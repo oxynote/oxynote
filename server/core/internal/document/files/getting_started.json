@@ -1,0 +1,676 @@
+{
+	"type": "doc",
+	"content": [
+		{
+			"type": "splitDocumentation",
+			"attrs": {
+				"uid": "qlUCVvXMrpGm0pPJUfuSR",
+				"inversed": false
+			},
+			"content": [
+				{
+					"type": "splitDocumentationLeftSide",
+					"attrs": {
+						"uid": "w3OcVenlPbAWDfTTDmTNe"
+					},
+					"content": [
+						{
+							"type": "heading",
+							"attrs": {
+								"uid": "Db9j7QU21zj5_PdWjEiJg",
+								"level": 1
+							},
+							"content": [
+								{
+									"text": "Getting Started",
+									"type": "text"
+								}
+							]
+						},
+						{
+							"type": "taskList",
+							"attrs": {
+								"uid": "a99euLfo331lrdRi4nAD8"
+							},
+							"content": [
+								{
+									"type": "taskItem",
+									"attrs": {
+										"uid": "nQ9N9DzMYEsDV6cw5lIev",
+										"checked": true
+									},
+									"content": [
+										{
+											"type": "paragraph",
+											"attrs": {
+												"uid": "n2yn78mPCP20O1QZ1OAPM"
+											},
+											"content": [
+												{
+													"text": "Create your Oxynote account",
+													"type": "text"
+												}
+											]
+										}
+									]
+								},
+								{
+									"type": "taskItem",
+									"attrs": {
+										"uid": "GimCWKuT2oZlv-cyw7ZNt",
+										"checked": false
+									},
+									"content": [
+										{
+											"type": "paragraph",
+											"attrs": {
+												"uid": "j3POAUqbn0Ci-Za8RsChh"
+											},
+											"content": [
+												{
+													"text": "Try the editor",
+													"type": "text"
+												}
+											]
+										},
+										{
+											"type": "taskList",
+											"attrs": {
+												"uid": "kCA_Gcjti3ZU3GOB2erH7"
+											},
+											"content": [
+												{
+													"type": "taskItem",
+													"attrs": {
+														"uid": "2u4y76HXNgJHSSuJ6_bBG",
+														"checked": false
+													},
+													"content": [
+														{
+															"type": "paragraph",
+															"attrs": {
+																"uid": "1VpMwJ17WBoKFNZZtkRyM"
+															},
+															"content": [
+																{
+																	"text": "Create a new line and and ",
+																	"type": "text"
+																},
+																{
+																	"text": "type",
+																	"type": "text",
+																	"marks": [
+																		{
+																			"type": "bold",
+																			"attrs": {
+																				"uid": null,
+																				"nodeCommentId": null
+																			}
+																		}
+																	]
+																},
+																{
+																	"text": " ",
+																	"type": "text"
+																},
+																{
+																	"text": "/",
+																	"type": "text",
+																	"marks": [
+																		{
+																			"type": "code",
+																			"attrs": {
+																				"uid": null,
+																				"nodeCommentId": null
+																			}
+																		}
+																	]
+																},
+																{
+																	"text": " to add blocks (headings, code, checklists, etc.)",
+																	"type": "text"
+																}
+															]
+														}
+													]
+												},
+												{
+													"type": "taskItem",
+													"attrs": {
+														"uid": "aAprosXmUysjiaIvCFTQi",
+														"checked": false
+													},
+													"content": [
+														{
+															"type": "paragraph",
+															"attrs": {
+																"uid": "_b78hvQwB73tDdtu8AgMe"
+															},
+															"content": [
+																{
+																	"text": "Use the ",
+																	"type": "text"
+																},
+																{
+																	"text": "sidebar",
+																	"type": "text",
+																	"marks": [
+																		{
+																			"type": "bold",
+																			"attrs": {
+																				"uid": null,
+																				"nodeCommentId": null
+																			}
+																		}
+																	]
+																},
+																{
+																	"text": " to create and organize pages",
+																	"type": "text"
+																}
+															]
+														}
+													]
+												}
+											]
+										}
+									]
+								},
+								{
+									"type": "taskItem",
+									"attrs": {
+										"uid": "wi6YkzLXgzXlgiE1uotQi",
+										"checked": false
+									},
+									"content": [
+										{
+											"type": "paragraph",
+											"attrs": {
+												"uid": "31lkLyeVScrBstmg3LCEQ"
+											},
+											"content": [
+												{
+													"text": "Use the ",
+													"type": "text"
+												},
+												{
+													"text": "Main + Draft",
+													"type": "text",
+													"marks": [
+														{
+															"type": "bold",
+															"attrs": {
+																"uid": null,
+																"nodeCommentId": null
+															}
+														}
+													]
+												},
+												{
+													"text": " workflow (the built-in review process)",
+													"type": "text"
+												}
+											]
+										},
+										{
+											"type": "taskList",
+											"attrs": {
+												"uid": "orpeJ8hDQg6miwqXdUO4g"
+											},
+											"content": [
+												{
+													"type": "taskItem",
+													"attrs": {
+														"uid": "ZoFTEjpintgQJPEgPm9Xp",
+														"checked": false
+													},
+													"content": [
+														{
+															"type": "paragraph",
+															"attrs": {
+																"uid": "8Kvnf38fkixxKFfX7v5rO"
+															},
+															"content": [
+																{
+																	"text": "Make a page reviewable: ",
+																	"type": "text"
+																},
+																{
+																	"text": "click",
+																	"type": "text",
+																	"marks": [
+																		{
+																			"type": "bold",
+																			"attrs": {
+																				"uid": null,
+																				"nodeCommentId": null
+																			}
+																		}
+																	]
+																},
+																{
+																	"text": " ⋯ (top right) → ",
+																	"type": "text"
+																},
+																{
+																	"text": "Make reviewable",
+																	"type": "text",
+																	"marks": [
+																		{
+																			"type": "bold",
+																			"attrs": {
+																				"uid": null,
+																				"nodeCommentId": null
+																			}
+																		}
+																	]
+																}
+															]
+														}
+													]
+												},
+												{
+													"type": "taskItem",
+													"attrs": {
+														"uid": "ZtYmkjv1oO8mP7Ev0lIv2",
+														"checked": false
+													},
+													"content": [
+														{
+															"type": "paragraph",
+															"attrs": {
+																"uid": "ODwmzUIctYepqomi68bXt"
+															},
+															"content": [
+																{
+																	"text": "Edit in Draft, then merge into Main with ",
+																	"type": "text"
+																},
+																{
+																	"text": "Approve",
+																	"type": "text",
+																	"marks": [
+																		{
+																			"type": "bold",
+																			"attrs": {
+																				"uid": null,
+																				"nodeCommentId": null
+																			}
+																		}
+																	]
+																},
+																{
+																	"text": " and ",
+																	"type": "text"
+																},
+																{
+																	"text": "Merge",
+																	"type": "text",
+																	"marks": [
+																		{
+																			"type": "bold",
+																			"attrs": {
+																				"uid": null,
+																				"nodeCommentId": null
+																			}
+																		}
+																	]
+																},
+																{
+																	"text": " buttons",
+																	"type": "text"
+																}
+															]
+														}
+													]
+												}
+											]
+										}
+									]
+								},
+								{
+									"type": "taskItem",
+									"attrs": {
+										"uid": "GxdUQ2azodmF22LAob7Y4",
+										"checked": false
+									},
+									"content": [
+										{
+											"type": "paragraph",
+											"attrs": {
+												"uid": "GimiYSz_4Kl4VjOAnFRQL"
+											},
+											"content": [
+												{
+													"text": "Add ",
+													"type": "text"
+												},
+												{
+													"text": "power blocks",
+													"type": "text",
+													"marks": [
+														{
+															"type": "bold",
+															"attrs": {
+																"uid": null,
+																"nodeCommentId": null
+															}
+														}
+													]
+												},
+												{
+													"text": " to a page",
+													"type": "text"
+												}
+											]
+										},
+										{
+											"type": "taskList",
+											"attrs": {
+												"uid": "OhfenZk7QuiveNZI5jS9m"
+											},
+											"content": [
+												{
+													"type": "taskItem",
+													"attrs": {
+														"uid": "0pvJMJiS_FK9CBDA6O1KY",
+														"checked": false
+													},
+													"content": [
+														{
+															"type": "paragraph",
+															"attrs": {
+																"uid": "NcmyH9QzK74El9ZTo2TS2"
+															},
+															"content": [
+																{
+																	"text": "Type ",
+																	"type": "text"
+																},
+																{
+																	"text": "||",
+																	"type": "text",
+																	"marks": [
+																		{
+																			"type": "code",
+																			"attrs": {
+																				"uid": null,
+																				"nodeCommentId": null
+																			}
+																		}
+																	]
+																},
+																{
+																	"text": " for a split documentation block (clean, Stripe-style docs layout)",
+																	"type": "text"
+																}
+															]
+														}
+													]
+												},
+												{
+													"type": "taskItem",
+													"attrs": {
+														"uid": "Nar3C7mB9_RazxPa3E7DX",
+														"checked": false
+													},
+													"content": [
+														{
+															"type": "paragraph",
+															"attrs": {
+																"uid": "dla10csPyz73gd8A-jDpc"
+															},
+															"content": [
+																{
+																	"text": "Type ",
+																	"type": "text"
+																},
+																{
+																	"text": "%%",
+																	"type": "text",
+																	"marks": [
+																		{
+																			"type": "code",
+																			"attrs": {
+																				"uid": null,
+																				"nodeCommentId": null
+																			}
+																		}
+																	]
+																},
+																{
+																	"text": " for a live metrics block (connects to your Prometheus)",
+																	"type": "text"
+																}
+															]
+														}
+													]
+												},
+												{
+													"type": "taskItem",
+													"attrs": {
+														"uid": "QnaS21RKbAQYmdwjMKQtr",
+														"checked": false
+													},
+													"content": [
+														{
+															"type": "paragraph",
+															"attrs": {
+																"uid": "plvnfwLLC76H6Wotedy-J"
+															},
+															"content": [
+																{
+																	"text": "Inspect the metric blocks on this page to see a working setup",
+																	"type": "text"
+																}
+															]
+														}
+													]
+												},
+												{
+													"type": "taskItem",
+													"attrs": {
+														"uid": "i6rMvtahnJUOkIcQ1AQbk",
+														"checked": false
+													},
+													"content": [
+														{
+															"type": "paragraph",
+															"attrs": {
+																"uid": "1XjY35bkAfgPc6X4PF27Z"
+															},
+															"content": [
+																{
+																	"text": "Drag metric blocks around to build a mini dashboard",
+																	"type": "text"
+																}
+															]
+														}
+													]
+												}
+											]
+										}
+									]
+								},
+								{
+									"type": "taskItem",
+									"attrs": {
+										"uid": "eEq8bl7lVDapqLExuYEvo",
+										"checked": false
+									},
+									"content": [
+										{
+											"type": "paragraph",
+											"attrs": {
+												"uid": "Dpkz03en3VeKYXQfp7OuH"
+											},
+											"content": [
+												{
+													"text": "Keep pages trustworthy with ",
+													"type": "text"
+												},
+												{
+													"text": "freshness hooks",
+													"type": "text",
+													"marks": [
+														{
+															"type": "bold",
+															"attrs": {
+																"uid": null,
+																"nodeCommentId": null
+															}
+														}
+													]
+												}
+											]
+										},
+										{
+											"type": "taskList",
+											"attrs": {
+												"uid": "O-brEIL17F4D2H5kb24d7"
+											},
+											"content": [
+												{
+													"type": "taskItem",
+													"attrs": {
+														"uid": "G3wE6i-j3aSPZkssFbEpt",
+														"checked": false
+													},
+													"content": [
+														{
+															"type": "paragraph",
+															"attrs": {
+																"uid": "xd-s3gw0t2WwlBK_1-zE2"
+															},
+															"content": [
+																{
+																	"text": "Add hooks via ",
+																	"type": "text"
+																},
+																{
+																	"text": "Hooks",
+																	"type": "text",
+																	"marks": [
+																		{
+																			"type": "bold",
+																			"attrs": {
+																				"uid": null,
+																				"nodeCommentId": null
+																			}
+																		}
+																	]
+																},
+																{
+																	"text": " at the top of the page or hover on a block and click the ",
+																	"type": "text"
+																},
+																{
+																	"text": "leaf icon",
+																	"type": "text",
+																	"marks": [
+																		{
+																			"type": "bold",
+																			"attrs": {
+																				"uid": null,
+																				"nodeCommentId": null
+																			}
+																		}
+																	]
+																},
+																{
+																	"text": " on the left",
+																	"type": "text"
+																}
+															]
+														}
+													]
+												},
+												{
+													"type": "taskItem",
+													"attrs": {
+														"uid": "uf05Ch7pemBDn--smPKKo",
+														"checked": false
+													},
+													"content": [
+														{
+															"type": "paragraph",
+															"attrs": {
+																"uid": "YNfCYotHElW4GC5IcPfCt"
+															},
+															"content": [
+																{
+																	"text": "Use hooks to track external changes (GitHub pushes, Docker image updates, etc.)",
+																	"type": "text"
+																}
+															]
+														}
+													]
+												}
+											]
+										}
+									]
+								}
+							]
+						}
+					]
+				},
+				{
+					"type": "splitDocumentationRightSide",
+					"attrs": {
+						"uid": "SJPRaiRkFhkpO40w1xZRn"
+					},
+					"content": [
+						{
+							"type": "metricBlock",
+							"attrs": {
+								"uid": "n0RdiI1dVIEQyxcO947Bg",
+								"title": "",
+								"width": "standard",
+								"queries": [
+									{
+										"name": "Query 1",
+										"query": "",
+										"legendFormat": ""
+									}
+								],
+								"timeRange": "last_5_minutes",
+								"refreshInterval": "5m",
+								"baseThresholdColor": "oklch(62.7% .194 149.214)"
+							}
+						},
+						{
+							"type": "metricBlock",
+							"attrs": {
+								"uid": "fiYQ4DAnDY_uwKpM1hlvM",
+								"title": "",
+								"width": "standard",
+								"queries": [
+									{
+										"name": "Query 1",
+										"query": "",
+										"legendFormat": ""
+									}
+								],
+								"timeRange": "last_5_minutes",
+								"refreshInterval": "5m",
+								"baseThresholdColor": "oklch(62.7% .194 149.214)"
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"type": "paragraph",
+			"attrs": {
+				"uid": "IW4FY31oFpg8z_BVpDoO5"
+			}
+		},
+		{
+			"type": "paragraph",
+			"attrs": {
+				"uid": "pViYU3p4mQ_wdYrUQGejB"
+			}
+		}
+	]
+}

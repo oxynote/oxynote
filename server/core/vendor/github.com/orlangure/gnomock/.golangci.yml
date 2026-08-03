@@ -1,0 +1,55 @@
+linters:
+  enable:
+    - bodyclose
+    - dogsled
+    - errcheck
+    - forcetypeassert
+    - errorlint
+    - gocognit
+    - goconst
+    - gocritic
+    - godot
+    - godox
+    - gofmt
+    - gofumpt
+    - goimports
+    - goprintffuncname
+    - gosec
+    - gosimple
+    - govet
+    - ineffassign
+    - lll
+    - misspell
+    - nakedret
+    - nilerr
+    - noctx
+    - prealloc
+    - predeclared
+    - revive
+    - staticcheck
+    - stylecheck
+    - typecheck
+    - unconvert
+    - unparam
+    - unused
+    - whitespace
+    - wsl
+    - copyloopvar
+
+issues:
+  include:
+    - EXC0001 # require error check on Close()
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - bodyclose
+        - gosec
+        - noctx
+
+    - path: cmd/server/presets.go
+      linters:
+        - godot
+
+    - path: internal/testutil/preset.go
+      linters:
+        - godot

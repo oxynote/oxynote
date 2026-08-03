@@ -1,0 +1,317 @@
+[
+	{
+		"type": "metricBlock",
+		"attrs": {
+			"uid": "mfjf_gdCtb7GOVUiyzDC1",
+			"title": "Pizza Fridays Scheduled",
+			"width": "compact",
+			"queries": [
+				{
+					"name": "Query 1",
+					"query": "engineering_pizza_fridays_next_30_days",
+					"legendFormat": "pizzas_{{pizza_count}}"
+				}
+			],
+			"unitType": "custom",
+			"timeRange": "last_3_hours",
+			"dataSourceId": "d6ffo789ra6s73aemr5g",
+			"refreshInterval": "30s",
+			"visualizationType": "line_chart",
+			"baseThresholdColor": "oklch(62.7% .194 149.214)"
+		}
+	},
+	{
+		"type": "metricBlock",
+		"attrs": {
+			"uid": "KkQTP80i5NbAv52qY0AbA",
+			"title": "\"Just Ship It\" Approvals After 5 PM",
+			"width": "compact",
+			"queries": [
+				{
+					"name": "Query 1",
+					"query": "engineering_ship_it_approvals_after_5pm_count",
+					"legendFormat": "{{reviewer_state}}"
+				}
+			],
+			"unitType": "custom",
+			"timeRange": "last_3_hours",
+			"dataSourceId": "d6ffo789ra6s73aemr5g",
+			"refreshInterval": "30s",
+			"visualizationType": "line_chart",
+			"baseThresholdColor": "oklch(62.7% .194 149.214)"
+		}
+	},
+	{
+		"type": "metricBlock",
+		"attrs": {
+			"uid": "w-fzEVkSpz1GaQKMsIwYd",
+			"title": "Pull Requests Merged on Friday Afternoon",
+			"width": "compact",
+			"queries": [
+				{
+					"name": "Query 1",
+					"query": "engineering_prs_merged_friday_afternoon_count",
+					"legendFormat": "{{confidence}}"
+				}
+			],
+			"unitType": "custom",
+			"timeRange": "last_3_hours",
+			"dataSourceId": "d6ffo789ra6s73aemr5g",
+			"refreshInterval": "30s",
+			"visualizationType": "line_chart",
+			"baseThresholdColor": "oklch(62.7% .194 149.214)"
+		}
+	},
+	{
+		"type": "metricBlock",
+		"attrs": {
+			"uid": "CH67D6UoSArJ7WLOo03Uh",
+			"title": "Hotfixes per Release",
+			"width": "compact",
+			"queries": [
+				{
+					"name": "Query 1",
+					"query": "engineering_hotfixes_per_release",
+					"legendFormat": "{{root_cause}}"
+				}
+			],
+			"unitType": "custom",
+			"timeRange": "last_3_hours",
+			"dataSourceId": "d6ffo789ra6s73aemr5g",
+			"refreshInterval": "30s",
+			"visualizationType": "line_chart",
+			"baseThresholdColor": "oklch(62.7% .194 149.214)"
+		}
+	},
+	{
+		"type": "metricBlock",
+		"attrs": {
+			"uid": "F_NqT_poRflIQGIagHBE_",
+			"title": "Secrets Leaked in Commits",
+			"width": "compact",
+			"queries": [
+				{
+					"name": "Query 1",
+					"query": "engineering_secrets_detected_commits_count",
+					"legendFormat": "{{severity}}"
+				}
+			],
+			"unitType": "custom",
+			"timeRange": "last_3_hours",
+			"dataSourceId": "d6ffo789ra6s73aemr5g",
+			"refreshInterval": "30s",
+			"visualizationType": "line_chart",
+			"baseThresholdColor": "oklch(62.7% .194 149.214)"
+		}
+	},
+	{
+		"type": "metricBlock",
+		"attrs": {
+			"uid": "9NDWOBguwcDYuf4sAmCI-",
+			"title": "Global Pre-Deployment Confidence",
+			"width": "compact",
+			"queries": [
+				{
+					"name": "Query 1",
+					"query": "engineering_deploy_confidence_index",
+					"legendFormat": "{{vibe}}"
+				}
+			],
+			"decimals": 1,
+			"unitType": "percent0to100",
+			"timeRange": "last_3_hours",
+			"dataSourceId": "d6ffo789ra6s73aemr5g",
+			"axisBoundsMax": 100,
+			"axisBoundsMin": 0,
+			"refreshInterval": "30s",
+			"visualizationType": "gauge_chart",
+			"baseThresholdColor": "oklch(62.7% .194 149.214)"
+		}
+	},
+	{
+		"type": "metricBlock",
+		"attrs": {
+			"uid": "plCtNV3TOgI-zqDWC_OdY",
+			"title": "Number of Deployments on Friday",
+			"width": "compact",
+			"queries": [
+				{
+					"name": "Query 1",
+					"query": "engineering_friday_deploys_count",
+					"legendFormat": "{{outcome}}"
+				}
+			],
+			"timeRange": "last_3_hours",
+			"dataSourceId": "d6ffo789ra6s73aemr5g",
+			"refreshInterval": "30s",
+			"visualizationType": "line_chart",
+			"baseThresholdColor": "oklch(62.7% .194 149.214)"
+		}
+	},
+	{
+		"type": "metricBlock",
+		"attrs": {
+			"uid": "VKFnQrsVqDIceDVAOONb2",
+			"title": "Meetings That Could've Been an Email/Doc",
+			"width": "compact",
+			"queries": [
+				{
+					"name": "Query 1",
+					"query": "engineering_meetings_could_be_doc_count",
+					"legendFormat": "{{excuse}}"
+				}
+			],
+			"timeRange": "last_3_hours",
+			"dataSourceId": "d6ffo789ra6s73aemr5g",
+			"refreshInterval": "30s",
+			"visualizationType": "line_chart",
+			"baseThresholdColor": "oklch(62.7% .194 149.214)"
+		}
+	},
+	{
+		"type": "metricBlock",
+		"attrs": {
+			"uid": "HSrKu9vUyQ2JJ22cgk_FG",
+			"title": "Feature Flag Graveyard Size",
+			"width": "compact",
+			"queries": [
+				{
+					"name": "Query 1",
+					"query": "engineering_feature_flag_graveyard_size",
+					"legendFormat": "remove: {{removal_likelihood}}"
+				}
+			],
+			"timeRange": "last_3_hours",
+			"dataSourceId": "d6ffo789ra6s73aemr5g",
+			"refreshInterval": "30s",
+			"visualizationType": "line_chart",
+			"baseThresholdColor": "oklch(62.7% .194 149.214)"
+		}
+	},
+	{
+		"type": "metricBlock",
+		"attrs": {
+			"uid": "POrIsr6SPrYSgEbrfUe1g",
+			"title": "\"Let’s Circle Back\" Count ",
+			"width": "compact",
+			"queries": [
+				{
+					"name": "Query 1",
+					"query": "engineering_circle_back_count",
+					"legendFormat": "{{outcome}}"
+				}
+			],
+			"timeRange": "last_3_hours",
+			"dataSourceId": "d6ffo789ra6s73aemr5g",
+			"refreshInterval": "30s",
+			"visualizationType": "line_chart",
+			"baseThresholdColor": "oklch(62.7% .194 149.214)"
+		}
+	},
+	{
+		"type": "metricBlock",
+		"attrs": {
+			"uid": "MuoVNoXIE2psco2cZZKVc",
+			"title": "\"Temporary Fix\" Age",
+			"width": "compact",
+			"queries": [
+				{
+					"name": "Query 1",
+					"query": "engineering_temporary_fix_age_days",
+					"legendFormat": "{{original_comment}}"
+				}
+			],
+			"unitType": "days",
+			"timeRange": "last_3_hours",
+			"dataSourceId": "d6ffo789ra6s73aemr5g",
+			"refreshInterval": "30s",
+			"visualizationType": "line_chart",
+			"baseThresholdColor": "oklch(62.7% .194 149.214)"
+		}
+	},
+	{
+		"type": "metricBlock",
+		"attrs": {
+			"uid": "Q74wBigwEkYTGv6bnJSVz",
+			"title": "Stale Git Branches",
+			"width": "compact",
+			"queries": [
+				{
+					"name": "Query 1",
+					"query": "engineering_stale_branches_total",
+					"legendFormat": "owner: {{owner_status}}"
+				}
+			],
+			"unitType": "custom",
+			"timeRange": "last_3_hours",
+			"dataSourceId": "d6ffo789ra6s73aemr5g",
+			"refreshInterval": "30s",
+			"visualizationType": "line_chart",
+			"baseThresholdColor": "oklch(62.7% .194 149.214)"
+		}
+	},
+	{
+		"type": "metricBlock",
+		"attrs": {
+			"uid": "L4ciBdhhKrXQ9Kr91j4Ba",
+			"title": "Pull Request Time to First Review",
+			"width": "compact",
+			"queries": [
+				{
+					"name": "Query 1",
+					"query": "engineering_pr_time_to_first_review_minutes",
+					"legendFormat": "time"
+				}
+			],
+			"decimals": 1,
+			"unitType": "minutes",
+			"timeRange": "last_3_hours",
+			"dataSourceId": "d6ffo789ra6s73aemr5g",
+			"refreshInterval": "30s",
+			"visualizationType": "line_chart",
+			"baseThresholdColor": "oklch(62.7% .194 149.214)"
+		}
+	},
+	{
+		"type": "metricBlock",
+		"attrs": {
+			"uid": "JPXl9b0QECuufqcPBUQ6-",
+			"title": "\"Works on My Machine\" Rate",
+			"width": "compact",
+			"queries": [
+				{
+					"name": "Query 1",
+					"query": "engineering_works_on_my_machine_rate",
+					"legendFormat": "{{platform}}"
+				}
+			],
+			"unitType": "custom",
+			"timeRange": "last_3_hours",
+			"dataSourceId": "d6ffo789ra6s73aemr5g",
+			"refreshInterval": "30s",
+			"visualizationType": "line_chart",
+			"baseThresholdColor": "oklch(62.7% .194 149.214)"
+		}
+	},
+	{
+		"type": "metricBlock",
+		"attrs": {
+			"uid": "oQGIXIEofuOGWdy-aL-xS",
+			"title": "\"Quick Sync\" Meetings per Day",
+			"width": "compact",
+			"queries": [
+				{
+					"name": "Query 1",
+					"query": "engineering_quick_sync_meetings_same_day_count",
+					"legendFormat": "{{duration}}"
+				}
+			],
+			"unitType": "custom",
+			"timeRange": "last_3_hours",
+			"dataSourceId": "d6ffo789ra6s73aemr5g",
+			"refreshInterval": "30s",
+			"visualizationType": "line_chart",
+			"baseThresholdColor": "oklch(62.7% .194 149.214)"
+		}
+	}
+]

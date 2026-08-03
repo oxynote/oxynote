@@ -1,0 +1,16 @@
+ignore:
+  # generator is a supporting utility built for humans; it isn't an integral
+  # part of Gnomock
+  - cmd/generator/**/*
+  - internal/testutil/**/*
+
+coverage:
+  status:
+    project:
+      default:
+        target: 80%
+        threshold: 0%
+    patch:
+      default:
+        target: 70%
+        threshold: 0%

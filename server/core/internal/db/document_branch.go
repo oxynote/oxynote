@@ -1,0 +1,336 @@
+package db
+
+import (
+	"context"
+
+	sq "github.com/Masterminds/squirrel"
+	"github.com/jmoiron/sqlx"
+	"github.com/oxynote/heimdall/internal/document"
+	"github.com/oxynote/purse/util/timeutil"
+	"github.com/rs/xid"
+)
+
+// insertDocumentBranch inserts a branch row for a newly created document.
+// Called inside the same transaction as InsertDocument.
+func (a *agent) insertDocumentBranch(ctx context.Context, doc document.Document) error {
+	q, args := a.builder.Insert("document_branches").
+		SetMap(map[string]any{
+			"id":                 doc.BranchID,
+			"fk_document_id":     doc.ID,
+			"fk_organization_id": doc.OrganizationID,
+			"branch_name":        doc.BranchName,
+			"document_name":      doc.DocumentName,
+			"icon":               doc.Icon,
+			"content":            doc.Content,
+			"protected":          doc.Protected,
+			`"default"`:          doc.Default,
+			"raw_content":        doc.RawContent,
+			"created_at":         doc.CreatedAt,
+			"fk_created_by":      doc.CreatedBy,
+			"updated_at":         doc.UpdatedAt,
+			"fk_last_updated_by": doc.LastUpdatedBy,
+		}).
+		Suffix("ON CONFLICT (fk_document_id, branch_name) DO NOTHING").
+		MustSql()
+
+	_, err := a.sql.ExecContext(ctx, q, args...)
+	return err
+}
+
+// upsertDocumentBranch upserts the branch row for a document.
+// Called inside the same transaction as UpdateDocument.
+func (a *agent) upsertDocumentBranch(ctx context.Context, doc document.Document) error {
+	q, args := a.builder.Insert("document_branches").
+		SetMap(map[string]any{
+			"id":                 doc.BranchID,
+			"fk_document_id":     doc.ID,
+			"fk_organization_id": doc.OrganizationID,
+			"branch_name":        doc.BranchName,
+			"document_name":      doc.DocumentName,
+			"icon":               doc.Icon,
+			"content":            doc.Content,
+			"protected":          doc.Protected,
+			`"default"`:          doc.Default,
+			"raw_content":        doc.RawContent,
+			"created_at":         doc.CreatedAt,
+			"fk_created_by":      doc.CreatedBy,
+			"updated_at":         doc.UpdatedAt,
+			"fk_last_updated_by": doc.LastUpdatedBy,
+		}).
+		// "default" is intentionally omitted from the SET clause — it is
+		// set once at branch creation and must never change via upsert.
+		Suffix("ON CONFLICT (fk_document_id, branch_name) DO UPDATE SET " +
+			"document_name = excluded.document_name, icon = excluded.icon, " +
+			"content = excluded.content, raw_content = excluded.raw_content, " +
+			"protected = excluded.protected, updated_at = excluded.updated_at, " +
+			"fk_last_updated_by = excluded.fk_last_updated_by").
+		MustSql()
+
+	_, err := a.sql.ExecContext(ctx, q, args...)
+	return err
+}
+
+// ForkDocumentBranch creates a new branch by copying the contents of an
+// existing source branch. Does nothing if the target branch already exists.
+func (a *agent) ForkDocumentBranch(
+	ctx context.Context,
+	docID xid.ID,
+	orgID string,
+	sourceBranch string,
+	targetBranch string,
+	createdBy string,
+) error {
+	now := timeutil.Now()
+
+	q := `
+		INSERT INTO document_branches (
+			id, fk_document_id, fk_organization_id, branch_name, document_name, icon,
+			content, raw_content, protected, "default",
+			created_at, fk_created_by, updated_at, fk_last_updated_by
+		)
+		SELECT $1, $2, $3, $4, document_name, icon, content, raw_content, protected, false, $5, $6, $5, $6
+		FROM document_branches
+		WHERE fk_document_id = $2 AND branch_name = $7
+		ON CONFLICT (fk_document_id, branch_name) DO NOTHING
+	`
+
+	_, err := a.sql.ExecContext(ctx, q, xid.New(), docID, orgID, targetBranch, now, createdBy, sourceBranch)
+	return err
+}
+
+// FetchMainBranchContent returns the parsed content and display name
+// of a document's main branch, scoped to the given org. Used by the
+// assistant's read tools, which only need these fields and would
+// otherwise pay to deserialize raw_content and the rest of the
+// branch row.
+func (a *agent) FetchMainBranchContent(ctx context.Context, docID xid.ID, organizationID string) (document.DocumentContent, error) {
+	q, args := a.builder.Select(
+		`document_name AS "document_name"`,
+		`content AS "content"`,
+	).From("document_branches").
+		Where(sq.Eq{
+			"fk_document_id":     docID,
+			"fk_organization_id": organizationID,
+			"branch_name":        document.DefaultBranch,
+		}).
+		Limit(1).
+		MustSql()
+
+	out := document.DocumentContent{
+		OrganizationID: organizationID,
+		DocumentID:     docID,
+	}
+	if err := sqlx.GetContext(ctx, a.sql, &out, q, args...); err != nil {
+		return document.DocumentContent{}, err
+	}
+
+	return out, nil
+}
+
+// FetchDocumentBranches fetches all branches for a document as lightweight summaries.
+func (a *agent) FetchDocumentBranches(ctx context.Context, docID xid.ID, organizationID string) ([]document.BranchSummary, error) {
+	q, args := a.builder.Select(
+		`id AS "branch_id"`,
+		`branch_name AS "branch_name"`,
+		`document_name AS "document_name"`,
+		`icon AS "icon"`,
+		`protected AS "protected"`,
+		`"default" AS "default"`,
+		`created_at AS "created_at"`,
+		`updated_at AS "updated_at"`,
+	).From("document_branches").
+		Where(sq.Eq{
+			"fk_document_id":     docID,
+			"fk_organization_id": organizationID,
+		}).
+		MustSql()
+
+	branches := []document.BranchSummary{}
+
+	if err := sqlx.SelectContext(ctx, a.sql, &branches, q, args...); err != nil {
+		return nil, err
+	}
+
+	return branches, nil
+}
+
+// CountDocumentBranches returns the number of branches for a document.
+// Used to enforce the minimum of one branch before deletion.
+func (a *agent) CountDocumentBranches(ctx context.Context, docID xid.ID, organizationID string) (int, error) {
+	q, args := a.builder.Select("COUNT(*)").
+		From("document_branches").
+		Where(sq.Eq{
+			"fk_document_id":     docID,
+			"fk_organization_id": organizationID,
+		}).
+		MustSql()
+
+	var count int
+
+	if err := sqlx.GetContext(ctx, a.sql, &count, q, args...); err != nil {
+		return 0, err
+	}
+
+	return count, nil
+}
+
+// DeleteDocumentBranchByID deletes a branch identified by its ID.
+// The caller is responsible for ensuring at least one branch remains.
+func (a *agent) DeleteDocumentBranchByID(ctx context.Context, branchID xid.ID, organizationID string) error {
+	q, args := a.builder.Delete("document_branches").
+		Where(sq.Eq{
+			"id":                 branchID,
+			"fk_organization_id": organizationID,
+		}).
+		MustSql()
+
+	_, err := a.sql.ExecContext(ctx, q, args...)
+
+	return err
+}
+
+// UpdateDocumentBranchMetadata updates the name and protection status of a branch.
+// It does not modify content or insert a changelog entry.
+func (a *agent) UpdateDocumentBranchMetadata(ctx context.Context, doc document.Document) error {
+	q, args := a.builder.Update("document_branches").
+		SetMap(map[string]any{
+			"branch_name":        doc.BranchName,
+			"protected":          doc.Protected,
+			"updated_at":         doc.UpdatedAt,
+			"fk_last_updated_by": doc.LastUpdatedBy,
+		}).
+		Where(sq.Eq{
+			"id":                 doc.BranchID,
+			"fk_organization_id": doc.OrganizationID,
+		}).
+		MustSql()
+
+	_, err := a.sql.ExecContext(ctx, q, args...)
+
+	return err
+}
+
+// FetchDocumentByBranchID fetches a document joined against the branch identified by branchID.
+func (a *agent) FetchDocumentByBranchID(ctx context.Context, branchID xid.ID, organizationID string) (*document.Document, error) {
+	q, args := a.builder.Select(
+		`db.id AS "branch_id"`,
+		`documents.id AS "id"`,
+		`documents.fk_organization_id AS "fk_organization_id"`,
+		`documents.fk_parent_id AS "fk_parent_id"`,
+		`db.branch_name AS "branch_name"`,
+		`db.document_name AS "document_name"`,
+		`db.icon AS "icon"`,
+		`db.content AS "content"`,
+		`db.raw_content AS "raw_content"`,
+		`db.protected AS "protected"`,
+		`db."default" AS "default"`,
+		`db.created_at AS "created_at"`,
+		`db.fk_created_by AS "fk_created_by"`,
+		`db.updated_at AS "updated_at"`,
+		`db.fk_last_updated_by AS "fk_last_updated_by"`,
+	).From("documents").
+		Join("document_branches db ON db.fk_document_id = documents.id").
+		Where(sq.Eq{
+			"db.id":                        branchID,
+			"documents.fk_organization_id": organizationID,
+		}).
+		Limit(1).
+		MustSql()
+
+	doc := &document.Document{}
+
+	if err := sqlx.GetContext(ctx, a.sql, doc, q, args...); err != nil {
+		return nil, err
+	}
+
+	return doc, nil
+}
+
+// FetchDocumentBranchesUnsafe fetches all branches for a document as lightweight
+// summaries without checking organization ownership.
+// This is intended only for internal system use cases.
+func (a *agent) FetchDocumentBranchesUnsafe(ctx context.Context, docID xid.ID) ([]document.BranchSummary, error) {
+	q, args := a.builder.Select(
+		`id AS "branch_id"`,
+		`branch_name AS "branch_name"`,
+		`document_name AS "document_name"`,
+		`icon AS "icon"`,
+		`protected AS "protected"`,
+		`"default" AS "default"`,
+		`created_at AS "created_at"`,
+		`updated_at AS "updated_at"`,
+	).From("document_branches").
+		Where(sq.Eq{
+			"fk_document_id": docID,
+		}).
+		MustSql()
+
+	branches := []document.BranchSummary{}
+
+	if err := sqlx.SelectContext(ctx, a.sql, &branches, q, args...); err != nil {
+		return nil, err
+	}
+
+	return branches, nil
+}
+
+// FetchDocumentUnsafeByBranchID fetches a document joined against the branch
+// identified by branchID without checking organization ownership.
+// This is intended only for internal system use cases.
+func (a *agent) FetchDocumentUnsafeByBranchID(ctx context.Context, branchID xid.ID) (*document.Document, error) {
+	q, args := a.builder.Select(
+		`db.id AS "branch_id"`,
+		`documents.id AS "id"`,
+		`documents.fk_organization_id AS "fk_organization_id"`,
+		`documents.fk_parent_id AS "fk_parent_id"`,
+		`db.branch_name AS "branch_name"`,
+		`db.document_name AS "document_name"`,
+		`db.icon AS "icon"`,
+		`db.content AS "content"`,
+		`db.raw_content AS "raw_content"`,
+		`db.protected AS "protected"`,
+		`db."default" AS "default"`,
+		`db.created_at AS "created_at"`,
+		`db.fk_created_by AS "fk_created_by"`,
+		`db.updated_at AS "updated_at"`,
+		`db.fk_last_updated_by AS "fk_last_updated_by"`,
+	).From("documents").
+		Join("document_branches db ON db.fk_document_id = documents.id").
+		Where(sq.Eq{
+			"db.id": branchID,
+		}).
+		Limit(1).
+		MustSql()
+
+	doc := &document.Document{}
+
+	if err := sqlx.GetContext(ctx, a.sql, doc, q, args...); err != nil {
+		return nil, err
+	}
+
+	return doc, nil
+}
+
+// insertDocumentBranchChangelog inserts a changelog entry for a branch update.
+func (a *agent) insertDocumentBranchChangelog(
+	ctx context.Context,
+	docID xid.ID,
+	branchName string,
+	clog document.Changelog,
+) error {
+	q, args := a.builder.Insert("document_branch_changelogs").
+		SetMap(map[string]any{
+			"id":             clog.ID,
+			"fk_document_id": docID,
+			"fk_branch_name": branchName,
+			"content":        clog.Content,
+			"raw_content":    clog.RawContent,
+			"created_at":     clog.CreatedAt,
+		}).
+		Suffix("ON CONFLICT (id) DO UPDATE SET " +
+			"content = excluded.content, raw_content = excluded.raw_content, created_at = excluded.created_at").
+		MustSql()
+
+	_, err := a.sql.ExecContext(ctx, q, args...)
+	return err
+}

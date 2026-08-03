@@ -1,0 +1,3352 @@
+{
+	"2fa": [
+		"mfa",
+		"multi-factor authentication"
+	],
+	"400 bad request": [
+		"bad request"
+	],
+	"401 unauthorized": [
+		"unauthorized"
+	],
+	"403 forbidden": [
+		"forbidden"
+	],
+	"404 not found": [
+		"not found"
+	],
+	"409 conflict": [
+		"conflict"
+	],
+	"429 too many requests": [
+		"rate limited",
+		"too many requests"
+	],
+	"500 internal server error": [
+		"server error"
+	],
+	"502 bad gateway": [
+		"bad gateway"
+	],
+	"503 unavailable": [
+		"service unavailable"
+	],
+	"504 timeout": [
+		"gateway timeout"
+	],
+	"a11y": [
+		"accessibility"
+	],
+	"acceptance criteria": [
+		"definition of done",
+		"dod"
+	],
+	"access control": [
+		"authorization",
+		"permissions"
+	],
+	"access key": [
+		"api key",
+		"client key"
+	],
+	"access policy": [
+		"policy",
+		"rule set"
+	],
+	"access scope": [
+		"permission scope",
+		"scope"
+	],
+	"accessibility": [
+		"a11y"
+	],
+	"acl (architecture)": [
+		"anti-corruption layer"
+	],
+	"adapter": [
+		"wrapper"
+	],
+	"agent": [
+		"executor",
+		"runner"
+	],
+	"alarm": [
+		"alert",
+		"notification"
+	],
+	"alert": [
+		"alarm",
+		"notification"
+	],
+	"allow list": [
+		"ip allowlist",
+		"whitelist"
+	],
+	"ann": [
+		"nearest neighbor search",
+		"vector search"
+	],
+	"annex": [
+		"appendix",
+		"supplement"
+	],
+	"ansible": [
+		"configuration management"
+	],
+	"anti-corruption layer": [
+		"acl (architecture)"
+	],
+	"api": [
+		"application programming interface",
+		"endpoint",
+		"interface"
+	],
+	"api collection": [
+		"postman collection"
+	],
+	"api gateway": [
+		"edge gateway",
+		"gateway"
+	],
+	"api key": [
+		"access key",
+		"client key"
+	],
+	"api version": [
+		"semver",
+		"versioning"
+	],
+	"appendix": [
+		"annex",
+		"supplement"
+	],
+	"application programming interface": [
+		"api",
+		"endpoint",
+		"interface"
+	],
+	"application service": [
+		"service layer"
+	],
+	"architecture diagram": [
+		"diagram",
+		"schematic"
+	],
+	"artifact": [
+		"build artifact",
+		"package"
+	],
+	"artifact repository": [
+		"package repository",
+		"registry"
+	],
+	"aside": [
+		"footnote",
+		"note"
+	],
+	"asymmetric key": [
+		"private key",
+		"public key"
+	],
+	"async": [
+		"asynchronous",
+		"non-blocking"
+	],
+	"asynchronous": [
+		"async",
+		"non-blocking"
+	],
+	"asynchronous consistency": [
+		"eventual consistency"
+	],
+	"atomic operation": [
+		"commit unit",
+		"transaction"
+	],
+	"auth": [
+		"authentication",
+		"login",
+		"sign in"
+	],
+	"auth cookie": [
+		"cookie",
+		"session cookie"
+	],
+	"authentication": [
+		"auth",
+		"login",
+		"sign in"
+	],
+	"authenticator code": [
+		"one time password",
+		"totp"
+	],
+	"authorization": [
+		"access control",
+		"permissions"
+	],
+	"authorization framework": [
+		"oauth",
+		"oauth2"
+	],
+	"auto scaling": [
+		"autoscaling",
+		"hpa"
+	],
+	"automatic failover": [
+		"failover",
+		"switchover"
+	],
+	"autoscaling": [
+		"auto scaling",
+		"hpa"
+	],
+	"availability": [
+		"service health",
+		"uptime"
+	],
+	"availability (cap)": [
+		"service availability"
+	],
+	"availability zone": [
+		"az",
+		"zone"
+	],
+	"avro schema store": [
+		"schema registry"
+	],
+	"az": [
+		"availability zone",
+		"zone"
+	],
+	"backend": [
+		"server",
+		"server-side"
+	],
+	"background job": [
+		"job runner",
+		"worker"
+	],
+	"backlog": [
+		"work queue"
+	],
+	"backoff": [
+		"retries",
+		"retry"
+	],
+	"backpressure": [
+		"flow control"
+	],
+	"backup": [
+		"disaster recovery",
+		"restore"
+	],
+	"bad gateway": [
+		"502 bad gateway"
+	],
+	"bad request": [
+		"400 bad request"
+	],
+	"balancer": [
+		"lb",
+		"load balancer"
+	],
+	"batch processing": [
+		"offline processing"
+	],
+	"benchmark": [
+		"load test",
+		"performance test"
+	],
+	"best practices": [
+		"guidelines",
+		"recommendations"
+	],
+	"beta": [
+		"pre-release",
+		"preview"
+	],
+	"bigquery": [
+		"data warehouse"
+	],
+	"blacklist": [
+		"deny list",
+		"ip blocklist"
+	],
+	"blob storage": [
+		"object storage"
+	],
+	"block storage": [
+		"volume storage"
+	],
+	"blocking": [
+		"sync",
+		"synchronous"
+	],
+	"blue-green": [
+		"blue/green deployment"
+	],
+	"blue/green deployment": [
+		"blue-green"
+	],
+	"body": [
+		"message body",
+		"payload"
+	],
+	"boilerplate": [
+		"scaffold",
+		"template"
+	],
+	"bootstrap": [
+		"seed"
+	],
+	"bounded context": [
+		"context boundary",
+		"module boundary"
+	],
+	"branch": [
+		"git branch"
+	],
+	"bucket": [
+		"object bucket",
+		"storage bucket"
+	],
+	"bug": [
+		"defect",
+		"issue"
+	],
+	"build": [
+		"bundle",
+		"compile"
+	],
+	"build artifact": [
+		"artifact",
+		"package"
+	],
+	"build pipeline": [
+		"ci pipeline",
+		"deployment pipeline",
+		"pipeline"
+	],
+	"build runner": [
+		"task runner"
+	],
+	"bulkhead": [
+		"isolation boundary"
+	],
+	"bundle": [
+		"build",
+		"compile"
+	],
+	"bundler": [
+		"packager"
+	],
+	"business model": [
+		"domain model"
+	],
+	"cache": [
+		"caching",
+		"memoization"
+	],
+	"cache invalidation": [
+		"eviction",
+		"expiry"
+	],
+	"cache store": [
+		"in-memory store",
+		"redis"
+	],
+	"caching": [
+		"cache",
+		"memoization"
+	],
+	"call": [
+		"invocation",
+		"request"
+	],
+	"call stack": [
+		"stack"
+	],
+	"callback": [
+		"continuation",
+		"http callback",
+		"webhook"
+	],
+	"canary": [
+		"canary deployment",
+		"canary release"
+	],
+	"canary deployment": [
+		"canary",
+		"canary release"
+	],
+	"canary release": [
+		"canary",
+		"canary deployment"
+	],
+	"capability": [
+		"feature",
+		"functionality"
+	],
+	"cassandra": [
+		"scylla"
+	],
+	"caveat": [
+		"gotcha",
+		"warning"
+	],
+	"cd": [
+		"continuous delivery",
+		"continuous deployment"
+	],
+	"cdn": [
+		"content delivery network"
+	],
+	"cert": [
+		"certificate",
+		"x509"
+	],
+	"certificate": [
+		"cert",
+		"x509"
+	],
+	"change log": [
+		"changelog",
+		"release notes"
+	],
+	"changelog": [
+		"change log",
+		"release notes"
+	],
+	"changeset": [
+		"commit",
+		"revision"
+	],
+	"chart": [
+		"helm chart"
+	],
+	"checksum": [
+		"digest",
+		"hash"
+	],
+	"cherry-pick": [
+		"selective merge"
+	],
+	"choreography": [
+		"orchestrator pattern"
+	],
+	"ci": [
+		"continuous integration"
+	],
+	"ci pipeline": [
+		"build pipeline"
+	],
+	"cipher": [
+		"cryptography",
+		"encryption"
+	],
+	"circuit": [
+		"circuit breaker"
+	],
+	"circuit breaker": [
+		"circuit",
+		"failure guard"
+	],
+	"cleanse": [
+		"sanitize",
+		"scrub"
+	],
+	"client key": [
+		"access key",
+		"api key"
+	],
+	"client library": [
+		"sdk",
+		"software development kit"
+	],
+	"client-side": [
+		"frontend",
+		"ui"
+	],
+	"cloud": [
+		"cloud computing",
+		"public cloud"
+	],
+	"cloud computing": [
+		"cloud",
+		"public cloud"
+	],
+	"cloud data warehouse": [
+		"snowflake"
+	],
+	"cloud region": [
+		"region"
+	],
+	"cluster": [
+		"k8s cluster",
+		"kubernetes cluster"
+	],
+	"cluster manager": [
+		"orchestrator",
+		"scheduler"
+	],
+	"coalesce": [
+		"debounce"
+	],
+	"code cleanup": [
+		"refactor",
+		"restructure"
+	],
+	"code formatter": [
+		"formatter"
+	],
+	"code review": [
+		"merge review",
+		"pr review"
+	],
+	"code sample": [
+		"example",
+		"sample",
+		"snippet"
+	],
+	"column store": [
+		"columnar store"
+	],
+	"columnar store": [
+		"column store"
+	],
+	"comma separated values": [
+		"csv"
+	],
+	"command query responsibility segregation": [
+		"cqrs"
+	],
+	"commit": [
+		"changeset",
+		"revision"
+	],
+	"commit unit": [
+		"atomic operation",
+		"transaction"
+	],
+	"compile": [
+		"build",
+		"bundle"
+	],
+	"compiler": [
+		"transpiler"
+	],
+	"component": [
+		"microservice",
+		"module",
+		"service",
+		"unit"
+	],
+	"component library": [
+		"design system"
+	],
+	"concurrency": [
+		"parallelism"
+	],
+	"config map": [
+		"configmap"
+	],
+	"configmap": [
+		"config map"
+	],
+	"configuration management": [
+		"ansible"
+	],
+	"configuration toml": [
+		"toml"
+	],
+	"conflict": [
+		"409 conflict"
+	],
+	"conn reset": [
+		"connection reset"
+	],
+	"connection reset": [
+		"conn reset"
+	],
+	"consistency": [
+		"read consistency",
+		"write consistency"
+	],
+	"container": [
+		"docker container",
+		"oci container"
+	],
+	"container image": [
+		"image",
+		"oci image"
+	],
+	"container runtime": [
+		"docker",
+		"docker engine"
+	],
+	"content delivery network": [
+		"cdn"
+	],
+	"context boundary": [
+		"bounded context",
+		"module boundary"
+	],
+	"continuation": [
+		"callback"
+	],
+	"continuous delivery": [
+		"cd",
+		"continuous deployment"
+	],
+	"continuous deployment": [
+		"cd",
+		"continuous delivery"
+	],
+	"continuous integration": [
+		"ci"
+	],
+	"cookie": [
+		"auth cookie",
+		"session cookie"
+	],
+	"corpus": [
+		"dataset",
+		"training data"
+	],
+	"cors": [
+		"cross-origin resource sharing"
+	],
+	"cqrs": [
+		"command query responsibility segregation"
+	],
+	"create account": [
+		"register",
+		"sign up",
+		"signup"
+	],
+	"create slug": [
+		"slugify"
+	],
+	"creating index": [
+		"indexing"
+	],
+	"credential": [
+		"key",
+		"secret"
+	],
+	"credential rotation": [
+		"key rotation",
+		"secrets rotation"
+	],
+	"cron": [
+		"scheduled job"
+	],
+	"cross-origin resource sharing": [
+		"cors"
+	],
+	"cross-site request forgery": [
+		"csrf"
+	],
+	"cross-site scripting": [
+		"xss"
+	],
+	"cryptography": [
+		"cipher",
+		"encryption"
+	],
+	"csrf": [
+		"cross-site request forgery"
+	],
+	"csv": [
+		"comma separated values"
+	],
+	"cursor": [
+		"offset token",
+		"page token"
+	],
+	"cursor-based paging": [
+		"page-based paging",
+		"pagination"
+	],
+	"cut a release": [
+		"release",
+		"version release"
+	],
+	"daemon": [
+		"service process"
+	],
+	"daemonset": [
+		"k8s daemon set"
+	],
+	"dal": [
+		"data access layer",
+		"repository (pattern)"
+	],
+	"data access layer": [
+		"dal",
+		"repository (pattern)"
+	],
+	"data import": [
+		"data intake",
+		"ingestion"
+	],
+	"data intake": [
+		"data import",
+		"ingestion"
+	],
+	"data lake": [
+		"object lake"
+	],
+	"data lakehouse": [
+		"lakehouse"
+	],
+	"data partition": [
+		"partition"
+	],
+	"data pipeline": [
+		"ingestion pipeline",
+		"pipeline (data)"
+	],
+	"data race": [
+		"race condition"
+	],
+	"data replication": [
+		"replication"
+	],
+	"data transfer object": [
+		"dto"
+	],
+	"data warehouse": [
+		"bigquery"
+	],
+	"database": [
+		"datastore",
+		"db"
+	],
+	"database migration": [
+		"migration",
+		"schema change"
+	],
+	"datacenter": [
+		"on premises",
+		"on-prem"
+	],
+	"dataset": [
+		"corpus",
+		"training data"
+	],
+	"datastore": [
+		"database",
+		"db"
+	],
+	"db": [
+		"database",
+		"datastore"
+	],
+	"deadlock": [
+		"livelock"
+	],
+	"debounce": [
+		"coalesce"
+	],
+	"debt": [
+		"tech debt",
+		"technical debt"
+	],
+	"debugging guide": [
+		"problem solving",
+		"troubleshooting"
+	],
+	"decoding": [
+		"deserialization",
+		"unmarshalling"
+	],
+	"dedicated link": [
+		"direct connect",
+		"private link"
+	],
+	"deduplication key": [
+		"idempotency key"
+	],
+	"deep learning": [
+		"dl"
+	],
+	"default branch": [
+		"main",
+		"master branch"
+	],
+	"defect": [
+		"bug",
+		"issue"
+	],
+	"definition of done": [
+		"acceptance criteria",
+		"dod"
+	],
+	"delta": [
+		"diff",
+		"patch diff"
+	],
+	"deny list": [
+		"blacklist",
+		"ip blocklist"
+	],
+	"dependencies": [
+		"prerequisites",
+		"requirements"
+	],
+	"dependency": [
+		"library",
+		"package"
+	],
+	"dependency injection": [
+		"di",
+		"inversion of control"
+	],
+	"deployment": [
+		"k8s deployment"
+	],
+	"deployment pipeline": [
+		"build pipeline",
+		"pipeline"
+	],
+	"deprecated": [
+		"legacy",
+		"obsolete"
+	],
+	"deprecation": [
+		"phase-out",
+		"sunset"
+	],
+	"deprecation policy": [
+		"sunset policy"
+	],
+	"deserialization": [
+		"decoding",
+		"unmarshalling"
+	],
+	"design system": [
+		"component library"
+	],
+	"devops": [
+		"platform engineering",
+		"site reliability",
+		"sre"
+	],
+	"di": [
+		"dependency injection",
+		"inversion of control"
+	],
+	"di container": [
+		"ioc container"
+	],
+	"diagram": [
+		"architecture diagram",
+		"schematic"
+	],
+	"diff": [
+		"delta",
+		"patch diff"
+	],
+	"digest": [
+		"checksum",
+		"hash"
+	],
+	"direct connect": [
+		"dedicated link",
+		"private link"
+	],
+	"disable": [
+		"toggle off"
+	],
+	"disaster recovery": [
+		"backup",
+		"restore"
+	],
+	"distributed tracing": [
+		"tracing"
+	],
+	"dl": [
+		"deep learning"
+	],
+	"docker": [
+		"container runtime",
+		"docker engine"
+	],
+	"docker container": [
+		"container",
+		"oci container"
+	],
+	"docker engine": [
+		"container runtime",
+		"docker"
+	],
+	"docs": [
+		"documentation",
+		"guide",
+		"handbook",
+		"manual",
+		"reference"
+	],
+	"document database": [
+		"document store"
+	],
+	"document store": [
+		"document database"
+	],
+	"documentation": [
+		"docs",
+		"guide",
+		"handbook",
+		"manual",
+		"reference"
+	],
+	"dod": [
+		"acceptance criteria",
+		"definition of done"
+	],
+	"domain model": [
+		"business model"
+	],
+	"dto": [
+		"data transfer object"
+	],
+	"dynamodb": [
+		"managed nosql"
+	],
+	"e2e test": [
+		"end-to-end test",
+		"integration test"
+	],
+	"ease of use": [
+		"usability"
+	],
+	"edge": [
+		"edge computing",
+		"edge network"
+	],
+	"edge computing": [
+		"edge",
+		"edge network"
+	],
+	"edge gateway": [
+		"api gateway",
+		"gateway"
+	],
+	"edge network": [
+		"edge",
+		"edge computing"
+	],
+	"edge proxy": [
+		"proxy",
+		"reverse proxy"
+	],
+	"elastic": [
+		"elasticsearch",
+		"es"
+	],
+	"elasticity": [
+		"scalability",
+		"scaling"
+	],
+	"elasticsearch": [
+		"elastic",
+		"es"
+	],
+	"elt": [
+		"extract load transform"
+	],
+	"embedded database": [
+		"sqlite"
+	],
+	"embedding": [
+		"vector representation"
+	],
+	"enable": [
+		"toggle on"
+	],
+	"encode": [
+		"escape"
+	],
+	"encoding": [
+		"marshalling",
+		"serialization"
+	],
+	"encryption": [
+		"cipher",
+		"cryptography"
+	],
+	"end-to-end test": [
+		"e2e test",
+		"integration test"
+	],
+	"endpoint": [
+		"api",
+		"application programming interface",
+		"interface",
+		"path",
+		"route",
+		"url pattern"
+	],
+	"enhancement": [
+		"feature request",
+		"improvement"
+	],
+	"env var": [
+		"environment variable"
+	],
+	"environment variable": [
+		"env var"
+	],
+	"epic": [
+		"initiative"
+	],
+	"error": [
+		"exception",
+		"throwable"
+	],
+	"error budget": [
+		"slo budget"
+	],
+	"es": [
+		"elastic",
+		"elasticsearch"
+	],
+	"escape": [
+		"encode"
+	],
+	"etl": [
+		"extract transform load"
+	],
+	"evaluation": [
+		"model eval"
+	],
+	"event bus": [
+		"publish-subscribe",
+		"pubsub"
+	],
+	"event driven": [
+		"event-oriented"
+	],
+	"event loop": [
+		"reactor"
+	],
+	"event sourcing": [
+		"event store"
+	],
+	"event store": [
+		"event sourcing"
+	],
+	"event streaming": [
+		"message streaming"
+	],
+	"event streaming platform": [
+		"kafka"
+	],
+	"event-oriented": [
+		"event driven"
+	],
+	"eventual consistency": [
+		"asynchronous consistency"
+	],
+	"eviction": [
+		"cache invalidation",
+		"expiry"
+	],
+	"example": [
+		"code sample",
+		"sample",
+		"snippet"
+	],
+	"exception": [
+		"error",
+		"throwable"
+	],
+	"execution environment": [
+		"runtime"
+	],
+	"execution plan": [
+		"query plan"
+	],
+	"executor": [
+		"agent",
+		"runner"
+	],
+	"expiration": [
+		"time to live",
+		"ttl"
+	],
+	"expiry": [
+		"cache invalidation",
+		"eviction"
+	],
+	"extract load transform": [
+		"elt"
+	],
+	"extract transform load": [
+		"etl"
+	],
+	"facade": [
+		"gateway"
+	],
+	"failover": [
+		"automatic failover",
+		"switchover"
+	],
+	"failure guard": [
+		"circuit breaker"
+	],
+	"fake": [
+		"mock",
+		"stub"
+	],
+	"faq": [
+		"frequently asked questions"
+	],
+	"fatal error": [
+		"panic"
+	],
+	"feature": [
+		"capability",
+		"functionality"
+	],
+	"feature creation": [
+		"feature engineering"
+	],
+	"feature engineering": [
+		"feature creation"
+	],
+	"feature flag": [
+		"switch",
+		"toggle"
+	],
+	"feature request": [
+		"enhancement",
+		"improvement"
+	],
+	"feature toggle": [
+		"flag",
+		"toggle"
+	],
+	"file storage": [
+		"nfs",
+		"shared filesystem"
+	],
+	"file upload": [
+		"form-data",
+		"multipart"
+	],
+	"fingerprint": [
+		"thumbprint"
+	],
+	"firewall": [
+		"packet filter"
+	],
+	"firewall rule": [
+		"ingress rule",
+		"security group"
+	],
+	"fit": [
+		"model training",
+		"training"
+	],
+	"fixture": [
+		"test data"
+	],
+	"flag": [
+		"feature toggle",
+		"toggle"
+	],
+	"flow board": [
+		"kanban"
+	],
+	"flow control": [
+		"backpressure"
+	],
+	"footnote": [
+		"aside",
+		"note"
+	],
+	"forbidden": [
+		"403 forbidden"
+	],
+	"form-data": [
+		"file upload",
+		"multipart"
+	],
+	"formatter": [
+		"code formatter"
+	],
+	"framework": [
+		"platform",
+		"toolkit"
+	],
+	"frequently asked questions": [
+		"faq"
+	],
+	"friendly id": [
+		"slug",
+		"url slug"
+	],
+	"frontend": [
+		"client-side",
+		"ui"
+	],
+	"fts": [
+		"full-text search",
+		"search engine"
+	],
+	"full-stack": [
+		"fullstack"
+	],
+	"full-text search": [
+		"fts",
+		"search engine"
+	],
+	"fullstack": [
+		"full-stack"
+	],
+	"functionality": [
+		"capability",
+		"feature"
+	],
+	"future": [
+		"promise"
+	],
+	"ga": [
+		"general availability",
+		"stable release"
+	],
+	"garbage collector": [
+		"gc"
+	],
+	"gateway": [
+		"api gateway",
+		"edge gateway",
+		"facade"
+	],
+	"gateway timeout": [
+		"504 timeout"
+	],
+	"gc": [
+		"garbage collector"
+	],
+	"general availability": [
+		"ga",
+		"stable release"
+	],
+	"getting started": [
+		"onboarding",
+		"quickstart"
+	],
+	"git branch": [
+		"branch"
+	],
+	"git hook": [
+		"hook",
+		"pre-commit hook"
+	],
+	"git tag": [
+		"release tag",
+		"tag"
+	],
+	"glossary": [
+		"terminology",
+		"vocabulary"
+	],
+	"gotcha": [
+		"caveat",
+		"warning"
+	],
+	"gql": [
+		"graphql"
+	],
+	"graph database": [
+		"graph db"
+	],
+	"graph db": [
+		"graph database"
+	],
+	"graphql": [
+		"gql"
+	],
+	"ground truth": [
+		"label truth"
+	],
+	"grpc": [
+		"protobuf rpc"
+	],
+	"guid": [
+		"unique id",
+		"uuid"
+	],
+	"guide": [
+		"docs",
+		"documentation",
+		"handbook",
+		"manual",
+		"reference"
+	],
+	"guidelines": [
+		"best practices",
+		"recommendations"
+	],
+	"ha": [
+		"high availability",
+		"redundancy"
+	],
+	"handbook": [
+		"docs",
+		"documentation",
+		"guide",
+		"manual",
+		"reference"
+	],
+	"hash": [
+		"checksum",
+		"digest"
+	],
+	"header": [
+		"http header",
+		"request header",
+		"response header"
+	],
+	"health check": [
+		"liveness probe",
+		"readiness probe"
+	],
+	"heap": [
+		"object heap"
+	],
+	"helm": [
+		"helm chart",
+		"kubernetes helm"
+	],
+	"helm chart": [
+		"chart",
+		"helm",
+		"kubernetes helm"
+	],
+	"hexagonal architecture": [
+		"ports and adapters"
+	],
+	"high availability": [
+		"ha",
+		"redundancy"
+	],
+	"history rewrite": [
+		"rebase"
+	],
+	"hook": [
+		"git hook",
+		"pre-commit hook"
+	],
+	"horizontal partitioning": [
+		"partitioning",
+		"sharding"
+	],
+	"hot fix": [
+		"hotfix",
+		"patch"
+	],
+	"hotfix": [
+		"hot fix",
+		"patch"
+	],
+	"how-to": [
+		"tutorial",
+		"walkthrough"
+	],
+	"hpa": [
+		"auto scaling",
+		"autoscaling"
+	],
+	"http api": [
+		"rest",
+		"restful"
+	],
+	"http callback": [
+		"callback",
+		"webhook"
+	],
+	"http code": [
+		"response code",
+		"status code"
+	],
+	"http header": [
+		"header",
+		"request header",
+		"response header"
+	],
+	"http method": [
+		"verb"
+	],
+	"https": [
+		"ssl",
+		"tls"
+	],
+	"hybrid cloud": [
+		"multi-cloud"
+	],
+	"iac": [
+		"infrastructure as code"
+	],
+	"iac pulumi": [
+		"pulumi"
+	],
+	"iac terraform": [
+		"terraform"
+	],
+	"iam": [
+		"identity and access management"
+	],
+	"id": [
+		"identifier"
+	],
+	"idempotency key": [
+		"deduplication key"
+	],
+	"idempotent": [
+		"repeatable",
+		"safe to retry"
+	],
+	"identifier": [
+		"id"
+	],
+	"identity and access management": [
+		"iam"
+	],
+	"image": [
+		"container image",
+		"oci image"
+	],
+	"improvement": [
+		"enhancement",
+		"feature request"
+	],
+	"in-memory store": [
+		"cache store",
+		"redis"
+	],
+	"incident": [
+		"outage",
+		"production incident"
+	],
+	"incident review": [
+		"postmortem",
+		"retrospective"
+	],
+	"incident ticket": [
+		"support ticket"
+	],
+	"index": [
+		"inverted index",
+		"search index",
+		"table of contents",
+		"toc"
+	],
+	"indexing": [
+		"creating index"
+	],
+	"inference": [
+		"prediction",
+		"scoring"
+	],
+	"inference budget": [
+		"latency budget"
+	],
+	"information retrieval": [
+		"retrieval"
+	],
+	"infra": [
+		"infrastructure",
+		"platform"
+	],
+	"infrastructure": [
+		"infra",
+		"platform"
+	],
+	"infrastructure as code": [
+		"iac"
+	],
+	"ingestion": [
+		"data import",
+		"data intake"
+	],
+	"ingestion pipeline": [
+		"data pipeline",
+		"pipeline (data)"
+	],
+	"ingress": [
+		"ingress resource",
+		"k8s ingress"
+	],
+	"ingress resource": [
+		"ingress",
+		"k8s ingress"
+	],
+	"ingress rule": [
+		"firewall rule",
+		"security group"
+	],
+	"initiative": [
+		"epic"
+	],
+	"integrate": [
+		"merge",
+		"rebase-merge"
+	],
+	"integration test": [
+		"e2e test",
+		"end-to-end test"
+	],
+	"interface": [
+		"api",
+		"application programming interface",
+		"endpoint"
+	],
+	"interpreter": [
+		"virtual machine",
+		"vm"
+	],
+	"introduction": [
+		"overview",
+		"summary"
+	],
+	"inversion of control": [
+		"dependency injection",
+		"di"
+	],
+	"inverted index": [
+		"index",
+		"search index"
+	],
+	"invocation": [
+		"call",
+		"request"
+	],
+	"ioc container": [
+		"di container"
+	],
+	"ip allowlist": [
+		"allow list",
+		"whitelist"
+	],
+	"ip blocklist": [
+		"blacklist",
+		"deny list"
+	],
+	"isolation boundary": [
+		"bulkhead"
+	],
+	"isolation level": [
+		"tx isolation"
+	],
+	"issue": [
+		"bug",
+		"defect"
+	],
+	"iteration": [
+		"sprint"
+	],
+	"javascript object notation": [
+		"json"
+	],
+	"job runner": [
+		"background job",
+		"worker"
+	],
+	"json": [
+		"javascript object notation"
+	],
+	"json web token": [
+		"jwt",
+		"token"
+	],
+	"jwt": [
+		"json web token",
+		"token"
+	],
+	"k8s": [
+		"kubernetes"
+	],
+	"k8s cluster": [
+		"cluster",
+		"kubernetes cluster"
+	],
+	"k8s daemon set": [
+		"daemonset"
+	],
+	"k8s deployment": [
+		"deployment"
+	],
+	"k8s ingress": [
+		"ingress",
+		"ingress resource"
+	],
+	"k8s namespace": [
+		"namespace"
+	],
+	"k8s pod": [
+		"pod"
+	],
+	"k8s secret": [
+		"secret resource"
+	],
+	"k8s service": [
+		"service"
+	],
+	"k8s stateful set": [
+		"statefulset"
+	],
+	"kafka": [
+		"event streaming platform"
+	],
+	"kanban": [
+		"flow board"
+	],
+	"key": [
+		"credential",
+		"secret"
+	],
+	"key rotation": [
+		"credential rotation",
+		"secrets rotation"
+	],
+	"key-value store": [
+		"kv store"
+	],
+	"keystore": [
+		"secret store",
+		"vault"
+	],
+	"kubelet node": [
+		"node",
+		"worker node"
+	],
+	"kubernetes": [
+		"k8s"
+	],
+	"kubernetes cluster": [
+		"cluster",
+		"k8s cluster"
+	],
+	"kubernetes helm": [
+		"helm",
+		"helm chart"
+	],
+	"kv store": [
+		"key-value store"
+	],
+	"label truth": [
+		"ground truth"
+	],
+	"lakehouse": [
+		"data lakehouse"
+	],
+	"latency": [
+		"response time"
+	],
+	"latency budget": [
+		"inference budget"
+	],
+	"lb": [
+		"balancer",
+		"load balancer"
+	],
+	"leak": [
+		"memory leak"
+	],
+	"least privilege": [
+		"polp",
+		"principle of least privilege"
+	],
+	"legacy": [
+		"deprecated",
+		"obsolete"
+	],
+	"library": [
+		"dependency",
+		"package"
+	],
+	"limit": [
+		"throttle"
+	],
+	"linearizability": [
+		"strong consistency"
+	],
+	"linter": [
+		"static analyzer"
+	],
+	"livelock": [
+		"deadlock"
+	],
+	"liveness probe": [
+		"health check",
+		"readiness probe"
+	],
+	"load balancer": [
+		"balancer",
+		"lb"
+	],
+	"load test": [
+		"benchmark",
+		"performance test"
+	],
+	"log collection": [
+		"logging",
+		"logs"
+	],
+	"logging": [
+		"log collection",
+		"logs"
+	],
+	"login": [
+		"auth",
+		"authentication",
+		"sign in"
+	],
+	"login session": [
+		"session",
+		"user session"
+	],
+	"logout": [
+		"sign out"
+	],
+	"logs": [
+		"log collection",
+		"logging"
+	],
+	"machine learning": [
+		"ml"
+	],
+	"main": [
+		"default branch",
+		"master branch"
+	],
+	"managed nosql": [
+		"dynamodb"
+	],
+	"manual": [
+		"docs",
+		"documentation",
+		"guide",
+		"handbook",
+		"reference"
+	],
+	"mariadb": [
+		"mysql"
+	],
+	"markup xml": [
+		"xml"
+	],
+	"marshalling": [
+		"encoding",
+		"serialization"
+	],
+	"master branch": [
+		"default branch",
+		"main"
+	],
+	"meilisearch": [
+		"search server",
+		"vector & text search"
+	],
+	"memoization": [
+		"cache",
+		"caching"
+	],
+	"memory leak": [
+		"leak"
+	],
+	"merge": [
+		"integrate",
+		"rebase-merge"
+	],
+	"merge request": [
+		"pr",
+		"pull request"
+	],
+	"merge review": [
+		"code review",
+		"pr review"
+	],
+	"mesh": [
+		"service mesh"
+	],
+	"message body": [
+		"body",
+		"payload"
+	],
+	"message queue": [
+		"queue"
+	],
+	"message streaming": [
+		"event streaming"
+	],
+	"metrics collection": [
+		"monitoring",
+		"time-series metrics"
+	],
+	"mfa": [
+		"2fa",
+		"multi-factor authentication"
+	],
+	"microservice": [
+		"component",
+		"service"
+	],
+	"migration": [
+		"database migration",
+		"schema change"
+	],
+	"ml": [
+		"machine learning"
+	],
+	"ml model": [
+		"model"
+	],
+	"mock": [
+		"fake",
+		"stub"
+	],
+	"mockup": [
+		"prototype",
+		"wireframe"
+	],
+	"model": [
+		"ml model"
+	],
+	"model eval": [
+		"evaluation"
+	],
+	"model training": [
+		"fit",
+		"training"
+	],
+	"module": [
+		"component",
+		"unit"
+	],
+	"module boundary": [
+		"bounded context",
+		"context boundary"
+	],
+	"mongo": [
+		"mongodb"
+	],
+	"mongodb": [
+		"mongo"
+	],
+	"monitoring": [
+		"metrics collection",
+		"time-series metrics"
+	],
+	"monorepo": [
+		"single repository"
+	],
+	"multi-cloud": [
+		"hybrid cloud"
+	],
+	"multi-factor authentication": [
+		"2fa",
+		"mfa"
+	],
+	"multi-repo": [
+		"polyrepo"
+	],
+	"multipart": [
+		"file upload",
+		"form-data"
+	],
+	"mysql": [
+		"mariadb"
+	],
+	"namespace": [
+		"k8s namespace"
+	],
+	"nat": [
+		"network address translation"
+	],
+	"nearest neighbor search": [
+		"ann",
+		"vector search"
+	],
+	"network address translation": [
+		"nat"
+	],
+	"network peering": [
+		"peering",
+		"vpc peering"
+	],
+	"network tolerance": [
+		"partition tolerance"
+	],
+	"nfs": [
+		"file storage",
+		"shared filesystem"
+	],
+	"node": [
+		"kubelet node",
+		"worker node"
+	],
+	"non-blocking": [
+		"async",
+		"asynchronous"
+	],
+	"non-relational database": [
+		"nosql"
+	],
+	"nonce": [
+		"salt"
+	],
+	"nosql": [
+		"non-relational database"
+	],
+	"not found": [
+		"404 not found"
+	],
+	"note": [
+		"aside",
+		"footnote"
+	],
+	"notification": [
+		"alarm",
+		"alert"
+	],
+	"o11y": [
+		"observability",
+		"telemetry"
+	],
+	"oas": [
+		"openapi",
+		"swagger"
+	],
+	"oauth": [
+		"authorization framework",
+		"oauth2"
+	],
+	"oauth2": [
+		"authorization framework",
+		"oauth"
+	],
+	"object bucket": [
+		"bucket",
+		"storage bucket"
+	],
+	"object heap": [
+		"heap"
+	],
+	"object lake": [
+		"data lake"
+	],
+	"object relational mapper": [
+		"orm"
+	],
+	"object storage": [
+		"blob storage"
+	],
+	"observability": [
+		"o11y",
+		"telemetry"
+	],
+	"obsolete": [
+		"deprecated",
+		"legacy"
+	],
+	"oci container": [
+		"container",
+		"docker container"
+	],
+	"oci image": [
+		"container image",
+		"image"
+	],
+	"offline processing": [
+		"batch processing"
+	],
+	"offset token": [
+		"cursor",
+		"page token"
+	],
+	"oidc": [
+		"openid connect"
+	],
+	"on premises": [
+		"datacenter",
+		"on-prem"
+	],
+	"on-prem": [
+		"datacenter",
+		"on premises"
+	],
+	"onboarding": [
+		"getting started",
+		"quickstart"
+	],
+	"one time password": [
+		"authenticator code",
+		"totp"
+	],
+	"openapi": [
+		"oas",
+		"swagger"
+	],
+	"openid connect": [
+		"oidc"
+	],
+	"ops guide": [
+		"playbook",
+		"runbook"
+	],
+	"orchestrator": [
+		"cluster manager",
+		"scheduler"
+	],
+	"orchestrator pattern": [
+		"choreography"
+	],
+	"orm": [
+		"object relational mapper"
+	],
+	"outage": [
+		"incident",
+		"production incident"
+	],
+	"overview": [
+		"introduction",
+		"summary"
+	],
+	"p95 latency": [
+		"p99 latency",
+		"tail latency"
+	],
+	"p99 latency": [
+		"p95 latency",
+		"tail latency"
+	],
+	"package": [
+		"artifact",
+		"build artifact",
+		"dependency",
+		"library"
+	],
+	"package repository": [
+		"artifact repository",
+		"registry"
+	],
+	"packager": [
+		"bundler"
+	],
+	"packet filter": [
+		"firewall"
+	],
+	"page token": [
+		"cursor",
+		"offset token"
+	],
+	"page-based paging": [
+		"cursor-based paging",
+		"pagination"
+	],
+	"pagination": [
+		"cursor-based paging",
+		"page-based paging"
+	],
+	"panic": [
+		"fatal error"
+	],
+	"parallelism": [
+		"concurrency"
+	],
+	"partition": [
+		"data partition"
+	],
+	"partition tolerance": [
+		"network tolerance"
+	],
+	"partitioning": [
+		"horizontal partitioning",
+		"sharding"
+	],
+	"patch": [
+		"hot fix",
+		"hotfix"
+	],
+	"patch diff": [
+		"delta",
+		"diff"
+	],
+	"path": [
+		"endpoint",
+		"route",
+		"url pattern"
+	],
+	"path parameter": [
+		"path variable",
+		"route param"
+	],
+	"path variable": [
+		"path parameter",
+		"route param"
+	],
+	"payload": [
+		"body",
+		"message body",
+		"reply",
+		"response",
+		"result"
+	],
+	"peering": [
+		"network peering",
+		"vpc peering"
+	],
+	"performance profiling": [
+		"profiling"
+	],
+	"performance test": [
+		"benchmark",
+		"load test"
+	],
+	"permission scope": [
+		"access scope",
+		"scope"
+	],
+	"permissions": [
+		"access control",
+		"authorization"
+	],
+	"pg": [
+		"postgres",
+		"postgresql"
+	],
+	"phase-out": [
+		"deprecation",
+		"sunset"
+	],
+	"pipeline": [
+		"build pipeline",
+		"deployment pipeline"
+	],
+	"pipeline (data)": [
+		"data pipeline",
+		"ingestion pipeline"
+	],
+	"plain old clr object": [
+		"poco"
+	],
+	"plain old java object": [
+		"pojo"
+	],
+	"plan": [
+		"roadmap",
+		"timeline"
+	],
+	"platform": [
+		"framework",
+		"infra",
+		"infrastructure",
+		"toolkit"
+	],
+	"platform engineering": [
+		"devops",
+		"site reliability",
+		"sre"
+	],
+	"playbook": [
+		"ops guide",
+		"runbook"
+	],
+	"poco": [
+		"plain old clr object"
+	],
+	"pod": [
+		"k8s pod"
+	],
+	"pojo": [
+		"plain old java object"
+	],
+	"policy": [
+		"access policy",
+		"rule set"
+	],
+	"polp": [
+		"least privilege",
+		"principle of least privilege"
+	],
+	"polyrepo": [
+		"multi-repo"
+	],
+	"ports and adapters": [
+		"hexagonal architecture"
+	],
+	"postgres": [
+		"pg",
+		"postgresql"
+	],
+	"postgresql": [
+		"pg",
+		"postgres"
+	],
+	"postman collection": [
+		"api collection"
+	],
+	"postmortem": [
+		"incident review",
+		"retrospective"
+	],
+	"pr": [
+		"merge request",
+		"pull request"
+	],
+	"pr review": [
+		"code review",
+		"merge review"
+	],
+	"pre-commit hook": [
+		"git hook",
+		"hook"
+	],
+	"pre-release": [
+		"beta",
+		"preview"
+	],
+	"prediction": [
+		"inference",
+		"scoring"
+	],
+	"prerequisites": [
+		"dependencies",
+		"requirements"
+	],
+	"preview": [
+		"beta",
+		"pre-release"
+	],
+	"principle of least privilege": [
+		"least privilege",
+		"polp"
+	],
+	"private key": [
+		"asymmetric key",
+		"public key"
+	],
+	"private link": [
+		"dedicated link",
+		"direct connect"
+	],
+	"private network": [
+		"virtual private cloud",
+		"vpc"
+	],
+	"problem solving": [
+		"debugging guide",
+		"troubleshooting"
+	],
+	"process manager": [
+		"saga"
+	],
+	"production incident": [
+		"incident",
+		"outage"
+	],
+	"profiling": [
+		"performance profiling"
+	],
+	"project overview": [
+		"read me",
+		"readme"
+	],
+	"promise": [
+		"future"
+	],
+	"proto": [
+		"protobuf",
+		"protocol buffers"
+	],
+	"protobuf": [
+		"proto",
+		"protocol buffers"
+	],
+	"protobuf rpc": [
+		"grpc"
+	],
+	"protocol buffers": [
+		"proto",
+		"protobuf"
+	],
+	"prototype": [
+		"mockup",
+		"wireframe"
+	],
+	"proxy": [
+		"edge proxy",
+		"reverse proxy"
+	],
+	"public cloud": [
+		"cloud",
+		"cloud computing"
+	],
+	"public key": [
+		"asymmetric key",
+		"private key"
+	],
+	"publish-subscribe": [
+		"event bus",
+		"pubsub"
+	],
+	"pubsub": [
+		"event bus",
+		"publish-subscribe"
+	],
+	"pull request": [
+		"merge request",
+		"pr"
+	],
+	"pulumi": [
+		"iac pulumi"
+	],
+	"qs": [
+		"query parameter",
+		"query string"
+	],
+	"query parameter": [
+		"qs",
+		"query string"
+	],
+	"query plan": [
+		"execution plan"
+	],
+	"query string": [
+		"qs",
+		"query parameter"
+	],
+	"queue": [
+		"message queue"
+	],
+	"quickstart": [
+		"getting started",
+		"onboarding"
+	],
+	"quota": [
+		"rate limit",
+		"throttling"
+	],
+	"race condition": [
+		"data race"
+	],
+	"ranking": [
+		"relevance ranking"
+	],
+	"rate limit": [
+		"quota",
+		"throttling"
+	],
+	"rate limited": [
+		"429 too many requests",
+		"too many requests"
+	],
+	"rate limiting": [
+		"throttling"
+	],
+	"rbac role": [
+		"role",
+		"user role"
+	],
+	"rdbms": [
+		"relational database",
+		"sql database"
+	],
+	"reactor": [
+		"event loop"
+	],
+	"read consistency": [
+		"consistency",
+		"write consistency"
+	],
+	"read me": [
+		"project overview",
+		"readme"
+	],
+	"readiness probe": [
+		"health check",
+		"liveness probe"
+	],
+	"readme": [
+		"project overview",
+		"read me"
+	],
+	"real-time processing": [
+		"stream processing"
+	],
+	"rebase": [
+		"history rewrite"
+	],
+	"rebase-merge": [
+		"integrate",
+		"merge"
+	],
+	"recommendations": [
+		"best practices",
+		"guidelines"
+	],
+	"redis": [
+		"cache store",
+		"in-memory store"
+	],
+	"redundancy": [
+		"ha",
+		"high availability"
+	],
+	"refactor": [
+		"code cleanup",
+		"restructure"
+	],
+	"reference": [
+		"docs",
+		"documentation",
+		"guide",
+		"handbook",
+		"manual"
+	],
+	"region": [
+		"cloud region"
+	],
+	"register": [
+		"create account",
+		"sign up",
+		"signup"
+	],
+	"registry": [
+		"artifact repository",
+		"package repository"
+	],
+	"relational database": [
+		"rdbms",
+		"sql database"
+	],
+	"release": [
+		"cut a release",
+		"version release"
+	],
+	"release notes": [
+		"change log",
+		"changelog"
+	],
+	"release tag": [
+		"git tag",
+		"tag"
+	],
+	"relevance ranking": [
+		"ranking"
+	],
+	"remote procedure call": [
+		"rpc"
+	],
+	"repeatable": [
+		"idempotent",
+		"safe to retry"
+	],
+	"replication": [
+		"data replication"
+	],
+	"reply": [
+		"payload",
+		"response",
+		"result"
+	],
+	"repository (pattern)": [
+		"dal",
+		"data access layer"
+	],
+	"request": [
+		"call",
+		"invocation"
+	],
+	"request header": [
+		"header",
+		"http header",
+		"response header"
+	],
+	"request timeout": [
+		"timeout"
+	],
+	"requests per second": [
+		"rps",
+		"throughput"
+	],
+	"requirement": [
+		"use case",
+		"user story"
+	],
+	"requirements": [
+		"dependencies",
+		"prerequisites"
+	],
+	"response": [
+		"payload",
+		"reply",
+		"result"
+	],
+	"response code": [
+		"http code",
+		"status code"
+	],
+	"response header": [
+		"header",
+		"http header",
+		"request header"
+	],
+	"response time": [
+		"latency"
+	],
+	"rest": [
+		"http api",
+		"restful"
+	],
+	"restful": [
+		"http api",
+		"rest"
+	],
+	"restore": [
+		"backup",
+		"disaster recovery"
+	],
+	"restructure": [
+		"code cleanup",
+		"refactor"
+	],
+	"result": [
+		"payload",
+		"reply",
+		"response"
+	],
+	"retries": [
+		"backoff",
+		"retry"
+	],
+	"retrieval": [
+		"information retrieval"
+	],
+	"retrospective": [
+		"incident review",
+		"postmortem"
+	],
+	"retry": [
+		"backoff",
+		"retries"
+	],
+	"reverse proxy": [
+		"edge proxy",
+		"proxy"
+	],
+	"revert": [
+		"roll back",
+		"rollback"
+	],
+	"revision": [
+		"changeset",
+		"commit"
+	],
+	"roadmap": [
+		"plan",
+		"timeline"
+	],
+	"role": [
+		"rbac role",
+		"user role"
+	],
+	"roll back": [
+		"revert",
+		"rollback"
+	],
+	"rollback": [
+		"revert",
+		"roll back"
+	],
+	"route": [
+		"endpoint",
+		"path",
+		"url pattern"
+	],
+	"route param": [
+		"path parameter",
+		"path variable"
+	],
+	"rpc": [
+		"remote procedure call"
+	],
+	"rps": [
+		"requests per second",
+		"throughput"
+	],
+	"rule set": [
+		"access policy",
+		"policy"
+	],
+	"runbook": [
+		"ops guide",
+		"playbook"
+	],
+	"runner": [
+		"agent",
+		"executor"
+	],
+	"runtime": [
+		"execution environment"
+	],
+	"safe to retry": [
+		"idempotent",
+		"repeatable"
+	],
+	"saga": [
+		"process manager"
+	],
+	"salt": [
+		"nonce"
+	],
+	"saml": [
+		"security assertion markup language"
+	],
+	"sample": [
+		"code sample",
+		"example",
+		"snippet"
+	],
+	"sandbox": [
+		"staging-lite",
+		"test environment"
+	],
+	"sanitize": [
+		"cleanse",
+		"scrub"
+	],
+	"scaffold": [
+		"boilerplate",
+		"template"
+	],
+	"scalability": [
+		"elasticity",
+		"scaling"
+	],
+	"scaling": [
+		"elasticity",
+		"scalability"
+	],
+	"scheduled job": [
+		"cron"
+	],
+	"scheduler": [
+		"cluster manager",
+		"orchestrator"
+	],
+	"schema change": [
+		"database migration",
+		"migration"
+	],
+	"schema registry": [
+		"avro schema store"
+	],
+	"schematic": [
+		"architecture diagram",
+		"diagram"
+	],
+	"scope": [
+		"access scope",
+		"permission scope"
+	],
+	"scoring": [
+		"inference",
+		"prediction"
+	],
+	"scrub": [
+		"cleanse",
+		"sanitize"
+	],
+	"scylla": [
+		"cassandra"
+	],
+	"sdk": [
+		"client library",
+		"software development kit"
+	],
+	"search engine": [
+		"fts",
+		"full-text search"
+	],
+	"search index": [
+		"index",
+		"inverted index"
+	],
+	"search server": [
+		"meilisearch",
+		"vector & text search"
+	],
+	"secret": [
+		"credential",
+		"key"
+	],
+	"secret resource": [
+		"k8s secret"
+	],
+	"secret store": [
+		"keystore",
+		"vault"
+	],
+	"secrets rotation": [
+		"credential rotation",
+		"key rotation"
+	],
+	"security assertion markup language": [
+		"saml"
+	],
+	"security group": [
+		"firewall rule",
+		"ingress rule"
+	],
+	"seed": [
+		"bootstrap"
+	],
+	"segfault": [
+		"segmentation fault"
+	],
+	"segmentation fault": [
+		"segfault"
+	],
+	"selective merge": [
+		"cherry-pick"
+	],
+	"semantic versioning": [
+		"semver"
+	],
+	"semver": [
+		"api version",
+		"semantic versioning",
+		"versioning"
+	],
+	"serialization": [
+		"encoding",
+		"marshalling"
+	],
+	"server": [
+		"backend",
+		"server-side"
+	],
+	"server error": [
+		"500 internal server error"
+	],
+	"server-sent events": [
+		"sse"
+	],
+	"server-side": [
+		"backend",
+		"server"
+	],
+	"service": [
+		"component",
+		"k8s service",
+		"microservice"
+	],
+	"service availability": [
+		"availability (cap)"
+	],
+	"service health": [
+		"availability",
+		"uptime"
+	],
+	"service layer": [
+		"application service"
+	],
+	"service level agreement": [
+		"sla"
+	],
+	"service level expectation": [
+		"sle"
+	],
+	"service level objective": [
+		"slo"
+	],
+	"service mesh": [
+		"mesh"
+	],
+	"service process": [
+		"daemon"
+	],
+	"service sidecar": [
+		"sidecar"
+	],
+	"service unavailable": [
+		"503 unavailable"
+	],
+	"session": [
+		"login session",
+		"user session"
+	],
+	"session cookie": [
+		"auth cookie",
+		"cookie"
+	],
+	"sharding": [
+		"horizontal partitioning",
+		"partitioning"
+	],
+	"shared filesystem": [
+		"file storage",
+		"nfs"
+	],
+	"shared key": [
+		"symmetric key"
+	],
+	"sidecar": [
+		"service sidecar"
+	],
+	"sign in": [
+		"auth",
+		"authentication",
+		"login"
+	],
+	"sign out": [
+		"logout"
+	],
+	"sign up": [
+		"create account",
+		"register",
+		"signup"
+	],
+	"signup": [
+		"create account",
+		"register",
+		"sign up"
+	],
+	"single repository": [
+		"monorepo"
+	],
+	"single sign-on": [
+		"sso"
+	],
+	"site reliability": [
+		"devops",
+		"platform engineering",
+		"sre"
+	],
+	"sla": [
+		"service level agreement"
+	],
+	"sle": [
+		"service level expectation"
+	],
+	"slo": [
+		"service level objective"
+	],
+	"slo budget": [
+		"error budget"
+	],
+	"slug": [
+		"friendly id",
+		"url slug"
+	],
+	"slugify": [
+		"create slug"
+	],
+	"snapshot": [
+		"volume snapshot"
+	],
+	"snippet": [
+		"code sample",
+		"example",
+		"sample"
+	],
+	"snowflake": [
+		"cloud data warehouse"
+	],
+	"software development kit": [
+		"client library",
+		"sdk"
+	],
+	"spec": [
+		"test case",
+		"unit test"
+	],
+	"sprint": [
+		"iteration"
+	],
+	"sql database": [
+		"rdbms",
+		"relational database"
+	],
+	"sqlite": [
+		"embedded database"
+	],
+	"sre": [
+		"devops",
+		"platform engineering",
+		"site reliability"
+	],
+	"sse": [
+		"server-sent events"
+	],
+	"ssl": [
+		"https",
+		"tls"
+	],
+	"sso": [
+		"single sign-on"
+	],
+	"stable release": [
+		"ga",
+		"general availability"
+	],
+	"stack": [
+		"call stack"
+	],
+	"staging-lite": [
+		"sandbox",
+		"test environment"
+	],
+	"statefulset": [
+		"k8s stateful set"
+	],
+	"static analyzer": [
+		"linter"
+	],
+	"status code": [
+		"http code",
+		"response code"
+	],
+	"storage bucket": [
+		"bucket",
+		"object bucket"
+	],
+	"stream processing": [
+		"real-time processing"
+	],
+	"strong consistency": [
+		"linearizability"
+	],
+	"stub": [
+		"fake",
+		"mock"
+	],
+	"sub-network": [
+		"subnet"
+	],
+	"subnet": [
+		"sub-network"
+	],
+	"summary": [
+		"introduction",
+		"overview"
+	],
+	"sunset": [
+		"deprecation",
+		"phase-out"
+	],
+	"sunset policy": [
+		"deprecation policy"
+	],
+	"supplement": [
+		"annex",
+		"appendix"
+	],
+	"support ticket": [
+		"incident ticket"
+	],
+	"swagger": [
+		"oas",
+		"openapi"
+	],
+	"switch": [
+		"feature flag",
+		"toggle"
+	],
+	"switchover": [
+		"automatic failover",
+		"failover"
+	],
+	"symmetric key": [
+		"shared key"
+	],
+	"sync": [
+		"blocking",
+		"synchronous"
+	],
+	"synchronous": [
+		"blocking",
+		"sync"
+	],
+	"table of contents": [
+		"index",
+		"toc"
+	],
+	"tag": [
+		"git tag",
+		"release tag"
+	],
+	"tail latency": [
+		"p95 latency",
+		"p99 latency"
+	],
+	"task runner": [
+		"build runner"
+	],
+	"tech debt": [
+		"debt",
+		"technical debt"
+	],
+	"technical debt": [
+		"debt",
+		"tech debt"
+	],
+	"telemetry": [
+		"o11y",
+		"observability"
+	],
+	"template": [
+		"boilerplate",
+		"scaffold"
+	],
+	"terminology": [
+		"glossary",
+		"vocabulary"
+	],
+	"terraform": [
+		"iac terraform"
+	],
+	"test case": [
+		"spec",
+		"unit test"
+	],
+	"test data": [
+		"fixture"
+	],
+	"test environment": [
+		"sandbox",
+		"staging-lite"
+	],
+	"thread": [
+		"worker thread"
+	],
+	"throttle": [
+		"limit"
+	],
+	"throttling": [
+		"quota",
+		"rate limit",
+		"rate limiting"
+	],
+	"throughput": [
+		"requests per second",
+		"rps"
+	],
+	"throwable": [
+		"error",
+		"exception"
+	],
+	"thumbprint": [
+		"fingerprint"
+	],
+	"time to live": [
+		"expiration",
+		"ttl"
+	],
+	"time-series db": [
+		"timeseries database",
+		"tsdb"
+	],
+	"time-series metrics": [
+		"metrics collection",
+		"monitoring"
+	],
+	"timeline": [
+		"plan",
+		"roadmap"
+	],
+	"timeout": [
+		"request timeout"
+	],
+	"timeseries database": [
+		"time-series db",
+		"tsdb"
+	],
+	"tls": [
+		"https",
+		"ssl"
+	],
+	"toc": [
+		"index",
+		"table of contents"
+	],
+	"toggle": [
+		"feature flag",
+		"feature toggle",
+		"flag",
+		"switch"
+	],
+	"toggle off": [
+		"disable"
+	],
+	"toggle on": [
+		"enable"
+	],
+	"token": [
+		"json web token",
+		"jwt"
+	],
+	"toml": [
+		"configuration toml"
+	],
+	"too many requests": [
+		"429 too many requests",
+		"rate limited"
+	],
+	"toolkit": [
+		"framework",
+		"platform"
+	],
+	"totp": [
+		"authenticator code",
+		"one time password"
+	],
+	"tracing": [
+		"distributed tracing"
+	],
+	"training": [
+		"fit",
+		"model training"
+	],
+	"training data": [
+		"corpus",
+		"dataset"
+	],
+	"transaction": [
+		"atomic operation",
+		"commit unit"
+	],
+	"transpiler": [
+		"compiler"
+	],
+	"troubleshooting": [
+		"debugging guide",
+		"problem solving"
+	],
+	"tsdb": [
+		"time-series db",
+		"timeseries database"
+	],
+	"ttl": [
+		"expiration",
+		"time to live"
+	],
+	"tutorial": [
+		"how-to",
+		"walkthrough"
+	],
+	"tx isolation": [
+		"isolation level"
+	],
+	"ui": [
+		"client-side",
+		"frontend",
+		"user interface"
+	],
+	"unauthorized": [
+		"401 unauthorized"
+	],
+	"unique id": [
+		"guid",
+		"uuid"
+	],
+	"unit": [
+		"component",
+		"module"
+	],
+	"unit test": [
+		"spec",
+		"test case"
+	],
+	"unmarshalling": [
+		"decoding",
+		"deserialization"
+	],
+	"uptime": [
+		"availability",
+		"service health"
+	],
+	"url pattern": [
+		"endpoint",
+		"path",
+		"route"
+	],
+	"url slug": [
+		"friendly id",
+		"slug"
+	],
+	"usability": [
+		"ease of use"
+	],
+	"use case": [
+		"requirement",
+		"user story"
+	],
+	"user experience": [
+		"ux"
+	],
+	"user interface": [
+		"ui"
+	],
+	"user role": [
+		"rbac role",
+		"role"
+	],
+	"user session": [
+		"login session",
+		"session"
+	],
+	"user story": [
+		"requirement",
+		"use case"
+	],
+	"uuid": [
+		"guid",
+		"unique id"
+	],
+	"ux": [
+		"user experience"
+	],
+	"vault": [
+		"keystore",
+		"secret store"
+	],
+	"vector & text search": [
+		"meilisearch",
+		"search server"
+	],
+	"vector representation": [
+		"embedding"
+	],
+	"vector search": [
+		"ann",
+		"nearest neighbor search"
+	],
+	"verb": [
+		"http method"
+	],
+	"version release": [
+		"cut a release",
+		"release"
+	],
+	"versioning": [
+		"api version",
+		"semver"
+	],
+	"virtual machine": [
+		"interpreter",
+		"vm"
+	],
+	"virtual private cloud": [
+		"private network",
+		"vpc"
+	],
+	"virtual private network": [
+		"vpn"
+	],
+	"vm": [
+		"interpreter",
+		"virtual machine"
+	],
+	"vocabulary": [
+		"glossary",
+		"terminology"
+	],
+	"volume snapshot": [
+		"snapshot"
+	],
+	"volume storage": [
+		"block storage"
+	],
+	"vpc": [
+		"private network",
+		"virtual private cloud"
+	],
+	"vpc peering": [
+		"network peering",
+		"peering"
+	],
+	"vpn": [
+		"virtual private network"
+	],
+	"walkthrough": [
+		"how-to",
+		"tutorial"
+	],
+	"warning": [
+		"caveat",
+		"gotcha"
+	],
+	"web socket": [
+		"websocket",
+		"ws"
+	],
+	"webhook": [
+		"callback",
+		"http callback"
+	],
+	"websocket": [
+		"web socket",
+		"ws"
+	],
+	"whitelist": [
+		"allow list",
+		"ip allowlist"
+	],
+	"wireframe": [
+		"mockup",
+		"prototype"
+	],
+	"work queue": [
+		"backlog"
+	],
+	"worker": [
+		"background job",
+		"job runner"
+	],
+	"worker node": [
+		"kubelet node",
+		"node"
+	],
+	"worker thread": [
+		"thread"
+	],
+	"wrapper": [
+		"adapter"
+	],
+	"write consistency": [
+		"consistency",
+		"read consistency"
+	],
+	"ws": [
+		"web socket",
+		"websocket"
+	],
+	"x509": [
+		"cert",
+		"certificate"
+	],
+	"xml": [
+		"markup xml"
+	],
+	"xss": [
+		"cross-site scripting"
+	],
+	"yaml": [
+		"yml"
+	],
+	"yml": [
+		"yaml"
+	],
+	"zone": [
+		"availability zone",
+		"az"
+	]
+}

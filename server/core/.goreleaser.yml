@@ -1,0 +1,87 @@
+version: 2
+project_name: heimdall
+dist: bin
+snapshot:
+  version_template: dev
+builds:
+  - id: heimdall-gate
+    main: ./cmd/gate
+    binary: "{{ .ProjectName }}-gate"
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    no_unique_dist_dir: true
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+    tags:
+      - "{{if not .IsSnapshot}} prod {{end}}"
+    flags:
+      - "-trimpath"
+    ldflags:
+      - "-s -w"
+      - "-X github.com/oxynote/heimdall/internal/buildinfo._name={{ .ProjectName }}_gate"
+      - "-X github.com/oxynote/heimdall/internal/buildinfo._version={{ .Version }}"
+      - "-X github.com/oxynote/heimdall/internal/buildinfo._commit={{ .ShortCommit }}"
+      - "-X github.com/oxynote/heimdall/internal/buildinfo._timestampString={{ .CommitDate }}"
+  - id: heimdall-connector
+    main: ./cmd/connector
+    binary: "{{ .ProjectName }}-connector"
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    no_unique_dist_dir: true
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+    tags:
+      - "{{if not .IsSnapshot}} prod {{end}}"
+    flags:
+      - "-trimpath"
+    ldflags:
+      - "-s -w"
+      - "-X github.com/oxynote/heimdall/internal/buildinfo._name={{ .ProjectName }}_connector"
+      - "-X github.com/oxynote/heimdall/internal/buildinfo._version={{ .Version }}"
+      - "-X github.com/oxynote/heimdall/internal/buildinfo._commit={{ .ShortCommit }}"
+      - "-X github.com/oxynote/heimdall/internal/buildinfo._timestampString={{ .CommitDate }}"
+dockers:
+  - ids:
+      - heimdall-gate
+    goos: linux
+    goarch: amd64
+    image_templates:
+      - "ghcr.io/oxynote/heimdall-gate:{{ .Version }}"
+      - "ghcr.io/oxynote/heimdall-gate:latest"
+    dockerfile: ./docker/Dockerfile
+    build_flag_templates:
+      - "--pull"
+      - "--platform=linux/amd64"
+      - "--build-arg=BINARY=heimdall-gate"
+  - ids:
+      - heimdall-connector
+    goos: linux
+    goarch: amd64
+    image_templates:
+      - "ghcr.io/oxynote/heimdall-connector:{{ .Version }}"
+      - "ghcr.io/oxynote/heimdall-connector:latest"
+    dockerfile: ./docker/Dockerfile
+    build_flag_templates:
+      - "--pull"
+      - "--platform=linux/amd64"
+      - "--build-arg=BINARY=heimdall-connector"
+checksum:
+  disable: true
+archives:
+  - formats: ["binary"] # disable archives
+release:
+  disable: true # disable release uploading to github/gitlab
+changelog:
+  use: github
+  filters:
+    exclude:
+      - "^workflow(s?):"
+      - "^github:"
+announce:
+  skip: true

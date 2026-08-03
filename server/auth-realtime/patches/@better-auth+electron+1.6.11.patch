@@ -1,0 +1,41 @@
+diff --git a/node_modules/@better-auth/electron/dist/index.mjs b/node_modules/@better-auth/electron/dist/index.mjs
+index 4b33041..40c0a5f 100644
+--- a/node_modules/@better-auth/electron/dist/index.mjs
++++ b/node_modules/@better-auth/electron/dist/index.mjs
+@@ -12,7 +12,7 @@ import { safeJSONParse as safeJSONParse$1 } from "@better-auth/core/utils/json";
+ import { createHash } from "@better-auth/utils/hash";
+ import { betterFetch } from "@better-fetch/fetch";
+ import { createAuthEndpoint, sessionMiddleware } from "better-auth/api";
+-import { setSessionCookie } from "better-auth/cookies";
++import { parseSetCookieHeader, setSessionCookie, toCookieOptions } from "better-auth/cookies";
+ import { parseUserOutput } from "better-auth/db";
+ //#region src/error-codes.ts
+ const ELECTRON_ERROR_CODES = defineErrorCodes({
+@@ -121,7 +121,7 @@ const electronInitOAuthProxy = (opts) => createAuthEndpoint("/electron/init-oaut
+ 	if (!isSocialProvider && !ctx.context.getPlugin("generic-oauth")) throw APIError.from("BAD_REQUEST", BASE_ERROR_CODES.PROVIDER_NOT_FOUND);
+ 	const headers = new Headers(ctx.request?.headers);
+ 	headers.set("origin", new URL(ctx.context.baseURL).origin);
+-	let setCookie = null;
++	let setCookies = [];
+ 	const searchParams = new URLSearchParams();
+ 	searchParams.set("client_id", opts.clientID || "electron");
+ 	searchParams.set("code_challenge", ctx.query.code_challenge);
+@@ -131,13 +131,15 @@ const electronInitOAuthProxy = (opts) => createAuthEndpoint("/electron/init-oaut
+ 		baseURL: ctx.context.baseURL,
+ 		method: "POST",
+ 		body: { provider: ctx.query.provider },
+-		onResponse: (ctx) => {
+-			setCookie = ctx.response.headers.get("set-cookie") ?? null;
++		onResponse: (innerCtx) => {
++			setCookies = innerCtx.response.headers.getSetCookie();
+ 		},
+ 		headers
+ 	});
+ 	if (res.error) throw new APIError("INTERNAL_SERVER_ERROR", { message: res.error.message || "An unknown error occurred." });
+-	if (setCookie) ctx.setHeader("set-cookie", setCookie);
++	for (const cookieStr of setCookies) parseSetCookieHeader(cookieStr).forEach((attrs, name) => {
++		ctx.setCookie(name, attrs.value, toCookieOptions(attrs));
++	});
+ 	if (res.data.url && res.data.redirect) {
+ 		ctx.setHeader("Location", res.data.url);
+ 		ctx.setStatus(302);
