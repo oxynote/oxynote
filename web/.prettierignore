@@ -1,0 +1,8 @@
+dist
+public
+.output
+.vite
+.nuxt
+
+*.md
+*.mdx

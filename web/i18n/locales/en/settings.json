@@ -1,0 +1,529 @@
+{
+	"settings": {
+		"title": "Settings",
+		"description": "Manage your profile, workspace, and app integrations",
+		"optional-label": "(optional)",
+		"action-modals": {
+			"email-change": {
+				"title": "Change Email",
+				"description": "Changing your email address will update the address used for notifications and other account-related actions. We'll send a verification email to your new address.",
+				"new-email-label": "Your new email address",
+				"new-email-placeholder": "New email address",
+				"submit-button": "Change Email",
+				"cancel-button": "Cancel",
+				"success-message": {
+					"title": "Verification email sent",
+					"description": "We've sent a verification link to {email}. Once you click the link, your email address will be updated"
+				}
+			},
+			"account-deletion": {
+				"title": "Delete Account",
+				"description": "This action is irreversible and will permanently delete all your data. A confirmation email will be sent to your registered email address to finalize the account deletion process.",
+				"description-last-org-member": "You are the last member of this workspace. Deleting your account will also delete the workspace and all its data.",
+				"confirm-button": "Delete Account",
+				"cancel-button": "Cancel",
+				"success-message": {
+					"confirmation-link-sent": {
+						"title": "Confirmation email sent",
+						"description": "We've sent a confirmation link to your email. Please click the link to permanently delete your account"
+					},
+					"account-deleted": {
+						"title": "Account deleted",
+						"description": "Your account and all associated data have been permanently deleted"
+					}
+				},
+				"errors": {
+					"deletion-failed": {
+						"title": "Account couldn't be deleted",
+						"description": "An error occurred while trying to delete your account. Please try again"
+					}
+				}
+			},
+			"workspace-url-change": {
+				"title": "Change Workspace URL",
+				"description": "This will replace all your workspace URLs and the old ones will redirect automatically.",
+				"new-url-label": "Your new workspace URL",
+				"submit-button": "Change URL",
+				"cancel-button": "Cancel",
+				"success-message": {
+					"title": "Workspace URL changed"
+				},
+				"errors": {
+					"url-regex": "Only letters, numbers, hyphens, and underscores can be used",
+					"workspace-url-taken": "This workspace URL is already taken",
+					"workspace-url-invalid": "This workspace URL is invalid"
+				}
+			},
+			"workspace-invitation": {
+				"title": "Invite to Your Workspace",
+				"description": "Send an invitation to new members to join your workspace.",
+				"title-max-members-reached": "Max Members Reached",
+				"description-max-members-reached": "You have reached the maximum number of members for your workspace. Contact us via email or Discord if you want to add more.",
+				"email-label": "Email address",
+				"email-placeholder": "Email address",
+				"submit-button": "Send Invitation",
+				"cancel-button": "Cancel",
+				"close-button": "Close",
+				"success-message": {
+					"title": "Invitation sent",
+					"description": "An invitation was sent to {email}"
+				}
+			},
+			"workspace-member-removal": {
+				"title": "Remove from Your Workspace",
+				"description": "Remove {member} from your workspace?",
+				"submit-button": "Remove Member",
+				"cancel-button": "Cancel",
+				"success-message": {
+					"title": "{member} was removed"
+				},
+				"error-message": {
+					"title": "{member} couldn't be removed",
+					"description": "An error occurred while trying to remove {member}. Please try again"
+				}
+			},
+			"data-source-upsert": {
+				"hidden-placeholder": "[protected]",
+				"title": {
+					"creation": {
+						"prometheus": "Connect Prometheus",
+						"postgresql": "Connect PostgreSQL",
+						"mysql": "Connect MySQL",
+						"mariadb": "Connect MariaDB"
+					},
+					"update": {
+						"prometheus": "Update Prometheus",
+						"postgresql": "Update PostgreSQL",
+						"mysql": "Update MySQL",
+						"mariadb": "Update MariaDB"
+					}
+				},
+				"description": {
+					"creation": {
+						"prometheus": "Connect a new Prometheus server to use in your workspace.",
+						"postgresql": "Connect a new PostgreSQL server to use in your workspace.",
+						"mysql": "Connect a new MySQL server to use in your workspace.",
+						"mariadb": "Connect a new MariaDB server to use in your workspace."
+					},
+					"update": {
+						"prometheus": "Update the settings of your Prometheus server.",
+						"postgresql": "Update the settings of your PostgreSQL server.",
+						"mysql": "Update the settings of your MySQL server.",
+						"mariadb": "Update the settings of your MariaDB server."
+					}
+				},
+				"name-field": {
+					"prometheus": {
+						"label": "Data Source Nickname",
+						"placeholder": "Main Prometheus Server"
+					},
+					"postgresql": {
+						"label": "Data Source Nickname",
+						"placeholder": "Main PostgreSQL Server"
+					},
+					"mysql": {
+						"label": "Data Source Nickname",
+						"placeholder": "Main MySQL Server"
+					},
+					"mariadb": {
+						"label": "Data Source Nickname",
+						"placeholder": "Main MariaDB Server"
+					}
+				},
+				"url-field": {
+					"prometheus": {
+						"label": "Data Source URL",
+						"placeholder": "https://prometheus.example.com:9090"
+					},
+					"postgresql": {
+						"label": "Data Source URL",
+						"placeholder": "postgresql://postgres.example.com:5432/main_database"
+					},
+					"mysql": {
+						"label": "Data Source URL",
+						"placeholder": "mysql://mysql.example.com:3306/main_database"
+					},
+					"mariadb": {
+						"label": "Data Source URL",
+						"placeholder": "mariadb://mariadb.example.com:3306/main_database"
+					}
+				},
+				"creds-username-field": {
+					"prometheus": {
+						"label": "Auth Username",
+						"placeholder": "Username"
+					},
+					"postgresql": {
+						"label": "Auth Username",
+						"placeholder": "Username"
+					},
+					"mysql": {
+						"label": "Auth Username",
+						"placeholder": "Username"
+					},
+					"mariadb": {
+						"label": "Auth Username",
+						"placeholder": "Username"
+					}
+				},
+				"creds-password-field": {
+					"prometheus": {
+						"label": "Auth Password",
+						"placeholder": "Password"
+					},
+					"postgresql": {
+						"label": "Auth Password",
+						"placeholder": "Password"
+					},
+					"mysql": {
+						"label": "Auth Password",
+						"placeholder": "Password"
+					},
+					"mariadb": {
+						"label": "Auth Password",
+						"placeholder": "Password"
+					}
+				},
+				"read-only-warning": {
+					"postgresql": "A {link} is needed to connect to Oxynote.",
+					"postgresql-link": "read-only PostgreSQL user",
+					"mysql": "A {link} is needed to connect to Oxynote.",
+					"mysql-link": "read-only MySQL user",
+					"mariadb": "A {link} is needed to connect to Oxynote.",
+					"mariadb-link": "read-only MariaDB user"
+				},
+				"submit-button": "Test & Save",
+				"cancel-button": "Cancel",
+				"success-message": {
+					"creation": {
+						"title": "{name} was successfully connected",
+						"description": "You can now use it in your pages"
+					},
+					"update": {
+						"title": "{name} was successfully updated",
+						"description": "You can now use it in your pages"
+					}
+				},
+				"error-message": {
+					"creation": {
+						"generic": {
+							"title": "{name} couldn't be connected",
+							"description": "An error occurred while trying to connect {name}. Please try again"
+						}
+					},
+					"update": {
+						"generic": {
+							"title": "{name} couldn't be updated",
+							"description": "An error occurred while trying to update {name}. Please try again"
+						}
+					},
+					"status": {
+						"unauthorized": {
+							"title": {
+								"creation": "{name} couldn't be connected",
+								"update": "{name} couldn't be updated"
+							},
+							"description": "Authentication credentials are incorrect. Please update them and try again"
+						},
+						"unreachable": {
+							"title": {
+								"creation": "{name} couldn't be connected",
+								"update": "{name} couldn't be updated"
+							},
+							"description": "The data source server is unreachable. Please update the URL and try again"
+						},
+						"version_not_supported": {
+							"title": {
+								"creation": "{name} couldn't be connected",
+								"update": "{name} couldn't be updated"
+							},
+							"description": "The version of the data source you are using is not supported. Please upgrade the data source server and try again"
+						},
+						"not_read_only": {
+							"title": {
+								"creation": "{name} has write access",
+								"update": "{name} has write access"
+							},
+							"description": "The data source user has write access, but Oxynote only needs read permissions. Please provide a read-only user to continue"
+						}
+					}
+				}
+			},
+			"data-source-removal": {
+				"title": {
+					"prometheus": "Remove Prometheus Data Source",
+					"postgresql": "Remove PostgreSQL Data Source",
+					"mysql": "Remove MySQL Data Source",
+					"mariadb": "Remove MariaDB Data Source"
+				},
+				"description": "Remove {name} from your workspace?",
+				"submit-button": "Remove Data Source",
+				"cancel-button": "Cancel",
+				"success-message": {
+					"title": "{name} was removed"
+				},
+				"error-message": {
+					"title": "{name} couldn't be removed",
+					"description": "An error occurred while trying to remove {name}. Please try again"
+				}
+			}
+		},
+		"profile": {
+			"title": "Profile",
+			"image-label": "Profile Picture",
+			"image-alt": "Profile Picture",
+			"image-description": "Recommended size is 256x256px",
+			"email-label": "Email",
+			"email-description": "The email used for notifications and login",
+			"email-change-button-screen-reader-hint": "Change Email",
+			"username-label": "Username",
+			"username-description": "The nickname or first name you'd like to use in Oxynote",
+			"username-placeholder": "Username",
+			"account-deletion-label": "Delete Account",
+			"account-deletion-description": "This action is irreversible and will permanently delete all your data",
+			"account-deletion-button": "Delete Account",
+			"slack-notification-label": "Slack Notifications",
+			"slack-notification-description": "Receive notifications about hooks and other updates directly in your Slack account",
+			"slack-notification-unlinked-description": {
+				"main": "To receive notifications, link your Slack account to Oxynote by using {command} in the chat with the Oxynote app",
+				"command": "/link"
+			},
+			"success-messages": {
+				"image": {
+					"title": "Profile picture changed"
+				},
+				"username": {
+					"title": "Username changed"
+				},
+				"slack-notifications": {
+					"title": "Slack notification preference changed"
+				}
+			},
+			"errors": {
+				"username-regex": "Only letters, numbers, hyphens, and underscores can be used",
+				"toasts": {
+					"image": {
+						"title": "Profile picture couldn't be changed",
+						"description": "An error occurred while trying to change the profile picture. Please try again"
+					},
+					"username": {
+						"title": "Username couldn't be changed",
+						"description": "An error occurred while trying to change the username. Please try again"
+					},
+					"slack-notifications": {
+						"title": "Slack notification preference couldn't be changed",
+						"description": "An error occurred while trying to change the Slack notification preference. Please try again"
+					}
+				}
+			}
+		},
+		"workspace": {
+			"title": "Workspace",
+			"logo-label": "Logo",
+			"logo-alt": "Workspace Logo",
+			"logo-description": "Recommended size is 256x256px",
+			"name-label": "Name",
+			"name-description": "The name of your workspace",
+			"name-placeholder": "Name",
+			"url-label": "URL",
+			"url-prefix": "oxynote.io/",
+			"url-description": "This is the URL you will use to access the workspace",
+			"url-change-button-screen-reader-hint": "Change Workspace URL",
+			"invitation-button": "Invite",
+			"members-label": "Members ({current}/{max})",
+			"members-option-button-screen-reader-hint": "Manage Member",
+			"joined-label": "Joined",
+			"invited-label": "Invited",
+			"member-options": {
+				"delete": {
+					"title": "Remove"
+				}
+			},
+			"success-messages": {
+				"logo": {
+					"title": "Workspace logo changed"
+				},
+				"name": {
+					"title": "Workspace name changed"
+				}
+			},
+			"errors": {
+				"name-regex": "Only letters, numbers, hyphens, and underscores can be used",
+				"toasts": {
+					"logo": {
+						"title": "Workspace logo couldn't be changed",
+						"description": "An error occurred while trying to change the workspace logo. Please try again"
+					},
+					"name": {
+						"title": "Workspace name couldn't be changed",
+						"description": "An error occurred while trying to change the workspace name. Please try again"
+					}
+				}
+			}
+		},
+		"apps": {
+			"title": "Apps",
+			"github": {
+				"title": "GitHub",
+				"description": "Connect your GitHub organization to enable features like freshness hook updates based on your repository activity",
+				"connect": "Connect",
+				"disconnect": "Disconnect",
+				"connected": "Connected",
+				"errors": {
+					"install": {
+						"title": "GitHub couldn't be connected",
+						"description": "An error occurred while trying to connect GitHub. Please try again"
+					},
+					"disconnect": {
+						"title": "GitHub couldn't be disconnected",
+						"description": "An error occurred while trying to disconnect GitHub. Please try again"
+					}
+				}
+			},
+			"slack": {
+				"title": "Slack",
+				"description": "Connect your Slack workspace to receive notifications and updates directly in your Slack account",
+				"connect": "Connect",
+				"disconnect": "Disconnect",
+				"connected": "Connected",
+				"errors": {
+					"install": {
+						"title": "Slack couldn't be connected",
+						"description": "An error occurred while trying to connect Slack. Please try again"
+					},
+					"disconnect": {
+						"title": "Slack couldn't be disconnected",
+						"description": "An error occurred while trying to disconnect Slack. Please try again"
+					}
+				}
+			}
+		},
+		"data-sources": {
+			"title": "External Data Sources",
+			"prometheus": {
+				"title": "Prometheus",
+				"description": "Connect your Prometheus server and use it in metric monitoring blocks in your pages",
+				"connect": "Connect",
+				"connected-label": "Connected",
+				"option-button-screen-reader-hint": "Manage Data Source",
+				"options": {
+					"update": {
+						"title": "Update"
+					},
+					"delete": {
+						"title": "Remove"
+					}
+				},
+				"status-messages": {
+					"success": "Successfully connected",
+					"unauthorized": "Authentication credentials are incorrect",
+					"unreachable": "Prometheus server is unreachable",
+					"version_not_supported": "Prometheus version not supported"
+				},
+				"errors": {
+					"install": {
+						"title": "Prometheus data source couldn't be connected",
+						"description": "An error occurred while trying to connect to Prometheus. Please try again"
+					},
+					"disconnect": {
+						"title": "Prometheus couldn't be disconnected",
+						"description": "An error occurred while trying to disconnect from Prometheus. Please try again"
+					}
+				}
+			},
+			"postgresql": {
+				"title": "PostgreSQL",
+				"description": "Connect your PostgreSQL server and use it in metric monitoring blocks in your pages",
+				"connect": "Connect",
+				"connected-label": "Connected",
+				"option-button-screen-reader-hint": "Manage Data Source",
+				"options": {
+					"update": {
+						"title": "Update"
+					},
+					"delete": {
+						"title": "Remove"
+					}
+				},
+				"status-messages": {
+					"success": "Successfully connected",
+					"unauthorized": "Authentication credentials are incorrect",
+					"unreachable": "PostgreSQL server is unreachable",
+					"version_not_supported": "PostgreSQL version not supported"
+				},
+				"errors": {
+					"install": {
+						"title": "PostgreSQL data source couldn't be connected",
+						"description": "An error occurred while trying to connect to PostgreSQL. Please try again"
+					},
+					"disconnect": {
+						"title": "PostgreSQL couldn't be disconnected",
+						"description": "An error occurred while trying to disconnect from PostgreSQL. Please try again"
+					}
+				}
+			},
+			"mysql": {
+				"title": "MySQL",
+				"description": "Connect your MySQL server and use it in metric monitoring blocks in your pages",
+				"connect": "Connect",
+				"connected-label": "Connected",
+				"option-button-screen-reader-hint": "Manage Data Source",
+				"options": {
+					"update": {
+						"title": "Update"
+					},
+					"delete": {
+						"title": "Remove"
+					}
+				},
+				"status-messages": {
+					"success": "Successfully connected",
+					"unauthorized": "Authentication credentials are incorrect",
+					"unreachable": "MySQL server is unreachable",
+					"version_not_supported": "MySQL version not supported"
+				},
+				"errors": {
+					"install": {
+						"title": "MySQL data source couldn't be connected",
+						"description": "An error occurred while trying to connect to MySQL. Please try again"
+					},
+					"disconnect": {
+						"title": "MySQL couldn't be disconnected",
+						"description": "An error occurred while trying to disconnect from MySQL. Please try again"
+					}
+				}
+			},
+			"mariadb": {
+				"title": "MariaDB",
+				"description": "Connect your MariaDB server and use it in metric monitoring blocks in your pages",
+				"connect": "Connect",
+				"connected-label": "Connected",
+				"option-button-screen-reader-hint": "Manage Data Source",
+				"options": {
+					"update": {
+						"title": "Update"
+					},
+					"delete": {
+						"title": "Remove"
+					}
+				},
+				"status-messages": {
+					"success": "Successfully connected",
+					"unauthorized": "Authentication credentials are incorrect",
+					"unreachable": "MariaDB server is unreachable",
+					"version_not_supported": "MariaDB version not supported"
+				},
+				"errors": {
+					"install": {
+						"title": "MariaDB data source couldn't be connected",
+						"description": "An error occurred while trying to connect to MariaDB. Please try again"
+					},
+					"disconnect": {
+						"title": "MariaDB couldn't be disconnected",
+						"description": "An error occurred while trying to disconnect from MariaDB. Please try again"
+					}
+				}
+			}
+		}
+	}
+}

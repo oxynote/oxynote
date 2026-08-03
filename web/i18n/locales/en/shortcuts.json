@@ -1,0 +1,15 @@
+{
+	"shortcuts": {
+		"connector": "then",
+		"keys": {
+			"toggle-sidebar": "Open/close sidebar",
+			"search-for-documents": "Search for pages",
+			"create-new-document": "Create new pages",
+			"toggle-inbox": "Open/close inbox",
+			"toggle-settings": "Open/close settings",
+			"add-params-to-split-doc-left-side": "Add parameters",
+			"add-code-block-to-split-doc-right-side": "Add code block",
+			"add-metrics-to-split-doc-right-side": "Add metrics"
+		}
+	}
+}

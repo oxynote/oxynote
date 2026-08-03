@@ -1,0 +1,20 @@
+packages:
+  - packages/*
+
+# Electron Forge's packaging toolchain expects a flat, npm-style node_modules
+# layout on disk.
+# https://www.electronjs.org/docs/latest/tutorial/tutorial-first-app#initializing-your-npm-project
+nodeLinker: hoisted
+
+# Install scripts for native/binary packages.
+allowBuilds:
+  "@parcel/watcher": true
+  "@sentry/cli": true
+  "electron-winstaller": true
+  "esbuild": true
+  "unrs-resolver": true
+  "vue-demi": true
+
+# electron-forge's dependency chain pulls @electron/node-gyp from a git fork
+# (via @electron/rebuild). pnpm blocks exotic git-resolved subdeps by default.
+blockExoticSubdeps: false

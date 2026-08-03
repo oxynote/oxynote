@@ -1,0 +1,26 @@
+{
+	"notification": {
+		"inbox": "Inbox",
+		"read-all-button": "Read all",
+		"empty-title": "All caught up",
+		"empty-description": "You'll receive notifications here for page review invitations, triggered hooks, and more",
+		"document-fallback": "Deleted Page",
+		"hook-fallback": "Unknown",
+		"now-time-label": "now",
+		"messages": {
+			"document-new-comment-description": "{user} has posted a new comment",
+			"document-new-comment-reply-description": "{user} has posted a reply to a comment",
+			"document-review-request-description": "Review requested for the draft version",
+			"document-hook-triggered-description": "{hook} hook was triggered",
+			"default-description": "You have a new notification"
+		},
+		"actions": {
+			"mark-read": "Mark as read",
+			"close-notification-box": "Close notifications"
+		},
+		"errors": {
+			"mark-read-failed": "Failed to mark the notification as read",
+			"mark-all-read-failed": "Failed to mark all notifications as read"
+		}
+	}
+}

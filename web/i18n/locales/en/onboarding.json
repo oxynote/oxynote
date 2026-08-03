@@ -1,0 +1,118 @@
+{
+	"onboarding": {
+		"signup": {
+			"title": "Welcome to Oxynote",
+			"signup-google": "Sign up with Google",
+			"signup-github": "Sign up with GitHub",
+			"signup-slack": "Sign up with Slack",
+			"conditions": {
+				"main": "By signing up, you agree to our {terms-of-service} and {privacy-policy}.",
+				"placeholders": {
+					"terms-of-service": "Terms of Service",
+					"privacy-policy": "Privacy Policy"
+				}
+			},
+			"have-account": {
+				"main": "Already have an account? {log-in}.",
+				"placeholders": {
+					"log-in": "Log in"
+				}
+			},
+			"errors": {
+				"signup-failed": "Signup cannot be completed. Please try again",
+				"organization-limit-reached": {
+					"title": "We're sorry, but we can't create a workspace for you at the moment because we've reached our limit for new workspaces",
+					"description": "Please join the waitlist and we'll notify you as soon as we can create a new workspace for you"
+				}
+			}
+		},
+		"login": {
+			"title": "Welcome back to Oxynote",
+			"login-google": "Log in with Google",
+			"login-github": "Log in with GitHub",
+			"login-slack": "Log in with Slack",
+			"no-account": {
+				"main": "Don't have an account? {sign-up} or {learn-more}.",
+				"placeholders": {
+					"sign-up": "Sign up",
+					"learn-more": "learn more"
+				}
+			},
+			"errors": {
+				"login-failed": "Login cannot be completed. Please try again",
+				"login-not-allowed": "Oxynote is currently undergoing changes. If you wish to delete your account, please email us at hello{'@'}oxynote.io.",
+				"registration-not-allowed": "Registration is currently closed. Keep an eye out for announcements!",
+				"organization-limit-reached": {
+					"title": "We're sorry, but we can't create a new workspace for you at the moment because we've reached our limit for new workspaces",
+					"description": "Please join the waitlist and we'll notify you as soon as we can create a new workspace for you"
+				}
+			}
+		},
+		"verify-email": {
+			"title": "Thank you for verifying {email} as your email address!",
+			"button": "Continue to Oxynote"
+		},
+		"accept-invite": {
+			"title": "{name} has invited you to join {org}",
+			"description": "To accept the invitation, sign up as {email}.",
+			"signup-button": "Sign up to accept",
+			"accept-button": "Accept invitation",
+			"login-info": {
+				"logged-in-as": "Logged in as",
+				"logout": "Log out"
+			},
+			"success": {
+				"accepted-invite-log-out": {
+					"title": "You have successfully accepted the invitation",
+					"description": "Please sign in again to access the organization"
+				}
+			},
+			"warn": {
+				"email-mismatch": {
+					"title": "Your email does not match the email associated with this invitation",
+					"description": "Please log out and sign up with the correct email to accept the invitation"
+				}
+			},
+			"errors": {
+				"accept-failed": "Failed to accept the invitation. Please try again",
+				"signout-failed": "Failed to log out. Please try again",
+				"member-limit-reached": {
+					"title": "We're sorry, but we can't add you to the workspace at the moment because the organization has reached its member limit"
+				}
+			}
+		},
+		"desktop-auth": {
+			"page-title": "Returning to Oxynote",
+			"message": "Returning to Oxynote..."
+		},
+		"welcome": {
+			"title": "Create your Oxynote workspace",
+			"description": "A workspace is where your team's knowledge lives and evolves. Create one to get started.",
+			"create-workspace": "Create Workspace",
+			"form": {
+				"workspace-name": {
+					"label": "Workspace Name",
+					"placeholder": "My Team's Workspace"
+				},
+				"workspace-url": {
+					"label": "Workspace URL",
+					"prefix": "oxynote.io/"
+				}
+			},
+			"login-info": {
+				"logged-in-as": "Logged in as",
+				"logout": "Log out"
+			},
+			"errors": {
+				"workspace-name-regex": "Only letters, numbers, hyphens, and underscores can be used",
+				"workspace-url-regex": "Only letters, numbers, hyphens, and underscores can be used",
+				"workspace-url-taken": "This workspace URL is already taken",
+				"workspace-url-invalid": "This workspace URL is invalid",
+				"create-failed": "Failed to create the workspace. Please try again",
+				"activation-failed": "Failed to activate the workspace. Please try again",
+				"signout-failed": "Failed to log out. Please try again",
+				"first-document-load-failed": "Failed to load your first page. Please try refresh the page to continue"
+			}
+		}
+	}
+}

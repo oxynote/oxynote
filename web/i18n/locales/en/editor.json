@@ -1,0 +1,772 @@
+{
+	"editor": {
+		"unknown-user-caret": "Unknown",
+		"placeholders": {
+			"name-default": "New Page",
+			"content": {
+				"comment": "Write something...",
+				"paragraph": "Write something or type '/' for commands...",
+				"heading": "Heading",
+				"split-documentation": {
+					"left-side-heading": "Documentation Topic",
+					"left-side-heading-empty": "[no topic]",
+					"left-side-paragraph": "Describe the topic...",
+					"left-side-paragraph-empty": "[no description]",
+					"parameter-list": {
+						"header-name": "Parameters",
+						"header-name-empty": "[no name]",
+						"item": {
+							"header-name": "Name",
+							"header-name-empty": "[no name]",
+							"header-type": "any type",
+							"header-type-empty": "[no type]",
+							"paragraph": "Describe the parameter...",
+							"paragraph-empty": "[no description]"
+						}
+					}
+				},
+				"callout": {
+					"content": "Write something important..."
+				},
+				"extended-code-block": {
+					"header-title": "Code Block Title",
+					"header-title-empty": "[no title]",
+					"content": "Add some code...",
+					"content-empty": "[no code]"
+				},
+				"mermaid": {
+					"content": "Add Mermaid code...",
+					"content-empty": "[no code]"
+				}
+			}
+		},
+		"navbar": {
+			"timestamp": {
+				"short-edited": "Edited {time}",
+				"full-edited": "Edited by {user} on {time}",
+				"full-created": "Created by {user} on {time}"
+			},
+			"unknown-user": "Unknown User",
+			"toggle-edit-mode": "Toggle Edit Mode",
+			"toggle-read-mode": "Toggle Read Mode",
+			"mode-tooltip": {
+				"edit-line-1": "You are in edit mode. Changes are saved automatically.",
+				"edit-line-2": "Click to switch to read mode.",
+				"read-line-1": "You are in read mode.",
+				"read-line-2": "Click to switch to edit mode."
+			},
+			"open-document-options": "Open Page Options",
+			"close-ai-assistant": "Close Rubber Duck",
+			"open-ai-assistant": "Open Rubber Duck",
+			"document-modes": {
+				"main": {
+					"title": "Main Version",
+					"description": "View the main version of the page"
+				},
+				"draft": {
+					"title": "Draft Version",
+					"description": "Edit, review, and manage the draft version of the page"
+				}
+			},
+			"document-options": {
+				"review-workflow": {
+					"enable-title": "Make Reviewable",
+					"disable-title": "Make Non Reviewable",
+					"disable-content": "Are you sure you want to make this page non-reviewable? This action will discard the draft.",
+					"disable-confirm": "Confirm",
+					"cancel": "Cancel"
+				},
+				"delete": {
+					"title": "Delete",
+					"content": "Are you sure you want to delete this page? This action cannot be undone.",
+					"confirm": "Yes, delete page",
+					"cancel": "Cancel"
+				},
+				"duplicate": {
+					"title": "Duplicate"
+				}
+			}
+		},
+		"name-editor": {
+			"maintainers": "Maintainers",
+			"reviewers": "Reviewers",
+			"hooks": "Hooks",
+			"reviewer-popover": {
+				"approved-by-label": "Approved by",
+				"request-review-screen-reader-hint": "Request review",
+				"invite-button": "Invite to review",
+				"invite-remove-screen-reader-hint": "Remove invitation",
+				"invite-remove-success": "Reviewer invitation was successfully removed",
+				"invite-remove-error": "Failed to remove the invitation. Please try again",
+				"invited-label": "Invited",
+				"request-review-success": {
+					"title": "Review was successfully requested",
+					"description": "The selected members will receive their review invitations shortly"
+				},
+				"request-review-error": "Failed to send the review request. Please try again",
+				"suggestions-label": "Suggestions"
+			},
+			"review-workflow": {
+				"show-diff": "Show Changes",
+				"approve": {
+					"title": "Approve Draft",
+					"description": "Approve the current draft version of the page",
+					"success": "You have successfully approved the draft",
+					"error": "An error occurred while approving the draft. Please try again"
+				},
+				"unapprove": {
+					"title": "Unapprove Draft",
+					"description": "Revoke approval of the current draft version",
+					"success": "You have successfully revoked your approval",
+					"error": "An error occurred while revoking approval. Please try again"
+				},
+				"merge": {
+					"title": "Merge Draft into Main",
+					"description": "Merge the draft version into the main version of the page",
+					"success": "The draft was successfully merged into the main version",
+					"error": "An error occurred while merging the draft. Please try again"
+				}
+			}
+		},
+		"icon-stack": {
+			"more": "More",
+			"more-indicator": "+{count}"
+		},
+		"figma": {
+			"label": "Figma Embed",
+			"description": "Embed Figma",
+			"placeholder": "https://www.figma.com/... + Enter",
+			"link": "Link",
+			"edit": "Edit URL",
+			"empty": "No Figma embed"
+		},
+		"image": {
+			"description": "Upload an image",
+			"empty": "Image not uploaded",
+			"uploading": "Uploading...",
+			"upload-unavailable": "Upload unavailable",
+			"errors": {
+				"upload-failed": "Failed to upload the selected image. Please try again"
+			}
+		},
+		"mermaid": {
+			"preview": {
+				"loading": "The diagram is loading...",
+				"empty": "Add Mermaid code to see a diagram",
+				"load-error": "Mermaid Load Error",
+				"render-error": "Mermaid Syntax Error"
+			},
+			"errors": {
+				"load-failed": "Failed to load the diagram engine",
+				"render-failed": "Failed to display the diagram"
+			}
+		},
+		"slash-commands": {
+			"no-results": "Add '{query}' to the page"
+		},
+		"icon-select-menu": {
+			"input-placeholder": "Filter...",
+			"no-results": "No results"
+		},
+		"bubble-menu": {
+			"comment-label": "Comment"
+		},
+		"comment-thread": {
+			"unknown-author": "Unknown",
+			"comment-header": "{author} {time}",
+			"now-time-label": "now",
+			"edited-comment-header": "{author} {time} (edited)",
+			"edit-start-button": "Edit",
+			"resolve-button": "Resolve",
+			"delete-button": "Delete",
+			"comment-button": "Comment",
+			"reply-button": "Reply",
+			"edit-button": "Confirm Edit",
+			"cancel-button": "Cancel",
+			"close-button": "Close",
+			"title-new-thread": "Add New Comment",
+			"title-reply-existing-thread": "Reply to Comment",
+			"title-edit-existing-thread": "Edit Comment",
+			"errors": {
+				"create-failed": "Failed to add the comment. Please try again.",
+				"update-failed": "Failed to update the comment. Please try again.",
+				"delete-failed": "Failed to delete the comment. Please try again.",
+				"reply-create-failed": "Failed to add the reply. Please try again.",
+				"reply-update-failed": "Failed to update the reply. Please try again.",
+				"reply-delete-failed": "Failed to delete the reply. Please try again."
+			}
+		},
+		"hook-handle": {
+			"screen-reader-hint": "Click to update hook options"
+		},
+		"drag-handle": {
+			"screen-reader-hint": "Drag to reorder or click to update",
+			"options": {
+				"copy-link": "Copy Link",
+				"add-node-comment": "Add Comment",
+				"delete-node-comment": "Delete Comment",
+				"open-node-comment": "Open Comment",
+				"delete-block": "Delete",
+				"default": {
+					"add-above-block": "Add Above",
+					"add-below-block": "Add Below",
+					"duplicate-block": "Duplicate"
+				},
+				"split-doc": {
+					"add-parameter-list": "Add Parameters",
+					"invert-sides": "Invert Sides"
+				},
+				"split-doc-parameter-list": {
+					"add-above-block": "Add Parameters Above",
+					"add-below-block": "Add Parameters Below"
+				},
+				"split-doc-parameter-list-item": {
+					"add-above-block": "Add Parameter Above",
+					"add-below-block": "Add Parameter Below"
+				},
+				"split-doc-right-side": {
+					"add-code-block-above-block": "Add Code Above",
+					"add-code-block-below-block": "Add Code Below",
+					"add-metrics-above-block": "Add Live Metrics Above",
+					"add-metrics-below-block": "Add Live Metrics Below"
+				},
+				"metric-block": {
+					"width": "Resize",
+					"width-options": {
+						"compact": "Compact",
+						"standard": "Standard",
+						"wide": "Wide"
+					}
+				}
+			}
+		},
+		"link": {
+			"title": "Link Text",
+			"title-placeholder": "Link text",
+			"page-or-url": "Link to Page",
+			"page-or-url-placeholder": "https://example.com + Enter",
+			"open": "Open",
+			"edit": "Edit",
+			"delete": "Delete Link",
+			"cancel": "Cancel",
+			"save": "Save"
+		},
+		"hooks": {
+			"add-new": "New freshness hook",
+			"create": "Confirm",
+			"update": "Update",
+			"renew": "Renew",
+			"delete": "Delete",
+			"reset": "Approve & Continue",
+			"errors": {
+				"create-failed": "Failed to create the hook. Please try again.",
+				"update-failed": "Failed to update the hook. Please try again.",
+				"delete-failed": "Failed to delete the hook. Please try again.",
+				"reset-failed": "Failed to approve the hook. Please try again.",
+				"renew-failed": "Failed to renew the hook. Please try again."
+			},
+			"time-expiration": {
+				"title": "Scheduled Reminder",
+				"select-placeholder": "Choose when",
+				"calendar-placeholder": "Pick a date",
+				"duration-label": "Remind",
+				"duration-label-triggered": "Remind again",
+				"existing-item": "Remind on {value}",
+				"triggered-item": "Reminded on {value}",
+				"existing-item-block-explanation": "A reminder will be sent on {value} to the maintainers of the page and the block will be highlighted.",
+				"existing-item-full-document-explanation": "A reminder will be sent on {value} to the maintainers of the page and the relevant sections will be highlighted.",
+				"duration-sentence-components": {
+					"1m": "a minute (dev)",
+					"24h": "a day",
+					"72h": "3 days",
+					"168h": "a week",
+					"336h": "2 weeks",
+					"720h": "a month",
+					"2160h": "3 months",
+					"4320h": "6 months"
+				},
+				"duration-options": {
+					"0": "Instant (dev)",
+					"1m": "In 1 minute (dev)",
+					"24h": "In 1 day",
+					"72h": "In 3 days",
+					"168h": "In 1 week",
+					"336h": "In 2 weeks",
+					"720h": "In 1 month",
+					"2160h": "In 3 months",
+					"4320h": "In 6 months",
+					"custom": "On a custom date"
+				}
+			},
+			"github-tracking": {
+				"title": "GitHub Commits",
+				"existing-item": "Watching {repository}",
+				"triggered-item": "Changes in {repository}",
+				"existing-item-block-explanation": "When the selected GitHub repository changes, a reminder will be sent to the maintainers of the page and the block will be highlighted.",
+				"existing-item-full-document-explanation": "When the selected GitHub repository changes, a reminder will be sent to the maintainers of the page and the relevant sections will be highlighted.",
+				"not-connected": {
+					"main": "{icon}To use this hook, connect your GitHub organization or personal account in the {placeholder}.",
+					"placeholder": "settings"
+				},
+				"no-repositories": "{icon}You have no accessible repositories in the connected GitHub organization or personal account.",
+				"missing-target-repository": "{icon}The selected GitHub repository cannot be accessed.",
+				"missing-target-branch": "{icon}The selected GitHub branch cannot be accessed.",
+				"repository-select-label": "Repository",
+				"repository-select-placeholder": "Select repository",
+				"repository-select-loading-placeholder": "Loading...",
+				"branch-select-label": "Branch",
+				"branch-select-placeholder": "Select branch",
+				"branch-select-loading-placeholder": "Loading...",
+				"branch-select-repository-placeholder": "Select repository first",
+				"path-select-placeholder": "Select files",
+				"path-select-label": "Files",
+				"path-select-loading-placeholder": "Loading...",
+				"path-select-repository-placeholder": "Select repository first",
+				"path-select-branch-placeholder": "Select branch first",
+				"empty-folder-placeholder": "No files",
+				"selection-text": {
+					"one": "1 file selected",
+					"other": "{count} files selected"
+				}
+			},
+			"url-watcher": {
+				"title": "Website Changes",
+				"existing-item": "Watching {url}",
+				"triggered-item": "Changes in {url}",
+				"existing-item-block-explanation": "When the selected website changes, a reminder will be sent to the maintainers of the page and the block will be highlighted.",
+				"existing-item-full-document-explanation": "When the selected website changes, a reminder will be sent to the maintainers of the page and the relevant sections will be highlighted.",
+				"unreachable-url": "{icon}The selected website cannot be reached. They may be temporarily down, no longer exist, or have anti-scraping measures in place.",
+				"url-input-label": "Link to Website",
+				"url-input-placeholder": "https://example.com"
+			},
+			"container-image-watcher": {
+				"title": "Docker Image Updates",
+				"existing-item": "Watching {image}",
+				"triggered-item": "Updates in {image}",
+				"existing-item-block-explanation": "When the selected Docker image changes, a reminder will be sent to the maintainers of the page and the block will be highlighted.",
+				"existing-item-full-document-explanation": "When the selected Docker image changes, a reminder will be sent to the maintainers of the page and the relevant sections will be highlighted.",
+				"unreachable-image": "{icon}The selected Docker image cannot be reached. They may be temporarily down, no longer exist, or have authentication.",
+				"image-input-label": "Image Reference",
+				"image-input-placeholder": "postgres:16.4-alpine"
+			}
+		},
+		"new-document-name": "New Page",
+		"split-documentation": {
+			"left-side-bottom-action-button": "Add Parameters",
+			"right-side-bottom-action-buttons": {
+				"add-code": "Add Code",
+				"add-metrics": "Add Metrics"
+			}
+		},
+		"metrics": {
+			"labels": {
+				"line-chart": "Line",
+				"bar-chart": "Bar",
+				"gauge-chart": "Gauge"
+			},
+			"status": {
+				"simplified-config-in-progress": {
+					"title": "No Data"
+				},
+				"type-not-selected": {
+					"title": "No Visualization Selected",
+					"description": "Start configuring metrics by selecting a visualization type",
+					"normal-action-button": "Edit Metrics",
+					"readonly-action-button": "View Metrics"
+				},
+				"data-source-not-selected": {
+					"title": "No Data Source Selected",
+					"description": "Choose a data source to see metric data",
+					"normal-action-button": "Edit Metrics",
+					"readonly-action-button": "View Metrics"
+				},
+				"invalid-data": {
+					"title": "Invalid Data",
+					"description": "The current configuration returned no valid data. Please adjust your queries or data sources",
+					"normal-action-button": "Edit Metrics",
+					"readonly-action-button": "View Metrics"
+				},
+				"query-error": {
+					"title": "Query Error",
+					"multi-query-description": "Query {index}: {error}",
+					"single-query-description": "Query returned an error: {error}",
+					"normal-action-button": "Edit Metrics",
+					"readonly-action-button": "View Metrics"
+				},
+				"no-data-loaded": {
+					"title": "No Data",
+					"description": "The current configuration returned no data. Please adjust your queries or data sources",
+					"normal-action-button": "Edit Metrics",
+					"readonly-action-button": "View Metrics"
+				},
+				"no-data-still-loading": {
+					"title": "Data Is Loading",
+					"description": "The metric data is still loading. Please wait a moment"
+				}
+			},
+			"config": {
+				"modal-trigger-button-normal": "Edit Metrics",
+				"modal-trigger-button-readonly": "View Metrics",
+				"modal-title-normal": "Edit Live Metrics",
+				"modal-title-readonly": "Live Metrics",
+				"modal-title-diff-unchanged": "Live Metrics",
+				"modal-title-diff-added": "New Live Metrics",
+				"modal-title-diff-removed": "Deleted Live Metrics",
+				"modal-title-diff-modified": "Live Metrics Changes",
+				"modal-description-normal": "Configure the metric visualization settings",
+				"modal-description-readonly": "View the metric visualization settings",
+				"data-source-label": "Data Source",
+				"data-source-placeholder": "Select data source",
+				"data-source-no-options": {
+					"main": "{icon}No data sources available. You can connect one in the {placeholder}.",
+					"placeholder": "settings"
+				},
+				"data-source-label-missing": "No data source selected",
+				"data-source-label-deleted": "Deleted data source",
+				"data-source-description-missing": "Click to select a data source",
+				"type-label": "Metric Visualization",
+				"type-placeholder": "Select visualization",
+				"type-options": {
+					"line-chart": {
+						"title": "Time Series",
+						"description": "See how metric values change over time"
+					},
+					"bar-chart": {
+						"title": "Bar Chart",
+						"description": "Compare metric values side by side"
+					},
+					"gauge-chart": {
+						"title": "Gauge",
+						"description": "Display a single metric value on a scale"
+					}
+				},
+				"query-label": "Query",
+				"query-explanation-button-label": "Help",
+				"query-explanations": {
+					"prometheus": {
+						"main": "{prometheus-queries} to select and transform time-series data. Use a metric name to fetch series, {label-filter} to filter by labels, and range selectors like {range-selector} with functions such as {rate-function} to calculate changes over time. Read more in the {official-prometheus-docs}.",
+						"main-placeholders": {
+							"prometheus-queries": "Prometheus queries use PromQL",
+							"label-filter": "{'{'}...{'}'}",
+							"range-selector": "[5m]",
+							"rate-function": "rate()",
+							"official-prometheus-docs": "official Prometheus docs"
+						},
+						"examples-title": "Examples",
+						"examples": {
+							"example-1": {
+								"description": "{query} - latest request counter values for only {method} requests from the {service} service",
+								"placeholders": {
+									"query": "http_requests_total{'{'}service=\"api\", method=\"GET\"{'}'}",
+									"method": "GET",
+									"service": "api"
+								}
+							},
+							"example-2": {
+								"description": "{query} - total request rate grouped by {service}, useful for multi-series charts",
+								"placeholders": {
+									"query": "sum by (service) (rate(http_requests_total{'{'}method=\"GET\"{'}'}[5m]))",
+									"service": "service"
+								}
+							}
+						}
+					},
+					"postgresql": {
+						"main": "{postgresql-queries}. For time-series charts, return a column named {time-column}, one or more {numeric-column} columns for values, and optionally {string-column} columns such as {service-column} or {environment-column} to split the result into multiple series. Sort results by {time-column}. Use {select-keyword} to read data, {where-keyword} to filter rows, {group-by-keyword} to aggregate, and macros/template variables for time filtering and bucketing. For PostgreSQL syntax, see the official {select-keyword} {docs-link}.",
+						"main-placeholders": {
+							"postgresql-queries": "PostgreSQL queries should return chart-friendly columns",
+							"time-column": "time",
+							"numeric-column": "numeric",
+							"string-column": "string",
+							"service-column": "service",
+							"environment-column": "environment",
+							"where-keyword": "WHERE",
+							"group-by-keyword": "GROUP BY",
+							"date-trunc-function": "date_trunc()",
+							"select-keyword": "SELECT",
+							"docs-link": "docs"
+						},
+						"examples-title": "Examples",
+						"examples": {
+							"example-1": {
+								"title": "Single series",
+								"query": "SELECT $__timeGroupAlias(time, $__interval), AVG(duration_seconds) AS avg_duration_seconds FROM deployments WHERE $__timeFilter(time) GROUP BY 1 ORDER BY 1",
+								"description": "Returns one series: {result}",
+								"placeholders": {
+									"result": "avg_duration_seconds"
+								}
+							},
+							"example-2": {
+								"title": "Multiple series",
+								"query": "SELECT $__timeGroupAlias(time, $__interval), AVG(duration_seconds) AS avg_duration_seconds, service FROM deployments WHERE $__timeFilter(time) GROUP BY 1, 3 ORDER BY 1, 3",
+								"description": "Returns one separate series per {service-column}, each showing {result} over time",
+								"placeholders": {
+									"service-column": "service",
+									"result": "avg_duration_seconds"
+								}
+							}
+						}
+					},
+					"mysql": {
+						"main": "{mysql-queries}. For time-series charts, return a column named {time-column}, one or more {numeric-column} columns for values, and optional {string-column} columns like {service-column} or {environment-column} to split the chart into separate series. Sort results by {time-column}. Use {select-keyword} to read data, {where-keyword} to filter rows, {group-by-keyword} to aggregate, and macros/template variables for time filtering and bucketing. For MySQL syntax, see the official {select-keyword} {docs-link}.",
+						"main-placeholders": {
+							"mysql-queries": "MySQL queries should return chart-friendly columns",
+							"time-column": "time",
+							"numeric-column": "numeric",
+							"string-column": "string",
+							"service-column": "service",
+							"environment-column": "environment",
+							"where-keyword": "WHERE",
+							"group-by-keyword": "GROUP BY",
+							"select-keyword": "SELECT",
+							"docs-link": "docs"
+						},
+						"examples-title": "Examples",
+						"examples": {
+							"example-1": {
+								"title": "Single series",
+								"query": "SELECT $__timeGroupAlias(time, $__interval), AVG(duration_seconds) AS avg_duration_seconds FROM deployments WHERE $__timeFilter(time) GROUP BY 1 ORDER BY 1",
+								"description": "Returns one series: {result}",
+								"placeholders": {
+									"result": "avg_duration_seconds"
+								}
+							},
+							"example-2": {
+								"title": "Multiple series",
+								"query": "SELECT $__timeGroupAlias(time, $__interval), AVG(duration_seconds) AS avg_duration_seconds, service FROM deployments WHERE $__timeFilter(time) GROUP BY 1, 3 ORDER BY 1, 3",
+								"description": "Returns one separate series per {service-column}, each showing {result} over time",
+								"placeholders": {
+									"service-column": "service",
+									"result": "avg_duration_seconds"
+								}
+							}
+						}
+					},
+					"mariadb": {
+						"main": "{mariadb-queries}. For time-series charts, return a column named {time-column}, one or more {numeric-column} columns for values, and optional {string-column} columns like {service-column} or {environment-column} to split the chart into separate series. Sort results by {time-column}. Use {select-keyword} to read data, {where-keyword} to filter rows, {group-by-keyword} to aggregate, and macros/template variables for time filtering and bucketing. For MariaDB syntax, see the official {select-keyword} {docs-link}.",
+						"main-placeholders": {
+							"mariadb-queries": "MariaDB queries should return chart-friendly columns",
+							"time-column": "time",
+							"numeric-column": "numeric",
+							"string-column": "string",
+							"service-column": "service",
+							"environment-column": "environment",
+							"where-keyword": "WHERE",
+							"group-by-keyword": "GROUP BY",
+							"select-keyword": "SELECT",
+							"docs-link": "docs"
+						},
+						"examples-title": "Examples",
+						"examples": {
+							"example-1": {
+								"title": "Single series",
+								"query": "SELECT $__timeGroupAlias(time, $__interval), AVG(duration_seconds) AS avg_duration_seconds FROM deployments WHERE $__timeFilter(time) GROUP BY 1 ORDER BY 1",
+								"description": "Returns one series: {result}",
+								"placeholders": {
+									"result": "avg_duration_seconds"
+								}
+							},
+							"example-2": {
+								"title": "Multiple series",
+								"query": "SELECT $__timeGroupAlias(time, $__interval), AVG(duration_seconds) AS avg_duration_seconds, service FROM deployments WHERE $__timeFilter(time) GROUP BY 1, 3 ORDER BY 1, 3",
+								"description": "Returns one separate series per {service-column}, each showing {result} over time",
+								"placeholders": {
+									"service-column": "service",
+									"result": "avg_duration_seconds"
+								}
+							}
+						}
+					}
+				},
+				"query-placeholder": {
+					"default": "Enter a query...",
+					"empty": "[empty]",
+					"prometheus": "Enter a PromQL query...",
+					"postgresql": "Enter a SQL query...",
+					"mysql": "Enter a SQL query...",
+					"mariadb": "Enter a SQL query..."
+				},
+				"query-name-default-format": "Query {index}",
+				"query-no-data-source-selected": "To enter a query, first select a data source",
+				"add-query-button": "Add Query",
+				"query-info": {
+					"prometheus": {
+						"interval": "Auto-calculated interval based on time range and resolution (ex. \"15s\", \"5m\", \"1h\")",
+						"range": "Duration of the selected time range",
+						"rate-interval": "Safe interval for rate() and increase(), adjusts to scrape frequency"
+					},
+					"sql": {
+						"from": "Start of the selected time range in unix milliseconds",
+						"to": "End of the selected time range in unix milliseconds",
+						"interval": "Auto-calculated interval based on time range and resolution (ex. \"15s\", \"5m\", \"1h\")",
+						"unix-epoch-from": "Start of the selected time range as a unix epoch timestamp (in seconds)",
+						"unix-epoch-to": "End of the selected time range as a unix epoch timestamp (in seconds)",
+						"unix-epoch-nano-from": "Start of the selected time range as a unix epoch timestamp (in nanoseconds)",
+						"unix-epoch-nano-to": "End of the selected time range as a unix epoch timestamp (in nanoseconds)"
+					}
+				},
+				"title-label": "Title",
+				"title-placeholder": "Enter a title...",
+				"title-empty-value-placeholder": "[empty]",
+				"decimals-label": "Decimal places",
+				"decimals-placeholder": "auto",
+				"unit-label": "Unit",
+				"unit-placeholder": "Choose unit",
+				"unit-empty-value-placeholder": "[empty]",
+				"unit-custom-placeholder": "Enter a unit...",
+				"unit-custom-empty-value-placeholder": "[empty]",
+				"unit-options": {
+					"custom": "Custom",
+					"misc": {
+						"title": "Misc",
+						"options": {
+							"percent0to100": "Percent (0-100)",
+							"percent0to1": "Percent (0.0-1.0)"
+						}
+					},
+					"data": {
+						"title": "Data",
+						"options": {
+							"bytes": "Bytes (B)",
+							"kilobytes": "Kilobytes (KB)",
+							"megabytes": "Megabytes (MB)",
+							"gigabytes": "Gigabytes (GB)",
+							"terabytes": "Terabytes (TB)",
+							"bits": "Bits (b)",
+							"kilobits": "Kilobits (Kb)",
+							"megabits": "Megabits (Mb)",
+							"gigabits": "Gigabits (Gb)",
+							"terabits": "Terabits (Tb)"
+						}
+					},
+					"time": {
+						"title": "Time",
+						"options": {
+							"nanoseconds": "Nanoseconds (ns)",
+							"microseconds": "Microseconds (µs)",
+							"milliseconds": "Milliseconds (ms)",
+							"seconds": "Seconds (s)",
+							"minutes": "Minutes (m)",
+							"hours": "Hours (h)",
+							"days": "Days (d)"
+						}
+					}
+				},
+				"bounds-min-label": "Min value",
+				"bounds-min-placeholder": "auto",
+				"bounds-max-label": "Max value",
+				"bounds-max-placeholder": "auto",
+				"thresholds-label": "Thresholds",
+				"threshold-value-placeholder": "Value",
+				"threshold-value-empty-placeholder": "[empty]",
+				"threshold-label-placeholder": "Label",
+				"threshold-label-empty-placeholder": "[empty]",
+				"add-threshold-button": "Add Threshold",
+				"no-thresholds-button": "No Thresholds",
+				"base-threshold-label": "Base",
+				"legend-format-label": "Legend",
+				"legend-format-placeholder": "{'{{'}some label{'}}'} {'{{'}another label{'}}'}",
+				"legend-format-empty-value-placeholder": "[empty]",
+				"legend-format-no-data-source-selected": "To edit the legend format, first select a data source",
+				"time-range-label": "Time Range",
+				"time-range-placeholder": "Select time range",
+				"time-range-options": {
+					"last_5_minutes": "Last 5 minutes",
+					"last_15_minutes": "Last 15 minutes",
+					"last_30_minutes": "Last 30 minutes",
+					"last_1_hour": "Last 1 hour",
+					"last_3_hours": "Last 3 hours",
+					"last_6_hours": "Last 6 hours",
+					"last_12_hours": "Last 12 hours",
+					"last_24_hours": "Last 24 hours",
+					"last_2_days": "Last 2 days",
+					"last_7_days": "Last 7 days",
+					"last_30_days": "Last 30 days",
+					"last_90_days": "Last 90 days",
+					"last_6_months": "Last 6 months",
+					"last_1_year": "Last 1 year",
+					"last_2_years": "Last 2 years",
+					"last_5_years": "Last 5 years",
+					"today": "Today",
+					"yesterday": "Yesterday",
+					"today_so_far": "Today so far",
+					"this_week": "This week",
+					"this_week_so_far": "This week so far",
+					"this_month": "This month",
+					"this_month_so_far": "This month so far",
+					"this_year": "This year",
+					"this_year_so_far": "This year so far",
+					"previous_week": "Previous week",
+					"previous_month": "Previous month",
+					"previous_year": "Previous year"
+				},
+				"refresh-interval-label": "Refresh Interval",
+				"refresh-interval-placeholder": "Select refresh interval",
+				"refresh-interval-options": {
+					"5s": "5 seconds",
+					"10s": "10 seconds",
+					"30s": "30 seconds",
+					"1m": "1 minute",
+					"5m": "5 minutes",
+					"15m": "15 minutes",
+					"30m": "30 minutes",
+					"1h": "1 hour",
+					"2h": "2 hours",
+					"1d": "1 day"
+				},
+				"refresh-interval-options-short": {
+					"5s": "5s",
+					"10s": "10s",
+					"30s": "30s",
+					"1m": "1m",
+					"5m": "5m",
+					"15m": "15m",
+					"30m": "30m",
+					"1h": "1h",
+					"2h": "2h",
+					"1d": "1d"
+				}
+			}
+		},
+		"icon-stack-image-alt": "User Avatar",
+		"no-document-indicator": {
+			"heading": "Time to create something great",
+			"subheading": "Pages are where the magic happens. Create one to dive in.",
+			"create-document-button": "Create Page"
+		},
+		"document-deletion-modal": {
+			"title": "Delete Page",
+			"description": "Are you sure you want to delete {name}? This action cannot be undone.",
+			"confirm-button": "Delete page",
+			"cancel-button": "Cancel",
+			"deletion-success": "{name} was successfully deleted"
+		},
+		"errors": {
+			"deletion-failed": "Failed to delete the page. Please try again",
+			"duplication-failed": "Failed to duplicate the page. Please try again",
+			"reviewability-update-failed": "Failed to update the page reviewability status. Please try again",
+			"content-load-failed": "Failed to load the page content. Please refresh the page and try again",
+			"node-being-edited": "Another user is currently editing this block"
+		},
+		"ai-chat": {
+			"title": "Rubber Duck",
+			"sheet-description": "Rubber Duck chat panel.",
+			"empty-state-description": "Quack! Tell me what's on your mind and I'll help you think it through.",
+			"input-placeholder": "Quack quack...",
+			"send": "Send",
+			"new-chat": "New Chat",
+			"tool-status": {
+				"read-document": "Reading page...",
+				"insert-blocks": "Inserting content...",
+				"replace-block-content": "Replacing content...",
+				"replace-block-attributes": "Updating block...",
+				"read-available-icons": "Reading icons...",
+				"update-document-name": "Updating name...",
+				"update-document-icon": "Updating icon...",
+				"delete-blocks": "Deleting blocks...",
+				"working": "Working..."
+			},
+			"generic-error": "An error occurred"
+		}
+	}
+}

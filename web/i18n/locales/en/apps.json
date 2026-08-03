@@ -1,0 +1,14 @@
+{
+	"apps": {
+		"github-connect": {
+			"loading": "Connecting GitHub to your organization...",
+			"success": "Successfully connected GitHub to your organization",
+			"error": "Something went wrong"
+		},
+		"slack-connect": {
+			"loading": "Connecting Slack to your organization...",
+			"success": "Successfully connected Slack to your organization",
+			"error": "Something went wrong"
+		}
+	}
+}

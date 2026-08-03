@@ -1,0 +1,24 @@
+{
+	"general": {
+		"default-page-title": "Oxynote",
+		"document-page-title": "{suffix} - Oxynote",
+		"login-page-title": "Log in to Oxynote",
+		"signup-page-title": "Sign up to Oxynote",
+		"onboarding-page-title": "Create a Workspace on Oxynote",
+		"accept-invite-page-title": "Join a Workspace on Oxynote",
+		"github-connect-page-title": "GitHub Connect - Oxynote",
+		"slack-connect-page-title": "Slack Connect - Oxynote",
+		"verify-email-page-title": "Verify Your Email - Oxynote",
+		"modal-close-screen-reader-hint": "Close"
+	},
+	"storage-errors": {
+		"invalid-content-type": {
+			"title": "Invalid file type",
+			"description": "The file type is not supported. Please upload a different file."
+		},
+		"size-limit-exceeded": {
+			"title": "File too large",
+			"description": "The file exceeds the maximum allowed size of 5MB. Please upload a smaller file."
+		}
+	}
+}

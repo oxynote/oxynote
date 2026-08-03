@@ -1,0 +1,722 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+	--scrollbar: oklch(0.8368 0.0034 264.53);
+
+	--background: oklch(0.994 0 0);
+	--background-warning: oklch(0.2485 0.0617 0);
+	--background-translucent: oklch(99.405% 0.00011 271.152 / 0.93);
+	--foreground: oklch(0.2221 0 0);
+	--foreground-rgb: rgb(27, 27, 27);
+	--card: oklch(1 0 0);
+	--card-foreground: oklch(0.2221 0 0);
+	--popover: oklch(0.994 0 0);
+	--popover-foreground: oklch(0.2221 0 0);
+	--primary: oklch(0.5696 0.0839 193.76);
+	--primary-foreground: oklch(0.985 0 0);
+	--secondary: oklch(0.97 0 0);
+	--secondary-foreground: oklch(0.265 0 0);
+	--muted: oklch(0.97 0 0);
+	--muted-50-real: oklch(0.9821 0 0); /* 50% opacity without the opacity */
+	--muted-highlight: oklch(0.95 0 0);
+	--muted-foreground: oklch(0.556 0 0);
+	--muted-foreground-50: oklch(55.553% 0.00006 271.152 / 0.5);
+	--muted-foreground-7: oklch(55.553% 0.00006 271.152 / 0.07);
+	--accent: oklch(0.931 0 0);
+	--accent-foreground: oklch(0.265 0 0);
+	--destructive: oklch(0.577 0.245 27.325);
+	--destructive-foreground: oklch(0.577 0.245 27.325);
+	--border: oklch(0.922 0 0);
+	--input: oklch(0.922 0 0);
+	--ring: oklch(0.708 0 0);
+	--radius: 0.35rem;
+
+	--status-info: oklch(0.5309 0.1628 244.25);
+	--status-success: oklch(0.6371 0.1749 146.7);
+	--status-warning: oklch(0.7074 0.1455 95.22);
+	--status-error: oklch(0.577 0.245 27.325);
+
+	--drag-target: oklch(0.8985 0.0419 244.63);
+	--hook-decoration: oklch(67.323% 0.14096 75.998);
+	--hook-status-fresh: oklch(0.6 0.118 184.704);
+	--hook-status-stale: oklch(67.323% 0.14096 75.998);
+	--comment-highlight: oklch(0.8633 0.1764 89.91);
+
+	--http-method-get: oklch(0.5002 0.1962 259.56);
+	--http-method-post: oklch(0.4784 0.1512 140.01);
+	--http-method-put: oklch(0.7072 0.0511 71.93);
+	--http-method-patch: oklch(0.6771 0.0299 136.93);
+	--http-method-delete: oklch(0.5114 0.1672 38.04);
+	--http-method-options: oklch(0.6228 0.0359 198.65);
+	--http-method-head: oklch(0.597 0.0221 270.05);
+	--http-method-connect: oklch(0.6151 0.0495 302.07);
+	--http-method-trace: oklch(0.6456 0.028 94.88);
+	--url-path-param: oklch(0.7183 0.063 144.88);
+
+	--sidebar: oklch(0.9672 0 0);
+	--sidebar-foreground: oklch(0.302 0.0036 286.18);
+	--sidebar-primary: oklch(0.265 0 0);
+	--sidebar-primary-foreground: oklch(0.985 0 0);
+	--sidebar-accent: oklch(0.931 0 0);
+	--sidebar-accent-foreground: oklch(0.265 0 0);
+	--sidebar-border: oklch(0.922 0 0);
+	--sidebar-ring: oklch(0.708 0 0);
+
+	--diff-added: oklch(53.282% 0.16399 143.531 / 0.3);
+	--diff-removed: oklch(57.909% 0.23191 28.689 / 0.3);
+	--diff-modified: oklch(70% 0.12 270 / 0.2);
+	--diff-text-added: oklch(53.282% 0.16399 143.531 / 0.3);
+	--diff-text-removed: oklch(57.909% 0.23191 28.689 / 0.3);
+	--diff-field-added: oklch(53.282% 0.16399 143.531 / 0.2);
+	--diff-field-removed: oklch(57.909% 0.23191 28.689 / 0.2);
+
+	--chart-threshold-1: theme(--color-red-600);
+	--chart-threshold-2: theme(--color-orange-600);
+	--chart-threshold-3: theme(--color-amber-600);
+	--chart-threshold-4: theme(--color-yellow-600);
+	--chart-threshold-5: theme(--color-lime-600);
+	--chart-threshold-6: theme(--color-green-600);
+	--chart-threshold-7: theme(--color-emerald-600);
+	--chart-threshold-8: theme(--color-teal-600);
+	--chart-threshold-9: theme(--color-cyan-600);
+	--chart-threshold-10: theme(--color-sky-600);
+	--chart-threshold-11: theme(--color-blue-600);
+	--chart-threshold-12: theme(--color-indigo-600);
+	--chart-threshold-13: theme(--color-violet-600);
+	--chart-threshold-14: theme(--color-purple-600);
+	--chart-threshold-15: theme(--color-fuchsia-600);
+	--chart-threshold-16: theme(--color-pink-600);
+
+	--chart-data-1: theme(--color-amber-500);
+	--chart-data-2: theme(--color-teal-500);
+	--chart-data-3: theme(--color-indigo-500);
+	--chart-data-4: theme(--color-fuchsia-500);
+	--chart-data-5: theme(--color-emerald-500);
+	--chart-data-6: theme(--color-cyan-500);
+	--chart-data-7: theme(--color-sky-500);
+	--chart-data-8: theme(--color-blue-500);
+	--chart-data-9: theme(--color-violet-500);
+	--chart-data-10: theme(--color-lime-500);
+	--chart-data-11: theme(--color-yellow-500);
+	--chart-data-12: theme(--color-purple-500);
+	--chart-data-13: theme(--color-orange-500);
+	--chart-data-14: theme(--color-pink-500);
+	--chart-data-15: theme(--color-green-500);
+	--chart-data-16: theme(--color-red-500);
+
+	/* editor caret colors */
+	--caret-red-500: theme(--color-red-500);
+	--caret-red-600: theme(--color-red-600);
+	--caret-red-700: theme(--color-red-700);
+	--caret-red-800: theme(--color-red-800);
+	--caret-orange-500: theme(--color-orange-500);
+	--caret-orange-600: theme(--color-orange-600);
+	--caret-orange-700: theme(--color-orange-700);
+	--caret-orange-800: theme(--color-orange-800);
+	--caret-amber-500: theme(--color-amber-500);
+	--caret-amber-600: theme(--color-amber-600);
+	--caret-amber-700: theme(--color-amber-700);
+	--caret-amber-800: theme(--color-amber-800);
+	--caret-yellow-500: theme(--color-yellow-500);
+	--caret-yellow-600: theme(--color-yellow-600);
+	--caret-yellow-700: theme(--color-yellow-700);
+	--caret-yellow-800: theme(--color-yellow-800);
+	--caret-lime-500: theme(--color-lime-500);
+	--caret-lime-600: theme(--color-lime-600);
+	--caret-lime-700: theme(--color-lime-700);
+	--caret-lime-800: theme(--color-lime-800);
+	--caret-green-500: theme(--color-green-500);
+	--caret-green-600: theme(--color-green-600);
+	--caret-green-700: theme(--color-green-700);
+	--caret-green-800: theme(--color-green-800);
+	--caret-emerald-500: theme(--color-emerald-500);
+	--caret-emerald-600: theme(--color-emerald-600);
+	--caret-emerald-700: theme(--color-emerald-700);
+	--caret-emerald-800: theme(--color-emerald-800);
+	--caret-teal-500: theme(--color-teal-500);
+	--caret-teal-600: theme(--color-teal-600);
+	--caret-teal-700: theme(--color-teal-700);
+	--caret-teal-800: theme(--color-teal-800);
+	--caret-cyan-500: theme(--color-cyan-500);
+	--caret-cyan-600: theme(--color-cyan-600);
+	--caret-cyan-700: theme(--color-cyan-700);
+	--caret-cyan-800: theme(--color-cyan-800);
+	--caret-sky-500: theme(--color-sky-500);
+	--caret-sky-600: theme(--color-sky-600);
+	--caret-sky-700: theme(--color-sky-700);
+	--caret-sky-800: theme(--color-sky-800);
+	--caret-blue-500: theme(--color-blue-500);
+	--caret-blue-600: theme(--color-blue-600);
+	--caret-blue-700: theme(--color-blue-700);
+	--caret-blue-800: theme(--color-blue-800);
+	--caret-indigo-500: theme(--color-indigo-500);
+	--caret-indigo-600: theme(--color-indigo-600);
+	--caret-indigo-700: theme(--color-indigo-700);
+	--caret-indigo-800: theme(--color-indigo-800);
+	--caret-violet-500: theme(--color-violet-500);
+	--caret-violet-600: theme(--color-violet-600);
+	--caret-violet-700: theme(--color-violet-700);
+	--caret-violet-800: theme(--color-violet-800);
+	--caret-purple-500: theme(--color-purple-500);
+	--caret-purple-600: theme(--color-purple-600);
+	--caret-purple-700: theme(--color-purple-700);
+	--caret-purple-800: theme(--color-purple-800);
+	--caret-fuchsia-500: theme(--color-fuchsia-500);
+	--caret-fuchsia-600: theme(--color-fuchsia-600);
+	--caret-fuchsia-700: theme(--color-fuchsia-700);
+	--caret-fuchsia-800: theme(--color-fuchsia-800);
+	--caret-pink-500: theme(--color-pink-500);
+	--caret-pink-600: theme(--color-pink-600);
+	--caret-pink-700: theme(--color-pink-700);
+	--caret-pink-800: theme(--color-pink-800);
+	--caret-rose-500: theme(--color-rose-500);
+	--caret-rose-600: theme(--color-rose-600);
+	--caret-rose-700: theme(--color-rose-700);
+	--caret-rose-800: theme(--color-rose-800);
+
+	@import "highlight.js/styles/github.css";
+}
+
+.dark {
+	--scrollbar: oklch(0.471 0.0034 264.53);
+
+	--background: oklch(0.1822 0 0);
+	--background-translucent: oklch(18.22% 0.00002 271.152 / 0.93);
+	--background-warning: oklch(0.5757 0.2009 11.12);
+	--foreground: oklch(1 0 0); /* 985 */
+	--foreground-rgb: rgb(250, 250, 250);
+	--card: oklch(0.1286 0 0);
+	--card-foreground: oklch(0.9 0 0);
+	--popover: oklch(0.1822 0 0);
+	--popover-foreground: oklch(1 0 0);
+	--primary: oklch(0.5696 0.0839 193.76);
+	--primary-foreground: oklch(0.985 0 0);
+	--secondary: oklch(0.1398 0 0);
+	--secondary-foreground: oklch(1 0 0);
+	--muted: oklch(0.1398 0 0);
+	--muted-50-real: oklch(0.1591 0 0); /* 50% opacity without the opacity */
+	--muted-highlight: oklch(0.1798 0 0);
+	--muted-foreground: oklch(0.708 0 0);
+	--muted-foreground-50: oklch(70.9% 0.00008 271.152 / 0.5);
+	--muted-foreground-7: oklch(70.9% 0.00008 271.152 / 0.07);
+	--accent: oklch(0.269 0 0);
+	--accent-foreground: oklch(1 0 0);
+	--destructive: oklch(0.396 0.141 25.723);
+	--destructive-foreground: oklch(0.637 0.237 25.331);
+	--border: oklch(0.269 0 0);
+	--input: oklch(0.269 0 0);
+	--ring: oklch(0.439 0 0);
+
+	--drag-target: oklch(0.6603 0.1406 244.63 / 35.99%);
+	--hook-decoration: oklch(68.662% 0.1396 91.469);
+	--hook-status-fresh: oklch(0.696 0.17 162.48);
+	--hook-status-stale: oklch(68.662% 0.1396 91.469);
+
+	--http-method-get: oklch(0.6773 0.1637 247.59);
+	--http-method-post: oklch(0.6613 0.1999 140.25);
+	--http-method-put: oklch(0.5693 0.0452 58.21);
+	--http-method-patch: oklch(0.5631 0.0294 141.69);
+	--http-method-delete: oklch(0.6958 0.1819 50.78);
+	--http-method-options: oklch(0.5034 0.0317 199.04);
+	--http-method-head: oklch(0.4744 0.0295 275.37);
+	--http-method-connect: oklch(0.4606 0.0678 301.72);
+	--http-method-trace: oklch(0.5077 0.0301 90.21);
+	--url-path-param: oklch(0.6036 0.0526 144.89);
+
+	--sidebar: oklch(0.1286 0 0);
+	--sidebar-foreground: oklch(0.9 0 0);
+	--sidebar-primary: oklch(0.488 0.243 264.376);
+	--sidebar-primary-foreground: oklch(0.9 0 0);
+	--sidebar-accent: oklch(0.269 0 0);
+	--sidebar-accent-foreground: oklch(0.9 0 0);
+	--sidebar-border: oklch(0.269 0 0);
+	--sidebar-ring: oklch(0.439 0 0);
+
+	--diff-added: oklch(64.522% 0.20475 143.722 / 0.25);
+	--diff-removed: oklch(49.991% 0.1933 29.256 / 0.25);
+	--diff-modified: oklch(70% 0.12 270 / 0.3);
+	--diff-text-added: oklch(64.522% 0.20475 143.722 / 0.25);
+	--diff-text-removed: oklch(49.991% 0.1933 29.256 / 0.25);
+	--diff-field-added: oklch(64.522% 0.20475 143.722 / 0.2);
+	--diff-field-removed: oklch(49.991% 0.1933 29.256 / 0.22);
+
+	@import "highlight.js/styles/github-dark.css";
+}
+
+.pm-root-dropcursor {
+	background: currentColor; /* inherits editor text color */
+	opacity: 0.5;
+}
+
+/* defaults: https://tailwindcss.com/docs/theme#default-theme-variable-reference */
+@theme {
+	--font-inter: "Inter", "sans-serif";
+
+	/* this might not be the best naming format, but I don't want to remap text-xs,
+	text-sm, or text-base*/
+	--text-2xs: 0.6875rem; /* 11px */
+	--text-2xs--line-height: 0.8125rem; /* 13px */
+	--text-2sm: 0.8125rem; /* 13px */
+	--text-2sm--line-height: 0.9375rem; /* 15px */
+	--text-2base: 0.9375rem; /* 15px */
+	--text-2base--line-height: 1.1875rem; /* 17px */
+
+	--shadow-fully-clear: 0rem 0.3125rem 1.25rem 0rem rgba(0, 0, 0, 0.15);
+
+	/* note that we also use these values as theme(zIndex.modal) */
+	--z-index-base: 0;
+	--z-index-editor-overlay: 0; /* for things inside the editor but under content */
+	--z-index-editor-diff-overlay: -1;
+	--z-index-editor-content: 5;
+	--z-index-editor-comment-indicators: 25; /* needs to be higher than navbar and drag handle */
+	--z-index-navbar: 10;
+	--z-index-sidebar: 20;
+	--z-index-dropdown: 30;
+	--z-index-modal: 50;
+	--z-index-modal-overlay: 50;
+	--z-index-sheet: 40;
+	--z-index-sheet-overlay: 40;
+	--z-index-popover: 30;
+	--z-index-popover-dropdown: 30;
+	--z-index-tooltip: 50;
+	--z-index-toast: 500;
+	--z-index-draggable: 500;
+	--z-index-drag-handle: 20;
+}
+
+@theme inline {
+	--color-background: var(--background);
+	--color-background-translucent: var(--background-translucent);
+	--color-background-warning: var(--background-warning);
+	--color-foreground: var(--foreground);
+	--color-card: var(--card);
+	--color-card-foreground: var(--card-foreground);
+	--color-popover: var(--popover);
+	--color-popover-foreground: var(--popover-foreground);
+	--color-primary: var(--primary);
+	--color-primary-foreground: var(--primary-foreground);
+	--color-secondary: var(--secondary);
+	--color-secondary-foreground: var(--secondary-foreground);
+	--color-muted: var(--muted);
+	--color-muted-50-real: var(--muted-50-real);
+	--color-muted-highlight: var(--muted-highlight);
+	--color-muted-foreground: var(--muted-foreground);
+	--color-accent: var(--accent);
+	--color-accent-foreground: var(--accent-foreground);
+	--color-destructive: var(--destructive);
+	--color-destructive-foreground: var(--destructive-foreground);
+	--color-border: var(--border);
+	--color-input: var(--input);
+	--color-ring: var(--ring);
+	--radius-sm: calc(var(--radius) - 4px);
+	--radius-md: calc(var(--radius) - 2px);
+	--radius-lg: var(--radius);
+	--radius-xl: calc(var(--radius) + 4px);
+
+	--color-status-info: var(--status-info);
+	--color-status-success: var(--status-success);
+	--color-status-warning: var(--status-warning);
+	--color-status-error: var(--status-error);
+
+	--color-drag-target: var(--drag-target);
+	--color-hook-decoration: var(--hook-decoration);
+	--color-hook-status-fresh: var(--hook-status-fresh);
+	--color-hook-status-stale: var(--hook-status-stale);
+	--color-comment-highlight: var(--comment-highlight);
+
+	--color-http-method-get: var(--http-method-get);
+	--color-http-method-post: var(--http-method-post);
+	--color-http-method-put: var(--http-method-put);
+	--color-http-method-patch: var(--http-method-patch);
+	--color-http-method-delete: var(--http-method-delete);
+	--color-http-method-options: var(--http-method-options);
+	--color-http-method-head: var(--http-method-head);
+	--color-http-method-connect: var(--http-method-connect);
+	--color-http-method-trace: var(--http-method-trace);
+	--color-url-path-param: var(--url-path-param);
+
+	--color-sidebar: var(--sidebar);
+	--color-sidebar-foreground: var(--sidebar-foreground);
+	--color-sidebar-primary: var(--sidebar-primary);
+	--color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+	--color-sidebar-accent: var(--sidebar-accent);
+	--color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+	--color-sidebar-border: var(--sidebar-border);
+	--color-sidebar-ring: var(--sidebar-ring);
+
+	--color-diff-added: var(--diff-added);
+	--color-diff-removed: var(--diff-removed);
+	--color-diff-modified: var(--diff-modified);
+	--color-diff-text-added: var(--diff-text-added);
+	--color-diff-text-removed: var(--diff-text-removed);
+	--color-diff-field-added: var(--diff-field-added);
+	--color-diff-field-removed: var(--diff-field-removed);
+
+	--animate-accordion-down: accordion-down 0.2s ease-out;
+	--animate-accordion-up: accordion-up 0.2s ease-out;
+
+	@keyframes accordion-down {
+		from {
+			height: 0;
+		}
+		to {
+			height: var(--reka-accordion-content-height);
+		}
+	}
+	@keyframes accordion-up {
+		from {
+			height: var(--reka-accordion-content-height);
+		}
+		to {
+			height: 0;
+		}
+	}
+}
+
+/*
+	How to overwrite prose values: https://github.com/tailwindlabs/tailwindcss-typography/issues/372#issuecomment-2616848354
+	Original theme: https://github.com/tailwindlabs/tailwindcss-typography/blob/main/src/styles.js#L1171
+*/
+@utility prose {
+	--tw-prose-body: var(--foreground);
+	--tw-prose-headings: var(--foreground);
+	--tw-prose-lead: var(--foreground);
+	--tw-prose-links: var(--foreground);
+	--tw-prose-bold: var(--foreground);
+	--tw-prose-counters: var(--foreground);
+	--tw-prose-bullets: var(--foreground);
+	--tw-prose-hr: var(--border);
+	--tw-prose-quotes: var(--foreground);
+	--tw-prose-quote-borders: var(--border);
+	--tw-prose-captions: var(--muted-foreground);
+	--tw-prose-kbd: var(--foreground);
+	--tw-prose-kbd-shadows: var(--foreground-rgb);
+	--tw-prose-code: var(--foreground);
+	--tw-prose-pre-code: var(--foreground);
+	--tw-prose-pre-bg: var(--muted);
+	--tw-prose-th-borders: var(--border);
+	--tw-prose-td-borders: var(--border);
+}
+
+@layer utilities {
+	.link-primary {
+		@apply cursor-pointer text-primary underline underline-offset-2 hover:text-primary/80;
+	}
+
+	.inline-code {
+		@apply rounded-sm border border-border bg-muted px-[0.25em] py-[0.075em] font-normal;
+	}
+
+	.shadow-fully-clear {
+		box-shadow: var(--shadow-fully-clear);
+	}
+
+	/* we need to style this here, globally, because tailwind cannot access
+	these pseudoclasses or find code blocks without <pre> parents */
+	.prose {
+		code::before {
+			/* remove backticks around inline code in prose */
+			content: "";
+		}
+
+		code::after {
+			/* remove backticks around inline code in prose */
+			content: "";
+		}
+
+		p {
+			@apply min-h-4;
+		}
+
+		h1 {
+			@apply min-h-7;
+		}
+
+		code:not(pre code) {
+			@apply rounded-sm border border-border bg-muted px-[0.25em] py-[0.075em] font-normal;
+		}
+
+		/* we need to enforce code block styles because for some reason
+		prose doesn't handle dark themes well */
+		pre {
+			code {
+				@apply font-mono text-foreground;
+
+				* {
+					@apply font-mono;
+				}
+			}
+		}
+
+		p:not(:last-child) {
+			@apply mb-5;
+		}
+
+		> * {
+			@apply my-5;
+		}
+
+		> :first-child {
+			@apply mt-0;
+		}
+
+		/*
+		 * Gap decoration wrappers use display:contents so they're invisible to layout,
+		 * but they still break :first-child/:last-child selectors. These rules treat
+		 * elements adjacent to gap wrappers at container boundaries as first/last children.
+		 * Hook decoration widgets similarly break :first-child when placed outside nodes.
+		 */
+		> .pm-gap-wrapper:first-child + *,
+		> [data-hook-decoration]:first-child + *,
+		> .pm-gap-wrapper:first-child + [data-hook-decoration] + *,
+		> [data-hook-decoration]:first-child + .pm-gap-wrapper + * {
+			@apply mt-0;
+		}
+
+		/* Remove top margin from first p of first blockquote */
+		> blockquote:first-child > p:first-child,
+		> .pm-gap-wrapper:first-child + blockquote > p:first-child,
+		> [data-hook-decoration]:first-child + blockquote > p:first-child,
+		> .pm-gap-wrapper:first-child
+			+ [data-hook-decoration]
+			+ blockquote
+			> p:first-child,
+		> [data-hook-decoration]:first-child
+			+ .pm-gap-wrapper
+			+ blockquote
+			> p:first-child {
+			@apply mt-0;
+		}
+
+		/* Remove top margin from first li of first list */
+		> ul:first-child > li:first-child,
+		> ol:first-child > li:first-child,
+		> ul:first-child > .pm-gap-wrapper:first-child + li,
+		> ol:first-child > .pm-gap-wrapper:first-child + li,
+		> .pm-gap-wrapper:first-child + ul > li:first-child,
+		> .pm-gap-wrapper:first-child + ol > li:first-child,
+		> .pm-gap-wrapper:first-child + ul > .pm-gap-wrapper:first-child + li,
+		> .pm-gap-wrapper:first-child + ol > .pm-gap-wrapper:first-child + li,
+		> [data-hook-decoration]:first-child + ul > li:first-child,
+		> [data-hook-decoration]:first-child + ol > li:first-child,
+		> [data-hook-decoration]:first-child
+			+ ul
+			> .pm-gap-wrapper:first-child
+			+ li,
+		> [data-hook-decoration]:first-child
+			+ ol
+			> .pm-gap-wrapper:first-child
+			+ li,
+		> .pm-gap-wrapper:first-child
+			+ [data-hook-decoration]
+			+ ul
+			> li:first-child,
+		> .pm-gap-wrapper:first-child
+			+ [data-hook-decoration]
+			+ ol
+			> li:first-child,
+		> [data-hook-decoration]:first-child
+			+ .pm-gap-wrapper
+			+ ul
+			> li:first-child,
+		> [data-hook-decoration]:first-child
+			+ .pm-gap-wrapper
+			+ ol
+			> li:first-child {
+			@apply mt-0;
+		}
+
+		> :last-child {
+			@apply mb-0;
+		}
+
+		> *:has(+ .pm-gap-wrapper:last-child) {
+			@apply mb-0;
+		}
+
+		/* Remove bottom margin from last li of last list (including deeply nested) */
+		> ul:has(+ .pm-gap-wrapper:last-child) li:last-child,
+		> ol:has(+ .pm-gap-wrapper:last-child) li:last-child {
+			@apply mb-0;
+		}
+
+		ul,
+		ol {
+			li {
+				> div {
+					@apply w-full;
+				}
+
+				p,
+				p:not(:last-child) {
+					@apply my-0;
+				}
+			}
+		}
+
+		/* nested lists */
+		ul ul,
+		ul ol,
+		ol ul,
+		ol ol {
+			@apply my-0;
+		}
+
+		ul ul > li:last-of-type {
+			/* checklists need this to avoid extra margin at the bottom of the
+			last nested item */
+			@apply mb-0;
+		}
+
+		ul[data-type="taskList"] {
+			@apply list-none p-0;
+
+			li {
+				@apply flex items-start;
+
+				input {
+					@apply mt-[0.125em];
+				}
+
+				p {
+					@apply pl-[0.675em];
+				}
+
+				&[data-checked="true"] > div > p {
+					@apply line-through opacity-50;
+				}
+
+				/*
+					Compensate for margin collapse loss when task items are nested.
+					When siblings, their margins collapse. When nested, they don't.
+					This negative margin restores the collapsed appearance.
+					Without this, when changing a task item's indent level, the
+					margin jump is jarring (the items below jump up).
+				 */
+				> div > ul[data-type="taskList"]:last-child {
+					/* I have no idea why only this value works. Hopefully,
+					future generations will provide a better solution. */
+					@apply mt-[0.69em];
+				}
+			}
+		}
+
+		:where(h2, h3) {
+			margin-top: 0 !important;
+		}
+	}
+}
+
+@layer base {
+	* {
+		@apply border-border outline-ring/50;
+		font-family: var(--font-inter);
+	}
+
+	body {
+		@apply max-w-screen overflow-x-hidden bg-background text-foreground;
+	}
+
+	::-webkit-scrollbar {
+		@apply w-2.5;
+	}
+
+	::-webkit-scrollbar-track {
+		@apply bg-(--scrollbar);
+	}
+
+	* {
+		scrollbar-width: thin;
+		scrollbar-color: var(--scrollbar) transparent;
+	}
+
+	input[type="checkbox"] {
+		@apply h-4 w-4 cursor-pointer appearance-none rounded-md border;
+	}
+
+	input[type="checkbox"]:checked {
+		@apply relative border-primary bg-primary text-primary-foreground;
+	}
+
+	input[type="checkbox"]:checked::after {
+		content: "✓";
+		@apply absolute top-[-0.0625em] left-[-0.0625em] flex h-4 w-4 items-center justify-center text-2base text-primary-foreground;
+	}
+}
+
+/* disable task list checkboxes when the editor is not editable */
+.editor-not-editable li[data-checked] > label {
+	@apply pointer-events-none;
+}
+
+.diff-added {
+	@apply bg-diff-added;
+}
+
+.diff-removed {
+	@apply bg-diff-removed;
+}
+
+.diff-modified {
+	@apply bg-diff-modified;
+}
+
+.diff-overlay-anchor {
+	@apply relative;
+}
+
+.diff-overlay {
+	@apply pointer-events-none absolute z-editor-diff-overlay;
+}
+
+.diff-overlay.diff-added {
+	@apply rounded-md bg-diff-added;
+}
+
+.diff-overlay.diff-removed {
+	@apply rounded-md bg-diff-removed;
+}
+
+.diff-overlay.diff-modified {
+	@apply rounded-md bg-diff-modified;
+}
+
+.diff-text-added {
+	@apply bg-diff-text-added;
+}
+
+.diff-text-removed {
+	@apply bg-diff-text-removed;
+}
+
+/* horizontal rules: pseudo-element overlay around the thin line */
+hr.diff-added,
+hr.diff-removed,
+hr.diff-modified {
+	@apply relative overflow-visible;
+	background: none;
+}
+
+hr.diff-added::before,
+hr.diff-removed::before,
+hr.diff-modified::before {
+	@apply pointer-events-none absolute rounded-md;
+	content: "";
+	inset: -0.5em -0.2em -0.4em -0.2em;
+}
+
+hr.diff-added::before {
+	@apply bg-diff-added;
+}
+
+hr.diff-removed::before {
+	@apply bg-diff-removed;
+}
+
+hr.diff-modified::before {
+	@apply bg-diff-modified;
+}

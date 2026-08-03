@@ -1,0 +1,62 @@
+{
+	"sidebar": {
+		"default-workspace-name": "Unknown",
+		"logo-alt": "Workspace Logo",
+		"header": {
+			"settings": "Settings",
+			"appearance": {
+				"title": "Appearance",
+				"light": "Light Theme",
+				"dark": "Dark Theme",
+				"auto": "System Theme"
+			},
+			"log-out": "Log Out"
+		},
+		"sections": {
+			"top": {
+				"search-button": "Search",
+				"inbox": "Inbox",
+				"ai-assistant": "AI Assistant"
+			},
+			"main-workspace": {
+				"heading": "Workspace",
+				"heading-action-title": "Add Page"
+			},
+			"next-steps": {
+				"heading": "Next Steps",
+				"items": {
+					"invite-team-members": "Invite Team Members",
+					"connect-github": "Activate GitHub Integration",
+					"connect-slack": "Activate Slack Integration"
+				}
+			}
+		},
+		"item-collapse-trigger-button": {
+			"open-screen-reader-hint": "Open Sub Pages",
+			"close-screen-reader-hint": "Close Sub Pages"
+		},
+		"item-dropdown-menu-trigger-button": {
+			"screen-reader-hint": "Open Page Actions"
+		},
+		"item-dropdown-menu-buttons": {
+			"add-sub-page": "Add Sub Page",
+			"duplicate-page": "Duplicate Page",
+			"delete-page": "Delete Page"
+		},
+		"item-placeholder-name": "Add Page",
+		"toggle-sidebar": "Toggle Sidebar",
+		"errors": {
+			"create-document-failed": "Failed to create a page. Please try again",
+			"update-tree-failed": "Failed to update the page location. Please try again",
+			"delete-document-failed": "Failed to delete the page. Please try again",
+			"signout-failed": "Failed to log out. Please try again"
+		},
+		"search": {
+			"title-screen-reader-hint": "Search for Pages",
+			"description-screen-reader-hint": "Search for pages by title or content",
+			"input-placeholder": "Search for pages...",
+			"empty-state": "Start typing to search for pages...",
+			"no-results": "No results found for {query}"
+		}
+	}
+}
