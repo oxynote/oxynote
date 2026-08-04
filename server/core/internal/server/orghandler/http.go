@@ -13,9 +13,9 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/document/searchgw"
 	"github.com/oxynote/oxynote/server/core/internal/server/auth"
 	"github.com/oxynote/oxynote/server/core/internal/storage"
-	"github.com/oxynote/purse/http/httpserver"
-	"github.com/oxynote/purse/util/errutil"
-	"github.com/oxynote/purse/util/sqlutil"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
+	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 	"github.com/rs/xid"
 )
 

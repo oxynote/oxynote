@@ -5,11 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 	"sync"
 
 	"github.com/jellydator/xync"
-	"github.com/oxynote/purse/util/ctxutil"
+	"github.com/oxynote/wetsocks/internal/ctxutil"
 	"github.com/oxynote/wetsocks/wsutil"
 )
 
@@ -419,9 +420,7 @@ func (t *topic) publish(
 
 			if !ok {
 				topicData := make(map[string]any, len(data))
-				for dk, dv := range data {
-					topicData[dk] = dv
-				}
+				maps.Copy(topicData, data)
 
 				topicData["topic"] = rawTopic
 
@@ -434,12 +433,9 @@ func (t *topic) publish(
 	}
 
 	for sub, pp := range subs {
-		sub := sub
-
 		wg.Add(len(pp))
 
 		for _, params := range pp {
-			params := params
 			subCtx := NewTopicParamsContext(sub.safeContext(), params)
 
 			go func() {
@@ -600,8 +596,6 @@ func (t *topic) execSubFns(ctx context.Context) {
 	defer t.events.sub.mu.Unlock()
 
 	for _, fn := range t.events.sub.fns {
-		fn := fn
-
 		t.supv.Go(func(gctx context.Context) {
 			mctx, cancel := ctxutil.MultiContext(ctx, gctx)
 			defer cancel()
@@ -627,8 +621,6 @@ func (t *topic) execUnsubFns(ctx context.Context) {
 	defer t.events.unsub.mu.Unlock()
 
 	for _, fn := range t.events.unsub.fns {
-		fn := fn
-
 		t.supv.Go(func(gctx context.Context) {
 			mctx, cancel := ctxutil.MultiContext(ctx, gctx)
 			defer cancel()
@@ -653,8 +645,6 @@ func (t *topic) execFirstSubFns() {
 	defer t.events.firstSub.mu.Unlock()
 
 	for _, fn := range t.events.firstSub.fns {
-		fn := fn
-
 		t.supv.Go(func(gctx context.Context) {
 			fn(gctx)
 		})
@@ -676,8 +666,6 @@ func (t *topic) execLastUnsubFns() {
 	defer t.events.lastUnsub.mu.Unlock()
 
 	for _, fn := range t.events.lastUnsub.fns {
-		fn := fn
-
 		t.supv.Go(func(gctx context.Context) {
 			fn(gctx)
 		})

@@ -14,8 +14,8 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/oxynote/oxynote/server/core/internal/apps/slackapp"
 	"github.com/oxynote/oxynote/server/core/internal/server/auth"
-	"github.com/oxynote/purse/http/httpserver"
-	"github.com/oxynote/purse/util/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
 )

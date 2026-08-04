@@ -20,9 +20,9 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/assistant/protocol"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
 	"github.com/oxynote/oxynote/server/core/internal/document/liveedit"
-	"github.com/oxynote/purse/redkit"
-	"github.com/oxynote/purse/util/errutil"
-	"github.com/oxynote/purse/util/metricutil"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
+	"github.com/oxynote/oxynote/server/core/pkg/redkit"
 )
 
 // _sessionExpiration is how long Redis retains the conversation

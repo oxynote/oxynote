@@ -1,0 +1,167 @@
+package metricutil
+
+import (
+	"testing"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/stretchr/testify/assert"
+)
+
+func Test_New(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	f := NewFactory("test", reg)
+	assert.Equal(t, reg, f.(*factory).RegistererGatherer)
+	assert.Equal(t, "test", f.(*factory).namespace)
+}
+
+func Test_factory_NewHistogram(t *testing.T) {
+	var f factory
+
+	cv := f.NewHistogram(Options{})
+	assert.Equal(t, discarder{}, cv.(discarder))
+
+	f.RegistererGatherer = prometheus.NewRegistry()
+
+	cv = f.NewHistogram(Options{
+		Name: "test_duration",
+		Help: "test help",
+	})
+
+	assert.Implements(t, (*prometheus.Histogram)(nil), cv)
+
+	ncv := f.NewHistogram(Options{
+		Name: "test_duration",
+		Help: "test help",
+	})
+
+	assert.Implements(t, (*prometheus.Histogram)(nil), cv)
+	assert.Same(t, cv, ncv)
+}
+
+func Test_factory_NewGauge(t *testing.T) {
+	var f factory
+
+	cv := f.NewGauge(Options{})
+	assert.Equal(t, discarder{}, cv.(discarder))
+
+	f.RegistererGatherer = prometheus.NewRegistry()
+
+	cv = f.NewGauge(Options{
+		Name: "test_duration",
+		Help: "test help",
+	})
+
+	assert.Implements(t, (*prometheus.Gauge)(nil), cv)
+
+	ncv := f.NewGauge(Options{
+		Name: "test_duration",
+		Help: "test help",
+	})
+
+	assert.Implements(t, (*prometheus.Gauge)(nil), cv)
+	assert.Same(t, cv, ncv)
+}
+
+func Test_factory_NewCounterVec(t *testing.T) {
+	var f factory
+
+	cv := f.NewCounterVec(Options{}, []string{"foo"})
+	assert.Equal(t, &counterVec{}, cv.(*counterVec))
+
+	f.RegistererGatherer = prometheus.NewRegistry()
+
+	cv = f.NewCounterVec(Options{
+		Name: "test_total",
+		Help: "test help",
+	}, []string{"foo"})
+
+	assert.IsType(t, &prometheus.CounterVec{}, cv.(*counterVec).counter)
+
+	ncv := f.NewCounterVec(Options{
+		Name: "test_total",
+		Help: "test help",
+	}, []string{"foo"})
+
+	assert.IsType(t, &prometheus.CounterVec{}, ncv.(*counterVec).counter)
+	assert.Same(t, cv.(*counterVec).counter, ncv.(*counterVec).counter)
+}
+
+func Test_factory_NewHistogramVec(t *testing.T) {
+	var f factory
+
+	cv := f.NewHistogramVec(Options{}, []string{"foo"})
+	assert.Equal(t, &histogramVec{}, cv.(*histogramVec))
+
+	f.RegistererGatherer = prometheus.NewRegistry()
+
+	cv = f.NewHistogramVec(Options{
+		Name: "test_duration",
+		Help: "test help",
+	}, []string{"foo"})
+
+	assert.IsType(t, &prometheus.HistogramVec{}, cv.(*histogramVec).histogram)
+
+	ncv := f.NewHistogramVec(Options{
+		Name: "test_duration",
+		Help: "test help",
+	}, []string{"foo"})
+
+	assert.IsType(t, &prometheus.HistogramVec{}, ncv.(*histogramVec).histogram)
+	assert.Same(t, cv.(*histogramVec).histogram, ncv.(*histogramVec).histogram)
+}
+
+func Test_counterVec_With(t *testing.T) {
+	var cv counterVec
+
+	c := cv.With(prometheus.Labels{"foo": "bar"})
+	assert.IsType(t, discarder{}, c)
+
+	cv.counter = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "test_total",
+		Help: "test help",
+	}, []string{"foo", _hostLabel})
+
+	c = cv.With(prometheus.Labels{"foo": "bar"})
+	_, ok := c.(prometheus.Counter)
+	assert.True(t, ok)
+}
+
+func Test_histogramVec_With(t *testing.T) {
+	var hv histogramVec
+
+	h := hv.With(prometheus.Labels{"foo": "bar"})
+	assert.IsType(t, discarder{}, h)
+
+	hv.histogram = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name: "test_duration",
+		Help: "test help",
+	}, []string{"foo", _hostLabel})
+
+	h = hv.With(prometheus.Labels{"foo": "bar"})
+	_, ok := h.(prometheus.Histogram)
+	assert.True(t, ok)
+}
+
+func Test_discarder_Set(_ *testing.T) {
+	(&discarder{}).Set(123)
+}
+
+func Test_discarder_Dec(_ *testing.T) {
+	(&discarder{}).Dec()
+}
+
+func Test_discarder_Sub(_ *testing.T) {
+	(&discarder{}).Sub(123)
+}
+
+func Test_discarder_Inc(_ *testing.T) {
+	(&discarder{}).Inc()
+}
+
+func Test_discarder_Add(_ *testing.T) {
+	(&discarder{}).Add(5)
+}
+
+func Test_discarder_Observer(_ *testing.T) {
+	(&discarder{}).Observe(1.0)
+}

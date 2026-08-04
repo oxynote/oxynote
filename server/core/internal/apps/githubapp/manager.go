@@ -7,7 +7,7 @@ import (
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
 	"github.com/google/go-github/v72/github"
-	"github.com/oxynote/purse/util/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 )
 
 var (

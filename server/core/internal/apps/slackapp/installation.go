@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/guregu/null/v5"
-	"github.com/oxynote/purse/util/cryptoutil"
+	"github.com/oxynote/oxynote/server/core/pkg/cryptoutil"
 )
 
 // _slackHost is the Slack host.

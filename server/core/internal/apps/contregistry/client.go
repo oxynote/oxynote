@@ -11,7 +11,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
-	"github.com/oxynote/purse/util/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 )
 
 // ErrUnauthorized is returned when access to the container registry is unauthorized.

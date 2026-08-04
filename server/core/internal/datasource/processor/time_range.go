@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/oxynote/purse/util/errutil"
-	"github.com/oxynote/purse/util/timeutil"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 )
 
 const (

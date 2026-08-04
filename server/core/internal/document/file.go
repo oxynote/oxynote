@@ -3,7 +3,7 @@ package document
 import (
 	"time"
 
-	"github.com/oxynote/purse/util/timeutil"
+	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
 )
 

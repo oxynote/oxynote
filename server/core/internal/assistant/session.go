@@ -14,7 +14,7 @@ import (
 	"github.com/jellydator/xync"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/protocol"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
-	"github.com/oxynote/purse/util/timeutil"
+	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
 	"github.com/tidwall/gjson"
 )

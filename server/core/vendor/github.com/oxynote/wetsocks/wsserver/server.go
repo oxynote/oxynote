@@ -12,9 +12,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 	"github.com/jellydator/xync"
-	"github.com/oxynote/purse/http/httpserver"
-	"github.com/oxynote/purse/util/errutil"
-	"github.com/oxynote/purse/util/logutil"
+	"github.com/oxynote/wetsocks/internal/errutil"
 	"github.com/oxynote/wetsocks/wsutil"
 	"github.com/rs/xid"
 )
@@ -73,6 +71,10 @@ type Options struct {
 	// connection.
 	// Default is a func that returns context.Background().
 	BaseContext func(*http.Request) (context.Context, error)
+
+	// RecoveryFunc is used to handle panics.
+	// An empty func is used if it's set to nil.
+	RecoveryFunc func(any)
 }
 
 // New creates a fresh instance of a websocket server.
@@ -80,12 +82,16 @@ type Options struct {
 // connections. Either a context or error should be returned. If an
 // error is returned, the connection won't be allowed to open.
 func New(
-	log *slog.Logger,
+	logger *slog.Logger,
 	router *Router,
 	opts Options,
 ) *Server {
 	if opts.ReadLimit == 0 {
 		opts.ReadLimit = _defaultReadLimit
+	}
+
+	if opts.RecoveryFunc == nil {
+		opts.RecoveryFunc = func(_ any) {}
 	}
 
 	if opts.ResponseWriteTimeout == 0 {
@@ -99,7 +105,7 @@ func New(
 	}
 
 	return &Server{
-		log:    log,
+		log:    logger,
 		router: router,
 		opts:   opts,
 		conns:  make(map[*conn]struct{}),
@@ -155,7 +161,7 @@ func (s *Server) closeConn(c *conn) {
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx, err := s.opts.BaseContext(r)
 	if err != nil {
-		httpserver.RespondError(s.log, w, err)
+		s.respondError(w, err)
 		return
 	}
 
@@ -164,7 +170,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	c, err := websocket.Accept(w, r, &s.opts.AcceptOptions)
 	if err != nil {
 		err = errutil.Wrap(err, http.StatusInternalServerError, "general", "")
-		httpserver.RespondError(s.log, w, err)
+		s.respondError(w, err)
 
 		return
 	}
@@ -188,12 +194,36 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// respondError sends the provided error to the client as a JSON response.
+func (s *Server) respondError(w http.ResponseWriter, err error) {
+	respErr := errutil.Detect(err)
+	statusCode := errutil.StatusCode(respErr)
+
+	body, merr := json.Marshal(respErr)
+	if merr != nil {
+		// NOCOV: the detected error structure is always valid.
+		w.WriteHeader(http.StatusInternalServerError)
+
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	w.Write(body) //nolint:errcheck,gosec // response write errors provide no meaningful info
+
+	if statusCode >= http.StatusInternalServerError {
+		s.log.Error("internal server error", "error", err)
+	}
+}
+
 // startReader handles reading from the provided websocket connection.
 func (s *Server) startReader(c *conn) {
-	defer logutil.Recover(
-		s.log,
-		logutil.NewRecoveryPlan("cannot continue reading from a websocket connection"),
-	)
+	defer func() {
+		if r := recover(); r != nil {
+			s.log.Error("cannot continue reading from a websocket connection", "panic", r)
+			s.opts.RecoveryFunc(r)
+		}
+	}()
 	defer s.closeConn(c)
 
 	type response struct {
@@ -206,8 +236,7 @@ func (s *Server) startReader(c *conn) {
 		if err != nil {
 			// NOCOV: response structure is already
 			// valid.
-			s.log.With("error", err.Error()).
-				Error("cannot encode a websocket response")
+			s.log.Error("cannot encode a websocket response", "error", err)
 
 			return
 		}
@@ -248,6 +277,7 @@ func (s *Server) startReader(c *conn) {
 			continue
 		}
 
+		// unknown descriptors are reported as unsuccessful
 		switch tpc.Descriptor {
 		case _descriptorSub:
 			resp.Success = s.router.addTopicSub(tpc, c) == nil
@@ -255,6 +285,7 @@ func (s *Server) startReader(c *conn) {
 			s.router.removeTopicSub(tpc, c)
 
 			resp.Success = true
+		default:
 		}
 
 		respond(resp)
@@ -263,10 +294,12 @@ func (s *Server) startReader(c *conn) {
 
 // startWriter handles writing to the provided websocket connection.
 func (s *Server) startWriter(c *conn) {
-	defer logutil.Recover(
-		s.log,
-		logutil.NewRecoveryPlan("cannot continue writing to a websocket connection"),
-	)
+	defer func() {
+		if r := recover(); r != nil {
+			s.log.Error("cannot continue writing to a websocket connection", "panic", r)
+			s.opts.RecoveryFunc(r)
+		}
+	}()
 	defer s.closeConn(c)
 
 	for {
@@ -304,13 +337,13 @@ type conn struct {
 // newConn creates a new connection wrapper.
 func newConn(
 	ctx context.Context,
-	log *slog.Logger,
+	logger *slog.Logger,
 	c *websocket.Conn,
 ) *conn {
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancel(ctx) //nolint:gosec // the cancel function is stored below and called on stop
 
 	return &conn{
-		log:     log,
+		log:     logger,
 		conn:    c,
 		ctx:     ctx,
 		stop:    cancel,
@@ -330,8 +363,7 @@ func (c *conn) safeContext() context.Context {
 func (c *conn) publish(ctx context.Context, data func() ([]byte, error)) {
 	bb, err := data()
 	if err != nil {
-		c.log.With("error", err.Error()).
-			Error("cannot encode websocket payload")
+		c.log.Error("cannot encode websocket payload", "error", err)
 
 		return
 	}

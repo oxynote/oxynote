@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"path"
 
-	"github.com/oxynote/purse/util/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/minio/minio-go/v7"
 )
 

@@ -5,7 +5,7 @@ import (
 	"errors"
 
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
-	"github.com/oxynote/purse/util/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 )
 
 // Runner represents the data source processor with necessary information for processing.

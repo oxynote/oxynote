@@ -6,7 +6,7 @@ import (
 
 	"github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/internal/server/auth"
-	"github.com/oxynote/purse/util/logutil"
+	"github.com/oxynote/oxynote/server/core/pkg/logutil"
 	"github.com/oxynote/wetsocks/wsserver"
 )
 

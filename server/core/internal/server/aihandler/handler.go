@@ -14,7 +14,7 @@ import (
 	"github.com/coder/websocket/wsjson"
 	"github.com/oxynote/oxynote/server/core/internal/assistant"
 	"github.com/oxynote/oxynote/server/core/internal/server/auth"
-	"github.com/oxynote/purse/http/httpserver"
+	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 )
 
 // Handler holds dependencies for AI chat operations.

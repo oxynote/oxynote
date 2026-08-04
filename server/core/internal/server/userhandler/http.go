@@ -10,8 +10,8 @@ import (
 
 	"github.com/oxynote/oxynote/server/core/internal/server/auth"
 	"github.com/oxynote/oxynote/server/core/internal/storage"
-	"github.com/oxynote/purse/http/httpserver"
-	"github.com/oxynote/purse/util/sqlutil"
+	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
+	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 )
 
 const (

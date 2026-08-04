@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/blang/semver/v4"
-	"github.com/oxynote/purse/util/logutil"
-	"github.com/oxynote/purse/util/timeutil"
+	"github.com/oxynote/oxynote/server/core/pkg/logutil"
+	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 )
 
 var (

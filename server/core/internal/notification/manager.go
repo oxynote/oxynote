@@ -8,8 +8,8 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/jellydator/xync"
-	"github.com/oxynote/purse/http/httpserver"
-	"github.com/oxynote/purse/util/logutil"
+	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
+	"github.com/oxynote/oxynote/server/core/pkg/logutil"
 	"github.com/rs/xid"
 )
 

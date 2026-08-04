@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/oxynote/purse/util/cryptoutil"
+	"github.com/oxynote/oxynote/server/core/pkg/cryptoutil"
 )
 
 // githubHost is the GitHub host.

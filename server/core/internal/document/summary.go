@@ -6,8 +6,8 @@ import (
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/pkg/errcode"
-	"github.com/oxynote/purse/util/errutil"
-	"github.com/oxynote/purse/util/sliceutil"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/sliceutil"
 	"github.com/rs/xid"
 )
 

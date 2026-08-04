@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/oxynote/purse/http/httpserver"
+	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 )
 
 // _contextKey is a custom type for context keys to avoid collisions.

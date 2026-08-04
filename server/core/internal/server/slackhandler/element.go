@@ -1,7 +1,7 @@
 package slackhandler
 
 import (
-	"github.com/oxynote/purse/util/ptrutil"
+	"github.com/oxynote/oxynote/server/core/pkg/ptrutil"
 	"github.com/slack-go/slack"
 )
 

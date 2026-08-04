@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/oxynote/purse/util/metricutil"
-	"github.com/oxynote/purse/util/timeutil"
+	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
+	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/oxynote/wetsocks/wsserver"
 	"github.com/prometheus/client_golang/prometheus"
 )

@@ -4,7 +4,7 @@ import (
 	"math"
 	"net/http"
 
-	"github.com/oxynote/purse/util/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 )
 
 // ChartType represents the type of chart visualization.

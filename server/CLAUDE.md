@@ -109,9 +109,9 @@ Both are gitignored. The assistant needs `ANTHROPIC_API_KEY`; without it the AI 
 ## House conventions worth knowing
 
 - Errors / closers in `cmd/*/main.go` use a hand-rolled `closers []io.Closer` slice and `ioutil.MultiCloser(true, closers...).Close()` to fan-out on shutdown / wrap construction errors. New top-level resources should follow the same pattern (prepend to slice if it should close before the things that depend on it).
-- Logging is `log/slog`, JSON handler, Sentry-wired via `purse/util/sentryutil`. Most packages take `*slog.Logger` as their first constructor arg.
-- Metrics use `purse/util/metricutil` with a Prometheus registry; each subsystem has its own `Metrics` type initialised from the shared factory.
-- `purse` and `wetsocks` (`github.com/oxynote/purse`, `github.com/oxynote/wetsocks`) are first-party internal libraries vendored into the module — they are not on a public registry. Useful packages from purse: `redkit` (typed Redis streams), `metricutil`, `logutil`, `ioutil`, `sentryutil`, `redisutil`, `httpserver`, `sqlutil`. `wetsocks/wsserver` is the WebSocket router used by `/api/ws`.
+- Logging is `log/slog`, JSON handler, Sentry-wired via `pkg/sentryutil`. Most packages take `*slog.Logger` as their first constructor arg.
+- Metrics use `pkg/metricutil` with a Prometheus registry; each subsystem has its own `Metrics` type initialised from the shared factory.
+- `server/core/pkg/` holds shared utility packages: `redkit` (typed Redis streams), `metricutil`, `logutil`, `ioutil`, `sentryutil`, `redisutil`, `httpserver`, `sqlutil` and friends. `wetsocks` (`github.com/oxynote/wetsocks`) is a first-party public library vendored into the module; `wetsocks/wsserver` is the WebSocket router used by `/api/ws`.
 - IDs are `rs/xid` everywhere on the Go side. Frontend-facing types serialise them as strings.
 
 ## Go code style

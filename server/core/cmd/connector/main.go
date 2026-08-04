@@ -12,10 +12,10 @@ import (
 
 	"github.com/oxynote/oxynote/server/core/internal/buildinfo"
 	"github.com/oxynote/oxynote/server/core/internal/connector"
-	"github.com/oxynote/purse/util/ioutil"
-	"github.com/oxynote/purse/util/logutil"
-	"github.com/oxynote/purse/util/metricutil"
-	"github.com/oxynote/purse/util/sentryutil"
+	"github.com/oxynote/oxynote/server/core/pkg/ioutil"
+	"github.com/oxynote/oxynote/server/core/pkg/logutil"
+	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
+	"github.com/oxynote/oxynote/server/core/pkg/sentryutil"
 	"github.com/prometheus/client_golang/prometheus"
 )
 

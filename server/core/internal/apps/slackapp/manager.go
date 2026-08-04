@@ -10,8 +10,8 @@ import (
 
 	"github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/internal/notification/interpreter"
-	"github.com/oxynote/purse/http/httpserver"
-	"github.com/oxynote/purse/util/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/slack-go/slack"
 )
 

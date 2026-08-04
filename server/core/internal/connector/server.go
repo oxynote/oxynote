@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/oxynote/oxynote/server/core/internal/connector/datasourcehandler"
-	"github.com/oxynote/purse/util/logutil"
-	"github.com/oxynote/purse/util/metricutil"
+	"github.com/oxynote/oxynote/server/core/pkg/logutil"
+	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
 )
 
 // Options holds all server options.

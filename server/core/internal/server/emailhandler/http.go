@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/oxynote/oxynote/server/core/internal/email"
-	"github.com/oxynote/purse/http/httpserver"
+	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 )
 
 // Handler holds dependencies required for email operations.

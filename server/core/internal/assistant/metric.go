@@ -2,7 +2,7 @@ package assistant
 
 import (
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
-	"github.com/oxynote/purse/util/metricutil"
+	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
