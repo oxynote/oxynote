@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/oxynote/heimdall/internal/document/aiblock"
+	"github.com/oxynote/oxynote/server/core/internal/document/aiblock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

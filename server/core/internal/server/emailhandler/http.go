@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/oxynote/heimdall/internal/email"
+	"github.com/oxynote/oxynote/server/core/internal/email"
 	"github.com/oxynote/purse/http/httpserver"
 )
 

@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/oxynote/heimdall/datagen/internal/demodata"
-	"github.com/oxynote/heimdall/datagen/internal/mockmetrics"
+	"github.com/oxynote/oxynote/datagen/internal/demodata"
+	"github.com/oxynote/oxynote/datagen/internal/mockmetrics"
 )
 
 const _backfillDays = 30

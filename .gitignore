@@ -31,6 +31,8 @@ lerna-debug.log*
 .env
 .env.*
 !.env.example
+!.env.*.example
+docker/production/env/
 docker/github/*.pem
 
 # dev
@@ -39,6 +41,8 @@ docker/github/*.pem
 .vscode/*
 !.vscode/launch.json
 !.vscode/*.code-snippets
+!.vscode/settings.json
+!.vscode/extensions.json
 .idea/workspace.xml
 .idea/usage.statistics.xml
 .idea/shelf

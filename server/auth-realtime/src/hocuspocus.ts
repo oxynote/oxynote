@@ -8,7 +8,7 @@ import { Logger } from "@hocuspocus/extension-logger"
 import { auth } from "./auth.js"
 import { replaceYdocContent, transformer } from "./ydocument.js"
 
-const url = process.env.HEIMDALL_GUARD_BACKEND_URL
+const url = process.env.OXYNOTE_AUTH_REALTIME_BACKEND_URL
 
 const documentMaintainers = new Map<string, Set<string>>()
 

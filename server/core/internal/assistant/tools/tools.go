@@ -12,9 +12,9 @@ import (
 	"log/slog"
 
 	"github.com/guregu/null/v5"
-	"github.com/oxynote/heimdall/internal/document"
-	"github.com/oxynote/heimdall/internal/document/liveedit"
-	"github.com/oxynote/heimdall/internal/document/searchgw"
+	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/liveedit"
+	"github.com/oxynote/oxynote/server/core/internal/document/searchgw"
 	"github.com/rs/xid"
 )
 

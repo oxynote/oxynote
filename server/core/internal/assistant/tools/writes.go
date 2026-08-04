@@ -7,9 +7,9 @@ import (
 	"fmt"
 
 	"github.com/guregu/null/v5"
-	"github.com/oxynote/heimdall/internal/document"
-	"github.com/oxynote/heimdall/internal/document/aiblock"
-	"github.com/oxynote/heimdall/internal/document/liveedit"
+	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/aiblock"
+	"github.com/oxynote/oxynote/server/core/internal/document/liveedit"
 	"github.com/rs/xid"
 )
 

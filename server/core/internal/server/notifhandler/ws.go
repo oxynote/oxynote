@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync"
 
-	"github.com/oxynote/heimdall/internal/notification"
-	"github.com/oxynote/heimdall/internal/server/auth"
+	"github.com/oxynote/oxynote/server/core/internal/notification"
+	"github.com/oxynote/oxynote/server/core/internal/server/auth"
 	"github.com/oxynote/purse/util/logutil"
 	"github.com/oxynote/wetsocks/wsserver"
 )

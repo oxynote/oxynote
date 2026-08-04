@@ -18,15 +18,15 @@ services:
         mode: non-blocking
         max-size: 10m
         max-file: "3"
-  heimdall-guard:
-    container_name: heimdall-guard
-    image: ghcr.io/oxynote/heimdall-guard:dev
+  auth-realtime:
+    container_name: auth-realtime
+    image: ghcr.io/oxynote/auth-realtime:dev
     environment:
-      - HEIMDALL_GUARD_BACKEND_URL=http://heimdall-gate:8080
-      - HEIMDALL_GUARD_DB_DSN=postgresql://devuser:devpass@postgres/devdb?sslmode=disable
-      - HEIMDALL_GUARD_VALKEY_URL=redis://valkey:6379
+      - OXYNOTE_AUTH_REALTIME_BACKEND_URL=http://core:8080
+      - OXYNOTE_AUTH_REALTIME_DB_DSN=postgresql://devuser:devpass@postgres/devdb?sslmode=disable
+      - OXYNOTE_AUTH_REALTIME_VALKEY_URL=redis://valkey:6379
     env_file:
-      - .env.guard
+      - .env.auth-realtime
     depends_on:
       postgres:
         condition: service_healthy
@@ -39,37 +39,37 @@ services:
         mode: non-blocking
         max-size: 10m
         max-file: "3"
-  heimdall-gate:
-    container_name: heimdall-gate
-    image: ghcr.io/oxynote/heimdall-gate:dev
+  core:
+    container_name: core
+    image: ghcr.io/oxynote/core:dev
     environment:
-      - HEIMDALL_GATE_DB_DSN=postgresql://devuser:devpass@postgres/devdb?sslmode=disable
-      - HEIMDALL_GATE_GITHUB_PRIVATE_KEY_PATH=/etc/heimdall/gate/oxynote.private-key.pem
-      - HEIMDALL_GATE_MEILISEARCH_DSN=http://meilisearch:7700
-      - HEIMDALL_GATE_MEILISEARCH_MASTER_KEY=devmasterkey
-      - HEIMDALL_GATE_VALKEY_NETWORK=tcp
-      - HEIMDALL_GATE_VALKEY_ADDRESS=valkey:6379
-      - HEIMDALL_GATE_SERVER_AUTH_BETTER_AUTH_URL=http://heimdall-guard:13321/api/auth/get-session
-      - HEIMDALL_GATE_SERVER_PUBLIC_URL=http://localhost:13321/go
-      - HEIMDALL_GATE_SERVER_DEMO_PROMETHEUS_URL=http://prometheus:9090
-      - HEIMDALL_GATE_STORAGE_URL=http://minio:9000
-      - HEIMDALL_GATE_STORAGE_ACCESS_KEY=sparta
-      - HEIMDALL_GATE_STORAGE_SECRET_KEY=chad_warrior
-      - HEIMDALL_GATE_STORAGE_BUCKET=dev
-      - HEIMDALL_GATE_CHANGEDETECTION_API_URL=http://changedetection:5000
-      - HEIMDALL_GATE_CONNECTOR_URL=http://heimdall-connector:8080
-      - HEIMDALL_GATE_NODE_URL=http://heimdall-guard:13321
+      - OXYNOTE_CORE_DB_DSN=postgresql://devuser:devpass@postgres/devdb?sslmode=disable
+      - OXYNOTE_CORE_GITHUB_PRIVATE_KEY_PATH=/etc/oxynote/core/oxynote.private-key.pem
+      - OXYNOTE_CORE_MEILISEARCH_DSN=http://meilisearch:7700
+      - OXYNOTE_CORE_MEILISEARCH_MASTER_KEY=devmasterkey
+      - OXYNOTE_CORE_VALKEY_NETWORK=tcp
+      - OXYNOTE_CORE_VALKEY_ADDRESS=valkey:6379
+      - OXYNOTE_CORE_SERVER_AUTH_BETTER_AUTH_URL=http://auth-realtime:13321/api/auth/get-session
+      - OXYNOTE_CORE_SERVER_PUBLIC_URL=http://localhost:13321/go
+      - OXYNOTE_CORE_SERVER_DEMO_PROMETHEUS_URL=http://prometheus:9090
+      - OXYNOTE_CORE_STORAGE_URL=http://minio:9000
+      - OXYNOTE_CORE_STORAGE_ACCESS_KEY=sparta
+      - OXYNOTE_CORE_STORAGE_SECRET_KEY=chad_warrior
+      - OXYNOTE_CORE_STORAGE_BUCKET=dev
+      - OXYNOTE_CORE_CHANGEDETECTION_API_URL=http://changedetection:5000
+      - OXYNOTE_CORE_CONNECTOR_URL=http://connector:8080
+      - OXYNOTE_CORE_NODE_URL=http://auth-realtime:13321
     env_file:
-      - .env.gate
+      - .env.core
     depends_on:
       postgres:
         condition: service_healthy
       meilisearch:
         condition: service_started
-      heimdall-connector:
+      connector:
         condition: service_started
     volumes:
-      - ./github/oxynote.private-key.pem:/etc/heimdall/gate/oxynote.private-key.pem
+      - ./github/oxynote.private-key.pem:/etc/oxynote/core/oxynote.private-key.pem
     restart: unless-stopped
     logging:
       driver: local
@@ -77,9 +77,9 @@ services:
         mode: non-blocking
         max-size: 10m
         max-file: "3"
-  heimdall-connector:
-    container_name: heimdall-connector
-    image: ghcr.io/oxynote/heimdall-connector:dev
+  connector:
+    container_name: connector
+    image: ghcr.io/oxynote/connector:dev
     restart: unless-stopped
     logging:
       driver: local
@@ -87,9 +87,9 @@ services:
         mode: non-blocking
         max-size: 10m
         max-file: "3"
-  heimdall-datagen:
-    container_name: heimdall-datagen
-    image: ghcr.io/oxynote/heimdall-datagen:dev
+  datagen:
+    container_name: datagen
+    image: ghcr.io/oxynote/datagen:dev
     environment:
       - DATAGEN_POSTGRES_DSN=postgresql://demouser:demopass@postgres/demodb?sslmode=disable
       - DATAGEN_MARIADB_DSN=demouser:demopass@tcp(mariadb:3306)/demodb?parseTime=true

@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/guregu/null/v5"
-	"github.com/oxynote/heimdall/internal/document"
-	"github.com/oxynote/heimdall/internal/server/auth"
+	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/server/auth"
 	"github.com/oxynote/wetsocks/wsserver"
 	"github.com/rs/xid"
 )

@@ -1,12 +1,12 @@
 {
-	"name": "node",
+	"name": "@oxynote/auth-realtime",
 	"type": "module",
 	"scripts": {
 		"postinstall": "patch-package",
 		"dev": "tsx --import ./src/instrument.ts watch src/index.ts",
 		"build": "tsc",
 		"start": "node --import ./dist/instrument.js dist/index.js",
-		"docker-build": "docker buildx build --platform linux/amd64 --no-cache -t ghcr.io/oxynote/heimdall-guard:dev -f ./docker/Dockerfile .",
+		"docker-build": "docker buildx build --platform linux/amd64 --no-cache -t ghcr.io/oxynote/auth-realtime:dev -f ./docker/Dockerfile .",
 		"check-types": "tsc --noEmit",
 		"lint": "eslint --fix .",
 		"check-lint": "eslint .",

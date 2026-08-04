@@ -4,8 +4,8 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/oxynote/heimdall/internal/datasource/connector"
-	"github.com/oxynote/heimdall/internal/datasource/processor"
+	"github.com/oxynote/oxynote/server/core/internal/datasource/connector"
+	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 	"github.com/oxynote/purse/http/httpserver"
 )
 

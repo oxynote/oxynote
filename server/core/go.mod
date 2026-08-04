@@ -1,4 +1,4 @@
-module github.com/oxynote/heimdall
+module github.com/oxynote/oxynote/server/core
 
 go 1.25.0
 

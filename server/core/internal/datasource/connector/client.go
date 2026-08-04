@@ -11,8 +11,8 @@ import (
 
 	"github.com/oxynote/purse/util/errutil"
 
-	"github.com/oxynote/heimdall/internal/datasource"
-	"github.com/oxynote/heimdall/internal/datasource/processor"
+	"github.com/oxynote/oxynote/server/core/internal/datasource"
+	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 )
 
 // Client communicates with the connector service for data source operations.

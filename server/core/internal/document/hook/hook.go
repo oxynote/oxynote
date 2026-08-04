@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/guregu/null/v5"
-	"github.com/oxynote/heimdall/internal/document/hook/processor"
+	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
 	"github.com/oxynote/purse/util/timeutil"
 	"github.com/rs/xid"
 	"github.com/shopspring/decimal"

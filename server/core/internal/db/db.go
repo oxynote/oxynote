@@ -100,7 +100,7 @@ func New(
 		sqlutil.NewHooks(
 			metrics,
 			sqlutil.WithHookErrorHandler(DetectError),
-			sqlutil.WithHookDatabaseName("heimdall"),
+			sqlutil.WithHookDatabaseName("oxynote"),
 			sqlutil.WithHookDurationThreshold(time.Millisecond*100),
 		)),
 	)

@@ -14,10 +14,10 @@
 	import common
 
 	handle_path /go/* {
-		reverse_proxy heimdall-gate:8080
+		reverse_proxy core:8080
 	}
 
-	reverse_proxy heimdall-guard:13321
+	reverse_proxy auth-realtime:13321
 }
 
 :13341 {

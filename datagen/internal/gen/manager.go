@@ -6,7 +6,7 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/oxynote/heimdall/datagen/internal/mockmetrics"
+	"github.com/oxynote/oxynote/datagen/internal/mockmetrics"
 	"github.com/oxynote/purse/util/metricutil"
 	"github.com/prometheus/client_golang/prometheus"
 )

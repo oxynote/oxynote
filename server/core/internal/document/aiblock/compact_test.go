@@ -3,7 +3,7 @@ package aiblock
 import (
 	"testing"
 
-	"github.com/oxynote/heimdall/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

@@ -1,4 +1,4 @@
-module github.com/oxynote/heimdall/datagen
+module github.com/oxynote/oxynote/datagen
 
 go 1.25.5
 

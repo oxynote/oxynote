@@ -17,8 +17,8 @@
 package liveedit
 
 import (
-	"github.com/oxynote/heimdall/internal/document"
-	"github.com/oxynote/heimdall/internal/document/aiblock"
+	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/aiblock"
 )
 
 // Operation is one edit to apply to a live document. Operations are

@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/oxynote/heimdall/internal/apps/contregistry"
+	"github.com/oxynote/oxynote/server/core/internal/apps/contregistry"
 	"github.com/shopspring/decimal"
 )
 

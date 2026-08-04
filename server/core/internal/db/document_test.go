@@ -9,7 +9,7 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/guregu/null/v5"
-	"github.com/oxynote/heimdall/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/purse/util/testutil"
 	"github.com/oxynote/purse/util/timeutil"
 	"github.com/rs/xid"

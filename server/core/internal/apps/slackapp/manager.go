@@ -8,8 +8,8 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/oxynote/heimdall/internal/notification"
-	"github.com/oxynote/heimdall/internal/notification/interpreter"
+	"github.com/oxynote/oxynote/server/core/internal/notification"
+	"github.com/oxynote/oxynote/server/core/internal/notification/interpreter"
 	"github.com/oxynote/purse/http/httpserver"
 	"github.com/oxynote/purse/util/errutil"
 	"github.com/slack-go/slack"

@@ -28,13 +28,13 @@ api.oxynote.io {
 
 	handle @admin {
 		handle_path /go/* {
-			reverse_proxy heimdall-gate:8080 {
+			reverse_proxy core:8080 {
 				import cloudflare-ip
 			}
 		}
 	}
 
-	reverse_proxy heimdall-guard:13321 {
+	reverse_proxy auth-realtime:13321 {
 		import cloudflare-ip
 	}
 }
@@ -47,7 +47,7 @@ slack-api.oxynote.io {
 	}
 
 	handle @slack {
-		reverse_proxy heimdall-gate:8080 {
+		reverse_proxy core:8080 {
 			import cloudflare-ip
 		}
 	}
@@ -61,7 +61,7 @@ github-api.oxynote.io {
 	}
 
 	handle @slack {
-		reverse_proxy heimdall-gate:8080 {
+		reverse_proxy core:8080 {
 			import cloudflare-ip
 		}
 	}

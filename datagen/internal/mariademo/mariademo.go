@@ -9,8 +9,8 @@ import (
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
-	"github.com/oxynote/heimdall/datagen/internal/demodata"
-	"github.com/oxynote/heimdall/datagen/internal/mockmetrics"
+	"github.com/oxynote/oxynote/datagen/internal/demodata"
+	"github.com/oxynote/oxynote/datagen/internal/mockmetrics"
 )
 
 const _backfillDays = 30

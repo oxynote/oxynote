@@ -2,7 +2,7 @@ package notification
 
 import (
 	"github.com/guregu/null/v5"
-	"github.com/oxynote/heimdall/internal/document/hook"
+	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/rs/xid"
 )
 

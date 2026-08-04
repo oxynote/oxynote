@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/oxynote/heimdall/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/rs/xid"
 )
 

@@ -1,7 +1,7 @@
 package tools
 
 import (
-	"github.com/oxynote/heimdall/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document"
 )
 
 // docSummaryEntry is one row in the assistant-facing document

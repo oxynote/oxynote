@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/oxynote/heimdall/internal/document/searchgw"
+	"github.com/oxynote/oxynote/server/core/internal/document/searchgw"
 )
 
 const (

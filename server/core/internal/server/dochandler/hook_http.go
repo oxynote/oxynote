@@ -4,9 +4,9 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/oxynote/heimdall/internal/document"
-	"github.com/oxynote/heimdall/internal/document/hook"
-	"github.com/oxynote/heimdall/internal/server/auth"
+	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/hook"
+	"github.com/oxynote/oxynote/server/core/internal/server/auth"
 	"github.com/oxynote/purse/http/httpserver"
 	"github.com/rs/xid"
 )

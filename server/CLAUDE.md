@@ -67,103 +67,103 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ## Stack overview
 
-Heimdall is the backend half of the Oxynote collaborative documentation product. It is a polyglot monorepo with three buildable components, all orchestrated through `docker-compose`:
+`server/` is the backend half of the Oxynote collaborative documentation product. Paths below are relative to the repository root; three buildable components, all orchestrated through `docker-compose`:
 
-- `go/` — Go module `github.com/oxynote/heimdall`. Two binaries:
-  - `cmd/gate` (`heimdall-gate`) — main API server. Listens on `:8080`. Exposes `/api/...` (auth-required) and `/api/x/...` (internal-only, no auth; the reverse proxy is expected to firewall this). Owns Postgres, Meilisearch, Valkey (Redis), MinIO, the GitHub/Slack apps and the assistant.
-  - `cmd/connector` (`heimdall-connector`) — a separate, near-empty HTTP server that the gate calls via `CONNECTOR_URL`. Used for outbound data-source connections from a different network boundary.
-- `node/` — `node` package (`heimdall-guard`). TypeScript ES-module service that runs Better Auth (organization plugin) and a Hocuspocus (Yjs CRDT) server in a single Hono process on port `13321`. Forwards non-auth `/api/...` traffic to the gate (`HEIMDALL_GUARD_BACKEND_URL`).
-- `datagen/` — separate Go module `github.com/oxynote/heimdall/datagen`. Synthesises demo Postgres/MariaDB content and a fake metrics endpoint scraped by Prometheus for the demo data sources.
+- `server/core/` — Go module `github.com/oxynote/oxynote/server/core`. Two binaries:
+  - `cmd/core` (`oxynote-core`) — main API server. Listens on `:8080`. Exposes `/api/...` (auth-required) and `/api/x/...` (internal-only, no auth; the reverse proxy is expected to firewall this). Owns Postgres, Meilisearch, Valkey (Redis), MinIO, the GitHub/Slack apps and the assistant.
+  - `cmd/connector` (`oxynote-connector`) — a separate, near-empty HTTP server that core calls via `CONNECTOR_URL`. Used for outbound data-source connections from a different network boundary.
+- `server/auth-realtime/` — `@oxynote/auth-realtime` package. TypeScript ES-module service that runs Better Auth (organization plugin) and a Hocuspocus (Yjs CRDT) server in a single Hono process on port `13321`. Forwards non-auth `/api/...` traffic to core (`OXYNOTE_AUTH_REALTIME_BACKEND_URL`).
+- `datagen/` — separate Go module `github.com/oxynote/oxynote/datagen`. Synthesises demo Postgres/MariaDB content and a fake metrics endpoint scraped by Prometheus for the demo data sources.
 
-All three components have their own `Makefile` whose `build` target produces a Docker image via `goreleaser` (go, datagen) or `docker buildx` (node). The root `Makefile` `run` target builds all three then runs `docker-compose -p heimdall -f ./docker/docker-compose.yaml up`.
+All three components have their own `Makefile` whose `build` target produces a Docker image via `goreleaser` (core, datagen) or `docker buildx` (auth-realtime). The compose stack is brought up with `docker-compose -p oxynote -f docker/docker-compose.yaml up` from the repository root.
 
 ## Common commands
 
 From the repository root:
 
 ```sh
-make run                 # build all three images + bring up docker-compose stack
+docker-compose -p oxynote -f docker/docker-compose.yaml up    # bring up the stack
 ```
 
 Per-component:
 
 ```sh
-# go (gate + connector)
-cd go && make build      # goreleaser release --snapshot --clean -> bin/
+# core (+ connector)
+cd server/core && make build      # goreleaser release --snapshot --clean -> bin/
 
 # datagen
 cd datagen && make build
 
-# node (guard)
-cd node && npm run docker-build
-cd node && npm run dev          # local watch mode (tsx + instrument.ts)
-cd node && npm run build        # tsc only
-cd node && npm run qa           # check-types + check-lint + check-fmt
-cd node && npm run qa-fix       # check-types + lint --fix + prettier --write
+# auth-realtime
+cd server/auth-realtime && npm run docker-build
+cd server/auth-realtime && npm run dev          # local watch mode (tsx + instrument.ts)
+cd server/auth-realtime && npm run build        # tsc only
+cd server/auth-realtime && npm run qa           # check-types + check-lint + check-fmt
+cd server/auth-realtime && npm run qa-fix       # check-types + lint --fix + prettier --write
 ```
 
 Go tests live next to their packages. The `db` package's tests spin up a real Postgres container via `gnomock` from `TestMain`, so Docker must be running:
 
 ```sh
-cd go && go test ./...                                # all packages
-cd go && go test ./internal/db/...                    # db (needs Docker)
-cd go && go test -run Test_New ./internal/db          # single test
+cd server/core && go test ./...                                # all packages
+cd server/core && go test ./internal/db/...                    # db (needs Docker)
+cd server/core && go test -run Test_New ./internal/db          # single test
 ```
 
-The Go module vendors its dependencies (`go/vendor/`), so most `go` commands work offline; `go mod tidy` should be followed by `go mod vendor`.
+The Go module vendors its dependencies (`server/core/vendor/`), so most `go` commands work offline; `go mod tidy` should be followed by `go mod vendor`.
 
 ## Caddy / port layout
 
 `docker/caddy/Caddyfile` is the entrypoint for all client traffic:
 
-- `:13321` — front door. `/go/*` is path-stripped and reverse-proxied to `heimdall-gate:8080`; everything else goes to `heimdall-guard:13321` (Better Auth, Hocuspocus, the merge proxy).
+- `:13321` — front door. `/go/*` is path-stripped and reverse-proxied to `core:8080`; everything else goes to `auth-realtime:13321` (Better Auth, Hocuspocus, the merge proxy).
 - `:13341` — MinIO console
 - `:13350` — changedetection.io
 - `:13000` — Grafana (direct, not via Caddy)
 
 So from a frontend's point of view: auth + realtime is `:13321/...`, the Go API is `:13321/go/api/...`. Internal-only Go routes (`/api/x/...`) are not exposed by Caddy.
 
-## Gate request surface
+## Core request surface
 
-`go/internal/server/router.go` is the canonical map. Three layers:
+`server/core/internal/server/router.go` is the canonical map. Three layers:
 
-- `/api/...` (public): auth middleware (`internal/server/auth`) validates sessions by calling guard's `/api/auth/get-session` (configured via `SERVER_AUTH_BETTER_AUTH_URL`). Routes for documents, branches, comments, reviewers, hooks, files, GitHub, Slack, notifications, data-sources, AI chat.
-- `/api/x/...` (internal): no auth at all — reverse proxy must firewall. Used by guard to fetch/store branch content (`/x/documents/{id}/branches`, `/x/documents/{id}/branch/{branchId}`), trigger emails, initialize orgs, and receive GitHub/Slack webhooks.
+- `/api/...` (public): auth middleware (`internal/server/auth`) validates sessions by calling auth-realtime's `/api/auth/get-session` (configured via `SERVER_AUTH_BETTER_AUTH_URL`). Routes for documents, branches, comments, reviewers, hooks, files, GitHub, Slack, notifications, data-sources, AI chat.
+- `/api/x/...` (internal): no auth at all — reverse proxy must firewall. Used by auth-realtime to fetch/store branch content (`/x/documents/{id}/branches`, `/x/documents/{id}/branch/{branchId}`), trigger emails, initialize orgs, and receive GitHub/Slack webhooks.
 - WebSocket topics under `/api/ws`: `change@document-tree`, `change@documents.{documentId}.comments|metadata|reviewers|maintainers`, `post@slack.messages`, `creation@notifications`, `ping@version`. Topic binders live on the per-domain handler types (`*handler.Handler.BindXxx`).
 
-Most public routes in the README (`/api/documents`, `/api/documents/tree`, etc.) are served by the gate; the README is the closest thing to a contract spec — when changing handlers, update it.
+Most public routes in the README (`/api/documents`, `/api/documents/tree`, etc.) are served by core; the README is the closest thing to a contract spec — when changing handlers, update it.
 
 ## Document storage / Hocuspocus integration
 
 This is the model that's least obvious from a fresh read:
 
 - Documents are organized into **branches** (`document_branches` table). Every document has at least one branch; the oldest = the default/main branch.
-- The Hocuspocus `documentName` is encoded as `"<documentId>-<branchIdentifier>"`. `branchIdentifier` may be the literal string `"default"`, in which case `resolveBranchId` in `node/src/hocuspocus.ts` looks up the default branch ID. Splitting on the **first** `-` (`indexOf("-")`) is intentional; XIDs do not contain dashes but the suffix path can.
+- The Hocuspocus `documentName` is encoded as `"<documentId>-<branchIdentifier>"`. `branchIdentifier` may be the literal string `"default"`, in which case `resolveBranchId` in `server/auth-realtime/src/hocuspocus.ts` looks up the default branch ID. Splitting on the **first** `-` (`indexOf("-")`) is intentional; XIDs do not contain dashes but the suffix path can.
 - Branch content is stored two ways in `document_branches`: structured ProseMirror JSON in `content` (JSONB) and the canonical Yjs binary state in `raw_content` (base64-encoded over the wire). `raw_content` is authoritative for CRDT continuity.
-- `onLoadDocument` / `onStoreDocument` round-trip through the gate's internal `/api/x/documents/{id}/branch/{branchId}` endpoints. **Do not** use `Y.applyUpdate` to seed a freshly-created doc with content from another doc — the differing `clientID`s CRDT-merge and silently duplicate content. The codebase's pattern is `replaceYdocContent` in `node/src/ydocument.ts`, which deep-clones `Y.XmlElement`s (preserving non-string attrs that `XmlElement.clone()` drops). Read the comments at `node/src/hocuspocus.ts:154` and `node/src/routes.ts:73` before touching this area.
-- Branch merging: `PUT /documents/:documentId/merge` is handled by guard, which proxies to the gate, then **directly mutates the in-memory target-branch Y.Doc** via `replaceYdocContent` (not `applyUpdate`) and immediately persists `rawContent` back through `/api/x/.../branch/:branchId` so a server restart can't reset the clientID and duplicate content on reconnect.
+- `onLoadDocument` / `onStoreDocument` round-trip through core's internal `/api/x/documents/{id}/branch/{branchId}` endpoints. **Do not** use `Y.applyUpdate` to seed a freshly-created doc with content from another doc — the differing `clientID`s CRDT-merge and silently duplicate content. The codebase's pattern is `replaceYdocContent` in `server/auth-realtime/src/ydocument.ts`, which deep-clones `Y.XmlElement`s (preserving non-string attrs that `XmlElement.clone()` drops). Read the comments at `server/auth-realtime/src/hocuspocus.ts:154` and `server/auth-realtime/src/routes.ts:73` before touching this area.
+- Branch merging: `PUT /documents/:documentId/merge` is handled by auth-realtime, which proxies to core, then **directly mutates the in-memory target-branch Y.Doc** via `replaceYdocContent` (not `applyUpdate`) and immediately persists `rawContent` back through `/api/x/.../branch/:branchId` so a server restart can't reset the clientID and duplicate content on reconnect.
 
-The ProseMirror schema is defined in `node/src/schema/` (one file per block kind, `index.ts` aggregates). The Go-side mirror is `go/internal/document/node.go` (`RootBlock`, `Block`, `Mark`).
+The ProseMirror schema is defined in `server/auth-realtime/src/schema/` (one file per block kind, `index.ts` aggregates). The Go-side mirror is `server/core/internal/document/node.go` (`RootBlock`, `Block`, `Mark`).
 
 ## Database
 
-Postgres (image `postgres:16.4-alpine`). Migrations are embedded in the gate binary from `go/internal/db/migrations/` and applied automatically by `db.New` on startup via `rubenv/sql-migrate`. Add new migrations as the next-numbered `NNN_<name>.sql` file.
+Postgres (image `postgres:16.4-alpine`). Migrations are embedded in the core binary from `server/core/internal/db/migrations/` and applied automatically by `db.New` on startup via `rubenv/sql-migrate`. Add new migrations as the next-numbered `NNN_<name>.sql` file.
 
-**Better Auth schema is separate** and applied by hand. The SQL is generated by the better-auth CLI from `node/src/auth.ts`:
+**Better Auth schema is separate** and applied by hand. The SQL is generated by the better-auth CLI from `server/auth-realtime/src/auth.ts`:
 
 ```sh
-# from node/, with HEIMDALL_GUARD_DB_DSN exported and other auth env vars set
-source ../docker/.env.guard && npx @better-auth/cli generate --output ./sql/better_auth_schema.sql
+# from server/auth-realtime/, with OXYNOTE_AUTH_REALTIME_DB_DSN exported and other auth env vars set
+source ../../docker/.env.auth-realtime && npx @better-auth/cli generate --output ./sql/better_auth_schema.sql
 ```
 
-Then the generated `node/sql/better_auth_schema.sql` is executed against the Postgres container manually. See the README "Better Auth" section.
+Then the generated `server/auth-realtime/sql/better_auth_schema.sql` is executed against the Postgres container manually. See the README "Better Auth" section.
 
 ## Env vars
 
 Two env files in `docker/`:
 
-- `.env.gate` — secrets and tunables for `heimdall-gate`. All vars are prefixed `HEIMDALL_GATE_`; `buildinfo.Getenv("FOO")` reads `HEIMDALL_GATE_FOO`. Example template at `.env.gate.example`.
-- `.env.guard` — secrets for `heimdall-guard`. Prefixed `HEIMDALL_GUARD_`. Example at `.env.guard.example`.
+- `.env.core` — secrets and tunables for `oxynote-core`. All vars are prefixed `OXYNOTE_CORE_`; `buildinfo.Getenv("FOO")` reads `OXYNOTE_CORE_FOO`. Example template at `.env.core.example`.
+- `.env.auth-realtime` — secrets for the auth-realtime service. Prefixed `OXYNOTE_AUTH_REALTIME_`. Example at `.env.auth-realtime.example`.
 
 Both are gitignored. The assistant needs `ANTHROPIC_API_KEY`; without it the AI chat can't complete a turn.
 
@@ -257,13 +257,13 @@ When restructuring, audit every exported identifier with `grep -rn "pkg\.Name"`.
 
 ## Assistant prompt
 
-The system prompt at `go/internal/assistant/prompt.go` codifies behaviour for the Rubber Duck AI chat. When fixing a behaviour bug, state the underlying principle in one or two sentences. Don't enumerate edge cases or add numbered steps — spelling every case out drowns the core guidance in noise. Worked examples and tables belong in the prompt only when the model genuinely needs the structure to anchor a concept (the block-schema table and the split_doc example qualify; most rules don't).
+The system prompt at `server/core/internal/assistant/prompt.go` codifies behaviour for the Rubber Duck AI chat. When fixing a behaviour bug, state the underlying principle in one or two sentences. Don't enumerate edge cases or add numbered steps — spelling every case out drowns the core guidance in noise. Worked examples and tables belong in the prompt only when the model genuinely needs the structure to anchor a concept (the block-schema table and the split_doc example qualify; most rules don't).
 
 ## Node formatting & TS
 
-Prettier uses **tabs (width 8)**, no semicolons, trailing commas, double-quoted strings — see [node/prettier.config.js](node/prettier.config.js). ESLint extends `@eslint/js` recommended + `typescript-eslint` **strict** + **stylistic** + `eslint-config-prettier`; `@typescript-eslint/no-explicit-any` is **off**. See [node/eslint.config.mjs](node/eslint.config.mjs).
+Prettier uses **tabs (width 8)**, no semicolons, trailing commas, double-quoted strings — see [auth-realtime/prettier.config.js](auth-realtime/prettier.config.js). ESLint extends `@eslint/js` recommended + `typescript-eslint` **strict** + **stylistic** + `eslint-config-prettier`; `@typescript-eslint/no-explicit-any` is **off**. See [auth-realtime/eslint.config.mjs](auth-realtime/eslint.config.mjs).
 
-TypeScript is `module: NodeNext`, `target: ESNext`, fully strict — `strict`, `noImplicitAny`, `noUnusedLocals`, `noUnusedParameters`, `noUncheckedIndexedAccess`, `noImplicitOverride`, `verbatimModuleSyntax` all on. See [node/tsconfig.json](node/tsconfig.json). Path alias `@/*` points to `node/src/*`.
+TypeScript is `module: NodeNext`, `target: ESNext`, fully strict — `strict`, `noImplicitAny`, `noUnusedLocals`, `noUnusedParameters`, `noUncheckedIndexedAccess`, `noImplicitOverride`, `verbatimModuleSyntax` all on. See [auth-realtime/tsconfig.json](auth-realtime/tsconfig.json). Path alias `@/*` points to `server/auth-realtime/src/*`.
 
 **ES module imports must include the explicit `.js` extension** (NodeNext + ESM requirement), even when importing TypeScript files — e.g. `import { foo } from "./bar.js"` for a `./bar.ts` source file.
 

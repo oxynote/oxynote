@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/oxynote/heimdall/internal/datasource"
-	"github.com/oxynote/heimdall/internal/datasource/processor"
+	"github.com/oxynote/oxynote/server/core/internal/datasource"
+	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 )
 
 // SQLQueryLabels executes a query with LIMIT 1 and returns string column names with example values.

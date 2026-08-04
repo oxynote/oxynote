@@ -7,9 +7,9 @@ import (
 
 	"github.com/gosimple/slug"
 	"github.com/guregu/null/v5"
-	"github.com/oxynote/heimdall/internal/document"
-	"github.com/oxynote/heimdall/internal/document/hook"
-	"github.com/oxynote/heimdall/internal/notification"
+	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/hook"
+	"github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/purse/util/errutil"
 	"github.com/rs/xid"
 )

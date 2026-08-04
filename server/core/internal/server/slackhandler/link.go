@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"slices"
 
-	"github.com/oxynote/heimdall/internal/apps/slackapp"
-	"github.com/oxynote/heimdall/internal/server/auth"
+	"github.com/oxynote/oxynote/server/core/internal/apps/slackapp"
+	"github.com/oxynote/oxynote/server/core/internal/server/auth"
 	"github.com/oxynote/purse/http/httpserver"
 	"github.com/oxynote/purse/util/errutil"
 	"github.com/slack-go/slack"

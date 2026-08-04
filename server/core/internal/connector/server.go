@@ -10,7 +10,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/oxynote/heimdall/internal/connector/datasourcehandler"
+	"github.com/oxynote/oxynote/server/core/internal/connector/datasourcehandler"
 	"github.com/oxynote/purse/util/logutil"
 	"github.com/oxynote/purse/util/metricutil"
 )

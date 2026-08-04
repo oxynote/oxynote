@@ -10,13 +10,13 @@ import { applyOperations, type Operation } from "./operations.js"
 import axios from "axios"
 
 const app = new Hono()
-const backendUrl = process.env.HEIMDALL_GUARD_BACKEND_URL
+const backendUrl = process.env.OXYNOTE_AUTH_REALTIME_BACKEND_URL
 
 app.use(
 	"*",
 	cors({
 		origin: (
-			(process.env.HEIMDALL_GUARD_TRUSTED_ORIGINS || "") as string
+			(process.env.OXYNOTE_AUTH_REALTIME_TRUSTED_ORIGINS || "") as string
 		).split(","),
 		allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
 		allowHeaders: ["Content-Type", "Authorization"],

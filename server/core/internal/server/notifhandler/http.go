@@ -4,8 +4,8 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/oxynote/heimdall/internal/notification"
-	"github.com/oxynote/heimdall/internal/server/auth"
+	"github.com/oxynote/oxynote/server/core/internal/notification"
+	"github.com/oxynote/oxynote/server/core/internal/server/auth"
 	"github.com/oxynote/purse/http/httpserver"
 	"github.com/rs/xid"
 )

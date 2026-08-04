@@ -5,7 +5,7 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
-	"github.com/oxynote/heimdall/internal/document/searchgw"
+	"github.com/oxynote/oxynote/server/core/internal/document/searchgw"
 )
 
 // InsertDocumentSearchJob inserts a new document search job into the database.

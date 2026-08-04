@@ -1,12 +1,12 @@
 version: 2
-project_name: heimdall
+project_name: oxynote
 dist: bin
 snapshot:
   version_template: dev
 builds:
-  - id: heimdall-gate
-    main: ./cmd/gate
-    binary: "{{ .ProjectName }}-gate"
+  - id: core
+    main: ./cmd/core
+    binary: "{{ .ProjectName }}-core"
     mod_timestamp: "{{ .CommitTimestamp }}"
     no_unique_dist_dir: true
     env:
@@ -21,11 +21,11 @@ builds:
       - "-trimpath"
     ldflags:
       - "-s -w"
-      - "-X github.com/oxynote/heimdall/internal/buildinfo._name={{ .ProjectName }}_gate"
-      - "-X github.com/oxynote/heimdall/internal/buildinfo._version={{ .Version }}"
-      - "-X github.com/oxynote/heimdall/internal/buildinfo._commit={{ .ShortCommit }}"
-      - "-X github.com/oxynote/heimdall/internal/buildinfo._timestampString={{ .CommitDate }}"
-  - id: heimdall-connector
+      - "-X github.com/oxynote/oxynote/server/core/internal/buildinfo._name={{ .ProjectName }}_core"
+      - "-X github.com/oxynote/oxynote/server/core/internal/buildinfo._version={{ .Version }}"
+      - "-X github.com/oxynote/oxynote/server/core/internal/buildinfo._commit={{ .ShortCommit }}"
+      - "-X github.com/oxynote/oxynote/server/core/internal/buildinfo._timestampString={{ .CommitDate }}"
+  - id: connector
     main: ./cmd/connector
     binary: "{{ .ProjectName }}-connector"
     mod_timestamp: "{{ .CommitTimestamp }}"
@@ -42,35 +42,35 @@ builds:
       - "-trimpath"
     ldflags:
       - "-s -w"
-      - "-X github.com/oxynote/heimdall/internal/buildinfo._name={{ .ProjectName }}_connector"
-      - "-X github.com/oxynote/heimdall/internal/buildinfo._version={{ .Version }}"
-      - "-X github.com/oxynote/heimdall/internal/buildinfo._commit={{ .ShortCommit }}"
-      - "-X github.com/oxynote/heimdall/internal/buildinfo._timestampString={{ .CommitDate }}"
+      - "-X github.com/oxynote/oxynote/server/core/internal/buildinfo._name={{ .ProjectName }}_connector"
+      - "-X github.com/oxynote/oxynote/server/core/internal/buildinfo._version={{ .Version }}"
+      - "-X github.com/oxynote/oxynote/server/core/internal/buildinfo._commit={{ .ShortCommit }}"
+      - "-X github.com/oxynote/oxynote/server/core/internal/buildinfo._timestampString={{ .CommitDate }}"
 dockers:
   - ids:
-      - heimdall-gate
+      - core
     goos: linux
     goarch: amd64
     image_templates:
-      - "ghcr.io/oxynote/heimdall-gate:{{ .Version }}"
-      - "ghcr.io/oxynote/heimdall-gate:latest"
+      - "ghcr.io/oxynote/core:{{ .Version }}"
+      - "ghcr.io/oxynote/core:latest"
     dockerfile: ./docker/Dockerfile
     build_flag_templates:
       - "--pull"
       - "--platform=linux/amd64"
-      - "--build-arg=BINARY=heimdall-gate"
+      - "--build-arg=BINARY={{ .ProjectName }}-core"
   - ids:
-      - heimdall-connector
+      - connector
     goos: linux
     goarch: amd64
     image_templates:
-      - "ghcr.io/oxynote/heimdall-connector:{{ .Version }}"
-      - "ghcr.io/oxynote/heimdall-connector:latest"
+      - "ghcr.io/oxynote/connector:{{ .Version }}"
+      - "ghcr.io/oxynote/connector:latest"
     dockerfile: ./docker/Dockerfile
     build_flag_templates:
       - "--pull"
       - "--platform=linux/amd64"
-      - "--build-arg=BINARY=heimdall-connector"
+      - "--build-arg=BINARY={{ .ProjectName }}-connector"
 checksum:
   disable: true
 archives:

@@ -8,21 +8,21 @@ import { db, dialect } from "./database.js"
 import axios from "axios"
 
 const MAX_ORGANIZATION_MEMBERS = parseInt(
-	process.env.HEIMDALL_GUARD_MAX_ORGANIZATION_MEMBERS || "5",
+	process.env.OXYNOTE_AUTH_REALTIME_MAX_ORGANIZATION_MEMBERS || "5",
 )
 export const MAX_ORGANIZATIONS = parseInt(
-	process.env.HEIMDALL_GUARD_MAX_ORGANIZATIONS || "100",
+	process.env.OXYNOTE_AUTH_REALTIME_MAX_ORGANIZATIONS || "100",
 )
-const backendUrl = process.env.HEIMDALL_GUARD_BACKEND_URL
+const backendUrl = process.env.OXYNOTE_AUTH_REALTIME_BACKEND_URL
 
 const ALLOWED_EMAILS = new Set(
-	(process.env.HEIMDALL_GUARD_ALLOWED_EMAILS || "")
+	(process.env.OXYNOTE_AUTH_REALTIME_ALLOWED_EMAILS || "")
 		.split(",")
 		.map((e) => e.trim().toLowerCase())
 		.filter(Boolean),
 )
 
-const FRONTEND_URL = process.env.HEIMDALL_GUARD_FRONTEND_URL as string
+const FRONTEND_URL = process.env.OXYNOTE_AUTH_REALTIME_FRONTEND_URL as string
 
 function isEmailAllowed(email: string): boolean {
 	if (ALLOWED_EMAILS.size === 0) {
@@ -33,44 +33,44 @@ function isEmailAllowed(email: string): boolean {
 }
 
 const redisClient = createClient({
-	url: process.env.HEIMDALL_GUARD_VALKEY_URL,
+	url: process.env.OXYNOTE_AUTH_REALTIME_VALKEY_URL,
 })
 
 await redisClient.connect()
 
 export const auth = betterAuth({
-	baseURL: process.env.HEIMDALL_GUARD_BETTER_AUTH_BASE_URL,
-	secret: process.env.HEIMDALL_GUARD_BETTER_AUTH_SECRET,
+	baseURL: process.env.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_BASE_URL,
+	secret: process.env.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_SECRET,
 	database: dialect,
 	socialProviders: {
 		slack: {
 			clientId: process.env
-				.HEIMDALL_GUARD_BETTER_AUTH_SLACK_CLIENT_ID as string,
+				.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_SLACK_CLIENT_ID as string,
 			clientSecret: process.env
-				.HEIMDALL_GUARD_BETTER_AUTH_SLACK_CLIENT_SECRET as string,
+				.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_SLACK_CLIENT_SECRET as string,
 			redirectURI:
 				(process.env
-					.HEIMDALL_GUARD_BETTER_AUTH_BASE_URL as string) +
+					.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_BASE_URL as string) +
 				"/api/auth/callback/slack",
 		},
 		google: {
 			clientId: process.env
-				.HEIMDALL_GUARD_BETTER_AUTH_GOOGLE_CLIENT_ID as string,
+				.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_GOOGLE_CLIENT_ID as string,
 			clientSecret: process.env
-				.HEIMDALL_GUARD_BETTER_AUTH_GOOGLE_CLIENT_SECRET as string,
+				.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_GOOGLE_CLIENT_SECRET as string,
 			redirectURI:
 				(process.env
-					.HEIMDALL_GUARD_BETTER_AUTH_BASE_URL as string) +
+					.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_BASE_URL as string) +
 				"/api/auth/callback/google",
 		},
 		github: {
 			clientId: process.env
-				.HEIMDALL_GUARD_BETTER_AUTH_GITHUB_CLIENT_ID as string,
+				.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_GITHUB_CLIENT_ID as string,
 			clientSecret: process.env
-				.HEIMDALL_GUARD_BETTER_AUTH_GITHUB_CLIENT_SECRET as string,
+				.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_GITHUB_CLIENT_SECRET as string,
 			redirectURI:
 				(process.env
-					.HEIMDALL_GUARD_BETTER_AUTH_BASE_URL as string) +
+					.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_BASE_URL as string) +
 				"/api/auth/callback/github",
 		},
 	},
@@ -79,7 +79,7 @@ export const auth = betterAuth({
 		crossSubDomainCookies: {
 			enabled: true,
 			domain: process.env
-				.HEIMDALL_GUARD_BETTER_AUTH_COOKIE_DOMAIN as string,
+				.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_COOKIE_DOMAIN as string,
 		},
 	},
 	secondaryStorage: {
@@ -114,7 +114,7 @@ export const auth = betterAuth({
 		},
 	},
 	trustedOrigins: (
-		(process.env.HEIMDALL_GUARD_TRUSTED_ORIGINS || "") as string
+		(process.env.OXYNOTE_AUTH_REALTIME_TRUSTED_ORIGINS || "") as string
 	).split(","),
 	user: {
 		modelName: "users",
@@ -225,7 +225,7 @@ export const auth = betterAuth({
 			sendInvitationEmail: async (data) => {
 				const inviteLink =
 					process.env
-						.HEIMDALL_GUARD_BETTER_AUTH_ORGANIZATION_INVITATION_URL +
+						.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_ORGANIZATION_INVITATION_URL +
 					`?id=${data.id}` +
 					`&email=${data.email}` +
 					`&inviter=${data.inviter.user.name}` +
@@ -245,7 +245,7 @@ export const auth = betterAuth({
 			// The @better-auth/electron plugin proxies /electron/init-oauth-proxy
 			// to /sign-in/social with only `{ provider }` in the body, so
 			// generateState() falls back to `options.baseURL` for callbackURL and
-			// the post-callback 302 lands on the heimdall root (404). Send it to
+			// the post-callback 302 lands on the server root (404). Send it to
 			// the desktop-auth handoff page on the frontend instead — that page
 			// reads the auth-code cookie set on /callback/* and triggers the
 			// deep link back into the desktop app.

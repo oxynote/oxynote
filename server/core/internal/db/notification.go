@@ -6,7 +6,7 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
-	"github.com/oxynote/heimdall/internal/notification"
+	"github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/purse/http/httpserver"
 	"github.com/oxynote/purse/util/sqlutil"
 	"github.com/rs/xid"

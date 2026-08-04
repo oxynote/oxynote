@@ -6,9 +6,9 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/oxynote/heimdall/internal/document"
-	"github.com/oxynote/heimdall/internal/server/auth"
-	"github.com/oxynote/heimdall/internal/storage"
+	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/server/auth"
+	"github.com/oxynote/oxynote/server/core/internal/storage"
 	"github.com/oxynote/purse/http/httpserver"
 )
 

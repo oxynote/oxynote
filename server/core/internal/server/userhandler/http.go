@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/oxynote/heimdall/internal/server/auth"
-	"github.com/oxynote/heimdall/internal/storage"
+	"github.com/oxynote/oxynote/server/core/internal/server/auth"
+	"github.com/oxynote/oxynote/server/core/internal/storage"
 	"github.com/oxynote/purse/http/httpserver"
 	"github.com/oxynote/purse/util/sqlutil"
 )

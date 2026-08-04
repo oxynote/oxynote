@@ -12,7 +12,7 @@ import (
 
 // Client posts batched operations to the Node hocuspocus service's
 // internal operations endpoint. The base URL points at the Node
-// service (e.g. http://heimdall-guard:13321); the path to the
+// service (e.g. http://auth-realtime:13321); the path to the
 // endpoint is appended by Apply.
 type Client struct {
 	// httpClient is the underlying HTTP client. Callers should

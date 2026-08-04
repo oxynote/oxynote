@@ -5,7 +5,7 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
-	"github.com/oxynote/heimdall/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document"
 )
 
 // InsertDocumentFile inserts a new document file into the database.

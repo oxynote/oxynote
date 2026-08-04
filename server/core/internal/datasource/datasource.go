@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/guregu/null/v5"
-	"github.com/oxynote/heimdall/internal/datasource/processor"
+	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 	"github.com/oxynote/purse/util/errutil"
 	"github.com/oxynote/purse/util/timeutil"
 	"github.com/rs/xid"

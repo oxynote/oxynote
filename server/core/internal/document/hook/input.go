@@ -3,9 +3,9 @@ package hook
 import (
 	"context"
 
-	"github.com/oxynote/heimdall/internal/apps/githubapp"
-	"github.com/oxynote/heimdall/internal/apps/webchanges"
-	"github.com/oxynote/heimdall/internal/document/hook/processor"
+	"github.com/oxynote/oxynote/server/core/internal/apps/githubapp"
+	"github.com/oxynote/oxynote/server/core/internal/apps/webchanges"
+	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
 )
 
 // Input represents an Input that provides state information

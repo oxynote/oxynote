@@ -1,10 +1,10 @@
 version: 2
-project_name: heimdall
+project_name: oxynote
 dist: bin
 snapshot:
   version_template: dev
 builds:
-  - id: heimdall-datagen
+  - id: oxynote-datagen
     main: ./cmd
     binary: "{{ .ProjectName }}-datagen"
     mod_timestamp: "{{ .CommitTimestamp }}"
@@ -23,12 +23,12 @@ builds:
       - "-s -w"
 dockers:
   - ids:
-      - heimdall-datagen
+      - oxynote-datagen
     goos: linux
     goarch: amd64
     image_templates:
-      - "ghcr.io/oxynote/heimdall-datagen:{{ .Version }}"
-      - "ghcr.io/oxynote/heimdall-datagen:latest"
+      - "ghcr.io/oxynote/datagen:{{ .Version }}"
+      - "ghcr.io/oxynote/datagen:latest"
     dockerfile: ./docker/Dockerfile
     build_flag_templates:
       - "--pull"

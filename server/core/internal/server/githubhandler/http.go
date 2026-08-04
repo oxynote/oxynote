@@ -11,8 +11,8 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/google/go-github/v72/github"
 	"github.com/guregu/null/v5"
-	"github.com/oxynote/heimdall/internal/apps/githubapp"
-	"github.com/oxynote/heimdall/internal/server/auth"
+	"github.com/oxynote/oxynote/server/core/internal/apps/githubapp"
+	"github.com/oxynote/oxynote/server/core/internal/server/auth"
 	"github.com/oxynote/purse/http/httpserver"
 	"github.com/oxynote/purse/util/errutil"
 )

@@ -1,3 +1,3 @@
 FROM gcr.io/distroless/static-debian10:nonroot
-COPY heimdall-datagen /
-ENTRYPOINT ["/heimdall-datagen"]
+COPY oxynote-datagen /
+ENTRYPOINT ["/oxynote-datagen"]

@@ -10,8 +10,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/oxynote/heimdall/internal/buildinfo"
-	"github.com/oxynote/heimdall/internal/connector"
+	"github.com/oxynote/oxynote/server/core/internal/buildinfo"
+	"github.com/oxynote/oxynote/server/core/internal/connector"
 	"github.com/oxynote/purse/util/ioutil"
 	"github.com/oxynote/purse/util/logutil"
 	"github.com/oxynote/purse/util/metricutil"

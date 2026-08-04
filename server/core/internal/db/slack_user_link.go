@@ -5,7 +5,7 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
-	"github.com/oxynote/heimdall/internal/apps/slackapp"
+	"github.com/oxynote/oxynote/server/core/internal/apps/slackapp"
 )
 
 // InsertSlackUserLink inserts or updates a Slack user link in the database.

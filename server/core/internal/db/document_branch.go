@@ -5,7 +5,7 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
-	"github.com/oxynote/heimdall/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/purse/util/timeutil"
 	"github.com/rs/xid"
 )

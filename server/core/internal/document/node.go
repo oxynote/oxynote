@@ -6,7 +6,7 @@ import (
 	"errors"
 	"maps"
 
-	"github.com/oxynote/heimdall/internal/document/searchgw"
+	"github.com/oxynote/oxynote/server/core/internal/document/searchgw"
 	"github.com/rs/xid"
 )
 

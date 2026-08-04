@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/oxynote/heimdall/internal/datasource/processor"
+	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 	"github.com/oxynote/purse/util/errutil"
 )
 

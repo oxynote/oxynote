@@ -3,8 +3,8 @@ package liveedit
 import (
 	"testing"
 
-	"github.com/oxynote/heimdall/internal/document"
-	"github.com/oxynote/heimdall/internal/document/aiblock"
+	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/aiblock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

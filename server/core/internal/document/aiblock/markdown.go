@@ -3,7 +3,7 @@ package aiblock
 import (
 	"strings"
 
-	"github.com/oxynote/heimdall/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document"
 )
 
 // Inline mark types used in canonical-markdown output.

@@ -3,7 +3,7 @@ import { Kysely, PostgresDialect } from 'kysely'
 
 export const dialect = new PostgresDialect({
   pool: new Pool({
-	connectionString: process.env.HEIMDALL_GUARD_DB_DSN,
+	connectionString: process.env.OXYNOTE_AUTH_REALTIME_DB_DSN,
   })
 })
 

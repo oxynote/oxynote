@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/mailgun/mailgun-go/v5"
-	"github.com/oxynote/heimdall/internal/buildinfo"
+	"github.com/oxynote/oxynote/server/core/internal/buildinfo"
 )
 
 // All available email templates.

@@ -3,8 +3,8 @@ package connector
 import (
 	"encoding/json"
 
-	"github.com/oxynote/heimdall/internal/datasource"
-	"github.com/oxynote/heimdall/internal/datasource/processor"
+	"github.com/oxynote/oxynote/server/core/internal/datasource"
+	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 )
 
 // TestConnectionRequest represents a request to test the connection to a data source.

@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/oxynote/heimdall/internal/datasource"
-	"github.com/oxynote/heimdall/internal/datasource/processor"
+	"github.com/oxynote/oxynote/server/core/internal/datasource"
+	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 )
 
 // PostgreSQLQuery executes a SQL query via the connector.

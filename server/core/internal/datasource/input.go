@@ -1,6 +1,6 @@
 package datasource
 
-import "github.com/oxynote/heimdall/internal/datasource/processor"
+import "github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 
 // stateInput is an implementation of the Input interface
 // that includes credentials.

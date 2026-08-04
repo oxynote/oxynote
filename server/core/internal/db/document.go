@@ -9,7 +9,7 @@ import (
 	"github.com/guregu/null/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jmoiron/sqlx"
-	"github.com/oxynote/heimdall/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/purse/util/sqlutil"
 	"github.com/rs/xid"
 )

@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/oxynote/heimdall/internal/apps/githubapp"
-	"github.com/oxynote/heimdall/internal/apps/webchanges"
+	"github.com/oxynote/oxynote/server/core/internal/apps/githubapp"
+	"github.com/oxynote/oxynote/server/core/internal/apps/webchanges"
 )
 
 // Input represents an input that provides state information

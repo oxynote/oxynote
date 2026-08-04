@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/guregu/null/v5"
-	"github.com/oxynote/heimdall/internal/document/searchgw"
+	"github.com/oxynote/oxynote/server/core/internal/document/searchgw"
 	"github.com/oxynote/purse/http/httpserver"
 	"github.com/oxynote/purse/util/timeutil"
 	"github.com/rs/xid"

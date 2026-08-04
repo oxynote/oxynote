@@ -34,14 +34,14 @@ docker run \
 
 Then put the DB DSN values into the env var:
 ```
-HEIMDALL_GUARD_DB_DSN=postgresql://postgres:postgres@localhost:5432/betterauth
+OXYNOTE_AUTH_REALTIME_DB_DSN=postgresql://postgres:postgres@localhost:5432/betterauth
 ```
 
 Then, from within the `auth-realtime` directory, run (make sure that other env vars
 that are needed by src/auth.ts are available and exported too):
 
 ```
-source ../docker/.env.guard && npx @better-auth/cli generate --output ./sql/better_auth_schema.sql
+source ../docker/.env.auth-realtime && npx @better-auth/cli generate --output ./sql/better_auth_schema.sql
 ```
 
 (You can comment redis, etc. out in the auth.ts file)

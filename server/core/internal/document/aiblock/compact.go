@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/oxynote/heimdall/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document"
 )
 
 // ErrUnsupportedPMType is returned by Compact when a document.Block

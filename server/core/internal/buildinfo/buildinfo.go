@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	_name            = "heimdall_gate"
+	_name            = "oxynote_core"
 	_version         = "0.0.0-dev"
 	_commit          = "0000000"
 	_timestampString = "2006-12-09T19:00:00Z"

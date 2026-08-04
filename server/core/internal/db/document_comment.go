@@ -5,7 +5,7 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
-	"github.com/oxynote/heimdall/internal/document/comment"
+	"github.com/oxynote/oxynote/server/core/internal/document/comment"
 	"github.com/rs/xid"
 	"golang.org/x/sync/errgroup"
 )

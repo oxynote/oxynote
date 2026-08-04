@@ -19,15 +19,15 @@ services:
         mode: non-blocking
         max-size: 10m
         max-file: "3"
-  heimdall-guard:
-    container_name: heimdall-guard
-    image: ghcr.io/oxynote/heimdall-guard:dev
+  auth-realtime:
+    container_name: auth-realtime
+    image: ghcr.io/oxynote/auth-realtime:dev
     environment:
-      - HEIMDALL_GUARD_BACKEND_URL=http://heimdall-gate:8080
-      - HEIMDALL_GUARD_DB_DSN=postgresql://root:pass@postgres/db?sslmode=disable
-      - HEIMDALL_GUARD_VALKEY_URL=redis://valkey:6379
+      - OXYNOTE_AUTH_REALTIME_BACKEND_URL=http://core:8080
+      - OXYNOTE_AUTH_REALTIME_DB_DSN=postgresql://root:pass@postgres/db?sslmode=disable
+      - OXYNOTE_AUTH_REALTIME_VALKEY_URL=redis://valkey:6379
     env_file:
-      - ./env/env.guard
+      - ./env/env.auth-realtime
     depends_on:
       postgres:
         condition: service_healthy
@@ -40,24 +40,24 @@ services:
         mode: non-blocking
         max-size: 10m
         max-file: "3"
-  heimdall-gate:
-    container_name: heimdall-gate
-    image: ghcr.io/oxynote/heimdall-gate:dev
+  core:
+    container_name: core
+    image: ghcr.io/oxynote/core:dev
     networks:
       - default
       - connector
     environment:
-      - HEIMDALL_GATE_DB_DSN=postgresql://root:pass@postgres/db?sslmode=disable
-      - HEIMDALL_GATE_MEILISEARCH_DSN=http://meilisearch:7700
-      - HEIMDALL_GATE_GITHUB_PRIVATE_KEY_PATH=/etc/oxynote/github/oxynote.private-key.pem
-      - HEIMDALL_GATE_VALKEY_NETWORK=tcp
-      - HEIMDALL_GATE_VALKEY_ADDRESS=valkey:6379
-      - HEIMDALL_GATE_SERVER_AUTH_BETTER_AUTH_URL=http://heimdall-guard:13321/api/auth/get-session
-      - HEIMDALL_GATE_SERVER_DEMO_PROMETHEUS_URL=https://demo-prometheus.oxynote.io
-      - HEIMDALL_GATE_CHANGEDETECTION_API_URL=http://changedetection:5000
-      - HEIMDALL_GATE_CONNECTOR_URL=http://heimdall-connector:8080
+      - OXYNOTE_CORE_DB_DSN=postgresql://root:pass@postgres/db?sslmode=disable
+      - OXYNOTE_CORE_MEILISEARCH_DSN=http://meilisearch:7700
+      - OXYNOTE_CORE_GITHUB_PRIVATE_KEY_PATH=/etc/oxynote/github/oxynote.private-key.pem
+      - OXYNOTE_CORE_VALKEY_NETWORK=tcp
+      - OXYNOTE_CORE_VALKEY_ADDRESS=valkey:6379
+      - OXYNOTE_CORE_SERVER_AUTH_BETTER_AUTH_URL=http://auth-realtime:13321/api/auth/get-session
+      - OXYNOTE_CORE_SERVER_DEMO_PROMETHEUS_URL=https://demo-prometheus.oxynote.io
+      - OXYNOTE_CORE_CHANGEDETECTION_API_URL=http://changedetection:5000
+      - OXYNOTE_CORE_CONNECTOR_URL=http://connector:8080
     env_file:
-      - ./env/env.gate
+      - ./env/env.core
     depends_on:
       postgres:
         condition: service_healthy
@@ -72,9 +72,9 @@ services:
         mode: non-blocking
         max-size: 10m
         max-file: "3"
-  heimdall-connector:
-    container_name: heimdall-connector
-    image: ghcr.io/oxynote/heimdall-connector:dev
+  connector:
+    container_name: connector
+    image: ghcr.io/oxynote/connector:dev
     networks:
       - connector
     env_file:
@@ -86,9 +86,9 @@ services:
         mode: non-blocking
         max-size: 10m
         max-file: "3"
-  heimdall-datagen:
-    container_name: heimdall-datagen
-    image: ghcr.io/oxynote/heimdall-datagen:dev
+  datagen:
+    container_name: datagen
+    image: ghcr.io/oxynote/datagen:dev
     restart: unless-stopped
     logging:
       driver: local
