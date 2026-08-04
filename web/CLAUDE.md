@@ -1,68 +1,11 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-## 1. Think Before Coding
-
-**Don't assume. Don't hide confusion. Surface tradeoffs.**
-
-Before implementing:
-- State your assumptions explicitly. If uncertain, ask.
-- If multiple interpretations exist, present them - don't pick silently.
-- If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what's confusing. Ask.
-
-## 2. Simplicity First
-
-**Minimum code that solves the problem. Nothing speculative.**
-
-- No features beyond what was asked.
-- No abstractions for single-use code.
-- No "flexibility" or "configurability" that wasn't requested.
-- No error handling for impossible scenarios.
-- If you write 200 lines and it could be 50, rewrite it.
-
-Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
-
-## 3. Surgical Changes
-
-**Touch only what you must. Clean up only your own mess.**
-
-When editing existing code:
-- Don't "improve" adjacent code, comments, or formatting.
-- Don't refactor things that aren't broken.
-- Match existing style, even if you'd do it differently.
-- If you notice unrelated dead code, mention it - don't delete it.
-
-When your changes create orphans:
-- Remove imports/variables/functions that YOUR changes made unused.
-- Don't remove pre-existing dead code unless asked.
-
-The test: Every changed line should trace directly to the user's request.
-
-## 4. Goal-Driven Execution
-
-**Define success criteria. Loop until verified.**
-
-Transform tasks into verifiable goals:
-- "Add validation" → "Write tests for invalid inputs, then make them pass"
-- "Fix the bug" → "Write a test that reproduces it, then make it pass"
-- "Refactor X" → "Ensure tests pass before and after"
-
-For multi-step tasks, state a brief plan:
-```
-1. [Step] → verify: [check]
-2. [Step] → verify: [check]
-3. [Step] → verify: [check]
-```
-
-Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
-
----
+Guidance for the `web/` frontend. Shared working principles and the TS/JS
+comment/whitespace rules live in the root [CLAUDE.md](../CLAUDE.md).
 
 ## Project
 
-**Oxynote** (codename **Bifrost**) — Nuxt 4 + Vue 3 frontend that ships as both a web app (Cloudflare Pages, SSR) and an Electron desktop app (static SPA).
+**Oxynote** web frontend — Nuxt 4 + Vue 3 frontend that ships as both a web app (Cloudflare Pages, SSR) and an Electron desktop app (static SPA).
 
 ## Common commands
 
@@ -70,6 +13,7 @@ Package manager is **pnpm** (workspace; uses `nodeLinker: hoisted` so Electron F
 
 ```bash
 pnpm install                  # installs deps; runs `prepare` (builds lezer-promql + nuxt prepare)
+pnpm setup                    # deps + explicit prepare (guarantees fresh lezer build + .nuxt types)
 
 pnpm start:dev:web            # nuxt dev on :3000 (web build)
 pnpm start:dev:desktop        # concurrently runs nuxt dev + electron-forge start with DESKTOP_BUILD=hybrid
@@ -86,7 +30,7 @@ pnpm fmt                      # prettier --write .
 pnpm build:lezer-promql       # rebuild the forked PromQL grammar package
 ```
 
-There is no test runner configured in this repo.
+There is no test runner configured in web/.
 
 ## Build modes (critical)
 
@@ -161,23 +105,6 @@ Prettier uses **tabs**, no semicolons, trailing commas — see [prettier.config.
 TypeScript strictness (set in [nuxt.config.ts:96-112](nuxt.config.ts#L96-L112)): `noUnusedLocals`, `noUnusedParameters`, `noUncheckedIndexedAccess`, `noImplicitOverride`, `verbatimModuleSyntax` all on; `noImplicitAny` off. Path aliases `@/*` and `~/*` both point to `app/*`.
 
 ## Code style
-
-### Comments
-
-- Only comment **complex implementations, edge cases, and locations that would confuse a future reader**. Do not add comments that restate what the code does, and do not add comments just to acknowledge a prompt or show that you understood the task.
-- Always use `//` single-line comments. Never use `/* */` — not even for multi-line blocks.
-- Wrap comments at 80 characters. Continuation lines also start with `// `.
-- Within a single comment, the **first sentence starts with a lowercase letter**; every following sentence starts with an uppercase letter. Sentences are still separated with proper punctuation.
-
-  Example:
-  ```ts
-  // strip the leading "; " that getCookie always emits. Downstream code
-  // expects a bare cookie pair, not a header-prefix fragment.
-  ```
-
-### Whitespace in TS/JS
-
-Leave a blank line **before and after each logical block**: function definitions, `if`/`else` branches, `for`/`while` loops, `try`/`catch`, `switch` blocks, etc. The goal is visual separation between distinct units of logic — not blank lines between every statement.
 
 ### Vue `<script setup>` ordering
 
