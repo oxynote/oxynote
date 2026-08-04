@@ -161,7 +161,10 @@ export function applyOperations(doc: Y.Doc, ops: Operation[]): ApplyResult {
 			} catch (err) {
 				result.errors.push({
 					index,
-					message: err instanceof Error ? err.message : String(err),
+					message:
+						err instanceof Error
+							? err.message
+							: String(err),
 				})
 			}
 		})
@@ -203,7 +206,8 @@ function opInsert(doc: Y.Doc, op: InsertOp): void {
 	}
 
 	const xml = pmBlockToY(op.block)
-	const insertAt = op.position === "before" ? found.index : found.index + 1
+	const insertAt =
+		op.position === "before" ? found.index : found.index + 1
 	found.parent.insert(insertAt, [xml])
 }
 
@@ -280,9 +284,11 @@ function opUpdateAttrs(doc: Y.Doc, op: UpdateAttrsOp): void {
 		// what the editor schema relies on for nested metric
 		// configuration. Cast through unknown to bypass the
 		// declaration's stricter type.
-		;(found.element as unknown as {
-			setAttribute(key: string, value: unknown): void
-		}).setAttribute(key, value)
+		;(
+			found.element as unknown as {
+				setAttribute(key: string, value: unknown): void
+			}
+		).setAttribute(key, value)
 	}
 }
 
@@ -331,7 +337,11 @@ function opSetIcon(doc: Y.Doc, op: SetIconOp): void {
 export function findByUid(
 	fragment: Y.XmlFragment,
 	uid: string,
-): { parent: Y.XmlFragment | Y.XmlElement; index: number; element: Y.XmlElement } | null {
+): {
+	parent: Y.XmlFragment | Y.XmlElement
+	index: number
+	element: Y.XmlElement
+} | null {
 	for (let i = 0; i < fragment.length; i++) {
 		const child = fragment.get(i)
 		if (!(child instanceof Y.XmlElement)) {
@@ -391,7 +401,9 @@ export function pmBlockToY(block: PMNode): Y.XmlElement {
 	const frag = tempDoc.getXmlFragment("content")
 	const first = frag.get(0)
 	if (!(first instanceof Y.XmlElement)) {
-		throw new Error("pmBlockToY: transformer produced no XmlElement")
+		throw new Error(
+			"pmBlockToY: transformer produced no XmlElement",
+		)
 	}
 
 	return cloneXmlElement(first)
@@ -431,7 +443,9 @@ function buildInlineText(content: PMInline[]): Y.XmlText | null {
  * Translates a ProseMirror mark array into the format-attribute
  * shape Y.XmlText expects: { [markType]: markAttrs | true }.
  */
-function marksToAttrs(marks: PMMark[] | undefined): Record<string, unknown> | undefined {
+function marksToAttrs(
+	marks: PMMark[] | undefined,
+): Record<string, unknown> | undefined {
 	if (!marks || marks.length === 0) {
 		return undefined
 	}

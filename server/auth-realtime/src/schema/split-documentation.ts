@@ -25,7 +25,11 @@ export const SplitDocumentationLeftSide = Node.create({
 	selectable: false,
 	content: `${Heading.name} (${allowedLeftSideContent.join(" | ")})+ (${extraLeftSideContent.join(" | ")})*`,
 	parseHTML() {
-		return [{ tag: `div[data-type="split-documentation-left-side"]` }]
+		return [
+			{
+				tag: `div[data-type="split-documentation-left-side"]`,
+			},
+		]
 	},
 	renderHTML({ HTMLAttributes }) {
 		return [
@@ -46,7 +50,11 @@ export const SplitDocumentationRightSide = Node.create({
 	selectable: false,
 	content: `(${TitledCodeBlock.name} | ${MetricBlock.name})+`,
 	parseHTML() {
-		return [{ tag: `div[data-type="split-documentation-right-side"]` }]
+		return [
+			{
+				tag: `div[data-type="split-documentation-right-side"]`,
+			},
+		]
 	},
 	renderHTML({ HTMLAttributes }) {
 		return [
@@ -70,7 +78,10 @@ export const SplitDocumentation = Node.create({
 		return {
 			inversed: {
 				default: false,
-				parseHTML: (element) => element.getAttribute("data-inversed") === "true",
+				parseHTML: (element) =>
+					element.getAttribute(
+						"data-inversed",
+					) === "true",
 				renderHTML: (attrs) => {
 					if (!attrs.inversed) {
 						return {}
@@ -91,7 +102,9 @@ export const SplitDocumentation = Node.create({
 	renderHTML({ HTMLAttributes }) {
 		return [
 			"div",
-			mergeAttributes(HTMLAttributes, { "data-type": "split-documentation" }),
+			mergeAttributes(HTMLAttributes, {
+				"data-type": "split-documentation",
+			}),
 			0,
 		]
 	},

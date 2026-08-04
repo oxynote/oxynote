@@ -10,10 +10,13 @@ const handlers: Record<string, (args: any) => Promise<unknown>> = {
 	"auth:updateUser": (args) => authClient.updateUser(args),
 	"auth:changeEmail": (args) => authClient.changeEmail(args),
 	"auth:deleteUser": (args) => authClient.deleteUser(args),
-	"auth:getFullOrganization": () => authClient.organization.getFullOrganization(),
-	"auth:checkOrganizationSlug": (args) => authClient.organization.checkSlug(args),
+	"auth:getFullOrganization": () =>
+		authClient.organization.getFullOrganization(),
+	"auth:checkOrganizationSlug": (args) =>
+		authClient.organization.checkSlug(args),
 	"auth:createOrganization": (args) => authClient.organization.create(args),
-	"auth:setActiveOrganization": (args) => authClient.organization.setActive(args),
+	"auth:setActiveOrganization": (args) =>
+		authClient.organization.setActive(args),
 	"auth:acceptOrganizationInvitation": (args) =>
 		authClient.organization.acceptInvitation(args),
 	"auth:updateOrganization": (args) => authClient.organization.update(args),

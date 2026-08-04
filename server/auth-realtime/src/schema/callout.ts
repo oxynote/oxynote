@@ -26,7 +26,9 @@ export const CalloutBlock = Node.create({
 				parseHTML: (element) => {
 					return element.getAttribute("data-icon")
 				},
-				renderHTML: (attrs) => ({ "data-icon": attrs.icon }),
+				renderHTML: (attrs) => ({
+					"data-icon": attrs.icon,
+				}),
 			},
 		}
 	},

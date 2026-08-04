@@ -21,7 +21,8 @@ export const ParameterListItemHeaderType = Node.create({
 		return [
 			"div",
 			mergeAttributes(HTMLAttributes, {
-				"data-type": "split-documentation-parameter-list-item-header-type",
+				"data-type":
+					"split-documentation-parameter-list-item-header-type",
 			}),
 			0,
 		]
@@ -47,7 +48,8 @@ export const ParameterListItemHeaderTitle = Node.create({
 		return [
 			"div",
 			mergeAttributes(HTMLAttributes, {
-				"data-type": "split-documentation-parameter-list-item-header-title",
+				"data-type":
+					"split-documentation-parameter-list-item-header-title",
 			}),
 			0,
 		]
@@ -72,7 +74,8 @@ export const ParameterListItemHeader = Node.create({
 		return [
 			"div",
 			mergeAttributes(HTMLAttributes, {
-				"data-type": "split-documentation-parameter-list-item-header",
+				"data-type":
+					"split-documentation-parameter-list-item-header",
 			}),
 			0,
 		]
@@ -87,13 +90,18 @@ export const ParameterListItem = Node.create({
 	isolating: true,
 	selectable: false,
 	parseHTML() {
-		return [{ tag: `div[data-type="split-documentation-parameter-list-item"]` }]
+		return [
+			{
+				tag: `div[data-type="split-documentation-parameter-list-item"]`,
+			},
+		]
 	},
 	renderHTML({ HTMLAttributes }) {
 		return [
 			"div",
 			mergeAttributes(HTMLAttributes, {
-				"data-type": "split-documentation-parameter-list-item",
+				"data-type":
+					"split-documentation-parameter-list-item",
 			}),
 			0,
 		]
@@ -110,14 +118,17 @@ export const ParameterListHeader = Node.create({
 	selectable: false,
 	parseHTML() {
 		return [
-			{ tag: `div[data-type="split-documentation-parameter-list-header"]` },
+			{
+				tag: `div[data-type="split-documentation-parameter-list-header"]`,
+			},
 		]
 	},
 	renderHTML({ HTMLAttributes }) {
 		return [
 			"div",
 			mergeAttributes(HTMLAttributes, {
-				"data-type": "split-documentation-parameter-list-header",
+				"data-type":
+					"split-documentation-parameter-list-header",
 			}),
 			0,
 		]
@@ -132,13 +143,18 @@ export const ParameterList = Node.create({
 	isolating: true,
 	selectable: false,
 	parseHTML() {
-		return [{ tag: `div[data-type="split-documentation-parameter-list"]` }]
+		return [
+			{
+				tag: `div[data-type="split-documentation-parameter-list"]`,
+			},
+		]
 	},
 	renderHTML({ HTMLAttributes }) {
 		return [
 			"div",
 			mergeAttributes(HTMLAttributes, {
-				"data-type": "split-documentation-parameter-list",
+				"data-type":
+					"split-documentation-parameter-list",
 			}),
 			0,
 		]

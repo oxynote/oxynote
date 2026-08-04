@@ -48,7 +48,13 @@ export const CodeBlock = CodeBlockLowlight.extend<CodeBlockOptions>({
 			},
 		]
 	},
-	renderHTML({ node, HTMLAttributes }: { node: any; HTMLAttributes: Record<string, any> }) {
+	renderHTML({
+		node,
+		HTMLAttributes,
+	}: {
+		node: any
+		HTMLAttributes: Record<string, any>
+	}) {
 		return [
 			"pre",
 			mergeAttributes(HTMLAttributes, {
@@ -58,7 +64,9 @@ export const CodeBlock = CodeBlockLowlight.extend<CodeBlockOptions>({
 				"code",
 				{
 					class: node.attrs.language
-						? this.options.languageClassPrefix + node.attrs.language
+						? this.options
+								.languageClassPrefix +
+							node.attrs.language
 						: null,
 				},
 				0,

@@ -2,7 +2,7 @@ import * as Sentry from "@sentry/node"
 import { betterAuth } from "better-auth"
 import { createAuthMiddleware, APIError } from "better-auth/api"
 import { organization } from "better-auth/plugins"
-import { electron } from "@better-auth/electron";
+import { electron } from "@better-auth/electron"
 import { createClient } from "redis"
 import { db, dialect } from "./database.js"
 import axios from "axios"
@@ -94,7 +94,9 @@ export const auth = betterAuth({
 		set: async (key, value, ttl) => {
 			try {
 				if (ttl) {
-					await redisClient.set(key, value, { EX: ttl })
+					await redisClient.set(key, value, {
+						EX: ttl,
+					})
 					return
 				}
 
@@ -114,7 +116,8 @@ export const auth = betterAuth({
 		},
 	},
 	trustedOrigins: (
-		(process.env.OXYNOTE_AUTH_REALTIME_TRUSTED_ORIGINS || "") as string
+		(process.env.OXYNOTE_AUTH_REALTIME_TRUSTED_ORIGINS ||
+			"") as string
 	).split(","),
 	user: {
 		modelName: "users",
@@ -177,7 +180,8 @@ export const auth = betterAuth({
 		organization({
 			allowUserToCreateOrganization: async () => {
 				try {
-					const count = await totalOrganizationCount()
+					const count =
+						await totalOrganizationCount()
 					return count < MAX_ORGANIZATIONS
 				} catch (err) {
 					Sentry.captureException(err)
@@ -306,7 +310,9 @@ export const auth = betterAuth({
 
 				const isNewUser =
 					Date.now() -
-						new Date(user.createdAt).getTime() <
+						new Date(
+							user.createdAt,
+						).getTime() <
 					10_000
 
 				const errorCode = isNewUser
@@ -318,7 +324,11 @@ export const auth = betterAuth({
 					"location",
 					`${FRONTEND_URL}/login?error=${errorCode}`,
 				)
-				throw new APIError("FOUND", undefined, redirectHeaders)
+				throw new APIError(
+					"FOUND",
+					undefined,
+					redirectHeaders,
+				)
 			}
 		}),
 	},
@@ -334,9 +344,10 @@ export const auth = betterAuth({
 			create: {
 				before: async (session) => {
 					try {
-						const orgId = await userOrganizationId(
-							session.userId,
-						)
+						const orgId =
+							await userOrganizationId(
+								session.userId,
+							)
 						return {
 							data: {
 								...session,
@@ -356,7 +367,8 @@ export const auth = betterAuth({
 						if (ctx?.context.session) {
 							const orgId =
 								await userOrganizationId(
-									ctx.context
+									ctx
+										.context
 										.session
 										.user
 										.id,
@@ -432,11 +444,14 @@ async function sendOrganizationInvitation(
 	link: string,
 ): Promise<void> {
 	try {
-		await axios.post(`${backendUrl}/api/x/email/organization-invitation`, {
-			email,
-			organization,
-			link,
-		})
+		await axios.post(
+			`${backendUrl}/api/x/email/organization-invitation`,
+			{
+				email,
+				organization,
+				link,
+			},
+		)
 	} catch (err) {
 		Sentry.captureException(err)
 		throw err

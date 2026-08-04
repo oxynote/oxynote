@@ -25,7 +25,9 @@ export function cloneXmlElement(source: Y.XmlElement): Y.XmlElement {
 	// Cast through unknown to bypass the type declaration without
 	// dropping non-string values.
 	const setAttr = (
-		el as unknown as { setAttribute(key: string, value: unknown): void }
+		el as unknown as {
+			setAttribute(key: string, value: unknown): void
+		}
 	).setAttribute.bind(el)
 
 	const attrs = source.getAttributes()
@@ -38,14 +40,19 @@ export function cloneXmlElement(source: Y.XmlElement): Y.XmlElement {
 	}
 	const children = source.toArray()
 	if (children.length > 0) {
-		el.insert(0, children.map(child => {
-			if (child instanceof Y.XmlElement) {
-				return cloneXmlElement(child)
-			}
-			const newText = new Y.XmlText()
-			newText.applyDelta((child as Y.XmlText).toDelta())
-			return newText
-		}))
+		el.insert(
+			0,
+			children.map((child) => {
+				if (child instanceof Y.XmlElement) {
+					return cloneXmlElement(child)
+				}
+				const newText = new Y.XmlText()
+				newText.applyDelta(
+					(child as Y.XmlText).toDelta(),
+				)
+				return newText
+			}),
+		)
 	}
 	return el
 }
@@ -82,7 +89,10 @@ function toNameContent(name: string) {
  */
 export function replaceYdocContent(ydoc: Y.Doc, data: DocumentData): void {
 	ydoc.transact(() => {
-		const nameDoc = transformer.toYdoc(toNameContent(data.name), "name")
+		const nameDoc = transformer.toYdoc(
+			toNameContent(data.name),
+			"name",
+		)
 		cloneXmlFragment(
 			nameDoc.getXmlFragment("name"),
 			ydoc.getXmlFragment("name"),

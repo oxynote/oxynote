@@ -34,7 +34,7 @@
 	},
 	"dependencies": {
 		"@babel/runtime": "^7.28.6",
-		"@better-auth/electron": "^1.6.11",
+		"@better-auth/electron": "^1.6.24",
 		"@codemirror/lang-sql": "^6.10.0",
 		"@floating-ui/dom": "^1.7.3",
 		"@hocuspocus/provider": "^3.2.3",
@@ -72,7 +72,7 @@
 		"@vee-validate/zod": "^4.15.1",
 		"@vueuse/core": "^13.9.0",
 		"@vueuse/nuxt": "^13.6.0",
-		"better-auth": "^1.6.11",
+		"better-auth": "^1.6.24",
 		"change-case": "^5.4.4",
 		"class-variance-authority": "^0.7.1",
 		"clsx": "^2.1.1",

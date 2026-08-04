@@ -1,14 +1,14 @@
-import { Pool } from 'pg'
-import { Kysely, PostgresDialect } from 'kysely'
+import { Pool } from "pg"
+import { Kysely, PostgresDialect } from "kysely"
 
 export const dialect = new PostgresDialect({
-  pool: new Pool({
-	connectionString: process.env.OXYNOTE_AUTH_REALTIME_DB_DSN,
-  })
+	pool: new Pool({
+		connectionString: process.env.OXYNOTE_AUTH_REALTIME_DB_DSN,
+	}),
 })
 
 export const db = new Kysely<Database>({
-  dialect,
+	dialect,
 })
 
 export interface Database {

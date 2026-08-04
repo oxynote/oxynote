@@ -195,9 +195,9 @@ export default function () {
 		...args: Parameters<typeof $authClient.organization.acceptInvitation>
 	) {
 		if (__DESKTOP_BUILD__) {
-			return getHost().auth.acceptOrganizationInvitation(
-				args[0],
-			) as ReturnType<typeof $authClient.organization.acceptInvitation>
+			return getHost().auth.acceptOrganizationInvitation(args[0]) as ReturnType<
+				typeof $authClient.organization.acceptInvitation
+			>
 		}
 		return $authClient.organization.acceptInvitation(...args)
 	}
@@ -228,9 +228,9 @@ export default function () {
 		...args: Parameters<typeof $authClient.organization.cancelInvitation>
 	) {
 		if (__DESKTOP_BUILD__) {
-			return getHost().auth.cancelOrganizationInvitation(
-				args[0],
-			) as ReturnType<typeof $authClient.organization.cancelInvitation>
+			return getHost().auth.cancelOrganizationInvitation(args[0]) as ReturnType<
+				typeof $authClient.organization.cancelInvitation
+			>
 		}
 		return $authClient.organization.cancelInvitation(...args)
 	}

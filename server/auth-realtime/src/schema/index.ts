@@ -102,8 +102,7 @@ export function getEditorExtensions(): Extensions {
 		Link.configure({
 			openOnClick: false,
 			HTMLAttributes: {
-				class:
-					"text-primary underline underline-offset-2 hover:text-primary/80 cursor-pointer",
+				class: "text-primary underline underline-offset-2 hover:text-primary/80 cursor-pointer",
 			},
 		}).extend({
 			inclusive: false,

@@ -27,10 +27,8 @@ const platformToOsType = (p: NodeJS.Platform): OsType => {
 	}
 }
 
-const invokeAuth =
-	(channel: string) =>
-	(args?: unknown) =>
-		ipcRenderer.invoke(channel, args)
+const invokeAuth = (channel: string) => (args?: unknown) =>
+	ipcRenderer.invoke(channel, args)
 
 contextBridge.exposeInMainWorld("__host", {
 	osType: platformToOsType(process.platform),
@@ -47,10 +45,14 @@ contextBridge.exposeInMainWorld("__host", {
 		checkOrganizationSlug: invokeAuth("auth:checkOrganizationSlug"),
 		createOrganization: invokeAuth("auth:createOrganization"),
 		setActiveOrganization: invokeAuth("auth:setActiveOrganization"),
-		acceptOrganizationInvitation: invokeAuth("auth:acceptOrganizationInvitation"),
+		acceptOrganizationInvitation: invokeAuth(
+			"auth:acceptOrganizationInvitation",
+		),
 		updateOrganization: invokeAuth("auth:updateOrganization"),
 		inviteOrganizationMember: invokeAuth("auth:inviteOrganizationMember"),
-		cancelOrganizationInvitation: invokeAuth("auth:cancelOrganizationInvitation"),
+		cancelOrganizationInvitation: invokeAuth(
+			"auth:cancelOrganizationInvitation",
+		),
 		removeOrganizationMember: invokeAuth("auth:removeOrganizationMember"),
 	},
 })

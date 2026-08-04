@@ -16,9 +16,17 @@ app.use(
 	"*",
 	cors({
 		origin: (
-			(process.env.OXYNOTE_AUTH_REALTIME_TRUSTED_ORIGINS || "") as string
+			(process.env.OXYNOTE_AUTH_REALTIME_TRUSTED_ORIGINS ||
+				"") as string
 		).split(","),
-		allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+		allowMethods: [
+			"GET",
+			"POST",
+			"PUT",
+			"PATCH",
+			"DELETE",
+			"OPTIONS",
+		],
 		allowHeaders: ["Content-Type", "Authorization"],
 		credentials: true,
 	}),
@@ -52,7 +60,10 @@ app.put("/documents/:documentId/merge", async (c) => {
 	}
 
 	if (!fromBranchId || !toBranchId) {
-		return c.json({ error: "fromBranchId and toBranchId are required" }, 400)
+		return c.json(
+			{ error: "fromBranchId and toBranchId are required" },
+			400,
+		)
 	}
 
 	try {
@@ -61,7 +72,7 @@ app.put("/documents/:documentId/merge", async (c) => {
 			{ fromBranchId, toBranchId },
 			{
 				headers: toAxiosHeaders(c.req.raw.headers),
-			}
+			},
 		)
 
 		if (response.status === 200) {
@@ -75,7 +86,9 @@ app.put("/documents/:documentId/merge", async (c) => {
 			// avoid Y.applyUpdate merge semantics that cause content
 			// duplication when source and target docs have different
 			// client origins.
-			const toDocument = hocuspocus.documents.get(`${documentId}-${toBranchId}`)
+			const toDocument = hocuspocus.documents.get(
+				`${documentId}-${toBranchId}`,
+			)
 			if (toDocument) {
 				replaceYdocContent(toDocument, mergedData)
 
@@ -108,21 +121,21 @@ app.put("/documents/:documentId/merge", async (c) => {
 			}
 		}
 
-		return c.json(response.data, response.status as ContentfulStatusCode)
+		return c.json(
+			response.data,
+			response.status as ContentfulStatusCode,
+		)
 	} catch (error: any) {
 		Sentry.captureException(error)
 
 		if (error.response) {
 			return c.json(
 				error.response.data,
-				error.response.status
+				error.response.status,
 			)
 		}
 
-		return c.json(
-			{ error: "failed to merge" },
-			500
-		)
+		return c.json({ error: "failed to merge" }, 500)
 	}
 })
 
@@ -151,7 +164,10 @@ app.post(
 
 		const ops = body.operations
 		if (!Array.isArray(ops)) {
-			return c.json({ error: "operations array is required" }, 400)
+			return c.json(
+				{ error: "operations array is required" },
+				400,
+			)
 		}
 
 		// Hocuspocus addresses documents by `documentId-branchId`; the
@@ -161,14 +177,20 @@ app.post(
 
 		let connection
 		try {
-			connection = await hocuspocus.openDirectConnection(documentName)
+			connection =
+				await hocuspocus.openDirectConnection(
+					documentName,
+				)
 		} catch (err) {
 			Sentry.captureException(err)
 			return c.json({ error: "failed to open document" }, 500)
 		}
 
 		try {
-			let result: { applied: number; errors: { index: number; message: string }[] } = {
+			let result: {
+				applied: number
+				errors: { index: number; message: string }[]
+			} = {
 				applied: 0,
 				errors: [],
 			}
@@ -180,7 +202,10 @@ app.post(
 			return c.json(result, 200)
 		} catch (err) {
 			Sentry.captureException(err)
-			return c.json({ error: "failed to apply operations" }, 500)
+			return c.json(
+				{ error: "failed to apply operations" },
+				500,
+			)
 		} finally {
 			try {
 				await connection.disconnect()

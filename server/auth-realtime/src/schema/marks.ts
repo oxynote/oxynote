@@ -53,10 +53,12 @@ export const CommentMark = Mark.create({
 		return {
 			commentId: {
 				default: null,
-				parseHTML: (element) => element.getAttribute("data-comment-id"),
+				parseHTML: (element) =>
+					element.getAttribute("data-comment-id"),
 				renderHTML: (attrs) => {
 					return {
-						"data-comment-id": attrs.commentId,
+						"data-comment-id":
+							attrs.commentId,
 					}
 				},
 			},

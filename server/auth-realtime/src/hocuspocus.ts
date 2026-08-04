@@ -45,7 +45,9 @@ async function resolveBranchId(
 	const defaultBranch = branches.find((b) => b.default)
 
 	if (!defaultBranch) {
-		throw new Error(`no default branch found for document ${documentId}`)
+		throw new Error(
+			`no default branch found for document ${documentId}`,
+		)
 	}
 
 	return defaultBranch.branchId
@@ -165,9 +167,12 @@ export const hocuspocus = new Hocuspocus({
 					await axios.put(
 						`${url}/api/x/documents/${documentId}/branch/${branchId}`,
 						{
-							name: response.data.documentName,
-							icon: response.data.icon,
-							content: response.data.content,
+							name: response.data
+								.documentName,
+							icon: response.data
+								.icon,
+							content: response.data
+								.content,
 							maintainers: [],
 							rawContent,
 							system: true,
@@ -209,22 +214,27 @@ export const hocuspocus = new Hocuspocus({
 			)
 			documentMaintainers.delete(data.documentName)
 
-			const name = transformer.fromYdoc(data.document, "name")
-			.content[0]?.content[0]?.text ||
+			const name =
+				transformer.fromYdoc(data.document, "name")
+					.content[0]?.content[0]?.text ||
 				"Untitled Document"
 
 			await axios.put(
 				`${url}/api/x/documents/${documentId}/branch/${branchId}`,
 				{
 					name: name,
-					icon: data.document.getText("icon").toString(),
+					icon: data.document
+						.getText("icon")
+						.toString(),
 					content: transformer.fromYdoc(
 						data.document,
 						"content",
 					),
 					maintainers: maintainers,
 					rawContent: Buffer.from(
-						Y.encodeStateAsUpdate(data.document),
+						Y.encodeStateAsUpdate(
+							data.document,
+						),
 					).toString("base64"),
 					system: false,
 				},
@@ -233,7 +243,10 @@ export const hocuspocus = new Hocuspocus({
 			Sentry.captureException(err)
 
 			data.document.broadcastStateless(
-				JSON.stringify({ type: "error", code: "hocuspocus.store_failed" }),
+				JSON.stringify({
+					type: "error",
+					code: "hocuspocus.store_failed",
+				}),
 			)
 		}
 	},

@@ -10,7 +10,8 @@ export const FigmaBlock = Node.create({
 		return {
 			src: {
 				default: null,
-				parseHTML: (element) => element.getAttribute("data-src"),
+				parseHTML: (element) =>
+					element.getAttribute("data-src"),
 				renderHTML: (attrs) => {
 					if (!attrs.src) return {}
 					return { "data-src": attrs.src }
@@ -19,7 +20,10 @@ export const FigmaBlock = Node.create({
 			width: {
 				default: null,
 				parseHTML: (element) => {
-					const w = element.getAttribute("data-width")
+					const w =
+						element.getAttribute(
+							"data-width",
+						)
 					return w ? Number.parseInt(w, 10) : null
 				},
 				renderHTML: (attrs) => {
@@ -30,7 +34,10 @@ export const FigmaBlock = Node.create({
 			height: {
 				default: null,
 				parseHTML: (element) => {
-					const h = element.getAttribute("data-height")
+					const h =
+						element.getAttribute(
+							"data-height",
+						)
 					return h ? Number.parseInt(h, 10) : null
 				},
 				renderHTML: (attrs) => {
@@ -46,7 +53,9 @@ export const FigmaBlock = Node.create({
 	renderHTML({ HTMLAttributes }) {
 		return [
 			"div",
-			mergeAttributes(HTMLAttributes, { "data-type": "figma-block" }),
+			mergeAttributes(HTMLAttributes, {
+				"data-type": "figma-block",
+			}),
 		]
 	},
 })
