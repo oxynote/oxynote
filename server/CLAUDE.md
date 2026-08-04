@@ -34,11 +34,11 @@ cd server/core && make build      # goreleaser release --snapshot --clean -> bin
 cd datagen && make build
 
 # auth-realtime
-cd server/auth-realtime && npm run docker-build
-cd server/auth-realtime && npm run dev          # local watch mode (tsx + instrument.ts)
-cd server/auth-realtime && npm run build        # tsc only
-cd server/auth-realtime && npm run qa           # check-types + check-lint + check-fmt
-cd server/auth-realtime && npm run qa-fix       # check-types + lint --fix + prettier --write
+cd server/auth-realtime && pnpm run docker-build
+cd server/auth-realtime && pnpm run dev          # local watch mode (tsx + instrument.ts)
+cd server/auth-realtime && pnpm run build        # tsc only
+cd server/auth-realtime && pnpm run qa           # check-types + check-lint + check-fmt
+cd server/auth-realtime && pnpm run qa-fix       # check-types + lint --fix + prettier --write
 ```
 
 Go tests live next to their packages. The `db` package's tests spin up a real Postgres container via `gnomock` from `TestMain`, so Docker must be running:

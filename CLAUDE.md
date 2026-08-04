@@ -73,7 +73,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 - `web/` — Nuxt 4 + Vue 3 frontend; ships as both a web app (SSR) and an Electron desktop app. Own **pnpm** workspace (includes the forked `packages/lezer-promql`). Details: [web/CLAUDE.md](web/CLAUDE.md).
 - `server/core/` — Go API server (`oxynote-core`) plus `oxynote-connector` for outbound data-source connections. Vendored Go module `github.com/oxynote/oxynote/server/core`. Details: [server/CLAUDE.md](server/CLAUDE.md).
-- `server/auth-realtime/` — Node service (`@oxynote/auth-realtime`, **npm**) running Better Auth and a Hocuspocus (Yjs) server in one Hono process. Details: [server/CLAUDE.md](server/CLAUDE.md).
+- `server/auth-realtime/` — Node service (`@oxynote/auth-realtime`, **pnpm**) running Better Auth and a Hocuspocus (Yjs) server in one Hono process. Details: [server/CLAUDE.md](server/CLAUDE.md).
 - `datagen/` — demo-data generator; separate Go module `github.com/oxynote/oxynote/datagen`. Demo/testing only, ships as its own Docker image.
 - `docker/` — docker-compose stack, Caddyfile, env files. Real env files (`.env.core`, `.env.auth-realtime`) are gitignored; `.env.*.example` templates are committed.
 
@@ -82,7 +82,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 From the repository root:
 
 ```sh
-make deps      # install web/ (pnpm) + auth-realtime (npm) dependencies
+make deps      # install web/ + auth-realtime dependencies (both pnpm)
 make setup     # same as deps, plus web prepare (lezer-promql build + nuxt prepare)
 
 docker-compose -p oxynote -f docker/docker-compose.yaml up   # backend stack

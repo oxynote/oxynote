@@ -1,2 +1,2 @@
 build:
-	npm run docker-build
+	pnpm run docker-build
