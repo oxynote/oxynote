@@ -1,0 +1,48 @@
+version: 2
+project_name: heimdall
+dist: bin
+snapshot:
+  version_template: dev
+builds:
+  - id: heimdall-datagen
+    main: ./cmd
+    binary: "{{ .ProjectName }}-datagen"
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    no_unique_dist_dir: true
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+    tags:
+      - "{{if not .IsSnapshot}} prod {{end}}"
+    flags:
+      - "-trimpath"
+    ldflags:
+      - "-s -w"
+dockers:
+  - ids:
+      - heimdall-datagen
+    goos: linux
+    goarch: amd64
+    image_templates:
+      - "ghcr.io/oxynote/heimdall-datagen:{{ .Version }}"
+      - "ghcr.io/oxynote/heimdall-datagen:latest"
+    dockerfile: ./docker/Dockerfile
+    build_flag_templates:
+      - "--pull"
+checksum:
+  disable: true
+archives:
+  - formats: ["binary"] # disable archives
+release:
+  disable: true # disable release uploading to github/gitlab
+changelog:
+  use: github
+  filters:
+    exclude:
+      - "^workflow(s?):"
+      - "^github:"
+announce:
+  skip: true

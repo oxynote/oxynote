@@ -1,0 +1,33 @@
+{
+	admin off # disable the admin API
+}
+
+(common) {
+	request_body {
+		max_size 10MB # must be higher than file upload limit
+	}
+
+	header -Server
+}
+
+:13321 {
+	import common
+
+	handle_path /go/* {
+		reverse_proxy heimdall-gate:8080
+	}
+
+	reverse_proxy heimdall-guard:13321
+}
+
+:13341 {
+	import common
+
+	reverse_proxy minio:9001
+}
+
+:13350 {
+	import common
+
+	reverse_proxy changedetection:5000
+}

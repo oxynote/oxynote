@@ -1,0 +1,13 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: 'heimdall-gate'
+    metrics_path: api/x/metrics
+    static_configs:
+      - targets: ['heimdall-gate:8080']
+  - job_name: 'datagen'
+    metrics_path: api/metrics
+    static_configs:
+      - targets: ['heimdall-datagen:8080']
