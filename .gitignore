@@ -16,6 +16,11 @@ node_modules
 # Logs
 logs
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
 # Misc
 .DS_Store
@@ -27,6 +32,20 @@ logs
 .env.*
 !.env.example
 docker/github/*.pem
+
+# dev
+.yarn/
+!.yarn/releases
+.vscode/*
+!.vscode/launch.json
+!.vscode/*.code-snippets
+.idea/workspace.xml
+.idea/usage.statistics.xml
+.idea/shelf
+
+# misc
+.DS_Store
+
 
 # Binaries for programs and plugins
 *.exe
