@@ -34,7 +34,7 @@ api.oxynote.io {
 		}
 	}
 
-	reverse_proxy auth-realtime:13321 {
+	reverse_proxy auth-realtime:8081 {
 		import cloudflare-ip
 	}
 }

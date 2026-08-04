@@ -11,7 +11,7 @@ comment/whitespace rules live in the root [CLAUDE.md](../CLAUDE.md).
 - `server/core/` — Go module `github.com/oxynote/oxynote/server/core`. Two binaries:
   - `cmd/core` (`oxynote-core`) — main API server. Listens on `:8080`. Exposes `/api/...` (auth-required) and `/api/x/...` (internal-only, no auth; the reverse proxy is expected to firewall this). Owns Postgres, Meilisearch, Valkey (Redis), MinIO, the GitHub/Slack apps and the assistant.
   - `cmd/connector` (`oxynote-connector`) — a separate, near-empty HTTP server that core calls via `CONNECTOR_URL`. Used for outbound data-source connections from a different network boundary.
-- `server/auth-realtime/` — `@oxynote/auth-realtime` package. TypeScript ES-module service that runs Better Auth (organization plugin) and a Hocuspocus (Yjs CRDT) server in a single Hono process on port `13321`. Forwards non-auth `/api/...` traffic to core (`OXYNOTE_AUTH_REALTIME_BACKEND_URL`).
+- `server/auth-realtime/` — `@oxynote/auth-realtime` package. TypeScript ES-module service that runs Better Auth (organization plugin) and a Hocuspocus (Yjs CRDT) server in a single Hono process on port `8081`. Forwards non-auth `/api/...` traffic to core (`OXYNOTE_AUTH_REALTIME_BACKEND_URL`).
 - `datagen/` — separate Go module `github.com/oxynote/oxynote/datagen`. Synthesises demo Postgres/MariaDB content and a fake metrics endpoint scraped by Prometheus for the demo data sources.
 
 All three components have their own `Makefile` whose `build` target produces a Docker image via `goreleaser` (core, datagen) or `docker buildx` (auth-realtime). The compose stack is brought up with `docker-compose -p oxynote -f docker/docker-compose.yaml up` from the repository root.
@@ -55,12 +55,12 @@ The Go module vendors its dependencies (`server/core/vendor/`), so most `go` com
 
 `docker/caddy/Caddyfile` is the entrypoint for all client traffic:
 
-- `:13321` — front door. `/go/*` is path-stripped and reverse-proxied to `core:8080`; everything else goes to `auth-realtime:13321` (Better Auth, Hocuspocus, the merge proxy).
-- `:13341` — MinIO console
-- `:13350` — changedetection.io
-- `:13000` — Grafana (direct, not via Caddy)
+- `:8081` — front door. `/go/*` is path-stripped and reverse-proxied to `core:8080`; everything else goes to `auth-realtime:8081` (Better Auth, Hocuspocus, the merge proxy).
+- `:9001` — MinIO console
+- `:5001` — changedetection.io (`5001` to dodge the macOS AirPlay Receiver on `5000`)
+- `:3001` — Grafana (direct, not via Caddy; host `3001` because `nuxt dev` owns `3000`)
 
-So from a frontend's point of view: auth + realtime is `:13321/...`, the Go API is `:13321/go/api/...`. Internal-only Go routes (`/api/x/...`) are not exposed by Caddy.
+So from a frontend's point of view: auth + realtime is `:8081/...`, the Go API is `:8081/go/api/...`. Internal-only Go routes (`/api/x/...`) are not exposed by Caddy.
 
 ## Core request surface
 

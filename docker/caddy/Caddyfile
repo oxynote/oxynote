@@ -10,23 +10,23 @@
 	header -Server
 }
 
-:13321 {
+:8081 {
 	import common
 
 	handle_path /go/* {
 		reverse_proxy core:8080
 	}
 
-	reverse_proxy auth-realtime:13321
+	reverse_proxy auth-realtime:8081
 }
 
-:13341 {
+:9001 {
 	import common
 
 	reverse_proxy minio:9001
 }
 
-:13350 {
+:5001 {
 	import common
 
 	reverse_proxy changedetection:5000

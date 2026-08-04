@@ -52,7 +52,7 @@ services:
       - OXYNOTE_CORE_GITHUB_PRIVATE_KEY_PATH=/etc/oxynote/github/oxynote.private-key.pem
       - OXYNOTE_CORE_VALKEY_NETWORK=tcp
       - OXYNOTE_CORE_VALKEY_ADDRESS=valkey:6379
-      - OXYNOTE_CORE_SERVER_AUTH_BETTER_AUTH_URL=http://auth-realtime:13321/api/auth/get-session
+      - OXYNOTE_CORE_SERVER_AUTH_BETTER_AUTH_URL=http://auth-realtime:8081/api/auth/get-session
       - OXYNOTE_CORE_SERVER_DEMO_PROMETHEUS_URL=https://demo-prometheus.oxynote.io
       - OXYNOTE_CORE_CHANGEDETECTION_API_URL=http://changedetection:5000
       - OXYNOTE_CORE_CONNECTOR_URL=http://connector:8080

@@ -25,6 +25,6 @@ COPY --from=builder --chown=hono:nodejs /server/package.json /server/package.jso
 
 ENV NODE_ENV=production
 USER hono
-EXPOSE 13321
+EXPOSE 8081
 
 CMD ["node", "--import", "/server/dist/instrument.js", "/server/dist/index.js"]

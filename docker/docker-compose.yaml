@@ -8,10 +8,9 @@ services:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile
     restart: unless-stopped
     ports:
-      - "13321:13321"
-      - "13340:13340"
-      - "13341:13341"
-      - "13350:13350"
+      - "8081:8081"
+      - "9001:9001"
+      - "5001:5001"
     logging:
       driver: local
       options:
@@ -49,8 +48,8 @@ services:
       - OXYNOTE_CORE_MEILISEARCH_MASTER_KEY=devmasterkey
       - OXYNOTE_CORE_VALKEY_NETWORK=tcp
       - OXYNOTE_CORE_VALKEY_ADDRESS=valkey:6379
-      - OXYNOTE_CORE_SERVER_AUTH_BETTER_AUTH_URL=http://auth-realtime:13321/api/auth/get-session
-      - OXYNOTE_CORE_SERVER_PUBLIC_URL=http://localhost:13321/go
+      - OXYNOTE_CORE_SERVER_AUTH_BETTER_AUTH_URL=http://auth-realtime:8081/api/auth/get-session
+      - OXYNOTE_CORE_SERVER_PUBLIC_URL=http://localhost:8081/go
       - OXYNOTE_CORE_SERVER_DEMO_PROMETHEUS_URL=http://prometheus:9090
       - OXYNOTE_CORE_STORAGE_URL=http://minio:9000
       - OXYNOTE_CORE_STORAGE_ACCESS_KEY=sparta
@@ -58,7 +57,7 @@ services:
       - OXYNOTE_CORE_STORAGE_BUCKET=dev
       - OXYNOTE_CORE_CHANGEDETECTION_API_URL=http://changedetection:5000
       - OXYNOTE_CORE_CONNECTOR_URL=http://connector:8080
-      - OXYNOTE_CORE_NODE_URL=http://auth-realtime:13321
+      - OXYNOTE_CORE_NODE_URL=http://auth-realtime:8081
     env_file:
       - .env.core
     depends_on:
@@ -247,7 +246,7 @@ services:
     image: grafana/grafana:latest
     container_name: grafana
     ports:
-      - "13000:3000"
+      - "3001:3000"
     volumes:
       - grafana_storage:/var/lib/grafana
     environment:
