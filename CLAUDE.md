@@ -72,7 +72,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 **Oxynote** — collaborative documentation product. One repo, four buildable components:
 
 - `web/` — Nuxt 4 + Vue 3 frontend; ships as both a web app (SSR) and an Electron desktop app. Own **pnpm** workspace (includes the forked `packages/lezer-promql`). Details: [web/CLAUDE.md](web/CLAUDE.md).
-- `server/core/` — Go API server (`oxynote-core`) plus `oxynote-connector` for outbound data-source connections. Vendored Go module `github.com/oxynote/oxynote/server/core`. Details: [server/CLAUDE.md](server/CLAUDE.md).
+- `server/core/` — Go API server (`oxynote-core`) plus `oxynote-connector` for outbound data-source connections. Go module `github.com/oxynote/oxynote/server/core`. Details: [server/CLAUDE.md](server/CLAUDE.md).
 - `server/auth-realtime/` — Node service (`@oxynote/auth-realtime`, **pnpm**) running Better Auth and a Hocuspocus (Yjs) server in one Hono process. Details: [server/CLAUDE.md](server/CLAUDE.md).
 - `datagen/` — demo-data generator; separate Go module `github.com/oxynote/oxynote/datagen`. Demo/testing only.
 - `docker/` — dev docker-compose stack, Caddyfile, `env/` (committed `*.example.env` templates; `make setup` copies them to gitignored `*.local.env`, which is what the compose stack reads), `demo/` (demo-data configs for mariadb/postgres/prometheus).
@@ -82,7 +82,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 From the repository root:
 
 ```sh
-make deps      # install web/ + auth-realtime dependencies (both pnpm)
+make deps      # install web/ + auth-realtime (pnpm) and go module dependencies
 make setup     # deps + web prepare + creates docker/env/*.local.env from templates
 make run       # build images + run the dev stack in the foreground (ctrl-c stops it)
 make start     # build images + run the dev stack in the background

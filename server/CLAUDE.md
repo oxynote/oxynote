@@ -48,7 +48,7 @@ cd server/core && go test ./internal/db/...                    # db (needs Docke
 cd server/core && go test -run Test_New ./internal/db          # single test
 ```
 
-The Go module vendors its dependencies (`server/core/vendor/`), so most `go` commands work offline; `go mod tidy` should be followed by `go mod vendor`.
+Go dependencies are fetched into the module cache at build time (`make deps` runs `go mod download`) — there is no vendoring. All dependencies, including the first-party `github.com/oxynote/wetsocks`, are public; no GOPRIVATE or git auth setup is needed.
 
 ## Caddy / port layout
 
@@ -109,7 +109,7 @@ Env lives in `docker/env/`: committed `*.example.env` templates list **every** v
 - Errors / closers in `cmd/*/main.go` use a hand-rolled `closers []io.Closer` slice and `ioutil.MultiCloser(true, closers...).Close()` to fan-out on shutdown / wrap construction errors. New top-level resources should follow the same pattern (prepend to slice if it should close before the things that depend on it).
 - Logging is `log/slog`, JSON handler, Sentry-wired via `pkg/sentryutil`. Most packages take `*slog.Logger` as their first constructor arg.
 - Metrics use `pkg/metricutil` with a Prometheus registry; each subsystem has its own `Metrics` type initialised from the shared factory.
-- `server/core/pkg/` holds shared utility packages: `redkit` (typed Redis streams), `metricutil`, `logutil`, `ioutil`, `sentryutil`, `redisutil`, `httpserver`, `sqlutil` and friends. `wetsocks` (`github.com/oxynote/wetsocks`) is a first-party public library vendored into the module; `wetsocks/wsserver` is the WebSocket router used by `/api/ws`.
+- `server/core/pkg/` holds shared utility packages: `redkit` (typed Redis streams), `metricutil`, `logutil`, `ioutil`, `sentryutil`, `redisutil`, `httpserver`, `sqlutil` and friends. `wetsocks` (`github.com/oxynote/wetsocks`) is a first-party public library; `wetsocks/wsserver` is the WebSocket router used by `/api/ws`.
 - IDs are `rs/xid` everywhere on the Go side. Frontend-facing types serialise them as strings.
 
 ## Go code style

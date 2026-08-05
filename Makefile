@@ -19,11 +19,14 @@ stop:
 setup:
 	cd web && pnpm run setup
 	cd server/auth-realtime && pnpm install
+	cd server/core && go mod download
+	cd datagen && go mod download
 	for f in core auth-realtime web; do \
 		test -f docker/env/$$f.local.env || cp docker/env/$$f.example.env docker/env/$$f.local.env; \
 	done
 
-# go modules (server/core, datagen) vendor their deps — no install step needed
 deps:
 	cd web && pnpm run deps
 	cd server/auth-realtime && pnpm install
+	cd server/core && go mod download
+	cd datagen && go mod download
