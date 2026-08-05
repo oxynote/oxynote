@@ -24,6 +24,13 @@ export default function () {
 		autoRefetch: true,
 	})
 
+	// whether the server has the Slack App integration configured at all.
+	// Treats "unknown" (still loading) as configured so Slack UI doesn't
+	// flicker away on deployments that do have it.
+	const slackConfigured = computed(
+		() => fetchSlackConnectionStatus.data.value?.configured !== false,
+	)
+
 	async function fetchSlackInstallURL(): Promise<SlackInstallResponse> {
 		// we don't want to use useQuery here as installs are
 		// typically one-off and we don't want to cache them
@@ -61,7 +68,10 @@ export default function () {
 					SLACK_QUERY_KEYS.connected,
 				),
 			)
-			const newStatus: SlackConnectionStatus = { connected: false }
+			const newStatus: SlackConnectionStatus = {
+				connected: false,
+				configured: oldStatus?.configured ?? true,
+			}
 
 			queryCache.setQueryData(SLACK_QUERY_KEYS.connected, newStatus)
 			queryCache.cancelQueries({
@@ -92,6 +102,10 @@ export default function () {
 	const fetchSlackUserLinkSettings = useQuery<SlackUserLinkSettings | null>({
 		key: SLACK_QUERY_KEYS.userLinkSettings,
 		query: async () => {
+			if (!(await fetchSlackConnectionStatus.refresh()).data?.configured) {
+				return null
+			}
+
 			try {
 				return await $apiClient<SlackUserLinkSettings>(`/api/slack/users`, {
 					method: "GET",
@@ -191,6 +205,7 @@ export default function () {
 
 	return {
 		fetchSlackConnectionStatus,
+		slackConfigured,
 		fetchSlackInstallURL,
 		connectSlack,
 		linkSlackUser,

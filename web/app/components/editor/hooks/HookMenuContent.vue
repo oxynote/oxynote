@@ -13,6 +13,8 @@ const emit = defineEmits<{
 	(e: "open-settings", target: "github"): void
 }>()
 
+const { gitHubConfigured } = useGitHubAPI()
+
 const isSubOpen = ref(false)
 
 const matchingActiveHooks = computed(() => {
@@ -124,6 +126,7 @@ function hookProps(type: string, hook: DocumentHook): any {
 					@force-close="isSubOpen = false"
 				/>
 				<GitHubTrackingConfigMenu
+					v-if="gitHubConfigured"
 					:node-id="nodeId"
 					@force-close="isSubOpen = false"
 					@open-settings="(target: 'github') => emit('open-settings', target)"

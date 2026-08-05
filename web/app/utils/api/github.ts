@@ -5,6 +5,7 @@ export interface GitHubRepository {
 
 export interface GitHubConnectionStatus {
 	connected: boolean
+	configured: boolean
 }
 
 export interface GitHubInstallResponse {

@@ -48,6 +48,10 @@ type InstallationState struct {
 // CreateExternalInstallationURL generates the Slack installation URL for the
 // specified organization ID. This is used when installing Slack from the app.
 func (m *Manager) CreateExternalInstallationURL(organizationID string) (string, error) {
+	if !m.Configured() {
+		return "", ErrNotConfigured
+	}
+
 	u := url.URL{
 		Scheme: "https",
 		Host:   _slackHost,
@@ -81,6 +85,10 @@ func (m *Manager) CreateExternalInstallationURL(organizationID string) (string, 
 // CreateInternalInstallationURL generates the Slack installation URL for the
 // specified team ID. This is used when connecting from within Slack.
 func (m *Manager) CreateInternalInstallationURL(teamID string) (string, error) {
+	if !m.Configured() {
+		return "", ErrNotConfigured
+	}
+
 	u, err := url.Parse(m.opt.RedirectURL)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse installation URL: %w", err)
@@ -109,6 +117,10 @@ func (m *Manager) CreateInternalInstallationURL(teamID string) (string, error) {
 // VerifyInstallationState verifies and decrypts the installation state
 // from the given state string.
 func (m *Manager) VerifyInstallationState(state string) (*InstallationState, error) {
+	if !m.Configured() {
+		return nil, ErrNotConfigured
+	}
+
 	decrypted, err := cryptoutil.DecryptText(state, []byte(m.opt.InstallationSigningSecret))
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt installation state: %w", err)

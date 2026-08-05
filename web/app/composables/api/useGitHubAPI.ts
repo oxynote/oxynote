@@ -33,6 +33,13 @@ export default function () {
 		autoRefetch: true,
 	})
 
+	// whether the server has the GitHub App integration configured at all.
+	// Treats "unknown" (still loading) as configured so GitHub UI doesn't
+	// flicker away on deployments that do have it.
+	const gitHubConfigured = computed(
+		() => fetchGitHubConnectionStatus.data.value?.configured !== false,
+	)
+
 	async function fetchGitHubInstallURL(): Promise<GitHubInstallResponse> {
 		// we don't want to use useQuery here as installs are
 		// typically one-off and we don't want to cache them
@@ -58,7 +65,10 @@ export default function () {
 					GITHUB_QUERY_KEYS.connected,
 				),
 			)
-			const newStatus: GitHubConnectionStatus = { connected: false }
+			const newStatus: GitHubConnectionStatus = {
+				connected: false,
+				configured: oldStatus?.configured ?? true,
+			}
 
 			queryCache.setQueryData(GITHUB_QUERY_KEYS.connected, newStatus)
 			queryCache.cancelQueries({
@@ -175,6 +185,7 @@ export default function () {
 
 	return {
 		fetchGitHubConnectionStatus,
+		gitHubConfigured,
 		fetchGitHubInstallURL,
 		connectGitHub,
 		disconnectGitHub,

@@ -22,6 +22,9 @@ var (
 
 	// ErrInstallationNotFound is returned when a GitHub installation resource is not found.
 	ErrInstallationNotFound = errutil.New(http.StatusNotFound, "github.installation_not_found", "installation not found")
+
+	// ErrNotConfigured is returned when the GitHub App integration is not configured on this deployment.
+	ErrNotConfigured = errutil.New(http.StatusConflict, "github.not_configured", "github app is not configured")
 )
 
 // Options holds configuration options for the Github handler.
@@ -49,8 +52,18 @@ type Manager struct {
 	opt       Options
 }
 
-// NewManager creates a new GitHub App client with the given app ID and private key path.
+// NewManager creates a new GitHub App client with the given app ID and private
+// key path. A zero AppID means the GitHub App integration is not configured:
+// the manager is still created, but Configured reports false and every method
+// that talks to GitHub returns ErrNotConfigured.
 func NewManager(db DB, opt Options) (*Manager, error) {
+	if opt.AppID == 0 {
+		return &Manager{
+			db:  db,
+			opt: opt,
+		}, nil
+	}
+
 	appClient, err := createAppClient(opt.AppID, opt.PrivateKeyPath)
 	if err != nil {
 		return nil, err
@@ -63,6 +76,11 @@ func NewManager(db DB, opt Options) (*Manager, error) {
 	}, nil
 }
 
+// Configured reports whether the GitHub App integration is configured.
+func (m *Manager) Configured() bool {
+	return m.appClient != nil
+}
+
 // SignatureSecret returns the signature secret for verifying GitHub request signatures.
 func (m *Manager) SignatureSecret() string {
 	return m.opt.SignatureSecret
@@ -70,6 +88,10 @@ func (m *Manager) SignatureSecret() string {
 
 // HasInstallationClient checks whether InstallationClient exists for the given organization ID.
 func (m *Manager) HasInstallationClient(ctx context.Context, organizationID string) (bool, error) {
+	if !m.Configured() {
+		return false, ErrNotConfigured
+	}
+
 	installationID, err := m.db.FetchGithubInstallationByOrganizationID(ctx, organizationID)
 
 	switch {
@@ -105,6 +127,10 @@ func (m *Manager) HasInstallationClient(ctx context.Context, organizationID stri
 
 // GetInstallationClient fetches an InstallationClient for the given installation ID.
 func (m *Manager) GetInstallationClient(ctx context.Context, organizationID string) (*InstallationClient, error) {
+	if !m.Configured() {
+		return nil, ErrNotConfigured
+	}
+
 	installationID, err := m.db.FetchGithubInstallationByOrganizationID(ctx, organizationID)
 
 	switch {

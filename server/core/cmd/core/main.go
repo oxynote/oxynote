@@ -93,17 +93,24 @@ func main() {
 
 	closers = append([]io.Closer{rdb}, closers...)
 
-	githubAppID, err := strconv.ParseInt(buildinfo.Getenv("GITHUB_APP_ID"), 10, 64)
-	if err != nil {
-		err = ioutil.AppendCloseErr(
-			ioutil.MultiCloser(true, closers...),
-			fmt.Errorf("invalid GITHUB_APP_ID: %w", err),
-		)
+	// an empty GITHUB_APP_ID means the GitHub App integration is disabled.
+	// The zero app ID makes githubapp.NewManager return an unconfigured
+	// manager instead of failing.
+	var githubAppID int64
 
-		log.With("error", err).
-			Error("cannot parse GITHUB_APP_ID")
+	if v := buildinfo.Getenv("GITHUB_APP_ID"); v != "" {
+		githubAppID, err = strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			err = ioutil.AppendCloseErr(
+				ioutil.MultiCloser(true, closers...),
+				fmt.Errorf("invalid GITHUB_APP_ID: %w", err),
+			)
 
-		return
+			log.With("error", err).
+				Error("cannot parse GITHUB_APP_ID")
+
+			return
+		}
 	}
 
 	githubMan, err := githubapp.NewManager(dbc, githubapp.Options{

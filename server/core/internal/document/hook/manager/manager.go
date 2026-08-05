@@ -123,6 +123,16 @@ func (m *Manager) processHooks(ctx context.Context) error {
 				continue
 			}
 
+			// github-tracking hooks cannot make progress without a
+			// configured GitHub App; skip them and leave their state
+			// untouched.
+			if h.Type == hook.TypeGithubTracking && !m.githubMan.Configured() {
+				m.log.With("hook_id", h.ID).
+					Warn("skipping github-tracking hook: github app is not configured")
+
+				continue
+			}
+
 			previousScore := h.Score
 
 			ok := m.ensureHook(ctx, ps, &h)

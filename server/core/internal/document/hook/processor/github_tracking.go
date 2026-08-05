@@ -60,7 +60,8 @@ func (gt *GithubTracking) Process(ctx context.Context, inp Input) (decimal.Decim
 	switch {
 	case err == nil:
 		// OK.
-	case errors.Is(err, githubapp.ErrInstallationNotFound):
+	case errors.Is(err, githubapp.ErrInstallationNotFound),
+		errors.Is(err, githubapp.ErrNotConfigured):
 		return gts.EncodeState(decimal.Zero, GithubTrackingStatusMissingInstallation)
 	default:
 		return decimal.Zero, nil, fmt.Errorf("getting github client: %w", err)
@@ -109,7 +110,8 @@ func (gt *GithubTracking) Reset(ctx context.Context, inp Input) (decimal.Decimal
 	switch {
 	case err == nil:
 		// OK.
-	case errors.Is(err, githubapp.ErrInstallationNotFound):
+	case errors.Is(err, githubapp.ErrInstallationNotFound),
+		errors.Is(err, githubapp.ErrNotConfigured):
 		return gts.EncodeState(decimal.Zero, GithubTrackingStatusMissingInstallation)
 	default:
 		return decimal.Zero, nil, fmt.Errorf("getting github client: %w", err)

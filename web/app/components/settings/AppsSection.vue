@@ -1,10 +1,18 @@
 <script lang="ts" setup>
 import { showToastMessage } from "../toast"
 
-const { fetchGitHubConnectionStatus, fetchGitHubInstallURL, disconnectGitHub } =
-	useGitHubAPI()
-const { fetchSlackConnectionStatus, fetchSlackInstallURL, disconnectSlack } =
-	useSlackAPI()
+const {
+	fetchGitHubConnectionStatus,
+	gitHubConfigured,
+	fetchGitHubInstallURL,
+	disconnectGitHub,
+} = useGitHubAPI()
+const {
+	fetchSlackConnectionStatus,
+	slackConfigured,
+	fetchSlackInstallURL,
+	disconnectSlack,
+} = useSlackAPI()
 const { t } = useI18n({ useScope: "global" })
 const { openExternalLink } = useExternalLinks()
 
@@ -62,7 +70,10 @@ async function disconnectSlackApp() {
 </script>
 <template>
 	<div class="flex flex-col">
-		<div class="flex w-full items-center justify-between gap-4">
+		<div
+			v-if="gitHubConfigured"
+			class="flex w-full items-center justify-between gap-4"
+		>
 			<div class="flex items-center gap-2">
 				<Icon name="simple-icons:github" class="size-7 shrink-0" />
 				<div class="flex flex-col">
@@ -106,8 +117,14 @@ async function disconnectSlackApp() {
 				</ShadcnUiButton>
 			</div>
 		</div>
-		<div class="my-3.5 h-px w-full bg-border" />
-		<div class="flex w-full items-center justify-between gap-2">
+		<div
+			v-if="gitHubConfigured && slackConfigured"
+			class="my-3.5 h-px w-full bg-border"
+		/>
+		<div
+			v-if="slackConfigured"
+			class="flex w-full items-center justify-between gap-2"
+		>
 			<div class="flex items-center gap-2">
 				<Icon name="devicon:slack" class="size-6.5 shrink-0" />
 				<div class="flex flex-col">

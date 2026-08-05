@@ -67,9 +67,30 @@ func NewHandler(log *slog.Logger, db DB, client *http.Client, man *slackapp.Mana
 	}
 }
 
+// RequireConfigured is a middleware that rejects requests with
+// slackapp.ErrNotConfigured when the Slack App integration is not configured
+// on this deployment.
+func (h *Handler) RequireConfigured(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !h.man.Configured() {
+			httpserver.RespondError(h.log, w, slackapp.ErrNotConfigured)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 // VerifySignature is a middleware that verifies the Slack request signature.
 func (h *Handler) VerifySignature(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// respond with a bare 404 when the Slack App is not configured:
+		// no Slack App can be pointing its callbacks at this deployment.
+		if !h.man.Configured() {
+			httpserver.RespondError(h.log, w, errutil.NewPlain(http.StatusNotFound))
+			return
+		}
+
 		if err := h.man.VerifyMiddleware(r); err != nil {
 			httpserver.RespondError(h.log, w, err)
 			return
@@ -82,6 +103,11 @@ func (h *Handler) VerifySignature(next http.Handler) http.Handler {
 // InstallApp handles the installation of a Slack app by exchanging the
 // code for an access token.
 func (h *Handler) InstallApp(w http.ResponseWriter, r *http.Request) {
+	if !h.man.Configured() {
+		httpserver.RespondError(h.log, w, errutil.NewPlain(http.StatusNotFound))
+		return
+	}
+
 	code := r.URL.Query().Get("code")
 	if code == "" {
 		httpserver.RespondError(h.log, w, ErrMissingCode)
@@ -155,20 +181,26 @@ func (h *Handler) CheckInstallation(w http.ResponseWriter, r *http.Request) {
 
 	var connected bool
 
-	_, err = h.db.FetchSlackAppByOrganizationID(r.Context(), session.ActiveOrganizationID)
+	// skip the DB lookup when the Slack App is not configured: this
+	// endpoint always responds 200 so the frontend can use the configured
+	// flag as the capability signal.
+	if h.man.Configured() {
+		_, err = h.db.FetchSlackAppByOrganizationID(r.Context(), session.ActiveOrganizationID)
 
-	switch {
-	case errutil.IsNotFound(err):
-		// OK.
-	case err == nil:
-		connected = true
-	default:
-		httpserver.RespondError(h.log, w, err)
-		return
+		switch {
+		case errutil.IsNotFound(err):
+			// OK.
+		case err == nil:
+			connected = true
+		default:
+			httpserver.RespondError(h.log, w, err)
+			return
+		}
 	}
 
 	httpserver.Respond(h.log, w, map[string]bool{
-		"connected": connected,
+		"connected":  connected,
+		"configured": h.man.Configured(),
 	}, http.StatusOK)
 }
 

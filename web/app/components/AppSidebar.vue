@@ -27,8 +27,10 @@ const emit = defineEmits<{
 const { t } = useI18n({ useScope: "global" })
 const { fetchDocumentTree, updateDocumentTree } = useDocumentAPI()
 const { fetchOrganization, safeSignOut } = useAuthSession()
-const { fetchGitHubConnectionStatus, fetchGitHubInstallURL } = useGitHubAPI()
-const { fetchSlackConnectionStatus, fetchSlackInstallURL } = useSlackAPI()
+const { fetchGitHubConnectionStatus, gitHubConfigured, fetchGitHubInstallURL } =
+	useGitHubAPI()
+const { fetchSlackConnectionStatus, slackConfigured, fetchSlackInstallURL } =
+	useSlackAPI()
 const { useFetchNotificationCount } = useNotificationAPI()
 const fetchNotificationCount = useFetchNotificationCount({ read: false })
 const editorStore = useEditorStore()
@@ -150,7 +152,10 @@ const sections = computed<Section[]>(() => {
 		})
 	}
 
-	if (!fetchGitHubConnectionStatus.data.value?.connected) {
+	if (
+		gitHubConfigured.value &&
+		!fetchGitHubConnectionStatus.data.value?.connected
+	) {
 		nextStepsItems.push({
 			id: "connect-github",
 			name: t("sidebar.sections.next-steps.items.connect-github"),
@@ -167,7 +172,10 @@ const sections = computed<Section[]>(() => {
 		})
 	}
 
-	if (!fetchSlackConnectionStatus.data.value?.connected) {
+	if (
+		slackConfigured.value &&
+		!fetchSlackConnectionStatus.data.value?.connected
+	) {
 		nextStepsItems.push({
 			id: "connect-slack",
 			name: t("sidebar.sections.next-steps.items.connect-slack"),

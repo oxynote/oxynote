@@ -28,6 +28,10 @@ type InstallationState struct {
 // CreateInstallationURL generates the GitHub App installation URL for the
 // specified organization ID.
 func (m *Manager) CreateInstallationURL(organizationID string) (string, error) {
+	if !m.Configured() {
+		return "", ErrNotConfigured
+	}
+
 	u := url.URL{
 		Scheme: "https",
 		Host:   _githubHost,
@@ -57,6 +61,10 @@ func (m *Manager) CreateInstallationURL(organizationID string) (string, error) {
 // VerifyInstallationState verifies and decrypts the installation state
 // from the given state string.
 func (m *Manager) VerifyInstallationState(state string) (*InstallationState, error) {
+	if !m.Configured() {
+		return nil, ErrNotConfigured
+	}
+
 	decrypted, err := cryptoutil.DecryptText(state, []byte(m.opt.InstallationSigningSecret))
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt installation state: %w", err)

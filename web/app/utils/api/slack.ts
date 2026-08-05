@@ -1,5 +1,6 @@
 export interface SlackConnectionStatus {
 	connected: boolean
+	configured: boolean
 }
 
 export interface SlackInstallResponse {

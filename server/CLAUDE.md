@@ -102,7 +102,7 @@ Env lives in `docker/env/`: committed `*.example.env` templates list **every** v
 
 - core vars are prefixed `OXYNOTE_CORE_`; `buildinfo.Getenv("FOO")` reads `OXYNOTE_CORE_FOO`.
 - auth-realtime vars are prefixed `OXYNOTE_AUTH_REALTIME_`.
-- `OXYNOTE_CORE_GITHUB_APP_ID` and the GitHub App private key (mounted from `docker/github/`) are currently **required** for core to boot. The assistant needs `ANTHROPIC_API_KEY`; without it the AI chat can't complete a turn.
+- All integrations are optional. The GitHub App is enabled by setting `OXYNOTE_CORE_GITHUB_APP_ID` and dropping the app's private key into `docker/github/` (mounted into the core container); an empty `OXYNOTE_CORE_GITHUB_APP_ID` disables it — core boots, GitHub routes respond `github.not_configured` (the always-200 `GET /api/github` status endpoint reports `configured: false` as the frontend's capability signal), and github-tracking hooks are skipped. A set app ID with a missing/unreadable key is a boot error. Slack works the same way keyed on `OXYNOTE_CORE_SLACK_CLIENT_ID` (`slack.not_configured`, `GET /api/slack` reports `configured`); a set client ID with other `SLACK_*` values missing is a boot error. The assistant needs `ANTHROPIC_API_KEY`; without it the AI chat can't complete a turn.
 
 ## House conventions worth knowing
 

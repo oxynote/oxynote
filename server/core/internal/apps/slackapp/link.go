@@ -37,6 +37,10 @@ type LinkState struct {
 
 // CreateLinkURL generates a URL for linking a Slack user to an internal account.
 func (m *Manager) CreateLinkURL(slackUserID, slackTeamID, organizationID string) (string, error) {
+	if !m.Configured() {
+		return "", ErrNotConfigured
+	}
+
 	data, err := json.Marshal(LinkState{
 		SlackUserID:    slackUserID,
 		TeamID:         slackTeamID,
@@ -67,6 +71,10 @@ func (m *Manager) CreateLinkURL(slackUserID, slackTeamID, organizationID string)
 
 // VerifyLinkState verifies and decrypts the link state from the given state string.
 func (m *Manager) VerifyLinkState(state string) (*LinkState, error) {
+	if !m.Configured() {
+		return nil, ErrNotConfigured
+	}
+
 	decrypted, err := cryptoutil.DecryptText(state, []byte(m.opt.InstallationSigningSecret))
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt link state: %w", err)

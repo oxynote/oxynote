@@ -21,6 +21,9 @@ var (
 
 	// ErrAppNotConnected is returned when a Slack app is not connected to an organization.
 	ErrAppNotConnected = errutil.New(http.StatusBadRequest, "slack.app_not_connected", "slack app is not connected to an organization")
+
+	// ErrNotConfigured is returned when the Slack App integration is not configured on this deployment.
+	ErrNotConfigured = errutil.New(http.StatusConflict, "slack.not_configured", "slack app is not configured")
 )
 
 // Options holds configuration options for the Slack manager.
@@ -75,7 +78,11 @@ type Manager struct {
 	cleanup func()
 }
 
-// NewManager creates a new Slack App manager with the given options.
+// NewManager creates a new Slack App manager with the given options. An empty
+// client ID means the Slack App integration is not configured: the manager is
+// still created, but Configured reports false, every method that talks to
+// Slack returns ErrNotConfigured, and notifications are not forwarded to
+// Slack.
 func NewManager(
 	log *slog.Logger,
 	db DB,
@@ -83,10 +90,6 @@ func NewManager(
 	notifs notification.NotificationReceiver,
 	opt Options,
 ) (*Manager, error) {
-	if err := opt.Validate(); err != nil {
-		return nil, err
-	}
-
 	m := &Manager{
 		log: log.With("component", "slack-app-manager"),
 		db:  db,
@@ -94,9 +97,22 @@ func NewManager(
 		opt: opt,
 	}
 
+	if opt.ClientID == "" {
+		return m, nil
+	}
+
+	if err := opt.Validate(); err != nil {
+		return nil, err
+	}
+
 	m.cleanup = notifs.OnNotification(m.ProcessNotification)
 
 	return m, nil
+}
+
+// Configured reports whether the Slack App integration is configured.
+func (m *Manager) Configured() bool {
+	return m.opt.ClientID != ""
 }
 
 // Close stops and closes all processes.
@@ -194,6 +210,10 @@ func (m *Manager) VerifyMiddleware(r *http.Request) error {
 
 // ExchangeCode exchanges an OAuth code for an app access data.
 func (m *Manager) ExchangeCode(ctx context.Context, code string) (*AppAccess, error) {
+	if !m.Configured() {
+		return nil, ErrNotConfigured
+	}
+
 	resp, err := slack.GetOAuthV2ResponseContext(
 		ctx,
 		http.DefaultClient,
@@ -215,6 +235,10 @@ func (m *Manager) ExchangeCode(ctx context.Context, code string) (*AppAccess, er
 
 // GetClient creates a Slack client for the given team ID.
 func (m *Manager) GetClient(ctx context.Context, teamID string) (*slack.Client, error) {
+	if !m.Configured() {
+		return nil, ErrNotConfigured
+	}
+
 	app, err := m.db.FetchSlackAppByTeamID(ctx, teamID)
 	if err != nil {
 		if errutil.IsNotFound(err) {

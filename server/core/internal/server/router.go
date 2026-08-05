@@ -163,16 +163,22 @@ func (s *Server) router() chi.Router {
 	}))
 
 	r.Route("/github", func(sr chi.Router) {
+		// the status endpoint stays available when the GitHub App is not
+		// configured: it is the capability signal for the frontend.
 		sr.Get("/", s.handlers.github.CheckInstallation)
-		sr.Delete("/", s.handlers.github.DisconnectOrganization)
-		sr.Get("/install", s.handlers.github.FetchInstall)
-		sr.Get("/connect", s.handlers.github.ConnectOrganization)
-		sr.Get("/issues", s.handlers.github.FetchIssues)
-		sr.Route("/repositories", func(ssr chi.Router) {
-			ssr.Get("/", s.handlers.github.FetchRepositories)
-			ssr.Route("/{repository}", func(sssr chi.Router) {
-				sssr.Get("/branches", s.handlers.github.FetchRepositoryBranches)
-				sssr.Get("/tree", s.handlers.github.FetchRepositoryTree)
+
+		sr.Group(func(ssr chi.Router) {
+			ssr.Use(s.handlers.github.RequireConfigured)
+			ssr.Delete("/", s.handlers.github.DisconnectOrganization)
+			ssr.Get("/install", s.handlers.github.FetchInstall)
+			ssr.Get("/connect", s.handlers.github.ConnectOrganization)
+			ssr.Get("/issues", s.handlers.github.FetchIssues)
+			ssr.Route("/repositories", func(sssr chi.Router) {
+				sssr.Get("/", s.handlers.github.FetchRepositories)
+				sssr.Route("/{repository}", func(ssssr chi.Router) {
+					ssssr.Get("/branches", s.handlers.github.FetchRepositoryBranches)
+					ssssr.Get("/tree", s.handlers.github.FetchRepositoryTree)
+				})
 			})
 		})
 	})
@@ -187,16 +193,22 @@ func (s *Server) router() chi.Router {
 	})
 
 	r.Route("/slack", func(sr chi.Router) {
+		// the status endpoint stays available when the Slack App is not
+		// configured: it is the capability signal for the frontend.
 		sr.Get("/", s.handlers.slack.CheckInstallation)
-		sr.Delete("/", s.handlers.slack.DisconnectOrganization)
-		sr.Get("/install", s.handlers.slack.FetchInstall)
-		sr.Get("/connect", s.handlers.slack.ConnectOrganization)
-		sr.Get("/messages", s.handlers.slack.FetchMessages)
-		sr.Route("/users", func(ssr chi.Router) {
-			ssr.Get("/", s.handlers.slack.FetchUserLink)
-			ssr.Put("/settings", s.handlers.slack.UpdateUserLink)
-			ssr.Delete("/", s.handlers.slack.DeleteUserLink)
-			ssr.Get("/link", s.handlers.slack.LinkUser)
+
+		sr.Group(func(ssr chi.Router) {
+			ssr.Use(s.handlers.slack.RequireConfigured)
+			ssr.Delete("/", s.handlers.slack.DisconnectOrganization)
+			ssr.Get("/install", s.handlers.slack.FetchInstall)
+			ssr.Get("/connect", s.handlers.slack.ConnectOrganization)
+			ssr.Get("/messages", s.handlers.slack.FetchMessages)
+			ssr.Route("/users", func(sssr chi.Router) {
+				sssr.Get("/", s.handlers.slack.FetchUserLink)
+				sssr.Put("/settings", s.handlers.slack.UpdateUserLink)
+				sssr.Delete("/", s.handlers.slack.DeleteUserLink)
+				sssr.Get("/link", s.handlers.slack.LinkUser)
+			})
 		})
 	})
 
