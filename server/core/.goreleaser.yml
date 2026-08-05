@@ -46,31 +46,39 @@ builds:
       - "-X github.com/oxynote/oxynote/server/core/internal/buildinfo._version={{ .Version }}"
       - "-X github.com/oxynote/oxynote/server/core/internal/buildinfo._commit={{ .ShortCommit }}"
       - "-X github.com/oxynote/oxynote/server/core/internal/buildinfo._timestampString={{ .CommitDate }}"
-dockers:
-  - ids:
+dockers_v2:
+  - id: core
+    ids:
       - core
-    goos: linux
-    goarch: amd64
-    image_templates:
-      - "ghcr.io/oxynote/core:{{ .Version }}"
-      - "ghcr.io/oxynote/core:latest"
     dockerfile: ./Dockerfile.dev
-    build_flag_templates:
-      - "--pull"
-      - "--platform=linux/amd64"
-      - "--build-arg=BINARY={{ .ProjectName }}-core"
-  - ids:
+    images:
+      - ghcr.io/oxynote/core
+    tags:
+      - "{{ .Version }}"
+      - latest
+    platforms:
+      - linux/amd64
+    build_args:
+      BINARY: oxynote-core
+    sbom: false
+    flags:
+      - "--provenance=false"
+  - id: connector
+    ids:
       - connector
-    goos: linux
-    goarch: amd64
-    image_templates:
-      - "ghcr.io/oxynote/connector:{{ .Version }}"
-      - "ghcr.io/oxynote/connector:latest"
     dockerfile: ./Dockerfile.dev
-    build_flag_templates:
-      - "--pull"
-      - "--platform=linux/amd64"
-      - "--build-arg=BINARY={{ .ProjectName }}-connector"
+    images:
+      - ghcr.io/oxynote/connector
+    tags:
+      - "{{ .Version }}"
+      - latest
+    platforms:
+      - linux/amd64
+    build_args:
+      BINARY: oxynote-connector
+    sbom: false
+    flags:
+      - "--provenance=false"
 checksum:
   disable: true
 archives:

@@ -1,3 +1,4 @@
 FROM gcr.io/distroless/static-debian10:nonroot
-COPY oxynote-datagen /
+ARG TARGETPLATFORM
+COPY ${TARGETPLATFORM}/oxynote-datagen /oxynote-datagen
 ENTRYPOINT ["/oxynote-datagen"]

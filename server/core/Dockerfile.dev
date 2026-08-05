@@ -1,5 +1,6 @@
 FROM gcr.io/distroless/static-debian10:nonroot
+ARG TARGETPLATFORM
 ARG BINARY
-COPY ${BINARY} /app
+COPY ${TARGETPLATFORM}/${BINARY} /app
 ENTRYPOINT ["/app"]
 EXPOSE 8080

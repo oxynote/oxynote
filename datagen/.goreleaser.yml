@@ -21,18 +21,21 @@ builds:
       - "-trimpath"
     ldflags:
       - "-s -w"
-dockers:
-  - ids:
+dockers_v2:
+  - id: datagen
+    ids:
       - oxynote-datagen
-    goos: linux
-    goarch: amd64
-    image_templates:
-      - "ghcr.io/oxynote/datagen:{{ .Version }}"
-      - "ghcr.io/oxynote/datagen:latest"
     dockerfile: ./Dockerfile.dev
-    build_flag_templates:
-      - "--pull"
-      - "--platform=linux/amd64"
+    images:
+      - ghcr.io/oxynote/datagen
+    tags:
+      - "{{ .Version }}"
+      - latest
+    platforms:
+      - linux/amd64
+    sbom: false
+    flags:
+      - "--provenance=false"
 checksum:
   disable: true
 archives:
