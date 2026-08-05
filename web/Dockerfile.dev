@@ -1,0 +1,33 @@
+FROM node:22-alpine AS base
+
+FROM base AS builder
+
+# the lezer-promql build script is a bash script; alpine only ships ash
+RUN apk add --no-cache bash
+RUN corepack enable
+WORKDIR /app
+
+# the vite client build exceeds node's default ~2GB heap
+ENV NODE_OPTIONS="--max-old-space-size=4096"
+
+COPY . .
+
+# install runs `prepare` (lezer-promql build + nuxt prepare); the node-server
+# preset produces a self-contained SSR server in .output that reads
+# NUXT_PUBLIC_* / NUXT_* runtime config from env at startup.
+RUN pnpm install --frozen-lockfile && \
+    NITRO_PRESET=node-server pnpm run build:web
+
+FROM base AS runner
+WORKDIR /app
+
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nuxt
+
+COPY --from=builder --chown=nuxt:nodejs /app/.output /app/.output
+
+ENV NODE_ENV=production
+USER nuxt
+EXPOSE 3000
+
+CMD ["node", "/app/.output/server/index.mjs"]

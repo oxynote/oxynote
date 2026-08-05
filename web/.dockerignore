@@ -1,0 +1,11 @@
+node_modules
+.nuxt
+.output
+.vite
+.data
+dist
+out
+.env
+.env.*
+packages/*/node_modules
+packages/*/dist

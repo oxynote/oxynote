@@ -70,7 +70,11 @@ export default defineNuxtConfig({
 
 	nitro: {
 		// https://content.nuxt.com/docs/deploy/cloudflare-pages
-		preset: isDesktopBuild ? "static" : "cloudflare_pages",
+		// NITRO_PRESET only applies to web builds — e.g. `node-server` for the
+		// self-hosted docker image. Desktop builds are always static.
+		preset: isDesktopBuild
+			? "static"
+			: (process.env.NITRO_PRESET ?? "cloudflare_pages"),
 	},
 
 	modules: [
@@ -112,6 +116,12 @@ export default defineNuxtConfig({
 	},
 
 	runtimeConfig: {
+		// server-only SSR overrides. When the app runs inside a container, the
+		// public localhost URLs are unreachable from the server side — these
+		// point SSR fetches at the backend services directly and fall back to
+		// the public URLs when unset.
+		goAPIInternalHttpURL: "",
+		nodejsAPIInternalHttpURL: "",
 		public: {
 			sentryDSN: "",
 			appBaseURL: "",
@@ -213,8 +223,13 @@ export default defineNuxtConfig({
 		authToken: process.env.SENTRY_AUTH_TOKEN,
 	},
 
-	sourcemap: {
-		client: "hidden",
-		server: "hidden",
-	},
+	// hidden sourcemaps exist only for the Sentry upload. Skip generating
+	// them when no auth token is present (e.g. self-hosted docker builds) —
+	// they roughly double the build's memory footprint.
+	sourcemap: process.env.SENTRY_AUTH_TOKEN
+		? {
+				client: "hidden",
+				server: "hidden",
+			}
+		: false,
 })

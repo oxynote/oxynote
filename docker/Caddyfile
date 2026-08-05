@@ -17,7 +17,17 @@
 		reverse_proxy core:8080
 	}
 
-	reverse_proxy auth-realtime:8081
+	handle /api/* {
+		reverse_proxy auth-realtime:8081
+	}
+
+	handle /hocuspocus {
+		reverse_proxy auth-realtime:8081
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
 }
 
 :9001 {

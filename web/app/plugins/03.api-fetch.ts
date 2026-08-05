@@ -11,7 +11,9 @@ export default defineNuxtPlugin((nuxtApp) => {
 		: undefined
 
 	const goAPI = $fetch.create({
-		baseURL: config.public.goAPIBaseHttpURL as string,
+		baseURL:
+			(import.meta.server && (config.goAPIInternalHttpURL as string)) ||
+			(config.public.goAPIBaseHttpURL as string),
 		credentials: "include",
 		onRequest({ options }) {
 			if (!ssrHeaders) {
@@ -37,7 +39,9 @@ export default defineNuxtPlugin((nuxtApp) => {
 	})
 
 	const nodejsAPI = $fetch.create({
-		baseURL: config.public.nodejsAPIBaseHttpURL as string,
+		baseURL:
+			(import.meta.server && (config.nodejsAPIInternalHttpURL as string)) ||
+			(config.public.nodejsAPIBaseHttpURL as string),
 		credentials: "include",
 		onRequest({ options }) {
 			if (!ssrHeaders) {

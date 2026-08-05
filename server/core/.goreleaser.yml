@@ -54,7 +54,7 @@ dockers:
     image_templates:
       - "ghcr.io/oxynote/core:{{ .Version }}"
       - "ghcr.io/oxynote/core:latest"
-    dockerfile: ./docker/Dockerfile
+    dockerfile: ./Dockerfile.dev
     build_flag_templates:
       - "--pull"
       - "--platform=linux/amd64"
@@ -66,7 +66,7 @@ dockers:
     image_templates:
       - "ghcr.io/oxynote/connector:{{ .Version }}"
       - "ghcr.io/oxynote/connector:latest"
-    dockerfile: ./docker/Dockerfile
+    dockerfile: ./Dockerfile.dev
     build_flag_templates:
       - "--pull"
       - "--platform=linux/amd64"

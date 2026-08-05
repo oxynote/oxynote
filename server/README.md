@@ -41,7 +41,7 @@ Then, from within the `auth-realtime` directory, run (make sure that other env v
 that are needed by src/auth.ts are available and exported too):
 
 ```
-source ../docker/.env.auth-realtime && npx @better-auth/cli generate --output ./sql/better_auth_schema.sql
+source ../../docker/env/auth-realtime.local.env && npx @better-auth/cli generate --output ./sql/better_auth_schema.sql
 ```
 
 (You can comment redis, etc. out in the auth.ts file)

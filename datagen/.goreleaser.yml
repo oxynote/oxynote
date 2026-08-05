@@ -29,9 +29,10 @@ dockers:
     image_templates:
       - "ghcr.io/oxynote/datagen:{{ .Version }}"
       - "ghcr.io/oxynote/datagen:latest"
-    dockerfile: ./docker/Dockerfile
+    dockerfile: ./Dockerfile.dev
     build_flag_templates:
       - "--pull"
+      - "--platform=linux/amd64"
 checksum:
   disable: true
 archives:

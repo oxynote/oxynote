@@ -36,7 +36,7 @@ There is no test runner configured in web/.
 
 The `DESKTOP_BUILD` env var drives a Vite `define` that materializes `__DESKTOP_BUILD__` in the bundle. See [nuxt.config.ts:9-24](nuxt.config.ts#L9-L24) and [index.d.ts:1-9](index.d.ts#L1-L9):
 
-- `DESKTOP_BUILD=0` / unset → web build. `__DESKTOP_BUILD__` is literal `false`. SSR enabled. Nitro preset `cloudflare_pages`.
+- `DESKTOP_BUILD=0` / unset → web build. `__DESKTOP_BUILD__` is literal `false`. SSR enabled. Nitro preset `cloudflare_pages`, overridable via `NITRO_PRESET` (the docker image builds with `node-server`).
 - `DESKTOP_BUILD=1` → pure desktop build. Literal `true`. SSR off. Nitro preset `static`. Renderer is served from `oxynote://app/index.html` out of `.output/public/`.
 - `DESKTOP_BUILD=hybrid` → dev-only, used by `start:dev:desktop`. One Nuxt dev server is hit by *both* the Electron renderer and the system browser opened for OAuth. `__DESKTOP_BUILD__` becomes a *runtime probe* of `window.__isElectron` (set by [electron/preload.ts](electron/preload.ts)) so each context picks the right branch from the same bundle.
 
@@ -61,6 +61,8 @@ OAuth flow on desktop: renderer calls `window.requestAuth({ provider })` → ope
 - `$nodejsAPIClient` → Node API (`NUXT_PUBLIC_NODEJS_API_BASE_HTTP_URL`)
 
 Both propagate SSR request headers (captured eagerly during plugin setup — the H3 context is lost inside `onRequest` callbacks on Cloudflare workerd) and redirect to `/login` on 401.
+
+When the server-only runtime config keys `goAPIInternalHttpURL` / `nodejsAPIInternalHttpURL` (`NUXT_GO_API_INTERNAL_HTTP_URL` / `NUXT_NODEJS_API_INTERNAL_HTTP_URL`) are set, SSR fetches (including the auth client in `app/plugins/02.auth.ts`) use them instead of the public URLs — required when the app runs inside a container where the public localhost origin is unreachable.
 
 ## Data layer
 
