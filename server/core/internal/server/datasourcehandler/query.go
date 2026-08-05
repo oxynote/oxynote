@@ -64,7 +64,7 @@ func (h *Handler) queryPrometheusGeneric(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	status, result, err := h.connector.PrometheusQuery(r.Context(), *ds, query, *tr)
+	status, result, err := h.executor.PrometheusQuery(r.Context(), *ds, query, *tr)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -99,7 +99,7 @@ func (h *Handler) queryMySQLGeneric(w http.ResponseWriter, r *http.Request, ds *
 		return
 	}
 
-	status, result, err := h.connector.MySQLQuery(r.Context(), *ds, query, *tr)
+	status, result, err := h.executor.MySQLQuery(r.Context(), *ds, query, *tr)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -134,7 +134,7 @@ func (h *Handler) queryPostgreSQLGeneric(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	status, result, err := h.connector.PostgreSQLQuery(r.Context(), *ds, query, *tr)
+	status, result, err := h.executor.PostgreSQLQuery(r.Context(), *ds, query, *tr)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return

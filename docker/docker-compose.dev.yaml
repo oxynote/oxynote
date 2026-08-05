@@ -63,24 +63,11 @@ services:
         condition: service_healthy
       meilisearch:
         condition: service_started
-      connector:
-        condition: service_started
     volumes:
       # optional GitHub App private key: drop oxynote.private-key.pem into
       # docker/github/ and set OXYNOTE_CORE_GITHUB_APP_ID to enable the
       # GitHub App integration.
       - ./github:/etc/oxynote/core/github:ro
-    restart: unless-stopped
-    logging:
-      driver: local
-      options:
-        mode: non-blocking
-        max-size: 10m
-        max-file: "3"
-  connector:
-    container_name: connector
-    image: ghcr.io/oxynote/connector:dev
-    platform: linux/amd64
     restart: unless-stopped
     logging:
       driver: local

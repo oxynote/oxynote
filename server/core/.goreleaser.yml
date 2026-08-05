@@ -25,27 +25,6 @@ builds:
       - "-X github.com/oxynote/oxynote/server/core/internal/buildinfo._version={{ .Version }}"
       - "-X github.com/oxynote/oxynote/server/core/internal/buildinfo._commit={{ .ShortCommit }}"
       - "-X github.com/oxynote/oxynote/server/core/internal/buildinfo._timestampString={{ .CommitDate }}"
-  - id: connector
-    main: ./cmd/connector
-    binary: "{{ .ProjectName }}-connector"
-    mod_timestamp: "{{ .CommitTimestamp }}"
-    no_unique_dist_dir: true
-    env:
-      - CGO_ENABLED=0
-    goos:
-      - linux
-    goarch:
-      - amd64
-    tags:
-      - "{{if not .IsSnapshot}} prod {{end}}"
-    flags:
-      - "-trimpath"
-    ldflags:
-      - "-s -w"
-      - "-X github.com/oxynote/oxynote/server/core/internal/buildinfo._name={{ .ProjectName }}_connector"
-      - "-X github.com/oxynote/oxynote/server/core/internal/buildinfo._version={{ .Version }}"
-      - "-X github.com/oxynote/oxynote/server/core/internal/buildinfo._commit={{ .ShortCommit }}"
-      - "-X github.com/oxynote/oxynote/server/core/internal/buildinfo._timestampString={{ .CommitDate }}"
 dockers_v2:
   - id: core
     ids:
@@ -60,22 +39,6 @@ dockers_v2:
       - linux/amd64
     build_args:
       BINARY: oxynote-core
-    sbom: false
-    flags:
-      - "--provenance=false"
-  - id: connector
-    ids:
-      - connector
-    dockerfile: ./Dockerfile.dev
-    images:
-      - ghcr.io/oxynote/connector
-    tags:
-      - "{{ .Version }}"
-      - latest
-    platforms:
-      - linux/amd64
-    build_args:
-      BINARY: oxynote-connector
     sbom: false
     flags:
       - "--provenance=false"

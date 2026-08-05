@@ -45,7 +45,7 @@ func (h *Handler) QueryPrometheusDataSource(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	status, result, err := h.connector.PrometheusQuery(r.Context(), *ds, query, *tr)
+	status, result, err := h.executor.PrometheusQuery(r.Context(), *ds, query, *tr)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -87,7 +87,7 @@ func (h *Handler) FetchPrometheusDataSourceMetadata(w http.ResponseWriter, r *ht
 		return
 	}
 
-	status, result, err := h.connector.PrometheusMetadata(r.Context(), *ds)
+	status, result, err := h.executor.PrometheusMetadata(r.Context(), *ds)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -135,7 +135,7 @@ func (h *Handler) FetchPrometheusDataSourceLabelNames(w http.ResponseWriter, r *
 		return
 	}
 
-	status, result, err := h.connector.PrometheusLabelNames(r.Context(), *ds, r.URL.Query()[_prometheusMatchersQuery], *tr)
+	status, result, err := h.executor.PrometheusLabelNames(r.Context(), *ds, r.URL.Query()[_prometheusMatchersQuery], *tr)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -188,7 +188,7 @@ func (h *Handler) FetchPrometheusDataSourceLabelValues(w http.ResponseWriter, r 
 		return
 	}
 
-	status, result, err := h.connector.PrometheusLabelValues(r.Context(), *ds, label, r.URL.Query()[_prometheusMatchersQuery], *tr)
+	status, result, err := h.executor.PrometheusLabelValues(r.Context(), *ds, label, r.URL.Query()[_prometheusMatchersQuery], *tr)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -235,7 +235,7 @@ func (h *Handler) FetchPrometheusDataSourceSeries(w http.ResponseWriter, r *http
 		return
 	}
 
-	status, result, err := h.connector.PrometheusSeries(r.Context(), *ds, r.URL.Query()[_prometheusMatchersQuery], *tr)
+	status, result, err := h.executor.PrometheusSeries(r.Context(), *ds, r.URL.Query()[_prometheusMatchersQuery], *tr)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return

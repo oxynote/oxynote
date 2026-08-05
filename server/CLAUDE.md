@@ -8,13 +8,11 @@ comment/whitespace rules live in the root [CLAUDE.md](../CLAUDE.md).
 
 `server/` is the backend half of the Oxynote collaborative documentation product. Paths below are relative to the repository root; three buildable components, all orchestrated through `docker-compose`:
 
-- `server/core/` — Go module `github.com/oxynote/oxynote/server/core`. Two binaries:
-  - `cmd/core` (`oxynote-core`) — main API server. Listens on `:8080`. Exposes `/api/...` (auth-required) and `/api/x/...` (internal-only, no auth; the reverse proxy is expected to firewall this). Owns Postgres, Meilisearch, Valkey (Redis), MinIO, the GitHub/Slack apps and the assistant.
-  - `cmd/connector` (`oxynote-connector`) — a separate, near-empty HTTP server that core calls via `CONNECTOR_URL`. Used for outbound data-source connections from a different network boundary.
+- `server/core/` — Go module `github.com/oxynote/oxynote/server/core`. One binary: `cmd/core` (`oxynote-core`) — main API server. Listens on `:8080`. Exposes `/api/...` (auth-required) and `/api/x/...` (internal-only, no auth; the reverse proxy is expected to firewall this). Owns Postgres, Meilisearch, Valkey (Redis), MinIO, the GitHub/Slack apps, the assistant, and the outbound data-source connections (`internal/datasource`).
 - `server/auth-realtime/` — `@oxynote/auth-realtime` package. TypeScript ES-module service that runs Better Auth (organization plugin) and a Hocuspocus (Yjs CRDT) server in a single Hono process on port `8081`. Forwards non-auth `/api/...` traffic to core (`OXYNOTE_AUTH_REALTIME_BACKEND_URL`).
 - `datagen/` — separate Go module `github.com/oxynote/oxynote/datagen`. Synthesises demo Postgres/MariaDB content and a fake metrics endpoint scraped by Prometheus for the demo data sources.
 
-Go builds go through **goreleaser**: `make build` in `server/core` and `datagen` runs `goreleaser release --snapshot --clean`, producing binaries in `bin/` and the `ghcr.io/oxynote/{core,connector,datagen}:dev` images via each module's `Dockerfile.dev`. The dev compose stack consumes those images; `auth-realtime` (and `web/`) are built from source by compose via their `Dockerfile.dev`. `make run` / `make start` from the repository root orchestrates both.
+Go builds go through **goreleaser**: `make build` in `server/core` and `datagen` runs `goreleaser release --snapshot --clean`, producing binaries in `bin/` and the `ghcr.io/oxynote/{core,datagen}:dev` images via each module's `Dockerfile.dev`. The dev compose stack consumes those images; `auth-realtime` (and `web/`) are built from source by compose via their `Dockerfile.dev`. `make run` / `make start` from the repository root orchestrates both.
 
 ## Common commands
 
@@ -27,7 +25,7 @@ docker-compose -p oxynote -f docker/docker-compose.dev.yaml up    # bring up the
 Per-component:
 
 ```sh
-# core (+ connector)
+# core
 cd server/core && make build      # goreleaser release --snapshot --clean -> bin/
 
 # datagen

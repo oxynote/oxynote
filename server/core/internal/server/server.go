@@ -17,7 +17,6 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/apps/webchanges"
 	"github.com/oxynote/oxynote/server/core/internal/assistant"
 	"github.com/oxynote/oxynote/server/core/internal/buildinfo"
-	"github.com/oxynote/oxynote/server/core/internal/datasource/connector"
 	"github.com/oxynote/oxynote/server/core/internal/email"
 	"github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/internal/server/aihandler"
@@ -111,7 +110,6 @@ func NewServer(
 	searchGateway dochandler.SearchGateway,
 	notifier Notifier,
 	emailSender *email.Sender,
-	connectorClient *connector.Client,
 	client *http.Client,
 ) (*Server, error) {
 	if err := opts.validate(); err != nil {
@@ -138,7 +136,7 @@ func NewServer(
 	srv.handlers.github = githubhandler.NewHandler(log, db, client, githubMan)
 	srv.handlers.slack = slackhandler.NewHandler(log, db, http.DefaultClient, slackMan)
 	srv.handlers.notification = notifhandler.NewHandler(log, db, notifier)
-	srv.handlers.datasource = datasourcehandler.NewHandler(log, db, connectorClient)
+	srv.handlers.datasource = datasourcehandler.NewHandler(log, db)
 	srv.handlers.email = emailhandler.NewHandler(log, emailSender)
 
 	wsAcceptOpts := websocket.AcceptOptions{

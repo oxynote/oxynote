@@ -4,4 +4,3 @@
 build:
 	goreleaser release --snapshot --clean
 	docker tag ghcr.io/oxynote/core:dev-amd64 ghcr.io/oxynote/core:dev
-	docker tag ghcr.io/oxynote/connector:dev-amd64 ghcr.io/oxynote/connector:dev

@@ -13,6 +13,7 @@ import (
 	"github.com/guregu/null/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const (
@@ -216,8 +217,9 @@ func (p *PostgreSQL) Query(ctx context.Context, q string, tr TimeRange) (*Postgr
 			return nil, fmt.Errorf("error reading row values: %w", err)
 		}
 
-		for _, v := range values {
+		for i, v := range values {
 			payloadSize += pgEstimateValueSize(v)
+			values[i] = pgNormalizeValue(v)
 		}
 
 		if payloadSize > _queryPayloadLimit {
@@ -485,6 +487,32 @@ func (pqr *PostgreSQLQueryResult) identifyColumns() (timeIdx int, valueIdxs []in
 	}
 
 	return
+}
+
+// pgNormalizeValue converts native pgx row values into the JSON-shaped values
+// the rest of the pipeline expects (Transform, HTTP responses). Timestamps
+// become RFC3339 strings and all numeric types become float64, mirroring what
+// JSON marshaling produces for these types.
+func pgNormalizeValue(v any) any {
+	switch val := v.(type) {
+	case time.Time:
+		return val.Format(time.RFC3339Nano)
+	case int64:
+		return float64(val)
+	case int32:
+		return float64(val)
+	case int16:
+		return float64(val)
+	case pgtype.Numeric:
+		f, err := val.Float64Value()
+		if err != nil || !f.Valid {
+			return v
+		}
+
+		return f.Float64
+	default:
+		return v
+	}
 }
 
 // pgParseTimestamp parses a timestamp value from a PostgreSQL result row.

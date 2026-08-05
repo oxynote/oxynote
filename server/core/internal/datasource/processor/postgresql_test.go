@@ -2,7 +2,9 @@ package processor
 
 import (
 	"testing"
+	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -401,6 +403,58 @@ func Test_sqlSetLimit(t *testing.T) {
 			t.Parallel()
 
 			result := sqlSetLimit(tc.Query, tc.Limit)
+			assert.Equal(t, tc.Expected, result)
+		})
+	}
+}
+
+func Test_pgNormalizeValue(t *testing.T) {
+	numeric := pgtype.Numeric{}
+	require.NoError(t, numeric.Scan("42.5"))
+
+	tests := map[string]struct {
+		In       any
+		Expected any
+	}{
+		"Timestamp becomes RFC3339 string": {
+			In:       time.Date(2026, 8, 5, 12, 30, 0, 0, time.UTC),
+			Expected: "2026-08-05T12:30:00Z",
+		},
+		"Int64 becomes float64": {
+			In:       int64(42),
+			Expected: 42.0,
+		},
+		"Int32 becomes float64": {
+			In:       int32(7),
+			Expected: 7.0,
+		},
+		"Int16 becomes float64": {
+			In:       int16(3),
+			Expected: 3.0,
+		},
+		"Numeric becomes float64": {
+			In:       numeric,
+			Expected: 42.5,
+		},
+		"Float64 passes through": {
+			In:       42.5,
+			Expected: 42.5,
+		},
+		"String passes through": {
+			In:       "foo",
+			Expected: "foo",
+		},
+		"Nil passes through": {
+			In:       nil,
+			Expected: nil,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			result := pgNormalizeValue(tc.In)
 			assert.Equal(t, tc.Expected, result)
 		})
 	}

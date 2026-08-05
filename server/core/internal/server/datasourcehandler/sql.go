@@ -42,7 +42,7 @@ func (h *Handler) FetchSQLQueryLabels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	status, labels, err := h.connector.SQLQueryLabels(r.Context(), *ds, query, *tr)
+	status, labels, err := h.executor.SQLQueryLabels(r.Context(), *ds, query, *tr)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -92,7 +92,7 @@ func (h *Handler) FetchSQLMetadata(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	status, result, err := h.connector.SQLMetadata(r.Context(), *ds)
+	status, result, err := h.executor.SQLMetadata(r.Context(), *ds)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return

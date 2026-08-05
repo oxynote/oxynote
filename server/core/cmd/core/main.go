@@ -20,7 +20,6 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/apps/webchanges"
 	"github.com/oxynote/oxynote/server/core/internal/assistant"
 	"github.com/oxynote/oxynote/server/core/internal/buildinfo"
-	"github.com/oxynote/oxynote/server/core/internal/datasource/connector"
 	"github.com/oxynote/oxynote/server/core/internal/db"
 	hookMan "github.com/oxynote/oxynote/server/core/internal/document/hook/manager"
 	"github.com/oxynote/oxynote/server/core/internal/document/liveedit"
@@ -222,11 +221,6 @@ func main() {
 		buildinfo.Getenv("EMAIL_MAILGUN_API_KEY"),
 	)
 
-	connectorClient := connector.NewClient(
-		buildinfo.Getenv("CONNECTOR_URL"),
-		http.DefaultClient,
-	)
-
 	liveEditClient := liveedit.NewClient(
 		http.DefaultClient,
 		buildinfo.Getenv("NODE_URL"),
@@ -264,7 +258,6 @@ func main() {
 		searchClient,
 		notifMan,
 		emailSender,
-		connectorClient,
 		http.DefaultClient,
 	)
 	if err != nil {

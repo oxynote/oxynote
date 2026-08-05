@@ -6,7 +6,6 @@ import (
 	"net/http"
 
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
-	"github.com/oxynote/oxynote/server/core/internal/datasource/connector"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 	"github.com/oxynote/oxynote/server/core/internal/server/auth"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
@@ -15,17 +14,16 @@ import (
 
 // Handler holds dependencies required for data source operations.
 type Handler struct {
-	log       *slog.Logger
-	db        DB
-	connector *connector.Client
+	log      *slog.Logger
+	db       DB
+	executor datasource.Executor
 }
 
-// NewHandler creates a new handler instance with the provided logger, database, and connector client.
-func NewHandler(log *slog.Logger, db DB, connectorClient *connector.Client) *Handler {
+// NewHandler creates a new handler instance with the provided logger and database.
+func NewHandler(log *slog.Logger, db DB) *Handler {
 	return &Handler{
-		log:       log,
-		db:        db,
-		connector: connectorClient,
+		log: log,
+		db:  db,
 	}
 }
 
@@ -46,7 +44,7 @@ func (h *Handler) CreateDataSource(w http.ResponseWriter, r *http.Request) {
 
 	ds := datasource.NewDataSource(input, session.ActiveOrganizationID)
 
-	status, err := h.connector.TestConnection(r.Context(), *ds)
+	status, err := h.executor.TestConnection(r.Context(), *ds)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -112,7 +110,7 @@ func (h *Handler) TestDataSourceConnection(w http.ResponseWriter, r *http.Reques
 
 	prevStatus := ds.Status
 
-	status, err := h.connector.TestConnection(r.Context(), *ds)
+	status, err := h.executor.TestConnection(r.Context(), *ds)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -187,7 +185,7 @@ func (h *Handler) UpdateDataSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	status, err := h.connector.TestConnection(r.Context(), *ds)
+	status, err := h.executor.TestConnection(r.Context(), *ds)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
