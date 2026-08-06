@@ -8,9 +8,9 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile
     restart: unless-stopped
     ports:
+      - "8080:8080"
       - "8081:8081"
-      - "9001:9001"
-      - "5001:5001"
+      - "8082:8082"
     logging:
       driver: local
       options:
@@ -236,7 +236,7 @@ services:
     image: grafana/grafana:latest
     container_name: grafana
     ports:
-      - "3001:3000"
+      - "8083:3000"
     volumes:
       - grafana_storage:/var/lib/grafana
     environment:

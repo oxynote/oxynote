@@ -10,7 +10,7 @@
 	header -Server
 }
 
-:8081 {
+:8080 {
 	import common
 
 	handle_path /go/* {
@@ -30,13 +30,13 @@
 	}
 }
 
-:9001 {
+:8081 {
 	import common
 
 	reverse_proxy minio:9001
 }
 
-:5001 {
+:8082 {
 	import common
 
 	reverse_proxy changedetection:5000

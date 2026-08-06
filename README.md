@@ -26,7 +26,7 @@ make setup     # install dependencies + create local env files from templates
 make start     # build all images + run the dev stack in the background
 ```
 
-Then open http://localhost:8081. Use `make run` instead of `make start` to run
+Then open http://localhost:8080. Use `make run` instead of `make start` to run
 in the foreground with logs (ctrl-c stops it), and `make stop` to stop the
 background stack.
 
@@ -51,10 +51,10 @@ variables are set.
 
 The dev stack exposes:
 
-- `8081` — front door (the app; APIs under `/api` and `/go`)
-- `9001` — MinIO console
-- `5001` — changedetection.io
-- `3001` — Grafana
+- `8080` — front door (the app; APIs under `/api` and `/go`)
+- `8081` — MinIO console
+- `8082` — changedetection.io
+- `8083` — Grafana
 
 Common per-component commands:
 

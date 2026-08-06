@@ -52,12 +52,12 @@ Go dependencies are fetched into the module cache at build time (`make deps` run
 
 `docker/Caddyfile` is the entrypoint for all client traffic:
 
-- `:8081` — front door. `/go/*` is path-stripped and reverse-proxied to `core:8080`; `/api/*` and `/hocuspocus` go to `auth-realtime:8081` (Better Auth, Hocuspocus, the merge proxy); everything else goes to the web SSR container (`web:3000`).
-- `:9001` — MinIO console
-- `:5001` — changedetection.io (`5001` to dodge the macOS AirPlay Receiver on `5000`)
-- `:3001` — Grafana (direct, not via Caddy; host `3001` because `nuxt dev` owns `3000`)
+- `:8080` — front door. `/go/*` is path-stripped and reverse-proxied to `core:8080`; `/api/*` and `/hocuspocus` go to `auth-realtime:8081` (Better Auth, Hocuspocus, the merge proxy); everything else goes to the web SSR container (`web:3000`).
+- `:8081` — MinIO console
+- `:8082` — changedetection.io
+- `:8083` — Grafana (direct, not via Caddy)
 
-So from a frontend's point of view: auth + realtime is `:8081/...`, the Go API is `:8081/go/api/...`. Internal-only Go routes (`/api/x/...`) are not exposed by Caddy.
+So from a frontend's point of view: auth + realtime is `:8080/...`, the Go API is `:8080/go/api/...`. Internal-only Go routes (`/api/x/...`) are not exposed by Caddy.
 
 ## Core request surface
 
