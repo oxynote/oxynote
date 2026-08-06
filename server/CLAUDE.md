@@ -52,12 +52,12 @@ Go dependencies are fetched into the module cache at build time (`make deps` run
 
 `docker/Caddyfile` is the entrypoint for all client traffic:
 
-- `:8080` — front door. `/go/*` is path-stripped and reverse-proxied to `core:8080`; `/api/*` and `/hocuspocus` go to `auth-realtime:8081` (Better Auth, Hocuspocus, the merge proxy); everything else goes to the web SSR container (`web:3000`).
+- `:8080` — front door. `/core/*` is path-stripped and reverse-proxied to `core:8080`; `/auth-realtime/*` is path-stripped and reverse-proxied to `auth-realtime:8081` (Better Auth, Hocuspocus, the merge proxy — the service itself still serves `/api/...` and `/hocuspocus`); everything else goes to the web SSR container (`web:3000`).
 - `:8081` — MinIO console
 - `:8082` — changedetection.io
 - `:8083` — Grafana (direct, not via Caddy)
 
-So from a frontend's point of view: auth + realtime is `:8080/...`, the Go API is `:8080/go/api/...`. Internal-only Go routes (`/api/x/...`) are not exposed by Caddy.
+So from a frontend's point of view: auth + realtime is `:8080/auth-realtime/...`, the Go API is `:8080/core/api/...`. Internal-only Go routes (`/api/x/...`) are not exposed by Caddy.
 
 ## Core request surface
 

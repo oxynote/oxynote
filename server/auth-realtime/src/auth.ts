@@ -24,6 +24,19 @@ const ALLOWED_EMAILS = new Set(
 
 const FRONTEND_URL = process.env.OXYNOTE_AUTH_REALTIME_FRONTEND_URL as string
 
+const PUBLIC_AUTH_BASE_URL = process.env
+	.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_BASE_URL as string
+
+const AUTH_ORIGIN = new URL(PUBLIC_AUTH_BASE_URL).origin
+
+// better-auth builds absolute links (email confirmation/deletion URLs) from
+// its baseURL, which is the bare origin — see the baseURL comment below.
+// Rewrite them onto the public prefix so emailed links survive the reverse
+// proxy.
+function toPublicAuthURL(url: string): string {
+	return url.replace(AUTH_ORIGIN, PUBLIC_AUTH_BASE_URL)
+}
+
 function isEmailAllowed(email: string): boolean {
 	if (ALLOWED_EMAILS.size === 0) {
 		return true
@@ -39,7 +52,14 @@ const redisClient = createClient({
 await redisClient.connect()
 
 export const auth = betterAuth({
-	baseURL: process.env.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_BASE_URL,
+	// the public base URL carries the reverse proxy's /auth-realtime prefix,
+	// but a path inside baseURL becomes better-auth's basePath — and the
+	// proxy strips that prefix before requests reach this service. Match on
+	// the bare origin (basePath stays /api/auth) and use the full public URL
+	// only where absolute, browser-reachable URLs are built (the OAuth
+	// redirect URIs below).
+	baseURL: AUTH_ORIGIN,
+	basePath: "/api/auth",
 	secret: process.env.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_SECRET,
 	database: dialect,
 	socialProviders: {
@@ -49,8 +69,7 @@ export const auth = betterAuth({
 			clientSecret: process.env
 				.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_SLACK_CLIENT_SECRET as string,
 			redirectURI:
-				(process.env
-					.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_BASE_URL as string) +
+				PUBLIC_AUTH_BASE_URL +
 				"/api/auth/callback/slack",
 		},
 		google: {
@@ -59,8 +78,7 @@ export const auth = betterAuth({
 			clientSecret: process.env
 				.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_GOOGLE_CLIENT_SECRET as string,
 			redirectURI:
-				(process.env
-					.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_BASE_URL as string) +
+				PUBLIC_AUTH_BASE_URL +
 				"/api/auth/callback/google",
 		},
 		github: {
@@ -69,8 +87,7 @@ export const auth = betterAuth({
 			clientSecret: process.env
 				.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_GITHUB_CLIENT_SECRET as string,
 			redirectURI:
-				(process.env
-					.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_BASE_URL as string) +
+				PUBLIC_AUTH_BASE_URL +
 				"/api/auth/callback/github",
 		},
 	},
@@ -132,7 +149,10 @@ export const auth = betterAuth({
 				newEmail,
 				url,
 			}) => {
-				await sendEmailVerification(newEmail, url)
+				await sendEmailVerification(
+					newEmail,
+					toPublicAuthURL(url),
+				)
 			},
 		},
 		deleteUser: {
@@ -143,7 +163,7 @@ export const auth = betterAuth({
 			}) => {
 				await sendUserDeletionConfirmation(
 					user.email,
-					url,
+					toPublicAuthURL(url),
 				)
 			},
 		},

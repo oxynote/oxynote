@@ -51,7 +51,7 @@ variables are set.
 
 The dev stack exposes:
 
-- `8080` — front door (the app; APIs under `/api` and `/go`)
+- `8080` — front door (the app; APIs under `/auth-realtime` and `/core`)
 - `8081` — MinIO console
 - `8082` — changedetection.io
 - `8083` — Grafana

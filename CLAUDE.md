@@ -94,7 +94,7 @@ Component build/test/qa commands are listed in the nested CLAUDE.md files.
 
 ## Cross-component contracts
 
-- **Front door**: Caddy on host `:8080`. `/go/*` is path-stripped and proxied to core (`:8080`); `/api/*` and `/hocuspocus` go to auth-realtime (`:8081`); everything else goes to the web SSR container. The frontend reaches the Go API via `NUXT_PUBLIC_GO_API_BASE_HTTP_URL` (`…:8080/go`) and auth/realtime via `NUXT_PUBLIC_NODEJS_API_BASE_*_URL`.
+- **Front door**: Caddy on host `:8080`. `/core/*` is path-stripped and proxied to core (`:8080`); `/auth-realtime/*` is path-stripped and proxied to auth-realtime (`:8081`, so `/auth-realtime/api/...` and `/auth-realtime/hocuspocus` publicly); everything else goes to the web SSR container. The frontend reaches the Go API via `NUXT_PUBLIC_GO_API_BASE_HTTP_URL` (`…:8080/core`) and auth/realtime via `NUXT_PUBLIC_NODEJS_API_BASE_*_URL` (`…:8080/auth-realtime`).
 - **Trust boundary**: core's `/api/...` routes require a session; `/api/x/...` routes have no auth and must never be exposed by the reverse proxy — they exist for service-to-service calls (auth-realtime ↔ core).
 - **Session validation**: core's auth middleware validates sessions by calling auth-realtime's `/api/auth/get-session`; auth-realtime owns the Better Auth schema.
 - **Yjs invariant**: the Hocuspocus `documentName` is `"<documentId>-<branchIdentifier>"`, split on the first `-`. Never seed or merge one Y.Doc from another with `Y.applyUpdate` — use `replaceYdocContent` (`server/auth-realtime/src/ydocument.ts`). Read the document-storage section of [server/CLAUDE.md](server/CLAUDE.md) before touching branch content anywhere.

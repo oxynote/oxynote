@@ -13,15 +13,17 @@
 :8080 {
 	import common
 
-	handle_path /go/* {
+	# /api/x/* is core's internal, auth-less service-to-service surface —
+	# it must never be reachable through the front door.
+	handle /core/api/x/* {
+		respond 403
+	}
+
+	handle_path /core/* {
 		reverse_proxy core:8080
 	}
 
-	handle /api/* {
-		reverse_proxy auth-realtime:8081
-	}
-
-	handle /hocuspocus {
+	handle_path /auth-realtime/* {
 		reverse_proxy auth-realtime:8081
 	}
 
