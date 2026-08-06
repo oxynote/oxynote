@@ -7,14 +7,20 @@ build-go:
 
 # foreground: streams all logs, ctrl-c stops the stack
 run: build-go
-	$(COMPOSE) up --build
+	$(COMPOSE) --profile web up --build
 
 # background
 start: build-go
+	$(COMPOSE) --profile web up --build -d
+
+# backend containers + web dev server on the host with hot reload. Ctrl-c
+# stops the web dev server; `make stop` stops the containers.
+dev: build-go
 	$(COMPOSE) up --build -d
+	cd web && pnpm run start:dev:web
 
 stop:
-	$(COMPOSE) down
+	$(COMPOSE) --profile web down
 
 setup:
 	cd web && pnpm run setup

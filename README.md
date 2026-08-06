@@ -60,7 +60,8 @@ Common per-component commands:
 
 ```sh
 # web
-cd web && pnpm start:dev:web        # nuxt dev server on :3000
+make dev                            # backend containers + nuxt dev on :3000 (hot reload)
+cd web && pnpm start:dev:web        # nuxt dev server only, on :3000
 cd web && pnpm qa                   # check-types + check-lint + check-fmt
 
 # server/core

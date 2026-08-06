@@ -20,6 +20,10 @@ services:
   web:
     container_name: web
     image: ghcr.io/oxynote/web:dev
+    # not started by plain `up` — `make dev` runs web on the host instead;
+    # `make run` / `make start` enable this profile for the full stack.
+    profiles:
+      - web
     build:
       context: ../web
       dockerfile: Dockerfile.dev

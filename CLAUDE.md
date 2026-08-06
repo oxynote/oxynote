@@ -86,6 +86,7 @@ make deps      # install web/ + auth-realtime (pnpm) and go module dependencies
 make setup     # deps + web prepare + creates docker/env/*.local.env from templates
 make run       # build images + run the dev stack in the foreground (ctrl-c stops it)
 make start     # build images + run the dev stack in the background
+make dev       # backend containers + web dev server on the host (hot reload, :3000)
 make stop      # stop the dev stack
 ```
 
