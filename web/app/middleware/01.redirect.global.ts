@@ -10,7 +10,6 @@ export default defineNuxtRouteMiddleware(async (to) => {
 
 	const nuxtApp = useNuxtApp()
 	const { fetchAuthSession, fetchOrganization } = useAuthSession()
-	const { fetchDocumentTree } = useDocumentAPI()
 
 	const sessionReq = await fetchAuthSession.refresh()
 	const session = sessionReq?.data?.data?.session
@@ -37,7 +36,13 @@ export default defineNuxtRouteMiddleware(async (to) => {
 	}
 
 	if (!session && !to.meta.skipAuth) {
-		return redirectToLogin(to.fullPath, true, nuxtApp)
+		// "/" is the post-login default anyway, so a `next` param pointing at
+		// it is noise in the login URL
+		return redirectToLogin(
+			to.fullPath === "/" ? undefined : to.fullPath,
+			true,
+			nuxtApp,
+		)
 	} else if (session && to.meta.skipAuth) {
 		const nextUrl = to.query.next as string | undefined
 		if (nextUrl) {
@@ -55,6 +60,11 @@ export default defineNuxtRouteMiddleware(async (to) => {
 			return redirectToLogin(to.fullPath, true, nuxtApp)
 		}
 
+		// created here, not at the top of the middleware: a query
+		// instantiated outside a component fetches immediately, and an
+		// unauthenticated tree fetch 401s, which the API client turns into a
+		// redirect to /login — looping forever on the login page itself.
+		const { fetchDocumentTree } = useDocumentAPI()
 		const docTree = await fetchDocumentTree.refresh()
 		if (!docTree.data?.length) {
 			return nuxtApp.runWithContext(() => {
