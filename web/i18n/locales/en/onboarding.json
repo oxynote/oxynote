@@ -24,7 +24,8 @@
 					"title": "We're sorry, but we can't create a workspace for you at the moment because we've reached our limit for new workspaces",
 					"description": "Please join the waitlist and we'll notify you as soon as we can create a new workspace for you"
 				}
-			}
+			},
+			"no-methods": "No sign-up methods are configured on this server."
 		},
 		"login": {
 			"title": "Welcome back to Oxynote",
@@ -46,7 +47,8 @@
 					"title": "We're sorry, but we can't create a new workspace for you at the moment because we've reached our limit for new workspaces",
 					"description": "Please join the waitlist and we'll notify you as soon as we can create a new workspace for you"
 				}
-			}
+			},
+			"no-methods": "No login methods are configured on this server."
 		},
 		"verify-email": {
 			"title": "Thank you for verifying {email} as your email address!",

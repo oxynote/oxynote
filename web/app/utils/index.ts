@@ -1,5 +1,6 @@
 // Re-exporting allows the content of these files to be auto-imported
 // elsewhere.
+export * from "./api/auth"
 export * from "./api/document"
 export * from "./api/comment"
 export * from "./api/github"

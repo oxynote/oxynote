@@ -19,6 +19,13 @@
 		respond 403
 	}
 
+	# /api/internal/* is auth-realtime's unauthenticated service-to-service
+	# surface (core calls it directly over the container network) — it must
+	# never be reachable through the front door either.
+	handle /auth-realtime/api/internal/* {
+		respond 403
+	}
+
 	handle_path /core/* {
 		reverse_proxy core:8080
 	}

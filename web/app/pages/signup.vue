@@ -13,11 +13,21 @@ useHead({
 })
 
 const { signInSocial, setupSignInRedirect } = useAuthSession()
+const { fetchAuthMethods } = useAuthAPI()
+
 const { fetchOrganizationStats } = useOrganizationAPI()
 const { currentUrl } = useCurrentUrl()
 const route = useRoute()
 const config = useRuntimeConfig()
 const loading = ref<"github" | "google" | "slack" | null>(null)
+const enabledMethods = computed(
+	() => fetchAuthMethods.state.value.data?.methods ?? [],
+)
+const noMethodsConfigured = computed(
+	() =>
+		fetchAuthMethods.state.value.status === "success" &&
+		enabledMethods.value.length === 0,
+)
 const newAccountsAllowed = computed(() => {
 	return (
 		fetchOrganizationStats.state.value.data &&
@@ -128,6 +138,7 @@ async function signUpWithProvider(provider: "github" | "google" | "slack") {
 			</div>
 			<div class="flex w-full flex-col gap-3">
 				<ShadcnUiButton
+					v-if="enabledMethods.includes('google')"
 					size="lg"
 					:class="
 						cn('h-[2.5rem] w-full', loading !== null && 'pointer-events-none')
@@ -146,6 +157,7 @@ async function signUpWithProvider(provider: "github" | "google" | "slack") {
 					{{ $t("onboarding.signup.signup-google") }}
 				</ShadcnUiButton>
 				<ShadcnUiButton
+					v-if="enabledMethods.includes('github')"
 					size="lg"
 					:class="
 						cn('h-[2.5rem] w-full', loading !== null && 'pointer-events-none')
@@ -165,6 +177,7 @@ async function signUpWithProvider(provider: "github" | "google" | "slack") {
 					{{ $t("onboarding.signup.signup-github") }}
 				</ShadcnUiButton>
 				<ShadcnUiButton
+					v-if="enabledMethods.includes('slack')"
 					size="lg"
 					:class="
 						cn('h-[2.5rem] w-full', loading !== null && 'pointer-events-none')
@@ -183,6 +196,12 @@ async function signUpWithProvider(provider: "github" | "google" | "slack") {
 					/>
 					{{ $t("onboarding.signup.signup-slack") }}
 				</ShadcnUiButton>
+				<div
+					v-if="noMethodsConfigured"
+					class="text-center text-xs text-accent-foreground"
+				>
+					{{ $t("onboarding.signup.no-methods") }}
+				</div>
 			</div>
 			<i18n-t
 				keypath="onboarding.signup.conditions.main"

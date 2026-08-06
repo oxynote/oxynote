@@ -29,6 +29,31 @@ const PUBLIC_AUTH_BASE_URL = process.env
 
 const AUTH_ORIGIN = new URL(PUBLIC_AUTH_BASE_URL).origin
 
+const GOOGLE_CONFIGURED = Boolean(
+	process.env.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_GOOGLE_CLIENT_ID &&
+		process.env
+			.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_GOOGLE_CLIENT_SECRET,
+)
+const GITHUB_CONFIGURED = Boolean(
+	process.env.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_GITHUB_CLIENT_ID &&
+		process.env
+			.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_GITHUB_CLIENT_SECRET,
+)
+const SLACK_CONFIGURED = Boolean(
+	process.env.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_SLACK_CLIENT_ID &&
+		process.env
+			.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_SLACK_CLIENT_SECRET,
+)
+
+// the capability list served by /api/auth-methods. Derived from the same
+// flags that register the social providers below, so the endpoint can never
+// disagree with what better-auth actually accepts.
+export const AUTH_METHODS = [
+	...(GOOGLE_CONFIGURED ? ["google" as const] : []),
+	...(GITHUB_CONFIGURED ? ["github" as const] : []),
+	...(SLACK_CONFIGURED ? ["slack" as const] : []),
+]
+
 // better-auth builds absolute links (email confirmation/deletion URLs) from
 // its baseURL, which is the bare origin — see the baseURL comment below.
 // Rewrite them onto the public prefix so emailed links survive the reverse
@@ -62,34 +87,43 @@ export const auth = betterAuth({
 	basePath: "/api/auth",
 	secret: process.env.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_SECRET,
 	database: dialect,
+	// providers with missing credentials are left out entirely so sign-in
+	// attempts fail with PROVIDER_NOT_FOUND instead of a broken OAuth
+	// redirect.
 	socialProviders: {
-		slack: {
-			clientId: process.env
-				.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_SLACK_CLIENT_ID as string,
-			clientSecret: process.env
-				.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_SLACK_CLIENT_SECRET as string,
-			redirectURI:
-				PUBLIC_AUTH_BASE_URL +
-				"/api/auth/callback/slack",
-		},
-		google: {
-			clientId: process.env
-				.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_GOOGLE_CLIENT_ID as string,
-			clientSecret: process.env
-				.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_GOOGLE_CLIENT_SECRET as string,
-			redirectURI:
-				PUBLIC_AUTH_BASE_URL +
-				"/api/auth/callback/google",
-		},
-		github: {
-			clientId: process.env
-				.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_GITHUB_CLIENT_ID as string,
-			clientSecret: process.env
-				.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_GITHUB_CLIENT_SECRET as string,
-			redirectURI:
-				PUBLIC_AUTH_BASE_URL +
-				"/api/auth/callback/github",
-		},
+		...(SLACK_CONFIGURED && {
+			slack: {
+				clientId: process.env
+					.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_SLACK_CLIENT_ID as string,
+				clientSecret: process.env
+					.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_SLACK_CLIENT_SECRET as string,
+				redirectURI:
+					PUBLIC_AUTH_BASE_URL +
+					"/api/auth/callback/slack",
+			},
+		}),
+		...(GOOGLE_CONFIGURED && {
+			google: {
+				clientId: process.env
+					.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_GOOGLE_CLIENT_ID as string,
+				clientSecret: process.env
+					.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_GOOGLE_CLIENT_SECRET as string,
+				redirectURI:
+					PUBLIC_AUTH_BASE_URL +
+					"/api/auth/callback/google",
+			},
+		}),
+		...(GITHUB_CONFIGURED && {
+			github: {
+				clientId: process.env
+					.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_GITHUB_CLIENT_ID as string,
+				clientSecret: process.env
+					.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_GITHUB_CLIENT_SECRET as string,
+				redirectURI:
+					PUBLIC_AUTH_BASE_URL +
+					"/api/auth/callback/github",
+			},
+		}),
 	},
 	advanced: {
 		cookiePrefix: "auth",

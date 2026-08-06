@@ -14,9 +14,19 @@ useHead({
 })
 
 const { signInSocial, setupSignInRedirect } = useAuthSession()
+const { fetchAuthMethods } = useAuthAPI()
+
 const route = useRoute()
 const config = useRuntimeConfig()
 const loading = ref<"github" | "google" | "slack" | null>(null)
+const enabledMethods = computed(
+	() => fetchAuthMethods.state.value.data?.methods ?? [],
+)
+const noMethodsConfigured = computed(
+	() =>
+		fetchAuthMethods.state.value.status === "success" &&
+		enabledMethods.value.length === 0,
+)
 
 let redirectTimeout: ReturnType<typeof setTimeout> | undefined
 
@@ -110,6 +120,7 @@ async function logInWithProvider(provider: "github" | "google" | "slack") {
 			</div>
 			<div class="flex w-full flex-col gap-3">
 				<ShadcnUiButton
+					v-if="enabledMethods.includes('google')"
 					size="lg"
 					:class="
 						cn('h-[2.5rem] w-full', loading !== null && 'pointer-events-none')
@@ -128,6 +139,7 @@ async function logInWithProvider(provider: "github" | "google" | "slack") {
 					{{ $t("onboarding.login.login-google") }}
 				</ShadcnUiButton>
 				<ShadcnUiButton
+					v-if="enabledMethods.includes('github')"
 					size="lg"
 					:class="
 						cn('h-[2.5rem] w-full', loading !== null && 'pointer-events-none')
@@ -147,6 +159,7 @@ async function logInWithProvider(provider: "github" | "google" | "slack") {
 					{{ $t("onboarding.login.login-github") }}
 				</ShadcnUiButton>
 				<ShadcnUiButton
+					v-if="enabledMethods.includes('slack')"
 					size="lg"
 					:class="
 						cn('h-[2.5rem] w-full', loading !== null && 'pointer-events-none')
@@ -165,6 +178,12 @@ async function logInWithProvider(provider: "github" | "google" | "slack") {
 					/>
 					{{ $t("onboarding.login.login-slack") }}
 				</ShadcnUiButton>
+				<div
+					v-if="noMethodsConfigured"
+					class="text-center text-xs text-accent-foreground"
+				>
+					{{ $t("onboarding.login.no-methods") }}
+				</div>
 			</div>
 			<i18n-t
 				keypath="onboarding.login.no-account.main"

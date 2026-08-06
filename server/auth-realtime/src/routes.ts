@@ -2,7 +2,12 @@ import * as Sentry from "@sentry/node"
 import { Hono } from "hono"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
 import { cors } from "hono/cors"
-import { auth, totalOrganizationCount, MAX_ORGANIZATIONS } from "./auth.js"
+import {
+	auth,
+	totalOrganizationCount,
+	AUTH_METHODS,
+	MAX_ORGANIZATIONS,
+} from "./auth.js"
 import * as Y from "yjs"
 import { hocuspocus, toAxiosHeaders } from "./hocuspocus.js"
 import { replaceYdocContent } from "./ydocument.js"
@@ -40,11 +45,22 @@ app.on(["POST", "GET"], "/auth/**", (c) => {
 	return auth.handler(c.req.raw)
 })
 
+// public capability signal for the login/signup pages: which social
+// providers are configured. Lives outside the better-auth /auth/**
+// namespace.
+app.get("/auth-methods", (c) => {
+	return c.json({ methods: AUTH_METHODS })
+})
+
 app.get("/organizations/stats", async (c) => {
 	const count = await totalOrganizationCount()
 	return c.json({ availableSlots: MAX_ORGANIZATIONS - count })
 })
 
+// auth is delegated: the caller's headers (including the session cookie)
+// are forwarded to core, whose middleware validates the session and
+// authorizes the merge. The in-memory Y.Doc mutation below only runs when
+// core responds 200, so an unauthenticated caller changes nothing.
 app.put("/documents/:documentId/merge", async (c) => {
 	const documentId = c.req.param("documentId")
 
@@ -146,9 +162,10 @@ app.put("/documents/:documentId/merge", async (c) => {
 // broadcasting the resulting update to subscribed clients and
 // persisting via onStoreDocument.
 //
-// This route lives on the trusted internal network alongside the Go
-// `/api/x/...` endpoints; clients on the public internet have no
-// path to it.
+// This route is service-to-service only, like the Go `/api/x/...`
+// endpoints: core calls it directly over the container network, and
+// the reverse proxy blocks `/auth-realtime/api/internal/*` at the
+// front door.
 app.post(
 	"/internal/documents/:documentId/branches/:branchId/operations",
 	async (c) => {
