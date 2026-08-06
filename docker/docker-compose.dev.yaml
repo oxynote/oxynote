@@ -20,6 +20,12 @@ services:
   web:
     container_name: web
     image: ghcr.io/oxynote/web:dev
+    environment:
+      # SSR inside the container must reach the services directly; these
+      # compose hostnames don't resolve on the host, which is why they live
+      # here and not in the shared env template.
+      - NUXT_CORE_API_INTERNAL_HTTP_URL=http://core:8080
+      - NUXT_AUTH_REALTIME_API_INTERNAL_HTTP_URL=http://auth-realtime:8081
     # not started by plain `up` — `make dev` runs web on the host instead;
     # `make run` / `make start` enable this profile for the full stack.
     profiles:

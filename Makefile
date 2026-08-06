@@ -17,7 +17,7 @@ start: build-go
 # stops the web dev server; `make stop` stops the containers.
 dev: build-go
 	$(COMPOSE) up --build -d
-	cd web && pnpm run start:dev:web
+	cd web && NUXT_PUBLIC_APP_BASE_URL=http://localhost:3000 pnpm run start:dev:web
 
 stop:
 	$(COMPOSE) --profile web down
@@ -30,6 +30,7 @@ setup:
 	for f in core auth-realtime web; do \
 		test -f docker/env/$$f.local.env || cp docker/env/$$f.example.env docker/env/$$f.local.env; \
 	done
+	test -f web/.env || cp docker/env/web.example.env web/.env
 
 deps:
 	cd web && pnpm run deps

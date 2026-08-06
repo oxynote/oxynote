@@ -75,7 +75,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - `server/core/` — Go API server (`oxynote-core`). Go module `github.com/oxynote/oxynote/server/core`. Details: [server/CLAUDE.md](server/CLAUDE.md).
 - `server/auth-realtime/` — Node service (`@oxynote/auth-realtime`, **pnpm**) running Better Auth and a Hocuspocus (Yjs) server in one Hono process. Details: [server/CLAUDE.md](server/CLAUDE.md).
 - `datagen/` — demo-data generator; separate Go module `github.com/oxynote/oxynote/datagen`. Demo/testing only.
-- `docker/` — dev docker-compose stack, Caddyfile, `env/` (committed `*.example.env` templates; `make setup` copies them to gitignored `*.local.env`, which is what the compose stack reads), `demo/` (demo-data configs for mariadb/postgres/prometheus).
+- `docker/` — dev docker-compose stack, Caddyfile, `env/` (committed `*.example.env` templates; `make setup` copies them to the gitignored `*.local.env` files the compose stack reads, and `web.example.env` also to `web/.env` for the host dev server and electron builds), `demo/` (demo-data configs for mariadb/postgres/prometheus).
 
 ## Common commands
 

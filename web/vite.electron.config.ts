@@ -20,12 +20,12 @@ try {
 
 // Auth env vars are baked into the bundle at build time. Runtime env can't
 // override them — this is the security boundary for the desktop app.
-const apiBaseURL = process.env.NUXT_PUBLIC_NODEJS_API_BASE_HTTP_URL
+const apiBaseURL = process.env.NUXT_PUBLIC_AUTH_REALTIME_API_BASE_HTTP_URL
 const appBaseURL = process.env.NUXT_PUBLIC_APP_BASE_URL
 
 if (!apiBaseURL || !appBaseURL) {
 	throw new Error(
-		"electron build requires NUXT_PUBLIC_NODEJS_API_BASE_HTTP_URL and NUXT_PUBLIC_APP_BASE_URL env vars",
+		"electron build requires NUXT_PUBLIC_AUTH_REALTIME_API_BASE_HTTP_URL and NUXT_PUBLIC_APP_BASE_URL env vars",
 	)
 }
 
