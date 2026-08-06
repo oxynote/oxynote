@@ -2,12 +2,12 @@ export function buildDocumentFileSrc(
 	documentId: string,
 	blockId: string,
 ): string {
-	const { goAPIBaseHttpURL } = useRuntimeConfig().public
-	return `${goAPIBaseHttpURL}/api/documents/${documentId}/files/${blockId}`
+	const { coreAPIBaseHttpURL } = useRuntimeConfig().public
+	return `${coreAPIBaseHttpURL}/api/documents/${documentId}/files/${blockId}`
 }
 
 export default function () {
-	const { $apiClient } = useNuxtApp()
+	const { $coreAPIClient } = useNuxtApp()
 
 	const uploadDocumentFile = useMutation({
 		mutation: async ({
@@ -24,7 +24,7 @@ export default function () {
 			const body = new FormData()
 			body.append("file", file)
 
-			const response = await $apiClient.raw(
+			const response = await $coreAPIClient.raw(
 				`/api/documents/${documentId}/files?id=${encodeURIComponent(id)}&location=${loc}`,
 				{
 					method: "POST",

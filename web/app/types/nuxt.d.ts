@@ -4,16 +4,16 @@ import type { AuthClient } from "~/plugins/02.auth"
 declare module "#app" {
 	interface NuxtApp {
 		$authClient: AuthClient
-		$apiClient: $Fetch
-		$nodejsAPIClient: $Fetch
+		$coreAPIClient: $Fetch
+		$authRealtimeAPIClient: $Fetch
 	}
 }
 
 declare module "vue" {
 	interface ComponentCustomProperties {
 		$authClient: AuthClient
-		$apiClient: $Fetch
-		$nodejsAPIClient: $Fetch
+		$coreAPIClient: $Fetch
+		$authRealtimeAPIClient: $Fetch
 	}
 }
 

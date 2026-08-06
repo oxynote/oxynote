@@ -24,7 +24,7 @@ export function useAIChat(opts: {
 	const toolStatus = ref<string | null>(null)
 
 	const wsUrl = computed(() => {
-		const base = config.public.goAPIBaseHttpWS as string
+		const base = config.public.coreAPIBaseWsURL as string
 		return `${base}/api/ai/chat`
 	})
 

@@ -120,16 +120,16 @@ export default defineNuxtConfig({
 		// public localhost URLs are unreachable from the server side — these
 		// point SSR fetches at the backend services directly and fall back to
 		// the public URLs when unset.
-		goAPIInternalHttpURL: "",
-		nodejsAPIInternalHttpURL: "",
+		coreAPIInternalHttpURL: "",
+		authRealtimeAPIInternalHttpURL: "",
 		public: {
 			sentryDSN: "",
 			appBaseURL: "",
 			linkToMoreInfoAboutProduct: "",
-			nodejsAPIBaseHttpURL: "",
-			nodejsAPIBaseWsURL: "",
-			goAPIBaseHttpURL: "",
-			goAPIBaseHttpWS: "",
+			authRealtimeAPIBaseHttpURL: "",
+			authRealtimeAPIBaseWsURL: "",
+			coreAPIBaseHttpURL: "",
+			coreAPIBaseWsURL: "",
 			termsOfServiceURL: "",
 			privacyPolicyURL: "",
 			experimentalFeatures: "",

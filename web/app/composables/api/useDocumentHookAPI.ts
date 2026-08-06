@@ -7,7 +7,7 @@ const DOCUMENT_HOOK_QUERY_KEYS = {
 }
 
 export default function () {
-	const { $apiClient } = useNuxtApp()
+	const { $coreAPIClient } = useNuxtApp()
 	const queryCache = useQueryCache()
 	const { fetchOrganization } = useAuthSession()
 
@@ -28,7 +28,7 @@ export default function () {
 					return []
 				}
 
-				const res = await $apiClient<DocumentHooksResponse>(
+				const res = await $coreAPIClient<DocumentHooksResponse>(
 					`/api/documents/${docId}/hooks?branchId=${encodeURIComponent(branchId)}`,
 					{ method: "GET" },
 				)
@@ -98,7 +98,7 @@ export default function () {
 				return
 			}
 
-			return await $apiClient<DocumentHookCreateResponse>(
+			return await $coreAPIClient<DocumentHookCreateResponse>(
 				`/api/documents/${docId}/hooks`,
 				{
 					method: "POST",
@@ -186,7 +186,7 @@ export default function () {
 				return
 			}
 
-			return await $apiClient<DocumentHookUpdateResponse>(
+			return await $coreAPIClient<DocumentHookUpdateResponse>(
 				`/api/documents/${docId}/hooks/${hookId}`,
 				{
 					method: "PUT",
@@ -276,7 +276,7 @@ export default function () {
 				return
 			}
 
-			await $apiClient(`/api/documents/${docId}/hooks/${hookId}`, {
+			await $coreAPIClient(`/api/documents/${docId}/hooks/${hookId}`, {
 				method: "DELETE",
 			})
 		},
@@ -366,7 +366,7 @@ export default function () {
 				return
 			}
 
-			return await $apiClient<DocumentHookResponse>(
+			return await $coreAPIClient<DocumentHookResponse>(
 				`/api/documents/${docId}/hooks/${hookId}/reset`,
 				{
 					method: "PUT",

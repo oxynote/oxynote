@@ -10,7 +10,7 @@ const NOTIFICATION_QUERY_KEYS = {
 }
 
 export default function () {
-	const { $apiClient } = useNuxtApp()
+	const { $coreAPIClient } = useNuxtApp()
 	const queryCache = useQueryCache()
 
 	function useFetchManyNotifications(
@@ -31,7 +31,7 @@ export default function () {
 					page: String(page),
 				})
 
-				return await $apiClient<NotificationsResponse>(
+				return await $coreAPIClient<NotificationsResponse>(
 					`/api/notifications?${searchParams.toString()}`,
 					{ method: "GET" },
 				)
@@ -64,7 +64,7 @@ export default function () {
 					? `/api/notifications/count?${query}`
 					: `/api/notifications/count`
 
-				return await $apiClient<{ count: number }>(url, { method: "GET" })
+				return await $coreAPIClient<{ count: number }>(url, { method: "GET" })
 			},
 			refetchOnMount: false,
 			refetchOnWindowFocus: false,
@@ -106,7 +106,7 @@ export default function () {
 			return { newNotifs, oldNotifs }
 		},
 		mutation: async (req: MarkNotificationsReadRequest) => {
-			await $apiClient(`/api/notifications/read-status`, {
+			await $coreAPIClient(`/api/notifications/read-status`, {
 				method: "PUT",
 				body: req,
 			})

@@ -223,7 +223,7 @@ func main() {
 
 	liveEditClient := liveedit.NewClient(
 		http.DefaultClient,
-		buildinfo.Getenv("NODE_URL"),
+		buildinfo.Getenv("AUTH_REALTIME_URL"),
 	)
 
 	assistantMan := assistant.NewManager(

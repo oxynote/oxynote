@@ -25,14 +25,14 @@ const DOCUMENT_QUERY_KEYS = {
 }
 
 export default function () {
-	const { $apiClient, $nodejsAPIClient } = useNuxtApp()
+	const { $coreAPIClient, $authRealtimeAPIClient } = useNuxtApp()
 	const { fetchAuthSession, fetchOrganization } = useAuthSession()
 	const queryCache = useQueryCache()
 
 	const fetchDocumentTree = useQuery({
 		key: DOCUMENT_QUERY_KEYS.root,
 		query: async () => {
-			return await $apiClient<DocumentTreeResponse>(`/api/documents/tree`, {
+			return await $coreAPIClient<DocumentTreeResponse>(`/api/documents/tree`, {
 				method: "GET",
 			})
 		},
@@ -187,7 +187,7 @@ export default function () {
 				return
 			}
 
-			await $apiClient(`/api/documents/tree`, {
+			await $coreAPIClient(`/api/documents/tree`, {
 				method: "PUT",
 				body: finalReq,
 			})
@@ -275,7 +275,7 @@ export default function () {
 			const cleanReq = clone(req)
 			delete cleanReq.skipLocalOptimisticInsert
 
-			return await $apiClient<DocumentCreateResponse>(`/api/documents`, {
+			return await $coreAPIClient<DocumentCreateResponse>(`/api/documents`, {
 				method: "POST",
 				body: cleanReq,
 			})
@@ -341,7 +341,7 @@ export default function () {
 				return
 			}
 
-			await $apiClient(`/api/documents/${id}`, {
+			await $coreAPIClient(`/api/documents/${id}`, {
 				method: "DELETE",
 			})
 		},
@@ -490,7 +490,7 @@ export default function () {
 				return
 			}
 
-			return await $apiClient<DocumentCreateResponse>(
+			return await $coreAPIClient<DocumentCreateResponse>(
 				`/api/documents/${id}/duplicate`,
 				{
 					method: "POST",
@@ -514,7 +514,7 @@ export default function () {
 	async function searchDocuments(q: string): Promise<DocumentSearchResponse> {
 		// we don't want to use useQuery here as searches are
 		// typically one-off and we don't want to cache them
-		return await $apiClient<DocumentSearchResponse>(
+		return await $coreAPIClient<DocumentSearchResponse>(
 			`/api/documents/search?q=${encodeURIComponent(q)}`,
 			{
 				method: "GET",
@@ -580,7 +580,7 @@ export default function () {
 				return
 			}
 
-			await $apiClient(`/api/documents/${id}/branches/${branchId}`, {
+			await $coreAPIClient(`/api/documents/${id}/branches/${branchId}`, {
 				method: "PUT",
 				body: {
 					protected: protectedMode,
@@ -654,7 +654,7 @@ export default function () {
 				return
 			}
 
-			return await $apiClient<DocumentBranchCreateResponse>(
+			return await $coreAPIClient<DocumentBranchCreateResponse>(
 				`/api/documents/${docId}/branches`,
 				{
 					method: "POST",
@@ -721,7 +721,7 @@ export default function () {
 				return
 			}
 
-			await $apiClient(`/api/documents/${docId}/branches/${branchId}`, {
+			await $coreAPIClient(`/api/documents/${docId}/branches/${branchId}`, {
 				method: "DELETE",
 			})
 		},
@@ -766,7 +766,7 @@ export default function () {
 				return
 			}
 
-			await $nodejsAPIClient(`/api/documents/${docId}/merge`, {
+			await $authRealtimeAPIClient(`/api/documents/${docId}/merge`, {
 				method: "PUT",
 				body: { fromBranchId, toBranchId },
 			})
@@ -792,7 +792,7 @@ export default function () {
 					return []
 				}
 
-				return await $apiClient<DocumentMaintainersResponse>(
+				return await $coreAPIClient<DocumentMaintainersResponse>(
 					`/api/documents/${docId}/maintainers`,
 					{
 						method: "GET",
@@ -818,7 +818,7 @@ export default function () {
 					return []
 				}
 
-				return await $apiClient<DocumentBranchesResponse>(
+				return await $coreAPIClient<DocumentBranchesResponse>(
 					`/api/documents/${docId}/branches`,
 					{
 						method: "GET",
@@ -852,7 +852,7 @@ export default function () {
 					return []
 				}
 
-				return await $apiClient<BranchReviewersResponse>(
+				return await $coreAPIClient<BranchReviewersResponse>(
 					`/api/documents/${docId}/branches/${branchId}/reviewers`,
 					{
 						method: "GET",
@@ -929,7 +929,7 @@ export default function () {
 				return
 			}
 
-			await $apiClient(
+			await $coreAPIClient(
 				`/api/documents/${docId}/branches/${branchId}/review-approve`,
 				{
 					method: "PUT",
@@ -1019,7 +1019,7 @@ export default function () {
 				return
 			}
 
-			await $apiClient(
+			await $coreAPIClient(
 				`/api/documents/${docId}/branches/${branchId}/reviewers`,
 				{
 					method: "POST",
@@ -1107,7 +1107,7 @@ export default function () {
 				return
 			}
 
-			await $apiClient(
+			await $coreAPIClient(
 				`/api/documents/${docId}/branches/${branchId}/reviewers?userId=${encodeURIComponent(userId)}`,
 				{
 					method: "DELETE",

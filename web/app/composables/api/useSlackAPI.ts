@@ -7,13 +7,13 @@ const SLACK_QUERY_KEYS = {
 }
 
 export default function () {
-	const { $apiClient } = useNuxtApp()
+	const { $coreAPIClient } = useNuxtApp()
 	const queryCache = useQueryCache()
 
 	const fetchSlackConnectionStatus = useQuery<SlackConnectionStatus>({
 		key: SLACK_QUERY_KEYS.connected,
 		query: async () => {
-			return await $apiClient<SlackConnectionStatus>(`/api/slack`, {
+			return await $coreAPIClient<SlackConnectionStatus>(`/api/slack`, {
 				method: "GET",
 			})
 		},
@@ -34,7 +34,7 @@ export default function () {
 	async function fetchSlackInstallURL(): Promise<SlackInstallResponse> {
 		// we don't want to use useQuery here as installs are
 		// typically one-off and we don't want to cache them
-		return await $apiClient<SlackInstallResponse>(`/api/slack/install`, {
+		return await $coreAPIClient<SlackInstallResponse>(`/api/slack/install`, {
 			method: "GET",
 		})
 	}
@@ -45,7 +45,7 @@ export default function () {
 			const query = queryParams.toString()
 			const url = query ? `/api/slack/connect?${query}` : "/api/slack/connect"
 
-			return await $apiClient(url, { method: "GET" })
+			return await $coreAPIClient(url, { method: "GET" })
 		},
 	})
 
@@ -57,7 +57,7 @@ export default function () {
 				? `/api/slack/users/link?${query}`
 				: "/api/slack/users/link"
 
-			return await $apiClient(url, { method: "GET" })
+			return await $coreAPIClient(url, { method: "GET" })
 		},
 	})
 
@@ -81,7 +81,7 @@ export default function () {
 			return { newStatus, oldStatus }
 		},
 		mutation: async () => {
-			return await $apiClient(`/api/slack`, { method: "DELETE" })
+			return await $coreAPIClient(`/api/slack`, { method: "DELETE" })
 		},
 		async onSuccess() {
 			await queryCache.invalidateQueries({ key: SLACK_QUERY_KEYS.connected })
@@ -107,7 +107,7 @@ export default function () {
 			}
 
 			try {
-				return await $apiClient<SlackUserLinkSettings>(`/api/slack/users`, {
+				return await $coreAPIClient<SlackUserLinkSettings>(`/api/slack/users`, {
 					method: "GET",
 				})
 			} catch (error) {
@@ -142,7 +142,7 @@ export default function () {
 			return { newSettings, oldSettings }
 		},
 		mutation: async (req: SlackUserLinkSettings) => {
-			return await $apiClient(`/api/slack/users/settings`, {
+			return await $coreAPIClient(`/api/slack/users/settings`, {
 				method: "PUT",
 				body: req,
 			})
@@ -182,7 +182,7 @@ export default function () {
 			return { oldSettings }
 		},
 		mutation: async () => {
-			return await $apiClient(`/api/slack/users`, { method: "DELETE" })
+			return await $coreAPIClient(`/api/slack/users`, { method: "DELETE" })
 		},
 		async onSuccess() {
 			await queryCache.invalidateQueries({

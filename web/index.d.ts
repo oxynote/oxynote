@@ -14,10 +14,10 @@ declare module "nuxt/schema" {
 		sentryDSN: string
 		appBaseURL: string
 		linkToMoreInfoAboutProduct: string
-		nodejsAPIBaseHttpURL: string
-		nodejsAPIBaseWsURL: string
-		goAPIBaseHttpURL: string
-		goAPIBaseHttpWS: string
+		authRealtimeAPIBaseHttpURL: string
+		authRealtimeAPIBaseWsURL: string
+		coreAPIBaseHttpURL: string
+		coreAPIBaseWsURL: string
 		termsOfServiceURL: string
 		privacyPolicyURL: string
 		experimentalFeatures: string // example: feature1:org1,org2;feature2:org3

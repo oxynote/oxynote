@@ -3,7 +3,7 @@ const ORGANIZATION_QUERY_KEYS = {
 }
 
 export default function () {
-	const { $apiClient, $nodejsAPIClient } = useNuxtApp()
+	const { $coreAPIClient, $authRealtimeAPIClient } = useNuxtApp()
 
 	const uploadOrganizationLogo = useMutation({
 		// no optimistic updates possible here
@@ -11,7 +11,7 @@ export default function () {
 			const body = new FormData()
 			body.append("logo", file)
 
-			const response = await $apiClient.raw(`/api/organizations/logo`, {
+			const response = await $coreAPIClient.raw(`/api/organizations/logo`, {
 				method: "PUT",
 				body,
 			})
@@ -28,7 +28,7 @@ export default function () {
 	const fetchOrganizationStats = useQuery({
 		key: ORGANIZATION_QUERY_KEYS.list,
 		query: async () => {
-			return await $nodejsAPIClient<OrganizationStats>(
+			return await $authRealtimeAPIClient<OrganizationStats>(
 				`/api/organizations/stats`,
 				{
 					method: "GET",

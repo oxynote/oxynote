@@ -6,7 +6,7 @@ const SQL_QUERY_KEYS = {
 }
 
 export default function () {
-	const { $apiClient } = useNuxtApp()
+	const { $coreAPIClient } = useNuxtApp()
 
 	function useSQLMetadata(
 		dataSourceIdRef: MaybeRefOrGetter<string | null | undefined>,
@@ -20,7 +20,7 @@ export default function () {
 					return null
 				}
 
-				return await $apiClient<SQLMetadataResult>(
+				return await $coreAPIClient<SQLMetadataResult>(
 					`/api/data-sources/${dataSourceId}/sql/metadata`,
 					{ method: "GET" },
 				)
@@ -62,7 +62,7 @@ export default function () {
 					...formatQueryTimeRange(params),
 				})
 
-				return await $apiClient<SQLLabelsResult>(
+				return await $coreAPIClient<SQLLabelsResult>(
 					`/api/data-sources/${dataSourceId}/sql/query-labels?${queryParams.toString()}`,
 					{ method: "GET" },
 				)

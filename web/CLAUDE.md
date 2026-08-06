@@ -57,12 +57,12 @@ OAuth flow on desktop: renderer calls `window.requestAuth({ provider })` → ope
 
 `app/plugins/03.api-fetch.ts` provides two `$fetch` instances:
 
-- `$apiClient` → Go API (`NUXT_PUBLIC_GO_API_BASE_HTTP_URL`)
-- `$nodejsAPIClient` → Node API (`NUXT_PUBLIC_NODEJS_API_BASE_HTTP_URL`)
+- `$coreAPIClient` → core API (`NUXT_PUBLIC_CORE_API_BASE_HTTP_URL`)
+- `$authRealtimeAPIClient` → auth-realtime API (`NUXT_PUBLIC_AUTH_REALTIME_API_BASE_HTTP_URL`)
 
 Both propagate SSR request headers (captured eagerly during plugin setup — the H3 context is lost inside `onRequest` callbacks on Cloudflare workerd) and redirect to `/login` on 401.
 
-When the server-only runtime config keys `goAPIInternalHttpURL` / `nodejsAPIInternalHttpURL` (`NUXT_GO_API_INTERNAL_HTTP_URL` / `NUXT_NODEJS_API_INTERNAL_HTTP_URL`) are set, SSR fetches (including the auth client in `app/plugins/02.auth.ts`) use them instead of the public URLs — required when the app runs inside a container where the public localhost origin is unreachable.
+When the server-only runtime config keys `coreAPIInternalHttpURL` / `authRealtimeAPIInternalHttpURL` (`NUXT_CORE_API_INTERNAL_HTTP_URL` / `NUXT_AUTH_REALTIME_API_INTERNAL_HTTP_URL`) are set, SSR fetches (including the auth client in `app/plugins/02.auth.ts`) use them instead of the public URLs — required when the app runs inside a container where the public localhost origin is unreachable.
 
 ## Data layer
 
@@ -72,7 +72,7 @@ API composables live in [app/composables/api/](app/composables/api/) and are re-
 
 ## Editor (TipTap + Yjs)
 
-Document editor is in [app/components/editor/](app/components/editor/). Real-time collaboration uses **Yjs** + **Hocuspocus** (`NUXT_PUBLIC_NODEJS_API_BASE_WS_URL`). Notable subsystems:
+Document editor is in [app/components/editor/](app/components/editor/). Real-time collaboration uses **Yjs** + **Hocuspocus** (`NUXT_PUBLIC_AUTH_REALTIME_API_BASE_WS_URL`). Notable subsystems:
 
 - `blocks/` — custom node types (mermaid, metrics, code-block, figma, image, callout, split-documentation)
 - `comments/` — comment marks + node-comment extension

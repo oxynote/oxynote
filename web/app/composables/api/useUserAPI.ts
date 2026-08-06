@@ -1,5 +1,5 @@
 export default function () {
-	const { $apiClient } = useNuxtApp()
+	const { $coreAPIClient } = useNuxtApp()
 
 	const uploadUserImage = useMutation({
 		// no optimistic updates possible here
@@ -7,7 +7,7 @@ export default function () {
 			const body = new FormData()
 			body.append("image", file)
 
-			const response = await $apiClient.raw(`/api/users/image`, {
+			const response = await $coreAPIClient.raw(`/api/users/image`, {
 				method: "PUT",
 				body,
 			})

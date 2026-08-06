@@ -16,13 +16,13 @@ const GITHUB_QUERY_KEYS = {
 }
 
 export default function () {
-	const { $apiClient } = useNuxtApp()
+	const { $coreAPIClient } = useNuxtApp()
 	const queryCache = useQueryCache()
 
 	const fetchGitHubConnectionStatus = useQuery<GitHubConnectionStatus>({
 		key: GITHUB_QUERY_KEYS.connected,
 		query: async () => {
-			return await $apiClient<GitHubConnectionStatus>(`/api/github`, {
+			return await $coreAPIClient<GitHubConnectionStatus>(`/api/github`, {
 				method: "GET",
 			})
 		},
@@ -43,7 +43,7 @@ export default function () {
 	async function fetchGitHubInstallURL(): Promise<GitHubInstallResponse> {
 		// we don't want to use useQuery here as installs are
 		// typically one-off and we don't want to cache them
-		return await $apiClient<GitHubInstallResponse>(`/api/github/install`, {
+		return await $coreAPIClient<GitHubInstallResponse>(`/api/github/install`, {
 			method: "GET",
 		})
 	}
@@ -54,7 +54,7 @@ export default function () {
 			const query = queryParams.toString()
 			const url = query ? `/api/github/connect?${query}` : "/api/github/connect"
 
-			return await $apiClient(url, { method: "GET" })
+			return await $coreAPIClient(url, { method: "GET" })
 		},
 	})
 
@@ -78,7 +78,7 @@ export default function () {
 			return { newStatus, oldStatus }
 		},
 		mutation: async () => {
-			return await $apiClient(`/api/github`, { method: "DELETE" })
+			return await $coreAPIClient(`/api/github`, { method: "DELETE" })
 		},
 		async onSuccess() {
 			await queryCache.invalidateQueries({ key: GITHUB_QUERY_KEYS.connected })
@@ -103,9 +103,12 @@ export default function () {
 				return []
 			}
 
-			return await $apiClient<GitHubRepository[]>(`/api/github/repositories`, {
-				method: "GET",
-			})
+			return await $coreAPIClient<GitHubRepository[]>(
+				`/api/github/repositories`,
+				{
+					method: "GET",
+				},
+			)
 		},
 		refetchOnMount: false,
 		refetchOnWindowFocus: false,
@@ -129,7 +132,7 @@ export default function () {
 					return []
 				}
 
-				return await $apiClient<string[]>(
+				return await $coreAPIClient<string[]>(
 					`/api/github/repositories/${repoName}/branches`,
 					{ method: "GET" },
 				)
@@ -171,7 +174,9 @@ export default function () {
 					url += `?branch=${branchName}`
 				}
 
-				return await $apiClient<GitHubFileTreeItem[]>(url, { method: "GET" })
+				return await $coreAPIClient<GitHubFileTreeItem[]>(url, {
+					method: "GET",
+				})
 			},
 			enabled: () =>
 				toValue(repoNameRef) !== null && toValue(repoNameRef) !== undefined,

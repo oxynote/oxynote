@@ -10,10 +10,10 @@ export default defineNuxtPlugin((nuxtApp) => {
 		? useRequestHeaders(["cookie", "accept-language"])
 		: undefined
 
-	const goAPI = $fetch.create({
+	const coreAPI = $fetch.create({
 		baseURL:
-			(import.meta.server && (config.goAPIInternalHttpURL as string)) ||
-			(config.public.goAPIBaseHttpURL as string),
+			(import.meta.server && (config.coreAPIInternalHttpURL as string)) ||
+			(config.public.coreAPIBaseHttpURL as string),
 		credentials: "include",
 		onRequest({ options }) {
 			if (!ssrHeaders) {
@@ -38,10 +38,11 @@ export default defineNuxtPlugin((nuxtApp) => {
 		},
 	})
 
-	const nodejsAPI = $fetch.create({
+	const authRealtimeAPI = $fetch.create({
 		baseURL:
-			(import.meta.server && (config.nodejsAPIInternalHttpURL as string)) ||
-			(config.public.nodejsAPIBaseHttpURL as string),
+			(import.meta.server &&
+				(config.authRealtimeAPIInternalHttpURL as string)) ||
+			(config.public.authRealtimeAPIBaseHttpURL as string),
 		credentials: "include",
 		onRequest({ options }) {
 			if (!ssrHeaders) {
@@ -68,8 +69,8 @@ export default defineNuxtPlugin((nuxtApp) => {
 
 	return {
 		provide: {
-			apiClient: goAPI,
-			nodejsAPIClient: nodejsAPI,
+			coreAPIClient: coreAPI,
+			authRealtimeAPIClient: authRealtimeAPI,
 		},
 	}
 })

@@ -19,13 +19,13 @@ const DATA_SOURCE_QUERY_KEYS = {
 }
 
 export default function () {
-	const { $apiClient } = useNuxtApp()
+	const { $coreAPIClient } = useNuxtApp()
 	const queryCache = useQueryCache()
 
 	const fetchDataSources = useQuery({
 		key: DATA_SOURCE_QUERY_KEYS.list,
 		query: async () => {
-			return await $apiClient<DataSourcesResponse>(`/api/data-sources`, {
+			return await $coreAPIClient<DataSourcesResponse>(`/api/data-sources`, {
 				method: "GET",
 			})
 		},
@@ -47,7 +47,7 @@ export default function () {
 					return null
 				}
 
-				return await $apiClient<DataSourceResponse>(
+				return await $coreAPIClient<DataSourceResponse>(
 					`/api/data-sources/${dataSourceId}`,
 					{
 						method: "GET",
@@ -77,7 +77,7 @@ export default function () {
 					return null
 				}
 
-				return await $apiClient<DataSourceConnectionResponse>(
+				return await $coreAPIClient<DataSourceConnectionResponse>(
 					`/api/data-sources/${dataSourceId}/connection`,
 					{
 						method: "GET",
@@ -119,10 +119,13 @@ export default function () {
 			return { newDataSources, oldDataSources }
 		},
 		mutation: async (req: DataSourceCreateRequest) => {
-			return await $apiClient<DataSourceCreateResponse>(`/api/data-sources`, {
-				method: "POST",
-				body: req,
-			})
+			return await $coreAPIClient<DataSourceCreateResponse>(
+				`/api/data-sources`,
+				{
+					method: "POST",
+					body: req,
+				},
+			)
 		},
 		async onSuccess() {
 			await queryCache.invalidateQueries({ key: DATA_SOURCE_QUERY_KEYS.list })
@@ -214,7 +217,7 @@ export default function () {
 			dataSourceId: string
 			req: DataSourceUpdateRequest
 		}) => {
-			return await $apiClient<DataSourceUpdateResponse>(
+			return await $coreAPIClient<DataSourceUpdateResponse>(
 				`/api/data-sources/${dataSourceId}`,
 				{
 					method: "PUT",
@@ -310,7 +313,7 @@ export default function () {
 			return { newDataSources, oldDataSources, oldDataSourceById }
 		},
 		mutation: async (dataSourceId: string) => {
-			await $apiClient(`/api/data-sources/${dataSourceId}`, {
+			await $coreAPIClient(`/api/data-sources/${dataSourceId}`, {
 				method: "DELETE",
 			})
 		},
@@ -391,7 +394,7 @@ export default function () {
 				})
 
 				try {
-					return await $apiClient<GenericQueryResult>(
+					return await $coreAPIClient<GenericQueryResult>(
 						`/api/data-sources/${dataSourceId}/query?${queryParams.toString()}`,
 						{ method: "GET" },
 					)
@@ -461,7 +464,7 @@ export default function () {
 						})
 
 						try {
-							return await $apiClient<GenericQueryResult>(
+							return await $coreAPIClient<GenericQueryResult>(
 								`/api/data-sources/${dataSourceId}/query?${queryParams.toString()}`,
 								{ method: "GET" },
 							)

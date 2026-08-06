@@ -7,7 +7,7 @@ const DOCUMENT_COMMENT_QUERY_KEYS = {
 }
 
 export default function () {
-	const { $apiClient } = useNuxtApp()
+	const { $coreAPIClient } = useNuxtApp()
 	const queryCache = useQueryCache()
 	const { fetchAuthSession, fetchOrganization } = useAuthSession()
 
@@ -29,7 +29,7 @@ export default function () {
 					return []
 				}
 
-				const res = await $apiClient<DocumentCommentsResponse>(
+				const res = await $coreAPIClient<DocumentCommentsResponse>(
 					`/api/documents/${docId}/comments?branchId=${encodeURIComponent(branchId)}`,
 					{ method: "GET" },
 				)
@@ -106,7 +106,7 @@ export default function () {
 				return
 			}
 
-			return await $apiClient<DocumentCommentCreateResponse>(
+			return await $coreAPIClient<DocumentCommentCreateResponse>(
 				`/api/documents/${docId}/comments`,
 				{
 					method: "POST",
@@ -194,7 +194,7 @@ export default function () {
 				return
 			}
 
-			await $apiClient(`/api/documents/${docId}/comments/${commentId}`, {
+			await $coreAPIClient(`/api/documents/${docId}/comments/${commentId}`, {
 				method: "PUT",
 				body: req,
 			})
@@ -281,7 +281,7 @@ export default function () {
 				return
 			}
 
-			await $apiClient(
+			await $coreAPIClient(
 				`/api/documents/${docId}/comments/${commentId}/resolve`,
 				{
 					method: "PUT",
@@ -377,7 +377,7 @@ export default function () {
 				return
 			}
 
-			await $apiClient(`/api/documents/${docId}/comments/${commentId}`, {
+			await $coreAPIClient(`/api/documents/${docId}/comments/${commentId}`, {
 				method: "DELETE",
 			})
 		},
@@ -488,7 +488,7 @@ export default function () {
 				return
 			}
 
-			return await $apiClient<DocumentCommentReplyCreateResponse>(
+			return await $coreAPIClient<DocumentCommentReplyCreateResponse>(
 				`/api/documents/${docId}/comments/${commentId}/replies`,
 				{
 					method: "POST",
@@ -606,7 +606,7 @@ export default function () {
 				return
 			}
 
-			await $apiClient(
+			await $coreAPIClient(
 				`/api/documents/${docId}/comments/${commentId}/replies/${replyId}`,
 				{
 					method: "PUT",
@@ -717,7 +717,7 @@ export default function () {
 				return
 			}
 
-			await $apiClient(
+			await $coreAPIClient(
 				`/api/documents/${docId}/comments/${commentId}/replies/${replyId}`,
 				{
 					method: "DELETE",

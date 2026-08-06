@@ -57,7 +57,7 @@ Go dependencies are fetched into the module cache at build time (`make deps` run
 - `:8082` — changedetection.io
 - `:8083` — Grafana (direct, not via Caddy)
 
-So from a frontend's point of view: auth + realtime is `:8080/auth-realtime/...`, the Go API is `:8080/core/api/...`. Internal-only Go routes (`/api/x/...`) are not exposed by Caddy.
+So from a frontend's point of view: auth + realtime is `:8080/auth-realtime/...`, the core API is `:8080/core/api/...`. Internal-only Go routes (`/api/x/...`) are not exposed by Caddy.
 
 ## Core request surface
 

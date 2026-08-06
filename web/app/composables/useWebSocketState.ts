@@ -12,7 +12,7 @@ export default function (opts: {
 	const config = useRuntimeConfig()
 
 	let wsConnRetry = 0
-	const wsControl = useWebSocket(`${config.public.goAPIBaseHttpWS}/api/ws`, {
+	const wsControl = useWebSocket(`${config.public.coreAPIBaseWsURL}/api/ws`, {
 		immediate: false,
 		autoClose: false,
 		autoReconnect: {

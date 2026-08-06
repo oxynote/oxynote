@@ -20,7 +20,7 @@ const PROMETHEUS_QUERY_KEYS = {
 }
 
 export default function () {
-	const { $apiClient } = useNuxtApp()
+	const { $coreAPIClient } = useNuxtApp()
 
 	function usePrometheusQuery(
 		dataSourceIdRef: MaybeRefOrGetter<string | null | undefined>,
@@ -51,7 +51,7 @@ export default function () {
 					...formatQueryTimeRange(params),
 				})
 
-				return await $apiClient<PrometheusQueryResult>(
+				return await $coreAPIClient<PrometheusQueryResult>(
 					`/api/data-sources/${dataSourceId}/prometheus/query?${queryParams.toString()}`,
 					{ method: "GET" },
 				)
@@ -113,7 +113,7 @@ export default function () {
 							...timeRangeParams,
 						})
 
-						return await $apiClient<PrometheusQueryResult>(
+						return await $coreAPIClient<PrometheusQueryResult>(
 							`/api/data-sources/${dataSourceId}/prometheus/query?${queryParams.toString()}`,
 							{ method: "GET" },
 						)
@@ -161,7 +161,7 @@ export default function () {
 					return null
 				}
 
-				return await $apiClient<PrometheusMetadataResult>(
+				return await $coreAPIClient<PrometheusMetadataResult>(
 					`/api/data-sources/${dataSourceId}/prometheus/metadata`,
 					{ method: "GET" },
 				)
@@ -209,7 +209,7 @@ export default function () {
 					? `/api/data-sources/${dataSourceId}/prometheus/labels?${queryParams.toString()}`
 					: `/api/data-sources/${dataSourceId}/prometheus/labels`
 
-				return await $apiClient<PrometheusLabelNamesResult>(url, {
+				return await $coreAPIClient<PrometheusLabelNamesResult>(url, {
 					method: "GET",
 				})
 			},
@@ -260,7 +260,7 @@ export default function () {
 					? `/api/data-sources/${dataSourceId}/prometheus/labels/${params.label}/values?${queryParams.toString()}`
 					: `/api/data-sources/${dataSourceId}/prometheus/labels/${params.label}/values`
 
-				return await $apiClient<PrometheusLabelValuesResult>(url, {
+				return await $coreAPIClient<PrometheusLabelValuesResult>(url, {
 					method: "GET",
 				})
 			},
@@ -316,7 +316,7 @@ export default function () {
 					queryParams.append("matchers", matcher)
 				}
 
-				return await $apiClient<PrometheusSeriesResult>(
+				return await $coreAPIClient<PrometheusSeriesResult>(
 					`/api/data-sources/${dataSourceId}/prometheus/series?${queryParams.toString()}`,
 					{ method: "GET" },
 				)

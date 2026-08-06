@@ -199,7 +199,7 @@ function createBranchProvider(
 	const ydoc = new Y.Doc()
 	const synced = ref(false)
 	const provider = new HocuspocusProvider({
-		url: config.public.nodejsAPIBaseWsURL as string,
+		url: config.public.authRealtimeAPIBaseWsURL as string,
 		name: streamName,
 		document: ydoc,
 		token: "notoken",
