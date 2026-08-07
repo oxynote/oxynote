@@ -80,7 +80,7 @@ const contentExtensionsWithIDs: Extensions = [
 ]
 
 /**
- * Get all Tiptap extensions used in the bifrost editor
+ * Get all Tiptap extensions used in the web editor
  * This matches the schema used by the frontend for document compatibility
  */
 export function getEditorExtensions(): Extensions {

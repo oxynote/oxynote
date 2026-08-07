@@ -14,12 +14,18 @@ By default the following ports are opened:
 
 ## Using Migrations
 
-Execute the SQL migrations inside the postgres container (e.g., via docker
-desktop).
+Nothing to do by hand: the Better Auth tables are owned by core's SQL
+migrations (`server/core/internal/db/migrations/`), which are embedded in the
+binary and applied automatically on startup.
 
-## Generating Migrations
+## Generating the Reference Schema
 
-To generate the SQL migration file, start a postgres container:
+`auth-realtime/sql/better_auth_schema.sql` is a generated reference of the
+schema Better Auth expects — regenerate it after changing the Better Auth
+config in `src/auth.ts` and diff it against core's migrations to see whether a
+new migration is needed.
+
+To generate it, start a postgres container:
 
 ```
 docker run \

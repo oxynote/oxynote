@@ -1,4 +1,7 @@
-# Bifrost
+# Web
+
+Nuxt 4 + Vue 3 frontend of Oxynote. Ships two ways: a server-rendered web app
+and an Electron desktop app.
 
 **Tools and dependencies**:
 - Favicon processing: https://realfavicongenerator.net
@@ -17,32 +20,47 @@ error messages: https://vee-validate.logaretm.com/v4/guide/i18n/
 
 ## Setup
 
-Make sure to install dependencies:
+Install dependencies and run the prepare step:
 
 ```bash
-pnpm install
+pnpm run setup
 ```
 
-## Development Server
+Environment variables are read from `.env` — `make setup` at the repository
+root creates it from `docker/env/web.example.env`.
 
-Start the development server on `http://localhost:3000`:
+## Development
+
+Start the web development server on `http://localhost:3000` (the backend
+stack must be running — `make dev` at the repository root does both):
 
 ```bash
-pnpm run dev
+pnpm run start:dev:web
+```
+
+Run the desktop app against the same dev server:
+
+```bash
+pnpm run start:dev:desktop
 ```
 
 ## Production
 
-Build the application for production:
+Build the web application:
 
 ```bash
-pnpm run build
+pnpm run build:web
 ```
 
-Locally preview production build:
+Package the desktop application (or build installers with `make:desktop`):
 
 ```bash
-pnpm run preview
+pnpm run package:desktop
 ```
 
-Check out the [deployment documentation](https://nuxt.com/docs/getting-started/deployment) for more information.
+## QA
+
+```bash
+pnpm run qa      # check-types + check-lint + check-fmt
+pnpm run qa-fix  # check-types + lint --fix + prettier --write
+```

@@ -8,8 +8,8 @@ type BlockNodeType string
 
 // ProseMirror node-type names registered by the editor's TipTap
 // schema. Match the names registered in
-// bifrost/app/components/editor/blocks/* and
-// node/src/schema/index.ts; renaming an editor extension means
+// web/app/components/editor/blocks/* and
+// server/auth-realtime/src/schema/index.ts; renaming an editor extension means
 // renaming the matching constant here.
 const (
 	// BlockNodeText is the inline text leaf node carrying actual

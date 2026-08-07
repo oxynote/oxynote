@@ -8,7 +8,7 @@ export interface DocumentData {
 	icon: string
 }
 
-// Create a TiptapTransformer instance with the bifrost schema
+// Create a TiptapTransformer instance with the web editor schema
 const extensions = getEditorExtensions()
 const transformer = TiptapTransformer.extensions(extensions)
 

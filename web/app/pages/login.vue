@@ -31,16 +31,6 @@ const noMethodsConfigured = computed(
 let redirectTimeout: ReturnType<typeof setTimeout> | undefined
 
 onMounted(() => {
-	const error = route.query.error
-	if (error === "auth.login_not_allowed") {
-		showToastMessage("error", t("onboarding.login.errors.login-not-allowed"))
-	} else if (error === "auth.registration_not_allowed") {
-		showToastMessage(
-			"error",
-			t("onboarding.login.errors.registration-not-allowed"),
-		)
-	}
-
 	redirectTimeout = setupSignInRedirect()
 })
 

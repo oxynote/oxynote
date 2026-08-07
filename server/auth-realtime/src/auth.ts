@@ -1,6 +1,6 @@
 import * as Sentry from "@sentry/node"
 import { betterAuth } from "better-auth"
-import { createAuthMiddleware, APIError } from "better-auth/api"
+import { createAuthMiddleware } from "better-auth/api"
 import { organization } from "better-auth/plugins"
 import { electron } from "@better-auth/electron"
 import { createClient } from "redis"
@@ -14,13 +14,6 @@ export const MAX_ORGANIZATIONS = parseInt(
 	process.env.OXYNOTE_AUTH_REALTIME_MAX_ORGANIZATIONS || "100",
 )
 const backendUrl = process.env.OXYNOTE_AUTH_REALTIME_BACKEND_URL
-
-const ALLOWED_EMAILS = new Set(
-	(process.env.OXYNOTE_AUTH_REALTIME_ALLOWED_EMAILS || "")
-		.split(",")
-		.map((e) => e.trim().toLowerCase())
-		.filter(Boolean),
-)
 
 const FRONTEND_URL = process.env.OXYNOTE_AUTH_REALTIME_FRONTEND_URL as string
 
@@ -47,8 +40,10 @@ const SLACK_CONFIGURED = Boolean(
 
 // the capability list served by /api/auth-config. Derived from the same
 // flags that register the social providers below, so the endpoint can never
-// disagree with what better-auth actually accepts.
+// disagree with what better-auth actually accepts. Email-password needs no
+// external credentials, so it is always available.
 export const AUTH_METHODS = [
+	"email-password" as const,
 	...(GOOGLE_CONFIGURED ? ["google" as const] : []),
 	...(GITHUB_CONFIGURED ? ["github" as const] : []),
 	...(SLACK_CONFIGURED ? ["slack" as const] : []),
@@ -60,14 +55,6 @@ export const AUTH_METHODS = [
 // proxy.
 function toPublicAuthURL(url: string): string {
 	return url.replace(AUTH_ORIGIN, PUBLIC_AUTH_BASE_URL)
-}
-
-function isEmailAllowed(email: string): boolean {
-	if (ALLOWED_EMAILS.size === 0) {
-		return true
-	}
-
-	return ALLOWED_EMAILS.has(email.toLowerCase())
 }
 
 const redisClient = createClient({
@@ -124,6 +111,25 @@ export const auth = betterAuth({
 					"/api/auth/callback/github",
 			},
 		}),
+	},
+	emailAndPassword: {
+		enabled: true,
+		requireEmailVerification: true,
+		sendResetPassword: async ({ user, url }) => {
+			await sendPasswordReset(
+				user.email,
+				toPublicAuthURL(url),
+			)
+		},
+	},
+	emailVerification: {
+		sendOnSignUp: true,
+		sendVerificationEmail: async ({ user, url }) => {
+			await sendEmailVerification(
+				user.email,
+				toPublicAuthURL(url),
+			)
+		},
 	},
 	advanced: {
 		cookiePrefix: "auth",
@@ -322,69 +328,6 @@ export const auth = betterAuth({
 				}
 			}
 		}),
-		after: createAuthMiddleware(async (ctx) => {
-			if (!ctx.path.startsWith("/callback/")) {
-				return
-			}
-
-			const setCookie =
-				ctx.context.responseHeaders?.get("set-cookie")
-			if (!setCookie) {
-				return
-			}
-
-			const match = setCookie.match(
-				/auth\.session_token=([^;,]+)/,
-			)
-			if (!match?.[1]) {
-				return
-			}
-
-			const signedToken = decodeURIComponent(match[1])
-			const token = signedToken.substring(
-				0,
-				signedToken.lastIndexOf("."),
-			)
-			if (!token) {
-				return
-			}
-
-			const sessionData = await redisClient.get(token)
-			if (!sessionData) {
-				return
-			}
-
-			const { user } = JSON.parse(sessionData)
-			if (!user) {
-				return
-			}
-
-			if (!isEmailAllowed(user.email)) {
-				await redisClient.del(token)
-
-				const isNewUser =
-					Date.now() -
-						new Date(
-							user.createdAt,
-						).getTime() <
-					10_000
-
-				const errorCode = isNewUser
-					? "auth.registration_not_allowed"
-					: "auth.login_not_allowed"
-
-				const redirectHeaders = new Headers()
-				redirectHeaders.set(
-					"location",
-					`${FRONTEND_URL}/login?error=${errorCode}`,
-				)
-				throw new APIError(
-					"FOUND",
-					undefined,
-					redirectHeaders,
-				)
-			}
-		}),
 	},
 	databaseHooks: {
 		user: {
@@ -483,6 +426,18 @@ async function sendEmailVerification(
 ): Promise<void> {
 	try {
 		await axios.post(`${backendUrl}/api/x/email/verification`, {
+			email,
+			link,
+		})
+	} catch (err) {
+		Sentry.captureException(err)
+		throw err
+	}
+}
+
+async function sendPasswordReset(email: string, link: string): Promise<void> {
+	try {
+		await axios.post(`${backendUrl}/api/x/email/password-reset`, {
 			email,
 			link,
 		})

@@ -41,8 +41,6 @@
 			},
 			"errors": {
 				"login-failed": "Login cannot be completed. Please try again",
-				"login-not-allowed": "Oxynote is currently undergoing changes. If you wish to delete your account, please email us at hello{'@'}oxynote.io.",
-				"registration-not-allowed": "Registration is currently closed. Keep an eye out for announcements!",
 				"organization-limit-reached": {
 					"title": "We're sorry, but we can't create a new workspace for you at the moment because we've reached our limit for new workspaces",
 					"description": "Please join the waitlist and we'll notify you as soon as we can create a new workspace for you"

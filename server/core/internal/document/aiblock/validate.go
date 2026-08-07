@@ -410,7 +410,7 @@ func validateSplitDoc(b Block, path string) error {
 	// (heading first, then any number of body blocks, then any
 	// number of param_lists).
 	//
-	// Level 1 mirrors what bifrost's split_doc.createAndFill produces
+	// Level 1 mirrors what the web editor's split_doc.createAndFill produces
 	// for a freshly inserted split_doc — the panel provides its own
 	// visual emphasis, so the heading inside is always level 1
 	// regardless of the surrounding outline depth.
@@ -606,7 +606,7 @@ var (
 	}
 
 	// _allowedListItemContent is the set of block types that can sit
-	// inside a list/task-list item. Mirrors the bifrost editor's
+	// inside a list/task-list item. Mirrors the web editor's
 	// ListItem default content.
 	_allowedListItemContent = map[BlockType]bool{
 		BlockParagraph:   true,
@@ -616,7 +616,7 @@ var (
 	}
 
 	// _allowedCalloutItems mirrors CalloutBlock.content in
-	// bifrost/app/components/editor/blocks/callout/index.ts.
+	// web/app/components/editor/blocks/callout/index.ts.
 	_allowedCalloutItems = map[BlockType]bool{
 		BlockParagraph:   true,
 		BlockBulletList:  true,
