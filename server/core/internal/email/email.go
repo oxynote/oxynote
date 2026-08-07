@@ -2,6 +2,7 @@
 package email
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
@@ -168,6 +169,16 @@ func (s *Sender) send(toEmail, subject string, tmpl template, args map[string]st
 
 	msg.Subject(subject)
 	msg.SetBodyString(mail.TypeTextHTML, body)
+
+	err = msg.EmbedReader("logo.png", bytes.NewReader(_logoPNG), mail.WithFileContentID("logo.png"))
+	if err != nil {
+		s.log.Error(
+			"cannot embed email logo",
+			slog.String("error", err.Error()),
+		)
+
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), _sendTimeout)
 	defer cancel()

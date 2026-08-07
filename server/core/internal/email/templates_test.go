@@ -93,6 +93,9 @@ func Test_render(t *testing.T) {
 			// must not strip them.
 			assert.Contains(t, got, "<!--[if", "rendered body lost the Outlook conditional comments")
 
+			assert.Contains(t, got, `src="cid:logo.png"`, "rendered body must reference the embedded logo")
+			assert.NotContains(t, got, "cdn.prod.website-files.com", "rendered body references a remote CDN image")
+
 			for _, want := range tc.WantContains {
 				assert.Contains(t, got, want)
 			}

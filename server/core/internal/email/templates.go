@@ -22,6 +22,14 @@ type template string
 //go:embed templates/*.html
 var _templateFS embed.FS
 
+// _logoPNG is the logo the templates reference as "cid:logo.png". It is
+// attached inline to every email: remote images get blocked by many
+// clients and data: URIs don't render in Gmail, so a CID attachment is
+// the only reliable way to show it.
+//
+//go:embed assets/logo.png
+var _logoPNG []byte
+
 // _templates holds all email templates parsed from the embedded HTML
 // files, addressable by "<template>.html".
 // text/template is used instead of html/template on purpose: the
