@@ -1,5 +1,5 @@
 export type AuthMethod = "github" | "google" | "slack"
 
-export interface AuthMethods {
+export interface AuthConfig {
 	methods: AuthMethod[]
 }

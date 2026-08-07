@@ -45,7 +45,7 @@ const SLACK_CONFIGURED = Boolean(
 			.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_SLACK_CLIENT_SECRET,
 )
 
-// the capability list served by /api/auth-methods. Derived from the same
+// the capability list served by /api/auth-config. Derived from the same
 // flags that register the social providers below, so the endpoint can never
 // disagree with what better-auth actually accepts.
 export const AUTH_METHODS = [

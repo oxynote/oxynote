@@ -14,17 +14,17 @@ useHead({
 })
 
 const { signInSocial, setupSignInRedirect } = useAuthSession()
-const { fetchAuthMethods } = useAuthAPI()
+const { fetchAuthConfig } = useAuthAPI()
 
 const route = useRoute()
 const config = useRuntimeConfig()
 const loading = ref<"github" | "google" | "slack" | null>(null)
 const enabledMethods = computed(
-	() => fetchAuthMethods.state.value.data?.methods ?? [],
+	() => fetchAuthConfig.state.value.data?.methods ?? [],
 )
 const noMethodsConfigured = computed(
 	() =>
-		fetchAuthMethods.state.value.status === "success" &&
+		fetchAuthConfig.state.value.status === "success" &&
 		enabledMethods.value.length === 0,
 )
 

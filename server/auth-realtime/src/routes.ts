@@ -45,10 +45,10 @@ app.on(["POST", "GET"], "/auth/**", (c) => {
 	return auth.handler(c.req.raw)
 })
 
-// public capability signal for the login/signup pages: which social
-// providers are configured. Lives outside the better-auth /auth/**
-// namespace.
-app.get("/auth-methods", (c) => {
+// public auth configuration for the login/signup pages: which social
+// providers are configured (and, later, other signup-related capability
+// flags). Lives outside the better-auth /auth/** namespace.
+app.get("/auth-config", (c) => {
 	return c.json({ methods: AUTH_METHODS })
 })
 

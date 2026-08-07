@@ -1,14 +1,14 @@
 const AUTH_QUERY_KEYS = {
-	methods: ["auth", "methods"] as const,
+	config: ["auth", "config"] as const,
 }
 
 export default function () {
 	const { $authRealtimeAPIClient } = useNuxtApp()
 
-	const fetchAuthMethods = useQuery({
-		key: AUTH_QUERY_KEYS.methods,
+	const fetchAuthConfig = useQuery({
+		key: AUTH_QUERY_KEYS.config,
 		query: async () => {
-			return await $authRealtimeAPIClient<AuthMethods>(`/api/auth-methods`, {
+			return await $authRealtimeAPIClient<AuthConfig>(`/api/auth-config`, {
 				method: "GET",
 			})
 		},
@@ -18,5 +18,5 @@ export default function () {
 		staleTime: 5 * 60 * 1000, // 5 mins
 	})
 
-	return { fetchAuthMethods }
+	return { fetchAuthConfig }
 }
