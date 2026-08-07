@@ -215,11 +215,28 @@ func main() {
 		origins = biOrigins
 	}
 
-	emailSender := email.NewSender(
+	emailSender, err := email.NewSender(
 		log,
-		buildinfo.Getenv("EMAIL_MAILGUN_DOMAIN"),
-		buildinfo.Getenv("EMAIL_MAILGUN_API_KEY"),
+		email.Config{
+			Host:        buildinfo.Getenv("EMAIL_SMTP_HOST"),
+			Port:        buildinfo.Getenv("EMAIL_SMTP_PORT"),
+			Username:    buildinfo.Getenv("EMAIL_SMTP_USERNAME"),
+			Password:    buildinfo.Getenv("EMAIL_SMTP_PASSWORD"),
+			TLS:         email.TLSMode(buildinfo.Getenv("EMAIL_SMTP_TLS")),
+			FromAddress: buildinfo.Getenv("EMAIL_FROM_ADDRESS"),
+		},
 	)
+	if err != nil {
+		err = ioutil.AppendCloseErr(
+			ioutil.MultiCloser(true, closers...),
+			fmt.Errorf("cannot create email sender: %w", err),
+		)
+
+		log.With("error", err).
+			Error("cannot create email sender")
+
+		return
+	}
 
 	liveEditClient := liveedit.NewClient(
 		http.DefaultClient,

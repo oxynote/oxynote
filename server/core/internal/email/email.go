@@ -5,97 +5,184 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"time"
 
-	"github.com/mailgun/mailgun-go/v5"
-	"github.com/oxynote/oxynote/server/core/internal/buildinfo"
+	"github.com/wneessen/go-mail"
 )
 
-// All available email templates.
-var (
-	_mailgunTemplateOrganizationInvitationKey = buildinfo.Getenv("EMAIL_MAILGUN_TEMPLATE_ORGANIZATION_INVITATION_KEY")
-	_mailgunTemplateEmailVerificationKey      = buildinfo.Getenv("EMAIL_MAILGUN_TEMPLATE_EMAIL_VERIFICATION_KEY")
-	_mailgunTemplateUserDeletionKey           = buildinfo.Getenv("EMAIL_MAILGUN_TEMPLATE_USER_DELETION_KEY")
-	_mailgunTemplateUserCreationKey           = buildinfo.Getenv("EMAIL_MAILGUN_TEMPLATE_USER_CREATION_KEY")
+// TLSMode describes how the SMTP connection is secured.
+type TLSMode string
+
+// Available TLS modes for the SMTP connection.
+const (
+	// TLSModeNone connects in plaintext without any TLS.
+	TLSModeNone TLSMode = "none"
+
+	// TLSModeStartTLS connects in plaintext and requires an upgrade to
+	// TLS via STARTTLS.
+	TLSModeStartTLS TLSMode = "starttls"
+
+	// TLSModeTLS connects over implicit TLS.
+	TLSModeTLS TLSMode = "tls"
 )
 
 // _sendTimeout is the maximum allowed time for sending an email.
 const _sendTimeout = 30 * time.Second
 
+// Config holds SMTP connection settings for the email sender.
+type Config struct {
+	// Host is the SMTP server host. When empty, email sending is
+	// disabled and every email is logged instead.
+	Host string
+
+	// Port is the SMTP server port.
+	Port string
+
+	// Username is the SMTP auth username. Empty together with Password
+	// means no authentication.
+	Username string
+
+	// Password is the SMTP auth password.
+	Password string
+
+	// TLS is the TLS mode of the SMTP connection. One of "none",
+	// "starttls" or "tls".
+	TLS TLSMode
+
+	// FromAddress is the address emails are sent from, in
+	// "Name <address>" or plain "address" form.
+	FromAddress string
+}
+
 // Sender holds dependencies required for email sending.
 type Sender struct {
 	log    *slog.Logger
-	client *mailgun.Client
+	client *mail.Client
 
-	domain    string
 	fromEmail string
 }
 
 // NewSender creates a fresh instance of email sender.
-func NewSender(
-	log *slog.Logger,
-	domain, apiKey string,
-) *Sender {
-	return &Sender{
+// An empty cfg.Host yields a sender with sending disabled: every email
+// is logged instead of sent.
+func NewSender(log *slog.Logger, cfg Config) (*Sender, error) {
+	sender := &Sender{
 		log:       log,
-		client:    mailgun.NewMailgun(apiKey),
-		domain:    domain,
-		fromEmail: buildinfo.Getenv("EMAIL_FROM_ADDRESS"),
+		fromEmail: cfg.FromAddress,
 	}
+
+	if cfg.Host == "" {
+		return sender, nil
+	}
+
+	port, err := strconv.Atoi(cfg.Port)
+	if err != nil {
+		return nil, fmt.Errorf("invalid smtp port %q: %w", cfg.Port, err)
+	}
+
+	opts := []mail.Option{
+		mail.WithPort(port),
+	}
+
+	switch cfg.TLS {
+	case TLSModeNone:
+		opts = append(opts, mail.WithTLSPolicy(mail.NoTLS))
+	case TLSModeStartTLS:
+		opts = append(opts, mail.WithTLSPolicy(mail.TLSMandatory))
+	case TLSModeTLS:
+		opts = append(opts, mail.WithSSL())
+	default:
+		return nil, fmt.Errorf("invalid smtp tls mode %q", cfg.TLS)
+	}
+
+	if cfg.Username != "" || cfg.Password != "" {
+		opts = append(
+			opts,
+			mail.WithSMTPAuth(mail.SMTPAuthAutoDiscover),
+			mail.WithUsername(cfg.Username),
+			mail.WithPassword(cfg.Password),
+		)
+	}
+
+	client, err := mail.NewClient(cfg.Host, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("create smtp client: %w", err)
+	}
+
+	sender.client = client
+
+	return sender, nil
 }
 
-// send prepares an email from the specified templates and sends it
+// send prepares an email from the specified template and sends it
 // to the destination address.
 // All errors will be suppressed and logged.
 func (s *Sender) send(toEmail, subject string, tmpl template, args map[string]string) {
-	var templateKey string
+	if s.client == nil {
+		s.log.Info(
+			"email sending is not configured, logging email instead",
+			slog.String("to", toEmail),
+			slog.String("subject", subject),
+			slog.String("template", string(tmpl)),
+			slog.Any("args", args),
+		)
 
-	switch tmpl {
-	case _templateOrganizationInvitation:
-		templateKey = _mailgunTemplateOrganizationInvitationKey
-	case _templateEmailVerification:
-		templateKey = _mailgunTemplateEmailVerificationKey
-	case _templateUserDeletion:
-		templateKey = _mailgunTemplateUserDeletionKey
-	case _templateUserCreation:
-		templateKey = _mailgunTemplateUserCreationKey
-	default:
-		s.log.Error("unknown email template", slog.String("template", string(tmpl)))
 		return
 	}
 
-	msg := mailgun.NewMessage(
-		s.domain,
-		s.fromEmail,
-		subject,
-		"",
-	)
+	body, err := render(tmpl, args)
+	if err != nil {
+		s.log.Error(
+			"cannot render email template",
+			slog.String("template", string(tmpl)),
+			slog.String("error", err.Error()),
+		)
 
-	for k, v := range args {
-		err := msg.AddVariable(k, v)
-		if err != nil {
-			s.log.Error("cannot add email variable", slog.String("key", k), slog.String("value", v), slog.String("error", err.Error()))
-			return
-		}
+		return
 	}
 
-	msg.SetTemplate(templateKey)
-	msg.AddRecipient(toEmail)
+	msg := mail.NewMsg()
+
+	err = msg.From(s.fromEmail)
+	if err != nil {
+		s.log.Error(
+			"cannot set email from address",
+			slog.String("from", s.fromEmail),
+			slog.String("error", err.Error()),
+		)
+
+		return
+	}
+
+	err = msg.To(toEmail)
+	if err != nil {
+		s.log.Error(
+			"cannot set email recipient",
+			slog.String("to", toEmail),
+			slog.String("error", err.Error()),
+		)
+
+		return
+	}
+
+	msg.Subject(subject)
+	msg.SetBodyString(mail.TypeTextHTML, body)
 
 	ctx, cancel := context.WithTimeout(context.Background(), _sendTimeout)
 	defer cancel()
 
-	resp, err := s.client.Send(ctx, msg)
+	err = s.client.DialAndSendWithContext(ctx, msg)
 	if err != nil {
 		s.log.Error(
 			"cannot send an email",
 			slog.String("from", s.fromEmail),
-			slog.String("domain", s.domain),
 			slog.String("to", toEmail),
 			slog.String("subject", subject),
-			slog.String("template", templateKey),
+			slog.String("template", string(tmpl)),
 			slog.String("error", err.Error()),
 		)
+
 		return
 	}
 
@@ -103,8 +190,6 @@ func (s *Sender) send(toEmail, subject string, tmpl template, args map[string]st
 		"email sent",
 		slog.String("to", toEmail),
 		slog.String("subject", subject),
-		slog.String("id", resp.ID),
-		slog.String("message", resp.Message),
 	)
 }
 

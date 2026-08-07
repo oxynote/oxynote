@@ -100,7 +100,7 @@ Env lives in `docker/env/`: committed `*.example.env` templates list **every** v
 
 - core vars are prefixed `OXYNOTE_CORE_`; `buildinfo.Getenv("FOO")` reads `OXYNOTE_CORE_FOO`.
 - auth-realtime vars are prefixed `OXYNOTE_AUTH_REALTIME_`.
-- All integrations are optional. The GitHub App is enabled by setting `OXYNOTE_CORE_GITHUB_APP_ID` and dropping the app's private key into `docker/github/` (mounted into the core container); an empty `OXYNOTE_CORE_GITHUB_APP_ID` disables it — core boots, GitHub routes respond `github.not_configured` (the always-200 `GET /api/github` status endpoint reports `configured: false` as the frontend's capability signal), and github-tracking hooks are skipped. A set app ID with a missing/unreadable key is a boot error. Slack works the same way keyed on `OXYNOTE_CORE_SLACK_CLIENT_ID` (`slack.not_configured`, `GET /api/slack` reports `configured`); a set client ID with other `SLACK_*` values missing is a boot error. The assistant needs `ANTHROPIC_API_KEY`; without it the AI chat can't complete a turn.
+- All integrations are optional. The GitHub App is enabled by setting `OXYNOTE_CORE_GITHUB_APP_ID` and dropping the app's private key into `docker/github/` (mounted into the core container); an empty `OXYNOTE_CORE_GITHUB_APP_ID` disables it — core boots, GitHub routes respond `github.not_configured` (the always-200 `GET /api/github` status endpoint reports `configured: false` as the frontend's capability signal), and github-tracking hooks are skipped. A set app ID with a missing/unreadable key is a boot error. Slack works the same way keyed on `OXYNOTE_CORE_SLACK_CLIENT_ID` (`slack.not_configured`, `GET /api/slack` reports `configured`); a set client ID with other `SLACK_*` values missing is a boot error. The assistant needs `ANTHROPIC_API_KEY`; without it the AI chat can't complete a turn. Email is keyed on `OXYNOTE_CORE_EMAIL_SMTP_HOST`: when empty, core boots and each would-be email is logged instead of sent; with a set host, an invalid `EMAIL_SMTP_PORT` or `EMAIL_SMTP_TLS` (`none` | `starttls` | `tls`) is a boot error. The dev stack presets the mailpit container as the SMTP target (`mailpit:1025`, plaintext, no auth; web UI on host `:8025`) — the four HTML templates are embedded in the core binary from `server/core/internal/email/templates/`.
 
 ## House conventions worth knowing
 
@@ -146,6 +146,8 @@ for name, tc := range tests {
 ```
 
 Same one-per-line rule for multi-element slice/array literals. Single-element literals like `[]string{x}` are fine inline.
+
+Assertions always use testify (`assert.NoError`, `require.NoError`, `assert.Equal`, …) — never bare `t.Error`/`t.Fatalf` checks. `require` for preconditions that make the rest of the test meaningless, `assert` for everything else. Auxiliary checks never get their own suffixed test function (no `Test_render_preservesX`) — fold them into the function's single table-driven test via `Want*` fields.
 
 ### Error checking
 
