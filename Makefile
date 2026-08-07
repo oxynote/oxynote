@@ -5,17 +5,24 @@ build-go:
 	cd server/core && make build
 	cd datagen && make build
 
+# changedetection.io generates its API key on first boot; start it alone and
+# copy the key into core.local.env before the rest of the stack (core reads
+# its env only at container creation).
+sync-changedetection-key:
+	$(COMPOSE) up -d changedetection
+	./docker/sync-changedetection-key.sh
+
 # foreground: streams all logs, ctrl-c stops the stack
-run: build-go
+run: build-go sync-changedetection-key
 	$(COMPOSE) --profile web up --build
 
 # background
-start: build-go
+start: build-go sync-changedetection-key
 	$(COMPOSE) --profile web up --build -d
 
 # backend containers + web dev server on the host with hot reload. Ctrl-c
 # stops the web dev server; `make stop` stops the containers.
-dev: build-go
+dev: build-go sync-changedetection-key
 	$(COMPOSE) up --build -d
 	cd web && NUXT_PUBLIC_APP_BASE_URL=http://localhost:3000 pnpm run start:dev:web
 
