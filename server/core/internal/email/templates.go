@@ -14,6 +14,7 @@ const (
 	_templateOrganizationInvitation template = "organization_invitation"
 	_templateUserDeletion           template = "user_deletion"
 	_templateUserCreation           template = "user_creation"
+	_templatePasswordReset          template = "password_reset"
 )
 
 // template is used to identify template.

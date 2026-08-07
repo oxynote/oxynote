@@ -46,6 +46,16 @@ func Test_render(t *testing.T) {
 				"https://example.com/delete?t=abc",
 			},
 		},
+		"Password reset": {
+			Template: _templatePasswordReset,
+			Args: map[string]string{
+				"link": "https://example.com/reset?t=abc",
+			},
+			WantContains: []string{
+				"https://example.com/reset?t=abc",
+				"Reset your password",
+			},
+		},
 		"User creation matches source byte-for-byte": {
 			Template: _templateUserCreation,
 			Args:     nil,

@@ -259,7 +259,12 @@ func (s *Sender) SendUserCreation(eml string) {
 // SendPasswordReset sends an email with a password reset link to the
 // specified email address.
 func (s *Sender) SendPasswordReset(eml, link string) {
-	// TODO: actually send the email. No Mailgun template exists for
-	// password resets yet, and the planned SMTP transport with in-repo
-	// templates is not implemented either.
+	s.send(
+		eml,
+		"Reset your password",
+		_templatePasswordReset,
+		map[string]string{
+			"link": link,
+		},
+	)
 }
