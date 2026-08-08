@@ -121,6 +121,15 @@ export default function () {
 		return $authClient.signIn.social(...args)
 	}
 
+	// no __DESKTOP_BUILD__ branch: with email verification required, the
+	// signup response carries no session material, so the renderer's
+	// credential-less client is safe to call directly in both bundles.
+	function signUpEmailPassword(
+		...args: Parameters<typeof $authClient.signUp.email>
+	) {
+		return $authClient.signUp.email(...args)
+	}
+
 	// Web-only effect: when this page was opened by Electron via requestAuth(),
 	// $authClient.ensureElectronRedirect() arms the redirect back to oxynote://
 	// once OAuth completes. No-op when the page wasn't opened from Electron.
@@ -252,6 +261,7 @@ export default function () {
 		updateSessionOnInviteAccept,
 		safeSignOut,
 		signInSocial,
+		signUpEmailPassword,
 		setupSignInRedirect,
 		updateUser,
 		changeEmail,

@@ -94,6 +94,23 @@ func (h *Handler) SendPasswordReset(w http.ResponseWriter, r *http.Request) {
 	httpserver.Respond(h.log, w, nil, http.StatusNoContent)
 }
 
+// SendAccountExists sends an account-exists notification email.
+func (h *Handler) SendAccountExists(w http.ResponseWriter, r *http.Request) {
+	var data struct {
+		Email string `json:"email"`
+		Link  string `json:"link"`
+	}
+
+	if err := httpserver.DecodeJSON(r, &data); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	h.sender.SendAccountExists(data.Email, data.Link)
+
+	httpserver.Respond(h.log, w, nil, http.StatusNoContent)
+}
+
 // SendUserCreation sends a welcome email to a newly registered user.
 func (h *Handler) SendUserCreation(w http.ResponseWriter, r *http.Request) {
 	var data struct {

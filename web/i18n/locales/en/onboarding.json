@@ -5,6 +5,13 @@
 			"signup-google": "Sign up with Google",
 			"signup-github": "Sign up with GitHub",
 			"signup-slack": "Sign up with Slack",
+			"signup-email-password": "Sign up with email",
+			"email-password-form": {
+				"email-placeholder": "Email address",
+				"password-placeholder": "Password",
+				"continue": "Continue",
+				"back": "Back to signup"
+			},
 			"conditions": {
 				"main": "By signing up, you agree to our {terms-of-service} and {privacy-policy}.",
 				"placeholders": {
@@ -20,6 +27,9 @@
 			},
 			"errors": {
 				"signup-failed": "Signup cannot be completed. Please try again",
+				"email-invalid": "Please enter a valid email address",
+				"password-number": "Password must contain at least one number",
+				"password-symbol": "Password must contain at least one special symbol",
 				"organization-limit-reached": {
 					"title": "We're sorry, but we can't create a workspace for you at the moment because we've reached our limit for new workspaces",
 					"description": "Please join the waitlist and we'll notify you as soon as we can create a new workspace for you"
@@ -50,7 +60,14 @@
 		},
 		"verify-email": {
 			"title": "Thank you for verifying {email} as your email address!",
-			"button": "Continue to Oxynote"
+			"sent-title": "We've sent a verification link to {email}. Please check your inbox.",
+			"button": "Continue to Oxynote",
+			"have-account": {
+				"main": "Already have an account? {log-in}.",
+				"placeholders": {
+					"log-in": "Log in"
+				}
+			}
 		},
 		"accept-invite": {
 			"title": "{name} has invited you to join {org}",

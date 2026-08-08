@@ -268,3 +268,16 @@ func (s *Sender) SendPasswordReset(eml, link string) {
 		},
 	)
 }
+
+// SendAccountExists notifies the owner of an existing account that a
+// signup was attempted with their email address, with a login link.
+func (s *Sender) SendAccountExists(eml, link string) {
+	s.send(
+		eml,
+		"You already have an Oxynote account",
+		_templateAccountExists,
+		map[string]string{
+			"link": link,
+		},
+	)
+}

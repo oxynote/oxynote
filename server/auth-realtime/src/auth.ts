@@ -115,10 +115,21 @@ export const auth = betterAuth({
 	emailAndPassword: {
 		enabled: true,
 		requireEmailVerification: true,
+		minPasswordLength: 16,
+		maxPasswordLength: 128,
 		sendResetPassword: async ({ user, url }) => {
 			await sendPasswordReset(
 				user.email,
 				toPublicAuthURL(url),
+			)
+		},
+		// duplicate signups get better-auth's synthetic success so the
+		// browser can't probe which emails have accounts. The real
+		// owner is told through their inbox instead.
+		onExistingUserSignUp: async ({ user }) => {
+			await sendAccountExists(
+				user.email,
+				`${FRONTEND_URL}/login`,
 			)
 		},
 	},
@@ -426,6 +437,18 @@ async function sendEmailVerification(
 ): Promise<void> {
 	try {
 		await axios.post(`${backendUrl}/api/x/email/verification`, {
+			email,
+			link,
+		})
+	} catch (err) {
+		Sentry.captureException(err)
+		throw err
+	}
+}
+
+async function sendAccountExists(email: string, link: string): Promise<void> {
+	try {
+		await axios.post(`${backendUrl}/api/x/email/account-exists`, {
 			email,
 			link,
 		})

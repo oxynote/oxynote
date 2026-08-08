@@ -21,7 +21,11 @@ const pageRoute = useRoute()
 			<div class="flex flex-col items-center gap-6">
 				<Icon name="custom-icons:main-logo" class="size-12" />
 				<i18n-t
-					keypath="onboarding.verify-email.title"
+					:keypath="
+						pageRoute.query.sent
+							? 'onboarding.verify-email.sent-title'
+							: 'onboarding.verify-email.title'
+					"
 					tag="div"
 					class="text-center text-lg font-semibold"
 				>
@@ -34,6 +38,21 @@ const pageRoute = useRoute()
 			>
 				{{ $t("onboarding.verify-email.button") }}
 			</NuxtLink>
+			<i18n-t
+				v-if="pageRoute.query.sent"
+				keypath="onboarding.verify-email.have-account.main"
+				tag="div"
+				class="text-xs text-accent-foreground"
+			>
+				<template #log-in>
+					<NuxtLink
+						:to="{ name: 'login' }"
+						class="font-semibold hover:opacity-70 active:opacity-50"
+					>
+						{{ $t("onboarding.verify-email.have-account.placeholders.log-in") }}
+					</NuxtLink>
+				</template>
+			</i18n-t>
 		</div>
 	</main>
 </template>

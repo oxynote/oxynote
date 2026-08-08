@@ -3,8 +3,11 @@ import { redirectToLogin } from "~/plugins/03.api-fetch"
 export default defineNuxtRouteMiddleware(async (to) => {
 	// The desktop-auth handoff page is only ever reached as the OAuth
 	// callback target; let it mount unconditionally so it can either fire
-	// the deep link or fall back to /login itself.
-	if (to.name === "desktop-auth") {
+	// the deep link or fall back to /login itself. The verify-email info
+	// page must render for signed-out visitors (fresh email-password
+	// signups) and signed-in ones (change-email confirmations) alike, so
+	// neither the auth gate nor the skipAuth redirect may touch it.
+	if (to.name === "desktop-auth" || to.name === "verify-email") {
 		return
 	}
 
