@@ -50,3 +50,9 @@
 
 	reverse_proxy changedetection:5000
 }
+
+:8084 {
+	import common
+
+	reverse_proxy mailpit:8025
+}

@@ -55,6 +55,7 @@ The dev stack exposes:
 - `8081` — MinIO console
 - `8082` — changedetection.io
 - `8083` — Grafana
+- `8084` — Mailpit (dev email inbox)
 
 Common per-component commands:
 
