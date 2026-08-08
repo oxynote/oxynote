@@ -283,7 +283,7 @@ function backToSignup() {
 				@submit="onEmailPasswordSubmit"
 			>
 				<ShadcnUiFormField
-					v-slot="{ componentField }"
+					v-slot="{ componentField, meta }"
 					name="email"
 					:validate-on-model-update="false"
 					:validate-on-input="false"
@@ -311,11 +311,14 @@ function backToSignup() {
 								}"
 							/>
 						</ShadcnUiFormControl>
-						<ShadcnUiFormMessage class="text-2xs" />
+						<ShadcnUiFormMessage
+							v-if="meta.touched || meta.validated"
+							class="text-2xs"
+						/>
 					</ShadcnUiFormItem>
 				</ShadcnUiFormField>
 				<ShadcnUiFormField
-					v-slot="{ componentField }"
+					v-slot="{ componentField, meta }"
 					name="password"
 					:validate-on-model-update="false"
 					:validate-on-input="false"
@@ -345,7 +348,10 @@ function backToSignup() {
 								}"
 							/>
 						</ShadcnUiFormControl>
-						<ShadcnUiFormMessage class="text-2xs" />
+						<ShadcnUiFormMessage
+							v-if="meta.touched || meta.validated"
+							class="text-2xs"
+						/>
 					</ShadcnUiFormItem>
 				</ShadcnUiFormField>
 				<ShadcnUiButton

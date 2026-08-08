@@ -62,12 +62,7 @@
 			"title": "Thank you for verifying {email} as your email address!",
 			"sent-title": "We've sent a verification link to {email}. Please check your inbox.",
 			"button": "Continue to Oxynote",
-			"have-account": {
-				"main": "Already have an account? {log-in}.",
-				"placeholders": {
-					"log-in": "Log in"
-				}
-			}
+			"back-to-signup": "Back to signup"
 		},
 		"accept-invite": {
 			"title": "{name} has invited you to join {org}",

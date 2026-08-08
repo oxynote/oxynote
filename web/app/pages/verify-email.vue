@@ -33,26 +33,19 @@ const pageRoute = useRoute()
 				</i18n-t>
 			</div>
 			<NuxtLink
+				v-if="!pageRoute.query.sent"
 				to="/"
 				class="text-base font-semibold text-muted-foreground hover:opacity-70 active:opacity-50"
 			>
 				{{ $t("onboarding.verify-email.button") }}
 			</NuxtLink>
-			<i18n-t
+			<NuxtLink
 				v-if="pageRoute.query.sent"
-				keypath="onboarding.verify-email.have-account.main"
-				tag="div"
-				class="text-xs text-accent-foreground"
+				:to="{ name: 'signup' }"
+				class="text-xs text-accent-foreground font-semibold hover:opacity-70 active:opacity-50"
 			>
-				<template #log-in>
-					<NuxtLink
-						:to="{ name: 'login' }"
-						class="font-semibold hover:opacity-70 active:opacity-50"
-					>
-						{{ $t("onboarding.verify-email.have-account.placeholders.log-in") }}
-					</NuxtLink>
-				</template>
-			</i18n-t>
+				{{ $t("onboarding.verify-email.back-to-signup") }}
+			</NuxtLink>
 		</div>
 	</main>
 </template>
