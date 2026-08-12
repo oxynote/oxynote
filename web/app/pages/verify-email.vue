@@ -42,7 +42,7 @@ const pageRoute = useRoute()
 			<NuxtLink
 				v-if="pageRoute.query.sent"
 				:to="{ name: 'signup' }"
-				class="text-xs text-accent-foreground font-semibold hover:opacity-70 active:opacity-50"
+				class="text-xs font-semibold text-accent-foreground hover:opacity-70 active:opacity-50"
 			>
 				{{ $t("onboarding.verify-email.back-to-signup") }}
 			</NuxtLink>

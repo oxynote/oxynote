@@ -42,6 +42,13 @@
 			"login-google": "Log in with Google",
 			"login-github": "Log in with GitHub",
 			"login-slack": "Log in with Slack",
+			"login-email-password": "Log in with email",
+			"email-password-form": {
+				"email-placeholder": "Email address",
+				"password-placeholder": "Password",
+				"continue": "Continue",
+				"back": "Back to login"
+			},
 			"no-account": {
 				"main": "Don't have an account? {sign-up} or {learn-more}.",
 				"placeholders": {
@@ -51,6 +58,9 @@
 			},
 			"errors": {
 				"login-failed": "Login cannot be completed. Please try again",
+				"email-invalid": "Please enter a valid email address",
+				"password-required": "Please enter your password",
+				"invalid-credentials": "Invalid email or password",
 				"organization-limit-reached": {
 					"title": "We're sorry, but we can't create a new workspace for you at the moment because we've reached our limit for new workspaces",
 					"description": "Please join the waitlist and we'll notify you as soon as we can create a new workspace for you"

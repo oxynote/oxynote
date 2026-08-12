@@ -50,6 +50,8 @@ declare module "#app" {
 			// or tokens.
 			auth: {
 				getSession(): Promise<unknown>
+				signInEmailPassword(args: unknown): Promise<unknown>
+				signUpEmailPassword(args: unknown): Promise<unknown>
 				updateUser(args: unknown): Promise<unknown>
 				changeEmail(args: unknown): Promise<unknown>
 				deleteUser(args: unknown): Promise<unknown>

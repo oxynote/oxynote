@@ -135,6 +135,10 @@ export const auth = betterAuth({
 	},
 	emailVerification: {
 		sendOnSignUp: true,
+		// re-send the verification link when an unverified user tries to
+		// log in — the login page forwards them to the check-your-inbox
+		// page, which would otherwise lie about an email being sent.
+		sendOnSignIn: true,
 		sendVerificationEmail: async ({ user, url }) => {
 			await sendEmailVerification(
 				user.email,

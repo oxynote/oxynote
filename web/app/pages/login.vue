@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import { toTypedSchema } from "@vee-validate/zod"
+import { useForm } from "vee-validate"
+import * as z from "zod"
+// for some reason this isn't auto imported
+import { FormField as ShadcnUiFormField } from "@/components/shadcn/ui/form"
 import { postAuthDocumentUrl } from "#imports"
 import { showToastMessage } from "~/components/toast"
 import { cn } from "~/lib/utils"
@@ -13,12 +18,31 @@ useHead({
 	title: () => t("general.login-page-title"),
 })
 
-const { signInSocial, setupSignInRedirect } = useAuthSession()
+const {
+	fetchAuthSession,
+	signInSocial,
+	signInEmailPassword,
+	setupSignInRedirect,
+} = useAuthSession()
 const { fetchAuthConfig } = useAuthAPI()
 
 const route = useRoute()
 const config = useRuntimeConfig()
-const loading = ref<"github" | "google" | "slack" | null>(null)
+
+const emailPasswordFormSchema = toTypedSchema(
+	z.object({
+		email: z.string().trim().email(t("onboarding.login.errors.email-invalid")),
+		password: z.string().min(1, t("onboarding.login.errors.password-required")),
+	}),
+)
+const emailPasswordForm = useForm({
+	validationSchema: emailPasswordFormSchema,
+})
+
+const loading = ref<"github" | "google" | "slack" | "email-password" | null>(
+	null,
+)
+const showEmailPasswordForm = ref(false)
 const enabledMethods = computed(
 	() => fetchAuthConfig.state.value.data?.methods ?? [],
 )
@@ -96,6 +120,57 @@ async function logInWithProvider(provider: "github" | "google" | "slack") {
 		loading.value = null
 	}
 }
+
+const onEmailPasswordSubmit = emailPasswordForm.handleSubmit(async (values) => {
+	loading.value = "email-password"
+
+	const res = await signInEmailPassword({
+		email: values.email,
+		password: values.password,
+	})
+
+	if (res.error) {
+		// the sign-in attempt re-sent the verification link
+		// (sendOnSignIn), so the check-your-inbox page is accurate.
+		// Loading stays set so the spinner shows while redirecting.
+		if ((res.error as any).code === "EMAIL_NOT_VERIFIED") {
+			navigateTo({
+				path: "/verify-email",
+				query: { new: values.email, sent: "true" },
+			})
+
+			return
+		}
+
+		loading.value = null
+
+		if ((res.error as any).code === "INVALID_EMAIL_OR_PASSWORD") {
+			showToastMessage(
+				"error",
+				t("onboarding.login.errors.invalid-credentials"),
+			)
+
+			return
+		}
+
+		showToastMessage("error", t("onboarding.login.errors.login-failed"))
+
+		return
+	}
+
+	// the session query still caches the signed-out null within its
+	// staleTime — refetch before navigating or the middleware bounces
+	// straight back to /login
+	await fetchAuthSession.refetch()
+
+	const nextUrl = route.query.next as string | undefined
+	navigateTo(nextUrl ? decodeURIComponent(nextUrl) : "/", { replace: true })
+})
+
+function backToLogin() {
+	showEmailPasswordForm.value = false
+	emailPasswordForm.resetForm()
+}
 </script>
 <template>
 	<main
@@ -108,12 +183,12 @@ async function logInWithProvider(provider: "github" | "google" | "slack") {
 					{{ $t("onboarding.login.title") }}
 				</div>
 			</div>
-			<div class="flex w-full flex-col gap-3">
+			<div v-if="!showEmailPasswordForm" class="flex w-full flex-col gap-3">
 				<ShadcnUiButton
 					v-if="enabledMethods.includes('google')"
 					size="lg"
 					:class="
-						cn('h-[2.5rem] w-full', loading !== null && 'pointer-events-none')
+						cn('h-10 w-full', loading !== null && 'pointer-events-none')
 					"
 					:disabled="loading === 'google'"
 					@click="logInWithProvider('google')"
@@ -132,7 +207,7 @@ async function logInWithProvider(provider: "github" | "google" | "slack") {
 					v-if="enabledMethods.includes('github')"
 					size="lg"
 					:class="
-						cn('h-[2.5rem] w-full', loading !== null && 'pointer-events-none')
+						cn('h-10 w-full', loading !== null && 'pointer-events-none')
 					"
 					variant="outline"
 					:disabled="loading === 'github'"
@@ -152,7 +227,7 @@ async function logInWithProvider(provider: "github" | "google" | "slack") {
 					v-if="enabledMethods.includes('slack')"
 					size="lg"
 					:class="
-						cn('h-[2.5rem] w-full', loading !== null && 'pointer-events-none')
+						cn('h-10 w-full', loading !== null && 'pointer-events-none')
 					"
 					variant="outline"
 					:disabled="loading === 'slack'"
@@ -168,6 +243,16 @@ async function logInWithProvider(provider: "github" | "google" | "slack") {
 					/>
 					{{ $t("onboarding.login.login-slack") }}
 				</ShadcnUiButton>
+				<ShadcnUiButton
+					v-if="enabledMethods.includes('email-password')"
+					size="lg"
+					:class="cn('h-10 w-full', loading !== null && 'pointer-events-none')"
+					variant="outline"
+					@click="showEmailPasswordForm = true"
+				>
+					<Icon name="lucide:mail" class="size-4" />
+					{{ $t("onboarding.login.login-email-password") }}
+				</ShadcnUiButton>
 				<div
 					v-if="noMethodsConfigured"
 					class="text-center text-xs text-accent-foreground"
@@ -175,6 +260,107 @@ async function logInWithProvider(provider: "github" | "google" | "slack") {
 					{{ $t("onboarding.login.no-methods") }}
 				</div>
 			</div>
+			<form
+				v-else
+				class="flex w-full flex-col gap-3"
+				@submit="onEmailPasswordSubmit"
+			>
+				<ShadcnUiFormField
+					v-slot="{ componentField, meta }"
+					name="email"
+					:validate-on-model-update="false"
+					:validate-on-input="false"
+					:validate-on-change="false"
+					:validate-on-blur="true"
+				>
+					<ShadcnUiFormItem>
+						<ShadcnUiFormControl>
+							<ShadcnUiInput
+								type="email"
+								autocomplete="email"
+								:placeholder="
+									$t('onboarding.login.email-password-form.email-placeholder')
+								"
+								disable-focus-effect
+								disable-destructive-effect
+								:class="
+									cn(
+										'h-10 text-2base!',
+										loading !== null && 'pointer-events-none',
+									)
+								"
+								v-bind="{
+									...componentField,
+								}"
+							/>
+						</ShadcnUiFormControl>
+						<ShadcnUiFormMessage
+							v-if="meta.touched || meta.validated"
+							class="text-2xs"
+						/>
+					</ShadcnUiFormItem>
+				</ShadcnUiFormField>
+				<ShadcnUiFormField
+					v-slot="{ componentField, meta }"
+					name="password"
+					:validate-on-model-update="false"
+					:validate-on-input="false"
+					:validate-on-change="false"
+					:validate-on-blur="true"
+				>
+					<ShadcnUiFormItem>
+						<ShadcnUiFormControl>
+							<ShadcnUiInput
+								type="password"
+								autocomplete="current-password"
+								:placeholder="
+									$t(
+										'onboarding.login.email-password-form.password-placeholder',
+									)
+								"
+								disable-focus-effect
+								disable-destructive-effect
+								:class="
+									cn(
+										'h-10 text-2base!',
+										loading !== null && 'pointer-events-none',
+									)
+								"
+								v-bind="{
+									...componentField,
+								}"
+							/>
+						</ShadcnUiFormControl>
+						<ShadcnUiFormMessage
+							v-if="meta.touched || meta.validated"
+							class="text-2xs"
+						/>
+					</ShadcnUiFormItem>
+				</ShadcnUiFormField>
+				<ShadcnUiButton
+					type="submit"
+					size="lg"
+					class="h-10 w-full"
+					:disabled="loading === 'email-password'"
+				>
+					<Icon
+						v-show="loading === 'email-password'"
+						name="svg-spinners:blocks-shuffle-3"
+						class="size-4"
+					/>
+					{{ $t("onboarding.login.email-password-form.continue") }}
+				</ShadcnUiButton>
+				<ShadcnUiButton
+					type="button"
+					size="lg"
+					variant="ghost"
+					class="h-10 w-full text-muted-foreground"
+					:disabled="loading === 'email-password'"
+					@click="backToLogin"
+				>
+					{{ $t("onboarding.login.email-password-form.back") }}
+				</ShadcnUiButton>
+			</form>
 			<i18n-t
 				keypath="onboarding.login.no-account.main"
 				tag="div"

@@ -38,6 +38,8 @@ contextBridge.exposeInMainWorld("__host", {
 	// never touch the session cookie directly — it only sees results.
 	auth: {
 		getSession: invokeAuth("auth:getSession"),
+		signInEmailPassword: invokeAuth("auth:signInEmailPassword"),
+		signUpEmailPassword: invokeAuth("auth:signUpEmailPassword"),
 		updateUser: invokeAuth("auth:updateUser"),
 		changeEmail: invokeAuth("auth:changeEmail"),
 		deleteUser: invokeAuth("auth:deleteUser"),

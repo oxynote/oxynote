@@ -121,12 +121,28 @@ export default function () {
 		return $authClient.signIn.social(...args)
 	}
 
-	// no __DESKTOP_BUILD__ branch: with email verification required, the
-	// signup response carries no session material, so the renderer's
-	// credential-less client is safe to call directly in both bundles.
+	function signInEmailPassword(
+		...args: Parameters<typeof $authClient.signIn.email>
+	) {
+		if (__DESKTOP_BUILD__) {
+			return getHost().auth.signInEmailPassword(args[0]) as ReturnType<
+				typeof $authClient.signIn.email
+			>
+		}
+		return $authClient.signIn.email(...args)
+	}
+
+	// signup also rides the IPC bridge on desktop: the packaged renderer's
+	// oxynote:// origin is not CORS-trusted by the auth server, so a direct
+	// renderer call would only work in hybrid dev.
 	function signUpEmailPassword(
 		...args: Parameters<typeof $authClient.signUp.email>
 	) {
+		if (__DESKTOP_BUILD__) {
+			return getHost().auth.signUpEmailPassword(args[0]) as ReturnType<
+				typeof $authClient.signUp.email
+			>
+		}
 		return $authClient.signUp.email(...args)
 	}
 
@@ -261,6 +277,7 @@ export default function () {
 		updateSessionOnInviteAccept,
 		safeSignOut,
 		signInSocial,
+		signInEmailPassword,
 		signUpEmailPassword,
 		setupSignInRedirect,
 		updateUser,
