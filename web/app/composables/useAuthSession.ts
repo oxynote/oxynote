@@ -132,6 +132,26 @@ export default function () {
 		return $authClient.signIn.email(...args)
 	}
 
+	function requestPasswordReset(
+		...args: Parameters<typeof $authClient.requestPasswordReset>
+	) {
+		if (__DESKTOP_BUILD__) {
+			return getHost().auth.requestPasswordReset(args[0]) as ReturnType<
+				typeof $authClient.requestPasswordReset
+			>
+		}
+		return $authClient.requestPasswordReset(...args)
+	}
+
+	// no __DESKTOP_BUILD__ branch: the reset page is only ever reached
+	// through the emailed link, which opens in a regular browser — the
+	// desktop bundle never executes this.
+	function resetPassword(
+		...args: Parameters<typeof $authClient.resetPassword>
+	) {
+		return $authClient.resetPassword(...args)
+	}
+
 	// signup also rides the IPC bridge on desktop: the packaged renderer's
 	// oxynote:// origin is not CORS-trusted by the auth server, so a direct
 	// renderer call would only work in hybrid dev.
@@ -279,6 +299,8 @@ export default function () {
 		signInSocial,
 		signInEmailPassword,
 		signUpEmailPassword,
+		requestPasswordReset,
+		resetPassword,
 		setupSignInRedirect,
 		updateUser,
 		changeEmail,

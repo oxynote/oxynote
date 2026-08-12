@@ -9,6 +9,7 @@
 		"github-connect-page-title": "GitHub Connect - Oxynote",
 		"slack-connect-page-title": "Slack Connect - Oxynote",
 		"verify-email-page-title": "Verify Your Email - Oxynote",
+		"reset-password-page-title": "Reset Your Password - Oxynote",
 		"modal-close-screen-reader-hint": "Close"
 	},
 	"storage-errors": {

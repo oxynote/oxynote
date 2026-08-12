@@ -48,7 +48,20 @@
 				"email-placeholder": "Email address",
 				"password-placeholder": "Password",
 				"continue": "Continue",
+				"back": "Back to all"
+			},
+			"password-reset-form": {
+				"email-placeholder": "Email address",
+				"continue": "Send reset link",
 				"back": "Back to login"
+			},
+			"password-reset-sent": "If {email} has an Oxynote account, a password reset link will be sent right away. Please check your inbox.",
+			"password-reset-success": "Your password has been reset. You can now log in",
+			"forgot-password": {
+				"main": "Forgot your password? {reset}.",
+				"placeholders": {
+					"reset": "Reset it"
+				}
 			},
 			"no-account": {
 				"main": "Don't have an account? {sign-up} or {learn-more}.",
@@ -62,12 +75,25 @@
 				"email-invalid": "Please enter a valid email address",
 				"password-required": "Please enter your password",
 				"invalid-credentials": "Invalid email or password",
+				"password-reset-failed": "Could not send the reset link. Please try again",
 				"organization-limit-reached": {
 					"title": "We're sorry, but we can't create a new workspace for you at the moment because we've reached our limit for new workspaces",
 					"description": "Please join the waitlist and we'll notify you as soon as we can create a new workspace for you"
 				}
 			},
 			"no-methods": "No login methods are configured on this server."
+		},
+		"reset-password": {
+			"title": "Choose a new password",
+			"password-placeholder": "New password",
+			"confirm-placeholder": "Confirm new password",
+			"continue": "Reset password",
+			"errors": {
+				"password-number": "Password must contain at least one number",
+				"password-symbol": "Password must contain at least one special symbol",
+				"password-mismatch": "Passwords do not match",
+				"reset-failed": "The reset link is invalid or has expired. Please request a new one"
+			}
 		},
 		"verify-email": {
 			"title": "Thank you for verifying {email} as your email address!",

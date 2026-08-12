@@ -22,6 +22,7 @@ const {
 	fetchAuthSession,
 	signInSocial,
 	signInEmailPassword,
+	requestPasswordReset,
 	setupSignInRedirect,
 } = useAuthSession()
 const { fetchAuthConfig } = useAuthAPI()
@@ -39,10 +40,13 @@ const emailPasswordForm = useForm({
 	validationSchema: emailPasswordFormSchema,
 })
 
-const loading = ref<"github" | "google" | "slack" | "email-password" | null>(
-	null,
+const loading = ref<
+	"github" | "google" | "slack" | "email-password" | "password-reset" | null
+>(null)
+const view = ref<"methods" | "email-password" | "reset-request" | "reset-sent">(
+	"methods",
 )
-const showEmailPasswordForm = ref(false)
+const resetEmail = ref("")
 const enabledMethods = computed(
 	() => fetchAuthConfig.state.value.data?.methods ?? [],
 )
@@ -57,6 +61,10 @@ let redirectTimeout: ReturnType<typeof setTimeout> | undefined
 onMounted(() => {
 	if (route.query.verified === "true") {
 		showToastMessage("success", t("onboarding.login.email-verified"))
+	}
+
+	if (route.query.reset === "true") {
+		showToastMessage("success", t("onboarding.login.password-reset-success"))
 	}
 
 	redirectTimeout = setupSignInRedirect()
@@ -177,8 +185,49 @@ const onEmailPasswordSubmit = emailPasswordForm.handleSubmit(async (values) => {
 	navigateTo(nextUrl ? decodeURIComponent(nextUrl) : "/", { replace: true })
 })
 
+// the reset-request view reuses the login form's email field (a second
+// useForm in this component would override the injected form context).
+// That rules out handleSubmit — it validates the whole schema, and the
+// password field is not rendered in this view — so the one relevant
+// field is validated explicitly and its value read from the form state.
+async function onPasswordResetSubmit() {
+	const { valid } = await emailPasswordForm.validateField("email")
+
+	if (!valid) {
+		return
+	}
+
+	const email = emailPasswordForm.values.email as string
+
+	loading.value = "password-reset"
+
+	const res = await requestPasswordReset({
+		email,
+		redirectTo: `${config.public.appBaseURL}/reset-password`,
+	})
+
+	loading.value = null
+
+	if (res.error) {
+		showToastMessage(
+			"error",
+			t("onboarding.login.errors.password-reset-failed"),
+		)
+
+		return
+	}
+
+	resetEmail.value = email
+	view.value = "reset-sent"
+}
+
 function backToLogin() {
-	showEmailPasswordForm.value = false
+	view.value = "methods"
+	emailPasswordForm.resetForm()
+}
+
+function backToEmailPassword() {
+	view.value = "email-password"
 	emailPasswordForm.resetForm()
 }
 </script>
@@ -186,14 +235,14 @@ function backToLogin() {
 	<main
 		class="flex min-h-svh min-w-svw items-center justify-center bg-background text-foreground"
 	>
-		<div class="flex w-[16.75rem] flex-col items-center gap-5">
+		<div class="flex w-67 flex-col items-center gap-5">
 			<div class="flex flex-col items-center gap-6">
 				<Icon name="custom-icons:main-logo" class="size-12" />
 				<div class="text-lg font-semibold">
 					{{ $t("onboarding.login.title") }}
 				</div>
 			</div>
-			<div v-if="!showEmailPasswordForm" class="flex w-full flex-col gap-3">
+			<div v-if="view === 'methods'" class="flex w-full flex-col gap-3">
 				<ShadcnUiButton
 					v-if="enabledMethods.includes('google')"
 					size="lg"
@@ -252,7 +301,7 @@ function backToLogin() {
 					size="lg"
 					:class="cn('h-10 w-full', loading !== null && 'pointer-events-none')"
 					variant="outline"
-					@click="showEmailPasswordForm = true"
+					@click="view = 'email-password'"
 				>
 					<Icon name="lucide:mail" class="size-4" />
 					{{ $t("onboarding.login.login-email-password") }}
@@ -265,7 +314,7 @@ function backToLogin() {
 				</div>
 			</div>
 			<form
-				v-else
+				v-else-if="view === 'email-password'"
 				class="flex w-full flex-col gap-3"
 				@submit="onEmailPasswordSubmit"
 			>
@@ -365,6 +414,106 @@ function backToLogin() {
 					{{ $t("onboarding.login.email-password-form.back") }}
 				</ShadcnUiButton>
 			</form>
+			<form
+				v-else-if="view === 'reset-request'"
+				class="flex w-full flex-col gap-3"
+				@submit.prevent="onPasswordResetSubmit"
+			>
+				<ShadcnUiFormField
+					v-slot="{ componentField, meta }"
+					name="email"
+					:validate-on-model-update="false"
+					:validate-on-input="false"
+					:validate-on-change="false"
+					:validate-on-blur="true"
+				>
+					<ShadcnUiFormItem>
+						<ShadcnUiFormControl>
+							<ShadcnUiInput
+								type="email"
+								autocomplete="email"
+								:placeholder="
+									$t('onboarding.login.password-reset-form.email-placeholder')
+								"
+								disable-focus-effect
+								disable-destructive-effect
+								:class="
+									cn(
+										'h-10 text-2base!',
+										loading !== null && 'pointer-events-none',
+									)
+								"
+								v-bind="{
+									...componentField,
+								}"
+							/>
+						</ShadcnUiFormControl>
+						<ShadcnUiFormMessage
+							v-if="meta.touched || meta.validated"
+							class="text-2xs"
+						/>
+					</ShadcnUiFormItem>
+				</ShadcnUiFormField>
+				<ShadcnUiButton
+					type="submit"
+					size="lg"
+					class="h-10 w-full"
+					:disabled="loading === 'password-reset'"
+				>
+					<Icon
+						v-show="loading === 'password-reset'"
+						name="svg-spinners:blocks-shuffle-3"
+						class="size-4"
+					/>
+					{{ $t("onboarding.login.password-reset-form.continue") }}
+				</ShadcnUiButton>
+				<ShadcnUiButton
+					type="button"
+					size="lg"
+					variant="ghost"
+					class="h-10 w-full text-muted-foreground"
+					:disabled="loading === 'password-reset'"
+					@click="backToEmailPassword"
+				>
+					{{ $t("onboarding.login.password-reset-form.back") }}
+				</ShadcnUiButton>
+			</form>
+			<div v-else class="flex w-full flex-col gap-3">
+				<i18n-t
+					keypath="onboarding.login.password-reset-sent"
+					tag="div"
+					class="text-center text-xs text-accent-foreground"
+				>
+					<template #email>{{ resetEmail }}</template>
+				</i18n-t>
+				<ShadcnUiButton
+					type="button"
+					size="lg"
+					variant="ghost"
+					class="h-10 w-full text-muted-foreground"
+					@click="backToEmailPassword"
+				>
+					{{ $t("onboarding.login.password-reset-form.back") }}
+				</ShadcnUiButton>
+			</div>
+			<i18n-t
+				v-if="view === 'email-password'"
+				keypath="onboarding.login.forgot-password.main"
+				tag="div"
+				class="text-xs text-accent-foreground"
+			>
+				<template #reset>
+					<ShadcnUiButton
+						type="button"
+						variant="ghost-plain"
+						size="custom"
+						class="text-xs font-semibold text-accent-foreground transition-none hover:opacity-70 focus:text-accent-foreground active:opacity-50 [&:not(:disabled):hover:not(:active)]:text-accent-foreground"
+						@click="view = 'reset-request'"
+					>
+						{{ $t("onboarding.login.forgot-password.placeholders.reset") }}
+					</ShadcnUiButton>
+				</template>
+			</i18n-t>
 			<i18n-t
 				keypath="onboarding.login.no-account.main"
 				tag="div"
