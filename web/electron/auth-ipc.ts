@@ -10,6 +10,8 @@ const handlers: Record<string, (args: any) => Promise<unknown>> = {
 	"auth:signInEmailPassword": (args) => authClient.signIn.email(args),
 	"auth:signUpEmailPassword": (args) => authClient.signUp.email(args),
 	"auth:requestPasswordReset": (args) => authClient.requestPasswordReset(args),
+	"auth:changePassword": (args) => authClient.changePassword(args),
+	"auth:listAccounts": () => authClient.listAccounts(),
 	"auth:updateUser": (args) => authClient.updateUser(args),
 	"auth:changeEmail": (args) => authClient.changeEmail(args),
 	"auth:deleteUser": (args) => authClient.deleteUser(args),

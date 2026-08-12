@@ -16,6 +16,46 @@
 					"description": "We've sent a verification link to {email}. Once you click the link, your email address will be updated"
 				}
 			},
+			"password-change": {
+				"title": "Change Password",
+				"title-set": "Set Password",
+				"description": "Choose a new password for your account. You will stay logged in here, but all your other sessions will be logged out.",
+				"description-set": "Your account doesn't have a password yet. We'll send a link to {email} that will let you create one. Once the password is set, all your active sessions will be logged out.",
+				"current-password-label": "Your current password",
+				"current-password-placeholder": "Current password",
+				"new-password-label": "Your new password",
+				"new-password-placeholder": "New password",
+				"confirm-password-label": "Confirm your new password",
+				"confirm-password-placeholder": "Confirm new password",
+				"submit-button": "Change Password",
+				"send-link-button": "Send Link",
+				"cancel-button": "Cancel",
+				"success-message": {
+					"changed": {
+						"title": "Password changed",
+						"description": "All your other sessions have been logged out"
+					},
+					"link-sent": {
+						"title": "Password setup link sent",
+						"description": "We've sent a link to {email}. Click it to set your password"
+					}
+				},
+				"errors": {
+					"current-password-required": "Please enter your current password",
+					"password-number": "Password must contain at least one number",
+					"password-symbol": "Password must contain at least one special symbol",
+					"password-mismatch": "Passwords do not match",
+					"invalid-current-password": "Incorrect password",
+					"change-failed": {
+						"title": "Password couldn't be changed",
+						"description": "An error occurred while trying to change the password. Please try again"
+					},
+					"link-failed": {
+						"title": "Link couldn't be sent",
+						"description": "An error occurred while trying to send the password setup link. Please try again"
+					}
+				}
+			},
 			"account-deletion": {
 				"title": "Delete Account",
 				"description": "This action is irreversible and will permanently delete all your data. A confirmation email will be sent to your registered email address to finalize the account deletion process.",
@@ -279,6 +319,13 @@
 			"username-label": "Username",
 			"username-description": "The nickname or first name you'd like to use in Oxynote",
 			"username-placeholder": "Username",
+			"password-label": "Password",
+			"password-description": {
+				"main": "The password used together with your email to log in{status}",
+				"status-not-set": "No password set"
+			},
+			"password-set-button": "Set password",
+			"password-change-button": "Change password",
 			"account-deletion-label": "Delete Account",
 			"account-deletion-description": "This action is irreversible and will permanently delete all your data",
 			"account-deletion-button": "Delete Account",

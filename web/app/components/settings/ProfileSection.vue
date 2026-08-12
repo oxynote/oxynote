@@ -8,10 +8,16 @@ import { cn } from "~/lib/utils"
 import { showToastMessage } from "../toast"
 
 const emit = defineEmits<{
-	(event: "email-change" | "account-deletion"): void
+	(event: "email-change" | "password-change" | "account-deletion"): void
 }>()
 
-const { fetchAuthSession, fetchOrganization, updateUser } = useAuthSession()
+const {
+	fetchAuthSession,
+	fetchOrganization,
+	fetchAccounts,
+	hasPassword,
+	updateUser,
+} = useAuthSession()
 const {
 	fetchSlackConnectionStatus,
 	fetchSlackUserLinkSettings,
@@ -293,6 +299,51 @@ function handleAvatarClick() {
 		>
 			<div class="flex flex-col gap-0.5">
 				<div class="text-2base">
+					{{ $t("settings.profile.password-label") }}
+				</div>
+				<i18n-t
+					keypath="settings.profile.password-description.main"
+					tag="div"
+					class="text-xs text-muted-foreground"
+				>
+					<template #status>
+						<!-- the separator is an expression, not a text node — a bare "."
+							would pick up a leading space from template-whitespace
+							condensing (and prettier reflows the >-glue trick away) -->
+						<span v-if="fetchAccounts.state.value.data?.data && !hasPassword">
+							{{ ". " }}
+							<span class="font-semibold">
+								{{ $t("settings.profile.password-description.status-not-set") }}
+							</span>
+						</span>
+					</template>
+				</i18n-t>
+			</div>
+			<div
+				class="flex w-full items-center justify-between gap-1.5 sm:max-w-44 sm:min-w-44 sm:justify-end md:max-w-52 md:min-w-0 lg:max-w-70"
+			>
+				<ShadcnUiButton
+					v-if="fetchAccounts.state.value.data?.data"
+					type="button"
+					variant="ghost-plain"
+					class="gap-1.5 p-0 text-sm"
+					@click="emit('password-change')"
+				>
+					<Icon name="lucide:key-round" />
+					{{
+						hasPassword
+							? $t("settings.profile.password-change-button")
+							: $t("settings.profile.password-set-button")
+					}}
+				</ShadcnUiButton>
+			</div>
+		</div>
+		<div class="my-3.5 h-px w-full bg-border" />
+		<div
+			class="flex w-full flex-col justify-between gap-2 sm:flex-row sm:items-center"
+		>
+			<div class="flex flex-col gap-0.5">
+				<div class="text-2base">
 					{{ $t("settings.profile.account-deletion-label") }}
 				</div>
 				<div class="text-xs text-muted-foreground">
@@ -304,13 +355,12 @@ function handleAvatarClick() {
 			>
 				<ShadcnUiButton
 					type="button"
-					class="shrink-0 text-2sm"
+					class="gap-1.5 p-0 text-sm"
 					variant="ghost-plain-destructive"
 					@click="emit('account-deletion')"
 				>
-					<div>
-						{{ $t("settings.profile.account-deletion-button") }}
-					</div>
+					<Icon name="lucide:trash-2" />
+					{{ $t("settings.profile.account-deletion-button") }}
 				</ShadcnUiButton>
 			</div>
 		</div>

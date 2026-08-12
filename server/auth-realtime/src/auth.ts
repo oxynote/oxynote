@@ -117,6 +117,12 @@ export const auth = betterAuth({
 		requireEmailVerification: true,
 		minPasswordLength: 16,
 		maxPasswordLength: 128,
+		// a reset always happens outside an authenticated session (the
+		// emailed link opens in a plain browser), so this drops every
+		// session of the account — nothing survives a password reset.
+		// The logged-in change-password flow revokes its other sessions
+		// via revokeOtherSessions on the client call instead.
+		revokeSessionsOnPasswordReset: true,
 		sendResetPassword: async ({ user, url }) => {
 			await sendPasswordReset(
 				user.email,

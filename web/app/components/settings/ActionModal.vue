@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import EmailChangeAction from "./EmailChangeAction.vue"
+import PasswordChangeAction from "./PasswordChangeAction.vue"
 import WorkspaceInvitationAction from "./WorkspaceInvitationAction.vue"
 import WorkspaceMemberRemovalAction from "./WorkspaceMemberRemovalAction.vue"
 import DataSourceUpsertAction from "./DataSourceUpsertAction.vue"
@@ -13,6 +14,7 @@ const props = defineProps<{
 }>()
 const openType = defineModel<
 	| "email-change"
+	| "password-change"
 	| "account-deletion"
 	| "url-change"
 	| "workspace-invitation"
@@ -37,7 +39,7 @@ const open = computed({
 	},
 })
 const { t } = useI18n({ useScope: "global" })
-const { fetchOrganization } = useAuthSession()
+const { fetchOrganization, hasPassword } = useAuthSession()
 const isMaxMembersReached = computed(() => {
 	const org = fetchOrganization.state.value.data?.data
 	if (!org) {
@@ -57,6 +59,13 @@ const action = computed(() => {
 			return {
 				title: t("settings.action-modals.email-change.title"),
 				component: EmailChangeAction,
+			}
+		case "password-change":
+			return {
+				title: hasPassword.value
+					? t("settings.action-modals.password-change.title")
+					: t("settings.action-modals.password-change.title-set"),
+				component: PasswordChangeAction,
 			}
 		case "account-deletion":
 			return {

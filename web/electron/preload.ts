@@ -41,6 +41,8 @@ contextBridge.exposeInMainWorld("__host", {
 		signInEmailPassword: invokeAuth("auth:signInEmailPassword"),
 		signUpEmailPassword: invokeAuth("auth:signUpEmailPassword"),
 		requestPasswordReset: invokeAuth("auth:requestPasswordReset"),
+		changePassword: invokeAuth("auth:changePassword"),
+		listAccounts: invokeAuth("auth:listAccounts"),
 		updateUser: invokeAuth("auth:updateUser"),
 		changeEmail: invokeAuth("auth:changeEmail"),
 		deleteUser: invokeAuth("auth:deleteUser"),

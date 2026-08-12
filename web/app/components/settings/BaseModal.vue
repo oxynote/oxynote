@@ -22,6 +22,7 @@ const { t } = useI18n({ useScope: "global" })
 const openAction = ref<
 	| null
 	| "email-change"
+	| "password-change"
 	| "account-deletion"
 	| "url-change"
 	| "workspace-invitation"
@@ -124,6 +125,7 @@ whenever(open, async (val) => {
 								:is="section.component"
 								:id="section.id"
 								@email-change="openAction = 'email-change'"
+								@password-change="openAction = 'password-change'"
 								@account-deletion="openAction = 'account-deletion'"
 								@url-change="openAction = 'url-change'"
 								@invitation="openAction = 'workspace-invitation'"

@@ -1,6 +1,7 @@
 const AUTH_SESSION_QUERY_KEYS = {
 	root: ["auth", "session"] as const,
 	organization: ["auth", "organization"] as const,
+	accounts: ["auth", "accounts"] as const,
 }
 
 export default function () {
@@ -59,6 +60,36 @@ export default function () {
 		staleTime: 3 * 60 * 1000, // 3mins
 		autoRefetch: true,
 	})
+
+	const fetchAccounts = useQuery({
+		key: AUTH_SESSION_QUERY_KEYS.accounts,
+		// unlike the session/organization queries, the account list is only
+		// read by the settings surfaces — don't fire it (and 401) on
+		// signed-out pages.
+		enabled: () => Boolean(fetchAuthSession.state.value.data?.data),
+		query: async () => {
+			// See `as never` rationale on fetchAuthSession above.
+			if (__DESKTOP_BUILD__) {
+				return (await getHost().auth.listAccounts()) as never
+			}
+			return await $authClient.listAccounts()
+		},
+		refetchOnMount: false,
+		refetchOnWindowFocus: false,
+		refetchOnReconnect: false,
+		staleTime: 3 * 60 * 1000, // 3mins
+		autoRefetch: true,
+	})
+
+	// a "credential" account is better-auth's marker for an email-password
+	// credential — its presence means the user has a password set.
+	const hasPassword = computed(() =>
+		Boolean(
+			fetchAccounts.state.value.data?.data?.some(
+				(account) => account.providerId === "credential",
+			),
+		),
+	)
 
 	async function updateSessionOnInviteAccept(orgId: string) {
 		const args = { organizationId: orgId }
@@ -174,6 +205,17 @@ export default function () {
 	function setupSignInRedirect() {
 		if (__DESKTOP_BUILD__) return undefined
 		return $authClient.ensureElectronRedirect()
+	}
+
+	function changePassword(
+		...args: Parameters<typeof $authClient.changePassword>
+	) {
+		if (__DESKTOP_BUILD__) {
+			return getHost().auth.changePassword(args[0]) as ReturnType<
+				typeof $authClient.changePassword
+			>
+		}
+		return $authClient.changePassword(...args)
 	}
 
 	function updateUser(...args: Parameters<typeof $authClient.updateUser>) {
@@ -294,6 +336,8 @@ export default function () {
 	return {
 		fetchAuthSession,
 		fetchOrganization,
+		fetchAccounts,
+		hasPassword,
 		updateSessionOnInviteAccept,
 		safeSignOut,
 		signInSocial,
@@ -301,6 +345,7 @@ export default function () {
 		signUpEmailPassword,
 		requestPasswordReset,
 		resetPassword,
+		changePassword,
 		setupSignInRedirect,
 		updateUser,
 		changeEmail,
