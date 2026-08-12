@@ -55,6 +55,10 @@ const noMethodsConfigured = computed(
 let redirectTimeout: ReturnType<typeof setTimeout> | undefined
 
 onMounted(() => {
+	if (route.query.verified === "true") {
+		showToastMessage("success", t("onboarding.login.email-verified"))
+	}
+
 	redirectTimeout = setupSignInRedirect()
 })
 
@@ -124,9 +128,15 @@ async function logInWithProvider(provider: "github" | "google" | "slack") {
 const onEmailPasswordSubmit = emailPasswordForm.handleSubmit(async (values) => {
 	loading.value = "email-password"
 
+	// the callbackURL only matters for the verification email that an
+	// unverified sign-in attempt re-sends — its link drops the user back
+	// here with the confirmation flag. Absolute against the app origin
+	// because a relative path would resolve against the auth server's
+	// origin, which does not serve the frontend in host-dev mode.
 	const res = await signInEmailPassword({
 		email: values.email,
 		password: values.password,
+		callbackURL: `${config.public.appBaseURL}/login?verified=true`,
 	})
 
 	if (res.error) {
@@ -187,9 +197,7 @@ function backToLogin() {
 				<ShadcnUiButton
 					v-if="enabledMethods.includes('google')"
 					size="lg"
-					:class="
-						cn('h-10 w-full', loading !== null && 'pointer-events-none')
-					"
+					:class="cn('h-10 w-full', loading !== null && 'pointer-events-none')"
 					:disabled="loading === 'google'"
 					@click="logInWithProvider('google')"
 				>
@@ -206,9 +214,7 @@ function backToLogin() {
 				<ShadcnUiButton
 					v-if="enabledMethods.includes('github')"
 					size="lg"
-					:class="
-						cn('h-10 w-full', loading !== null && 'pointer-events-none')
-					"
+					:class="cn('h-10 w-full', loading !== null && 'pointer-events-none')"
 					variant="outline"
 					:disabled="loading === 'github'"
 					@click="logInWithProvider('github')"
@@ -226,9 +232,7 @@ function backToLogin() {
 				<ShadcnUiButton
 					v-if="enabledMethods.includes('slack')"
 					size="lg"
-					:class="
-						cn('h-10 w-full', loading !== null && 'pointer-events-none')
-					"
+					:class="cn('h-10 w-full', loading !== null && 'pointer-events-none')"
 					variant="outline"
 					:disabled="loading === 'slack'"
 					@click="logInWithProvider('slack')"

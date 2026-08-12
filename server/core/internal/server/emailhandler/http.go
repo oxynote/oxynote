@@ -94,6 +94,24 @@ func (h *Handler) SendPasswordReset(w http.ResponseWriter, r *http.Request) {
 	httpserver.Respond(h.log, w, nil, http.StatusNoContent)
 }
 
+// SendSignupVerification sends the account-activation email for a
+// fresh signup.
+func (h *Handler) SendSignupVerification(w http.ResponseWriter, r *http.Request) {
+	var data struct {
+		Email string `json:"email"`
+		Link  string `json:"link"`
+	}
+
+	if err := httpserver.DecodeJSON(r, &data); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	h.sender.SendSignupVerification(data.Email, data.Link)
+
+	httpserver.Respond(h.log, w, nil, http.StatusNoContent)
+}
+
 // SendAccountExists sends an account-exists notification email.
 func (h *Handler) SendAccountExists(w http.ResponseWriter, r *http.Request) {
 	var data struct {

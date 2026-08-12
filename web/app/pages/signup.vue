@@ -167,11 +167,17 @@ const onEmailPasswordSubmit = emailPasswordForm.handleSubmit(async (values) => {
 	loading.value = "email-password"
 
 	// better-auth requires a display name; the email local part is a
-	// sensible initial value until the user sets a real one.
+	// sensible initial value until the user sets a real one. The
+	// callbackURL is where the emailed verification link drops the user
+	// after verifying — absolute against the app origin (a relative path
+	// would resolve against the auth server's origin, which does not
+	// serve the frontend in host-dev mode), with a flag the login page
+	// confirms via a toast.
 	const res = await signUpEmailPassword({
 		email: values.email,
 		password: values.password,
 		name: values.email.split("@")[0] || values.email,
+		callbackURL: `${config.public.appBaseURL}/login?verified=true`,
 	})
 	// no duplicate-email branch on purpose: better-auth answers duplicate
 	// signups with a synthetic success so the browser can't probe which

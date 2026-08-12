@@ -139,8 +139,11 @@ export const auth = betterAuth({
 		// log in — the login page forwards them to the check-your-inbox
 		// page, which would otherwise lie about an email being sent.
 		sendOnSignIn: true,
+		// signup/sign-in verification gets its own account-activation
+		// template; the change-email flow below keeps the "new email
+		// address" one.
 		sendVerificationEmail: async ({ user, url }) => {
-			await sendEmailVerification(
+			await sendSignupVerification(
 				user.email,
 				toPublicAuthURL(url),
 			)
@@ -444,6 +447,24 @@ async function sendEmailVerification(
 			email,
 			link,
 		})
+	} catch (err) {
+		Sentry.captureException(err)
+		throw err
+	}
+}
+
+async function sendSignupVerification(
+	email: string,
+	link: string,
+): Promise<void> {
+	try {
+		await axios.post(
+			`${backendUrl}/api/x/email/signup-verification`,
+			{
+				email,
+				link,
+			},
+		)
 	} catch (err) {
 		Sentry.captureException(err)
 		throw err

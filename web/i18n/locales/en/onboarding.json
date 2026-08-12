@@ -43,6 +43,7 @@
 			"login-github": "Log in with GitHub",
 			"login-slack": "Log in with Slack",
 			"login-email-password": "Log in with email",
+			"email-verified": "Your email has been verified. You can now log in",
 			"email-password-form": {
 				"email-placeholder": "Email address",
 				"password-placeholder": "Password",

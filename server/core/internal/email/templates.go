@@ -16,6 +16,7 @@ const (
 	_templateUserCreation           template = "user_creation"
 	_templatePasswordReset          template = "password_reset"
 	_templateAccountExists          template = "account_exists"
+	_templateSignupVerification     template = "signup_verification"
 )
 
 // template is used to identify template.

@@ -269,6 +269,19 @@ func (s *Sender) SendPasswordReset(eml, link string) {
 	)
 }
 
+// SendSignupVerification sends the initial account-activation email
+// with a verification link to a freshly signed-up email address.
+func (s *Sender) SendSignupVerification(eml, link string) {
+	s.send(
+		eml,
+		"Confirm your email address",
+		_templateSignupVerification,
+		map[string]string{
+			"link": link,
+		},
+	)
+}
+
 // SendAccountExists notifies the owner of an existing account that a
 // signup was attempted with their email address, with a login link.
 func (s *Sender) SendAccountExists(eml, link string) {
