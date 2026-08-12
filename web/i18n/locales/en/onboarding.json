@@ -1,7 +1,7 @@
 {
 	"onboarding": {
 		"signup": {
-			"title": "Welcome to Oxynote",
+			"title": "Create your Oxynote account",
 			"signup-google": "Sign up with Google",
 			"signup-github": "Sign up with GitHub",
 			"signup-slack": "Sign up with Slack",

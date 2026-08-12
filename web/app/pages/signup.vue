@@ -57,6 +57,20 @@ const noMethodsConfigured = computed(
 		fetchAuthConfig.state.value.status === "success" &&
 		enabledMethods.value.length === 0,
 )
+// with three or more visible methods, the first button carries the
+// primary variant to anchor the list; with fewer, every button stays
+// outline. The find list must match the template's button order.
+const primaryMethod = computed(() => {
+	if (enabledMethods.value.length < 3) {
+		return null
+	}
+
+	return (
+		(["google", "github", "slack", "email-password"] as const).find((m) =>
+			enabledMethods.value.includes(m),
+		) ?? null
+	)
+})
 const newAccountsAllowed = computed(() => {
 	return (
 		fetchOrganizationStats.state.value.data &&
@@ -200,6 +214,10 @@ function backToSignup() {
 	showEmailPasswordForm.value = false
 	emailPasswordForm.resetForm()
 }
+
+function methodVariant(method: AuthMethod) {
+	return primaryMethod.value === method ? "default" : "outline"
+}
 </script>
 <template>
 	<main
@@ -216,6 +234,7 @@ function backToSignup() {
 				<ShadcnUiButton
 					v-if="enabledMethods.includes('google')"
 					size="lg"
+					:variant="methodVariant('google')"
 					:class="cn('h-10 w-full', loading !== null && 'pointer-events-none')"
 					:disabled="loading === 'google'"
 					@click="signUpWithProvider('google')"
@@ -234,7 +253,7 @@ function backToSignup() {
 					v-if="enabledMethods.includes('github')"
 					size="lg"
 					:class="cn('h-10 w-full', loading !== null && 'pointer-events-none')"
-					variant="outline"
+					:variant="methodVariant('github')"
 					:disabled="loading === 'github'"
 					@click="signUpWithProvider('github')"
 				>
@@ -252,7 +271,7 @@ function backToSignup() {
 					v-if="enabledMethods.includes('slack')"
 					size="lg"
 					:class="cn('h-10 w-full', loading !== null && 'pointer-events-none')"
-					variant="outline"
+					:variant="methodVariant('slack')"
 					:disabled="loading === 'slack'"
 					@click="signUpWithProvider('slack')"
 				>
@@ -270,7 +289,7 @@ function backToSignup() {
 					v-if="enabledMethods.includes('email-password')"
 					size="lg"
 					:class="cn('h-10 w-full', loading !== null && 'pointer-events-none')"
-					variant="outline"
+					:variant="methodVariant('email-password')"
 					@click="showEmailPasswordForm = true"
 				>
 					<Icon name="lucide:mail" class="size-4" />
