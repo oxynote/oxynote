@@ -96,10 +96,12 @@
 			}
 		},
 		"verify-email": {
+			"heading": "Email verified",
+			"sent-heading": "Verify your email",
 			"title": "Thank you for verifying {email} as your email address!",
 			"sent-title": "We've sent a verification link to {email}. Please check your inbox.",
 			"button": "Continue to Oxynote",
-			"back-to-signup": "Back to signup"
+			"back-to-login": "Back to login"
 		},
 		"accept-invite": {
 			"title": "{name} has invited you to join {org}",
