@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+#
+# Exported mocks will be placed in _mock directory.
+# Internal mocks (using -t internal) will be placed in their
+# own local files, prefixed with 0mock_.
+# Exported mocks (using -t external or leaving it as default) will be placed
+# in _mock directory with the full name of the interface.
+# If both mocks are required use -t both flag.
+# Usage: mock [-t] <interface> [file_name] 
+
+err() {
+    echo "Error: $1" >&2
+    exit 1
+}
+
+external_mock() {
+    moq -fmt goimports -out "./_mock/${NAME}.go" -stub -pkg mock . "${INTERFACE}:${INTERFACE}"
+}
+
+internal_mock() {
+    moq -fmt goimports -out "0mock_${NAME}_test.go" -stub . "${INTERFACE}"
+}
+
+OUTPUTS="external"
+while getopts ":t:" opt; do
+    case ${opt} in
+        t) OUTPUTS=${OPTARG} ;;
+        *) err 'invalid flag; check documentation' ;;
+    esac
+done
+shift $((OPTIND-1))
+
+INTERFACE="$1"
+NAME="$2"
+
+if [[ -z "${INTERFACE}" ]]; then
+    err 'invalid source interface'
+fi
+
+if [[ -z "${NAME}" ]]; then
+	NAME="$(echo "${INTERFACE}" | sed -e 's/\([A-Z]\)/_\1/g' -e 's/^_//' | awk '{print tolower($0)}')"
+fi
+
+case $OUTPUTS in
+    internal) internal_mock ;;
+    external) external_mock ;;
+    both) 
+        internal_mock
+        external_mock
+        ;;
+    *) err 'invalid mock output' ;;
+esac

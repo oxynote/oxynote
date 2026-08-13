@@ -1,0 +1,264 @@
+version: "2"
+linters:
+  enable:
+    - asasalint
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - copyloopvar
+    - cyclop
+    - depguard
+    - dogsled
+    - dupword
+    - durationcheck
+    - err113
+    - errchkjson
+    - errname
+    - errorlint
+    - exhaustive
+    - forbidigo
+    - forcetypeassert
+    - gochecknoglobals
+    - gochecknoinits
+    - gocognit
+    - goconst
+    - gocritic
+    - gocyclo
+    - godot
+    - gomoddirectives
+    - gomodguard
+    - goprintffuncname
+    - gosec
+    - importas
+    - maintidx
+    - misspell
+    - musttag
+    - nakedret
+    - nestif
+    - nilerr
+    - nilnil
+    - noctx
+    - nolintlint
+    - nosprintfhostport
+    - paralleltest
+    - prealloc
+    - predeclared
+    - promlinter
+    - reassign
+    - revive
+    - rowserrcheck
+    - sqlclosecheck
+    - staticcheck
+    - tagliatelle
+    - thelper
+    - unconvert
+    - unparam
+    - usestdlibvars
+    - usetesting
+    - wastedassign
+    - whitespace
+    - wsl_v5
+  disable:
+    - containedctx
+    - decorder
+    - dupl
+    - exhaustruct
+    - funlen
+    - godox
+    - goheader
+    - grouper
+    - ireturn
+    - lll
+    - makezero
+    - nlreturn
+    - nonamedreturns
+    - testpackage
+    - tparallel
+    - varnamelen
+    - wrapcheck
+  settings:
+    cyclop:
+      max-complexity: 25
+    depguard:
+      rules:
+        main:
+          deny:
+            - pkg: gotest.tools/assert
+            - pkg: github.com/bmizerany/assert
+    exhaustive:
+      default-signifies-exhaustive: true
+    goconst:
+      min-occurrences: 5
+      numbers: true
+    gocritic:
+      disabled-checks:
+        - hugeParam
+        - unnamedResult
+        - sloppyReassign
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+        - experimental
+        - opinionated
+    gomoddirectives:
+      replace-allow-list:
+        - gopkg.in/telebot.v3
+    govet:
+      disable:
+        - fieldalignment
+      enable-all: true
+    misspell:
+      ignore-rules:
+        - strat
+    nakedret:
+      max-func-lines: 20
+    paralleltest:
+      ignore-missing: true
+    prealloc:
+      for-loops: true
+    promlinter:
+      strict: true
+    revive:
+      enable-all-rules: true
+      rules:
+        - name: unchecked-type-assertion
+          disabled: true
+        - name: import-alias-naming
+          disabled: true
+        - name: unnecessary-stmt
+          disabled: true
+        - name: argument-limit
+          disabled: true
+        - name: function-result-limit
+          disabled: true
+        - name: cyclomatic
+          severity: warning
+          disabled: true
+        - name: line-length-limit
+          severity: warning
+          disabled: true
+        - name: cognitive-complexity
+          severity: warning
+          disabled: true
+        - name: confusing-naming
+          disabled: true
+        - name: confusing-results
+          disabled: true
+        - name: unhandled-error
+          disabled: true
+        - name: max-public-structs
+          disabled: true
+        - name: function-length
+          disabled: true
+        - name: banned-characters
+          disabled: true
+        - name: file-header
+          disabled: true
+        - name: add-constant
+          disabled: true
+        - name: comment-spacings
+          disabled: true
+        - name: unused-receiver
+          disabled: true
+        - name: nested-structs
+          disabled: true
+        - name: flag-parameter
+          disabled: true
+        - name: empty-lines
+          disabled: true
+        - name: if-return
+          disabled: true
+    rowserrcheck:
+      packages:
+        - github.com/jmoiron/sqlx
+    tagliatelle:
+      case:
+        rules:
+          json: camel
+    thelper:
+      test:
+        begin: false
+    whitespace:
+      multi-if: true
+    wsl_v5:
+      allow-first-in-block: true
+  exclusions:
+    generated: lax
+    rules:
+      - linters:
+          - forbidigo
+        path: cmd
+        text: fmt.Print
+      - linters:
+          - gochecknoglobals
+        text: ^_.+
+      - linters:
+          - forcetypeassert
+          - gochecknoinits
+          - maintidx
+          - promlinter
+          - usestdlibvars
+        path: _test.go
+      - linters:
+          - gocritic
+        text: 'unnecessaryDefer: defer'
+      - linters:
+          - err113
+        text: do not define dynamic errors
+      - linters:
+          - gosec
+        path: _test.go
+        text: G112
+      - linters:
+          - gosec
+        text: G115
+      - linters:
+          - gosec
+        path: x_sender.go
+        text: G505
+      - linters:
+          - tagliatelle
+        path: binance
+      - linters:
+          - promlinter
+        path: wsserver/server_test.go
+      - linters:
+          - musttag
+        text: should be annotated with the `db`
+      - linters:
+          - goconst
+        text: string `(true|false)` has
+      - linters:
+          - dupword
+        source: '^//go:generate '
+      - linters:
+          - revive
+        text: unknown option 'omitzero'
+      - linters:
+          - usetesting
+        text: could be replaced by t.Context()
+      - linters:
+          - cyclop
+          - goconst
+          - noctx
+        path: (.+)_test\.go
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - gofumpt
+    - goimports
+  settings:
+    gofumpt:
+      extra-rules: true
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
