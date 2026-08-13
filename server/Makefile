@@ -1,4 +1,5 @@
 # Build the Docker image
+.PHONY: run
 run:
 	make build --directory go
 	make build --directory datagen
