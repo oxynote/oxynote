@@ -84,6 +84,8 @@ are part of the convention.
   `//nolint:gochecknoglobals // used as a constant`.
 - Never write comments that narrate the next line or justify a diff; comments state
   constraints and reasons the code cannot express.
+- Comments stand alone: don't reference design docs by section number ("§5.4",
+  "M1") or assume the reader has another file open.
 
 ### Globals
 
@@ -112,6 +114,9 @@ are part of the convention.
   `DSN`, `TTL`. Exception: `Ws` in compounds (`BaseWsURL`, `setupWs`).
 - `any`, never `interface{}`.
 - Unused parameters are `_`.
+- When restructuring, audit every exported identifier with `grep -rn "pkg\.Name"`.
+  Anything used only inside its own package becomes lowercase (functions) or
+  `_camelCase` (constants/vars). Doubly-unused things get deleted.
 
 ### Function shape & whitespace (wsl rhythm)
 
@@ -262,6 +267,24 @@ Rules:
   each doc-commented.
 - Sentinels are package-level `Err*` vars, doc-commented
   `// ErrX is returned when ...`.
+- Sentinel handling uses a **single outer `if err != nil`** with the sentinel
+  branch nested inside — never two sibling ifs; `errors.Is` must not run on the
+  success path:
+
+  ```go
+  existing, err := store.FetchX(ctx, id)
+  if err != nil {
+      if errors.Is(err, errutil.ErrNotFound) {
+          return nil
+      }
+
+      return fmt.Errorf("fetching existing: %w", err)
+  }
+  ```
+
+- Don't discard `json.Unmarshal` errors. If a parse failure is genuinely
+  best-effort (e.g. building a label), log a Warn with context and continue with
+  the zero-valued target; never `_ = json.Unmarshal(...)`.
 - Capability/permission checks are methods returning `error`
   (`AllowsX() error`), building the user error inline at the check site.
 - `fmt.Errorf("%w")` wrapping is the default when passing errors up the stack —
@@ -359,6 +382,8 @@ Rules:
   ticker loops.
 - Shutdown coordination: a `chan struct{}` closed once, exposed as
   `ShutDownCh() <-chan struct{}`; loops `select` on it.
+- Ctx-bound sleeps use `select { case <-ctx.Done(): ...; case <-time.After(d): }`,
+  never bare `time.Sleep`.
 - Retries: exponential backoff (`cenkalti/backoff`) wrapped with context and a max
   retry count; a retry failure that is not `context.Canceled` is logged critical.
 - Bounded parallel work: `errgroup`/`multierror.Group` with an extra mutex for
@@ -719,10 +744,16 @@ Method naming: `<Verb><Entity>[By<Key>]` (`FetchOrderByID`, `DeleteItemsByOwnerI
 - Middleware baseline: CORS (only when origins are configured), request timeout,
   recoverer, method-not-allowed/not-found handlers, then the metrics wrapper.
 - Handler shape: a `Handler` struct holding only `log` + process-wide deps, with
-  `NewHandler(logger, deps...)`. Methods are **not** `http.HandlerFunc` — they take
+  `NewHandler(log, deps...)`. Methods are **not** `http.HandlerFunc` — they take
   extra arguments for per-request/per-tenant services, wired by route-level
-  closures: `func (h *Handler) Create(w http.ResponseWriter, r *http.Request,
-  ownerID xid.ID, exec SafeExecutor)`.
+  closures: `func (h *Handler) HandleCreateItem(w http.ResponseWriter,
+  r *http.Request, ownerID xid.ID, exec SafeExecutor)`.
+- Handler method names are `Handle<DomainVerb><Entity>` — the domain verb, never
+  the HTTP verb (the router file already says `GET`/`PUT`/`POST`):
+  `HandleFetchX` for GET of a single resource, `HandleFetchXs` for a collection
+  (not `HandleListX`), `HandleExtractX`/`HandleReextractX` for action endpoints
+  (not `HandlePutX`), `HandleCreateX`/`HandleUpdateX`/`HandleDeleteX` for the
+  obvious CRUD verbs.
 - Identity is resolved once in middleware into a private context key
   (`type ctxKey int` + `_ctxKeyUserID`), then passed to handlers as a plain
   argument — handlers never read the context for it.
@@ -779,6 +810,10 @@ standards from day one.
 ### Naming & layout
 
 - One test function per production function/method. Do not merge; do not split.
+- Test files pair 1:1 with source files: `expand.go` → `expand_test.go`, never a
+  bundled `package_test.go`. When tests span two files, they live in the one
+  that pairs with the *primary* file driving the test (round-trip tests land
+  with the file that initiates the round-trip).
 - `Test_<Type>_<Method>` for methods (`Test_Manager_SafeUpdate`), `Test_<Func>`
   for functions (`Test_New`, `Test_applyItemFilter`). Unexported names keep their
   casing: `Test_agent_CreateEvent`, `Test_webhook_Exec`,
@@ -1123,7 +1158,7 @@ success — each asserting the exact commit/rollback counts.
   req = req.WithContext(testutil.AddChiCtx(req.Context(), "id", id.String()))
   rec := httptest.NewRecorder()
 
-  hdl.Update(rec, req, ownerID, c.Exec)
+  hdl.HandleUpdateItem(rec, req, ownerID, c.Exec)
 
   assert.Equal(t, c.RespCode, rec.Code)
   assert.JSONEq(t, c.RespJSON, rec.Body.String())

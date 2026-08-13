@@ -2,7 +2,10 @@
 
 Guidance for the backend: `server/core`, `server/auth-realtime`, and the
 repo-root `datagen/`. Shared working principles and the TS/JS
-comment/whitespace rules live in the root [CLAUDE.md](../CLAUDE.md).
+comment/whitespace rules live in the root [CLAUDE.md](../CLAUDE.md). Go
+engineering and testing standards (style, errors, logging, db layer, tests)
+live in [core/CLAUDE.md](core/CLAUDE.md) — this file covers only architecture,
+infrastructure, and the non-Go services.
 
 ## Stack overview
 
@@ -38,13 +41,8 @@ cd server/auth-realtime && pnpm run qa           # check-types + check-lint + ch
 cd server/auth-realtime && pnpm run qa-fix       # check-types + lint --fix + prettier --write
 ```
 
-Go tests live next to their packages. The `db` package's tests spin up a real Postgres container via `gnomock` from `TestMain`, so Docker must be running:
-
-```sh
-cd server/core && go test ./...                                # all packages
-cd server/core && go test ./internal/db/...                    # db (needs Docker)
-cd server/core && go test -run Test_New ./internal/db          # single test
-```
+The Go test/lint workflow is documented in [core/CLAUDE.md](core/CLAUDE.md)
+("Commands & QA gates").
 
 Go dependencies are fetched into the module cache at build time (`make deps` runs `go mod download`) — there is no vendoring. All dependencies, including the first-party `github.com/oxynote/wetsocks`, are public; no GOPRIVATE or git auth setup is needed.
 
@@ -65,7 +63,7 @@ So from a frontend's point of view: auth + realtime is `:8080/auth-realtime/...`
 
 - `/api/...` (public): auth middleware (`internal/server/auth`) validates sessions by calling auth-realtime's `/api/auth/get-session` (configured via `SERVER_AUTH_BETTER_AUTH_URL`). Routes for documents, branches, comments, reviewers, hooks, files, GitHub, Slack, notifications, data-sources, AI chat.
 - `/api/x/...` (internal): no auth at all — reverse proxy must firewall. Used by auth-realtime to fetch/store branch content (`/x/documents/{id}/branches`, `/x/documents/{id}/branch/{branchId}`), trigger emails, initialize orgs, and receive GitHub/Slack webhooks.
-- WebSocket topics under `/api/ws`: `change@document-tree`, `change@documents.{documentId}.comments|metadata|reviewers|maintainers`, `post@slack.messages`, `creation@notifications`, `ping@version`. Topic binders live on the per-domain handler types (`*handler.Handler.BindXxx`).
+- WebSocket topics under `/api/ws` (routed by `wetsocks/wsserver` from the first-party `github.com/oxynote/wetsocks` library): `change@document-tree`, `change@documents.{documentId}.comments|metadata|reviewers|maintainers`, `post@slack.messages`, `creation@notifications`, `ping@version`. Topic binders live on the per-domain handler types (`*handler.Handler.BindXxx`).
 
 Most public routes in the README (`/api/documents`, `/api/documents/tree`, etc.) are served by core; the README is the closest thing to a contract spec — when changing handlers, update it.
 
@@ -101,96 +99,6 @@ Env lives in `docker/env/`: committed `*.example.env` templates list **every** v
 - core vars are prefixed `OXYNOTE_CORE_`; `buildinfo.Getenv("FOO")` reads `OXYNOTE_CORE_FOO`.
 - auth-realtime vars are prefixed `OXYNOTE_AUTH_REALTIME_`.
 - All integrations are optional. The GitHub App is enabled by setting `OXYNOTE_CORE_GITHUB_APP_ID` and dropping the app's private key into `docker/github/` (mounted into the core container); an empty `OXYNOTE_CORE_GITHUB_APP_ID` disables it — core boots, GitHub routes respond `github.not_configured` (the always-200 `GET /api/github` status endpoint reports `configured: false` as the frontend's capability signal), and github-tracking hooks are skipped. A set app ID with a missing/unreadable key is a boot error. Slack works the same way keyed on `OXYNOTE_CORE_SLACK_CLIENT_ID` (`slack.not_configured`, `GET /api/slack` reports `configured`); a set client ID with other `SLACK_*` values missing is a boot error. The assistant needs `ANTHROPIC_API_KEY`; without it the AI chat can't complete a turn. Email is keyed on `OXYNOTE_CORE_EMAIL_SMTP_HOST`: when empty, core boots and each would-be email is logged instead of sent; with a set host, an invalid `EMAIL_SMTP_PORT` or `EMAIL_SMTP_TLS` (`none` | `starttls` | `tls`) is a boot error. The dev stack presets the mailpit container as the SMTP target (`mailpit:1025`, plaintext, no auth; web UI on host `:8025`) — the four HTML templates are embedded in the core binary from `server/core/internal/email/templates/`.
-
-## House conventions worth knowing
-
-- Errors / closers in `cmd/*/main.go` use a hand-rolled `closers []io.Closer` slice and `ioutil.MultiCloser(true, closers...).Close()` to fan-out on shutdown / wrap construction errors. New top-level resources should follow the same pattern (prepend to slice if it should close before the things that depend on it).
-- Logging is `log/slog`, JSON handler, Sentry-wired via `pkg/sentryutil`. Most packages take `*slog.Logger` as their first constructor arg.
-- Metrics use `pkg/metricutil` with a Prometheus registry; each subsystem has its own `Metrics` type initialised from the shared factory.
-- `server/core/pkg/` holds shared utility packages: `redkit` (typed Redis streams), `metricutil`, `logutil`, `ioutil`, `sentryutil`, `redisutil`, `httpserver`, `sqlutil` and friends. `wetsocks` (`github.com/oxynote/wetsocks`) is a first-party public library; `wetsocks/wsserver` is the WebSocket router used by `/api/ws`.
-- IDs are `rs/xid` everywhere on the Go side. Frontend-facing types serialise them as strings.
-
-## Go code style
-
-### Doc comments
-
-Every exported symbol — struct, struct field, method, function, interface — gets a `//` doc comment. Field-level comments are required even on lightweight value types. Write comments so they stand alone: don't reference design docs by section number ("§5.4", "M1") or assume the reader has another file open.
-
-### Private package-level globals
-
-Unexported package-level **constants and variables** use `_camelCase` (`_pmText`, `_allowedAtRoot`, `_maxBatchSize`). Apply this on creation, never introduce a bare-lowercase `var allowedThings = …` at package level. **Functions** stay bare-lowercase.
-
-### Tests
-
-Test files pair 1:1 with source files: `expand.go` → `expand_test.go`, never a bundled "package_test.go". When tests span two files, they live in the one that pairs with the *primary* file driving the test (round-trip tests land with the file that initiates the round-trip).
-
-Naming: `Test_{Func}` for free functions, `Test_{Type}_{Method}` for methods. Table-driven, with one field per line (no inline struct literals, even for short cases) and capitalised case names:
-
-```go
-tests := map[string]struct{
-    In   string
-    Want string
-}{
-    "Empty string": {
-        In:   "",
-        Want: "",
-    },
-}
-
-for name, tc := range tests {
-    t.Run(name, func(t *testing.T) {
-        t.Parallel()
-        // ...
-    })
-}
-```
-
-Same one-per-line rule for multi-element slice/array literals. Single-element literals like `[]string{x}` are fine inline.
-
-Assertions always use testify (`assert.NoError`, `require.NoError`, `assert.Equal`, …) — never bare `t.Error`/`t.Fatalf` checks. `require` for preconditions that make the rest of the test meaningless, `assert` for everything else. Auxiliary checks never get their own suffixed test function (no `Test_render_preservesX`) — fold them into the function's single table-driven test via `Want*` fields.
-
-### Error checking
-
-When a function returns a sentinel error you want to handle separately, use a **single outer `if err != nil`** with the sentinel branch nested inside:
-
-```go
-existing, err := store.FetchX(ctx, id)
-if err != nil {
-    if errors.Is(err, errutil.ErrNotFound) {
-        return nil
-    }
-
-    return fmt.Errorf("fetch existing: %w", err)
-}
-```
-
-Not two sibling ifs — `errors.Is` should never run on the success path.
-
-Don't discard `json.Unmarshal` errors. If a parse failure is genuinely best-effort (e.g. building a label), log a `Warn` with context and continue with the zero-valued target; never `_ = json.Unmarshal(...)`.
-
-### Background goroutines
-
-Long-lived components own a `supv := xync.NewSupervisor()` and spawn via `supv.Go(func(ctx context.Context) { … })`. The component's `Close() error` calls `supv.CloseAndWait()` and gets wired into the cmd-level closer chain. Never `go someFunc()` in a long-lived component. Ctx-bound sleeps use `select { case <-ctx.Done(): ...; case <-time.After(d): }`, never bare `time.Sleep`.
-
-### Persistence layer
-
-- SQL stays in `internal/db`. Other packages define interfaces describing what they need; `db.agent` satisfies them. `db.DB` does **not** expose its underlying `*sqlx.DB`.
-- Domain types live in their domain package, not in `db`. When `db` returns shaped rows, define the struct in the consuming domain package and have `db` import it. Never invent `db.XxxRow`.
-- Use **squirrel** for almost all SQL: `a.builder.Insert(...).SetMap(...).Suffix("ON CONFLICT ...").MustSql()`, `sq.NotEq{"col": slice}` for `NOT IN`, `sq.Expr` for typed expressions squirrel can't build. Hand-rolled SQL strings only when squirrel can't express the query cleanly.
-- Prefer nullable columns + `null.String` (`guregu/null/v5`) for genuinely optional fields rather than `NOT NULL DEFAULT ''` + an empty-string-to-NULL helper.
-
-### HTTP handlers
-
-Handler method names use the **domain verb**, not the HTTP verb. The router file already says `GET`/`PUT`/`POST` — the handler name doesn't repeat it:
-
-- `HandleFetchX` for GET of a single resource
-- `HandleFetchXs` for GET of a collection (not `HandleListX`)
-- `HandleExtractX` / `HandleReextractX` for action endpoints (not `HandlePutX`)
-- `HandleCreateX`, `HandleUpdateX`, `HandleDeleteX` for the obvious CRUD verbs
-
-### Trimming unused exports
-
-When restructuring, audit every exported identifier with `grep -rn "pkg\.Name"`. Anything used only inside its own package becomes lowercase (functions) or `_camelCase` (constants/vars). Doubly-unused things get deleted.
 
 ## Assistant prompt
 
