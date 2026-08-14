@@ -17,7 +17,6 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/apps/webchanges"
 	"github.com/oxynote/oxynote/server/core/internal/assistant"
 	"github.com/oxynote/oxynote/server/core/internal/buildinfo"
-	"github.com/oxynote/oxynote/server/core/internal/email"
 	"github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/internal/server/aihandler"
 	"github.com/oxynote/oxynote/server/core/internal/server/auth"
@@ -80,15 +79,15 @@ type Server struct {
 	ws wsserver.Pool
 
 	handlers struct {
-		user            *userhandler.Handler
-		organization    *orghandler.Handler
-		document        *dochandler.Handler
-		github          *githubhandler.Handler
-		slack           *slackhandler.Handler
-		notification    *notifhandler.Handler
-		datasource      *datasourcehandler.Handler
-		email           *emailhandler.Handler
-		ai              *aihandler.Handler
+		user         *userhandler.Handler
+		organization *orghandler.Handler
+		document     *dochandler.Handler
+		github       *githubhandler.Handler
+		slack        *slackhandler.Handler
+		notification *notifhandler.Handler
+		datasource   *datasourcehandler.Handler
+		email        *emailhandler.Handler
+		ai           *aihandler.Handler
 	}
 
 	opts Options
@@ -109,7 +108,7 @@ func NewServer(
 	webchangesClient *webchanges.Client,
 	searchGateway dochandler.SearchGateway,
 	notifier Notifier,
-	emailSender *email.Sender,
+	emailSender emailhandler.Sender,
 	client *http.Client,
 ) (*Server, error) {
 	if err := opts.validate(); err != nil {

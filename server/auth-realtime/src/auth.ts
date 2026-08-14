@@ -124,19 +124,19 @@ export const auth = betterAuth({
 		// via revokeOtherSessions on the client call instead.
 		revokeSessionsOnPasswordReset: true,
 		sendResetPassword: async ({ user, url }) => {
-			await sendPasswordReset(
-				user.email,
-				toPublicAuthURL(url),
-			)
+			await sendEmail("password_reset", {
+				email: user.email,
+				link: toPublicAuthURL(url),
+			})
 		},
 		// duplicate signups get better-auth's synthetic success so the
 		// browser can't probe which emails have accounts. The real
 		// owner is told through their inbox instead.
 		onExistingUserSignUp: async ({ user }) => {
-			await sendAccountExists(
-				user.email,
-				`${FRONTEND_URL}/login`,
-			)
+			await sendEmail("account_exists", {
+				email: user.email,
+				link: `${FRONTEND_URL}/login`,
+			})
 		},
 	},
 	emailVerification: {
@@ -149,10 +149,10 @@ export const auth = betterAuth({
 		// template; the change-email flow below keeps the "new email
 		// address" one.
 		sendVerificationEmail: async ({ user, url }) => {
-			await sendSignupVerification(
-				user.email,
-				toPublicAuthURL(url),
-			)
+			await sendEmail("signup_verification", {
+				email: user.email,
+				link: toPublicAuthURL(url),
+			})
 		},
 	},
 	advanced: {
@@ -213,10 +213,10 @@ export const auth = betterAuth({
 				newEmail,
 				url,
 			}) => {
-				await sendEmailVerification(
-					newEmail,
-					toPublicAuthURL(url),
-				)
+				await sendEmail("email_verification", {
+					email: newEmail,
+					link: toPublicAuthURL(url),
+				})
 			},
 		},
 		deleteUser: {
@@ -225,10 +225,10 @@ export const auth = betterAuth({
 				user,
 				url,
 			}) => {
-				await sendUserDeletionConfirmation(
-					user.email,
-					toPublicAuthURL(url),
-				)
+				await sendEmail("user_deletion", {
+					email: user.email,
+					link: toPublicAuthURL(url),
+				})
 			},
 		},
 	},
@@ -320,11 +320,11 @@ export const auth = betterAuth({
 					`&orgName=${data.organization.name}` +
 					`&orgId=${data.organization.id}`
 
-				await sendOrganizationInvitation(
-					data.email,
-					data.organization.name,
-					inviteLink,
-				)
+				await sendEmail("organization_invitation", {
+					email: data.email,
+					organization: data.organization.name,
+					link: inviteLink,
+				})
 			},
 		}),
 	],
@@ -357,7 +357,9 @@ export const auth = betterAuth({
 		user: {
 			create: {
 				after: async (user) => {
-					await sendUserCreation(user.email)
+					await sendEmail("user_creation", {
+						email: user.email,
+					})
 				},
 			},
 		},
@@ -444,102 +446,21 @@ async function initializeOrganization(organizationId: string): Promise<void> {
 	}
 }
 
-async function sendEmailVerification(
-	email: string,
-	link: string,
+async function sendEmail(
+	template:
+		| "email_verification"
+		| "password_reset"
+		| "account_exists"
+		| "signup_verification"
+		| "organization_invitation"
+		| "user_deletion"
+		| "user_creation",
+	data: Record<string, string>,
 ): Promise<void> {
 	try {
-		await axios.post(`${backendUrl}/api/x/email/verification`, {
-			email,
-			link,
-		})
-	} catch (err) {
-		Sentry.captureException(err)
-		throw err
-	}
-}
-
-async function sendSignupVerification(
-	email: string,
-	link: string,
-): Promise<void> {
-	try {
-		await axios.post(
-			`${backendUrl}/api/x/email/signup-verification`,
-			{
-				email,
-				link,
-			},
-		)
-	} catch (err) {
-		Sentry.captureException(err)
-		throw err
-	}
-}
-
-async function sendAccountExists(email: string, link: string): Promise<void> {
-	try {
-		await axios.post(`${backendUrl}/api/x/email/account-exists`, {
-			email,
-			link,
-		})
-	} catch (err) {
-		Sentry.captureException(err)
-		throw err
-	}
-}
-
-async function sendPasswordReset(email: string, link: string): Promise<void> {
-	try {
-		await axios.post(`${backendUrl}/api/x/email/password-reset`, {
-			email,
-			link,
-		})
-	} catch (err) {
-		Sentry.captureException(err)
-		throw err
-	}
-}
-
-async function sendOrganizationInvitation(
-	email: string,
-	organization: string,
-	link: string,
-): Promise<void> {
-	try {
-		await axios.post(
-			`${backendUrl}/api/x/email/organization-invitation`,
-			{
-				email,
-				organization,
-				link,
-			},
-		)
-	} catch (err) {
-		Sentry.captureException(err)
-		throw err
-	}
-}
-
-async function sendUserDeletionConfirmation(
-	email: string,
-	link: string,
-): Promise<void> {
-	try {
-		await axios.post(`${backendUrl}/api/x/email/user-deletion`, {
-			email,
-			link,
-		})
-	} catch (err) {
-		Sentry.captureException(err)
-		throw err
-	}
-}
-
-async function sendUserCreation(email: string): Promise<void> {
-	try {
-		await axios.post(`${backendUrl}/api/x/email/user-creation`, {
-			email,
+		await axios.post(`${backendUrl}/api/x/email`, {
+			template,
+			data,
 		})
 	} catch (err) {
 		Sentry.captureException(err)

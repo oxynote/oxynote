@@ -59,7 +59,7 @@ type Config struct {
 // Sender holds dependencies required for email sending.
 type Sender struct {
 	log    *slog.Logger
-	client *mail.Client
+	client client
 
 	fromEmail string
 }
@@ -119,7 +119,7 @@ func NewSender(log *slog.Logger, cfg Config) (*Sender, error) {
 // send prepares an email from the specified template and sends it
 // to the destination address.
 // All errors will be suppressed and logged.
-func (s *Sender) send(toEmail, subject string, tmpl template, args map[string]string) {
+func (s *Sender) send(toEmail, subject string, tmpl Template, args map[string]string) {
 	if s.client == nil {
 		s.log.Info(
 			"email sending is not configured, logging email instead",
@@ -172,6 +172,7 @@ func (s *Sender) send(toEmail, subject string, tmpl template, args map[string]st
 
 	err = msg.EmbedReader("logo.png", bytes.NewReader(_logoPNG), mail.WithFileContentID("logo.png"))
 	if err != nil {
+		// NOCOV: reading from an in-memory bytes.Reader cannot fail.
 		s.log.Error(
 			"cannot embed email logo",
 			slog.String("error", err.Error()),
@@ -211,7 +212,7 @@ func (s *Sender) SendEmailVerification(eml, link string) {
 	s.send(
 		eml,
 		"Verify your new email address",
-		_templateEmailVerification,
+		TemplateEmailVerification,
 		map[string]string{
 			"link": link,
 		},
@@ -225,7 +226,7 @@ func (s *Sender) SendOrganizationInvitation(eml, org, link string) {
 	s.send(
 		eml,
 		fmt.Sprintf("Join %s on Oxynote", org),
-		_templateOrganizationInvitation,
+		TemplateOrganizationInvitation,
 		map[string]string{
 			"link":         link,
 			"organization": org,
@@ -239,7 +240,7 @@ func (s *Sender) SendUserDeletionConfirmation(eml, link string) {
 	s.send(
 		eml,
 		"Confirm your account deletion",
-		_templateUserDeletion,
+		TemplateUserDeletion,
 		map[string]string{
 			"link": link,
 		},
@@ -251,7 +252,7 @@ func (s *Sender) SendUserCreation(eml string) {
 	s.send(
 		eml,
 		"Welcome to Oxynote",
-		_templateUserCreation,
+		TemplateUserCreation,
 		nil,
 	)
 }
@@ -262,7 +263,7 @@ func (s *Sender) SendPasswordReset(eml, link string) {
 	s.send(
 		eml,
 		"Reset your password",
-		_templatePasswordReset,
+		TemplatePasswordReset,
 		map[string]string{
 			"link": link,
 		},
@@ -275,7 +276,7 @@ func (s *Sender) SendSignupVerification(eml, link string) {
 	s.send(
 		eml,
 		"Confirm your email address",
-		_templateSignupVerification,
+		TemplateSignupVerification,
 		map[string]string{
 			"link": link,
 		},
@@ -288,9 +289,19 @@ func (s *Sender) SendAccountExists(eml, link string) {
 	s.send(
 		eml,
 		"You already have an Oxynote account",
-		_templateAccountExists,
+		TemplateAccountExists,
 		map[string]string{
 			"link": link,
 		},
 	)
+}
+
+// client is an interface that handles communication with the SMTP
+// server.
+//
+//go:generate ../../scripts/codegen/mock -t internal client
+type client interface {
+	// DialAndSendWithContext should establish a connection to the SMTP
+	// server and send the provided messages.
+	DialAndSendWithContext(ctx context.Context, msgs ...*mail.Msg) error
 }

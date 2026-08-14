@@ -1,28 +1,61 @@
 package email
 
 import (
+	"bytes"
+	"context"
 	"log/slog"
 	"testing"
 
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wneessen/go-mail"
+	"go.uber.org/goleak"
 )
 
-func Test_NewSender(t *testing.T) {
-	t.Parallel()
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+}
 
-	tests := map[string]struct {
-		Cfg         Config
-		WantErr     bool
-		WantLogOnly bool
+func Test_NewSender(t *testing.T) {
+	cc := map[string]struct {
+		Cfg       Config
+		NilClient bool
+		Err       error
 	}{
-		"Empty host disables sending": {
+		"Error returned by invalid port": {
+			Cfg: Config{
+				Host: "localhost",
+				Port: "not-a-port",
+				TLS:  TLSModeNone,
+			},
+			Err: assert.AnError,
+		},
+		"Error returned by mail.NewClient": {
+			Cfg: Config{
+				Host: "localhost",
+				// out of the valid port range, so the client option
+				// fails inside mail.NewClient rather than in Atoi.
+				Port: "99999",
+				TLS:  TLSModeNone,
+			},
+			Err: assert.AnError,
+		},
+		"Error returned by invalid tls mode": {
+			Cfg: Config{
+				Host: "localhost",
+				Port: "1025",
+				TLS:  "ssl3",
+			},
+			Err: assert.AnError,
+		},
+		"Successful creation without a host": {
 			Cfg: Config{
 				FromAddress: "Oxynote <team@oxynote.io>",
 			},
-			WantLogOnly: true,
+			NilClient: true,
 		},
-		"Valid plaintext config": {
+		"Successful creation with plaintext config": {
 			Cfg: Config{
 				Host:        "localhost",
 				Port:        "1025",
@@ -30,7 +63,7 @@ func Test_NewSender(t *testing.T) {
 				FromAddress: "Oxynote <team@oxynote.io>",
 			},
 		},
-		"Valid starttls config with auth": {
+		"Successful creation with starttls config and auth": {
 			Cfg: Config{
 				Host:        "smtp.example.com",
 				Port:        "587",
@@ -40,7 +73,7 @@ func Test_NewSender(t *testing.T) {
 				FromAddress: "team@oxynote.io",
 			},
 		},
-		"Valid implicit tls config": {
+		"Successful creation with implicit tls config": {
 			Cfg: Config{
 				Host:        "smtp.example.com",
 				Port:        "465",
@@ -48,81 +81,276 @@ func Test_NewSender(t *testing.T) {
 				FromAddress: "team@oxynote.io",
 			},
 		},
-		"Invalid tls mode": {
-			Cfg: Config{
-				Host: "localhost",
-				Port: "1025",
-				TLS:  "ssl3",
-			},
-			WantErr: true,
-		},
-		"Invalid port": {
-			Cfg: Config{
-				Host: "localhost",
-				Port: "not-a-port",
-				TLS:  TLSModeNone,
-			},
-			WantErr: true,
-		},
 	}
 
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			sender, err := NewSender(slog.Default(), tc.Cfg)
+			log := slog.New(slog.DiscardHandler)
 
-			if tc.WantErr {
-				require.Error(t, err)
+			sender, err := NewSender(log, c.Cfg)
+			testutil.AssertEqualError(t, c.Err, err)
 
+			if err != nil {
 				return
 			}
 
-			require.NoError(t, err)
+			require.NotNil(t, sender)
+			assert.Equal(t, log, sender.log)
+			assert.Equal(t, c.Cfg.FromAddress, sender.fromEmail)
 
-			if tc.WantLogOnly {
-				assert.Nil(t, sender.client, "expected a log-only sender without a client")
+			if c.NilClient {
+				assert.Nil(t, sender.client)
 			} else {
-				assert.NotNil(t, sender.client, "expected a sender with a configured client")
+				assert.NotNil(t, sender.client)
 			}
 		})
 	}
 }
 
 func Test_Sender_send(t *testing.T) {
-	t.Parallel()
-
-	tests := map[string]struct {
-		Cfg Config
+	cc := map[string]struct {
+		Client      *clientMock
+		From        string
+		To          string
+		Template    Template
+		Args        map[string]string
+		WantCalls   int
+		LogContains string
 	}{
-		"Log-only sender skips sending": {
-			Cfg: Config{
-				FromAddress: "Oxynote <team@oxynote.io>",
-			},
+		"Sending disabled logs the email": {
+			To:          "user@example.com",
+			Template:    TemplatePasswordReset,
+			Args:        map[string]string{"link": "https://example.com/reset"},
+			LogContains: "email sending is not configured",
 		},
-		"Unreachable host logs and returns": {
-			Cfg: Config{
-				// nothing listens on port 1, so the dial inside send
-				// fails fast with connection refused and the failure
-				// is suppressed and logged.
-				Host:        "127.0.0.1",
-				Port:        "1",
-				TLS:         TLSModeNone,
-				FromAddress: "Oxynote <team@oxynote.io>",
+		"Error returned by render": {
+			Client:      &clientMock{},
+			From:        "team@oxynote.io",
+			To:          "user@example.com",
+			Template:    Template("nonexistent"),
+			LogContains: "cannot render email template",
+		},
+		"Invalid from address": {
+			Client:      &clientMock{},
+			To:          "user@example.com",
+			Template:    TemplatePasswordReset,
+			Args:        map[string]string{"link": "https://example.com/reset"},
+			LogContains: "cannot set email from address",
+		},
+		"Invalid recipient address": {
+			Client:      &clientMock{},
+			From:        "team@oxynote.io",
+			Template:    TemplatePasswordReset,
+			Args:        map[string]string{"link": "https://example.com/reset"},
+			LogContains: "cannot set email recipient",
+		},
+		"Error returned by client.DialAndSendWithContext": {
+			Client: &clientMock{
+				DialAndSendWithContextFunc: func(_ context.Context, _ ...*mail.Msg) error {
+					return assert.AnError
+				},
 			},
+			From:        "team@oxynote.io",
+			To:          "user@example.com",
+			Template:    TemplatePasswordReset,
+			Args:        map[string]string{"link": "https://example.com/reset"},
+			WantCalls:   1,
+			LogContains: "cannot send an email",
+		},
+		"Successful send": {
+			Client:      &clientMock{},
+			From:        "team@oxynote.io",
+			To:          "user@example.com",
+			Template:    TemplatePasswordReset,
+			Args:        map[string]string{"link": "https://example.com/reset"},
+			WantCalls:   1,
+			LogContains: "email sent",
 		},
 	}
 
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			sender, err := NewSender(slog.Default(), tc.Cfg)
-			require.NoError(t, err)
+			var buf bytes.Buffer
 
-			// must not panic or block indefinitely; errors are
-			// suppressed and logged by design.
-			sender.SendEmailVerification("test@example.com", "https://example.com/verify")
+			s := &Sender{
+				log: slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{
+					Level: slog.LevelDebug,
+				})),
+				fromEmail: c.From,
+			}
+
+			// a nil *clientMock must stay a nil interface so the
+			// log-only branch triggers.
+			if c.Client != nil {
+				s.client = c.Client
+			}
+
+			s.send(c.To, "subject", c.Template, c.Args)
+
+			assert.Contains(t, buf.String(), c.LogContains)
+
+			if c.Client == nil {
+				return
+			}
+
+			ff := c.Client.DialAndSendWithContextCalls()
+			require.Len(t, ff, c.WantCalls)
+
+			if c.WantCalls == 0 {
+				return
+			}
+
+			assert.NotNil(t, ff[0].Ctx)
+			require.Len(t, ff[0].Msgs, 1)
 		})
 	}
+}
+
+func Test_Sender_SendEmailVerification(t *testing.T) {
+	t.Parallel()
+
+	client := &clientMock{}
+	s := stubSender(client)
+
+	s.SendEmailVerification("user@example.com", "https://example.com/verify")
+
+	msg := sentMsg(t, client)
+	assert.Equal(t, "user@example.com", msgTo(t, msg))
+	assert.Equal(t, []string{"Verify your new email address"}, msg.GetGenHeader(mail.HeaderSubject))
+	assert.Contains(t, msgBody(t, msg), "https://example.com/verify")
+}
+
+func Test_Sender_SendOrganizationInvitation(t *testing.T) {
+	t.Parallel()
+
+	client := &clientMock{}
+	s := stubSender(client)
+
+	s.SendOrganizationInvitation("user@example.com", "Acme", "https://example.com/join")
+
+	msg := sentMsg(t, client)
+	assert.Equal(t, "user@example.com", msgTo(t, msg))
+	assert.Equal(t, []string{"Join Acme on Oxynote"}, msg.GetGenHeader(mail.HeaderSubject))
+
+	body := msgBody(t, msg)
+	assert.Contains(t, body, "https://example.com/join")
+	assert.Contains(t, body, "Acme")
+}
+
+func Test_Sender_SendUserDeletionConfirmation(t *testing.T) {
+	t.Parallel()
+
+	client := &clientMock{}
+	s := stubSender(client)
+
+	s.SendUserDeletionConfirmation("user@example.com", "https://example.com/delete")
+
+	msg := sentMsg(t, client)
+	assert.Equal(t, "user@example.com", msgTo(t, msg))
+	assert.Equal(t, []string{"Confirm your account deletion"}, msg.GetGenHeader(mail.HeaderSubject))
+	assert.Contains(t, msgBody(t, msg), "https://example.com/delete")
+}
+
+func Test_Sender_SendUserCreation(t *testing.T) {
+	t.Parallel()
+
+	client := &clientMock{}
+	s := stubSender(client)
+
+	s.SendUserCreation("user@example.com")
+
+	msg := sentMsg(t, client)
+	assert.Equal(t, "user@example.com", msgTo(t, msg))
+	assert.Equal(t, []string{"Welcome to Oxynote"}, msg.GetGenHeader(mail.HeaderSubject))
+	assert.NotEmpty(t, msgBody(t, msg))
+}
+
+func Test_Sender_SendPasswordReset(t *testing.T) {
+	t.Parallel()
+
+	client := &clientMock{}
+	s := stubSender(client)
+
+	s.SendPasswordReset("user@example.com", "https://example.com/reset")
+
+	msg := sentMsg(t, client)
+	assert.Equal(t, "user@example.com", msgTo(t, msg))
+	assert.Equal(t, []string{"Reset your password"}, msg.GetGenHeader(mail.HeaderSubject))
+	assert.Contains(t, msgBody(t, msg), "https://example.com/reset")
+}
+
+func Test_Sender_SendSignupVerification(t *testing.T) {
+	t.Parallel()
+
+	client := &clientMock{}
+	s := stubSender(client)
+
+	s.SendSignupVerification("user@example.com", "https://example.com/activate")
+
+	msg := sentMsg(t, client)
+	assert.Equal(t, "user@example.com", msgTo(t, msg))
+	assert.Equal(t, []string{"Confirm your email address"}, msg.GetGenHeader(mail.HeaderSubject))
+	assert.Contains(t, msgBody(t, msg), "https://example.com/activate")
+}
+
+func Test_Sender_SendAccountExists(t *testing.T) {
+	t.Parallel()
+
+	client := &clientMock{}
+	s := stubSender(client)
+
+	s.SendAccountExists("user@example.com", "https://example.com/login")
+
+	msg := sentMsg(t, client)
+	assert.Equal(t, "user@example.com", msgTo(t, msg))
+	assert.Equal(t, []string{"You already have an Oxynote account"}, msg.GetGenHeader(mail.HeaderSubject))
+	assert.Contains(t, msgBody(t, msg), "https://example.com/login")
+}
+
+// stubSender creates a sender backed by the provided mocked client.
+func stubSender(client *clientMock) *Sender {
+	return &Sender{
+		log:       slog.New(slog.DiscardHandler),
+		client:    client,
+		fromEmail: "Oxynote <team@oxynote.io>",
+	}
+}
+
+// sentMsg extracts the single message passed to the mocked client.
+func sentMsg(t *testing.T, client *clientMock) *mail.Msg {
+	t.Helper()
+
+	ff := client.DialAndSendWithContextCalls()
+	require.Len(t, ff, 1)
+	require.Len(t, ff[0].Msgs, 1)
+
+	return ff[0].Msgs[0]
+}
+
+// msgTo extracts the single recipient address of the message.
+func msgTo(t *testing.T, msg *mail.Msg) string {
+	t.Helper()
+
+	addrs := msg.GetTo()
+	require.Len(t, addrs, 1)
+
+	return addrs[0].Address
+}
+
+// msgBody extracts the rendered HTML body of the message before any
+// transfer encoding is applied.
+func msgBody(t *testing.T, msg *mail.Msg) string {
+	t.Helper()
+
+	parts := msg.GetParts()
+	require.NotEmpty(t, parts)
+
+	body, err := parts[0].GetContent()
+	require.NoError(t, err)
+
+	return string(body)
 }

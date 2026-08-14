@@ -3,118 +3,114 @@ package email
 import (
 	"testing"
 
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func Test_render(t *testing.T) {
-	t.Parallel()
-
-	tests := map[string]struct {
-		Template       template
-		Args           map[string]string
-		WantContains   []string
-		WantSourceFile string
-		WantErr        bool
+	cc := map[string]struct {
+		Template   Template
+		Args       map[string]string
+		Contains   []string
+		SourceFile string
+		Err        error
 	}{
+		"Error returned by unknown template": {
+			Template: Template("nonexistent"),
+			Err:      assert.AnError,
+		},
 		"Email verification": {
-			Template: _templateEmailVerification,
+			Template: TemplateEmailVerification,
 			Args: map[string]string{
 				"link": "https://example.com/verify?t=abc",
 			},
-			WantContains: []string{
+			Contains: []string{
 				"https://example.com/verify?t=abc",
 			},
 		},
 		"Organization invitation": {
-			Template: _templateOrganizationInvitation,
+			Template: TemplateOrganizationInvitation,
 			Args: map[string]string{
 				"link":         "https://example.com/join?t=abc",
 				"organization": "Acme Corp",
 			},
-			WantContains: []string{
+			Contains: []string{
 				"https://example.com/join?t=abc",
 				"Acme Corp",
 			},
 		},
 		"User deletion": {
-			Template: _templateUserDeletion,
+			Template: TemplateUserDeletion,
 			Args: map[string]string{
 				"link": "https://example.com/delete?t=abc",
 			},
-			WantContains: []string{
+			Contains: []string{
 				"https://example.com/delete?t=abc",
 			},
 		},
 		"Password reset": {
-			Template: _templatePasswordReset,
+			Template: TemplatePasswordReset,
 			Args: map[string]string{
 				"link": "https://example.com/reset?t=abc",
 			},
-			WantContains: []string{
+			Contains: []string{
 				"https://example.com/reset?t=abc",
 				"Reset your password",
 			},
 		},
 		"User creation matches source byte-for-byte": {
-			Template: _templateUserCreation,
-			Args:     nil,
+			Template: TemplateUserCreation,
 			// no placeholders, so the output must equal the embedded
 			// source file exactly, proving rendering does not alter
 			// the template (e.g. by stripping comments).
-			WantSourceFile: "templates/user_creation.html",
+			SourceFile: "templates/user_creation.html",
 		},
 		"Organization invitation escapes args": {
-			Template: _templateOrganizationInvitation,
+			Template: TemplateOrganizationInvitation,
 			Args: map[string]string{
 				"link":         "https://example.com/join?a=1&b=2",
 				"organization": "Acme & Co <script>",
 			},
-			WantContains: []string{
+			Contains: []string{
 				"https://example.com/join?a=1&amp;b=2",
 				"Acme &amp; Co &lt;script&gt;",
 			},
 		},
-		"Unknown template": {
-			Template: template("nonexistent"),
-			WantErr:  true,
-		},
 	}
 
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := render(tc.Template, tc.Args)
+			res, err := render(c.Template, c.Args)
+			testutil.AssertEqualError(t, c.Err, err)
 
-			if tc.WantErr {
-				require.Error(t, err)
-
+			if err != nil {
 				return
 			}
 
-			require.NoError(t, err)
-			require.NotEmpty(t, got)
+			require.NotEmpty(t, res)
 
-			assert.NotContains(t, got, "{{", "rendered body contains unsubstituted placeholders")
+			assert.NotContains(t, res, "{{", "rendered body contains unsubstituted placeholders")
 
 			// the MJML-compiled templates rely on Outlook conditional
 			// comments (<!--[if mso]> ghost tables etc.); rendering
 			// must not strip them.
-			assert.Contains(t, got, "<!--[if", "rendered body lost the Outlook conditional comments")
+			assert.Contains(t, res, "<!--[if", "rendered body lost the Outlook conditional comments")
 
-			assert.Contains(t, got, `src="cid:logo.png"`, "rendered body must reference the embedded logo")
-			assert.NotContains(t, got, "cdn.prod.website-files.com", "rendered body references a remote CDN image")
+			assert.Contains(t, res, `src="cid:logo.png"`, "rendered body must reference the embedded logo")
+			assert.NotContains(t, res, "cdn.prod.website-files.com", "rendered body references a remote CDN image")
 
-			for _, want := range tc.WantContains {
-				assert.Contains(t, got, want)
+			for _, want := range c.Contains {
+				assert.Contains(t, res, want)
 			}
 
-			if tc.WantSourceFile != "" {
-				src, err := _templateFS.ReadFile(tc.WantSourceFile)
-				require.NoError(t, err)
+			if c.SourceFile != "" {
+				src, rerr := _templateFS.ReadFile(c.SourceFile)
+				require.NoError(t, rerr)
 
-				assert.Equal(t, string(src), got)
+				assert.Equal(t, string(src), res)
 			}
 		})
 	}

@@ -8,19 +8,39 @@ import (
 	texttemplate "text/template"
 )
 
-// A list of email templates.
+// All available email template constants.
 const (
-	_templateEmailVerification      template = "email_verification"
-	_templateOrganizationInvitation template = "organization_invitation"
-	_templateUserDeletion           template = "user_deletion"
-	_templateUserCreation           template = "user_creation"
-	_templatePasswordReset          template = "password_reset"
-	_templateAccountExists          template = "account_exists"
-	_templateSignupVerification     template = "signup_verification"
+	// TemplateEmailVerification specifies the new-email-address
+	// verification template.
+	TemplateEmailVerification Template = "email_verification"
+
+	// TemplateOrganizationInvitation specifies the organization
+	// invitation template.
+	TemplateOrganizationInvitation Template = "organization_invitation"
+
+	// TemplateUserDeletion specifies the account deletion confirmation
+	// template.
+	TemplateUserDeletion Template = "user_deletion"
+
+	// TemplateUserCreation specifies the welcome template for newly
+	// registered users.
+	TemplateUserCreation Template = "user_creation"
+
+	// TemplatePasswordReset specifies the password reset template.
+	TemplatePasswordReset Template = "password_reset"
+
+	// TemplateAccountExists specifies the account-exists notification
+	// template.
+	TemplateAccountExists Template = "account_exists"
+
+	// TemplateSignupVerification specifies the account-activation
+	// template for fresh signups.
+	TemplateSignupVerification Template = "signup_verification"
 )
 
-// template is used to identify template.
-type template string
+// Template identifies an email template. Its value matches the base
+// name of the embedded HTML file the template is rendered from.
+type Template string
 
 //go:embed templates/*.html
 var _templateFS embed.FS
@@ -47,7 +67,7 @@ var _templates = texttemplate.Must(
 // render executes the specified template with the provided arguments,
 // HTML-escaping each argument value, and returns the resulting HTML
 // body.
-func render(tmpl template, args map[string]string) (string, error) {
+func render(tmpl Template, args map[string]string) (string, error) {
 	escaped := make(map[string]string, len(args))
 
 	for k, v := range args {

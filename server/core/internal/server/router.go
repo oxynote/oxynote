@@ -141,15 +141,7 @@ func (s *Server) internalRouter() chi.Router {
 		})
 	})
 
-	r.Route("/email", func(sr chi.Router) {
-		sr.Post("/verification", s.handlers.email.SendEmailVerification)
-		sr.Post("/password-reset", s.handlers.email.SendPasswordReset)
-		sr.Post("/account-exists", s.handlers.email.SendAccountExists)
-		sr.Post("/signup-verification", s.handlers.email.SendSignupVerification)
-		sr.Post("/organization-invitation", s.handlers.email.SendOrganizationInvitation)
-		sr.Post("/user-deletion", s.handlers.email.SendUserDeletionConfirmation)
-		sr.Post("/user-creation", s.handlers.email.SendUserCreation)
-	})
+	r.Post("/email", s.handlers.email.SendEmail)
 
 	return r
 }

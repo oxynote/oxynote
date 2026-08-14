@@ -1,3 +1,4 @@
+// Package emailhandler handles internal email-sending requests.
 package emailhandler
 
 import (
@@ -5,19 +6,24 @@ import (
 	"net/http"
 
 	"github.com/oxynote/oxynote/server/core/internal/email"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 )
+
+// ErrInvalidTemplate is returned when the requested email template is
+// not recognized.
+var ErrInvalidTemplate = errutil.New(http.StatusBadRequest, "email.invalid_template", "Invalid email template.")
 
 // Handler holds dependencies required for email operations.
 type Handler struct {
 	log    *slog.Logger
-	sender *email.Sender
+	sender Sender
 }
 
 // NewHandler creates a new email handling instance.
 func NewHandler(
 	log *slog.Logger,
-	sender *email.Sender,
+	sender Sender,
 ) *Handler {
 	return &Handler{
 		log:    log.With("component", "email-handler"),
@@ -25,122 +31,73 @@ func NewHandler(
 	}
 }
 
-// SendEmailVerification sends an email verification email.
-func (h *Handler) SendEmailVerification(w http.ResponseWriter, r *http.Request) {
-	var data struct {
-		Email string `json:"email"`
-		Link  string `json:"link"`
+// SendEmail sends an email rendered from the requested template.
+func (h *Handler) SendEmail(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Template email.Template `json:"template"`
+		Data     struct {
+			Email        string `json:"email"`
+			Organization string `json:"organization"`
+			Link         string `json:"link"`
+		} `json:"data"`
 	}
 
-	if err := httpserver.DecodeJSON(r, &data); err != nil {
+	if err := httpserver.DecodeJSON(r, &req); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	h.sender.SendEmailVerification(data.Email, data.Link)
+	switch req.Template {
+	case email.TemplateEmailVerification:
+		h.sender.SendEmailVerification(req.Data.Email, req.Data.Link)
+	case email.TemplatePasswordReset:
+		h.sender.SendPasswordReset(req.Data.Email, req.Data.Link)
+	case email.TemplateAccountExists:
+		h.sender.SendAccountExists(req.Data.Email, req.Data.Link)
+	case email.TemplateSignupVerification:
+		h.sender.SendSignupVerification(req.Data.Email, req.Data.Link)
+	case email.TemplateOrganizationInvitation:
+		h.sender.SendOrganizationInvitation(req.Data.Email, req.Data.Organization, req.Data.Link)
+	case email.TemplateUserDeletion:
+		h.sender.SendUserDeletionConfirmation(req.Data.Email, req.Data.Link)
+	case email.TemplateUserCreation:
+		h.sender.SendUserCreation(req.Data.Email)
+	default:
+		httpserver.RespondError(h.log, w, ErrInvalidTemplate)
+		return
+	}
 
 	httpserver.Respond(h.log, w, nil, http.StatusNoContent)
 }
 
-// SendOrganizationInvitation sends an organization invitation email.
-func (h *Handler) SendOrganizationInvitation(w http.ResponseWriter, r *http.Request) {
-	var data struct {
-		Email        string `json:"email"`
-		Organization string `json:"organization"`
-		Link         string `json:"link"`
-	}
+// Sender is an interface that handles email sending.
+//
+//go:generate ../../../scripts/codegen/mock -t internal Sender
+type Sender interface {
+	// SendEmailVerification should send a new-email-address
+	// verification email.
+	SendEmailVerification(eml, link string)
 
-	if err := httpserver.DecodeJSON(r, &data); err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
+	// SendPasswordReset should send a password reset email.
+	SendPasswordReset(eml, link string)
 
-	h.sender.SendOrganizationInvitation(data.Email, data.Organization, data.Link)
+	// SendAccountExists should send an account-exists notification
+	// email.
+	SendAccountExists(eml, link string)
 
-	httpserver.Respond(h.log, w, nil, http.StatusNoContent)
-}
+	// SendSignupVerification should send the account-activation email
+	// for a fresh signup.
+	SendSignupVerification(eml, link string)
 
-// SendUserDeletionConfirmation sends a user deletion confirmation email.
-func (h *Handler) SendUserDeletionConfirmation(w http.ResponseWriter, r *http.Request) {
-	var data struct {
-		Email string `json:"email"`
-		Link  string `json:"link"`
-	}
+	// SendOrganizationInvitation should send an organization invitation
+	// email.
+	SendOrganizationInvitation(eml, org, link string)
 
-	if err := httpserver.DecodeJSON(r, &data); err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
+	// SendUserDeletionConfirmation should send a user deletion
+	// confirmation email.
+	SendUserDeletionConfirmation(eml, link string)
 
-	h.sender.SendUserDeletionConfirmation(data.Email, data.Link)
-
-	httpserver.Respond(h.log, w, nil, http.StatusNoContent)
-}
-
-// SendPasswordReset sends a password reset email.
-func (h *Handler) SendPasswordReset(w http.ResponseWriter, r *http.Request) {
-	var data struct {
-		Email string `json:"email"`
-		Link  string `json:"link"`
-	}
-
-	if err := httpserver.DecodeJSON(r, &data); err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	h.sender.SendPasswordReset(data.Email, data.Link)
-
-	httpserver.Respond(h.log, w, nil, http.StatusNoContent)
-}
-
-// SendSignupVerification sends the account-activation email for a
-// fresh signup.
-func (h *Handler) SendSignupVerification(w http.ResponseWriter, r *http.Request) {
-	var data struct {
-		Email string `json:"email"`
-		Link  string `json:"link"`
-	}
-
-	if err := httpserver.DecodeJSON(r, &data); err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	h.sender.SendSignupVerification(data.Email, data.Link)
-
-	httpserver.Respond(h.log, w, nil, http.StatusNoContent)
-}
-
-// SendAccountExists sends an account-exists notification email.
-func (h *Handler) SendAccountExists(w http.ResponseWriter, r *http.Request) {
-	var data struct {
-		Email string `json:"email"`
-		Link  string `json:"link"`
-	}
-
-	if err := httpserver.DecodeJSON(r, &data); err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	h.sender.SendAccountExists(data.Email, data.Link)
-
-	httpserver.Respond(h.log, w, nil, http.StatusNoContent)
-}
-
-// SendUserCreation sends a welcome email to a newly registered user.
-func (h *Handler) SendUserCreation(w http.ResponseWriter, r *http.Request) {
-	var data struct {
-		Email string `json:"email"`
-	}
-
-	if err := httpserver.DecodeJSON(r, &data); err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	h.sender.SendUserCreation(data.Email)
-
-	httpserver.Respond(h.log, w, nil, http.StatusNoContent)
+	// SendUserCreation should send a welcome email to a newly
+	// registered user.
+	SendUserCreation(eml string)
 }
