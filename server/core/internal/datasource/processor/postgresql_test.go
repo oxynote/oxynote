@@ -1,10 +1,14 @@
 package processor
 
 import (
+	"context"
+	"net/http"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -456,6 +460,503 @@ func Test_pgNormalizeValue(t *testing.T) {
 
 			result := pgNormalizeValue(tc.In)
 			assert.Equal(t, tc.Expected, result)
+		})
+	}
+}
+
+func Test_NewPostgreSQL(t *testing.T) {
+	t.Parallel()
+
+	inp := &InputMock{}
+
+	p := NewPostgreSQL(inp)
+	require.NotNil(t, p)
+	assert.Same(t, inp, p.inp)
+}
+
+func Test_PostgreSQL_TestConnection(t *testing.T) {
+	cc := map[string]struct {
+		URL    string
+		Result ConnectionStatus
+	}{
+		"Error returned by connect": {
+			URL:    "://",
+			Result: ConnectionStatusUnreachable,
+		},
+		"Unreachable database": {
+			URL:    "postgres://127.0.0.1:1/db",
+			Result: ConnectionStatusUnreachable,
+		},
+		"Not read-only user": {
+			URL:    pgTestURL(_pgUser, _pgPass),
+			Result: ConnectionStatusNotReadOnly,
+		},
+		"Successful read-only connection": {
+			URL:    pgTestURL(_readerUser, _readerPass),
+			Result: ConnectionStatusSuccess,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			p := NewPostgreSQL(&InputMock{
+				URLFunc: func() string { return c.URL },
+			})
+
+			cs, err := p.TestConnection(context.Background())
+			require.NoError(t, err)
+			assert.Equal(t, c.Result, cs)
+		})
+	}
+}
+
+func Test_PostgreSQL_Metadata(t *testing.T) {
+	cc := map[string]struct {
+		URL    string
+		Result *SQLMetadataResult
+		Err    error
+	}{
+		"Error returned by buildConnectionString": {
+			URL: "://",
+			Err: assert.AnError,
+		},
+		"Error returned by pgx.Connect": {
+			URL: "postgres://127.0.0.1:1/db",
+			Err: assert.AnError,
+		},
+		"Successful retrieval": {
+			URL: pgTestURL(_pgUser, _pgPass),
+			Result: &SQLMetadataResult{
+				Tables: map[string]SQLTable{
+					"public.metrics": {
+						Columns: []SQLColumn{
+							{Name: "time"},
+							{Name: "host"},
+							{Name: "value"},
+						},
+					},
+				},
+				DefaultSchema: "public",
+			},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			p := NewPostgreSQL(&InputMock{
+				URLFunc: func() string { return c.URL },
+			})
+
+			result, err := p.Metadata(context.Background())
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, result)
+		})
+	}
+}
+
+func Test_PostgreSQL_QueryLabels(t *testing.T) {
+	cc := map[string]struct {
+		URL       string
+		Query     string
+		Result    map[string]string
+		ErrStatus int
+		Err       error
+	}{
+		"Error returned by buildConnectionString": {
+			URL:   "://",
+			Query: "SELECT 1",
+			Err:   assert.AnError,
+		},
+		"Error returned by pgx.Connect": {
+			URL:   "postgres://127.0.0.1:1/db",
+			Query: "SELECT 1",
+			Err:   assert.AnError,
+		},
+		"Invalid query error": {
+			URL:       pgTestURL(_pgUser, _pgPass),
+			Query:     "SELECT bogus FROM",
+			ErrStatus: http.StatusBadRequest,
+			Err:       assert.AnError,
+		},
+		"Successful retrieval": {
+			URL:   pgTestURL(_pgUser, _pgPass),
+			Query: "SELECT time, host, value FROM metrics ORDER BY time",
+			// only the text column produces a label; the numeric
+			// columns come back as float64 and are skipped.
+			Result: map[string]string{"host": "web-1"},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			p := NewPostgreSQL(&InputMock{
+				URLFunc: func() string { return c.URL },
+			})
+
+			labels, err := p.QueryLabels(context.Background(), c.Query, _testTimeRange)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if c.ErrStatus != 0 {
+				assert.Equal(t, c.ErrStatus, errutil.StatusCode(err, false))
+			}
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, labels)
+		})
+	}
+}
+
+func Test_PostgreSQL_Query(t *testing.T) {
+	cc := map[string]struct {
+		URL       string
+		Query     string
+		Result    *PostgreSQLQueryResult
+		ErrStatus int
+		Err       error
+	}{
+		"Error returned by buildConnectionString": {
+			URL:   "://",
+			Query: "SELECT 1",
+			Err:   assert.AnError,
+		},
+		"Error returned by pgx.Connect": {
+			URL:   "postgres://127.0.0.1:1/db",
+			Query: "SELECT 1",
+			Err:   assert.AnError,
+		},
+		"Invalid query error": {
+			URL:       pgTestURL(_pgUser, _pgPass),
+			Query:     "SELECT bogus FROM",
+			ErrStatus: http.StatusBadRequest,
+			Err:       assert.AnError,
+		},
+		"Successful query": {
+			URL:   pgTestURL(_pgUser, _pgPass),
+			Query: "SELECT time, host, value FROM metrics ORDER BY time",
+			Result: &PostgreSQLQueryResult{
+				Columns: []string{"time", "host", "value"},
+				Rows: [][]any{
+					{float64(1700000000), "web-1", 10.5},
+					{float64(1700000060), "web-2", 20.5},
+				},
+			},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			p := NewPostgreSQL(&InputMock{
+				URLFunc: func() string { return c.URL },
+			})
+
+			result, err := p.Query(context.Background(), c.Query, _testTimeRange)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if c.ErrStatus != 0 {
+				assert.Equal(t, c.ErrStatus, errutil.StatusCode(err, false))
+			}
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, result)
+		})
+	}
+}
+
+func Test_PostgreSQL_connect(t *testing.T) {
+	t.Parallel()
+
+	// buildConnectionString error
+	p := NewPostgreSQL(&InputMock{
+		URLFunc: func() string { return "://" },
+	})
+
+	_, err := p.connect(context.Background())
+	assert.Error(t, err)
+
+	// connection error
+	p = NewPostgreSQL(&InputMock{
+		URLFunc: func() string { return "postgres://127.0.0.1:1/db" },
+	})
+
+	_, err = p.connect(context.Background())
+	assert.Error(t, err)
+}
+
+func Test_PostgreSQL_buildConnectionString(t *testing.T) {
+	cc := map[string]struct {
+		URL    string
+		Creds  Credentials
+		Result string
+		Err    error
+	}{
+		"Error returned by url.Parse": {
+			URL: "://",
+			Err: assert.AnError,
+		},
+		"Error returned by unmarshaling credentials": {
+			URL:   "postgres://dbhost:5432/mydb",
+			Creds: Credentials(`{`),
+			Err:   assert.AnError,
+		},
+		"Credentials override url user": { //nolint:gosec // static test credentials
+			URL:    "postgres://olduser:oldpass@dbhost:5432/mydb",
+			Creds:  Credentials(`{"username":"credsuser","password":"credspass"}`),
+			Result: "postgres://credsuser:credspass@dbhost:5432/mydb",
+		},
+		"Empty credentials keep url user": { //nolint:gosec // static test credentials
+			URL:    "postgres://olduser:oldpass@dbhost:5432/mydb",
+			Creds:  Credentials(`{"username":"","password":""}`),
+			Result: "postgres://olduser:oldpass@dbhost:5432/mydb",
+		},
+		"No credentials keep url unchanged": {
+			URL:    "postgres://dbhost:5432/mydb",
+			Result: "postgres://dbhost:5432/mydb",
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			p := NewPostgreSQL(&InputMock{
+				URLFunc:         func() string { return c.URL },
+				CredentialsFunc: func() Credentials { return c.Creds },
+			})
+
+			connStr, err := p.buildConnectionString()
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, connStr)
+		})
+	}
+}
+
+func Test_UpdatePostgreSQLCredentials(t *testing.T) {
+	cc := map[string]struct {
+		Creds  Credentials
+		Inp    CredentialsUpdateInput
+		Result Credentials
+		Err    error
+	}{
+		"Error returned by unmarshaling credentials": {
+			Creds: Credentials(`{`),
+			Inp:   CredentialsUpdateInput(`{"username":"user"}`),
+			Err:   assert.AnError,
+		},
+		"Error returned by unmarshaling update input": {
+			Inp: CredentialsUpdateInput(`{`),
+			Err: assert.AnError,
+		},
+		"Updated username retains password": {
+			Creds:  Credentials(`{"username":"old","password":"secret"}`),
+			Inp:    CredentialsUpdateInput(`{"username":"new"}`),
+			Result: Credentials(`{"username":"new","password":"secret"}`),
+		},
+		"Updated password retains username": {
+			Creds:  Credentials(`{"username":"user","password":"old"}`),
+			Inp:    CredentialsUpdateInput(`{"password":"new"}`),
+			Result: Credentials(`{"username":"user","password":"new"}`),
+		},
+		"Cleared credentials": {
+			Creds: Credentials(`{"username":"user","password":"pass"}`),
+			Inp:   CredentialsUpdateInput(`{"username":"","password":""}`),
+		},
+		"Created credentials from scratch": {
+			Inp:    CredentialsUpdateInput(`{"username":"user","password":"pass"}`),
+			Result: Credentials(`{"username":"user","password":"pass"}`),
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			creds, err := UpdatePostgreSQLCredentials(c.Creds, c.Inp)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, creds)
+		})
+	}
+}
+
+func Test_PostgreSQLQueryResult_identifyColumns(t *testing.T) {
+	cc := map[string]struct {
+		Result    PostgreSQLQueryResult
+		TimeIdx   int
+		ValueIdxs []int
+		LabelIdxs []int
+	}{
+		"No rows": {
+			Result: PostgreSQLQueryResult{
+				Columns: []string{"time", "value"},
+			},
+			TimeIdx: 0,
+		},
+		"No time column": {
+			Result: PostgreSQLQueryResult{
+				Columns: []string{"value", "host"},
+				Rows:    [][]any{{float64(1), "a"}},
+			},
+			TimeIdx:   -1,
+			ValueIdxs: []int{0},
+			LabelIdxs: []int{1},
+		},
+		"Time value and label columns": {
+			Result: PostgreSQLQueryResult{
+				Columns: []string{"time", "value", "host"},
+				Rows:    [][]any{{"2023-11-14T22:13:20Z", float64(1), "a"}},
+			},
+			TimeIdx:   0,
+			ValueIdxs: []int{1},
+			LabelIdxs: []int{2},
+		},
+		"Short first row treats missing columns as labels": {
+			Result: PostgreSQLQueryResult{
+				Columns: []string{"time", "value", "host"},
+				Rows:    [][]any{{"2023-11-14T22:13:20Z"}},
+			},
+			TimeIdx:   0,
+			LabelIdxs: []int{1, 2},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			timeIdx, valueIdxs, labelIdxs := c.Result.identifyColumns()
+			assert.Equal(t, c.TimeIdx, timeIdx)
+			assert.Equal(t, c.ValueIdxs, valueIdxs)
+			assert.Equal(t, c.LabelIdxs, labelIdxs)
+		})
+	}
+}
+
+func Test_pgParseTimestamp(t *testing.T) {
+	cc := map[string]struct {
+		Value  any
+		Result int64
+		OK     bool
+	}{
+		"Float64 unix seconds": {
+			Value:  float64(1700000000.9),
+			Result: 1700000000,
+			OK:     true,
+		},
+		"RFC3339 string": {
+			Value:  "2023-11-14T22:13:20Z",
+			Result: 1700000000,
+			OK:     true,
+		},
+		"RFC3339 string with fraction": {
+			Value:  "2023-11-14T22:13:20.5Z",
+			Result: 1700000000,
+			OK:     true,
+		},
+		"Invalid string": {
+			Value: "not-a-time",
+		},
+		"Unsupported type": {
+			Value: int64(1700000000),
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			ts, ok := pgParseTimestamp(c.Value)
+			assert.Equal(t, c.OK, ok)
+			assert.Equal(t, c.Result, ts)
+		})
+	}
+}
+
+func Test_pgParseNumericValue(t *testing.T) {
+	cc := map[string]struct {
+		Value  any
+		Result float64
+		OK     bool
+	}{
+		"Float64 value": {
+			Value:  float64(10.5),
+			Result: 10.5,
+			OK:     true,
+		},
+		"Unsupported type": {
+			Value: "10.5",
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			v, ok := pgParseNumericValue(c.Value)
+			assert.Equal(t, c.OK, ok)
+			assert.InDelta(t, c.Result, v, 0.0001)
+		})
+	}
+}
+
+func Test_pgEstimateValueSize(t *testing.T) {
+	cc := map[string]struct {
+		Value  any
+		Result int
+	}{
+		"Nil value": {
+			Result: 4,
+		},
+		"Bool value": {
+			Value:  true,
+			Result: 5,
+		},
+		"String value": {
+			Value:  "hello",
+			Result: 7,
+		},
+		"Bytes value": {
+			Value:  []byte("hello"),
+			Result: 5,
+		},
+		"Numeric value": {
+			Value:  float64(42),
+			Result: 8,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, pgEstimateValueSize(c.Value))
 		})
 	}
 }

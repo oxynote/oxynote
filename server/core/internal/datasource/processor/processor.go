@@ -45,6 +45,8 @@ func (cs ConnectionStatus) Error() error {
 }
 
 // Input represents the input required by a data source processor.
+//
+//go:generate ../../../scripts/codegen/mock -t internal Input
 type Input interface {
 	// URL returns the endpoint URL of the data source.
 	URL() string

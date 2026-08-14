@@ -17,7 +17,8 @@ are part of the convention.
 1. Every possible code path — success and failure — is unit tested. Untestable
    branches carry a `// NOCOV: <reason>.` comment.
 2. Every external dependency of a unit is an interface **declared by the consumer**
-   and mocked (via `moq`) in tests. Only the database layer tests hit a real database.
+   and mocked (via `moq`) in tests. Only the database layer tests and the
+   data-source `processor` tests hit real databases (throwaway gnomock containers).
 3. One test function per production function/method, named `Test_<Type>_<Method>`.
 4. Table-driven tests use `map[string]struct{...}` tables named `cc`, run with
    `t.Run(cn, ...)` + `t.Parallel()`.
@@ -801,7 +802,8 @@ Method naming: `<Verb><Entity>[By<Key>]` (`FetchOrderByID`, `DeleteItemsByOwnerI
 
 Tests are first-class: they live in the same package as the code (white-box), cover
 **every** success and failure path, and mock **every** external dependency. Only the
-db package touches a real database.
+db package and the data-source `processor` package touch real databases (throwaway
+gnomock containers).
 
 Most of the suite hasn't been written yet — it is being added soon. Absent tests in
 a package are not license to skip them: new and modified code follows these
@@ -1123,7 +1125,10 @@ success — each asserting the exact commit/rollback counts.
 - The db package's `TestMain` starts one throwaway Postgres container (gnomock)
   per package run, exports its DSN into a `_`-prefixed package var, and still runs
   goleak (`goleak.IgnoreCurrent()` for the container client). These are unit
-  tests — Docker is a unit-test dependency for the db package only.
+  tests — Docker is a unit-test dependency for the db package and the data-source
+  `processor` package only; the latter starts throwaway MariaDB and Postgres
+  containers the same way to cover real connection, query, and read-only-check
+  paths of the outbound data-source clients.
 - `prepTempDB(t)` gives every test/subtest **its own randomly named database**:
   connect to the admin DB, `CREATE DATABASE <random>`, run `New()` (which
   migrates), register `t.Cleanup(func() { db.Close() })`. This is what makes

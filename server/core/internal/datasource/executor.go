@@ -9,6 +9,11 @@ import (
 // Executor runs data source operations in-process.
 type Executor struct{}
 
+// NewExecutor creates a fresh instance of Executor.
+func NewExecutor() *Executor {
+	return &Executor{}
+}
+
 // TestConnection tests the connection to a data source.
 func (e Executor) TestConnection(ctx context.Context, ds DataSource) (processor.ConnectionStatus, error) {
 	runner := NewRunner(ds)

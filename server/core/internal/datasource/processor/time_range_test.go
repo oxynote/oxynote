@@ -1,10 +1,16 @@
 package processor
 
 import (
+	"net/http"
+	"net/url"
 	"testing"
 	"time"
 
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
+	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func Test_TimeRange_ProcessQuery(t *testing.T) {
@@ -135,19 +141,19 @@ func Test_toGoTimeFormat(t *testing.T) {
 		Input  string
 		Result string
 	}{
-		"YYYY-MM":          {Input: "YYYY-MM", Result: "2006-01"},
-		"YYYY-MM-DD":       {Input: "YYYY-MM-DD", Result: "2006-01-02"},
+		"YYYY-MM":         {Input: "YYYY-MM", Result: "2006-01"},
+		"YYYY-MM-DD":      {Input: "YYYY-MM-DD", Result: "2006-01-02"},
 		"YYYY-MM-DD HH":   {Input: "YYYY-MM-DD HH", Result: "2006-01-02 15"},
-		"YY":               {Input: "YY", Result: "06"},
-		"M-D":              {Input: "M-D", Result: "1-2"},
-		"HH mm ss":         {Input: "HH mm ss", Result: "15 04 05"},
-		"hh A":             {Input: "hh A", Result: "03 PM"},
-		"SSS":              {Input: "SSS", Result: ".000"},
-		"YYYY-MM-DD ddd":   {Input: "YYYY-MM-DD ddd", Result: "2006-01-02 Mon"},
-		"YYYY-MM-DD dddd":  {Input: "YYYY-MM-DD dddd", Result: "2006-01-02 Monday"},
-		"MMMM":             {Input: "MMMM", Result: "January"},
-		"MMM":              {Input: "MMM", Result: "Jan"},
-		"ZZ":               {Input: "YYYY-MM-DDZZ", Result: "2006-01-02-0700"},
+		"YY":              {Input: "YY", Result: "06"},
+		"M-D":             {Input: "M-D", Result: "1-2"},
+		"HH mm ss":        {Input: "HH mm ss", Result: "15 04 05"},
+		"hh A":            {Input: "hh A", Result: "03 PM"},
+		"SSS":             {Input: "SSS", Result: ".000"},
+		"YYYY-MM-DD ddd":  {Input: "YYYY-MM-DD ddd", Result: "2006-01-02 Mon"},
+		"YYYY-MM-DD dddd": {Input: "YYYY-MM-DD dddd", Result: "2006-01-02 Monday"},
+		"MMMM":            {Input: "MMMM", Result: "January"},
+		"MMM":             {Input: "MMM", Result: "Jan"},
+		"ZZ":              {Input: "YYYY-MM-DDZZ", Result: "2006-01-02-0700"},
 	}
 
 	for name, tc := range tests {
@@ -224,6 +230,211 @@ func Test_TimeRange_Normalize(t *testing.T) {
 
 			res := tc.TimeRange.Normalize()
 			assert.Equal(t, tc.Result, res)
+		})
+	}
+}
+
+func Test_ParseTimeRange(t *testing.T) {
+	cc := map[string]struct {
+		FromOptional bool
+		Values       url.Values
+		Result       *TimeRange
+		NowTo        bool
+		Err          error
+	}{
+		"Missing required from parameter": {
+			Values: url.Values{},
+			Err:    errutil.New(http.StatusBadRequest, "from.invalid", "From parameter must be a valid RFC3339 timestamp."),
+		},
+		"Invalid optional from parameter": {
+			FromOptional: true,
+			Values:       url.Values{"from": {"bogus"}},
+			Err:          errutil.New(http.StatusBadRequest, "from.invalid", "From parameter must be a valid RFC3339 timestamp."),
+		},
+		"Invalid to parameter": {
+			Values: url.Values{
+				"from": {"2024-01-01T00:00:00Z"},
+				"to":   {"bogus"},
+			},
+			Err: errutil.New(http.StatusBadRequest, "to.invalid", "To parameter must be a valid RFC3339 timestamp."),
+		},
+		"Missing optional from defaults to zero": {
+			FromOptional: true,
+			Values:       url.Values{"to": {"2024-01-02T00:00:00Z"}},
+			Result: &TimeRange{
+				To: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
+			},
+		},
+		"Missing to defaults to now": {
+			Values: url.Values{"from": {"2024-01-01T00:00:00Z"}},
+			Result: &TimeRange{
+				From: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+			},
+			NowTo: true,
+		},
+		"Full time range": {
+			Values: url.Values{
+				"from": {"2024-01-01T00:00:00Z"},
+				"to":   {"2024-01-02T00:00:00Z"},
+			},
+			Result: &TimeRange{
+				From: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+				To:   time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
+			},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			tr, err := ParseTimeRange(c.FromOptional, c.Values)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			require.NotNil(t, tr)
+			assert.True(t, c.Result.From.Equal(tr.From))
+
+			if c.NowTo {
+				assert.WithinDuration(t, timeutil.Now(), tr.To, time.Second)
+				return
+			}
+
+			assert.True(t, c.Result.To.Equal(tr.To))
+		})
+	}
+}
+
+func Test_TimeRange_QueryStep(t *testing.T) {
+	cc := map[string]struct {
+		TimeRange TimeRange
+		Result    time.Duration
+	}{
+		"Zero range uses minimum step": {
+			TimeRange: TimeRange{
+				From: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+				To:   time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+			},
+			Result: 15 * time.Second,
+		},
+		"One day range": {
+			TimeRange: TimeRange{
+				From: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+				To:   time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
+			},
+			Result: 15 * time.Minute,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, c.TimeRange.QueryStep())
+		})
+	}
+}
+
+func Test_TimeRange_calculateInterval(t *testing.T) {
+	cc := map[string]struct {
+		TimeRange TimeRange
+		Result    time.Duration
+	}{
+		"Negative duration uses minimum interval": {
+			TimeRange: TimeRange{
+				From: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
+				To:   time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+			},
+			Result: 15 * time.Second,
+		},
+		"Short range rounds up to minimum interval": {
+			TimeRange: TimeRange{
+				From: time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
+				To:   time.Date(2024, 1, 1, 12, 5, 0, 0, time.UTC),
+			},
+			Result: 15 * time.Second,
+		},
+		"One day range rounds to fifteen minutes": {
+			TimeRange: TimeRange{
+				From: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+				To:   time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
+			},
+			Result: 15 * time.Minute,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, c.TimeRange.calculateInterval())
+		})
+	}
+}
+
+func Test_formatInterval(t *testing.T) {
+	cc := map[string]struct {
+		Duration time.Duration
+		Result   string
+	}{
+		"Seconds": {
+			Duration: 30 * time.Second,
+			Result:   "30s",
+		},
+		"Minutes": {
+			Duration: 5 * time.Minute,
+			Result:   "5m",
+		},
+		"Hours": {
+			Duration: 2 * time.Hour,
+			Result:   "2h",
+		},
+		"Days": {
+			Duration: 48 * time.Hour,
+			Result:   "2d",
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, formatInterval(c.Duration))
+		})
+	}
+}
+
+func Test_roundInterval(t *testing.T) {
+	cc := map[string]struct {
+		Duration time.Duration
+		Result   time.Duration
+	}{
+		"Below the smallest bucket": {
+			Duration: 10 * time.Second,
+			Result:   15 * time.Second,
+		},
+		"Between buckets rounds up": {
+			Duration: 20 * time.Second,
+			Result:   30 * time.Second,
+		},
+		"Mid-range bucket": {
+			Duration: 40 * time.Minute,
+			Result:   time.Hour,
+		},
+		"Above the largest bucket": {
+			Duration: 25 * time.Hour,
+			Result:   24 * time.Hour,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, roundInterval(c.Duration))
 		})
 	}
 }

@@ -16,14 +16,15 @@ import (
 type Handler struct {
 	log      *slog.Logger
 	db       DB
-	executor datasource.Executor
+	executor Executor
 }
 
 // NewHandler creates a new handler instance with the provided logger and database.
 func NewHandler(log *slog.Logger, db DB) *Handler {
 	return &Handler{
-		log: log,
-		db:  db,
+		log:      log,
+		db:       db,
+		executor: datasource.NewExecutor(),
 	}
 }
 
@@ -244,6 +245,8 @@ func (h *Handler) extractDataSourceID(r *http.Request) (xid.ID, error) {
 }
 
 // DB is an interface that handles communication with the data source database.
+//
+//go:generate ../../../scripts/codegen/mock -t internal DB db
 type DB interface {
 	// InsertDataSource inserts a data source into the database.
 	InsertDataSource(ctx context.Context, ds *datasource.DataSource) error
@@ -259,4 +262,46 @@ type DB interface {
 
 	// DeleteDataSource removes a data source from the database.
 	DeleteDataSource(ctx context.Context, id xid.ID, organizationID string) error
+}
+
+// Executor is an interface that runs data source operations.
+//
+//go:generate ../../../scripts/codegen/mock -t internal Executor
+type Executor interface {
+	// TestConnection should test the connection to a data source.
+	TestConnection(ctx context.Context, ds datasource.DataSource) (processor.ConnectionStatus, error)
+
+	// PrometheusQuery should execute a Prometheus query against a data source.
+	PrometheusQuery(ctx context.Context, ds datasource.DataSource, query string, tr processor.TimeRange) (processor.ConnectionStatus, *processor.PrometheusQueryResult, error)
+
+	// PrometheusMetadata should retrieve metadata from a Prometheus data
+	// source.
+	PrometheusMetadata(ctx context.Context, ds datasource.DataSource) (processor.ConnectionStatus, *processor.PrometheusMetadataResult, error)
+
+	// PrometheusLabelNames should retrieve label names from a Prometheus
+	// data source.
+	PrometheusLabelNames(ctx context.Context, ds datasource.DataSource, matchers []string, tr processor.TimeRange) (processor.ConnectionStatus, *processor.PrometheusLabelNamesResult, error)
+
+	// PrometheusLabelValues should retrieve label values for a specific
+	// label from a Prometheus data source.
+	PrometheusLabelValues(ctx context.Context, ds datasource.DataSource, label string, matchers []string, tr processor.TimeRange) (processor.ConnectionStatus, *processor.PrometheusLabelValuesResult, error)
+
+	// PrometheusSeries should retrieve series matching the given selectors
+	// from a Prometheus data source.
+	PrometheusSeries(ctx context.Context, ds datasource.DataSource, matchers []string, tr processor.TimeRange) (processor.ConnectionStatus, *processor.PrometheusSeriesResult, error)
+
+	// MySQLQuery should execute a SQL query against a MySQL data source.
+	MySQLQuery(ctx context.Context, ds datasource.DataSource, query string, tr processor.TimeRange) (processor.ConnectionStatus, *processor.MySQLQueryResult, error)
+
+	// PostgreSQLQuery should execute a SQL query against a PostgreSQL data
+	// source.
+	PostgreSQLQuery(ctx context.Context, ds datasource.DataSource, query string, tr processor.TimeRange) (processor.ConnectionStatus, *processor.PostgreSQLQueryResult, error)
+
+	// SQLQueryLabels should execute a query with LIMIT 1 and return string
+	// column names with example values.
+	SQLQueryLabels(ctx context.Context, ds datasource.DataSource, query string, tr processor.TimeRange) (processor.ConnectionStatus, map[string]string, error)
+
+	// SQLMetadata should retrieve all tables and their columns from a SQL
+	// data source.
+	SQLMetadata(ctx context.Context, ds datasource.DataSource) (processor.ConnectionStatus, *processor.SQLMetadataResult, error)
 }

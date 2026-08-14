@@ -8,12 +8,28 @@ package testutil
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"sync"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// AddChiCtx adds the provided URL parameter to the context's chi route
+// context, creating one when the context doesn't carry it yet.
+func AddChiCtx(ctx context.Context, key, value string) context.Context {
+	rctx, ok := ctx.Value(chi.RouteCtxKey).(*chi.Context)
+	if !ok {
+		rctx = chi.NewRouteContext()
+		ctx = context.WithValue(ctx, chi.RouteCtxKey, rctx)
+	}
+
+	rctx.URLParams.Add(key, value)
+
+	return ctx
+}
 
 // AssertEqualError uses testify's assert package to check if errors
 // are equal or, if assert.AnError is expected, whether an error exists
@@ -22,7 +38,7 @@ func AssertEqualError(t *testing.T, exp, err error) {
 	t.Helper()
 
 	if exp != nil {
-		if exp == assert.AnError { //nolint:goerr113,errorlint // direct check is needed
+		if exp == assert.AnError { //nolint:err113,errorlint // direct check is needed
 			assert.Error(t, err)
 			return
 		}
@@ -42,7 +58,7 @@ func RequireEqualError(t *testing.T, exp, err error) {
 	t.Helper()
 
 	if exp != nil {
-		if exp == assert.AnError { //nolint:goerr113,errorlint // direct check is needed
+		if exp == assert.AnError { //nolint:err113,errorlint // direct check is needed
 			require.Error(t, err)
 			return
 		}
