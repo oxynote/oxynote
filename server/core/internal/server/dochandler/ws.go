@@ -11,6 +11,10 @@ import (
 	"github.com/rs/xid"
 )
 
+// _publishTimeout bounds each WebSocket publish triggered by a domain
+// callback.
+const _publishTimeout = 5 * time.Second
+
 // CommentChangeType represents the type of comment change.
 type CommentChangeType string
 
@@ -43,7 +47,7 @@ type CommentChangeMessage struct {
 // BindTreeChange binds a tree change event to the given topic.
 func (h *Handler) BindTreeChange(tpc wsserver.Topic) {
 	h.tree.changeCallback = func(organizationID string, parentId null.Value[xid.ID]) {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), _publishTimeout)
 		defer cancel()
 
 		tpc.PublishMany(ctx, TreeChangeMessage{
@@ -65,10 +69,10 @@ func (h *Handler) NotifyTreeChange(organizationID string, parentID null.Value[xi
 	h.tree.changeCallback(organizationID, parentID)
 }
 
-// BindCommentsCreate binds a comment creation event to the given topic.
+// BindCommentsChange binds a comment change event to the given topic.
 func (h *Handler) BindCommentsChange(tpc wsserver.Topic) {
 	h.comments.changeCallback = func(organizationID string, documentId xid.ID, msg CommentChangeMessage) {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), _publishTimeout)
 		defer cancel()
 
 		tpc.PublishMany(ctx, msg, func(ctx context.Context, rawTopic string) bool {
@@ -108,7 +112,7 @@ type DocumentBranchMetadata struct {
 // BindReviewersChange binds a reviewers change event to the given topic.
 func (h *Handler) BindReviewersChange(tpc wsserver.Topic) {
 	h.reviewers.changeCallback = func(organizationID string, documentID xid.ID) {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), _publishTimeout)
 		defer cancel()
 
 		tpc.PublishMany(ctx, struct{}{}, func(ctx context.Context, rawTopic string) bool {
@@ -124,7 +128,7 @@ func (h *Handler) BindReviewersChange(tpc wsserver.Topic) {
 // BindMaintainersChange binds a maintainers change event to the given topic.
 func (h *Handler) BindMaintainersChange(tpc wsserver.Topic) {
 	h.maintainers.changeCallback = func(organizationID string, documentID xid.ID) {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), _publishTimeout)
 		defer cancel()
 
 		tpc.PublishMany(ctx, struct{}{}, func(ctx context.Context, rawTopic string) bool {
@@ -146,12 +150,12 @@ func (h *Handler) BindMetadataChange(tpc wsserver.Topic) {
 			return
 		}
 
-		documentId, err := xid.FromString(wsserver.TopicParamFromContext(ctx, "documentId"))
+		documentID, err := xid.FromString(wsserver.TopicParamFromContext(ctx, "documentId"))
 		if err != nil {
 			return
 		}
 
-		branches, err := h.db.FetchDocumentBranches(ctx, documentId, session.ActiveOrganizationID)
+		branches, err := h.db.FetchDocumentBranches(ctx, documentID, session.ActiveOrganizationID)
 		if err != nil {
 			h.log.With("error", err).
 				Error("fetching document branches for metadata WS subscription")
@@ -173,7 +177,7 @@ func (h *Handler) BindMetadataChange(tpc wsserver.Topic) {
 	})
 
 	h.metadata.changeCallback = func(organizationID string, doc document.Document) {
-		pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		pubCtx, pubCancel := context.WithTimeout(context.Background(), _publishTimeout)
 		defer pubCancel()
 
 		tpc.PublishMany(pubCtx, documentBranchMetadataFrom(doc), func(ctx context.Context, rawTopic string) bool {

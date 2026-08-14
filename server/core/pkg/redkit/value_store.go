@@ -1,3 +1,4 @@
+// Package redkit provides small Redis-backed storage helpers.
 package redkit
 
 import (
@@ -38,7 +39,7 @@ func (vs *ValueStore[V]) Set(ctx context.Context, key string, value V) error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck // error provides no meaningful info
 
 	_, err = conn.Do("SET", key, data, "EX", int(vs.expireAfter.Seconds()))
 	if err != nil {
@@ -54,7 +55,7 @@ func (vs *ValueStore[V]) Get(ctx context.Context, key string) (*V, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck // error provides no meaningful info
 
 	value, err := redis.Bytes(conn.Do("GET", key))
 
@@ -83,7 +84,7 @@ func (vs *ValueStore[V]) Delete(ctx context.Context, key string) error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck // error provides no meaningful info
 
 	_, err = conn.Do("DEL", key)
 	if err != nil {

@@ -1,3 +1,4 @@
+// Package processor implements the freshness hook processors.
 package processor
 
 import (
@@ -53,7 +54,7 @@ func (ciw *ContainerImageWatcher) Process(ctx context.Context, inp Input) (decim
 		return decimal.Zero, nil, fmt.Errorf("fetching container image digest: %w", err)
 	}
 
-	score := decimal.NewFromInt(100)
+	score := _fullScore
 	if ciws.Digest != digest {
 		score = decimal.Zero
 	}
@@ -92,10 +93,11 @@ func (ciw *ContainerImageWatcher) Reset(ctx context.Context, inp Input) (decimal
 		return decimal.Zero, nil, err
 	}
 
-	return decimal.NewFromInt(100), state, nil
+	return _fullScore, state, nil
 }
 
-// URLWatcherState represents the state of the URL watcher processor.
+// ContainerImageWatcherState represents the state of the container image
+// watcher processor.
 type ContainerImageWatcherState struct {
 	// Status is the current status of the processor.
 	Status ContainerImageWatcherStatus `json:"status"`

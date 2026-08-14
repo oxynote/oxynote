@@ -33,7 +33,7 @@ type Handler struct {
 	githubMan          *githubapp.Manager
 	webchangesClient   *webchanges.Client
 	searchGateway      SearchGateway
-	notifPub           notification.NotificationPublisher
+	notifPub           notification.Publisher
 
 	tree struct {
 		changeCallback func(organizationID string, parentId null.Value[xid.ID])
@@ -65,7 +65,7 @@ func NewHandler(
 	githubMan *githubapp.Manager,
 	webchangesClient *webchanges.Client,
 	searchGateway SearchGateway,
-	notifPub notification.NotificationPublisher,
+	notifPub notification.Publisher,
 ) *Handler {
 	return &Handler{
 		log:                log,
@@ -159,7 +159,7 @@ func (h *Handler) RequestBranchReviewer(w http.ResponseWriter, r *http.Request) 
 		UserID string `json:"userId"`
 	}
 
-	if err := httpserver.DecodeJSON(r, &inp); err != nil {
+	if err = httpserver.DecodeJSON(r, &inp); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -179,7 +179,7 @@ func (h *Handler) RequestBranchReviewer(w http.ResponseWriter, r *http.Request) 
 
 	switch {
 	case err == nil:
-		if err := h.db.UpdateBranchReviewer(r.Context(), document.BranchReviewer{
+		if err = h.db.UpdateBranchReviewer(r.Context(), document.BranchReviewer{
 			BranchID:          branchID,
 			UserID:            inp.UserID,
 			OrganizationID:    session.ActiveOrganizationID,
@@ -189,7 +189,7 @@ func (h *Handler) RequestBranchReviewer(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	case errutil.IsNotFound(err):
-		if err := h.db.InsertBranchReviewer(r.Context(), document.BranchReviewer{
+		if err = h.db.InsertBranchReviewer(r.Context(), document.BranchReviewer{
 			BranchID:       branchID,
 			UserID:         inp.UserID,
 			OrganizationID: session.ActiveOrganizationID,
@@ -273,7 +273,7 @@ func (h *Handler) UpdateDocumentTree(w http.ResponseWriter, r *http.Request) {
 
 	var data document.SwapInput
 
-	if err := httpserver.DecodeJSON(r, &data); err != nil {
+	if err = httpserver.DecodeJSON(r, &data); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -302,14 +302,18 @@ func (h *Handler) UpdateDocumentTree(w http.ResponseWriter, r *http.Request) {
 
 	changedParentID := doc.ParentID != data.ParentID
 
-	if changedParentID {
-		previousTree, err := tx.FetchDocumentTreeByDocumentParentID(r.Context(), doc.ParentID, session.ActiveOrganizationID)
+	if changedParentID { //nolint:nestif // the branching is sequential and readable
+		var previousTree document.Summaries
+
+		previousTree, err = tx.FetchDocumentTreeByDocumentParentID(r.Context(), doc.ParentID, session.ActiveOrganizationID)
 		if err != nil {
 			httpserver.RespondError(h.log, w, err)
 			return
 		}
 
-		removedTree, err := previousTree.Remove(data.ID)
+		var removedTree document.Summaries
+
+		removedTree, err = previousTree.Remove(data.ID)
 		if err != nil {
 			httpserver.RespondError(h.log, w, err)
 			return
@@ -419,7 +423,7 @@ func (h *Handler) SearchDocuments(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(data)
+	w.Write(data) //nolint:errcheck,gosec // client write errors provide no meaningful info
 }
 
 // CreateDocument handles the creation of a new document.
@@ -432,7 +436,7 @@ func (h *Handler) CreateDocument(w http.ResponseWriter, r *http.Request) {
 
 	var di document.CreateInput
 
-	if err := httpserver.DecodeJSON(r, &di); err != nil {
+	if err = httpserver.DecodeJSON(r, &di); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -449,17 +453,17 @@ func (h *Handler) CreateDocument(w http.ResponseWriter, r *http.Request) {
 
 	doc := document.NewDocument(di, session.ActiveOrganizationID, session.UserID)
 
-	if err := tx.InsertDocument(r.Context(), doc); err != nil {
+	if err = tx.InsertDocument(r.Context(), doc); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	if err := tx.UpsertDocumentMaintainers(r.Context(), doc.ID, session.ActiveOrganizationID, []string{session.UserID}); err != nil {
+	if err = tx.UpsertDocumentMaintainers(r.Context(), doc.ID, session.ActiveOrganizationID, []string{session.UserID}); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	if err := tx.InsertDocumentSearchJob(r.Context(), searchgw.BlocksDiff(nil, doc.Search())); err != nil {
+	if err = tx.InsertDocumentSearchJob(r.Context(), searchgw.BlocksDiff(nil, doc.Search())); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -616,7 +620,7 @@ func (h *Handler) UpdateDocumentBranchByIDUnsafe(w http.ResponseWriter, r *http.
 
 	var ui document.UpdateInput
 
-	if err := httpserver.DecodeJSON(r, &ui); err != nil {
+	if err = httpserver.DecodeJSON(r, &ui); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -639,7 +643,7 @@ func (h *Handler) UpdateDocumentBranchByIDUnsafe(w http.ResponseWriter, r *http.
 
 	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
 
-	if err := tx.UpdateDocument(r.Context(), ndoc); err != nil {
+	if err = tx.UpdateDocument(r.Context(), ndoc); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -660,7 +664,7 @@ func (h *Handler) UpdateDocumentBranchByIDUnsafe(w http.ResponseWriter, r *http.
 	}
 
 	if maintainersAdded {
-		if err := tx.UpsertDocumentMaintainers(
+		if err = tx.UpsertDocumentMaintainers(
 			r.Context(),
 			doc.ID,
 			doc.OrganizationID,
@@ -672,7 +676,7 @@ func (h *Handler) UpdateDocumentBranchByIDUnsafe(w http.ResponseWriter, r *http.
 	}
 
 	if ndoc.BranchName == document.DefaultBranch {
-		if err := tx.InsertDocumentSearchJob(
+		if err = tx.InsertDocumentSearchJob(
 			r.Context(),
 			searchgw.BlocksDiff(doc.Search(), ndoc.Search()),
 		); err != nil {
@@ -733,7 +737,7 @@ func (h *Handler) UpdateBranchReviewApproval(w http.ResponseWriter, r *http.Requ
 		Approved bool `json:"approved"`
 	}
 
-	if err := httpserver.DecodeJSON(r, &inp); err != nil {
+	if err = httpserver.DecodeJSON(r, &inp); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -742,7 +746,7 @@ func (h *Handler) UpdateBranchReviewApproval(w http.ResponseWriter, r *http.Requ
 
 	switch {
 	case err == nil:
-		if err := h.db.UpdateBranchReviewer(r.Context(), document.BranchReviewer{
+		if err = h.db.UpdateBranchReviewer(r.Context(), document.BranchReviewer{
 			BranchID:           branchDoc.BranchID,
 			UserID:             session.UserID,
 			OrganizationID:     session.ActiveOrganizationID,
@@ -753,7 +757,7 @@ func (h *Handler) UpdateBranchReviewApproval(w http.ResponseWriter, r *http.Requ
 			return
 		}
 	case errutil.IsNotFound(err):
-		if err := h.db.InsertBranchReviewer(r.Context(), document.BranchReviewer{
+		if err = h.db.InsertBranchReviewer(r.Context(), document.BranchReviewer{
 			BranchID:          branchDoc.BranchID,
 			UserID:            session.UserID,
 			OrganizationID:    session.ActiveOrganizationID,
@@ -794,7 +798,7 @@ func (h *Handler) MergeBranches(w http.ResponseWriter, r *http.Request) {
 		ToBranchID   xid.ID `json:"toBranchId"`
 	}
 
-	if err := httpserver.DecodeJSON(r, &inp); err != nil {
+	if err = httpserver.DecodeJSON(r, &inp); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -816,7 +820,7 @@ func (h *Handler) MergeBranches(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ndoc := toDoc.MergeBranch(fromDoc.DocumentBranch, session.UserID)
+	ndoc := toDoc.MergeBranch(fromDoc.Branch, session.UserID)
 
 	var tx Tx
 
@@ -905,7 +909,7 @@ func (h *Handler) DeleteDocument(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, hk := range hooks {
-		err := hk.Delete(r.Context(), hook.NewInput(
+		err = hk.Delete(r.Context(), hook.NewInput(
 			session.ActiveOrganizationID,
 			h.githubMan,
 			h.webchangesClient,
@@ -926,12 +930,12 @@ func (h *Handler) DeleteDocument(w http.ResponseWriter, r *http.Request) {
 
 	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
 
-	if err := tx.DeleteDocument(r.Context(), doc.ID, session.ActiveOrganizationID); err != nil {
+	if err = tx.DeleteDocument(r.Context(), doc.ID, session.ActiveOrganizationID); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	if err := tx.InsertDocumentSearchJob(r.Context(), searchgw.BlocksDiff(doc.Search(), nil)); err != nil {
+	if err = tx.InsertDocumentSearchJob(r.Context(), searchgw.BlocksDiff(doc.Search(), nil)); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -986,17 +990,17 @@ func (h *Handler) DuplicateDocument(w http.ResponseWriter, r *http.Request) {
 
 	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
 
-	if err := tx.InsertDocument(r.Context(), duplDoc); err != nil {
+	if err = tx.InsertDocument(r.Context(), duplDoc); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	if err := tx.UpsertDocumentMaintainers(r.Context(), duplDoc.ID, session.ActiveOrganizationID, []string{session.UserID}); err != nil {
+	if err = tx.UpsertDocumentMaintainers(r.Context(), duplDoc.ID, session.ActiveOrganizationID, []string{session.UserID}); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	if err := tx.InsertDocumentSearchJob(r.Context(), searchgw.BlocksDiff(nil, duplDoc.Search())); err != nil {
+	if err = tx.InsertDocumentSearchJob(r.Context(), searchgw.BlocksDiff(nil, duplDoc.Search())); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -1083,7 +1087,7 @@ func (h *Handler) CreateDocumentBranch(w http.ResponseWriter, r *http.Request) {
 		SourceBranchID xid.ID `json:"sourceBranchId"`
 	}
 
-	if err := httpserver.DecodeJSON(r, &inp); err != nil {
+	if err = httpserver.DecodeJSON(r, &inp); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -1101,14 +1105,14 @@ func (h *Handler) CreateDocumentBranch(w http.ResponseWriter, r *http.Request) {
 
 	var tx Tx
 
-	if err := h.db.BeginTx(r.Context(), &tx); err != nil {
+	if err = h.db.BeginTx(r.Context(), &tx); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
 	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
 
-	if err := tx.ForkDocumentBranch(
+	if err = tx.ForkDocumentBranch(
 		r.Context(),
 		sourceDoc.ID,
 		session.ActiveOrganizationID,
@@ -1197,7 +1201,7 @@ func (h *Handler) DeleteDocumentBranch(w http.ResponseWriter, r *http.Request) {
 // copyHooksToBranch fetches all hooks from fromBranchID and re-creates them on
 // toBranchID with fresh state. This is handler-level business logic; the DB
 // layer is not involved in the re-creation decision.
-func (h *Handler) copyHooksToBranch(ctx context.Context, db HooksDBAgent, fromBranchID, toBranchID xid.ID, documentID xid.ID, organizationID string) error {
+func (h *Handler) copyHooksToBranch(ctx context.Context, db HooksDBAgent, fromBranchID, toBranchID, documentID xid.ID, organizationID string) error {
 	hooks, err := db.FetchDocumentHooksByBranchID(ctx, fromBranchID, organizationID)
 	if err != nil {
 		return err
@@ -1252,7 +1256,15 @@ type DBAgent interface {
 	CommentsDBAgent
 	ReviewersDBAgent
 	FilesDBAgent
+	DocumentsDBAgent
+	BranchesDBAgent
+	TreeDBAgent
+	MaintainersDBAgent
+}
 
+// DocumentsDBAgent is an interface that handles communication with the
+// document entity database.
+type DocumentsDBAgent interface {
 	// InsertDocument should insert the document.
 	InsertDocument(ctx context.Context, doc document.Document) error
 
@@ -1263,7 +1275,7 @@ type DBAgent interface {
 	CheckDocumentExists(ctx context.Context, id xid.ID, organizationID string) error
 
 	// FetchDocument should fetch a document joined against the given branch for the given id.
-	FetchDocument(ctx context.Context, id xid.ID, organizationID string, branchName string) (*document.Document, error)
+	FetchDocument(ctx context.Context, id xid.ID, organizationID, branchName string) (*document.Document, error)
 
 	// FetchDocumentByBranchID should fetch a document joined against the branch
 	// identified by branchID.
@@ -1274,13 +1286,23 @@ type DBAgent interface {
 	// This is intended only for internal system use cases.
 	FetchDocumentUnsafeByBranchID(ctx context.Context, branchID xid.ID) (*document.Document, error)
 
+	// UpdateDocument should update the document.
+	UpdateDocument(ctx context.Context, doc document.Document) error
+
+	// DeleteDocument should delete the document.
+	DeleteDocument(ctx context.Context, id xid.ID, organizationID string) error
+}
+
+// BranchesDBAgent is an interface that handles communication with the
+// document branches database.
+type BranchesDBAgent interface {
 	// FetchDocumentBranchesUnsafe should fetch all branches for a document as
 	// lightweight summaries without checking organization ownership.
 	// This is intended only for internal system use cases.
 	FetchDocumentBranchesUnsafe(ctx context.Context, docID xid.ID) ([]document.BranchSummary, error)
 
 	// ForkDocumentBranch should create a new branch by copying the contents of an existing source branch.
-	ForkDocumentBranch(ctx context.Context, docID xid.ID, orgID string, sourceBranch string, targetBranch string, createdBy string) error
+	ForkDocumentBranch(ctx context.Context, docID xid.ID, orgID, sourceBranch, targetBranch, createdBy string) error
 
 	// FetchDocumentBranches should fetch all branches for a document as lightweight summaries.
 	FetchDocumentBranches(ctx context.Context, docID xid.ID, organizationID string) ([]document.BranchSummary, error)
@@ -1294,7 +1316,11 @@ type DBAgent interface {
 	// UpdateDocumentBranchMetadata should update the name and protection status of a branch
 	// without modifying content or inserting a changelog entry.
 	UpdateDocumentBranchMetadata(ctx context.Context, doc document.Document) error
+}
 
+// TreeDBAgent is an interface that handles communication with the document
+// tree database.
+type TreeDBAgent interface {
 	// FetchDocumentTree should fetch the document tree.
 	FetchDocumentTree(ctx context.Context, organizationID string) (document.Summaries, error)
 
@@ -1304,15 +1330,13 @@ type DBAgent interface {
 	// UpdateDocumentTree should update the tree of the document childrens.
 	UpdateDocumentTree(ctx context.Context, ss document.Summaries, organizationID string) error
 
-	// UpdateDocument should update the document.
-	UpdateDocument(ctx context.Context, doc document.Document) error
-
 	// UpdateDocumentParentID should update the parent id of the document.
 	UpdateDocumentParentID(ctx context.Context, id xid.ID, parentID null.Value[xid.ID], organizationID string) error
+}
 
-	// DeleteDocument should delete the document.
-	DeleteDocument(ctx context.Context, id xid.ID, organizationID string) error
-
+// MaintainersDBAgent is an interface that handles communication with the
+// document maintainers database.
+type MaintainersDBAgent interface {
 	// UpsertDocumentMaintainers should upsert the document maintainers.
 	UpsertDocumentMaintainers(ctx context.Context, documentID xid.ID, organizationID string, maintainerIDs []string) error
 
@@ -1329,7 +1353,7 @@ type ReviewersDBAgent interface {
 	FetchBranchReviewers(ctx context.Context, branchID xid.ID, organizationID string) ([]document.BranchReviewer, error)
 
 	// FetchBranchReviewer should fetch a single reviewer for a branch by user ID.
-	FetchBranchReviewer(ctx context.Context, branchID xid.ID, userID string, organizationID string) (*document.BranchReviewer, error)
+	FetchBranchReviewer(ctx context.Context, branchID xid.ID, userID, organizationID string) (*document.BranchReviewer, error)
 
 	// InsertBranchReviewer should insert a reviewer for a branch.
 	InsertBranchReviewer(ctx context.Context, reviewer document.BranchReviewer) error
@@ -1338,7 +1362,7 @@ type ReviewersDBAgent interface {
 	UpdateBranchReviewer(ctx context.Context, reviewer document.BranchReviewer) error
 
 	// DeleteBranchReviewer should remove a reviewer from a branch.
-	DeleteBranchReviewer(ctx context.Context, branchID xid.ID, userID string, organizationID string) error
+	DeleteBranchReviewer(ctx context.Context, branchID xid.ID, userID, organizationID string) error
 
 	// PromoteBranchApprovals should promote reviewer approvals from one branch to another.
 	PromoteBranchApprovals(ctx context.Context, fromBranchID, toBranchID xid.ID, organizationID string) error

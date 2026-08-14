@@ -1,3 +1,4 @@
+// Package auth validates sessions and resolves request identity.
 package auth
 
 import (
@@ -110,7 +111,7 @@ func getSession(ctx context.Context, client *http.Client, url string, cookies []
 	if err != nil {
 		return Session{}, err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // error provides no meaningful info
 
 	if resp.StatusCode != http.StatusOK {
 		return Session{}, httpserver.ErrNotAuthenticated

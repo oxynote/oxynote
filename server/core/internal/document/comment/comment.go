@@ -85,7 +85,7 @@ type Content map[string]any
 // It converts the Content to JSON for storage in the database.
 func (c Content) Value() (driver.Value, error) {
 	if c == nil {
-		return nil, nil
+		return nil, nil //nolint:nilnil // a nil driver.Value stores SQL NULL
 	}
 
 	return json.Marshal(c)
@@ -100,6 +100,7 @@ func (c *Content) Scan(value any) error {
 	}
 
 	var data []byte
+
 	switch v := value.(type) {
 	case []byte:
 		data = v
@@ -113,7 +114,7 @@ func (c *Content) Scan(value any) error {
 }
 
 // NewComment creates a new comment instance with the provided input.
-func NewComment(inp CommentInput, documentID xid.ID, branchID xid.ID, userID, organizationID string) Comment {
+func NewComment(inp Input, documentID, branchID xid.ID, userID, organizationID string) Comment {
 	return Comment{
 		ID:                  xid.New(),
 		DocumentID:          documentID,
@@ -129,7 +130,7 @@ func NewComment(inp CommentInput, documentID xid.ID, branchID xid.ID, userID, or
 }
 
 // ApplyUpdate updates comment instance with the input data.
-func (c Comment) ApplyUpdate(inp CommentInput) Comment {
+func (c Comment) ApplyUpdate(inp Input) Comment {
 	return Comment{
 		ID:             c.ID,
 		DocumentID:     c.DocumentID,
@@ -220,8 +221,8 @@ func (r Reply) ApplyUpdate(inp ReplyInput) Reply {
 	}
 }
 
-// CommentInput is the input structure for a comment.
-type CommentInput struct {
+// Input is the input structure for a comment.
+type Input struct {
 	// Content is the content of the comment.
 	Content Content `json:"content"`
 

@@ -25,6 +25,7 @@ func (a *agent) InsertSlackApp(ctx context.Context, app slackapp.App) error {
 		MustSql()
 
 	_, err := a.sql.ExecContext(ctx, q, args...)
+
 	return err
 }
 

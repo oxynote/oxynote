@@ -20,9 +20,9 @@ func TestMain(m *testing.M) {
 
 func Test_New(t *testing.T) {
 	err := New(http.StatusBadRequest, "hello", "bad request %s", "123")
-	require.IsType(t, &statusError{}, err)
-	sErr, _ := err.(*statusError) //nolint:errorlint // we need a direct check
-	assert.Nil(t, sErr.err)
+	require.IsType(t, &statusError{}, err) //nolint:testifylint // a direct type check is needed
+	sErr, _ := err.(*statusError)          //nolint:errorlint // we need a direct check
+	assert.NoError(t, sErr.err)
 	assert.Equal(t, "bad request 123", sErr.Message)
 	assert.Equal(t, "hello", sErr.InternalCode)
 	assert.Equal(t, http.StatusBadRequest, sErr.statusCode)
@@ -30,9 +30,9 @@ func Test_New(t *testing.T) {
 
 func Test_NewPlain(t *testing.T) {
 	err := NewPlain(http.StatusBadRequest)
-	require.IsType(t, &statusError{}, err)
-	sErr, _ := err.(*statusError) //nolint:errorlint // we need a direct check
-	assert.Nil(t, sErr.err)
+	require.IsType(t, &statusError{}, err) //nolint:testifylint // a direct type check is needed
+	sErr, _ := err.(*statusError)          //nolint:errorlint // we need a direct check
+	assert.NoError(t, sErr.err)
 	assert.Equal(t, "bad request", sErr.Message)
 	assert.Equal(t, http.StatusBadRequest, sErr.statusCode)
 	assert.Equal(t, "general", sErr.InternalCode)
@@ -40,16 +40,16 @@ func Test_NewPlain(t *testing.T) {
 
 func Test_wrap(t *testing.T) {
 	err := wrap(assert.AnError, http.StatusBadRequest, "hello", "bad request %s", "123")
-	require.IsType(t, &statusError{}, err)
-	sErr, _ := err.(*statusError) //nolint:errorlint // we need a direct check
+	require.IsType(t, &statusError{}, err) //nolint:testifylint // a direct type check is needed
+	sErr, _ := err.(*statusError)          //nolint:errorlint // we need a direct check
 	assert.Equal(t, "bad request 123", sErr.Message)
 	assert.Equal(t, "hello", sErr.InternalCode)
 	assert.Equal(t, http.StatusBadRequest, sErr.statusCode)
 	assert.Equal(t, assert.AnError, sErr.err)
 
 	err = wrap(assert.AnError, http.StatusBadRequest, "hello", "")
-	require.IsType(t, &statusError{}, err)
-	sErr, _ = err.(*statusError) //nolint:errorlint // it's a test
+	require.IsType(t, &statusError{}, err) //nolint:testifylint // a direct type check is needed
+	sErr, _ = err.(*statusError)           //nolint:errorlint // it's a test
 	assert.Equal(t, "bad request", sErr.Message)
 	assert.Equal(t, "hello", sErr.InternalCode)
 	assert.Equal(t, http.StatusBadRequest, sErr.statusCode)
@@ -150,8 +150,8 @@ func Test_Detect(t *testing.T) {
 			t.Parallel()
 
 			err := Detect(c.Err, c.Passthru)
-			require.IsType(t, &statusError{}, err)
-			sErr, _ := err.(*statusError) //nolint:errorlint // it's a test
+			require.IsType(t, &statusError{}, err) //nolint:testifylint // a direct type check is needed
+			sErr, _ := err.(*statusError)          //nolint:errorlint // it's a test
 			assert.Equal(t, c.Message, sErr.Message)
 			assert.Equal(t, c.Code, sErr.statusCode)
 		})

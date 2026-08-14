@@ -1,0 +1,63 @@
+name: QA
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - server/core/**
+      - .github/workflows/qa.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - server/core/**
+      - .github/workflows/qa.yml
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lint:
+    name: Linting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: server/core/go.mod
+          cache-dependency-path: server/core/go.sum
+
+      - name: Installing dependencies
+        run: go mod download
+        working-directory: server/core
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12
+          working-directory: server/core
+
+  test:
+    name: Unit testing
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: server/core/go.mod
+          cache-dependency-path: server/core/go.sum
+
+      - name: Installing dependencies
+        run: go mod download
+        working-directory: server/core
+
+      - name: Run unit tests
+        run: go test -race ./...
+        working-directory: server/core

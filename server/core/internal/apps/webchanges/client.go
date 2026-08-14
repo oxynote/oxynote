@@ -1,3 +1,4 @@
+// Package webchanges provides a client for the changedetection.io API.
 package webchanges
 
 import (
@@ -35,13 +36,13 @@ func (c *Client) FetchWatcher(ctx context.Context, uuid string) (*Watch, error) 
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("x-api-key", c.apiKey)
+	req.Header.Set("X-Api-Key", c.apiKey)
 
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // error provides no meaningful info
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, c.parseErrorResponse(resp)
@@ -78,7 +79,7 @@ func (c *Client) CreateWatcher(ctx context.Context, url string) (string, error) 
 		URL:          url,
 		FetchBackend: _fetchBackendWebDriver,
 		TimeBetweenCheck: &TimeBetweenCheck{
-			Minutes: 3,
+			Minutes: _checkIntervalMinutes,
 		},
 	})
 	if err != nil {
@@ -90,14 +91,14 @@ func (c *Client) CreateWatcher(ctx context.Context, url string) (string, error) 
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("x-api-key", c.apiKey)
+	req.Header.Set("X-Api-Key", c.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to execute request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // error provides no meaningful info
 
 	if resp.StatusCode != http.StatusCreated {
 		return "", c.parseErrorResponse(resp)
@@ -120,7 +121,7 @@ func (c *Client) UpdateWatcher(ctx context.Context, uuid, url string) error {
 		URL:          url,
 		FetchBackend: _fetchBackendWebDriver,
 		TimeBetweenCheck: &TimeBetweenCheck{
-			Minutes: 3,
+			Minutes: _checkIntervalMinutes,
 		},
 	})
 	if err != nil {
@@ -132,14 +133,14 @@ func (c *Client) UpdateWatcher(ctx context.Context, uuid, url string) error {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("x-api-key", c.apiKey)
+	req.Header.Set("X-Api-Key", c.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to execute request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // error provides no meaningful info
 
 	if resp.StatusCode != http.StatusOK {
 		return c.parseErrorResponse(resp)
@@ -155,13 +156,13 @@ func (c *Client) DeleteWatcher(ctx context.Context, uuid string) error {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("x-api-key", c.apiKey)
+	req.Header.Set("X-Api-Key", c.apiKey)
 
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to execute request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // error provides no meaningful info
 
 	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotFound {
 		return c.parseErrorResponse(resp)

@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -28,7 +27,7 @@ func Test_LocationHeader(t *testing.T) {
 	hdr := http.Header{}
 
 	LocationHeader("/test/123")(hdr, http.StatusBadGateway)
-	assert.Zero(t, hdr.Get("Location"))
+	assert.Empty(t, hdr.Get("Location"))
 
 	LocationHeader("/test/123")(hdr, http.StatusOK)
 	assert.Equal(t, "/test/123", hdr.Get("Location"))
@@ -70,6 +69,7 @@ func Test_Respond(t *testing.T) {
 			t.Parallel()
 
 			var b bytes.Buffer
+
 			out := bufio.NewWriter(&b)
 			log := slog.New(slog.NewJSONHandler(out, nil))
 			rec := httptest.NewRecorder()
@@ -96,27 +96,28 @@ func Test_Respond(t *testing.T) {
 			if c.Body {
 				assert.Equal(t, "application/json",
 					rec.Header().Get("Content-Type"))
-				assert.NotZero(t, rec.Body.String())
+				assert.NotEmpty(t, rec.Body.String())
 			} else {
-				assert.Zero(t, rec.Header().Get("Content-Type"))
-				assert.Zero(t, rec.Body.String())
+				assert.Empty(t, rec.Header().Get("Content-Type"))
+				assert.Empty(t, rec.Body.String())
 			}
 
 			require.NoError(t, out.Flush())
 
 			if c.Code < 500 {
-				assert.Zero(t, b.String())
+				assert.Empty(t, b.String())
 				return
 			}
 
 			strs := strings.Split(b.String(), "\n")
 			require.Len(t, strs, 2)
-			assert.Regexp(t, regexp.MustCompile(c.Log), strs[0])
+			assert.Regexp(t, c.Log, strs[0])
 		})
 	}
 
 	// special case
 	var b bytes.Buffer
+
 	out := bufio.NewWriter(&b)
 	log := slog.New(slog.NewJSONHandler(out, nil))
 
@@ -141,6 +142,7 @@ func Test_Respond(t *testing.T) {
 
 func Test_RespondError(t *testing.T) {
 	var b bytes.Buffer
+
 	out := bufio.NewWriter(&b)
 	log := slog.New(slog.NewJSONHandler(out, nil))
 
@@ -151,10 +153,10 @@ func Test_RespondError(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
 	assert.NotContains(t, rec.Header(), "Location")
-	assert.NotZero(t, rec.Body.String())
+	assert.NotEmpty(t, rec.Body.String())
 
 	require.NoError(t, out.Flush())
-	assert.Zero(t, b.String())
+	assert.Empty(t, b.String())
 
 	rec = httptest.NewRecorder()
 	rec.Header().Set("Location", "test")
@@ -163,17 +165,18 @@ func Test_RespondError(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
 	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
 	assert.NotContains(t, rec.Header(), "Location")
-	assert.NotZero(t, rec.Body.String())
+	assert.NotEmpty(t, rec.Body.String())
 
 	require.NoError(t, out.Flush())
 
 	strs := strings.Split(b.String(), "\n")
 	require.Len(t, strs, 2)
-	assert.Regexp(t, regexp.MustCompile(`"msg":"internal server error"`), strs[0])
+	assert.Regexp(t, `"msg":"internal server error"`, strs[0])
 }
 
 func Test_RespondSuppressedError(t *testing.T) {
 	var b bytes.Buffer
+
 	out := bufio.NewWriter(&b)
 	log := slog.New(slog.NewTextHandler(out, nil))
 
@@ -184,10 +187,10 @@ func Test_RespondSuppressedError(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
 	assert.NotContains(t, rec.Header(), "Location")
-	assert.NotZero(t, rec.Body.String())
+	assert.NotEmpty(t, rec.Body.String())
 
 	require.NoError(t, out.Flush())
-	assert.Zero(t, b.String())
+	assert.Empty(t, b.String())
 
 	rec = httptest.NewRecorder()
 	rec.Header().Set("Location", "test")
@@ -196,10 +199,10 @@ func Test_RespondSuppressedError(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
 	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
 	assert.NotContains(t, rec.Header(), "Location")
-	assert.NotZero(t, rec.Body.String())
+	assert.NotEmpty(t, rec.Body.String())
 
 	require.NoError(t, out.Flush())
-	require.Equal(t, "", b.String())
+	require.Empty(t, b.String())
 }
 
 func Test_DecodeJSON(t *testing.T) {
@@ -282,7 +285,7 @@ func Test_Recoverer(t *testing.T) {
 func Test_ExtractParam(t *testing.T) {
 	req := httptest.NewRequest("GET", "http://test.com/", http.NoBody)
 	val, err := ExtractParam(req, "key")
-	assert.Zero(t, val)
+	assert.Empty(t, val)
 	assert.Error(t, err)
 
 	ctx := chi.NewRouteContext()

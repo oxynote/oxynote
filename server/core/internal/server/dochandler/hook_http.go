@@ -56,12 +56,12 @@ func (h *Handler) CreateDocumentHook(w http.ResponseWriter, r *http.Request) {
 
 	var hi hook.CreateInput
 
-	if err := httpserver.DecodeJSON(r, &hi); err != nil {
+	if err = httpserver.DecodeJSON(r, &hi); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	if _, err := h.db.FetchDocumentByBranchID(r.Context(), hi.BranchID, session.ActiveOrganizationID); err != nil {
+	if _, err = h.db.FetchDocumentByBranchID(r.Context(), hi.BranchID, session.ActiveOrganizationID); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -118,7 +118,7 @@ func (h *Handler) UpdateDocumentHook(w http.ResponseWriter, r *http.Request) {
 
 	var ui hook.UpdateInput
 
-	if err := httpserver.DecodeJSON(r, &ui); err != nil {
+	if err = httpserver.DecodeJSON(r, &ui); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -218,6 +218,10 @@ func (h *Handler) DeleteDocumentHook(w http.ResponseWriter, r *http.Request) {
 		h.githubMan,
 		h.webchangesClient,
 	))
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
 
 	if err := h.db.DeleteDocumentHook(r.Context(), hk.ID, session.ActiveOrganizationID); err != nil {
 		httpserver.RespondError(h.log, w, err)

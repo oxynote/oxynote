@@ -87,7 +87,6 @@ func Detect(err error, passthru bool) error {
 		)
 	case errors.Is(err, context.Canceled),
 		errors.Is(err, context.DeadlineExceeded):
-
 		return NewPlain(http.StatusGatewayTimeout)
 	}
 
@@ -102,7 +101,7 @@ func Detect(err error, passthru bool) error {
 
 	if errors.As(err, &serr) {
 		// ensure that we aren't leaking any critical information
-		if serr.statusCode < 500 {
+		if serr.statusCode < http.StatusInternalServerError {
 			return serr
 		}
 

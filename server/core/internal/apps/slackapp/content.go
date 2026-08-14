@@ -1,3 +1,4 @@
+// Package slackapp manages the Slack App integration and its API access.
 package slackapp
 
 import (
@@ -99,6 +100,7 @@ func (uls *UserLinkSettings) Scan(value any) error {
 	}
 
 	var data []byte
+
 	switch v := value.(type) {
 	case []byte:
 		data = v

@@ -6,7 +6,6 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -58,7 +57,7 @@ func newTestManager(t *testing.T, configured bool) *githubapp.Manager {
 func newTestHandler(t *testing.T, configured bool) *Handler {
 	t.Helper()
 
-	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	log := slog.New(slog.DiscardHandler)
 
 	return NewHandler(log, nil, nil, newTestManager(t, configured))
 }
@@ -68,7 +67,7 @@ func Test_Handler_CheckInstallation(t *testing.T) {
 
 	h := newTestHandler(t, false)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/github", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/github", http.NoBody)
 	req = req.WithContext(auth.AddSessionToContext(req.Context(), auth.Session{
 		UserID:               "user",
 		ActiveOrganizationID: "org",
@@ -121,7 +120,7 @@ func Test_Handler_RequireConfigured(t *testing.T) {
 				w.WriteHeader(http.StatusNoContent)
 			})
 
-			req := httptest.NewRequest(http.MethodGet, "/api/github/install", nil)
+			req := httptest.NewRequest(http.MethodGet, "/api/github/install", http.NoBody)
 			rec := httptest.NewRecorder()
 
 			h.RequireConfigured(next).ServeHTTP(rec, req)
@@ -156,7 +155,7 @@ func Test_Handler_VerifySignature(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/x/github/events", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/x/github/events", http.NoBody)
 	rec := httptest.NewRecorder()
 
 	h.VerifySignature(next).ServeHTTP(rec, req)

@@ -2,6 +2,7 @@ package githubapp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -26,6 +27,10 @@ var (
 	// ErrNotConfigured is returned when the GitHub App integration is not configured on this deployment.
 	ErrNotConfigured = errutil.New(http.StatusConflict, "github.not_configured", "github app is not configured")
 )
+
+// _maxBranchRedirects specifies the maximum number of redirects followed
+// when resolving a repository branch.
+const _maxBranchRedirects = 3
 
 // Options holds configuration options for the Github handler.
 type Options struct {
@@ -176,7 +181,6 @@ func (m *Manager) createInstallationClient(installationID int64) (*github.Client
 		installationID,
 		m.opt.PrivateKeyPath,
 	)
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to create installation transport: %w", err)
 	}
@@ -199,7 +203,7 @@ type InstallationClient struct {
 func (ic *InstallationClient) FetchIssues(ctx context.Context, q, repository string) ([]Issue, error) {
 	bq := "in:title"
 
-	if repository != "" {
+	if repository != "" { //nolint:nestif // the branching is sequential and readable
 		_, resp, err := ic.installationClient.Repositories.Get(ctx, ic.owner, repository)
 		if err != nil {
 			if resp != nil && resp.StatusCode == http.StatusNotFound {
@@ -316,7 +320,7 @@ func (ic *InstallationClient) FetchRepositoryTree(ctx context.Context, repositor
 		ic.owner,
 		repository,
 		branch,
-		3,
+		_maxBranchRedirects,
 	)
 	if err != nil {
 		if resp != nil && resp.StatusCode == http.StatusNotFound {
@@ -450,14 +454,21 @@ func createAppClient(appID int64, privateKeyPath string) (*github.Client, error)
 
 // parseGithubError parses errors returned by the Github API and maps them to appropriate HTTP status codes.
 func parseGithubError(err error) error {
-	switch resp := err.(type) {
-	case *github.RateLimitError:
-		return errutil.New(http.StatusTooManyRequests, "github.rate_limit", "rate limit exceeded")
-	case *github.AbuseRateLimitError:
-		return errutil.New(http.StatusTooManyRequests, "github.abuse_rate_limit", "abuse rate limit exceeded")
-	case *github.ErrorResponse:
-		if resp.Response.StatusCode == http.StatusNotFound {
-			return ErrResourceNotFound
+	{
+		var (
+			resp  *github.RateLimitError
+			resp1 *github.AbuseRateLimitError
+			resp2 *github.ErrorResponse
+		)
+		switch {
+		case errors.As(err, &resp):
+			return errutil.New(http.StatusTooManyRequests, "github.rate_limit", "rate limit exceeded")
+		case errors.As(err, &resp1):
+			return errutil.New(http.StatusTooManyRequests, "github.abuse_rate_limit", "abuse rate limit exceeded")
+		case errors.As(err, &resp2):
+			if resp2.Response.StatusCode == http.StatusNotFound {
+				return ErrResourceNotFound
+			}
 		}
 	}
 

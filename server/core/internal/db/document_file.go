@@ -25,7 +25,7 @@ func (a *agent) InsertDocumentFile(ctx context.Context, f document.File) error {
 }
 
 // FetchDocumentFile retrieves a document file by its block ID from the database.
-func (a *agent) FetchDocumentFile(ctx context.Context, id string, organizationID string) (*document.File, error) {
+func (a *agent) FetchDocumentFile(ctx context.Context, id, organizationID string) (*document.File, error) {
 	q, args := a.selectDocumentFile(a.builder.Select()).
 		Where(sq.Eq{
 			"document_files.id":                 id,

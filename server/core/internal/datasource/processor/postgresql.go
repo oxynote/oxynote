@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 	"regexp"
 	"strings"
@@ -42,9 +43,9 @@ func (p *PostgreSQL) TestConnection(ctx context.Context) (ConnectionStatus, erro
 	if err != nil {
 		return ConnectionStatusUnreachable, nil
 	}
-	defer conn.Close(ctx)
+	defer conn.Close(ctx) //nolint:errcheck // error provides no meaningful info
 
-	if err := conn.Ping(ctx); err != nil {
+	if err = conn.Ping(ctx); err != nil {
 		return ConnectionStatusUnreachable, nil
 	}
 
@@ -73,7 +74,7 @@ func (p *PostgreSQL) Metadata(ctx context.Context) (*SQLMetadataResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error connecting to postgresql: %w", err)
 	}
-	defer conn.Close(ctx)
+	defer conn.Close(ctx) //nolint:errcheck // error provides no meaningful info
 
 	rows, err := conn.Query(ctx,
 		"SELECT table_schema, table_name, column_name FROM information_schema.columns WHERE table_schema NOT IN ('information_schema', 'pg_catalog') ORDER BY table_schema, table_name, ordinal_position",
@@ -122,7 +123,7 @@ func (p *PostgreSQL) QueryLabels(ctx context.Context, q string, tr TimeRange) (m
 	if err != nil {
 		return nil, fmt.Errorf("error connecting to postgresql: %w", err)
 	}
-	defer conn.Close(ctx)
+	defer conn.Close(ctx) //nolint:errcheck // error provides no meaningful info
 
 	rows, err := conn.Query(ctx, q)
 	if err != nil {
@@ -187,7 +188,7 @@ func (p *PostgreSQL) Query(ctx context.Context, q string, tr TimeRange) (*Postgr
 	if err != nil {
 		return nil, fmt.Errorf("error connecting to postgresql: %w", err)
 	}
-	defer conn.Close(ctx)
+	defer conn.Close(ctx) //nolint:errcheck // error provides no meaningful info
 
 	rows, err := conn.Query(ctx, q)
 	if err != nil {
@@ -304,7 +305,7 @@ func UpdatePostgreSQLCredentials(rawCreds Credentials, inp CredentialsUpdateInpu
 		return nil, nil
 	}
 
-	data, err := json.Marshal(creds)
+	data, err := json.Marshal(creds) //nolint:gosec // credentials are encrypted before storage
 	if err != nil {
 		return nil, fmt.Errorf("error marshaling updated credentials: %w", err)
 	}
@@ -349,7 +350,7 @@ type PostgreSQLQueryResult struct {
 //
 // Each numeric column generates its own set of series. When there are multiple
 // numeric columns, the column name is added as the "__name__" label to distinguish them.
-func (pqr *PostgreSQLQueryResult) Transform(ct ChartType) *QueryResult {
+func (pqr *PostgreSQLQueryResult) Transform(ct ChartType) *QueryResult { //nolint:gocognit // this method is complex, however, it's well-structured
 	if ct == "" {
 		return &QueryResult{Status: QueryStatusTypeNotSelected}
 	}
@@ -367,6 +368,7 @@ func (pqr *PostgreSQLQueryResult) Transform(ct ChartType) *QueryResult {
 
 	// Group rows by (value column, label combination) into series, preserving insertion order.
 	seriesMap := make(map[string]*QueryResultSeries)
+
 	var seriesOrder []string
 
 	for _, row := range pqr.Rows {
@@ -381,6 +383,7 @@ func (pqr *PostgreSQLQueryResult) Transform(ct ChartType) *QueryResult {
 
 		// Build label key once per row (shared across value columns).
 		labels := make(map[string]string, len(labelIdxs))
+
 		var labelKeyParts []string
 
 		for _, li := range labelIdxs {
@@ -411,9 +414,7 @@ func (pqr *PostgreSQLQueryResult) Transform(ct ChartType) *QueryResult {
 
 			if _, exists := seriesMap[key]; !exists {
 				seriesLabels := make(map[string]string, len(labels)+1)
-				for k, v := range labels {
-					seriesLabels[k] = v
-				}
+				maps.Copy(seriesLabels, labels)
 
 				if multipleValues {
 					seriesLabels["__name__"] = pqr.Columns[vi]
@@ -453,19 +454,19 @@ func (pqr *PostgreSQLQueryResult) Transform(ct ChartType) *QueryResult {
 }
 
 // identifyColumns detects which columns are time, value (numeric), and labels (non-numeric).
-func (pqr *PostgreSQLQueryResult) identifyColumns() (timeIdx int, valueIdxs []int, labelIdxs []int) {
+func (pqr *PostgreSQLQueryResult) identifyColumns() (timeIdx int, valueIdxs, labelIdxs []int) {
 	timeIdx = -1
 
 	// Identify time column by name.
 	for i, col := range pqr.Columns {
-		if strings.ToLower(col) == "time" {
+		if strings.EqualFold(col, _timeColumn) {
 			timeIdx = i
 			break
 		}
 	}
 
 	if len(pqr.Rows) == 0 {
-		return
+		return timeIdx, valueIdxs, labelIdxs
 	}
 
 	// Classify remaining columns by inspecting the first row's values.
@@ -486,7 +487,7 @@ func (pqr *PostgreSQLQueryResult) identifyColumns() (timeIdx int, valueIdxs []in
 		labelIdxs = append(labelIdxs, i)
 	}
 
-	return
+	return timeIdx, valueIdxs, labelIdxs
 }
 
 // pgNormalizeValue converts native pgx row values into the JSON-shaped values
@@ -551,14 +552,14 @@ func pgParseNumericValue(v any) (float64, bool) {
 func pgEstimateValueSize(v any) int {
 	switch val := v.(type) {
 	case nil:
-		return 4 // "null"
+		return _jsonNullSize
 	case bool:
-		return 5 // "false"
+		return _jsonBoolSize
 	case string:
-		return len(val) + 2
+		return len(val) + _jsonQuotesSize
 	case []byte:
 		return len(val)
 	default:
-		return 8 // numeric types
+		return _jsonNumericSize
 	}
 }

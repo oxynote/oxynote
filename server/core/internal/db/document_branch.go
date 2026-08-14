@@ -34,6 +34,7 @@ func (a *agent) insertDocumentBranch(ctx context.Context, doc document.Document)
 		MustSql()
 
 	_, err := a.sql.ExecContext(ctx, q, args...)
+
 	return err
 }
 
@@ -67,6 +68,7 @@ func (a *agent) upsertDocumentBranch(ctx context.Context, doc document.Document)
 		MustSql()
 
 	_, err := a.sql.ExecContext(ctx, q, args...)
+
 	return err
 }
 
@@ -95,6 +97,7 @@ func (a *agent) ForkDocumentBranch(
 	`
 
 	_, err := a.sql.ExecContext(ctx, q, xid.New(), docID, orgID, targetBranch, now, createdBy, sourceBranch)
+
 	return err
 }
 
@@ -103,7 +106,7 @@ func (a *agent) ForkDocumentBranch(
 // assistant's read tools, which only need these fields and would
 // otherwise pay to deserialize raw_content and the rest of the
 // branch row.
-func (a *agent) FetchMainBranchContent(ctx context.Context, docID xid.ID, organizationID string) (document.DocumentContent, error) {
+func (a *agent) FetchMainBranchContent(ctx context.Context, docID xid.ID, organizationID string) (document.Content, error) {
 	q, args := a.builder.Select(
 		`document_name AS "document_name"`,
 		`content AS "content"`,
@@ -116,12 +119,12 @@ func (a *agent) FetchMainBranchContent(ctx context.Context, docID xid.ID, organi
 		Limit(1).
 		MustSql()
 
-	out := document.DocumentContent{
+	out := document.Content{
 		OrganizationID: organizationID,
 		DocumentID:     docID,
 	}
 	if err := sqlx.GetContext(ctx, a.sql, &out, q, args...); err != nil {
-		return document.DocumentContent{}, err
+		return document.Content{}, err
 	}
 
 	return out, nil
@@ -332,5 +335,6 @@ func (a *agent) insertDocumentBranchChangelog(
 		MustSql()
 
 	_, err := a.sql.ExecContext(ctx, q, args...)
+
 	return err
 }

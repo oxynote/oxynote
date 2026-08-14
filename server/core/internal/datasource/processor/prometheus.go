@@ -6,14 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/guregu/null/v5"
-	"github.com/prometheus/common/config"
-	"github.com/prometheus/common/model"
-
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
+	"github.com/prometheus/common/config"
+	"github.com/prometheus/common/model"
 )
 
 const (
@@ -226,7 +226,7 @@ func UpdatePrometheusCredentials(rawCreds Credentials, inp CredentialsUpdateInpu
 		return nil, nil
 	}
 
-	data, err := json.Marshal(creds)
+	data, err := json.Marshal(creds) //nolint:gosec // credentials are encrypted before storage
 	if err != nil {
 		return nil, fmt.Errorf("error marshaling updated credentials: %w", err)
 	}
@@ -375,6 +375,7 @@ func (pqr *PrometheusQueryResult) transformVector() *QueryResult {
 
 	// Check if all samples are histograms.
 	allHistograms := true
+
 	for _, sample := range vector {
 		if sample.Histogram == nil {
 			allHistograms = false
@@ -402,6 +403,7 @@ func (pqr *PrometheusQueryResult) transformVector() *QueryResult {
 		}
 
 		hasValidValue = true
+
 		series = append(series, QueryResultSeries{
 			Labels: promConvertPromMetricToLabels(sample.Metric),
 			Metrics: [][2]any{
@@ -441,6 +443,7 @@ func (pqr *PrometheusQueryResult) transformMatrix(ct ChartType) *QueryResult {
 
 	// Check if all streams are histogram-only.
 	allHistograms := true
+
 	for _, stream := range matrix {
 		if len(stream.Values) > 0 {
 			allHistograms = false
@@ -466,13 +469,13 @@ func (pqr *PrometheusQueryResult) transformMatrix(ct ChartType) *QueryResult {
 
 		if ct == ChartTypeGauge {
 			// For gauge, only keep the last valid value.
-			for i := len(stream.Values) - 1; i >= 0; i-- {
-				v := float64(stream.Values[i].Value)
+			for _, sp := range slices.Backward(stream.Values) {
+				v := float64(sp.Value)
 				if isValidValue(v) {
 					hasValidValue = true
 					metrics = [][2]any{
 						{
-							stream.Values[i].Timestamp.Unix(),
+							sp.Timestamp.Unix(),
 							v,
 						},
 					}
@@ -488,6 +491,7 @@ func (pqr *PrometheusQueryResult) transformMatrix(ct ChartType) *QueryResult {
 				}
 
 				hasValidValue = true
+
 				metrics = append(metrics, [2]any{
 					sp.Timestamp.Unix(),
 					v,

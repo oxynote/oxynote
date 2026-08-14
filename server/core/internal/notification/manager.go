@@ -76,7 +76,7 @@ func (m *Manager) OnNotification(
 }
 
 // PublishNotifications publishes new notifications to users.
-func (m *Manager) PublishNotifications(organizationID string, nc NotificationCore, userIDs ...string) {
+func (m *Manager) PublishNotifications(organizationID string, nc Core, userIDs ...string) {
 	for _, userID := range userIDs {
 		nt := newNotification(organizationID, userID, nc)
 
@@ -110,14 +110,14 @@ func (m *Manager) PublishNotifications(organizationID string, nc NotificationCor
 	}
 }
 
-// NotificationPublisher is an interface used to publish notifications.
-type NotificationPublisher interface {
+// Publisher is an interface used to publish notifications.
+type Publisher interface {
 	// PublishNotification should publish a new notification.
-	PublishNotifications(organizationID string, be NotificationCore, userIDs ...string)
+	PublishNotifications(organizationID string, be Core, userIDs ...string)
 }
 
-// NotificationReceiver is an interface used to subscribe to notifications.
-type NotificationReceiver interface {
+// Receiver is an interface used to subscribe to notifications.
+type Receiver interface {
 	// OnNotification should subscribe to notifications.
 	OnNotification(fn func(
 		context.Context,

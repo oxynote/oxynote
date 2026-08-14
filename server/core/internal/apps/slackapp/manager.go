@@ -86,14 +86,14 @@ type Manager struct {
 func NewManager(
 	log *slog.Logger,
 	db DB,
-	int Interpreter,
-	notifs notification.NotificationReceiver,
+	interp Interpreter,
+	notifs notification.Receiver,
 	opt Options,
 ) (*Manager, error) {
 	m := &Manager{
 		log: log.With("component", "slack-app-manager"),
 		db:  db,
-		int: int,
+		int: interp,
 		opt: opt,
 	}
 
@@ -181,7 +181,7 @@ func (m *Manager) ProcessNotification(ctx context.Context, n notification.Notifi
 	}
 }
 
-// SignatureSecret returns the signature secret for verifying Slack request signatures.
+// VerifyMiddleware verifies the Slack request signature.
 func (m *Manager) VerifyMiddleware(r *http.Request) error {
 	verifier, err := slack.NewSecretsVerifier(r.Header, m.opt.SignatureSecret)
 	if err != nil {

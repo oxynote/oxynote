@@ -1,76 +1,114 @@
 version: "2"
 linters:
   enable:
+    - arangolint
     - asasalint
     - asciicheck
     - bidichk
     - bodyclose
+    - canonicalheader
+    - clickhouselint
+    - contextcheck
     - copyloopvar
     - cyclop
     - depguard
     - dogsled
     - dupword
     - durationcheck
+    - embeddedstructfieldcheck
     - err113
+    - errcheck
     - errchkjson
     - errname
     - errorlint
     - exhaustive
+    - exptostd
+    - fatcontext
     - forbidigo
     - forcetypeassert
+    - ginkgolinter
+    - gocheckcompilerdirectives
     - gochecknoglobals
     - gochecknoinits
+    - gochecksumtype
     - gocognit
     - goconst
     - gocritic
     - gocyclo
+    - godoclint
     - godot
     - gomoddirectives
-    - gomodguard
+    - gomodguard_v2
     - goprintffuncname
     - gosec
+    - govet
     - importas
+    - ineffassign
+    - inamedparam
+    - interfacebloat
+    - intrange
+    - iotamixing
+    - loggercheck
     - maintidx
+    - mirror
     - misspell
+    - mnd
+    - modernize
     - musttag
     - nakedret
     - nestif
     - nilerr
+    - nilnesserr
     - nilnil
     - noctx
     - nolintlint
     - nosprintfhostport
     - paralleltest
+    - perfsprint
     - prealloc
     - predeclared
     - promlinter
+    - protogetter
     - reassign
+    - recvcheck
     - revive
     - rowserrcheck
+    - sloglint
+    - spancheck
     - sqlclosecheck
     - staticcheck
+    - tagalign
     - tagliatelle
+    - testableexamples
+    - testifylint
     - thelper
     - unconvert
     - unparam
+    - unqueryvet
+    - unused
     - usestdlibvars
     - usetesting
     - wastedassign
     - whitespace
     - wsl_v5
+    - zerologlint
   disable:
     - containedctx
     - decorder
     - dupl
     - exhaustruct
+    - funcorder
     - funlen
     - godox
     - goheader
+    - gosmopolitan
     - grouper
+    - iface
     - ireturn
     - lll
     - makezero
     - nlreturn
+    - noinlineerr
     - nonamedreturns
     - testpackage
     - tparallel
@@ -95,6 +133,7 @@ linters:
         - hugeParam
         - unnamedResult
         - sloppyReassign
+        - rangeValCopy
       enabled-tags:
         - diagnostic
         - style
@@ -119,6 +158,10 @@ linters:
       for-loops: true
     promlinter:
       strict: true
+    recvcheck:
+      exclusions:
+        - '*.Value'
+        - '*.Scan'
     revive:
       enable-all-rules: true
       rules:
@@ -169,18 +212,27 @@ linters:
           disabled: true
         - name: if-return
           disabled: true
+        - name: enforce-switch-style
+          disabled: true
     rowserrcheck:
       packages:
         - github.com/jmoiron/sqlx
+    tagalign:
+      align: false
+      sort: true
+      order:
+        - json
+        - db
     tagliatelle:
       case:
         rules:
           json: camel
+    testifylint:
+      disable:
+        - require-error
     thelper:
       test:
         begin: false
-    whitespace:
-      multi-if: true
     wsl_v5:
       allow-first-in-block: true
   exclusions:
@@ -220,6 +272,12 @@ linters:
       - linters:
           - tagliatelle
         path: binance
+      # snake_case wire contracts: the assistant's Anthropic tool schemas and
+      # WS chat protocol, the changedetection.io API, the auth-realtime
+      # liveedit operations payload, and the canonical AI block JSON.
+      - linters:
+          - tagliatelle
+        path: internal/assistant|internal/apps/webchanges|internal/document/liveedit|internal/document/aiblock
       - linters:
           - promlinter
         path: wsserver/server_test.go
@@ -229,6 +287,11 @@ linters:
       - linters:
           - goconst
         text: string `(true|false)` has
+      # SQL column names in query builders mirror the schema and stay
+      # greppable against migrations; constants would obscure the queries.
+      - linters:
+          - goconst
+        path: internal/db
       - linters:
           - dupword
         source: '^//go:generate '
@@ -238,6 +301,16 @@ linters:
       - linters:
           - usetesting
         text: could be replaced by t.Context()
+      - linters:
+          - unqueryvet
+        path: internal/db|pkg/sqlutil
+      - linters:
+          - revive
+        path: pkg/ioutil
+        text: package-naming
+      - linters:
+          - revive
+        text: Import alias "v1" is redundant
       - linters:
           - cyclop
           - goconst

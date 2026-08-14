@@ -58,7 +58,7 @@ type Counter interface {
 	Inc()
 
 	// Add adds the given value to the counter.
-	Add(float64)
+	Add(value float64)
 }
 
 // HistogramVec is a histogram vector.
@@ -70,13 +70,13 @@ type HistogramVec interface {
 // Observer is an observer.
 type Observer interface {
 	// Observe observes the given value.
-	Observe(float64)
+	Observe(value float64)
 }
 
 // Gauge is a gauge data collector.
 type Gauge interface {
 	// Set should set the Gauge to an arbitrary value.
-	Set(float64)
+	Set(value float64)
 	// Inc should increment the Gauge by 1. Use Add to increment it by
 	// arbitrary values.
 	Inc()
@@ -85,10 +85,10 @@ type Gauge interface {
 	Dec()
 	// Add should add the given value to the Gauge. (The value can be
 	// negative, resulting in a decrease of the Gauge.)
-	Add(float64)
+	Add(value float64)
 	// Sub should subtract the given value from the Gauge. (The value can
 	// be negative, resulting in an increase of the Gauge.)
-	Sub(float64)
+	Sub(value float64)
 }
 
 // histogramBuckets returns custom buckets if non-empty, otherwise

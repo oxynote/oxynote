@@ -11,6 +11,9 @@ import (
 	"github.com/rs/xid"
 )
 
+// _maxPreviewLen caps the quoted text preview shown in the confirm UI.
+const _maxPreviewLen = 60
+
 // ConfirmActionSummary is the human-readable description of a
 // pending write op surfaced to the confirm UI. Built from the same
 // JSON args the tool was about to receive: Summarize never executes
@@ -65,10 +68,10 @@ func (m *Manager) ToolStatusLabel(ctx context.Context, name Name, args json.RawM
 
 	switch name {
 	case NameReadDocumentSummary:
-		return fmt.Sprintf("Reading %s", subject)
+		return "Reading " + subject
 
 	case NameReadBlock:
-		return fmt.Sprintf("Reading a block in %s", subject)
+		return "Reading a block in " + subject
 
 	case NameSearchDocuments:
 		var in struct {
@@ -76,6 +79,7 @@ func (m *Manager) ToolStatusLabel(ctx context.Context, name Name, args json.RawM
 		}
 
 		m.parseToolArgs(name, args, &in)
+
 		if in.Query == "" {
 			return "Searching documents"
 		}
@@ -88,6 +92,7 @@ func (m *Manager) ToolStatusLabel(ctx context.Context, name Name, args json.RawM
 		}
 
 		m.parseToolArgs(name, args, &in)
+
 		if in.Name == "" {
 			return "Creating a document"
 		}
@@ -95,13 +100,13 @@ func (m *Manager) ToolStatusLabel(ctx context.Context, name Name, args json.RawM
 		return fmt.Sprintf("Creating %q", in.Name)
 
 	case NameDeleteDocument:
-		return fmt.Sprintf("Deleting %s", subject)
+		return "Deleting " + subject
 
 	case NameRenameDocument:
-		return fmt.Sprintf("Renaming %s", subject)
+		return "Renaming " + subject
 
 	case NameMoveDocument:
-		return fmt.Sprintf("Moving %s", subject)
+		return "Moving " + subject
 
 	case NameInsertBlock,
 		NameAppendBlock,
@@ -110,12 +115,12 @@ func (m *Manager) ToolStatusLabel(ctx context.Context, name Name, args json.RawM
 		NameUpdateBlockText,
 		NameUpdateBlockAttrs,
 		NameDeleteBlock:
-		return fmt.Sprintf("Updating %s", subject)
+		return "Updating " + subject
+	default:
+		// list_documents, get_document, set_document_icon: too noisy or
+		// too generic; let them run without a pill.
+		return ""
 	}
-
-	// list_documents, get_document, set_document_icon: too noisy or
-	// too generic; let them run without a pill.
-	return ""
 }
 
 // Summarize builds a ConfirmActionSummary from a tool name and its
@@ -190,6 +195,7 @@ func (m *Manager) describe(name Name, args json.RawMessage, docName string) stri
 		}
 
 		m.parseToolArgs(name, args, &in)
+
 		if in.Name == "" {
 			return "Create a new document"
 		}
@@ -197,7 +203,7 @@ func (m *Manager) describe(name Name, args json.RawMessage, docName string) stri
 		return fmt.Sprintf("Create document %q", in.Name)
 
 	case NameDeleteDocument:
-		return fmt.Sprintf("Delete %s", subject)
+		return "Delete " + subject
 
 	case NameRenameDocument:
 		var in struct {
@@ -205,8 +211,9 @@ func (m *Manager) describe(name Name, args json.RawMessage, docName string) stri
 		}
 
 		m.parseToolArgs(name, args, &in)
+
 		if in.Name == "" {
-			return fmt.Sprintf("Rename %s", subject)
+			return "Rename " + subject
 		}
 
 		return fmt.Sprintf("Rename %s to %q", subject, in.Name)
@@ -226,6 +233,7 @@ func (m *Manager) describe(name Name, args json.RawMessage, docName string) stri
 		}
 
 		m.parseToolArgs(name, args, &in)
+
 		if in.NewParentID == "" {
 			return fmt.Sprintf("Move %s to the org root", subject)
 		}
@@ -285,9 +293,10 @@ func (m *Manager) describe(name Name, args json.RawMessage, docName string) stri
 		}
 
 		m.parseToolArgs(name, args, &in)
-		preview := preview(in.Text, 60)
+
+		preview := preview(in.Text, _maxPreviewLen)
 		if preview == "" {
-			return fmt.Sprintf("Update text of a block in %s", subject)
+			return "Update text of a block in " + subject
 		}
 
 		return fmt.Sprintf("Update a block in %s: %q", subject, preview)
@@ -305,16 +314,16 @@ func (m *Manager) describe(name Name, args json.RawMessage, docName string) stri
 		}
 
 		if len(keys) == 0 {
-			return fmt.Sprintf("Update block attributes in %s", subject)
+			return "Update block attributes in " + subject
 		}
 
 		return fmt.Sprintf("Update block %s in %s", strings.Join(keys, ", "), subject)
 
 	case NameDeleteBlock:
-		return fmt.Sprintf("Delete a block in %s", subject)
+		return "Delete a block in " + subject
+	default:
+		return string(name)
 	}
-
-	return string(name)
 }
 
 // blockKindLabel turns a canonical type string into a friendlier
@@ -364,21 +373,21 @@ func blockKindLabel(kind string) string {
 	return "a " + kind + " block"
 }
 
-// preview returns at most max runes of s, collapsed to a single
+// preview returns at most maxLen runes of s, collapsed to a single
 // line. Used for surfacing short snippets of an upcoming text edit
 // in the confirm UI.
-func preview(s string, max int) string {
+func preview(s string, maxLen int) string {
 	s = strings.ReplaceAll(s, "\n", " ")
 	s = strings.TrimSpace(s)
 
-	if max <= 0 {
+	if maxLen <= 0 {
 		return s
 	}
 
 	runes := []rune(s)
-	if len(runes) <= max {
+	if len(runes) <= maxLen {
 		return s
 	}
 
-	return string(runes[:max]) + "…"
+	return string(runes[:maxLen]) + "…"
 }

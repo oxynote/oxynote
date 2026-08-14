@@ -2,7 +2,6 @@ package redisutil
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
@@ -13,17 +12,17 @@ import (
 func Test_NewPool(t *testing.T) {
 	// Error, network is empty.
 	pool, err := NewPool("", "")
-	require.Error(t, err, errors.New("invalid redis network"))
+	require.EqualError(t, err, "invalid redis network")
 	require.Nil(t, pool)
 
 	// Error, address is empty.
 	pool, err = NewPool("127.0.0.1", "")
-	require.Error(t, err, errors.New("invalid redis address"))
+	require.EqualError(t, err, "invalid redis address")
 	require.Nil(t, pool)
 
 	// Success.
 	pool, err = NewPool("127.0.0.1", "8080")
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.NotNil(t, pool)
 
 	assert.Equal(t, 5, pool.MaxIdle)

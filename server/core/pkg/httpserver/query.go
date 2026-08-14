@@ -2,7 +2,7 @@ package httpserver
 
 import (
 	"net/http"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -17,6 +17,16 @@ const (
 	// _sortPrefix is a prefix that is used to group HTTP query
 	// sort keys together.
 	_sortPrefix = "sort-"
+
+	// _sortKeyParts specifies the number of dash-separated segments
+	// a raw sort key consists of (prefix, priority, key).
+	_sortKeyParts = 3
+
+	// _sortAsc is the ascending sort direction value.
+	_sortAsc = "asc"
+
+	// _sortDesc is the descending sort direction value.
+	_sortDesc = "desc"
 )
 
 var (
@@ -37,27 +47,27 @@ var (
 // data stores.
 type Query struct {
 	// Limit specifies the total amount of data elements per page.
-	Limit uint64 `schema:"limit" json:"limit"`
+	Limit uint64 `json:"limit" schema:"limit"`
 
 	// Page specifies data batch number.
-	Page uint64 `schema:"page" json:"page"`
+	Page uint64 `json:"page" schema:"page"`
 
 	// Filters specifies a map of fields and their expected values (can
 	// be partial).
 	// Filter's key must start with the "filter-" prefix in the request's
 	// query parameters to be put in this map.
-	Filters map[string]string `schema:"-" json:"filters,omitempty"`
+	Filters map[string]string `json:"filters,omitempty" schema:"-"`
 
 	// SortKeys specifies a slice of fields that should be used
 	// for sorting.
 	// Sorting key must start with the "sort-" prefix in the request's
 	// query parameters to be put in this slice.
 	// NOTE: the order of keys is important.
-	SortKeys []SortKey `schema:"-" json:"sortKeys,omitempty"`
+	SortKeys []SortKey `json:"sortKeys,omitempty" schema:"-"`
 
 	// Omissions specifies a list of keys that should be
 	// omitted from the response.
-	Omissions map[string]struct{} `schema:"-" json:"omissions,omitempty"`
+	Omissions map[string]struct{} `json:"omissions,omitempty" schema:"-"`
 }
 
 // SortKey is used to sort data by a specific key.
@@ -122,8 +132,8 @@ func ParseQuery(r *http.Request) (Query, error) {
 		case strings.HasPrefix(k, _sortPrefix):
 			// some sort keys might contain more than three
 			// dashes, but we care only about the first two
-			ss := strings.SplitN(k, "-", 3)
-			if len(ss) != 3 {
+			ss := strings.SplitN(k, "-", _sortKeyParts)
+			if len(ss) != _sortKeyParts {
 				continue
 			}
 
@@ -139,9 +149,9 @@ func ParseQuery(r *http.Request) (Query, error) {
 			var asc bool
 
 			switch r.Form.Get(k) {
-			case "asc":
+			case _sortAsc:
 				asc = true
-			case "desc":
+			case _sortDesc:
 				// asc is false already
 			default:
 				return Query{}, errutil.New(
@@ -191,9 +201,7 @@ func ParseQuery(r *http.Request) (Query, error) {
 		}
 	}
 
-	sort.Slice(sortPriority, func(i, j int) bool {
-		return sortPriority[i] < sortPriority[j]
-	})
+	slices.Sort(sortPriority)
 
 	if sortKeys != nil {
 		qr.SortKeys = make([]SortKey, 0, len(sortKeys))

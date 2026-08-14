@@ -1,6 +1,7 @@
 package aiblock
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/oxynote/oxynote/server/core/internal/document"
@@ -15,6 +16,13 @@ const (
 	_markCode      = "code"
 	_markLink      = "link"
 )
+
+// _escapeGrowHeadroom is the extra builder capacity reserved for the
+// backslashes escaping inserts.
+const _escapeGrowHeadroom = 4
+
+// _attrHref is the attribute key carrying a link mark's target URL.
+const _attrHref = "href"
 
 // ParseInlineMarkdown converts a minimal-markdown string into a slice
 // of ProseMirror text nodes with marks. The supported syntax is:
@@ -56,7 +64,7 @@ func EmitInlineMarkdown(nodes []document.Block) string {
 	)
 
 	for _, n := range nodes {
-		if n.Type != "text" {
+		if n.Type != document.BlockNodeText {
 			continue
 		}
 
@@ -71,6 +79,7 @@ func EmitInlineMarkdown(nodes []document.Block) string {
 			}
 
 			buf.WriteString(closeDelim(top))
+
 			active = active[:len(active)-1]
 		}
 
@@ -88,8 +97,8 @@ func EmitInlineMarkdown(nodes []document.Block) string {
 	}
 
 	// Close any marks still open at the end.
-	for i := len(active) - 1; i >= 0; i-- {
-		buf.WriteString(closeDelim(active[i]))
+	for _, v := range slices.Backward(active) {
+		buf.WriteString(closeDelim(v))
 	}
 
 	return buf.String()
@@ -120,7 +129,7 @@ type inlineAtom struct {
 // parseSpan parses the entire input string with the given outer
 // mark stack already active. It is called recursively for the
 // contents of bold/italic/underline/strike spans and link labels.
-func parseSpan(s string, outer []activeMark) []inlineAtom {
+func parseSpan(s string, outer []activeMark) []inlineAtom { //nolint:gocognit // this function is complex, however, it's well-structured
 	var out []inlineAtom
 
 	cur := strings.Builder{}
@@ -144,20 +153,21 @@ func parseSpan(s string, outer []activeMark) []inlineAtom {
 		if c == '\\' && i+1 < len(s) {
 			cur.WriteByte(s[i+1])
 			i += 2
+
 			continue
 		}
 
 		// Code span: literal until matching backtick. No parsing
 		// inside.
 		if c == '`' {
-			if close := strings.IndexByte(s[i+1:], '`'); close >= 0 {
+			if end := strings.IndexByte(s[i+1:], '`'); end >= 0 {
 				flush()
 
 				out = append(out, inlineAtom{
-					text:  s[i+1 : i+1+close],
+					text:  s[i+1 : i+1+end],
 					marks: append(append([]activeMark(nil), outer...), activeMark{kind: _markCode}),
 				})
-				i = i + 1 + close + 1
+				i = i + 1 + end + 1
 
 				continue
 			}
@@ -183,7 +193,7 @@ func parseSpan(s string, outer []activeMark) []inlineAtom {
 		// italics. If no close is found, consume both bytes as
 		// literal so we don't fall through to the single-char
 		// branch and treat ** as ***italic*italic*.
-		if i+1 < len(s) {
+		if i+1 < len(s) { //nolint:nestif // the branching is sequential and readable
 			pair := s[i : i+2]
 
 			if pair == "**" || pair == "~~" {
@@ -192,17 +202,18 @@ func parseSpan(s string, outer []activeMark) []inlineAtom {
 					mark = _markStrike
 				}
 
-				if close := scanDelimClose(s, i+2, pair); close >= 0 {
+				if end := scanDelimClose(s, i+len(pair), pair); end >= 0 {
 					flush()
 
-					inner := parseSpan(s[i+2:close], append(append([]activeMark(nil), outer...), activeMark{kind: mark}))
+					inner := parseSpan(s[i+len(pair):end], append(append([]activeMark(nil), outer...), activeMark{kind: mark}))
 					out = append(out, inner...)
-					i = close + 2
+					i = end + len(pair)
 
 					continue
 				}
 
 				cur.WriteString(pair)
+
 				i += 2
 
 				continue
@@ -216,18 +227,19 @@ func parseSpan(s string, outer []activeMark) []inlineAtom {
 				mark = _markUnderline
 			}
 
-			if close := scanDelimClose(s, i+1, string(c)); close >= 0 {
+			if end := scanDelimClose(s, i+1, string(c)); end >= 0 {
 				flush()
 
-				inner := parseSpan(s[i+1:close], append(append([]activeMark(nil), outer...), activeMark{kind: mark}))
+				inner := parseSpan(s[i+1:end], append(append([]activeMark(nil), outer...), activeMark{kind: mark}))
 				out = append(out, inner...)
-				i = close + 1
+				i = end + 1
 
 				continue
 			}
 		}
 
 		cur.WriteByte(c)
+
 		i++
 	}
 
@@ -263,12 +275,12 @@ func scanLink(s string, i int) (label, href string, end int, ok bool) {
 			return "", "", 0, false
 		case ']':
 			if j+1 < len(s) && s[j+1] == '(' {
-				close := strings.IndexByte(s[j+2:], ')')
-				if close < 0 {
+				end := strings.IndexByte(s[j+2:], ')')
+				if end < 0 {
 					return "", "", 0, false
 				}
 
-				return s[i+1 : j], s[j+2 : j+2+close], j + 2 + close + 1, true
+				return s[i+1 : j], s[j+2 : j+2+end], j + 2 + end + 1, true
 			}
 
 			return "", "", 0, false
@@ -336,9 +348,9 @@ func atomsToTextNodes(atoms []inlineAtom) []document.Block {
 	out := make([]document.Block, 0, len(atoms))
 
 	var (
-		buf       strings.Builder
-		curMarks  []activeMark
-		haveOpen  bool
+		buf      strings.Builder
+		curMarks []activeMark
+		haveOpen bool
 	)
 
 	flush := func() {
@@ -349,7 +361,7 @@ func atomsToTextNodes(atoms []inlineAtom) []document.Block {
 		}
 
 		out = append(out, document.Block{
-			Type:  "text",
+			Type:  document.BlockNodeText,
 			Text:  buf.String(),
 			Marks: marksToDocument(curMarks),
 		})
@@ -405,7 +417,7 @@ func marksToDocument(marks []activeMark) []document.Mark {
 	for _, m := range marks {
 		dm := document.Mark{Type: m.kind}
 		if m.kind == _markLink {
-			dm.Attrs = map[string]any{"href": m.href}
+			dm.Attrs = map[string]any{_attrHref: m.href}
 		}
 
 		out = append(out, dm)
@@ -428,7 +440,7 @@ func extractMarks(marks []document.Mark) []activeMark {
 		case _markBold, _markItalic, _markUnderline, _markStrike, _markCode:
 			out = append(out, activeMark{kind: m.Type})
 		case _markLink:
-			href, _ := m.Attrs["href"].(string)
+			href, _ := m.Attrs[_attrHref].(string)
 			out = append(out, activeMark{kind: _markLink, href: href})
 		}
 	}
@@ -522,9 +534,9 @@ func escapeMarkdown(text string, active []activeMark) string {
 
 	var b strings.Builder
 
-	b.Grow(len(text) + 4)
+	b.Grow(len(text) + _escapeGrowHeadroom)
 
-	for i := 0; i < len(text); i++ {
+	for i := range len(text) {
 		c := text[i]
 		switch c {
 		case '\\', '*', '_', '~', '`', '[':

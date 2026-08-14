@@ -5,6 +5,10 @@ import (
 	"time"
 )
 
+// _rateIntervalFactor multiplies the step interval so rate() windows always
+// span enough data points for accurate calculations.
+const _rateIntervalFactor = 4
+
 // ProcessPrometheusQuery processes the query string to replace Prometheus-specific
 // macros, then applies generic macro expansion via ProcessQuery.
 //
@@ -38,7 +42,7 @@ func (tr TimeRange) ProcessPrometheusQuery(q string) string {
 // whichever is larger.
 func (tr TimeRange) calculateRateInterval(interval time.Duration) time.Duration {
 	minRateInterval := time.Minute
-	rateInterval := interval * 4
+	rateInterval := interval * _rateIntervalFactor
 
 	if rateInterval < minRateInterval {
 		return minRateInterval

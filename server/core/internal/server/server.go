@@ -96,7 +96,6 @@ type Server struct {
 // NewServer creates a fresh instance of a server.
 // If central auth is nil, the default users are enabled.
 func NewServer(
-	ctx context.Context,
 	log *slog.Logger,
 	opts Options,
 	db DB,
@@ -240,7 +239,7 @@ func (s *Server) bindVersionPing(tpc wsserver.Topic) {
 
 	tpc.OnFirstSub(func(_ context.Context) {
 		// this context should be able to outlive this goroutine
-		ctx, cancel = context.WithCancel(context.Background())
+		ctx, cancel = context.WithCancel(context.Background()) //nolint:gosec,fatcontext // cancel is invoked by the OnLastUnsub callback; the context deliberately outlives the closure
 
 		cr.Start()
 	})
@@ -270,8 +269,8 @@ type Storer interface {
 }
 
 // Notifier is an interface that combines notification.Notifier and
-// notification.NotificationPublisher.
+// notification.Publisher.
 type Notifier interface {
-	notification.NotificationReceiver
-	notification.NotificationPublisher
+	notification.Receiver
+	notification.Publisher
 }

@@ -5,6 +5,10 @@ import "time"
 // _fetchBackendWebDriver defines the fetch backend constant for HTML WebDriver.
 const _fetchBackendWebDriver = "html_webdriver"
 
+// _checkIntervalMinutes specifies how often changedetection.io re-checks a
+// watched URL.
+const _checkIntervalMinutes = 3
+
 // Watch represents a changedetection.io watch configuration.
 type Watch struct {
 	// URL is the URL to be monitored.

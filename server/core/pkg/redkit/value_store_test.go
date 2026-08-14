@@ -18,7 +18,7 @@ func Test_NewValueStore(t *testing.T) {
 	vs := NewValueStore[string](pool, time.Hour*168)
 	require.NotNil(t, vs)
 	assert.Equal(t, vs.pool, pool)
-	assert.Equal(t, vs.expireAfter, time.Hour*168)
+	assert.Equal(t, time.Hour*168, vs.expireAfter)
 }
 
 func Test_ValueStore_Set(t *testing.T) {
@@ -32,6 +32,7 @@ func Test_ValueStore_Set(t *testing.T) {
 			Cancelled: true,
 			Conn: func() (*redigomock.Conn, func(*testing.T)) {
 				conn := redigomock.NewConn()
+
 				return conn, func(t *testing.T) {
 					err := conn.ExpectationsWereMet()
 					assert.NoError(t, err)
@@ -140,6 +141,7 @@ func Test_ValueStore_Get(t *testing.T) {
 			Cancelled: true,
 			Conn: func() (*redigomock.Conn, func(*testing.T)) {
 				conn := redigomock.NewConn()
+
 				return conn, func(t *testing.T) {
 					err := conn.ExpectationsWereMet()
 					assert.NoError(t, err)

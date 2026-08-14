@@ -15,10 +15,14 @@ import (
 // logger or not.
 var ShowCritical bool //nolint:gochecknoglobals // since sentry config is global, this must be too
 
+// _defaultSkipFrames specifies the number of stacktrace frames to skip so
+// that reports point at the caller instead of this package's helpers.
+const _defaultSkipFrames = 2
+
 // Critical creates an error level log event and sends the error to the
 // remote error tracking service.
 func Critical(log *slog.Logger, err error) *slog.Logger {
-	return CriticalSkipFrames(log, err, 2)
+	return CriticalSkipFrames(log, err, _defaultSkipFrames)
 }
 
 // CriticalSkipFrames creates an error level log event and sends the error
@@ -70,7 +74,7 @@ func Recover(log *slog.Logger, plan *RecoveryPlan) {
 // processRecoveryValue handles panic values, sends their info to the
 // remote error tracking service and logs them locally.
 func processRecoveryValue(log *slog.Logger, plan *RecoveryPlan) func(any) {
-	skipFrames := uint(2)
+	skipFrames := uint(_defaultSkipFrames)
 	if plan != nil && plan.skipFrames != 0 {
 		skipFrames = plan.skipFrames
 	}

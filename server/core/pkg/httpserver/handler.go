@@ -17,6 +17,10 @@ import (
 	"github.com/rs/xid"
 )
 
+// _criticalSkipFrames specifies the number of stacktrace frames to skip so
+// that critical reports point at the handler instead of this helper.
+const _criticalSkipFrames = 2
+
 var (
 	// ErrNotAuthenticated is returned when authorization process fails.
 	ErrNotAuthenticated = errutil.New(http.StatusUnauthorized, "account.not_authenticated", "not authenticated")
@@ -27,7 +31,7 @@ var (
 
 	// _errMethodNotAllowed is returned when request's method is not
 	// supported for the requested endpoint.
-	_errMethodNotAllowed = errutil.New(http.StatusMethodNotAllowed, "request.method_not_allowed", "method not allowed")
+	_errMethodNotAllowed = errutil.New(http.StatusMethodNotAllowed, "request.method_not_allowed", "method not allowed") //nolint:errname // unexported globals are _-prefixed by convention
 
 	// ErrInvalidJSON is returned when request's body contains invalid
 	// JSON data.
@@ -68,7 +72,7 @@ type ResponseHeader func(h http.Header, code int)
 // LocationHeader adds a location value to the Location header.
 func LocationHeader(loc string) ResponseHeader {
 	return func(h http.Header, code int) {
-		if code >= 400 {
+		if code >= http.StatusBadRequest {
 			// error responses must not point at a location
 			loc = ""
 		}
@@ -136,8 +140,8 @@ func RespondError(
 
 	Respond(log, w, respErr, statusCode, headers...)
 
-	if statusCode >= 500 {
-		logutil.CriticalSkipFrames(log, err, 2).Error("internal server error")
+	if statusCode >= http.StatusInternalServerError {
+		logutil.CriticalSkipFrames(log, err, _criticalSkipFrames).Error("internal server error")
 	}
 }
 

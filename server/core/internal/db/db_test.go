@@ -13,11 +13,11 @@ import (
 	"github.com/dchest/uniuri"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jmoiron/sqlx"
+	"github.com/orlangure/gnomock"
+	pgDocker "github.com/orlangure/gnomock/preset/postgres"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/ioutil"
 	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
-	"github.com/orlangure/gnomock"
-	pgDocker "github.com/orlangure/gnomock/preset/postgres"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -221,7 +221,7 @@ func prepTempDB(t *testing.T) *DB {
 	)
 	require.NoError(t, err)
 
-	_, err = tmpDB.Exec(fmt.Sprintf("CREATE DATABASE %s", name))
+	_, err = tmpDB.Exec("CREATE DATABASE " + name)
 	require.NoError(t, err)
 	require.NoError(t, tmpDB.Close())
 

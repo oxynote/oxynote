@@ -3,6 +3,7 @@ package aiblock
 import (
 	"errors"
 	"fmt"
+	"maps"
 
 	"github.com/oxynote/oxynote/server/core/internal/document"
 )
@@ -531,9 +532,7 @@ func readBoolAttr(attrs map[string]any, key string, def bool) bool {
 func copyAttrs(attrs map[string]any) map[string]any {
 	out := make(map[string]any, len(attrs)+1)
 
-	for k, v := range attrs {
-		out[k] = v
-	}
+	maps.Copy(out, attrs)
 
 	return out
 }

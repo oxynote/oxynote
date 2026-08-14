@@ -1,3 +1,4 @@
+// Package sliceutil provides generic slice helpers.
 package sliceutil
 
 // Move moves the element at oldIndex to newIndex in the slice.

@@ -1,3 +1,4 @@
+// Package githubapp manages GitHub App installations and API access.
 package githubapp
 
 import (
@@ -91,7 +92,7 @@ type Tree []TreeItem
 func (t Tree) GetItem(path string) (TreeItem, bool) {
 	parts := strings.Split(path, "/")
 
-	var items = t
+	items := t
 
 	for i := range parts {
 		j := slices.IndexFunc(items, func(ti TreeItem) bool {

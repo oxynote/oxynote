@@ -2,6 +2,7 @@ package slackapp
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -17,8 +18,8 @@ const _slackHost = "slack.com"
 // _installationStateTTL is the time-to-live for the installation state.
 const _installationStateTTL = time.Minute * 15
 
-// botScopes are the OAuth scopes required for bot-level access.
-var botScopes = []string{
+// _botScopes are the OAuth scopes required for bot-level access.
+var _botScopes = []string{
 	"app_mentions:read",
 	"chat:write",
 	"commands",
@@ -26,8 +27,8 @@ var botScopes = []string{
 	"users:read",
 }
 
-// userScopes are the OAuth scopes required for user-level access.
-var userScopes = []string{
+// _userScopes are the OAuth scopes required for user-level access.
+var _userScopes = []string{
 	"im:read",
 }
 
@@ -74,8 +75,8 @@ func (m *Manager) CreateExternalInstallationURL(organizationID string) (string, 
 	q := u.Query()
 	q.Set("client_id", m.opt.ClientID)
 	q.Set("state", state)
-	q.Set("scope", strings.Join(botScopes, ","))
-	q.Set("user_scope", strings.Join(userScopes, ","))
+	q.Set("scope", strings.Join(_botScopes, ","))
+	q.Set("user_scope", strings.Join(_userScopes, ","))
 	q.Set("redirect_uri", m.opt.RedirectURL)
 	u.RawQuery = q.Encode()
 
@@ -133,7 +134,7 @@ func (m *Manager) VerifyInstallationState(state string) (*InstallationState, err
 	}
 
 	if time.Since(is.CreatedAt) > _installationStateTTL {
-		return nil, fmt.Errorf("installation state has expired")
+		return nil, errors.New("installation state has expired")
 	}
 
 	return &is, nil

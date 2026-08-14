@@ -1,3 +1,4 @@
+// Package searchgw indexes and searches documents through Meilisearch.
 package searchgw
 
 import (
@@ -15,6 +16,15 @@ var synonymsFile []byte
 
 // _documentsIndex is the name of the documents index.
 const _documentsIndex = "documents"
+
+const (
+	// _searchCropLength is the number of words kept around a match in
+	// cropped search results.
+	_searchCropLength = 5
+
+	// _searchResultLimit caps the number of search hits returned.
+	_searchResultLimit = 20
+)
 
 // Client is a Meilisearch client wrapper.
 type Client struct {
@@ -103,8 +113,8 @@ func (c *Client) SearchDocuments(ctx context.Context, organizationID, query stri
 		Filter:                fmt.Sprintf("organizationId = %q", organizationID),
 		HighlightPreTag:       "<mark>",
 		HighlightPostTag:      "</mark>",
-		CropLength:            5,
-		Limit:                 20,
+		CropLength:            _searchCropLength,
+		Limit:                 _searchResultLimit,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("searching documents: %w", err)

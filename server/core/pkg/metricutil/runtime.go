@@ -240,7 +240,7 @@ func (f *factory) CollectRuntimeMetrics(ctx context.Context, dur time.Duration) 
 			ii := memStats.NumGC % uint32(len(memStats.PauseNs))
 
 			if memStats.NumGC-numGC >= uint32(len(memStats.PauseNs)) {
-				for i = 0; i < uint32(len(memStats.PauseNs)); i++ {
+				for i = range uint32(len(memStats.PauseNs)) {
 					metrics.memory.Pause.Observe(float64(memStats.PauseNs[i] * _nanosecondsPerSecond))
 				}
 			} else {

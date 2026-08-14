@@ -47,6 +47,14 @@ const (
 
 	// _connMaxLifetime is the maximum amount of time a connection may be reused.
 	_connMaxLifetime = 2 * time.Minute
+
+	// _driverNameRandBound bounds the random suffix appended to the
+	// registered driver name.
+	_driverNameRandBound = 1000
+
+	// _slowQueryThreshold is the query duration above which the hooks
+	// report a slow query.
+	_slowQueryThreshold = time.Millisecond * 100
 )
 
 type agent struct {
@@ -91,7 +99,7 @@ func New(
 ) (*DB, error) {
 	// we use the unix nano timestamp as the driver name to ensure
 	// that tests are able to register multiple drivers.
-	driverName := strconv.Itoa(int(timeutil.Now().UnixNano()) + rand.Intn(1000)) //nolint:gosec // basic randomizer is enough for random driver name
+	driverName := strconv.Itoa(int(timeutil.Now().UnixNano()) + rand.Intn(_driverNameRandBound)) //nolint:gosec // basic randomizer is enough for random driver name
 
 	drv := pgx.GetDefaultDriver()
 
@@ -101,7 +109,7 @@ func New(
 			metrics,
 			sqlutil.WithHookErrorHandler(DetectError),
 			sqlutil.WithHookDatabaseName("oxynote"),
-			sqlutil.WithHookDurationThreshold(time.Millisecond*100),
+			sqlutil.WithHookDurationThreshold(_slowQueryThreshold),
 		)),
 	)
 
@@ -192,8 +200,7 @@ func DetectError(err error) error {
 	}
 
 	if perr.Code == "23505" { // Unique violation.
-		switch perr.ConstraintName {
-		case "data_sources_fk_organization_id_name_key":
+		if perr.ConstraintName == "data_sources_fk_organization_id_name_key" {
 			return errutil.New(
 				http.StatusBadRequest,
 				"data_source.duplicate_name",

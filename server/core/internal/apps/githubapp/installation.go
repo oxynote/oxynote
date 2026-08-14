@@ -2,6 +2,7 @@ package githubapp
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"time"
@@ -77,7 +78,7 @@ func (m *Manager) VerifyInstallationState(state string) (*InstallationState, err
 	}
 
 	if time.Since(is.CreatedAt) > _installationStateTTL {
-		return nil, fmt.Errorf("installation state has expired")
+		return nil, errors.New("installation state has expired")
 	}
 
 	return &is, nil

@@ -43,7 +43,7 @@ func Test_Hooks_Before(t *testing.T) {
 	ctx := context.Background()
 
 	nctx, err := h.Before(ctx, "query")
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	tstamp, ok := nctx.Value(timeKey).(time.Time)
 	require.True(t, ok)
@@ -55,7 +55,7 @@ func Test_Hooks_Before(t *testing.T) {
 func Test_Hooks_OnError(t *testing.T) {
 	h := Hooks{}
 
-	assert.Equal(t, nil, h.OnError(context.Background(), nil, "query"))
+	assert.NoError(t, h.OnError(context.Background(), nil, "query"))
 
 	h.errorHandler = func(_ error) error {
 		return assert.AnError
@@ -79,14 +79,14 @@ func Test_Hooks_After(t *testing.T) {
 	ctx := context.WithValue(context.Background(), timeKey, timeutil.Now())
 
 	_, err := h.After(ctx, "query")
-	require.Nil(t, err)
+	require.NoError(t, err)
 
-	assert.Len(t, hv.WithCalls(), 0)
+	assert.Empty(t, hv.WithCalls())
 
 	ctx = context.WithValue(context.Background(), timeKey, timeutil.Now().Add(-time.Hour*2))
 
 	_, err = h.After(ctx, "query")
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	assert.Len(t, hv.WithCalls(), 1)
 }

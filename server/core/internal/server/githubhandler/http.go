@@ -219,7 +219,7 @@ func (h *Handler) ConnectOrganization(w http.ResponseWriter, r *http.Request) {
 	var organizationID null.String
 
 	rerr := backoff.Retry(
-		func() error {
+		func() error { //nolint:contextcheck // the retry closure runs synchronously within the request
 			organizationID, err = h.db.FetchGithubInstallationOrganizationID(r.Context(), installationID)
 			if err != nil {
 				if !errutil.IsNotFound(err) {
@@ -276,8 +276,7 @@ func (h *Handler) HandleEvent(w http.ResponseWriter, r *http.Request) {
 
 	h.log.Debug("received github event", slog.Any("event", event))
 
-	switch event := event.(type) {
-	case *github.InstallationEvent:
+	if event, ok := event.(*github.InstallationEvent); ok {
 		installationID := event.GetInstallation().GetID()
 
 		switch event.GetAction() {

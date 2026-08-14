@@ -71,6 +71,12 @@ func (w *docWalker) walkLevel(blocks []document.Block, depth int, parentUID stri
 		}
 
 		switch b.Type {
+		// list items surface flat because their visible content is
+		// the first child paragraph; titled code blocks surface as a
+		// single entry because they only exist inside split_doc.right
+		// and are editable as a unit — the AI replaces them whole
+		// rather than poking at their codeBlockTitle / codeBlock
+		// children. Deeper recursion isn't useful for either.
 		case document.BlockNodeParagraph,
 			document.BlockNodeHeading,
 			document.BlockNodeBlockquote,
@@ -78,43 +84,27 @@ func (w *docWalker) walkLevel(blocks []document.Block, depth int, parentUID stri
 			document.BlockNodeMermaidBlock,
 			document.BlockNodeHorizontalRule,
 			document.BlockNodeImageBlock,
-			document.BlockNodeFigmaBlock:
+			document.BlockNodeFigmaBlock,
+			document.BlockNodeMetricBlock,
+			document.BlockNodeListItem,
+			document.BlockNodeTaskItem,
+			document.BlockNodeTitledCodeBlock:
 			w.emit(b, uid, depth, parentUID)
 
 		case document.BlockNodeBulletList,
 			document.BlockNodeOrderedList,
-			document.BlockNodeTaskList:
+			document.BlockNodeTaskList,
+			document.BlockNodeCalloutBlock,
+			document.BlockNodeMetricGrid:
 			w.emit(b, uid, depth, parentUID)
 			w.walkLevel(b.Content, depth+1, uid)
-
-		case document.BlockNodeListItem, document.BlockNodeTaskItem:
-			w.emit(b, uid, depth, parentUID)
-			// The visible content of a list item is its first
-			// child paragraph; deeper recursion isn't useful.
-
-		case document.BlockNodeCalloutBlock:
-			w.emit(b, uid, depth, parentUID)
-			w.walkLevel(b.Content, depth+1, uid)
-
-		case document.BlockNodeMetricGrid:
-			w.emit(b, uid, depth, parentUID)
-			w.walkLevel(b.Content, depth+1, uid)
-
-		case document.BlockNodeMetricBlock:
-			w.emit(b, uid, depth, parentUID)
-
-		case document.BlockNodeTitledCodeBlock:
-			// Surface the titled code as a single entry. It only
-			// exists inside split_doc.right and is editable as a
-			// unit; the AI replaces it whole rather than poking at
-			// its codeBlockTitle / codeBlock children.
-			w.emit(b, uid, depth, parentUID)
 
 		case document.BlockNodeSplitDoc:
 			w.emitSplitDoc(b, uid, depth, parentUID)
 
 		case document.BlockNodeParamList:
 			w.emitParamList(b, uid, depth, parentUID)
+		default:
 		}
 	}
 }
@@ -207,9 +197,9 @@ func canonicalKindForPM(pm document.BlockNodeType) string {
 		return "split_doc"
 	case document.BlockNodeParamList:
 		return "split_doc_param_list"
+	default:
+		return string(pm)
 	}
-
-	return string(pm)
 }
 
 // summaryAttrs filters the block's raw PM attrs down to the small
@@ -217,7 +207,7 @@ func canonicalKindForPM(pm document.BlockNodeType) string {
 // (already on the entry); opaque metric configurations are dropped
 // because they would balloon the payload and the AI never edits
 // them by hand anyway.
-func summaryAttrs(b document.Block) map[string]any {
+func summaryAttrs(b document.Block) map[string]any { //nolint:gocognit,cyclop // this function is complex, however, it's well-structured
 	switch b.Type {
 	case document.BlockNodeHeading:
 		if v, ok := b.Attrs["level"]; ok {
@@ -237,21 +227,25 @@ func summaryAttrs(b document.Block) map[string]any {
 		}
 	case document.BlockNodeImageBlock:
 		out := map[string]any{}
+
 		for _, k := range []string{"src", "alt", "title", "width"} {
 			if v, ok := b.Attrs[k]; ok && v != nil && v != "" {
 				out[k] = v
 			}
 		}
+
 		if len(out) > 0 {
 			return out
 		}
 	case document.BlockNodeFigmaBlock:
 		out := map[string]any{}
+
 		for _, k := range []string{"src", "width", "height"} {
 			if v, ok := b.Attrs[k]; ok && v != nil && v != "" {
 				out[k] = v
 			}
 		}
+
 		if len(out) > 0 {
 			return out
 		}
@@ -261,6 +255,8 @@ func summaryAttrs(b document.Block) map[string]any {
 				return map[string]any{"inversed": true}
 			}
 		}
+	default:
+		return nil
 	}
 
 	return nil

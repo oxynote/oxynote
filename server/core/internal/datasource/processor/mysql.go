@@ -1,3 +1,4 @@
+// Package processor implements the per-type data-source clients used for connection tests and queries.
 package processor
 
 import (
@@ -6,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 	"strconv"
 	"strings"
@@ -13,6 +15,15 @@ import (
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/guregu/null/v5"
+)
+
+const (
+	// _mysqlConnMaxLifetime bounds how long a MySQL connection may be
+	// reused.
+	_mysqlConnMaxLifetime = 30 * time.Second
+
+	// _mysqlConnectTimeout bounds the initial MySQL dial.
+	_mysqlConnectTimeout = 10 * time.Second
 )
 
 // _mysqlReadOnlyPrivileges is the set of MySQL/MariaDB privileges considered read-only.
@@ -44,9 +55,9 @@ func (m *MySQL) TestConnection(ctx context.Context) (ConnectionStatus, error) {
 	if err != nil {
 		return ConnectionStatusUnreachable, nil
 	}
-	defer db.Close()
+	defer db.Close() //nolint:errcheck // error provides no meaningful info
 
-	if err := db.PingContext(ctx); err != nil {
+	if err = db.PingContext(ctx); err != nil {
 		return ConnectionStatusUnreachable, nil
 	}
 
@@ -71,7 +82,7 @@ func (m *MySQL) Metadata(ctx context.Context) (*SQLMetadataResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error connecting to mysql: %w", err)
 	}
-	defer db.Close()
+	defer db.Close() //nolint:errcheck // error provides no meaningful info
 
 	rows, err := db.QueryContext(ctx,
 		"SELECT table_schema, table_name, column_name FROM information_schema.columns WHERE table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys') ORDER BY table_schema, table_name, ordinal_position",
@@ -79,14 +90,14 @@ func (m *MySQL) Metadata(ctx context.Context) (*SQLMetadataResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error fetching metadata: %w", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // error provides no meaningful info
 
 	tables := make(map[string]SQLTable)
 
 	for rows.Next() {
 		var schema, tableName, columnName string
 
-		if err := rows.Scan(&schema, &tableName, &columnName); err != nil {
+		if err = rows.Scan(&schema, &tableName, &columnName); err != nil {
 			return nil, fmt.Errorf("error scanning metadata: %w", err)
 		}
 
@@ -97,7 +108,7 @@ func (m *MySQL) Metadata(ctx context.Context) (*SQLMetadataResult, error) {
 		tables[key] = table
 	}
 
-	if err := rows.Err(); err != nil {
+	if err = rows.Err(); err != nil {
 		return nil, fmt.Errorf("error iterating metadata: %w", err)
 	}
 
@@ -127,7 +138,7 @@ func (m *MySQL) QueryLabels(ctx context.Context, q string, tr TimeRange) (map[st
 	if err != nil {
 		return nil, fmt.Errorf("error connecting to mysql: %w", err)
 	}
-	defer db.Close()
+	defer db.Close() //nolint:errcheck // error provides no meaningful info
 
 	rows, err := db.QueryContext(ctx, q)
 	if err != nil {
@@ -139,7 +150,7 @@ func (m *MySQL) QueryLabels(ctx context.Context, q string, tr TimeRange) (map[st
 
 		return nil, fmt.Errorf("error executing query: %w", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // error provides no meaningful info
 
 	columns, err := rows.Columns()
 	if err != nil {
@@ -149,6 +160,10 @@ func (m *MySQL) QueryLabels(ctx context.Context, q string, tr TimeRange) (map[st
 	labels := make(map[string]string)
 
 	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return nil, fmt.Errorf("error iterating rows: %w", err)
+		}
+
 		return labels, nil
 	}
 
@@ -164,10 +179,12 @@ func (m *MySQL) QueryLabels(ctx context.Context, q string, tr TimeRange) (map[st
 	}
 
 	for i, v := range dest {
-		if s, ok := v.([]byte); ok {
+		switch s := v.(type) {
+		case []byte:
 			labels[columns[i]] = string(s)
-		} else if s, ok := v.(string); ok {
+		case string:
 			labels[columns[i]] = s
+		default:
 		}
 	}
 
@@ -185,7 +202,7 @@ func (m *MySQL) Query(ctx context.Context, q string, tr TimeRange) (*MySQLQueryR
 	if err != nil {
 		return nil, fmt.Errorf("error connecting to mysql: %w", err)
 	}
-	defer db.Close()
+	defer db.Close() //nolint:errcheck // error provides no meaningful info
 
 	rows, err := db.QueryContext(ctx, q)
 	if err != nil {
@@ -197,7 +214,7 @@ func (m *MySQL) Query(ctx context.Context, q string, tr TimeRange) (*MySQLQueryR
 
 		return nil, fmt.Errorf("error executing query: %w", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // error provides no meaningful info
 
 	columns, err := rows.Columns()
 	if err != nil {
@@ -262,14 +279,14 @@ func (m *MySQL) connect() (*sql.DB, error) {
 
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
-	db.SetConnMaxLifetime(30 * time.Second)
+	db.SetConnMaxLifetime(_mysqlConnMaxLifetime)
 
 	return db, nil
 }
 
 // buildDSN builds a MySQL DSN from the URL and credentials.
 // Input URL format: mysql://user:pass@host:3306/db
-// Output DSN format: user:pass@tcp(host:port)/db?parseTime=true&timeout=10s
+// Output DSN format: user:pass@tcp(host:port)/db?parseTime=true&timeout=10s.
 func (m *MySQL) buildDSN() (string, error) {
 	u, err := url.Parse(m.inp.URL())
 	if err != nil {
@@ -315,7 +332,7 @@ func (m *MySQL) buildDSN() (string, error) {
 	cfg.Addr = host + ":" + port
 	cfg.DBName = dbName
 	cfg.ParseTime = true
-	cfg.Timeout = 10 * time.Second
+	cfg.Timeout = _mysqlConnectTimeout
 
 	return cfg.FormatDSN(), nil
 }
@@ -348,7 +365,7 @@ func UpdateMySQLCredentials(rawCreds Credentials, inp CredentialsUpdateInput) (C
 		return nil, nil
 	}
 
-	data, err := json.Marshal(creds)
+	data, err := json.Marshal(creds) //nolint:gosec // credentials are encrypted before storage
 	if err != nil {
 		return nil, fmt.Errorf("error marshaling updated credentials: %w", err)
 	}
@@ -385,7 +402,7 @@ type MySQLQueryResult struct {
 
 // Transform transforms a MySQLQueryResult into a unified QueryResult
 // based on the requested chart type.
-func (mqr *MySQLQueryResult) Transform(ct ChartType) *QueryResult {
+func (mqr *MySQLQueryResult) Transform(ct ChartType) *QueryResult { //nolint:gocognit // this method is complex, however, it's well-structured
 	if ct == "" {
 		return &QueryResult{Status: QueryStatusTypeNotSelected}
 	}
@@ -402,6 +419,7 @@ func (mqr *MySQLQueryResult) Transform(ct ChartType) *QueryResult {
 	multipleValues := len(valueIdxs) > 1
 
 	seriesMap := make(map[string]*QueryResultSeries)
+
 	var seriesOrder []string
 
 	for _, row := range mqr.Rows {
@@ -415,6 +433,7 @@ func (mqr *MySQLQueryResult) Transform(ct ChartType) *QueryResult {
 		}
 
 		labels := make(map[string]string, len(labelIdxs))
+
 		var labelKeyParts []string
 
 		for _, li := range labelIdxs {
@@ -443,9 +462,7 @@ func (mqr *MySQLQueryResult) Transform(ct ChartType) *QueryResult {
 
 			if _, exists := seriesMap[key]; !exists {
 				seriesLabels := make(map[string]string, len(labels)+1)
-				for k, v := range labels {
-					seriesLabels[k] = v
-				}
+				maps.Copy(seriesLabels, labels)
 
 				if multipleValues {
 					seriesLabels["__name__"] = mqr.Columns[vi]
@@ -484,18 +501,18 @@ func (mqr *MySQLQueryResult) Transform(ct ChartType) *QueryResult {
 }
 
 // identifyColumns detects which columns are time, value (numeric), and labels (non-numeric).
-func (mqr *MySQLQueryResult) identifyColumns() (timeIdx int, valueIdxs []int, labelIdxs []int) {
+func (mqr *MySQLQueryResult) identifyColumns() (timeIdx int, valueIdxs, labelIdxs []int) {
 	timeIdx = -1
 
 	for i, col := range mqr.Columns {
-		if strings.ToLower(col) == "time" {
+		if strings.EqualFold(col, _timeColumn) {
 			timeIdx = i
 			break
 		}
 	}
 
 	if len(mqr.Rows) == 0 {
-		return
+		return timeIdx, valueIdxs, labelIdxs
 	}
 
 	firstRow := mqr.Rows[0]
@@ -515,7 +532,7 @@ func (mqr *MySQLQueryResult) identifyColumns() (timeIdx int, valueIdxs []int, la
 		labelIdxs = append(labelIdxs, i)
 	}
 
-	return
+	return timeIdx, valueIdxs, labelIdxs
 }
 
 // mysqlCheckReadOnly checks whether the connected user has only read-only privileges
@@ -525,7 +542,7 @@ func mysqlCheckReadOnly(ctx context.Context, db *sql.DB) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // error provides no meaningful info
 
 	for rows.Next() {
 		var grant string
@@ -549,7 +566,7 @@ func mysqlCheckReadOnly(ctx context.Context, db *sql.DB) (bool, error) {
 			return false, nil
 		}
 
-		for _, p := range strings.Split(privs, ",") {
+		for p := range strings.SplitSeq(privs, ",") {
 			p = strings.TrimSpace(p)
 			if p == "" {
 				continue
@@ -635,14 +652,14 @@ func mysqlParseNumericValue(v any) (float64, bool) {
 func mysqlEstimateValueSize(v any) int {
 	switch val := v.(type) {
 	case nil:
-		return 4 // "null"
+		return _jsonNullSize
 	case bool:
-		return 5 // "false"
+		return _jsonBoolSize
 	case string:
-		return len(val) + 2
+		return len(val) + _jsonQuotesSize
 	case []byte:
 		return len(val)
 	default:
-		return 8 // numeric types
+		return _jsonNumericSize
 	}
 }

@@ -17,6 +17,22 @@ const (
 	// _maxDataPoints defines the default maximum number of data points for interval calculations.
 	_maxDataPoints = 100
 
+	// _minInterval is the smallest step interval used for queries.
+	_minInterval = 15 * time.Second
+
+	// _maxInterval is the largest step interval used for queries.
+	_maxInterval = 24 * time.Hour
+
+	// _hoursPerDay is used when formatting durations as days.
+	_hoursPerDay = 24
+
+	// _fromKey names the range start in query params and macro variables.
+	_fromKey = "from"
+
+	// _timeColumn is the canonical name of the time column produced by
+	// the $__time-family macros and expected in SQL chart results.
+	_timeColumn = "time"
+
 	// _minQueryStep defines the default step duration for range queries.
 	_minQueryStep = time.Second * 15
 )
@@ -35,9 +51,9 @@ func ParseTimeRange(
 	fromOptional bool,
 	v url.Values,
 ) (*TimeRange, error) {
-	from, err := time.Parse(time.RFC3339, v.Get("from"))
+	from, err := time.Parse(time.RFC3339, v.Get(_fromKey))
 	if err != nil {
-		if !fromOptional || v.Get("from") != "" {
+		if !fromOptional || v.Get(_fromKey) != "" {
 			return nil, errutil.New(http.StatusBadRequest, "from.invalid", "From parameter must be a valid RFC3339 timestamp.")
 		}
 
@@ -93,7 +109,7 @@ func (tr TimeRange) Normalize() TimeRange {
 func (tr TimeRange) calculateInterval() time.Duration {
 	duration := tr.To.Sub(tr.From)
 	if duration <= 0 {
-		return 15 * time.Second
+		return _minInterval
 	}
 
 	interval := duration / time.Duration(_maxDataPoints)
@@ -103,7 +119,7 @@ func (tr TimeRange) calculateInterval() time.Duration {
 
 // _timeVarRe matches ${__from} and ${__to} with optional :date modifiers.
 //
-// Examples: ${__from}, ${__from:date}, ${__from:date:iso}, ${__from:date:YYYY-MM}
+// Examples: ${__from}, ${__from:date}, ${__from:date:iso}, ${__from:date:YYYY-MM}.
 var _timeVarRe = regexp.MustCompile(`\$\{__(from|to)(?::(date)(?::([^}]+))?)?\}`)
 
 // _isoMillisFormat is ISO 8601/RFC 3339 with millisecond precision.
@@ -158,7 +174,7 @@ func (tr TimeRange) ProcessQuery(q string) string {
 		submatch := _timeVarRe.FindStringSubmatch(match)
 
 		var t time.Time
-		if submatch[1] == "from" {
+		if submatch[1] == _fromKey {
 			t = tr.From.UTC()
 		} else {
 			t = tr.To.UTC()
@@ -200,10 +216,10 @@ func formatInterval(d time.Duration) string {
 		return fmt.Sprintf("%ds", int(d.Seconds()))
 	case d < time.Hour:
 		return fmt.Sprintf("%dm", int(d.Minutes()))
-	case d < 24*time.Hour:
+	case d < _hoursPerDay*time.Hour:
 		return fmt.Sprintf("%dh", int(d.Hours()))
 	default:
-		return fmt.Sprintf("%dd", int(d.Hours()/24))
+		return fmt.Sprintf("%dd", int(d.Hours()/_hoursPerDay))
 	}
 }
 
@@ -232,6 +248,5 @@ func roundInterval(d time.Duration) time.Duration {
 		}
 	}
 
-	return 24 * time.Hour
+	return _maxInterval
 }
-

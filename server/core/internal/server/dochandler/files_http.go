@@ -53,7 +53,7 @@ func (h *Handler) UploadDocumentFile(w http.ResponseWriter, r *http.Request) {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
-	defer file.Close()
+	defer file.Close() //nolint:errcheck // error provides no meaningful info
 
 	folder := fmt.Sprintf(_documentFilesFolderFormat, session.ActiveOrganizationID, documentID)
 
@@ -79,6 +79,7 @@ func (h *Handler) UploadDocumentFile(w http.ResponseWriter, r *http.Request) {
 		}
 
 		httpserver.RespondError(h.log, w, err)
+
 		return
 	}
 
@@ -132,7 +133,8 @@ func (h *Handler) RetrieveDocumentFile(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	defer obj.Body.Close()
+
+	defer obj.Body.Close() //nolint:errcheck // error provides no meaningful info
 
 	if match := r.Header.Get("If-None-Match"); match == obj.ETag {
 		w.WriteHeader(http.StatusNotModified)
@@ -160,7 +162,7 @@ type FilesDBAgent interface {
 	InsertDocumentFile(ctx context.Context, f document.File) error
 
 	// FetchDocumentFile should fetch the document file for the given block id.
-	FetchDocumentFile(ctx context.Context, blockID string, organizationID string) (*document.File, error)
+	FetchDocumentFile(ctx context.Context, blockID, organizationID string) (*document.File, error)
 }
 
 // Storer is an interface that defines methods for uploading and retrieving objects.

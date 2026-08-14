@@ -9,6 +9,16 @@ import (
 	"github.com/gomodule/redigo/redis"
 )
 
+const (
+	// _maxIdleConns specifies the maximum number of idle connections
+	// kept in the pool.
+	_maxIdleConns = 5
+
+	// _dialTimeout specifies the timeout applied to connect, read and
+	// write operations of a dialed connection.
+	_dialTimeout = time.Second * 3
+)
+
 // NewPool prepares a new redis connection pool.
 func NewPool(network, address string) (*redis.Pool, error) {
 	if network == "" {
@@ -20,16 +30,16 @@ func NewPool(network, address string) (*redis.Pool, error) {
 	}
 
 	return &redis.Pool{
-		MaxIdle:     5,
+		MaxIdle:     _maxIdleConns,
 		IdleTimeout: time.Minute,
 		DialContext: func(ctx context.Context) (redis.Conn, error) {
 			return redis.DialContext(
 				ctx,
 				network,
 				address,
-				redis.DialConnectTimeout(time.Second*3),
-				redis.DialWriteTimeout(time.Second*3),
-				redis.DialReadTimeout(time.Second*3),
+				redis.DialConnectTimeout(_dialTimeout),
+				redis.DialWriteTimeout(_dialTimeout),
+				redis.DialReadTimeout(_dialTimeout),
 			)
 		},
 	}, nil

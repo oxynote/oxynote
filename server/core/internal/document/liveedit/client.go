@@ -23,6 +23,10 @@ type Client struct {
 	baseURL string
 }
 
+// _maxErrorPreviewBytes caps how much of an error response body is
+// surfaced to callers.
+const _maxErrorPreviewBytes = 1024
+
 // NewClient constructs an edit-RPC client. The baseURL must include
 // the scheme and host of the Node service; the operations path is
 // appended per request.
@@ -107,12 +111,12 @@ func (c *Client) Apply(ctx context.Context, documentID, branchID string, ops []O
 	if err != nil {
 		return Result{}, fmt.Errorf("post operations: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // error provides no meaningful info
 
 	if resp.StatusCode != http.StatusOK {
 		// Surface up to ~1 KiB of the response body so callers can
 		// see the Node-side error without us pre-parsing.
-		preview, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		preview, _ := io.ReadAll(io.LimitReader(resp.Body, _maxErrorPreviewBytes))
 
 		return Result{}, fmt.Errorf("node operations endpoint: status %d: %s", resp.StatusCode, string(preview))
 	}

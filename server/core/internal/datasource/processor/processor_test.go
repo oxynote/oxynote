@@ -92,7 +92,7 @@ func TestMain(m *testing.M) {
 			"INSERT INTO metrics VALUES (1700000000, 'web-1', 10.5), (1700000060, 'web-2', 20.5)",
 			fmt.Sprintf("CREATE ROLE %s LOGIN PASSWORD '%s'", _readerUser, _readerPass),
 			fmt.Sprintf("ALTER ROLE %s SET default_transaction_read_only = on", _readerUser),
-			fmt.Sprintf("GRANT SELECT ON metrics TO %s", _readerUser),
+			"GRANT SELECT ON metrics TO "+_readerUser,
 		),
 	))
 	if err != nil {

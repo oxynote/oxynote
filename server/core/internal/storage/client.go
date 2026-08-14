@@ -1,3 +1,4 @@
+// Package storage provides object storage access backed by MinIO.
 package storage
 
 import (
@@ -30,9 +31,8 @@ type Options struct {
 
 // Client is a client to access buckets.
 type Client struct {
-	client    *minio.Client
-	bucket    string
-	publicURL string
+	client *minio.Client
+	bucket string
 }
 
 // NewClient creates a new client instance.

@@ -34,6 +34,16 @@ const (
 	// _maxTokens caps the model's response length per turn.
 	_maxTokens = 64000
 
+	// _temperature keeps chat turns focused: low enough for
+	// deterministic tool use, high enough for natural prose.
+	_temperature = 0.3
+
+	// _maxErrorArgsLogBytes caps tool args in error-level logs.
+	_maxErrorArgsLogBytes = 512
+
+	// _maxDebugArgsLogBytes caps tool args in debug-level logs.
+	_maxDebugArgsLogBytes = 256
+
 	// _maxToolResultBytes caps any single tool_result. Larger
 	// results are truncated to a short error so the conversation
 	// doesn't balloon.
@@ -44,6 +54,10 @@ const (
 	// expiry — the writes are skipped and the model receives
 	// declined results.
 	_confirmTimeout = 10 * time.Minute
+
+	// _errorKey is the JSON field carrying an error in tool results and
+	// the status label recorded for failed tool calls.
+	_errorKey = "error"
 )
 
 // Session holds per-connection state for an AI assistant session.
@@ -121,6 +135,7 @@ func (s *Session) Process(ctx context.Context, msg []byte) {
 
 			return
 		}
+
 		s.processing = true
 		s.mu.Unlock()
 
@@ -143,6 +158,7 @@ func (s *Session) Process(ctx context.Context, msg []byte) {
 
 			return
 		}
+
 		s.messages = nil
 		s.mu.Unlock()
 
@@ -225,7 +241,7 @@ func (s *Session) callAnthropic(ctx context.Context, activeDocumentID string) (a
 		Model:     _model,
 		MaxTokens: _maxTokens,
 		Temperature: param.Opt[float64]{
-			Value: 0.3,
+			Value: _temperature,
 		},
 		System: []anthropic.TextBlockParam{
 			{
@@ -238,7 +254,7 @@ func (s *Session) callAnthropic(ctx context.Context, activeDocumentID string) (a
 		Messages: s.messages,
 		Tools:    tools.AnthropicTools(),
 	})
-	defer stream.Close()
+	defer stream.Close() //nolint:errcheck // error provides no meaningful info
 
 	var (
 		assistantBlocks []anthropic.ContentBlockParamUnion
@@ -269,6 +285,7 @@ func (s *Session) callAnthropic(ctx context.Context, activeDocumentID string) (a
 			switch evt.ContentBlock.Type {
 			case "text":
 				inText = true
+
 				textAccum.Reset()
 			case "tool_use":
 				activeTool.id = evt.ContentBlock.ID
@@ -280,6 +297,7 @@ func (s *Session) callAnthropic(ctx context.Context, activeDocumentID string) (a
 			switch evt.Delta.Type {
 			case "text_delta":
 				s.writer.WriteJSON(ctx, protocol.NewTextDeltaMessage(evt.Delta.Text))
+
 				textStreamed = true
 
 				if inText {
@@ -340,6 +358,7 @@ func (s *Session) callAnthropic(ctx context.Context, activeDocumentID string) (a
 		if stopReason == anthropic.StopReasonToolUse {
 			kind = protocol.TextEndKindStatus
 		}
+
 		s.writer.WriteJSON(ctx, protocol.NewTextEndMessage(kind))
 	}
 
@@ -451,7 +470,6 @@ func (s *Session) dispatchTools(
 	var wg sync.WaitGroup
 
 	for i := range calls {
-		i := i
 		c := calls[i]
 
 		if c.write && !approved {
@@ -463,13 +481,9 @@ func (s *Session) dispatchTools(
 			continue
 		}
 
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			results[c.idx] = s.runTool(ctx, c.id, tools.Name(c.name), c.args)
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -492,7 +506,7 @@ func (s *Session) runTool(
 			slog.String("tool", string(name)),
 		)
 
-		return makeToolResult(id, mustJSON(map[string]any{"error": "unknown tool"}))
+		return makeToolResult(id, mustJSON(map[string]any{_errorKey: "unknown tool"}))
 	}
 
 	// Surface a short pill to the client describing what we're
@@ -509,23 +523,23 @@ func (s *Session) runTool(
 	status := "success"
 
 	if err != nil {
-		status = "error"
-		result = mustJSON(map[string]any{"error": err.Error()})
+		status = _errorKey
+		result = mustJSON(map[string]any{_errorKey: err.Error()})
 
 		s.man.log.Warn("assistant tool error",
 			slog.String("tool", string(name)),
 			slog.String("error", err.Error()),
-			slog.String("args", truncateForLog(args, 512)),
+			slog.String("args", truncateForLog(args, _maxErrorArgsLogBytes)),
 			slog.Int64("duration_ms", durationMs),
 		)
 	}
 
 	if len(result) > _maxToolResultBytes {
 		result = mustJSON(map[string]any{
-			"error": "result too large; use a more specific query to narrow it down",
+			_errorKey: "result too large; use a more specific query to narrow it down",
 		})
 
-		status = "error"
+		status = _errorKey
 
 		s.man.log.Warn("assistant tool result truncated (too large)",
 			slog.String("tool", string(name)),
@@ -536,7 +550,7 @@ func (s *Session) runTool(
 	if err == nil {
 		s.man.log.Debug("assistant tool ok",
 			slog.String("tool", string(name)),
-			slog.String("args", truncateForLog(args, 256)),
+			slog.String("args", truncateForLog(args, _maxDebugArgsLogBytes)),
 			slog.Int64("duration_ms", durationMs),
 		)
 	}
@@ -548,14 +562,14 @@ func (s *Session) runTool(
 }
 
 // truncateForLog returns a short, single-line preview of raw for
-// inclusion in log fields. Strings longer than max are tail-elided
+// inclusion in log fields. Strings longer than maxLen are tail-elided
 // with an ellipsis so a long tool argument doesn't fill the log.
-func truncateForLog(raw json.RawMessage, max int) string {
-	if len(raw) <= max {
+func truncateForLog(raw json.RawMessage, maxLen int) string {
+	if len(raw) <= maxLen {
 		return string(raw)
 	}
 
-	return string(raw[:max]) + "…"
+	return string(raw[:maxLen]) + "…"
 }
 
 // requestConfirmation sends a confirm_request and blocks until the
@@ -577,15 +591,15 @@ func (s *Session) requestConfirmation(ctx context.Context, actions []protocol.Co
 		s.confirmMu.Unlock()
 	}()
 
-	tools := make([]string, 0, len(actions))
+	toolNames := make([]string, 0, len(actions))
 	for _, a := range actions {
-		tools = append(tools, a.Tool)
+		toolNames = append(toolNames, a.Tool)
 	}
 
 	s.man.log.Info("assistant confirm requested",
 		slog.String("turn_id", turnID),
 		slog.Int("action_count", len(actions)),
-		slog.Any("tools", tools),
+		slog.Any("tools", toolNames),
 	)
 
 	s.writer.WriteJSON(ctx, protocol.NewConfirmRequest(turnID, actions))
@@ -688,6 +702,7 @@ func (s *Session) pruneStaleReads() {
 					slog.String("tool_use_id", block.OfToolUse.ID),
 					slog.String("error", err.Error()),
 				)
+
 				continue
 			}
 

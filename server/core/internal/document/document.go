@@ -36,8 +36,8 @@ const (
 	_changelogTimeLayout = "2006-01-02T15:04:05"
 )
 
-// DocumentBranch holds branch-specific content and metadata for a document.
-type DocumentBranch struct {
+// Branch holds branch-specific content and metadata for a document.
+type Branch struct {
 	// BranchID is the unique identifier for this branch row.
 	BranchID xid.ID `json:"branchId" db:"branch_id"`
 
@@ -77,7 +77,7 @@ type DocumentBranch struct {
 
 // Document contains document information.
 type Document struct {
-	DocumentBranch
+	Branch
 
 	// ID is the unique identifier for the document.
 	ID xid.ID `json:"id" db:"id"`
@@ -90,14 +90,14 @@ type Document struct {
 }
 
 // NewDocument creates a new document instance with the provided organization ID.
-func NewDocument(inp CreateInput, organizationID string, createdBy string) Document {
+func NewDocument(inp CreateInput, organizationID, createdBy string) Document {
 	now := timeutil.Now()
 
 	return Document{
 		ID:             xid.New(),
 		ParentID:       inp.ParentID,
 		OrganizationID: organizationID,
-		DocumentBranch: DocumentBranch{
+		Branch: Branch{
 			BranchID:      xid.New(),
 			BranchName:    DefaultBranch,
 			DocumentName:  inp.Name,
@@ -142,11 +142,11 @@ func (d Document) ApplyUpdate(inp UpdateInput) (Document, error) {
 }
 
 // MergeBranch applies source branch changes onto this document's main content.
-func (d Document) MergeBranch(source DocumentBranch, mergedBy string) Document {
+func (d Document) MergeBranch(source Branch, mergedBy string) Document {
 	now := timeutil.Now()
 
 	nd := d
-	nd.DocumentBranch = DocumentBranch{
+	nd.Branch = Branch{
 		BranchID:      d.BranchID,
 		BranchName:    d.BranchName,
 		DocumentName:  source.DocumentName,
@@ -173,11 +173,11 @@ func (d Document) ApplyProtection(protected bool, updatedBy string) Document {
 	return nd
 }
 
-// DocumentContent is a lightweight view of one document at one branch:
+// Content is a lightweight view of one document at one branch:
 // just the identity, display name, and parsed content. Used by
 // downstream pipelines that need to walk the content tree without
 // pulling raw_content or other branch metadata.
-type DocumentContent struct {
+type Content struct {
 	// OrganizationID is the identifier of the organization that
 	// owns this document.
 	OrganizationID string `db:"fk_organization_id"`
@@ -464,7 +464,7 @@ func (d Document) Duplicate(duplicatedBy string) Document {
 		ID:             xid.New(),
 		ParentID:       d.ParentID,
 		OrganizationID: d.OrganizationID,
-		DocumentBranch: DocumentBranch{
+		Branch: Branch{
 			BranchID:      xid.New(),
 			BranchName:    DefaultBranch,
 			DocumentName:  fmt.Sprintf("%s (%s)", d.DocumentName, tstamp.Format("2006 Jan. 02 15:04")),

@@ -57,7 +57,7 @@ func (r *Runner) Prometheus(ctx context.Context) (Prometheus, processor.Connecti
 		return nil, "", err
 	}
 
-	return r.runner.(*processor.Prometheus), cs, nil
+	return r.runner.(*processor.Prometheus), cs, nil //nolint:forcetypeassert // the type is static
 }
 
 // PostgreSQL returns a postgresql client or an error in case data source is not of type postgresql.
@@ -76,7 +76,7 @@ func (r *Runner) PostgreSQL(ctx context.Context) (PostgreSQL, processor.Connecti
 		return nil, "", err
 	}
 
-	return r.runner.(*processor.PostgreSQL), cs, nil
+	return r.runner.(*processor.PostgreSQL), cs, nil //nolint:forcetypeassert // the type is static
 }
 
 // MySQL returns a mysql client or an error in case data source is not of type mariadb or mysql.
@@ -94,7 +94,7 @@ func (r *Runner) MySQL(ctx context.Context) (MySQL, processor.ConnectionStatus, 
 		return nil, "", err
 	}
 
-	return r.runner.(*processor.MySQL), cs, nil
+	return r.runner.(*processor.MySQL), cs, nil //nolint:forcetypeassert // the type is static
 }
 
 // SQL returns a SQL client or an error in case data source is not a SQL-based type.

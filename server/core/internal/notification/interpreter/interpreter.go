@@ -113,7 +113,7 @@ func (i *Interpreter) interpretDocumentHookTriggeredNotification(ctx context.Con
 
 	subject := doc.DocumentName
 	if blockID.Valid {
-		subject = fmt.Sprintf("a block in %s", doc.DocumentName)
+		subject = "a block in " + doc.DocumentName
 	}
 
 	return &Message{

@@ -8,6 +8,21 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 )
 
+const (
+	// _jsonNullSize is the encoded size of a JSON "null" literal.
+	_jsonNullSize = 4
+
+	// _jsonBoolSize is the encoded size of the longest JSON boolean
+	// literal ("false").
+	_jsonBoolSize = 5
+
+	// _jsonQuotesSize accounts for the quotes wrapping a JSON string.
+	_jsonQuotesSize = 2
+
+	// _jsonNumericSize is a rough encoded size of a JSON number.
+	_jsonNumericSize = 8
+)
+
 // ConnectionStatus represents the status of a connection test.
 type ConnectionStatus string
 
@@ -71,8 +86,8 @@ func (c *Credentials) UnmarshalJSON(data []byte) error {
 }
 
 // Encrypt encrypts the credentials using the provided signing key.
-func (c Credentials) Encrypt(signingKey string) ([]byte, error) {
-	state, err := cryptoutil.EncryptText(string(c), []byte(signingKey))
+func (c *Credentials) Encrypt(signingKey string) ([]byte, error) {
+	state, err := cryptoutil.EncryptText(string(*c), []byte(signingKey))
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt credentials: %w", err)
 	}

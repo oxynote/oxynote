@@ -1,3 +1,4 @@
+// Package datasource manages outbound data-source connections and queries.
 package datasource
 
 import (
@@ -77,8 +78,8 @@ func NewDataSource(ci CreateInput, organizationID string) *DataSource {
 }
 
 // Info returns a subset of data source fields for external use.
-func (ds *DataSource) Info() DataSourceInfo {
-	return DataSourceInfo{
+func (ds *DataSource) Info() Info {
+	return Info{
 		ID:   ds.ID,
 		Name: ds.Name,
 		Type: ds.Type,
@@ -140,8 +141,8 @@ func (ds *DataSource) updateCredentials(inp null.Value[processor.CredentialsUpda
 	return nil
 }
 
-// DataSourceInfo is the subset of data source fields returned to the AI.
-type DataSourceInfo struct {
+// Info is the subset of data source fields returned to the AI.
+type Info struct {
 	// ID is the unique identifier for the data source.
 	ID xid.ID `json:"id"`
 

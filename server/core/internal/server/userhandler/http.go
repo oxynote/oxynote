@@ -1,3 +1,4 @@
+// Package userhandler provides HTTP handlers for user operations.
 package userhandler
 
 import (
@@ -14,13 +15,8 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 )
 
-const (
-	// _userImageFolderFormat is the folder where user images are stored.
-	_userImageFolderFormat = "organizations/%s/users/images"
-
-	// _userMaxImageSize is the maximum allowed size for user images (5 MB).
-	_userMaxImageSize = 5 * 1024 * 1024
-)
+// _userImageFolderFormat is the folder where user images are stored.
+const _userImageFolderFormat = "organizations/%s/users/images"
 
 // Handler holds dependencies required for user-related operations.
 type Handler struct {
@@ -71,7 +67,8 @@ func (h *Handler) RetrieveUserImage(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	defer obj.Body.Close()
+
+	defer obj.Body.Close() //nolint:errcheck // error provides no meaningful info
 
 	if match := r.Header.Get("If-None-Match"); match == obj.ETag {
 		w.WriteHeader(http.StatusNotModified)
@@ -101,7 +98,7 @@ func (h *Handler) UploadUserImage(w http.ResponseWriter, r *http.Request) {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
-	defer file.Close()
+	defer file.Close() //nolint:errcheck // error provides no meaningful info
 
 	imageFolder := fmt.Sprintf(_userImageFolderFormat, session.ActiveOrganizationID)
 
@@ -122,6 +119,7 @@ func (h *Handler) UploadUserImage(w http.ResponseWriter, r *http.Request) {
 		}
 
 		httpserver.RespondError(h.log, w, err)
+
 		return
 	}
 

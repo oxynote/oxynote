@@ -1,3 +1,4 @@
+// Package manager runs the background document search-indexing jobs.
 package manager
 
 import (

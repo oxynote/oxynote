@@ -1,3 +1,4 @@
+// Package hook defines document freshness hooks and their processing contract.
 package hook
 
 import (

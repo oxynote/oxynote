@@ -1,3 +1,4 @@
+// Package orghandler provides HTTP handlers for organization operations.
 package orghandler
 
 import (
@@ -19,13 +20,8 @@ import (
 	"github.com/rs/xid"
 )
 
-const (
-	// _organizationsLogoFolderFormat is the folder where organization logos are stored.
-	_organizationsLogoFolderFormat = "organizations/%s/logo"
-
-	// _organizationMaxLogoSize is the maximum allowed size for organization logos (5 MB).
-	_organizationMaxLogoSize = 5 * 1024 * 1024
-)
+// _organizationsLogoFolderFormat is the folder where organization logos are stored.
+const _organizationsLogoFolderFormat = "organizations/%s/logo"
 
 // ErrNoOrganizationMembers is returned when an organization has no members.
 var ErrNoOrganizationMembers = errutil.New(http.StatusBadRequest, "organization.no_members", "organization has no members")
@@ -105,7 +101,7 @@ func (h *Handler) InitializeOrganization(w http.ResponseWriter, r *http.Request)
 		Credentials: []byte(`{}`),
 	}, id)
 
-	if err := tx.InsertDataSource(r.Context(), ds); err != nil {
+	if err = tx.InsertDataSource(r.Context(), ds); err != nil {
 		// NOTE: We log the error instead of returning it to avoid failing the entire
 		// initialization process due to a single data source insertion failure.
 		h.log.Error("inserting demo data source", slog.String("error", err.Error()))
@@ -124,17 +120,17 @@ func (h *Handler) InitializeOrganization(w http.ResponseWriter, r *http.Request)
 
 	doc.Content = content
 
-	if err := tx.InsertDocument(r.Context(), doc); err != nil {
+	if err = tx.InsertDocument(r.Context(), doc); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	if err := tx.UpsertDocumentMaintainers(r.Context(), doc.ID, id, []string{members[0]}); err != nil {
+	if err = tx.UpsertDocumentMaintainers(r.Context(), doc.ID, id, []string{members[0]}); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	if err := tx.InsertDocumentSearchJob(r.Context(), searchgw.BlocksDiff(nil, doc.Search())); err != nil {
+	if err = tx.InsertDocumentSearchJob(r.Context(), searchgw.BlocksDiff(nil, doc.Search())); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -166,7 +162,7 @@ func (h *Handler) UploadOrganizationLogo(w http.ResponseWriter, r *http.Request)
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
-	defer file.Close()
+	defer file.Close() //nolint:errcheck // error provides no meaningful info
 
 	logoFolder := fmt.Sprintf(_organizationsLogoFolderFormat, session.ActiveOrganizationID)
 
@@ -187,6 +183,7 @@ func (h *Handler) UploadOrganizationLogo(w http.ResponseWriter, r *http.Request)
 		}
 
 		httpserver.RespondError(h.log, w, err)
+
 		return
 	}
 
@@ -219,7 +216,8 @@ func (h *Handler) RetrieveOrganizationLogo(w http.ResponseWriter, r *http.Reques
 		http.NotFound(w, r)
 		return
 	}
-	defer obj.Body.Close()
+
+	defer obj.Body.Close() //nolint:errcheck // error provides no meaningful info
 
 	if match := r.Header.Get("If-None-Match"); match == obj.ETag {
 		w.WriteHeader(http.StatusNotModified)

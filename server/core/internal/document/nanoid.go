@@ -3,7 +3,7 @@ package document
 import "crypto/rand"
 
 // _nanoidAlphabet is the default alphabet used by nanoid.
-// This matches the Node.js nanoid default: A-Za-z0-9_-
+// This matches the Node.js nanoid default: A-Za-z0-9_-.
 const _nanoidAlphabet = "useandom-26T198340PX75pxJACKVERYMINDBUSHWOLF_GQZbfghjklqvwyzrict"
 
 // _nanoidLength is the default length of nanoid IDs (21 characters).

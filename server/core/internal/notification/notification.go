@@ -17,10 +17,10 @@ const (
 	SortCreatedAt = "created_at"
 )
 
-// NotificationCore is a single notification.
-type NotificationCore struct {
+// Core is a single notification.
+type Core struct {
 	// Code specifies a code of the notification.
-	Code NotificationCode `json:"code" db:"code"`
+	Code Code `json:"code" db:"code"`
 
 	// Metadata specifies a collection of additional data associated
 	// with the notification.
@@ -29,7 +29,7 @@ type NotificationCore struct {
 
 // Notification is a single notification.
 type Notification struct {
-	NotificationCore
+	Core
 
 	// ID is the unique identifier of the notification.
 	ID xid.ID `json:"id" db:"id"`
@@ -48,13 +48,13 @@ type Notification struct {
 }
 
 // newNotification creates a new notification.
-func newNotification(organizationID, userID string, nc NotificationCore) *Notification {
+func newNotification(organizationID, userID string, nc Core) *Notification {
 	return &Notification{
-		NotificationCore: nc,
-		ID:               xid.New(),
-		UserID:           userID,
-		OrganizationID:   organizationID,
-		CreatedAt:        timeutil.Now(),
+		Core:           nc,
+		ID:             xid.New(),
+		UserID:         userID,
+		OrganizationID: organizationID,
+		CreatedAt:      timeutil.Now(),
 	}
 }
 

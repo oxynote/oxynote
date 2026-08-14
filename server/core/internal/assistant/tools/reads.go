@@ -26,10 +26,10 @@ const _searchLimitMax = 50
 // document.Summary but uses snake_case keys so the AI consumes a
 // consistent vocabulary with the rest of the tool surface.
 type docTreeNode struct {
-	ID       string         `json:"id"`
-	Name     string         `json:"name"`
-	Icon     string         `json:"icon"`
-	Children []docTreeNode  `json:"children,omitempty"`
+	ID       string        `json:"id"`
+	Name     string        `json:"name"`
+	Icon     string        `json:"icon"`
+	Children []docTreeNode `json:"children,omitempty"`
 }
 
 func (m *Manager) listDocuments(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {

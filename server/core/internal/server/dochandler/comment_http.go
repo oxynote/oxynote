@@ -27,9 +27,9 @@ func (h *Handler) CreateDocumentComment(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	var ci comment.CommentInput
+	var ci comment.Input
 
-	if err := httpserver.DecodeJSON(r, &ci); err != nil {
+	if err = httpserver.DecodeJSON(r, &ci); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -48,7 +48,7 @@ func (h *Handler) CreateDocumentComment(w http.ResponseWriter, r *http.Request) 
 		session.ActiveOrganizationID,
 	)
 
-	if err := h.db.InsertDocumentComment(r.Context(), c); err != nil {
+	if err = h.db.InsertDocumentComment(r.Context(), c); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -286,7 +286,7 @@ func (h *Handler) UpdateDocumentComment(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	var ui comment.CommentInput
+	var ui comment.Input
 
 	if err := httpserver.DecodeJSON(r, &ui); err != nil {
 		httpserver.RespondError(h.log, w, err)
@@ -417,20 +417,9 @@ func (h *Handler) ResolveDocumentComment(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// TODO: Once comment history is implemented, use soft delete (resolve) here.
-	// nc := c.Resolve(session.UserID)
-
-	// if err := h.db.UpdateDocumentComment(r.Context(), nc); err != nil {
-	// 	httpserver.RespondError(h.log, w, err)
-	// 	return
-	// }
-
-	// if h.comments.changeCallback != nil {
-	// 	h.comments.changeCallback(session.ActiveOrganizationID, documentID, CommentChangeMessage{
-	// 		Type:      CommentChangeTypeUpdated,
-	// 		CommentID: commentID,
-	// 	})
-	// }
+	// TODO: Once comment history is implemented, soft delete (resolve) the
+	// comment via c.Resolve and publish an update message instead of
+	// removing it.
 
 	if h.comments.changeCallback != nil {
 		h.comments.changeCallback(session.ActiveOrganizationID, documentID, CommentChangeMessage{
@@ -449,7 +438,7 @@ func (h *Handler) ResolveDocumentComment(w http.ResponseWriter, r *http.Request)
 
 // TODO: Uncomment once comment history is implemented.
 // UnresolveDocumentComment handles marking a comment as unresolved.
-//func (h *Handler) UnresolveDocumentComment(w http.ResponseWriter, r *http.Request) {
+// func (h *Handler) UnresolveDocumentComment(w http.ResponseWriter, r *http.Request) {
 //	session, err := auth.ExtractSessionFromContext(r.Context())
 //	if err != nil {
 //		httpserver.RespondError(h.log, w, err)
@@ -520,7 +509,7 @@ func (h *Handler) DeleteDocumentComment(w http.ResponseWriter, r *http.Request) 
 
 	var tx Tx
 
-	if err := h.db.BeginTx(r.Context(), &tx); err != nil {
+	if err = h.db.BeginTx(r.Context(), &tx); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -655,14 +644,13 @@ func (h *Handler) extractReplyParameter(r *http.Request) (xid.ID, error) {
 
 // CommentsDBAgent is an interface that handles communication with the document comments database.
 type CommentsDBAgent interface {
+	CommentRepliesDBAgent
+
 	// FetchDocumentByBranchID should fetch the document joined against the branch identified by branchID.
 	FetchDocumentByBranchID(ctx context.Context, branchID xid.ID, organizationID string) (*document.Document, error)
 
 	// InsertDocumentComment should insert a new comment.
 	InsertDocumentComment(ctx context.Context, c comment.Comment) error
-
-	// InsertDocumentCommentReply should insert a new reply to a comment.
-	InsertDocumentCommentReply(ctx context.Context, r comment.Reply) error
 
 	// FetchDocumentComment should fetch a comment by its ID along with all its replies.
 	FetchDocumentComment(ctx context.Context, id, documentID xid.ID, organizationID string) (*comment.Comment, error)
@@ -670,14 +658,8 @@ type CommentsDBAgent interface {
 	// FetchDocumentCommentsByBranchID should fetch all comments for a branch with their replies.
 	FetchDocumentCommentsByBranchID(ctx context.Context, branchID xid.ID, organizationID string) ([]comment.Comment, error)
 
-	// FetchDocumentCommentReply should fetch a reply by its ID.
-	FetchDocumentCommentReply(ctx context.Context, id, commentID xid.ID, organizationID string) (*comment.Reply, error)
-
 	// UpdateDocumentComment should update an existing comment.
 	UpdateDocumentComment(ctx context.Context, c comment.Comment) error
-
-	// UpdateDocumentCommentReply should update an existing reply.
-	UpdateDocumentCommentReply(ctx context.Context, r comment.Reply) error
 
 	// ReplaceDocumentComment should replace a comment's content and author with the given reply's data.
 	ReplaceDocumentComment(ctx context.Context, c comment.Comment) error
@@ -687,6 +669,19 @@ type CommentsDBAgent interface {
 
 	// DeleteDocumentCommentsByBranchID should delete all comments for a branch.
 	DeleteDocumentCommentsByBranchID(ctx context.Context, branchID xid.ID, organizationID string) error
+}
+
+// CommentRepliesDBAgent is an interface that handles communication with the
+// document comment replies database.
+type CommentRepliesDBAgent interface {
+	// InsertDocumentCommentReply should insert a new reply to a comment.
+	InsertDocumentCommentReply(ctx context.Context, r comment.Reply) error
+
+	// FetchDocumentCommentReply should fetch a reply by its ID.
+	FetchDocumentCommentReply(ctx context.Context, id, commentID xid.ID, organizationID string) (*comment.Reply, error)
+
+	// UpdateDocumentCommentReply should update an existing reply.
+	UpdateDocumentCommentReply(ctx context.Context, r comment.Reply) error
 
 	// DeleteDocumentCommentReply should delete a reply.
 	DeleteDocumentCommentReply(ctx context.Context, id, commentID xid.ID, organizationID string) error

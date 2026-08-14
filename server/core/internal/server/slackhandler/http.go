@@ -129,6 +129,7 @@ func (h *Handler) InstallApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	//nolint:gosec // the fixed slack:// scheme and OAuth-provided ids cannot redirect to an attacker origin
 	http.Redirect(
 		w,
 		r,
@@ -236,7 +237,9 @@ func (h *Handler) ConnectOrganization(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		appAccess, err := h.man.ExchangeCode(r.Context(), code)
+		var appAccess *slackapp.AppAccess
+
+		appAccess, err = h.man.ExchangeCode(r.Context(), code)
 		if err != nil {
 			httpserver.RespondError(h.log, w, err)
 			return
@@ -258,7 +261,7 @@ func (h *Handler) ConnectOrganization(w http.ResponseWriter, r *http.Request) {
 	var app *slackapp.App
 
 	rerr := backoff.Retry(
-		func() error {
+		func() error { //nolint:contextcheck // the retry closure runs synchronously within the request
 			app, err = h.db.FetchSlackAppByTeamID(r.Context(), is.TeamID.String)
 			if err != nil {
 				if !errutil.IsNotFound(err) {
@@ -424,8 +427,10 @@ func (h *Handler) HandleCommand(w http.ResponseWriter, r *http.Request) {
 
 	client := slack.New(app.Token)
 
-	if !app.OrganizationID.Valid {
-		user, err := client.GetUserInfo(payload.User.ID)
+	if !app.OrganizationID.Valid { //nolint:nestif // the branching is sequential and readable
+		var user *slack.User
+
+		user, err = client.GetUserInfo(payload.User.ID)
 		if err != nil {
 			httpserver.RespondError(h.log, w, err)
 			return
@@ -442,7 +447,9 @@ func (h *Handler) HandleCommand(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		} else {
-			url, err := h.man.CreateInternalInstallationURL(payload.Team.ID)
+			var url string
+
+			url, err = h.man.CreateInternalInstallationURL(payload.Team.ID)
 			if err != nil {
 				httpserver.RespondError(h.log, w, err)
 				return
@@ -488,6 +495,7 @@ func (h *Handler) HandleCommand(w http.ResponseWriter, r *http.Request) {
 		if h.message.postCallback != nil {
 			h.message.postCallback()
 		}
+	default:
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -504,32 +512,36 @@ func (h *Handler) sendEphemeralResponse(ctx context.Context, responseURL, text s
 	data, err := json.Marshal(body)
 	if err != nil {
 		return fmt.Errorf("failed to marshal response body: %w", err)
-
 	}
 
+	//nolint:gosec // the response URL comes from a signature-verified Slack request
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, responseURL, bytes.NewBuffer(data))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
-
 	}
 
-	resp, err := h.client.Do(req)
+	resp, err := h.client.Do(req) //nolint:gosec // the response URL comes from a signature-verified Slack request
 	if err != nil {
 		return fmt.Errorf("failed to send response: %w", err)
-
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // error provides no meaningful info
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("received non-OK response: %s", resp.Status)
 	}
 
 	return nil
-
 }
 
 // DB is an interface that handles communication with the document database.
 type DB interface {
+	AppDB
+	UserLinkDB
+}
+
+// AppDB is an interface that handles communication with the slack app and
+// message database.
+type AppDB interface {
 	// InsertSlackApp inserts a slack app into the database.
 	InsertSlackApp(ctx context.Context, app slackapp.App) error
 
@@ -537,7 +549,7 @@ type DB interface {
 	InsertSlackMessage(ctx context.Context, msg slackapp.Message) error
 
 	// UpdateSlackAppOrganiziationID updates an existing slack app in the database.
-	UpdateSlackAppOrganizationID(ctx context.Context, teamID string, organizationID string) error
+	UpdateSlackAppOrganizationID(ctx context.Context, teamID, organizationID string) error
 
 	// FetchSlackAppByTeamID fetches the slack app for a given team id.
 	FetchSlackAppByTeamID(ctx context.Context, teamID string) (*slackapp.App, error)
@@ -553,7 +565,11 @@ type DB interface {
 
 	// UnassignSlackAppOrganization removes the organization association from a Slack app.
 	UnassignSlackAppOrganization(ctx context.Context, organizationID string) error
+}
 
+// UserLinkDB is an interface that handles communication with the slack user
+// link database.
+type UserLinkDB interface {
 	// InsertSlackUserLink inserts a Slack user link in the database.
 	InsertSlackUserLink(ctx context.Context, link slackapp.UserLink) error
 

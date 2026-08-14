@@ -1,3 +1,4 @@
+// Package main is the entry point of the oxynote-core API server.
 package main
 
 import (
@@ -39,7 +40,24 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-func main() {
+const (
+	// _serverPort specifies the port the HTTP server listens on.
+	_serverPort = 8080
+
+	// _maxNotifications specifies the maximum number of notifications
+	// retained per user.
+	_maxNotifications = 500
+
+	// _sentryDedupInterval specifies how long a reported error suppresses
+	// duplicate reports.
+	_sentryDedupInterval = 10 * time.Minute
+
+	// _sentryDedupCapacity specifies the maximum number of error
+	// fingerprints tracked for deduplication.
+	_sentryDedupCapacity = 100
+)
+
+func main() { //nolint:maintidx // main performs linear wiring of all components
 	var closers []io.Closer
 
 	log, flushLogs, ok := newLogger()
@@ -57,7 +75,7 @@ func main() {
 
 	dbc, err := db.New(log, metrics, db.Options{
 		DSN:                                buildinfo.Getenv("DB_DSN"),
-		MaxNotifications:                   500,
+		MaxNotifications:                   _maxNotifications,
 		DataSourceCredentialsSigningSecret: buildinfo.Getenv("DB_DATA_SOURCE_CREDENTIALS_SIGNING_SECRET"),
 	})
 	if err != nil {
@@ -254,12 +272,11 @@ func main() {
 	)
 
 	srv, err := server.NewServer(
-		termCtx,
 		log,
 		server.Options{
 			PublicURL:         buildinfo.Getenv("SERVER_PUBLIC_URL"),
 			DemoPrometheusURL: buildinfo.Getenv("SERVER_DEMO_PROMETHEUS_URL"),
-			Port:              8080,
+			Port:              _serverPort,
 			Origins:           origins,
 			Auth: auth.Options{
 				BetterAuthURL: buildinfo.Getenv("SERVER_AUTH_BETTER_AUTH_URL"),
@@ -290,7 +307,7 @@ func main() {
 	}
 
 	hooksMan := hookMan.NewManager(log, dbc, githubMan, webchangesClient, notifMan)
-	searchMan := searchMan.NewManager(log, dbc, searchClient)
+	searchManager := searchMan.NewManager(log, dbc, searchClient)
 
 	closers = append([]io.Closer{srv}, closers...)
 
@@ -301,7 +318,7 @@ func main() {
 		hooksMan.Start(termCtx)
 	})
 	wg.Go(func() {
-		searchMan.Start(termCtx)
+		searchManager.Start(termCtx)
 	})
 
 	<-termCtx.Done()
@@ -345,8 +362,8 @@ func newLogger() (*slog.Logger, func(), bool) {
 		ReleaseCommit:    buildinfo.Full().Commit,
 		ReleaseTimestamp: buildinfo.Full().FormattedTimestamp(),
 		Deduplication: sentryutil.DeduplicationConfig{
-			Interval: 10 * time.Minute,
-			Capacity: 100,
+			Interval: _sentryDedupInterval,
+			Capacity: _sentryDedupCapacity,
 		},
 	})
 	if err != nil {

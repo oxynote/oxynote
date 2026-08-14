@@ -3,7 +3,6 @@ package slackhandler
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -26,7 +25,7 @@ func (fakeReceiver) OnNotification(_ func(context.Context, notification.Notifica
 func newTestHandler(t *testing.T, configured bool) *Handler {
 	t.Helper()
 
-	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	log := slog.New(slog.DiscardHandler)
 	opt := slackapp.Options{}
 
 	if configured {
@@ -52,7 +51,7 @@ func Test_Handler_CheckInstallation(t *testing.T) {
 
 	h := newTestHandler(t, false)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/slack", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/slack", http.NoBody)
 	req = req.WithContext(auth.AddSessionToContext(req.Context(), auth.Session{
 		UserID:               "user",
 		ActiveOrganizationID: "org",
@@ -105,7 +104,7 @@ func Test_Handler_RequireConfigured(t *testing.T) {
 				w.WriteHeader(http.StatusNoContent)
 			})
 
-			req := httptest.NewRequest(http.MethodGet, "/api/slack/install", nil)
+			req := httptest.NewRequest(http.MethodGet, "/api/slack/install", http.NoBody)
 			rec := httptest.NewRecorder()
 
 			h.RequireConfigured(next).ServeHTTP(rec, req)
@@ -140,7 +139,7 @@ func Test_Handler_VerifySignature(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/x/slack/events", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/x/slack/events", http.NoBody)
 	rec := httptest.NewRecorder()
 
 	h.VerifySignature(next).ServeHTTP(rec, req)
@@ -155,7 +154,7 @@ func Test_Handler_InstallApp(t *testing.T) {
 
 	h := newTestHandler(t, false)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/x/slack/install?code=abc", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/x/slack/install?code=abc", http.NoBody)
 	rec := httptest.NewRecorder()
 
 	h.InstallApp(rec, req)

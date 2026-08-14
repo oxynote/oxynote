@@ -1,3 +1,4 @@
+// Package datasourcehandler provides HTTP handlers for data-source operations.
 package datasourcehandler
 
 import (
@@ -38,7 +39,7 @@ func (h *Handler) CreateDataSource(w http.ResponseWriter, r *http.Request) {
 
 	var input datasource.CreateInput
 
-	if err := httpserver.DecodeJSON(r, &input); err != nil {
+	if err = httpserver.DecodeJSON(r, &input); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -170,7 +171,7 @@ func (h *Handler) UpdateDataSource(w http.ResponseWriter, r *http.Request) {
 
 	var input datasource.UpdateInput
 
-	if err := httpserver.DecodeJSON(r, &input); err != nil {
+	if err = httpserver.DecodeJSON(r, &input); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -181,7 +182,7 @@ func (h *Handler) UpdateDataSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := ds.ApplyUpdate(input); err != nil {
+	if err = ds.ApplyUpdate(input); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}

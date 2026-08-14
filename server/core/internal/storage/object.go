@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"path"
 
-	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/minio/minio-go/v7"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 )
 
 var (
@@ -23,6 +23,10 @@ var (
 
 // _maxObjectSize is the maximum allowed size for an object (5 MB).
 const _maxObjectSize = 5 * 1024 * 1024 // 5 MB
+
+// _sniffLen is the number of leading bytes http.DetectContentType
+// examines when detecting an object's content type.
+const _sniffLen = 512
 
 // ObjectInfo contains metadata about a retrieved object.
 type ObjectInfo struct {
@@ -41,10 +45,10 @@ type ObjectInfo struct {
 func (c *Client) Upload(ctx context.Context, folder, id string, r io.Reader) error {
 	r = newLimitedReader(r, _maxObjectSize)
 
-	buf := make([]byte, 512)
+	buf := make([]byte, _sniffLen)
 
 	n, err := r.Read(buf)
-	if err != nil && err != io.EOF {
+	if err != nil && !errors.Is(err, io.EOF) {
 		return fmt.Errorf("reading object: %w", err)
 	}
 

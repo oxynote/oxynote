@@ -139,7 +139,7 @@ func buildSystemPrompt(activeDocumentID string) string {
 	var sb strings.Builder
 	sb.WriteString(_basePrompt)
 	sb.WriteString("\n## Current context\n\n")
-	sb.WriteString(fmt.Sprintf("The user is currently viewing document `%s`. When they say \"this document\", \"here\", or \"the doc\" without naming one, this is the document they mean.\n", activeDocumentID))
+	fmt.Fprintf(&sb, "The user is currently viewing document `%s`. When they say \"this document\", \"here\", or \"the doc\" without naming one, this is the document they mean.\n", activeDocumentID)
 
 	return sb.String()
 }

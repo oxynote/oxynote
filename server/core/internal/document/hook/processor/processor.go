@@ -8,7 +8,14 @@ import (
 
 	"github.com/oxynote/oxynote/server/core/internal/apps/githubapp"
 	"github.com/oxynote/oxynote/server/core/internal/apps/webchanges"
+	"github.com/shopspring/decimal"
 )
+
+// _fullScorePercent is the maximum freshness score in percent.
+const _fullScorePercent = 100
+
+// _fullScore is the maximum freshness score (100%) a hook can report.
+var _fullScore = decimal.NewFromInt(_fullScorePercent)
 
 // Input represents an input that provides state information
 // for processing freshness hooks.
@@ -106,7 +113,7 @@ type ChangeDetection interface {
 	FetchWatcher(ctx context.Context, watchID string) (*webchanges.Watch, error)
 
 	// UpdateWatcher updates a watcher for change detection.
-	UpdateWatcher(ctx context.Context, watchID string, url string) error
+	UpdateWatcher(ctx context.Context, watchID, url string) error
 
 	// DeleteWatcher deletes the watcher with the given watch ID.
 	DeleteWatcher(ctx context.Context, watchID string) error

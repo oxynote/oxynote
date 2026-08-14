@@ -1,3 +1,4 @@
+// Package manager periodically processes document freshness hooks.
 package manager
 
 import (
@@ -29,13 +30,19 @@ const (
 	_hookRetentionDuration = time.Hour * 24
 )
 
+// _fullScorePercent is the maximum freshness score in percent.
+const _fullScorePercent = 100
+
+// _fullScore is the maximum freshness score (100%) a hook can report.
+var _fullScore = decimal.NewFromInt(_fullScorePercent)
+
 // Manager manages document freshness hooks.
 type Manager struct {
 	log              *slog.Logger
 	db               DB
 	githubMan        *githubapp.Manager
 	webchangesClient *webchanges.Client
-	notifPub         notification.NotificationPublisher
+	notifPub         notification.Publisher
 }
 
 // NewManager creates a new Manager with the given database interface.
@@ -44,7 +51,7 @@ func NewManager(
 	db DB,
 	githubMan *githubapp.Manager,
 	webchangesClient *webchanges.Client,
-	notifPub notification.NotificationPublisher,
+	notifPub notification.Publisher,
 ) *Manager {
 	return &Manager{
 		log:              log.With("component", "document-hooks-manager"),
@@ -98,7 +105,7 @@ type ProcessingState struct {
 }
 
 // processHooks processes document hooks in a paginated manner.
-func (m *Manager) processHooks(ctx context.Context) error {
+func (m *Manager) processHooks(ctx context.Context) error { //nolint:gocognit // this method is complex, however, it's well-structured
 	ps := &ProcessingState{
 		Documents: make(map[documentBranchKey]*document.Document),
 	}
@@ -114,7 +121,7 @@ func (m *Manager) processHooks(ctx context.Context) error {
 
 			// Branch was deleted; clean up the orphaned hook immediately.
 			if !h.BranchID.Valid {
-				if err := m.db.DeleteDocumentHook(ctx, h.ID, h.OrganizationID); err != nil {
+				if err = m.db.DeleteDocumentHook(ctx, h.ID, h.OrganizationID); err != nil {
 					m.log.With("hook_id", h.ID).
 						With("error", err).
 						Error("deleting orphaned hook for deleted branch")
@@ -160,7 +167,7 @@ func (m *Manager) processHooks(ctx context.Context) error {
 					Error("updating document hook")
 			}
 
-			if previousScore.Equal(decimal.NewFromInt(100)) && h.Score.Equal(decimal.Zero) {
+			if previousScore.Equal(_fullScore) && h.Score.Equal(decimal.Zero) {
 				maintainers, err := m.db.FetchDocumentMaintainers(ctx, h.DocumentID, h.OrganizationID)
 				if err != nil {
 					m.log.With("hook_id", h.ID).

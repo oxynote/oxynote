@@ -47,7 +47,7 @@ type GithubTracking struct {
 	Paths []string `json:"paths"`
 }
 
-// CalculateScore calculates the inactivity duration score.
+// Process calculates the inactivity duration score.
 func (gt *GithubTracking) Process(ctx context.Context, inp Input) (decimal.Decimal, State, error) {
 	var gts GithubTrackingState
 
@@ -90,7 +90,7 @@ func (gt *GithubTracking) Process(ctx context.Context, inp Input) (decimal.Decim
 		}
 	}
 
-	score := decimal.NewFromInt(100)
+	score := _fullScore
 	if modified {
 		score = decimal.Zero
 	}
@@ -139,7 +139,7 @@ func (gt *GithubTracking) Reset(ctx context.Context, inp Input) (decimal.Decimal
 		gts.PathsChecksums[path] = item.Checksum
 	}
 
-	return gts.EncodeState(decimal.NewFromInt(100), GithubTrackingStatusActive)
+	return gts.EncodeState(_fullScore, GithubTrackingStatusActive)
 }
 
 // GithubTrackingState represents the state of the

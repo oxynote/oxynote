@@ -36,7 +36,7 @@ func (tr TimeRange) ProcessMySQLQuery(q string) string {
 
 	q = _mysqlMacroRe.ReplaceAllStringFunc(q, func(match string) string {
 		submatch := _mysqlMacroRe.FindStringSubmatch(match)
-		if len(submatch) != 3 {
+		if len(submatch) != _macroSubmatchCount {
 			return match
 		}
 
@@ -44,7 +44,7 @@ func (tr TimeRange) ProcessMySQLQuery(q string) string {
 		args := parseMacroArgs(submatch[2])
 
 		switch name {
-		case "time", "timeEpoch":
+		case _timeColumn, "timeEpoch":
 			return mysqlMacroTime(args, match)
 		case "timeFilter":
 			return mysqlMacroTimeFilter(tr, args, match)
@@ -80,7 +80,7 @@ func (tr TimeRange) ProcessMySQLQuery(q string) string {
 	return q
 }
 
-// $__time(dateColumn) / $__timeEpoch(dateColumn)
+// $__time(dateColumn) / $__timeEpoch(dateColumn).
 func mysqlMacroTime(args []string, original string) string {
 	if len(args) < 1 {
 		return original
@@ -89,7 +89,7 @@ func mysqlMacroTime(args []string, original string) string {
 	return fmt.Sprintf("UNIX_TIMESTAMP(%s) AS `time`", args[0])
 }
 
-// $__timeFilter(dateColumn)
+// $__timeFilter(dateColumn).
 func mysqlMacroTimeFilter(tr TimeRange, args []string, original string) string {
 	if len(args) < 1 {
 		return original
@@ -102,19 +102,19 @@ func mysqlMacroTimeFilter(tr TimeRange, args []string, original string) string {
 	)
 }
 
-// $__timeFrom()
+// $__timeFrom().
 func mysqlMacroTimeFrom(tr TimeRange) string {
 	return fmt.Sprintf("'%s'", tr.From.UTC().Format(time.RFC3339))
 }
 
-// $__timeTo()
+// $__timeTo().
 func mysqlMacroTimeTo(tr TimeRange) string {
 	return fmt.Sprintf("'%s'", tr.To.UTC().Format(time.RFC3339))
 }
 
-// $__timeGroup(dateColumn,'5m'[, fill])
+// $__timeGroup(dateColumn,'5m'[, fill]).
 func mysqlMacroTimeGroup(args []string, original string) string {
-	if len(args) < 2 {
+	if len(args) < _timeGroupMinArgs {
 		return original
 	}
 
@@ -126,9 +126,9 @@ func mysqlMacroTimeGroup(args []string, original string) string {
 	return fmt.Sprintf("FLOOR(UNIX_TIMESTAMP(%s)/%d)*%d", args[0], seconds, seconds)
 }
 
-// $__timeGroupAlias(dateColumn,'5m'[, fill])
+// $__timeGroupAlias(dateColumn,'5m'[, fill]).
 func mysqlMacroTimeGroupAlias(args []string, original string) string {
-	if len(args) < 2 {
+	if len(args) < _timeGroupMinArgs {
 		return original
 	}
 
@@ -140,9 +140,9 @@ func mysqlMacroTimeGroupAlias(args []string, original string) string {
 	return fmt.Sprintf("FLOOR(UNIX_TIMESTAMP(%s)/%d)*%d AS `time`", args[0], seconds, seconds)
 }
 
-// $__unixEpochGroupAlias(dateColumn,'5m'[, fill])
+// $__unixEpochGroupAlias(dateColumn,'5m'[, fill]).
 func mysqlMacroUnixEpochGroupAlias(args []string, original string) string {
-	if len(args) < 2 {
+	if len(args) < _timeGroupMinArgs {
 		return original
 	}
 

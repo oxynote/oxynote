@@ -31,6 +31,9 @@ const (
 // _sendTimeout is the maximum allowed time for sending an email.
 const _sendTimeout = 30 * time.Second
 
+// _linkKey is the template argument carrying the action URL.
+const _linkKey = "link"
+
 // Config holds SMTP connection settings for the email sender.
 type Config struct {
 	// Host is the SMTP server host. When empty, email sending is
@@ -214,7 +217,7 @@ func (s *Sender) SendEmailVerification(eml, link string) {
 		"Verify your new email address",
 		TemplateEmailVerification,
 		map[string]string{
-			"link": link,
+			_linkKey: link,
 		},
 	)
 }
@@ -228,7 +231,7 @@ func (s *Sender) SendOrganizationInvitation(eml, org, link string) {
 		fmt.Sprintf("Join %s on Oxynote", org),
 		TemplateOrganizationInvitation,
 		map[string]string{
-			"link":         link,
+			_linkKey:       link,
 			"organization": org,
 		},
 	)
@@ -242,7 +245,7 @@ func (s *Sender) SendUserDeletionConfirmation(eml, link string) {
 		"Confirm your account deletion",
 		TemplateUserDeletion,
 		map[string]string{
-			"link": link,
+			_linkKey: link,
 		},
 	)
 }
@@ -265,7 +268,7 @@ func (s *Sender) SendPasswordReset(eml, link string) {
 		"Reset your password",
 		TemplatePasswordReset,
 		map[string]string{
-			"link": link,
+			_linkKey: link,
 		},
 	)
 }
@@ -278,7 +281,7 @@ func (s *Sender) SendSignupVerification(eml, link string) {
 		"Confirm your email address",
 		TemplateSignupVerification,
 		map[string]string{
-			"link": link,
+			_linkKey: link,
 		},
 	)
 }
@@ -291,7 +294,7 @@ func (s *Sender) SendAccountExists(eml, link string) {
 		"You already have an Oxynote account",
 		TemplateAccountExists,
 		map[string]string{
-			"link": link,
+			_linkKey: link,
 		},
 	)
 }

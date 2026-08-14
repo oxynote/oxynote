@@ -1,3 +1,4 @@
+// Package interpreter renders notifications into human-readable content.
 package interpreter
 
 // Message represents a human-readable notification message.

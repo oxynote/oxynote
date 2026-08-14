@@ -43,7 +43,7 @@ func Test_multiClose_Close(t *testing.T) {
 	mc = &multiCloser{closers: []io.Closer{c1, c2}, force: true}
 	err = mc.Close()
 	require.Error(t, err)
-	require.IsType(t, &multierror.Error{}, err)
+	require.IsType(t, &multierror.Error{}, err)      //nolint:testifylint // a direct type check is needed
 	assert.Len(t, err.(*multierror.Error).Errors, 2) //nolint:errorlint // it's a test
 	assert.True(t, c1.called)
 	assert.True(t, c2.called)

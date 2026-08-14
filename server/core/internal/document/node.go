@@ -109,6 +109,7 @@ func (b Block) UID() (string, bool) {
 func (b Block) Flatten() string {
 	var buf []byte
 	b.flattenInto(&buf)
+
 	return string(buf)
 }
 

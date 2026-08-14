@@ -185,6 +185,7 @@ func Test_Recover(t *testing.T) {
 
 			assert.NotPanics(t, func() {
 				defer Recover(log, c.Plan)
+
 				panic(c.Panic)
 			})
 

@@ -81,6 +81,7 @@ func (a *agent) insertDocumentRow(ctx context.Context, doc document.Document) er
 		}).MustSql()
 
 	_, err := a.sql.ExecContext(ctx, q, args...)
+
 	return err
 }
 
@@ -102,7 +103,7 @@ func (a *agent) CheckDocumentExists(ctx context.Context, id xid.ID, organization
 
 // FetchDocument retrieves a document by its ID and organization ID,
 // joined against the specified branch.
-func (a *agent) FetchDocument(ctx context.Context, id xid.ID, organizationID string, branchName string) (*document.Document, error) {
+func (a *agent) FetchDocument(ctx context.Context, id xid.ID, organizationID, branchName string) (*document.Document, error) {
 	q, args := a.selectDocumentWithBranch(a.builder.Select(), branchName).
 		Where(sq.Eq{
 			"documents.id":                 id,

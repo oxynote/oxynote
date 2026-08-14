@@ -20,6 +20,10 @@ const (
 	ScaleTypeLinear ScaleType = "linear"
 )
 
+// _scheduleGracePeriod is the minimum lead time a schedule must have on
+// reset; anything closer scores zero immediately.
+const _scheduleGracePeriod = time.Second * 5
+
 // ScheduledReminder specifies a processor that calculates the
 // score based on a scheduled time.
 type ScheduledReminder struct {
@@ -44,7 +48,7 @@ func (sr *ScheduledReminder) Process(_ context.Context, inp Input) (decimal.Deci
 		return decimal.Zero, nil, fmt.Errorf("unmarshaling scheduled reminder state: %w", err)
 	}
 
-	score := decimal.NewFromInt(100)
+	score := _fullScore
 
 	switch sr.Scale {
 	case ScaleTypeLinear:
@@ -56,7 +60,7 @@ func (sr *ScheduledReminder) Process(_ context.Context, inp Input) (decimal.Deci
 			break
 		}
 
-		elapsedPercent := decimal.NewFromFloat(elapsed.Seconds() / totalDuration.Seconds()).Mul(decimal.NewFromInt(100))
+		elapsedPercent := decimal.NewFromFloat(elapsed.Seconds() / totalDuration.Seconds()).Mul(_fullScore)
 		score = score.Sub(elapsedPercent).Round(0)
 	default:
 		return decimal.Zero, nil, errors.New("invalid scale type")
@@ -81,9 +85,9 @@ func (sr *ScheduledReminder) Reset(_ context.Context, _ Input) (decimal.Decimal,
 		return decimal.Zero, nil, fmt.Errorf("marshaling scheduled reminder state: %w", err)
 	}
 
-	score := decimal.NewFromInt(100)
+	score := _fullScore
 
-	if srs.StartedAt.Add(time.Second * 5).After(sr.Schedule) {
+	if srs.StartedAt.Add(_scheduleGracePeriod).After(sr.Schedule) {
 		score = decimal.Zero
 	}
 

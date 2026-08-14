@@ -5,7 +5,7 @@ import (
 	"github.com/slack-go/slack"
 )
 
-// _welcomeMessageTemplate is a template for the welcome message sent to users
+// _welcomeMessageTemplate is a template for the welcome message sent to users.
 const _welcomeMessageTemplate = `Hey <@%s> 👋! Oxynote’s Slack integration 
 allows you to easily share context, save important information, and create 
 new documents. See our help documentation for more information.`

@@ -9,6 +9,10 @@ import (
 	"github.com/jellydator/ttlcache/v3"
 )
 
+// _flushTimeout specifies how long the returned closer waits for
+// buffered sentry events to be delivered.
+const _flushTimeout = 2 * time.Second
+
 // Config represents the configuration of sentry.
 type Config struct {
 	// DSN specifies the dsn to connect to sentry.
@@ -103,7 +107,7 @@ func Setup(cfg Config) (func(), error) {
 	}
 
 	return func() {
-		sentry.Flush(2 * time.Second)
+		sentry.Flush(_flushTimeout)
 
 		if dc != nil {
 			dc.Stop()

@@ -59,9 +59,9 @@ func Compact(b document.Block) (Block, error) {
 		return compactSplitDoc(b, uid)
 	case document.BlockNodeParamList:
 		return compactParamList(b, uid)
+	default:
+		return Block{}, fmt.Errorf("%w: %q", ErrUnsupportedPMType, b.Type)
 	}
-
-	return Block{}, fmt.Errorf("%w: %q", ErrUnsupportedPMType, b.Type)
 }
 
 // CompactMany compacts a slice of document.Blocks, short-circuiting
@@ -265,6 +265,7 @@ func compactTitledCode(b document.Block, uid string) Block {
 		case document.BlockNodeCodeBlock:
 			body = flattenText(child.Content)
 			lang = readStringAttr(child.Attrs, _attrLanguage, "")
+		default:
 		}
 	}
 
@@ -400,6 +401,7 @@ func compactSplitDoc(b document.Block, uid string) (Block, error) {
 			}
 
 			out.Right = items
+		default:
 		}
 	}
 
@@ -416,12 +418,8 @@ func compactParamList(b document.Block, uid string) (Block, error) {
 		case document.BlockNodeParamListHeader:
 			out.Header = flattenText(child.Content)
 		case document.BlockNodeParamListItem:
-			item, err := compactParamListItem(child)
-			if err != nil {
-				return Block{}, err
-			}
-
-			out.Params = append(out.Params, item)
+			out.Params = append(out.Params, compactParamListItem(child))
+		default:
 		}
 	}
 
@@ -430,7 +428,7 @@ func compactParamList(b document.Block, uid string) (Block, error) {
 
 // compactParamListItem turns one splitDocumentationParameterListItem
 // node into a canonical ParamItem.
-func compactParamListItem(b document.Block) (ParamItem, error) {
+func compactParamListItem(b document.Block) ParamItem {
 	uid, _ := b.UID()
 	item := ParamItem{UID: uid}
 
@@ -443,14 +441,16 @@ func compactParamListItem(b document.Block) (ParamItem, error) {
 					item.Name = flattenText(sub.Content)
 				case document.BlockNodeParamListItemType:
 					item.Type = flattenText(sub.Content)
+				default:
 				}
 			}
 		case document.BlockNodeParagraph:
 			item.Description = EmitInlineMarkdown(child.Content)
+		default:
 		}
 	}
 
-	return item, nil
+	return item
 }
 
 // flattenText concatenates the text of inline text nodes ignoring

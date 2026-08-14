@@ -1,3 +1,4 @@
+// Package notifhandler provides HTTP handlers for notification operations.
 package notifhandler
 
 import (
@@ -14,14 +15,14 @@ import (
 type Handler struct {
 	log      *slog.Logger
 	db       notification.DB
-	notifier notification.NotificationReceiver
+	notifier notification.Receiver
 }
 
 // NewHandler creates a new notifications handling instance.
 func NewHandler(
 	log *slog.Logger,
 	db notification.DB,
-	notifier notification.NotificationReceiver,
+	notifier notification.Receiver,
 ) *Handler {
 	return &Handler{
 		log:      log.With("component", "notification-handler"),
@@ -30,7 +31,7 @@ func NewHandler(
 	}
 }
 
-// FetchMany fetches many notifications for the authenticated user.
+// FetchManyNotifications fetches many notifications for the authenticated user.
 func (h *Handler) FetchManyNotifications(w http.ResponseWriter, r *http.Request) {
 	session, err := auth.ExtractSessionFromContext(r.Context())
 	if err != nil {
@@ -56,7 +57,7 @@ func (h *Handler) FetchManyNotifications(w http.ResponseWriter, r *http.Request)
 	}{Notifications: evts, PageCount: pc}, http.StatusOK)
 }
 
-// FetchCount fetches the count of notifications for the authenticated user.
+// FetchNotificationsCount fetches the count of notifications for the authenticated user.
 func (h *Handler) FetchNotificationsCount(w http.ResponseWriter, r *http.Request) {
 	session, err := auth.ExtractSessionFromContext(r.Context())
 	if err != nil {
@@ -68,7 +69,7 @@ func (h *Handler) FetchNotificationsCount(w http.ResponseWriter, r *http.Request
 		Read bool `schema:"read"`
 	}
 
-	if err := httpserver.DecodeForm(r, &opts); err != nil {
+	if err = httpserver.DecodeForm(r, &opts); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -86,7 +87,7 @@ func (h *Handler) FetchNotificationsCount(w http.ResponseWriter, r *http.Request
 	}, http.StatusOK)
 }
 
-// MarkReadMany marks many notifications as read for the authenticated user.
+// MarkReadManyNotifications marks many notifications as read for the authenticated user.
 func (h *Handler) MarkReadManyNotifications(w http.ResponseWriter, r *http.Request) {
 	session, err := auth.ExtractSessionFromContext(r.Context())
 	if err != nil {
@@ -98,7 +99,7 @@ func (h *Handler) MarkReadManyNotifications(w http.ResponseWriter, r *http.Reque
 		IDs []xid.ID `json:"ids"`
 	}
 
-	if err := httpserver.DecodeJSON(r, &data); err != nil {
+	if err = httpserver.DecodeJSON(r, &data); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}

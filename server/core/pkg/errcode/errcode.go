@@ -1,3 +1,4 @@
+// Package errcode centralizes machine-readable error codes.
 package errcode
 
 const (

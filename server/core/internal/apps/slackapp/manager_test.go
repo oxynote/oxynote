@@ -3,7 +3,6 @@ package slackapp
 import (
 	"context"
 	"errors"
-	"io"
 	"log/slog"
 	"testing"
 
@@ -22,7 +21,7 @@ func newDisabledManager(t *testing.T) *Manager {
 	t.Helper()
 
 	man, err := NewManager(
-		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		slog.New(slog.DiscardHandler),
 		nil,
 		nil,
 		nil,
@@ -72,7 +71,7 @@ func Test_NewManager(t *testing.T) {
 			t.Parallel()
 
 			man, err := NewManager(
-				slog.New(slog.NewTextHandler(io.Discard, nil)),
+				slog.New(slog.DiscardHandler),
 				nil,
 				nil,
 				fakeReceiver{},

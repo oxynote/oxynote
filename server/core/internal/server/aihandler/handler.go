@@ -17,6 +17,9 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 )
 
+// _maxMessageBytes caps a single inbound WebSocket message (1 MB).
+const _maxMessageBytes = 1 << 20
+
 // Handler holds dependencies for AI chat operations.
 type Handler struct {
 	log        *slog.Logger
@@ -27,12 +30,12 @@ type Handler struct {
 // NewHandler creates a new AI handler.
 func NewHandler(
 	log *slog.Logger,
-	assistant *assistant.Manager,
+	assistantMan *assistant.Manager,
 	acceptOpts websocket.AcceptOptions,
 ) *Handler {
 	return &Handler{
 		log:        log.With("component", "aihandler"),
-		assistant:  assistant,
+		assistant:  assistantMan,
 		acceptOpts: acceptOpts,
 	}
 }
@@ -51,9 +54,12 @@ func (h *Handler) HandleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	conn.SetReadLimit(1 << 20) // 1 MB
+	conn.SetReadLimit(_maxMessageBytes)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	// the chat loop deliberately outlives the HTTP request lifecycle:
+	// WithoutCancel keeps the session values while detaching from the
+	// request's cancellation.
+	ctx, cancel := context.WithCancel(context.WithoutCancel(r.Context()))
 
 	wr := &writer{
 		log:    h.log,
@@ -76,14 +82,14 @@ func (h *Handler) HandleChat(w http.ResponseWriter, r *http.Request) {
 		h.log.Error("failed to create assistant session", slog.String("error", err.Error()))
 		cancel()
 
-		conn.Close(websocket.StatusInternalError, "failed to create session")
+		conn.Close(websocket.StatusInternalError, "failed to create session") //nolint:errcheck,gosec // error provides no meaningful info
 
 		return
 	}
 
 	defer func() {
 		cancel()
-		session.Close()
+		session.Close() //nolint:errcheck,gosec // error provides no meaningful info
 	}()
 
 	for {

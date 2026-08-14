@@ -27,7 +27,7 @@ func prepDocuments(t *testing.T, db *DB, count int, fn func(int, *document.Docum
 	for i := range count {
 		doc := &document.Document{
 			ID: xid.New(),
-			DocumentBranch: document.DocumentBranch{
+			Branch: document.Branch{
 				BranchID:     xid.New(),
 				BranchName:   document.DefaultBranch,
 				DocumentName: "Test Document " + strconv.Itoa(i),
@@ -105,7 +105,7 @@ func Test_agent_InsertDocument(t *testing.T) {
 		return document.Document{
 			ID:             xid.New(),
 			OrganizationID: organizationID,
-			DocumentBranch: document.DocumentBranch{
+			Branch: document.Branch{
 				BranchID:     xid.New(),
 				BranchName:   document.DefaultBranch,
 				DocumentName: "Test Document 1",
@@ -200,12 +200,12 @@ func Test_agent_FetchDocument(t *testing.T) {
 func Test_agent_UpdateDocumentTree(t *testing.T) {
 	db := prepTempDB(t)
 
-	var exp1 []document.Summary
-
 	org := prepOrganizations(t, db, 1)[0]
 	docs := prepDocuments(t, db, 3, func(_ int, ndoc *document.Document) {
 		ndoc.OrganizationID = org
 	})
+
+	exp1 := make([]document.Summary, 0, len(docs))
 
 	// Root documents
 	for i, doc := range docs {
@@ -255,12 +255,12 @@ func Test_agent_FetchDocumentTree(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, res)
 
-	var exp1 document.Summaries
-
 	org := prepOrganizations(t, db, 1)[0]
 	docs := prepDocuments(t, db, 3, func(_ int, ndoc *document.Document) {
 		ndoc.OrganizationID = org
 	})
+
+	exp1 := make(document.Summaries, 0, len(docs))
 
 	// Root documents
 	for i, doc := range docs {
@@ -382,6 +382,7 @@ func Test_agent_DeleteDocument(t *testing.T) {
 	cc := map[string]func(*testing.T, *DB) tcase{
 		"Successful delete": func(t *testing.T, db *DB) tcase {
 			doc := prepDocuments(t, db, 1, nil)[0]
+
 			return tcase{
 				ID:             doc.ID,
 				OrganizationID: doc.OrganizationID,

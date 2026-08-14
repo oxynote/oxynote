@@ -6,6 +6,9 @@ import (
 	"strings"
 )
 
+// _textPathSegment is the breadcrumb segment naming a block's text field.
+const _textPathSegment = "text"
+
 // ValidationError is the structured error returned by Validate.
 // Path locates the offending block within a nested canonical tree
 // using a slash-separated breadcrumb (e.g. "split_doc/left[0]",
@@ -87,9 +90,9 @@ func containerForType(t BlockType) string {
 		return "metric_grid or split_doc.right"
 	case BlockParamList:
 		return "split_doc.left"
+	default:
+		return "its parent macro"
 	}
-
-	return "its parent macro"
 }
 
 // validateBlock dispatches on b.Type. Path is the breadcrumb to b
@@ -147,7 +150,7 @@ func validateTextBearing(b Block, path string) error {
 		return verr(path, fmt.Sprintf("%s does not accept items", b.Type))
 	}
 
-	return validateInlineMarkdown(b.Text, joinPath(path, "text"))
+	return validateInlineMarkdown(b.Text, joinPath(path, _textPathSegment))
 }
 
 func validateHeading(b Block, path string) error {
@@ -164,7 +167,7 @@ func validateHeading(b Block, path string) error {
 		return verr(joinPath(path, "attrs.level"), "heading level must be 1, 2, or 3")
 	}
 
-	return validateInlineMarkdown(b.Text, joinPath(path, "text"))
+	return validateInlineMarkdown(b.Text, joinPath(path, _textPathSegment))
 }
 
 func validateBlockquote(b Block, path string) error {
@@ -181,7 +184,7 @@ func validateBlockquote(b Block, path string) error {
 	}
 
 	if b.Text != "" {
-		return validateInlineMarkdown(b.Text, joinPath(path, "text"))
+		return validateInlineMarkdown(b.Text, joinPath(path, _textPathSegment))
 	}
 
 	return validateItemsAllowed(b.Items, joinPath(path, "items"), _allowedBlockquoteItems)
@@ -250,7 +253,7 @@ func validateCallout(b Block, path string) error {
 	}
 
 	if b.Text != "" {
-		return validateInlineMarkdown(b.Text, joinPath(path, "text"))
+		return validateInlineMarkdown(b.Text, joinPath(path, _textPathSegment))
 	}
 
 	return validateItemsAllowed(b.Items, joinPath(path, "items"), _allowedCalloutItems)

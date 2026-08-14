@@ -34,7 +34,7 @@ func (a *agent) FetchBranchReviewers(ctx context.Context, branchID xid.ID, organ
 }
 
 // FetchBranchReviewer retrieves a single reviewer for a branch by user ID.
-func (a *agent) FetchBranchReviewer(ctx context.Context, branchID xid.ID, userID string, organizationID string) (*document.BranchReviewer, error) {
+func (a *agent) FetchBranchReviewer(ctx context.Context, branchID xid.ID, userID, organizationID string) (*document.BranchReviewer, error) {
 	q, args := a.builder.Select(
 		"fk_branch_id",
 		"fk_user_id",
@@ -95,7 +95,7 @@ func (a *agent) UpdateBranchReviewer(ctx context.Context, reviewer document.Bran
 }
 
 // DeleteBranchReviewer removes a reviewer from a branch.
-func (a *agent) DeleteBranchReviewer(ctx context.Context, branchID xid.ID, userID string, organizationID string) error {
+func (a *agent) DeleteBranchReviewer(ctx context.Context, branchID xid.ID, userID, organizationID string) error {
 	q, args := a.builder.Delete("branch_reviewers").
 		Where(sq.Eq{
 			"fk_branch_id":       branchID,

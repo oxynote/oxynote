@@ -27,11 +27,11 @@ type Name string
 // Read tools — never confirmed. The assistant runs these
 // immediately on every relevant turn.
 const (
-	NameListDocuments        Name = "list_documents"
-	NameGetDocument          Name = "get_document"
-	NameReadDocumentSummary  Name = "read_document_summary"
-	NameReadBlock            Name = "read_block"
-	NameSearchDocuments      Name = "search_documents"
+	NameListDocuments       Name = "list_documents"
+	NameGetDocument         Name = "get_document"
+	NameReadDocumentSummary Name = "read_document_summary"
+	NameReadBlock           Name = "read_block"
+	NameSearchDocuments     Name = "search_documents"
 )
 
 // Write tools — always confirmed. Deletes are the most
@@ -70,9 +70,9 @@ func IsWrite(name Name) bool {
 		NameUpdateBlockAttrs,
 		NameDeleteBlock:
 		return true
+	default:
+		return false
 	}
-
-	return false
 }
 
 // IsValid reports whether name is one of the assistant's known
@@ -118,12 +118,12 @@ type DB interface {
 	// FetchDocument returns full document content for the named
 	// branch. Used by get_document, read_document_summary,
 	// read_block.
-	FetchDocument(ctx context.Context, id xid.ID, organizationID string, branchName string) (*document.Document, error)
+	FetchDocument(ctx context.Context, id xid.ID, organizationID, branchName string) (*document.Document, error)
 
 	// FetchMainBranchContent returns the parsed main-branch
 	// content of the document. Used when an op only needs the
 	// content tree (no branch metadata).
-	FetchMainBranchContent(ctx context.Context, docID xid.ID, organizationID string) (document.DocumentContent, error)
+	FetchMainBranchContent(ctx context.Context, docID xid.ID, organizationID string) (document.Content, error)
 
 	// InsertDocument creates a new document. Used by
 	// create_document.
@@ -206,7 +206,7 @@ type Manager struct {
 // nil values surface as nil-pointer panics on the first tool call
 // rather than at startup, but in practice the cmd-level wiring
 // passes all of them.
-func NewManager(log *slog.Logger, db DB, search Searcher, liveedit *liveedit.Client, tree TreeNotifier, orgID, userID string) *Manager {
+func NewManager(log *slog.Logger, db DB, search Searcher, liveeditClient *liveedit.Client, tree TreeNotifier, orgID, userID string) *Manager {
 	return &Manager{
 		log: log.With(
 			"component", "assistant-tools",
@@ -215,7 +215,7 @@ func NewManager(log *slog.Logger, db DB, search Searcher, liveedit *liveedit.Cli
 		),
 		db:       db,
 		search:   search,
-		liveedit: liveedit,
+		liveedit: liveeditClient,
 		tree:     tree,
 		orgID:    orgID,
 		userID:   userID,

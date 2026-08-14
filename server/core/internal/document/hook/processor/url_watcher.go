@@ -45,9 +45,9 @@ func (uw *URLWatcher) Process(ctx context.Context, inp Input) (decimal.Decimal, 
 	if watch.Unreachable {
 		uws.Status = URLWatcherStatusUnreachableURL
 
-		state, err := json.Marshal(uws)
-		if err != nil {
-			return decimal.Zero, nil, fmt.Errorf("marshaling url watcher state: %w", err)
+		state, merr := json.Marshal(uws)
+		if merr != nil {
+			return decimal.Zero, nil, fmt.Errorf("marshaling url watcher state: %w", merr)
 		}
 
 		return decimal.Zero, state, nil
@@ -55,7 +55,7 @@ func (uw *URLWatcher) Process(ctx context.Context, inp Input) (decimal.Decimal, 
 
 	uws.Status = URLWatcherStatusActive
 
-	score := decimal.NewFromInt(100)
+	score := _fullScore
 
 	if !uws.LastChangedAt.Valid {
 		uws.LastChangedAt = null.TimeFrom(watch.LastChangedAt)
@@ -81,7 +81,7 @@ func (uw *URLWatcher) Reset(ctx context.Context, inp Input) (decimal.Decimal, St
 		}
 	}
 
-	if uws.WatcherID == "" {
+	if uws.WatcherID == "" { //nolint:nestif // the branching is sequential and readable
 		watcherID, err := inp.ChangeDetection().CreateWatcher(ctx, uw.URL)
 		if err != nil {
 			return decimal.Zero, nil, fmt.Errorf("creating url watcher: %w", err)
@@ -114,7 +114,7 @@ func (uw *URLWatcher) Reset(ctx context.Context, inp Input) (decimal.Decimal, St
 		return decimal.Zero, nil, err
 	}
 
-	return decimal.NewFromInt(100), state, nil
+	return _fullScore, state, nil
 }
 
 // Delete deletes the URL watcher processor's state.

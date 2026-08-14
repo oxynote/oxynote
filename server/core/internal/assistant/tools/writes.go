@@ -66,6 +66,7 @@ func (m *Manager) createDocument(ctx context.Context, args json.RawMessage) (jso
 	}
 
 	var parentID null.Value[xid.ID]
+
 	if in.ParentID != "" {
 		pid, err := xid.FromString(in.ParentID)
 		if err != nil {
@@ -214,6 +215,7 @@ func (m *Manager) moveDocument(ctx context.Context, args json.RawMessage) (json.
 	oldParent := doc.ParentID
 
 	var newParent null.Value[xid.ID]
+
 	if in.NewParentID != "" {
 		pid, err := xid.FromString(in.NewParentID)
 		if err != nil {
@@ -256,9 +258,9 @@ func (m *Manager) moveDocument(ctx context.Context, args json.RawMessage) (json.
 
 func (m *Manager) insertBlock(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
 	var in struct {
-		DocumentID        string          `json:"document_id"`
-		ReferenceBlockUID string          `json:"reference_block_uid"`
-		Position          string          `json:"position"`
+		DocumentID        string        `json:"document_id"`
+		ReferenceBlockUID string        `json:"reference_block_uid"`
+		Position          string        `json:"position"`
 		Block             aiblock.Block `json:"block"`
 	}
 
@@ -275,6 +277,7 @@ func (m *Manager) insertBlock(ctx context.Context, args json.RawMessage) (json.R
 	}
 
 	var op liveedit.Operation
+
 	switch in.Position {
 	case "before":
 		op = liveedit.InsertBefore(in.ReferenceBlockUID, in.Block)
@@ -289,7 +292,7 @@ func (m *Manager) insertBlock(ctx context.Context, args json.RawMessage) (json.R
 
 func (m *Manager) appendBlock(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
 	var in struct {
-		DocumentID string          `json:"document_id"`
+		DocumentID string        `json:"document_id"`
 		Block      aiblock.Block `json:"block"`
 	}
 
@@ -306,7 +309,7 @@ func (m *Manager) appendBlock(ctx context.Context, args json.RawMessage) (json.R
 
 func (m *Manager) prependBlock(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
 	var in struct {
-		DocumentID string          `json:"document_id"`
+		DocumentID string        `json:"document_id"`
 		Block      aiblock.Block `json:"block"`
 	}
 
@@ -323,8 +326,8 @@ func (m *Manager) prependBlock(ctx context.Context, args json.RawMessage) (json.
 
 func (m *Manager) replaceBlock(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
 	var in struct {
-		DocumentID string          `json:"document_id"`
-		BlockUID   string          `json:"block_uid"`
+		DocumentID string        `json:"document_id"`
+		BlockUID   string        `json:"block_uid"`
 		Block      aiblock.Block `json:"block"`
 	}
 

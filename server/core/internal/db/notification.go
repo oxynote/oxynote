@@ -27,6 +27,9 @@ func (a *agent) CreateNotification(ctx context.Context, nt *notification.Notific
 			}).MustSql()
 
 		_, err := tx.ExecContext(ctx, q, args...)
+		if err != nil {
+			return err
+		}
 
 		b := a.builder.Select("id").
 			From("notifications").

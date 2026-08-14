@@ -11,6 +11,26 @@ import (
 // _pgMacroRe matches PostgreSQL macro invocations: $__macroName(args...).
 var _pgMacroRe = regexp.MustCompile(`\$__(\w+)\(([^)]*)\)`)
 
+const (
+	// _macroSubmatchCount specifies the number of submatches a macro
+	// regexp match yields (full match, name, args).
+	_macroSubmatchCount = 3
+
+	// _timeGroupMinArgs specifies the minimum number of arguments a
+	// time-group macro requires (column, interval).
+	_timeGroupMinArgs = 2
+
+	// _minIntervalLen specifies the minimum length of an interval
+	// string (one digit plus a unit suffix).
+	_minIntervalLen = 2
+
+	// All available interval unit multipliers in seconds.
+	_secondsPerMinute = 60
+	_secondsPerHour   = 3600
+	_secondsPerDay    = 86400
+	_secondsPerWeek   = 604800
+)
+
 // ProcessPostgreSQLQuery processes the query string to replace PostgreSQL-specific
 // macros with appropriate SQL expressions.
 //
@@ -38,7 +58,7 @@ func (tr TimeRange) ProcessPostgreSQLQuery(q string) string {
 
 	q = _pgMacroRe.ReplaceAllStringFunc(q, func(match string) string {
 		submatch := _pgMacroRe.FindStringSubmatch(match)
-		if len(submatch) != 3 {
+		if len(submatch) != _macroSubmatchCount {
 			return match
 		}
 
@@ -46,7 +66,7 @@ func (tr TimeRange) ProcessPostgreSQLQuery(q string) string {
 		args := parseMacroArgs(submatch[2])
 
 		switch name {
-		case "time", "timeEpoch":
+		case _timeColumn, "timeEpoch":
 			return pgMacroTime(args, match)
 		case "timeFilter":
 			return pgMacroTimeFilter(tr, args, match)
@@ -101,11 +121,12 @@ func parseMacroArgs(raw string) []string {
 
 // parseInterval parses an interval string (e.g., "5m", "1h", "30s") to seconds.
 func parseInterval(s string) (int64, bool) {
-	if len(s) < 2 {
+	if len(s) < _minIntervalLen {
 		return 0, false
 	}
 
 	unit := s[len(s)-1]
+
 	num, err := strconv.ParseInt(s[:len(s)-1], 10, 64)
 	if err != nil || num <= 0 {
 		return 0, false
@@ -115,19 +136,19 @@ func parseInterval(s string) (int64, bool) {
 	case 's':
 		return num, true
 	case 'm':
-		return num * 60, true
+		return num * _secondsPerMinute, true
 	case 'h':
-		return num * 3600, true
+		return num * _secondsPerHour, true
 	case 'd':
-		return num * 86400, true
+		return num * _secondsPerDay, true
 	case 'w':
-		return num * 604800, true
+		return num * _secondsPerWeek, true
 	default:
 		return 0, false
 	}
 }
 
-// $__time(dateColumn) / $__timeEpoch(dateColumn)
+// $__time(dateColumn) / $__timeEpoch(dateColumn).
 func pgMacroTime(args []string, original string) string {
 	if len(args) < 1 {
 		return original
@@ -136,7 +157,7 @@ func pgMacroTime(args []string, original string) string {
 	return fmt.Sprintf("EXTRACT(EPOCH FROM %s) AS \"time\"", args[0])
 }
 
-// $__timeFilter(dateColumn)
+// $__timeFilter(dateColumn).
 func pgMacroTimeFilter(tr TimeRange, args []string, original string) string {
 	if len(args) < 1 {
 		return original
@@ -149,19 +170,19 @@ func pgMacroTimeFilter(tr TimeRange, args []string, original string) string {
 	)
 }
 
-// $__timeFrom()
+// $__timeFrom().
 func pgMacroTimeFrom(tr TimeRange) string {
 	return fmt.Sprintf("'%s'::timestamptz", tr.From.UTC().Format(time.RFC3339))
 }
 
-// $__timeTo()
+// $__timeTo().
 func pgMacroTimeTo(tr TimeRange) string {
 	return fmt.Sprintf("'%s'::timestamptz", tr.To.UTC().Format(time.RFC3339))
 }
 
-// $__timeGroup(dateColumn,'5m'[, fill])
+// $__timeGroup(dateColumn,'5m'[, fill]).
 func pgMacroTimeGroup(args []string, original string) string {
-	if len(args) < 2 {
+	if len(args) < _timeGroupMinArgs {
 		return original
 	}
 
@@ -173,9 +194,9 @@ func pgMacroTimeGroup(args []string, original string) string {
 	return fmt.Sprintf("floor(EXTRACT(EPOCH FROM %s)/%d)*%d", args[0], seconds, seconds)
 }
 
-// $__timeGroupAlias(dateColumn,'5m'[, fill])
+// $__timeGroupAlias(dateColumn,'5m'[, fill]).
 func pgMacroTimeGroupAlias(args []string, original string) string {
-	if len(args) < 2 {
+	if len(args) < _timeGroupMinArgs {
 		return original
 	}
 
@@ -187,7 +208,7 @@ func pgMacroTimeGroupAlias(args []string, original string) string {
 	return fmt.Sprintf("floor(EXTRACT(EPOCH FROM %s)/%d)*%d AS \"time\"", args[0], seconds, seconds)
 }
 
-// $__unixEpochFilter(dateColumn)
+// $__unixEpochFilter(dateColumn).
 func pgMacroUnixEpochFilter(tr TimeRange, args []string, original string) string {
 	if len(args) < 1 {
 		return original
@@ -199,17 +220,17 @@ func pgMacroUnixEpochFilter(tr TimeRange, args []string, original string) string
 	)
 }
 
-// $__unixEpochFrom()
+// $__unixEpochFrom().
 func pgMacroUnixEpochFrom(tr TimeRange) string {
 	return strconv.FormatInt(tr.From.Unix(), 10)
 }
 
-// $__unixEpochTo()
+// $__unixEpochTo().
 func pgMacroUnixEpochTo(tr TimeRange) string {
 	return strconv.FormatInt(tr.To.Unix(), 10)
 }
 
-// $__unixEpochNanoFilter(dateColumn)
+// $__unixEpochNanoFilter(dateColumn).
 func pgMacroUnixEpochNanoFilter(tr TimeRange, args []string, original string) string {
 	if len(args) < 1 {
 		return original
@@ -221,19 +242,19 @@ func pgMacroUnixEpochNanoFilter(tr TimeRange, args []string, original string) st
 	)
 }
 
-// $__unixEpochNanoFrom()
+// $__unixEpochNanoFrom().
 func pgMacroUnixEpochNanoFrom(tr TimeRange) string {
 	return strconv.FormatInt(tr.From.UnixNano(), 10)
 }
 
-// $__unixEpochNanoTo()
+// $__unixEpochNanoTo().
 func pgMacroUnixEpochNanoTo(tr TimeRange) string {
 	return strconv.FormatInt(tr.To.UnixNano(), 10)
 }
 
-// $__unixEpochGroup(dateColumn,'5m'[, fill])
+// $__unixEpochGroup(dateColumn,'5m'[, fill]).
 func pgMacroUnixEpochGroup(args []string, original string) string {
-	if len(args) < 2 {
+	if len(args) < _timeGroupMinArgs {
 		return original
 	}
 
@@ -245,9 +266,9 @@ func pgMacroUnixEpochGroup(args []string, original string) string {
 	return fmt.Sprintf("floor(%s/%d)*%d", args[0], seconds, seconds)
 }
 
-// $__unixEpochGroupAlias(dateColumn,'5m'[, fill])
+// $__unixEpochGroupAlias(dateColumn,'5m'[, fill]).
 func pgMacroUnixEpochGroupAlias(args []string, original string) string {
-	if len(args) < 2 {
+	if len(args) < _timeGroupMinArgs {
 		return original
 	}
 

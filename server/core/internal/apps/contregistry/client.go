@@ -1,3 +1,4 @@
+// Package contregistry fetches container image digests from container registries.
 package contregistry
 
 import (

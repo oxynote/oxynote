@@ -23,6 +23,13 @@ const (
 
 	// _documentFileLocationFormat is the URL format for document files.
 	_documentFileLocationFormat = "/api/documents/%s/files/%s"
+
+	// _requestTimeout bounds the processing of a single HTTP request.
+	_requestTimeout = 30 * time.Second
+
+	// _corsMaxAgeSeconds is how long browsers may cache CORS preflight
+	// responses.
+	_corsMaxAgeSeconds = 300
 )
 
 // wsRouter prepares all websocket routes/topics.
@@ -87,7 +94,7 @@ func (s *Server) wsRouter() *wsserver.Router {
 func (s *Server) httpRouter() chi.Router {
 	r := chi.NewRouter()
 
-	r.Use(httpserver.Timeout(30 * time.Second))
+	r.Use(httpserver.Timeout(_requestTimeout))
 	r.Use(httpserver.Recoverer(s.log))
 	r.MethodNotAllowed(httpserver.MethodNotAllowed(s.log))
 	r.NotFound(httpserver.NotFound(s.log))
@@ -334,7 +341,7 @@ func (s *Server) setupCORS(r *chi.Mux) {
 			http.MethodDelete,
 		},
 		AllowCredentials: true,
-		MaxAge:           300,
+		MaxAge:           _corsMaxAgeSeconds,
 		Debug:            true,
 	})
 

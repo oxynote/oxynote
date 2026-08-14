@@ -11,10 +11,8 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 )
 
-var (
-	// ErrLinkStateExpired is returned when the link state has expired.
-	ErrLinkStateExpired = errutil.New(http.StatusBadRequest, "slack.link_state_expired", "link state has expired")
-)
+// ErrLinkStateExpired is returned when the link state has expired.
+var ErrLinkStateExpired = errutil.New(http.StatusBadRequest, "slack.link_state_expired", "link state has expired")
 
 // _linkStateTTL is the time-to-live for the link state.
 const _linkStateTTL = time.Minute * 15

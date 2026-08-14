@@ -51,7 +51,7 @@ func Test_DataSource_Info(t *testing.T) {
 		Type: TypePostgreSQL,
 	}
 
-	assert.Equal(t, DataSourceInfo{
+	assert.Equal(t, Info{
 		ID:   id,
 		Name: "test-source",
 		Type: TypePostgreSQL,

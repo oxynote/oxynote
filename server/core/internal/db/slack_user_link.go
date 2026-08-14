@@ -20,6 +20,7 @@ func (a *agent) InsertSlackUserLink(ctx context.Context, link slackapp.UserLink)
 		}).MustSql()
 
 	_, err := a.sql.ExecContext(ctx, q, args...)
+
 	return err
 }
 
@@ -36,6 +37,7 @@ func (a *agent) UpdateSlackUserLink(ctx context.Context, link slackapp.UserLink)
 		MustSql()
 
 	_, err := a.sql.ExecContext(ctx, q, args...)
+
 	return err
 }
 
@@ -86,6 +88,7 @@ func (a *agent) DeleteSlackUserLink(ctx context.Context, slackUserID, teamID str
 		MustSql()
 
 	_, err := a.sql.ExecContext(ctx, q, args...)
+
 	return err
 }
 

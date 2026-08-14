@@ -45,7 +45,11 @@ func (h *Handler) HandleSlashCommand(w http.ResponseWriter, r *http.Request) {
 	case "/unlink":
 		h.handleUnlinkCommand(w, r, userID, teamID, responseURL)
 	default:
-		h.sendEphemeralResponse(r.Context(), responseURL, "Unknown command.")
+		if err := h.sendEphemeralResponse(r.Context(), responseURL, "Unknown command."); err != nil {
+			httpserver.RespondError(h.log, w, err)
+			return
+		}
+
 		w.WriteHeader(http.StatusOK)
 	}
 }
@@ -70,6 +74,7 @@ func (h *Handler) handleLinkCommand(w http.ResponseWriter, r *http.Request, user
 		}
 
 		w.WriteHeader(http.StatusOK)
+
 		return
 	}
 
@@ -91,6 +96,7 @@ func (h *Handler) handleLinkCommand(w http.ResponseWriter, r *http.Request, user
 		}
 
 		w.WriteHeader(http.StatusOK)
+
 		return
 	}
 
@@ -114,20 +120,27 @@ func (h *Handler) handleUnlinkCommand(w http.ResponseWriter, r *http.Request, us
 	link, err := h.db.FetchSlackUserLink(r.Context(), userID, teamID)
 	if err != nil {
 		if errutil.IsNotFound(err) {
-			h.sendEphemeralResponse(
+			serr := h.sendEphemeralResponse(
 				r.Context(),
 				responseURL,
 				"Your Slack account is not linked to a Oxynote account.",
 			)
+			if serr != nil {
+				httpserver.RespondError(h.log, w, serr)
+				return
+			}
+
 			w.WriteHeader(http.StatusOK)
+
 			return
 		}
 
 		httpserver.RespondError(h.log, w, err)
+
 		return
 	}
 
-	if err := h.db.DeleteSlackUserLink(r.Context(), link.SlackUserID, link.TeamID); err != nil {
+	if err = h.db.DeleteSlackUserLink(r.Context(), link.SlackUserID, link.TeamID); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -172,7 +185,7 @@ func (h *Handler) UpdateUserLink(w http.ResponseWriter, r *http.Request) {
 
 	var settings slackapp.UserLinkSettings
 
-	if err := httpserver.DecodeJSON(r, &settings); err != nil {
+	if err = httpserver.DecodeJSON(r, &settings); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -209,6 +222,7 @@ func (h *Handler) DeleteUserLink(w http.ResponseWriter, r *http.Request) {
 		}
 
 		httpserver.RespondError(h.log, w, err)
+
 		return
 	}
 
@@ -262,7 +276,7 @@ func (h *Handler) LinkUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.db.InsertSlackUserLink(
+	if err = h.db.InsertSlackUserLink(
 		r.Context(),
 		*slackapp.NewUserLink(ls.SlackUserID, ls.TeamID, session.UserID),
 	); err != nil {
