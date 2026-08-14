@@ -31,6 +31,13 @@ func (a *agent) CreateNotification(ctx context.Context, nt *notification.Notific
 			return err
 		}
 
+		// a zero limit means unlimited retention; without this guard
+		// the subquery below would emit LIMIT 0 and the delete would
+		// drop every notification of the user.
+		if a.opts.MaxNotifications == 0 {
+			return nil
+		}
+
 		b := a.builder.Select("id").
 			From("notifications").
 			Where(sq.Eq{

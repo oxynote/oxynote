@@ -9,10 +9,14 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"fmt"
+	"reflect"
 	"sync"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -69,6 +73,28 @@ func RequireEqualError(t *testing.T, exp, err error) {
 	}
 
 	require.NoError(t, err)
+}
+
+// FilterEqual asserts that two objects are equal.
+// All ignored types found on any of the provided objects will not be compared.
+func FilterEqual(v1, v2 any, ignoreTypes ...any) error {
+	diff := cmp.Diff(v1, v2, cmpopts.IgnoreTypes(ignoreTypes...),
+		cmp.Exporter(func(reflect.Type) bool { return true }))
+	if diff != "" {
+		return fmt.Errorf("not equal:\n%s", diff)
+	}
+
+	return nil
+}
+
+// AssertFilterEqual asserts that two objects are equal.
+// All ignored types found on any of the provided objects will not be compared.
+func AssertFilterEqual(t *testing.T, v1, v2 any, ignoreTypes ...any) {
+	t.Helper()
+
+	if err := FilterEqual(v1, v2, ignoreTypes...); err != nil {
+		t.Error(err)
+	}
 }
 
 // NewBuffer creates a fresh instance of concurrent writer and its buffer.

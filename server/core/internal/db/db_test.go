@@ -10,9 +10,12 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/DATA-DOG/go-sqlmock"
+	sq "github.com/Masterminds/squirrel"
 	"github.com/dchest/uniuri"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jmoiron/sqlx"
+	"github.com/lann/builder"
 	"github.com/orlangure/gnomock"
 	pgDocker "github.com/orlangure/gnomock/preset/postgres"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
@@ -28,6 +31,11 @@ var _pgDSN string
 const (
 	_pgUser string = "pgtest"
 	_pgPass string = "pgpass"
+
+	// _dataSourceSecret is the credentials signing secret used by
+	// all temporary test databases. It must be a valid AES key
+	// length (32 bytes).
+	_dataSourceSecret string = "0123456789abcdef0123456789abcdef"
 )
 
 func TestMain(m *testing.M) {
@@ -208,11 +216,32 @@ func Test_Tx_Rollback(t *testing.T) {
 	require.Error(t, ntx.Rollback())
 }
 
+// prepMockDB creates an agent backed by sqlmock for reaching error
+// branches that a real database cannot produce (e.g. failures in the
+// middle of a multi-statement transaction).
+func prepMockDB(t *testing.T) (*agent, sqlmock.Sqlmock) {
+	t.Helper()
+
+	mockDB, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		mockDB.Close() //nolint:errcheck,gosec // error provides no meaningful info
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	return &agent{
+		sql:     sqlx.NewDb(mockDB, "sqlmock"),
+		builder: sq.StatementBuilderType(builder.EmptyBuilder).PlaceholderFormat(sq.Dollar),
+	}, mock
+}
+
 func prepTempDB(t *testing.T) *DB {
 	name := uniuri.NewLenChars(10, []byte("abcdefghijklmnopqrstuvwxyz"))
 
 	opts := Options{
-		DSN: fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", _pgUser, _pgPass, _pgDSN, name),
+		DSN:                                fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", _pgUser, _pgPass, _pgDSN, name),
+		DataSourceCredentialsSigningSecret: _dataSourceSecret,
 	}
 
 	tmpDB, err := sqlx.Connect(

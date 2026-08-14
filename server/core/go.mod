@@ -16,6 +16,7 @@ require (
 	github.com/go-chi/cors v1.2.2
 	github.com/go-sql-driver/mysql v1.10.0
 	github.com/gomodule/redigo v1.9.3
+	github.com/google/go-cmp v0.7.0
 	github.com/google/go-containerregistry v0.21.6
 	github.com/google/go-github/v72 v72.0.0
 	github.com/gorilla/schema v1.4.1
