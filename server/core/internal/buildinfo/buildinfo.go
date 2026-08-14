@@ -29,10 +29,22 @@ func init() { //nolint:gochecknoinits // we need to prepare build info
 	logutil.ShowCritical = IsDevEnv()
 
 	// only strings can be inserted via ldflags which means
-	// some information needs to be parsed
+	// some information needs to be parsed. Malformed injected values
+	// fall back to zero defaults instead of failing the boot.
 
-	_info.Version, _ = semver.ParseTolerant(_version)
-	_info.Timestamp, _ = timeutil.Parse(_timestampString)
+	version, err := semver.ParseTolerant(_version)
+	if err != nil {
+		version = semver.Version{}
+	}
+
+	_info.Version = version
+
+	timestamp, err := timeutil.Parse(_timestampString)
+	if err != nil {
+		timestamp = time.Time{}
+	}
+
+	_info.Timestamp = timestamp
 }
 
 // BuildInfo contains information about the executable.

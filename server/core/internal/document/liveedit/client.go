@@ -116,7 +116,10 @@ func (c *Client) Apply(ctx context.Context, documentID, branchID string, ops []O
 	if resp.StatusCode != http.StatusOK {
 		// Surface up to ~1 KiB of the response body so callers can
 		// see the Node-side error without us pre-parsing.
-		preview, _ := io.ReadAll(io.LimitReader(resp.Body, _maxErrorPreviewBytes))
+		preview, err := io.ReadAll(io.LimitReader(resp.Body, _maxErrorPreviewBytes))
+		if err != nil {
+			return Result{}, fmt.Errorf("node operations endpoint: status %d: reading response body: %w", resp.StatusCode, err)
+		}
 
 		return Result{}, fmt.Errorf("node operations endpoint: status %d: %s", resp.StatusCode, string(preview))
 	}

@@ -239,7 +239,7 @@ func Test_WrapTx(t *testing.T) {
 
 	// error - invalid agent
 	assert.PanicsWithValue(t, "invalid agent type", func() {
-		_ = WrapTx(context.Background(), struct{}{}, fn1)
+		require.NoError(t, WrapTx(context.Background(), struct{}{}, fn1))
 	})
 
 	// error in begin

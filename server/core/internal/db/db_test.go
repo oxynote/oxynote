@@ -141,7 +141,7 @@ func Test_SystemDB_BeginTx(t *testing.T) {
 		t,
 		"dest is not a pointer",
 		func() {
-			_ = db.BeginTx(context.Background(), struct{}{})
+			require.NoError(t, db.BeginTx(context.Background(), struct{}{}))
 		},
 	)
 
@@ -150,7 +150,7 @@ func Test_SystemDB_BeginTx(t *testing.T) {
 		t,
 		"dest is not a pointer",
 		func() {
-			_ = db.BeginTx(context.Background(), (*struct{})(nil))
+			require.NoError(t, db.BeginTx(context.Background(), (*struct{})(nil)))
 		},
 	)
 
@@ -158,7 +158,7 @@ func Test_SystemDB_BeginTx(t *testing.T) {
 	require.Panics(
 		t,
 		func() {
-			_ = db.BeginTx(context.Background(), &struct{}{})
+			require.NoError(t, db.BeginTx(context.Background(), &struct{}{}))
 		},
 	)
 

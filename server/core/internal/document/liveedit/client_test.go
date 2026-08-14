@@ -80,11 +80,14 @@ func Test_Client_Apply(t *testing.T) {
 				captured.path = r.URL.Path
 				captured.method = r.Method
 
-				raw, _ := io.ReadAll(r.Body)
-				_ = json.Unmarshal(raw, &captured.body)
+				raw, err := io.ReadAll(r.Body)
+				assert.NoError(t, err)
+				assert.NoError(t, json.Unmarshal(raw, &captured.body))
 
 				w.WriteHeader(tc.StatusCode)
-				_, _ = w.Write([]byte(tc.ResponseBody))
+
+				_, err = w.Write([]byte(tc.ResponseBody))
+				assert.NoError(t, err)
 			}))
 			t.Cleanup(srv.Close)
 

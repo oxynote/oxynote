@@ -454,21 +454,20 @@ func createAppClient(appID int64, privateKeyPath string) (*github.Client, error)
 
 // parseGithubError parses errors returned by the Github API and maps them to appropriate HTTP status codes.
 func parseGithubError(err error) error {
-	{
-		var (
-			resp  *github.RateLimitError
-			resp1 *github.AbuseRateLimitError
-			resp2 *github.ErrorResponse
-		)
-		switch {
-		case errors.As(err, &resp):
-			return errutil.New(http.StatusTooManyRequests, "github.rate_limit", "rate limit exceeded")
-		case errors.As(err, &resp1):
-			return errutil.New(http.StatusTooManyRequests, "github.abuse_rate_limit", "abuse rate limit exceeded")
-		case errors.As(err, &resp2):
-			if resp2.Response.StatusCode == http.StatusNotFound {
-				return ErrResourceNotFound
-			}
+	var (
+		rateErr  *github.RateLimitError
+		abuseErr *github.AbuseRateLimitError
+		respErr  *github.ErrorResponse
+	)
+
+	switch {
+	case errors.As(err, &rateErr):
+		return errutil.New(http.StatusTooManyRequests, "github.rate_limit", "rate limit exceeded")
+	case errors.As(err, &abuseErr):
+		return errutil.New(http.StatusTooManyRequests, "github.abuse_rate_limit", "abuse rate limit exceeded")
+	case errors.As(err, &respErr):
+		if respErr.Response.StatusCode == http.StatusNotFound {
+			return ErrResourceNotFound
 		}
 	}
 

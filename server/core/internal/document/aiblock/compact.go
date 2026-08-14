@@ -30,7 +30,7 @@ func Compact(b document.Block) (Block, error) {
 	case document.BlockNodeHeading:
 		return compactHeading(b, uid), nil
 	case document.BlockNodeBlockquote:
-		return compactBlockquote(b, uid), nil
+		return compactBlockquote(b, uid)
 	case document.BlockNodeBulletList:
 		return compactList(b, uid, BlockBulletList)
 	case document.BlockNodeOrderedList:
@@ -104,7 +104,7 @@ func compactHeading(b document.Block, uid string) Block {
 	}
 }
 
-func compactBlockquote(b document.Block, uid string) Block {
+func compactBlockquote(b document.Block, uid string) (Block, error) {
 	// The canonical model treats blockquote as a single-paragraph
 	// wrapper. When the source has exactly one paragraph child,
 	// promote its text. Otherwise fall back to Items so callers can
@@ -114,16 +114,19 @@ func compactBlockquote(b document.Block, uid string) Block {
 			Type: BlockBlockquote,
 			UID:  uid,
 			Text: EmitInlineMarkdown(b.Content[0].Content),
-		}
+		}, nil
 	}
 
-	items, _ := CompactMany(b.Content)
+	items, err := CompactMany(b.Content)
+	if err != nil {
+		return Block{}, fmt.Errorf("blockquote: %w", err)
+	}
 
 	return Block{
 		Type:  BlockBlockquote,
 		UID:   uid,
 		Items: items,
-	}
+	}, nil
 }
 
 // compactList compacts a bulletList or orderedList by unwrapping
