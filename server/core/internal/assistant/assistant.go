@@ -46,7 +46,7 @@ type Manager struct {
 // client backs the search_documents tool; the tree notifier
 // broadcasts sidebar refresh events after assistant-driven document
 // tree mutations and is wired post-construction via SetTreeNotifier
-// because the dochandler that satisfies it is built later, inside
+// because the document handler that satisfies it is built later, inside
 // server.NewServer.
 func NewManager(
 	log *slog.Logger,
@@ -72,7 +72,7 @@ func NewManager(
 
 // SetTreeNotifier wires the tree-change notifier the assistant uses
 // to broadcast sidebar refresh events after document tree mutations.
-// Call this once during startup, after the dochandler that satisfies
+// Call this once during startup, after the document handler that satisfies
 // tools.TreeNotifier is constructed. The setter is not safe for
 // concurrent use with NewSession; wire it before serving traffic.
 func (m *Manager) SetTreeNotifier(tree tools.TreeNotifier) {

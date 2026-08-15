@@ -8,7 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
-	"github.com/oxynote/oxynote/server/core/internal/server/auth"
+	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/oxynote/wetsocks/wsserver"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -51,7 +51,7 @@ func (s *Server) wsRouter() *wsserver.Router {
 
 	binderFn("change@documents.{documentId}.comments",
 		func(tpc wsserver.Topic) {
-			s.handlers.document.BindCommentsChange(tpc)
+			s.handlers.comment.BindCommentsChange(tpc)
 		},
 	)
 
@@ -270,34 +270,34 @@ func (s *Server) router() chi.Router {
 				})
 			})
 			ssr.Route("/hooks", func(sssr chi.Router) {
-				sssr.Get("/", s.handlers.document.FetchDocumentHooks)
-				sssr.Post("/", s.handlers.document.CreateDocumentHook)
+				sssr.Get("/", s.handlers.hook.FetchDocumentHooks)
+				sssr.Post("/", s.handlers.hook.CreateDocumentHook)
 				sssr.Route("/{hookId}", func(ssssr chi.Router) {
-					ssssr.Put("/", s.handlers.document.UpdateDocumentHook)
-					ssssr.Delete("/", s.handlers.document.DeleteDocumentHook)
-					ssssr.Put("/reset", s.handlers.document.ResetDocumentHook)
+					ssssr.Put("/", s.handlers.hook.UpdateDocumentHook)
+					ssssr.Delete("/", s.handlers.hook.DeleteDocumentHook)
+					ssssr.Put("/reset", s.handlers.hook.ResetDocumentHook)
 				})
 			})
 			ssr.Route("/files", func(sssr chi.Router) {
-				sssr.Post("/", s.handlers.document.UploadDocumentFile)
-				sssr.Get("/{id}", s.handlers.document.RetrieveDocumentFile)
+				sssr.Post("/", s.handlers.files.UploadDocumentFile)
+				sssr.Get("/{id}", s.handlers.files.RetrieveDocumentFile)
 			})
 
 			ssr.Route("/comments", func(sssr chi.Router) {
-				sssr.Get("/", s.handlers.document.FetchDocumentComments)
-				sssr.Post("/", s.handlers.document.CreateDocumentComment)
+				sssr.Get("/", s.handlers.comment.FetchDocumentComments)
+				sssr.Post("/", s.handlers.comment.CreateDocumentComment)
 				sssr.Route("/{commentId}", func(ssssr chi.Router) {
 					// TODO: Uncomment this once comment history is implemented.
 					// ssssr.Put("/unresolve", s.handlers.document.UnresolveDocumentComment)
-					ssssr.Get("/", s.handlers.document.FetchDocumentComment)
-					ssssr.Put("/", s.handlers.document.UpdateDocumentComment)
-					ssssr.Put("/resolve", s.handlers.document.ResolveDocumentComment)
-					ssssr.Delete("/", s.handlers.document.DeleteDocumentComment)
+					ssssr.Get("/", s.handlers.comment.FetchDocumentComment)
+					ssssr.Put("/", s.handlers.comment.UpdateDocumentComment)
+					ssssr.Put("/resolve", s.handlers.comment.ResolveDocumentComment)
+					ssssr.Delete("/", s.handlers.comment.DeleteDocumentComment)
 					ssssr.Route("/replies", func(sssssr chi.Router) {
-						sssssr.Post("/", s.handlers.document.CreateDocumentCommentReply)
+						sssssr.Post("/", s.handlers.comment.CreateDocumentCommentReply)
 						sssssr.Route("/{replyId}", func(ssssssr chi.Router) {
-							ssssssr.Put("/", s.handlers.document.UpdateDocumentCommentReply)
-							ssssssr.Delete("/", s.handlers.document.DeleteDocumentCommentReply)
+							ssssssr.Put("/", s.handlers.comment.UpdateDocumentCommentReply)
+							ssssssr.Delete("/", s.handlers.comment.DeleteDocumentCommentReply)
 						})
 					})
 				})

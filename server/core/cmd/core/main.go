@@ -30,7 +30,6 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/internal/notification/interpreter"
 	"github.com/oxynote/oxynote/server/core/internal/server"
-	"github.com/oxynote/oxynote/server/core/internal/server/auth"
 	"github.com/oxynote/oxynote/server/core/internal/storage"
 	"github.com/oxynote/oxynote/server/core/pkg/ioutil"
 	"github.com/oxynote/oxynote/server/core/pkg/logutil"
@@ -278,7 +277,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 			DemoPrometheusURL: buildinfo.Getenv("SERVER_DEMO_PROMETHEUS_URL"),
 			Port:              _serverPort,
 			Origins:           origins,
-			Auth: auth.Options{
+			Auth: server.AuthOptions{
 				BetterAuthURL: buildinfo.Getenv("SERVER_AUTH_BETTER_AUTH_URL"),
 			},
 		},

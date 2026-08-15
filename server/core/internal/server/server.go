@@ -15,19 +15,22 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/apps/githubapp"
 	"github.com/oxynote/oxynote/server/core/internal/apps/slackapp"
 	"github.com/oxynote/oxynote/server/core/internal/apps/webchanges"
-	"github.com/oxynote/oxynote/server/core/internal/assistant"
+	assistantCore "github.com/oxynote/oxynote/server/core/internal/assistant"
 	"github.com/oxynote/oxynote/server/core/internal/buildinfo"
-	"github.com/oxynote/oxynote/server/core/internal/notification"
-	"github.com/oxynote/oxynote/server/core/internal/server/aihandler"
-	"github.com/oxynote/oxynote/server/core/internal/server/auth"
-	"github.com/oxynote/oxynote/server/core/internal/server/datasourcehandler"
-	"github.com/oxynote/oxynote/server/core/internal/server/dochandler"
-	"github.com/oxynote/oxynote/server/core/internal/server/emailhandler"
-	"github.com/oxynote/oxynote/server/core/internal/server/githubhandler"
-	"github.com/oxynote/oxynote/server/core/internal/server/notifhandler"
-	"github.com/oxynote/oxynote/server/core/internal/server/orghandler"
-	"github.com/oxynote/oxynote/server/core/internal/server/slackhandler"
-	"github.com/oxynote/oxynote/server/core/internal/server/userhandler"
+	notificationCore "github.com/oxynote/oxynote/server/core/internal/notification"
+	"github.com/oxynote/oxynote/server/core/internal/server/internal/assistant"
+	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
+	"github.com/oxynote/oxynote/server/core/internal/server/internal/datasource"
+	"github.com/oxynote/oxynote/server/core/internal/server/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/server/internal/document/comment"
+	"github.com/oxynote/oxynote/server/core/internal/server/internal/document/files"
+	"github.com/oxynote/oxynote/server/core/internal/server/internal/document/hook"
+	"github.com/oxynote/oxynote/server/core/internal/server/internal/email"
+	"github.com/oxynote/oxynote/server/core/internal/server/internal/github"
+	"github.com/oxynote/oxynote/server/core/internal/server/internal/notification"
+	"github.com/oxynote/oxynote/server/core/internal/server/internal/org"
+	"github.com/oxynote/oxynote/server/core/internal/server/internal/slack"
+	"github.com/oxynote/oxynote/server/core/internal/server/internal/user"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/oxynote/oxynote/server/core/pkg/logutil"
 	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
@@ -60,6 +63,10 @@ type Options struct {
 	Auth auth.Options
 }
 
+// AuthOptions aliases the internal auth package's options so that cmd
+// wiring can populate them without importing an internal package.
+type AuthOptions = auth.Options
+
 // validate validates remote server options.
 func (o Options) validate() error {
 	if o.Port != 0 && o.Port < 1024 {
@@ -79,15 +86,18 @@ type Server struct {
 	ws wsserver.Pool
 
 	handlers struct {
-		user         *userhandler.Handler
-		organization *orghandler.Handler
-		document     *dochandler.Handler
-		github       *githubhandler.Handler
-		slack        *slackhandler.Handler
-		notification *notifhandler.Handler
-		datasource   *datasourcehandler.Handler
-		email        *emailhandler.Handler
-		ai           *aihandler.Handler
+		user         *user.Handler
+		organization *org.Handler
+		document     *document.Handler
+		comment      *comment.Handler
+		files        *files.Handler
+		hook         *hook.Handler
+		github       *github.Handler
+		slack        *slack.Handler
+		notification *notification.Handler
+		datasource   *datasource.Handler
+		email        *email.Handler
+		ai           *assistant.Handler
 	}
 
 	opts Options
@@ -101,13 +111,13 @@ func NewServer(
 	db DB,
 	fc metricutil.Factory,
 	storageClient Storer,
-	assistantMan *assistant.Manager,
+	assistantMan *assistantCore.Manager,
 	githubMan *githubapp.Manager,
 	slackMan *slackapp.Manager,
 	webchangesClient *webchanges.Client,
-	searchGateway dochandler.SearchGateway,
+	searchGateway document.SearchGateway,
 	notifier Notifier,
-	emailSender emailhandler.Sender,
+	emailSender email.Sender,
 	client *http.Client,
 ) (*Server, error) {
 	if err := opts.validate(); err != nil {
@@ -121,27 +131,30 @@ func NewServer(
 		client: client,
 	}
 
-	srv.handlers.user = userhandler.NewHandler(log, db, storageClient, opts.PublicURL+_userImageLocationFormat)
-	srv.handlers.organization = orghandler.NewHandler(log, db, storageClient, opts.PublicURL+_organizationLogoLocation, opts.DemoPrometheusURL)
-	srv.handlers.document = dochandler.NewHandler(log, db, storageClient, opts.PublicURL+_documentFileLocationFormat, githubMan, webchangesClient, searchGateway, notifier)
+	srv.handlers.user = user.NewHandler(log, db, storageClient, opts.PublicURL+_userImageLocationFormat)
+	srv.handlers.organization = org.NewHandler(log, db, storageClient, opts.PublicURL+_organizationLogoLocation, opts.DemoPrometheusURL)
+	srv.handlers.document = document.NewHandler(log, db, githubMan, webchangesClient, searchGateway, notifier)
+	srv.handlers.comment = comment.NewHandler(log, db, notifier)
+	srv.handlers.files = files.NewHandler(log, db, storageClient, opts.PublicURL+_documentFileLocationFormat)
+	srv.handlers.hook = hook.NewHandler(log, db, githubMan, webchangesClient)
 
 	// The assistant's CRUD tools mutate the document tree directly
 	// via the DB layer, bypassing the HTTP handlers that normally
-	// fire tree-change events. Hand it the dochandler so its tools
-	// can notify sidebar subscribers after create/delete/move/
+	// fire tree-change events. Hand it the document handler so its
+	// tools can notify sidebar subscribers after create/delete/move/
 	// rename/set-icon.
 	assistantMan.SetTreeNotifier(srv.handlers.document)
-	srv.handlers.github = githubhandler.NewHandler(log, db, client, githubMan)
-	srv.handlers.slack = slackhandler.NewHandler(log, db, http.DefaultClient, slackMan)
-	srv.handlers.notification = notifhandler.NewHandler(log, db, notifier)
-	srv.handlers.datasource = datasourcehandler.NewHandler(log, db)
-	srv.handlers.email = emailhandler.NewHandler(log, emailSender)
+	srv.handlers.github = github.NewHandler(log, db, client, githubMan)
+	srv.handlers.slack = slack.NewHandler(log, db, http.DefaultClient, slackMan)
+	srv.handlers.notification = notification.NewHandler(log, db, notifier)
+	srv.handlers.datasource = datasource.NewHandler(log, db)
+	srv.handlers.email = email.NewHandler(log, emailSender)
 
 	wsAcceptOpts := websocket.AcceptOptions{
 		OriginPatterns:     opts.Origins,
 		InsecureSkipVerify: !opts.Secure,
 	}
-	srv.handlers.ai = aihandler.NewHandler(
+	srv.handlers.ai = assistant.NewHandler(
 		log,
 		assistantMan,
 		wsAcceptOpts,
@@ -252,25 +265,28 @@ func (s *Server) bindVersionPing(tpc wsserver.Topic) {
 
 // DB is an interface that handles communication with the database.
 type DB interface {
-	dochandler.DB
-	userhandler.DB
-	orghandler.DB
-	githubhandler.DB
-	slackhandler.DB
-	notification.DB
-	datasourcehandler.DB
+	document.DB
+	comment.DB
+	files.DB
+	hook.DB
+	user.DB
+	org.DB
+	github.DB
+	slack.DB
+	notificationCore.DB
+	datasource.DB
 }
 
 // Storer is an interface that defines methods for uploading and retrieving objects.
 type Storer interface {
-	orghandler.Storer
-	userhandler.Storer
-	dochandler.Storer
+	org.Storer
+	user.Storer
+	files.Storer
 }
 
-// Notifier is an interface that combines notification.Notifier and
-// notification.Publisher.
+// Notifier is an interface that combines notificationCore.Notifier and
+// notificationCore.Publisher.
 type Notifier interface {
-	notification.Receiver
-	notification.Publisher
+	notificationCore.Receiver
+	notificationCore.Publisher
 }

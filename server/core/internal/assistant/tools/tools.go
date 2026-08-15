@@ -162,7 +162,7 @@ type Searcher interface {
 
 // TreeNotifier publishes document-tree-change events so connected
 // clients can refresh their sidebar after assistant-driven creates,
-// deletes, moves, renames, or icon changes. The dochandler.Handler
+// deletes, moves, renames, or icon changes. The server document handler
 // satisfies this interface via its NotifyTreeChange method.
 //
 //go:generate ../../../scripts/codegen/mock -t both TreeNotifier tree_notifier
