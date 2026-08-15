@@ -19,10 +19,24 @@ Grafana's view of your systems, with more of the ops stack on the roadmap.
 
 ## Quickstart
 
-Requirements: [Docker](https://www.docker.com), [Go](https://go.dev),
-[Node.js](https://nodejs.org) (with corepack for [pnpm](https://pnpm.io)),
-[goreleaser](https://goreleaser.com), [make](https://www.gnu.org/software/make/),
-[golangci-lint](https://golangci-lint.run), [moq](https://github.com/matryer/moq).
+Requirements:
+
+- [Docker](https://www.docker.com) — runs the dev stack (Postgres, Caddy, the
+  app containers, etc.) via docker-compose; also a unit-test dependency for
+  the Go database-layer tests, which start throwaway containers.
+- [Go](https://go.dev) — builds the `server/core` API server and the
+  `datagen` demo-data generator.
+- [Node.js](https://nodejs.org) (with corepack for [pnpm](https://pnpm.io)) —
+  builds and runs the `web` frontend and the `server/auth-realtime` service;
+  pnpm is the package manager for both.
+- [goreleaser](https://goreleaser.com) — produces the Go binaries and dev
+  docker images (`make build` in `server/core` and `datagen`).
+- [make](https://www.gnu.org/software/make/) — orchestrates all setup, build,
+  and run commands.
+- [golangci-lint](https://golangci-lint.run) — lints the Go code (part of the
+  QA gates).
+- [moq](https://github.com/matryer/moq) — generates the mocks used by Go
+  tests (`go generate`).
 
 ```sh
 make setup     # install dependencies + create local env files from templates
