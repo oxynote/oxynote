@@ -5,3 +5,18 @@
 build:
 	goreleaser release --snapshot --clean
 	docker tag ghcr.io/oxynote/core:dev-amd64 ghcr.io/oxynote/core:dev
+
+# Run all tests with the race detector.
+.PHONY: test
+test:
+	@go test -race ./...
+
+# Run the linters and apply automatic fixes.
+.PHONY: lint
+lint:
+	@golangci-lint run --fix --timeout 5m
+
+# Run the linters without modifying anything.
+.PHONY: check-lint
+check-lint:
+	@golangci-lint run --timeout 5m

@@ -36,6 +36,15 @@ are part of the convention.
 10. Lint clean under a strict golangci-lint profile (gofumpt extra rules, wsl, godot,
     revive all-rules, gocritic all tags). `//nolint` always carries a reason.
 
+## Commands & QA gates
+
+```sh
+make build       # goreleaser snapshot build -> bin/ + ghcr.io/oxynote/core:dev image
+make test        # go test -race ./...
+make lint        # golangci-lint run --fix (applies automatic fixes)
+make check-lint  # golangci-lint run (verification only)
+```
+
 ## Repository layout
 
 - `cmd/<app>/main.go` — the only place that reads the environment, builds the root
