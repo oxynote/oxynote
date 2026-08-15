@@ -22,7 +22,7 @@ func (h *Handler) BindNotifications(tpc wsserver.Topic) {
 		defer mu.Unlock()
 
 		unsub = h.notifier.OnNotification(func(ctx context.Context, nt notificationCore.Notification) {
-			count, err := h.db.FetchNotificationCount(ctx, nt.UserID, nt.OrganizationID, false)
+			count, err := h.db.FetchNotificationCount(ctx, nt.OrganizationID, nt.UserID, false)
 			if err != nil {
 				logutil.Critical(h.log, err).
 					Error("failed to fetch notifications count")

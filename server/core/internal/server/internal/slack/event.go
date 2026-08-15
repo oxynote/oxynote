@@ -59,6 +59,9 @@ func (h *Handler) handleChannelOpenEvent(ctx context.Context, teamID, userID, ch
 			url,
 		),
 	)
+	if err != nil {
+		return fmt.Errorf("failed to post message: %w", err)
+	}
 
-	return fmt.Errorf("failed to post message: %w", err)
+	return nil
 }

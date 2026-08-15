@@ -83,11 +83,13 @@ func (m *Manager) SetTreeNotifier(tree tools.TreeNotifier) {
 // organisation and user. The session starts without an active
 // document; the client sends a set_active_document message right
 // after connect to tell the model which document is in view.
+// NewSession creates a new chat session bound to the given organization,
+// user, and message writer.
 func (m *Manager) NewSession(
 	ctx context.Context,
 	orgID, userID string,
 	writer protocol.SessionWriter,
-) (*Session, error) {
+) (Session, error) {
 	msg, err := m.store.Get(ctx, createSessionKey(orgID, userID))
 
 	switch {
@@ -99,7 +101,7 @@ func (m *Manager) NewSession(
 		return nil, fmt.Errorf("failed to get session messages: %w", err)
 	}
 
-	session := &Session{
+	s := &session{
 		man:      m,
 		orgID:    orgID,
 		userID:   userID,
@@ -109,9 +111,9 @@ func (m *Manager) NewSession(
 		tools:    tools.NewManager(m.log, m.db, m.search, m.applier, m.tree, orgID, userID),
 	}
 
-	session.sendHistory(ctx)
+	s.sendHistory(ctx)
 
-	return session, nil
+	return s, nil
 }
 
 // saveMessages persists the current session messages to Redis.
@@ -238,6 +240,17 @@ func hasToolUse(msg anthropic.MessageParam) bool {
 	}
 
 	return false
+}
+
+// Session is a single AI chat session created by the Manager.
+//
+//go:generate ../../scripts/codegen/mock Session
+type Session interface {
+	// Process handles a single inbound client message.
+	Process(ctx context.Context, msg []byte)
+
+	// Close releases the session's resources.
+	Close() error
 }
 
 // SessionStore is the persistence surface for conversation history,

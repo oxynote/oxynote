@@ -675,12 +675,16 @@ func (h *Handler) extractReplyParameter(r *http.Request) (xid.ID, error) {
 }
 
 // DB is an interface that combines sqlutil.DB and DBAgent.
+//
+//go:generate ../../../../../scripts/codegen/mock -t internal DB db
 type DB interface {
 	sqlutil.DB
 	DBAgent
 }
 
 // Tx is an interface that combines sqlutil.Tx and DBAgent.
+//
+//go:generate ../../../../../scripts/codegen/mock -t internal Tx tx
 type Tx interface {
 	sqlutil.Tx
 	DBAgent

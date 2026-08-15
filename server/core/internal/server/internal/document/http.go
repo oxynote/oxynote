@@ -1229,12 +1229,16 @@ func (h *Handler) extractBranchParameter(r *http.Request) (xid.ID, error) {
 }
 
 // DB is an interface that combines sqlutil.DB and DBAgent.
+//
+//go:generate ../../../../scripts/codegen/mock -t internal DB db
 type DB interface {
 	sqlutil.DB
 	DBAgent
 }
 
 // Tx is an interface that combines sqlutil.Tx and DBAgent.
+//
+//go:generate ../../../../scripts/codegen/mock -t internal Tx tx
 type Tx interface {
 	sqlutil.Tx
 	DBAgent
@@ -1379,6 +1383,8 @@ type ReviewersDBAgent interface {
 }
 
 // SearchGateway is an interface that handles communication with the search engine.
+//
+//go:generate ../../../../scripts/codegen/mock -t internal SearchGateway
 type SearchGateway interface {
 	// SearchDocuments should find the documents matching the query.
 	SearchDocuments(ctx context.Context, organizationID, query string) ([]byte, error)

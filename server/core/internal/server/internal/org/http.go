@@ -240,12 +240,16 @@ func (h *Handler) extractOrganizationParameter(r *http.Request) (string, error) 
 }
 
 // DB is an interface that combines sqlutil.DB and DBAgent.
+//
+//go:generate ../../../../scripts/codegen/mock -t internal DB db
 type DB interface {
 	sqlutil.DB
 	DBAgent
 }
 
 // Tx is an interface that combines sqlutil.Tx and DBAgent.
+//
+//go:generate ../../../../scripts/codegen/mock -t internal Tx tx
 type Tx interface {
 	sqlutil.Tx
 	DBAgent
@@ -273,6 +277,8 @@ type DBAgent interface {
 }
 
 // Storer is an interface that defines methods for uploading and retrieving objects.
+//
+//go:generate ../../../../scripts/codegen/mock -t internal Storer
 type Storer interface {
 	// Upload uploads a new object.
 	Upload(ctx context.Context, folder, id string, r io.Reader) error

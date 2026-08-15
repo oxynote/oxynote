@@ -450,6 +450,8 @@ func (h *Handler) FetchRepositoryTree(w http.ResponseWriter, r *http.Request) {
 }
 
 // DB is an interface that handles communication with the document database.
+//
+//go:generate ../../../../scripts/codegen/mock -t internal DB db
 type DB interface {
 	githubapp.DB
 

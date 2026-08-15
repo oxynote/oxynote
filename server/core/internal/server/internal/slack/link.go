@@ -13,6 +13,14 @@ import (
 	"github.com/slack-go/slack"
 )
 
+const (
+	// _linkCommand is the slash command that links a Slack account.
+	_linkCommand = "/link"
+
+	// _unlinkCommand is the slash command that unlinks a Slack account.
+	_unlinkCommand = "/unlink"
+)
+
 var (
 	// ErrMissingLinkState is returned when the link state is missing from the request.
 	ErrMissingLinkState = errutil.New(http.StatusBadRequest, "slack.missing_link_state", "link state is required")
@@ -40,9 +48,9 @@ func (h *Handler) HandleSlashCommand(w http.ResponseWriter, r *http.Request) {
 	responseURL := r.FormValue("response_url")
 
 	switch command {
-	case "/link":
+	case _linkCommand:
 		h.handleLinkCommand(w, r, userID, teamID, responseURL)
-	case "/unlink":
+	case _unlinkCommand:
 		h.handleUnlinkCommand(w, r, userID, teamID, responseURL)
 	default:
 		if err := h.sendEphemeralResponse(r.Context(), responseURL, "Unknown command."); err != nil {

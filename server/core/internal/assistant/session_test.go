@@ -112,7 +112,7 @@ func newTestSession(
 	db tools.DB,
 	store SessionStore,
 	log *slog.Logger,
-) *Session {
+) *session {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
@@ -132,7 +132,7 @@ func newTestSession(
 		metrics: newMetrics(metricutil.NewFactory("test", nil)),
 	}
 
-	return &Session{
+	return &session{
 		man:    man,
 		orgID:  "org",
 		userID: "user",
@@ -481,7 +481,7 @@ func Test_Session_dispatchTools(t *testing.T) {
 	t.Run("Declined writes are skipped", func(t *testing.T) {
 		t.Parallel()
 
-		var s *Session
+		var s *session
 
 		writer := &protocolMock.SessionWriter{
 			WriteJSONFunc: func(_ context.Context, msg any) {
@@ -506,7 +506,7 @@ func Test_Session_dispatchTools(t *testing.T) {
 	t.Run("Approved writes execute", func(t *testing.T) {
 		t.Parallel()
 
-		var s *Session
+		var s *session
 
 		writer := &protocolMock.SessionWriter{
 			WriteJSONFunc: func(_ context.Context, msg any) {
@@ -630,7 +630,7 @@ func Test_Session_requestConfirmation(t *testing.T) {
 	t.Run("Approved", func(t *testing.T) {
 		t.Parallel()
 
-		var s *Session
+		var s *session
 
 		writer := &protocolMock.SessionWriter{
 			WriteJSONFunc: func(_ context.Context, msg any) {

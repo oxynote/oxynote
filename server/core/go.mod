@@ -24,6 +24,7 @@ require (
 	github.com/guregu/null/v5 v5.0.0
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/jackc/pgx/v5 v5.9.2
+	github.com/jarcoal/httpmock v1.4.2
 	github.com/jellydator/ttlcache/v3 v3.4.0
 	github.com/jellydator/xync v0.0.0-20240601154136-0f038e166df4
 	github.com/jmoiron/sqlx v1.4.0
@@ -33,6 +34,7 @@ require (
 	github.com/orlangure/gnomock v0.32.0
 	github.com/oxynote/wetsocks v0.1.0
 	github.com/prometheus/client_golang v1.23.2
+	github.com/prometheus/client_model v0.6.2
 	github.com/prometheus/common v0.67.5
 	github.com/qustavo/sqlhooks/v2 v2.1.0
 	github.com/rafaeljusto/redigomock v2.4.0+incompatible
@@ -105,7 +107,6 @@ require (
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
-	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/procfs v0.20.1 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/standard-webhooks/standard-webhooks/libraries v0.0.1 // indirect

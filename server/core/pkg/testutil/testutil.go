@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/http"
 	"reflect"
 	"sync"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/jarcoal/httpmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -95,6 +97,14 @@ func AssertFilterEqual(t *testing.T, v1, v2 any, ignoreTypes ...any) {
 	if err := FilterEqual(v1, v2, ignoreTypes...); err != nil {
 		t.Error(err)
 	}
+}
+
+// MockHTTP creates an HTTP client backed by an isolated httpmock
+// transport, so tests never activate httpmock globally.
+func MockHTTP() (*http.Client, *httpmock.MockTransport) {
+	mt := httpmock.NewMockTransport()
+
+	return &http.Client{Transport: mt}, mt
 }
 
 // NewBuffer creates a fresh instance of concurrent writer and its buffer.

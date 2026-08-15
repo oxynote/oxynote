@@ -2,6 +2,7 @@
 package notification
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 
@@ -14,14 +15,14 @@ import (
 // Handler holds dependencies required for notification operations.
 type Handler struct {
 	log      *slog.Logger
-	db       notificationCore.DB
+	db       DB
 	notifier notificationCore.Receiver
 }
 
 // NewHandler creates a new notifications handling instance.
 func NewHandler(
 	log *slog.Logger,
-	db notificationCore.DB,
+	db DB,
 	notifier notificationCore.Receiver,
 ) *Handler {
 	return &Handler{
@@ -111,4 +112,19 @@ func (h *Handler) MarkReadManyNotifications(w http.ResponseWriter, r *http.Reque
 	}
 
 	httpserver.Respond(h.log, w, nil, http.StatusNoContent)
+}
+
+// DB is an interface that handles communication with the notifications database.
+//
+//go:generate ../../../../scripts/codegen/mock -t internal DB db
+type DB interface {
+	// FetchManyNotifications should fetch all notifications.
+	FetchManyNotifications(ctx context.Context, organizationID, userID string, qr httpserver.Query) ([]*notificationCore.Notification, uint64, error)
+
+	// FetchNotificationCount should fetch the total number of notifications.
+	FetchNotificationCount(ctx context.Context, organizationID, userID string, read bool) (uint64, error)
+
+	// MarkReadByNotificationsIDs should mark notifications as read by their IDs.
+	// If no ids are provided, all notifications should be marked as read.
+	MarkReadByNotificationsIDs(ctx context.Context, organizationID, userID string, ids []xid.ID) error
 }

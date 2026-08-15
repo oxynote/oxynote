@@ -131,23 +131,26 @@ func Test_Manager_NewSession(t *testing.T) {
 			writer := &protocolMock.SessionWriter{}
 			m := &Manager{log: slog.New(slog.DiscardHandler), store: c.Store}
 
-			session, err := m.NewSession(context.Background(), "org", "user", writer)
+			sess, err := m.NewSession(context.Background(), "org", "user", writer)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {
 				return
 			}
 
-			require.NotNil(t, session)
-			t.Cleanup(func() { assert.NoError(t, session.Close()) })
+			require.NotNil(t, sess)
+			t.Cleanup(func() { assert.NoError(t, sess.Close()) })
 
-			assert.Same(t, m, session.man)
-			assert.Equal(t, "org", session.orgID)
-			assert.Equal(t, "user", session.userID)
-			assert.Same(t, writer, session.writer)
-			assert.NotNil(t, session.supv)
-			assert.NotNil(t, session.tools)
-			assert.Equal(t, c.Messages, session.messages)
+			cs, ok := sess.(*session)
+			require.True(t, ok)
+
+			assert.Same(t, m, cs.man)
+			assert.Equal(t, "org", cs.orgID)
+			assert.Equal(t, "user", cs.userID)
+			assert.Same(t, writer, cs.writer)
+			assert.NotNil(t, cs.supv)
+			assert.NotNil(t, cs.tools)
+			assert.Equal(t, c.Messages, cs.messages)
 
 			ff := writer.WriteJSONCalls()
 			require.Len(t, ff, c.HistoryCalls)

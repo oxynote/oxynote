@@ -35,6 +35,12 @@ type State json.RawMessage
 
 // MarshalJSON returns the JSON representation of the state.
 func (s State) MarshalJSON() ([]byte, error) {
+	// mirror json.RawMessage: a nil value marshals as JSON null instead
+	// of failing the entire enclosing marshal.
+	if s == nil {
+		return []byte("null"), nil
+	}
+
 	return s, nil
 }
 
@@ -69,6 +75,12 @@ type Settings json.RawMessage
 
 // MarshalJSON returns the JSON representation of the settings.
 func (s Settings) MarshalJSON() ([]byte, error) {
+	// mirror json.RawMessage: a nil value marshals as JSON null instead
+	// of failing the entire enclosing marshal.
+	if s == nil {
+		return []byte("null"), nil
+	}
+
 	return s, nil
 }
 

@@ -13,6 +13,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 	assistantCore "github.com/oxynote/oxynote/server/core/internal/assistant"
+	"github.com/oxynote/oxynote/server/core/internal/assistant/protocol"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 )
@@ -23,7 +24,7 @@ const _maxMessageBytes = 1 << 20
 // Handler holds dependencies for AI chat operations.
 type Handler struct {
 	log        *slog.Logger
-	assistant  *assistantCore.Manager
+	assistant  Manager
 	acceptOpts websocket.AcceptOptions
 }
 
@@ -129,4 +130,13 @@ func (w *writer) WriteJSON(ctx context.Context, msg any) {
 		w.log.Error("failed to write message to client", slog.String("error", err.Error()))
 		w.cancel()
 	}
+}
+
+// Manager creates AI chat sessions for authenticated users.
+//
+//go:generate ../../../../scripts/codegen/mock -t internal Manager
+type Manager interface {
+	// NewSession should create a new chat session bound to the given
+	// organization, user, and message writer.
+	NewSession(ctx context.Context, orgID, userID string, writer protocol.SessionWriter) (assistantCore.Session, error)
 }

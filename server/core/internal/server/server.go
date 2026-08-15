@@ -264,6 +264,8 @@ func (s *Server) bindVersionPing(tpc wsserver.Topic) {
 }
 
 // DB is an interface that handles communication with the database.
+//
+//go:generate ../../scripts/codegen/mock -t internal DB db
 type DB interface {
 	document.DB
 	comment.DB
@@ -273,11 +275,13 @@ type DB interface {
 	org.DB
 	github.DB
 	slack.DB
-	notificationCore.DB
+	notification.DB
 	datasource.DB
 }
 
 // Storer is an interface that defines methods for uploading and retrieving objects.
+//
+//go:generate ../../scripts/codegen/mock -t internal Storer
 type Storer interface {
 	org.Storer
 	user.Storer
@@ -286,6 +290,8 @@ type Storer interface {
 
 // Notifier is an interface that combines notificationCore.Notifier and
 // notificationCore.Publisher.
+//
+//go:generate ../../scripts/codegen/mock -t internal Notifier
 type Notifier interface {
 	notificationCore.Receiver
 	notificationCore.Publisher

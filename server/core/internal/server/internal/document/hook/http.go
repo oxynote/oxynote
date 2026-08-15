@@ -274,6 +274,8 @@ func (h *Handler) extractDocumentHookParameter(r *http.Request) (xid.ID, error) 
 }
 
 // DB is an interface that handles communication with the document hooks database.
+//
+//go:generate ../../../../../scripts/codegen/mock -t internal DB db
 type DB interface {
 	// FetchDocumentByBranchID should fetch the document joined against the branch identified by branchID.
 	FetchDocumentByBranchID(ctx context.Context, branchID xid.ID, organizationID string) (*document.Document, error)

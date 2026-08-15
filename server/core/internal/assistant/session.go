@@ -66,7 +66,7 @@ const (
 var _confirmTimeout = 10 * time.Minute
 
 // Session holds per-connection state for an AI assistant session.
-type Session struct {
+type session struct {
 	man    *Manager
 	orgID  string
 	userID string
@@ -100,7 +100,7 @@ type Session struct {
 }
 
 // Close stops and closes all processes for the session.
-func (s *Session) Close() error {
+func (s *session) Close() error {
 	s.supv.CloseAndWait()
 	return nil
 }
@@ -108,7 +108,7 @@ func (s *Session) Close() error {
 // SetActiveDocument records which document the user is viewing.
 // Called by the chat handler from the WebSocket upgrade path or
 // from a "document changed" client message.
-func (s *Session) SetActiveDocument(documentID string) {
+func (s *session) SetActiveDocument(documentID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -117,7 +117,7 @@ func (s *Session) SetActiveDocument(documentID string) {
 
 // sendHistory sends the current message history to the client so it
 // can restore previous conversation state.
-func (s *Session) sendHistory(ctx context.Context) {
+func (s *session) sendHistory(ctx context.Context) {
 	entries := buildHistory(s.messages)
 	if len(entries) == 0 {
 		return
@@ -128,7 +128,7 @@ func (s *Session) sendHistory(ctx context.Context) {
 
 // Process handles incoming messages from the client. It dispatches
 // by message type to the appropriate handler.
-func (s *Session) Process(ctx context.Context, msg []byte) {
+func (s *session) Process(ctx context.Context, msg []byte) {
 	tp := gjson.GetBytes(msg, "type").String()
 
 	switch protocol.ClientMessageType(tp) {
@@ -185,7 +185,7 @@ func (s *Session) Process(ctx context.Context, msg []byte) {
 }
 
 // handleUserMessage runs the agent loop for a single user message.
-func (s *Session) handleUserMessage(ctx context.Context, content string) {
+func (s *session) handleUserMessage(ctx context.Context, content string) {
 	s.trimMessages()
 
 	checkpoint := len(s.messages)
@@ -241,7 +241,7 @@ func (s *Session) handleUserMessage(ctx context.Context, content string) {
 // concurrently, gates writes behind a confirm prompt, and feeds the
 // results back into the conversation. Returns the stop reason so
 // the outer loop knows whether another turn is needed.
-func (s *Session) callAnthropic(ctx context.Context, activeDocumentID string) (anthropic.StopReason, error) {
+func (s *session) callAnthropic(ctx context.Context, activeDocumentID string) (anthropic.StopReason, error) {
 	stream := s.man.client.Messages.NewStreaming(ctx, anthropic.MessageNewParams{
 		Model:     _model,
 		MaxTokens: _maxTokens,
@@ -403,7 +403,7 @@ func (s *Session) callAnthropic(ctx context.Context, activeDocumentID string) (a
 // writes, runs reads concurrently, gates writes behind a confirm
 // prompt, and returns the tool_result blocks in input order so the
 // next Anthropic call sees a consistent dialogue.
-func (s *Session) dispatchTools(
+func (s *session) dispatchTools(
 	ctx context.Context,
 	assistantBlocks []anthropic.ContentBlockParamUnion,
 ) []anthropic.ContentBlockParamUnion {
@@ -500,7 +500,7 @@ func (s *Session) dispatchTools(
 // tool_result block. The result envelope is JSON: the success path
 // is the tool's own JSON output; the failure path is
 // {"error": "..."}.
-func (s *Session) runTool(
+func (s *session) runTool(
 	ctx context.Context,
 	id string,
 	name tools.Name,
@@ -569,7 +569,7 @@ func (s *Session) runTool(
 // requestConfirmation sends a confirm_request and blocks until the
 // client returns a confirm_response (or the timeout fires). Returns
 // true when the user approved the batch, false otherwise.
-func (s *Session) requestConfirmation(ctx context.Context, actions []protocol.ConfirmAction) bool {
+func (s *session) requestConfirmation(ctx context.Context, actions []protocol.ConfirmAction) bool {
 	turnID := xid.New().String()
 	ch := make(chan bool, 1)
 
@@ -628,7 +628,7 @@ func (s *Session) requestConfirmation(ctx context.Context, actions []protocol.Co
 // stale answers from prior turns shouldn't fire. When all is set
 // alongside approved, the rest of the current turn skips the
 // prompt entirely.
-func (s *Session) deliverConfirmResponse(turnID string, approved, all bool) {
+func (s *session) deliverConfirmResponse(turnID string, approved, all bool) {
 	s.confirmMu.Lock()
 	defer s.confirmMu.Unlock()
 
@@ -654,7 +654,7 @@ func (s *Session) deliverConfirmResponse(turnID string, approved, all bool) {
 // call for the same (tool, document, block) supersedes them. This
 // keeps the conversation history small even when the model
 // re-reads the same document across turns.
-func (s *Session) pruneStaleReads() {
+func (s *session) pruneStaleReads() {
 	type readKey struct {
 		tool, doc, block string
 	}
@@ -721,7 +721,7 @@ func (s *Session) pruneStaleReads() {
 // message following the assistant turn at assistantIdx) with a
 // compact placeholder, keeping the conversation honest about what
 // was once read without paying tokens to keep the full content.
-func (s *Session) prunePriorReadResult(assistantIdx int, toolUseID string) {
+func (s *session) prunePriorReadResult(assistantIdx int, toolUseID string) {
 	resultIdx := assistantIdx + 1
 	if resultIdx >= len(s.messages)-1 {
 		return
@@ -748,7 +748,7 @@ func (s *Session) prunePriorReadResult(assistantIdx int, toolUseID string) {
 // trimMessages keeps the conversation history under _maxMessages.
 // We trim from the front in pairs to avoid stranding a user message
 // without its assistant follow-up (or vice versa).
-func (s *Session) trimMessages() {
+func (s *session) trimMessages() {
 	if len(s.messages) <= _maxMessages {
 		return
 	}

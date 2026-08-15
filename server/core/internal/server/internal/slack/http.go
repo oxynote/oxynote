@@ -369,10 +369,15 @@ func (h *Handler) HandleEvent(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// slackevents.ChallengeResponse has no json tag and would
+		// marshal the field as "Challenge", but Slack's URL
+		// verification expects a lowercase "challenge" attribute.
 		httpserver.Respond(
 			h.log,
 			w,
-			slackevents.ChallengeResponse{
+			struct {
+				Challenge string `json:"challenge"`
+			}{
 				Challenge: event.Challenge,
 			},
 			http.StatusOK,
@@ -514,13 +519,12 @@ func (h *Handler) sendEphemeralResponse(ctx context.Context, responseURL, text s
 		return fmt.Errorf("failed to marshal response body: %w", err)
 	}
 
-	//nolint:gosec // the response URL comes from a signature-verified Slack request
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, responseURL, bytes.NewBuffer(data))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := h.client.Do(req) //nolint:gosec // the response URL comes from a signature-verified Slack request
+	resp, err := h.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send response: %w", err)
 	}
@@ -534,6 +538,8 @@ func (h *Handler) sendEphemeralResponse(ctx context.Context, responseURL, text s
 }
 
 // DB is an interface that handles communication with the document database.
+//
+//go:generate ../../../../scripts/codegen/mock -t internal DB db
 type DB interface {
 	AppDB
 	UserLinkDB
