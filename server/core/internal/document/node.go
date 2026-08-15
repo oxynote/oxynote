@@ -26,10 +26,22 @@ type RootBlock struct {
 	Content []Block `json:"content,omitempty"`
 }
 
-// FindBlock searches for a block with the given ID in the root block.
-func (rb RootBlock) FindBlock(blockID string) bool {
+// FindByUID recursively searches the root's subtree for the block
+// with the given uid and returns it.
+func (rb RootBlock) FindByUID(uid string) (Block, bool) {
 	for _, b := range rb.Content {
-		if b.FindBlock(blockID) {
+		if found, ok := b.FindByUID(uid); ok {
+			return found, true
+		}
+	}
+
+	return Block{}, false
+}
+
+// HasBlock searches for a block with the given ID in the root block.
+func (rb RootBlock) HasBlock(blockID string) bool {
+	for _, b := range rb.Content {
+		if b.HasBlock(blockID) {
 			return true
 		}
 	}
@@ -131,19 +143,27 @@ func (b Block) flattenInto(buf *[]byte) {
 	}
 }
 
-// FindBlock recursively searches for a block with the given ID.
-func (b Block) FindBlock(blockID string) bool {
-	if id, ok := b.UID(); ok && id == blockID {
-		return true
+// FindByUID recursively searches the block's subtree (self included)
+// for the block with the given uid and returns it.
+func (b Block) FindByUID(uid string) (Block, bool) {
+	if id, ok := b.UID(); ok && id == uid {
+		return b, true
 	}
 
 	for _, cb := range b.Content {
-		if cb.FindBlock(blockID) {
-			return true
+		if found, ok := cb.FindByUID(uid); ok {
+			return found, true
 		}
 	}
 
-	return false
+	return Block{}, false
+}
+
+// HasBlock recursively searches for a block with the given ID.
+func (b Block) HasBlock(blockID string) bool {
+	_, ok := b.FindByUID(blockID)
+
+	return ok
 }
 
 // Search transforms Block into a searchgw compatible type.

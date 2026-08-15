@@ -264,9 +264,12 @@ type ConfirmResponse struct {
 }
 
 // SessionWriter is the interface the assistant session uses to
-// stream messages back to the client. Implementations must be safe
+// stream messages back to the client.
+//
 // for concurrent use because text deltas and confirm requests can
 // be produced from different goroutines.
+//
+//go:generate ../../../scripts/codegen/mock -t external SessionWriter session_writer Implementations must be safe
 type SessionWriter interface {
 	// WriteJSON serialises msg as JSON and sends it on the
 	// underlying transport.

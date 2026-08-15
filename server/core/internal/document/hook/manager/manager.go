@@ -256,7 +256,7 @@ func (m *Manager) ensureHook(
 	}
 
 	if h.BlockID.Valid {
-		hasBlock := doc.Content.FindBlock(h.BlockID.String)
+		hasBlock := doc.Content.HasBlock(h.BlockID.String)
 
 		if !hasBlock && !h.SoftDeletedAt.Valid {
 			h.SoftDeletedAt = null.TimeFrom(timeutil.Now())

@@ -173,7 +173,7 @@ func (m *Manager) readBlock(ctx context.Context, args json.RawMessage) (json.Raw
 		return nil, fmt.Errorf("read_block: fetch content: %w", err)
 	}
 
-	blk, ok := findBlockByUID(content.Content.Content, in.BlockUID)
+	blk, ok := content.Content.FindByUID(in.BlockUID)
 	if !ok {
 		return nil, errutil.ErrNotFound
 	}
@@ -290,22 +290,6 @@ func summariesToTree(ss document.Summaries) []docTreeNode {
 	}
 
 	return out
-}
-
-// findBlockByUID walks the document tree depth-first and returns
-// the block whose uid attribute equals target.
-func findBlockByUID(blocks []document.Block, target string) (document.Block, bool) {
-	for _, b := range blocks {
-		if uid, ok := b.UID(); ok && uid == target {
-			return b, true
-		}
-
-		if found, ok := findBlockByUID(b.Content, target); ok {
-			return found, true
-		}
-	}
-
-	return document.Block{}, false
 }
 
 // marshalResult is the single place tool result envelopes are

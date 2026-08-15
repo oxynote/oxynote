@@ -105,7 +105,7 @@ func IsValid(name Name) bool {
 // DB is the persistence surface the tools manager requires. The
 // db package's agent satisfies it.
 //
-//go:generate ../../../scripts/codegen/mock -t internal DB db
+//go:generate ../../../scripts/codegen/mock -t both DB db
 type DB interface {
 	// FetchDocumentTree returns all documents for the org as a
 	// nested summary tree (sort_index order). Used by
@@ -152,6 +152,8 @@ type DB interface {
 
 // Searcher is the full-text search surface search_documents uses.
 // The document/searchgw Meilisearch client satisfies it.
+//
+//go:generate ../../../scripts/codegen/mock -t both Searcher searcher
 type Searcher interface {
 	// SearchDocumentBlocks returns blocks whose text matches the
 	// query, scoped to the organization and capped at limit hits.
@@ -162,6 +164,8 @@ type Searcher interface {
 // clients can refresh their sidebar after assistant-driven creates,
 // deletes, moves, renames, or icon changes. The dochandler.Handler
 // satisfies this interface via its NotifyTreeChange method.
+//
+//go:generate ../../../scripts/codegen/mock -t both TreeNotifier tree_notifier
 type TreeNotifier interface {
 	// NotifyTreeChange tells subscribers that the tree under
 	// parentID (a null value means the root) changed in
@@ -174,7 +178,7 @@ type TreeNotifier interface {
 // use for content edits and the rename/set-icon ops. The edit.Client
 // satisfies it.
 //
-//go:generate ../../../scripts/codegen/mock -t internal EditApplier edit_applier
+//go:generate ../../../scripts/codegen/mock -t both EditApplier edit_applier
 type EditApplier interface {
 	// Apply should ship the operation batch to the realtime service
 	// for the (documentID, branchID) document and return the per-op

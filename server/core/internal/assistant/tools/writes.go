@@ -13,6 +13,10 @@ import (
 	"github.com/rs/xid"
 )
 
+// _defaultDocumentIcon is the icon assigned to assistant-created
+// documents when the model doesn't pick one.
+const _defaultDocumentIcon = "lucide:file"
+
 // docRef wraps the (documentID, branchID) pair the edit client
 // needs to address a live Y.Doc. The branch is resolved to the
 // document's default branch — multi-branch editing is out of scope
@@ -62,7 +66,7 @@ func (m *Manager) createDocument(ctx context.Context, args json.RawMessage) (jso
 
 	icon := in.Icon
 	if icon == "" {
-		icon = "lucide:file"
+		icon = _defaultDocumentIcon
 	}
 
 	var parentID null.Value[xid.ID]

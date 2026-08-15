@@ -14,16 +14,17 @@ import (
 	"github.com/jellydator/xync"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/protocol"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
+	"github.com/oxynote/oxynote/server/core/pkg/strutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
 	"github.com/tidwall/gjson"
 )
 
-const (
-	// _maxAgentTurns caps the agent loop so a runaway model can't
-	// burn budget indefinitely.
-	_maxAgentTurns = 50
+// _maxAgentTurns caps the agent loop so a runaway model can't
+// burn budget indefinitely. A var so tests can shorten it.
+var _maxAgentTurns = 50
 
+const (
 	// _maxMessages caps the conversation history retained in
 	// Redis. The trim is applied at the start of each user message.
 	_maxMessages = 100
@@ -49,16 +50,20 @@ const (
 	// doesn't balloon.
 	_maxToolResultBytes = 80000
 
-	// _confirmTimeout bounds how long the agent waits for a
-	// confirm_response from the client. Treated as a decline on
-	// expiry — the writes are skipped and the model receives
-	// declined results.
-	_confirmTimeout = 10 * time.Minute
-
 	// _errorKey is the JSON field carrying an error in tool results and
 	// the status label recorded for failed tool calls.
 	_errorKey = "error"
+
+	// _deltaTypeText is the streaming delta type carrying response
+	// text.
+	_deltaTypeText = "text_delta"
 )
+
+// _confirmTimeout bounds how long the agent waits for a
+// confirm_response from the client. Treated as a decline on
+// expiry — the writes are skipped and the model receives
+// declined results. A var so tests can shorten it.
+var _confirmTimeout = 10 * time.Minute
 
 // Session holds per-connection state for an AI assistant session.
 type Session struct {
@@ -295,7 +300,7 @@ func (s *Session) callAnthropic(ctx context.Context, activeDocumentID string) (a
 
 		case "content_block_delta":
 			switch evt.Delta.Type {
-			case "text_delta":
+			case _deltaTypeText:
 				s.writer.WriteJSON(ctx, protocol.NewTextDeltaMessage(evt.Delta.Text))
 
 				textStreamed = true
@@ -529,7 +534,7 @@ func (s *Session) runTool(
 		s.man.log.Warn("assistant tool error",
 			slog.String("tool", string(name)),
 			slog.String("error", err.Error()),
-			slog.String("args", truncateForLog(args, _maxErrorArgsLogBytes)),
+			slog.String("args", strutil.Ellipsize(string(args), _maxErrorArgsLogBytes)),
 			slog.Int64("duration_ms", durationMs),
 		)
 	}
@@ -550,7 +555,7 @@ func (s *Session) runTool(
 	if err == nil {
 		s.man.log.Debug("assistant tool ok",
 			slog.String("tool", string(name)),
-			slog.String("args", truncateForLog(args, _maxDebugArgsLogBytes)),
+			slog.String("args", strutil.Ellipsize(string(args), _maxDebugArgsLogBytes)),
 			slog.Int64("duration_ms", durationMs),
 		)
 	}
@@ -559,17 +564,6 @@ func (s *Session) runTool(
 	s.man.metrics.recordToolDuration(name, time.Since(start).Seconds())
 
 	return makeToolResult(id, result)
-}
-
-// truncateForLog returns a short, single-line preview of raw for
-// inclusion in log fields. Strings longer than maxLen are tail-elided
-// with an ellipsis so a long tool argument doesn't fill the log.
-func truncateForLog(raw json.RawMessage, maxLen int) string {
-	if len(raw) <= maxLen {
-		return string(raw)
-	}
-
-	return string(raw[:maxLen]) + "…"
 }
 
 // requestConfirmation sends a confirm_request and blocks until the
@@ -665,10 +659,17 @@ func (s *Session) pruneStaleReads() {
 		tool, doc, block string
 	}
 
-	// Walk backwards and record the latest tool_use for each
+	// readSeen remembers where a read's tool_use lives and its id so
+	// a later duplicate can locate the exact result block to prune.
+	type readSeen struct {
+		idx int
+		id  string
+	}
+
+	// Walk forwards and record the latest tool_use for each
 	// read-tool key. Earlier matches (smaller positions) are the
 	// ones we'll prune.
-	lastSeen := map[readKey]int{}
+	lastSeen := map[readKey]readSeen{}
 
 	for i, msg := range s.messages {
 		if msg.Role != anthropic.MessageParamRoleAssistant {
@@ -707,11 +708,11 @@ func (s *Session) pruneStaleReads() {
 			}
 
 			k := readKey{tool: string(name), doc: probe.DocumentID, block: probe.BlockUID}
-			if last, ok := lastSeen[k]; ok && last != i {
-				s.prunePriorReadResult(last, block.OfToolUse.ID)
+			if last, ok := lastSeen[k]; ok && last.idx != i {
+				s.prunePriorReadResult(last.idx, last.id)
 			}
 
-			lastSeen[k] = i
+			lastSeen[k] = readSeen{idx: i, id: block.OfToolUse.ID}
 		}
 	}
 }

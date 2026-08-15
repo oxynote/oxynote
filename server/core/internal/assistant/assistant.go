@@ -34,7 +34,7 @@ type Manager struct {
 	log     *slog.Logger
 	db      tools.DB
 	search  tools.Searcher
-	pool    *redkit.ValueStore[[]anthropic.MessageParam]
+	store   SessionStore
 	client  *anthropic.Client
 	applier tools.EditApplier
 	tree    tools.TreeNotifier
@@ -63,7 +63,7 @@ func NewManager(
 		log:     log.With("component", "assistant"),
 		db:      db,
 		search:  search,
-		pool:    redkit.NewValueStore[[]anthropic.MessageParam](pool, _sessionExpiration),
+		store:   redkit.NewValueStore[[]anthropic.MessageParam](pool, _sessionExpiration),
 		client:  &client,
 		applier: editClient,
 		metrics: newMetrics(fc),
@@ -88,7 +88,7 @@ func (m *Manager) NewSession(
 	orgID, userID string,
 	writer protocol.SessionWriter,
 ) (*Session, error) {
-	msg, err := m.pool.Get(ctx, createSessionKey(orgID, userID))
+	msg, err := m.store.Get(ctx, createSessionKey(orgID, userID))
 
 	switch {
 	case err == nil:
@@ -116,7 +116,7 @@ func (m *Manager) NewSession(
 
 // saveMessages persists the current session messages to Redis.
 func (m *Manager) saveMessages(ctx context.Context, orgID, userID string, messages []anthropic.MessageParam) {
-	err := m.pool.Set(ctx, createSessionKey(orgID, userID), messages)
+	err := m.store.Set(ctx, createSessionKey(orgID, userID), messages)
 	if err != nil {
 		m.log.Error("failed to save session messages",
 			slog.String("error", err.Error()),
@@ -129,7 +129,7 @@ func (m *Manager) saveMessages(ctx context.Context, orgID, userID string, messag
 // deleteMessages removes the session messages from Redis, called
 // when the user issues a reset.
 func (m *Manager) deleteMessages(ctx context.Context, orgID, userID string) {
-	err := m.pool.Delete(ctx, createSessionKey(orgID, userID))
+	err := m.store.Delete(ctx, createSessionKey(orgID, userID))
 	if err != nil {
 		m.log.Error("failed to delete session messages",
 			slog.String("error", err.Error()),
@@ -238,4 +238,21 @@ func hasToolUse(msg anthropic.MessageParam) bool {
 	}
 
 	return false
+}
+
+// SessionStore is the persistence surface for conversation history,
+// keyed per (organisation, user). The redkit ValueStore satisfies
+// it.
+//
+//go:generate ../../scripts/codegen/mock -t internal SessionStore session_store
+type SessionStore interface {
+	// Get should return the stored messages for the key, or
+	// errutil.ErrNotFound when no history exists yet.
+	Get(ctx context.Context, key string) (*[]anthropic.MessageParam, error)
+
+	// Set should persist the messages under the key.
+	Set(ctx context.Context, key string, value []anthropic.MessageParam) error
+
+	// Delete should remove the stored messages for the key.
+	Delete(ctx context.Context, key string) error
 }

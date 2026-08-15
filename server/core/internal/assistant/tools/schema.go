@@ -172,7 +172,7 @@ func writeCreateDocument() anthropic.ToolUnionParam {
 						_keyType:        _typeString,
 						_keyDescription: "Display name for the new document.",
 					},
-					"icon": map[string]any{
+					_attrIcon: map[string]any{
 						_keyType:        _typeString,
 						_keyDescription: "Lucide icon identifier (e.g. \"lucide:file-text\"). Defaults to \"lucide:file\" when empty.",
 					},
@@ -238,12 +238,12 @@ func writeSetDocumentIcon() anthropic.ToolUnionParam {
 						_keyType:        _typeString,
 						_keyDescription: _descDocumentID,
 					},
-					"icon": map[string]any{
+					_attrIcon: map[string]any{
 						_keyType:        _typeString,
 						_keyDescription: "The new icon identifier.",
 					},
 				},
-				Required: []string{_keyDocumentID, "icon"},
+				Required: []string{_keyDocumentID, _attrIcon},
 			},
 		},
 	}

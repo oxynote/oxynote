@@ -7,7 +7,9 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/oxynote/oxynote/server/core/internal/assistant/block"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/pkg/strutil"
 	"github.com/rs/xid"
 )
 
@@ -50,6 +52,17 @@ func (m *Manager) parseToolArgs(name Name, args json.RawMessage, dst any) {
 	}
 }
 
+// subjectFor returns the display subject for label and summary
+// strings: the document's name when known, a generic fallback
+// otherwise.
+func subjectFor(docName string) string {
+	if docName == "" {
+		return "document"
+	}
+
+	return docName
+}
+
 // ToolStatusLabel builds a one-line pill string describing what
 // the assistant is about to do (e.g. "Reading 'Cat Facts'"). Returns
 // an empty string for tools that are too noisy or too generic to
@@ -61,10 +74,7 @@ func (m *Manager) ToolStatusLabel(ctx context.Context, name Name, args json.RawM
 		docName = m.lookupDocumentName(ctx, docID)
 	}
 
-	subject := docName
-	if subject == "" {
-		subject = "document"
-	}
+	subject := subjectFor(docName)
 
 	switch name {
 	case NameReadDocumentSummary:
@@ -183,10 +193,7 @@ func (m *Manager) lookupDocumentName(ctx context.Context, documentID string) str
 // instead it leans on document name plus a short description of
 // the change.
 func (m *Manager) describe(name Name, args json.RawMessage, docName string) string {
-	subject := docName
-	if subject == "" {
-		subject = "document"
-	}
+	subject := subjectFor(docName)
 
 	switch name {
 	case NameCreateDocument:
@@ -294,7 +301,7 @@ func (m *Manager) describe(name Name, args json.RawMessage, docName string) stri
 
 		m.parseToolArgs(name, args, &in)
 
-		preview := preview(in.Text, _maxPreviewLen)
+		preview := textPreview(in.Text, _maxPreviewLen)
 		if preview == "" {
 			return "Update text of a block in " + subject
 		}
@@ -329,40 +336,40 @@ func (m *Manager) describe(name Name, args json.RawMessage, docName string) stri
 // blockKindLabel turns a canonical type string into a friendlier
 // label for the confirm UI. Unknown types fall through verbatim.
 func blockKindLabel(kind string) string {
-	switch kind {
-	case "paragraph":
+	switch block.Type(kind) {
+	case block.BlockParagraph:
 		return "a paragraph"
-	case "heading":
+	case block.BlockHeading:
 		return "a heading"
-	case "blockquote":
+	case block.BlockBlockquote:
 		return "a blockquote"
-	case "bullet_list":
+	case block.BlockBulletList:
 		return "a bullet list"
-	case "ordered_list":
+	case block.BlockOrderedList:
 		return "an ordered list"
-	case "task_list":
+	case block.BlockTaskList:
 		return "a task list"
-	case "callout":
+	case block.BlockCallout:
 		return "a callout"
-	case "code":
+	case block.BlockCode:
 		return "a code block"
-	case "titled_code":
+	case block.BlockTitledCode:
 		return "a titled code block"
-	case "mermaid":
+	case block.BlockMermaid:
 		return "a mermaid diagram"
-	case "horizontal_rule":
+	case block.BlockHorizontalRule:
 		return "a divider"
-	case "image":
+	case block.BlockImage:
 		return "an image"
-	case "figma":
+	case block.BlockFigma:
 		return "a figma embed"
-	case "metric":
+	case block.BlockMetric:
 		return "a metric"
-	case "metric_grid":
+	case block.BlockMetricGrid:
 		return "a metric grid"
-	case "split_doc":
+	case block.BlockSplitDoc:
 		return "a split documentation block"
-	case "split_doc_param_list":
+	case block.BlockParamList:
 		return "a parameter list"
 	}
 
@@ -373,21 +380,12 @@ func blockKindLabel(kind string) string {
 	return "a " + kind + " block"
 }
 
-// preview returns at most maxLen runes of s, collapsed to a single
-// line. Used for surfacing short snippets of an upcoming text edit
-// in the confirm UI.
-func preview(s string, maxLen int) string {
+// textPreview returns at most maxLen runes of s, collapsed to a
+// single line. Used for surfacing short snippets of an upcoming
+// text edit in the confirm UI.
+func textPreview(s string, maxLen int) string {
 	s = strings.ReplaceAll(s, "\n", " ")
 	s = strings.TrimSpace(s)
 
-	if maxLen <= 0 {
-		return s
-	}
-
-	runes := []rune(s)
-	if len(runes) <= maxLen {
-		return s
-	}
-
-	return string(runes[:maxLen]) + "…"
+	return strutil.Ellipsize(s, maxLen)
 }

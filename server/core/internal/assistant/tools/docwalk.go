@@ -1,7 +1,19 @@
 package tools
 
 import (
+	"github.com/oxynote/oxynote/server/core/internal/assistant/block"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+)
+
+// Attribute keys shared between the summary walker and the tool
+// schemas.
+const (
+	_attrLevel    = "level"
+	_attrIcon     = "icon"
+	_attrLanguage = "language"
+	_attrChecked  = "checked"
+	_attrSrc      = "src"
+	_attrInversed = "inversed"
 )
 
 // docSummaryEntry is one row in the assistant-facing document
@@ -131,7 +143,7 @@ func (w *docWalker) emit(b document.Block, uid string, depth int, parentUID stri
 func (w *docWalker) emitSplitDoc(b document.Block, uid string, depth int, parentUID string) {
 	w.out = append(w.out, docSummaryEntry{
 		UID:       uid,
-		Kind:      "split_doc",
+		Kind:      string(block.BlockSplitDoc),
 		Text:      b.Flatten(),
 		Depth:     depth,
 		ParentUID: parentUID,
@@ -145,7 +157,7 @@ func (w *docWalker) emitSplitDoc(b document.Block, uid string, depth int, parent
 func (w *docWalker) emitParamList(b document.Block, uid string, depth int, parentUID string) {
 	w.out = append(w.out, docSummaryEntry{
 		UID:       uid,
-		Kind:      "split_doc_param_list",
+		Kind:      string(block.BlockParamList),
 		Text:      b.Flatten(),
 		Depth:     depth,
 		ParentUID: parentUID,
@@ -160,43 +172,43 @@ func (w *docWalker) emitParamList(b document.Block, uid string, depth int, paren
 func canonicalKindForPM(pm document.BlockNodeType) string {
 	switch pm {
 	case document.BlockNodeParagraph:
-		return "paragraph"
+		return string(block.BlockParagraph)
 	case document.BlockNodeHeading:
-		return "heading"
+		return string(block.BlockHeading)
 	case document.BlockNodeBlockquote:
-		return "blockquote"
+		return string(block.BlockBlockquote)
 	case document.BlockNodeBulletList:
-		return "bullet_list"
+		return string(block.BlockBulletList)
 	case document.BlockNodeOrderedList:
-		return "ordered_list"
+		return string(block.BlockOrderedList)
 	case document.BlockNodeTaskList:
-		return "task_list"
+		return string(block.BlockTaskList)
 	case document.BlockNodeListItem:
 		return "list_item"
 	case document.BlockNodeTaskItem:
 		return "task_item"
 	case document.BlockNodeCalloutBlock:
-		return "callout"
+		return string(block.BlockCallout)
 	case document.BlockNodeCodeBlock:
-		return "code"
+		return string(block.BlockCode)
 	case document.BlockNodeTitledCodeBlock:
-		return "titled_code"
+		return string(block.BlockTitledCode)
 	case document.BlockNodeMermaidBlock:
-		return "mermaid"
+		return string(block.BlockMermaid)
 	case document.BlockNodeHorizontalRule:
-		return "horizontal_rule"
+		return string(block.BlockHorizontalRule)
 	case document.BlockNodeImageBlock:
-		return "image"
+		return string(block.BlockImage)
 	case document.BlockNodeFigmaBlock:
-		return "figma"
+		return string(block.BlockFigma)
 	case document.BlockNodeMetricBlock:
-		return "metric"
+		return string(block.BlockMetric)
 	case document.BlockNodeMetricGrid:
-		return "metric_grid"
+		return string(block.BlockMetricGrid)
 	case document.BlockNodeSplitDoc:
-		return "split_doc"
+		return string(block.BlockSplitDoc)
 	case document.BlockNodeParamList:
-		return "split_doc_param_list"
+		return string(block.BlockParamList)
 	default:
 		return string(pm)
 	}
@@ -207,28 +219,28 @@ func canonicalKindForPM(pm document.BlockNodeType) string {
 // (already on the entry); opaque metric configurations are dropped
 // because they would balloon the payload and the AI never edits
 // them by hand anyway.
-func summaryAttrs(b document.Block) map[string]any { //nolint:gocognit,cyclop // this function is complex, however, it's well-structured
+func summaryAttrs(b document.Block) map[string]any { //nolint:cyclop // this function is complex, however, it's well-structured
 	switch b.Type {
 	case document.BlockNodeHeading:
-		if v, ok := b.Attrs["level"]; ok {
-			return map[string]any{"level": v}
+		if v, ok := b.Attrs[_attrLevel]; ok {
+			return map[string]any{_attrLevel: v}
 		}
 	case document.BlockNodeCalloutBlock:
-		if v, ok := b.Attrs["icon"]; ok {
-			return map[string]any{"icon": v}
+		if v, ok := b.Attrs[_attrIcon]; ok {
+			return map[string]any{_attrIcon: v}
 		}
 	case document.BlockNodeCodeBlock:
-		if v, ok := b.Attrs["language"]; ok && v != "" {
-			return map[string]any{"language": v}
+		if v, ok := b.Attrs[_attrLanguage]; ok && v != "" {
+			return map[string]any{_attrLanguage: v}
 		}
 	case document.BlockNodeTaskItem:
-		if v, ok := b.Attrs["checked"]; ok {
-			return map[string]any{"checked": v}
+		if v, ok := b.Attrs[_attrChecked]; ok {
+			return map[string]any{_attrChecked: v}
 		}
 	case document.BlockNodeImageBlock:
 		out := map[string]any{}
 
-		for _, k := range []string{"src", "alt", "title", "width"} {
+		for _, k := range []string{_attrSrc, "alt", "title", "width"} {
 			if v, ok := b.Attrs[k]; ok && v != nil && v != "" {
 				out[k] = v
 			}
@@ -240,7 +252,7 @@ func summaryAttrs(b document.Block) map[string]any { //nolint:gocognit,cyclop //
 	case document.BlockNodeFigmaBlock:
 		out := map[string]any{}
 
-		for _, k := range []string{"src", "width", "height"} {
+		for _, k := range []string{_attrSrc, "width", "height"} {
 			if v, ok := b.Attrs[k]; ok && v != nil && v != "" {
 				out[k] = v
 			}
@@ -250,10 +262,8 @@ func summaryAttrs(b document.Block) map[string]any { //nolint:gocognit,cyclop //
 			return out
 		}
 	case document.BlockNodeSplitDoc:
-		if v, ok := b.Attrs["inversed"]; ok {
-			if vb, ok := v.(bool); ok && vb {
-				return map[string]any{"inversed": true}
-			}
+		if a, ok := b.Attrs.Get(_attrInversed); ok && a.Bool() {
+			return map[string]any{_attrInversed: true}
 		}
 	default:
 		return nil
