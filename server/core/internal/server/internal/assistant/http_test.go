@@ -3,6 +3,7 @@ package assistant
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -13,7 +14,6 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 	assistantCore "github.com/oxynote/oxynote/server/core/internal/assistant"
-	assistantMock "github.com/oxynote/oxynote/server/core/internal/assistant/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/protocol"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/stretchr/testify/assert"
@@ -90,7 +90,7 @@ func Test_Handler_HandleChat_NoSession(t *testing.T) {
 
 	assert.Equal(t, http.StatusUnauthorized, rec.Code)
 	assert.JSONEq(t, `{"code":"account.not_authenticated","message":"not authenticated"}`, rec.Body.String())
-	assert.Empty(t, man.NewSessionCalls())
+	assert.Empty(t, man.ChatCalls())
 }
 
 func Test_Handler_HandleChat_UpgradeFailure(t *testing.T) {
@@ -115,15 +115,15 @@ func Test_Handler_HandleChat_UpgradeFailure(t *testing.T) {
 	hdl.HandleChat(rec, req)
 
 	assert.NotEqual(t, http.StatusSwitchingProtocols, rec.Code)
-	assert.Empty(t, man.NewSessionCalls())
+	assert.Empty(t, man.ChatCalls())
 }
 
-func Test_Handler_HandleChat_SessionCreationError(t *testing.T) {
+func Test_Handler_HandleChat_ChatError(t *testing.T) {
 	t.Parallel()
 
 	man := &ManagerMock{
-		NewSessionFunc: func(context.Context, string, string, protocol.SessionWriter) (assistantCore.Session, error) {
-			return nil, errors.New("boom")
+		ChatFunc: func(context.Context, string, string, protocol.SessionConn) error {
+			return errors.New("boom")
 		},
 	}
 
@@ -141,24 +141,41 @@ func Test_Handler_HandleChat_SessionCreationError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	// a failed chat closes the socket with an internal error status.
 	_, _, err := conn.Read(ctx)
 	require.Error(t, err)
 	assert.Equal(t, websocket.StatusInternalError, websocket.CloseStatus(err))
 
-	ff := man.NewSessionCalls()
+	ff := man.ChatCalls()
 	require.Len(t, ff, 1)
 	assert.Equal(t, "org1", ff[0].OrgID)
 	assert.Equal(t, "u1", ff[0].UserID)
-	assert.NotNil(t, ff[0].Writer)
+	assert.NotNil(t, ff[0].Conn)
 }
 
-func Test_Handler_HandleChat_MessageDispatch(t *testing.T) {
+func Test_Handler_HandleChat_ConversationRoundTrip(t *testing.T) {
 	t.Parallel()
 
-	session := &assistantMock.Session{}
+	// the chat loop reads a message, echoes a reply, and sees the
+	// clean client close as io.EOF through the adapter.
+	readErrs := make(chan error, 1)
 	man := &ManagerMock{
-		NewSessionFunc: func(context.Context, string, string, protocol.SessionWriter) (assistantCore.Session, error) {
-			return session, nil
+		ChatFunc: func(ctx context.Context, _, _ string, conn protocol.SessionConn) error {
+			msg, err := conn.Read(ctx)
+			if err != nil {
+				return err
+			}
+
+			conn.WriteJSON(ctx, map[string]string{"echo": string(msg)})
+
+			_, err = conn.Read(ctx)
+			readErrs <- err
+
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+
+			return err
 		},
 	}
 
@@ -174,32 +191,40 @@ func Test_Handler_HandleChat_MessageDispatch(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	require.NoError(t, conn.Write(ctx, websocket.MessageText, []byte(`{"type":"first"}`)))
-	require.NoError(t, conn.Write(ctx, websocket.MessageText, []byte(`{"type":"second"}`)))
+	require.NoError(t, conn.Write(ctx, websocket.MessageText, []byte(`{"type":"hello"}`)))
 
-	// both messages must reach the session before closing.
-	require.Eventually(t, func() bool {
-		return len(session.ProcessCalls()) == 2
-	}, 5*time.Second, 10*time.Millisecond)
+	var reply map[string]string
 
-	assert.JSONEq(t, `{"type":"first"}`, string(session.ProcessCalls()[0].Msg))
-	assert.JSONEq(t, `{"type":"second"}`, string(session.ProcessCalls()[1].Msg))
+	require.NoError(t, wsjson.Read(ctx, conn, &reply))
+	assert.JSONEq(t, `{"type":"hello"}`, reply["echo"])
 
-	// a normal closure ends the read loop and closes the session.
 	require.NoError(t, conn.Close(websocket.StatusNormalClosure, "bye"))
 
-	require.Eventually(t, func() bool {
-		return len(session.CloseCalls()) == 1
-	}, 5*time.Second, 10*time.Millisecond)
+	select {
+	case err := <-readErrs:
+		assert.ErrorIs(t, err, io.EOF)
+	case <-time.After(5 * time.Second):
+		t.Fatal("chat loop did not observe the client close")
+	}
 }
 
 func Test_Handler_HandleChat_AbruptClose(t *testing.T) {
 	t.Parallel()
 
-	session := &assistantMock.Session{}
+	// an abrupt transport drop surfaces as a raw io.EOF, which counts
+	// as a clean end — matching the pre-rework handler, which treated
+	// io.EOF like a normal closure.
+	readErrs := make(chan error, 1)
 	man := &ManagerMock{
-		NewSessionFunc: func(context.Context, string, string, protocol.SessionWriter) (assistantCore.Session, error) {
-			return session, nil
+		ChatFunc: func(ctx context.Context, _, _ string, conn protocol.SessionConn) error {
+			_, err := conn.Read(ctx)
+			readErrs <- err
+
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+
+			return err
 		},
 	}
 
@@ -212,16 +237,17 @@ func Test_Handler_HandleChat_AbruptClose(t *testing.T) {
 	srv := chatServer(t, hdl)
 	conn := dial(t, srv)
 
-	// an abrupt transport close still ends the read loop and closes
-	// the session, just through the error branch.
 	require.NoError(t, conn.CloseNow())
 
-	require.Eventually(t, func() bool {
-		return len(session.CloseCalls()) == 1
-	}, 5*time.Second, 10*time.Millisecond)
+	select {
+	case err := <-readErrs:
+		assert.ErrorIs(t, err, io.EOF)
+	case <-time.After(5 * time.Second):
+		t.Fatal("chat loop did not observe the dropped connection")
+	}
 }
 
-func Test_writer_WriteJSON(t *testing.T) {
+func Test_wsConn_WriteJSON(t *testing.T) {
 	t.Parallel()
 
 	type msg struct {
@@ -229,7 +255,7 @@ func Test_writer_WriteJSON(t *testing.T) {
 	}
 
 	var (
-		wr       *writer
+		wc       *wsConn
 		accepted = make(chan struct{})
 	)
 
@@ -239,7 +265,7 @@ func Test_writer_WriteJSON(t *testing.T) {
 			return
 		}
 
-		wr = &writer{
+		wc = &wsConn{
 			log:    slog.New(slog.DiscardHandler),
 			conn:   conn,
 			cancel: func() {},
@@ -268,7 +294,7 @@ func Test_writer_WriteJSON(t *testing.T) {
 
 	for i := range 10 {
 		wg.Go(func() {
-			wr.WriteJSON(ctx, msg{N: i})
+			wc.WriteJSON(ctx, msg{N: i})
 		})
 	}
 
@@ -288,13 +314,18 @@ func Test_writer_WriteJSON(t *testing.T) {
 	require.NoError(t, conn.Close(websocket.StatusNormalClosure, ""))
 }
 
-func Test_writer_WriteJSON_CancelsOnError(t *testing.T) {
+func Test_wsConn_WriteJSON_CancelsOnError(t *testing.T) {
 	t.Parallel()
 
-	session := &assistantMock.Session{}
+	conns := make(chan *wsConn, 1)
 	man := &ManagerMock{
-		NewSessionFunc: func(context.Context, string, string, protocol.SessionWriter) (assistantCore.Session, error) {
-			return session, nil
+		ChatFunc: func(ctx context.Context, _, _ string, conn protocol.SessionConn) error {
+			conns <- conn.(*wsConn)
+
+			// block until the write failure cancels the context.
+			<-ctx.Done()
+
+			return nil
 		},
 	}
 
@@ -307,44 +338,22 @@ func Test_writer_WriteJSON_CancelsOnError(t *testing.T) {
 	srv := chatServer(t, hdl)
 	conn := dial(t, srv)
 
-	require.Eventually(t, func() bool {
-		return len(man.NewSessionCalls()) == 1
-	}, 5*time.Second, 10*time.Millisecond)
+	defer conn.CloseNow() //nolint:errcheck // error provides no meaningful info
 
-	wr, ok := man.NewSessionCalls()[0].Writer.(*writer)
-	require.True(t, ok)
+	var wc *wsConn
 
-	var (
-		mu        sync.Mutex
-		cancelled bool
-	)
-
-	wr.cancel = func() {
-		mu.Lock()
-		defer mu.Unlock()
-
-		cancelled = true
+	select {
+	case wc = <-conns:
+	case <-time.After(5 * time.Second):
+		t.Fatal("chat was not started")
 	}
 
-	// writing on a closed connection must trip the cancel callback.
-	require.NoError(t, wr.conn.CloseNow())
+	// writing on a closed connection must trip the cancel callback,
+	// which unblocks the chat loop above.
+	require.NoError(t, wc.conn.CloseNow())
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	wr.WriteJSON(ctx, struct{}{})
-
-	mu.Lock()
-	cancelledNow := cancelled
-	mu.Unlock()
-
-	assert.True(t, cancelledNow)
-
-	// the read loop exits through its error branch and closes the
-	// session.
-	require.Eventually(t, func() bool {
-		return len(session.CloseCalls()) == 1
-	}, 5*time.Second, 10*time.Millisecond)
-
-	require.NoError(t, conn.CloseNow())
+	wc.WriteJSON(ctx, struct{}{})
 }

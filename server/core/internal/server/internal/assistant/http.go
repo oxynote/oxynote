@@ -41,7 +41,8 @@ func NewHandler(
 	}
 }
 
-// HandleChat upgrades the connection to WebSocket and runs the AI chat loop.
+// HandleChat upgrades the connection to WebSocket and hands it to the
+// assistant, which owns the chat loop until the client disconnects.
 func (h *Handler) HandleChat(w http.ResponseWriter, r *http.Request) {
 	sess, err := auth.ExtractSessionFromContext(r.Context())
 	if err != nil {
@@ -61,67 +62,56 @@ func (h *Handler) HandleChat(w http.ResponseWriter, r *http.Request) {
 	// WithoutCancel keeps the session values while detaching from the
 	// request's cancellation.
 	ctx, cancel := context.WithCancel(context.WithoutCancel(r.Context()))
+	defer cancel()
 
-	wr := &writer{
+	wc := &wsConn{
 		log:    h.log,
 		conn:   conn,
 		cancel: cancel,
 	}
 
-	// The client tells us which document the user is currently
-	// viewing via a set_active_document message immediately after
-	// connect (and again whenever they navigate). Keeping that out
-	// of the URL means the WS doesn't get reopened on every doc
-	// switch, so an in-flight turn survives the navigation.
-	session, err := h.assistant.NewSession(
-		ctx,
-		sess.ActiveOrganizationID,
-		sess.UserID,
-		wr,
-	)
+	err = h.assistant.Chat(ctx, sess.ActiveOrganizationID, sess.UserID, wc)
 	if err != nil {
-		h.log.Error("failed to create assistant session", slog.String("error", err.Error()))
-		cancel()
+		h.log.Error("assistant chat failed", slog.String("error", err.Error()))
 
-		conn.Close(websocket.StatusInternalError, "failed to create session") //nolint:errcheck,gosec // error provides no meaningful info
+		conn.Close(websocket.StatusInternalError, "chat failed") //nolint:errcheck,gosec // error provides no meaningful info
 
 		return
 	}
 
-	defer func() {
-		cancel()
-		session.Close() //nolint:errcheck,gosec // error provides no meaningful info
-	}()
-
-	for {
-		_, data, err := conn.Read(ctx)
-		if err != nil {
-			if websocket.CloseStatus(err) == websocket.StatusNormalClosure ||
-				websocket.CloseStatus(err) == websocket.StatusGoingAway ||
-				errors.Is(err, io.EOF) {
-				return
-			}
-
-			h.log.Error("reading websocket", slog.String("error", err.Error()))
-
-			return
-		}
-
-		session.Process(ctx, data)
-	}
+	conn.Close(websocket.StatusNormalClosure, "") //nolint:errcheck,gosec // error provides no meaningful info
 }
 
-// writer provides a concurrency-safe way to write messages to
-// the WebSocket connection.
-type writer struct {
+// wsConn adapts a WebSocket connection to the transport-agnostic
+// protocol.SessionConn contract.
+type wsConn struct {
 	mu     sync.Mutex
 	log    *slog.Logger
 	conn   *websocket.Conn
 	cancel context.CancelFunc
 }
 
-// WriteJSON sends a message to the client. It is safe for concurrent use.
-func (w *writer) WriteJSON(ctx context.Context, msg any) {
+// Read blocks for the next client message, translating a clean client
+// close into io.EOF.
+func (w *wsConn) Read(ctx context.Context) ([]byte, error) {
+	_, data, err := w.conn.Read(ctx)
+	if err != nil {
+		if websocket.CloseStatus(err) == websocket.StatusNormalClosure ||
+			websocket.CloseStatus(err) == websocket.StatusGoingAway ||
+			errors.Is(err, io.EOF) {
+			return nil, io.EOF
+		}
+
+		return nil, err
+	}
+
+	return data, nil
+}
+
+// WriteJSON sends a message to the client. It is safe for concurrent
+// use; a failed write cancels the chat context to unblock the read
+// loop.
+func (w *wsConn) WriteJSON(ctx context.Context, msg any) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -132,11 +122,11 @@ func (w *writer) WriteJSON(ctx context.Context, msg any) {
 	}
 }
 
-// Manager creates AI chat sessions for authenticated users.
+// Manager runs AI chat conversations for authenticated users.
 //
 //go:generate ../../../../scripts/codegen/mock -t internal Manager
 type Manager interface {
-	// NewSession should create a new chat session bound to the given
-	// organization, user, and message writer.
-	NewSession(ctx context.Context, orgID, userID string, writer protocol.SessionWriter) (assistantCore.Session, error)
+	// Chat should run the chat loop over the connection until the
+	// client disconnects, returning nil on a clean close.
+	Chat(ctx context.Context, orgID, userID string, conn protocol.SessionConn) error
 }

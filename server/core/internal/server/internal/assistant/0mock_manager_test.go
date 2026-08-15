@@ -7,7 +7,6 @@ import (
 	"context"
 	"sync"
 
-	assistantCore "github.com/oxynote/oxynote/server/core/internal/assistant"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/protocol"
 )
 
@@ -21,8 +20,8 @@ var _ Manager = &ManagerMock{}
 //
 //		// make and configure a mocked Manager
 //		mockedManager := &ManagerMock{
-//			NewSessionFunc: func(ctx context.Context, orgID string, userID string, writer protocol.SessionWriter) (assistantCore.Session, error) {
-//				panic("mock out the NewSession method")
+//			ChatFunc: func(ctx context.Context, orgID string, userID string, conn protocol.SessionConn) error {
+//				panic("mock out the Chat method")
 //			},
 //		}
 //
@@ -31,70 +30,69 @@ var _ Manager = &ManagerMock{}
 //
 //	}
 type ManagerMock struct {
-	// NewSessionFunc mocks the NewSession method.
-	NewSessionFunc func(ctx context.Context, orgID string, userID string, writer protocol.SessionWriter) (assistantCore.Session, error)
+	// ChatFunc mocks the Chat method.
+	ChatFunc func(ctx context.Context, orgID string, userID string, conn protocol.SessionConn) error
 
 	// calls tracks calls to the methods.
 	calls struct {
-		// NewSession holds details about calls to the NewSession method.
-		NewSession []struct {
+		// Chat holds details about calls to the Chat method.
+		Chat []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
 			// OrgID is the orgID argument value.
 			OrgID string
 			// UserID is the userID argument value.
 			UserID string
-			// Writer is the writer argument value.
-			Writer protocol.SessionWriter
+			// Conn is the conn argument value.
+			Conn protocol.SessionConn
 		}
 	}
-	lockNewSession sync.RWMutex
+	lockChat sync.RWMutex
 }
 
-// NewSession calls NewSessionFunc.
-func (mock *ManagerMock) NewSession(ctx context.Context, orgID string, userID string, writer protocol.SessionWriter) (assistantCore.Session, error) {
+// Chat calls ChatFunc.
+func (mock *ManagerMock) Chat(ctx context.Context, orgID string, userID string, conn protocol.SessionConn) error {
 	callInfo := struct {
 		Ctx    context.Context
 		OrgID  string
 		UserID string
-		Writer protocol.SessionWriter
+		Conn   protocol.SessionConn
 	}{
 		Ctx:    ctx,
 		OrgID:  orgID,
 		UserID: userID,
-		Writer: writer,
+		Conn:   conn,
 	}
-	mock.lockNewSession.Lock()
-	mock.calls.NewSession = append(mock.calls.NewSession, callInfo)
-	mock.lockNewSession.Unlock()
-	if mock.NewSessionFunc == nil {
+	mock.lockChat.Lock()
+	mock.calls.Chat = append(mock.calls.Chat, callInfo)
+	mock.lockChat.Unlock()
+	if mock.ChatFunc == nil {
 		var (
-			sessionOut assistantCore.Session
-			errOut     error
+			errOut error
 		)
-		return sessionOut, errOut
+		return errOut
 	}
-	return mock.NewSessionFunc(ctx, orgID, userID, writer)
+	return mock.ChatFunc(ctx, orgID, userID, conn)
 }
 
-// NewSessionCalls gets all the calls that were made to NewSession.
+// ChatCalls gets all the calls that were made to Chat.
 // Check the length with:
 //
-//	len(mockedManager.NewSessionCalls())
-func (mock *ManagerMock) NewSessionCalls() []struct {
+//	len(mockedManager.ChatCalls())
+func (mock *ManagerMock) ChatCalls() []struct {
 	Ctx    context.Context
 	OrgID  string
 	UserID string
-	Writer protocol.SessionWriter
+	Conn   protocol.SessionConn
 } {
 	var calls []struct {
 		Ctx    context.Context
 		OrgID  string
 		UserID string
-		Writer protocol.SessionWriter
+		Conn   protocol.SessionConn
 	}
-	mock.lockNewSession.RLock()
-	calls = mock.calls.NewSession
-	mock.lockNewSession.RUnlock()
+	mock.lockChat.RLock()
+	calls = mock.calls.Chat
+	mock.lockChat.RUnlock()
 	return calls
 }

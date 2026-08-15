@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"testing"
 
@@ -87,7 +88,7 @@ func Test_Manager_SetTreeNotifier(t *testing.T) {
 	assert.Same(t, tree, m.tree)
 }
 
-func Test_Manager_NewSession(t *testing.T) {
+func Test_Manager_newSession(t *testing.T) {
 	stored := []anthropic.MessageParam{userMsg("hi"), assistantMsg(anthropic.NewTextBlock("hello"))}
 
 	cc := map[string]struct {
@@ -131,18 +132,15 @@ func Test_Manager_NewSession(t *testing.T) {
 			writer := &protocolMock.SessionWriter{}
 			m := &Manager{log: slog.New(slog.DiscardHandler), store: c.Store}
 
-			sess, err := m.NewSession(context.Background(), "org", "user", writer)
+			cs, err := m.newSession(context.Background(), "org", "user", writer)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {
 				return
 			}
 
-			require.NotNil(t, sess)
-			t.Cleanup(func() { assert.NoError(t, sess.Close()) })
-
-			cs, ok := sess.(*session)
-			require.True(t, ok)
+			require.NotNil(t, cs)
+			t.Cleanup(func() { assert.NoError(t, cs.Close()) })
 
 			assert.Same(t, m, cs.man)
 			assert.Equal(t, "org", cs.orgID)
@@ -162,6 +160,95 @@ func Test_Manager_NewSession(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_Manager_Chat(t *testing.T) {
+	t.Parallel()
+
+	emptyStore := func() *SessionStoreMock {
+		return &SessionStoreMock{
+			GetFunc: func(context.Context, string) (*[]anthropic.MessageParam, error) {
+				return nil, errutil.ErrNotFound
+			},
+		}
+	}
+
+	t.Run("Session creation error", func(t *testing.T) {
+		t.Parallel()
+
+		m := &Manager{
+			log: slog.New(slog.DiscardHandler),
+			store: &SessionStoreMock{
+				GetFunc: func(context.Context, string) (*[]anthropic.MessageParam, error) {
+					return nil, assert.AnError
+				},
+			},
+		}
+
+		conn := &protocolMock.SessionConn{}
+
+		err := m.Chat(context.Background(), "org", "user", conn)
+		require.ErrorIs(t, err, assert.AnError)
+		assert.Empty(t, conn.ReadCalls())
+	})
+
+	t.Run("Clean client close", func(t *testing.T) {
+		t.Parallel()
+
+		m := &Manager{log: slog.New(slog.DiscardHandler), store: emptyStore()}
+
+		conn := &protocolMock.SessionConn{
+			ReadFunc: func(context.Context) ([]byte, error) {
+				return nil, io.EOF
+			},
+		}
+
+		require.NoError(t, m.Chat(context.Background(), "org", "user", conn))
+		assert.Len(t, conn.ReadCalls(), 1)
+	})
+
+	t.Run("Transport read error", func(t *testing.T) {
+		t.Parallel()
+
+		m := &Manager{log: slog.New(slog.DiscardHandler), store: emptyStore()}
+
+		conn := &protocolMock.SessionConn{
+			ReadFunc: func(context.Context) ([]byte, error) {
+				return nil, assert.AnError
+			},
+		}
+
+		err := m.Chat(context.Background(), "org", "user", conn)
+		require.ErrorIs(t, err, assert.AnError)
+		assert.ErrorContains(t, err, "reading client message")
+	})
+
+	t.Run("Messages are dispatched to the session", func(t *testing.T) {
+		t.Parallel()
+
+		m := &Manager{log: slog.New(slog.DiscardHandler), store: emptyStore()}
+
+		conn := &protocolMock.SessionConn{}
+
+		var reads int
+
+		conn.ReadFunc = func(context.Context) ([]byte, error) {
+			reads++
+			if reads == 1 {
+				return []byte(`{"type":"bogus"}`), nil
+			}
+
+			return nil, io.EOF
+		}
+
+		require.NoError(t, m.Chat(context.Background(), "org", "user", conn))
+
+		// the unknown message type makes the session answer with an
+		// error message, proving the dispatch happened.
+		ff := conn.WriteJSONCalls()
+		require.Len(t, ff, 1)
+		assert.Equal(t, protocol.NewErrorMessage("unknown message type"), ff[0].Msg)
+	})
 }
 
 func Test_Manager_saveMessages(t *testing.T) {

@@ -1,7 +1,7 @@
 // Package assistant runs the AI chat that lets the user interact
 // with documents in their organisation. The Manager holds shared
 // dependencies (Anthropic client, DB, edit-RPC client, Redis
-// session store, metrics); each connected user gets a Session that
+// session store, metrics); each connected user gets a session that
 // owns the per-turn agent loop.
 package assistant
 
@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"strings"
 	"time"
@@ -74,22 +75,47 @@ func NewManager(
 // to broadcast sidebar refresh events after document tree mutations.
 // Call this once during startup, after the document handler that satisfies
 // tools.TreeNotifier is constructed. The setter is not safe for
-// concurrent use with NewSession; wire it before serving traffic.
+// concurrent use with Chat; wire it before serving traffic.
 func (m *Manager) SetTreeNotifier(tree tools.TreeNotifier) {
 	m.tree = tree
 }
 
-// NewSession creates a new assistant session bound to the given
-// organisation and user. The session starts without an active
-// document; the client sends a set_active_document message right
-// after connect to tell the model which document is in view.
-// NewSession creates a new chat session bound to the given organization,
-// user, and message writer.
-func (m *Manager) NewSession(
+// Chat runs an assistant chat over the given connection for the given
+// organisation and user. It owns the read loop: inbound messages are
+// dispatched to a fresh session until the connection reports io.EOF (a
+// clean client close, returning nil) or fails with any other error.
+// The session starts without an active document; the client sends a
+// set_active_document message right after connect to tell the model
+// which document is in view.
+func (m *Manager) Chat(ctx context.Context, orgID, userID string, conn protocol.SessionConn) error {
+	s, err := m.newSession(ctx, orgID, userID, conn)
+	if err != nil {
+		return err
+	}
+
+	defer s.Close() //nolint:errcheck // Close never returns a meaningful error
+
+	for {
+		msg, err := conn.Read(ctx)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+
+			return fmt.Errorf("reading client message: %w", err)
+		}
+
+		s.Process(ctx, msg)
+	}
+}
+
+// newSession creates a new chat session bound to the given
+// organisation, user, and message writer.
+func (m *Manager) newSession(
 	ctx context.Context,
 	orgID, userID string,
 	writer protocol.SessionWriter,
-) (Session, error) {
+) (*session, error) {
 	msg, err := m.store.Get(ctx, createSessionKey(orgID, userID))
 
 	switch {
@@ -240,17 +266,6 @@ func hasToolUse(msg anthropic.MessageParam) bool {
 	}
 
 	return false
-}
-
-// Session is a single AI chat session created by the Manager.
-//
-//go:generate ../../scripts/codegen/mock Session
-type Session interface {
-	// Process handles a single inbound client message.
-	Process(ctx context.Context, msg []byte)
-
-	// Close releases the session's resources.
-	Close() error
 }
 
 // SessionStore is the persistence surface for conversation history,

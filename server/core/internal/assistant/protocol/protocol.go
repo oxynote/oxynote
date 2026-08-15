@@ -264,16 +264,28 @@ type ConfirmResponse struct {
 }
 
 // SessionWriter is the interface the assistant session uses to
-// stream messages back to the client.
-//
+// stream messages back to the client. Implementations must be safe
 // for concurrent use because text deltas and confirm requests can
 // be produced from different goroutines.
 //
-//go:generate ../../../scripts/codegen/mock -t external SessionWriter session_writer Implementations must be safe
+//go:generate ../../../scripts/codegen/mock -t external SessionWriter session_writer
 type SessionWriter interface {
 	// WriteJSON serialises msg as JSON and sends it on the
 	// underlying transport.
 	WriteJSON(ctx context.Context, msg any)
+}
+
+// SessionConn is the bidirectional transport a chat session runs
+// over. It stays transport-agnostic: implementations translate their
+// clean-close signal into io.EOF.
+//
+//go:generate ../../../scripts/codegen/mock -t external SessionConn session_conn
+type SessionConn interface {
+	SessionWriter
+
+	// Read blocks until the next client message arrives. It returns
+	// io.EOF when the client ended the conversation cleanly.
+	Read(ctx context.Context) ([]byte, error)
 }
 
 // ClientMessage is a generic envelope for messages received from
