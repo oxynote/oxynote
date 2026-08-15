@@ -51,7 +51,7 @@ const hoveredMetadata = computed(() => {
 		return null
 	}
 
-	const nodeId = node.attrs["uid"] as string
+	const nodeId = node.attrs.uid as string
 	const hooks = processedDocumentHooks.value.filter((h) => {
 		return h.blockId === nodeId
 	})
@@ -62,9 +62,9 @@ const hoveredMetadata = computed(() => {
 		nodeId: nodeId,
 		nodeHooks: hooks.length ? hooks : null,
 		nodeHookStatus: hooks.length
-			? ((hooks.some((h) => Number(h.score) === 0) ? "stale" : "fresh") as
-					| "stale"
-					| "fresh")
+			? hooks.some((h) => Number(h.score) === 0)
+				? ("stale" as const)
+				: ("fresh" as const)
 			: null,
 	}
 })

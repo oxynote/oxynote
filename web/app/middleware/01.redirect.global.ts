@@ -19,7 +19,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
 
 	if (to.name === "accept-invite") {
 		// only 1 organization can be joined per user
-		if (session && session.activeOrganizationId) {
+		if (session?.activeOrganizationId) {
 			return nuxtApp.runWithContext(() => navigateTo("/", { replace: true }))
 		}
 
@@ -30,11 +30,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
 		return nuxtApp.runWithContext(() =>
 			navigateTo({ name: "onboarding" }, { replace: true }),
 		)
-	} else if (
-		session &&
-		session.activeOrganizationId &&
-		to.name === "onboarding"
-	) {
+	} else if (session?.activeOrganizationId && to.name === "onboarding") {
 		return nuxtApp.runWithContext(() => navigateTo("/", { replace: true }))
 	}
 

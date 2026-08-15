@@ -47,8 +47,12 @@ const targetBranchTitle = ref(extractText(props.targetBranchYdoc))
 const activeBranchTitle = ref(extractText(props.activeBranchYdoc))
 const { diffContent } = useDiffTitle(targetBranchTitle, activeBranchTitle)
 
-const onTargetBranchUpdate = () => recompute()
-const onActiveBranchUpdate = () => recompute()
+const onTargetBranchUpdate = () => {
+	recompute()
+}
+const onActiveBranchUpdate = () => {
+	recompute()
+}
 
 props.targetBranchYdoc.on("update", onTargetBranchUpdate)
 props.activeBranchYdoc.on("update", onActiveBranchUpdate)

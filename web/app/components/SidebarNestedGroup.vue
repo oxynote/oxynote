@@ -22,10 +22,7 @@ const items = defineModel<SidebarItem[]>()
 // parentId indicates that the current item can also be a parent to other items.
 const parentId = computed(() => props.itemId)
 
-const collapseOpen = usePersistentState<{
-	// TODO cookie might not be the best place for this
-	[id: string]: number // 1 or 0
-}>({
+const collapseOpen = usePersistentState<Record<string, number>>({
 	key: "sidebar-item-collapse",
 	defaultValue: () => {
 		return {}
@@ -36,9 +33,9 @@ const collapseOpen = usePersistentState<{
 	},
 })
 
-const collapseWrapperElems = ref<{
-	[id: string]: HTMLElement | null | undefined
-}>({})
+const collapseWrapperElems = ref<
+	Record<string, HTMLElement | null | undefined>
+>({})
 
 if (!props.itemId && !Object.keys(collapseOpen.value).length) {
 	// make the first level items open

@@ -94,12 +94,16 @@ function migrateLegacyIfNeeded(fieldAttrs: Record<string, any>) {
 const config = reactive({
 	title: computed<MetricConfig["title"]>({
 		get: () => legacyConfig.value?.title ?? props.node.attrs.title ?? "",
-		set: (v) => migrateLegacyIfNeeded({ title: v }),
+		set: (v) => {
+			migrateLegacyIfNeeded({ title: v })
+		},
 	}),
 	dataSourceId: computed<MetricConfig["dataSourceId"]>({
 		get: () =>
 			legacyConfig.value?.dataSourceId ?? props.node.attrs.dataSourceId ?? null,
-		set: (v) => migrateLegacyIfNeeded({ dataSourceId: v }),
+		set: (v) => {
+			migrateLegacyIfNeeded({ dataSourceId: v })
+		},
 	}),
 	visualizationType: computed<MetricConfig["visualizationType"]>({
 		get: () =>
@@ -107,51 +111,69 @@ const config = reactive({
 			legacyConfig.value?.visualizationType ??
 			props.node.attrs.visualizationType ??
 			null,
-		set: (v) => migrateLegacyIfNeeded({ visualizationType: v }),
+		set: (v) => {
+			migrateLegacyIfNeeded({ visualizationType: v })
+		},
 	}),
 	queries: computed<MetricConfig["queries"]>({
 		get: () => legacyConfig.value?.queries ?? props.node.attrs.queries ?? null,
-		set: (v) => migrateLegacyIfNeeded({ queries: v }),
+		set: (v) => {
+			migrateLegacyIfNeeded({ queries: v })
+		},
 	}),
 	timeRange: computed<MetricConfig["timeRange"]>({
 		get: () =>
 			legacyConfig.value?.timeRange ?? props.node.attrs.timeRange ?? null,
-		set: (v) => migrateLegacyIfNeeded({ timeRange: v }),
+		set: (v) => {
+			migrateLegacyIfNeeded({ timeRange: v })
+		},
 	}),
 	refreshInterval: computed<MetricConfig["refreshInterval"]>({
 		get: () =>
 			legacyConfig.value?.refreshInterval ??
 			props.node.attrs.refreshInterval ??
 			null,
-		set: (v) => migrateLegacyIfNeeded({ refreshInterval: v }),
+		set: (v) => {
+			migrateLegacyIfNeeded({ refreshInterval: v })
+		},
 	}),
 	thresholds: computed<Required<MetricConfig>["thresholds"]>({
 		get: () =>
 			legacyConfig.value?.thresholds ?? props.node.attrs.thresholds ?? null,
-		set: (v) => migrateLegacyIfNeeded({ thresholds: v }),
+		set: (v) => {
+			migrateLegacyIfNeeded({ thresholds: v })
+		},
 	}),
 	baseThresholdColor: computed<MetricConfig["baseThresholdColor"]>({
 		get: () =>
 			legacyConfig.value?.baseThresholdColor ??
 			props.node.attrs.baseThresholdColor ??
 			"",
-		set: (v) => migrateLegacyIfNeeded({ baseThresholdColor: v }),
+		set: (v) => {
+			migrateLegacyIfNeeded({ baseThresholdColor: v })
+		},
 	}),
 	decimals: computed<Required<MetricConfig>["decimals"]>({
 		get: () =>
 			legacyConfig.value?.decimals ?? props.node.attrs.decimals ?? null,
-		set: (v) => migrateLegacyIfNeeded({ decimals: v }),
+		set: (v) => {
+			migrateLegacyIfNeeded({ decimals: v })
+		},
 	}),
 	unit: reactive({
 		type: computed<Required<MetricConfig["unit"]>["type"]>({
 			get: () =>
 				legacyConfig.value?.unit?.type ?? props.node.attrs.unitType ?? null,
-			set: (v) => migrateLegacyIfNeeded({ unitType: v }),
+			set: (v) => {
+				migrateLegacyIfNeeded({ unitType: v })
+			},
 		}),
 		custom: computed<Required<MetricConfig["unit"]>["custom"]>({
 			get: () =>
 				legacyConfig.value?.unit?.custom ?? props.node.attrs.unitCustom ?? null,
-			set: (v) => migrateLegacyIfNeeded({ unitCustom: v }),
+			set: (v) => {
+				migrateLegacyIfNeeded({ unitCustom: v })
+			},
 		}),
 	}),
 	axisBounds: reactive({
@@ -160,14 +182,18 @@ const config = reactive({
 				legacyConfig.value?.axisBounds?.min ??
 				props.node.attrs.axisBoundsMin ??
 				null,
-			set: (v) => migrateLegacyIfNeeded({ axisBoundsMin: v }),
+			set: (v) => {
+				migrateLegacyIfNeeded({ axisBoundsMin: v })
+			},
 		}),
 		max: computed<Required<NonNullable<MetricConfig["axisBounds"]>>["max"]>({
 			get: () =>
 				legacyConfig.value?.axisBounds?.max ??
 				props.node.attrs.axisBoundsMax ??
 				null,
-			set: (v) => migrateLegacyIfNeeded({ axisBoundsMax: v }),
+			set: (v) => {
+				migrateLegacyIfNeeded({ axisBoundsMax: v })
+			},
 		}),
 	}),
 })

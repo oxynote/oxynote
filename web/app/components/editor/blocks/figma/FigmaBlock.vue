@@ -195,7 +195,9 @@ function handleClickOutside(event: MouseEvent) {
 
 watch(showPopover, (val) => {
 	if (val) {
-		nextTick(() => document.addEventListener("mousedown", handleClickOutside))
+		nextTick(() => {
+			document.addEventListener("mousedown", handleClickOutside)
+		})
 	} else {
 		document.removeEventListener("mousedown", handleClickOutside)
 	}

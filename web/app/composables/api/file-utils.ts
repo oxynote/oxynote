@@ -50,7 +50,7 @@ export function getStorageErrorCode(error: unknown): StorageErrorCode | null {
 		code === StorageErrorCode.InvalidContentType ||
 		code === StorageErrorCode.SizeLimitExceeded
 	) {
-		return code as StorageErrorCode
+		return code
 	}
 
 	return null

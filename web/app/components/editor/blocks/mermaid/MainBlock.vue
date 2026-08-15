@@ -20,7 +20,9 @@ const uid = computed(() => props.node.attrs.uid as string)
 
 const showCode = computed({
 	get: () => editorStore.mermaidBlockShowCode[uid.value] ?? false,
-	set: (v: boolean) => editorStore.setMermaidBlockShowCode(uid.value, v),
+	set: (v: boolean) => {
+		editorStore.setMermaidBlockShowCode(uid.value, v)
+	},
 })
 
 // open the code section by default when the block is empty.

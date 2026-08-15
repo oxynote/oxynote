@@ -276,7 +276,7 @@ export function isNodeInsideTiptapNode(
 export function preventTiptapInputRuleInNode(
 	rule: InputRule,
 	allowedContainerNodes: string[],
-	rootOnly: boolean = false,
+	rootOnly = false,
 ) {
 	return new InputRule({
 		find: rule.find,
@@ -385,5 +385,7 @@ export function startRandomNumberInsertion(
 		editor.chain().focus().insertContentAt(insertPos, content).run()
 	}, intervalMs)
 
-	return () => clearInterval(intervalId)
+	return () => {
+		clearInterval(intervalId)
+	}
 }

@@ -72,8 +72,7 @@ async function buildNotificationHref(notification: Notification) {
 
 	switch (notification.code) {
 		case NotificationCode.DocumentReviewRequest: {
-			const metadata =
-				notification.metadata as NotificationMetadataDocumentReviewRequest
+			const metadata = notification.metadata
 
 			const documentName = findDocumentName(metadata.documentId) || ""
 			const docSlug = createNameSlugWithId(documentName, metadata.documentId)

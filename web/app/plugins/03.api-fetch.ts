@@ -12,15 +12,15 @@ export default defineNuxtPlugin((nuxtApp) => {
 
 	const coreAPI = $fetch.create({
 		baseURL:
-			(import.meta.server && (config.coreAPIInternalHttpURL as string)) ||
-			(config.public.coreAPIBaseHttpURL as string),
+			(import.meta.server && config.coreAPIInternalHttpURL) ||
+			config.public.coreAPIBaseHttpURL,
 		credentials: "include",
 		onRequest({ options }) {
 			if (!ssrHeaders) {
 				return
 			}
 
-			const h = new Headers(options.headers as HeadersInit | undefined)
+			const h = new Headers(options.headers)
 
 			for (const [k, v] of Object.entries(ssrHeaders)) {
 				if (v && !h.has(k)) {
@@ -40,16 +40,15 @@ export default defineNuxtPlugin((nuxtApp) => {
 
 	const authRealtimeAPI = $fetch.create({
 		baseURL:
-			(import.meta.server &&
-				(config.authRealtimeAPIInternalHttpURL as string)) ||
-			(config.public.authRealtimeAPIBaseHttpURL as string),
+			(import.meta.server && config.authRealtimeAPIInternalHttpURL) ||
+			config.public.authRealtimeAPIBaseHttpURL,
 		credentials: "include",
 		onRequest({ options }) {
 			if (!ssrHeaders) {
 				return
 			}
 
-			const h = new Headers(options.headers as HeadersInit | undefined)
+			const h = new Headers(options.headers)
 
 			for (const [k, v] of Object.entries(ssrHeaders)) {
 				if (v && !h.has(k)) {

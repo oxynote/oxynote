@@ -13,12 +13,12 @@ const ALPHANUM_EXTENDED_REGEX = /^[\p{L}\p{N}]+$/u
 const EMPTY_RERENDER_KEY = "empty-rerender"
 const MAX_UNKNOWN_CHARS = 5
 
-export type SlashCommandOptions = {
+export interface SlashCommandOptions {
 	decorationClass: string
 	decorationEmptyClass: string
 }
 
-export type SlashCommandStorage = {
+export interface SlashCommandStorage {
 	sequenceWithTriggerChar: boolean
 }
 
@@ -91,8 +91,7 @@ export const SlashCommands = Extension.create<
 							if (
 								!props.clientRect ||
 								!props.decorationNode ||
-								!component ||
-								!component.element
+								!component?.element
 							) {
 								return
 							}

@@ -23,7 +23,11 @@ pnpm make:desktop             # nuxt generate (static) + electron-forge make (in
 
 pnpm qa                       # check-types + check-lint + check-fmt (read-only)
 pnpm qa-fix                   # check-types + lint --fix + prettier --write
-pnpm check-types              # vue-tsc --noEmit
+pnpm check-types              # nuxt typecheck (regenerates .nuxt types, then
+                              # vue-tsc -b --noEmit; plain vue-tsc --noEmit on
+                              # the solution-style root tsconfig checks nothing)
+                              # + tsc on electron/ (own tsconfig, not part of
+                              # the nuxt solution)
 pnpm lint                     # eslint --fix .
 pnpm fmt                      # prettier --write .
 

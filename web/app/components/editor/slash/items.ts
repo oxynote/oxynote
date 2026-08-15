@@ -326,7 +326,7 @@ const allItems: CommandItem[] = [
 			const { schema } = state
 
 			const calloutNode = schema.nodes[CalloutBlock.name]
-			const paragraphNode = schema.nodes["paragraph"]
+			const paragraphNode = schema.nodes.paragraph
 
 			if (!calloutNode || !paragraphNode) {
 				return

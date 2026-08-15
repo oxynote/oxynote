@@ -94,10 +94,7 @@ const onSubmit = form.handleSubmit(async (values) => {
 		loading.value = null
 
 		// https://github.com/better-auth/better-auth/blob/main/packages/better-auth/src/plugins/organization/error-codes.ts#L4
-		if (
-			(orgError as any).code ===
-			"YOU_ARE_NOT_ALLOWED_TO_CREATE_A_NEW_ORGANIZATION"
-		) {
+		if (orgError.code === "YOU_ARE_NOT_ALLOWED_TO_CREATE_A_NEW_ORGANIZATION") {
 			showToastMessage(
 				"info",
 				t("onboarding.signup.errors.organization-limit-reached.title"),

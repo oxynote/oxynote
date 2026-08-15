@@ -76,7 +76,9 @@ function hookProps(type: string, hook: DocumentHook): any {
 			return computed(() => ({
 				nodeId: props.nodeId,
 				hook: hook,
-				onOpenSettings: (target: "github") => emit("open-settings", target),
+				onOpenSettings: (target: "github") => {
+					emit("open-settings", target)
+				},
 			}))
 		case DocumentHookType.URLWatcher:
 			return computed(() => ({

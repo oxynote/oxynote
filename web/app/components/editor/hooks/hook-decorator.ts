@@ -27,7 +27,7 @@ declare module "@tiptap/core" {
 	}
 }
 
-type Options = {
+interface Options {
 	attributeName: string
 	getHooks: () => DocumentHook[]
 }
@@ -102,9 +102,7 @@ function buildDecorations(
 					el.setAttribute(CLONE_IGNORE_ATTR, "true")
 					el.setAttribute(HOOK_DECORATION_ATTR, "true")
 
-					const editorContainer = view.dom.closest(
-						".content-editor",
-					) as HTMLElement | null
+					const editorContainer = view.dom.closest(".content-editor")
 
 					const updatePosition = () => {
 						const nodeDOM = view.nodeDOM(targetNodePos) as HTMLElement | null
@@ -193,7 +191,7 @@ export const HookDecorator = Extension.create<Partial<Options>>({
 						const ids = toAvailableIDs(opt.getHooks() ?? [])
 						return {
 							ids,
-							decos: buildDecorations(doc as PMNode, opt, ids),
+							decos: buildDecorations(doc, opt, ids),
 						}
 					},
 					apply(tr, old, _oldState, newState) {

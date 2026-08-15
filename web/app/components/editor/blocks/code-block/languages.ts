@@ -42,7 +42,7 @@ export const languageNames: Record<string, string> = {
 	yaml: "YAML",
 }
 export const extendedCodeBlockLanguages = common
-extendedCodeBlockLanguages["curl"] = curl
+extendedCodeBlockLanguages.curl = curl
 
 export const extendedCodeBlockLanguageOptions = Object.fromEntries(
 	Object.keys(extendedCodeBlockLanguages)

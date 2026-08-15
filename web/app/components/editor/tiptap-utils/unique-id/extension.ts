@@ -14,7 +14,7 @@ import { v4 as uuidv4 } from "uuid"
 
 import { findDuplicates } from "./helpers/findDuplicates.js"
 
-export type UniqueIDGenerationContext = {
+export interface UniqueIDGenerationContext {
 	node: ProseMirrorNode
 	pos: number
 }
@@ -144,12 +144,14 @@ export const UniqueID = Extension.create<UniqueIDOptions>({
 		 */
 		if (collab) {
 			if (!provider) {
-				return createIds()
+				createIds()
+				return
 			}
 
 			provider.on("synced", createIds)
 		} else {
-			return createIds()
+			createIds()
+			return
 		}
 	},
 

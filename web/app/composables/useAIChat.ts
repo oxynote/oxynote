@@ -24,7 +24,7 @@ export function useAIChat(opts: {
 	const toolStatus = ref<string | null>(null)
 
 	const wsUrl = computed(() => {
-		const base = config.public.coreAPIBaseWsURL as string
+		const base = config.public.coreAPIBaseWsURL
 		return `${base}/api/ai/chat`
 	})
 
@@ -90,7 +90,7 @@ export function useAIChat(opts: {
 			case ServerMessageType.TextDelta: {
 				const last = messages.value[messages.value.length - 1]
 
-				if (last && last.role === ChatMessageRole.Assistant) {
+				if (last?.role === ChatMessageRole.Assistant) {
 					last.text += msg.content ?? ""
 				} else {
 					messages.value.push({
@@ -112,10 +112,7 @@ export function useAIChat(opts: {
 				)
 
 				try {
-					const result = await opts.toolExecutor(
-						msg.tool,
-						msg.args as ExecuteToolArgs,
-					)
+					const result = await opts.toolExecutor(msg.tool, msg.args!)
 
 					if (isConnected.value) {
 						send(

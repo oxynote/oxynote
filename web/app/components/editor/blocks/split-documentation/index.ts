@@ -223,10 +223,7 @@ export const SplitDocumentation = Node.create({
 				({ state, tr, dispatch }) => {
 					const { schema, doc } = state
 					const leftNode = doc.nodeAt(leftSideNodePos)
-					if (
-						!leftNode ||
-						leftNode.type.name !== SplitDocumentationLeftSide.name
-					) {
+					if (leftNode?.type.name !== SplitDocumentationLeftSide.name) {
 						return false
 					}
 
@@ -263,10 +260,7 @@ export const SplitDocumentation = Node.create({
 					let splitDocPos: number | null = null
 					let splitDocNode: PMNode | null = null
 
-					if (
-						splitDocNodeAtPos &&
-						splitDocNodeAtPos.type.name === SplitDocumentation.name
-					) {
+					if (splitDocNodeAtPos?.type.name === SplitDocumentation.name) {
 						splitDocPos = splitDocNodePos ?? null
 						splitDocNode = splitDocNodeAtPos
 					} else {
@@ -307,10 +301,7 @@ export const SplitDocumentation = Node.create({
 				({ state, tr, dispatch }) => {
 					const { schema, doc } = state
 					const rightNode = doc.nodeAt(rightSideNodePos)
-					if (
-						!rightNode ||
-						rightNode.type.name !== SplitDocumentationRightSide.name
-					) {
+					if (rightNode?.type.name !== SplitDocumentationRightSide.name) {
 						return false
 					}
 
@@ -365,7 +356,7 @@ export const SplitDocumentation = Node.create({
 
 					// nodePos is the position of a ParameterList
 					const node = doc.nodeAt(nodePos)
-					if (!node || node.type.name !== ParameterList.name) {
+					if (node?.type.name !== ParameterList.name) {
 						return false
 					}
 
@@ -422,7 +413,7 @@ export const SplitDocumentation = Node.create({
 
 					// nodePos is the position of a ParameterListItem
 					const node = doc.nodeAt(nodePos)
-					if (!node || node.type.name !== ParameterListItem.name) {
+					if (node?.type.name !== ParameterListItem.name) {
 						return false
 					}
 

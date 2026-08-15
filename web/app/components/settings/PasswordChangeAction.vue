@@ -64,7 +64,7 @@ const onChangeSubmit = form.handleSubmit(async (values) => {
 	if (error) {
 		loading.value = false
 
-		if ((error as any).code === "INVALID_PASSWORD") {
+		if (error.code === "INVALID_PASSWORD") {
 			form.setFieldError(
 				"currentPassword",
 				t(

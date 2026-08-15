@@ -293,7 +293,7 @@ export const useEditorStore = defineStore("editor", () => {
 		lastDragDropTimestamp.value = new Date()
 	}
 
-	function isLastDragDropRecent(thresholdMs: number = 2000): boolean {
+	function isLastDragDropRecent(thresholdMs = 2000): boolean {
 		if (!lastDragDropTimestamp.value) {
 			return false
 		}

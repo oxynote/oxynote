@@ -127,11 +127,15 @@ export default function () {
 		queryCache.cancelQueries({ key: AUTH_SESSION_QUERY_KEYS.root })
 		queryCache
 			.getEntries({ key: AUTH_SESSION_QUERY_KEYS.root })
-			.forEach((e) => queryCache.remove(e))
+			.forEach((e) => {
+				queryCache.remove(e)
+			})
 		queryCache.cancelQueries({ key: AUTH_SESSION_QUERY_KEYS.organization })
 		queryCache
 			.getEntries({ key: AUTH_SESSION_QUERY_KEYS.organization })
-			.forEach((e) => queryCache.remove(e))
+			.forEach((e) => {
+				queryCache.remove(e)
+			})
 
 		return res
 	}

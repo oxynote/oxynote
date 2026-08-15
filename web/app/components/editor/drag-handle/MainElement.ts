@@ -79,7 +79,7 @@ export const DragHandle = defineComponent({
 			editor.registerPlugin(
 				DragHandlePlugin({
 					editor,
-					element: root.value as HTMLElement,
+					element: root.value!,
 					pluginKey,
 					provider,
 					onNodeChange,

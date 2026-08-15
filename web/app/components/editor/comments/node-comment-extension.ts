@@ -225,7 +225,7 @@ export const NodeComment = Extension.create<NodeCommentOptions>({
 					document.head.appendChild(hoverStyleEl)
 
 					// Track attached listeners for cleanup
-					type NodeHandlers = {
+					interface NodeHandlers {
 						enter: () => void
 						leave: (e: Event) => void
 						markEnter: (e: Event) => void
@@ -356,7 +356,9 @@ export const NodeComment = Extension.create<NodeCommentOptions>({
 						// Only remove overlay elements, preserve Vue Teleport content
 						container
 							.querySelectorAll(".node-comment-overlay")
-							.forEach((el) => el.remove())
+							.forEach((el) => {
+								el.remove()
+							})
 
 						const state = editorView.state
 						const newOverlays: NodeCommentOverlay[] = []
@@ -525,7 +527,7 @@ export function findNodeCommentAtPos(
 	pos: number,
 ): NodeCommentMatch | null {
 	const node = state.doc.nodeAt(pos)
-	if (!node || !node.attrs.nodeCommentId) {
+	if (!node?.attrs.nodeCommentId) {
 		return null
 	}
 

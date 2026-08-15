@@ -1,11 +1,11 @@
 export const WS_NOTIFICATION_CREATION_TOPIC = "creation@notifications"
 
-export type NotificationsParams = {
+export interface NotificationsParams {
 	limit: number
 	page: number
 }
 
-export type NotificationsCountParams = {
+export interface NotificationsCountParams {
 	read: boolean
 }
 

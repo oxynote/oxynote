@@ -15,7 +15,7 @@
 		"qa-fix": "pnpm run check-types && pnpm run lint && pnpm run fmt"
 	},
 	"dependencies": {
-		"@better-auth/electron": "^1.6.24",
+		"@better-auth/electron": "^1.6.28",
 		"@hocuspocus/extension-logger": "^3.2.3",
 		"@hocuspocus/server": "^3.2.2",
 		"@hocuspocus/transformer": "^3.2.3",
@@ -39,7 +39,7 @@
 		"@tiptap/extension-underline": "^3.1.0",
 		"@tiptap/extension-unique-id": "^3.14.0",
 		"axios": "^1.11.0",
-		"better-auth": "^1.6.24",
+		"better-auth": "^1.6.28",
 		"hono": "^4.9.2",
 		"kysely": "^0.28.8",
 		"lowlight": "^3.3.0",

@@ -19,7 +19,9 @@ export const authClient = createAuthClient({
 			protocol: { scheme: "oxynote" },
 			storage: {
 				getItem: (key) => store.get(key) ?? null,
-				setItem: (key, value) => store.set(key, value),
+				setItem: (key, value) => {
+					store.set(key, value)
+				},
 			},
 			storagePrefix: "auth",
 			// Must match the auth server's global cookie prefix — the client

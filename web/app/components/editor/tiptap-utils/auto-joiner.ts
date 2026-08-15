@@ -19,7 +19,7 @@ function autoJoin(
 	nodeTypes: NodeType[], // The node type to join
 ) {
 	// Find all ranges where we might want to join.
-	const ranges: Array<number> = []
+	const ranges: number[] = []
 	for (let i = 0; i < tr.mapping.maps.length; i++) {
 		const map = tr.mapping.maps[i]
 		if (!map) continue
@@ -43,10 +43,10 @@ function autoJoin(
 		) {
 			const after = parent.maybeChild(index)
 			if (!after) break
-			if (index && joinable.indexOf(pos) == -1) {
+			if (index && !joinable.includes(pos)) {
 				const before = parent.child(index - 1)
 				if (before.type == after.type && nodeTypes.includes(before.type))
-					joinable.push(pos as number)
+					joinable.push(pos)
 			}
 			pos += after.nodeSize
 		}

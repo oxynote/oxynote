@@ -349,7 +349,7 @@ export function yAxisLabelFormatter(
 		`${truncToDecimals(num, decimals)}`
 
 	type ScalableUnit = VisualizationTimeUnit | VisualizationDataUnit
-	type UnitScale = {
+	interface UnitScale {
 		unit: ScalableUnit
 		label: string
 		factorToNext: number | null
@@ -544,7 +544,7 @@ function countDecimals(value: number): number {
 export function calculateYAxisBounds(
 	data: (BarChartData | LineChartData)[],
 	thresholds?: { value: number }[],
-	margin: number = 0.1,
+	margin = 0.1,
 	bounds?: { min?: number | null; max?: number | null },
 ): { min: number; max: number } {
 	// Collect all values from data points
@@ -606,7 +606,7 @@ export function calculateYAxisBounds(
 export function calculateGaugeAxisBounds(
 	gauges: MultipleGaugeChartData,
 	thresholds?: { value: number }[],
-	margin: number = 0.1,
+	margin = 0.1,
 	bounds?: { min?: number | null; max?: number | null },
 ): { min: number; max: number } {
 	// Collect all values from gauges

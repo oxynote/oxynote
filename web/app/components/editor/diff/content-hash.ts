@@ -34,9 +34,7 @@ function stripExcluded(node: JSONContent, options: HashOptions): JSONContent {
 
 	// strip excluded marks
 	if (result.marks) {
-		result.marks = result.marks.filter(
-			(m) => !excludeMarks.includes(m.type as string),
-		)
+		result.marks = result.marks.filter((m) => !excludeMarks.includes(m.type))
 		if (result.marks.length === 0) {
 			delete result.marks
 		}

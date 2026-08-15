@@ -70,7 +70,7 @@ const props = defineProps<{
 
 const containerElem = useTemplateRef<HTMLDivElement>("chart-container")
 const { width: containerWidth } = useElementSize(containerElem)
-const chartElem = useTemplateRef("chart")
+const chartElem = useTemplateRef<InstanceType<typeof VChart>>("chart")
 const { color } = useAppearance()
 const { browserType } = useDetectHost()
 
@@ -249,9 +249,7 @@ const option = computed<ECOption>(() => {
 			emphasis: {
 				// safari's canvas implementation mishandles globalAlpha during
 				// emphasis/blur transitions, causing bars to disappear
-				focus: (browserType.value === HostBrowserType.Safari
-					? "none"
-					: "series") as "none" | "series",
+				focus: browserType.value === HostBrowserType.Safari ? "none" : "series",
 				disabled: browserType.value === HostBrowserType.Safari,
 			},
 			itemStyle: {

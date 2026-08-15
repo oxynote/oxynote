@@ -44,10 +44,10 @@ export enum GenericQueryResultStatus {
 
 export interface GenericQueryResult {
 	status: GenericQueryResultStatus
-	data: Array<{
+	data: {
 		labels: Record<string, string> // label name: label value
 		metrics: [number, number][] // unix seconds (int) and value (int/float)
-	}>
+	}[]
 	queryErrorMessage?: string // only set when status is QueryError (local-only)
 }
 

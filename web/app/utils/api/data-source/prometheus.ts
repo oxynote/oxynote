@@ -48,34 +48,32 @@ export type PrometheusQueryStringResult = [number, string] // unix seconds
 
 // https://prometheus.io/docs/prometheus/latest/querying/api/#instant-vectors
 // Each series could have the "value" key, or the "histogram" key, but not both.
-export type PrometheusQueryVectorResult = Array<{
+export type PrometheusQueryVectorResult = {
 	metric: Record<string, string> // label name: label value
 	value?: [number, string] // unix seconds
 	histogram?: [number, PrometheusQueryHistogramResultValue] // unix seconds
-}>
+}[]
 
 // https://prometheus.io/docs/prometheus/latest/querying/api/#range-vectors
 // Each series could have the "values" key, or the "histograms" key, or both.
 // For a given timestamp, there will only be one sample of either float or
 // histogram type.
-export type PrometheusQueryMatrixResult = Array<{
+export type PrometheusQueryMatrixResult = {
 	metric: Record<string, string> // label name: label value
-	values?: Array<[number, string]> // unix seconds
-	histograms?: Array<[number, PrometheusQueryHistogramResultValue]> // unix seconds
-}>
+	values?: [number, string][] // unix seconds
+	histograms?: [number, PrometheusQueryHistogramResultValue][] // unix seconds
+}[]
 
 // https://prometheus.io/docs/prometheus/latest/querying/api/#native-histograms
 export interface PrometheusQueryHistogramResultValue {
 	count: string
 	sum: string
-	buckets: Array<
-		[
-			0 | 1 | 2 | 3, // boundary_rule
-			string, // left_boundary
-			string, // right_boundary
-			string, // count_in_bucket
-		]
-	>
+	buckets: [
+		0 | 1 | 2 | 3, // boundary_rule
+		string, // left_boundary
+		string, // right_boundary
+		string, // count_in_bucket
+	][]
 }
 
 export interface PrometheusMultipleQueriesParams extends PrometheusTimeRange {

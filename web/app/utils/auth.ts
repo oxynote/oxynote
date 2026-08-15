@@ -20,5 +20,5 @@ export function postEmailVerificationUrl(
 	baseUrl: string | undefined,
 	email: string,
 ): string {
-	return `${baseUrl || ""}${`/verify-email?new=${encodeURIComponent(email)}`}`
+	return `${baseUrl || ""}/verify-email?new=${encodeURIComponent(email)}`
 }

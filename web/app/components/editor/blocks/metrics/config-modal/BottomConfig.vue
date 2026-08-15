@@ -9,7 +9,7 @@ import { DiffStatus } from "~/components/editor/diff/position-map"
 
 type QueryEntry = NonNullable<MetricConfig["queries"]>[number]
 
-type DiffQueryEntry = {
+interface DiffQueryEntry {
 	newQuery: QueryEntry | null
 	oldQuery: QueryEntry | null
 	queryChanged: boolean

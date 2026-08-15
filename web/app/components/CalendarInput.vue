@@ -28,7 +28,10 @@ const emit = defineEmits<{
 }>()
 const value = computed({
 	get: () => props.modelValue as DateValue | undefined,
-	set: (v) => emit("update:modelValue", v as T),
+	set: (v) => {
+		// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- eslint can't resolve the component generic T, vue-tsc needs the assertion
+		emit("update:modelValue", v as T)
+	},
 })
 const open = ref(false)
 

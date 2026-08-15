@@ -77,7 +77,7 @@ export const MermaidBlock = Node.create({
 				// remove up to TAB_SIZE leading spaces
 				const lineEnd = $from.end()
 				const lineText = state.doc.textBetween(lineBegin, lineEnd)
-				const leadingSpaces = lineText.match(/^ */)?.[0].length ?? 0
+				const leadingSpaces = /^ */.exec(lineText)?.[0].length ?? 0
 
 				if (leadingSpaces > 0) {
 					const removeCount = Math.min(leadingSpaces, TAB_SIZE)

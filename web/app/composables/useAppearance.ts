@@ -40,7 +40,7 @@ export default function () {
 			return mode.system.value === "dark" ? "dark" : "light"
 		}
 
-		return mode.store.value as "light" | "dark"
+		return mode.store.value
 	})
 
 	if (import.meta.client) {
@@ -51,7 +51,7 @@ export default function () {
 				return
 			}
 
-			lastAutoColorCookie.value = mode.store.value as "light" | "dark"
+			lastAutoColorCookie.value = mode.store.value
 		})
 	}
 

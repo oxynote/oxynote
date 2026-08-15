@@ -20,9 +20,7 @@ export function parseDurationString(dur: string): number {
 	let totalMs = 0
 	let match
 
-	const conversionFactors: {
-		[key: string]: number
-	} = {
+	const conversionFactors: Record<string, number> = {
 		ns: 1e-6, // nanoseconds to milliseconds
 		µs: 1e-3, // microseconds to milliseconds
 		us: 1e-3, // microseconds to milliseconds (alternative representation)

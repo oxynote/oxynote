@@ -9,7 +9,7 @@ import { redirectToLogin } from "~/plugins/03.api-fetch"
 import { refreshGapDecorationsInBackground } from "./drag-handle/gap-decorations"
 import { editorCaretColors } from "~/assets/css"
 
-type BranchProviderEntry = {
+interface BranchProviderEntry {
 	provider: HocuspocusProvider
 	ydoc: Y.Doc
 	synced: Ref<boolean>
@@ -199,7 +199,7 @@ function createBranchProvider(
 	const ydoc = new Y.Doc()
 	const synced = ref(false)
 	const provider = new HocuspocusProvider({
-		url: config.public.authRealtimeAPIBaseWsURL as string,
+		url: config.public.authRealtimeAPIBaseWsURL,
 		name: streamName,
 		document: ydoc,
 		token: "notoken",

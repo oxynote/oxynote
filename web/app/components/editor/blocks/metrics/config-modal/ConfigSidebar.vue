@@ -155,13 +155,13 @@ const isBoundsMaxModified = computed(() => {
 	)
 })
 
-type ThresholdEntry = {
+interface ThresholdEntry {
 	value?: number
 	label?: string
 	color?: string
 }
 
-type DiffThresholdEntry = {
+interface DiffThresholdEntry {
 	threshold: ThresholdEntry
 	diffStatus: DiffStatus
 	key: string

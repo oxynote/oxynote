@@ -20,11 +20,15 @@ const sections = computed(() => {
 						ds.type === DataSourceType.Prometheus &&
 						ds.status !== DataSourceStatus.LocalOptimisticInsert,
 				) || [],
-			create: () => emit("data-source-creation", DataSourceType.Prometheus),
-			update: (dataSource: DataSource) =>
-				emit("data-source-update", dataSource),
-			delete: (dataSource: DataSource) =>
-				emit("data-source-removal", dataSource),
+			create: () => {
+				emit("data-source-creation", DataSourceType.Prometheus)
+			},
+			update: (dataSource: DataSource) => {
+				emit("data-source-update", dataSource)
+			},
+			delete: (dataSource: DataSource) => {
+				emit("data-source-removal", dataSource)
+			},
 		},
 		{
 			key: DataSourceType.PostgreSQL,
@@ -35,11 +39,15 @@ const sections = computed(() => {
 						ds.type === DataSourceType.PostgreSQL &&
 						ds.status !== DataSourceStatus.LocalOptimisticInsert,
 				) || [],
-			create: () => emit("data-source-creation", DataSourceType.PostgreSQL),
-			update: (dataSource: DataSource) =>
-				emit("data-source-update", dataSource),
-			delete: (dataSource: DataSource) =>
-				emit("data-source-removal", dataSource),
+			create: () => {
+				emit("data-source-creation", DataSourceType.PostgreSQL)
+			},
+			update: (dataSource: DataSource) => {
+				emit("data-source-update", dataSource)
+			},
+			delete: (dataSource: DataSource) => {
+				emit("data-source-removal", dataSource)
+			},
 		},
 		{
 			key: DataSourceType.MySQL,
@@ -50,11 +58,15 @@ const sections = computed(() => {
 						ds.type === DataSourceType.MySQL &&
 						ds.status !== DataSourceStatus.LocalOptimisticInsert,
 				) || [],
-			create: () => emit("data-source-creation", DataSourceType.MySQL),
-			update: (dataSource: DataSource) =>
-				emit("data-source-update", dataSource),
-			delete: (dataSource: DataSource) =>
-				emit("data-source-removal", dataSource),
+			create: () => {
+				emit("data-source-creation", DataSourceType.MySQL)
+			},
+			update: (dataSource: DataSource) => {
+				emit("data-source-update", dataSource)
+			},
+			delete: (dataSource: DataSource) => {
+				emit("data-source-removal", dataSource)
+			},
 		},
 		{
 			key: DataSourceType.MariaDB,
@@ -65,11 +77,15 @@ const sections = computed(() => {
 						ds.type === DataSourceType.MariaDB &&
 						ds.status !== DataSourceStatus.LocalOptimisticInsert,
 				) || [],
-			create: () => emit("data-source-creation", DataSourceType.MariaDB),
-			update: (dataSource: DataSource) =>
-				emit("data-source-update", dataSource),
-			delete: (dataSource: DataSource) =>
-				emit("data-source-removal", dataSource),
+			create: () => {
+				emit("data-source-creation", DataSourceType.MariaDB)
+			},
+			update: (dataSource: DataSource) => {
+				emit("data-source-update", dataSource)
+			},
+			delete: (dataSource: DataSource) => {
+				emit("data-source-removal", dataSource)
+			},
 		},
 	]
 

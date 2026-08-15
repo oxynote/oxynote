@@ -95,17 +95,16 @@ function cloneElement(node: HTMLElement) {
 		// If the source is a canvas, copy its bitmap into a fresh canvas
 		if (sourceElement instanceof HTMLCanvasElement) {
 			try {
-				const src = sourceElement as HTMLCanvasElement
-				const newCanvas = document.createElement("canvas") as HTMLCanvasElement
+				const newCanvas = document.createElement("canvas")
 
 				// copy intrinsic size
-				newCanvas.width = src.width
-				newCanvas.height = src.height
+				newCanvas.width = sourceElement.width
+				newCanvas.height = sourceElement.height
 
 				// copy drawn pixels
 				const ctx = newCanvas.getContext("2d")
 				if (ctx) {
-					ctx.drawImage(src, 0, 0)
+					ctx.drawImage(sourceElement, 0, 0)
 				}
 
 				// copy computed styles
@@ -116,7 +115,7 @@ function cloneElement(node: HTMLElement) {
 					targetEl.parentNode.replaceChild(newCanvas, targetEl)
 					// update the corresponding entry in targetElements so later code
 					// that references this array sees the replacement
-					targetElements[index] = newCanvas as unknown as HTMLElement
+					targetElements[index] = newCanvas
 				}
 			} catch {
 				// If anything fails, fall back to copying styles onto the cloned element
@@ -134,7 +133,9 @@ function cloneElement(node: HTMLElement) {
 	// Now that styles are copied, remove any decorator widgets from the clone.
 	clonedNode
 		.querySelectorAll<HTMLElement>(`[${CLONE_IGNORE_ATTR}="true"]`)
-		.forEach((el) => el.remove())
+		.forEach((el) => {
+			el.remove()
+		})
 
 	return clonedNode
 }
@@ -289,7 +290,13 @@ function handleDragData(event: DragEvent, editor: Editor, nodePos: number) {
 	} as any
 	view.dispatch(tr)
 
-	document.addEventListener("drop", () => removeNode(wrapper), { once: true })
+	document.addEventListener(
+		"drop",
+		() => {
+			removeNode(wrapper)
+		},
+		{ once: true },
+	)
 }
 
 export interface DragHandlePluginProps {

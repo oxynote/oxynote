@@ -89,7 +89,7 @@ async function acceptInvite() {
 		loading.value = null
 
 		// https://github.com/better-auth/better-auth/blob/main/packages/better-auth/src/plugins/organization/error-codes.ts#L4
-		if ((error as any).code === "ORGANIZATION_MEMBERSHIP_LIMIT_REACHED") {
+		if (error.code === "ORGANIZATION_MEMBERSHIP_LIMIT_REACHED") {
 			showToastMessage(
 				"info",
 				t("onboarding.accept-invite.errors.member-limit-reached.title"),

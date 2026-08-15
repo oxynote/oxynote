@@ -6,9 +6,6 @@ const WINDOWS_UA_PATTERN = /Windows NT|Win64|WOW64/
 const MACOS_UA_PATTERN = /Macintosh|Mac OS X/
 const IOS_UA_PATTERN = /iPhone|iPad|iPod/
 const LINUX_UA_PATTERN = /X11|Linux|Ubuntu|Fedora|Debian|CrOS/
-const ANDROID_UA_PATTERN = /Android/
-const IPADOS_DESKTOP_UA_PATTERN = /Macintosh/
-const MOBILE_UA_PATTERN = /Mobile\//
 
 export default defineNuxtPlugin(() => {
 	const { setOsType, setBrowserType } = useDetectHost()
@@ -65,13 +62,13 @@ function detectOsType(ua: string, secChUaPlatform: string): HostOsType {
 		return HostOsType.Windows
 	}
 
-	if (ANDROID_UA_PATTERN.test(ua)) {
+	if (ua.includes("Android")) {
 		return HostOsType.Android
 	}
 
 	if (
 		IOS_UA_PATTERN.test(ua) ||
-		(IPADOS_DESKTOP_UA_PATTERN.test(ua) && MOBILE_UA_PATTERN.test(ua))
+		(ua.includes("Macintosh") && ua.includes("Mobile/"))
 	) {
 		return HostOsType.IOS
 	}
@@ -97,7 +94,7 @@ function detectBrowserType(ua: string): HostBrowserType {
 	}
 
 	const isChromium = CHROMIUM_UA_PATTERN.test(ua)
-	const isSafari = /Safari\//.test(ua) && !isChromium
+	const isSafari = ua.includes("Safari/") && !isChromium
 
 	if (isSafari) {
 		return HostBrowserType.Safari

@@ -3,13 +3,7 @@ import { useEditor, EditorContent, posToDOMRect } from "@tiptap/vue-3"
 import type { Editor } from "@tiptap/core"
 import type { Node as PMNode } from "@tiptap/pm/model"
 import type { EditorState } from "@tiptap/pm/state"
-import {
-	computePosition,
-	flip,
-	offset,
-	shift,
-	type Placement,
-} from "@floating-ui/dom"
+import { computePosition, flip, offset, shift } from "@floating-ui/dom"
 import { cn } from "@/lib/utils"
 import Comment from "./Comment.vue"
 import Bold from "@tiptap/extension-bold"
@@ -136,7 +130,7 @@ const popoverElem = useTemplateRef("comment-popover")
 const popoverPosition = ref({
 	left: 0,
 	top: 0,
-	placement: "bottom-start" as Placement,
+	placement: "bottom-start",
 })
 const containerElem = useTemplateRef("editor-container")
 const scrollerElem = useTemplateRef<DynamicScrollerType>("comment-scroller")
@@ -185,13 +179,12 @@ const loadedCommentReplies = computed(() => {
 	const exist = !!loadedComment.value.replies?.length
 
 	return {
-		data: (loadedComment.value.replies || []).reduce(
-			(acc, reply) => {
-				acc[reply.id] = reply
-				return acc
-			},
-			{} as Record<string, DocumentCommentReply>,
-		),
+		data: (loadedComment.value.replies || []).reduce<
+			Record<string, DocumentCommentReply>
+		>((acc, reply) => {
+			acc[reply.id] = reply
+			return acc
+		}, {}),
 		exist,
 	}
 })
@@ -606,7 +599,7 @@ async function selectComment(
 			`[data-comment-id="${selectedComment.value.id}"]`,
 		)
 
-		if (commentEl && commentEl.getClientRects().length === 0) {
+		if (commentEl?.getClientRects().length === 0) {
 			closePopover(true)
 			return
 		}

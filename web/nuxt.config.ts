@@ -97,6 +97,14 @@ export default defineNuxtConfig({
 
 	devtools: { enabled: false },
 
+	eslint: {
+		config: {
+			typescript: {
+				tsconfigPath: "tsconfig.json",
+			},
+		},
+	},
+
 	typescript: {
 		typeCheck: true,
 		tsConfig: {
@@ -106,7 +114,7 @@ export default defineNuxtConfig({
 				noUnusedLocals: true,
 				noUnusedParameters: true,
 				noFallthroughCasesInSwitch: true,
-				noImplicitAny: false,
+				noImplicitAny: true,
 				forceConsistentCasingInFileNames: true,
 				noUncheckedIndexedAccess: true,
 				noImplicitOverride: true,

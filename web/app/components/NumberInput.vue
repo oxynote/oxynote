@@ -87,14 +87,14 @@ function thresholdBeforeInput(e: InputEvent) {
 	}
 }
 
-function isAllowed(num: number) {
+function isAllowed(num: number): boolean {
 	if (num > 0) {
-		return props.positive !== false
+		return props.positive
 	} else if (num < 0) {
-		return props.negative !== false
+		return props.negative
 	}
 
-	return props.zero !== false
+	return props.zero
 }
 
 function thresholdValueInput(e: Event) {

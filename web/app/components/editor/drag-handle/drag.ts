@@ -102,7 +102,7 @@ function findMetricGridAtCoords(
 
 	// Find all MetricGrid nodes in the document
 	const metricGrids: { pos: number; node: Node }[] = []
-	doc.descendants((node, pos) => {
+	doc.descendants((node: Node, pos: number) => {
 		if (node.type.name === MetricGrid.name) {
 			metricGrids.push({ pos, node })
 			return false // Don't descend into MetricGrid
@@ -163,19 +163,19 @@ function findMetricGridDropPosition(
 	const { doc } = view.state
 	const gridNode = doc.nodeAt(gridPos)
 
-	if (!gridNode || gridNode.type.name !== MetricGrid.name) {
+	if (gridNode?.type.name !== MetricGrid.name) {
 		return null
 	}
 
 	// Get all MetricBlock children with their positions and DOM elements
-	const allBlocks: Array<{
+	const allBlocks: {
 		pos: number
 		node: Node
 		dom: HTMLElement
 		rect: DOMRect
-	}> = []
+	}[] = []
 
-	gridNode.forEach((child, childOffset) => {
+	gridNode.forEach((child: Node, childOffset: number) => {
 		const childPos = gridPos + 1 + childOffset // +1 for grid's opening tag
 		const childDOM = view.nodeDOM(childPos)
 
@@ -197,7 +197,7 @@ function findMetricGridDropPosition(
 	// Group blocks by row based on their vertical position
 	// Blocks are on the same row if their vertical centers are within tolerance
 	const ROW_TOLERANCE = 10
-	const rows: Array<typeof allBlocks> = []
+	const rows: (typeof allBlocks)[] = []
 
 	for (const block of allBlocks) {
 		const blockCenterY = block.rect.top + block.rect.height / 2
@@ -1346,8 +1346,7 @@ export const Drag = Extension.create<DragOptions>({
 			new Plugin({
 				props: {
 					handleDOMEvents: {
-						dragover(view, event) {
-							const e = event as DragEvent
+						dragover(view, e) {
 							if (e.clientX == null || e.clientY == null) {
 								return false
 							}
@@ -1393,8 +1392,7 @@ export const Drag = Extension.create<DragOptions>({
 
 							return false
 						},
-						dragleave(view, event) {
-							const e = event as DragEvent
+						dragleave(view, e) {
 							const editorElement = view.dom
 							const relatedTarget = e.relatedTarget as any | null
 
@@ -1406,8 +1404,7 @@ export const Drag = Extension.create<DragOptions>({
 							return false
 						},
 					},
-					handleDrop(view, event, slice, moved) {
-						const e = event as DragEvent
+					handleDrop(view, e, slice, moved) {
 						let insertPos = lastInsertPos
 
 						if (insertPos == null) {

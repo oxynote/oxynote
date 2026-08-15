@@ -30,10 +30,7 @@ const unitToCategory = Object.fromEntries(
 	Object.entries(nonCoreUnits).flatMap(([category, units]) =>
 		units.map((unit: any) => [unit, category]),
 	),
-) as Record<
-	VisualizationTimeUnit | VisualizationDataUnit | VisualizationMiscUnit,
-	keyof typeof nonCoreUnits
->
+) as Partial<Record<VisualizationUnit, keyof typeof nonCoreUnits>>
 const processedSelectedUnit = computed(() => {
 	let unit = selectedUnit.value
 	if (!unit && props.oldUnit) {

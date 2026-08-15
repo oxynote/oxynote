@@ -203,8 +203,7 @@ function getDecorations(doc: ProsemirrorNode, name: string) {
 
 export function mermaidHighlightPlugin(name: string) {
 	const pluginKey = new PluginKey("mermaidHighlight")
-
-	const plugin: Plugin<DecorationSet> = new Plugin({
+	const plugin: Plugin<DecorationSet> = new Plugin<DecorationSet>({
 		key: pluginKey,
 
 		state: {

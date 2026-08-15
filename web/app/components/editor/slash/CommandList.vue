@@ -26,12 +26,13 @@ const { osType } = useDetectHost()
 const selectedIndex = ref<number | null>(0)
 const open = ref(false)
 const processedItems = computed(() => {
-	const groups: {
-		[group: string]: {
+	const groups: Record<
+		string,
+		{
 			sortIndex: number
 			items: CommandItem[]
 		}
-	} = {}
+	> = {}
 
 	if (props.items.length) {
 		props.items.forEach((item) => {

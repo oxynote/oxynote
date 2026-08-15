@@ -278,12 +278,12 @@ export interface WSDocumentMetadataPayload {
 	lastUpdatedBy?: string | null
 }
 
-export type DocumentTimestampUser = {
+export interface DocumentTimestampUser {
 	id: string
 	name: string
 }
 
-export type DocumentModeTimestamp = {
+export interface DocumentModeTimestamp {
 	at: Date
 	user: DocumentTimestampUser | null
 }

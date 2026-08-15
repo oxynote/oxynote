@@ -109,6 +109,7 @@ function handleClickOutside(e: MouseEvent) {
 		return
 	}
 
+	// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- eslint can't resolve floatingElem's type here, vue-tsc needs the assertion
 	if (!floatingElem.value.contains(e.target as Node)) {
 		closeIconPicker()
 	}

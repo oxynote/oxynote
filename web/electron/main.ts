@@ -182,9 +182,7 @@ app.whenReady().then(() => {
 			const cookieKey = Object.keys(details.requestHeaders).find(
 				(k) => k.toLowerCase() === "cookie",
 			)
-			const existing = cookieKey
-				? (details.requestHeaders[cookieKey] as string)
-				: ""
+			const existing = cookieKey ? details.requestHeaders[cookieKey] : ""
 			const cleaned = existing
 				.split(";")
 				.map((s) => s.trim())
@@ -198,7 +196,7 @@ app.whenReady().then(() => {
 				delete details.requestHeaders[cookieKey]
 			}
 
-			details.requestHeaders["Cookie"] = merged
+			details.requestHeaders.Cookie = merged
 
 			callback({ requestHeaders: details.requestHeaders })
 		},

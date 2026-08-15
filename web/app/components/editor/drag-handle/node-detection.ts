@@ -166,10 +166,10 @@ function findDeepestListItemAtY(
 	let deepestLevel = -1
 
 	for (const li of allListItems) {
-		const bounds = findVerticalBounds(li as HTMLElement)
+		const bounds = findVerticalBounds(li)
 		if (y >= bounds.top && y <= bounds.bottom) {
 			// Skip if we're in the trailing margin of a parent list item
-			if (isInListItemTrailingMargin(li as HTMLElement, y)) {
+			if (isInListItemTrailingMargin(li, y)) {
 				continue
 			}
 
@@ -185,7 +185,7 @@ function findDeepestListItemAtY(
 
 			if (level >= deepestLevel) {
 				deepestLevel = level
-				deepestLi = li as HTMLElement
+				deepestLi = li
 			}
 		}
 	}
@@ -427,10 +427,10 @@ function findNestedListItemAtY(
 	let deepestLevel = -1
 
 	for (const li of allListItems) {
-		const bounds = findVerticalBounds(li as HTMLElement)
+		const bounds = findVerticalBounds(li)
 		if (y >= bounds.top && y <= bounds.bottom) {
 			// Skip if we're in the trailing margin of this list item
-			if (isInListItemTrailingMargin(li as HTMLElement, y)) {
+			if (isInListItemTrailingMargin(li, y)) {
 				continue
 			}
 
@@ -449,7 +449,7 @@ function findNestedListItemAtY(
 			// at any given time (siblings are vertically stacked)
 			if (level >= deepestLevel) {
 				deepestLevel = level
-				deepestLi = li as HTMLElement
+				deepestLi = li
 			}
 		}
 	}

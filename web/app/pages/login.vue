@@ -165,7 +165,7 @@ const onEmailPasswordSubmit = emailPasswordForm.handleSubmit(async (values) => {
 		// the sign-in attempt re-sent the verification link
 		// (sendOnSignIn), so the check-your-inbox page is accurate.
 		// Loading stays set so the spinner shows while redirecting.
-		if ((res.error as any).code === "EMAIL_NOT_VERIFIED") {
+		if (res.error.code === "EMAIL_NOT_VERIFIED") {
 			navigateTo({
 				path: "/verify-email",
 				query: { new: values.email, sent: "true" },
@@ -176,7 +176,7 @@ const onEmailPasswordSubmit = emailPasswordForm.handleSubmit(async (values) => {
 
 		loading.value = null
 
-		if ((res.error as any).code === "INVALID_EMAIL_OR_PASSWORD") {
+		if (res.error.code === "INVALID_EMAIL_OR_PASSWORD") {
 			showToastMessage(
 				"error",
 				t("onboarding.login.errors.invalid-credentials"),
@@ -211,7 +211,7 @@ async function onPasswordResetSubmit() {
 		return
 	}
 
-	const email = emailPasswordForm.values.email as string
+	const email = emailPasswordForm.values.email!
 
 	loading.value = "password-reset"
 

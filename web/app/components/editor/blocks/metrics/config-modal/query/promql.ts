@@ -290,7 +290,7 @@ export function usePromQLLegendExtension(
 			return {}
 		}
 
-		const firstSeries = res.data.result![0]
+		const firstSeries = res.data.result[0]
 
 		return firstSeries ?? {}
 	}

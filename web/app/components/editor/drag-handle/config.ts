@@ -358,7 +358,7 @@ export const LIST_NODE_TYPES = new Set([
  * Used when dropping a list item where a list wrapper is needed and
  * no original list type is available.
  */
-export const LIST_ITEM_TO_DEFAULT_LIST_TYPE: Map<string, string> = new Map([
+export const LIST_ITEM_TO_DEFAULT_LIST_TYPE = new Map<string, string>([
 	[ListItem.name, BulletList.name],
 	[TaskItem.name, TaskList.name],
 ])
@@ -367,7 +367,7 @@ export const LIST_ITEM_TO_DEFAULT_LIST_TYPE: Map<string, string> = new Map([
  * Mapping from node types that require a wrapper to their wrapper types.
  * Used when dropping a node at a position that doesn't accept it directly.
  */
-export const NODE_TO_WRAPPER_TYPE: Map<string, string> = new Map([
+export const NODE_TO_WRAPPER_TYPE = new Map<string, string>([
 	[METRIC_BLOCK_NAME, MetricGrid.name],
 ])
 
@@ -414,7 +414,7 @@ export const DRAGGABLE_NODE_TYPES = new Set([
  * Nodes that disable drag handles for descendants.
  * Empty set = disable ALL descendants.
  */
-export const DRAG_DISABLED_EXCEPT_RULES: Map<string, Set<string>> = new Map([
+export const DRAG_DISABLED_EXCEPT_RULES = new Map<string, Set<string>>([
 	[TaskItem.name, new Set([TaskItem.name, ListItem.name])],
 	[ListItem.name, new Set([TaskItem.name, ListItem.name])],
 	[CalloutBlock.name, new Set([])],

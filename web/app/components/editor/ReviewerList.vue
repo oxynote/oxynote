@@ -2,7 +2,7 @@
 import IconStack from "./IconStack.vue"
 import { showToastMessage } from "../toast"
 
-export type ReviewerEntry = {
+export interface ReviewerEntry {
 	id: string
 	name: string
 	email: string
@@ -11,7 +11,7 @@ export type ReviewerEntry = {
 	previouslyApproved?: boolean
 }
 
-export type ReviewerInviteEntry = {
+export interface ReviewerInviteEntry {
 	id: string
 	name: string
 	email?: string | null

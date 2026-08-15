@@ -32,7 +32,13 @@ const isDragging = ref(false)
 const currentWidth = ref(SIDEBAR_DEFAULT_WIDTH)
 
 // Sync local width to shared context
-watch(currentWidth, (value) => setWidth(value), { immediate: true })
+watch(
+	currentWidth,
+	(value) => {
+		setWidth(value)
+	},
+	{ immediate: true },
+)
 
 whenever(resizeHandle, () => {
 	resizeHandle.value?.addEventListener("mousedown", startDrag)

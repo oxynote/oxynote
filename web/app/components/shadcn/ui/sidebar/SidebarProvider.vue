@@ -56,9 +56,7 @@ function setOpenMobile(value: boolean) {
 
 // Helper to toggle the sidebar.
 function toggleSidebar() {
-	return isMobile.value
-		? setOpenMobile(!openMobile.value)
-		: setOpen(!open.value)
+	isMobile.value ? setOpenMobile(!openMobile.value) : setOpen(!open.value)
 }
 
 // We add a state so that we can do data-state="expanded" or "collapsed".

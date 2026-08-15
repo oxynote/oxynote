@@ -26,10 +26,9 @@ const config = computed(() => {
 	}
 
 	return (
-		(editorStore.metricBlockConfigs[editorStore.activeDocumentId]?.[
+		editorStore.metricBlockConfigs[editorStore.activeDocumentId]?.[
 			editorStore.activeBranchId
-		]?.[editorStore.activeMetricBlockConfig] as MetricConfig | undefined) ||
-		null
+		]?.[editorStore.activeMetricBlockConfig] || null
 	)
 })
 const diffStatus = computed<DiffStatus | null>(() => {

@@ -301,4 +301,7 @@ function applyMarkStyles(span: HTMLSpanElement, marks: JSONMark[]) {
 	}
 }
 
-type JSONMark = { type: string; attrs?: Record<string, unknown> }
+interface JSONMark {
+	type: string
+	attrs?: Record<string, unknown>
+}

@@ -109,7 +109,7 @@ export function useSidebarDraggable(
 				return
 			}
 
-			if (Math.abs(dragFirstPosition.y - pos.y) < opts!.minDistance!) {
+			if (Math.abs(dragFirstPosition.y - pos.y) < opts.minDistance!) {
 				return
 			}
 

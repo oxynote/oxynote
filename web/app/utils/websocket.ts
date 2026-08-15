@@ -39,7 +39,7 @@ export default class WsState {
 	private msgIndex = 0
 	private autoSubTimeout: number
 
-	constructor(autoSubTimeout: number = 10000) {
+	constructor(autoSubTimeout = 10000) {
 		this.autoSubTimeout = autoSubTimeout
 		this.runAutoSub()
 	}
@@ -85,7 +85,7 @@ export default class WsState {
 		}
 
 		const state = this.topics.get(topic[3])
-		if (!state || !state.confirmed) {
+		if (!state?.confirmed) {
 			return
 		}
 

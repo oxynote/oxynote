@@ -409,8 +409,8 @@ export default function () {
 			)
 
 			// Find the source document to get its name, icon, and parent
-			let name: string = "New Document"
-			let icon: string = "mingcute:document-2-fill"
+			let name = "New Document"
+			let icon = "mingcute:document-2-fill"
 			let parentId: string | null = null
 
 			const findSource = (

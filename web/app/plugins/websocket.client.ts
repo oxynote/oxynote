@@ -40,7 +40,7 @@ export default defineNuxtPlugin({
 					wsControl?.closeConn()
 
 					if (beforeUnloadHandler) {
-						window.removeEventListener("beforeunload", beforeUnloadHandler!)
+						window.removeEventListener("beforeunload", beforeUnloadHandler)
 						beforeUnloadHandler = null
 					}
 				}

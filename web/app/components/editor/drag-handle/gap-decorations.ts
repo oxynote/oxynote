@@ -137,9 +137,9 @@ function measureVerticalGapZone(
 	const elWidth = el.offsetWidth
 
 	// Get existing secondary gap element for row boundaries
-	const secondaryEl = wrapper.querySelector(
+	const secondaryEl = wrapper.querySelector<HTMLElement>(
 		".pm-gap-zone-secondary",
-	) as HTMLElement | null
+	)
 
 	let gapLeft: number
 	let gapRight: number
@@ -563,11 +563,11 @@ function doRepositionGapZones() {
 	}
 
 	// Phase 1: Collect element data (minimal reads)
-	const elementData: Array<{
+	const elementData: {
 		el: HTMLElement
 		isVertical: boolean
 		offset: number
-	}> = []
+	}[] = []
 
 	elements.forEach((el) => {
 		const htmlEl = el as HTMLElement
@@ -580,7 +580,7 @@ function doRepositionGapZones() {
 	})
 
 	// Phase 2: Batch all DOM measurements (reads)
-	const measurements: Array<GapMeasurement | null> = elementData.map(({ el }) =>
+	const measurements: (GapMeasurement | null)[] = elementData.map(({ el }) =>
 		measureGapZone(el),
 	)
 
@@ -645,7 +645,7 @@ function collectGapsForContainer(
 	node: Node,
 	contentStart: number,
 	gaps: GapInfo[],
-	indentLevel: number = 0,
+	indentLevel = 0,
 	parentNodeType?: string,
 	parentId?: string,
 ): void {
@@ -755,14 +755,14 @@ function collectAllGaps(doc: Node): GapInfo[] {
 
 	// Track list ranges to determine indentation level
 	// Only lists count toward indentation, not other containers
-	const listRanges: Array<{
+	const listRanges: {
 		start: number
 		end: number
 		indentLevel: number
-	}> = []
+	}[] = []
 
 	// First pass: collect all list positions and their node sizes
-	const listInfo: Array<{ pos: number; size: number; isInList: boolean }> = []
+	const listInfo: { pos: number; size: number; isInList: boolean }[] = []
 	doc.descendants((node, pos) => {
 		if (LIST_NODE_TYPES.has(node.type.name)) {
 			listInfo.push({ pos, size: node.nodeSize, isInList: true })
@@ -1098,9 +1098,9 @@ export function findGapElementsByPos(
 	for (const [key, p] of gapsByKey) {
 		if (p === pos) {
 			// Find all elements with this key (primary and secondary gaps share the same key)
-			const els = document.querySelectorAll(
+			const els = document.querySelectorAll<HTMLElement>(
 				`[data-gap-key="${key}"]`,
-			) as NodeListOf<HTMLElement>
+			)
 			elements.push(...els)
 		}
 	}
@@ -1249,7 +1249,7 @@ export const GapDecorations = Extension.create({
 					}
 					return true
 				},
-		} as any
+		}
 	},
 	addProseMirrorPlugins() {
 		return [

@@ -2,7 +2,7 @@
 import { compareAsc } from "date-fns"
 import { cn } from "~/lib/utils"
 
-export type IconMetadata = {
+export interface IconMetadata {
 	id: string
 	name: string
 	url?: string

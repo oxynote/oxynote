@@ -9,9 +9,8 @@ export default defineNuxtPlugin({
 		const config = useRuntimeConfig()
 		const headers = import.meta.server ? useRequestHeaders() : undefined
 		const authClient = create(
-			(import.meta.server &&
-				(config.authRealtimeAPIInternalHttpURL as string)) ||
-				(config.public.authRealtimeAPIBaseHttpURL as string),
+			(import.meta.server && config.authRealtimeAPIInternalHttpURL) ||
+				config.public.authRealtimeAPIBaseHttpURL,
 			headers,
 		)
 

@@ -33,7 +33,7 @@ function applySelection(
 	item: GitHubFileTreeItem,
 	active: boolean,
 	parents?: GitHubFileTreeItem[],
-	old?: string[] | undefined,
+	old?: string[],
 ): string[] {
 	if (!old) {
 		old = selected.value ? clone(selected.value) : undefined
