@@ -1,10 +1,10 @@
-package liveedit
+package edit
 
 import (
 	"testing"
 
+	"github.com/oxynote/oxynote/server/core/internal/assistant/block"
 	"github.com/oxynote/oxynote/server/core/internal/document"
-	"github.com/oxynote/oxynote/server/core/internal/document/aiblock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -13,10 +13,11 @@ func Test_Operations_ToWire(t *testing.T) {
 	tests := map[string]struct {
 		Op           Operation
 		ExpectedKind string
+		ExpectErr    bool
 		Inspect      func(t *testing.T, w wireOp)
 	}{
 		"InsertAfter carries position and reference uid": {
-			Op:           InsertAfter("ref-uid", aiblock.Block{Type: aiblock.BlockParagraph, Text: "hi"}),
+			Op:           InsertAfter("ref-uid", block.Block{Type: block.BlockParagraph, Text: "hi"}),
 			ExpectedKind: "insert",
 			Inspect: func(t *testing.T, w wireOp) {
 				assert.Equal(t, "after", w.Position)
@@ -26,14 +27,14 @@ func Test_Operations_ToWire(t *testing.T) {
 			},
 		},
 		"InsertBefore carries position": {
-			Op:           InsertBefore("ref", aiblock.Block{Type: aiblock.BlockParagraph, Text: "hi"}),
+			Op:           InsertBefore("ref", block.Block{Type: block.BlockParagraph, Text: "hi"}),
 			ExpectedKind: "insert",
 			Inspect: func(t *testing.T, w wireOp) {
 				assert.Equal(t, "before", w.Position)
 			},
 		},
 		"Append has block but no reference": {
-			Op:           Append(aiblock.Block{Type: aiblock.BlockParagraph, Text: "hi"}),
+			Op:           Append(block.Block{Type: block.BlockParagraph, Text: "hi"}),
 			ExpectedKind: "append",
 			Inspect: func(t *testing.T, w wireOp) {
 				assert.Empty(t, w.Position)
@@ -42,11 +43,11 @@ func Test_Operations_ToWire(t *testing.T) {
 			},
 		},
 		"Prepend has block but no reference": {
-			Op:           Prepend(aiblock.Block{Type: aiblock.BlockParagraph, Text: "hi"}),
+			Op:           Prepend(block.Block{Type: block.BlockParagraph, Text: "hi"}),
 			ExpectedKind: "prepend",
 		},
 		"Replace carries block uid and block": {
-			Op:           Replace("target", aiblock.Block{Type: aiblock.BlockParagraph, Text: "hi"}),
+			Op:           Replace("target", block.Block{Type: block.BlockParagraph, Text: "hi"}),
 			ExpectedKind: "replace",
 			Inspect: func(t *testing.T, w wireOp) {
 				assert.Equal(t, "target", w.BlockUID)
@@ -96,13 +97,31 @@ func Test_Operations_ToWire(t *testing.T) {
 				assert.Equal(t, "lucide:file-text", w.Icon)
 			},
 		},
+		"InsertAfter fails on unexpandable block": {
+			Op:        InsertAfter("ref", block.Block{Type: "not_a_type"}),
+			ExpectErr: true,
+		},
+		"Prepend fails on unexpandable block": {
+			Op:        Prepend(block.Block{Type: "not_a_type"}),
+			ExpectErr: true,
+		},
+		"Replace fails on unexpandable block": {
+			Op:        Replace("target", block.Block{Type: "not_a_type"}),
+			ExpectErr: true,
+		},
 	}
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			w, err := tc.Op.toWire()
+			w, err := tc.Op()
+			if tc.ExpectErr {
+				require.Error(t, err)
+
+				return
+			}
+
 			require.NoError(t, err)
 			assert.Equal(t, tc.ExpectedKind, w.Kind)
 

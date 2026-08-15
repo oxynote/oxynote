@@ -1,4 +1,4 @@
-package aiblock
+package block
 
 import (
 	"slices"
@@ -52,12 +52,12 @@ func ParseInlineMarkdown(input string) []document.Block {
 	return atomsToTextNodes(atoms)
 }
 
-// EmitInlineMarkdown is the inverse of ParseInlineMarkdown: it
+// emitInlineMarkdown is the inverse of ParseInlineMarkdown: it
 // renders a slice of ProseMirror inline text nodes back into the
 // canonical-markdown subset. Round-tripping parse(emit(x)) is
 // idempotent at the level of (text, mark-set) atoms — text nodes
 // with the same mark-set are merged on emit.
-func EmitInlineMarkdown(nodes []document.Block) string {
+func emitInlineMarkdown(nodes []document.Block) string {
 	var (
 		buf    strings.Builder
 		active []activeMark
@@ -417,7 +417,7 @@ func marksToDocument(marks []activeMark) []document.Mark {
 	for _, m := range marks {
 		dm := document.Mark{Type: m.kind}
 		if m.kind == _markLink {
-			dm.Attrs = map[string]any{_attrHref: m.href}
+			dm.Attrs = document.Attributes{_attrHref: m.href}
 		}
 
 		out = append(out, dm)
@@ -440,7 +440,12 @@ func extractMarks(marks []document.Mark) []activeMark {
 		case _markBold, _markItalic, _markUnderline, _markStrike, _markCode:
 			out = append(out, activeMark{kind: m.Type})
 		case _markLink:
-			href, _ := m.Attrs[_attrHref].(string)
+			var href string
+
+			if a, ok := m.Attrs.Get(_attrHref); ok {
+				href = a.String()
+			}
+
 			out = append(out, activeMark{kind: _markLink, href: href})
 		}
 	}

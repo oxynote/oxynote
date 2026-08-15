@@ -1,4 +1,4 @@
-package aiblock
+package block
 
 import (
 	"testing"
@@ -45,7 +45,7 @@ func stripUIDsPM(b document.Block) document.Block {
 	return out
 }
 
-// stripUIDsCanonical strips UID fields throughout an aiblock Block
+// stripUIDsCanonical strips UID fields throughout a canonical Block
 // tree (Block.UID, TaskItem.UID, ParamItem.UID) so round-trip
 // assertions can ignore generated identifiers.
 func stripUIDsCanonical(b Block) Block {
@@ -80,8 +80,9 @@ func stripUIDsCanonical(b Block) Block {
 
 func Test_Expand(t *testing.T) {
 	tests := map[string]struct {
-		Input    Block
-		Expected document.Block
+		Input     Block
+		Expected  document.Block
+		ExpectErr bool
 	}{
 		"Paragraph with bold mark": {
 			Input: Block{Type: BlockParagraph, Text: "say **hi**"},
@@ -285,6 +286,152 @@ func Test_Expand(t *testing.T) {
 				},
 			},
 		},
+		"Ordered list wraps items in listItem": {
+			Input: Block{
+				Type:  BlockOrderedList,
+				Items: []Block{{Type: BlockParagraph, Text: "one"}},
+			},
+			Expected: document.Block{
+				Type: document.BlockNodeOrderedList,
+				Content: []document.Block{
+					{
+						Type: document.BlockNodeListItem,
+						Content: []document.Block{
+							{Type: document.BlockNodeParagraph, Content: []document.Block{{Type: "text", Text: "one"}}},
+						},
+					},
+				},
+			},
+		},
+		"Heading without level defaults to 1": {
+			Input: Block{Type: BlockHeading, Text: "T"},
+			Expected: document.Block{
+				Type:    document.BlockNodeHeading,
+				Attrs:   map[string]any{"level": 1},
+				Content: []document.Block{{Type: "text", Text: "T"}},
+			},
+		},
+		"Callout without icon uses the default": {
+			Input: Block{Type: BlockCallout, Text: "note"},
+			Expected: document.Block{
+				Type:  document.BlockNodeCalloutBlock,
+				Attrs: map[string]any{"icon": "lucide:text"},
+				Content: []document.Block{
+					{Type: document.BlockNodeParagraph, Content: []document.Block{{Type: "text", Text: "note"}}},
+				},
+			},
+		},
+		"Callout with items expands each": {
+			Input: Block{
+				Type:  BlockCallout,
+				Attrs: map[string]any{"icon": "lucide:warning"},
+				Items: []Block{
+					{Type: BlockParagraph, Text: "a"},
+					{Type: BlockParagraph, Text: "b"},
+				},
+			},
+			Expected: document.Block{
+				Type:  document.BlockNodeCalloutBlock,
+				Attrs: map[string]any{"icon": "lucide:warning"},
+				Content: []document.Block{
+					{Type: document.BlockNodeParagraph, Content: []document.Block{{Type: "text", Text: "a"}}},
+					{Type: document.BlockNodeParagraph, Content: []document.Block{{Type: "text", Text: "b"}}},
+				},
+			},
+		},
+		"Callout with invalid item fails": {
+			Input: Block{
+				Type:  BlockCallout,
+				Items: []Block{{Type: "not_a_type"}},
+			},
+			ExpectErr: true,
+		},
+		"Bullet list with invalid item fails": {
+			Input: Block{
+				Type:  BlockBulletList,
+				Items: []Block{{Type: "not_a_type"}},
+			},
+			ExpectErr: true,
+		},
+		"Task list with invalid item fails": {
+			Input: Block{
+				Type:      BlockTaskList,
+				TaskItems: []TaskItem{{Block: Block{Type: "not_a_type"}}},
+			},
+			ExpectErr: true,
+		},
+		"Metric passes attrs through": {
+			Input: Block{Type: BlockMetric, Attrs: map[string]any{"query": "up"}},
+			Expected: document.Block{
+				Type:  document.BlockNodeMetricBlock,
+				Attrs: map[string]any{"query": "up"},
+			},
+		},
+		"Metric grid wraps metric items": {
+			Input: Block{
+				Type:  BlockMetricGrid,
+				Items: []Block{{Type: BlockMetric, Attrs: map[string]any{"query": "up"}}},
+			},
+			Expected: document.Block{
+				Type: document.BlockNodeMetricGrid,
+				Content: []document.Block{
+					{Type: document.BlockNodeMetricBlock, Attrs: map[string]any{"query": "up"}},
+				},
+			},
+		},
+		"Metric grid with invalid item fails": {
+			Input: Block{
+				Type:  BlockMetricGrid,
+				Items: []Block{{Type: "not_a_type"}},
+			},
+			ExpectErr: true,
+		},
+		"Split doc with invalid left fails": {
+			Input: Block{
+				Type: BlockSplitDoc,
+				Left: []Block{{Type: "not_a_type"}},
+			},
+			ExpectErr: true,
+		},
+		"Split doc with invalid right fails": {
+			Input: Block{
+				Type:  BlockSplitDoc,
+				Left:  []Block{{Type: BlockHeading, Text: "T", Attrs: map[string]any{"level": 1}}},
+				Right: []Block{{Type: "not_a_type"}},
+			},
+			ExpectErr: true,
+		},
+		"Split doc with empty sides yields empty wrappers": {
+			Input: Block{Type: BlockSplitDoc},
+			Expected: document.Block{
+				Type: document.BlockNodeSplitDoc,
+				Content: []document.Block{
+					{Type: document.BlockNodeSplitDocLeft},
+					{Type: document.BlockNodeSplitDocRight},
+				},
+			},
+		},
+		"Image carries title and alt attrs": {
+			Input: Block{Type: BlockImage, Attrs: map[string]any{"src": "http://x", "alt": "pic", "title": "shot"}},
+			Expected: document.Block{
+				Type:  document.BlockNodeImageBlock,
+				Attrs: map[string]any{"src": "http://x", "alt": "pic", "title": "shot"},
+			},
+		},
+		"Titled code without title has an empty title node": {
+			Input: Block{Type: BlockTitledCode, Text: "x", Attrs: map[string]any{"language": "go"}},
+			Expected: document.Block{
+				Type: document.BlockNodeTitledCodeBlock,
+				Content: []document.Block{
+					{Type: document.BlockNodeCodeBlockTitle},
+					{Type: document.BlockNodeCodeBlock, Attrs: map[string]any{"language": "go"}, Content: []document.Block{{Type: "text", Text: "x"}}},
+				},
+			},
+		},
+		"Unknown block type fails": {
+			Input:     Block{Type: "not_a_type"},
+			ExpectErr: true,
+		},
 	}
 
 	for name, tc := range tests {
@@ -292,8 +439,13 @@ func Test_Expand(t *testing.T) {
 			t.Parallel()
 
 			got, err := Expand(tc.Input)
-			require.NoError(t, err)
+			if tc.ExpectErr {
+				require.Error(t, err)
 
+				return
+			}
+
+			require.NoError(t, err)
 			assert.Equal(t, tc.Expected, stripUIDsPM(got))
 		})
 	}

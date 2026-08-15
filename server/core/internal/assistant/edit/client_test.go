@@ -1,4 +1,4 @@
-package liveedit
+package edit
 
 import (
 	"context"
@@ -8,10 +8,30 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/oxynote/oxynote/server/core/internal/document/aiblock"
+	"github.com/oxynote/oxynote/server/core/internal/assistant/block"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+}
+
+func Test_NewClient(t *testing.T) {
+	t.Parallel()
+
+	// nil http client falls back to the default client
+	c := NewClient(nil, "http://test.com")
+	require.NotNil(t, c)
+	assert.Same(t, http.DefaultClient, c.httpClient)
+	assert.Equal(t, "http://test.com", c.baseURL)
+
+	// explicit http client is kept
+	hc := &http.Client{}
+	c = NewClient(hc, "http://test.com")
+	assert.Same(t, hc, c.httpClient)
+}
 
 func Test_Client_Apply(t *testing.T) {
 	t.Parallel()
@@ -24,6 +44,9 @@ func Test_Client_Apply(t *testing.T) {
 
 	tests := map[string]struct {
 		Ops             []Operation
+		BaseURL         string
+		CloseEarly      bool
+		TruncateBody    bool
 		StatusCode      int
 		ResponseBody    string
 		ExpectedApplied int
@@ -33,7 +56,7 @@ func Test_Client_Apply(t *testing.T) {
 	}{
 		"Successful batch reports applied count": {
 			Ops: []Operation{
-				Append(aiblock.Block{Type: aiblock.BlockParagraph, Text: "hi"}),
+				Append(block.Block{Type: block.BlockParagraph, Text: "hi"}),
 				Delete("uid-1"),
 			},
 			StatusCode:      200,
@@ -45,7 +68,7 @@ func Test_Client_Apply(t *testing.T) {
 		"Partial failure surfaces per-op errors": {
 			Ops: []Operation{
 				Delete("missing"),
-				Append(aiblock.Block{Type: aiblock.BlockParagraph, Text: "ok"}),
+				Append(block.Block{Type: block.BlockParagraph, Text: "ok"}),
 			},
 			StatusCode:      200,
 			ResponseBody:    `{"applied": 1, "errors": [{"index": 0, "message": "block_uid not found: missing"}]}`,
@@ -68,6 +91,34 @@ func Test_Client_Apply(t *testing.T) {
 			StatusCode:      0,
 			ExpectedApplied: 0,
 		},
+		"Invalid base URL fails before the request": {
+			Ops:       []Operation{Delete("x")},
+			BaseURL:   "://bad",
+			ExpectErr: true,
+		},
+		"Unencodable attrs fail at marshal time": {
+			Ops: []Operation{
+				UpdateAttrs("uid", map[string]any{"bad": make(chan int)}),
+			},
+			ExpectErr: true,
+		},
+		"Transport failure becomes a Go error": {
+			Ops:        []Operation{Delete("x")},
+			CloseEarly: true,
+			ExpectErr:  true,
+		},
+		"Unreadable error body still reports the status": {
+			Ops:          []Operation{Delete("x")},
+			StatusCode:   500,
+			TruncateBody: true,
+			ExpectErr:    true,
+		},
+		"Malformed success response fails decoding": {
+			Ops:          []Operation{Delete("x")},
+			StatusCode:   200,
+			ResponseBody: `{not json`,
+			ExpectErr:    true,
+		},
 	}
 
 	for name, tc := range tests {
@@ -84,6 +135,12 @@ func Test_Client_Apply(t *testing.T) {
 				assert.NoError(t, err)
 				assert.NoError(t, json.Unmarshal(raw, &captured.body))
 
+				// declare a longer body than is written so the
+				// client's error-body read fails mid-stream
+				if tc.TruncateBody {
+					w.Header().Set("Content-Length", "100")
+				}
+
 				w.WriteHeader(tc.StatusCode)
 
 				_, err = w.Write([]byte(tc.ResponseBody))
@@ -91,7 +148,16 @@ func Test_Client_Apply(t *testing.T) {
 			}))
 			t.Cleanup(srv.Close)
 
-			c := NewClient(srv.Client(), srv.URL)
+			baseURL := srv.URL
+			if tc.BaseURL != "" {
+				baseURL = tc.BaseURL
+			}
+
+			if tc.CloseEarly {
+				srv.Close()
+			}
+
+			c := NewClient(srv.Client(), baseURL)
 
 			res, err := c.Apply(context.Background(), "doc-1", "branch-1", tc.Ops)
 			if tc.ExpectErr {
@@ -131,7 +197,7 @@ func Test_Client_Apply_ExpansionError(t *testing.T) {
 	c := NewClient(srv.Client(), srv.URL)
 
 	_, err := c.Apply(context.Background(), "doc", "branch", []Operation{
-		Append(aiblock.Block{Type: "totally_not_a_real_type"}),
+		Append(block.Block{Type: "totally_not_a_real_type"}),
 	})
 
 	require.Error(t, err)

@@ -7,13 +7,13 @@ import (
 	"fmt"
 
 	"github.com/guregu/null/v5"
+	"github.com/oxynote/oxynote/server/core/internal/assistant/block"
+	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
 	"github.com/oxynote/oxynote/server/core/internal/document"
-	"github.com/oxynote/oxynote/server/core/internal/document/aiblock"
-	"github.com/oxynote/oxynote/server/core/internal/document/liveedit"
 	"github.com/rs/xid"
 )
 
-// docRef wraps the (documentID, branchID) pair the liveedit client
+// docRef wraps the (documentID, branchID) pair the edit client
 // needs to address a live Y.Doc. The branch is resolved to the
 // document's default branch — multi-branch editing is out of scope
 // for the assistant.
@@ -24,7 +24,7 @@ type docRef struct {
 }
 
 // resolveDoc loads the default branch of the given document and
-// returns the ids the liveedit client needs. The lookup also acts
+// returns the ids the edit client needs. The lookup also acts
 // as the cross-org safety check — db.FetchDocument scopes by orgID
 // so a docID from another organisation surfaces as NotFound.
 func (m *Manager) resolveDoc(ctx context.Context, documentID string) (docRef, error) {
@@ -158,7 +158,7 @@ func (m *Manager) renameDocument(ctx context.Context, args json.RawMessage) (jso
 		return nil, errors.New("rename_document: name is required")
 	}
 
-	out, err := m.applyEdit(ctx, in.DocumentID, []liveedit.Operation{liveedit.SetName(in.Name)})
+	out, err := m.applyEdit(ctx, in.DocumentID, []edit.Operation{edit.SetName(in.Name)})
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +182,7 @@ func (m *Manager) setDocumentIcon(ctx context.Context, args json.RawMessage) (js
 		return nil, errors.New("set_document_icon: icon is required")
 	}
 
-	out, err := m.applyEdit(ctx, in.DocumentID, []liveedit.Operation{liveedit.SetIcon(in.Icon)})
+	out, err := m.applyEdit(ctx, in.DocumentID, []edit.Operation{edit.SetIcon(in.Icon)})
 	if err != nil {
 		return nil, err
 	}
@@ -258,10 +258,10 @@ func (m *Manager) moveDocument(ctx context.Context, args json.RawMessage) (json.
 
 func (m *Manager) insertBlock(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
 	var in struct {
-		DocumentID        string        `json:"document_id"`
-		ReferenceBlockUID string        `json:"reference_block_uid"`
-		Position          string        `json:"position"`
-		Block             aiblock.Block `json:"block"`
+		DocumentID        string      `json:"document_id"`
+		ReferenceBlockUID string      `json:"reference_block_uid"`
+		Position          string      `json:"position"`
+		Block             block.Block `json:"block"`
 	}
 
 	if err := json.Unmarshal(args, &in); err != nil {
@@ -272,63 +272,63 @@ func (m *Manager) insertBlock(ctx context.Context, args json.RawMessage) (json.R
 		return nil, errors.New("insert_block: reference_block_uid is required")
 	}
 
-	if err := aiblock.Validate(in.Block); err != nil {
+	if err := block.Validate(in.Block); err != nil {
 		return nil, fmt.Errorf("insert_block: %w", err)
 	}
 
-	var op liveedit.Operation
+	var op edit.Operation
 
 	switch in.Position {
 	case "before":
-		op = liveedit.InsertBefore(in.ReferenceBlockUID, in.Block)
+		op = edit.InsertBefore(in.ReferenceBlockUID, in.Block)
 	case "after":
-		op = liveedit.InsertAfter(in.ReferenceBlockUID, in.Block)
+		op = edit.InsertAfter(in.ReferenceBlockUID, in.Block)
 	default:
 		return nil, fmt.Errorf("insert_block: position must be \"before\" or \"after\", got %q", in.Position)
 	}
 
-	return m.applyEdit(ctx, in.DocumentID, []liveedit.Operation{op})
+	return m.applyEdit(ctx, in.DocumentID, []edit.Operation{op})
 }
 
 func (m *Manager) appendBlock(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
 	var in struct {
-		DocumentID string        `json:"document_id"`
-		Block      aiblock.Block `json:"block"`
+		DocumentID string      `json:"document_id"`
+		Block      block.Block `json:"block"`
 	}
 
 	if err := json.Unmarshal(args, &in); err != nil {
 		return nil, fmt.Errorf("append_block: invalid input: %w", err)
 	}
 
-	if err := aiblock.ValidateAsRoot(in.Block); err != nil {
+	if err := block.ValidateAsRoot(in.Block); err != nil {
 		return nil, fmt.Errorf("append_block: %w", err)
 	}
 
-	return m.applyEdit(ctx, in.DocumentID, []liveedit.Operation{liveedit.Append(in.Block)})
+	return m.applyEdit(ctx, in.DocumentID, []edit.Operation{edit.Append(in.Block)})
 }
 
 func (m *Manager) prependBlock(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
 	var in struct {
-		DocumentID string        `json:"document_id"`
-		Block      aiblock.Block `json:"block"`
+		DocumentID string      `json:"document_id"`
+		Block      block.Block `json:"block"`
 	}
 
 	if err := json.Unmarshal(args, &in); err != nil {
 		return nil, fmt.Errorf("prepend_block: invalid input: %w", err)
 	}
 
-	if err := aiblock.ValidateAsRoot(in.Block); err != nil {
+	if err := block.ValidateAsRoot(in.Block); err != nil {
 		return nil, fmt.Errorf("prepend_block: %w", err)
 	}
 
-	return m.applyEdit(ctx, in.DocumentID, []liveedit.Operation{liveedit.Prepend(in.Block)})
+	return m.applyEdit(ctx, in.DocumentID, []edit.Operation{edit.Prepend(in.Block)})
 }
 
 func (m *Manager) replaceBlock(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
 	var in struct {
-		DocumentID string        `json:"document_id"`
-		BlockUID   string        `json:"block_uid"`
-		Block      aiblock.Block `json:"block"`
+		DocumentID string      `json:"document_id"`
+		BlockUID   string      `json:"block_uid"`
+		Block      block.Block `json:"block"`
 	}
 
 	if err := json.Unmarshal(args, &in); err != nil {
@@ -339,11 +339,11 @@ func (m *Manager) replaceBlock(ctx context.Context, args json.RawMessage) (json.
 		return nil, errors.New("replace_block: block_uid is required")
 	}
 
-	if err := aiblock.Validate(in.Block); err != nil {
+	if err := block.Validate(in.Block); err != nil {
 		return nil, fmt.Errorf("replace_block: %w", err)
 	}
 
-	return m.applyEdit(ctx, in.DocumentID, []liveedit.Operation{liveedit.Replace(in.BlockUID, in.Block)})
+	return m.applyEdit(ctx, in.DocumentID, []edit.Operation{edit.Replace(in.BlockUID, in.Block)})
 }
 
 func (m *Manager) updateBlockText(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
@@ -361,7 +361,7 @@ func (m *Manager) updateBlockText(ctx context.Context, args json.RawMessage) (js
 		return nil, errors.New("update_block_text: block_uid is required")
 	}
 
-	return m.applyEdit(ctx, in.DocumentID, []liveedit.Operation{liveedit.UpdateText(in.BlockUID, in.Text)})
+	return m.applyEdit(ctx, in.DocumentID, []edit.Operation{edit.UpdateText(in.BlockUID, in.Text)})
 }
 
 func (m *Manager) updateBlockAttrs(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
@@ -383,7 +383,7 @@ func (m *Manager) updateBlockAttrs(ctx context.Context, args json.RawMessage) (j
 		return nil, errors.New("update_block_attrs: attrs must not be empty")
 	}
 
-	return m.applyEdit(ctx, in.DocumentID, []liveedit.Operation{liveedit.UpdateAttrs(in.BlockUID, in.Attrs)})
+	return m.applyEdit(ctx, in.DocumentID, []edit.Operation{edit.UpdateAttrs(in.BlockUID, in.Attrs)})
 }
 
 func (m *Manager) deleteBlock(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
@@ -400,7 +400,7 @@ func (m *Manager) deleteBlock(ctx context.Context, args json.RawMessage) (json.R
 		return nil, errors.New("delete_block: block_uid is required")
 	}
 
-	return m.applyEdit(ctx, in.DocumentID, []liveedit.Operation{liveedit.Delete(in.BlockUID)})
+	return m.applyEdit(ctx, in.DocumentID, []edit.Operation{edit.Delete(in.BlockUID)})
 }
 
 // notifyTreeChange invokes the tree notifier when one is configured.
@@ -438,10 +438,10 @@ func (m *Manager) notifyTreeChangeForDocument(ctx context.Context, documentID st
 // result. Outcomes are logged so partial failures on the Node side
 // (uid not found, malformed block) are visible without re-running
 // the conversation.
-func (m *Manager) applyEdit(ctx context.Context, documentID string, ops []liveedit.Operation) (json.RawMessage, error) {
+func (m *Manager) applyEdit(ctx context.Context, documentID string, ops []edit.Operation) (json.RawMessage, error) {
 	ref, err := m.resolveDoc(ctx, documentID)
 	if err != nil {
-		m.log.Warn("liveedit resolve failed",
+		m.log.Warn("edit resolve failed",
 			"document_id", documentID,
 			"error", err.Error(),
 		)
@@ -449,9 +449,9 @@ func (m *Manager) applyEdit(ctx context.Context, documentID string, ops []liveed
 		return nil, err
 	}
 
-	res, err := m.liveedit.Apply(ctx, ref.DocumentID, ref.BranchID, ops)
+	res, err := m.applier.Apply(ctx, ref.DocumentID, ref.BranchID, ops)
 	if err != nil {
-		m.log.Error("liveedit apply failed",
+		m.log.Error("edit apply failed",
 			"document_id", ref.DocumentID,
 			"branch_id", ref.BranchID,
 			"op_count", len(ops),
@@ -462,14 +462,14 @@ func (m *Manager) applyEdit(ctx context.Context, documentID string, ops []liveed
 	}
 
 	if len(res.Errors) > 0 {
-		m.log.Warn("liveedit partial failure",
+		m.log.Warn("edit partial failure",
 			"document_id", ref.DocumentID,
 			"branch_id", ref.BranchID,
 			"applied", res.Applied,
 			"errors", res.Errors,
 		)
 	} else {
-		m.log.Debug("liveedit applied",
+		m.log.Debug("edit applied",
 			"document_id", ref.DocumentID,
 			"branch_id", ref.BranchID,
 			"applied", res.Applied,

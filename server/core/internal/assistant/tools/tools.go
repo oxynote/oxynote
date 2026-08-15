@@ -12,8 +12,8 @@ import (
 	"log/slog"
 
 	"github.com/guregu/null/v5"
+	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
 	"github.com/oxynote/oxynote/server/core/internal/document"
-	"github.com/oxynote/oxynote/server/core/internal/document/liveedit"
 	"github.com/oxynote/oxynote/server/core/internal/document/searchgw"
 	"github.com/rs/xid"
 )
@@ -104,6 +104,8 @@ func IsValid(name Name) bool {
 
 // DB is the persistence surface the tools manager requires. The
 // db package's agent satisfies it.
+//
+//go:generate ../../../scripts/codegen/mock -t internal DB db
 type DB interface {
 	// FetchDocumentTree returns all documents for the org as a
 	// nested summary tree (sort_index order). Used by
@@ -168,6 +170,18 @@ type TreeNotifier interface {
 	NotifyTreeChange(organizationID string, parentID null.Value[xid.ID])
 }
 
+// EditApplier is the live-document mutation surface the write tools
+// use for content edits and the rename/set-icon ops. The edit.Client
+// satisfies it.
+//
+//go:generate ../../../scripts/codegen/mock -t internal EditApplier edit_applier
+type EditApplier interface {
+	// Apply should ship the operation batch to the realtime service
+	// for the (documentID, branchID) document and return the per-op
+	// outcome.
+	Apply(ctx context.Context, documentID, branchID string, ops []edit.Operation) (edit.Result, error)
+}
+
 // Manager dispatches AI tool calls. One Manager is constructed per
 // session and is scoped to a single (organization, user) pair so
 // cross-org access is impossible by construction.
@@ -184,10 +198,10 @@ type Manager struct {
 	// search is the full-text index behind search_documents.
 	search Searcher
 
-	// liveedit is the live edit client for content mutations and
-	// the rename/set-icon ops that must propagate to connected
+	// applier is the edit client for content mutations and the
+	// rename/set-icon ops that must propagate to connected
 	// editors.
-	liveedit *liveedit.Client
+	applier EditApplier
 
 	// tree notifies tree-change subscribers after the assistant
 	// mutates the document tree.
@@ -206,19 +220,19 @@ type Manager struct {
 // nil values surface as nil-pointer panics on the first tool call
 // rather than at startup, but in practice the cmd-level wiring
 // passes all of them.
-func NewManager(log *slog.Logger, db DB, search Searcher, liveeditClient *liveedit.Client, tree TreeNotifier, orgID, userID string) *Manager {
+func NewManager(log *slog.Logger, db DB, search Searcher, applier EditApplier, tree TreeNotifier, orgID, userID string) *Manager {
 	return &Manager{
 		log: log.With(
 			"component", "assistant-tools",
 			"org_id", orgID,
 			"user_id", userID,
 		),
-		db:       db,
-		search:   search,
-		liveedit: liveeditClient,
-		tree:     tree,
-		orgID:    orgID,
-		userID:   userID,
+		db:      db,
+		search:  search,
+		applier: applier,
+		tree:    tree,
+		orgID:   orgID,
+		userID:  userID,
 	}
 }
 

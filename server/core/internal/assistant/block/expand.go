@@ -1,18 +1,10 @@
-package aiblock
+package block
 
 import (
-	"errors"
 	"fmt"
-	"maps"
 
 	"github.com/oxynote/oxynote/server/core/internal/document"
 )
-
-// ErrUnknownBlockType is returned by Expand when asked to expand a
-// canonical block whose Type is not in the registry. Validate should
-// have caught this; the error exists as a safety net for direct
-// callers.
-var ErrUnknownBlockType = errors.New("canonical: unknown block type")
 
 // Expand converts a canonical Block into a document.Block ready to
 // be applied to a Y.Doc. Every node in the resulting tree carries a
@@ -30,7 +22,7 @@ func Expand(b Block) (document.Block, error) {
 	case BlockParagraph:
 		return expandParagraph(b), nil
 	case BlockHeading:
-		return expandHeading(b)
+		return expandHeading(b), nil
 	case BlockBlockquote:
 		return expandBlockquote(b), nil
 	case BlockBulletList:
@@ -63,12 +55,12 @@ func Expand(b Block) (document.Block, error) {
 		return expandParamList(b)
 	}
 
-	return document.Block{}, fmt.Errorf("%w: %q", ErrUnknownBlockType, b.Type)
+	return document.Block{}, fmt.Errorf("unknown block type %q", b.Type)
 }
 
-// ExpandMany expands a slice of canonical Blocks into a slice of
+// expandMany expands a slice of canonical Blocks into a slice of
 // document.Blocks, short-circuiting on the first error.
-func ExpandMany(blocks []Block) ([]document.Block, error) {
+func expandMany(blocks []Block) ([]document.Block, error) {
 	if len(blocks) == 0 {
 		return nil, nil
 	}
@@ -99,8 +91,8 @@ func resolveUID(supplied string) string {
 }
 
 // uidAttrs returns the standard {uid: …} attribute map.
-func uidAttrs(uid string) map[string]any {
-	return map[string]any{_attrUID: uid}
+func uidAttrs(uid string) document.Attributes {
+	return document.Attributes{_attrUID: uid}
 }
 
 // expandParagraph builds a paragraph node from a canonical block,
@@ -116,8 +108,11 @@ func expandParagraph(b Block) document.Block {
 // expandHeading builds a heading node, reading the required level
 // attribute. Level defaults to 1 when missing; Validate should have
 // already enforced 1-3.
-func expandHeading(b Block) (document.Block, error) {
-	level := readIntAttr(b.Attrs, _attrLevel, 1)
+func expandHeading(b Block) document.Block {
+	level := 1
+	if a, ok := b.Attrs.Get(_attrLevel); ok {
+		level = a.Int()
+	}
 
 	attrs := uidAttrs(resolveUID(b.UID))
 	attrs[_attrLevel] = level
@@ -126,7 +121,7 @@ func expandHeading(b Block) (document.Block, error) {
 		Type:    document.BlockNodeHeading,
 		Attrs:   attrs,
 		Content: ParseInlineMarkdown(b.Text),
-	}, nil
+	}
 }
 
 // expandBlockquote builds a blockquote node wrapping a single
@@ -208,12 +203,16 @@ func expandTaskList(b Block) (document.Block, error) {
 // editor's default.
 func expandCallout(b Block) (document.Block, error) {
 	attrs := uidAttrs(resolveUID(b.UID))
-	attrs[_attrIcon] = readStringAttr(b.Attrs, _attrIcon, "lucide:text")
+
+	attrs[_attrIcon] = "lucide:text"
+	if a, ok := b.Attrs.Get(_attrIcon); ok {
+		attrs[_attrIcon] = a.String()
+	}
 
 	var children []document.Block
 
 	if len(b.Items) > 0 {
-		expanded, err := ExpandMany(b.Items)
+		expanded, err := expandMany(b.Items)
 		if err != nil {
 			return document.Block{}, fmt.Errorf("callout items: %w", err)
 		}
@@ -238,8 +237,8 @@ func expandCallout(b Block) (document.Block, error) {
 // emitted as a single text node (no markdown parsing).
 func expandCode(b Block) document.Block {
 	attrs := uidAttrs(resolveUID(b.UID))
-	if lang := readStringAttr(b.Attrs, _attrLanguage, ""); lang != "" {
-		attrs[_attrLanguage] = lang
+	if a, ok := b.Attrs.Get(_attrLanguage); ok && a.String() != "" {
+		attrs[_attrLanguage] = a.String()
 	}
 
 	return document.Block{
@@ -253,8 +252,15 @@ func expandCode(b Block) document.Block {
 // codeBlockTitle + codeBlock children. Title is plain text; the code
 // body is raw.
 func expandTitledCode(b Block) document.Block {
-	title := readStringAttr(b.Attrs, _attrTitle, "")
-	lang := readStringAttr(b.Attrs, _attrLanguage, "")
+	var title, lang string
+
+	if a, ok := b.Attrs.Get(_attrTitle); ok {
+		title = a.String()
+	}
+
+	if a, ok := b.Attrs.Get(_attrLanguage); ok {
+		lang = a.String()
+	}
 
 	codeAttrs := uidAttrs(document.GenerateNodeUID())
 	if lang != "" {
@@ -303,20 +309,20 @@ func expandHorizontalRule(b Block) document.Block {
 func expandImage(b Block) document.Block {
 	attrs := uidAttrs(resolveUID(b.UID))
 
-	if src := readStringAttr(b.Attrs, _attrSrc, ""); src != "" {
-		attrs[_attrSrc] = src
+	if a, ok := b.Attrs.Get(_attrSrc); ok && a.String() != "" {
+		attrs[_attrSrc] = a.String()
 	}
 
-	if alt := readStringAttr(b.Attrs, _attrAlt, ""); alt != "" {
-		attrs[_attrAlt] = alt
+	if a, ok := b.Attrs.Get(_attrAlt); ok && a.String() != "" {
+		attrs[_attrAlt] = a.String()
 	}
 
-	if title := readStringAttr(b.Attrs, _attrTitle, ""); title != "" {
-		attrs[_attrTitle] = title
+	if a, ok := b.Attrs.Get(_attrTitle); ok && a.String() != "" {
+		attrs[_attrTitle] = a.String()
 	}
 
-	if width := readIntAttr(b.Attrs, _attrWidth, 0); width > 0 {
-		attrs[_attrWidth] = width
+	if a, ok := b.Attrs.Get(_attrWidth); ok && a.Int() > 0 {
+		attrs[_attrWidth] = a.Int()
 	}
 
 	return document.Block{
@@ -329,16 +335,16 @@ func expandImage(b Block) document.Block {
 func expandFigma(b Block) document.Block {
 	attrs := uidAttrs(resolveUID(b.UID))
 
-	if src := readStringAttr(b.Attrs, _attrSrc, ""); src != "" {
-		attrs[_attrSrc] = src
+	if a, ok := b.Attrs.Get(_attrSrc); ok && a.String() != "" {
+		attrs[_attrSrc] = a.String()
 	}
 
-	if width := readIntAttr(b.Attrs, _attrWidth, 0); width > 0 {
-		attrs[_attrWidth] = width
+	if a, ok := b.Attrs.Get(_attrWidth); ok && a.Int() > 0 {
+		attrs[_attrWidth] = a.Int()
 	}
 
-	if height := readIntAttr(b.Attrs, _attrHeight, 0); height > 0 {
-		attrs[_attrHeight] = height
+	if a, ok := b.Attrs.Get(_attrHeight); ok && a.Int() > 0 {
+		attrs[_attrHeight] = a.Int()
 	}
 
 	return document.Block{
@@ -352,7 +358,7 @@ func expandFigma(b Block) document.Block {
 // opaque to the canonical layer); the uid is taken from Block.UID
 // or freshly generated.
 func expandMetric(b Block) document.Block {
-	attrs := copyAttrs(b.Attrs)
+	attrs := b.Attrs.Copy()
 	attrs[_attrUID] = resolveUID(b.UID)
 
 	return document.Block{
@@ -364,7 +370,7 @@ func expandMetric(b Block) document.Block {
 // expandMetricGrid builds a metricGrid wrapping each item (expected
 // to be a metric).
 func expandMetricGrid(b Block) (document.Block, error) {
-	children, err := ExpandMany(b.Items)
+	children, err := expandMany(b.Items)
 	if err != nil {
 		return document.Block{}, fmt.Errorf("metric_grid items: %w", err)
 	}
@@ -380,12 +386,12 @@ func expandMetricGrid(b Block) (document.Block, error) {
 // Left and Right in their splitDocumentationLeftSide /
 // splitDocumentationRightSide nodes.
 func expandSplitDoc(b Block) (document.Block, error) {
-	left, err := ExpandMany(b.Left)
+	left, err := expandMany(b.Left)
 	if err != nil {
 		return document.Block{}, fmt.Errorf("split_doc left: %w", err)
 	}
 
-	right, err := ExpandMany(b.Right)
+	right, err := expandMany(b.Right)
 	if err != nil {
 		return document.Block{}, fmt.Errorf("split_doc right: %w", err)
 	}
@@ -403,7 +409,7 @@ func expandSplitDoc(b Block) (document.Block, error) {
 	}
 
 	attrs := uidAttrs(resolveUID(b.UID))
-	if inversed := readBoolAttr(b.Attrs, _attrInversed, false); inversed {
+	if a, ok := b.Attrs.Get(_attrInversed); ok && a.Bool() {
 		attrs[_attrInversed] = true
 	}
 
@@ -476,63 +482,4 @@ func rawTextContent(text string) []document.Block {
 	}
 
 	return []document.Block{{Type: document.BlockNodeText, Text: text}}
-}
-
-// readStringAttr returns attrs[key] when it is a string, otherwise
-// def. Used by expanders to read typed canonical attrs without
-// repeatedly type-asserting.
-func readStringAttr(attrs map[string]any, key, def string) string {
-	if attrs == nil {
-		return def
-	}
-
-	if v, ok := attrs[key].(string); ok {
-		return v
-	}
-
-	return def
-}
-
-// readIntAttr returns attrs[key] coerced to int. Supports the
-// numeric types that json.Unmarshal can land in (float64, int,
-// int64). Falls back to def on missing/wrong type.
-func readIntAttr(attrs map[string]any, key string, def int) int {
-	if attrs == nil {
-		return def
-	}
-
-	switch v := attrs[key].(type) {
-	case int:
-		return v
-	case int64:
-		return int(v)
-	case float64:
-		return int(v)
-	}
-
-	return def
-}
-
-// readBoolAttr returns attrs[key] as a bool, falling back to def.
-func readBoolAttr(attrs map[string]any, key string, def bool) bool {
-	if attrs == nil {
-		return def
-	}
-
-	if v, ok := attrs[key].(bool); ok {
-		return v
-	}
-
-	return def
-}
-
-// copyAttrs returns a shallow copy of attrs, or an empty map when
-// attrs is nil. Used to pass through opaque metric configuration
-// without mutating the caller's map.
-func copyAttrs(attrs map[string]any) map[string]any {
-	out := make(map[string]any, len(attrs)+1)
-
-	maps.Copy(out, attrs)
-
-	return out
 }

@@ -1,17 +1,10 @@
-package aiblock
+package block
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/oxynote/oxynote/server/core/internal/document"
 )
-
-// ErrUnsupportedPMType is returned by Compact when a document.Block
-// uses a TipTap node type that isn't part of the canonical taxonomy.
-// Callers should treat the block as opaque (skip, or surface a
-// dedicated "unknown" placeholder to the AI).
-var ErrUnsupportedPMType = errors.New("canonical: unsupported ProseMirror type")
 
 // Compact converts a document.Block (ProseMirror JSON) into the
 // canonical Block representation surfaced to the AI. Wrapper nodes
@@ -60,13 +53,13 @@ func Compact(b document.Block) (Block, error) {
 	case document.BlockNodeParamList:
 		return compactParamList(b, uid)
 	default:
-		return Block{}, fmt.Errorf("%w: %q", ErrUnsupportedPMType, b.Type)
+		return Block{}, fmt.Errorf("unsupported ProseMirror type %q", b.Type)
 	}
 }
 
-// CompactMany compacts a slice of document.Blocks, short-circuiting
+// compactMany compacts a slice of document.Blocks, short-circuiting
 // on the first error.
-func CompactMany(blocks []document.Block) ([]Block, error) {
+func compactMany(blocks []document.Block) ([]Block, error) {
 	if len(blocks) == 0 {
 		return nil, nil
 	}
@@ -85,39 +78,46 @@ func CompactMany(blocks []document.Block) ([]Block, error) {
 	return out, nil
 }
 
+// compactParagraph compacts a paragraph node, emitting its inline
+// content as minimal-markdown text.
 func compactParagraph(b document.Block, uid string) Block {
 	return Block{
 		Type: BlockParagraph,
 		UID:  uid,
-		Text: EmitInlineMarkdown(b.Content),
+		Text: emitInlineMarkdown(b.Content),
 	}
 }
 
+// compactHeading compacts a heading node, carrying the level attr
+// alongside the inline text.
 func compactHeading(b document.Block, uid string) Block {
-	level := readIntAttr(b.Attrs, _attrLevel, 1)
+	level := 1
+	if a, ok := b.Attrs.Get(_attrLevel); ok {
+		level = a.Int()
+	}
 
 	return Block{
 		Type:  BlockHeading,
 		UID:   uid,
-		Text:  EmitInlineMarkdown(b.Content),
-		Attrs: map[string]any{_attrLevel: level},
+		Text:  emitInlineMarkdown(b.Content),
+		Attrs: document.Attributes{_attrLevel: level},
 	}
 }
 
+// compactBlockquote compacts a blockquote node. The canonical model
+// treats blockquote as a single-paragraph wrapper: when the source
+// has exactly one paragraph child, its text is promoted; otherwise
+// Items carries the content so callers can still see it.
 func compactBlockquote(b document.Block, uid string) (Block, error) {
-	// The canonical model treats blockquote as a single-paragraph
-	// wrapper. When the source has exactly one paragraph child,
-	// promote its text. Otherwise fall back to Items so callers can
-	// still see the content.
 	if len(b.Content) == 1 && b.Content[0].Type == document.BlockNodeParagraph {
 		return Block{
 			Type: BlockBlockquote,
 			UID:  uid,
-			Text: EmitInlineMarkdown(b.Content[0].Content),
+			Text: emitInlineMarkdown(b.Content[0].Content),
 		}, nil
 	}
 
-	items, err := CompactMany(b.Content)
+	items, err := compactMany(b.Content)
 	if err != nil {
 		return Block{}, fmt.Errorf("blockquote: %w", err)
 	}
@@ -131,7 +131,7 @@ func compactBlockquote(b document.Block, uid string) (Block, error) {
 
 // compactList compacts a bulletList or orderedList by unwrapping
 // each listItem and compacting its single content child.
-func compactList(b document.Block, uid string, kind BlockType) (Block, error) {
+func compactList(b document.Block, uid string, kind Type) (Block, error) {
 	items := make([]Block, 0, len(b.Content))
 
 	for i, li := range b.Content {
@@ -171,7 +171,11 @@ func compactTaskList(b document.Block, uid string) (Block, error) {
 		}
 
 		itemUID, _ := ti.UID()
-		checked := readBoolAttr(ti.Attrs, _attrChecked, false)
+
+		var checked bool
+		if a, ok := ti.Attrs.Get(_attrChecked); ok {
+			checked = a.Bool()
+		}
 
 		var inner Block
 
@@ -204,23 +208,21 @@ func compactTaskList(b document.Block, uid string) (Block, error) {
 // single paragraph child, the canonical block uses the Text
 // shorthand; otherwise Items carries the child blocks verbatim.
 func compactCallout(b document.Block, uid string) (Block, error) {
-	icon := readStringAttr(b.Attrs, _attrIcon, "")
-	attrs := map[string]any{}
-
-	if icon != "" {
-		attrs[_attrIcon] = icon
+	attrs := document.Attributes{}
+	if a, ok := b.Attrs.Get(_attrIcon); ok && a.String() != "" {
+		attrs[_attrIcon] = a.String()
 	}
 
 	if len(b.Content) == 1 && b.Content[0].Type == document.BlockNodeParagraph {
 		return Block{
 			Type:  BlockCallout,
 			UID:   uid,
-			Text:  EmitInlineMarkdown(b.Content[0].Content),
+			Text:  emitInlineMarkdown(b.Content[0].Content),
 			Attrs: attrsOrNil(attrs),
 		}, nil
 	}
 
-	items, err := CompactMany(b.Content)
+	items, err := compactMany(b.Content)
 	if err != nil {
 		return Block{}, fmt.Errorf("callout items: %w", err)
 	}
@@ -233,11 +235,12 @@ func compactCallout(b document.Block, uid string) (Block, error) {
 	}, nil
 }
 
+// compactCode compacts a codeBlock node, flattening its content
+// into raw text (no markdown emission).
 func compactCode(b document.Block, uid string) Block {
-	attrs := map[string]any{}
-
-	if lang := readStringAttr(b.Attrs, _attrLanguage, ""); lang != "" {
-		attrs[_attrLanguage] = lang
+	attrs := document.Attributes{}
+	if a, ok := b.Attrs.Get(_attrLanguage); ok && a.String() != "" {
+		attrs[_attrLanguage] = a.String()
 	}
 
 	return Block{
@@ -253,7 +256,7 @@ func compactCode(b document.Block, uid string) Block {
 // Defensive on malformed input: missing children produce empty
 // title/body rather than an error.
 func compactTitledCode(b document.Block, uid string) Block {
-	attrs := map[string]any{}
+	attrs := document.Attributes{}
 
 	var (
 		title string
@@ -267,7 +270,10 @@ func compactTitledCode(b document.Block, uid string) Block {
 			title = flattenText(child.Content)
 		case document.BlockNodeCodeBlock:
 			body = flattenText(child.Content)
-			lang = readStringAttr(child.Attrs, _attrLanguage, "")
+
+			if a, ok := child.Attrs.Get(_attrLanguage); ok {
+				lang = a.String()
+			}
 		default:
 		}
 	}
@@ -288,6 +294,8 @@ func compactTitledCode(b document.Block, uid string) Block {
 	}
 }
 
+// compactMermaid compacts a mermaidBlock node, flattening its
+// content into raw diagram source.
 func compactMermaid(b document.Block, uid string) Block {
 	return Block{
 		Type: BlockMermaid,
@@ -296,23 +304,25 @@ func compactMermaid(b document.Block, uid string) Block {
 	}
 }
 
+// compactImage compacts an imageBlock atom node, surfacing its
+// src/alt/title/width attributes.
 func compactImage(b document.Block, uid string) Block {
-	attrs := map[string]any{}
+	attrs := document.Attributes{}
 
-	if src := readStringAttr(b.Attrs, _attrSrc, ""); src != "" {
-		attrs[_attrSrc] = src
+	if a, ok := b.Attrs.Get(_attrSrc); ok && a.String() != "" {
+		attrs[_attrSrc] = a.String()
 	}
 
-	if alt := readStringAttr(b.Attrs, _attrAlt, ""); alt != "" {
-		attrs[_attrAlt] = alt
+	if a, ok := b.Attrs.Get(_attrAlt); ok && a.String() != "" {
+		attrs[_attrAlt] = a.String()
 	}
 
-	if title := readStringAttr(b.Attrs, _attrTitle, ""); title != "" {
-		attrs[_attrTitle] = title
+	if a, ok := b.Attrs.Get(_attrTitle); ok && a.String() != "" {
+		attrs[_attrTitle] = a.String()
 	}
 
-	if width := readIntAttr(b.Attrs, _attrWidth, 0); width > 0 {
-		attrs[_attrWidth] = width
+	if a, ok := b.Attrs.Get(_attrWidth); ok && a.Int() > 0 {
+		attrs[_attrWidth] = a.Int()
 	}
 
 	return Block{
@@ -322,19 +332,21 @@ func compactImage(b document.Block, uid string) Block {
 	}
 }
 
+// compactFigma compacts a figmaBlock atom node, surfacing its
+// src/width/height attributes.
 func compactFigma(b document.Block, uid string) Block {
-	attrs := map[string]any{}
+	attrs := document.Attributes{}
 
-	if src := readStringAttr(b.Attrs, _attrSrc, ""); src != "" {
-		attrs[_attrSrc] = src
+	if a, ok := b.Attrs.Get(_attrSrc); ok && a.String() != "" {
+		attrs[_attrSrc] = a.String()
 	}
 
-	if width := readIntAttr(b.Attrs, _attrWidth, 0); width > 0 {
-		attrs[_attrWidth] = width
+	if a, ok := b.Attrs.Get(_attrWidth); ok && a.Int() > 0 {
+		attrs[_attrWidth] = a.Int()
 	}
 
-	if height := readIntAttr(b.Attrs, _attrHeight, 0); height > 0 {
-		attrs[_attrHeight] = height
+	if a, ok := b.Attrs.Get(_attrHeight); ok && a.Int() > 0 {
+		attrs[_attrHeight] = a.Int()
 	}
 
 	return Block{
@@ -348,15 +360,8 @@ func compactFigma(b document.Block, uid string) Block {
 // metric block — the configuration shape is opaque to the canonical
 // layer and the AI sees it through-pass.
 func compactMetric(b document.Block, uid string) Block {
-	attrs := make(map[string]any, len(b.Attrs))
-
-	for k, v := range b.Attrs {
-		if k == _attrUID {
-			continue
-		}
-
-		attrs[k] = v
-	}
+	attrs := b.Attrs.Copy()
+	delete(attrs, _attrUID)
 
 	return Block{
 		Type:  BlockMetric,
@@ -365,8 +370,10 @@ func compactMetric(b document.Block, uid string) Block {
 	}
 }
 
+// compactMetricGrid compacts a metricGrid node, carrying each child
+// metric in Items.
 func compactMetricGrid(b document.Block, uid string) (Block, error) {
-	items, err := CompactMany(b.Content)
+	items, err := compactMany(b.Content)
 	if err != nil {
 		return Block{}, fmt.Errorf("metric_grid items: %w", err)
 	}
@@ -384,21 +391,21 @@ func compactMetricGrid(b document.Block, uid string) (Block, error) {
 func compactSplitDoc(b document.Block, uid string) (Block, error) {
 	out := Block{Type: BlockSplitDoc, UID: uid}
 
-	if inversed := readBoolAttr(b.Attrs, _attrInversed, false); inversed {
-		out.Attrs = map[string]any{_attrInversed: true}
+	if a, ok := b.Attrs.Get(_attrInversed); ok && a.Bool() {
+		out.Attrs = document.Attributes{_attrInversed: true}
 	}
 
 	for _, side := range b.Content {
 		switch side.Type {
 		case document.BlockNodeSplitDocLeft:
-			items, err := CompactMany(side.Content)
+			items, err := compactMany(side.Content)
 			if err != nil {
 				return Block{}, fmt.Errorf("split_doc left: %w", err)
 			}
 
 			out.Left = items
 		case document.BlockNodeSplitDocRight:
-			items, err := CompactMany(side.Content)
+			items, err := compactMany(side.Content)
 			if err != nil {
 				return Block{}, fmt.Errorf("split_doc right: %w", err)
 			}
@@ -448,7 +455,7 @@ func compactParamListItem(b document.Block) ParamItem {
 				}
 			}
 		case document.BlockNodeParagraph:
-			item.Description = EmitInlineMarkdown(child.Content)
+			item.Description = emitInlineMarkdown(child.Content)
 		default:
 		}
 	}
@@ -474,7 +481,7 @@ func flattenText(content []document.Block) string {
 // attrsOrNil returns m when it has at least one entry, nil
 // otherwise. Compact output uses nil maps rather than empty ones so
 // JSON-marshalled canonical blocks omit the field cleanly.
-func attrsOrNil(m map[string]any) map[string]any {
+func attrsOrNil(m document.Attributes) document.Attributes {
 	if len(m) == 0 {
 		return nil
 	}

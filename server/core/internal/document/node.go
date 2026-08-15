@@ -90,7 +90,7 @@ type Block struct {
 	Marks []Mark `json:"marks,omitempty"`
 
 	// Attrs are additional attributes for the block, such as alignment, link, etc.
-	Attrs map[string]any `json:"attrs,omitempty"`
+	Attrs Attributes `json:"attrs,omitempty"`
 }
 
 // UID returns the block's uid attribute and whether it is present.
@@ -187,7 +187,7 @@ type Mark struct {
 	Type string `json:"type"`
 
 	// Attrs are additional attributes for the mark, such as link URL.
-	Attrs map[string]any `json:"attrs,omitempty"`
+	Attrs Attributes `json:"attrs,omitempty"`
 }
 
 // StripCommentMarks returns a copy of the RootBlock with all comment marks

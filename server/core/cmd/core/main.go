@@ -20,10 +20,10 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/apps/slackapp"
 	"github.com/oxynote/oxynote/server/core/internal/apps/webchanges"
 	"github.com/oxynote/oxynote/server/core/internal/assistant"
+	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
 	"github.com/oxynote/oxynote/server/core/internal/buildinfo"
 	"github.com/oxynote/oxynote/server/core/internal/db"
 	hookMan "github.com/oxynote/oxynote/server/core/internal/document/hook/manager"
-	"github.com/oxynote/oxynote/server/core/internal/document/liveedit"
 	"github.com/oxynote/oxynote/server/core/internal/document/searchgw"
 	searchMan "github.com/oxynote/oxynote/server/core/internal/document/searchgw/manager"
 	"github.com/oxynote/oxynote/server/core/internal/email"
@@ -256,7 +256,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 		return
 	}
 
-	liveEditClient := liveedit.NewClient(
+	editClient := edit.NewClient(
 		http.DefaultClient,
 		buildinfo.Getenv("AUTH_REALTIME_URL"),
 	)
@@ -267,7 +267,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 		rdb,
 		buildinfo.Getenv("ANTHROPIC_API_KEY"),
 		metrics,
-		liveEditClient,
+		editClient,
 		searchClient,
 	)
 

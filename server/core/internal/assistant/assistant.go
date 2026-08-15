@@ -19,7 +19,6 @@ import (
 	"github.com/jellydator/xync"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/protocol"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
-	"github.com/oxynote/oxynote/server/core/internal/document/liveedit"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
 	"github.com/oxynote/oxynote/server/core/pkg/redkit"
@@ -32,18 +31,18 @@ const _sessionExpiration = time.Hour * 24
 
 // Manager holds dependencies shared across assistant sessions.
 type Manager struct {
-	log      *slog.Logger
-	db       tools.DB
-	search   tools.Searcher
-	pool     *redkit.ValueStore[[]anthropic.MessageParam]
-	client   *anthropic.Client
-	liveedit *liveedit.Client
-	tree     tools.TreeNotifier
-	metrics  *metrics
+	log     *slog.Logger
+	db      tools.DB
+	search  tools.Searcher
+	pool    *redkit.ValueStore[[]anthropic.MessageParam]
+	client  *anthropic.Client
+	applier tools.EditApplier
+	tree    tools.TreeNotifier
+	metrics *metrics
 }
 
-// NewManager constructs an assistant Manager. The liveEditClient is
-// the live-edit pipe to the Node hocuspocus service; the search
+// NewManager constructs an assistant Manager. The editClient is the
+// edit pipe to the Node hocuspocus service; the search
 // client backs the search_documents tool; the tree notifier
 // broadcasts sidebar refresh events after assistant-driven document
 // tree mutations and is wired post-construction via SetTreeNotifier
@@ -55,19 +54,19 @@ func NewManager(
 	pool *redis.Pool,
 	apiKey string,
 	fc metricutil.Factory,
-	liveEditClient *liveedit.Client,
+	editClient tools.EditApplier,
 	search tools.Searcher,
 ) *Manager {
 	client := anthropic.NewClient(option.WithAPIKey(apiKey))
 
 	return &Manager{
-		log:      log.With("component", "assistant"),
-		db:       db,
-		search:   search,
-		pool:     redkit.NewValueStore[[]anthropic.MessageParam](pool, _sessionExpiration),
-		client:   &client,
-		liveedit: liveEditClient,
-		metrics:  newMetrics(fc),
+		log:     log.With("component", "assistant"),
+		db:      db,
+		search:  search,
+		pool:    redkit.NewValueStore[[]anthropic.MessageParam](pool, _sessionExpiration),
+		client:  &client,
+		applier: editClient,
+		metrics: newMetrics(fc),
 	}
 }
 
@@ -107,7 +106,7 @@ func (m *Manager) NewSession(
 		writer:   writer,
 		supv:     xync.NewSupervisor(),
 		messages: *msg,
-		tools:    tools.NewManager(m.log, m.db, m.search, m.liveedit, m.tree, orgID, userID),
+		tools:    tools.NewManager(m.log, m.db, m.search, m.applier, m.tree, orgID, userID),
 	}
 
 	session.sendHistory(ctx)

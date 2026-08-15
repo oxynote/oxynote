@@ -1,4 +1,4 @@
-package liveedit
+package edit
 
 import (
 	"bytes"
@@ -80,7 +80,7 @@ func (c *Client) Apply(ctx context.Context, documentID, branchID string, ops []O
 	wires := make([]wireOp, 0, len(ops))
 
 	for i, op := range ops {
-		w, err := op.toWire()
+		w, err := op()
 		if err != nil {
 			return Result{}, fmt.Errorf("operation %d: %w", i, err)
 		}
@@ -102,6 +102,9 @@ func (c *Client) Apply(ctx context.Context, documentID, branchID string, ops []O
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
+		// NOCOV: the URL is pre-validated by endpoint, so the only
+		// remaining failure is a nil context, which cannot be
+		// simulated in tests without violating the API contract.
 		return Result{}, fmt.Errorf("build request: %w", err)
 	}
 

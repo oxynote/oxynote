@@ -7,8 +7,8 @@ import (
 	"fmt"
 
 	"github.com/guregu/null/v5"
+	"github.com/oxynote/oxynote/server/core/internal/assistant/block"
 	"github.com/oxynote/oxynote/server/core/internal/document"
-	"github.com/oxynote/oxynote/server/core/internal/document/aiblock"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/rs/xid"
 )
@@ -173,12 +173,12 @@ func (m *Manager) readBlock(ctx context.Context, args json.RawMessage) (json.Raw
 		return nil, fmt.Errorf("read_block: fetch content: %w", err)
 	}
 
-	block, ok := findBlockByUID(content.Content.Content, in.BlockUID)
+	blk, ok := findBlockByUID(content.Content.Content, in.BlockUID)
 	if !ok {
 		return nil, errutil.ErrNotFound
 	}
 
-	canon, err := aiblock.Compact(block)
+	canon, err := block.Compact(blk)
 	if err != nil {
 		return nil, fmt.Errorf("read_block: compact: %w", err)
 	}

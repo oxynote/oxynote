@@ -1,19 +1,89 @@
-package aiblock
+package block
 
 import (
-	"errors"
 	"fmt"
+	"slices"
 	"strings"
 )
 
-// _textPathSegment is the breadcrumb segment naming a block's text field.
-const _textPathSegment = "text"
+// Allowed child-type sets, mirroring the editor's schema rules.
+var (
+	// _allowedBlockquoteItems mirrors TipTap's default Blockquote
+	// content (block+); we accept the same set of simple blocks
+	// the AI is likely to nest there.
+	_allowedBlockquoteItems = map[Type]bool{
+		BlockParagraph:   true,
+		BlockBulletList:  true,
+		BlockOrderedList: true,
+		BlockTaskList:    true,
+	}
 
-// ValidationError is the structured error returned by Validate.
+	// _allowedListItemContent is the set of block types that can sit
+	// inside a list/task-list item. Mirrors the web editor's
+	// ListItem default content.
+	_allowedListItemContent = map[Type]bool{
+		BlockParagraph:   true,
+		BlockBulletList:  true,
+		BlockOrderedList: true,
+		BlockTaskList:    true,
+	}
+
+	// _allowedCalloutItems mirrors CalloutBlock.content in
+	// web/app/components/editor/blocks/callout/index.ts.
+	_allowedCalloutItems = map[Type]bool{
+		BlockParagraph:   true,
+		BlockBulletList:  true,
+		BlockOrderedList: true,
+		BlockTaskList:    true,
+	}
+
+	// _allowedSplitDocLeftBody is the set of types that may appear
+	// between the leading heading and any trailing param_lists on
+	// a split_doc left side.
+	_allowedSplitDocLeftBody = map[Type]bool{
+		BlockParagraph:   true,
+		BlockBulletList:  true,
+		BlockOrderedList: true,
+		BlockTaskList:    true,
+		BlockCallout:     true,
+	}
+
+	// _allowedSplitDocRight is the set of types that may appear on a
+	// split_doc right side.
+	_allowedSplitDocRight = map[Type]bool{
+		BlockTitledCode: true,
+		BlockMetric:     true,
+	}
+
+	// _allowedAtRoot is the set of canonical block types that may
+	// sit directly under the document root. Types not in this set
+	// use custom TipTap groups
+	// (splitDocumentationParameterList, metricBlock,
+	// titledCodeBlock) and only become valid inside their containing
+	// macro.
+	_allowedAtRoot = map[Type]bool{
+		BlockParagraph:      true,
+		BlockHeading:        true,
+		BlockBlockquote:     true,
+		BlockBulletList:     true,
+		BlockOrderedList:    true,
+		BlockTaskList:       true,
+		BlockCallout:        true,
+		BlockCode:           true,
+		BlockMermaid:        true,
+		BlockHorizontalRule: true,
+		BlockImage:          true,
+		BlockFigma:          true,
+		BlockMetricGrid:     true,
+		BlockSplitDoc:       true,
+	}
+)
+
+// validationError is the structured error returned by Validate.
 // Path locates the offending block within a nested canonical tree
 // using a slash-separated breadcrumb (e.g. "split_doc/left[0]",
 // "param_list/params[2]"); Message describes the rule that failed.
-type ValidationError struct {
+type validationError struct {
 	// Path is a slash-separated breadcrumb identifying the offending
 	// node. Indices use bracketed integers (e.g. "items[3]").
 	Path string
@@ -24,7 +94,7 @@ type ValidationError struct {
 
 // Error renders the validation error in the form
 // "{path}: {message}".
-func (e *ValidationError) Error() string {
+func (e *validationError) Error() string {
 	if e.Path == "" {
 		return e.Message
 	}
@@ -35,7 +105,7 @@ func (e *ValidationError) Error() string {
 // Validate checks that a canonical Block satisfies every constraint
 // Expand and the editor schema require. It is intended to be run on
 // AI-supplied input before Expand. Validate stops at the first
-// violation and returns a ValidationError describing it; callers
+// violation and returns a validationError describing it; callers
 // can surface that message to the AI to recover precisely.
 //
 // A nil error means Expand will produce a structurally valid
@@ -44,18 +114,6 @@ func (e *ValidationError) Error() string {
 // reaches hocuspocus).
 func Validate(b Block) error {
 	return validateBlock(b, "")
-}
-
-// ValidateMany validates each block in a slice, prefixing errors
-// with their index.
-func ValidateMany(blocks []Block) error {
-	for i, b := range blocks {
-		if err := validateBlock(b, fmt.Sprintf("[%d]", i)); err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
 // ValidateAsRoot validates a block being inserted at the top level
@@ -82,7 +140,7 @@ func ValidateAsRoot(b Block) error {
 // containerForType returns a human-readable description of the
 // macro that must contain a non-root block type. Used to build
 // helpful error messages for ValidateAsRoot.
-func containerForType(t BlockType) string {
+func containerForType(t Type) string {
 	switch t {
 	case BlockTitledCode:
 		return "split_doc.right"
@@ -138,8 +196,8 @@ func validateBlock(b Block, path string) error {
 	return verr(path, fmt.Sprintf("unknown block type %q", b.Type))
 }
 
-// validateTextBearing checks that the block carries Text content
-// and no compound-only fields. Used for paragraph (heading and
+// validateTextBearing checks that the block carries only inline Text
+// content and no compound fields. Used for paragraph (heading and
 // blockquote layer their own rules on top of this).
 func validateTextBearing(b Block, path string) error {
 	if err := mustNotHaveCompoundFields(b, path); err != nil {
@@ -150,26 +208,25 @@ func validateTextBearing(b Block, path string) error {
 		return verr(path, fmt.Sprintf("%s does not accept items", b.Type))
 	}
 
-	return validateInlineMarkdown(b.Text, joinPath(path, _textPathSegment))
+	return nil
 }
 
+// validateHeading layers the level-attr rule on top of the
+// text-bearing checks.
 func validateHeading(b Block, path string) error {
-	if err := mustNotHaveCompoundFields(b, path); err != nil {
+	if err := validateTextBearing(b, path); err != nil {
 		return err
 	}
 
-	if len(b.Items) != 0 {
-		return verr(path, "heading does not accept items")
-	}
-
-	level := readIntAttr(b.Attrs, _attrLevel, 0)
-	if level < 1 || level > 3 {
+	if a, ok := b.Attrs.Get(_attrLevel); !ok || a.Int() < 1 || a.Int() > 3 {
 		return verr(joinPath(path, "attrs.level"), "heading level must be 1, 2, or 3")
 	}
 
-	return validateInlineMarkdown(b.Text, joinPath(path, _textPathSegment))
+	return nil
 }
 
+// validateBlockquote checks the text-or-items exclusivity rule and
+// the allowed item types.
 func validateBlockquote(b Block, path string) error {
 	if err := mustNotHaveCompoundFields(b, path); err != nil {
 		return err
@@ -184,12 +241,14 @@ func validateBlockquote(b Block, path string) error {
 	}
 
 	if b.Text != "" {
-		return validateInlineMarkdown(b.Text, joinPath(path, _textPathSegment))
+		return nil
 	}
 
 	return validateItemsAllowed(b.Items, joinPath(path, "items"), _allowedBlockquoteItems)
 }
 
+// validateList checks a bullet_list or ordered_list: no text, at
+// least one item, items of allowed types.
 func validateList(b Block, path string) error {
 	if err := mustNotHaveCompoundFields(b, path); err != nil {
 		return err
@@ -206,6 +265,8 @@ func validateList(b Block, path string) error {
 	return validateItemsAllowed(b.Items, joinPath(path, "items"), _allowedListItemContent)
 }
 
+// validateTaskList checks that rows live in task_items and each
+// row's content block is an allowed list-item type.
 func validateTaskList(b Block, path string) error {
 	if err := mustHaveNoCanonicalCompoundExcept(b, path, "task_items"); err != nil {
 		return err
@@ -213,10 +274,6 @@ func validateTaskList(b Block, path string) error {
 
 	if b.Text != "" {
 		return verr(path, "task_list does not accept text")
-	}
-
-	if len(b.Items) != 0 {
-		return verr(path, "task_list rows live in task_items, not items")
 	}
 
 	if len(b.TaskItems) == 0 {
@@ -239,6 +296,8 @@ func validateTaskList(b Block, path string) error {
 	return nil
 }
 
+// validateCallout checks the text-or-items exclusivity rule and
+// the allowed item types.
 func validateCallout(b Block, path string) error {
 	if err := mustHaveNoCanonicalCompoundExcept(b, path, "items"); err != nil {
 		return err
@@ -253,12 +312,14 @@ func validateCallout(b Block, path string) error {
 	}
 
 	if b.Text != "" {
-		return validateInlineMarkdown(b.Text, joinPath(path, _textPathSegment))
+		return nil
 	}
 
 	return validateItemsAllowed(b.Items, joinPath(path, "items"), _allowedCalloutItems)
 }
 
+// validateCode checks that a code block carries no compound
+// content.
 func validateCode(b Block, path string) error {
 	if err := mustNotHaveCompoundFields(b, path); err != nil {
 		return err
@@ -271,6 +332,8 @@ func validateCode(b Block, path string) error {
 	return nil
 }
 
+// validateTitledCode checks that a titled_code block carries a
+// non-empty title attr and no compound content.
 func validateTitledCode(b Block, path string) error {
 	if err := mustNotHaveCompoundFields(b, path); err != nil {
 		return err
@@ -280,14 +343,15 @@ func validateTitledCode(b Block, path string) error {
 		return verr(path, "titled_code does not accept items")
 	}
 
-	title := readStringAttr(b.Attrs, _attrTitle, "")
-	if strings.TrimSpace(title) == "" {
+	if a, ok := b.Attrs.Get(_attrTitle); !ok || strings.TrimSpace(a.String()) == "" {
 		return verr(joinPath(path, "attrs.title"), "titled_code requires a non-empty title")
 	}
 
 	return nil
 }
 
+// validateRawText checks a raw-text block (mermaid): no compound
+// content, no items.
 func validateRawText(b Block, path string) error {
 	if err := mustNotHaveCompoundFields(b, path); err != nil {
 		return err
@@ -300,6 +364,8 @@ func validateRawText(b Block, path string) error {
 	return nil
 }
 
+// validateHorizontalRule checks that the divider carries no
+// content at all.
 func validateHorizontalRule(b Block, path string) error {
 	if err := mustNotHaveCompoundFields(b, path); err != nil {
 		return err
@@ -312,6 +378,8 @@ func validateHorizontalRule(b Block, path string) error {
 	return nil
 }
 
+// validateImage checks that an image block carries a non-empty src
+// attr and no content.
 func validateImage(b Block, path string) error {
 	if err := mustNotHaveCompoundFields(b, path); err != nil {
 		return err
@@ -321,14 +389,15 @@ func validateImage(b Block, path string) error {
 		return verr(path, "image does not accept content")
 	}
 
-	src := readStringAttr(b.Attrs, _attrSrc, "")
-	if strings.TrimSpace(src) == "" {
+	if a, ok := b.Attrs.Get(_attrSrc); !ok || strings.TrimSpace(a.String()) == "" {
 		return verr(joinPath(path, "attrs.src"), "image requires a non-empty src")
 	}
 
 	return nil
 }
 
+// validateFigma checks that a figma block carries a non-empty src
+// attr and no content.
 func validateFigma(b Block, path string) error {
 	if err := mustNotHaveCompoundFields(b, path); err != nil {
 		return err
@@ -338,14 +407,15 @@ func validateFigma(b Block, path string) error {
 		return verr(path, "figma does not accept content")
 	}
 
-	src := readStringAttr(b.Attrs, _attrSrc, "")
-	if strings.TrimSpace(src) == "" {
+	if a, ok := b.Attrs.Get(_attrSrc); !ok || strings.TrimSpace(a.String()) == "" {
 		return verr(joinPath(path, "attrs.src"), "figma requires a non-empty src")
 	}
 
 	return nil
 }
 
+// validateMetric checks that a metric block carries no content;
+// its attrs are opaque configuration.
 func validateMetric(b Block, path string) error {
 	if err := mustNotHaveCompoundFields(b, path); err != nil {
 		return err
@@ -358,6 +428,8 @@ func validateMetric(b Block, path string) error {
 	return nil
 }
 
+// validateMetricGrid checks that every item is a metric and there
+// is at least one.
 func validateMetricGrid(b Block, path string) error {
 	if err := mustHaveNoCanonicalCompoundExcept(b, path, "items"); err != nil {
 		return err
@@ -387,6 +459,9 @@ func validateMetricGrid(b Block, path string) error {
 	return nil
 }
 
+// validateSplitDoc checks the split_doc shape: a level-1 heading
+// leading the left side, body blocks before any param_lists, and
+// titled_code/metric blocks on the right.
 func validateSplitDoc(b Block, path string) error {
 	if err := mustHaveNoCanonicalCompoundExcept(b, path, "left", "right"); err != nil {
 		return err
@@ -394,10 +469,6 @@ func validateSplitDoc(b Block, path string) error {
 
 	if b.Text != "" {
 		return verr(path, "split_doc does not accept text")
-	}
-
-	if len(b.Items) != 0 || len(b.TaskItems) != 0 {
-		return verr(path, "split_doc uses left and right, not items")
 	}
 
 	if len(b.Left) == 0 {
@@ -421,7 +492,7 @@ func validateSplitDoc(b Block, path string) error {
 		return verr(joinPath(path, "left[0]"), "split_doc left must begin with a heading")
 	}
 
-	if level := readIntAttr(b.Left[0].Attrs, _attrLevel, 0); level != 1 {
+	if a, ok := b.Left[0].Attrs.Get(_attrLevel); !ok || a.Int() != 1 {
 		return verr(
 			joinPath(path, "left[0].attrs.level"),
 			"split_doc left heading must be level 1",
@@ -478,13 +549,15 @@ func validateSplitDoc(b Block, path string) error {
 	return nil
 }
 
+// validateParamList checks the header and per-row name
+// requirements of a param_list.
 func validateParamList(b Block, path string) error {
 	if err := mustHaveNoCanonicalCompoundExcept(b, path, "header", "params"); err != nil {
 		return err
 	}
 
-	if b.Text != "" || len(b.Items) != 0 || len(b.TaskItems) != 0 {
-		return verr(path, "param_list uses header and params, not text or items")
+	if b.Text != "" {
+		return verr(path, "param_list uses header and params, not text")
 	}
 
 	if strings.TrimSpace(b.Header) == "" {
@@ -496,29 +569,13 @@ func validateParamList(b Block, path string) error {
 	}
 
 	for i, p := range b.Params {
-		itemPath := joinPath(path, fmt.Sprintf("params[%d]", i))
-
 		if strings.TrimSpace(p.Name) == "" {
-			return verr(joinPath(itemPath, "name"), "param row requires a non-empty name")
-		}
-
-		if err := validateInlineMarkdown(p.Description, joinPath(itemPath, "description")); err != nil {
-			return err
+			return verr(
+				joinPath(path, fmt.Sprintf("params[%d]/name", i)),
+				"param row requires a non-empty name",
+			)
 		}
 	}
-
-	return nil
-}
-
-// validateInlineMarkdown checks that the input can be parsed without
-// landing in an unrecoverable state. Today's parser is tolerant
-// (unmatched delimiters become literal text), so the only true
-// failure mode is empty text on a required field — which the caller
-// checks separately. The function is kept as a hook so we can add
-// stricter rules later without changing the callsites.
-func validateInlineMarkdown(text, path string) error {
-	_ = text
-	_ = path
 
 	return nil
 }
@@ -580,7 +637,7 @@ func mustHaveNoCanonicalCompoundExcept(b Block, path string, allowed ...string) 
 
 // validateItemsAllowed validates a slice of items, requiring each
 // to be of a type in allowed.
-func validateItemsAllowed(items []Block, path string, allowed map[BlockType]bool) error {
+func validateItemsAllowed(items []Block, path string, allowed map[Type]bool) error {
 	for i, item := range items {
 		itemPath := joinPath(path, fmt.Sprintf("[%d]", i))
 		if !allowed[item.Type] {
@@ -596,107 +653,23 @@ func validateItemsAllowed(items []Block, path string, allowed map[BlockType]bool
 	return nil
 }
 
-// Allowed child-type sets, mirroring the editor's schema rules.
-var (
-	// _allowedBlockquoteItems mirrors TipTap's default Blockquote
-	// content (block+); we accept the same set of simple blocks
-	// the AI is likely to nest there.
-	_allowedBlockquoteItems = map[BlockType]bool{
-		BlockParagraph:   true,
-		BlockBulletList:  true,
-		BlockOrderedList: true,
-		BlockTaskList:    true,
-	}
-
-	// _allowedListItemContent is the set of block types that can sit
-	// inside a list/task-list item. Mirrors the web editor's
-	// ListItem default content.
-	_allowedListItemContent = map[BlockType]bool{
-		BlockParagraph:   true,
-		BlockBulletList:  true,
-		BlockOrderedList: true,
-		BlockTaskList:    true,
-	}
-
-	// _allowedCalloutItems mirrors CalloutBlock.content in
-	// web/app/components/editor/blocks/callout/index.ts.
-	_allowedCalloutItems = map[BlockType]bool{
-		BlockParagraph:   true,
-		BlockBulletList:  true,
-		BlockOrderedList: true,
-		BlockTaskList:    true,
-	}
-
-	// _allowedSplitDocLeftBody is the set of types that may appear
-	// between the leading heading and any trailing param_lists on
-	// a split_doc left side.
-	_allowedSplitDocLeftBody = map[BlockType]bool{
-		BlockParagraph:   true,
-		BlockBulletList:  true,
-		BlockOrderedList: true,
-		BlockTaskList:    true,
-		BlockCallout:     true,
-	}
-
-	// _allowedSplitDocRight is the set of types that may appear on a
-	// split_doc right side.
-	_allowedSplitDocRight = map[BlockType]bool{
-		BlockTitledCode: true,
-		BlockMetric:     true,
-	}
-
-	// _allowedAtRoot is the set of canonical block types that may
-	// sit directly under the document root. Types not in this set
-	// use custom TipTap groups
-	// (splitDocumentationParameterList, metricBlock,
-	// titledCodeBlock) and only become valid inside their containing
-	// macro.
-	_allowedAtRoot = map[BlockType]bool{
-		BlockParagraph:      true,
-		BlockHeading:        true,
-		BlockBlockquote:     true,
-		BlockBulletList:     true,
-		BlockOrderedList:    true,
-		BlockTaskList:       true,
-		BlockCallout:        true,
-		BlockCode:           true,
-		BlockMermaid:        true,
-		BlockHorizontalRule: true,
-		BlockImage:          true,
-		BlockFigma:          true,
-		BlockMetricGrid:     true,
-		BlockSplitDoc:       true,
-	}
-)
-
 // listAllowed returns a sorted comma-separated list of the keys in
 // the allowed-set, for use in error messages.
-func listAllowed(m map[BlockType]bool) string {
+func listAllowed(m map[Type]bool) string {
 	names := make([]string, 0, len(m))
 	for k := range m {
 		names = append(names, string(k))
 	}
 
 	// Sort so error messages are deterministic for tests.
-	for i := 1; i < len(names); i++ {
-		for j := i; j > 0 && names[j-1] > names[j]; j-- {
-			names[j-1], names[j] = names[j], names[j-1]
-		}
-	}
+	slices.Sort(names)
 
 	return strings.Join(names, ", ")
 }
 
-// verr is a tiny ValidationError constructor.
+// verr is a tiny validationError constructor.
 func verr(path, message string) error {
-	return &ValidationError{Path: path, Message: message}
-}
-
-// IsValidationError reports whether err is a *ValidationError.
-func IsValidationError(err error) bool {
-	var ve *ValidationError
-
-	return errors.As(err, &ve)
+	return &validationError{Path: path, Message: message}
 }
 
 // joinPath concatenates a parent breadcrumb with a child segment.
