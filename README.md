@@ -19,7 +19,10 @@ Grafana's view of your systems, with more of the ops stack on the roadmap.
 
 ## Quickstart
 
-Requirements: Docker, Go, Node.js (with corepack for pnpm), goreleaser, make.
+Requirements: [Docker](https://www.docker.com), [Go](https://go.dev),
+[Node.js](https://nodejs.org) (with corepack for [pnpm](https://pnpm.io)),
+[goreleaser](https://goreleaser.com), [make](https://www.gnu.org/software/make/),
+[golangci-lint](https://golangci-lint.run), [moq](https://github.com/matryer/moq).
 
 ```sh
 make setup     # install dependencies + create local env files from templates
