@@ -3,11 +3,14 @@ package hook
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"testing"
 	"time"
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
@@ -226,6 +229,37 @@ func Test_Hook_ensurePrepared(t *testing.T) {
 			runner := h.runner
 			require.NoError(t, h.ensurePrepared())
 			assert.Same(t, runner, h.runner)
+		})
+	}
+}
+
+func Test_Type_Validate(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Type Type
+		Err  error
+	}{
+		"Scheduled reminder":      {Type: TypeScheduledReminder},
+		"Github tracking":         {Type: TypeGithubTracking},
+		"URL watcher":             {Type: TypeURLWatcher},
+		"Container image watcher": {Type: TypeContainerImageWatcher},
+		"Unknown type":            {Type: Type("bogus"), Err: ErrInvalidType},
+		"Empty type":              {Err: ErrInvalidType},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			err := c.Type.Validate()
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err == nil {
+				return
+			}
+
+			assert.Equal(t, http.StatusBadRequest, errutil.StatusCode(err, false))
 		})
 	}
 }

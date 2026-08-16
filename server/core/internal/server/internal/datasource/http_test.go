@@ -368,7 +368,7 @@ func Test_Handler_FetchDataSource(t *testing.T) {
 		"Invalid data source id": {
 			ID: "bogus",
 			Checks: checks(
-				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				hasResp(http.StatusNotFound, `{"code":"general","message":"not found"}`),
 				wasDBFetchDataSourceCalled(0),
 			),
 		},

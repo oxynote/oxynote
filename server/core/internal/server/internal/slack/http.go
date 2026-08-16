@@ -22,13 +22,10 @@ import (
 
 var (
 	// ErrMissingCode is returned when the Slack code is missing in the request.
-	ErrMissingCode = errutil.New(http.StatusInternalServerError, "slack.missing_code", "missing code in request")
-
-	// ErrMissingTeamID is returned when the Slack team ID is missing in the request.
-	ErrMissingTeamID = errutil.New(http.StatusInternalServerError, "slack.missing_team_id", "missing team ID in request")
+	ErrMissingCode = errutil.New(http.StatusBadRequest, "slack.missing_code", "missing code in request")
 
 	// ErrMissingInstallationState is returned when the installation state is missing from the request.
-	ErrMissingInstallationState = errutil.New(http.StatusBadRequest, "github.missing_installation_state", "installation state is required")
+	ErrMissingInstallationState = errutil.New(http.StatusBadRequest, "slack.missing_installation_state", "installation state is required")
 
 	// ErrOrganizationAlreadyConnected is returned when the Slack organization is already connected.
 	ErrOrganizationAlreadyConnected = errutil.New(http.StatusBadRequest, "slack.organization_already_connected", "organization already connected")

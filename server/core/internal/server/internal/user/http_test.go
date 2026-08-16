@@ -298,7 +298,7 @@ func Test_Handler_UploadUserImage(t *testing.T) {
 			Storer: &StorerMock{},
 			NoFile: true,
 			Checks: checks(
-				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				hasResp(http.StatusBadRequest, `{"code":"request.invalid_form","message":"invalid form data"}`),
 				wasUploadCalled(0),
 				wasUpdateUserImageCalled(0),
 			),

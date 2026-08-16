@@ -397,7 +397,7 @@ func Test_Handler_ConnectOrganization(t *testing.T) {
 		"External state with missing code": {
 			DB:       &DBMock{},
 			StateFor: "org1",
-			RespCode: http.StatusInternalServerError,
+			RespCode: http.StatusBadRequest,
 		},
 		"Internal state app lookup error": {
 			DB: &DBMock{

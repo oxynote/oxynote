@@ -259,7 +259,7 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 			DB:   &DBMock{},
 			Body: `{"type":"bogus","branchId":"` + _branchID.String() + `","settings":{}}`,
 			Checks: checks(
-				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				hasResp(http.StatusBadRequest, `{"code":"document_hook.invalid_type","message":"invalid hook type"}`),
 				wasInsertCalled(0),
 			),
 		},

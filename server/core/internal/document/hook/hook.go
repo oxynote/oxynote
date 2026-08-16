@@ -5,17 +5,33 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"time"
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
 	"github.com/shopspring/decimal"
 )
 
+// ErrInvalidType is returned when a hook carries a type the processors do
+// not implement.
+var ErrInvalidType = errutil.New(http.StatusBadRequest, "document_hook.invalid_type", "invalid hook type")
+
 // Type represents the type of a freshness hook.
 type Type string
+
+// Validate checks whether the hook type is one of the known variants.
+func (t Type) Validate() error {
+	switch t {
+	case TypeScheduledReminder, TypeGithubTracking, TypeURLWatcher, TypeContainerImageWatcher:
+		return nil
+	default:
+		return ErrInvalidType
+	}
+}
 
 // HumanizedString returns a human-readable string for the hook type.
 func (t Type) HumanizedString() string {

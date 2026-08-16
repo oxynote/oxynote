@@ -232,17 +232,7 @@ func (h *Handler) DeleteDataSource(w http.ResponseWriter, r *http.Request) {
 
 // extractDataSourceID extracts the data source ID from the request parameters.
 func (h *Handler) extractDataSourceID(r *http.Request) (xid.ID, error) {
-	raw, err := httpserver.ExtractParam(r, "dataSourceId")
-	if err != nil {
-		return xid.NilID(), err
-	}
-
-	id, err := xid.FromString(raw)
-	if err != nil {
-		return xid.NilID(), err
-	}
-
-	return id, nil
+	return httpserver.ExtractNamedID(r, "dataSourceId")
 }
 
 // DB is an interface that handles communication with the data source database.

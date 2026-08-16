@@ -189,7 +189,7 @@ func Test_Handler_UploadDocumentFile(t *testing.T) {
 			NoFile: true,
 			Query:  "?id=f1&location=document",
 			Checks: checks(
-				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				hasResp(http.StatusBadRequest, `{"code":"request.invalid_form","message":"invalid form data"}`),
 				wasUploadCalled(0),
 			),
 		},

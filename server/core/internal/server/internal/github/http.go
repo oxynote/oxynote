@@ -32,6 +32,12 @@ var (
 
 	// ErrResourceNotFound is returned when the requested resource is not found.
 	ErrResourceNotFound = errutil.New(http.StatusNotFound, "github.resource_not_found", "resource not found")
+
+	// ErrInvalidSignature is returned when a webhook fails signature verification.
+	ErrInvalidSignature = errutil.New(http.StatusUnauthorized, "github.invalid_signature", "invalid webhook signature")
+
+	// ErrInvalidPayload is returned when a webhook body cannot be parsed.
+	ErrInvalidPayload = errutil.New(http.StatusBadRequest, "github.invalid_payload", "invalid webhook payload")
 )
 
 // _ctxKey is a type used for context keys to avoid collisions with other packages.
@@ -97,7 +103,7 @@ func (h *Handler) VerifySignature(next http.Handler) http.Handler {
 
 		payload, err := gogithub.ValidatePayload(r, []byte(h.man.SignatureSecret()))
 		if err != nil {
-			httpserver.RespondError(h.log, w, err)
+			httpserver.RespondError(h.log, w, ErrInvalidSignature)
 			return
 		}
 
@@ -270,7 +276,7 @@ func (h *Handler) HandleEvent(w http.ResponseWriter, r *http.Request) {
 
 	event, err := gogithub.ParseWebHook(gogithub.WebHookType(r), payload)
 	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+		httpserver.RespondError(h.log, w, ErrInvalidPayload)
 		return
 	}
 

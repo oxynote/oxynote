@@ -443,7 +443,7 @@ func Test_Handler_HandleEvent(t *testing.T) {
 			DB:        &DBMock{},
 			EventType: "installation",
 			Payload:   "{",
-			RespCode:  http.StatusInternalServerError,
+			RespCode:  http.StatusBadRequest,
 		},
 		"Installation created": {
 			DB:        &DBMock{},

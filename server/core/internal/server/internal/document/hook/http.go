@@ -88,6 +88,11 @@ func (h *Handler) CreateDocumentHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err = hi.Type.Validate(); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
 	if _, err = h.db.FetchDocumentByBranchID(r.Context(), hi.BranchID, session.ActiveOrganizationID); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return

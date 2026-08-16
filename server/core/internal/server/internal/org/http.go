@@ -159,7 +159,7 @@ func (h *Handler) UploadOrganizationLogo(w http.ResponseWriter, r *http.Request)
 
 	file, _, err := r.FormFile("logo")
 	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+		httpserver.RespondError(h.log, w, httpserver.ErrInvalidForm)
 		return
 	}
 	defer file.Close() //nolint:errcheck // error provides no meaningful info
