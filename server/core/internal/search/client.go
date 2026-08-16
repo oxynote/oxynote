@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/meilisearch/meilisearch-go"
 )
@@ -28,6 +29,10 @@ const (
 
 	// _searchResultLimit caps the number of search hits returned.
 	_searchResultLimit = 20
+
+	// _taskPollInterval is how often an asynchronous Meilisearch task is
+	// polled while waiting for it to settle.
+	_taskPollInterval = 50 * time.Millisecond
 )
 
 // Client is a Meilisearch client wrapper.
@@ -59,34 +64,57 @@ func (c *Client) ensureIndex(ctx context.Context) error {
 
 	switch {
 	case err == nil:
-		return nil
-	case errors.As(err, &merr):
-		if merr.MeilisearchApiError.Code == "index_not_found" {
-			break
+		// the index is already there.
+	case errors.As(err, &merr) && merr.MeilisearchApiError.Code == "index_not_found":
+		task, cerr := c.meiliMan.CreateIndexWithContext(ctx, &meilisearch.IndexConfig{
+			Uid:        _documentsIndex,
+			PrimaryKey: "id",
+		})
+		if cerr != nil {
+			return fmt.Errorf("creating documents index: %w", cerr)
 		}
 
-		fallthrough
+		if cerr = c.awaitTask(ctx, task); cerr != nil {
+			return fmt.Errorf("creating documents index: %w", cerr)
+		}
 	default:
 		return fmt.Errorf("getting documents index: %w", err)
 	}
 
-	_, err = c.meiliMan.CreateIndexWithContext(ctx, &meilisearch.IndexConfig{
-		Uid:        _documentsIndex,
-		PrimaryKey: "id",
-	})
-	if err != nil {
-		return fmt.Errorf("creating documents index: %w", err)
-	}
-
-	_, err = c.meiliMan.Index(_documentsIndex).UpdateFilterableAttributesWithContext(ctx, &[]any{
+	// the settings updates are idempotent and are therefore applied on every
+	// boot. Applying them only when the index is created leaves an index
+	// whose settings task failed broken for good — with organizationId not
+	// filterable every search fails — and never rolls new synonyms out to an
+	// existing deployment.
+	task, err := c.meiliMan.Index(_documentsIndex).UpdateFilterableAttributesWithContext(ctx, &[]any{
 		"organizationId",
 	})
 	if err != nil {
 		return fmt.Errorf("updating filterable attributes: %w", err)
 	}
 
-	if err := c.setupSynonyms(ctx, _documentsIndex); err != nil {
+	if err = c.awaitTask(ctx, task); err != nil {
+		return fmt.Errorf("updating filterable attributes: %w", err)
+	}
+
+	if err = c.setupSynonyms(ctx, _documentsIndex); err != nil {
 		return fmt.Errorf("setting up synonyms: %w", err)
+	}
+
+	return nil
+}
+
+// awaitTask blocks until an asynchronous Meilisearch task settles and reports
+// a rejected task as an error, so a failed index or settings update surfaces
+// at boot instead of leaving the index quietly misconfigured.
+func (c *Client) awaitTask(ctx context.Context, info *meilisearch.TaskInfo) error {
+	task, err := c.meiliMan.WaitForTaskWithContext(ctx, info.TaskUID, _taskPollInterval)
+	if err != nil {
+		return fmt.Errorf("waiting for task %d: %w", info.TaskUID, err)
+	}
+
+	if task.Status != meilisearch.TaskStatusSucceeded {
+		return fmt.Errorf("task %d finished with status %q", info.TaskUID, task.Status)
 	}
 
 	return nil
@@ -100,8 +128,12 @@ func (c *Client) setupSynonyms(ctx context.Context, index string) error {
 		return fmt.Errorf("unmarshaling synonyms: %w", err)
 	}
 
-	_, err := c.meiliMan.Index(index).UpdateSynonymsWithContext(ctx, &synonyms)
+	task, err := c.meiliMan.Index(index).UpdateSynonymsWithContext(ctx, &synonyms)
 	if err != nil {
+		return fmt.Errorf("updating synonyms: %w", err)
+	}
+
+	if err = c.awaitTask(ctx, task); err != nil {
 		return fmt.Errorf("updating synonyms: %w", err)
 	}
 

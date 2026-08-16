@@ -47,8 +47,11 @@ func (c *Client) Upload(ctx context.Context, folder, id string, r io.Reader) err
 
 	buf := make([]byte, _sniffLen)
 
-	n, err := r.Read(buf)
-	if err != nil && !errors.Is(err, io.EOF) {
+	// a single Read may legitimately return fewer bytes than asked for, which
+	// would sniff the content type from a partial prefix and reject a valid
+	// image; only a genuinely short object stops before _sniffLen.
+	n, err := io.ReadFull(r, buf)
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
 		return fmt.Errorf("reading object: %w", err)
 	}
 
@@ -99,13 +102,15 @@ func (c *Client) Retrieve(ctx context.Context, folder, id string) (*ObjectInfo, 
 	switch {
 	case err == nil:
 		// OK.
-	case errors.As(err, &merr):
-		if merr.Code == minio.NoSuchKey {
-			return nil, false, nil
-		}
+	case errors.As(err, &merr) && merr.Code == minio.NoSuchKey:
+		// the object is serviced by a background goroutine, so it has to be
+		// closed on every path that does not hand it to the caller.
+		obj.Close() //nolint:errcheck,gosec // error provides no meaningful info
 
-		fallthrough
+		return nil, false, nil
 	default:
+		obj.Close() //nolint:errcheck,gosec // error provides no meaningful info
+
 		return nil, false, fmt.Errorf("describing object: %w", err)
 	}
 

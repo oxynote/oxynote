@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/meilisearch/meilisearch-go"
 	mock "github.com/oxynote/oxynote/server/core/internal/_mock"
@@ -95,14 +96,29 @@ func Test_NewClient(t *testing.T) {
 		CreateErr     error
 		FilterableErr error
 		SynonymsErr   error
+		WaitErr       error
+		TaskStatus    meilisearch.TaskStatus
 		Checks        []check
 	}{
-		"Existing index skips creation": {
+		"Existing index still has its settings applied": {
 			Checks: checks(
 				hasError(false),
 				wasCreateIndexCalled(0),
-				wasFilterableUpdated(0),
-				wasSynonymsUpdated(0),
+				wasFilterableUpdated(1),
+				wasSynonymsUpdated(1),
+			),
+		},
+		"Rejected settings task fails": {
+			TaskStatus: meilisearch.TaskStatusFailed,
+			Checks: checks(
+				hasError(true),
+				wasCreateIndexCalled(0),
+			),
+		},
+		"Task wait failure fails": {
+			WaitErr: assert.AnError,
+			Checks: checks(
+				hasError(true),
 			),
 		},
 		"Missing index is created with settings": {
@@ -159,10 +175,10 @@ func Test_NewClient(t *testing.T) {
 
 			idx := &mock.MeiliIndexManager{
 				UpdateFilterableAttributesWithContextFunc: func(context.Context, *[]any) (*meilisearch.TaskInfo, error) {
-					return nil, tc.FilterableErr
+					return &meilisearch.TaskInfo{TaskUID: 2}, tc.FilterableErr
 				},
 				UpdateSynonymsWithContextFunc: func(context.Context, *map[string][]string) (*meilisearch.TaskInfo, error) {
-					return nil, tc.SynonymsErr
+					return &meilisearch.TaskInfo{TaskUID: 3}, tc.SynonymsErr
 				},
 			}
 
@@ -171,7 +187,15 @@ func Test_NewClient(t *testing.T) {
 				return nil, tc.GetIndexErr
 			}
 			svc.CreateIndexWithContextFunc = func(context.Context, *meilisearch.IndexConfig) (*meilisearch.TaskInfo, error) {
-				return nil, tc.CreateErr
+				return &meilisearch.TaskInfo{TaskUID: 1}, tc.CreateErr
+			}
+			svc.WaitForTaskWithContextFunc = func(context.Context, int64, time.Duration) (*meilisearch.Task, error) {
+				status := meilisearch.TaskStatusSucceeded
+				if tc.TaskStatus != "" {
+					status = tc.TaskStatus
+				}
+
+				return &meilisearch.Task{Status: status}, tc.WaitErr
 			}
 
 			client, err := NewClient(context.Background(), svc)

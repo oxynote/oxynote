@@ -55,6 +55,12 @@ func Test_Client_Upload(t *testing.T) {
 			Reader: bytes.NewReader(_testPNG),
 			Err:    assert.AnError,
 		},
+		"Short reads still sniff the content type": {
+			Fake:        &fakeS3{},
+			Reader:      &chunkReader{r: bytes.NewReader(_testPNG)},
+			Data:        _testPNG,
+			ContentType: "image/png",
+		},
 		"Successful PNG upload": {
 			Fake:        &fakeS3{},
 			Reader:      bytes.NewReader(_testPNG),
@@ -259,4 +265,19 @@ type errReader struct{}
 // Read returns a read failure.
 func (er *errReader) Read(_ []byte) (int, error) {
 	return 0, assert.AnError
+}
+
+// chunkReader yields at most one byte per Read, the way a multipart part can
+// at a chunk boundary.
+type chunkReader struct {
+	r io.Reader
+}
+
+// Read reads at most a single byte from the underlying reader.
+func (cr *chunkReader) Read(p []byte) (int, error) {
+	if len(p) > 1 {
+		p = p[:1]
+	}
+
+	return cr.r.Read(p)
 }
