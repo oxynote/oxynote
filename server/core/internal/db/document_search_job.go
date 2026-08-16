@@ -20,12 +20,14 @@ func (a *agent) InsertDocumentSearchJob(ctx context.Context, blockDiff search.Bl
 	return err
 }
 
-// FetchDocumentSearchJobs retrieves a batch of document search jobs.
-func (a *agent) FetchDocumentSearchJobs(ctx context.Context, limit int64) ([]search.DocumentSearchJob, error) {
+// FetchDocumentSearchJobs retrieves a batch of document search jobs with IDs
+// greater than the given offset ID.
+func (a *agent) FetchDocumentSearchJobs(ctx context.Context, offsetID, limit int64) ([]search.DocumentSearchJob, error) {
 	q, args := a.builder.Select(
 		"id",
 		"block_diff",
 	).From("document_search_jobs").
+		Where(sq.Gt{"id": offsetID}).
 		OrderBy("id ASC").
 		Limit(uint64(limit)).
 		MustSql()

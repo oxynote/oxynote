@@ -58,21 +58,24 @@ func (m *Manager) Start(ctx context.Context) {
 	}
 }
 
-// processJobs processes document search jobs in a paginated manner.
+// processJobs processes document search jobs in a paginated manner. Failed
+// jobs stay in the database and are retried on the next processing interval.
 func (m *Manager) processJobs(ctx context.Context) error {
+	var offsetID int64
+
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 
-		jobs, err := m.db.FetchDocumentSearchJobs(ctx, _processingBatch)
+		jobs, err := m.db.FetchDocumentSearchJobs(ctx, offsetID, _processingBatch)
 		if err != nil {
 			return fmt.Errorf("fetching paginated document search jobs: %w", err)
 		}
 
-		var deleted int
-
 		for _, job := range jobs {
+			offsetID = job.ID
+
 			err := m.searchGateway.ReplaceDocumentBlocks(ctx, job.BlockDiff)
 			if err != nil {
 				m.log.With("job_id", job.ID).
@@ -87,17 +90,10 @@ func (m *Manager) processJobs(ctx context.Context) error {
 				m.log.With("job_id", job.ID).
 					With("error", err).
 					Error("deleting document search job")
-
-				continue
 			}
-
-			deleted++
 		}
 
-		// the fetch has no offset, so without progress the next pass
-		// would see the same failing jobs again — leave them for the
-		// next processing interval instead of spinning on them.
-		if len(jobs) < _processingBatch || deleted == 0 {
+		if len(jobs) < _processingBatch {
 			break
 		}
 	}
@@ -110,8 +106,9 @@ func (m *Manager) processJobs(ctx context.Context) error {
 //go:generate ../../../scripts/codegen/mock -t internal DB db
 type DB interface {
 	// FetchDocumentSearchJobs should retrieve a batch of document search
-	// jobs, limited to the specified number of jobs.
-	FetchDocumentSearchJobs(ctx context.Context, limit int64) ([]search.DocumentSearchJob, error)
+	// jobs with IDs greater than the given offset ID, limited to the
+	// specified number of jobs.
+	FetchDocumentSearchJobs(ctx context.Context, offsetID, limit int64) ([]search.DocumentSearchJob, error)
 
 	// DeleteDocumentSearchJob should delete the given document search job from the database.
 	DeleteDocumentSearchJob(ctx context.Context, id int64) error

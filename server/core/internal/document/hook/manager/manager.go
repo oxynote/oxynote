@@ -86,28 +86,20 @@ func (m *Manager) Start(ctx context.Context) {
 	}
 }
 
-// documentBranchKey is the cache key for the documents map in ProcessingState.
-type documentBranchKey struct {
-	// ID is the document ID.
-	ID xid.ID
-
-	// BranchID is the document branch ID.
-	BranchID null.Value[xid.ID]
-}
-
 // ProcessingState holds the state during hook processing.
 type ProcessingState struct {
 	// OffsetID is the last processed hook ID.
 	OffsetID xid.ID
 
-	// Documents caches documents by (ID, branchID) to avoid redundant fetches.
-	Documents map[documentBranchKey]*document.Document
+	// Documents caches documents by branch ID to avoid redundant fetches;
+	// a branch belongs to exactly one document.
+	Documents map[xid.ID]*document.Document
 }
 
 // processHooks processes document hooks in a paginated manner.
 func (m *Manager) processHooks(ctx context.Context) error { //nolint:gocognit // this method is complex, however, it's well-structured
 	ps := &ProcessingState{
-		Documents: make(map[documentBranchKey]*document.Document),
+		Documents: make(map[xid.ID]*document.Document),
 	}
 
 	for {
@@ -206,10 +198,7 @@ func (m *Manager) ensureHook(
 	state *ProcessingState,
 	h *hook.Hook,
 ) bool {
-	key := documentBranchKey{
-		ID:       h.DocumentID,
-		BranchID: h.BranchID,
-	}
+	key := h.BranchID.V
 
 	doc, ok := state.Documents[key]
 	if !ok {

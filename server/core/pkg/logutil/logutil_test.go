@@ -203,6 +203,31 @@ func Test_Recover(t *testing.T) {
 	ShowCritical = false
 }
 
+func Test_processRecoveryValue(t *testing.T) {
+	// the nil plan branch inside the returned closure is reachable
+	// only through a direct call, since Recover replaces a nil plan
+	// before invoking this helper.
+	out, b := testutil.NewBuffer()
+	log := slog.New(slog.NewJSONHandler(out, &slog.HandlerOptions{
+		ReplaceAttr: func(_ []string, a slog.Attr) slog.Attr {
+			if a.Key == "time" {
+				return slog.Attr{}
+			}
+
+			return a
+		},
+	}))
+
+	processRecoveryValue(log, nil)("error")
+
+	require.NoError(t, out.Flush())
+	assert.JSONEq(t, `{
+		"level":"ERROR",
+		"error":"internal error",
+		"msg":"recovered from panic"
+	}`, b.String())
+}
+
 func Test_NewRecoveryPlan(t *testing.T) {
 	p := NewRecoveryPlan("hello")
 	require.NotNil(t, p)

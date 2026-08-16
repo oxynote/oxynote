@@ -10,12 +10,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// jobs builds n sequential search jobs.
-func jobs(n int) []search.DocumentSearchJob {
+// jobs builds n sequential search jobs with IDs starting at start.
+func jobs(start, n int) []search.DocumentSearchJob {
 	jj := make([]search.DocumentSearchJob, 0, n)
 
 	for i := range n {
-		jj = append(jj, search.DocumentSearchJob{ID: int64(i + 1)})
+		jj = append(jj, search.DocumentSearchJob{ID: int64(start + i)})
 	}
 
 	return jj
@@ -73,23 +73,29 @@ func Test_Manager_processJobs(t *testing.T) {
 			),
 		},
 		"Jobs are processed and deleted": {
-			Batches: [][]search.DocumentSearchJob{jobs(3)},
+			Batches: [][]search.DocumentSearchJob{jobs(1, 3)},
 			Checks: checks(
 				hasError(false),
 				wasReplaceCalled(3),
 				wasDeleteCalled(3),
 			),
 		},
-		"Full batches keep paginating": {
-			Batches: [][]search.DocumentSearchJob{jobs(_processingBatch), jobs(2)},
+		"Full batches keep paginating past the last job ID": {
+			Batches: [][]search.DocumentSearchJob{jobs(1, _processingBatch), jobs(101, 2)},
 			Checks: checks(
 				hasError(false),
 				wasReplaceCalled(_processingBatch+2),
 				wasDeleteCalled(_processingBatch+2),
+				func(t *testing.T, db *DBMock, _ *SearchGatewayMock, _ error) {
+					ff := db.FetchDocumentSearchJobsCalls()
+					require.Len(t, ff, 2)
+					assert.Equal(t, int64(0), ff[0].OffsetID)
+					assert.Equal(t, int64(_processingBatch), ff[1].OffsetID)
+				},
 			),
 		},
-		"Replace failure keeps the job for the next pass": {
-			Batches:    [][]search.DocumentSearchJob{jobs(2)},
+		"Replace failure keeps the job for the next interval": {
+			Batches:    [][]search.DocumentSearchJob{jobs(1, 2)},
 			ReplaceErr: assert.AnError,
 			Checks: checks(
 				hasError(false),
@@ -97,19 +103,26 @@ func Test_Manager_processJobs(t *testing.T) {
 				wasDeleteCalled(0),
 			),
 		},
-		"Persistently failing full batch terminates": {
-			// without the no-progress guard this would refetch the
-			// same failing batch forever.
-			Batches:    [][]search.DocumentSearchJob{jobs(_processingBatch), jobs(_processingBatch)},
+		"Persistently failing full batches advance and terminate": {
+			// the offset moves past failing jobs, so a wall of
+			// failures cannot refetch the same batch forever.
+			Batches: [][]search.DocumentSearchJob{
+				jobs(1, _processingBatch),
+				jobs(101, _processingBatch),
+				nil,
+			},
 			ReplaceErr: assert.AnError,
 			Checks: checks(
 				hasError(false),
-				wasReplaceCalled(_processingBatch),
+				wasReplaceCalled(2*_processingBatch),
 				wasDeleteCalled(0),
 			),
 		},
-		"Delete failure does not count as progress": {
-			Batches:   [][]search.DocumentSearchJob{jobs(_processingBatch), jobs(_processingBatch)},
+		"Delete failure still advances the offset": {
+			Batches: [][]search.DocumentSearchJob{
+				jobs(1, _processingBatch),
+				nil,
+			},
 			DeleteErr: assert.AnError,
 			Checks: checks(
 				hasError(false),
@@ -126,7 +139,7 @@ func Test_Manager_processJobs(t *testing.T) {
 			fetches := 0
 
 			db := &DBMock{
-				FetchDocumentSearchJobsFunc: func(context.Context, int64) ([]search.DocumentSearchJob, error) {
+				FetchDocumentSearchJobsFunc: func(context.Context, int64, int64) ([]search.DocumentSearchJob, error) {
 					if fetches >= len(tc.Batches) {
 						if len(tc.Batches) == 0 {
 							return nil, assert.AnError

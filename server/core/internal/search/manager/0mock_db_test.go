@@ -23,7 +23,7 @@ var _ DB = &DBMock{}
 //			DeleteDocumentSearchJobFunc: func(ctx context.Context, id int64) error {
 //				panic("mock out the DeleteDocumentSearchJob method")
 //			},
-//			FetchDocumentSearchJobsFunc: func(ctx context.Context, limit int64) ([]search.DocumentSearchJob, error) {
+//			FetchDocumentSearchJobsFunc: func(ctx context.Context, offsetID int64, limit int64) ([]search.DocumentSearchJob, error) {
 //				panic("mock out the FetchDocumentSearchJobs method")
 //			},
 //		}
@@ -37,7 +37,7 @@ type DBMock struct {
 	DeleteDocumentSearchJobFunc func(ctx context.Context, id int64) error
 
 	// FetchDocumentSearchJobsFunc mocks the FetchDocumentSearchJobs method.
-	FetchDocumentSearchJobsFunc func(ctx context.Context, limit int64) ([]search.DocumentSearchJob, error)
+	FetchDocumentSearchJobsFunc func(ctx context.Context, offsetID int64, limit int64) ([]search.DocumentSearchJob, error)
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -52,6 +52,8 @@ type DBMock struct {
 		FetchDocumentSearchJobs []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
+			// OffsetID is the offsetID argument value.
+			OffsetID int64
 			// Limit is the limit argument value.
 			Limit int64
 		}
@@ -100,13 +102,15 @@ func (mock *DBMock) DeleteDocumentSearchJobCalls() []struct {
 }
 
 // FetchDocumentSearchJobs calls FetchDocumentSearchJobsFunc.
-func (mock *DBMock) FetchDocumentSearchJobs(ctx context.Context, limit int64) ([]search.DocumentSearchJob, error) {
+func (mock *DBMock) FetchDocumentSearchJobs(ctx context.Context, offsetID int64, limit int64) ([]search.DocumentSearchJob, error) {
 	callInfo := struct {
-		Ctx   context.Context
-		Limit int64
+		Ctx      context.Context
+		OffsetID int64
+		Limit    int64
 	}{
-		Ctx:   ctx,
-		Limit: limit,
+		Ctx:      ctx,
+		OffsetID: offsetID,
+		Limit:    limit,
 	}
 	mock.lockFetchDocumentSearchJobs.Lock()
 	mock.calls.FetchDocumentSearchJobs = append(mock.calls.FetchDocumentSearchJobs, callInfo)
@@ -118,7 +122,7 @@ func (mock *DBMock) FetchDocumentSearchJobs(ctx context.Context, limit int64) ([
 		)
 		return documentSearchJobsOut, errOut
 	}
-	return mock.FetchDocumentSearchJobsFunc(ctx, limit)
+	return mock.FetchDocumentSearchJobsFunc(ctx, offsetID, limit)
 }
 
 // FetchDocumentSearchJobsCalls gets all the calls that were made to FetchDocumentSearchJobs.
@@ -126,12 +130,14 @@ func (mock *DBMock) FetchDocumentSearchJobs(ctx context.Context, limit int64) ([
 //
 //	len(mockedDB.FetchDocumentSearchJobsCalls())
 func (mock *DBMock) FetchDocumentSearchJobsCalls() []struct {
-	Ctx   context.Context
-	Limit int64
+	Ctx      context.Context
+	OffsetID int64
+	Limit    int64
 } {
 	var calls []struct {
-		Ctx   context.Context
-		Limit int64
+		Ctx      context.Context
+		OffsetID int64
+		Limit    int64
 	}
 	mock.lockFetchDocumentSearchJobs.RLock()
 	calls = mock.calls.FetchDocumentSearchJobs

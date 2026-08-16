@@ -248,6 +248,33 @@ func Test_DecodeForm(t *testing.T) {
 	req.URL.RawQuery = q.Encode()
 	assert.NoError(t, DecodeForm(req, &v2))
 	assert.Equal(t, []xid.ID{id}, v2.IDs)
+
+	v3 := struct {
+		ID   xid.ID
+		Time time.Time
+	}{}
+	tm := time.Date(2021, 1, 2, 3, 4, 5, 0, time.UTC)
+
+	req = httptest.NewRequest("GET", "http://test.com/", http.NoBody)
+	q = req.URL.Query()
+	q.Add("id", "invalid")
+	req.URL.RawQuery = q.Encode()
+	assert.Equal(t, ErrInvalidForm, DecodeForm(req, &v3))
+
+	req = httptest.NewRequest("GET", "http://test.com/", http.NoBody)
+	q = req.URL.Query()
+	q.Add("time", "invalid")
+	req.URL.RawQuery = q.Encode()
+	assert.Equal(t, ErrInvalidForm, DecodeForm(req, &v3))
+
+	req = httptest.NewRequest("GET", "http://test.com/", http.NoBody)
+	q = req.URL.Query()
+	q.Add("id", id.String())
+	q.Add("time", tm.Format(time.RFC3339Nano))
+	req.URL.RawQuery = q.Encode()
+	assert.NoError(t, DecodeForm(req, &v3))
+	assert.Equal(t, id, v3.ID)
+	assert.Equal(t, tm, v3.Time)
 }
 
 func Test_NotFound(t *testing.T) {
@@ -280,6 +307,32 @@ func Test_Recoverer(t *testing.T) {
 
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
 	assert.Contains(t, rec.Body.String(), strings.ToLower(http.StatusText(http.StatusInternalServerError)))
+}
+
+func Test_ExtractNamedID(t *testing.T) {
+	req := httptest.NewRequest("GET", "http://test.com/", http.NoBody)
+	id, err := ExtractNamedID(req, "id")
+	assert.Zero(t, id)
+	assert.Equal(t, errutil.ErrNotFound, err)
+
+	ctx := chi.NewRouteContext()
+	ctx.URLParams.Add("id", "invalid")
+	req = req.WithContext(context.WithValue(context.Background(),
+		chi.RouteCtxKey, ctx))
+
+	id, err = ExtractNamedID(req, "id")
+	assert.Zero(t, id)
+	assert.Equal(t, errutil.ErrNotFound, err)
+
+	expID := xid.New()
+	ctx = chi.NewRouteContext()
+	ctx.URLParams.Add("id", expID.String())
+	req = req.WithContext(context.WithValue(context.Background(),
+		chi.RouteCtxKey, ctx))
+
+	id, err = ExtractNamedID(req, "id")
+	assert.Equal(t, expID, id)
+	assert.NoError(t, err)
 }
 
 func Test_ExtractParam(t *testing.T) {

@@ -236,26 +236,7 @@ func (f *factory) CollectRuntimeMetrics(ctx context.Context, dur time.Duration) 
 			metrics.memory.NextGC.Set(float64(memStats.NextGC))
 			metrics.memory.NumGC.Set(float64(memStats.NumGC - numGC))
 
-			i := numGC % uint32(len(memStats.PauseNs))
-			ii := memStats.NumGC % uint32(len(memStats.PauseNs))
-
-			if memStats.NumGC-numGC >= uint32(len(memStats.PauseNs)) {
-				for i = range uint32(len(memStats.PauseNs)) {
-					metrics.memory.Pause.Observe(float64(memStats.PauseNs[i] * _nanosecondsPerSecond))
-				}
-			} else {
-				if i > ii {
-					for ; i < uint32(len(memStats.PauseNs)); i++ {
-						metrics.memory.Pause.Observe(float64(memStats.PauseNs[i] * _nanosecondsPerSecond))
-					}
-
-					i = 0
-				}
-
-				for ; i < ii; i++ {
-					metrics.memory.Pause.Observe(float64(memStats.PauseNs[i] * _nanosecondsPerSecond))
-				}
-			}
+			observeGCPauses(metrics.memory.Pause, &memStats, numGC)
 
 			frees = memStats.Frees
 			lookups = memStats.Lookups
@@ -269,5 +250,33 @@ func (f *factory) CollectRuntimeMetrics(ctx context.Context, dur time.Duration) 
 			metrics.NumGoroutine.Set(float64(runtime.NumGoroutine()))
 			metrics.NumThread.Set(float64(threadCreateProfile.Count()))
 		}
+	}
+}
+
+// observeGCPauses observes the garbage collection pause durations
+// recorded since the previous collection cycle, unwinding the
+// runtime's circular pause buffer.
+func observeGCPauses(pause Observer, memStats *runtime.MemStats, prevNumGC uint32) {
+	i := prevNumGC % uint32(len(memStats.PauseNs))
+	ii := memStats.NumGC % uint32(len(memStats.PauseNs))
+
+	if memStats.NumGC-prevNumGC >= uint32(len(memStats.PauseNs)) {
+		for i = range uint32(len(memStats.PauseNs)) {
+			pause.Observe(float64(memStats.PauseNs[i] * _nanosecondsPerSecond))
+		}
+
+		return
+	}
+
+	if i > ii {
+		for ; i < uint32(len(memStats.PauseNs)); i++ {
+			pause.Observe(float64(memStats.PauseNs[i] * _nanosecondsPerSecond))
+		}
+
+		i = 0
+	}
+
+	for ; i < ii; i++ {
+		pause.Observe(float64(memStats.PauseNs[i] * _nanosecondsPerSecond))
 	}
 }

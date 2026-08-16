@@ -26,6 +26,7 @@ func EncryptText(text string, key []byte) (string, error) {
 	// https://en.wikipedia.org/wiki/Galois/Counter_Mode.
 	gcm, err := cipher.NewGCM(c)
 	if err != nil {
+		// NOCOV: cipher.NewGCM cannot fail with a valid AES block.
 		return "", err
 	}
 
@@ -36,6 +37,7 @@ func EncryptText(text string, key []byte) (string, error) {
 	// Populates our nonce with a cryptographically secure
 	// random sequence.
 	if _, err = io.ReadFull(rand.Reader, nonce); err != nil {
+		// NOCOV: crypto/rand failures cannot be simulated in tests.
 		return "", err
 	}
 
@@ -71,6 +73,7 @@ func DecryptText(encryptedText string, key []byte) (string, error) {
 
 	gcm, err := cipher.NewGCM(c)
 	if err != nil {
+		// NOCOV: cipher.NewGCM cannot fail with a valid AES block.
 		return "", err
 	}
 

@@ -249,23 +249,88 @@ func Test_ValueStore_Get(t *testing.T) {
 }
 
 func Test_ValueStore_Delete(t *testing.T) {
-	conn := redigomock.NewConn()
-	conn.Command("DEL", "test").Expect(int64(1))
+	cc := map[string]struct {
+		Cancelled bool
+		Conn      func() (*redigomock.Conn, func(*testing.T))
+		Err       error
+	}{
+		"Cancelled context": {
+			Cancelled: true,
+			Conn: func() (*redigomock.Conn, func(*testing.T)) {
+				conn := redigomock.NewConn()
 
-	vs := &ValueStore[any]{
-		pool: &redis.Pool{
-			Dial: func() (redis.Conn, error) {
-				return conn, nil
+				return conn, func(t *testing.T) {
+					err := conn.ExpectationsWereMet()
+					assert.NoError(t, err)
+				}
 			},
-			Wait:      true,
-			MaxActive: 10,
+			Err: assert.AnError,
 		},
-		expireAfter: time.Hour * 168,
+		"DEL returns an error": {
+			Conn: func() (*redigomock.Conn, func(*testing.T)) {
+				conn := redigomock.NewConn()
+				conn.Command("DEL", "test").ExpectError(assert.AnError)
+
+				return conn, func(t *testing.T) {
+					err := conn.ExpectationsWereMet()
+					assert.NoError(t, err)
+				}
+			},
+			Err: assert.AnError,
+		},
+		"Successfully deleted element": {
+			Conn: func() (*redigomock.Conn, func(*testing.T)) {
+				conn := redigomock.NewConn()
+				conn.Command("DEL", "test").Expect(int64(1))
+
+				return conn, func(t *testing.T) {
+					err := conn.ExpectationsWereMet()
+					assert.NoError(t, err)
+				}
+			},
+		},
 	}
 
-	err := vs.Delete(context.Background(), "test")
-	require.NoError(t, err)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	err = conn.ExpectationsWereMet()
-	require.NoError(t, err)
+			conn, check := c.Conn()
+
+			vs := &ValueStore[any]{
+				pool: &redis.Pool{
+					Dial: func() (redis.Conn, error) {
+						return conn, nil
+					},
+					Wait:      true,
+					MaxActive: 10,
+				},
+				expireAfter: time.Hour * 168,
+			}
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			if c.Cancelled {
+				cancel()
+			}
+
+			err := vs.Delete(ctx, "test")
+
+			check(t)
+
+			if c.Err != nil {
+				if errors.Is(c.Err, assert.AnError) {
+					assert.Error(t, err)
+					return
+				}
+
+				assert.Equal(t, c.Err, err)
+
+				return
+			}
+
+			assert.NoError(t, err)
+		})
+	}
 }

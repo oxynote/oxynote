@@ -2,6 +2,7 @@ package metricutil
 
 import (
 	"context"
+	"runtime"
 	"testing"
 	"time"
 
@@ -45,4 +46,77 @@ func Test_CollectRuntimeMetrics(t *testing.T) {
 	assert.NotPanics(t, func() {
 		f.CollectRuntimeMetrics(ctx, time.Millisecond*50)
 	})
+}
+
+func Test_observeGCPauses(t *testing.T) {
+	// the runtime records pauses in a 256-entry circular buffer, so
+	// the case data is expressed through buffer indexes.
+	buffer := func(vals map[int]uint64) [256]uint64 {
+		var pp [256]uint64
+
+		for i, v := range vals {
+			pp[i] = v
+		}
+
+		return pp
+	}
+
+	cc := map[string]struct {
+		PauseNs   [256]uint64
+		NumGC     uint32
+		PrevNumGC uint32
+		Result    []float64
+	}{
+		"No new garbage collections": {
+			PauseNs:   buffer(map[int]uint64{3: 1}),
+			NumGC:     3,
+			PrevNumGC: 3,
+		},
+		"Pauses within a single window": {
+			PauseNs:   buffer(map[int]uint64{2: 1, 3: 2, 4: 3}),
+			NumGC:     5,
+			PrevNumGC: 2,
+			Result:    []float64{1e9, 2e9, 3e9},
+		},
+		"Pauses wrapping the buffer": {
+			PauseNs:   buffer(map[int]uint64{254: 1, 255: 2, 0: 3, 1: 4}),
+			NumGC:     258,
+			PrevNumGC: 254,
+			Result:    []float64{1e9, 2e9, 3e9, 4e9},
+		},
+		"Full buffer of pauses": {
+			PauseNs:   buffer(map[int]uint64{0: 1}),
+			NumGC:     300,
+			PrevNumGC: 0,
+			Result: append(
+				[]float64{1e9},
+				make([]float64, 255)...,
+			),
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			ob := &observerStub{}
+			memStats := &runtime.MemStats{
+				NumGC:   c.NumGC,
+				PauseNs: c.PauseNs,
+			}
+
+			observeGCPauses(ob, memStats, c.PrevNumGC)
+			assert.Equal(t, c.Result, ob.values)
+		})
+	}
+}
+
+// observerStub records observed values for assertions.
+type observerStub struct {
+	values []float64
+}
+
+// Observe records the observed value.
+func (ob *observerStub) Observe(value float64) {
+	ob.values = append(ob.values, value)
 }

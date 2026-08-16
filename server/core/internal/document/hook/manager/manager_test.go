@@ -244,12 +244,10 @@ func Test_Manager_processHooks(t *testing.T) {
 		},
 		"Documents are fetched once per branch": {
 			Hooks: func(t *testing.T) []hook.Hook {
-				// hooks on the same branch share a document.
-				first := stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
-				second := stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
-				second.DocumentID = first.DocumentID
-
-				return []hook.Hook{first, second}
+				return []hook.Hook{
+					stubHook(t, branchID, time.Now().Add(time.Hour), time.Now()),
+					stubHook(t, branchID, time.Now().Add(time.Hour), time.Now()),
+				}
 			},
 			Doc: stubDocument(),
 			Checks: checks(

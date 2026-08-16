@@ -137,21 +137,26 @@ func Test_agent_FetchDocumentSearchJobs(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	res, err := db.FetchDocumentSearchJobs(ctx, 10)
+	res, err := db.FetchDocumentSearchJobs(ctx, 0, 10)
 	require.Error(t, err)
 	assert.Nil(t, res)
 
 	// success - no jobs
-	res, err = db.FetchDocumentSearchJobs(context.Background(), 10)
+	res, err = db.FetchDocumentSearchJobs(context.Background(), 0, 10)
 	require.NoError(t, err)
 	assert.Empty(t, res)
 
 	// success - limited batch in id order
 	jobs := prepDocumentSearchJobs(t, db, 3, nil)
 
-	res, err = db.FetchDocumentSearchJobs(context.Background(), 2)
+	res, err = db.FetchDocumentSearchJobs(context.Background(), 0, 2)
 	assert.NoError(t, err)
 	assert.Equal(t, jobs[:2], res)
+
+	// success - offset skips earlier jobs
+	res, err = db.FetchDocumentSearchJobs(context.Background(), jobs[0].ID, 10)
+	assert.NoError(t, err)
+	assert.Equal(t, jobs[1:], res)
 }
 
 func Test_agent_DeleteDocumentSearchJob(t *testing.T) {

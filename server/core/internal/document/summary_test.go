@@ -36,6 +36,9 @@ func Test_Summaries_Swap(t *testing.T) {
 			res[1].DocumentName,
 			res[2].DocumentName,
 		})
+
+		// the receiver is left untouched.
+		assert.Equal(t, "a", ss[0].DocumentName)
 	})
 
 	t.Run("Out-of-range index fails", func(t *testing.T) {
@@ -74,6 +77,11 @@ func Test_Summaries_Remove(t *testing.T) {
 		require.Len(t, res, 2)
 		assert.Equal(t, "a", res[0].DocumentName)
 		assert.Equal(t, "c", res[1].DocumentName)
+
+		// the receiver is left untouched.
+		require.Len(t, ss, 3)
+		assert.Equal(t, "b", ss[1].DocumentName)
+		assert.Equal(t, "c", ss[2].DocumentName)
 	})
 
 	t.Run("Unknown ID fails with not found", func(t *testing.T) {

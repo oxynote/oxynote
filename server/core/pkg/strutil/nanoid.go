@@ -16,6 +16,7 @@ func NanoID() string {
 
 	_, err := rand.Read(bytes)
 	if err != nil {
+		// NOCOV: crypto/rand failures cannot be simulated in tests.
 		panic(err)
 	}
 

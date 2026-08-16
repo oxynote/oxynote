@@ -14,7 +14,8 @@ import (
 // Summaries is a collection of Summary objects.
 type Summaries []Summary
 
-// Swap swaps the elements in the Summaries slice.
+// Swap returns a copy of the Summaries slice with the summary moved to the
+// given sort index. The receiver is left untouched.
 func (ss Summaries) Swap(id xid.ID, sortIndex int) (Summaries, error) {
 	if sortIndex < 0 || sortIndex >= len(ss) {
 		return nil, errutil.New(
@@ -31,12 +32,14 @@ func (ss Summaries) Swap(id xid.ID, sortIndex int) (Summaries, error) {
 		return nil, errutil.ErrNotFound
 	}
 
-	sliceutil.Move(ss, index, sortIndex)
+	nss := slices.Clone(ss)
+	sliceutil.Move(nss, index, sortIndex)
 
-	return ss, nil
+	return nss, nil
 }
 
-// Remove removes a summary from the Summaries slice by its id.
+// Remove returns a copy of the Summaries slice without the summary carrying
+// the given id. The receiver is left untouched.
 func (ss Summaries) Remove(id xid.ID) (Summaries, error) {
 	index := slices.IndexFunc(ss, func(d Summary) bool {
 		return d.ID == id
@@ -45,7 +48,7 @@ func (ss Summaries) Remove(id xid.ID) (Summaries, error) {
 		return nil, errutil.ErrNotFound
 	}
 
-	return append(ss[:index], ss[index+1:]...), nil
+	return slices.Delete(slices.Clone(ss), index, index+1), nil
 }
 
 // Summary represents summary of the document.
