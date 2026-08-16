@@ -40,6 +40,8 @@ func newTestManager(t *testing.T, configured bool, db github.DB) *github.Manager
 
 	if configured {
 		opt.InstallationSigningSecret = "0123456789abcdef0123456789abcdef"
+		opt.AppSlug = "test-app"
+		opt.SignatureSecret = "sig"
 
 		key, err := rsa.GenerateKey(rand.Reader, 2048)
 		if err != nil {

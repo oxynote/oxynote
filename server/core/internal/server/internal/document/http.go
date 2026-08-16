@@ -24,6 +24,10 @@ import (
 // ErrInvalidSearchQuery is returned when the search query is invalid.
 var ErrInvalidSearchQuery = errutil.New(http.StatusBadRequest, "document.invalid_search_query", "invalid search query")
 
+// ErrBranchMismatch is returned when the requested branch does not belong to
+// the document identified by the request path.
+var ErrBranchMismatch = errutil.New(http.StatusNotFound, "document.branch_mismatch", "branch does not belong to the document")
+
 // Handler holds dependencies required for tenant app-related operations.
 type Handler struct {
 	log             *slog.Logger
@@ -145,6 +149,17 @@ func (h *Handler) RequestBranchReviewer(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	branchDoc, err := h.db.FetchDocumentByBranchID(r.Context(), branchID, session.ActiveOrganizationID)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if branchDoc.ID != id {
+		httpserver.RespondError(h.log, w, ErrBranchMismatch)
+		return
+	}
+
 	var inp struct {
 		UserID string `json:"userId"`
 	}
@@ -165,12 +180,12 @@ func (h *Handler) RequestBranchReviewer(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	_, err = h.db.FetchBranchReviewer(r.Context(), branchID, inp.UserID, session.ActiveOrganizationID)
+	_, err = h.db.FetchBranchReviewer(r.Context(), branchDoc.BranchID, inp.UserID, session.ActiveOrganizationID)
 
 	switch {
 	case err == nil:
 		if err = h.db.UpdateBranchReviewer(r.Context(), documentCore.BranchReviewer{
-			BranchID:          branchID,
+			BranchID:          branchDoc.BranchID,
 			UserID:            inp.UserID,
 			OrganizationID:    session.ActiveOrganizationID,
 			CurrentlyApproved: false,
@@ -180,7 +195,7 @@ func (h *Handler) RequestBranchReviewer(w http.ResponseWriter, r *http.Request) 
 		}
 	case errutil.IsNotFound(err):
 		if err = h.db.InsertBranchReviewer(r.Context(), documentCore.BranchReviewer{
-			BranchID:       branchID,
+			BranchID:       branchDoc.BranchID,
 			UserID:         inp.UserID,
 			OrganizationID: session.ActiveOrganizationID,
 		}); err != nil {
@@ -194,7 +209,7 @@ func (h *Handler) RequestBranchReviewer(w http.ResponseWriter, r *http.Request) 
 
 	h.notifPub.PublishNotifications(
 		session.ActiveOrganizationID,
-		notification.NewDocumentReviewRequestNotification(session.UserID, id, branchID),
+		notification.NewDocumentReviewRequestNotification(session.UserID, branchDoc.ID, branchDoc.BranchID),
 		inp.UserID,
 	)
 

@@ -298,13 +298,41 @@ func Test_Handler_RequestBranchReviewer(t *testing.T) {
 			Body:     validBody,
 			RespCode: http.StatusNotFound,
 		},
+		"Branch document fetch error": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return nil, errors.New("boom")
+				},
+			},
+			Body:     validBody,
+			RespCode: http.StatusInternalServerError,
+		},
+		"Branch of another document": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					doc := storedDoc()
+					doc.ID = xid.New()
+
+					return doc, nil
+				},
+			},
+			Body:     validBody,
+			RespCode: http.StatusNotFound,
+		},
 		"Invalid JSON body": {
-			DB:       &DBMock{},
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
+			},
 			Body:     "{",
 			RespCode: http.StatusBadRequest,
 		},
 		"Member check error": {
 			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
 				CheckOrganizationMemberFunc: func(context.Context, string, string) (bool, error) {
 					return false, errors.New("boom")
 				},
@@ -314,6 +342,9 @@ func Test_Handler_RequestBranchReviewer(t *testing.T) {
 		},
 		"Not an organization member": {
 			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
 				CheckOrganizationMemberFunc: func(context.Context, string, string) (bool, error) {
 					return false, nil
 				},
@@ -323,6 +354,9 @@ func Test_Handler_RequestBranchReviewer(t *testing.T) {
 		},
 		"Reviewer lookup error": {
 			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
 				CheckOrganizationMemberFunc: func(context.Context, string, string) (bool, error) {
 					return true, nil
 				},
@@ -335,6 +369,9 @@ func Test_Handler_RequestBranchReviewer(t *testing.T) {
 		},
 		"Existing reviewer update error": {
 			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
 				CheckOrganizationMemberFunc: func(context.Context, string, string) (bool, error) {
 					return true, nil
 				},
@@ -348,6 +385,9 @@ func Test_Handler_RequestBranchReviewer(t *testing.T) {
 		},
 		"Existing reviewer re-request": {
 			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
 				CheckOrganizationMemberFunc: func(context.Context, string, string) (bool, error) {
 					return true, nil
 				},
@@ -360,6 +400,9 @@ func Test_Handler_RequestBranchReviewer(t *testing.T) {
 		},
 		"New reviewer insertion error": {
 			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
 				CheckOrganizationMemberFunc: func(context.Context, string, string) (bool, error) {
 					return true, nil
 				},
@@ -376,6 +419,9 @@ func Test_Handler_RequestBranchReviewer(t *testing.T) {
 		},
 		"New reviewer request": {
 			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
 				CheckOrganizationMemberFunc: func(context.Context, string, string) (bool, error) {
 					return true, nil
 				},

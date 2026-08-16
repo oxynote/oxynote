@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -78,6 +79,58 @@ func installationHandler(t *testing.T, body string) http.Handler {
 	return mux
 }
 
+func Test_Options_Validate(t *testing.T) {
+	t.Parallel()
+
+	valid := Options{
+		AppID:                     123,
+		AppSlug:                   "test-app",
+		SignatureSecret:           "sig",
+		PrivateKeyPath:            "testdata/test-key.pem",
+		InstallationSigningSecret: _testSigningSecret,
+	}
+
+	cc := map[string]struct {
+		Mutate func(o *Options)
+		Err    error
+	}{
+		"Full options are valid": {
+			Mutate: func(*Options) {},
+		},
+		"Missing app ID": {
+			Mutate: func(o *Options) { o.AppID = 0 },
+			Err:    errors.New("app id is required"),
+		},
+		"Missing app slug": {
+			Mutate: func(o *Options) { o.AppSlug = "" },
+			Err:    errors.New("app slug is required"),
+		},
+		"Missing signature secret": {
+			Mutate: func(o *Options) { o.SignatureSecret = "" },
+			Err:    errors.New("signature secret is required"),
+		},
+		"Missing private key path": {
+			Mutate: func(o *Options) { o.PrivateKeyPath = "" },
+			Err:    errors.New("private key path is required"),
+		},
+		"Missing installation signing secret": {
+			Mutate: func(o *Options) { o.InstallationSigningSecret = "" },
+			Err:    errors.New("installation signing secret is required"),
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			opt := valid
+			c.Mutate(&opt)
+
+			testutil.AssertEqualError(t, c.Err, opt.Validate())
+		})
+	}
+}
+
 func Test_NewManager(t *testing.T) {
 	t.Parallel()
 
@@ -89,17 +142,31 @@ func Test_NewManager(t *testing.T) {
 		"Zero app ID creates an unconfigured manager": {
 			Opt: Options{},
 		},
-		"App ID with missing private key fails": {
+		"App ID with incomplete options fails": {
 			Opt: Options{
 				AppID:          123,
-				PrivateKeyPath: "testdata/missing.pem",
+				AppSlug:        "test-app",
+				PrivateKeyPath: "testdata/test-key.pem",
+			},
+			ExpectErr: true,
+		},
+		"App ID with missing private key fails": {
+			Opt: Options{
+				AppID:                     123,
+				AppSlug:                   "test-app",
+				SignatureSecret:           "sig",
+				PrivateKeyPath:            "testdata/missing.pem",
+				InstallationSigningSecret: _testSigningSecret,
 			},
 			ExpectErr: true,
 		},
 		"App ID with valid private key creates a configured manager": {
 			Opt: Options{
-				AppID:          123,
-				PrivateKeyPath: "testdata/test-key.pem",
+				AppID:                     123,
+				AppSlug:                   "test-app",
+				SignatureSecret:           "sig",
+				PrivateKeyPath:            "testdata/test-key.pem",
+				InstallationSigningSecret: _testSigningSecret,
 			},
 			WantConfigured: true,
 		},

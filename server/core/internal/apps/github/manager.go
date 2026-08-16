@@ -50,6 +50,31 @@ type Options struct {
 	InstallationSigningSecret string
 }
 
+// Validate checks if the required options are set for the Github manager.
+func (o Options) Validate() error {
+	if o.AppID == 0 {
+		return errors.New("app id is required")
+	}
+
+	if o.AppSlug == "" {
+		return errors.New("app slug is required")
+	}
+
+	if o.SignatureSecret == "" {
+		return errors.New("signature secret is required")
+	}
+
+	if o.PrivateKeyPath == "" {
+		return errors.New("private key path is required")
+	}
+
+	if o.InstallationSigningSecret == "" {
+		return errors.New("installation signing secret is required")
+	}
+
+	return nil
+}
+
 // Manager represents a GitHub App clients manager.
 type Manager struct {
 	db        DB
@@ -60,13 +85,19 @@ type Manager struct {
 // NewManager creates a new GitHub App client with the given app ID and private
 // key path. A zero AppID means the GitHub App integration is not configured:
 // the manager is still created, but Configured reports false and every method
-// that talks to GitHub returns ErrNotConfigured.
+// that talks to GitHub returns ErrNotConfigured. A non-zero AppID requires
+// every other option to be set; an incomplete configuration is a
+// construction error.
 func NewManager(db DB, opt Options) (*Manager, error) {
 	if opt.AppID == 0 {
 		return &Manager{
 			db:  db,
 			opt: opt,
 		}, nil
+	}
+
+	if err := opt.Validate(); err != nil {
+		return nil, err
 	}
 
 	appClient, err := createAppClient(opt.AppID, opt.PrivateKeyPath)

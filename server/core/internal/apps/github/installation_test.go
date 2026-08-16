@@ -23,6 +23,7 @@ func newTestManager(t *testing.T, db DB) *Manager {
 	man, err := NewManager(db, Options{
 		AppID:                     123,
 		AppSlug:                   "test-app",
+		SignatureSecret:           "sig",
 		PrivateKeyPath:            "testdata/test-key.pem",
 		InstallationSigningSecret: _testSigningSecret,
 	})
