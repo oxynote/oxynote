@@ -479,6 +479,19 @@ func Test_agent_UpdateDocumentBranchMetadata(t *testing.T) {
 				Err:              assert.AnError,
 			}
 		},
+		"Successful update of an edited branch": func(t *testing.T, db *DB) tcase {
+			branch := prepDocumentBranches(t, db, 1, nil)[0]
+
+			// an edit leaves a changelog entry behind, which used to pin
+			// the branch name in place.
+			require.NoError(t, db.UpdateDocument(context.Background(), *branch))
+
+			branch.BranchName = "renamed-edited-branch"
+
+			return tcase{
+				Document: *branch,
+			}
+		},
 		"Successful update": func(t *testing.T, db *DB) tcase {
 			users := prepUsers(t, db, 1)
 			branch := prepDocumentBranches(t, db, 1, nil)[0]
@@ -593,7 +606,7 @@ func Test_agent_FetchDocumentUnsafeByBranchID(t *testing.T) {
 func Test_agent_insertDocumentBranchChangelog(t *testing.T) {
 	type tcase struct {
 		DocumentID xid.ID
-		BranchName string
+		BranchID   xid.ID
 		Changelog  document.Changelog
 		Err        error
 	}
@@ -605,7 +618,7 @@ func Test_agent_insertDocumentBranchChangelog(t *testing.T) {
 
 			return tcase{
 				DocumentID: doc.ID,
-				BranchName: "non-existent-branch",
+				BranchID:   xid.New(),
 				Changelog:  clog,
 				Err:        assert.AnError,
 			}
@@ -615,7 +628,7 @@ func Test_agent_insertDocumentBranchChangelog(t *testing.T) {
 
 			return tcase{
 				DocumentID: doc.ID,
-				BranchName: doc.BranchName,
+				BranchID:   doc.BranchID,
 				Changelog:  doc.Changelog(),
 			}
 		},
@@ -625,7 +638,7 @@ func Test_agent_insertDocumentBranchChangelog(t *testing.T) {
 			require.NoError(t, db.insertDocumentBranchChangelog(
 				context.Background(),
 				doc.ID,
-				doc.BranchName,
+				doc.BranchID,
 				doc.Changelog(),
 			))
 
@@ -633,7 +646,7 @@ func Test_agent_insertDocumentBranchChangelog(t *testing.T) {
 
 			return tcase{
 				DocumentID: doc.ID,
-				BranchName: doc.BranchName,
+				BranchID:   doc.BranchID,
 				Changelog:  doc.Changelog(),
 			}
 		},
@@ -646,7 +659,7 @@ func Test_agent_insertDocumentBranchChangelog(t *testing.T) {
 			db := prepTempDB(t)
 			c := cfn(t, db)
 
-			err := db.insertDocumentBranchChangelog(context.Background(), c.DocumentID, c.BranchName, c.Changelog)
+			err := db.insertDocumentBranchChangelog(context.Background(), c.DocumentID, c.BranchID, c.Changelog)
 			testutil.RequireEqualError(t, c.Err, err)
 
 			if err != nil {

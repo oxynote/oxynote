@@ -315,17 +315,18 @@ func (a *agent) FetchDocumentUnsafeByBranchID(ctx context.Context, branchID xid.
 }
 
 // insertDocumentBranchChangelog inserts a changelog entry for a branch update.
+// The entry is keyed by branch id rather than branch name so that renaming a
+// branch cannot break the reference.
 func (a *agent) insertDocumentBranchChangelog(
 	ctx context.Context,
-	docID xid.ID,
-	branchName string,
+	docID, branchID xid.ID,
 	clog document.Changelog,
 ) error {
 	q, args := a.builder.Insert("document_branch_changelogs").
 		SetMap(map[string]any{
 			"id":             clog.ID,
 			"fk_document_id": docID,
-			"fk_branch_name": branchName,
+			"fk_branch_id":   branchID,
 			"content":        clog.Content,
 			"raw_content":    clog.RawContent,
 			"created_at":     clog.CreatedAt,

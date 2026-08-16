@@ -125,14 +125,14 @@ CREATE INDEX document_branches_fk_organization_id_idx ON document_branches (fk_o
 
 CREATE TABLE document_branch_changelogs (
 	id TEXT PRIMARY KEY,
-	fk_document_id TEXT NOT NULL,
-	fk_branch_name TEXT NOT NULL,
+	fk_document_id TEXT NOT NULL REFERENCES documents ON DELETE CASCADE,
+	fk_branch_id TEXT NOT NULL REFERENCES document_branches(id) ON DELETE CASCADE,
 	content JSONB NOT NULL,
 	raw_content BYTEA NULL,
-	created_at TIMESTAMP NOT NULL,
-	FOREIGN KEY (fk_document_id, fk_branch_name) REFERENCES document_branches (fk_document_id, branch_name) ON DELETE CASCADE
+	created_at TIMESTAMP NOT NULL
 );
-CREATE INDEX document_branch_changelogs_fk_document_id_fk_branch_name_idx ON document_branch_changelogs (fk_document_id, fk_branch_name);
+CREATE INDEX document_branch_changelogs_fk_document_id_idx ON document_branch_changelogs (fk_document_id);
+CREATE INDEX document_branch_changelogs_fk_branch_id_idx ON document_branch_changelogs (fk_branch_id);
 
 CREATE TABLE document_hooks (
 	id TEXT PRIMARY KEY,

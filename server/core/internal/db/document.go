@@ -215,7 +215,7 @@ func (a *agent) UpdateDocument(ctx context.Context, doc document.Document) error
 			return err
 		}
 
-		return a.insertDocumentBranchChangelog(ctx, doc.ID, doc.BranchName, doc.Changelog())
+		return a.insertDocumentBranchChangelog(ctx, doc.ID, doc.BranchID, doc.Changelog())
 	})
 }
 
