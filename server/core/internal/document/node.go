@@ -6,7 +6,8 @@ import (
 	"errors"
 	"maps"
 
-	"github.com/oxynote/oxynote/server/core/internal/document/searchgw"
+	"github.com/oxynote/oxynote/server/core/internal/search"
+	"github.com/oxynote/oxynote/server/core/pkg/strutil"
 	"github.com/rs/xid"
 )
 
@@ -49,9 +50,9 @@ func (rb RootBlock) HasBlock(blockID string) bool {
 	return false
 }
 
-// Search transforms RootBlock into a searchgw compatible type.
-func (rb RootBlock) Search(organizationID string, documentID xid.ID) map[string]searchgw.Block {
-	res := make(map[string]searchgw.Block)
+// Search transforms RootBlock into a search compatible type.
+func (rb RootBlock) Search(organizationID string, documentID xid.ID) map[string]search.Block {
+	res := make(map[string]search.Block)
 
 	for _, b := range rb.Content {
 		content := b.Search(organizationID, documentID)
@@ -166,9 +167,9 @@ func (b Block) HasBlock(blockID string) bool {
 	return ok
 }
 
-// Search transforms Block into a searchgw compatible type.
-func (b Block) Search(organizationID string, documentID xid.ID) map[string]searchgw.Block {
-	res := make(map[string]searchgw.Block)
+// Search transforms Block into a search compatible type.
+func (b Block) Search(organizationID string, documentID xid.ID) map[string]search.Block {
+	res := make(map[string]search.Block)
 
 	var text string
 
@@ -188,7 +189,7 @@ func (b Block) Search(organizationID string, documentID xid.ID) map[string]searc
 
 	if text != "" {
 		if id, ok := b.UID(); ok && id != "" {
-			res[id] = searchgw.Block{
+			res[id] = search.Block{
 				ID:             id,
 				OrganizationID: organizationID,
 				DocumentID:     documentID,
@@ -214,74 +215,23 @@ type Mark struct {
 // and nodeCommentId attributes removed. Unlike Duplicate, uid attributes are
 // preserved as-is.
 func (rb RootBlock) StripCommentMarks() RootBlock {
-	newContent := make([]Block, len(rb.Content))
-
-	for i, b := range rb.Content {
-		newContent[i] = b.stripCommentMarks()
-	}
-
-	return RootBlock{
-		Type:    rb.Type,
-		Content: newContent,
-	}
-}
-
-// stripCommentMarks returns a copy of the Block with comment marks and
-// nodeCommentId attributes removed. uid attributes are preserved.
-func (b Block) stripCommentMarks() Block {
-	newBlock := Block{
-		Type: b.Type,
-		Text: b.Text,
-	}
-
-	if len(b.Content) > 0 {
-		newBlock.Content = make([]Block, len(b.Content))
-
-		for i, cb := range b.Content {
-			newBlock.Content[i] = cb.stripCommentMarks()
-		}
-	}
-
-	if len(b.Marks) > 0 {
-		newMarks := make([]Mark, 0, len(b.Marks))
-
-		for _, m := range b.Marks {
-			if m.Type != _nodeCommentMarkType {
-				newMarks = append(newMarks, m)
-			}
-		}
-
-		if len(newMarks) > 0 {
-			newBlock.Marks = newMarks
-		}
-	}
-
-	if len(b.Attrs) > 0 {
-		newAttrs := make(map[string]any)
-
-		for k, v := range b.Attrs {
-			if k == _nodeCommentIDAttr {
-				continue
-			}
-
-			newAttrs[k] = v
-		}
-
-		if len(newAttrs) > 0 {
-			newBlock.Attrs = newAttrs
-		}
-	}
-
-	return newBlock
+	return rb.copyStripped(false)
 }
 
 // Duplicate creates a copy of the RootBlock with all comment marks
 // removed, nodeCommentId attributes removed, and uid attributes regenerated.
 func (rb RootBlock) Duplicate() RootBlock {
+	return rb.copyStripped(true)
+}
+
+// copyStripped returns a copy of the RootBlock with comment marks and
+// nodeCommentId attributes removed, regenerating uid attributes when
+// regenUIDs is set.
+func (rb RootBlock) copyStripped(regenUIDs bool) RootBlock {
 	newContent := make([]Block, len(rb.Content))
 
 	for i, b := range rb.Content {
-		newContent[i] = b.duplicate()
+		newContent[i] = b.copyStripped(regenUIDs)
 	}
 
 	return RootBlock{
@@ -290,24 +240,23 @@ func (rb RootBlock) Duplicate() RootBlock {
 	}
 }
 
-// duplicate creates a copy of the Block with comment marks removed,
-// nodeCommentId attributes removed, and uid attributes regenerated.
-func (b Block) duplicate() Block {
+// copyStripped returns a copy of the Block with comment marks and
+// nodeCommentId attributes removed, regenerating uid attributes when
+// regenUIDs is set.
+func (b Block) copyStripped(regenUIDs bool) Block {
 	newBlock := Block{
 		Type: b.Type,
 		Text: b.Text,
 	}
 
-	// Process child content recursively
 	if len(b.Content) > 0 {
 		newBlock.Content = make([]Block, len(b.Content))
 
 		for i, cb := range b.Content {
-			newBlock.Content[i] = cb.duplicate()
+			newBlock.Content[i] = cb.copyStripped(regenUIDs)
 		}
 	}
 
-	// Filter out comment marks
 	if len(b.Marks) > 0 {
 		newMarks := make([]Mark, 0, len(b.Marks))
 
@@ -322,7 +271,6 @@ func (b Block) duplicate() Block {
 		}
 	}
 
-	// Process attributes: remove nodeCommentId, regenerate uid
 	if len(b.Attrs) > 0 {
 		newAttrs := make(map[string]any)
 
@@ -331,8 +279,8 @@ func (b Block) duplicate() Block {
 				continue
 			}
 
-			if k == _nodeUIDAttr {
-				newAttrs[k] = generateNanoID()
+			if regenUIDs && k == _nodeUIDAttr {
+				newAttrs[k] = strutil.NanoID()
 				continue
 			}
 

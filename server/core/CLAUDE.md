@@ -56,7 +56,7 @@ make check-lint  # golangci-lint run (verification only)
   domain-agnostic helpers (`errcode`, `ptrutil`, `sliceutil`-style). Business
   logic never goes here.
 - Package names: short, lowercase, no underscores. Helper siblings are named
-  `<parentabbrev><role>` (`searchgw`, `redkit`) or a bare role
+  `<parentabbrev><role>` (`redkit`, `wsserver`) or a bare role
   name when nesting disambiguates (`block`, `edit`, `processor`).
 - Files: snake_case, named after the primary type/concern. Recurring names across
   packages: `manager.go`, `options.go`, `metrics.go`, `client.go`, `event.go`,

@@ -9,7 +9,7 @@ import (
 
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/document"
-	"github.com/oxynote/oxynote/server/core/internal/document/searchgw"
+	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/rs/xid"
 )
 
@@ -35,7 +35,7 @@ var _ DB = &DBMock{}
 //			InsertDocumentFunc: func(ctx context.Context, doc document.Document) error {
 //				panic("mock out the InsertDocument method")
 //			},
-//			InsertDocumentSearchJobFunc: func(ctx context.Context, diff searchgw.BlocksDifference) error {
+//			InsertDocumentSearchJobFunc: func(ctx context.Context, diff search.BlocksDifference) error {
 //				panic("mock out the InsertDocumentSearchJob method")
 //			},
 //			UpdateOrganizationLogoFunc: func(ctx context.Context, organizationID string, logo string) error {
@@ -64,7 +64,7 @@ type DBMock struct {
 	InsertDocumentFunc func(ctx context.Context, doc document.Document) error
 
 	// InsertDocumentSearchJobFunc mocks the InsertDocumentSearchJob method.
-	InsertDocumentSearchJobFunc func(ctx context.Context, diff searchgw.BlocksDifference) error
+	InsertDocumentSearchJobFunc func(ctx context.Context, diff search.BlocksDifference) error
 
 	// UpdateOrganizationLogoFunc mocks the UpdateOrganizationLogo method.
 	UpdateOrganizationLogoFunc func(ctx context.Context, organizationID string, logo string) error
@@ -107,7 +107,7 @@ type DBMock struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
 			// Diff is the diff argument value.
-			Diff searchgw.BlocksDifference
+			Diff search.BlocksDifference
 		}
 		// UpdateOrganizationLogo holds details about calls to the UpdateOrganizationLogo method.
 		UpdateOrganizationLogo []struct {
@@ -297,10 +297,10 @@ func (mock *DBMock) InsertDocumentCalls() []struct {
 }
 
 // InsertDocumentSearchJob calls InsertDocumentSearchJobFunc.
-func (mock *DBMock) InsertDocumentSearchJob(ctx context.Context, diff searchgw.BlocksDifference) error {
+func (mock *DBMock) InsertDocumentSearchJob(ctx context.Context, diff search.BlocksDifference) error {
 	callInfo := struct {
 		Ctx  context.Context
-		Diff searchgw.BlocksDifference
+		Diff search.BlocksDifference
 	}{
 		Ctx:  ctx,
 		Diff: diff,
@@ -323,11 +323,11 @@ func (mock *DBMock) InsertDocumentSearchJob(ctx context.Context, diff searchgw.B
 //	len(mockedDB.InsertDocumentSearchJobCalls())
 func (mock *DBMock) InsertDocumentSearchJobCalls() []struct {
 	Ctx  context.Context
-	Diff searchgw.BlocksDifference
+	Diff search.BlocksDifference
 } {
 	var calls []struct {
 		Ctx  context.Context
-		Diff searchgw.BlocksDifference
+		Diff search.BlocksDifference
 	}
 	mock.lockInsertDocumentSearchJob.RLock()
 	calls = mock.calls.InsertDocumentSearchJob

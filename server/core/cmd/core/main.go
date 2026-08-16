@@ -24,11 +24,11 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/buildinfo"
 	"github.com/oxynote/oxynote/server/core/internal/db"
 	hookMan "github.com/oxynote/oxynote/server/core/internal/document/hook/manager"
-	"github.com/oxynote/oxynote/server/core/internal/document/searchgw"
-	searchMan "github.com/oxynote/oxynote/server/core/internal/document/searchgw/manager"
 	"github.com/oxynote/oxynote/server/core/internal/email"
 	"github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/internal/notification/interpreter"
+	"github.com/oxynote/oxynote/server/core/internal/search"
+	searchMan "github.com/oxynote/oxynote/server/core/internal/search/manager"
 	"github.com/oxynote/oxynote/server/core/internal/server"
 	"github.com/oxynote/oxynote/server/core/internal/storage"
 	"github.com/oxynote/oxynote/server/core/pkg/ioutil"
@@ -186,7 +186,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 	termCtx, termCancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer termCancel()
 
-	searchClient, err := searchgw.NewClient(
+	searchClient, err := search.NewClient(
 		termCtx,
 		meilisearch.New(
 			buildinfo.Getenv("MEILISEARCH_DSN"),

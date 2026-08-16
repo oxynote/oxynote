@@ -34,7 +34,7 @@ func prepDocuments(t *testing.T, db *DB, count int, fn func(int, *document.Docum
 				DocumentName: "Test Document " + strconv.Itoa(i),
 				Icon:         "icon-test",
 				Content: document.RootBlock{
-					Type: "doc",
+					Type: document.BlockNodeDoc,
 					Content: []document.Block{
 						{
 							Type: "paragraph",
@@ -112,7 +112,7 @@ func Test_agent_InsertDocument(t *testing.T) {
 				DocumentName: "Test Document 1",
 				Icon:         "icon-test2",
 				Content: document.RootBlock{
-					Type: "doc",
+					Type: document.BlockNodeDoc,
 					Content: []document.Block{
 						{
 							Type: "paragraph",

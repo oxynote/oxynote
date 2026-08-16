@@ -9,7 +9,7 @@ import (
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/document"
-	"github.com/oxynote/oxynote/server/core/internal/document/searchgw"
+	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
@@ -215,7 +215,7 @@ func Test_Manager_readDocumentSummary(t *testing.T) {
 					return document.Content{
 						DocumentName: "Cat Facts",
 						Content: document.RootBlock{
-							Type: "doc",
+							Type: document.BlockNodeDoc,
 							Content: []document.Block{
 								pmBlock(document.BlockNodeParagraph, "p1", nil, pmText("hello")),
 							},
@@ -254,7 +254,7 @@ func Test_Manager_readBlock(t *testing.T) {
 		return &DBMock{
 			FetchMainBranchContentFunc: func(_ context.Context, _ xid.ID, _ string) (document.Content, error) {
 				return document.Content{
-					Content: document.RootBlock{Type: "doc", Content: blocks},
+					Content: document.RootBlock{Type: document.BlockNodeDoc, Content: blocks},
 				}, nil
 			},
 		}
@@ -328,9 +328,9 @@ func Test_Manager_readBlock(t *testing.T) {
 func Test_Manager_searchDocuments(t *testing.T) {
 	docID := xid.New()
 
-	stubSearch := func(err error, blocks ...searchgw.Block) *SearcherMock {
+	stubSearch := func(err error, blocks ...search.Block) *SearcherMock {
 		return &SearcherMock{
-			SearchDocumentBlocksFunc: func(_ context.Context, _, _ string, _ int) ([]searchgw.Block, error) {
+			SearchDocumentBlocksFunc: func(_ context.Context, _, _ string, _ int) ([]search.Block, error) {
 				return blocks, err
 			},
 		}
@@ -382,7 +382,7 @@ func Test_Manager_searchDocuments(t *testing.T) {
 					return document.Summaries{{ID: docID, DocumentName: "Cat Facts"}}, nil
 				},
 			},
-			Search: stubSearch(nil, searchgw.Block{ID: "b1", DocumentID: docID, Text: "meow"}),
+			Search: stubSearch(nil, search.Block{ID: "b1", DocumentID: docID, Text: "meow"}),
 			Args:   `{"query":"cats","limit":5}`,
 			Limit:  5,
 			RespJSON: `{"hits":[{"document_id":"` + docID.String() + `","document_name":"Cat Facts",` +
@@ -394,7 +394,7 @@ func Test_Manager_searchDocuments(t *testing.T) {
 					return nil, assert.AnError
 				},
 			},
-			Search: stubSearch(nil, searchgw.Block{ID: "b1", DocumentID: docID, Text: "meow"}),
+			Search: stubSearch(nil, search.Block{ID: "b1", DocumentID: docID, Text: "meow"}),
 			Args:   `{"query":"cats","limit":5}`,
 			Limit:  5,
 			RespJSON: `{"hits":[{"document_id":"` + docID.String() + `",` +

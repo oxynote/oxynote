@@ -110,7 +110,17 @@ func (c *Content) Scan(value any) error {
 		return fmt.Errorf("cannot scan %T into Content", value)
 	}
 
-	return json.Unmarshal(data, c)
+	// unmarshal into a fresh map: json.Unmarshal merges into an existing
+	// one, which would keep stale keys when scanning into a reused value.
+	var nc Content
+
+	if err := json.Unmarshal(data, &nc); err != nil {
+		return err
+	}
+
+	*c = nc
+
+	return nil
 }
 
 // NewComment creates a new comment instance with the provided input.
@@ -131,69 +141,43 @@ func NewComment(inp Input, documentID, branchID xid.ID, userID, organizationID s
 
 // ApplyUpdate updates comment instance with the input data.
 func (c Comment) ApplyUpdate(inp Input) Comment {
-	return Comment{
-		ID:             c.ID,
-		DocumentID:     c.DocumentID,
-		OrganizationID: c.OrganizationID,
-		AnchorBlockID:  inp.AnchorBlockID,
-		UserID:         c.UserID,
-		Resolved:       c.Resolved,
-		Content:        inp.Content,
-		CreatedAt:      c.CreatedAt,
-		UpdatedAt:      null.TimeFrom(timeutil.Now()),
-		Replies:        c.Replies,
-	}
+	nc := c
+	nc.AnchorBlockID = inp.AnchorBlockID
+	nc.Content = inp.Content
+	nc.UpdatedAt = null.TimeFrom(timeutil.Now())
+
+	return nc
 }
 
 // Resolve marks the comment as resolved.
 func (c Comment) Resolve(resolvedBy string) Comment {
-	return Comment{
-		ID:             c.ID,
-		DocumentID:     c.DocumentID,
-		OrganizationID: c.OrganizationID,
-		AnchorBlockID:  c.AnchorBlockID,
-		UserID:         c.UserID,
-		ResolvedBy:     null.StringFrom(resolvedBy),
-		Resolved:       true,
-		Content:        c.Content,
-		CreatedAt:      c.CreatedAt,
-		UpdatedAt:      c.UpdatedAt,
-		Replies:        c.Replies,
-	}
+	nc := c
+	nc.Resolved = true
+	nc.ResolvedBy = null.StringFrom(resolvedBy)
+
+	return nc
 }
 
-// Unresolve marks the comment as resolved.
+// Unresolve marks the comment as unresolved.
 func (c Comment) Unresolve() Comment {
-	return Comment{
-		ID:             c.ID,
-		DocumentID:     c.DocumentID,
-		OrganizationID: c.OrganizationID,
-		AnchorBlockID:  c.AnchorBlockID,
-		UserID:         c.UserID,
-		ResolvedBy:     null.String{},
-		Resolved:       false,
-		Content:        c.Content,
-		CreatedAt:      c.CreatedAt,
-		UpdatedAt:      c.UpdatedAt,
-		Replies:        c.Replies,
-	}
+	nc := c
+	nc.Resolved = false
+	nc.ResolvedBy = null.String{}
+
+	return nc
 }
 
-// Replace returns a new comment with content and author replaced by the given reply.
+// Replace returns a new comment with content and author replaced by the given
+// reply, which is removed from the head of the reply list.
 func (c Comment) Replace(r Reply) Comment {
-	return Comment{
-		ID:             c.ID,
-		DocumentID:     c.DocumentID,
-		OrganizationID: c.OrganizationID,
-		AnchorBlockID:  c.AnchorBlockID,
-		UserID:         r.UserID,
-		ResolvedBy:     c.ResolvedBy,
-		Resolved:       c.Resolved,
-		Content:        r.Content,
-		CreatedAt:      r.CreatedAt,
-		UpdatedAt:      r.UpdatedAt,
-		Replies:        c.Replies[1:],
-	}
+	nc := c
+	nc.UserID = r.UserID
+	nc.Content = r.Content
+	nc.CreatedAt = r.CreatedAt
+	nc.UpdatedAt = r.UpdatedAt
+	nc.Replies = c.Replies[1:]
+
+	return nc
 }
 
 // NewReply creates a new reply instance with the provided input.
@@ -210,15 +194,11 @@ func NewReply(inp ReplyInput, commentID xid.ID, userID, organizationID string) R
 
 // ApplyUpdate updates reply instance with the input data.
 func (r Reply) ApplyUpdate(inp ReplyInput) Reply {
-	return Reply{
-		ID:             r.ID,
-		CommentID:      r.CommentID,
-		OrganizationID: r.OrganizationID,
-		UserID:         r.UserID,
-		Content:        inp.Content,
-		CreatedAt:      r.CreatedAt,
-		UpdatedAt:      null.TimeFrom(timeutil.Now()),
-	}
+	nr := r
+	nr.Content = inp.Content
+	nr.UpdatedAt = null.TimeFrom(timeutil.Now())
+
+	return nr
 }
 
 // Input is the input structure for a comment.

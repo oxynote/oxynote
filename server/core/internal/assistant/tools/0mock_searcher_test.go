@@ -7,7 +7,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/oxynote/oxynote/server/core/internal/document/searchgw"
+	"github.com/oxynote/oxynote/server/core/internal/search"
 )
 
 // Ensure, that SearcherMock does implement Searcher.
@@ -20,7 +20,7 @@ var _ Searcher = &SearcherMock{}
 //
 //		// make and configure a mocked Searcher
 //		mockedSearcher := &SearcherMock{
-//			SearchDocumentBlocksFunc: func(ctx context.Context, organizationID string, query string, limit int) ([]searchgw.Block, error) {
+//			SearchDocumentBlocksFunc: func(ctx context.Context, organizationID string, query string, limit int) ([]search.Block, error) {
 //				panic("mock out the SearchDocumentBlocks method")
 //			},
 //		}
@@ -31,7 +31,7 @@ var _ Searcher = &SearcherMock{}
 //	}
 type SearcherMock struct {
 	// SearchDocumentBlocksFunc mocks the SearchDocumentBlocks method.
-	SearchDocumentBlocksFunc func(ctx context.Context, organizationID string, query string, limit int) ([]searchgw.Block, error)
+	SearchDocumentBlocksFunc func(ctx context.Context, organizationID string, query string, limit int) ([]search.Block, error)
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -51,7 +51,7 @@ type SearcherMock struct {
 }
 
 // SearchDocumentBlocks calls SearchDocumentBlocksFunc.
-func (mock *SearcherMock) SearchDocumentBlocks(ctx context.Context, organizationID string, query string, limit int) ([]searchgw.Block, error) {
+func (mock *SearcherMock) SearchDocumentBlocks(ctx context.Context, organizationID string, query string, limit int) ([]search.Block, error) {
 	callInfo := struct {
 		Ctx            context.Context
 		OrganizationID string
@@ -68,7 +68,7 @@ func (mock *SearcherMock) SearchDocumentBlocks(ctx context.Context, organization
 	mock.lockSearchDocumentBlocks.Unlock()
 	if mock.SearchDocumentBlocksFunc == nil {
 		var (
-			blocksOut []searchgw.Block
+			blocksOut []search.Block
 			errOut    error
 		)
 		return blocksOut, errOut

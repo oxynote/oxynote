@@ -26,6 +26,8 @@ func (t Type) HumanizedString() string {
 		return "GitHub Tracking"
 	case TypeURLWatcher:
 		return "Website Changes"
+	case TypeContainerImageWatcher:
+		return "Container Image Updates"
 	default:
 		return "Unknown"
 	}
@@ -124,6 +126,11 @@ func NewHook(
 func (h *Hook) ApplyUpdate(ctx context.Context, ui UpdateInput, inp *Input) error {
 	h.Settings = ui.Settings
 	h.UpdatedAt = null.TimeFrom(timeutil.Now())
+
+	// the runner is built from the settings; drop the memoized one so the
+	// reset below sees the updated settings.
+	h.prepared = false
+	h.runner = nil
 
 	if err := h.Reset(ctx, inp); err != nil {
 		return err

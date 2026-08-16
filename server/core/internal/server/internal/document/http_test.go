@@ -11,8 +11,8 @@ import (
 
 	"github.com/guregu/null/v5"
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
-	"github.com/oxynote/oxynote/server/core/internal/document/searchgw"
 	"github.com/oxynote/oxynote/server/core/internal/notification"
+	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
@@ -958,7 +958,7 @@ func Test_Handler_CreateDocument(t *testing.T) {
 		},
 		"Search job insertion error": {
 			Tx: &TxMock{
-				InsertDocumentSearchJobFunc: func(context.Context, searchgw.BlocksDifference) error {
+				InsertDocumentSearchJobFunc: func(context.Context, search.BlocksDifference) error {
 					return errors.New("boom")
 				},
 			},

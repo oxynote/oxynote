@@ -9,7 +9,7 @@ import (
 
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/document"
-	"github.com/oxynote/oxynote/server/core/internal/document/searchgw"
+	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/rs/xid"
 )
 
@@ -35,7 +35,7 @@ var _ Tx = &TxMock{}
 //			InsertDocumentFunc: func(ctx context.Context, doc document.Document) error {
 //				panic("mock out the InsertDocument method")
 //			},
-//			InsertDocumentSearchJobFunc: func(ctx context.Context, diff searchgw.BlocksDifference) error {
+//			InsertDocumentSearchJobFunc: func(ctx context.Context, diff search.BlocksDifference) error {
 //				panic("mock out the InsertDocumentSearchJob method")
 //			},
 //			RollbackFunc: func() error {
@@ -67,7 +67,7 @@ type TxMock struct {
 	InsertDocumentFunc func(ctx context.Context, doc document.Document) error
 
 	// InsertDocumentSearchJobFunc mocks the InsertDocumentSearchJob method.
-	InsertDocumentSearchJobFunc func(ctx context.Context, diff searchgw.BlocksDifference) error
+	InsertDocumentSearchJobFunc func(ctx context.Context, diff search.BlocksDifference) error
 
 	// RollbackFunc mocks the Rollback method.
 	RollbackFunc func() error
@@ -109,7 +109,7 @@ type TxMock struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
 			// Diff is the diff argument value.
-			Diff searchgw.BlocksDifference
+			Diff search.BlocksDifference
 		}
 		// Rollback holds details about calls to the Rollback method.
 		Rollback []struct {
@@ -294,10 +294,10 @@ func (mock *TxMock) InsertDocumentCalls() []struct {
 }
 
 // InsertDocumentSearchJob calls InsertDocumentSearchJobFunc.
-func (mock *TxMock) InsertDocumentSearchJob(ctx context.Context, diff searchgw.BlocksDifference) error {
+func (mock *TxMock) InsertDocumentSearchJob(ctx context.Context, diff search.BlocksDifference) error {
 	callInfo := struct {
 		Ctx  context.Context
-		Diff searchgw.BlocksDifference
+		Diff search.BlocksDifference
 	}{
 		Ctx:  ctx,
 		Diff: diff,
@@ -320,11 +320,11 @@ func (mock *TxMock) InsertDocumentSearchJob(ctx context.Context, diff searchgw.B
 //	len(mockedTx.InsertDocumentSearchJobCalls())
 func (mock *TxMock) InsertDocumentSearchJobCalls() []struct {
 	Ctx  context.Context
-	Diff searchgw.BlocksDifference
+	Diff search.BlocksDifference
 } {
 	var calls []struct {
 		Ctx  context.Context
-		Diff searchgw.BlocksDifference
+		Diff search.BlocksDifference
 	}
 	mock.lockInsertDocumentSearchJob.RLock()
 	calls = mock.calls.InsertDocumentSearchJob

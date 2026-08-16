@@ -1,4 +1,4 @@
-package document
+package strutil
 
 import "crypto/rand"
 
@@ -9,17 +9,9 @@ const _nanoidAlphabet = "useandom-26T198340PX75pxJACKVERYMINDBUSHWOLF_GQZbfghjkl
 // _nanoidLength is the default length of nanoid IDs (21 characters).
 const _nanoidLength = 21
 
-// GenerateNodeUID generates a nanoid-compatible unique identifier used as a
-// block "uid" attribute. The output is 1:1 compatible with the Node.js
-// nanoid() function using default settings.
-func GenerateNodeUID() string {
-	return generateNanoID()
-}
-
-// generateNanoID generates a nanoid-compatible unique identifier.
-// This function produces IDs that are 1:1 compatible with the Node.js
-// nanoid() function using default settings.
-func generateNanoID() string {
+// NanoID generates a nanoid-compatible unique identifier. The output is 1:1
+// compatible with the Node.js nanoid() function using default settings.
+func NanoID() string {
 	bytes := make([]byte, _nanoidLength)
 
 	_, err := rand.Read(bytes)

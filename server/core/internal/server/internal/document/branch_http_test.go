@@ -11,7 +11,7 @@ import (
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
 	hookCore "github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
-	"github.com/oxynote/oxynote/server/core/internal/document/searchgw"
+	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -225,7 +225,7 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 				FetchDocumentMaintainersFunc: func(context.Context, xid.ID, string) ([]string, error) {
 					return []string{"u1", "u9"}, nil
 				},
-				InsertDocumentSearchJobFunc: func(context.Context, searchgw.BlocksDifference) error {
+				InsertDocumentSearchJobFunc: func(context.Context, search.BlocksDifference) error {
 					return errors.New("boom")
 				},
 			},
@@ -587,7 +587,7 @@ func Test_Handler_DeleteDocument(t *testing.T) {
 		"Search job insertion error": {
 			DB: &DBMock{FetchDocumentFunc: fetchStored},
 			Tx: &TxMock{
-				InsertDocumentSearchJobFunc: func(context.Context, searchgw.BlocksDifference) error {
+				InsertDocumentSearchJobFunc: func(context.Context, search.BlocksDifference) error {
 					return errors.New("boom")
 				},
 			},

@@ -10,7 +10,7 @@ import (
 	"github.com/guregu/null/v5"
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
-	"github.com/oxynote/oxynote/server/core/internal/document/searchgw"
+	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/rs/xid"
 )
 
@@ -96,7 +96,7 @@ var _ Tx = &TxMock{}
 //			InsertDocumentHookFunc: func(ctx context.Context, hk hook.Hook) error {
 //				panic("mock out the InsertDocumentHook method")
 //			},
-//			InsertDocumentSearchJobFunc: func(ctx context.Context, diff searchgw.BlocksDifference) error {
+//			InsertDocumentSearchJobFunc: func(ctx context.Context, diff search.BlocksDifference) error {
 //				panic("mock out the InsertDocumentSearchJob method")
 //			},
 //			PromoteBranchApprovalsFunc: func(ctx context.Context, fromBranchID xid.ID, toBranchID xid.ID, organizationID string) error {
@@ -206,7 +206,7 @@ type TxMock struct {
 	InsertDocumentHookFunc func(ctx context.Context, hk hook.Hook) error
 
 	// InsertDocumentSearchJobFunc mocks the InsertDocumentSearchJob method.
-	InsertDocumentSearchJobFunc func(ctx context.Context, diff searchgw.BlocksDifference) error
+	InsertDocumentSearchJobFunc func(ctx context.Context, diff search.BlocksDifference) error
 
 	// PromoteBranchApprovalsFunc mocks the PromoteBranchApprovals method.
 	PromoteBranchApprovalsFunc func(ctx context.Context, fromBranchID xid.ID, toBranchID xid.ID, organizationID string) error
@@ -452,7 +452,7 @@ type TxMock struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
 			// Diff is the diff argument value.
-			Diff searchgw.BlocksDifference
+			Diff search.BlocksDifference
 		}
 		// PromoteBranchApprovals holds details about calls to the PromoteBranchApprovals method.
 		PromoteBranchApprovals []struct {
@@ -1600,10 +1600,10 @@ func (mock *TxMock) InsertDocumentHookCalls() []struct {
 }
 
 // InsertDocumentSearchJob calls InsertDocumentSearchJobFunc.
-func (mock *TxMock) InsertDocumentSearchJob(ctx context.Context, diff searchgw.BlocksDifference) error {
+func (mock *TxMock) InsertDocumentSearchJob(ctx context.Context, diff search.BlocksDifference) error {
 	callInfo := struct {
 		Ctx  context.Context
-		Diff searchgw.BlocksDifference
+		Diff search.BlocksDifference
 	}{
 		Ctx:  ctx,
 		Diff: diff,
@@ -1626,11 +1626,11 @@ func (mock *TxMock) InsertDocumentSearchJob(ctx context.Context, diff searchgw.B
 //	len(mockedTx.InsertDocumentSearchJobCalls())
 func (mock *TxMock) InsertDocumentSearchJobCalls() []struct {
 	Ctx  context.Context
-	Diff searchgw.BlocksDifference
+	Diff search.BlocksDifference
 } {
 	var calls []struct {
 		Ctx  context.Context
-		Diff searchgw.BlocksDifference
+		Diff search.BlocksDifference
 	}
 	mock.lockInsertDocumentSearchJob.RLock()
 	calls = mock.calls.InsertDocumentSearchJob

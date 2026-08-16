@@ -14,7 +14,7 @@ import (
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
 	"github.com/oxynote/oxynote/server/core/internal/document"
-	"github.com/oxynote/oxynote/server/core/internal/document/searchgw"
+	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/rs/xid"
 )
 
@@ -151,13 +151,13 @@ type DB interface {
 }
 
 // Searcher is the full-text search surface search_documents uses.
-// The document/searchgw Meilisearch client satisfies it.
+// The document/search Meilisearch client satisfies it.
 //
 //go:generate ../../../scripts/codegen/mock -t both Searcher searcher
 type Searcher interface {
 	// SearchDocumentBlocks returns blocks whose text matches the
 	// query, scoped to the organization and capped at limit hits.
-	SearchDocumentBlocks(ctx context.Context, organizationID, query string, limit int) ([]searchgw.Block, error)
+	SearchDocumentBlocks(ctx context.Context, organizationID, query string, limit int) ([]search.Block, error)
 }
 
 // TreeNotifier publishes document-tree-change events so connected
@@ -224,7 +224,7 @@ type Manager struct {
 // nil values surface as nil-pointer panics on the first tool call
 // rather than at startup, but in practice the cmd-level wiring
 // passes all of them.
-func NewManager(log *slog.Logger, db DB, search Searcher, applier EditApplier, tree TreeNotifier, orgID, userID string) *Manager {
+func NewManager(log *slog.Logger, db DB, searcher Searcher, applier EditApplier, tree TreeNotifier, orgID, userID string) *Manager {
 	return &Manager{
 		log: log.With(
 			"component", "assistant-tools",
@@ -232,7 +232,7 @@ func NewManager(log *slog.Logger, db DB, search Searcher, applier EditApplier, t
 			"user_id", userID,
 		),
 		db:      db,
-		search:  search,
+		search:  searcher,
 		applier: applier,
 		tree:    tree,
 		orgID:   orgID,

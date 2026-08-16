@@ -12,8 +12,8 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
-	"github.com/oxynote/oxynote/server/core/internal/document/searchgw"
 	"github.com/oxynote/oxynote/server/core/internal/notification"
+	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
@@ -453,7 +453,7 @@ func (h *Handler) CreateDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err = tx.InsertDocumentSearchJob(r.Context(), searchgw.BlocksDiff(nil, doc.Search())); err != nil {
+	if err = tx.InsertDocumentSearchJob(r.Context(), search.BlocksDiff(nil, doc.Search())); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -668,7 +668,7 @@ func (h *Handler) UpdateDocumentBranchByIDUnsafe(w http.ResponseWriter, r *http.
 	if ndoc.BranchName == documentCore.DefaultBranch {
 		if err = tx.InsertDocumentSearchJob(
 			r.Context(),
-			searchgw.BlocksDiff(doc.Search(), ndoc.Search()),
+			search.BlocksDiff(doc.Search(), ndoc.Search()),
 		); err != nil {
 			httpserver.RespondError(h.log, w, err)
 			return
@@ -841,7 +841,7 @@ func (h *Handler) MergeBranches(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := tx.InsertDocumentSearchJob(r.Context(), searchgw.BlocksDiff(toDoc.Search(), ndoc.Search())); err != nil {
+	if err := tx.InsertDocumentSearchJob(r.Context(), search.BlocksDiff(toDoc.Search(), ndoc.Search())); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -925,7 +925,7 @@ func (h *Handler) DeleteDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err = tx.InsertDocumentSearchJob(r.Context(), searchgw.BlocksDiff(doc.Search(), nil)); err != nil {
+	if err = tx.InsertDocumentSearchJob(r.Context(), search.BlocksDiff(doc.Search(), nil)); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -990,7 +990,7 @@ func (h *Handler) DuplicateDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err = tx.InsertDocumentSearchJob(r.Context(), searchgw.BlocksDiff(nil, duplDoc.Search())); err != nil {
+	if err = tx.InsertDocumentSearchJob(r.Context(), search.BlocksDiff(nil, duplDoc.Search())); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -1283,7 +1283,7 @@ type DocumentsDBAgent interface {
 	InsertDocument(ctx context.Context, doc documentCore.Document) error
 
 	// InsertDocumentSearchJob should insert the document search job.
-	InsertDocumentSearchJob(ctx context.Context, diff searchgw.BlocksDifference) error
+	InsertDocumentSearchJob(ctx context.Context, diff search.BlocksDifference) error
 
 	// CheckDocumentExists returns nil if the document exists and belongs to the given organization.
 	CheckDocumentExists(ctx context.Context, id xid.ID, organizationID string) error

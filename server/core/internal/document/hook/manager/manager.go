@@ -269,6 +269,8 @@ func (m *Manager) ensureHook(
 }
 
 // DB defines the database operations required by the Manager.
+//
+//go:generate ../../../../scripts/codegen/mock -t internal DB db
 type DB interface {
 	// FetchPaginatedDocumentHooks should retrieve a paginated list of document hooks
 	// starting after the given offset ID, limited to the specified number of hooks.

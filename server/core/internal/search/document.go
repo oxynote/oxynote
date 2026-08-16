@@ -1,4 +1,4 @@
-package searchgw
+package search
 
 import (
 	"database/sql/driver"

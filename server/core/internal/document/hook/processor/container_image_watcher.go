@@ -38,7 +38,7 @@ func (ciw *ContainerImageWatcher) Process(ctx context.Context, inp Input) (decim
 	var ciws ContainerImageWatcherState
 
 	if err := json.Unmarshal(inp.State(), &ciws); err != nil {
-		return decimal.Zero, nil, fmt.Errorf("unmarshaling url watcher state: %w", err)
+		return decimal.Zero, nil, fmt.Errorf("unmarshaling container image watcher state: %w", err)
 	}
 
 	digest, err := registry.Digest(
@@ -61,7 +61,7 @@ func (ciw *ContainerImageWatcher) Process(ctx context.Context, inp Input) (decim
 
 	state, err := json.Marshal(ciws)
 	if err != nil {
-		return decimal.Zero, nil, fmt.Errorf("marshaling url watcher state: %w", err)
+		return decimal.Zero, nil, fmt.Errorf("marshaling container image watcher state: %w", err)
 	}
 
 	return score, state, nil
@@ -73,7 +73,7 @@ func (ciw *ContainerImageWatcher) Reset(ctx context.Context, inp Input) (decimal
 
 	if state := inp.State(); state != nil {
 		if err := json.Unmarshal(state, &ciws); err != nil {
-			return decimal.Zero, nil, fmt.Errorf("unmarshaling url watcher state: %w", err)
+			return decimal.Zero, nil, fmt.Errorf("unmarshaling container image watcher state: %w", err)
 		}
 	}
 

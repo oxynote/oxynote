@@ -36,7 +36,7 @@ func prepDocumentBranches(t *testing.T, db *DB, count int, fn func(int, *documen
 				DocumentName: "Branch Document " + strconv.Itoa(i),
 				Icon:         "icon-branch",
 				Content: document.RootBlock{
-					Type: "doc",
+					Type: document.BlockNodeDoc,
 					Content: []document.Block{
 						{
 							Type: "paragraph",

@@ -10,8 +10,9 @@ import (
 	"time"
 
 	"github.com/guregu/null/v5"
-	"github.com/oxynote/oxynote/server/core/internal/document/searchgw"
+	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
+	"github.com/oxynote/oxynote/server/core/pkg/strutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
 )
@@ -258,11 +259,11 @@ func (d Document) Changelog() Changelog {
 	}
 }
 
-// Search converts the document to a searchgw.Document for indexing.
-func (d Document) Search() map[string]searchgw.Block {
+// Search converts the document to a search.Document for indexing.
+func (d Document) Search() map[string]search.Block {
 	res := d.Content.Search(d.OrganizationID, d.ID)
 
-	res[d.ID.String()] = searchgw.Block{
+	res[d.ID.String()] = search.Block{
 		// this is a special block representing the name/title of
 		// the document, so its block ID matches the doc ID
 		ID:             "docname" + d.ID.String(),
@@ -440,12 +441,12 @@ func replaceDataSourceID(attrs map[string]any, dataSourceID xid.ID) map[string]a
 // NewDocumentContent returns the initial content for a new document.
 func NewDocumentContent() RootBlock {
 	return RootBlock{
-		Type: "doc",
+		Type: BlockNodeDoc,
 		Content: []Block{
 			{
 				Type: "paragraph",
 				Attrs: map[string]any{
-					_nodeUIDAttr: generateNanoID(),
+					_nodeUIDAttr: strutil.NanoID(),
 				},
 				Content: []Block{},
 			},

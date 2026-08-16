@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/pkg/strutil"
 )
 
 // Expand converts a canonical Block into a document.Block ready to
@@ -87,7 +88,7 @@ func resolveUID(supplied string) string {
 		return supplied
 	}
 
-	return document.GenerateNodeUID()
+	return strutil.NanoID()
 }
 
 // uidAttrs returns the standard {uid: …} attribute map.
@@ -129,7 +130,7 @@ func expandHeading(b Block) document.Block {
 func expandBlockquote(b Block) document.Block {
 	inner := document.Block{
 		Type:    document.BlockNodeParagraph,
-		Attrs:   uidAttrs(document.GenerateNodeUID()),
+		Attrs:   uidAttrs(strutil.NanoID()),
 		Content: ParseInlineMarkdown(b.Text),
 	}
 
@@ -156,7 +157,7 @@ func expandBulletOrOrderedList(b Block, pmType document.BlockNodeType) (document
 
 		children = append(children, document.Block{
 			Type:    document.BlockNodeListItem,
-			Attrs:   uidAttrs(document.GenerateNodeUID()),
+			Attrs:   uidAttrs(strutil.NanoID()),
 			Content: []document.Block{expanded},
 		})
 	}
@@ -221,7 +222,7 @@ func expandCallout(b Block) (document.Block, error) {
 	} else {
 		children = []document.Block{{
 			Type:    document.BlockNodeParagraph,
-			Attrs:   uidAttrs(document.GenerateNodeUID()),
+			Attrs:   uidAttrs(strutil.NanoID()),
 			Content: ParseInlineMarkdown(b.Text),
 		}}
 	}
@@ -262,14 +263,14 @@ func expandTitledCode(b Block) document.Block {
 		lang = a.String()
 	}
 
-	codeAttrs := uidAttrs(document.GenerateNodeUID())
+	codeAttrs := uidAttrs(strutil.NanoID())
 	if lang != "" {
 		codeAttrs[_attrLanguage] = lang
 	}
 
 	titleNode := document.Block{
 		Type:    document.BlockNodeCodeBlockTitle,
-		Attrs:   uidAttrs(document.GenerateNodeUID()),
+		Attrs:   uidAttrs(strutil.NanoID()),
 		Content: rawTextContent(title),
 	}
 
@@ -398,13 +399,13 @@ func expandSplitDoc(b Block) (document.Block, error) {
 
 	leftNode := document.Block{
 		Type:    document.BlockNodeSplitDocLeft,
-		Attrs:   uidAttrs(document.GenerateNodeUID()),
+		Attrs:   uidAttrs(strutil.NanoID()),
 		Content: left,
 	}
 
 	rightNode := document.Block{
 		Type:    document.BlockNodeSplitDocRight,
-		Attrs:   uidAttrs(document.GenerateNodeUID()),
+		Attrs:   uidAttrs(strutil.NanoID()),
 		Content: right,
 	}
 
@@ -429,32 +430,32 @@ func expandParamList(b Block) (document.Block, error) {
 
 	children = append(children, document.Block{
 		Type:    document.BlockNodeParamListHeader,
-		Attrs:   uidAttrs(document.GenerateNodeUID()),
+		Attrs:   uidAttrs(strutil.NanoID()),
 		Content: rawTextContent(b.Header),
 	})
 
 	for _, p := range b.Params {
 		titleNode := document.Block{
 			Type:    document.BlockNodeParamListItemTitle,
-			Attrs:   uidAttrs(document.GenerateNodeUID()),
+			Attrs:   uidAttrs(strutil.NanoID()),
 			Content: rawTextContent(p.Name),
 		}
 
 		typeNode := document.Block{
 			Type:    document.BlockNodeParamListItemType,
-			Attrs:   uidAttrs(document.GenerateNodeUID()),
+			Attrs:   uidAttrs(strutil.NanoID()),
 			Content: rawTextContent(p.Type),
 		}
 
 		headerNode := document.Block{
 			Type:    document.BlockNodeParamListItemHeader,
-			Attrs:   uidAttrs(document.GenerateNodeUID()),
+			Attrs:   uidAttrs(strutil.NanoID()),
 			Content: []document.Block{titleNode, typeNode},
 		}
 
 		descNode := document.Block{
 			Type:    document.BlockNodeParagraph,
-			Attrs:   uidAttrs(document.GenerateNodeUID()),
+			Attrs:   uidAttrs(strutil.NanoID()),
 			Content: ParseInlineMarkdown(p.Description),
 		}
 

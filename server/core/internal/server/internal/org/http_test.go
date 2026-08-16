@@ -14,7 +14,7 @@ import (
 
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/document"
-	"github.com/oxynote/oxynote/server/core/internal/document/searchgw"
+	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/internal/storage"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
@@ -269,7 +269,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 				FetchOrganizationMembersFunc: func(context.Context, string) ([]string, error) {
 					return []string{"member1"}, nil
 				},
-				InsertDocumentSearchJobFunc: func(context.Context, searchgw.BlocksDifference) error {
+				InsertDocumentSearchJobFunc: func(context.Context, search.BlocksDifference) error {
 					return errors.New("boom")
 				},
 			},

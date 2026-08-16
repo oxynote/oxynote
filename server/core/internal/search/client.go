@@ -1,5 +1,5 @@
-// Package searchgw indexes and searches documents through Meilisearch.
-package searchgw
+// Package search indexes and searches documents through Meilisearch.
+package search
 
 import (
 	"context"
@@ -16,6 +16,10 @@ var synonymsFile []byte
 
 // _documentsIndex is the name of the documents index.
 const _documentsIndex = "documents"
+
+// _textAttribute is the indexed block attribute searched, cropped, and
+// highlighted.
+const _textAttribute = "text"
 
 const (
 	// _searchCropLength is the number of words kept around a match in
@@ -107,9 +111,9 @@ func (c *Client) setupSynonyms(ctx context.Context, index string) error {
 // SearchDocuments searches documents in the index.
 func (c *Client) SearchDocuments(ctx context.Context, organizationID, query string) ([]byte, error) {
 	res, err := c.meiliMan.Index(_documentsIndex).SearchWithContext(ctx, query, &meilisearch.SearchRequest{
-		AttributesToSearchOn:  []string{"text"},
-		AttributesToCrop:      []string{"text"},
-		AttributesToHighlight: []string{"text"},
+		AttributesToSearchOn:  []string{_textAttribute},
+		AttributesToCrop:      []string{_textAttribute},
+		AttributesToHighlight: []string{_textAttribute},
 		Filter:                fmt.Sprintf("organizationId = %q", organizationID),
 		HighlightPreTag:       "<mark>",
 		HighlightPostTag:      "</mark>",
@@ -144,7 +148,7 @@ func (c *Client) SearchDocuments(ctx context.Context, organizationID, query stri
 // directly.
 func (c *Client) SearchDocumentBlocks(ctx context.Context, organizationID, query string, limit int) ([]Block, error) {
 	res, err := c.meiliMan.Index(_documentsIndex).SearchWithContext(ctx, query, &meilisearch.SearchRequest{
-		AttributesToSearchOn: []string{"text"},
+		AttributesToSearchOn: []string{_textAttribute},
 		Filter:               fmt.Sprintf("organizationId = %q", organizationID),
 		Limit:                int64(limit),
 	})

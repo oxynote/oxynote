@@ -12,6 +12,9 @@ type BlockNodeType string
 // server/auth-realtime/src/schema/index.ts; renaming an editor extension means
 // renaming the matching constant here.
 const (
+	// BlockNodeDoc is the root node wrapping a TipTap document.
+	BlockNodeDoc BlockNodeType = "doc"
+
 	// BlockNodeText is the inline text leaf node carrying actual
 	// characters and marks.
 	BlockNodeText BlockNodeType = "text"

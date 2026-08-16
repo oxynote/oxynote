@@ -11,7 +11,7 @@ import (
 
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/document"
-	"github.com/oxynote/oxynote/server/core/internal/document/searchgw"
+	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/internal/storage"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
@@ -130,7 +130,7 @@ func (h *Handler) InitializeOrganization(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err = tx.InsertDocumentSearchJob(r.Context(), searchgw.BlocksDiff(nil, doc.Search())); err != nil {
+	if err = tx.InsertDocumentSearchJob(r.Context(), search.BlocksDiff(nil, doc.Search())); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -264,7 +264,7 @@ type DBAgent interface {
 	InsertDocument(ctx context.Context, doc document.Document) error
 
 	// InsertDocumentSearchJob should insert the document search job.
-	InsertDocumentSearchJob(ctx context.Context, diff searchgw.BlocksDifference) error
+	InsertDocumentSearchJob(ctx context.Context, diff search.BlocksDifference) error
 
 	// UpdateOrganizationLogo should update the organization's logo URL.
 	UpdateOrganizationLogo(ctx context.Context, organizationID, logo string) error

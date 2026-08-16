@@ -5,11 +5,11 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
-	"github.com/oxynote/oxynote/server/core/internal/document/searchgw"
+	"github.com/oxynote/oxynote/server/core/internal/search"
 )
 
 // InsertDocumentSearchJob inserts a new document search job into the database.
-func (a *agent) InsertDocumentSearchJob(ctx context.Context, blockDiff searchgw.BlocksDifference) error {
+func (a *agent) InsertDocumentSearchJob(ctx context.Context, blockDiff search.BlocksDifference) error {
 	q, args := a.builder.Insert("document_search_jobs").
 		SetMap(map[string]any{
 			"block_diff": blockDiff,
@@ -21,7 +21,7 @@ func (a *agent) InsertDocumentSearchJob(ctx context.Context, blockDiff searchgw.
 }
 
 // FetchDocumentSearchJobs retrieves a batch of document search jobs.
-func (a *agent) FetchDocumentSearchJobs(ctx context.Context, limit int64) ([]searchgw.DocumentSearchJob, error) {
+func (a *agent) FetchDocumentSearchJobs(ctx context.Context, limit int64) ([]search.DocumentSearchJob, error) {
 	q, args := a.builder.Select(
 		"id",
 		"block_diff",
@@ -30,7 +30,7 @@ func (a *agent) FetchDocumentSearchJobs(ctx context.Context, limit int64) ([]sea
 		Limit(uint64(limit)).
 		MustSql()
 
-	var jobs []searchgw.DocumentSearchJob
+	var jobs []search.DocumentSearchJob
 
 	err := sqlx.SelectContext(ctx, a.sql, &jobs, q, args...)
 	if err != nil {

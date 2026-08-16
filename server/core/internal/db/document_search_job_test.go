@@ -7,22 +7,22 @@ import (
 	"testing"
 
 	sq "github.com/Masterminds/squirrel"
-	"github.com/oxynote/oxynote/server/core/internal/document/searchgw"
+	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func prepDocumentSearchJobs(t *testing.T, db *DB, count int, fn func(int, *searchgw.DocumentSearchJob)) []searchgw.DocumentSearchJob {
+func prepDocumentSearchJobs(t *testing.T, db *DB, count int, fn func(int, *search.DocumentSearchJob)) []search.DocumentSearchJob {
 	t.Helper()
 
-	res := make([]searchgw.DocumentSearchJob, count)
+	res := make([]search.DocumentSearchJob, count)
 
 	for i := range count {
-		job := searchgw.DocumentSearchJob{
-			BlockDiff: searchgw.BlocksDifference{
-				Updated: []searchgw.Block{
+		job := search.DocumentSearchJob{
+			BlockDiff: search.BlocksDifference{
+				Updated: []search.Block{
 					{
 						ID:             "block-" + strconv.Itoa(i),
 						OrganizationID: "org-" + strconv.Itoa(i),
@@ -59,7 +59,7 @@ func prepDocumentSearchJobs(t *testing.T, db *DB, count int, fn func(int, *searc
 func Test_agent_InsertDocumentSearchJob(t *testing.T) {
 	type tcase struct {
 		CancelledContext bool
-		BlockDiff        searchgw.BlocksDifference
+		BlockDiff        search.BlocksDifference
 		Err              error
 	}
 
@@ -72,8 +72,8 @@ func Test_agent_InsertDocumentSearchJob(t *testing.T) {
 		},
 		"Successful insert": func(_ *testing.T, _ *DB) tcase {
 			return tcase{
-				BlockDiff: searchgw.BlocksDifference{
-					Added: []searchgw.Block{
+				BlockDiff: search.BlocksDifference{
+					Added: []search.Block{
 						{
 							ID:             "block-added",
 							OrganizationID: "org-added",
@@ -82,7 +82,7 @@ func Test_agent_InsertDocumentSearchJob(t *testing.T) {
 							Text:           "Added block",
 						},
 					},
-					Removed: []searchgw.Block{
+					Removed: []search.Block{
 						{
 							ID:             "block-removed",
 							OrganizationID: "org-removed",
@@ -117,7 +117,7 @@ func Test_agent_InsertDocumentSearchJob(t *testing.T) {
 				return
 			}
 
-			var blockDiff searchgw.BlocksDifference
+			var blockDiff search.BlocksDifference
 
 			q, args := db.builder.Select("block_diff").
 				From("document_search_jobs").
