@@ -12,7 +12,7 @@ import (
 
 // insertDocumentBranch inserts a branch row for a newly created document.
 // Called inside the same transaction as InsertDocument.
-func (a *agent) insertDocumentBranch(ctx context.Context, doc document.Document) error {
+func (a *agent) insertDocumentBranch(ctx context.Context, tx *sqlx.Tx, doc document.Document) error {
 	q, args := a.builder.Insert("document_branches").
 		SetMap(map[string]any{
 			"id":                 doc.BranchID,
@@ -33,7 +33,7 @@ func (a *agent) insertDocumentBranch(ctx context.Context, doc document.Document)
 		Suffix("ON CONFLICT (fk_document_id, branch_name) DO NOTHING").
 		MustSql()
 
-	_, err := a.sql.ExecContext(ctx, q, args...)
+	_, err := tx.ExecContext(ctx, q, args...)
 
 	return err
 }

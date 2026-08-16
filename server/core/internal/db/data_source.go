@@ -51,7 +51,8 @@ func (a *agent) UpdateDataSource(ctx context.Context, ds *datasource.DataSource)
 			"updated_at":  ds.UpdatedAt,
 		}).
 		Where(sq.Eq{
-			"id": ds.ID,
+			"id":                 ds.ID,
+			"fk_organization_id": ds.OrganizationID,
 		}).
 		MustSql()
 

@@ -353,3 +353,22 @@ func Test_agent_FetchDataSources(t *testing.T) {
 		testutil.AssertFilterEqual(t, *ds, res[i])
 	}
 }
+
+func Test_agent_UpdateDataSource_organizationScope(t *testing.T) {
+	t.Parallel()
+
+	db := prepTempDB(t)
+	ds := prepDataSources(t, db, 1, nil)[0]
+
+	// the update must not reach a row owned by a different organization,
+	// whatever identifier it is handed.
+	foreign := *ds
+	foreign.OrganizationID = prepOrganizations(t, db, 1)[0]
+	foreign.Name = "renamed-by-another-org"
+
+	require.NoError(t, db.UpdateDataSource(context.Background(), &foreign))
+
+	res, err := db.FetchDataSource(context.Background(), ds.ID, ds.OrganizationID)
+	require.NoError(t, err)
+	assert.Equal(t, ds.Name, res.Name)
+}

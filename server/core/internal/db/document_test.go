@@ -232,6 +232,74 @@ func Test_agent_InsertDocument(t *testing.T) {
 	}
 }
 
+func Test_agent_InsertDocument_atomicityAndScoping(t *testing.T) {
+	t.Run("Branch insert failure rolls the document back", func(t *testing.T) {
+		t.Parallel()
+
+		db := prepTempDB(t)
+		existing := prepDocuments(t, db, 1, nil)[0]
+
+		// reusing the branch id trips the branch primary key, after the
+		// documents row has already been inserted.
+		doc := *existing
+		doc.ID = xid.New()
+
+		err := db.InsertDocument(context.Background(), doc)
+		require.Error(t, err)
+
+		err = db.CheckDocumentExists(context.Background(), doc.ID, doc.OrganizationID)
+		testutil.AssertEqualError(t, sql.ErrNoRows, err)
+	})
+
+	t.Run("Root sort indexes are scoped per organization", func(t *testing.T) {
+		t.Parallel()
+
+		db := prepTempDB(t)
+		orgs := prepOrganizations(t, db, 2)
+
+		now := timeutil.Now().Truncate(time.Second)
+
+		insert := func(org string) document.Document {
+			doc := document.Document{
+				ID:             xid.New(),
+				OrganizationID: org,
+				Branch: document.Branch{
+					BranchID:   xid.New(),
+					BranchName: document.DefaultBranch,
+					CreatedAt:  now,
+					UpdatedAt:  now,
+				},
+			}
+
+			require.NoError(t, db.InsertDocument(context.Background(), doc))
+
+			return doc
+		}
+
+		first := insert(orgs[0])
+		second := insert(orgs[0])
+
+		// a second organization starts its own sequence rather than
+		// colliding with, or counting, the first one's roots.
+		other := insert(orgs[1])
+
+		sortIndex := func(id xid.ID) int {
+			var idx int
+
+			q, args := db.builder.Select("sort_index").From("documents").
+				Where(sq.Eq{"id": id}).MustSql()
+
+			require.NoError(t, db.sql.Get(&idx, q, args...))
+
+			return idx
+		}
+
+		assert.Equal(t, 0, sortIndex(first.ID))
+		assert.Equal(t, 1, sortIndex(second.ID))
+		assert.Equal(t, 0, sortIndex(other.ID))
+	})
+}
+
 func Test_agent_CheckDocumentExists(t *testing.T) {
 	db := prepTempDB(t)
 
@@ -266,10 +334,14 @@ func Test_agent_CheckDocumentCycle(t *testing.T) {
 		})[0]
 	}
 
-	root := prepChild(null.Value[xid.ID]{})
+	// the two roots are created together so they get distinct sort indexes.
+	roots := prepDocuments(t, db, 2, func(_ int, d *document.Document) {
+		d.OrganizationID = org
+	})
+	root, other := roots[0], roots[1]
+
 	child := prepChild(null.ValueFrom(root.ID))
 	grandchild := prepChild(null.ValueFrom(child.ID))
-	other := prepChild(null.Value[xid.ID]{})
 
 	cc := map[string]struct {
 		ID             xid.ID
@@ -348,6 +420,7 @@ func Test_agent_UpdateDocumentTree(t *testing.T) {
 	a, mock := prepMockDB(t)
 
 	mock.ExpectBegin()
+	mock.ExpectExec("SET CONSTRAINTS").WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec("UPDATE documents").WillReturnError(assert.AnError)
 	mock.ExpectRollback()
 

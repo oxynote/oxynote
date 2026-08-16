@@ -14,11 +14,11 @@ import (
 	"github.com/rs/xid"
 )
 
-// _insertDocumentSortIndexConstraint names the unique index on
-// (fk_parent_id, sort_index). Concurrent InsertDocument calls under
-// the same parent race on this constraint; InsertDocument catches
-// it and retries.
-const _insertDocumentSortIndexConstraint = "documents_fk_parent_id_sort_index_key"
+// _insertDocumentSortIndexConstraint names the unique constraint on
+// (fk_organization_id, fk_parent_id, sort_index). Concurrent InsertDocument
+// calls under the same parent race on it; InsertDocument catches the
+// violation and retries.
+const _insertDocumentSortIndexConstraint = "documents_sort_index_key"
 
 // _insertDocumentMaxAttempts caps the retry loop in InsertDocument
 // when concurrent inserts race on sort_index. Five attempts covers
@@ -26,15 +26,28 @@ const _insertDocumentSortIndexConstraint = "documents_fk_parent_id_sort_index_ke
 // create_document calls) without risking livelock.
 const _insertDocumentMaxAttempts = 5
 
-// InsertDocument inserts a new document into the database. Concurrent
-// inserts under the same parent race on the (fk_parent_id, sort_index)
-// unique constraint; the unique index guarantees correctness and a
-// short retry loop smooths over the lost race.
+// _insertDocumentSavepoint names the savepoint isolating one insert attempt.
+const _insertDocumentSavepoint = "document_insert"
+
+// InsertDocument inserts a new document and its first branch atomically.
+// Concurrent inserts under the same parent race on the sort_index unique
+// constraint; the constraint guarantees correctness and a short retry loop
+// smooths over the lost race. Each attempt runs inside a savepoint so a
+// conflict can be retried even when the agent is already running in a
+// caller's transaction, where a failed statement would otherwise abort it.
 func (a *agent) InsertDocument(ctx context.Context, doc document.Document) error {
 	for range _insertDocumentMaxAttempts {
-		err := a.insertDocumentRow(ctx, doc)
+		err := sqlutil.WrapTx(ctx, a.sql, func(tx *sqlx.Tx) error {
+			return withSavepoint(ctx, tx, _insertDocumentSavepoint, func() error {
+				if ierr := a.insertDocumentRow(ctx, tx, doc); ierr != nil {
+					return ierr
+				}
+
+				return a.insertDocumentBranch(ctx, tx, doc)
+			})
+		})
 		if err == nil {
-			return a.insertDocumentBranch(ctx, doc)
+			return nil
 		}
 
 		var pgErr *pgconn.PgError
@@ -53,18 +66,39 @@ func (a *agent) InsertDocument(ctx context.Context, doc document.Document) error
 	)
 }
 
-// insertDocumentRow performs one attempt: count siblings to pick the
-// next sort_index, then insert. Caller is expected to retry on a
-// unique-violation on the sort_index constraint.
-func (a *agent) insertDocumentRow(ctx context.Context, doc document.Document) error {
+// withSavepoint runs fn inside a savepoint so a failed attempt rolls back on
+// its own instead of aborting the surrounding transaction.
+func withSavepoint(ctx context.Context, tx *sqlx.Tx, name string, fn func() error) error {
+	if _, err := tx.ExecContext(ctx, "SAVEPOINT "+name); err != nil {
+		return err
+	}
+
+	if err := fn(); err != nil {
+		if _, rerr := tx.ExecContext(ctx, "ROLLBACK TO SAVEPOINT "+name); rerr != nil {
+			return rerr
+		}
+
+		return err
+	}
+
+	_, err := tx.ExecContext(ctx, "RELEASE SAVEPOINT "+name)
+
+	return err
+}
+
+// insertDocumentRow performs one attempt: count siblings within the
+// organization to pick the next sort_index, then insert. Caller is expected
+// to retry on a unique-violation on the sort_index constraint.
+func (a *agent) insertDocumentRow(ctx context.Context, tx *sqlx.Tx, doc document.Document) error {
 	var pos int64
 
 	q, args := a.builder.Select("COUNT(*)").From("documents").
 		Where(sq.Eq{
-			"fk_parent_id": doc.ParentID,
+			"fk_parent_id":       doc.ParentID,
+			"fk_organization_id": doc.OrganizationID,
 		}).MustSql()
 
-	if err := sqlx.GetContext(ctx, a.sql, &pos, q, args...); err != nil {
+	if err := sqlx.GetContext(ctx, tx, &pos, q, args...); err != nil {
 		return err
 	}
 
@@ -80,7 +114,7 @@ func (a *agent) insertDocumentRow(ctx context.Context, doc document.Document) er
 			"fk_last_updated_by": doc.LastUpdatedBy,
 		}).MustSql()
 
-	_, err := a.sql.ExecContext(ctx, q, args...)
+	_, err := tx.ExecContext(ctx, q, args...)
 
 	return err
 }
@@ -154,6 +188,12 @@ func (a *agent) FetchDocument(ctx context.Context, id xid.ID, organizationID, br
 // UpdateDocumentTree updates the tree of a document childrens in the database.
 func (a *agent) UpdateDocumentTree(ctx context.Context, ss document.Summaries, organizationID string) error {
 	return sqlutil.WrapTx(ctx, a.sql, func(tx *sqlx.Tx) error {
+		// renumbering walks positions that transiently collide with rows not
+		// yet updated, so the constraint is checked at commit here.
+		if _, err := tx.ExecContext(ctx, "SET CONSTRAINTS "+_insertDocumentSortIndexConstraint+" DEFERRED"); err != nil {
+			return err
+		}
+
 		for i, st := range ss {
 			q, args := a.builder.Update("documents").
 				SetMap(map[string]any{
@@ -219,20 +259,38 @@ func (a *agent) UpdateDocument(ctx context.Context, doc document.Document) error
 	})
 }
 
-// UpdateDocumentParentID updates the parent ID of a document in the database.
+// UpdateDocumentParentID re-parents a document, placing it last among its new
+// siblings. The sort index is recomputed rather than carried over: it belongs
+// to the previous parent's sequence and would otherwise collide with an
+// existing sibling at the destination.
 func (a *agent) UpdateDocumentParentID(ctx context.Context, id xid.ID, parentID null.Value[xid.ID], organizationID string) error {
-	q, args := a.builder.Update("documents").
-		SetMap(map[string]any{
-			"fk_parent_id": parentID,
-		}).
-		Where(sq.Eq{
-			"id":                 id,
-			"fk_organization_id": organizationID,
-		}).MustSql()
+	return sqlutil.WrapTx(ctx, a.sql, func(tx *sqlx.Tx) error {
+		var pos int64
 
-	_, err := a.sql.ExecContext(ctx, q, args...)
+		q, args := a.builder.Select("COUNT(*)").From("documents").
+			Where(sq.Eq{
+				"fk_parent_id":       parentID,
+				"fk_organization_id": organizationID,
+			}).MustSql()
 
-	return err
+		if err := sqlx.GetContext(ctx, tx, &pos, q, args...); err != nil {
+			return err
+		}
+
+		q, args = a.builder.Update("documents").
+			SetMap(map[string]any{
+				"fk_parent_id": parentID,
+				"sort_index":   pos,
+			}).
+			Where(sq.Eq{
+				"id":                 id,
+				"fk_organization_id": organizationID,
+			}).MustSql()
+
+		_, err := tx.ExecContext(ctx, q, args...)
+
+		return err
+	})
 }
 
 // DeleteDocument deletes a document from the database.

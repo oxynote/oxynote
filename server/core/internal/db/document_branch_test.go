@@ -9,7 +9,9 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/guregu/null/v5"
+	"github.com/jmoiron/sqlx"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
@@ -138,7 +140,9 @@ func Test_agent_insertDocumentBranch(t *testing.T) {
 			db := prepTempDB(t)
 			c := cfn(t, db)
 
-			err := db.insertDocumentBranch(context.Background(), c.Document)
+			err := sqlutil.WrapTx(context.Background(), db.sql, func(tx *sqlx.Tx) error {
+				return db.insertDocumentBranch(context.Background(), tx, c.Document)
+			})
 			testutil.RequireEqualError(t, c.Err, err)
 
 			if err != nil {

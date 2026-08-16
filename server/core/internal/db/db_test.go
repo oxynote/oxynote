@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -262,4 +263,24 @@ func prepTempDB(t *testing.T) *DB {
 	})
 
 	return db
+}
+
+func Test_DetectError_duplicateBranchName(t *testing.T) {
+	t.Parallel()
+
+	db := prepTempDB(t)
+
+	// renaming a branch onto a sibling's name trips the unique key that
+	// DetectError has to recognise.
+	branches := prepDocumentBranches(t, db, 2, nil)
+
+	second := branches[1]
+	second.BranchName = branches[0].BranchName
+
+	err := db.UpdateDocumentBranchMetadata(context.Background(), *second)
+	require.Error(t, err)
+
+	mapped := DetectError(err)
+	assert.Equal(t, http.StatusBadRequest, errutil.StatusCode(mapped, false))
+	assert.Contains(t, mapped.Error(), "branch name is already in use")
 }

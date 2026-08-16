@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func prepOrganizations(t *testing.T, db *DB, count int) []string { //nolint:unparam // fixture helpers share a uniform signature
+func prepOrganizations(t *testing.T, db *DB, count int) []string {
 	t.Helper()
 
 	res := make([]string, count)

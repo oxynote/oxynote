@@ -200,11 +200,18 @@ func DetectError(err error) error {
 	}
 
 	if perr.Code == "23505" { // Unique violation.
-		if perr.ConstraintName == "data_sources_fk_organization_id_name_key" {
+		switch perr.ConstraintName {
+		case "data_sources_fk_organization_id_name_key":
 			return errutil.New(
 				http.StatusBadRequest,
 				"data_source.duplicate_name",
 				"name is already in use",
+			)
+		case "document_branches_fk_document_id_branch_name_key":
+			return errutil.New(
+				http.StatusBadRequest,
+				"document_branch.duplicate_name",
+				"branch name is already in use",
 			)
 		}
 	}

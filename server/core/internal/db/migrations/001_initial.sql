@@ -98,7 +98,9 @@ CREATE TABLE documents (
 	fk_created_by TEXT REFERENCES users ON DELETE SET NULL,
 	updated_at TIMESTAMP NOT NULL,
 	fk_last_updated_by TEXT REFERENCES users ON DELETE SET NULL,
-	UNIQUE(fk_parent_id, sort_index) DEFERRABLE INITIALLY DEFERRED
+	CONSTRAINT documents_sort_index_key
+		UNIQUE NULLS NOT DISTINCT (fk_organization_id, fk_parent_id, sort_index)
+		DEFERRABLE INITIALLY IMMEDIATE
 );
 CREATE INDEX documents_fk_organization_id_idx ON documents (fk_organization_id);
 CREATE INDEX documents_fk_parent_id_idx ON documents (fk_parent_id);

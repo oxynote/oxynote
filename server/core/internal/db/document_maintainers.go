@@ -10,6 +10,10 @@ import (
 
 // UpsertDocumentMaintainers updates or inserts maintainers for a document.
 func (a *agent) UpsertDocumentMaintainers(ctx context.Context, documentID xid.ID, organizationID string, maintainerIDs []string) error {
+	if len(maintainerIDs) == 0 {
+		return nil
+	}
+
 	sb := a.builder.Insert("document_maintainers").
 		Columns(
 			"fk_document_id",

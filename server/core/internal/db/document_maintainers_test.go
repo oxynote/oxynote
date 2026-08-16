@@ -108,3 +108,17 @@ func Test_agent_FetchDocumentMaintainers(t *testing.T) {
 	assert.NoError(t, err)
 	assert.ElementsMatch(t, users, res)
 }
+
+func Test_agent_UpsertDocumentMaintainers_emptyList(t *testing.T) {
+	t.Parallel()
+
+	db := prepTempDB(t)
+	doc := prepDocuments(t, db, 1, nil)[0]
+
+	// squirrel refuses an INSERT with no VALUES and MustSql panics on it, so
+	// an empty list has to short-circuit.
+	assert.NotPanics(t, func() {
+		err := db.UpsertDocumentMaintainers(context.Background(), doc.ID, doc.OrganizationID, nil)
+		assert.NoError(t, err)
+	})
+}
