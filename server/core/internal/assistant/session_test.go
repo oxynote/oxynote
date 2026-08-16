@@ -35,7 +35,7 @@ func sseEvent(name, data string) string {
 
 // sseTextTurn renders a streamed Anthropic response carrying a
 // single text block that ends with the given stop reason.
-func sseTextTurn(text, stopReason string) string {
+func sseTextTurn(text string) string {
 	return sseEvent("message_start",
 		`{"type":"message_start","message":{"id":"m1","type":"message","role":"assistant","content":[],"model":"claude","usage":{"input_tokens":1,"output_tokens":1}}}`) +
 		sseEvent("content_block_start",
@@ -44,7 +44,7 @@ func sseTextTurn(text, stopReason string) string {
 			`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"`+text+`"}}`) +
 		sseEvent("content_block_stop", `{"type":"content_block_stop","index":0}`) +
 		sseEvent("message_delta",
-			`{"type":"message_delta","delta":{"stop_reason":"`+stopReason+`"},"usage":{"input_tokens":3,"output_tokens":5,"cache_creation_input_tokens":2,"cache_read_input_tokens":4}}`) +
+			`{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":3,"output_tokens":5,"cache_creation_input_tokens":2,"cache_read_input_tokens":4}}`) +
 		sseEvent("message_stop", `{"type":"message_stop"}`)
 }
 
@@ -291,7 +291,7 @@ func Test_Session_Process(t *testing.T) {
 		t.Parallel()
 
 		client := anthClient(t, func(_ int) (int, string) {
-			return http.StatusOK, sseTextTurn("hello", "end_turn")
+			return http.StatusOK, sseTextTurn("hello")
 		})
 
 		writer := &protocolMock.SessionWriter{}
@@ -332,7 +332,7 @@ func Test_Session_handleUserMessage(t *testing.T) {
 		t.Parallel()
 
 		client := anthClient(t, func(_ int) (int, string) {
-			return http.StatusOK, sseTextTurn("answer", "end_turn")
+			return http.StatusOK, sseTextTurn("answer")
 		})
 
 		writer := &protocolMock.SessionWriter{}
@@ -377,7 +377,7 @@ func Test_Session_callAnthropic(t *testing.T) {
 		t.Parallel()
 
 		client := anthClient(t, func(_ int) (int, string) {
-			return http.StatusOK, sseTextTurn("hello", "end_turn")
+			return http.StatusOK, sseTextTurn("hello")
 		})
 
 		writer := &protocolMock.SessionWriter{}
@@ -578,6 +578,92 @@ func Test_Session_dispatchTools_writesRunSequentially(t *testing.T) {
 	require.Len(t, results, 2)
 	assert.False(t, overlapped.Load(), "approved writes must not run concurrently")
 	assert.Equal(t, []string{first.String(), second.String()}, order)
+}
+
+func Test_Session_handleUserMessage_dropsEmptyTextBlocks(t *testing.T) {
+	t.Parallel()
+
+	// a text block that never receives a delta, which is what the API emits
+	// ahead of a tool_use and then rejects on the way back in.
+	body := sseEvent("message_start",
+		`{"type":"message_start","message":{"id":"m1","type":"message","role":"assistant","content":[],"model":"claude","usage":{"input_tokens":1,"output_tokens":1}}}`) +
+		sseEvent("content_block_start",
+			`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`) +
+		sseEvent("content_block_stop", `{"type":"content_block_stop","index":0}`) +
+		sseEvent("message_delta",
+			`{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":1,"output_tokens":1}}`) +
+		sseEvent("message_stop", `{"type":"message_stop"}`)
+
+	client := anthClient(t, func(int) (int, string) {
+		return http.StatusOK, body
+	})
+
+	s := newTestSession(client, &protocolMock.SessionWriter{}, nil, nil, nil)
+
+	s.Process(context.Background(), []byte(`{"type":"message","content":"hi"}`))
+	s.supv.Wait()
+
+	for _, m := range s.messages {
+		for _, b := range m.Content {
+			if b.OfText != nil {
+				assert.NotEmpty(t, b.OfText.Text, "an empty text block would be rejected on the next turn")
+			}
+		}
+	}
+}
+
+func Test_Session_dispatchTools_containsToolPanic(t *testing.T) {
+	t.Parallel()
+
+	writer := &protocolMock.SessionWriter{}
+
+	db := &toolsMock.DB{
+		FetchDocumentTreeFunc: func(context.Context, string) (document.Summaries, error) {
+			panic("tool exploded")
+		},
+	}
+
+	s := newTestSession(nil, writer, db, nil, nil)
+
+	// a panicking tool degrades to an error result instead of taking the
+	// process down or abandoning the rest of the batch.
+	var results []anthropic.ContentBlockParamUnion
+
+	require.NotPanics(t, func() {
+		results = s.dispatchTools(context.Background(), []anthropic.ContentBlockParamUnion{
+			toolUseBlock("t1", "list_documents", `{}`),
+		})
+	})
+
+	require.Len(t, results, 1)
+	require.NotNil(t, results[0].OfToolResult)
+}
+
+func Test_Session_Process_releasesTurnOnPanic(t *testing.T) {
+	t.Parallel()
+
+	client := anthClient(t, func(int) (int, string) {
+		return http.StatusOK, sseTextTurn("hello")
+	})
+
+	// panic partway through the turn, while still letting the recovery path
+	// deliver its error and done messages.
+	writer := &protocolMock.SessionWriter{}
+	writer.WriteJSONFunc = func(_ context.Context, msg any) {
+		if _, ok := msg.(protocol.TextDeltaMessage); ok {
+			panic("writer exploded")
+		}
+	}
+
+	s := newTestSession(client, writer, nil, nil, nil)
+
+	s.Process(context.Background(), []byte(`{"type":"message","content":"hi"}`))
+	s.supv.Wait()
+
+	// the turn is released and the client is told, rather than the session
+	// rejecting every later message with "already processing".
+	assert.False(t, s.processing)
+	assert.Contains(t, writtenTypes(writer), "done")
 }
 
 func Test_Session_dispatchTools(t *testing.T) {

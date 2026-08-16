@@ -21,6 +21,12 @@ func (h *Handler) BindNotifications(tpc wsserver.Topic) {
 		mu.Lock()
 		defer mu.Unlock()
 
+		// a re-subscribe that overtakes the previous unsubscribe would
+		// otherwise strand the earlier registration forever.
+		if unsub != nil {
+			unsub()
+		}
+
 		unsub = h.notifier.OnNotification(func(ctx context.Context, nt notificationCore.Notification) {
 			count, err := h.db.FetchNotificationCount(ctx, nt.OrganizationID, nt.UserID, false)
 			if err != nil {
@@ -44,6 +50,14 @@ func (h *Handler) BindNotifications(tpc wsserver.Topic) {
 		mu.Lock()
 		defer mu.Unlock()
 
+		// the callbacks are dispatched as independent goroutines, so an
+		// unsubscribe can arrive before any subscribe registered anything.
+		if unsub == nil {
+			return
+		}
+
 		unsub()
+
+		unsub = nil
 	})
 }

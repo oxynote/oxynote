@@ -16,6 +16,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -777,7 +778,7 @@ func Test_Handler_HandleCommand(t *testing.T) {
 
 			var posted int
 
-			hdl.message.postCallback = func() { posted++ }
+			hdl.message.postCallback = func(string, xid.ID) { posted++ }
 
 			body := c.RawBody
 

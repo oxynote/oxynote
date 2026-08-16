@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/blang/semver/v4"
@@ -230,14 +231,27 @@ func (s *Server) fetchVersion(w http.ResponseWriter, _ *http.Request) {
 
 // bindVersionPing publishes version information every 5th second.
 func (s *Server) bindVersionPing(tpc wsserver.Topic) {
+	// the subscribe and unsubscribe callbacks are dispatched as independent
+	// goroutines, so they can overlap and even arrive out of order; the
+	// mutex guards the shared context and the nil check covers an
+	// unsubscribe that lands before the first subscribe.
 	var (
+		mu     sync.Mutex
 		ctx    context.Context
 		cancel context.CancelFunc
 		cr     = timeutil.NewCron(s.log)
 	)
 
 	_, err := cr.AddFunc("*/5 * * * * *", func() {
-		tpc.PublishMany(ctx, struct {
+		mu.Lock()
+		pubCtx := ctx
+		mu.Unlock()
+
+		if pubCtx == nil {
+			return
+		}
+
+		tpc.PublishMany(pubCtx, struct {
 			Version semver.Version `json:"version"`
 		}{
 			Version: buildinfo.Full().Version,
@@ -251,14 +265,26 @@ func (s *Server) bindVersionPing(tpc wsserver.Topic) {
 	}
 
 	tpc.OnFirstSub(func(_ context.Context) {
-		// this context should be able to outlive this goroutine
-		ctx, cancel = context.WithCancel(context.Background()) //nolint:gosec,fatcontext // cancel is invoked by the OnLastUnsub callback; the context deliberately outlives the closure
+		mu.Lock()
+		defer mu.Unlock()
+
+		// this context deliberately outlives the closure; OnLastUnsub
+		// cancels it.
+		ctx, cancel = context.WithCancel(context.Background()) //nolint:gosec,fatcontext // cancel is invoked by the OnLastUnsub callback
 
 		cr.Start()
 	})
 
 	tpc.OnLastUnsub(func(_ context.Context) {
-		cancel()
+		mu.Lock()
+		defer mu.Unlock()
+
+		if cancel != nil {
+			cancel()
+
+			ctx, cancel = nil, nil //nolint:fatcontext // cleared so the next subscription starts a fresh context
+		}
+
 		cr.Stop()
 	})
 }

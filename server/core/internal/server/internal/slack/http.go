@@ -16,6 +16,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
+	"github.com/rs/xid"
 	goslack "github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
 )
@@ -50,7 +51,7 @@ type Handler struct {
 	man    *slack.Manager
 
 	message struct {
-		postCallback func()
+		postCallback func(organizationID string, id xid.ID)
 	}
 }
 
@@ -485,17 +486,18 @@ func (h *Handler) HandleCommand(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case goslack.InteractionTypeViewSubmission:
-		err := h.db.InsertSlackMessage(r.Context(), *slack.NewMessage(
+		msg := slack.NewMessage(
 			app.OrganizationID.String,
 			payload.View.State.Values["message_input_block"]["message_input_block_action"].Value,
-		))
-		if err != nil {
+		)
+
+		if err := h.db.InsertSlackMessage(r.Context(), *msg); err != nil {
 			httpserver.RespondError(h.log, w, err)
 			return
 		}
 
 		if h.message.postCallback != nil {
-			h.message.postCallback()
+			h.message.postCallback(msg.OrganizationID, msg.ID)
 		}
 	default:
 	}

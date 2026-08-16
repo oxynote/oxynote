@@ -14,6 +14,7 @@ import (
 	"github.com/jellydator/xync"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/protocol"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
+	"github.com/oxynote/oxynote/server/core/pkg/logutil"
 	"github.com/oxynote/oxynote/server/core/pkg/strutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
@@ -145,6 +146,26 @@ func (s *session) Process(ctx context.Context, msg []byte) {
 		s.mu.Unlock()
 
 		s.supv.Go(func(sctx context.Context) {
+			// the supervisor recovers panics silently, so log the panic here
+			// and make sure the turn is always released: a stranded
+			// processing flag rejects every later message in the session.
+			defer logutil.Recover(s.man.log, nil)
+
+			defer func() {
+				s.mu.Lock()
+				s.processing = false
+				s.mu.Unlock()
+
+				// a panic skips the turn's own done message, leaving the
+				// client waiting for a reply that never arrives.
+				if rec := recover(); rec != nil {
+					s.writer.WriteJSON(ctx, protocol.NewErrorMessage("the assistant failed to complete the turn"))
+					s.writer.WriteJSON(ctx, protocol.NewDoneMessage())
+
+					panic(rec)
+				}
+			}()
+
 			// Close cancels the supervisor context, so merge it into the
 			// connection context: otherwise a closing session cannot
 			// interrupt a turn parked on a confirmation or a model stream.
@@ -158,10 +179,6 @@ func (s *session) Process(ctx context.Context, msg []byte) {
 				turnCtx,
 				gjson.GetBytes(msg, "content").String(),
 			)
-
-			s.mu.Lock()
-			s.processing = false
-			s.mu.Unlock()
 		})
 
 	case protocol.ClientTypeReset:
@@ -250,7 +267,7 @@ func (s *session) handleUserMessage(ctx context.Context, content string) {
 // concurrently, gates writes behind a confirm prompt, and feeds the
 // results back into the conversation. Returns the stop reason so
 // the outer loop knows whether another turn is needed.
-func (s *session) callAnthropic(ctx context.Context, activeDocumentID string) (anthropic.StopReason, error) {
+func (s *session) callAnthropic(ctx context.Context, activeDocumentID string) (anthropic.StopReason, error) { //nolint:gocognit // this method is complex, however, it's well-structured
 	stream := s.man.client.Messages.NewStreaming(ctx, anthropic.MessageNewParams{
 		Model:     _model,
 		MaxTokens: _maxTokens,
@@ -323,9 +340,12 @@ func (s *session) callAnthropic(ctx context.Context, activeDocumentID string) (a
 
 		case "content_block_stop":
 			if inText {
-				assistantBlocks = append(assistantBlocks,
-					anthropic.NewTextBlock(textAccum.String()),
-				)
+				// the API emits empty text blocks ahead of tool_use and
+				// rejects them on the way back in; one that reaches the saved
+				// history fails every later turn.
+				if text := textAccum.String(); text != "" {
+					assistantBlocks = append(assistantBlocks, anthropic.NewTextBlock(text))
+				}
 
 				inText = false
 			}
@@ -492,7 +512,7 @@ func (s *session) dispatchTools(
 		}
 
 		wg.Go(func() {
-			results[c.idx] = s.runTool(ctx, c.id, tools.Name(c.name), c.args)
+			results[c.idx] = s.runToolSafely(ctx, c.id, tools.Name(c.name), c.args)
 		})
 	}
 
@@ -518,10 +538,34 @@ func (s *session) dispatchTools(
 			continue
 		}
 
-		results[c.idx] = s.runTool(ctx, c.id, tools.Name(c.name), c.args)
+		results[c.idx] = s.runToolSafely(ctx, c.id, tools.Name(c.name), c.args)
 	}
 
 	return results
+}
+
+// runToolSafely runs a tool and turns a panic into an error result. Tool
+// inputs come from the model, so a panicking tool must not take the process
+// down with it or abandon the other calls in the batch.
+func (s *session) runToolSafely(
+	ctx context.Context,
+	id string,
+	name tools.Name,
+	args json.RawMessage,
+) (res anthropic.ContentBlockParamUnion) {
+	defer func() {
+		rec := recover()
+		if rec == nil {
+			return
+		}
+
+		logutil.Critical(s.man.log, fmt.Errorf("%v", rec)).
+			Error("assistant tool panicked", slog.String("tool", string(name)))
+
+		res = makeToolResult(id, mustJSON(map[string]any{_errorKey: "tool failed"}))
+	}()
+
+	return s.runTool(ctx, id, name, args)
 }
 
 // runTool executes one tool and packages its outcome as a
@@ -567,7 +611,7 @@ func (s *session) runTool(
 		)
 	}
 
-	if len(result) > _maxToolResultBytes {
+	if size := len(result); size > _maxToolResultBytes {
 		result = mustJSON(map[string]any{
 			_errorKey: "result too large; use a more specific query to narrow it down",
 		})
@@ -576,7 +620,7 @@ func (s *session) runTool(
 
 		s.man.log.Warn("assistant tool result truncated (too large)",
 			slog.String("tool", string(name)),
-			slog.Int("size_bytes", len(result)),
+			slog.Int("size_bytes", size),
 		)
 	}
 
