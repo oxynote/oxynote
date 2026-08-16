@@ -27,6 +27,11 @@ const (
 	// was not found in the GitHub repository.
 	GithubTrackingStatusBranchNotFound GithubTrackingStatus = "missing_branch"
 
+	// GithubTrackingStatusTreeTruncated indicates that the repository tree
+	// is too large for GitHub to return in full, so freshness cannot be
+	// determined from it.
+	GithubTrackingStatusTreeTruncated GithubTrackingStatus = "tree_truncated"
+
 	// GithubTrackingStatusRepositoryNotFound indicates that the specified
 	// repository was not found on GitHub.
 	GithubTrackingStatusRepositoryNotFound GithubTrackingStatus = "missing_repository"
@@ -76,6 +81,8 @@ func (gt *GithubTracking) Process(ctx context.Context, inp Input) (decimal.Decim
 		return gts.EncodeState(decimal.Zero, GithubTrackingStatusRepositoryNotFound)
 	case errors.Is(err, github.ErrRepositoryBranchNotFound):
 		return gts.EncodeState(decimal.Zero, GithubTrackingStatusBranchNotFound)
+	case errors.Is(err, github.ErrTreeTruncated):
+		return gts.EncodeState(decimal.Zero, GithubTrackingStatusTreeTruncated)
 	default:
 		return decimal.Zero, nil, fmt.Errorf("fetching repository tree: %w", err)
 	}

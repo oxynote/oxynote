@@ -554,6 +554,7 @@ func Test_MySQL_buildDSN(t *testing.T) {
 		Password string
 		Addr     string
 		DBName   string
+		TLS      string
 		Err      error
 	}{
 		"Error returned by url.Parse": {
@@ -588,6 +589,12 @@ func Test_MySQL_buildDSN(t *testing.T) {
 			Addr:     "dbhost:3307",
 			DBName:   "mydb",
 		},
+		"TLS parameter is carried over": {
+			URL:    "mysql://dbhost/mydb?tls=true",
+			Addr:   "dbhost:3306",
+			DBName: "mydb",
+			TLS:    "true",
+		},
 		"No user info": {
 			URL:    "mysql://dbhost/mydb",
 			Addr:   "dbhost:3306",
@@ -619,6 +626,7 @@ func Test_MySQL_buildDSN(t *testing.T) {
 			assert.Equal(t, c.DBName, cfg.DBName)
 			assert.True(t, cfg.ParseTime)
 			assert.Equal(t, 10*time.Second, cfg.Timeout)
+			assert.Equal(t, c.TLS, cfg.TLSConfig)
 		})
 	}
 }
@@ -757,6 +765,11 @@ func Test_mysqlCheckReadOnly(t *testing.T) {
 		"Write privilege": {
 			Rows: sqlmock.NewRows([]string{"grants"}).
 				AddRow("GRANT SELECT, INSERT ON *.* TO 'u'@'%'"),
+		},
+		"Role grant hides its privileges": {
+			Rows: sqlmock.NewRows([]string{"grants"}).
+				AddRow("GRANT SELECT ON *.* TO `u`@`%`").
+				AddRow("GRANT `writer_role`@`%` TO `u`@`%`"),
 		},
 		"Read-only privileges": {
 			Rows: sqlmock.NewRows([]string{"grants"}).

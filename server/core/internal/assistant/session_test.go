@@ -185,6 +185,43 @@ func Test_Session_Close(t *testing.T) {
 
 	s := newTestSession(nil, &protocolMock.SessionWriter{}, nil, nil, nil)
 	assert.NoError(t, s.Close())
+
+	t.Run("Close interrupts a pending confirmation", func(t *testing.T) {
+		t.Parallel()
+
+		client := anthClient(t, func(_ int) (int, string) {
+			return http.StatusOK, sseToolTurn("delete_document", `{"document_id":"doc-1"}`)
+		})
+
+		s := newTestSession(client, &protocolMock.SessionWriter{}, nil, nil, nil)
+
+		s.Process(context.Background(), []byte(`{"type":"message","content":"hi"}`))
+
+		// no completion signal exists for "the turn has parked on the confirm
+		// prompt", so poll for the pending channel the prompt installs.
+		require.Eventually(t, func() bool {
+			s.confirmMu.Lock()
+			defer s.confirmMu.Unlock()
+
+			return s.confirmCh != nil
+		}, 5*time.Second, time.Millisecond)
+
+		done := make(chan struct{})
+
+		go func() {
+			defer close(done)
+
+			assert.NoError(t, s.Close())
+		}()
+
+		// Close cancels the turn instead of waiting out _confirmTimeout, which
+		// is ten minutes.
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			t.Fatal("Close did not interrupt the pending confirmation")
+		}
+	})
 }
 
 func Test_Session_SetActiveDocument(t *testing.T) {
@@ -309,6 +346,33 @@ func Test_Session_Process(t *testing.T) {
 		assert.Len(t, store.SetCalls(), 1)
 		assert.False(t, s.processing)
 	})
+
+	t.Run("A panicking turn is released", func(t *testing.T) {
+		t.Parallel()
+
+		client := anthClient(t, func(int) (int, string) {
+			return http.StatusOK, sseTextTurn("hello")
+		})
+
+		// panic partway through the turn, while still letting the recovery path
+		// deliver its error and done messages.
+		writer := &protocolMock.SessionWriter{}
+		writer.WriteJSONFunc = func(_ context.Context, msg any) {
+			if _, ok := msg.(protocol.TextDeltaMessage); ok {
+				panic("writer exploded")
+			}
+		}
+
+		s := newTestSession(client, writer, nil, nil, nil)
+
+		s.Process(context.Background(), []byte(`{"type":"message","content":"hi"}`))
+		s.supv.Wait()
+
+		// the turn is released and the client is told, rather than the session
+		// rejecting every later message with "already processing".
+		assert.False(t, s.processing)
+		assert.Contains(t, writtenTypes(writer), "done")
+	})
 }
 
 func Test_Session_handleUserMessage(t *testing.T) {
@@ -369,6 +433,38 @@ func Test_Session_handleUserMessage(t *testing.T) {
 		assert.Contains(t, types, "error:maximum agent turns reached")
 		assert.Equal(t, "done", types[len(types)-1])
 		assert.Len(t, db.FetchDocumentTreeCalls(), 2)
+	})
+
+	t.Run("Empty text blocks are dropped", func(t *testing.T) {
+		t.Parallel()
+
+		// a text block that never receives a delta, which is what the API emits
+		// ahead of a tool_use and then rejects on the way back in.
+		body := sseEvent("message_start",
+			`{"type":"message_start","message":{"id":"m1","type":"message","role":"assistant","content":[],"model":"claude","usage":{"input_tokens":1,"output_tokens":1}}}`) +
+			sseEvent("content_block_start",
+				`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`) +
+			sseEvent("content_block_stop", `{"type":"content_block_stop","index":0}`) +
+			sseEvent("message_delta",
+				`{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":1,"output_tokens":1}}`) +
+			sseEvent("message_stop", `{"type":"message_stop"}`)
+
+		client := anthClient(t, func(int) (int, string) {
+			return http.StatusOK, body
+		})
+
+		s := newTestSession(client, &protocolMock.SessionWriter{}, nil, nil, nil)
+
+		s.Process(context.Background(), []byte(`{"type":"message","content":"hi"}`))
+		s.supv.Wait()
+
+		for _, m := range s.messages {
+			for _, b := range m.Content {
+				if b.OfText != nil {
+					assert.NotEmpty(t, b.OfText.Text, "an empty text block would be rejected on the next turn")
+				}
+			}
+		}
 	})
 }
 
@@ -466,206 +562,6 @@ func Test_Session_callAnthropic(t *testing.T) {
 		require.Error(t, err)
 	})
 }
-
-func Test_Session_Close_interruptsPendingConfirmation(t *testing.T) {
-	t.Parallel()
-
-	client := anthClient(t, func(_ int) (int, string) {
-		return http.StatusOK, sseToolTurn("delete_document", `{"document_id":"doc-1"}`)
-	})
-
-	s := newTestSession(client, &protocolMock.SessionWriter{}, nil, nil, nil)
-
-	s.Process(context.Background(), []byte(`{"type":"message","content":"hi"}`))
-
-	// no completion signal exists for "the turn has parked on the confirm
-	// prompt", so poll for the pending channel the prompt installs.
-	require.Eventually(t, func() bool {
-		s.confirmMu.Lock()
-		defer s.confirmMu.Unlock()
-
-		return s.confirmCh != nil
-	}, 5*time.Second, time.Millisecond)
-
-	done := make(chan struct{})
-
-	go func() {
-		defer close(done)
-
-		assert.NoError(t, s.Close())
-	}()
-
-	// Close cancels the turn instead of waiting out _confirmTimeout, which
-	// is ten minutes.
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
-		t.Fatal("Close did not interrupt the pending confirmation")
-	}
-}
-
-func Test_Session_dispatchTools_writesRunSequentially(t *testing.T) {
-	t.Parallel()
-
-	var s *session
-
-	writer := &protocolMock.SessionWriter{
-		WriteJSONFunc: func(_ context.Context, msg any) {
-			if req, ok := msg.(protocol.ConfirmRequest); ok {
-				s.deliverConfirmResponse(req.TurnID, true, false)
-			}
-		},
-	}
-
-	db := &toolsMock.DB{
-		FetchDocumentFunc: func(_ context.Context, id xid.ID, _, _ string) (*document.Document, error) {
-			return &document.Document{
-				ID:     id,
-				Branch: document.Branch{BranchID: xid.New()},
-			}, nil
-		},
-	}
-
-	var (
-		active     atomic.Int32
-		overlapped atomic.Bool
-		orderMu    sync.Mutex
-		order      []string
-	)
-
-	applier := &toolsMock.EditApplier{
-		ApplyFunc: func(_ context.Context, documentID, _ string, _ []edit.Operation) (edit.Result, error) {
-			if active.Add(1) > 1 {
-				overlapped.Store(true)
-			}
-
-			// widen the window a concurrent second write would land in.
-			// Sequential execution can never overlap, so this only ever
-			// slows the test down.
-			time.Sleep(20 * time.Millisecond)
-
-			orderMu.Lock()
-
-			order = append(order, documentID)
-			orderMu.Unlock()
-
-			active.Add(-1)
-
-			return edit.Result{Applied: 1}, nil
-		},
-	}
-
-	first, second := xid.New(), xid.New()
-
-	s = newTestSession(nil, writer, db, nil, nil)
-	s.tools = tools.NewManager(
-		slog.New(slog.DiscardHandler),
-		db,
-		&toolsMock.Searcher{},
-		applier,
-		&toolsMock.TreeNotifier{},
-		"org",
-		"user",
-	)
-
-	results := s.dispatchTools(context.Background(), []anthropic.ContentBlockParamUnion{
-		toolUseBlock("t1", "append_block",
-			`{"document_id":"`+first.String()+`","block":{"type":"paragraph","text":"a"}}`),
-		toolUseBlock("t2", "append_block",
-			`{"document_id":"`+second.String()+`","block":{"type":"paragraph","text":"b"}}`),
-	})
-
-	require.Len(t, results, 2)
-	assert.False(t, overlapped.Load(), "approved writes must not run concurrently")
-	assert.Equal(t, []string{first.String(), second.String()}, order)
-}
-
-func Test_Session_handleUserMessage_dropsEmptyTextBlocks(t *testing.T) {
-	t.Parallel()
-
-	// a text block that never receives a delta, which is what the API emits
-	// ahead of a tool_use and then rejects on the way back in.
-	body := sseEvent("message_start",
-		`{"type":"message_start","message":{"id":"m1","type":"message","role":"assistant","content":[],"model":"claude","usage":{"input_tokens":1,"output_tokens":1}}}`) +
-		sseEvent("content_block_start",
-			`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`) +
-		sseEvent("content_block_stop", `{"type":"content_block_stop","index":0}`) +
-		sseEvent("message_delta",
-			`{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":1,"output_tokens":1}}`) +
-		sseEvent("message_stop", `{"type":"message_stop"}`)
-
-	client := anthClient(t, func(int) (int, string) {
-		return http.StatusOK, body
-	})
-
-	s := newTestSession(client, &protocolMock.SessionWriter{}, nil, nil, nil)
-
-	s.Process(context.Background(), []byte(`{"type":"message","content":"hi"}`))
-	s.supv.Wait()
-
-	for _, m := range s.messages {
-		for _, b := range m.Content {
-			if b.OfText != nil {
-				assert.NotEmpty(t, b.OfText.Text, "an empty text block would be rejected on the next turn")
-			}
-		}
-	}
-}
-
-func Test_Session_dispatchTools_containsToolPanic(t *testing.T) {
-	t.Parallel()
-
-	writer := &protocolMock.SessionWriter{}
-
-	db := &toolsMock.DB{
-		FetchDocumentTreeFunc: func(context.Context, string) (document.Summaries, error) {
-			panic("tool exploded")
-		},
-	}
-
-	s := newTestSession(nil, writer, db, nil, nil)
-
-	// a panicking tool degrades to an error result instead of taking the
-	// process down or abandoning the rest of the batch.
-	var results []anthropic.ContentBlockParamUnion
-
-	require.NotPanics(t, func() {
-		results = s.dispatchTools(context.Background(), []anthropic.ContentBlockParamUnion{
-			toolUseBlock("t1", "list_documents", `{}`),
-		})
-	})
-
-	require.Len(t, results, 1)
-	require.NotNil(t, results[0].OfToolResult)
-}
-
-func Test_Session_Process_releasesTurnOnPanic(t *testing.T) {
-	t.Parallel()
-
-	client := anthClient(t, func(int) (int, string) {
-		return http.StatusOK, sseTextTurn("hello")
-	})
-
-	// panic partway through the turn, while still letting the recovery path
-	// deliver its error and done messages.
-	writer := &protocolMock.SessionWriter{}
-	writer.WriteJSONFunc = func(_ context.Context, msg any) {
-		if _, ok := msg.(protocol.TextDeltaMessage); ok {
-			panic("writer exploded")
-		}
-	}
-
-	s := newTestSession(client, writer, nil, nil, nil)
-
-	s.Process(context.Background(), []byte(`{"type":"message","content":"hi"}`))
-	s.supv.Wait()
-
-	// the turn is released and the client is told, rather than the session
-	// rejecting every later message with "already processing".
-	assert.False(t, s.processing)
-	assert.Contains(t, writtenTypes(writer), "done")
-}
-
 func Test_Session_dispatchTools(t *testing.T) {
 	t.Run("Reads execute without confirmation", func(t *testing.T) {
 		t.Parallel()
@@ -774,6 +670,109 @@ func Test_Session_dispatchTools(t *testing.T) {
 
 		require.Len(t, results, 1)
 		assert.Len(t, db.FetchDocumentTreeCalls(), 1)
+	})
+
+	t.Run("Writes run sequentially in input order", func(t *testing.T) {
+		t.Parallel()
+
+		var s *session
+
+		writer := &protocolMock.SessionWriter{
+			WriteJSONFunc: func(_ context.Context, msg any) {
+				if req, ok := msg.(protocol.ConfirmRequest); ok {
+					s.deliverConfirmResponse(req.TurnID, true, false)
+				}
+			},
+		}
+
+		db := &toolsMock.DB{
+			FetchDocumentFunc: func(_ context.Context, id xid.ID, _, _ string) (*document.Document, error) {
+				return &document.Document{
+					ID:     id,
+					Branch: document.Branch{BranchID: xid.New()},
+				}, nil
+			},
+		}
+
+		var (
+			active     atomic.Int32
+			overlapped atomic.Bool
+			orderMu    sync.Mutex
+			order      []string
+		)
+
+		applier := &toolsMock.EditApplier{
+			ApplyFunc: func(_ context.Context, documentID, _ string, _ []edit.Operation) (edit.Result, error) {
+				if active.Add(1) > 1 {
+					overlapped.Store(true)
+				}
+
+				// widen the window a concurrent second write would land in.
+				// Sequential execution can never overlap, so this only ever
+				// slows the test down.
+				time.Sleep(20 * time.Millisecond)
+
+				orderMu.Lock()
+
+				order = append(order, documentID)
+				orderMu.Unlock()
+
+				active.Add(-1)
+
+				return edit.Result{Applied: 1}, nil
+			},
+		}
+
+		first, second := xid.New(), xid.New()
+
+		s = newTestSession(nil, writer, db, nil, nil)
+		s.tools = tools.NewManager(
+			slog.New(slog.DiscardHandler),
+			db,
+			&toolsMock.Searcher{},
+			applier,
+			&toolsMock.TreeNotifier{},
+			"org",
+			"user",
+		)
+
+		results := s.dispatchTools(context.Background(), []anthropic.ContentBlockParamUnion{
+			toolUseBlock("t1", "append_block",
+				`{"document_id":"`+first.String()+`","block":{"type":"paragraph","text":"a"}}`),
+			toolUseBlock("t2", "append_block",
+				`{"document_id":"`+second.String()+`","block":{"type":"paragraph","text":"b"}}`),
+		})
+
+		require.Len(t, results, 2)
+		assert.False(t, overlapped.Load(), "approved writes must not run concurrently")
+		assert.Equal(t, []string{first.String(), second.String()}, order)
+	})
+
+	t.Run("A panicking tool is contained", func(t *testing.T) {
+		t.Parallel()
+
+		writer := &protocolMock.SessionWriter{}
+
+		db := &toolsMock.DB{
+			FetchDocumentTreeFunc: func(context.Context, string) (document.Summaries, error) {
+				panic("tool exploded")
+			},
+		}
+
+		s := newTestSession(nil, writer, db, nil, nil)
+
+		// a panicking tool degrades to an error result instead of taking the
+		// process down or abandoning the rest of the batch.
+		var results []anthropic.ContentBlockParamUnion
+
+		require.NotPanics(t, func() {
+			results = s.dispatchTools(context.Background(), []anthropic.ContentBlockParamUnion{
+				toolUseBlock("t1", "list_documents", `{}`),
+			})
+		})
+
+		require.Len(t, results, 1)
+		require.NotNil(t, results[0].OfToolResult)
 	})
 }
 

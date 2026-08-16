@@ -587,6 +587,13 @@ func Test_PostgreSQL_QueryLabels(t *testing.T) {
 			ErrStatus: http.StatusBadRequest,
 			Err:       assert.AnError,
 		},
+		// a runtime failure is reported through rows.Err rather than the
+		// Query call, so an empty result must not read as success.
+		"Execution failure on an empty result": {
+			URL:   pgTestURL(_pgUser, _pgPass),
+			Query: "SELECT 1/0 WHERE false OR 1/0 = 0",
+			Err:   assert.AnError,
+		},
 		"Successful retrieval": {
 			URL:   pgTestURL(_pgUser, _pgPass),
 			Query: "SELECT time, host, value FROM metrics ORDER BY time",

@@ -230,9 +230,7 @@ func Test_agent_InsertDocument(t *testing.T) {
 			assert.Equal(t, c.Document, doc)
 		})
 	}
-}
 
-func Test_agent_InsertDocument_atomicityAndScoping(t *testing.T) {
 	t.Run("Branch insert failure rolls the document back", func(t *testing.T) {
 		t.Parallel()
 
@@ -299,7 +297,6 @@ func Test_agent_InsertDocument_atomicityAndScoping(t *testing.T) {
 		assert.Equal(t, 0, sortIndex(other.ID))
 	})
 }
-
 func Test_agent_CheckDocumentExists(t *testing.T) {
 	db := prepTempDB(t)
 

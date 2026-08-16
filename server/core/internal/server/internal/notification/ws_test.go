@@ -118,51 +118,51 @@ func Test_Handler_BindNotifications(t *testing.T) {
 			assert.False(t, pubs[0].Filter(stranger, "topic"))
 		})
 	}
+
+	t.Run("Lifecycle callbacks arrive out of order", func(t *testing.T) {
+		t.Parallel()
+
+		rcv := &fakeReceiver{}
+
+		hdl := Handler{
+			log:      slog.New(slog.DiscardHandler),
+			db:       &DBMock{},
+			notifier: rcv,
+		}
+
+		// the lifecycle callbacks are dispatched as independent goroutines, so
+		// an unsubscribe can land before any subscribe and a re-subscribe can
+		// overtake a pending unsubscribe.
+		var first, last func(context.Context)
+
+		tpc := &wsMock.Topic{
+			OnFirstSubFunc:  func(fn func(context.Context)) { first = fn },
+			OnLastUnsubFunc: func(fn func(context.Context)) { last = fn },
+		}
+
+		hdl.BindNotifications(tpc)
+		require.NotNil(t, first)
+		require.NotNil(t, last)
+
+		assert.NotPanics(t, func() {
+			last(context.Background())
+		})
+
+		first(context.Background())
+		first(context.Background())
+
+		// the first registration is released rather than stranded.
+		assert.Equal(t, 1, rcv.unsubbd)
+
+		assert.NotPanics(t, func() {
+			last(context.Background())
+			last(context.Background())
+		})
+
+		assert.Equal(t, 2, rcv.unsubbd)
+	})
 }
 
 // ensure the domain DB interface keeps satisfying the handler's narrow
 // DB contract mirrored from it.
 var _ DB = notificationCore.DB(nil)
-
-func Test_Handler_BindNotifications_outOfOrderLifecycle(t *testing.T) {
-	t.Parallel()
-
-	rcv := &fakeReceiver{}
-
-	hdl := Handler{
-		log:      slog.New(slog.DiscardHandler),
-		db:       &DBMock{},
-		notifier: rcv,
-	}
-
-	// the lifecycle callbacks are dispatched as independent goroutines, so
-	// an unsubscribe can land before any subscribe and a re-subscribe can
-	// overtake a pending unsubscribe.
-	var first, last func(context.Context)
-
-	tpc := &wsMock.Topic{
-		OnFirstSubFunc:  func(fn func(context.Context)) { first = fn },
-		OnLastUnsubFunc: func(fn func(context.Context)) { last = fn },
-	}
-
-	hdl.BindNotifications(tpc)
-	require.NotNil(t, first)
-	require.NotNil(t, last)
-
-	assert.NotPanics(t, func() {
-		last(context.Background())
-	})
-
-	first(context.Background())
-	first(context.Background())
-
-	// the first registration is released rather than stranded.
-	assert.Equal(t, 1, rcv.unsubbd)
-
-	assert.NotPanics(t, func() {
-		last(context.Background())
-		last(context.Background())
-	})
-
-	assert.Equal(t, 2, rcv.unsubbd)
-}

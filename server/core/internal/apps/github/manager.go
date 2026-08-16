@@ -24,6 +24,10 @@ var (
 	// ErrInstallationNotFound is returned when a GitHub installation resource is not found.
 	ErrInstallationNotFound = errutil.New(http.StatusNotFound, "github.installation_not_found", "installation not found")
 
+	// ErrTreeTruncated is returned when GitHub truncated the repository tree,
+	// so a path missing from it cannot be read as a real change.
+	ErrTreeTruncated = errutil.New(http.StatusUnprocessableEntity, "github.tree_truncated", "repository tree is too large to compare")
+
 	// ErrNotConfigured is returned when the GitHub App integration is not configured on this deployment.
 	ErrNotConfigured = errutil.New(http.StatusConflict, "github.not_configured", "github app is not configured")
 )
@@ -31,6 +35,10 @@ var (
 // _maxBranchRedirects specifies the maximum number of redirects followed
 // when resolving a repository branch.
 const _maxBranchRedirects = 3
+
+// _listPageSize is the page size used when walking paginated GitHub
+// listings. GitHub caps it at 100.
+const _listPageSize = 100
 
 // Options holds configuration options for the Github handler.
 type Options struct {
@@ -278,27 +286,35 @@ func (ic *InstallationClient) FetchIssues(ctx context.Context, q, repository str
 	return issues, nil
 }
 
-// FetchRepositories fetches all repositories accessible by the GitHub App installation.
+// FetchRepositories fetches all repositories accessible by the GitHub App
+// installation. It lists the installation's own repositories rather than the
+// owner's, which is both what the installation was actually granted and the
+// only form that works for an app installed on a user account.
 func (ic *InstallationClient) FetchRepositories(ctx context.Context) ([]Repository, error) {
-	repos, _, err := ic.installationClient.Repositories.ListByOrg(
-		ctx,
-		ic.owner,
-		nil,
+	var (
+		res  []Repository
+		opts = &gogithub.ListOptions{PerPage: _listPageSize}
 	)
-	if err != nil {
-		return nil, parseGithubError(err)
+
+	for {
+		page, resp, err := ic.installationClient.Apps.ListRepos(ctx, opts)
+		if err != nil {
+			return nil, parseGithubError(err)
+		}
+
+		for _, repo := range page.Repositories {
+			res = append(res, Repository{
+				Name:          repo.GetName(),
+				DefaultBranch: repo.GetDefaultBranch(),
+			})
+		}
+
+		if resp == nil || resp.NextPage == 0 {
+			return res, nil
+		}
+
+		opts.Page = resp.NextPage
 	}
-
-	var res []Repository
-
-	for _, repo := range repos {
-		res = append(res, Repository{
-			Name:          repo.GetName(),
-			DefaultBranch: repo.GetDefaultBranch(),
-		})
-	}
-
-	return res, nil
 }
 
 // FetchRepositoryBranches fetches all branches of the specified repository.
@@ -312,23 +328,34 @@ func (ic *InstallationClient) FetchRepositoryBranches(ctx context.Context, repos
 		return nil, parseGithubError(err)
 	}
 
-	branches, _, err := ic.installationClient.Repositories.ListBranches(
-		ctx,
-		ic.owner,
-		repository,
-		nil,
+	var (
+		res  []string
+		opts = &gogithub.BranchListOptions{
+			ListOptions: gogithub.ListOptions{PerPage: _listPageSize},
+		}
 	)
-	if err != nil {
-		return nil, parseGithubError(err)
+
+	for {
+		branches, bresp, berr := ic.installationClient.Repositories.ListBranches(
+			ctx,
+			ic.owner,
+			repository,
+			opts,
+		)
+		if berr != nil {
+			return nil, parseGithubError(berr)
+		}
+
+		for _, branch := range branches {
+			res = append(res, branch.GetName())
+		}
+
+		if bresp == nil || bresp.NextPage == 0 {
+			return res, nil
+		}
+
+		opts.Page = bresp.NextPage
 	}
-
-	var res []string
-
-	for _, branch := range branches {
-		res = append(res, branch.GetName())
-	}
-
-	return res, nil
 }
 
 // FetchRepositoryTree fetches the full recursive file tree of the specified branch in the repository.
@@ -370,6 +397,10 @@ func (ic *InstallationClient) FetchRepositoryTree(ctx context.Context, repositor
 	)
 	if err != nil {
 		return nil, parseGithubError(err)
+	}
+
+	if tree.GetTruncated() {
+		return nil, ErrTreeTruncated
 	}
 
 	return ParseTreeItems(tree.Entries), nil

@@ -275,24 +275,24 @@ func Test_Server_bindVersionPing(t *testing.T) {
 	}{
 		Version: buildinfo.Full().Version,
 	}, ff[0].Payload)
-}
 
-func Test_Server_bindVersionPing_unsubscribeBeforeSubscribe(t *testing.T) {
-	t.Parallel()
+	t.Run("Unsubscribe before the first subscribe", func(t *testing.T) {
+		t.Parallel()
 
-	s := Server{
-		log: discardLog(),
-	}
+		s := Server{
+			log: discardLog(),
+		}
 
-	tpc := &wsMock.Topic{}
+		tpc := &wsMock.Topic{}
 
-	s.bindVersionPing(tpc)
+		s.bindVersionPing(tpc)
 
-	// the lifecycle callbacks are dispatched as independent goroutines, so
-	// an unsubscribe can land before the first subscribe ever ran.
-	require.Len(t, tpc.OnLastUnsubCalls(), 1)
+		// the lifecycle callbacks are dispatched as independent goroutines, so
+		// an unsubscribe can land before the first subscribe ever ran.
+		require.Len(t, tpc.OnLastUnsubCalls(), 1)
 
-	assert.NotPanics(t, func() {
-		tpc.OnLastUnsubCalls()[0].Fn(context.Background())
+		assert.NotPanics(t, func() {
+			tpc.OnLastUnsubCalls()[0].Fn(context.Background())
+		})
 	})
 }

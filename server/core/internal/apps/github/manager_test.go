@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"testing"
 
 	gogithub "github.com/google/go-github/v72/github"
@@ -515,14 +516,16 @@ func Test_InstallationClient_FetchRepositories(t *testing.T) {
 
 			mux := http.NewServeMux()
 
-			mux.HandleFunc("/orgs/own/repos", func(w http.ResponseWriter, _ *http.Request) {
+			// the installation's own repositories, which is what the app was
+			// granted and the only form that works for a user account.
+			mux.HandleFunc("/installation/repositories", func(w http.ResponseWriter, _ *http.Request) {
 				if tc.Status != 0 {
 					w.WriteHeader(tc.Status)
 
 					return
 				}
 
-				_, err := w.Write([]byte(`[{"name": "repo", "default_branch": "main"}]`))
+				_, err := w.Write([]byte(`{"total_count": 1, "repositories": [{"name": "repo", "default_branch": "main"}]}`))
 				assert.NoError(t, err)
 			})
 
@@ -534,6 +537,38 @@ func Test_InstallationClient_FetchRepositories(t *testing.T) {
 			assert.Equal(t, tc.ExpectedRepos, repos)
 		})
 	}
+
+	t.Run("Listing follows every page", func(t *testing.T) {
+		t.Parallel()
+
+		mux := http.NewServeMux()
+
+		// GitHub returns 30 entries per page by default and signals more through
+		// the Link header; stopping at the first page hides the rest.
+		mux.HandleFunc("/installation/repositories", func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Query().Get("page") == "" {
+				w.Header().Set("Link", `<`+r.URL.Path+`?page=2>; rel="next"`)
+
+				_, err := w.Write([]byte(`{"total_count": 2, "repositories": [{"name": "one", "default_branch": "main"}]}`))
+				assert.NoError(t, err)
+
+				return
+			}
+
+			_, err := w.Write([]byte(`{"total_count": 2, "repositories": [{"name": "two", "default_branch": "dev"}]}`))
+			assert.NoError(t, err)
+		})
+
+		ic := newTestInstallationClient(t, false, mux)
+
+		res, err := ic.FetchRepositories(context.Background())
+		require.NoError(t, err)
+
+		assert.Equal(t, []Repository{
+			{Name: "one", DefaultBranch: "main"},
+			{Name: "two", DefaultBranch: "dev"},
+		}, res)
+	})
 }
 
 func Test_InstallationClient_FetchRepositoryBranches(t *testing.T) {
@@ -604,6 +639,7 @@ func Test_InstallationClient_FetchRepositoryTree(t *testing.T) {
 		RepoStatus     int
 		BranchStatus   int
 		TreeStatus     int
+		Truncated      bool
 		ExpectedBranch string
 		ExpectedErr    error
 		ExpectedTree   Tree
@@ -639,6 +675,11 @@ func Test_InstallationClient_FetchRepositoryTree(t *testing.T) {
 			Branch:       "gone",
 			BranchStatus: http.StatusNotFound,
 			ExpectedErr:  ErrRepositoryBranchNotFound,
+		},
+		"Truncated tree is reported": {
+			Branch:      "dev",
+			Truncated:   true,
+			ExpectedErr: ErrTreeTruncated,
 		},
 		"Tree failure is propagated": {
 			Branch:      "dev",
@@ -688,6 +729,7 @@ func Test_InstallationClient_FetchRepositoryTree(t *testing.T) {
 
 				_, err := w.Write([]byte(`{
 					"sha": "root",
+					"truncated": ` + strconv.FormatBool(tc.Truncated) + `,
 					"tree": [
 						{"path": "docs", "type": "tree", "sha": "sha-1"},
 						{"path": "docs/guide.md", "type": "blob", "sha": "sha-2"}

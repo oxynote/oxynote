@@ -73,8 +73,14 @@ type Input interface {
 // Credentials represents the credentials of a data source in JSON format.
 type Credentials []byte
 
-// MarshalJSON returns the JSON representation of the credentials.
+// MarshalJSON returns the JSON representation of the credentials. Empty
+// credentials marshal as null: emitting nothing at all would make every
+// enclosing struct fail to marshal.
 func (c *Credentials) MarshalJSON() ([]byte, error) {
+	if c == nil || len(*c) == 0 {
+		return []byte("null"), nil
+	}
+
 	return []byte(*c), nil
 }
 

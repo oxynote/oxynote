@@ -150,6 +150,12 @@ func (p *PostgreSQL) QueryLabels(ctx context.Context, q string, tr TimeRange) (m
 	labels := make(map[string]string)
 
 	if !rows.Next() {
+		// pgx surfaces execution failures, including a query killed by the
+		// timeout, through Err rather than the Query call.
+		if rerr := rows.Err(); rerr != nil {
+			return nil, pgQueryError(rerr)
+		}
+
 		return labels, nil
 	}
 
@@ -588,4 +594,16 @@ func pgEstimateValueSize(v any) int {
 	default:
 		return _jsonNumericSize
 	}
+}
+
+// pgQueryError maps a syntax or semantic failure reported by PostgreSQL to a
+// user-facing invalid-query error, leaving everything else as an internal one.
+func pgQueryError(err error) error {
+	var pgErr *pgconn.PgError
+
+	if errors.As(err, &pgErr) && pgErr.Code[0:2] == "42" {
+		return NewInvalidQueryError(pgErr.Message)
+	}
+
+	return fmt.Errorf("error executing query: %w", err)
 }

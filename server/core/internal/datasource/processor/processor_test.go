@@ -3,6 +3,7 @@ package processor
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -216,6 +217,16 @@ func Test_Credentials_MarshalJSON(t *testing.T) {
 	data, err := c.MarshalJSON()
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"username":"user"}`, string(data))
+
+	// an empty payload used to marshal as zero bytes, which makes every
+	// enclosing struct fail with "unexpected end of JSON input".
+	var empty Credentials
+
+	out, err := json.Marshal(struct {
+		Credentials Credentials `json:"credentials"`
+	}{Credentials: empty})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"credentials":null}`, string(out))
 }
 
 func Test_Credentials_UnmarshalJSON(t *testing.T) {

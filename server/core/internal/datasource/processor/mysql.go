@@ -334,6 +334,13 @@ func (m *MySQL) buildDSN() (string, error) {
 	cfg.ParseTime = true
 	cfg.Timeout = _mysqlConnectTimeout
 
+	// carry the recognised connection parameters over from the URL; without
+	// this a data source cannot ask for TLS and credentials cross the wire in
+	// the clear.
+	if tls := u.Query().Get("tls"); tls != "" {
+		cfg.TLSConfig = tls
+	}
+
 	return cfg.FormatDSN(), nil
 }
 
@@ -556,8 +563,15 @@ func mysqlCheckReadOnly(ctx context.Context, db *sql.DB) (bool, error) {
 		grantIdx := strings.Index(grant, "GRANT ")
 		onIdx := strings.Index(grant, " ON ")
 
-		if grantIdx < 0 || onIdx < 0 {
+		if grantIdx < 0 {
 			continue
+		}
+
+		// a grant without " ON " is a role grant, whose privileges are not
+		// listed here and can include writes; treat it as not read-only
+		// rather than skipping it.
+		if onIdx < 0 {
+			return false, nil
 		}
 
 		privs := grant[grantIdx+len("GRANT ") : onIdx]

@@ -17,7 +17,7 @@ type Runner struct {
 	URL string `json:"url"`
 
 	// Credentials holds the authentication credentials for the data source.
-	Credentials processor.Credentials `json:"credentials"`
+	Credentials processor.Credentials `json:"-"`
 
 	prepared bool
 	runner   runner
