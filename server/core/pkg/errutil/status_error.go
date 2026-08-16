@@ -39,8 +39,12 @@ func wrap(err error, statusCode int, internalCode, msg string, args ...any) erro
 		msg = strings.ToLower(http.StatusText(statusCode))
 	}
 
+	if len(args) > 0 {
+		msg = fmt.Sprintf(msg, args...)
+	}
+
 	return &statusError{
-		Message:      fmt.Sprintf(msg, args...),
+		Message:      msg,
 		InternalCode: internalCode,
 		statusCode:   statusCode,
 		err:          err,

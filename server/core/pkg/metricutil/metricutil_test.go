@@ -129,6 +129,11 @@ func Test_counterVec_With(t *testing.T) {
 	c = cv.With(prometheus.Labels{"foo": "bar"})
 	_, ok := c.(prometheus.Counter)
 	assert.True(t, ok)
+
+	labels := prometheus.Labels{"foo": "bar"}
+
+	cv.With(labels)
+	assert.Equal(t, prometheus.Labels{"foo": "bar"}, labels, "caller labels must not be mutated")
 }
 
 func Test_histogramVec_With(t *testing.T) {
@@ -145,6 +150,11 @@ func Test_histogramVec_With(t *testing.T) {
 	h = hv.With(prometheus.Labels{"foo": "bar"})
 	_, ok := h.(prometheus.Histogram)
 	assert.True(t, ok)
+
+	labels := prometheus.Labels{"foo": "bar"}
+
+	hv.With(labels)
+	assert.Equal(t, prometheus.Labels{"foo": "bar"}, labels, "caller labels must not be mutated")
 }
 
 func Test_discarder_Set(_ *testing.T) {

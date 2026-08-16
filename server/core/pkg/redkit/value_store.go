@@ -17,7 +17,8 @@ type ValueStore[V any] struct {
 	expireAfter time.Duration
 }
 
-// NewValueStore creates a new value store instance.
+// NewValueStore creates a new value store instance. An expireAfter below one
+// second stores values without an expiry.
 func NewValueStore[V any](
 	pool *redis.Pool,
 	expireAfter time.Duration,
@@ -41,7 +42,15 @@ func (vs *ValueStore[V]) Set(ctx context.Context, key string, value V) error {
 	}
 	defer conn.Close() //nolint:errcheck // error provides no meaningful info
 
-	_, err = conn.Do("SET", key, data, "EX", int(vs.expireAfter.Seconds()))
+	args := []any{key, data}
+
+	// redis rejects "EX 0", which is what any expiry below one second
+	// truncates to; treat those as no expiry at all.
+	if secs := int(vs.expireAfter.Seconds()); secs > 0 {
+		args = append(args, "EX", secs)
+	}
+
+	_, err = conn.Do("SET", args...)
 	if err != nil {
 		return err
 	}

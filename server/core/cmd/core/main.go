@@ -226,11 +226,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 		return
 	}
 
-	var origins []string
-
-	if biOrigins := strings.Split(buildinfo.Getenv("ORIGINS"), ","); len(biOrigins) > 0 {
-		origins = biOrigins
-	}
+	origins := parseOrigins(buildinfo.Getenv("ORIGINS"))
 
 	emailSender, err := email.NewSender(
 		log,
@@ -310,17 +306,29 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 
 	closers = append([]io.Closer{srv}, closers...)
 
-	var wg sync.WaitGroup
+	var serverWg, backgroundWg sync.WaitGroup
 
-	wg.Go(srv.Listen)
-	wg.Go(func() {
+	serverWg.Go(func() {
+		srv.Listen()
+
+		// Listen also returns when the listener could not be bound at all,
+		// which has to bring the process down rather than leave it up with
+		// no server answering.
+		termCancel()
+	})
+
+	backgroundWg.Go(func() {
 		hooksMan.Start(termCtx)
 	})
-	wg.Go(func() {
+	backgroundWg.Go(func() {
 		searchManager.Start(termCtx)
 	})
 
 	<-termCtx.Done()
+
+	// the managers query the database and redis, so let them finish their
+	// current pass before the closer chain tears those pools down.
+	backgroundWg.Wait()
 
 	cerr := ioutil.MultiCloser(true, closers...).Close()
 	if cerr != nil {
@@ -328,7 +336,8 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 			Error("error closing resources")
 	}
 
-	wg.Wait()
+	// closing the server above is what unblocks Listen.
+	serverWg.Wait()
 }
 
 // newLogger initializes a new logger with Sentry support.
@@ -384,13 +393,27 @@ func newMetrics(log *slog.Logger) (metricutil.Factory, func()) {
 	go func() {
 		defer logutil.Recover(log, nil)
 
-		metrics.CollectRuntimeMetrics(metricsCtx, time.Second)
+		// deferred so a recovered panic still releases the shutdown wait
+		// below instead of blocking it forever.
+		defer close(metricsStopCh)
 
-		close(metricsStopCh)
+		metrics.CollectRuntimeMetrics(metricsCtx, time.Second)
 	}()
 
 	return metrics, func() {
 		metricsCancel()
 		<-metricsStopCh
 	}
+}
+
+// parseOrigins splits the configured allowed-origin list. An empty value
+// yields no origins at all, which is what leaves origin checking disabled:
+// strings.Split would instead return a one-element slice holding "", which
+// matches no browser origin and so blocks every cross-origin request.
+func parseOrigins(val string) []string {
+	if val == "" {
+		return nil
+	}
+
+	return strings.Split(val, ",")
 }

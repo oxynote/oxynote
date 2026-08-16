@@ -4,6 +4,7 @@ package metricutil
 import (
 	"context"
 	"errors"
+	"maps"
 	"os"
 	"time"
 
@@ -228,9 +229,7 @@ func (cv counterVec) With(labels prometheus.Labels) Counter {
 		return discarder{}
 	}
 
-	labels[_hostLabel] = cv.host
-
-	return cv.counter.With(labels)
+	return cv.counter.With(withHost(labels, cv.host))
 }
 
 // histogramVec is a histogram vector.
@@ -245,7 +244,18 @@ func (hv histogramVec) With(labels prometheus.Labels) Observer {
 		return discarder{}
 	}
 
-	labels[_hostLabel] = hv.host
+	return hv.histogram.With(withHost(labels, hv.host))
+}
 
-	return hv.histogram.With(labels)
+// withHost returns a copy of the labels carrying the host label, leaving the
+// caller's map untouched so it stays reusable across metric families.
+func withHost(labels prometheus.Labels, host string) prometheus.Labels {
+	out := maps.Clone(labels)
+	if out == nil {
+		out = prometheus.Labels{}
+	}
+
+	out[_hostLabel] = host
+
+	return out
 }

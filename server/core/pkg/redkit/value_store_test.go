@@ -23,10 +23,11 @@ func Test_NewValueStore(t *testing.T) {
 
 func Test_ValueStore_Set(t *testing.T) {
 	cc := map[string]struct {
-		Cancelled bool
-		Conn      func() (*redigomock.Conn, func(*testing.T))
-		Value     any
-		Err       error
+		Cancelled   bool
+		ExpireAfter time.Duration
+		Conn        func() (*redigomock.Conn, func(*testing.T))
+		Value       any
+		Err         error
 	}{
 		"Cancelled context": {
 			Cancelled: true,
@@ -68,6 +69,19 @@ func Test_ValueStore_Set(t *testing.T) {
 			Value: "123",
 			Err:   assert.AnError,
 		},
+		"Sub-second expiry stores without an expiry": {
+			ExpireAfter: time.Millisecond,
+			Conn: func() (*redigomock.Conn, func(*testing.T)) {
+				conn := redigomock.NewConn()
+				conn.Command("SET", "test", []byte(`"123"`))
+
+				return conn, func(t *testing.T) {
+					err := conn.ExpectationsWereMet()
+					assert.NoError(t, err)
+				}
+			},
+			Value: "123",
+		},
 		"Successfully set element": {
 			Conn: func() (*redigomock.Conn, func(*testing.T)) {
 				conn := redigomock.NewConn()
@@ -88,6 +102,11 @@ func Test_ValueStore_Set(t *testing.T) {
 
 			conn, check := c.Conn()
 
+			expireAfter := c.ExpireAfter
+			if expireAfter == 0 {
+				expireAfter = time.Hour * 168
+			}
+
 			vs := &ValueStore[any]{
 				pool: &redis.Pool{
 					Dial: func() (redis.Conn, error) {
@@ -96,7 +115,7 @@ func Test_ValueStore_Set(t *testing.T) {
 					Wait:      true,
 					MaxActive: 10,
 				},
-				expireAfter: time.Hour * 168,
+				expireAfter: expireAfter,
 			}
 
 			ctx, cancel := context.WithCancel(context.Background())

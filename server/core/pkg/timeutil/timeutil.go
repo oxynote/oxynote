@@ -17,7 +17,14 @@ const ReadableFormat = "2006-01-02 15:04 MST"
 // Parse converts the provided RFC3339 string value into a time structure
 // with time zone set to UTC.
 func Parse(val string) (time.Time, error) {
-	return time.ParseInLocation(time.RFC3339, val, time.UTC)
+	// the RFC3339 layout always carries a zone, so ParseInLocation would
+	// ignore the location and keep the offset from the input.
+	t, err := time.Parse(time.RFC3339, val)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	return t.UTC(), nil
 }
 
 // Now returns the current time with the location set to UTC.

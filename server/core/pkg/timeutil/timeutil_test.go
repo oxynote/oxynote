@@ -30,6 +30,13 @@ func Test_Parse(t *testing.T) {
 	assert.Equal(t, tim, tim1)
 }
 
+func Test_Parse_normalisesToUTC(t *testing.T) {
+	tim, err := Parse("2026-01-02T10:00:00+02:00")
+	require.NoError(t, err)
+	assert.Equal(t, time.UTC, tim.Location())
+	assert.Equal(t, time.Date(2026, 1, 2, 8, 0, 0, 0, time.UTC), tim)
+}
+
 func Test_Now(t *testing.T) {
 	n := Now()
 	assert.NotZero(t, n)

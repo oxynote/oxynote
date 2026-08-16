@@ -47,6 +47,12 @@ func Test_wrap(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, sErr.statusCode)
 	assert.Equal(t, assert.AnError, sErr.err)
 
+	// without args the message is used verbatim, so a literal percent
+	// sign is not treated as a format verb.
+	err = wrap(nil, http.StatusBadRequest, "hello", "usage above 90% threshold")
+	sErr, _ = err.(*statusError) //nolint:errorlint // a direct check is needed
+	assert.Equal(t, "usage above 90% threshold", sErr.Message)
+
 	err = wrap(assert.AnError, http.StatusBadRequest, "hello", "")
 	require.IsType(t, &statusError{}, err) //nolint:testifylint // a direct type check is needed
 	sErr, _ = err.(*statusError)           //nolint:errorlint // it's a test
