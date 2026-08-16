@@ -12,9 +12,9 @@ import (
 
 	"github.com/blang/semver/v4"
 	"github.com/coder/websocket"
-	"github.com/oxynote/oxynote/server/core/internal/apps/githubapp"
-	"github.com/oxynote/oxynote/server/core/internal/apps/slackapp"
-	"github.com/oxynote/oxynote/server/core/internal/apps/webchanges"
+	githubCore "github.com/oxynote/oxynote/server/core/internal/apps/github"
+	slackCore "github.com/oxynote/oxynote/server/core/internal/apps/slack"
+	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	assistantCore "github.com/oxynote/oxynote/server/core/internal/assistant"
 	"github.com/oxynote/oxynote/server/core/internal/buildinfo"
 	notificationCore "github.com/oxynote/oxynote/server/core/internal/notification"
@@ -112,9 +112,9 @@ func NewServer(
 	fc metricutil.Factory,
 	storageClient Storer,
 	assistantMan *assistantCore.Manager,
-	githubMan *githubapp.Manager,
-	slackMan *slackapp.Manager,
-	webchangesClient *webchanges.Client,
+	githubMan *githubCore.Manager,
+	slackMan *slackCore.Manager,
+	webchangeClient *webchange.Client,
 	searchGateway document.SearchGateway,
 	notifier Notifier,
 	emailSender email.Sender,
@@ -133,10 +133,10 @@ func NewServer(
 
 	srv.handlers.user = user.NewHandler(log, db, storageClient, opts.PublicURL+_userImageLocationFormat)
 	srv.handlers.organization = org.NewHandler(log, db, storageClient, opts.PublicURL+_organizationLogoLocation, opts.DemoPrometheusURL)
-	srv.handlers.document = document.NewHandler(log, db, githubMan, webchangesClient, searchGateway, notifier)
+	srv.handlers.document = document.NewHandler(log, db, githubMan, webchangeClient, searchGateway, notifier)
 	srv.handlers.comment = comment.NewHandler(log, db, notifier)
 	srv.handlers.files = files.NewHandler(log, db, storageClient, opts.PublicURL+_documentFileLocationFormat)
-	srv.handlers.hook = hook.NewHandler(log, db, githubMan, webchangesClient)
+	srv.handlers.hook = hook.NewHandler(log, db, githubMan, webchangeClient)
 
 	// The assistant's CRUD tools mutate the document tree directly
 	// via the DB layer, bypassing the HTTP handlers that normally

@@ -9,24 +9,24 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/guregu/null/v5"
-	"github.com/oxynote/oxynote/server/core/internal/apps/slackapp"
+	"github.com/oxynote/oxynote/server/core/internal/apps/slack"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func prepSlackUserLinks(t *testing.T, db *DB, count int, fn func(int, *slackapp.UserLink)) []slackapp.UserLink { //nolint:unparam // fixture helpers share a uniform signature
+func prepSlackUserLinks(t *testing.T, db *DB, count int, fn func(int, *slack.UserLink)) []slack.UserLink { //nolint:unparam // fixture helpers share a uniform signature
 	t.Helper()
 
-	res := make([]slackapp.UserLink, count)
+	res := make([]slack.UserLink, count)
 
 	now := timeutil.Now().Truncate(time.Second)
 
 	for i := range count {
-		link := slackapp.UserLink{
+		link := slack.UserLink{
 			SlackUserID: "slack-user-" + strconv.Itoa(i),
-			Settings: slackapp.UserLinkSettings{
+			Settings: slack.UserLinkSettings{
 				Notifications: true,
 			},
 			CreatedAt: now,
@@ -64,7 +64,7 @@ func prepSlackUserLinks(t *testing.T, db *DB, count int, fn func(int, *slackapp.
 
 func Test_agent_InsertSlackUserLink(t *testing.T) {
 	type tcase struct {
-		Link slackapp.UserLink
+		Link slack.UserLink
 		Err  error
 	}
 
@@ -73,7 +73,7 @@ func Test_agent_InsertSlackUserLink(t *testing.T) {
 			users := prepUsers(t, db, 1)
 
 			return tcase{
-				Link: slackapp.UserLink{
+				Link: slack.UserLink{
 					SlackUserID: "slack-user-1",
 					TeamID:      "non-existent-team-id",
 					UserID:      users[0],
@@ -87,11 +87,11 @@ func Test_agent_InsertSlackUserLink(t *testing.T) {
 			users := prepUsers(t, db, 1)
 
 			return tcase{
-				Link: slackapp.UserLink{
+				Link: slack.UserLink{
 					SlackUserID: "slack-user-1",
 					TeamID:      app.TeamID,
 					UserID:      users[0],
-					Settings: slackapp.UserLinkSettings{
+					Settings: slack.UserLinkSettings{
 						Notifications: true,
 					},
 					CreatedAt: timeutil.Now().Truncate(time.Second),
@@ -114,7 +114,7 @@ func Test_agent_InsertSlackUserLink(t *testing.T) {
 				return
 			}
 
-			var link slackapp.UserLink
+			var link slack.UserLink
 
 			q, args := db.selectSlackUserLink(db.builder.Select()).
 				Where(sq.Eq{
@@ -132,7 +132,7 @@ func Test_agent_InsertSlackUserLink(t *testing.T) {
 func Test_agent_UpdateSlackUserLink(t *testing.T) {
 	type tcase struct {
 		CancelledContext bool
-		Link             slackapp.UserLink
+		Link             slack.UserLink
 		Err              error
 	}
 
@@ -177,7 +177,7 @@ func Test_agent_UpdateSlackUserLink(t *testing.T) {
 				return
 			}
 
-			var link slackapp.UserLink
+			var link slack.UserLink
 
 			q, args := db.selectSlackUserLink(db.builder.Select()).
 				Where(sq.Eq{
@@ -218,10 +218,10 @@ func Test_agent_FetchSlackUserLinkByUserID(t *testing.T) {
 
 	// success
 	org := prepOrganizations(t, db, 1)[0]
-	app := prepSlackApps(t, db, 1, func(_ int, app *slackapp.App) {
+	app := prepSlackApps(t, db, 1, func(_ int, app *slack.App) {
 		app.OrganizationID = null.StringFrom(org)
 	})[0]
-	link := prepSlackUserLinks(t, db, 1, func(_ int, link *slackapp.UserLink) {
+	link := prepSlackUserLinks(t, db, 1, func(_ int, link *slack.UserLink) {
 		link.TeamID = app.TeamID
 	})[0]
 
@@ -233,7 +233,7 @@ func Test_agent_FetchSlackUserLinkByUserID(t *testing.T) {
 func Test_agent_DeleteSlackUserLink(t *testing.T) {
 	type tcase struct {
 		CancelledContext bool
-		Link             slackapp.UserLink
+		Link             slack.UserLink
 		Err              error
 	}
 

@@ -1,5 +1,5 @@
-// Package webchanges provides a client for the changedetection.io API.
-package webchanges
+// Package webchange provides a client for the changedetection.io API.
+package webchange
 
 import (
 	"bytes"
@@ -75,10 +75,10 @@ func (c *Client) FetchWatcher(ctx context.Context, uuid string) (*Watch, error) 
 
 // CreateWatcher creates a new watch and returns its uuid.
 func (c *Client) CreateWatcher(ctx context.Context, url string) (string, error) {
-	body, err := json.Marshal(CreateWatchRequest{
+	body, err := json.Marshal(watchRequest{
 		URL:          url,
 		FetchBackend: _fetchBackendWebDriver,
-		TimeBetweenCheck: &TimeBetweenCheck{
+		TimeBetweenCheck: &timeBetweenCheck{
 			Minutes: _checkIntervalMinutes,
 		},
 	})
@@ -117,10 +117,10 @@ func (c *Client) CreateWatcher(ctx context.Context, url string) (string, error) 
 
 // UpdateWatcher updates an existing watch.
 func (c *Client) UpdateWatcher(ctx context.Context, uuid, url string) error {
-	body, err := json.Marshal(UpdateWatchRequest{
+	body, err := json.Marshal(watchRequest{
 		URL:          url,
 		FetchBackend: _fetchBackendWebDriver,
-		TimeBetweenCheck: &TimeBetweenCheck{
+		TimeBetweenCheck: &timeBetweenCheck{
 			Minutes: _checkIntervalMinutes,
 		},
 	})

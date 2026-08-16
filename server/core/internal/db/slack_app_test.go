@@ -9,7 +9,7 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/guregu/null/v5"
-	"github.com/oxynote/oxynote/server/core/internal/apps/slackapp"
+	"github.com/oxynote/oxynote/server/core/internal/apps/slack"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
@@ -17,13 +17,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func prepSlackApps(t *testing.T, db *DB, count int, fn func(int, *slackapp.App)) []slackapp.App { //nolint:unparam // fixture helpers share a uniform signature
+func prepSlackApps(t *testing.T, db *DB, count int, fn func(int, *slack.App)) []slack.App { //nolint:unparam // fixture helpers share a uniform signature
 	t.Helper()
 
-	res := make([]slackapp.App, count)
+	res := make([]slack.App, count)
 
 	for i := range count {
-		app := slackapp.App{
+		app := slack.App{
 			// the team ID embeds a random ID so repeated fixture
 			// calls within one database never collide.
 			TeamID: "team-" + xid.New().String(),
@@ -50,15 +50,15 @@ func prepSlackApps(t *testing.T, db *DB, count int, fn func(int, *slackapp.App))
 	return res
 }
 
-func prepSlackMessages(t *testing.T, db *DB, count int, fn func(int, *slackapp.Message)) []slackapp.Message {
+func prepSlackMessages(t *testing.T, db *DB, count int, fn func(int, *slack.Message)) []slack.Message {
 	t.Helper()
 
-	res := make([]slackapp.Message, count)
+	res := make([]slack.Message, count)
 
 	now := timeutil.Now().Truncate(time.Second)
 
 	for i := range count {
-		msg := slackapp.Message{
+		msg := slack.Message{
 			ID:   xid.New(),
 			Text: "Message " + strconv.Itoa(i),
 			// distinct timestamps keep the fetch order deterministic.
@@ -92,14 +92,14 @@ func prepSlackMessages(t *testing.T, db *DB, count int, fn func(int, *slackapp.M
 
 func Test_agent_InsertSlackApp(t *testing.T) {
 	type tcase struct {
-		App slackapp.App
+		App slack.App
 		Err error
 	}
 
 	cc := map[string]func(*testing.T, *DB) tcase{
 		"Non-existent organization": func(_ *testing.T, _ *DB) tcase {
 			return tcase{
-				App: slackapp.App{
+				App: slack.App{
 					TeamID:         "team-1",
 					OrganizationID: null.StringFrom("non-existent-org-id"),
 					Token:          "token-1",
@@ -111,7 +111,7 @@ func Test_agent_InsertSlackApp(t *testing.T) {
 			org := prepOrganizations(t, db, 1)[0]
 
 			return tcase{
-				App: slackapp.App{
+				App: slack.App{
 					TeamID:         "team-1",
 					OrganizationID: null.StringFrom(org),
 					Token:          "token-1",
@@ -142,7 +142,7 @@ func Test_agent_InsertSlackApp(t *testing.T) {
 				return
 			}
 
-			var app slackapp.App
+			var app slack.App
 
 			q, args := db.selectSlackApp(db.builder.Select()).
 				Where(sq.Eq{
@@ -158,7 +158,7 @@ func Test_agent_InsertSlackApp(t *testing.T) {
 
 func Test_agent_InsertSlackMessage(t *testing.T) {
 	type tcase struct {
-		Message slackapp.Message
+		Message slack.Message
 		Err     error
 	}
 
@@ -175,7 +175,7 @@ func Test_agent_InsertSlackMessage(t *testing.T) {
 			org := prepOrganizations(t, db, 1)[0]
 
 			return tcase{
-				Message: slackapp.Message{
+				Message: slack.Message{
 					ID:             xid.New(),
 					OrganizationID: org,
 					Text:           "Hello from Slack",
@@ -199,7 +199,7 @@ func Test_agent_InsertSlackMessage(t *testing.T) {
 				return
 			}
 
-			var msg slackapp.Message
+			var msg slack.Message
 
 			q, args := db.selectSlackMessage(db.builder.Select()).
 				Where(sq.Eq{
@@ -231,7 +231,7 @@ func Test_agent_FetchSlackMessages(t *testing.T) {
 
 	// success - ordered by creation time, newest first
 	org := prepOrganizations(t, db, 1)[0]
-	messages := prepSlackMessages(t, db, 3, func(_ int, msg *slackapp.Message) {
+	messages := prepSlackMessages(t, db, 3, func(_ int, msg *slack.Message) {
 		msg.OrganizationID = org
 	})
 
@@ -323,7 +323,7 @@ func Test_agent_FetchSlackAppByOrganizationID(t *testing.T) {
 
 	// success
 	org := prepOrganizations(t, db, 1)[0]
-	app := prepSlackApps(t, db, 1, func(_ int, app *slackapp.App) {
+	app := prepSlackApps(t, db, 1, func(_ int, app *slack.App) {
 		app.OrganizationID = null.StringFrom(org)
 	})[0]
 
@@ -404,7 +404,7 @@ func Test_agent_UnassignSlackAppOrganization(t *testing.T) {
 	cc := map[string]func(*testing.T, *DB) tcase{
 		"Cancelled context": func(t *testing.T, db *DB) tcase {
 			org := prepOrganizations(t, db, 1)[0]
-			app := prepSlackApps(t, db, 1, func(_ int, app *slackapp.App) {
+			app := prepSlackApps(t, db, 1, func(_ int, app *slack.App) {
 				app.OrganizationID = null.StringFrom(org)
 			})[0]
 
@@ -417,7 +417,7 @@ func Test_agent_UnassignSlackAppOrganization(t *testing.T) {
 		},
 		"Successful unassign": func(t *testing.T, db *DB) tcase {
 			org := prepOrganizations(t, db, 1)[0]
-			app := prepSlackApps(t, db, 1, func(_ int, app *slackapp.App) {
+			app := prepSlackApps(t, db, 1, func(_ int, app *slack.App) {
 				app.OrganizationID = null.StringFrom(org)
 			})[0]
 

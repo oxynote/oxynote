@@ -10,8 +10,8 @@ import (
 
 	"github.com/blang/semver/v4"
 	"github.com/gomodule/redigo/redis"
-	"github.com/oxynote/oxynote/server/core/internal/apps/githubapp"
-	"github.com/oxynote/oxynote/server/core/internal/apps/slackapp"
+	"github.com/oxynote/oxynote/server/core/internal/apps/github"
+	"github.com/oxynote/oxynote/server/core/internal/apps/slack"
 	assistantCore "github.com/oxynote/oxynote/server/core/internal/assistant"
 	"github.com/oxynote/oxynote/server/core/internal/buildinfo"
 	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
@@ -55,10 +55,10 @@ func Test_NewServer(t *testing.T) {
 
 	assistantMan := assistantCore.NewManager(log, nil, &redis.Pool{}, "key", fc, nil, nil)
 
-	githubMan, err := githubapp.NewManager(nil, githubapp.Options{})
+	githubMan, err := github.NewManager(nil, github.Options{})
 	require.NoError(t, err)
 
-	slackMan, err := slackapp.NewManager(log, nil, nil, nil, slackapp.Options{})
+	slackMan, err := slack.NewManager(log, nil, nil, nil, slack.Options{})
 	require.NoError(t, err)
 
 	db := &DBMock{}

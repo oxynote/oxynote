@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/oxynote/oxynote/server/core/internal/apps/githubapp"
-	"github.com/oxynote/oxynote/server/core/internal/apps/webchanges"
+	"github.com/oxynote/oxynote/server/core/internal/apps/github"
+	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	"github.com/shopspring/decimal"
 )
 
@@ -113,7 +113,7 @@ func (s *Settings) Scan(src any) error {
 // Github represents a GitHub client interface.
 type Github interface {
 	// FetchRepositoryTree fetches the file tree of a repository at a specific branch.
-	FetchRepositoryTree(ctx context.Context, repository, branch string) (githubapp.Tree, error)
+	FetchRepositoryTree(ctx context.Context, repository, branch string) (github.Tree, error)
 }
 
 // ChangeDetection represents an interface for detecting changes in URLs.
@@ -122,7 +122,7 @@ type ChangeDetection interface {
 	CreateWatcher(ctx context.Context, url string) (string, error)
 
 	// FetchWatcher fetches the watcher with the given watch ID.
-	FetchWatcher(ctx context.Context, watchID string) (*webchanges.Watch, error)
+	FetchWatcher(ctx context.Context, watchID string) (*webchange.Watch, error)
 
 	// UpdateWatcher updates a watcher for change detection.
 	UpdateWatcher(ctx context.Context, watchID, url string) error

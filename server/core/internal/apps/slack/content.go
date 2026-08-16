@@ -1,5 +1,5 @@
-// Package slackapp manages the Slack App integration and its API access.
-package slackapp
+// Package slack manages the Slack App integration and its API access.
+package slack
 
 import (
 	"database/sql/driver"
@@ -113,7 +113,7 @@ func (uls *UserLinkSettings) Scan(value any) error {
 	return json.Unmarshal(data, uls)
 }
 
-// AppAccess  represents access information for a Slack app.
+// AppAccess represents access information for a Slack app.
 type AppAccess struct {
 	// TeamID is the identifier for the Slack team.
 	TeamID string `json:"teamId"`

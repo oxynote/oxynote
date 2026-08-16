@@ -5,11 +5,11 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
-	"github.com/oxynote/oxynote/server/core/internal/apps/slackapp"
+	"github.com/oxynote/oxynote/server/core/internal/apps/slack"
 )
 
 // InsertSlackUserLink inserts or updates a Slack user link in the database.
-func (a *agent) InsertSlackUserLink(ctx context.Context, link slackapp.UserLink) error {
+func (a *agent) InsertSlackUserLink(ctx context.Context, link slack.UserLink) error {
 	q, args := a.builder.Insert("slack_user_links").
 		SetMap(map[string]any{
 			"slack_user_id": link.SlackUserID,
@@ -25,7 +25,7 @@ func (a *agent) InsertSlackUserLink(ctx context.Context, link slackapp.UserLink)
 }
 
 // UpdateSlackUserLink updates an existing Slack user link in the database.
-func (a *agent) UpdateSlackUserLink(ctx context.Context, link slackapp.UserLink) error {
+func (a *agent) UpdateSlackUserLink(ctx context.Context, link slack.UserLink) error {
 	q, args := a.builder.Update("slack_user_links").
 		SetMap(map[string]any{
 			"settings": link.Settings,
@@ -42,7 +42,7 @@ func (a *agent) UpdateSlackUserLink(ctx context.Context, link slackapp.UserLink)
 }
 
 // FetchSlackUserLink retrieves a Slack user link by Slack user ID and team ID.
-func (a *agent) FetchSlackUserLink(ctx context.Context, slackUserID, teamID string) (*slackapp.UserLink, error) {
+func (a *agent) FetchSlackUserLink(ctx context.Context, slackUserID, teamID string) (*slack.UserLink, error) {
 	q, args := a.selectSlackUserLink(a.builder.Select()).
 		Where(sq.Eq{
 			"slack_user_id": slackUserID,
@@ -51,7 +51,7 @@ func (a *agent) FetchSlackUserLink(ctx context.Context, slackUserID, teamID stri
 		Limit(1).
 		MustSql()
 
-	link := &slackapp.UserLink{}
+	link := &slack.UserLink{}
 	if err := sqlx.GetContext(ctx, a.sql, link, q, args...); err != nil {
 		return nil, err
 	}
@@ -60,7 +60,7 @@ func (a *agent) FetchSlackUserLink(ctx context.Context, slackUserID, teamID stri
 }
 
 // FetchSlackUserLinkByUserID retrieves a Slack user link by user ID.
-func (a *agent) FetchSlackUserLinkByUserID(ctx context.Context, userID, organizationID string) (*slackapp.UserLink, error) {
+func (a *agent) FetchSlackUserLinkByUserID(ctx context.Context, userID, organizationID string) (*slack.UserLink, error) {
 	q, args := a.selectSlackUserLink(a.builder.Select()).
 		Where(sq.Eq{
 			"fk_user_id":                    userID,
@@ -70,7 +70,7 @@ func (a *agent) FetchSlackUserLinkByUserID(ctx context.Context, userID, organiza
 		Limit(1).
 		MustSql()
 
-	link := &slackapp.UserLink{}
+	link := &slack.UserLink{}
 	if err := sqlx.GetContext(ctx, a.sql, link, q, args...); err != nil {
 		return nil, err
 	}

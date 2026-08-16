@@ -142,16 +142,10 @@ linters:
         - performance
         - experimental
         - opinionated
-    gomoddirectives:
-      replace-allow-list:
-        - gopkg.in/telebot.v3
     govet:
       disable:
         - fieldalignment
       enable-all: true
-    misspell:
-      ignore-rules:
-        - strat
     nakedret:
       max-func-lines: 20
     paralleltest:
@@ -267,22 +261,12 @@ linters:
       - linters:
           - gosec
         text: G115
-      - linters:
-          - gosec
-        path: x_sender.go
-        text: G505
-      - linters:
-          - tagliatelle
-        path: binance
-      # snake_case wire contracts: the assistant's Anthropic tool schemas and
-      # WS chat protocol, the changedetection.io API, the auth-realtime
-      # liveedit operations payload, and the canonical AI block JSON.
+      # snake_case wire contracts: the assistant's Anthropic tool schemas, WS
+      # chat protocol, liveedit operations payload, and canonical AI block
+      # JSON, plus the changedetection.io API.
       - linters:
           - tagliatelle
-        path: internal/assistant|internal/apps/webchanges|internal/document/liveedit|internal/document/aiblock
-      - linters:
-          - promlinter
-        path: wsserver/server_test.go
+        path: internal/assistant|internal/apps/webchange
       - linters:
           - musttag
         text: should be annotated with the `db`
@@ -297,9 +281,6 @@ linters:
       - linters:
           - dupword
         source: '^//go:generate '
-      - linters:
-          - revive
-        text: unknown option 'omitzero'
       - linters:
           - usetesting
         text: could be replaced by t.Context()

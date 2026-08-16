@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/guregu/null/v5"
-	"github.com/oxynote/oxynote/server/core/internal/apps/githubapp"
-	"github.com/oxynote/oxynote/server/core/internal/apps/webchanges"
+	"github.com/oxynote/oxynote/server/core/internal/apps/github"
+	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/notification"
@@ -38,27 +38,27 @@ var _fullScore = decimal.NewFromInt(_fullScorePercent)
 
 // Manager manages document freshness hooks.
 type Manager struct {
-	log              *slog.Logger
-	db               DB
-	githubMan        *githubapp.Manager
-	webchangesClient *webchanges.Client
-	notifPub         notification.Publisher
+	log             *slog.Logger
+	db              DB
+	githubMan       *github.Manager
+	webchangeClient *webchange.Client
+	notifPub        notification.Publisher
 }
 
 // NewManager creates a new Manager with the given database interface.
 func NewManager(
 	log *slog.Logger,
 	db DB,
-	githubMan *githubapp.Manager,
-	webchangesClient *webchanges.Client,
+	githubMan *github.Manager,
+	webchangeClient *webchange.Client,
 	notifPub notification.Publisher,
 ) *Manager {
 	return &Manager{
-		log:              log.With("component", "document-hooks-manager"),
-		db:               db,
-		githubMan:        githubMan,
-		webchangesClient: webchangesClient,
-		notifPub:         notifPub,
+		log:             log.With("component", "document-hooks-manager"),
+		db:              db,
+		githubMan:       githubMan,
+		webchangeClient: webchangeClient,
+		notifPub:        notifPub,
 	}
 }
 
@@ -150,7 +150,7 @@ func (m *Manager) processHooks(ctx context.Context) error { //nolint:gocognit //
 			err = h.Process(ctx, hook.NewInput(
 				h.OrganizationID,
 				m.githubMan,
-				m.webchangesClient,
+				m.webchangeClient,
 			))
 			if err != nil {
 				m.log.With("hook_id", h.ID).
@@ -235,7 +235,7 @@ func (m *Manager) ensureHook(
 		err := h.Delete(ctx, hook.NewInput(
 			h.OrganizationID,
 			m.githubMan,
-			m.webchangesClient,
+			m.webchangeClient,
 		))
 		if err != nil {
 			m.log.With("hook_id", h.ID).

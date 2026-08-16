@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/oxynote/oxynote/server/core/internal/apps/contregistry"
+	"github.com/oxynote/oxynote/server/core/internal/apps/registry"
 	"github.com/shopspring/decimal"
 )
 
@@ -41,14 +41,14 @@ func (ciw *ContainerImageWatcher) Process(ctx context.Context, inp Input) (decim
 		return decimal.Zero, nil, fmt.Errorf("unmarshaling url watcher state: %w", err)
 	}
 
-	digest, err := contregistry.Digest(
+	digest, err := registry.Digest(
 		ctx,
 		ciw.Image,
 	)
 	switch {
 	case err == nil:
 		ciws.Status = ContainerImageWatcherStatusActive
-	case errors.Is(err, contregistry.ErrUnauthorized):
+	case errors.Is(err, registry.ErrUnauthorized):
 		ciws.Status = ContainerImageWatcherStatusUnauthorized
 	default:
 		return decimal.Zero, nil, fmt.Errorf("fetching container image digest: %w", err)
@@ -77,7 +77,7 @@ func (ciw *ContainerImageWatcher) Reset(ctx context.Context, inp Input) (decimal
 		}
 	}
 
-	digest, err := contregistry.Digest(
+	digest, err := registry.Digest(
 		ctx,
 		ciw.Image,
 	)

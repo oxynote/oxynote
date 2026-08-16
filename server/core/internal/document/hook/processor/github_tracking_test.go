@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/oxynote/oxynote/server/core/internal/apps/githubapp"
+	"github.com/oxynote/oxynote/server/core/internal/apps/github"
 	"github.com/shopspring/decimal"
 )
 
@@ -36,11 +36,11 @@ func Test_GithubTracking_Process(t *testing.T) {
 		WantStatus GithubTrackingStatus
 	}{
 		"Installation not found degrades to missing installation": {
-			Err:        githubapp.ErrInstallationNotFound,
+			Err:        github.ErrInstallationNotFound,
 			WantStatus: GithubTrackingStatusMissingInstallation,
 		},
 		"Github app not configured degrades to missing installation": {
-			Err:        githubapp.ErrNotConfigured,
+			Err:        github.ErrNotConfigured,
 			WantStatus: GithubTrackingStatusMissingInstallation,
 		},
 	}
@@ -91,7 +91,7 @@ func Test_GithubTracking_Reset(t *testing.T) {
 
 	inp := githubErrInput{
 		state: State("{}"),
-		err:   githubapp.ErrNotConfigured,
+		err:   github.ErrNotConfigured,
 	}
 
 	score, state, err := gt.Reset(context.Background(), inp)

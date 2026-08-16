@@ -3,29 +3,29 @@ package hook
 import (
 	"context"
 
-	"github.com/oxynote/oxynote/server/core/internal/apps/githubapp"
-	"github.com/oxynote/oxynote/server/core/internal/apps/webchanges"
+	"github.com/oxynote/oxynote/server/core/internal/apps/github"
+	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
 )
 
 // Input represents an Input that provides state information
 // for processing freshness hooks.
 type Input struct {
-	organizationID   string
-	githubMan        *githubapp.Manager
-	webchangesClient *webchanges.Client
+	organizationID  string
+	githubMan       *github.Manager
+	webchangeClient *webchange.Client
 }
 
 // NewInput creates a new Input with the given state.
 func NewInput(
 	organizationID string,
-	githubMan *githubapp.Manager,
-	webchangesClient *webchanges.Client,
+	githubMan *github.Manager,
+	webchangeClient *webchange.Client,
 ) *Input {
 	return &Input{
-		organizationID:   organizationID,
-		githubMan:        githubMan,
-		webchangesClient: webchangesClient,
+		organizationID:  organizationID,
+		githubMan:       githubMan,
+		webchangeClient: webchangeClient,
 	}
 }
 
@@ -36,7 +36,7 @@ func (i *Input) Github(ctx context.Context) (processor.Github, error) {
 
 // ChangeDetection should return a ChangeDetection client interface.
 func (i *Input) ChangeDetection() processor.ChangeDetection {
-	return i.webchangesClient
+	return i.webchangeClient
 }
 
 // stateInput is an implementation of the Input interface

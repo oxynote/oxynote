@@ -1,4 +1,4 @@
-package slackapp
+package slack
 
 import (
 	"bytes"
@@ -12,7 +12,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/notification/interpreter"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
-	"github.com/slack-go/slack"
+	goslack "github.com/slack-go/slack"
 )
 
 var (
@@ -169,7 +169,7 @@ func (m *Manager) ProcessNotification(ctx context.Context, n notification.Notifi
 	_, _, err = client.PostMessageContext(
 		ctx,
 		ul.SlackUserID,
-		slack.MsgOptionText(msg.Text, false),
+		goslack.MsgOptionText(msg.Text, false),
 	)
 	if err != nil {
 		m.log.Error(
@@ -183,7 +183,7 @@ func (m *Manager) ProcessNotification(ctx context.Context, n notification.Notifi
 
 // VerifyMiddleware verifies the Slack request signature.
 func (m *Manager) VerifyMiddleware(r *http.Request) error {
-	verifier, err := slack.NewSecretsVerifier(r.Header, m.opt.SignatureSecret)
+	verifier, err := goslack.NewSecretsVerifier(r.Header, m.opt.SignatureSecret)
 	if err != nil {
 		return err
 	}
@@ -214,7 +214,7 @@ func (m *Manager) ExchangeCode(ctx context.Context, code string) (*AppAccess, er
 		return nil, ErrNotConfigured
 	}
 
-	resp, err := slack.GetOAuthV2ResponseContext(
+	resp, err := goslack.GetOAuthV2ResponseContext(
 		ctx,
 		http.DefaultClient,
 		m.opt.ClientID,
@@ -234,7 +234,7 @@ func (m *Manager) ExchangeCode(ctx context.Context, code string) (*AppAccess, er
 }
 
 // GetClient creates a Slack client for the given team ID.
-func (m *Manager) GetClient(ctx context.Context, teamID string) (*slack.Client, error) {
+func (m *Manager) GetClient(ctx context.Context, teamID string) (*goslack.Client, error) {
 	if !m.Configured() {
 		return nil, ErrNotConfigured
 	}
@@ -248,10 +248,12 @@ func (m *Manager) GetClient(ctx context.Context, teamID string) (*slack.Client, 
 		return nil, err
 	}
 
-	return slack.New(app.Token), nil
+	return goslack.New(app.Token), nil
 }
 
 // DB is an interface that handles communication with the database.
+//
+//go:generate ../../../scripts/codegen/mock -t internal DB db
 type DB interface {
 	// FetchSlackAppByTeamID fetches the slack app for a given team id.
 	FetchSlackAppByTeamID(ctx context.Context, teamID string) (*App, error)
@@ -264,6 +266,8 @@ type DB interface {
 }
 
 // Interpreter interprets notifications into human-readable messages.
+//
+//go:generate ../../../scripts/codegen/mock -t internal Interpreter
 type Interpreter interface {
 	// InterpretNotification interprets a notification and returns a human-readable message.
 	InterpretNotification(ctx context.Context, n notification.Notification) (*interpreter.Message, error)

@@ -1,4 +1,4 @@
-package webchanges
+package webchange
 
 import "time"
 
@@ -30,7 +30,7 @@ type rawWatch struct {
 	URL string `json:"url"`
 
 	// TimeBetweenCheck specifies the interval between checks.
-	TimeBetweenCheck TimeBetweenCheck `json:"time_between_check"`
+	TimeBetweenCheck timeBetweenCheck `json:"time_between_check"`
 
 	// LastChanged holds the timestamp of the last change detected.
 	LastChanged int64 `json:"last_changed"`
@@ -39,34 +39,19 @@ type rawWatch struct {
 	LastError any `json:"last_error"`
 }
 
-// TimeBetweenCheck represents the interval between watch checks.
-type TimeBetweenCheck struct {
+// timeBetweenCheck represents the interval between watch checks.
+type timeBetweenCheck struct {
 	// Minutes represents the number of minutes.
 	Minutes int `json:"minutes"`
 }
 
-// CreateWatchRequest represents the request body for creating a new watch.
-type CreateWatchRequest struct {
+// watchRequest represents the request body for creating or updating a watch.
+type watchRequest struct {
 	// URL is the URL to be monitored.
 	URL string `json:"url"`
 
 	// TimeBetweenCheck specifies the interval between checks.
-	TimeBetweenCheck *TimeBetweenCheck `json:"time_between_check"`
-
-	// FetchBackend specifies the fetch backend to be used.
-	FetchBackend string `json:"fetch_backend"`
-
-	// TimeBetweenCheckUseDefault indicates if the default interval is used.
-	TimeBetweenCheckUseDefault bool `json:"time_between_check_use_default"`
-}
-
-// UpdateWatchRequest represents the request body for updating a watch.
-type UpdateWatchRequest struct {
-	// URL is the URL to be monitored.
-	URL string `json:"url"`
-
-	// TimeBetweenCheck specifies the interval between checks.
-	TimeBetweenCheck *TimeBetweenCheck `json:"time_between_check"`
+	TimeBetweenCheck *timeBetweenCheck `json:"time_between_check"`
 
 	// FetchBackend specifies the fetch backend to be used.
 	FetchBackend string `json:"fetch_backend"`

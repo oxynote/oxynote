@@ -6,11 +6,11 @@ import (
 	"net/http"
 	"slices"
 
-	"github.com/oxynote/oxynote/server/core/internal/apps/slackapp"
+	"github.com/oxynote/oxynote/server/core/internal/apps/slack"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
-	"github.com/slack-go/slack"
+	goslack "github.com/slack-go/slack"
 )
 
 const (
@@ -191,7 +191,7 @@ func (h *Handler) UpdateUserLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var settings slackapp.UserLinkSettings
+	var settings slack.UserLinkSettings
 
 	if err = httpserver.DecodeJSON(r, &settings); err != nil {
 		httpserver.RespondError(h.log, w, err)
@@ -286,7 +286,7 @@ func (h *Handler) LinkUser(w http.ResponseWriter, r *http.Request) {
 
 	if err = h.db.InsertSlackUserLink(
 		r.Context(),
-		*slackapp.NewUserLink(ls.SlackUserID, ls.TeamID, session.UserID),
+		*slack.NewUserLink(ls.SlackUserID, ls.TeamID, session.UserID),
 	); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -299,7 +299,7 @@ func (h *Handler) LinkUser(w http.ResponseWriter, r *http.Request) {
 		_, _, err = client.PostMessageContext(
 			r.Context(),
 			ls.SlackUserID,
-			slack.MsgOptionText("Your Slack account has been successfully linked to your Oxynote account.", false),
+			goslack.MsgOptionText("Your Slack account has been successfully linked to your Oxynote account.", false),
 		)
 		if err != nil {
 			h.log.Error("failed to send confirmation DM", slog.String("error", err.Error()))
@@ -313,28 +313,28 @@ func (h *Handler) LinkUser(w http.ResponseWriter, r *http.Request) {
 
 // sendLinkMessage sends an ephemeral message with a link button.
 func (h *Handler) sendLinkMessage(ctx context.Context, responseURL, linkURL string) error {
-	msg := slack.WebhookMessage{
+	msg := goslack.WebhookMessage{
 		ResponseType: "ephemeral",
-		Blocks: &slack.Blocks{
-			BlockSet: []slack.Block{
-				&slack.SectionBlock{
-					Type: slack.MBTSection,
-					Text: &slack.TextBlockObject{
-						Type: slack.MarkdownType,
+		Blocks: &goslack.Blocks{
+			BlockSet: []goslack.Block{
+				&goslack.SectionBlock{
+					Type: goslack.MBTSection,
+					Text: &goslack.TextBlockObject{
+						Type: goslack.MarkdownType,
 						Text: "Link your Slack account to Oxynote to enable personalized features and notifications.",
 					},
 				},
-				&slack.ActionBlock{
-					Type:    slack.MBTAction,
+				&goslack.ActionBlock{
+					Type:    goslack.MBTAction,
 					BlockID: "link_user_block",
-					Elements: &slack.BlockElements{
-						ElementSet: []slack.BlockElement{
-							&slack.ButtonBlockElement{
+					Elements: &goslack.BlockElements{
+						ElementSet: []goslack.BlockElement{
+							&goslack.ButtonBlockElement{
 								ActionID: "link_user_element",
-								Type:     slack.METButton,
-								Style:    slack.StylePrimary,
-								Text: &slack.TextBlockObject{
-									Type: slack.PlainTextType,
+								Type:     goslack.METButton,
+								Style:    goslack.StylePrimary,
+								Text: &goslack.TextBlockObject{
+									Type: goslack.PlainTextType,
 									Text: "Link Account",
 								},
 								URL: linkURL,
@@ -346,5 +346,5 @@ func (h *Handler) sendLinkMessage(ctx context.Context, responseURL, linkURL stri
 		},
 	}
 
-	return slack.PostWebhookContext(ctx, responseURL, &msg)
+	return goslack.PostWebhookContext(ctx, responseURL, &msg)
 }

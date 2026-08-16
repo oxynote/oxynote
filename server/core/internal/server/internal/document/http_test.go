@@ -159,7 +159,7 @@ func Test_NewHandler(t *testing.T) {
 	assert.Same(t, gw, hdl.searchGateway)
 	assert.Same(t, pub, hdl.notifPub)
 	assert.Nil(t, hdl.githubMan)
-	assert.Nil(t, hdl.webchangesClient)
+	assert.Nil(t, hdl.webchangeClient)
 }
 
 func Test_Handler_FetchDocumentMaintainers(t *testing.T) {

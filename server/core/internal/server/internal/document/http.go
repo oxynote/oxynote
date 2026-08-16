@@ -8,8 +8,8 @@ import (
 	"slices"
 
 	"github.com/guregu/null/v5"
-	"github.com/oxynote/oxynote/server/core/internal/apps/githubapp"
-	"github.com/oxynote/oxynote/server/core/internal/apps/webchanges"
+	"github.com/oxynote/oxynote/server/core/internal/apps/github"
+	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/document/searchgw"
@@ -26,12 +26,12 @@ var ErrInvalidSearchQuery = errutil.New(http.StatusBadRequest, "document.invalid
 
 // Handler holds dependencies required for tenant app-related operations.
 type Handler struct {
-	log              *slog.Logger
-	db               DB
-	githubMan        *githubapp.Manager
-	webchangesClient *webchanges.Client
-	searchGateway    SearchGateway
-	notifPub         notification.Publisher
+	log             *slog.Logger
+	db              DB
+	githubMan       *github.Manager
+	webchangeClient *webchange.Client
+	searchGateway   SearchGateway
+	notifPub        notification.Publisher
 
 	tree struct {
 		changeCallback func(organizationID string, parentId null.Value[xid.ID])
@@ -54,18 +54,18 @@ type Handler struct {
 func NewHandler(
 	log *slog.Logger,
 	db DB,
-	githubMan *githubapp.Manager,
-	webchangesClient *webchanges.Client,
+	githubMan *github.Manager,
+	webchangeClient *webchange.Client,
 	searchGateway SearchGateway,
 	notifPub notification.Publisher,
 ) *Handler {
 	return &Handler{
-		log:              log,
-		db:               db,
-		githubMan:        githubMan,
-		webchangesClient: webchangesClient,
-		searchGateway:    searchGateway,
-		notifPub:         notifPub,
+		log:             log,
+		db:              db,
+		githubMan:       githubMan,
+		webchangeClient: webchangeClient,
+		searchGateway:   searchGateway,
+		notifPub:        notifPub,
 	}
 }
 
@@ -902,7 +902,7 @@ func (h *Handler) DeleteDocument(w http.ResponseWriter, r *http.Request) {
 		err = hk.Delete(r.Context(), hook.NewInput(
 			session.ActiveOrganizationID,
 			h.githubMan,
-			h.webchangesClient,
+			h.webchangeClient,
 		))
 		if err != nil {
 			httpserver.RespondError(h.log, w, err)
@@ -1197,7 +1197,7 @@ func (h *Handler) copyHooksToBranch(ctx context.Context, db HooksDBAgent, fromBr
 		return err
 	}
 
-	inp := hook.NewInput(organizationID, h.githubMan, h.webchangesClient)
+	inp := hook.NewInput(organizationID, h.githubMan, h.webchangeClient)
 
 	for _, hk := range hooks {
 		newHk, err := hook.NewHook(ctx, hook.CreateInput{

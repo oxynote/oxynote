@@ -12,11 +12,11 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
-	"github.com/oxynote/oxynote/server/core/internal/apps/slackapp"
+	"github.com/oxynote/oxynote/server/core/internal/apps/slack"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
-	"github.com/slack-go/slack"
+	goslack "github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
 )
 
@@ -50,7 +50,7 @@ type Handler struct {
 	log    *slog.Logger
 	client *http.Client
 	db     DB
-	man    *slackapp.Manager
+	man    *slack.Manager
 
 	message struct {
 		postCallback func()
@@ -58,7 +58,7 @@ type Handler struct {
 }
 
 // NewHandler creates a new handler instance with the provided logger and database.
-func NewHandler(log *slog.Logger, db DB, client *http.Client, man *slackapp.Manager) *Handler {
+func NewHandler(log *slog.Logger, db DB, client *http.Client, man *slack.Manager) *Handler {
 	return &Handler{
 		log:    log,
 		client: client,
@@ -68,12 +68,12 @@ func NewHandler(log *slog.Logger, db DB, client *http.Client, man *slackapp.Mana
 }
 
 // RequireConfigured is a middleware that rejects requests with
-// slackapp.ErrNotConfigured when the Slack App integration is not configured
+// slack.ErrNotConfigured when the Slack App integration is not configured
 // on this deployment.
 func (h *Handler) RequireConfigured(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !h.man.Configured() {
-			httpserver.RespondError(h.log, w, slackapp.ErrNotConfigured)
+			httpserver.RespondError(h.log, w, slack.ErrNotConfigured)
 			return
 		}
 
@@ -120,7 +120,7 @@ func (h *Handler) InstallApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.db.InsertSlackApp(r.Context(), slackapp.App{
+	err = h.db.InsertSlackApp(r.Context(), slack.App{
 		TeamID: appAccess.TeamID,
 		Token:  appAccess.AccessToken,
 	})
@@ -237,7 +237,7 @@ func (h *Handler) ConnectOrganization(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		var appAccess *slackapp.AppAccess
+		var appAccess *slack.AppAccess
 
 		appAccess, err = h.man.ExchangeCode(r.Context(), code)
 		if err != nil {
@@ -245,7 +245,7 @@ func (h *Handler) ConnectOrganization(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		err = h.db.InsertSlackApp(r.Context(), slackapp.App{
+		err = h.db.InsertSlackApp(r.Context(), slack.App{
 			TeamID:         appAccess.TeamID,
 			Token:          appAccess.AccessToken,
 			OrganizationID: is.OrganizationID,
@@ -258,7 +258,7 @@ func (h *Handler) ConnectOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var app *slackapp.App
+	var app *slack.App
 
 	rerr := backoff.Retry(
 		func() error { //nolint:contextcheck // the retry closure runs synchronously within the request
@@ -416,7 +416,7 @@ func (h *Handler) HandleCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var payload slack.InteractionCallback
+	var payload goslack.InteractionCallback
 
 	err := json.Unmarshal([]byte(r.FormValue("payload")), &payload)
 	if err != nil {
@@ -430,10 +430,10 @@ func (h *Handler) HandleCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client := slack.New(app.Token)
+	client := goslack.New(app.Token)
 
 	if !app.OrganizationID.Valid { //nolint:nestif // the branching is sequential and readable
-		var user *slack.User
+		var user *goslack.User
 
 		user, err = client.GetUserInfo(payload.User.ID)
 		if err != nil {
@@ -477,7 +477,7 @@ func (h *Handler) HandleCommand(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch payload.Type {
-	case slack.InteractionTypeMessageAction:
+	case goslack.InteractionTypeMessageAction:
 		_, err = client.OpenViewContext(
 			r.Context(),
 			payload.TriggerID,
@@ -487,8 +487,8 @@ func (h *Handler) HandleCommand(w http.ResponseWriter, r *http.Request) {
 			httpserver.RespondError(h.log, w, ErrOpeningView)
 			return
 		}
-	case slack.InteractionTypeViewSubmission:
-		err := h.db.InsertSlackMessage(r.Context(), *slackapp.NewMessage(
+	case goslack.InteractionTypeViewSubmission:
+		err := h.db.InsertSlackMessage(r.Context(), *slack.NewMessage(
 			app.OrganizationID.String,
 			payload.View.State.Values["message_input_block"]["message_input_block_action"].Value,
 		))
@@ -549,22 +549,22 @@ type DB interface {
 // message database.
 type AppDB interface {
 	// InsertSlackApp inserts a slack app into the database.
-	InsertSlackApp(ctx context.Context, app slackapp.App) error
+	InsertSlackApp(ctx context.Context, app slack.App) error
 
 	// InsertSlackMessage inserts a slack message into the database.
-	InsertSlackMessage(ctx context.Context, msg slackapp.Message) error
+	InsertSlackMessage(ctx context.Context, msg slack.Message) error
 
 	// UpdateSlackAppOrganiziationID updates an existing slack app in the database.
 	UpdateSlackAppOrganizationID(ctx context.Context, teamID, organizationID string) error
 
 	// FetchSlackAppByTeamID fetches the slack app for a given team id.
-	FetchSlackAppByTeamID(ctx context.Context, teamID string) (*slackapp.App, error)
+	FetchSlackAppByTeamID(ctx context.Context, teamID string) (*slack.App, error)
 
 	// FetchSlackAppByOrganizationID retrieves the slack app for a given organization ID.
-	FetchSlackAppByOrganizationID(ctx context.Context, organizationID string) (*slackapp.App, error)
+	FetchSlackAppByOrganizationID(ctx context.Context, organizationID string) (*slack.App, error)
 
 	// FetchSlackMessages retrieves Slack messages for a given organization ID from the database.
-	FetchSlackMessages(ctx context.Context, organizationID string) ([]slackapp.Message, error)
+	FetchSlackMessages(ctx context.Context, organizationID string) ([]slack.Message, error)
 
 	// DeleteSlackApp deletes a slack app from the database.
 	DeleteSlackApp(ctx context.Context, teamID string) error
@@ -577,16 +577,16 @@ type AppDB interface {
 // link database.
 type UserLinkDB interface {
 	// InsertSlackUserLink inserts a Slack user link in the database.
-	InsertSlackUserLink(ctx context.Context, link slackapp.UserLink) error
+	InsertSlackUserLink(ctx context.Context, link slack.UserLink) error
 
 	// UpdateSlackUserLink updates an existing Slack user link in the database.
-	UpdateSlackUserLink(ctx context.Context, link slackapp.UserLink) error
+	UpdateSlackUserLink(ctx context.Context, link slack.UserLink) error
 
 	// FetchSlackUserLink retrieves a Slack user link by Slack user ID and team ID.
-	FetchSlackUserLink(ctx context.Context, slackUserID, teamID string) (*slackapp.UserLink, error)
+	FetchSlackUserLink(ctx context.Context, slackUserID, teamID string) (*slack.UserLink, error)
 
 	// FetchSlackUserLinkByUserID retrieves a Slack user link by user ID.
-	FetchSlackUserLinkByUserID(ctx context.Context, userID, organizationID string) (*slackapp.UserLink, error)
+	FetchSlackUserLinkByUserID(ctx context.Context, userID, organizationID string) (*slack.UserLink, error)
 
 	// DeleteSlackUserLink removes a Slack user link from the database.
 	DeleteSlackUserLink(ctx context.Context, slackUserID, teamID string) error

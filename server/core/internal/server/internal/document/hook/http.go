@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/oxynote/oxynote/server/core/internal/apps/githubapp"
-	"github.com/oxynote/oxynote/server/core/internal/apps/webchanges"
+	"github.com/oxynote/oxynote/server/core/internal/apps/github"
+	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	hookCore "github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
@@ -17,24 +17,24 @@ import (
 
 // Handler holds dependencies required for document hook operations.
 type Handler struct {
-	log              *slog.Logger
-	db               DB
-	githubMan        *githubapp.Manager
-	webchangesClient *webchanges.Client
+	log             *slog.Logger
+	db              DB
+	githubMan       *github.Manager
+	webchangeClient *webchange.Client
 }
 
 // NewHandler creates a new handler instance with the provided logger and database.
 func NewHandler(
 	log *slog.Logger,
 	db DB,
-	githubMan *githubapp.Manager,
-	webchangesClient *webchanges.Client,
+	githubMan *github.Manager,
+	webchangeClient *webchange.Client,
 ) *Handler {
 	return &Handler{
-		log:              log,
-		db:               db,
-		githubMan:        githubMan,
-		webchangesClient: webchangesClient,
+		log:             log,
+		db:              db,
+		githubMan:       githubMan,
+		webchangeClient: webchangeClient,
 	}
 }
 
@@ -102,7 +102,7 @@ func (h *Handler) CreateDocumentHook(w http.ResponseWriter, r *http.Request) {
 		hookCore.NewInput(
 			session.ActiveOrganizationID,
 			h.githubMan,
-			h.webchangesClient,
+			h.webchangeClient,
 		),
 	)
 	if err != nil {
@@ -156,7 +156,7 @@ func (h *Handler) UpdateDocumentHook(w http.ResponseWriter, r *http.Request) {
 		hookCore.NewInput(
 			session.ActiveOrganizationID,
 			h.githubMan,
-			h.webchangesClient,
+			h.webchangeClient,
 		),
 	)
 	if err != nil {
@@ -200,7 +200,7 @@ func (h *Handler) ResetDocumentHook(w http.ResponseWriter, r *http.Request) {
 	err = hk.Reset(r.Context(), hookCore.NewInput(
 		session.ActiveOrganizationID,
 		h.githubMan,
-		h.webchangesClient,
+		h.webchangeClient,
 	))
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
@@ -243,7 +243,7 @@ func (h *Handler) DeleteDocumentHook(w http.ResponseWriter, r *http.Request) {
 	err = hk.Delete(r.Context(), hookCore.NewInput(
 		session.ActiveOrganizationID,
 		h.githubMan,
-		h.webchangesClient,
+		h.webchangeClient,
 	))
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)

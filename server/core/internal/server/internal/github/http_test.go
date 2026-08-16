@@ -17,7 +17,7 @@ import (
 	"testing"
 
 	"github.com/guregu/null/v5"
-	"github.com/oxynote/oxynote/server/core/internal/apps/githubapp"
+	"github.com/oxynote/oxynote/server/core/internal/apps/github"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
@@ -30,13 +30,13 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }
 
-// newTestManager creates a githubapp.Manager for tests. When configured is
+// newTestManager creates a github.Manager for tests. When configured is
 // true, a throwaway RSA key is generated so the manager builds a real app
 // client.
-func newTestManager(t *testing.T, configured bool, db githubapp.DB) *githubapp.Manager {
+func newTestManager(t *testing.T, configured bool, db github.DB) *github.Manager {
 	t.Helper()
 
-	opt := githubapp.Options{}
+	opt := github.Options{}
 
 	if configured {
 		opt.InstallationSigningSecret = "0123456789abcdef0123456789abcdef"
@@ -61,7 +61,7 @@ func newTestManager(t *testing.T, configured bool, db githubapp.DB) *githubapp.M
 		opt.PrivateKeyPath = keyPath
 	}
 
-	man, err := githubapp.NewManager(db, opt)
+	man, err := github.NewManager(db, opt)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -275,7 +275,7 @@ func Test_Handler_FetchInstall(t *testing.T) {
 
 // installationState builds a valid encrypted installation state for the
 // given organization by round-tripping through the manager's URL builder.
-func installationState(t *testing.T, man *githubapp.Manager, orgID string) string {
+func installationState(t *testing.T, man *github.Manager, orgID string) string {
 	t.Helper()
 
 	rawURL, err := man.CreateInstallationURL(orgID)

@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
-	"github.com/google/go-github/v72/github"
+	gogithub "github.com/google/go-github/v72/github"
 	"github.com/guregu/null/v5"
-	"github.com/oxynote/oxynote/server/core/internal/apps/githubapp"
+	"github.com/oxynote/oxynote/server/core/internal/apps/github"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
@@ -53,7 +53,7 @@ type Handler struct {
 	log    *slog.Logger
 	client *http.Client
 	db     DB
-	man    *githubapp.Manager
+	man    *github.Manager
 }
 
 // NewHandler creates a new handler instance with the provided logger and database.
@@ -61,7 +61,7 @@ func NewHandler(
 	log *slog.Logger,
 	db DB,
 	client *http.Client,
-	man *githubapp.Manager,
+	man *github.Manager,
 ) *Handler {
 	return &Handler{
 		log:    log,
@@ -72,12 +72,12 @@ func NewHandler(
 }
 
 // RequireConfigured is a middleware that rejects requests with
-// githubapp.ErrNotConfigured when the GitHub App integration is not
+// github.ErrNotConfigured when the GitHub App integration is not
 // configured on this deployment.
 func (h *Handler) RequireConfigured(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !h.man.Configured() {
-			httpserver.RespondError(h.log, w, githubapp.ErrNotConfigured)
+			httpserver.RespondError(h.log, w, github.ErrNotConfigured)
 			return
 		}
 
@@ -95,7 +95,7 @@ func (h *Handler) VerifySignature(next http.Handler) http.Handler {
 			return
 		}
 
-		payload, err := github.ValidatePayload(r, []byte(h.man.SignatureSecret()))
+		payload, err := gogithub.ValidatePayload(r, []byte(h.man.SignatureSecret()))
 		if err != nil {
 			httpserver.RespondError(h.log, w, err)
 			return
@@ -268,7 +268,7 @@ func (h *Handler) HandleEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	event, err := github.ParseWebHook(github.WebHookType(r), payload)
+	event, err := gogithub.ParseWebHook(gogithub.WebHookType(r), payload)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -276,7 +276,7 @@ func (h *Handler) HandleEvent(w http.ResponseWriter, r *http.Request) {
 
 	h.log.Debug("received github event", slog.Any("event", event))
 
-	if event, ok := event.(*github.InstallationEvent); ok {
+	if event, ok := event.(*gogithub.InstallationEvent); ok {
 		installationID := event.GetInstallation().GetID()
 
 		switch event.GetAction() {
@@ -453,7 +453,7 @@ func (h *Handler) FetchRepositoryTree(w http.ResponseWriter, r *http.Request) {
 //
 //go:generate ../../../../scripts/codegen/mock -t internal DB db
 type DB interface {
-	githubapp.DB
+	github.DB
 
 	// InsertGithubInstallation inserts a new Github installation into the database.
 	InsertGithubInstallation(ctx context.Context, installationID int64) error

@@ -61,7 +61,7 @@ func Test_NewHandler(t *testing.T) {
 	assert.NotNil(t, hdl.log)
 	assert.Same(t, db, hdl.db)
 	assert.Nil(t, hdl.githubMan)
-	assert.Nil(t, hdl.webchangesClient)
+	assert.Nil(t, hdl.webchangeClient)
 }
 
 func Test_Handler_FetchDocumentHooks(t *testing.T) {

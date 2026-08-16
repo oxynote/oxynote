@@ -1,5 +1,5 @@
-// Package contregistry fetches container image digests from container registries.
-package contregistry
+// Package registry fetches container image digests from container registries.
+package registry
 
 import (
 	"context"
@@ -16,7 +16,7 @@ import (
 )
 
 // ErrUnauthorized is returned when access to the container registry is unauthorized.
-var ErrUnauthorized = errutil.New(http.StatusBadRequest, "contregistry.unauthorized", "Unauthorized access to the container registry.")
+var ErrUnauthorized = errutil.New(http.StatusBadRequest, "registry.unauthorized", "Unauthorized access to the container registry.")
 
 // digestOptions holds options for configuring the Digest function.
 type digestOptions struct {
@@ -77,9 +77,11 @@ func Digest(
 		var terr *transport.Error
 
 		if ok := errors.As(err, &terr); ok {
-			if slices.ContainsFunc(terr.Errors, func(diag transport.Diagnostic) bool {
-				return diag.Code == transport.UnauthorizedErrorCode || diag.Code == transport.DeniedErrorCode
-			}) {
+			if terr.StatusCode == http.StatusUnauthorized ||
+				terr.StatusCode == http.StatusForbidden ||
+				slices.ContainsFunc(terr.Errors, func(diag transport.Diagnostic) bool {
+					return diag.Code == transport.UnauthorizedErrorCode || diag.Code == transport.DeniedErrorCode
+				}) {
 				return "", ErrUnauthorized
 			}
 		}

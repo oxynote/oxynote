@@ -7,7 +7,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/oxynote/oxynote/server/core/internal/apps/slackapp"
+	"github.com/oxynote/oxynote/server/core/internal/apps/slack"
 )
 
 // Ensure, that DBMock does implement DB.
@@ -29,28 +29,28 @@ var _ DB = &DBMock{}
 //			FetchOrganizationMembersFunc: func(ctx context.Context, organizationID string) ([]string, error) {
 //				panic("mock out the FetchOrganizationMembers method")
 //			},
-//			FetchSlackAppByOrganizationIDFunc: func(ctx context.Context, organizationID string) (*slackapp.App, error) {
+//			FetchSlackAppByOrganizationIDFunc: func(ctx context.Context, organizationID string) (*slack.App, error) {
 //				panic("mock out the FetchSlackAppByOrganizationID method")
 //			},
-//			FetchSlackAppByTeamIDFunc: func(ctx context.Context, teamID string) (*slackapp.App, error) {
+//			FetchSlackAppByTeamIDFunc: func(ctx context.Context, teamID string) (*slack.App, error) {
 //				panic("mock out the FetchSlackAppByTeamID method")
 //			},
-//			FetchSlackMessagesFunc: func(ctx context.Context, organizationID string) ([]slackapp.Message, error) {
+//			FetchSlackMessagesFunc: func(ctx context.Context, organizationID string) ([]slack.Message, error) {
 //				panic("mock out the FetchSlackMessages method")
 //			},
-//			FetchSlackUserLinkFunc: func(ctx context.Context, slackUserID string, teamID string) (*slackapp.UserLink, error) {
+//			FetchSlackUserLinkFunc: func(ctx context.Context, slackUserID string, teamID string) (*slack.UserLink, error) {
 //				panic("mock out the FetchSlackUserLink method")
 //			},
-//			FetchSlackUserLinkByUserIDFunc: func(ctx context.Context, userID string, organizationID string) (*slackapp.UserLink, error) {
+//			FetchSlackUserLinkByUserIDFunc: func(ctx context.Context, userID string, organizationID string) (*slack.UserLink, error) {
 //				panic("mock out the FetchSlackUserLinkByUserID method")
 //			},
-//			InsertSlackAppFunc: func(ctx context.Context, app slackapp.App) error {
+//			InsertSlackAppFunc: func(ctx context.Context, app slack.App) error {
 //				panic("mock out the InsertSlackApp method")
 //			},
-//			InsertSlackMessageFunc: func(ctx context.Context, msg slackapp.Message) error {
+//			InsertSlackMessageFunc: func(ctx context.Context, msg slack.Message) error {
 //				panic("mock out the InsertSlackMessage method")
 //			},
-//			InsertSlackUserLinkFunc: func(ctx context.Context, link slackapp.UserLink) error {
+//			InsertSlackUserLinkFunc: func(ctx context.Context, link slack.UserLink) error {
 //				panic("mock out the InsertSlackUserLink method")
 //			},
 //			UnassignSlackAppOrganizationFunc: func(ctx context.Context, organizationID string) error {
@@ -59,7 +59,7 @@ var _ DB = &DBMock{}
 //			UpdateSlackAppOrganizationIDFunc: func(ctx context.Context, teamID string, organizationID string) error {
 //				panic("mock out the UpdateSlackAppOrganizationID method")
 //			},
-//			UpdateSlackUserLinkFunc: func(ctx context.Context, link slackapp.UserLink) error {
+//			UpdateSlackUserLinkFunc: func(ctx context.Context, link slack.UserLink) error {
 //				panic("mock out the UpdateSlackUserLink method")
 //			},
 //		}
@@ -79,28 +79,28 @@ type DBMock struct {
 	FetchOrganizationMembersFunc func(ctx context.Context, organizationID string) ([]string, error)
 
 	// FetchSlackAppByOrganizationIDFunc mocks the FetchSlackAppByOrganizationID method.
-	FetchSlackAppByOrganizationIDFunc func(ctx context.Context, organizationID string) (*slackapp.App, error)
+	FetchSlackAppByOrganizationIDFunc func(ctx context.Context, organizationID string) (*slack.App, error)
 
 	// FetchSlackAppByTeamIDFunc mocks the FetchSlackAppByTeamID method.
-	FetchSlackAppByTeamIDFunc func(ctx context.Context, teamID string) (*slackapp.App, error)
+	FetchSlackAppByTeamIDFunc func(ctx context.Context, teamID string) (*slack.App, error)
 
 	// FetchSlackMessagesFunc mocks the FetchSlackMessages method.
-	FetchSlackMessagesFunc func(ctx context.Context, organizationID string) ([]slackapp.Message, error)
+	FetchSlackMessagesFunc func(ctx context.Context, organizationID string) ([]slack.Message, error)
 
 	// FetchSlackUserLinkFunc mocks the FetchSlackUserLink method.
-	FetchSlackUserLinkFunc func(ctx context.Context, slackUserID string, teamID string) (*slackapp.UserLink, error)
+	FetchSlackUserLinkFunc func(ctx context.Context, slackUserID string, teamID string) (*slack.UserLink, error)
 
 	// FetchSlackUserLinkByUserIDFunc mocks the FetchSlackUserLinkByUserID method.
-	FetchSlackUserLinkByUserIDFunc func(ctx context.Context, userID string, organizationID string) (*slackapp.UserLink, error)
+	FetchSlackUserLinkByUserIDFunc func(ctx context.Context, userID string, organizationID string) (*slack.UserLink, error)
 
 	// InsertSlackAppFunc mocks the InsertSlackApp method.
-	InsertSlackAppFunc func(ctx context.Context, app slackapp.App) error
+	InsertSlackAppFunc func(ctx context.Context, app slack.App) error
 
 	// InsertSlackMessageFunc mocks the InsertSlackMessage method.
-	InsertSlackMessageFunc func(ctx context.Context, msg slackapp.Message) error
+	InsertSlackMessageFunc func(ctx context.Context, msg slack.Message) error
 
 	// InsertSlackUserLinkFunc mocks the InsertSlackUserLink method.
-	InsertSlackUserLinkFunc func(ctx context.Context, link slackapp.UserLink) error
+	InsertSlackUserLinkFunc func(ctx context.Context, link slack.UserLink) error
 
 	// UnassignSlackAppOrganizationFunc mocks the UnassignSlackAppOrganization method.
 	UnassignSlackAppOrganizationFunc func(ctx context.Context, organizationID string) error
@@ -109,7 +109,7 @@ type DBMock struct {
 	UpdateSlackAppOrganizationIDFunc func(ctx context.Context, teamID string, organizationID string) error
 
 	// UpdateSlackUserLinkFunc mocks the UpdateSlackUserLink method.
-	UpdateSlackUserLinkFunc func(ctx context.Context, link slackapp.UserLink) error
+	UpdateSlackUserLinkFunc func(ctx context.Context, link slack.UserLink) error
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -180,21 +180,21 @@ type DBMock struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
 			// App is the app argument value.
-			App slackapp.App
+			App slack.App
 		}
 		// InsertSlackMessage holds details about calls to the InsertSlackMessage method.
 		InsertSlackMessage []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
 			// Msg is the msg argument value.
-			Msg slackapp.Message
+			Msg slack.Message
 		}
 		// InsertSlackUserLink holds details about calls to the InsertSlackUserLink method.
 		InsertSlackUserLink []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
 			// Link is the link argument value.
-			Link slackapp.UserLink
+			Link slack.UserLink
 		}
 		// UnassignSlackAppOrganization holds details about calls to the UnassignSlackAppOrganization method.
 		UnassignSlackAppOrganization []struct {
@@ -217,7 +217,7 @@ type DBMock struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
 			// Link is the link argument value.
-			Link slackapp.UserLink
+			Link slack.UserLink
 		}
 	}
 	lockDeleteSlackApp                sync.RWMutex
@@ -359,7 +359,7 @@ func (mock *DBMock) FetchOrganizationMembersCalls() []struct {
 }
 
 // FetchSlackAppByOrganizationID calls FetchSlackAppByOrganizationIDFunc.
-func (mock *DBMock) FetchSlackAppByOrganizationID(ctx context.Context, organizationID string) (*slackapp.App, error) {
+func (mock *DBMock) FetchSlackAppByOrganizationID(ctx context.Context, organizationID string) (*slack.App, error) {
 	callInfo := struct {
 		Ctx            context.Context
 		OrganizationID string
@@ -372,7 +372,7 @@ func (mock *DBMock) FetchSlackAppByOrganizationID(ctx context.Context, organizat
 	mock.lockFetchSlackAppByOrganizationID.Unlock()
 	if mock.FetchSlackAppByOrganizationIDFunc == nil {
 		var (
-			appOut *slackapp.App
+			appOut *slack.App
 			errOut error
 		)
 		return appOut, errOut
@@ -399,7 +399,7 @@ func (mock *DBMock) FetchSlackAppByOrganizationIDCalls() []struct {
 }
 
 // FetchSlackAppByTeamID calls FetchSlackAppByTeamIDFunc.
-func (mock *DBMock) FetchSlackAppByTeamID(ctx context.Context, teamID string) (*slackapp.App, error) {
+func (mock *DBMock) FetchSlackAppByTeamID(ctx context.Context, teamID string) (*slack.App, error) {
 	callInfo := struct {
 		Ctx    context.Context
 		TeamID string
@@ -412,7 +412,7 @@ func (mock *DBMock) FetchSlackAppByTeamID(ctx context.Context, teamID string) (*
 	mock.lockFetchSlackAppByTeamID.Unlock()
 	if mock.FetchSlackAppByTeamIDFunc == nil {
 		var (
-			appOut *slackapp.App
+			appOut *slack.App
 			errOut error
 		)
 		return appOut, errOut
@@ -439,7 +439,7 @@ func (mock *DBMock) FetchSlackAppByTeamIDCalls() []struct {
 }
 
 // FetchSlackMessages calls FetchSlackMessagesFunc.
-func (mock *DBMock) FetchSlackMessages(ctx context.Context, organizationID string) ([]slackapp.Message, error) {
+func (mock *DBMock) FetchSlackMessages(ctx context.Context, organizationID string) ([]slack.Message, error) {
 	callInfo := struct {
 		Ctx            context.Context
 		OrganizationID string
@@ -452,7 +452,7 @@ func (mock *DBMock) FetchSlackMessages(ctx context.Context, organizationID strin
 	mock.lockFetchSlackMessages.Unlock()
 	if mock.FetchSlackMessagesFunc == nil {
 		var (
-			messagesOut []slackapp.Message
+			messagesOut []slack.Message
 			errOut      error
 		)
 		return messagesOut, errOut
@@ -479,7 +479,7 @@ func (mock *DBMock) FetchSlackMessagesCalls() []struct {
 }
 
 // FetchSlackUserLink calls FetchSlackUserLinkFunc.
-func (mock *DBMock) FetchSlackUserLink(ctx context.Context, slackUserID string, teamID string) (*slackapp.UserLink, error) {
+func (mock *DBMock) FetchSlackUserLink(ctx context.Context, slackUserID string, teamID string) (*slack.UserLink, error) {
 	callInfo := struct {
 		Ctx         context.Context
 		SlackUserID string
@@ -494,7 +494,7 @@ func (mock *DBMock) FetchSlackUserLink(ctx context.Context, slackUserID string, 
 	mock.lockFetchSlackUserLink.Unlock()
 	if mock.FetchSlackUserLinkFunc == nil {
 		var (
-			userLinkOut *slackapp.UserLink
+			userLinkOut *slack.UserLink
 			errOut      error
 		)
 		return userLinkOut, errOut
@@ -523,7 +523,7 @@ func (mock *DBMock) FetchSlackUserLinkCalls() []struct {
 }
 
 // FetchSlackUserLinkByUserID calls FetchSlackUserLinkByUserIDFunc.
-func (mock *DBMock) FetchSlackUserLinkByUserID(ctx context.Context, userID string, organizationID string) (*slackapp.UserLink, error) {
+func (mock *DBMock) FetchSlackUserLinkByUserID(ctx context.Context, userID string, organizationID string) (*slack.UserLink, error) {
 	callInfo := struct {
 		Ctx            context.Context
 		UserID         string
@@ -538,7 +538,7 @@ func (mock *DBMock) FetchSlackUserLinkByUserID(ctx context.Context, userID strin
 	mock.lockFetchSlackUserLinkByUserID.Unlock()
 	if mock.FetchSlackUserLinkByUserIDFunc == nil {
 		var (
-			userLinkOut *slackapp.UserLink
+			userLinkOut *slack.UserLink
 			errOut      error
 		)
 		return userLinkOut, errOut
@@ -567,10 +567,10 @@ func (mock *DBMock) FetchSlackUserLinkByUserIDCalls() []struct {
 }
 
 // InsertSlackApp calls InsertSlackAppFunc.
-func (mock *DBMock) InsertSlackApp(ctx context.Context, app slackapp.App) error {
+func (mock *DBMock) InsertSlackApp(ctx context.Context, app slack.App) error {
 	callInfo := struct {
 		Ctx context.Context
-		App slackapp.App
+		App slack.App
 	}{
 		Ctx: ctx,
 		App: app,
@@ -593,11 +593,11 @@ func (mock *DBMock) InsertSlackApp(ctx context.Context, app slackapp.App) error 
 //	len(mockedDB.InsertSlackAppCalls())
 func (mock *DBMock) InsertSlackAppCalls() []struct {
 	Ctx context.Context
-	App slackapp.App
+	App slack.App
 } {
 	var calls []struct {
 		Ctx context.Context
-		App slackapp.App
+		App slack.App
 	}
 	mock.lockInsertSlackApp.RLock()
 	calls = mock.calls.InsertSlackApp
@@ -606,10 +606,10 @@ func (mock *DBMock) InsertSlackAppCalls() []struct {
 }
 
 // InsertSlackMessage calls InsertSlackMessageFunc.
-func (mock *DBMock) InsertSlackMessage(ctx context.Context, msg slackapp.Message) error {
+func (mock *DBMock) InsertSlackMessage(ctx context.Context, msg slack.Message) error {
 	callInfo := struct {
 		Ctx context.Context
-		Msg slackapp.Message
+		Msg slack.Message
 	}{
 		Ctx: ctx,
 		Msg: msg,
@@ -632,11 +632,11 @@ func (mock *DBMock) InsertSlackMessage(ctx context.Context, msg slackapp.Message
 //	len(mockedDB.InsertSlackMessageCalls())
 func (mock *DBMock) InsertSlackMessageCalls() []struct {
 	Ctx context.Context
-	Msg slackapp.Message
+	Msg slack.Message
 } {
 	var calls []struct {
 		Ctx context.Context
-		Msg slackapp.Message
+		Msg slack.Message
 	}
 	mock.lockInsertSlackMessage.RLock()
 	calls = mock.calls.InsertSlackMessage
@@ -645,10 +645,10 @@ func (mock *DBMock) InsertSlackMessageCalls() []struct {
 }
 
 // InsertSlackUserLink calls InsertSlackUserLinkFunc.
-func (mock *DBMock) InsertSlackUserLink(ctx context.Context, link slackapp.UserLink) error {
+func (mock *DBMock) InsertSlackUserLink(ctx context.Context, link slack.UserLink) error {
 	callInfo := struct {
 		Ctx  context.Context
-		Link slackapp.UserLink
+		Link slack.UserLink
 	}{
 		Ctx:  ctx,
 		Link: link,
@@ -671,11 +671,11 @@ func (mock *DBMock) InsertSlackUserLink(ctx context.Context, link slackapp.UserL
 //	len(mockedDB.InsertSlackUserLinkCalls())
 func (mock *DBMock) InsertSlackUserLinkCalls() []struct {
 	Ctx  context.Context
-	Link slackapp.UserLink
+	Link slack.UserLink
 } {
 	var calls []struct {
 		Ctx  context.Context
-		Link slackapp.UserLink
+		Link slack.UserLink
 	}
 	mock.lockInsertSlackUserLink.RLock()
 	calls = mock.calls.InsertSlackUserLink
@@ -766,10 +766,10 @@ func (mock *DBMock) UpdateSlackAppOrganizationIDCalls() []struct {
 }
 
 // UpdateSlackUserLink calls UpdateSlackUserLinkFunc.
-func (mock *DBMock) UpdateSlackUserLink(ctx context.Context, link slackapp.UserLink) error {
+func (mock *DBMock) UpdateSlackUserLink(ctx context.Context, link slack.UserLink) error {
 	callInfo := struct {
 		Ctx  context.Context
-		Link slackapp.UserLink
+		Link slack.UserLink
 	}{
 		Ctx:  ctx,
 		Link: link,
@@ -792,11 +792,11 @@ func (mock *DBMock) UpdateSlackUserLink(ctx context.Context, link slackapp.UserL
 //	len(mockedDB.UpdateSlackUserLinkCalls())
 func (mock *DBMock) UpdateSlackUserLinkCalls() []struct {
 	Ctx  context.Context
-	Link slackapp.UserLink
+	Link slack.UserLink
 } {
 	var calls []struct {
 		Ctx  context.Context
-		Link slackapp.UserLink
+		Link slack.UserLink
 	}
 	mock.lockUpdateSlackUserLink.RLock()
 	calls = mock.calls.UpdateSlackUserLink

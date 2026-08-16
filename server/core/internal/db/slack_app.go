@@ -5,11 +5,11 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
-	"github.com/oxynote/oxynote/server/core/internal/apps/slackapp"
+	"github.com/oxynote/oxynote/server/core/internal/apps/slack"
 )
 
 // InsertSlackApp inserts or updates a Slack app document in the database.
-func (a *agent) InsertSlackApp(ctx context.Context, app slackapp.App) error {
+func (a *agent) InsertSlackApp(ctx context.Context, app slack.App) error {
 	q, args := a.builder.Insert("slack_apps").
 		SetMap(map[string]any{
 			"team_id":            app.TeamID,
@@ -30,7 +30,7 @@ func (a *agent) InsertSlackApp(ctx context.Context, app slackapp.App) error {
 }
 
 // InsertSlackMessage inserts a Slack message into the database.
-func (a *agent) InsertSlackMessage(ctx context.Context, msg slackapp.Message) error {
+func (a *agent) InsertSlackMessage(ctx context.Context, msg slack.Message) error {
 	q, args := a.builder.Insert("slack_messages").
 		SetMap(map[string]any{
 			"id":                 msg.ID,
@@ -45,7 +45,7 @@ func (a *agent) InsertSlackMessage(ctx context.Context, msg slackapp.Message) er
 }
 
 // FetchSlackMessages retrieves Slack messages for a given organization ID from the database.
-func (a *agent) FetchSlackMessages(ctx context.Context, organizationID string) ([]slackapp.Message, error) {
+func (a *agent) FetchSlackMessages(ctx context.Context, organizationID string) ([]slack.Message, error) {
 	q, args := a.selectSlackMessage(a.builder.Select()).
 		Where(sq.Eq{
 			"fk_organization_id": organizationID,
@@ -53,7 +53,7 @@ func (a *agent) FetchSlackMessages(ctx context.Context, organizationID string) (
 		OrderBy("created_at DESC").
 		MustSql()
 
-	var messages []slackapp.Message
+	var messages []slack.Message
 
 	if err := sqlx.SelectContext(ctx, a.sql, &messages, q, args...); err != nil {
 		return nil, err
@@ -79,7 +79,7 @@ func (a *agent) UpdateSlackAppOrganizationID(ctx context.Context, teamID, organi
 }
 
 // FetchSlackAppByTeamID retrieves the Slack app for a given team ID from the database.
-func (a *agent) FetchSlackAppByTeamID(ctx context.Context, teamID string) (*slackapp.App, error) {
+func (a *agent) FetchSlackAppByTeamID(ctx context.Context, teamID string) (*slack.App, error) {
 	q, args := a.selectSlackApp(a.builder.Select()).
 		Where(sq.Eq{
 			"team_id": teamID,
@@ -87,7 +87,7 @@ func (a *agent) FetchSlackAppByTeamID(ctx context.Context, teamID string) (*slac
 		Limit(1).
 		MustSql()
 
-	app := &slackapp.App{}
+	app := &slack.App{}
 	if err := sqlx.GetContext(ctx, a.sql, app, q, args...); err != nil {
 		return nil, err
 	}
@@ -96,7 +96,7 @@ func (a *agent) FetchSlackAppByTeamID(ctx context.Context, teamID string) (*slac
 }
 
 // FetchSlackAppByOrganizationID retrieves the installation ID for a given organization ID.
-func (a *agent) FetchSlackAppByOrganizationID(ctx context.Context, organizationID string) (*slackapp.App, error) {
+func (a *agent) FetchSlackAppByOrganizationID(ctx context.Context, organizationID string) (*slack.App, error) {
 	q, args := a.selectSlackApp(a.builder.Select()).
 		Where(sq.Eq{
 			"fk_organization_id": organizationID,
@@ -104,7 +104,7 @@ func (a *agent) FetchSlackAppByOrganizationID(ctx context.Context, organizationI
 		Limit(1).
 		MustSql()
 
-	app := &slackapp.App{}
+	app := &slack.App{}
 	if err := sqlx.GetContext(ctx, a.sql, app, q, args...); err != nil {
 		return nil, err
 	}

@@ -1,4 +1,4 @@
-package githubapp
+package github
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"net/http"
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
-	"github.com/google/go-github/v72/github"
+	gogithub "github.com/google/go-github/v72/github"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 )
 
@@ -53,7 +53,7 @@ type Options struct {
 // Manager represents a GitHub App clients manager.
 type Manager struct {
 	db        DB
-	appClient *github.Client
+	appClient *gogithub.Client
 	opt       Options
 }
 
@@ -174,7 +174,7 @@ func (m *Manager) GetInstallationClient(ctx context.Context, organizationID stri
 }
 
 // createInstallationClient creates a new Github client using the installation transport.
-func (m *Manager) createInstallationClient(installationID int64) (*github.Client, error) {
+func (m *Manager) createInstallationClient(installationID int64) (*gogithub.Client, error) {
 	rt, err := ghinstallation.NewKeyFromFile(
 		http.DefaultTransport,
 		m.opt.AppID,
@@ -185,7 +185,7 @@ func (m *Manager) createInstallationClient(installationID int64) (*github.Client
 		return nil, fmt.Errorf("failed to create installation transport: %w", err)
 	}
 
-	return github.NewClient(
+	return gogithub.NewClient(
 		&http.Client{
 			Transport: rt,
 		},
@@ -196,7 +196,7 @@ func (m *Manager) createInstallationClient(installationID int64) (*github.Client
 type InstallationClient struct {
 	user               bool
 	owner              string
-	installationClient *github.Client
+	installationClient *gogithub.Client
 }
 
 // FetchIssues fetches issues from the GitHub repository based on the provided query and repository name.
@@ -364,7 +364,7 @@ func (ic *InstallationClient) FetchFileContent(ctx context.Context, repository, 
 		ic.owner,
 		repository,
 		path,
-		&github.RepositoryContentGetOptions{
+		&gogithub.RepositoryContentGetOptions{
 			Ref: branch,
 		},
 	)
@@ -406,7 +406,7 @@ func (ic *InstallationClient) FetchCodeSearchResults(ctx context.Context, reposi
 
 	q := "repo:" + ic.owner + "/" + repository + " " + query
 
-	res, _, err := ic.installationClient.Search.Code(ctx, q, &github.SearchOptions{
+	res, _, err := ic.installationClient.Search.Code(ctx, q, &gogithub.SearchOptions{
 		TextMatch: true,
 	})
 	if err != nil {
@@ -435,7 +435,7 @@ func (ic *InstallationClient) FetchCodeSearchResults(ctx context.Context, reposi
 }
 
 // createAppClient creates a new Github client using the app transport for GitHub Apps.
-func createAppClient(appID int64, privateKeyPath string) (*github.Client, error) {
+func createAppClient(appID int64, privateKeyPath string) (*gogithub.Client, error) {
 	rt, err := ghinstallation.NewAppsTransportKeyFromFile(
 		http.DefaultTransport,
 		appID,
@@ -445,7 +445,7 @@ func createAppClient(appID int64, privateKeyPath string) (*github.Client, error)
 		return nil, fmt.Errorf("failed to create installation transport: %w", err)
 	}
 
-	return github.NewClient(
+	return gogithub.NewClient(
 		&http.Client{
 			Transport: rt,
 		},
@@ -455,9 +455,9 @@ func createAppClient(appID int64, privateKeyPath string) (*github.Client, error)
 // parseGithubError parses errors returned by the Github API and maps them to appropriate HTTP status codes.
 func parseGithubError(err error) error {
 	var (
-		rateErr  *github.RateLimitError
-		abuseErr *github.AbuseRateLimitError
-		respErr  *github.ErrorResponse
+		rateErr  *gogithub.RateLimitError
+		abuseErr *gogithub.AbuseRateLimitError
+		respErr  *gogithub.ErrorResponse
 	)
 
 	switch {
@@ -475,6 +475,8 @@ func parseGithubError(err error) error {
 }
 
 // DB is an interface that handles communication with the document database.
+//
+//go:generate ../../../scripts/codegen/mock -t internal DB db
 type DB interface {
 	// FetchGithubInstallationByOrganizationID retrieves the installation ID for a given organization ID.
 	FetchGithubInstallationByOrganizationID(ctx context.Context, organizationID string) (int64, error)

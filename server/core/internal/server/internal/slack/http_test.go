@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/guregu/null/v5"
-	"github.com/oxynote/oxynote/server/core/internal/apps/slackapp"
+	"github.com/oxynote/oxynote/server/core/internal/apps/slack"
 	"github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
@@ -38,10 +38,10 @@ func newTestHandler(t *testing.T, configured bool) *Handler {
 	t.Helper()
 
 	log := slog.New(slog.DiscardHandler)
-	opt := slackapp.Options{}
+	opt := slack.Options{}
 
 	if configured {
-		opt = slackapp.Options{
+		opt = slack.Options{
 			ClientID:                  "id",
 			ClientSecret:              "secret",
 			SignatureSecret:           "sig",
@@ -50,7 +50,7 @@ func newTestHandler(t *testing.T, configured bool) *Handler {
 		}
 	}
 
-	man, err := slackapp.NewManager(log, nil, nil, fakeReceiver{}, opt)
+	man, err := slack.NewManager(log, nil, nil, fakeReceiver{}, opt)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -58,19 +58,19 @@ func newTestHandler(t *testing.T, configured bool) *Handler {
 	return NewHandler(log, nil, nil, man)
 }
 
-// notFoundManagerDB is a slackapp.DB that never finds anything, keeping
+// notFoundManagerDB is a slack.DB that never finds anything, keeping
 // manager-created Slack clients (and their network calls) out of tests.
 type notFoundManagerDB struct{}
 
-func (notFoundManagerDB) FetchSlackAppByTeamID(context.Context, string) (*slackapp.App, error) {
+func (notFoundManagerDB) FetchSlackAppByTeamID(context.Context, string) (*slack.App, error) {
 	return nil, errutil.ErrNotFound
 }
 
-func (notFoundManagerDB) FetchSlackAppByOrganizationID(context.Context, string) (*slackapp.App, error) {
+func (notFoundManagerDB) FetchSlackAppByOrganizationID(context.Context, string) (*slack.App, error) {
 	return nil, errutil.ErrNotFound
 }
 
-func (notFoundManagerDB) FetchSlackUserLinkByUserID(context.Context, string, string) (*slackapp.UserLink, error) {
+func (notFoundManagerDB) FetchSlackUserLinkByUserID(context.Context, string, string) (*slack.UserLink, error) {
 	return nil, errutil.ErrNotFound
 }
 
@@ -81,10 +81,10 @@ func newMockedHandler(t *testing.T, configured bool, db *DBMock, client *http.Cl
 
 	log := slog.New(slog.DiscardHandler)
 
-	opt := slackapp.Options{}
+	opt := slack.Options{}
 
 	if configured {
-		opt = slackapp.Options{
+		opt = slack.Options{
 			ClientID:                  "id",
 			ClientSecret:              "secret",
 			SignatureSecret:           "sig",
@@ -93,7 +93,7 @@ func newMockedHandler(t *testing.T, configured bool, db *DBMock, client *http.Cl
 		}
 	}
 
-	man, err := slackapp.NewManager(log, notFoundManagerDB{}, nil, fakeReceiver{}, opt)
+	man, err := slack.NewManager(log, notFoundManagerDB{}, nil, fakeReceiver{}, opt)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -259,8 +259,8 @@ func stateFrom(t *testing.T, rawURL string) string {
 }
 
 // connectedApp returns a Slack app assigned to org1.
-func connectedApp() *slackapp.App {
-	return &slackapp.App{
+func connectedApp() *slack.App {
+	return &slack.App{
 		TeamID:         "team1",
 		OrganizationID: null.StringFrom("org1"),
 		Token:          "tkn",
@@ -268,20 +268,20 @@ func connectedApp() *slackapp.App {
 }
 
 // unassignedApp returns a Slack app without an organization.
-func unassignedApp() *slackapp.App {
-	return &slackapp.App{
+func unassignedApp() *slack.App {
+	return &slack.App{
 		TeamID: "team1",
 		Token:  "tkn",
 	}
 }
 
 // userLink returns a stored Slack user link for u1.
-func userLink() *slackapp.UserLink {
-	return &slackapp.UserLink{
+func userLink() *slack.UserLink {
+	return &slack.UserLink{
 		SlackUserID: "slack-u1",
 		TeamID:      "team1",
 		UserID:      "u1",
-		Settings:    slackapp.UserLinkSettings{Notifications: true},
+		Settings:    slack.UserLinkSettings{Notifications: true},
 	}
 }
 
@@ -303,7 +303,7 @@ func Test_Handler_FetchInstall(t *testing.T) {
 		"App lookup error": {
 			Configured: true,
 			DB: &DBMock{
-				FetchSlackAppByOrganizationIDFunc: func(context.Context, string) (*slackapp.App, error) {
+				FetchSlackAppByOrganizationIDFunc: func(context.Context, string) (*slack.App, error) {
 					return nil, errors.New("boom")
 				},
 			},
@@ -312,7 +312,7 @@ func Test_Handler_FetchInstall(t *testing.T) {
 		"Organization already connected": {
 			Configured: true,
 			DB: &DBMock{
-				FetchSlackAppByOrganizationIDFunc: func(context.Context, string) (*slackapp.App, error) {
+				FetchSlackAppByOrganizationIDFunc: func(context.Context, string) (*slack.App, error) {
 					return connectedApp(), nil
 				},
 			},
@@ -320,7 +320,7 @@ func Test_Handler_FetchInstall(t *testing.T) {
 		},
 		"Slack app not configured": {
 			DB: &DBMock{
-				FetchSlackAppByOrganizationIDFunc: func(context.Context, string) (*slackapp.App, error) {
+				FetchSlackAppByOrganizationIDFunc: func(context.Context, string) (*slack.App, error) {
 					return nil, errutil.ErrNotFound
 				},
 			},
@@ -329,7 +329,7 @@ func Test_Handler_FetchInstall(t *testing.T) {
 		"Successful URL creation": {
 			Configured: true,
 			DB: &DBMock{
-				FetchSlackAppByOrganizationIDFunc: func(context.Context, string) (*slackapp.App, error) {
+				FetchSlackAppByOrganizationIDFunc: func(context.Context, string) (*slack.App, error) {
 					return nil, errutil.ErrNotFound
 				},
 			},
@@ -401,7 +401,7 @@ func Test_Handler_ConnectOrganization(t *testing.T) {
 		},
 		"Internal state app lookup error": {
 			DB: &DBMock{
-				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slackapp.App, error) {
+				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
 					return nil, errors.New("boom")
 				},
 			},
@@ -410,7 +410,7 @@ func Test_Handler_ConnectOrganization(t *testing.T) {
 		},
 		"Internal state app already assigned": {
 			DB: &DBMock{
-				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slackapp.App, error) {
+				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
 					return connectedApp(), nil
 				},
 			},
@@ -419,7 +419,7 @@ func Test_Handler_ConnectOrganization(t *testing.T) {
 		},
 		"Internal state assignment error": {
 			DB: &DBMock{
-				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slackapp.App, error) {
+				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
 					return unassignedApp(), nil
 				},
 				UpdateSlackAppOrganizationIDFunc: func(context.Context, string, string) error {
@@ -432,7 +432,7 @@ func Test_Handler_ConnectOrganization(t *testing.T) {
 		},
 		"Successful internal connection": {
 			DB: &DBMock{
-				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slackapp.App, error) {
+				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
 					return unassignedApp(), nil
 				},
 			},
@@ -512,7 +512,7 @@ func Test_Handler_FetchMessages(t *testing.T) {
 		},
 		"Message fetch error": {
 			DB: &DBMock{
-				FetchSlackMessagesFunc: func(context.Context, string) ([]slackapp.Message, error) {
+				FetchSlackMessagesFunc: func(context.Context, string) ([]slack.Message, error) {
 					return nil, errors.New("boom")
 				},
 			},
@@ -520,8 +520,8 @@ func Test_Handler_FetchMessages(t *testing.T) {
 		},
 		"Successful fetch": {
 			DB: &DBMock{
-				FetchSlackMessagesFunc: func(context.Context, string) ([]slackapp.Message, error) {
-					return []slackapp.Message{}, nil
+				FetchSlackMessagesFunc: func(context.Context, string) ([]slack.Message, error) {
+					return []slack.Message{}, nil
 				},
 			},
 			RespCode: http.StatusOK,
@@ -565,7 +565,7 @@ func Test_Handler_DisconnectOrganization(t *testing.T) {
 		},
 		"App not connected": {
 			DB: &DBMock{
-				FetchSlackAppByOrganizationIDFunc: func(context.Context, string) (*slackapp.App, error) {
+				FetchSlackAppByOrganizationIDFunc: func(context.Context, string) (*slack.App, error) {
 					return nil, errutil.ErrNotFound
 				},
 			},
@@ -573,7 +573,7 @@ func Test_Handler_DisconnectOrganization(t *testing.T) {
 		},
 		"Unassignment error": {
 			DB: &DBMock{
-				FetchSlackAppByOrganizationIDFunc: func(context.Context, string) (*slackapp.App, error) {
+				FetchSlackAppByOrganizationIDFunc: func(context.Context, string) (*slack.App, error) {
 					return connectedApp(), nil
 				},
 				UnassignSlackAppOrganizationFunc: func(context.Context, string) error {
@@ -585,7 +585,7 @@ func Test_Handler_DisconnectOrganization(t *testing.T) {
 		},
 		"Successful disconnection": {
 			DB: &DBMock{
-				FetchSlackAppByOrganizationIDFunc: func(context.Context, string) (*slackapp.App, error) {
+				FetchSlackAppByOrganizationIDFunc: func(context.Context, string) (*slack.App, error) {
 					return connectedApp(), nil
 				},
 			},
@@ -655,7 +655,7 @@ func Test_Handler_HandleEvent(t *testing.T) {
 		},
 		"Channel open for connected workspace": {
 			DB: &DBMock{
-				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slackapp.App, error) {
+				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
 					return connectedApp(), nil
 				},
 			},
@@ -664,7 +664,7 @@ func Test_Handler_HandleEvent(t *testing.T) {
 		},
 		"Channel open app lookup error": {
 			DB: &DBMock{
-				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slackapp.App, error) {
+				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
 					return nil, errors.New("boom")
 				},
 			},
@@ -727,7 +727,7 @@ func Test_Handler_HandleCommand(t *testing.T) {
 		},
 		"App lookup error": {
 			DB: &DBMock{
-				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slackapp.App, error) {
+				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
 					return nil, errors.New("boom")
 				},
 			},
@@ -736,10 +736,10 @@ func Test_Handler_HandleCommand(t *testing.T) {
 		},
 		"Message submission insert error": {
 			DB: &DBMock{
-				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slackapp.App, error) {
+				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
 					return connectedApp(), nil
 				},
-				InsertSlackMessageFunc: func(context.Context, slackapp.Message) error {
+				InsertSlackMessageFunc: func(context.Context, slack.Message) error {
 					return errors.New("boom")
 				},
 			},
@@ -749,7 +749,7 @@ func Test_Handler_HandleCommand(t *testing.T) {
 		},
 		"Successful message submission": {
 			DB: &DBMock{
-				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slackapp.App, error) {
+				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
 					return connectedApp(), nil
 				},
 			},
@@ -760,7 +760,7 @@ func Test_Handler_HandleCommand(t *testing.T) {
 		},
 		"Ignored interaction type": {
 			DB: &DBMock{
-				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slackapp.App, error) {
+				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
 					return connectedApp(), nil
 				},
 			},
@@ -822,7 +822,7 @@ func Test_Handler_HandleSlashCommand(t *testing.T) {
 		},
 		"Link with app lookup error": {
 			DB: &DBMock{
-				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slackapp.App, error) {
+				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
 					return nil, errors.New("boom")
 				},
 			},
@@ -831,7 +831,7 @@ func Test_Handler_HandleSlashCommand(t *testing.T) {
 		},
 		"Link on unconnected workspace": {
 			DB: &DBMock{
-				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slackapp.App, error) {
+				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
 					return unassignedApp(), nil
 				},
 			},
@@ -841,10 +841,10 @@ func Test_Handler_HandleSlashCommand(t *testing.T) {
 		},
 		"Link with lookup error on user link": {
 			DB: &DBMock{
-				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slackapp.App, error) {
+				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
 					return connectedApp(), nil
 				},
-				FetchSlackUserLinkFunc: func(context.Context, string, string) (*slackapp.UserLink, error) {
+				FetchSlackUserLinkFunc: func(context.Context, string, string) (*slack.UserLink, error) {
 					return nil, errors.New("boom")
 				},
 			},
@@ -853,10 +853,10 @@ func Test_Handler_HandleSlashCommand(t *testing.T) {
 		},
 		"Link when already linked": {
 			DB: &DBMock{
-				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slackapp.App, error) {
+				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
 					return connectedApp(), nil
 				},
-				FetchSlackUserLinkFunc: func(context.Context, string, string) (*slackapp.UserLink, error) {
+				FetchSlackUserLinkFunc: func(context.Context, string, string) (*slack.UserLink, error) {
 					return userLink(), nil
 				},
 			},
@@ -866,10 +866,10 @@ func Test_Handler_HandleSlashCommand(t *testing.T) {
 		},
 		"Successful link invitation": {
 			DB: &DBMock{
-				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slackapp.App, error) {
+				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
 					return connectedApp(), nil
 				},
-				FetchSlackUserLinkFunc: func(context.Context, string, string) (*slackapp.UserLink, error) {
+				FetchSlackUserLinkFunc: func(context.Context, string, string) (*slack.UserLink, error) {
 					return nil, errutil.ErrNotFound
 				},
 			},
@@ -879,7 +879,7 @@ func Test_Handler_HandleSlashCommand(t *testing.T) {
 		},
 		"Unlink when not linked": {
 			DB: &DBMock{
-				FetchSlackUserLinkFunc: func(context.Context, string, string) (*slackapp.UserLink, error) {
+				FetchSlackUserLinkFunc: func(context.Context, string, string) (*slack.UserLink, error) {
 					return nil, errutil.ErrNotFound
 				},
 			},
@@ -889,7 +889,7 @@ func Test_Handler_HandleSlashCommand(t *testing.T) {
 		},
 		"Unlink with lookup error": {
 			DB: &DBMock{
-				FetchSlackUserLinkFunc: func(context.Context, string, string) (*slackapp.UserLink, error) {
+				FetchSlackUserLinkFunc: func(context.Context, string, string) (*slack.UserLink, error) {
 					return nil, errors.New("boom")
 				},
 			},
@@ -898,7 +898,7 @@ func Test_Handler_HandleSlashCommand(t *testing.T) {
 		},
 		"Unlink with deletion error": {
 			DB: &DBMock{
-				FetchSlackUserLinkFunc: func(context.Context, string, string) (*slackapp.UserLink, error) {
+				FetchSlackUserLinkFunc: func(context.Context, string, string) (*slack.UserLink, error) {
 					return userLink(), nil
 				},
 				DeleteSlackUserLinkFunc: func(context.Context, string, string) error {
@@ -911,7 +911,7 @@ func Test_Handler_HandleSlashCommand(t *testing.T) {
 		},
 		"Successful unlink": {
 			DB: &DBMock{
-				FetchSlackUserLinkFunc: func(context.Context, string, string) (*slackapp.UserLink, error) {
+				FetchSlackUserLinkFunc: func(context.Context, string, string) (*slack.UserLink, error) {
 					return userLink(), nil
 				},
 			},
@@ -967,7 +967,7 @@ func Test_Handler_FetchUserLink(t *testing.T) {
 		},
 		"Link fetch error": {
 			DB: &DBMock{
-				FetchSlackUserLinkByUserIDFunc: func(context.Context, string, string) (*slackapp.UserLink, error) {
+				FetchSlackUserLinkByUserIDFunc: func(context.Context, string, string) (*slack.UserLink, error) {
 					return nil, errutil.ErrNotFound
 				},
 			},
@@ -975,7 +975,7 @@ func Test_Handler_FetchUserLink(t *testing.T) {
 		},
 		"Successful fetch": {
 			DB: &DBMock{
-				FetchSlackUserLinkByUserIDFunc: func(context.Context, string, string) (*slackapp.UserLink, error) {
+				FetchSlackUserLinkByUserIDFunc: func(context.Context, string, string) (*slack.UserLink, error) {
 					return userLink(), nil
 				},
 			},
@@ -1032,7 +1032,7 @@ func Test_Handler_UpdateUserLink(t *testing.T) {
 		},
 		"Link fetch error": {
 			DB: &DBMock{
-				FetchSlackUserLinkByUserIDFunc: func(context.Context, string, string) (*slackapp.UserLink, error) {
+				FetchSlackUserLinkByUserIDFunc: func(context.Context, string, string) (*slack.UserLink, error) {
 					return nil, errutil.ErrNotFound
 				},
 			},
@@ -1041,10 +1041,10 @@ func Test_Handler_UpdateUserLink(t *testing.T) {
 		},
 		"Link update error": {
 			DB: &DBMock{
-				FetchSlackUserLinkByUserIDFunc: func(context.Context, string, string) (*slackapp.UserLink, error) {
+				FetchSlackUserLinkByUserIDFunc: func(context.Context, string, string) (*slack.UserLink, error) {
 					return userLink(), nil
 				},
-				UpdateSlackUserLinkFunc: func(context.Context, slackapp.UserLink) error {
+				UpdateSlackUserLinkFunc: func(context.Context, slack.UserLink) error {
 					return errors.New("boom")
 				},
 			},
@@ -1054,7 +1054,7 @@ func Test_Handler_UpdateUserLink(t *testing.T) {
 		},
 		"Successful update": {
 			DB: &DBMock{
-				FetchSlackUserLinkByUserIDFunc: func(context.Context, string, string) (*slackapp.UserLink, error) {
+				FetchSlackUserLinkByUserIDFunc: func(context.Context, string, string) (*slack.UserLink, error) {
 					return userLink(), nil
 				},
 			},
@@ -1106,7 +1106,7 @@ func Test_Handler_DeleteUserLink(t *testing.T) {
 		},
 		"Link not found": {
 			DB: &DBMock{
-				FetchSlackUserLinkByUserIDFunc: func(context.Context, string, string) (*slackapp.UserLink, error) {
+				FetchSlackUserLinkByUserIDFunc: func(context.Context, string, string) (*slack.UserLink, error) {
 					return nil, errutil.ErrNotFound
 				},
 			},
@@ -1114,7 +1114,7 @@ func Test_Handler_DeleteUserLink(t *testing.T) {
 		},
 		"Link fetch error": {
 			DB: &DBMock{
-				FetchSlackUserLinkByUserIDFunc: func(context.Context, string, string) (*slackapp.UserLink, error) {
+				FetchSlackUserLinkByUserIDFunc: func(context.Context, string, string) (*slack.UserLink, error) {
 					return nil, errors.New("boom")
 				},
 			},
@@ -1122,7 +1122,7 @@ func Test_Handler_DeleteUserLink(t *testing.T) {
 		},
 		"Link deletion error": {
 			DB: &DBMock{
-				FetchSlackUserLinkByUserIDFunc: func(context.Context, string, string) (*slackapp.UserLink, error) {
+				FetchSlackUserLinkByUserIDFunc: func(context.Context, string, string) (*slack.UserLink, error) {
 					return userLink(), nil
 				},
 				DeleteSlackUserLinkFunc: func(context.Context, string, string) error {
@@ -1134,7 +1134,7 @@ func Test_Handler_DeleteUserLink(t *testing.T) {
 		},
 		"Successful deletion": {
 			DB: &DBMock{
-				FetchSlackUserLinkByUserIDFunc: func(context.Context, string, string) (*slackapp.UserLink, error) {
+				FetchSlackUserLinkByUserIDFunc: func(context.Context, string, string) (*slack.UserLink, error) {
 					return userLink(), nil
 				},
 			},
@@ -1194,7 +1194,7 @@ func Test_Handler_LinkUser(t *testing.T) {
 		},
 		"App lookup error": {
 			DB: &DBMock{
-				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slackapp.App, error) {
+				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
 					return nil, errors.New("boom")
 				},
 			},
@@ -1203,7 +1203,7 @@ func Test_Handler_LinkUser(t *testing.T) {
 		},
 		"Workspace connected to another organization": {
 			DB: &DBMock{
-				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slackapp.App, error) {
+				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
 					app := connectedApp()
 					app.OrganizationID = null.StringFrom("org9")
 
@@ -1215,7 +1215,7 @@ func Test_Handler_LinkUser(t *testing.T) {
 		},
 		"Member fetch error": {
 			DB: &DBMock{
-				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slackapp.App, error) {
+				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
 					return connectedApp(), nil
 				},
 				FetchOrganizationMembersFunc: func(context.Context, string) ([]string, error) {
@@ -1227,7 +1227,7 @@ func Test_Handler_LinkUser(t *testing.T) {
 		},
 		"User not an organization member": {
 			DB: &DBMock{
-				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slackapp.App, error) {
+				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
 					return connectedApp(), nil
 				},
 				FetchOrganizationMembersFunc: func(context.Context, string) ([]string, error) {
@@ -1239,13 +1239,13 @@ func Test_Handler_LinkUser(t *testing.T) {
 		},
 		"Link insertion error": {
 			DB: &DBMock{
-				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slackapp.App, error) {
+				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
 					return connectedApp(), nil
 				},
 				FetchOrganizationMembersFunc: func(context.Context, string) ([]string, error) {
 					return []string{"u1"}, nil
 				},
-				InsertSlackUserLinkFunc: func(context.Context, slackapp.UserLink) error {
+				InsertSlackUserLinkFunc: func(context.Context, slack.UserLink) error {
 					return errors.New("boom")
 				},
 			},
@@ -1255,7 +1255,7 @@ func Test_Handler_LinkUser(t *testing.T) {
 		},
 		"Successful link with unavailable confirmation client": {
 			DB: &DBMock{
-				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slackapp.App, error) {
+				FetchSlackAppByTeamIDFunc: func(context.Context, string) (*slack.App, error) {
 					return connectedApp(), nil
 				},
 				FetchOrganizationMembersFunc: func(context.Context, string) ([]string, error) {

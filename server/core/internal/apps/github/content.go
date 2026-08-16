@@ -1,11 +1,11 @@
-// Package githubapp manages GitHub App installations and API access.
-package githubapp
+// Package github manages GitHub App installations and API access.
+package github
 
 import (
 	"slices"
 	"strings"
 
-	"github.com/google/go-github/v72/github"
+	gogithub "github.com/google/go-github/v72/github"
 )
 
 // TreeItemType represents the type of a tree item, either a file or a folder.
@@ -135,42 +135,69 @@ type TreeItem struct {
 	Checksum string `json:"checksum"`
 }
 
+// treeNode is an intermediate pointer-based tree used while parsing. Items
+// are materialized into value slices only once the tree is fully built, as
+// growing value slices mid-build would leave parent pointers referencing
+// stale backing arrays.
+type treeNode struct {
+	item     TreeItem
+	children []*treeNode
+}
+
 // ParseTreeItems converts a list of GitHub TreeEntry objects into a
-// list of TreeItem objects.
-func ParseTreeItems(items []*github.TreeEntry) []TreeItem {
+// list of TreeItem objects. Entries whose parent folder is not present
+// in the list are skipped.
+func ParseTreeItems(items []*gogithub.TreeEntry) []TreeItem {
 	var (
-		res     []TreeItem
-		parents = make(map[string]*TreeItem)
+		roots   []*treeNode
+		folders = make(map[string]*treeNode)
 	)
 
-	for _, item := range items {
-		path := item.GetPath()
-		parts := strings.Split(path, "/")
+	for _, entry := range items {
+		path := entry.GetPath()
 
-		item := &TreeItem{
-			Type:     parseTreeItemType(item.GetType()),
-			Name:     path,
-			Checksum: item.GetSHA(),
+		node := &treeNode{
+			item: TreeItem{
+				Type:     parseTreeItemType(entry.GetType()),
+				Name:     path,
+				Checksum: entry.GetSHA(),
+			},
 		}
 
-		if len(parts) == 1 {
-			res = append(res, *item)
+		if node.item.Type == TreeItemTypeFolder {
+			folders[path] = node
+		}
 
-			if item.Type == TreeItemTypeFolder {
-				parents[item.Name] = &res[len(res)-1]
-			}
+		idx := strings.LastIndex(path, "/")
+		if idx == -1 {
+			roots = append(roots, node)
 
 			continue
 		}
 
-		parentPath := strings.Join(parts[:len(parts)-1], "/")
-
-		parent := parents[parentPath]
-		parent.Items = append(parent.Items, *item)
-
-		if item.Type == TreeItemTypeFolder {
-			parents[path] = &parent.Items[len(parent.Items)-1]
+		parent := folders[path[:idx]]
+		if parent == nil {
+			continue
 		}
+
+		parent.children = append(parent.children, node)
+	}
+
+	return materializeTreeNodes(roots)
+}
+
+// materializeTreeNodes converts a pointer-based node tree into the value
+// slices exposed by Tree.
+func materializeTreeNodes(nodes []*treeNode) []TreeItem {
+	if len(nodes) == 0 {
+		return nil
+	}
+
+	res := make([]TreeItem, 0, len(nodes))
+
+	for _, node := range nodes {
+		node.item.Items = materializeTreeNodes(node.children)
+		res = append(res, node.item)
 	}
 
 	return res

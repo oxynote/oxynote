@@ -16,9 +16,9 @@ import (
 	"time"
 
 	"github.com/meilisearch/meilisearch-go"
-	"github.com/oxynote/oxynote/server/core/internal/apps/githubapp"
-	"github.com/oxynote/oxynote/server/core/internal/apps/slackapp"
-	"github.com/oxynote/oxynote/server/core/internal/apps/webchanges"
+	"github.com/oxynote/oxynote/server/core/internal/apps/github"
+	"github.com/oxynote/oxynote/server/core/internal/apps/slack"
+	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	"github.com/oxynote/oxynote/server/core/internal/assistant"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
 	"github.com/oxynote/oxynote/server/core/internal/buildinfo"
@@ -110,7 +110,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 	closers = append([]io.Closer{rdb}, closers...)
 
 	// an empty GITHUB_APP_ID means the GitHub App integration is disabled.
-	// The zero app ID makes githubapp.NewManager return an unconfigured
+	// The zero app ID makes github.NewManager return an unconfigured
 	// manager instead of failing.
 	var githubAppID int64
 
@@ -129,7 +129,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 		}
 	}
 
-	githubMan, err := githubapp.NewManager(dbc, githubapp.Options{
+	githubMan, err := github.NewManager(dbc, github.Options{
 		AppID:                     githubAppID,
 		AppSlug:                   buildinfo.Getenv("GITHUB_APP_SLUG"),
 		SignatureSecret:           buildinfo.Getenv("GITHUB_SIGNATURE_SECRET"),
@@ -151,12 +151,12 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 	notifMan := notification.NewManager(log, dbc)
 	closers = append([]io.Closer{notifMan}, closers...)
 
-	slackMan, err := slackapp.NewManager(
+	slackMan, err := slack.NewManager(
 		log,
 		dbc,
 		interpreter.NewInterpreter(dbc, buildinfo.Getenv("BASE_APP_URL")),
 		notifMan,
-		slackapp.Options{
+		slack.Options{
 			RedirectURL:               buildinfo.Getenv("SLACK_REDIRECT_URL"),
 			ClientID:                  buildinfo.Getenv("SLACK_CLIENT_ID"),
 			ClientSecret:              buildinfo.Getenv("SLACK_CLIENT_SECRET"),
@@ -178,7 +178,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 
 	closers = append([]io.Closer{slackMan}, closers...)
 
-	webchangesClient := webchanges.NewClient(
+	webchangeClient := webchange.NewClient(
 		buildinfo.Getenv("CHANGEDETECTION_API_URL"),
 		buildinfo.Getenv("CHANGEDETECTION_API_KEY"),
 	)
@@ -287,7 +287,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 		assistantMan,
 		githubMan,
 		slackMan,
-		webchangesClient,
+		webchangeClient,
 		searchClient,
 		notifMan,
 		emailSender,
@@ -305,7 +305,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 		return
 	}
 
-	hooksMan := hookMan.NewManager(log, dbc, githubMan, webchangesClient, notifMan)
+	hooksMan := hookMan.NewManager(log, dbc, githubMan, webchangeClient, notifMan)
 	searchManager := searchMan.NewManager(log, dbc, searchClient)
 
 	closers = append([]io.Closer{srv}, closers...)
