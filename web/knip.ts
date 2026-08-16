@@ -1,9 +1,9 @@
 import type { KnipConfig } from "knip"
-import { parse } from "vue/compiler-sfc"
 
-// knip's nuxt plugin only knows the nuxt 3 layout, so the nuxt 4 app/
-// conventions (and everything else referenced by convention rather than by
-// import) are declared as entries here explicitly.
+// knip's nuxt plugin handles the nuxt 4 app/ layout natively (it detects the
+// app/ srcDir) and resolves auto-imported components and named composables
+// through the generated .nuxt/imports.d.ts and .nuxt/components.d.ts maps —
+// so only the conventions it cannot know about are configured here.
 const config: KnipConfig = {
 	// the vendored PromQL grammar fork is re-synced from upstream and must
 	// not be reported against (see packages/README.lezer-promql.md)
@@ -17,56 +17,16 @@ const config: KnipConfig = {
 		unlisted: "off",
 	},
 
-	compilers: {
-		// the SFC compiler recommended by knip's docs, extended to follow
-		// tailwind v4 @reference/@plugin directives in <style> blocks
-		vue: (text: string, filename: string) => {
-			const { descriptor } = parse(text, { filename, sourceMap: false })
-
-			const scripts = [descriptor.script, descriptor.scriptSetup]
-				.filter((block) => block !== null)
-				.map((block) => (block.src ? `import '${block.src}'` : block.content))
-
-			const styles = descriptor.styles.flatMap((block) => [
-				...[...block.content.matchAll(/(?<=@)import[^;]+/g)].map(String),
-				...[
-					...block.content.matchAll(/@(?:plugin|reference)\s+"([^"]+)"/g),
-				].map((m) => `import "${m[1]}"`),
-			])
-
-			return [...scripts, ...styles].join("\n")
-		},
-		// follows @import chains and tailwind v4 @plugin directives in the
-		// css entries nuxt loads (main.css)
-		css: (text: string) =>
-			[
-				...[...text.matchAll(/(?<=@)import[^;]+/g)].map(String),
-				...[...text.matchAll(/@plugin\s+"([^"]+)"/g)].map(
-					(m) => `import "${m[1]}"`,
-				),
-			].join("\n"),
-	},
-
 	workspaces: {
 		".": {
 			entry: [
-				// nuxt 4 app/ conventions: loaded by the framework, never
-				// imported. Components are included because templates
-				// reference them by tag through nuxt auto-registration,
-				// which knip cannot resolve — a component no longer used by
-				// any template is therefore NOT reported by knip.
-				"app/pages/**/*.vue",
-				"app/middleware/**/*.ts",
-				"app/plugins/**/*.ts",
-				"app/components/**/*.vue",
-				// the whole auto-import surface: unimport makes everything
-				// in these directories reachable without import statements,
-				// so knip cannot trace their usage. The tradeoff: unused
-				// exports inside these directories are NOT reported.
+				// the auto-import map connects named exports, but not the
+				// `export default function useX` style these composables
+				// use — without this their defaults are reported unused.
+				// The api/ barrel (index.ts) is also convention-load-bearing:
+				// it is what makes the nested api/ composables auto-importable.
 				"app/composables/**/*.ts",
-				"app/stores/**/*.ts",
-				"app/utils/**/*.ts",
-				// module conventions loaded by name
+				// module convention loaded by name (@pinia/colada-nuxt)
 				"colada.options.ts",
 				// electron main/preload world, built by forge + vite
 				"electron/main.ts",
@@ -74,11 +34,6 @@ const config: KnipConfig = {
 				"forge.config.ts",
 				"vite.electron.config.ts",
 			],
-
-			// auto-imported by unimport (no import statements at use
-			// sites), so the files must count as project members even when
-			// nothing imports them
-			project: ["app/**/*.{ts,vue,css}", "electron/**/*.ts", "*.ts"],
 
 			ignore: [
 				// vendored shadcn-vue components: installed ahead of use and
@@ -91,6 +46,9 @@ const config: KnipConfig = {
 				// icon collections resolved by name at build time by
 				// @nuxt/icon
 				"@iconify-json/.*",
+				// consumed only by the vendored shadcn drawer spares, which
+				// are ignored above
+				"vaul-vue",
 				// never imported directly — declared as the umbrella that
 				// provides the individually-imported @tiptap/extension-*
 				// packages (see rules.unlisted above)
