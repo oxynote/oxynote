@@ -5,13 +5,13 @@ on:
       - main
     paths:
       - server/core/**
-      - .github/workflows/qa.yml
+      - .github/workflows/qa-server-core.yml
   pull_request:
     branches:
       - main
     paths:
       - server/core/**
-      - .github/workflows/qa.yml
+      - .github/workflows/qa-server-core.yml
 
 defaults:
   run:
@@ -19,7 +19,7 @@ defaults:
 
 jobs:
   lint:
-    name: Linting
+    name: Linting server/core
     runs-on: ubuntu-latest
     steps:
       - name: Check out the code
@@ -42,7 +42,7 @@ jobs:
           working-directory: server/core
 
   test:
-    name: Unit testing
+    name: Unit testing server/core
     runs-on: ubuntu-latest
     steps:
       - name: Check out the code

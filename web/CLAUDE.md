@@ -21,15 +21,16 @@ pnpm build:web                # production web build (cloudflare_pages preset)
 pnpm package:desktop          # nuxt generate (static) + electron-forge package
 pnpm make:desktop             # nuxt generate (static) + electron-forge make (installers)
 
-pnpm qa                       # check-types + check-lint + check-fmt (read-only)
-pnpm qa-fix                   # check-types + lint --fix + prettier --write
+pnpm check-lint               # check-types + check-eslint + check-fmt (read-only)
+pnpm lint                     # fixing variant: check-types + eslint --fix + prettier --write
+pnpm qa                       # check-lint (will grow tests later); qa-fix = lint
 pnpm check-types              # nuxt typecheck (regenerates .nuxt types, then
                               # vue-tsc -b --noEmit; plain vue-tsc --noEmit on
                               # the solution-style root tsconfig checks nothing)
                               # + tsc on electron/ (own tsconfig, not part of
                               # the nuxt solution)
-pnpm lint                     # eslint --fix .
-pnpm fmt                      # prettier --write .
+pnpm check-eslint             # eslint --max-warnings 0 . (eslint / fmt are the
+                              # fixing counterparts)
 
 pnpm build:lezer-promql       # rebuild the forked PromQL grammar package
 ```
@@ -110,9 +111,9 @@ Prettier uses **tabs**, no semicolons, trailing commas — see [prettier.config.
 
 ESLint ([eslint.config.mjs](eslint.config.mjs)) runs **type-aware**: `eslint.config.typescript.tsconfigPath` in `nuxt.config.ts` switches the generated Nuxt preset to the `*-type-checked` rule sets, on top of which the config adds `eslint:recommended` (the Nuxt preset ships no base JS rules), typescript-eslint **strict + stylistic**, and `@intlify/eslint-plugin-vue-i18n`. Consequences worth knowing:
 
-- Linting builds a full TS program, so `check-lint` takes minutes, not seconds.
+- Linting builds a full TS program, so `check-eslint` takes minutes, not seconds.
 - ESLint's TS program cannot resolve `.vue` imports (only `vue-tsc` can), so calls through a component ref are reported as unsafe. Those carry an inline disable with the reason `eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this`.
-- Every `eslint-disable` **must** state a reason after `--`. It is for false positives only, never to avoid a fix. Stale disables are errors (`reportUnusedDisableDirectives`), and `check-lint` runs with `--max-warnings 0`, so warnings fail the gate too.
+- Every `eslint-disable` **must** state a reason after `--`. It is for false positives only, never to avoid a fix. Stale disables are errors (`reportUnusedDisableDirectives`), and eslint runs with `--max-warnings 0`, so warnings fail the gate too.
 - `@typescript-eslint/no-explicit-any` is off; `prefer-function-type` is off (keeps the `defineEmits<{ (e: ...): void }>()` style).
 - The vendored `packages/lezer-promql` fork is excluded so upstream re-syncs cannot break the gate.
 

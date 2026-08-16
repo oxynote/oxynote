@@ -24,12 +24,14 @@
 		"prepare": "pnpm run build:lezer-promql && nuxt prepare",
 		"build:lezer-promql": "pnpm --filter @oxynote/lezer-promql build",
 		"check-types": "nuxt typecheck && tsc -p electron/tsconfig.json --noEmit",
-		"lint": "eslint --fix --max-warnings 0 .",
-		"check-lint": "eslint --max-warnings 0 .",
+		"eslint": "eslint --fix --max-warnings 0 .",
+		"check-eslint": "eslint --max-warnings 0 .",
 		"fmt": "prettier --write .",
 		"check-fmt": "prettier --check .",
-		"qa": "pnpm run check-types && pnpm run check-lint && pnpm run check-fmt",
-		"qa-fix": "pnpm run check-types && pnpm run lint && pnpm run fmt"
+		"lint": "pnpm run check-types && pnpm run eslint && pnpm run fmt",
+		"check-lint": "pnpm run check-types && pnpm run check-eslint && pnpm run check-fmt",
+		"qa": "pnpm run check-lint",
+		"qa-fix": "pnpm run lint"
 	},
 	"dependencies": {
 		"@babel/runtime": "^7.28.6",
