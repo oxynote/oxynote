@@ -1,4 +1,3 @@
-import type { ComputePositionConfig } from "@floating-ui/dom"
 import type { Editor } from "@tiptap/vue-3"
 import type { HocuspocusProvider } from "@hocuspocus/provider"
 import type { Node } from "@tiptap/pm/model"
@@ -12,11 +11,6 @@ import { DragHandlePlugin, type DragHandlePluginProps } from "./handle-plugin"
 // docs: https://tiptap.dev/docs/editor/extensions/functionality/drag-handle
 
 type Optional<T, K extends keyof T> = Pick<Partial<T>, K> & Omit<T, K>
-
-export const defaultComputePositionConfig: ComputePositionConfig = {
-	placement: "left-start",
-	strategy: "absolute",
-}
 
 export type DragHandleProps = Omit<
 	Optional<DragHandlePluginProps, "pluginKey">,

@@ -26,7 +26,7 @@ import { deletePendingNodeComments } from "./node-comment-extension"
 import { COMMENT_MARK_NAME } from "../mark-names"
 import { DIFF_COMMENT_TX_META } from "../diff/diff-content-lock"
 
-export const PENDING_COMMENT_ID = "pending"
+const PENDING_COMMENT_ID = "pending"
 
 let pendingCounter = 0
 

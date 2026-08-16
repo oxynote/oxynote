@@ -2,7 +2,7 @@ import { common } from "lowlight"
 import type { LanguageFn } from "highlight.js"
 import curl from "highlightjs-curl"
 
-export const languageNames: Record<string, string> = {
+const languageNames: Record<string, string> = {
 	arduino: "Arduino",
 	bash: "Bash",
 	curl: "cURL",

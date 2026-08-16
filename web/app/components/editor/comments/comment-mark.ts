@@ -17,7 +17,7 @@ export interface CommentAttrs {
 	commentId: string
 }
 
-export interface TextCommentIndicator {
+interface TextCommentIndicator {
 	commentId: string
 	top: number
 	left: number
@@ -515,20 +515,6 @@ export function findCommentMarkById(
 	return result
 }
 
-export function findSelectedCommentMark(state: EditorState) {
-	const { from, empty } = state.selection
-	if (!empty) {
-		return null
-	}
-
-	const direct = findCommentMarkAtPos(state, from)
-	if (direct) {
-		return direct
-	}
-
-	return null
-}
-
 export function deletePendingCommentMarks(
 	editor: Editor,
 	activeUserId: string,
@@ -639,7 +625,7 @@ export function mergedOffsetToOriginalOffset(
 //     (use for fromOffset: "find the removed char at this original pos")
 //   "end" — stops immediately after the last non-added char
 //     (use for toOffset: "exclusive end right after the removed text")
-export function originalOffsetToMergedOffset(
+function originalOffsetToMergedOffset(
 	node: PMNode,
 	originalOffset: number,
 	side: "start" | "end" = "start",

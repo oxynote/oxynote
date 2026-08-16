@@ -78,23 +78,6 @@ export function isNodeBeingDraggedByOther(
 	return otherUserDraggingUids(provider).has(uid)
 }
 
-/**
- * Get the caret color of a remote user by their client ID.
- * Returns null if the user is not found or has no color set.
- */
-export function findRemoteUserCaretColor(
-	provider: HocuspocusProvider | null,
-	clientId: number,
-): string | null {
-	if (!provider?.awareness) {
-		return null
-	}
-
-	const state = provider.awareness.getStates().get(clientId)
-	const user = state?.user as EditingUser | undefined
-	return user?.color ?? null
-}
-
 // editing awareness helpers for collaborative edit conflict resolution.
 // these functions allow broadcasting which node a user is currently editing
 // and detecting if other users are editing a specific node or its descendants.
@@ -130,28 +113,6 @@ export function setEditingNodeInAwareness(
 	}
 
 	provider.awareness.setLocalStateField("editingNodeUid", info)
-}
-
-// clears the editing awareness state only if the current local state
-// matches the given info. This prevents accidentally clearing
-// awareness that was set by a different node.
-export function deleteEditingNodeInAwareness(
-	provider: HocuspocusProvider | null,
-	info: EditingNodeInfo,
-): void {
-	if (!provider?.awareness) {
-		return
-	}
-
-	const localState = provider.awareness.getLocalState()
-	const current = localState?.editingNodeUid as
-		| EditingNodeInfo
-		| null
-		| undefined
-
-	if (current?.uid === info.uid && current.type === info.type) {
-		setEditingNodeInAwareness(provider, null)
-	}
 }
 
 /**

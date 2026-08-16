@@ -266,7 +266,7 @@ export interface DynamicPlaceholderOptions {
 // Based on: https://github.com/ueberdosis/tiptap/blob/develop/packages/extensions/src/placeholder/placeholder.ts#L63
 // The official Placeholder was copied/forked because we need to support
 // a mix of permament and temporary placeholders in different nodes.
-export const DynamicPlaceholder = Extension.create<DynamicPlaceholderOptions>({
+const DynamicPlaceholder = Extension.create<DynamicPlaceholderOptions>({
 	name: "dynamic-placeholder",
 	addOptions() {
 		return {

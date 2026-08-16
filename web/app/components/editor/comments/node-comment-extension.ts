@@ -13,7 +13,7 @@ export interface NodeCommentAttrs {
 	nodeCommentId: string
 }
 
-export interface NodeCommentOverlay {
+interface NodeCommentOverlay {
 	nodeCommentId: string
 	top: number
 	left: number

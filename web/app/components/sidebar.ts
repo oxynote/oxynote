@@ -2,7 +2,7 @@ export type PlainActionFn = (() => void) | (() => Promise<void>)
 
 export const SIDEBAR_ITEM_PLACEHOLDER_ID = "placeholder"
 
-export function sidebarItemPlaceholder(name: string): SidebarItem {
+function sidebarItemPlaceholder(name: string): SidebarItem {
 	return {
 		id: SIDEBAR_ITEM_PLACEHOLDER_ID,
 		name: name,

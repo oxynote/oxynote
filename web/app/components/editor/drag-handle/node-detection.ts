@@ -14,7 +14,7 @@ export function isDraggableNodeType(typeName: string): boolean {
 	return DRAGGABLE_NODE_TYPES.has(typeName)
 }
 
-export function shouldShowDragHandle(
+function shouldShowDragHandle(
 	$pos: ResolvedPos,
 	depth: number,
 	nodeTypeName?: string,
@@ -521,38 +521,4 @@ export function findDraggableNodeAtCoords(
 
 	// In margin or fallback: find by Y
 	return findByY(view, state, view.dom, y)
-}
-
-export function findDraggableNodeAtPos(
-	editor: Editor,
-	pos: number,
-): DraggableNodeResult | null {
-	const { view, state } = editor
-
-	let $pos: ResolvedPos
-	try {
-		$pos = state.doc.resolve(pos)
-	} catch {
-		return null
-	}
-
-	for (let d = $pos.depth; d > 0; d--) {
-		const node = $pos.node(d)
-		const typeName = node.type.name
-		const rules = DRAG_DISABLED_EXCEPT_RULES.get(typeName)
-
-		if (
-			shouldShowDragHandle($pos, d) &&
-			((rules?.size === 0 && DRAGGABLE_NODE_TYPES.has(typeName)) ||
-				DRAGGABLE_NODE_TYPES.has(typeName))
-		) {
-			const nodePos = $pos.before(d)
-			const dom = view.nodeDOM(nodePos) as HTMLElement | null
-			if (dom?.nodeType === 1) {
-				return { node, pos: nodePos, depth: d, dom }
-			}
-		}
-	}
-
-	return null
 }

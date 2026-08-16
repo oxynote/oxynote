@@ -14,7 +14,7 @@ import { v4 as uuidv4 } from "uuid"
 
 import { findDuplicates } from "./helpers/findDuplicates.js"
 
-export interface UniqueIDGenerationContext {
+interface UniqueIDGenerationContext {
 	node: ProseMirrorNode
 	pos: number
 }

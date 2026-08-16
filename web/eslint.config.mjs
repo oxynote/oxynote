@@ -88,6 +88,7 @@ export default withNuxt([
 		files: [
 			"colada.options.ts",
 			"forge.config.ts",
+			"knip.ts",
 			"vite.electron.config.ts",
 			"electron/preload.d.ts",
 		],

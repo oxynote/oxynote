@@ -350,7 +350,7 @@ interface DragHandlePluginState {
 	lastWasRemote: boolean
 }
 
-export const dragHandlePluginDefaultKey = new PluginKey("dragHandle")
+const dragHandlePluginDefaultKey = new PluginKey("dragHandle")
 
 export const DragHandlePlugin = ({
 	pluginKey = dragHandlePluginDefaultKey,

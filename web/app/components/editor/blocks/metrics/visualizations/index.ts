@@ -101,7 +101,7 @@ function truncToDecimals(num: number, decimals: number | null) {
 	return parseFloat(num.toFixed(decimals))
 }
 
-export function extractVisualizationData(
+function extractVisualizationData(
 	visualizationType: GenericQueryChartType | null | undefined,
 	input: GenericQueryResult | null | undefined,
 	legendLabelFormat: string,

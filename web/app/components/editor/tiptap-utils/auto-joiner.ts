@@ -1,6 +1,6 @@
 import { Extension } from "@tiptap/core"
 import { Plugin, PluginKey } from "@tiptap/pm/state"
-import { canJoin } from "prosemirror-transform"
+import { canJoin } from "@tiptap/pm/transform"
 import type { NodeType } from "@tiptap/pm/model"
 import type { Transaction } from "@tiptap/pm/state"
 
@@ -74,7 +74,7 @@ function autoJoin(
 	return joined
 }
 
-export interface AutoJoinerOptions {
+interface AutoJoinerOptions {
 	elementsToJoin: string[]
 }
 

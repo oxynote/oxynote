@@ -61,7 +61,7 @@ function stripNullAttrs(
 	return json
 }
 
-export function executeReadDocument(
+function executeReadDocument(
 	contentEditor: Editor,
 	nameEditor: Editor,
 ): object {
@@ -78,7 +78,7 @@ export function executeReadDocument(
 	}
 }
 
-export function executeInsertBlocks(
+function executeInsertBlocks(
 	contentEditor: Editor,
 	args: InsertBlocksArgs,
 ): object {
@@ -100,7 +100,7 @@ export function executeInsertBlocks(
 	return { success: true }
 }
 
-export function executeReplaceBlockContent(
+function executeReplaceBlockContent(
 	contentEditor: Editor,
 	args: ReplaceBlockContentArgs,
 ): object {
@@ -124,7 +124,7 @@ export function executeReplaceBlockContent(
 	return { success: true }
 }
 
-export function executeReplaceBlockAttributes(
+function executeReplaceBlockAttributes(
 	contentEditor: Editor,
 	args: ReplaceBlockAttributesArgs,
 ): object {
@@ -147,7 +147,7 @@ export function executeReplaceBlockAttributes(
 	return { success: true }
 }
 
-export function executeUpdateDocumentName(
+function executeUpdateDocumentName(
 	nameEditor: Editor,
 	args: UpdateDocumentNameArgs,
 ): object {
@@ -160,7 +160,7 @@ export function executeUpdateDocumentName(
 	return { success: true }
 }
 
-export function executeUpdateDocumentIcon(
+function executeUpdateDocumentIcon(
 	contentEditor: Editor,
 	args: UpdateDocumentIconArgs,
 ): object {
@@ -180,7 +180,7 @@ export function executeUpdateDocumentIcon(
 	return { success: true }
 }
 
-export function executeDeleteBlocks(
+function executeDeleteBlocks(
 	contentEditor: Editor,
 	args: DeleteBlocksArgs,
 ): object {
@@ -206,7 +206,7 @@ export function executeDeleteBlocks(
 	return { success: true, deleted: positions.length }
 }
 
-export function executeReadAvailableIcons(): object {
+function executeReadAvailableIcons(): object {
 	return { icons: selectableIconList() }
 }
 

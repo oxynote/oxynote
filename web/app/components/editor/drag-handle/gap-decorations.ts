@@ -2,7 +2,7 @@ import { Extension, type CommandProps, type Editor } from "@tiptap/core"
 import { Plugin, PluginKey, type EditorState } from "prosemirror-state"
 import { Decoration, DecorationSet } from "prosemirror-view"
 import type { Node, NodeType } from "prosemirror-model"
-import type { Mapping } from "prosemirror-transform"
+import type { Mapping } from "@tiptap/pm/transform"
 import {
 	DEBUG_SHOW_GAPS,
 	DRAG_CONTAINER_NODE_TYPES,
@@ -458,7 +458,7 @@ function positionGapZone(el: HTMLElement, yOffset: number) {
  * @param originalListTypeName - The original parent list type name (if dragging from a list)
  * @returns true if the dragged node can be dropped at this gap (possibly wrapped)
  */
-export function canDropAtGap(
+function canDropAtGap(
 	parentNode: Node,
 	insertIndex: number,
 	draggedNode: Node,

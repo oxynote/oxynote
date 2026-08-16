@@ -55,7 +55,7 @@ declare module "@tiptap/core" {
 	}
 }
 
-export const allowedLeftSideContent = [
+const allowedLeftSideContent = [
 	Paragraph.name,
 	BulletList.name,
 	OrderedList.name,
@@ -63,7 +63,7 @@ export const allowedLeftSideContent = [
 	CalloutBlock.name,
 ]
 
-export const extraLeftSideContent = [ParameterList.name]
+const extraLeftSideContent = [ParameterList.name]
 
 export const SplitDocumentationLeftSide = Node.create({
 	name: SPLIT_DOCUMENTATION_LEFT_SIDE_NAME,

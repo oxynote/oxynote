@@ -18,7 +18,7 @@ import { COMMENT_MARK_NAME } from "./mark-names"
 import { CODE_BLOCK_NAME, TITLED_CODE_BLOCK_NAME } from "./blocks/node-names"
 
 // [] means no items are whitelisted
-export function whitelistBubbleMenuItemsByContext(
+function whitelistBubbleMenuItemsByContext(
 	state: EditorState,
 ): string[] | "all" {
 	const allowComment = !isCursorInsideTiptapMark(state, COMMENT_MARK_NAME)

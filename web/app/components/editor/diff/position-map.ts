@@ -8,13 +8,7 @@ export enum DiffStatus {
 	Modified = "modified",
 }
 
-export interface MappedPosition {
-	source: "original" | "modified"
-	blockIndex: number
-	offsetInBlock: number
-}
-
-export interface PositionMapEntry {
+interface PositionMapEntry {
 	source: "original" | "modified"
 	blockIndex: number
 	/** start position (in the merged ProseMirror doc, 0-based from doc start) */
@@ -138,27 +132,6 @@ export function buildPositionMapFromDoc(doc: PMNode): PositionMap {
 	})
 
 	return entries
-}
-
-/**
- * resolve a position inside the merged editor to its source document
- * and block-local offset.
- */
-export function resolvePosition(
-	map: PositionMap,
-	pos: number,
-): MappedPosition | null {
-	for (const entry of map) {
-		const endPos = entry.startPos + entry.nodeSize
-		if (pos >= entry.startPos && pos < endPos) {
-			return {
-				source: entry.source,
-				blockIndex: entry.blockIndex,
-				offsetInBlock: pos - entry.startPos,
-			}
-		}
-	}
-	return null
 }
 
 export interface SelectionSegment {

@@ -5,8 +5,6 @@ import { buildPositionMap, type PositionMap, DiffStatus } from "./position-map"
 import { DEFAULT_MERGE_OPTIONS } from "./config"
 import { expandInlineDiffs } from "./inline-diff-expansion"
 
-export { DiffStatus } from "./position-map"
-
 export interface MergeOptions extends HashOptions {
 	/** use block uid attribute for primary matching (default: true) */
 	useUidMatching?: boolean

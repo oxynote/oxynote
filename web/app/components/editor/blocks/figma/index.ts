@@ -4,7 +4,7 @@ import { Plugin } from "@tiptap/pm/state"
 import FigmaBlockComponent from "./FigmaBlock.vue"
 import { FIGMA_BLOCK_NAME } from "../node-names"
 
-export const FIGMA_URL_RE =
+const FIGMA_URL_RE =
 	/^https?:\/\/(www\.)?figma\.com\/(file|design|board|proto)\/([A-Za-z0-9_-]+)/
 
 export function isFigmaUrl(url: string): boolean {

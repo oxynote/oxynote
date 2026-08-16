@@ -51,7 +51,7 @@ import { FigmaBlock } from "./blocks/figma"
  * UniqueID extension with DOM id attribute rendering.
  * nodes get both `data-uid` and `id` HTML attributes.
  */
-export const UniqueIDWithDomId = UniqueID.extend({
+const UniqueIDWithDomId = UniqueID.extend({
 	addGlobalAttributes() {
 		return [
 			{
