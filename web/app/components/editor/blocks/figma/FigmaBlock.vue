@@ -18,8 +18,12 @@ const isEditingDisabled = computed(
 const { isDark } = useAppearance()
 
 const src = computed(() => props.node.attrs.src as string | null)
+// convertToEmbedUrl assumes a figma URL; anything else would produce a
+// broken https://embed.figma.com/undefined/undefined embed
 const embedUrl = computed(() =>
-	src.value ? convertToEmbedUrl(src.value, isDark.value) : null,
+	src.value && isFigmaUrl(src.value)
+		? convertToEmbedUrl(src.value, isDark.value)
+		: null,
 )
 
 const diffStatus = computed(

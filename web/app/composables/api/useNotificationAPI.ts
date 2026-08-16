@@ -86,8 +86,16 @@ export default function () {
 				const oldNotifPage = clone(
 					queryCache.getQueryData<NotificationsResponse>(entry.key),
 				)
-				// eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- list entries are only cached once their query resolved, so they hold data
-				oldNotifs.push({ ...oldNotifPage!, key: clone(entry.key) })
+
+				// entries can exist without data (a query that has not
+				// resolved yet); including them would make the update loop
+				// below throw on the missing notifications array and abort
+				// the whole mutation
+				if (!oldNotifPage) {
+					return
+				}
+
+				oldNotifs.push({ ...oldNotifPage, key: clone(entry.key) })
 			})
 
 			const newNotifs = clone(oldNotifs)
@@ -130,8 +138,14 @@ export default function () {
 				const cachedNotifPage = clone(
 					queryCache.getQueryData<NotificationsResponse>(entry.key),
 				)
-				// eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- list entries are only cached once their query resolved, so they hold data
-				cachedNotifs.push({ ...cachedNotifPage!, key: clone(entry.key) })
+
+				// mirror the onMutate filter so the rollback comparison sees
+				// the same set of pages the optimistic update touched
+				if (!cachedNotifPage) {
+					return
+				}
+
+				cachedNotifs.push({ ...cachedNotifPage, key: clone(entry.key) })
 			})
 
 			if (!isDeepEqual(newNotifs, cachedNotifs)) {

@@ -853,11 +853,15 @@ export default function () {
 					return []
 				}
 
-				return await $coreAPIClient<BranchReviewersResponse>(
-					`/api/documents/${docId}/branches/${branchId}/reviewers`,
-					{
-						method: "GET",
-					},
+				// the core handler responds with the db slice unwrapped, and
+				// a branch without reviewers yields a nil slice — JSON null
+				return (
+					(await $coreAPIClient<BranchReviewersResponse | null>(
+						`/api/documents/${docId}/branches/${branchId}/reviewers`,
+						{
+							method: "GET",
+						},
+					)) ?? []
 				)
 			},
 			enabled: () => !!toValue(docIdRef) && !!toValue(branchIdRef),

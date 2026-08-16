@@ -21,6 +21,7 @@ export type DragHandleProps = Omit<
 		node: Node | null
 		editor: Editor
 		pos: number
+		depth: number
 	}) => void
 	locked?: boolean
 }

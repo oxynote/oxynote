@@ -40,8 +40,7 @@ watch(debouncedSearchQuery, async (query) => {
 
 	try {
 		const results = await searchDocuments(query)
-		// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the core API serializes an empty result set as JSON null, which the declared array type does not admit
-		searchResults.value = results || []
+		searchResults.value = results
 	} catch {
 		searchResults.value = []
 	} finally {

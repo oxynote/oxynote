@@ -87,7 +87,15 @@ function thresholdBeforeInput(e: InputEvent) {
 	}
 }
 
+// sign flags act as an allowlist: with no flags set every number is
+// allowed, with any flag set only the flagged signs are. Vue casts absent
+// boolean props to false, so "unset" and "false" are indistinguishable —
+// without the allow-all branch a flagless <NumberInput> rejects all input.
 function isAllowed(num: number): boolean {
+	if (!props.positive && !props.negative && !props.zero) {
+		return true
+	}
+
 	if (num > 0) {
 		return props.positive
 	} else if (num < 0) {

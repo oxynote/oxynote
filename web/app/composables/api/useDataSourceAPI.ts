@@ -25,9 +25,13 @@ export default function () {
 	const fetchDataSources = useQuery({
 		key: DATA_SOURCE_QUERY_KEYS.list,
 		query: async () => {
-			return await $coreAPIClient<DataSourcesResponse>(`/api/data-sources`, {
-				method: "GET",
-			})
+			// an organization without data sources yields a nil slice from
+			// the core handler — JSON null
+			return (
+				(await $coreAPIClient<DataSourcesResponse | null>(`/api/data-sources`, {
+					method: "GET",
+				})) ?? []
+			)
 		},
 		refetchOnMount: false,
 		refetchOnWindowFocus: false,

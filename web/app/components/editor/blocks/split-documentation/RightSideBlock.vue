@@ -12,8 +12,9 @@ const isEditingDisabled = computed(() => {
 })
 
 function addElement(btn: "first" | "second") {
+	// a falsiness check would wrongly reject position 0 (document start)
 	const pos = props.getPos()
-	if (!pos) {
+	if (typeof pos !== "number" || pos < 0) {
 		return
 	}
 
