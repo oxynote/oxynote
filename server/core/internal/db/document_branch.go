@@ -335,6 +335,37 @@ func (a *agent) insertDocumentBranchChangelog(
 			"content = excluded.content, raw_content = excluded.raw_content, created_at = excluded.created_at").
 		MustSql()
 
+	if _, err := a.sql.ExecContext(ctx, q, args...); err != nil {
+		return err
+	}
+
+	return a.trimDocumentBranchChangelogs(ctx, branchID)
+}
+
+// trimDocumentBranchChangelogs keeps only the newest snapshots of a branch.
+// Age trimming lives in the file manager instead, since it has to reach
+// branches that stopped inserting altogether.
+func (a *agent) trimDocumentBranchChangelogs(ctx context.Context, branchID xid.ID) error {
+	// a zero limit means unlimited retention; without this guard the
+	// subquery below would emit LIMIT 0 and the delete would drop every
+	// snapshot of the branch.
+	if a.opts.MaxDocumentChangelogs == 0 {
+		return nil
+	}
+
+	b := a.builder.Select("id").
+		From("document_branch_changelogs").
+		Where(sq.Eq{"fk_branch_id": branchID}).
+		OrderBy("created_at DESC").
+		Limit(a.opts.MaxDocumentChangelogs).
+		Prefix("id NOT IN (").
+		Suffix(")")
+
+	q, args := a.builder.Delete("document_branch_changelogs").Where(sq.And{
+		b,
+		sq.Eq{"fk_branch_id": branchID},
+	}).MustSql()
+
 	_, err := a.sql.ExecContext(ctx, q, args...)
 
 	return err

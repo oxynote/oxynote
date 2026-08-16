@@ -21,6 +21,9 @@ var _ Storer = &StorerMock{}
 //
 //		// make and configure a mocked Storer
 //		mockedStorer := &StorerMock{
+//			CopyFunc: func(ctx context.Context, srcFolder string, srcID string, dstFolder string, dstID string) error {
+//				panic("mock out the Copy method")
+//			},
 //			DeleteFunc: func(ctx context.Context, folder string, id string) error {
 //				panic("mock out the Delete method")
 //			},
@@ -37,6 +40,9 @@ var _ Storer = &StorerMock{}
 //
 //	}
 type StorerMock struct {
+	// CopyFunc mocks the Copy method.
+	CopyFunc func(ctx context.Context, srcFolder string, srcID string, dstFolder string, dstID string) error
+
 	// DeleteFunc mocks the Delete method.
 	DeleteFunc func(ctx context.Context, folder string, id string) error
 
@@ -48,6 +54,19 @@ type StorerMock struct {
 
 	// calls tracks calls to the methods.
 	calls struct {
+		// Copy holds details about calls to the Copy method.
+		Copy []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// SrcFolder is the srcFolder argument value.
+			SrcFolder string
+			// SrcID is the srcID argument value.
+			SrcID string
+			// DstFolder is the dstFolder argument value.
+			DstFolder string
+			// DstID is the dstID argument value.
+			DstID string
+		}
 		// Delete holds details about calls to the Delete method.
 		Delete []struct {
 			// Ctx is the ctx argument value.
@@ -78,9 +97,61 @@ type StorerMock struct {
 			R io.Reader
 		}
 	}
+	lockCopy     sync.RWMutex
 	lockDelete   sync.RWMutex
 	lockRetrieve sync.RWMutex
 	lockUpload   sync.RWMutex
+}
+
+// Copy calls CopyFunc.
+func (mock *StorerMock) Copy(ctx context.Context, srcFolder string, srcID string, dstFolder string, dstID string) error {
+	callInfo := struct {
+		Ctx       context.Context
+		SrcFolder string
+		SrcID     string
+		DstFolder string
+		DstID     string
+	}{
+		Ctx:       ctx,
+		SrcFolder: srcFolder,
+		SrcID:     srcID,
+		DstFolder: dstFolder,
+		DstID:     dstID,
+	}
+	mock.lockCopy.Lock()
+	mock.calls.Copy = append(mock.calls.Copy, callInfo)
+	mock.lockCopy.Unlock()
+	if mock.CopyFunc == nil {
+		var (
+			errOut error
+		)
+		return errOut
+	}
+	return mock.CopyFunc(ctx, srcFolder, srcID, dstFolder, dstID)
+}
+
+// CopyCalls gets all the calls that were made to Copy.
+// Check the length with:
+//
+//	len(mockedStorer.CopyCalls())
+func (mock *StorerMock) CopyCalls() []struct {
+	Ctx       context.Context
+	SrcFolder string
+	SrcID     string
+	DstFolder string
+	DstID     string
+} {
+	var calls []struct {
+		Ctx       context.Context
+		SrcFolder string
+		SrcID     string
+		DstFolder string
+		DstID     string
+	}
+	mock.lockCopy.RLock()
+	calls = mock.calls.Copy
+	mock.lockCopy.RUnlock()
+	return calls
 }
 
 // Delete calls DeleteFunc.

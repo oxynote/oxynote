@@ -18,7 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func prepDocumentComments(t *testing.T, db *DB, count int, fn func(int, *comment.Comment)) []comment.Comment { //nolint:unparam // fixture helpers share a uniform signature
+func prepDocumentComments(t *testing.T, db *DB, count int, fn func(int, *comment.Comment)) []comment.Comment {
 	t.Helper()
 
 	res := make([]comment.Comment, count)

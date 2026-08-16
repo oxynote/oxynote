@@ -86,6 +86,16 @@ type Options struct {
 	// Zero means no limit.
 	MaxNotifications uint64
 
+	// MaxDocumentChangelogs specifies the maximum number of changelog
+	// snapshots to keep per document branch.
+	// Zero means no limit.
+	MaxDocumentChangelogs uint64
+
+	// DocumentChangelogRetention specifies how long changelog snapshots
+	// are kept before the file manager trims them.
+	// Zero means no age limit.
+	DocumentChangelogRetention time.Duration
+
 	// DataSourceCredentialsSigningSecret is the secret used to sign
 	// data source credentials.
 	DataSourceCredentialsSigningSecret string

@@ -139,9 +139,9 @@ CREATE INDEX document_branch_changelogs_fk_branch_id_idx ON document_branch_chan
 CREATE TABLE document_hooks (
 	id TEXT PRIMARY KEY,
 	type TEXT NOT NULL,
-	fk_document_id TEXT NOT NULL REFERENCES documents ON DELETE CASCADE,
+	fk_document_id TEXT REFERENCES documents ON DELETE SET NULL,
 	fk_organization_id TEXT NOT NULL REFERENCES organizations ON DELETE CASCADE,
-	fk_branch_id TEXT NOT NULL REFERENCES document_branches(id) ON DELETE CASCADE,
+	fk_branch_id TEXT REFERENCES document_branches(id) ON DELETE SET NULL,
 	block_id TEXT,
 	settings JSONB NOT NULL,
 	state TEXT NOT NULL,
@@ -201,9 +201,11 @@ CREATE INDEX branch_reviewers_fk_organization_id_idx ON branch_reviewers (fk_org
 CREATE TABLE document_files (
 	id TEXT PRIMARY KEY,
 	location TEXT NOT NULL,
+	storage_key TEXT NOT NULL,
 	fk_document_id TEXT REFERENCES documents ON DELETE SET NULL,
 	fk_organization_id TEXT REFERENCES organizations ON DELETE SET NULL,
-	created_at TIMESTAMP NOT NULL
+	created_at TIMESTAMP NOT NULL,
+	unreferenced_at TIMESTAMP
 );
 CREATE INDEX document_files_fk_document_id_idx ON document_files (fk_document_id);
 CREATE INDEX document_files_fk_organization_id_idx ON document_files (fk_organization_id);

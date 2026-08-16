@@ -21,9 +21,6 @@ const (
 	// _organizationLogoLocation is the URL path for organization logos.
 	_organizationLogoLocation = "/api/organizations/logo"
 
-	// _documentFileLocationFormat is the URL format for document files.
-	_documentFileLocationFormat = "/api/documents/%s/files/%s"
-
 	// _requestTimeout bounds the processing of a single HTTP request.
 	_requestTimeout = 30 * time.Second
 

@@ -4,7 +4,10 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"maps"
+	"net/url"
+	"strings"
 
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/pkg/strutil"
@@ -14,8 +17,14 @@ import (
 const (
 	_nodeCommentIDAttr   = "nodeCommentId"
 	_nodeUIDAttr         = "uid"
+	_nodeSrcAttr         = "src"
 	_nodeCommentMarkType = "comment"
 )
+
+// FilePathFormat is the URL path format under which document files are
+// served. Duplication matches stored src attributes against it, so the
+// router mounts the file routes on this very format.
+const FilePathFormat = "/api/documents/%s/files/%s"
 
 // RootBlock represents a block in a document.
 type RootBlock struct {
@@ -215,23 +224,53 @@ type Mark struct {
 // and nodeCommentId attributes removed. Unlike Duplicate, uid attributes are
 // preserved as-is.
 func (rb RootBlock) StripCommentMarks() RootBlock {
-	return rb.copyStripped(false)
+	return rb.copyStripped(nil)
 }
 
 // Duplicate creates a copy of the RootBlock with all comment marks
 // removed, nodeCommentId attributes removed, and uid attributes regenerated.
-func (rb RootBlock) Duplicate() RootBlock {
-	return rb.copyStripped(true)
+// Image blocks pointing at the source document's own files have their src
+// rewritten to the duplicate's, and the returned map pairs every such file's
+// old id with its new one so the caller can copy the objects themselves.
+func (rb RootBlock) Duplicate(oldDocumentID, newDocumentID xid.ID) (RootBlock, map[string]string) {
+	dc := &duplication{
+		oldDocumentID: oldDocumentID,
+		newDocumentID: newDocumentID,
+		files:         make(map[string]string),
+	}
+
+	return rb.copyStripped(dc), dc.files
+}
+
+// RegenerateUIDs returns a copy of the RootBlock with comment marks removed
+// and every uid attribute regenerated. Unlike Duplicate it rewrites no file
+// references, which suits content templates: they carry none.
+func (rb RootBlock) RegenerateUIDs() RootBlock {
+	return rb.copyStripped(&duplication{files: make(map[string]string)})
+}
+
+// duplication carries the state a block tree needs while it is being
+// duplicated: the documents involved and the file ids collected on the way.
+type duplication struct {
+	// oldDocumentID is the id of the document being duplicated.
+	oldDocumentID xid.ID
+
+	// newDocumentID is the id of the document being created.
+	newDocumentID xid.ID
+
+	// files maps the source document's file ids to the ids the duplicate
+	// refers to them by.
+	files map[string]string
 }
 
 // copyStripped returns a copy of the RootBlock with comment marks and
-// nodeCommentId attributes removed, regenerating uid attributes when
-// regenUIDs is set.
-func (rb RootBlock) copyStripped(regenUIDs bool) RootBlock {
+// nodeCommentId attributes removed, regenerating uid attributes and
+// rewriting file references when a duplication is in progress.
+func (rb RootBlock) copyStripped(dc *duplication) RootBlock {
 	newContent := make([]Block, len(rb.Content))
 
 	for i, b := range rb.Content {
-		newContent[i] = b.copyStripped(regenUIDs)
+		newContent[i] = b.copyStripped(dc)
 	}
 
 	return RootBlock{
@@ -241,9 +280,9 @@ func (rb RootBlock) copyStripped(regenUIDs bool) RootBlock {
 }
 
 // copyStripped returns a copy of the Block with comment marks and
-// nodeCommentId attributes removed, regenerating uid attributes when
-// regenUIDs is set.
-func (b Block) copyStripped(regenUIDs bool) Block {
+// nodeCommentId attributes removed, regenerating uid attributes and
+// rewriting file references when a duplication is in progress.
+func (b Block) copyStripped(dc *duplication) Block {
 	newBlock := Block{
 		Type: b.Type,
 		Text: b.Text,
@@ -253,7 +292,7 @@ func (b Block) copyStripped(regenUIDs bool) Block {
 		newBlock.Content = make([]Block, len(b.Content))
 
 		for i, cb := range b.Content {
-			newBlock.Content[i] = cb.copyStripped(regenUIDs)
+			newBlock.Content[i] = cb.copyStripped(dc)
 		}
 	}
 
@@ -279,12 +318,16 @@ func (b Block) copyStripped(regenUIDs bool) Block {
 				continue
 			}
 
-			if regenUIDs && k == _nodeUIDAttr {
+			if dc != nil && k == _nodeUIDAttr {
 				newAttrs[k] = strutil.NanoID()
 				continue
 			}
 
 			newAttrs[k] = v
+		}
+
+		if dc != nil && b.Type == BlockNodeImageBlock {
+			dc.rewriteFileRef(b.Attrs, newAttrs)
 		}
 
 		if len(newAttrs) > 0 {
@@ -293,4 +336,43 @@ func (b Block) copyStripped(regenUIDs bool) Block {
 	}
 
 	return newBlock
+}
+
+// rewriteFileRef points a duplicated image block at the duplicate's own copy
+// of the file and records the pair. Images served from anywhere but the
+// source document's file route are left as they are: an externally hosted
+// image has no object to copy.
+func (d *duplication) rewriteFileRef(attrs, newAttrs Attributes) {
+	oldID, ok := attrs[_nodeUIDAttr].(string)
+	if !ok {
+		return
+	}
+
+	newID, ok := newAttrs[_nodeUIDAttr].(string)
+	if !ok {
+		return
+	}
+
+	src, ok := attrs[_nodeSrcAttr].(string)
+	if !ok {
+		return
+	}
+
+	u, err := url.Parse(src)
+	if err != nil {
+		return
+	}
+
+	oldPath := fmt.Sprintf(FilePathFormat, d.oldDocumentID, oldID)
+	if !strings.HasSuffix(u.Path, oldPath) {
+		return
+	}
+
+	// only the path is swapped: the src was built by the frontend from its
+	// own api base url, which need not match this server's public url.
+	u.Path = strings.TrimSuffix(u.Path, oldPath) +
+		fmt.Sprintf(FilePathFormat, d.newDocumentID, newID)
+
+	newAttrs[_nodeSrcAttr] = u.String()
+	d.files[oldID] = newID
 }

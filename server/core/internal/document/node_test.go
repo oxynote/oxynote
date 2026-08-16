@@ -1,6 +1,7 @@
 package document
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/oxynote/oxynote/server/core/internal/search"
@@ -280,7 +281,9 @@ func Test_RootBlock_Duplicate(t *testing.T) {
 	t.Parallel()
 
 	orig := stubMarkedTree()
-	dup := orig.Duplicate()
+	dup, files := orig.Duplicate(xid.New(), xid.New())
+
+	assert.Empty(t, files)
 
 	require.Len(t, dup.Content, 1)
 
@@ -299,6 +302,85 @@ func Test_RootBlock_Duplicate(t *testing.T) {
 	// mutating the duplicate must not touch the original.
 	p.Attrs["align"] = "right"
 	assert.Equal(t, "left", orig.Content[0].Attrs["align"])
+}
+
+func Test_RootBlock_Duplicate_files(t *testing.T) {
+	t.Parallel()
+
+	oldDocumentID := xid.New()
+	newDocumentID := xid.New()
+
+	orig := RootBlock{
+		Type: BlockNodeDoc,
+		Content: []Block{
+			{
+				Type: BlockNodeImageBlock,
+				Attrs: Attributes{
+					"uid": "img1",
+					"src": "https://app.test/core" + fmt.Sprintf(FilePathFormat, oldDocumentID, "img1"),
+				},
+			},
+			{
+				Type: BlockNodeImageBlock,
+				Attrs: Attributes{
+					"uid": "img2",
+					"src": "https://cdn.test/photo.png",
+				},
+			},
+			{
+				Type: BlockNodeImageBlock,
+				Attrs: Attributes{
+					"uid": "img3",
+					"src": "https://app.test/core" + fmt.Sprintf(FilePathFormat, xid.New(), "img3"),
+				},
+			},
+			{
+				Type:  BlockNodeImageBlock,
+				Attrs: Attributes{"uid": "img4"},
+			},
+		},
+	}
+
+	dup, files := orig.Duplicate(oldDocumentID, newDocumentID)
+
+	// only the image served by the source document is remapped.
+	require.Len(t, files, 1)
+
+	newID, ok := files["img1"]
+	require.True(t, ok)
+
+	uid, ok := dup.Content[0].UID()
+	require.True(t, ok)
+	assert.Equal(t, newID, uid)
+	assert.Equal(
+		t,
+		"https://app.test/core"+fmt.Sprintf(FilePathFormat, newDocumentID, newID),
+		dup.Content[0].Attrs["src"],
+		"the host and path prefix must survive the rewrite",
+	)
+
+	// an externally hosted image, an image of another document and an
+	// image without a src are all left as they are.
+	assert.Equal(t, "https://cdn.test/photo.png", dup.Content[1].Attrs["src"])
+	assert.Equal(t, orig.Content[2].Attrs["src"], dup.Content[2].Attrs["src"])
+	assert.NotContains(t, dup.Content[3].Attrs, "src")
+
+	// the original is untouched.
+	assert.Equal(t, "img1", orig.Content[0].Attrs["uid"])
+}
+
+func Test_RootBlock_RegenerateUIDs(t *testing.T) {
+	t.Parallel()
+
+	orig := stubMarkedTree()
+	res := orig.RegenerateUIDs()
+
+	require.Len(t, res.Content, 1)
+	assert.NotContains(t, res.Content[0].Attrs, "nodeCommentId")
+
+	uid, ok := res.Content[0].UID()
+	require.True(t, ok)
+	assert.NotEqual(t, "p1", uid)
 }
 
 func Test_RootBlock_Value_Scan(t *testing.T) {

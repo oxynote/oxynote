@@ -97,7 +97,7 @@ type ProcessingState struct {
 }
 
 // processHooks processes document hooks in a paginated manner.
-func (m *Manager) processHooks(ctx context.Context) error { //nolint:gocognit // this method is complex, however, it's well-structured
+func (m *Manager) processHooks(ctx context.Context) error {
 	ps := &ProcessingState{
 		Documents: make(map[xid.ID]*document.Document),
 	}
@@ -111,13 +111,11 @@ func (m *Manager) processHooks(ctx context.Context) error { //nolint:gocognit //
 		for _, h := range hooks {
 			ps.OffsetID = h.ID
 
-			// Branch was deleted; clean up the orphaned hook immediately.
-			if !h.BranchID.Valid {
-				if err = m.db.DeleteDocumentHook(ctx, h.ID, h.OrganizationID); err != nil {
-					m.log.With("hook_id", h.ID).
-						With("error", err).
-						Error("deleting orphaned hook for deleted branch")
-				}
+			// The branch or the document was deleted, which is the only
+			// trace left of the hook: tear down the external resource it
+			// holds before the row goes away with the last reference to it.
+			if !h.BranchID.Valid || !h.DocumentID.Valid {
+				m.deleteHook(ctx, &h)
 
 				continue
 			}
@@ -149,18 +147,19 @@ func (m *Manager) processHooks(ctx context.Context) error { //nolint:gocognit //
 					With("error", err).
 					Error("processing document hook")
 
+				// the soft-deletion mark set by ensureHook is persisted even
+				// here: it starts the retention clock, and a hook that keeps
+				// failing to process is exactly the one that would otherwise
+				// never reach it.
+				m.updateHook(ctx, h)
+
 				continue
 			}
 
-			err = m.db.UpdateDocumentHook(ctx, h)
-			if err != nil {
-				m.log.With("hook_id", h.ID).
-					With("error", err).
-					Error("updating document hook")
-			}
+			m.updateHook(ctx, h)
 
 			if previousScore.Equal(_fullScore) && h.Score.Equal(decimal.Zero) {
-				maintainers, err := m.db.FetchDocumentMaintainers(ctx, h.DocumentID, h.OrganizationID)
+				maintainers, err := m.db.FetchDocumentMaintainers(ctx, h.DocumentID.V, h.OrganizationID)
 				if err != nil {
 					m.log.With("hook_id", h.ID).
 						With("error", err).
@@ -172,7 +171,7 @@ func (m *Manager) processHooks(ctx context.Context) error { //nolint:gocognit //
 				m.notifPub.PublishNotifications(
 					h.OrganizationID,
 					notification.NewDocumentHookTriggeredNotification(
-						h.DocumentID,
+						h.DocumentID.V,
 						h.Type,
 						h.BlockID,
 						h.BranchID.V,
@@ -221,25 +220,7 @@ func (m *Manager) ensureHook(
 	}
 
 	if doc == nil || (h.SoftDeletedAt.Valid && h.SoftDeletedAt.Time.Before(timeutil.Now().Add(-_hookRetentionDuration))) {
-		err := h.Delete(ctx, hook.NewInput(
-			h.OrganizationID,
-			m.githubMan,
-			m.webchangeClient,
-		))
-		if err != nil {
-			m.log.With("hook_id", h.ID).
-				With("error", err).
-				Error("deleting hook for missing document")
-
-			return false
-		}
-
-		err = m.db.DeleteDocumentHook(ctx, h.ID, h.OrganizationID)
-		if err != nil {
-			m.log.With("hook_id", h.ID).
-				With("error", err).
-				Error("deleting hook for missing document from db")
-		}
+		m.deleteHook(ctx, h)
 
 		return false
 	}
@@ -255,6 +236,42 @@ func (m *Manager) ensureHook(
 	}
 
 	return true
+}
+
+// deleteHook tears down the hook's external resource and then removes the
+// row describing it. The external teardown goes first: the row is the only
+// record of the resource, so dropping it first would strand the watcher
+// with nothing left to find it by.
+func (m *Manager) deleteHook(ctx context.Context, h *hook.Hook) {
+	err := h.Delete(ctx, hook.NewInput(
+		h.OrganizationID,
+		m.githubMan,
+		m.webchangeClient,
+	))
+	if err != nil {
+		m.log.With("hook_id", h.ID).
+			With("error", err).
+			Error("deleting hook external resource")
+
+		return
+	}
+
+	err = m.db.DeleteDocumentHook(ctx, h.ID, h.OrganizationID)
+	if err != nil {
+		m.log.With("hook_id", h.ID).
+			With("error", err).
+			Error("deleting hook from db")
+	}
+}
+
+// updateHook persists the hook's current state.
+func (m *Manager) updateHook(ctx context.Context, h hook.Hook) {
+	err := m.db.UpdateDocumentHook(ctx, h)
+	if err != nil {
+		m.log.With("hook_id", h.ID).
+			With("error", err).
+			Error("updating document hook")
+	}
 }
 
 // DB defines the database operations required by the Manager.

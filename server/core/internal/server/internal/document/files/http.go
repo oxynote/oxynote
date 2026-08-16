@@ -8,15 +8,13 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/file"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/internal/storage"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/rs/xid"
 )
-
-// _documentFilesFolderFormat is the folder format for document files.
-const _documentFilesFolderFormat = "organizations/%s/documents/%s/files"
 
 // Handler holds dependencies required for document file operations.
 type Handler struct {
@@ -68,40 +66,43 @@ func (h *Handler) UploadDocumentFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	location := document.Location(r.URL.Query().Get("location"))
+	location := file.Location(r.URL.Query().Get("location"))
 	if !location.Valid() {
 		httpserver.RespondError(h.log, w, httpserver.ErrInvalidForm)
 		return
 	}
 
-	file, _, err := r.FormFile("file")
+	body, _, err := r.FormFile("file")
 	if err != nil {
 		httpserver.RespondError(h.log, w, httpserver.ErrInvalidForm)
 		return
 	}
-	defer file.Close() //nolint:errcheck // error provides no meaningful info
+	defer body.Close() //nolint:errcheck // error provides no meaningful info
 
-	folder := fmt.Sprintf(_documentFilesFolderFormat, session.ActiveOrganizationID, documentID)
+	folder := file.Folder(session.ActiveOrganizationID, documentID)
 
-	err = h.storer.Upload(r.Context(), folder, fileID, file)
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
+	// the row is written before the object so that a crash can only ever
+	// leave a row without an object, which the file manager reaps. An
+	// object without a row would be invisible to every cleanup path.
 	err = h.db.InsertDocumentFile(
 		r.Context(),
-		document.NewFile(
+		file.NewFile(
 			fileID,
 			location,
+			file.Key(session.ActiveOrganizationID, documentID, fileID),
 			documentID,
 			session.ActiveOrganizationID,
 		),
 	)
 	if err != nil {
-		// Clean up the uploaded file if DB insert fails.
-		if derr := h.storer.Delete(r.Context(), folder, fileID); derr != nil {
-			h.log.Error("deleting file after DB failure", "error", derr.Error())
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	err = h.storer.Upload(r.Context(), folder, fileID, body)
+	if err != nil {
+		if derr := h.db.DeleteDocumentFile(r.Context(), fileID); derr != nil {
+			h.log.Error("deleting file row after upload failure", "error", derr.Error())
 		}
 
 		httpserver.RespondError(h.log, w, err)
@@ -141,13 +142,21 @@ func (h *Handler) RetrieveDocumentFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify file exists and belongs to the organization.
-	_, err = h.db.FetchDocumentFile(r.Context(), id, session.ActiveOrganizationID)
+	f, err := h.db.FetchDocumentFile(r.Context(), id, session.ActiveOrganizationID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	folder := fmt.Sprintf(_documentFilesFolderFormat, session.ActiveOrganizationID, documentID)
+	// the object key is built from the document in the url, so a file
+	// belonging to another document would merely miss the key; reject it
+	// as the authorization failure it is instead.
+	if f.DocumentID.V != documentID {
+		httpserver.RespondError(h.log, w, errutil.ErrNotFound)
+		return
+	}
+
+	folder := file.Folder(session.ActiveOrganizationID, documentID)
 
 	obj, found, err := h.storer.Retrieve(r.Context(), folder, id)
 	if err != nil {
@@ -200,10 +209,13 @@ type DB interface {
 // DBAgent is an interface that handles communication with the document files database.
 type DBAgent interface {
 	// InsertDocumentFile should insert the document file.
-	InsertDocumentFile(ctx context.Context, f document.File) error
+	InsertDocumentFile(ctx context.Context, f file.File) error
 
 	// FetchDocumentFile should fetch the document file for the given block id.
-	FetchDocumentFile(ctx context.Context, blockID, organizationID string) (*document.File, error)
+	FetchDocumentFile(ctx context.Context, blockID, organizationID string) (*file.File, error)
+
+	// DeleteDocumentFile should remove the document file row.
+	DeleteDocumentFile(ctx context.Context, id string) error
 }
 
 // Storer is an interface that defines methods for uploading and retrieving objects.
@@ -215,7 +227,4 @@ type Storer interface {
 
 	// Retrieve retrieves an object by its ID.
 	Retrieve(ctx context.Context, folder, id string) (*storage.ObjectInfo, bool, error)
-
-	// Delete deletes an object by its ID.
-	Delete(ctx context.Context, folder, id string) error
 }

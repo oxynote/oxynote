@@ -121,7 +121,31 @@ func (c *Client) Retrieve(ctx context.Context, folder, id string) (*ObjectInfo, 
 	}, true, nil
 }
 
-// Delete deletes an object by its ID.
+// Copy copies an object within the bucket, server-side. The object is never
+// streamed through this process: uploads are capped well below the multipart
+// threshold, so a copy stays a metadata-only operation.
+func (c *Client) Copy(ctx context.Context, srcFolder, srcID, dstFolder, dstID string) error {
+	_, err := c.client.CopyObject(
+		ctx,
+		minio.CopyDestOptions{
+			Bucket: c.bucket,
+			Object: path.Join(dstFolder, dstID),
+		},
+		minio.CopySrcOptions{
+			Bucket: c.bucket,
+			Object: path.Join(srcFolder, srcID),
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("copying object: %w", err)
+	}
+
+	return nil
+}
+
+// Delete deletes an object by its ID. Deleting an object that is not there
+// is not an error, which is what lets a crashed upload heal: the row that
+// outlived it is removed on the next cleanup pass either way.
 func (c *Client) Delete(ctx context.Context, folder, id string) error {
 	err := c.client.RemoveObject(
 		ctx,

@@ -70,7 +70,7 @@ func Test_NewHook(t *testing.T) {
 
 		assert.False(t, h.ID.IsZero())
 		assert.Equal(t, TypeScheduledReminder, h.Type)
-		assert.Equal(t, documentID, h.DocumentID)
+		assert.Equal(t, null.ValueFrom(documentID), h.DocumentID)
 		assert.Equal(t, null.ValueFrom(branchID), h.BranchID)
 		assert.Equal(t, "org-1", h.OrganizationID)
 		assert.Equal(t, null.StringFrom("block-1"), h.BlockID)

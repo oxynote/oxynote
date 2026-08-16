@@ -3,12 +3,14 @@ package document
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/guregu/null/v5"
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/file"
 	hookCore "github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
 	"github.com/oxynote/oxynote/server/core/internal/search"
@@ -23,7 +25,7 @@ func storedHook(typ hookCore.Type) hookCore.Hook {
 	return hookCore.Hook{
 		ID:             xid.New(),
 		Type:           typ,
-		DocumentID:     _documentID,
+		DocumentID:     null.ValueFrom(_documentID),
 		OrganizationID: "org1",
 		BranchID:       null.ValueFrom(_branchID),
 		Settings:       processor.Settings(`{"scale":"linear"}`),
@@ -655,15 +657,50 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 		return tx
 	}
 
+	// fetchStoredWithImage serves a document whose content holds an image
+	// served by that same document, which is what duplication has to copy.
+	fetchStoredWithImage := func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
+		doc := storedDoc()
+		doc.Content = documentCore.RootBlock{
+			Type: documentCore.BlockNodeDoc,
+			Content: []documentCore.Block{
+				{
+					Type: documentCore.BlockNodeImageBlock,
+					Attrs: documentCore.Attributes{
+						"uid": "img1",
+						"src": "https://app.test/core" + fmt.Sprintf(documentCore.FilePathFormat, _documentID, "img1"),
+					},
+				},
+			},
+		}
+
+		return doc, nil
+	}
+
+	// imageDB serves the document with the image plus the file row that
+	// image refers to, which is what the copy is made from.
+	imageDB := func() *DBMock {
+		return &DBMock{
+			FetchDocumentFunc: fetchStoredWithImage,
+			FetchDocumentFileFunc: func(_ context.Context, id, organizationID string) (*file.File, error) {
+				f := file.NewFile(id, file.LocationDocument, "key", _documentID, organizationID)
+
+				return &f, nil
+			},
+		}
+	}
+
 	cc := map[string]struct {
 		DB        *DBMock
 		Tx        *TxMock
+		Storer    *StorerMock
 		BeginErr  error
 		NoSession bool
 		OmitDoc   bool
 		RespCode  int
 		Committed int
 		TreeCbs   int
+		Copies    int
 	}{
 		"No session in context": {
 			DB:        &DBMock{},
@@ -726,6 +763,28 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 			Committed: 1,
 			TreeCbs:   1,
 		},
+		"Files are copied along with the document": {
+			DB:        imageDB(),
+			Tx:        insertAwareTx(),
+			Storer:    &StorerMock{},
+			RespCode:  http.StatusCreated,
+			Committed: 1,
+			TreeCbs:   1,
+			Copies:    1,
+		},
+		"Failing file copy still yields the duplicate": {
+			DB: imageDB(),
+			Tx: insertAwareTx(),
+			Storer: &StorerMock{
+				CopyFunc: func(context.Context, string, string, string, string) error {
+					return errors.New("boom")
+				},
+			},
+			RespCode:  http.StatusCreated,
+			Committed: 1,
+			TreeCbs:   1,
+			Copies:    1,
+		},
 	}
 
 	for cn, c := range cc {
@@ -733,6 +792,10 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 			t.Parallel()
 
 			hdl, cnt := newTestHandler(withTx(c.DB, c.Tx, c.BeginErr), &fakePublisher{})
+
+			if c.Storer != nil {
+				hdl.storer = c.Storer
+			}
 
 			rec := httptest.NewRecorder()
 
@@ -742,12 +805,121 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 			assert.Len(t, c.Tx.CommitCalls(), c.Committed)
 			assert.Equal(t, c.TreeCbs, cnt.tree)
 
+			if c.Storer != nil {
+				assert.Len(t, c.Storer.CopyCalls(), c.Copies)
+				assert.Len(t, c.DB.InsertDocumentFileCalls(), c.Copies)
+			}
+
 			if c.RespCode == http.StatusCreated {
 				// the duplicate is a new document owned by the caller.
 				require.Len(t, c.Tx.InsertDocumentCalls(), 1)
 				assert.NotEqual(t, _documentID, c.Tx.InsertDocumentCalls()[0].Doc.ID)
 				assert.Equal(t, []string{"u1"}, c.Tx.UpsertDocumentMaintainersCalls()[0].MaintainerIDs)
 			}
+		})
+	}
+}
+
+func Test_Handler_copyDocumentFiles(t *testing.T) {
+	toDocumentID := xid.New()
+
+	fileDB := func() *DBMock {
+		return &DBMock{
+			FetchDocumentFileFunc: func(_ context.Context, id, organizationID string) (*file.File, error) {
+				f := file.NewFile(id, file.LocationComment, "key", _documentID, organizationID)
+
+				return &f, nil
+			},
+		}
+	}
+
+	cc := map[string]struct {
+		DB      *DBMock
+		Storer  *StorerMock
+		Files   map[string]string
+		Inserts int
+		Copies  int
+	}{
+		"Nothing to copy": {
+			DB:     fileDB(),
+			Storer: &StorerMock{},
+			Files:  map[string]string{},
+		},
+		"File row is missing": {
+			DB: &DBMock{
+				FetchDocumentFileFunc: func(context.Context, string, string) (*file.File, error) {
+					return nil, errors.New("boom")
+				},
+			},
+			Storer: &StorerMock{},
+			Files:  map[string]string{"old-1": "new-1"},
+		},
+		"Error returned by db.InsertDocumentFile": {
+			DB: func() *DBMock {
+				db := fileDB()
+				db.InsertDocumentFileFunc = func(context.Context, file.File) error {
+					return errors.New("boom")
+				}
+
+				return db
+			}(),
+			Storer:  &StorerMock{},
+			Files:   map[string]string{"old-1": "new-1"},
+			Inserts: 1,
+		},
+		"Error returned by storer.Copy": {
+			DB: fileDB(),
+			Storer: &StorerMock{
+				CopyFunc: func(context.Context, string, string, string, string) error {
+					return errors.New("boom")
+				},
+			},
+			Files:   map[string]string{"old-1": "new-1"},
+			Inserts: 1,
+			Copies:  1,
+		},
+		"Successful copy": {
+			DB:      fileDB(),
+			Storer:  &StorerMock{},
+			Files:   map[string]string{"old-1": "new-1"},
+			Inserts: 1,
+			Copies:  1,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			hdl, _ := newTestHandler(c.DB, &fakePublisher{})
+			hdl.storer = c.Storer
+
+			hdl.copyDocumentFiles(context.Background(), c.Files, _documentID, toDocumentID, "org1")
+
+			ff := c.DB.InsertDocumentFileCalls()
+			require.Len(t, ff, c.Inserts)
+
+			cf := c.Storer.CopyCalls()
+			require.Len(t, cf, c.Copies)
+
+			if c.Inserts == 0 {
+				return
+			}
+
+			// the copy owns its row, keyed under the new document.
+			assert.Equal(t, "new-1", ff[0].F.ID)
+			assert.Equal(t, file.LocationComment, ff[0].F.Location)
+			assert.Equal(t, file.Key("org1", toDocumentID, "new-1"), ff[0].F.StorageKey)
+			assert.Equal(t, toDocumentID, ff[0].F.DocumentID.V)
+
+			if c.Copies == 0 {
+				return
+			}
+
+			assert.Equal(t, file.Folder("org1", _documentID), cf[0].SrcFolder)
+			assert.Equal(t, "old-1", cf[0].SrcID)
+			assert.Equal(t, file.Folder("org1", toDocumentID), cf[0].DstFolder)
+			assert.Equal(t, "new-1", cf[0].DstID)
 		})
 	}
 }

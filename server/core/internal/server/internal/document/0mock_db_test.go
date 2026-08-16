@@ -9,6 +9,7 @@ import (
 
 	"github.com/guregu/null/v5"
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/file"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/rs/xid"
@@ -69,6 +70,9 @@ var _ DB = &DBMock{}
 //			FetchDocumentByBranchIDFunc: func(ctx context.Context, branchID xid.ID, organizationID string) (*documentCore.Document, error) {
 //				panic("mock out the FetchDocumentByBranchID method")
 //			},
+//			FetchDocumentFileFunc: func(ctx context.Context, id string, organizationID string) (*file.File, error) {
+//				panic("mock out the FetchDocumentFile method")
+//			},
 //			FetchDocumentHooksByBranchIDFunc: func(ctx context.Context, branchID xid.ID, organizationID string) ([]hook.Hook, error) {
 //				panic("mock out the FetchDocumentHooksByBranchID method")
 //			},
@@ -95,6 +99,9 @@ var _ DB = &DBMock{}
 //			},
 //			InsertDocumentFunc: func(ctx context.Context, doc documentCore.Document) error {
 //				panic("mock out the InsertDocument method")
+//			},
+//			InsertDocumentFileFunc: func(ctx context.Context, f file.File) error {
+//				panic("mock out the InsertDocumentFile method")
 //			},
 //			InsertDocumentHookFunc: func(ctx context.Context, hk hook.Hook) error {
 //				panic("mock out the InsertDocumentHook method")
@@ -178,6 +185,9 @@ type DBMock struct {
 	// FetchDocumentByBranchIDFunc mocks the FetchDocumentByBranchID method.
 	FetchDocumentByBranchIDFunc func(ctx context.Context, branchID xid.ID, organizationID string) (*documentCore.Document, error)
 
+	// FetchDocumentFileFunc mocks the FetchDocumentFile method.
+	FetchDocumentFileFunc func(ctx context.Context, id string, organizationID string) (*file.File, error)
+
 	// FetchDocumentHooksByBranchIDFunc mocks the FetchDocumentHooksByBranchID method.
 	FetchDocumentHooksByBranchIDFunc func(ctx context.Context, branchID xid.ID, organizationID string) ([]hook.Hook, error)
 
@@ -204,6 +214,9 @@ type DBMock struct {
 
 	// InsertDocumentFunc mocks the InsertDocument method.
 	InsertDocumentFunc func(ctx context.Context, doc documentCore.Document) error
+
+	// InsertDocumentFileFunc mocks the InsertDocumentFile method.
+	InsertDocumentFileFunc func(ctx context.Context, f file.File) error
 
 	// InsertDocumentHookFunc mocks the InsertDocumentHook method.
 	InsertDocumentHookFunc func(ctx context.Context, hk hook.Hook) error
@@ -376,6 +389,15 @@ type DBMock struct {
 			// OrganizationID is the organizationID argument value.
 			OrganizationID string
 		}
+		// FetchDocumentFile holds details about calls to the FetchDocumentFile method.
+		FetchDocumentFile []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// ID is the id argument value.
+			ID string
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+		}
 		// FetchDocumentHooksByBranchID holds details about calls to the FetchDocumentHooksByBranchID method.
 		FetchDocumentHooksByBranchID []struct {
 			// Ctx is the ctx argument value.
@@ -454,6 +476,13 @@ type DBMock struct {
 			Ctx context.Context
 			// Doc is the doc argument value.
 			Doc documentCore.Document
+		}
+		// InsertDocumentFile holds details about calls to the InsertDocumentFile method.
+		InsertDocumentFile []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// F is the f argument value.
+			F file.File
 		}
 		// InsertDocumentHook holds details about calls to the InsertDocumentHook method.
 		InsertDocumentHook []struct {
@@ -557,6 +586,7 @@ type DBMock struct {
 	lockFetchDocumentBranches               sync.RWMutex
 	lockFetchDocumentBranchesUnsafe         sync.RWMutex
 	lockFetchDocumentByBranchID             sync.RWMutex
+	lockFetchDocumentFile                   sync.RWMutex
 	lockFetchDocumentHooksByBranchID        sync.RWMutex
 	lockFetchDocumentHooksByDocumentID      sync.RWMutex
 	lockFetchDocumentMaintainers            sync.RWMutex
@@ -566,6 +596,7 @@ type DBMock struct {
 	lockForkDocumentBranch                  sync.RWMutex
 	lockInsertBranchReviewer                sync.RWMutex
 	lockInsertDocument                      sync.RWMutex
+	lockInsertDocumentFile                  sync.RWMutex
 	lockInsertDocumentHook                  sync.RWMutex
 	lockInsertDocumentSearchJob             sync.RWMutex
 	lockPromoteBranchApprovals              sync.RWMutex
@@ -1240,6 +1271,50 @@ func (mock *DBMock) FetchDocumentByBranchIDCalls() []struct {
 	return calls
 }
 
+// FetchDocumentFile calls FetchDocumentFileFunc.
+func (mock *DBMock) FetchDocumentFile(ctx context.Context, id string, organizationID string) (*file.File, error) {
+	callInfo := struct {
+		Ctx            context.Context
+		ID             string
+		OrganizationID string
+	}{
+		Ctx:            ctx,
+		ID:             id,
+		OrganizationID: organizationID,
+	}
+	mock.lockFetchDocumentFile.Lock()
+	mock.calls.FetchDocumentFile = append(mock.calls.FetchDocumentFile, callInfo)
+	mock.lockFetchDocumentFile.Unlock()
+	if mock.FetchDocumentFileFunc == nil {
+		var (
+			fileOut *file.File
+			errOut  error
+		)
+		return fileOut, errOut
+	}
+	return mock.FetchDocumentFileFunc(ctx, id, organizationID)
+}
+
+// FetchDocumentFileCalls gets all the calls that were made to FetchDocumentFile.
+// Check the length with:
+//
+//	len(mockedDB.FetchDocumentFileCalls())
+func (mock *DBMock) FetchDocumentFileCalls() []struct {
+	Ctx            context.Context
+	ID             string
+	OrganizationID string
+} {
+	var calls []struct {
+		Ctx            context.Context
+		ID             string
+		OrganizationID string
+	}
+	mock.lockFetchDocumentFile.RLock()
+	calls = mock.calls.FetchDocumentFile
+	mock.lockFetchDocumentFile.RUnlock()
+	return calls
+}
+
 // FetchDocumentHooksByBranchID calls FetchDocumentHooksByBranchIDFunc.
 func (mock *DBMock) FetchDocumentHooksByBranchID(ctx context.Context, branchID xid.ID, organizationID string) ([]hook.Hook, error) {
 	callInfo := struct {
@@ -1626,6 +1701,45 @@ func (mock *DBMock) InsertDocumentCalls() []struct {
 	mock.lockInsertDocument.RLock()
 	calls = mock.calls.InsertDocument
 	mock.lockInsertDocument.RUnlock()
+	return calls
+}
+
+// InsertDocumentFile calls InsertDocumentFileFunc.
+func (mock *DBMock) InsertDocumentFile(ctx context.Context, f file.File) error {
+	callInfo := struct {
+		Ctx context.Context
+		F   file.File
+	}{
+		Ctx: ctx,
+		F:   f,
+	}
+	mock.lockInsertDocumentFile.Lock()
+	mock.calls.InsertDocumentFile = append(mock.calls.InsertDocumentFile, callInfo)
+	mock.lockInsertDocumentFile.Unlock()
+	if mock.InsertDocumentFileFunc == nil {
+		var (
+			errOut error
+		)
+		return errOut
+	}
+	return mock.InsertDocumentFileFunc(ctx, f)
+}
+
+// InsertDocumentFileCalls gets all the calls that were made to InsertDocumentFile.
+// Check the length with:
+//
+//	len(mockedDB.InsertDocumentFileCalls())
+func (mock *DBMock) InsertDocumentFileCalls() []struct {
+	Ctx context.Context
+	F   file.File
+} {
+	var calls []struct {
+		Ctx context.Context
+		F   file.File
+	}
+	mock.lockInsertDocumentFile.RLock()
+	calls = mock.calls.InsertDocumentFile
+	mock.lockInsertDocumentFile.RUnlock()
 	return calls
 }
 

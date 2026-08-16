@@ -166,6 +166,48 @@ func Test_Client_Retrieve(t *testing.T) {
 	}
 }
 
+func Test_Client_Copy(t *testing.T) {
+	cc := map[string]struct {
+		Fake *fakeS3
+		Err  error
+	}{
+		"Error returned by CopyObject": {
+			Fake: &fakeS3{
+				objects:  map[string][]byte{"folder/object-id": _testPNG},
+				failCopy: true,
+			},
+			Err: assert.AnError,
+		},
+		"Missing source object": {
+			Fake: &fakeS3{objects: map[string][]byte{}},
+			Err:  assert.AnError,
+		},
+		"Successful copy": {
+			Fake: &fakeS3{
+				objects: map[string][]byte{"folder/object-id": _testPNG},
+			},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			client := prepClient(t, c.Fake)
+
+			err := client.Copy(context.Background(), "folder", "object-id", "other-folder", "copy-id")
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, _testPNG, c.Fake.objects["other-folder/copy-id"])
+			assert.Equal(t, _testPNG, c.Fake.objects["folder/object-id"])
+		})
+	}
+}
+
 func Test_Client_Delete(t *testing.T) {
 	cc := map[string]struct {
 		Fake *fakeS3
@@ -177,6 +219,11 @@ func Test_Client_Delete(t *testing.T) {
 				failDelete: true,
 			},
 			Err: assert.AnError,
+		},
+		// a file row can outlive its object, so the sweep must be able to
+		// drop the row without the delete failing first.
+		"Object is already gone": {
+			Fake: &fakeS3{objects: map[string][]byte{}},
 		},
 		"Successful deletion": {
 			Fake: &fakeS3{

@@ -47,12 +47,12 @@ func prepDocumentHooks(t *testing.T, db *DB, count int, fn func(int, *hook.Hook)
 			fn(i, &hk)
 		}
 
-		if hk.DocumentID.IsZero() {
+		if !hk.DocumentID.Valid {
 			if branch == nil {
 				branch = prepDocumentBranches(t, db, 1, nil)[0]
 			}
 
-			hk.DocumentID = branch.ID
+			hk.DocumentID = null.ValueFrom(branch.ID)
 			hk.OrganizationID = branch.OrganizationID
 			hk.BranchID = null.ValueFrom(branch.BranchID)
 		}
@@ -63,7 +63,7 @@ func prepDocumentHooks(t *testing.T, db *DB, count int, fn func(int, *hook.Hook)
 			SetMap(map[string]any{
 				"id":                 hk.ID,
 				"type":               hk.Type,
-				"fk_document_id":     hk.DocumentID,
+				"fk_document_id":     hk.DocumentID.V,
 				"fk_organization_id": hk.OrganizationID,
 				"fk_branch_id":       hk.BranchID,
 				"block_id":           hk.BlockID,
@@ -104,7 +104,7 @@ func Test_agent_InsertDocumentHook(t *testing.T) {
 				Hook: hook.Hook{
 					ID:             xid.New(),
 					Type:           hook.TypeScheduledReminder,
-					DocumentID:     branch.ID,
+					DocumentID:     null.ValueFrom(branch.ID),
 					OrganizationID: branch.OrganizationID,
 					BranchID:       null.ValueFrom(branch.BranchID),
 					Settings:       processor.Settings(`{"schedule": "0 0 * * * *"}`),
@@ -173,7 +173,7 @@ func Test_agent_FetchDocumentHooksByDocumentID(t *testing.T) {
 	// success
 	hooks := prepDocumentHooks(t, db, 2, nil)
 
-	res, err = db.FetchDocumentHooksByDocumentID(context.Background(), hooks[0].DocumentID, hooks[0].OrganizationID)
+	res, err = db.FetchDocumentHooksByDocumentID(context.Background(), hooks[0].DocumentID.V, hooks[0].OrganizationID)
 	assert.NoError(t, err)
 	testutil.AssertFilterEqual(t, hooks, res)
 }

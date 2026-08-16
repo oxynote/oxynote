@@ -369,7 +369,7 @@ func InitialDocumentContent(dataSourceID xid.ID) (RootBlock, error) {
 		return RootBlock{}, fmt.Errorf("failed to unmarshal available metrics content: %w", err)
 	}
 
-	return applyMetrics(drb, mrb, dataSourceID).Duplicate(), nil
+	return applyMetrics(drb, mrb, dataSourceID).RegenerateUIDs(), nil
 }
 
 // applyMetrics replaces every metricBlock in rb with a metricBlock from
@@ -462,12 +462,17 @@ func NewDocumentContent() RootBlock {
 // Duplicate creates a copy of the document with a new ID, duplicated content
 // (with comment marks removed, nodeCommentId attributes removed, and uid
 // attributes regenerated), and cleared raw content. The new document name
-// includes a timestamp suffix.
-func (d Document) Duplicate(duplicatedBy string) Document {
+// includes a timestamp suffix. The returned map pairs the source document's
+// file ids with the ids the copy refers to them by, so the caller can copy
+// the stored objects.
+func (d Document) Duplicate(duplicatedBy string) (Document, map[string]string) {
 	tstamp := timeutil.Now()
+	id := xid.New()
+
+	content, files := d.Content.Duplicate(d.ID, id)
 
 	return Document{
-		ID:             xid.New(),
+		ID:             id,
 		ParentID:       d.ParentID,
 		OrganizationID: d.OrganizationID,
 		Branch: Branch{
@@ -475,7 +480,7 @@ func (d Document) Duplicate(duplicatedBy string) Document {
 			BranchName:    DefaultBranch,
 			DocumentName:  fmt.Sprintf("%s (%s)", d.DocumentName, tstamp.Format("2006 Jan. 02 15:04")),
 			Icon:          d.Icon,
-			Content:       d.Content.Duplicate(),
+			Content:       content,
 			RawContent:    nil,
 			Protected:     false,
 			CreatedAt:     tstamp,
@@ -483,5 +488,5 @@ func (d Document) Duplicate(duplicatedBy string) Document {
 			UpdatedAt:     tstamp,
 			LastUpdatedBy: null.StringFrom(duplicatedBy),
 		},
-	}
+	}, files
 }

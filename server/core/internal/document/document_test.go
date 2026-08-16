@@ -1,6 +1,7 @@
 package document
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -289,7 +290,9 @@ func Test_Document_Duplicate(t *testing.T) {
 	doc := stubDocument()
 	doc.Protected = true
 
-	dup := doc.Duplicate("user-2")
+	dup, files := doc.Duplicate("user-2")
+
+	assert.Empty(t, files)
 
 	assert.NotEqual(t, doc.ID, dup.ID)
 	assert.NotEqual(t, doc.BranchID, dup.BranchID)
@@ -308,6 +311,33 @@ func Test_Document_Duplicate(t *testing.T) {
 	dupUID, ok := dup.Content.Content[0].UID()
 	require.True(t, ok)
 	assert.NotEqual(t, origUID, dupUID)
+}
+
+func Test_Document_Duplicate_files(t *testing.T) {
+	t.Parallel()
+
+	doc := stubDocument()
+	doc.Content.Content[0] = Block{
+		Type: BlockNodeImageBlock,
+		Attrs: Attributes{
+			"uid": "img1",
+			"src": "https://app.test/core" + fmt.Sprintf(FilePathFormat, doc.ID, "img1"),
+		},
+	}
+
+	dup, files := doc.Duplicate("user-2")
+
+	require.Len(t, files, 1)
+
+	newID, ok := files["img1"]
+	require.True(t, ok)
+
+	// the duplicate refers to its own copy under its own document.
+	assert.Equal(
+		t,
+		"https://app.test/core"+fmt.Sprintf(FilePathFormat, dup.ID, newID),
+		dup.Content.Content[0].Attrs["src"],
+	)
 }
 
 func Test_NewDocumentContent(t *testing.T) {

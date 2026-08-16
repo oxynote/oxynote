@@ -11,6 +11,7 @@ import (
 	"github.com/guregu/null/v5"
 	"github.com/jmoiron/sqlx"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
@@ -407,6 +408,7 @@ func Test_agent_DeleteDocumentBranchByID(t *testing.T) {
 		CancelledContext bool
 		BranchID         xid.ID
 		OrganizationID   string
+		HookID           xid.ID
 		Err              error
 	}
 
@@ -419,6 +421,24 @@ func Test_agent_DeleteDocumentBranchByID(t *testing.T) {
 				BranchID:         branch.BranchID,
 				OrganizationID:   branch.OrganizationID,
 				Err:              assert.AnError,
+			}
+		},
+		// the hook survives its branch: it holds an external watcher that
+		// only the hook manager can tear down, and the row is what points
+		// at it.
+		"Hooks outlive the branch": func(t *testing.T, db *DB) tcase {
+			branch := prepDocumentBranches(t, db, 1, nil)[0]
+
+			hk := prepDocumentHooks(t, db, 1, func(_ int, hk *hook.Hook) {
+				hk.DocumentID = null.ValueFrom(branch.ID)
+				hk.OrganizationID = branch.OrganizationID
+				hk.BranchID = null.ValueFrom(branch.BranchID)
+			})[0]
+
+			return tcase{
+				BranchID:       branch.BranchID,
+				OrganizationID: branch.OrganizationID,
+				HookID:         hk.ID,
 			}
 		},
 		"Successful delete": func(t *testing.T, db *DB) tcase {
@@ -462,6 +482,20 @@ func Test_agent_DeleteDocumentBranchByID(t *testing.T) {
 
 			err = db.sql.Get(&id, q, args...)
 			testutil.AssertEqualError(t, sql.ErrNoRows, err)
+
+			if c.HookID.IsZero() {
+				return
+			}
+
+			var hk hook.Hook
+
+			q, args = db.selectDocumentHook(db.builder.Select()).
+				Where(sq.Eq{"document_hooks.id": c.HookID}).
+				MustSql()
+
+			require.NoError(t, db.sql.Get(&hk, q, args...))
+			assert.False(t, hk.BranchID.Valid)
+			assert.True(t, hk.DocumentID.Valid, "the document itself is still there")
 		})
 	}
 }
@@ -607,11 +641,128 @@ func Test_agent_FetchDocumentUnsafeByBranchID(t *testing.T) {
 	testutil.AssertFilterEqual(t, branch, res)
 }
 
+// prepChangelogs writes count snapshots of the document's branch, one per
+// aggregation bucket so each lands as its own entry, oldest first.
+func prepChangelogs(t *testing.T, db *DB, doc *document.Document, count int) []document.Changelog {
+	t.Helper()
+
+	res := make([]document.Changelog, count)
+	base := timeutil.Now().Truncate(time.Second)
+
+	for i := range count {
+		doc.UpdatedAt = base.Add(-time.Duration(count-i) * time.Hour)
+		clog := doc.Changelog()
+
+		require.NoError(t, db.insertDocumentBranchChangelog(
+			context.Background(),
+			doc.ID,
+			doc.BranchID,
+			clog,
+		))
+
+		res[i] = clog
+	}
+
+	return res
+}
+
+// countChangelogs returns how many snapshots the branch currently has.
+func countChangelogs(t *testing.T, db *DB, branchID xid.ID) int {
+	t.Helper()
+
+	q, args := db.builder.Select("COUNT(*)").
+		From("document_branch_changelogs").
+		Where(sq.Eq{"fk_branch_id": branchID}).
+		MustSql()
+
+	var count int
+
+	require.NoError(t, db.sql.Get(&count, q, args...))
+
+	return count
+}
+
+func Test_agent_trimDocumentBranchChangelogs(t *testing.T) {
+	cc := map[string]struct {
+		Max       uint64
+		Remaining int
+	}{
+		"Zero keeps every snapshot": {
+			Max:       0,
+			Remaining: 4,
+		},
+		"Only the newest snapshots survive": {
+			Max:       2,
+			Remaining: 2,
+		},
+		"Limit above the count changes nothing": {
+			Max:       10,
+			Remaining: 4,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := prepTempDB(t)
+			doc := prepDocuments(t, db, 1, nil)[0]
+
+			clogs := prepChangelogs(t, db, doc, 4)
+
+			db.opts.MaxDocumentChangelogs = c.Max
+
+			require.NoError(t, db.trimDocumentBranchChangelogs(context.Background(), doc.BranchID))
+			assert.Equal(t, c.Remaining, countChangelogs(t, db, doc.BranchID))
+
+			if c.Max == 0 || c.Remaining == len(clogs) {
+				return
+			}
+
+			// the survivors are the newest ones.
+			var ids []string
+
+			q, args := db.builder.Select("id").
+				From("document_branch_changelogs").
+				Where(sq.Eq{"fk_branch_id": doc.BranchID}).
+				MustSql()
+
+			require.NoError(t, db.sql.Select(&ids, q, args...))
+			assert.ElementsMatch(t, []string{clogs[2].ID, clogs[3].ID}, ids)
+		})
+	}
+}
+
+func Test_agent_DeleteExpiredDocumentBranchChangelogs(t *testing.T) {
+	t.Parallel()
+
+	db := prepTempDB(t)
+	doc := prepDocuments(t, db, 1, nil)[0]
+
+	clogs := prepChangelogs(t, db, doc, 4)
+	require.Equal(t, 4, countChangelogs(t, db, doc.BranchID))
+
+	// nothing is old enough yet.
+	require.NoError(t, db.DeleteExpiredDocumentBranchChangelogs(
+		context.Background(),
+		clogs[0].CreatedAt.Add(-time.Second),
+	))
+	assert.Equal(t, 4, countChangelogs(t, db, doc.BranchID))
+
+	// everything created before the newest snapshot goes.
+	require.NoError(t, db.DeleteExpiredDocumentBranchChangelogs(
+		context.Background(),
+		clogs[3].CreatedAt,
+	))
+	assert.Equal(t, 1, countChangelogs(t, db, doc.BranchID))
+}
+
 func Test_agent_insertDocumentBranchChangelog(t *testing.T) {
 	type tcase struct {
 		DocumentID xid.ID
 		BranchID   xid.ID
 		Changelog  document.Changelog
+		Trimmed    int
 		Err        error
 	}
 
@@ -634,6 +785,21 @@ func Test_agent_insertDocumentBranchChangelog(t *testing.T) {
 				DocumentID: doc.ID,
 				BranchID:   doc.BranchID,
 				Changelog:  doc.Changelog(),
+			}
+		},
+		"Insert trims the branch down to the retained snapshots": func(t *testing.T, db *DB) tcase {
+			doc := prepDocuments(t, db, 1, nil)[0]
+
+			prepChangelogs(t, db, doc, 3)
+
+			db.opts.MaxDocumentChangelogs = 2
+			doc.UpdatedAt = timeutil.Now().Truncate(time.Second)
+
+			return tcase{
+				DocumentID: doc.ID,
+				BranchID:   doc.BranchID,
+				Changelog:  doc.Changelog(),
+				Trimmed:    2,
 			}
 		},
 		"Successful update of an existing entry": func(t *testing.T, db *DB) tcase {
@@ -665,6 +831,10 @@ func Test_agent_insertDocumentBranchChangelog(t *testing.T) {
 
 			err := db.insertDocumentBranchChangelog(context.Background(), c.DocumentID, c.BranchID, c.Changelog)
 			testutil.RequireEqualError(t, c.Err, err)
+
+			if c.Trimmed != 0 {
+				assert.Equal(t, c.Trimmed, countChangelogs(t, db, c.BranchID))
+			}
 
 			if err != nil {
 				return

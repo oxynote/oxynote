@@ -7,7 +7,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/file"
 	"github.com/rs/xid"
 )
 
@@ -24,10 +24,13 @@ var _ DB = &DBMock{}
 //			CheckDocumentExistsFunc: func(ctx context.Context, id xid.ID, organizationID string) error {
 //				panic("mock out the CheckDocumentExists method")
 //			},
-//			FetchDocumentFileFunc: func(ctx context.Context, blockID string, organizationID string) (*document.File, error) {
+//			DeleteDocumentFileFunc: func(ctx context.Context, id string) error {
+//				panic("mock out the DeleteDocumentFile method")
+//			},
+//			FetchDocumentFileFunc: func(ctx context.Context, blockID string, organizationID string) (*file.File, error) {
 //				panic("mock out the FetchDocumentFile method")
 //			},
-//			InsertDocumentFileFunc: func(ctx context.Context, f document.File) error {
+//			InsertDocumentFileFunc: func(ctx context.Context, f file.File) error {
 //				panic("mock out the InsertDocumentFile method")
 //			},
 //		}
@@ -40,11 +43,14 @@ type DBMock struct {
 	// CheckDocumentExistsFunc mocks the CheckDocumentExists method.
 	CheckDocumentExistsFunc func(ctx context.Context, id xid.ID, organizationID string) error
 
+	// DeleteDocumentFileFunc mocks the DeleteDocumentFile method.
+	DeleteDocumentFileFunc func(ctx context.Context, id string) error
+
 	// FetchDocumentFileFunc mocks the FetchDocumentFile method.
-	FetchDocumentFileFunc func(ctx context.Context, blockID string, organizationID string) (*document.File, error)
+	FetchDocumentFileFunc func(ctx context.Context, blockID string, organizationID string) (*file.File, error)
 
 	// InsertDocumentFileFunc mocks the InsertDocumentFile method.
-	InsertDocumentFileFunc func(ctx context.Context, f document.File) error
+	InsertDocumentFileFunc func(ctx context.Context, f file.File) error
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -56,6 +62,13 @@ type DBMock struct {
 			ID xid.ID
 			// OrganizationID is the organizationID argument value.
 			OrganizationID string
+		}
+		// DeleteDocumentFile holds details about calls to the DeleteDocumentFile method.
+		DeleteDocumentFile []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// ID is the id argument value.
+			ID string
 		}
 		// FetchDocumentFile holds details about calls to the FetchDocumentFile method.
 		FetchDocumentFile []struct {
@@ -71,10 +84,11 @@ type DBMock struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
 			// F is the f argument value.
-			F document.File
+			F file.File
 		}
 	}
 	lockCheckDocumentExists sync.RWMutex
+	lockDeleteDocumentFile  sync.RWMutex
 	lockFetchDocumentFile   sync.RWMutex
 	lockInsertDocumentFile  sync.RWMutex
 }
@@ -122,8 +136,47 @@ func (mock *DBMock) CheckDocumentExistsCalls() []struct {
 	return calls
 }
 
+// DeleteDocumentFile calls DeleteDocumentFileFunc.
+func (mock *DBMock) DeleteDocumentFile(ctx context.Context, id string) error {
+	callInfo := struct {
+		Ctx context.Context
+		ID  string
+	}{
+		Ctx: ctx,
+		ID:  id,
+	}
+	mock.lockDeleteDocumentFile.Lock()
+	mock.calls.DeleteDocumentFile = append(mock.calls.DeleteDocumentFile, callInfo)
+	mock.lockDeleteDocumentFile.Unlock()
+	if mock.DeleteDocumentFileFunc == nil {
+		var (
+			errOut error
+		)
+		return errOut
+	}
+	return mock.DeleteDocumentFileFunc(ctx, id)
+}
+
+// DeleteDocumentFileCalls gets all the calls that were made to DeleteDocumentFile.
+// Check the length with:
+//
+//	len(mockedDB.DeleteDocumentFileCalls())
+func (mock *DBMock) DeleteDocumentFileCalls() []struct {
+	Ctx context.Context
+	ID  string
+} {
+	var calls []struct {
+		Ctx context.Context
+		ID  string
+	}
+	mock.lockDeleteDocumentFile.RLock()
+	calls = mock.calls.DeleteDocumentFile
+	mock.lockDeleteDocumentFile.RUnlock()
+	return calls
+}
+
 // FetchDocumentFile calls FetchDocumentFileFunc.
-func (mock *DBMock) FetchDocumentFile(ctx context.Context, blockID string, organizationID string) (*document.File, error) {
+func (mock *DBMock) FetchDocumentFile(ctx context.Context, blockID string, organizationID string) (*file.File, error) {
 	callInfo := struct {
 		Ctx            context.Context
 		BlockID        string
@@ -138,7 +191,7 @@ func (mock *DBMock) FetchDocumentFile(ctx context.Context, blockID string, organ
 	mock.lockFetchDocumentFile.Unlock()
 	if mock.FetchDocumentFileFunc == nil {
 		var (
-			fileOut *document.File
+			fileOut *file.File
 			errOut  error
 		)
 		return fileOut, errOut
@@ -167,10 +220,10 @@ func (mock *DBMock) FetchDocumentFileCalls() []struct {
 }
 
 // InsertDocumentFile calls InsertDocumentFileFunc.
-func (mock *DBMock) InsertDocumentFile(ctx context.Context, f document.File) error {
+func (mock *DBMock) InsertDocumentFile(ctx context.Context, f file.File) error {
 	callInfo := struct {
 		Ctx context.Context
-		F   document.File
+		F   file.File
 	}{
 		Ctx: ctx,
 		F:   f,
@@ -193,11 +246,11 @@ func (mock *DBMock) InsertDocumentFile(ctx context.Context, f document.File) err
 //	len(mockedDB.InsertDocumentFileCalls())
 func (mock *DBMock) InsertDocumentFileCalls() []struct {
 	Ctx context.Context
-	F   document.File
+	F   file.File
 } {
 	var calls []struct {
 		Ctx context.Context
-		F   document.File
+		F   file.File
 	}
 	mock.lockInsertDocumentFile.RLock()
 	calls = mock.calls.InsertDocumentFile

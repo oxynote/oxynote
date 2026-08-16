@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/file"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/internal/storage"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
@@ -111,15 +111,23 @@ func Test_Handler_UploadDocumentFile(t *testing.T) {
 			}
 
 			assert.Equal(t, "f1", ff[0].F.ID)
-			assert.Equal(t, document.LocationDocument, ff[0].F.Location)
-			assert.Equal(t, _documentID, ff[0].F.DocumentID)
-			assert.Equal(t, "org1", ff[0].F.OrganizationID)
+			assert.Equal(t, file.LocationDocument, ff[0].F.Location)
+			assert.Equal(t, "organizations/org1/documents/"+_documentID.String()+"/files/f1", ff[0].F.StorageKey)
+			assert.Equal(t, _documentID, ff[0].F.DocumentID.V)
+			assert.Equal(t, "org1", ff[0].F.OrganizationID.String)
 		}
 	}
 
 	wasDeleteCalled := func(count int) check {
-		return func(t *testing.T, _ *DBMock, storer *StorerMock, _ *httptest.ResponseRecorder) {
-			assert.Len(t, storer.DeleteCalls(), count)
+		return func(t *testing.T, db *DBMock, _ *StorerMock, _ *httptest.ResponseRecorder) {
+			ff := db.DeleteDocumentFileCalls()
+			require.Len(t, ff, count)
+
+			if count == 0 {
+				return
+			}
+
+			assert.Equal(t, "f1", ff[0].ID)
 		}
 	}
 
@@ -193,7 +201,22 @@ func Test_Handler_UploadDocumentFile(t *testing.T) {
 				wasUploadCalled(0),
 			),
 		},
-		"Storer upload error": {
+		"DB insert error": {
+			DB: &DBMock{
+				InsertDocumentFileFunc: func(context.Context, file.File) error {
+					return errors.New("boom")
+				},
+			},
+			Storer: &StorerMock{},
+			Query:  "?id=f1&location=document",
+			Checks: checks(
+				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				wasInsertCalled(1),
+				wasUploadCalled(0),
+				wasDeleteCalled(0),
+			),
+		},
+		"Storer upload error rolls the row back": {
 			DB: &DBMock{},
 			Storer: &StorerMock{
 				UploadFunc: func(context.Context, string, string, io.Reader) error {
@@ -203,34 +226,20 @@ func Test_Handler_UploadDocumentFile(t *testing.T) {
 			Query: "?id=f1&location=document",
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
-				wasUploadCalled(1),
-				wasInsertCalled(0),
-			),
-		},
-		"DB insert error triggers cleanup": {
-			DB: &DBMock{
-				InsertDocumentFileFunc: func(context.Context, document.File) error {
-					return errors.New("boom")
-				},
-			},
-			Storer: &StorerMock{},
-			Query:  "?id=f1&location=document",
-			Checks: checks(
-				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
-				wasUploadCalled(1),
 				wasInsertCalled(1),
+				wasUploadCalled(1),
 				wasDeleteCalled(1),
 			),
 		},
-		"DB insert error with failing cleanup": {
+		"Storer upload error with failing rollback": {
 			DB: &DBMock{
-				InsertDocumentFileFunc: func(context.Context, document.File) error {
-					return errors.New("boom")
+				DeleteDocumentFileFunc: func(context.Context, string) error {
+					return errors.New("cleanup boom")
 				},
 			},
 			Storer: &StorerMock{
-				DeleteFunc: func(context.Context, string, string) error {
-					return errors.New("cleanup boom")
+				UploadFunc: func(context.Context, string, string, io.Reader) error {
+					return errors.New("boom")
 				},
 			},
 			Query: "?id=f1&location=document",
@@ -253,7 +262,7 @@ func Test_Handler_UploadDocumentFile(t *testing.T) {
 				func(t *testing.T, db *DBMock, _ *StorerMock, _ *httptest.ResponseRecorder) {
 					ff := db.InsertDocumentFileCalls()
 					require.Len(t, ff, 1)
-					assert.Equal(t, document.LocationComment, ff[0].F.Location)
+					assert.Equal(t, file.LocationComment, ff[0].F.Location)
 				},
 				wasDeleteCalled(0),
 			),
@@ -304,6 +313,18 @@ func Test_Handler_UploadDocumentFile(t *testing.T) {
 				ch(t, c.DB, c.Storer, rec)
 			}
 		})
+	}
+}
+
+// stubFileDB returns a db mock whose file record belongs to the given
+// document, which is what the ownership check compares the url against.
+func stubFileDB(documentID xid.ID) *DBMock {
+	return &DBMock{
+		FetchDocumentFileFunc: func(_ context.Context, id, organizationID string) (*file.File, error) {
+			f := file.NewFile(id, file.LocationDocument, "key", documentID, organizationID)
+
+			return &f, nil
+		},
 	}
 }
 
@@ -387,7 +408,7 @@ func Test_Handler_RetrieveDocumentFile(t *testing.T) {
 		},
 		"File record fetch error": {
 			DB: &DBMock{
-				FetchDocumentFileFunc: func(context.Context, string, string) (*document.File, error) {
+				FetchDocumentFileFunc: func(context.Context, string, string) (*file.File, error) {
 					return nil, errors.New("boom")
 				},
 			},
@@ -400,8 +421,20 @@ func Test_Handler_RetrieveDocumentFile(t *testing.T) {
 				wasRetrieveCalled(0),
 			),
 		},
+		"File belongs to another document": {
+			DB:     stubFileDB(xid.New()),
+			Storer: &StorerMock{},
+			Checks: checks(
+				func(t *testing.T, _ *DBMock, _ *StorerMock, rec *httptest.ResponseRecorder) {
+					assert.Equal(t, http.StatusNotFound, rec.Code)
+					assert.JSONEq(t, `{"code":"general","message":"not found"}`, rec.Body.String())
+				},
+				wasFetchCalled(1),
+				wasRetrieveCalled(0),
+			),
+		},
 		"Storer retrieval error": {
-			DB: &DBMock{},
+			DB: stubFileDB(_documentID),
 			Storer: &StorerMock{
 				RetrieveFunc: func(context.Context, string, string) (*storage.ObjectInfo, bool, error) {
 					return nil, false, errors.New("boom")
@@ -415,7 +448,7 @@ func Test_Handler_RetrieveDocumentFile(t *testing.T) {
 			),
 		},
 		"File object not found": {
-			DB: &DBMock{},
+			DB: stubFileDB(_documentID),
 			Storer: &StorerMock{
 				RetrieveFunc: func(context.Context, string, string) (*storage.ObjectInfo, bool, error) {
 					return nil, false, nil
@@ -429,7 +462,7 @@ func Test_Handler_RetrieveDocumentFile(t *testing.T) {
 			),
 		},
 		"Matching If-None-Match": {
-			DB: &DBMock{},
+			DB: stubFileDB(_documentID),
 			Storer: &StorerMock{
 				RetrieveFunc: func(context.Context, string, string) (*storage.ObjectInfo, bool, error) {
 					return &storage.ObjectInfo{
@@ -448,7 +481,7 @@ func Test_Handler_RetrieveDocumentFile(t *testing.T) {
 			),
 		},
 		"Successful retrieval": {
-			DB: &DBMock{},
+			DB: stubFileDB(_documentID),
 			Storer: &StorerMock{
 				RetrieveFunc: func(context.Context, string, string) (*storage.ObjectInfo, bool, error) {
 					return &storage.ObjectInfo{

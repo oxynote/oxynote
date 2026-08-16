@@ -11,12 +11,14 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/apps/github"
 	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/file"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
+	"github.com/oxynote/oxynote/server/core/pkg/logutil"
 	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 	"github.com/rs/xid"
 )
@@ -40,6 +42,7 @@ type Handler struct {
 	webchangeClient *webchange.Client
 	searchGateway   SearchGateway
 	notifPub        notification.Publisher
+	storer          Storer
 
 	tree struct {
 		changeCallback func(organizationID string, parentId null.Value[xid.ID])
@@ -66,6 +69,7 @@ func NewHandler(
 	webchangeClient *webchange.Client,
 	searchGateway SearchGateway,
 	notifPub notification.Publisher,
+	storer Storer,
 ) *Handler {
 	return &Handler{
 		log:             log,
@@ -74,6 +78,7 @@ func NewHandler(
 		webchangeClient: webchangeClient,
 		searchGateway:   searchGateway,
 		notifPub:        notifPub,
+		storer:          storer,
 	}
 }
 
@@ -1014,7 +1019,7 @@ func (h *Handler) DuplicateDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	duplDoc := doc.Duplicate(session.UserID)
+	duplDoc, files := doc.Duplicate(session.UserID)
 
 	var tx Tx
 
@@ -1069,6 +1074,8 @@ func (h *Handler) DuplicateDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.copyDocumentFiles(r.Context(), files, id, duplDoc.ID, session.ActiveOrganizationID)
+
 	if h.tree.changeCallback != nil {
 		h.tree.changeCallback(session.ActiveOrganizationID, duplDoc.ParentID)
 	}
@@ -1079,6 +1086,65 @@ func (h *Handler) DuplicateDocument(w http.ResponseWriter, r *http.Request) {
 		duplDoc,
 		http.StatusCreated,
 	)
+}
+
+// copyDocumentFiles gives the duplicated document its own copies of the
+// source document's files.
+//
+// It runs after the document is committed, and each copy writes its row
+// before the object: a crash can then only leave a row without an object,
+// which the file manager reaps, whereas an object without a row would be
+// invisible to every cleanup path. A failure here leaves the duplicate with
+// broken images rather than failing the duplication outright — the document
+// exists, and deleting it reclaims whatever was copied.
+func (h *Handler) copyDocumentFiles(
+	ctx context.Context,
+	files map[string]string,
+	fromDocumentID, toDocumentID xid.ID,
+	organizationID string,
+) {
+	for oldID, newID := range files {
+		f, err := h.db.FetchDocumentFile(ctx, oldID, organizationID)
+		if err != nil {
+			// the content referenced a file that has no row, so there is
+			// nothing to copy; the duplicate keeps the dangling reference
+			// its source already had.
+			h.log.Warn(
+				"cannot fetch document file for duplication",
+				slog.String("error", err.Error()),
+				slog.String("file_id", oldID),
+			)
+
+			continue
+		}
+
+		fromFolder := file.Folder(organizationID, fromDocumentID)
+		toFolder := file.Folder(organizationID, toDocumentID)
+
+		err = h.db.InsertDocumentFile(ctx, file.NewFile(
+			newID,
+			f.Location,
+			file.Key(organizationID, toDocumentID, newID),
+			toDocumentID,
+			organizationID,
+		))
+		if err != nil {
+			logutil.Critical(h.log, err).Error(
+				"cannot insert duplicated document file",
+				slog.String("file_id", newID),
+			)
+
+			continue
+		}
+
+		err = h.storer.Copy(ctx, fromFolder, oldID, toFolder, newID)
+		if err != nil {
+			logutil.Critical(h.log, err).Error(
+				"cannot copy duplicated document file",
+				slog.String("file_id", newID),
+			)
+		}
+	}
 }
 
 // FetchDocumentBranches handles the retrieval of all branches for a document.
@@ -1298,6 +1364,7 @@ type DBAgent interface {
 	BranchesDBAgent
 	TreeDBAgent
 	MaintainersDBAgent
+	FilesDBAgent
 
 	// DeleteDocumentCommentsByBranchID should delete all comments for a branch.
 	DeleteDocumentCommentsByBranchID(ctx context.Context, branchID xid.ID, organizationID string) error
@@ -1430,6 +1497,26 @@ type ReviewersDBAgent interface {
 
 	// PromoteBranchApprovals should promote reviewer approvals from one branch to another.
 	PromoteBranchApprovals(ctx context.Context, fromBranchID, toBranchID xid.ID, organizationID string) error
+}
+
+// FilesDBAgent is an interface that handles communication with the document
+// files database, covering the file operations needed when a document is
+// duplicated.
+type FilesDBAgent interface {
+	// FetchDocumentFile should fetch the document file for the given block id.
+	FetchDocumentFile(ctx context.Context, id, organizationID string) (*file.File, error)
+
+	// InsertDocumentFile should insert the document file.
+	InsertDocumentFile(ctx context.Context, f file.File) error
+}
+
+// Storer is an interface that defines the object storage operations needed
+// when a document is duplicated.
+//
+//go:generate ../../../../scripts/codegen/mock -t internal Storer
+type Storer interface {
+	// Copy should copy an object within the storage.
+	Copy(ctx context.Context, srcFolder, srcID, dstFolder, dstID string) error
 }
 
 // SearchGateway is an interface that handles communication with the search engine.

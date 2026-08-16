@@ -23,6 +23,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
 	"github.com/oxynote/oxynote/server/core/internal/buildinfo"
 	"github.com/oxynote/oxynote/server/core/internal/db"
+	fileMan "github.com/oxynote/oxynote/server/core/internal/document/file/manager"
 	hookMan "github.com/oxynote/oxynote/server/core/internal/document/hook/manager"
 	"github.com/oxynote/oxynote/server/core/internal/email"
 	"github.com/oxynote/oxynote/server/core/internal/notification"
@@ -46,6 +47,14 @@ const (
 	// _maxNotifications specifies the maximum number of notifications
 	// retained per user.
 	_maxNotifications = 500
+
+	// _defaultMaxDocumentChangelogs specifies how many changelog snapshots
+	// are retained per document branch when the environment says nothing.
+	_defaultMaxDocumentChangelogs = 100
+
+	// _defaultDocumentChangelogRetention specifies how long changelog
+	// snapshots are retained when the environment says nothing.
+	_defaultDocumentChangelogRetention = time.Hour * 24 * 90
 
 	// _sentryDedupInterval specifies how long a reported error suppresses
 	// duplicate reports.
@@ -72,9 +81,34 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 	metrics, cleanup := newMetrics(log)
 	defer cleanup()
 
+	maxDocumentChangelogs, err := parseUintEnv("DB_MAX_DOCUMENT_CHANGELOGS", _defaultMaxDocumentChangelogs)
+	if err != nil {
+		err = ioutil.AppendCloseErr(ioutil.MultiCloser(true, closers...), err)
+
+		log.With("error", err).
+			Error("cannot read the configuration")
+
+		return
+	}
+
+	documentChangelogRetention, err := parseDurationEnv(
+		"DB_DOCUMENT_CHANGELOG_RETENTION",
+		_defaultDocumentChangelogRetention,
+	)
+	if err != nil {
+		err = ioutil.AppendCloseErr(ioutil.MultiCloser(true, closers...), err)
+
+		log.With("error", err).
+			Error("cannot read the configuration")
+
+		return
+	}
+
 	dbc, err := db.New(log, metrics, db.Options{
 		DSN:                                buildinfo.Getenv("DB_DSN"),
 		MaxNotifications:                   _maxNotifications,
+		MaxDocumentChangelogs:              maxDocumentChangelogs,
+		DocumentChangelogRetention:         documentChangelogRetention,
 		DataSourceCredentialsSigningSecret: buildinfo.Getenv("DB_DATA_SOURCE_CREDENTIALS_SIGNING_SECRET"),
 	})
 	if err != nil {
@@ -303,6 +337,9 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 
 	hooksMan := hookMan.NewManager(log, dbc, githubMan, webchangeClient, notifMan)
 	searchManager := searchMan.NewManager(log, dbc, searchClient)
+	filesMan := fileMan.NewManager(log, dbc, storageClient, fileMan.Options{
+		ChangelogRetention: documentChangelogRetention,
+	})
 
 	closers = append([]io.Closer{srv}, closers...)
 
@@ -322,6 +359,9 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 	})
 	backgroundWg.Go(func() {
 		searchManager.Start(termCtx)
+	})
+	backgroundWg.Go(func() {
+		filesMan.Start(termCtx)
 	})
 
 	<-termCtx.Done()
@@ -404,6 +444,38 @@ func newMetrics(log *slog.Logger) (metricutil.Factory, func()) {
 		metricsCancel()
 		<-metricsStopCh
 	}
+}
+
+// parseUintEnv reads an unsigned integer from the environment, falling back
+// to the given default when the variable is unset.
+func parseUintEnv(name string, def uint64) (uint64, error) {
+	v := buildinfo.Getenv(name)
+	if v == "" {
+		return def, nil
+	}
+
+	res, err := strconv.ParseUint(v, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s: %w", name, err)
+	}
+
+	return res, nil
+}
+
+// parseDurationEnv reads a duration from the environment, falling back to
+// the given default when the variable is unset.
+func parseDurationEnv(name string, def time.Duration) (time.Duration, error) {
+	v := buildinfo.Getenv(name)
+	if v == "" {
+		return def, nil
+	}
+
+	res, err := time.ParseDuration(v)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s: %w", name, err)
+	}
+
+	return res, nil
 }
 
 // parseOrigins splits the configured allowed-origin list. An empty value

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	hookCore "github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
@@ -45,7 +46,7 @@ func scheduledHook(typ hookCore.Type) *hookCore.Hook {
 	return &hookCore.Hook{
 		ID:             _hookID,
 		Type:           typ,
-		DocumentID:     _documentID,
+		DocumentID:     null.ValueFrom(_documentID),
 		OrganizationID: "org1",
 		Settings:       processor.Settings(`{"scale":"linear"}`),
 	}
@@ -202,7 +203,7 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 			}
 
 			assert.Equal(t, hookCore.TypeScheduledReminder, ff[0].Hk.Type)
-			assert.Equal(t, _documentID, ff[0].Hk.DocumentID)
+			assert.Equal(t, null.ValueFrom(_documentID), ff[0].Hk.DocumentID)
 			assert.Equal(t, "org1", ff[0].Hk.OrganizationID)
 			assert.NotEmpty(t, ff[0].Hk.State)
 		}

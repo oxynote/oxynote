@@ -11,6 +11,8 @@ import (
 	sq "github.com/Masterminds/squirrel"
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/file"
+	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
@@ -851,6 +853,8 @@ func Test_agent_DeleteDocument(t *testing.T) {
 	type tcase struct {
 		ID             xid.ID
 		OrganizationID string
+		FileID         string
+		HookID         xid.ID
 		Err            error
 	}
 
@@ -861,6 +865,30 @@ func Test_agent_DeleteDocument(t *testing.T) {
 			return tcase{
 				ID:             doc.ID,
 				OrganizationID: doc.OrganizationID,
+			}
+		},
+		// files and hooks outlive their document on purpose: the row is
+		// the only record of the object or the external watcher, so the
+		// managers need it to reclaim them.
+		"External resources outlive the document": func(t *testing.T, db *DB) tcase {
+			doc := prepDocuments(t, db, 1, nil)[0]
+
+			f := prepDocumentFiles(t, db, 1, func(_ int, f *file.File) {
+				f.DocumentID = null.ValueFrom(doc.ID)
+				f.OrganizationID = null.StringFrom(doc.OrganizationID)
+			})[0]
+
+			hk := prepDocumentHooks(t, db, 1, func(_ int, hk *hook.Hook) {
+				hk.DocumentID = null.ValueFrom(doc.ID)
+				hk.OrganizationID = doc.OrganizationID
+				hk.BranchID = null.ValueFrom(doc.BranchID)
+			})[0]
+
+			return tcase{
+				ID:             doc.ID,
+				OrganizationID: doc.OrganizationID,
+				FileID:         f.ID,
+				HookID:         hk.ID,
 			}
 		},
 	}
@@ -889,6 +917,31 @@ func Test_agent_DeleteDocument(t *testing.T) {
 
 			err = db.sql.Get(&doc, q, args...)
 			require.Equal(t, sql.ErrNoRows, err)
+
+			if c.FileID == "" {
+				return
+			}
+
+			var f file.File
+
+			q, args = db.selectDocumentFile(db.builder.Select()).
+				Where(sq.Eq{"document_files.id": c.FileID}).
+				MustSql()
+
+			require.NoError(t, db.sql.Get(&f, q, args...))
+			assert.False(t, f.DocumentID.Valid)
+			assert.True(t, f.Orphaned())
+			assert.NotEmpty(t, f.StorageKey, "the object stays reachable without its document")
+
+			var hk hook.Hook
+
+			q, args = db.selectDocumentHook(db.builder.Select()).
+				Where(sq.Eq{"document_hooks.id": c.HookID}).
+				MustSql()
+
+			require.NoError(t, db.sql.Get(&hk, q, args...))
+			assert.False(t, hk.DocumentID.Valid)
+			assert.False(t, hk.BranchID.Valid)
 		})
 	}
 }

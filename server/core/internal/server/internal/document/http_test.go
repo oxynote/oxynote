@@ -65,6 +65,7 @@ func newTestHandler(db DB, pub *fakePublisher) (*Handler, *callbackCounts) {
 		log:      slog.New(slog.DiscardHandler),
 		db:       db,
 		notifPub: pub,
+		storer:   &StorerMock{},
 	}
 
 	hdl.tree.changeCallback = func(string, null.Value[xid.ID]) { cnt.tree++ }
@@ -152,13 +153,15 @@ func Test_NewHandler(t *testing.T) {
 	db := &DBMock{}
 	gw := &SearchGatewayMock{}
 	pub := &fakePublisher{}
+	st := &StorerMock{}
 
-	hdl := NewHandler(slog.New(slog.DiscardHandler), db, nil, nil, gw, pub)
+	hdl := NewHandler(slog.New(slog.DiscardHandler), db, nil, nil, gw, pub, st)
 	require.NotNil(t, hdl)
 	assert.NotNil(t, hdl.log)
 	assert.Same(t, db, hdl.db)
 	assert.Same(t, gw, hdl.searchGateway)
 	assert.Same(t, pub, hdl.notifPub)
+	assert.Same(t, st, hdl.storer)
 	assert.Nil(t, hdl.githubMan)
 	assert.Nil(t, hdl.webchangeClient)
 }

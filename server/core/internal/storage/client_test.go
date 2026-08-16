@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -192,6 +193,9 @@ type fakeS3 struct {
 
 	// failDelete forces object removal to fail.
 	failDelete bool
+
+	// failCopy forces server-side object copies to fail.
+	failCopy bool
 }
 
 // ServeHTTP dispatches the S3 REST requests issued by the minio client.
@@ -199,9 +203,17 @@ func (f *fakeS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
+	// the maps are initialized independently: a fixture that seeds only
+	// objects still needs the other two.
 	if f.objects == nil {
 		f.objects = make(map[string][]byte)
+	}
+
+	if f.contentTypes == nil {
 		f.contentTypes = make(map[string]string)
+	}
+
+	if f.parts == nil {
 		f.parts = make(map[string][]byte)
 	}
 
@@ -224,6 +236,8 @@ func (f *fakeS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.handleMakeBucket(w)
 	case r.Method == http.MethodPost && query.Has("uploads"):
 		f.handleInitiateUpload(w, r, key)
+	case r.Method == http.MethodPut && r.Header.Get("X-Amz-Copy-Source") != "":
+		f.handleCopy(w, r, key)
 	case r.Method == http.MethodPut && query.Get("uploadId") != "":
 		f.handleUploadPart(w, r, key)
 	case r.Method == http.MethodPost && query.Get("uploadId") != "":
@@ -364,6 +378,41 @@ func (f *fakeS3) handleDelete(w http.ResponseWriter, key string) {
 	delete(f.objects, key)
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleCopy serves server-side object copies, which arrive as a PUT
+// naming their source in the x-amz-copy-source header.
+func (f *fakeS3) handleCopy(w http.ResponseWriter, r *http.Request, key string) {
+	if f.failCopy {
+		writeS3Error(w, http.StatusForbidden, "AccessDenied")
+
+		return
+	}
+
+	src, err := url.PathUnescape(strings.TrimPrefix(r.Header.Get("X-Amz-Copy-Source"), "/"))
+	if err != nil {
+		writeS3Error(w, http.StatusBadRequest, "InvalidArgument")
+
+		return
+	}
+
+	// the header names the source as "<bucket>/<key>".
+	_, srcKey, _ := strings.Cut(src, "/")
+
+	data, ok := f.objects[srcKey]
+	if !ok {
+		writeS3Error(w, http.StatusNotFound, "NoSuchKey")
+
+		return
+	}
+
+	f.objects[key] = data
+	f.contentTypes[key] = f.contentTypes[srcKey]
+
+	fmt.Fprint( //nolint:errcheck // test server response errors are irrelevant
+		w,
+		`<?xml version="1.0"?><CopyObjectResult><ETag>"test-etag"</ETag><LastModified>2006-01-02T15:04:05.000Z</LastModified></CopyObjectResult>`,
+	)
 }
 
 // writeS3ObjectHeaders writes the object metadata headers the minio

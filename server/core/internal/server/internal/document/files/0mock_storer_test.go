@@ -21,9 +21,6 @@ var _ Storer = &StorerMock{}
 //
 //		// make and configure a mocked Storer
 //		mockedStorer := &StorerMock{
-//			DeleteFunc: func(ctx context.Context, folder string, id string) error {
-//				panic("mock out the Delete method")
-//			},
 //			RetrieveFunc: func(ctx context.Context, folder string, id string) (*storage.ObjectInfo, bool, error) {
 //				panic("mock out the Retrieve method")
 //			},
@@ -37,9 +34,6 @@ var _ Storer = &StorerMock{}
 //
 //	}
 type StorerMock struct {
-	// DeleteFunc mocks the Delete method.
-	DeleteFunc func(ctx context.Context, folder string, id string) error
-
 	// RetrieveFunc mocks the Retrieve method.
 	RetrieveFunc func(ctx context.Context, folder string, id string) (*storage.ObjectInfo, bool, error)
 
@@ -48,15 +42,6 @@ type StorerMock struct {
 
 	// calls tracks calls to the methods.
 	calls struct {
-		// Delete holds details about calls to the Delete method.
-		Delete []struct {
-			// Ctx is the ctx argument value.
-			Ctx context.Context
-			// Folder is the folder argument value.
-			Folder string
-			// ID is the id argument value.
-			ID string
-		}
 		// Retrieve holds details about calls to the Retrieve method.
 		Retrieve []struct {
 			// Ctx is the ctx argument value.
@@ -78,52 +63,8 @@ type StorerMock struct {
 			R io.Reader
 		}
 	}
-	lockDelete   sync.RWMutex
 	lockRetrieve sync.RWMutex
 	lockUpload   sync.RWMutex
-}
-
-// Delete calls DeleteFunc.
-func (mock *StorerMock) Delete(ctx context.Context, folder string, id string) error {
-	callInfo := struct {
-		Ctx    context.Context
-		Folder string
-		ID     string
-	}{
-		Ctx:    ctx,
-		Folder: folder,
-		ID:     id,
-	}
-	mock.lockDelete.Lock()
-	mock.calls.Delete = append(mock.calls.Delete, callInfo)
-	mock.lockDelete.Unlock()
-	if mock.DeleteFunc == nil {
-		var (
-			errOut error
-		)
-		return errOut
-	}
-	return mock.DeleteFunc(ctx, folder, id)
-}
-
-// DeleteCalls gets all the calls that were made to Delete.
-// Check the length with:
-//
-//	len(mockedStorer.DeleteCalls())
-func (mock *StorerMock) DeleteCalls() []struct {
-	Ctx    context.Context
-	Folder string
-	ID     string
-} {
-	var calls []struct {
-		Ctx    context.Context
-		Folder string
-		ID     string
-	}
-	mock.lockDelete.RLock()
-	calls = mock.calls.Delete
-	mock.lockDelete.RUnlock()
-	return calls
 }
 
 // Retrieve calls RetrieveFunc.

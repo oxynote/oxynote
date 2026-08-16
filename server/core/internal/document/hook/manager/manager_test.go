@@ -48,7 +48,7 @@ func stubHook(t *testing.T, branchID xid.ID, schedule, startedAt time.Time) hook
 	return hook.Hook{
 		ID:             xid.New(),
 		Type:           hook.TypeScheduledReminder,
-		DocumentID:     xid.New(),
+		DocumentID:     null.ValueFrom(xid.New()),
 		OrganizationID: "org-1",
 		BranchID:       null.ValueFrom(branchID),
 		Settings:       processor.Settings(settings),
@@ -168,6 +168,41 @@ func Test_Manager_processHooks(t *testing.T) {
 				wasDeleteCalled(1),
 				wasFetchDocumentCalled(0),
 				wasUpdateCalled(0),
+			),
+		},
+		"Orphaned hook without a document is deleted": {
+			Hooks: func(t *testing.T) []hook.Hook {
+				h := stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+				h.DocumentID = null.Value[xid.ID]{}
+
+				return []hook.Hook{h}
+			},
+			Checks: checks(
+				hasError(false),
+				wasDeleteCalled(1),
+				wasFetchDocumentCalled(0),
+				wasUpdateCalled(0),
+			),
+		},
+		"Processing failure still persists the soft deletion": {
+			Hooks: func(t *testing.T) []hook.Hook {
+				h := stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+				h.BlockID = null.StringFrom("missing-block")
+				// unparsable settings make Process fail, which used to
+				// skip the update and leave the retention clock unstarted.
+				h.Settings = processor.Settings(`{"scale": "nonsense"}`)
+
+				return []hook.Hook{h}
+			},
+			Doc: stubDocument(),
+			Checks: checks(
+				hasError(false),
+				wasUpdateCalled(1),
+				func(t *testing.T, db *DBMock, _ *fakePublisher, _ error) {
+					ff := db.UpdateDocumentHookCalls()
+					require.NotEmpty(t, ff)
+					assert.True(t, ff[0].Hk.SoftDeletedAt.Valid)
+				},
 			),
 		},
 		"Github tracking hook is skipped when unconfigured": {

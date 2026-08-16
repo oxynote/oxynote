@@ -75,13 +75,16 @@ type Hook struct {
 	Type Type `json:"type" db:"type"`
 
 	// DocumentID is the ID of the document that this hook is associated with.
-	DocumentID xid.ID `json:"documentId" db:"fk_document_id"`
+	// Null when the document has been deleted; the manager will clean up
+	// such hooks.
+	DocumentID null.Value[xid.ID] `json:"documentId" db:"fk_document_id"`
 
 	// OrganizationID is the ID of the organization that owns the hook.
 	OrganizationID string `json:"organizationId" db:"fk_organization_id"`
 
 	// BranchID is the ID of the document branch this hook is associated with.
-	// Null when the branch has been deleted; the manager will clean up such hooks.
+	// Null when the branch has been deleted; the manager will clean up such
+	// hooks, tearing down the external resource they hold first.
 	BranchID null.Value[xid.ID] `json:"branchId" db:"fk_branch_id"`
 
 	// BlockID is the ID of the block that this hook is associated with.
@@ -123,7 +126,7 @@ func NewHook(
 	h := Hook{
 		ID:             xid.New(),
 		Type:           ci.Type,
-		DocumentID:     documentID,
+		DocumentID:     null.ValueFrom(documentID),
 		OrganizationID: organizationID,
 		BranchID:       null.ValueFrom(branchID),
 		BlockID:        ci.BlockID,

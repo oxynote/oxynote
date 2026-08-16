@@ -10,8 +10,9 @@ import (
 	"github.com/guregu/null/v5"
 	slackCore "github.com/oxynote/oxynote/server/core/internal/apps/slack"
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
-	"github.com/oxynote/oxynote/server/core/internal/document"
+	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/document/comment"
+	"github.com/oxynote/oxynote/server/core/internal/document/file"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	notificationCore "github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/internal/search"
@@ -65,6 +66,9 @@ var _ DB = &DBMock{}
 //			DeleteDocumentCommentsByBranchIDFunc: func(ctx context.Context, branchID xid.ID, organizationID string) error {
 //				panic("mock out the DeleteDocumentCommentsByBranchID method")
 //			},
+//			DeleteDocumentFileFunc: func(ctx context.Context, id string) error {
+//				panic("mock out the DeleteDocumentFile method")
+//			},
 //			DeleteDocumentHookFunc: func(ctx context.Context, id xid.ID, organizationID string) error {
 //				panic("mock out the DeleteDocumentHook method")
 //			},
@@ -77,10 +81,10 @@ var _ DB = &DBMock{}
 //			DeleteSlackUserLinkFunc: func(ctx context.Context, slackUserID string, teamID string) error {
 //				panic("mock out the DeleteSlackUserLink method")
 //			},
-//			FetchBranchReviewerFunc: func(ctx context.Context, branchID xid.ID, userID string, organizationID string) (*document.BranchReviewer, error) {
+//			FetchBranchReviewerFunc: func(ctx context.Context, branchID xid.ID, userID string, organizationID string) (*documentCore.BranchReviewer, error) {
 //				panic("mock out the FetchBranchReviewer method")
 //			},
-//			FetchBranchReviewersFunc: func(ctx context.Context, branchID xid.ID, organizationID string) ([]document.BranchReviewer, error) {
+//			FetchBranchReviewersFunc: func(ctx context.Context, branchID xid.ID, organizationID string) ([]documentCore.BranchReviewer, error) {
 //				panic("mock out the FetchBranchReviewers method")
 //			},
 //			FetchDataSourceFunc: func(ctx context.Context, id xid.ID, organizationID string) (*datasource.DataSource, error) {
@@ -89,16 +93,16 @@ var _ DB = &DBMock{}
 //			FetchDataSourcesFunc: func(ctx context.Context, organizationID string) ([]datasource.DataSource, error) {
 //				panic("mock out the FetchDataSources method")
 //			},
-//			FetchDocumentFunc: func(ctx context.Context, id xid.ID, organizationID string, branchName string) (*document.Document, error) {
+//			FetchDocumentFunc: func(ctx context.Context, id xid.ID, organizationID string, branchName string) (*documentCore.Document, error) {
 //				panic("mock out the FetchDocument method")
 //			},
-//			FetchDocumentBranchesFunc: func(ctx context.Context, docID xid.ID, organizationID string) ([]document.BranchSummary, error) {
+//			FetchDocumentBranchesFunc: func(ctx context.Context, docID xid.ID, organizationID string) ([]documentCore.BranchSummary, error) {
 //				panic("mock out the FetchDocumentBranches method")
 //			},
-//			FetchDocumentBranchesUnsafeFunc: func(ctx context.Context, docID xid.ID) ([]document.BranchSummary, error) {
+//			FetchDocumentBranchesUnsafeFunc: func(ctx context.Context, docID xid.ID) ([]documentCore.BranchSummary, error) {
 //				panic("mock out the FetchDocumentBranchesUnsafe method")
 //			},
-//			FetchDocumentByBranchIDFunc: func(ctx context.Context, branchID xid.ID, organizationID string) (*document.Document, error) {
+//			FetchDocumentByBranchIDFunc: func(ctx context.Context, branchID xid.ID, organizationID string) (*documentCore.Document, error) {
 //				panic("mock out the FetchDocumentByBranchID method")
 //			},
 //			FetchDocumentCommentFunc: func(ctx context.Context, id xid.ID, documentID xid.ID, organizationID string) (*comment.Comment, error) {
@@ -110,7 +114,7 @@ var _ DB = &DBMock{}
 //			FetchDocumentCommentsByBranchIDFunc: func(ctx context.Context, branchID xid.ID, organizationID string) ([]comment.Comment, error) {
 //				panic("mock out the FetchDocumentCommentsByBranchID method")
 //			},
-//			FetchDocumentFileFunc: func(ctx context.Context, blockID string, organizationID string) (*document.File, error) {
+//			FetchDocumentFileFunc: func(ctx context.Context, id string, organizationID string) (*file.File, error) {
 //				panic("mock out the FetchDocumentFile method")
 //			},
 //			FetchDocumentHookFunc: func(ctx context.Context, id xid.ID, organizationID string) (*hook.Hook, error) {
@@ -125,13 +129,13 @@ var _ DB = &DBMock{}
 //			FetchDocumentMaintainersFunc: func(ctx context.Context, documentID xid.ID, organizationID string) ([]string, error) {
 //				panic("mock out the FetchDocumentMaintainers method")
 //			},
-//			FetchDocumentTreeFunc: func(ctx context.Context, organizationID string) (document.Summaries, error) {
+//			FetchDocumentTreeFunc: func(ctx context.Context, organizationID string) (documentCore.Summaries, error) {
 //				panic("mock out the FetchDocumentTree method")
 //			},
-//			FetchDocumentTreeByDocumentParentIDFunc: func(ctx context.Context, parentID null.Value[xid.ID], organizationID string) (document.Summaries, error) {
+//			FetchDocumentTreeByDocumentParentIDFunc: func(ctx context.Context, parentID null.Value[xid.ID], organizationID string) (documentCore.Summaries, error) {
 //				panic("mock out the FetchDocumentTreeByDocumentParentID method")
 //			},
-//			FetchDocumentUnsafeByBranchIDFunc: func(ctx context.Context, branchID xid.ID) (*document.Document, error) {
+//			FetchDocumentUnsafeByBranchIDFunc: func(ctx context.Context, branchID xid.ID) (*documentCore.Document, error) {
 //				panic("mock out the FetchDocumentUnsafeByBranchID method")
 //			},
 //			FetchGithubInstallationByOrganizationIDFunc: func(ctx context.Context, organizationID string) (int64, error) {
@@ -167,13 +171,13 @@ var _ DB = &DBMock{}
 //			ForkDocumentBranchFunc: func(ctx context.Context, docID xid.ID, orgID string, sourceBranch string, targetBranch string, createdBy string) error {
 //				panic("mock out the ForkDocumentBranch method")
 //			},
-//			InsertBranchReviewerFunc: func(ctx context.Context, reviewer document.BranchReviewer) error {
+//			InsertBranchReviewerFunc: func(ctx context.Context, reviewer documentCore.BranchReviewer) error {
 //				panic("mock out the InsertBranchReviewer method")
 //			},
 //			InsertDataSourceFunc: func(ctx context.Context, ds *datasource.DataSource) error {
 //				panic("mock out the InsertDataSource method")
 //			},
-//			InsertDocumentFunc: func(ctx context.Context, doc document.Document) error {
+//			InsertDocumentFunc: func(ctx context.Context, doc documentCore.Document) error {
 //				panic("mock out the InsertDocument method")
 //			},
 //			InsertDocumentCommentFunc: func(ctx context.Context, c comment.Comment) error {
@@ -182,7 +186,7 @@ var _ DB = &DBMock{}
 //			InsertDocumentCommentReplyFunc: func(ctx context.Context, r comment.Reply) error {
 //				panic("mock out the InsertDocumentCommentReply method")
 //			},
-//			InsertDocumentFileFunc: func(ctx context.Context, f document.File) error {
+//			InsertDocumentFileFunc: func(ctx context.Context, f file.File) error {
 //				panic("mock out the InsertDocumentFile method")
 //			},
 //			InsertDocumentHookFunc: func(ctx context.Context, hk hook.Hook) error {
@@ -221,16 +225,16 @@ var _ DB = &DBMock{}
 //			UnassignSlackAppOrganizationFunc: func(ctx context.Context, organizationID string) error {
 //				panic("mock out the UnassignSlackAppOrganization method")
 //			},
-//			UpdateBranchReviewerFunc: func(ctx context.Context, reviewer document.BranchReviewer) error {
+//			UpdateBranchReviewerFunc: func(ctx context.Context, reviewer documentCore.BranchReviewer) error {
 //				panic("mock out the UpdateBranchReviewer method")
 //			},
 //			UpdateDataSourceFunc: func(ctx context.Context, ds *datasource.DataSource) error {
 //				panic("mock out the UpdateDataSource method")
 //			},
-//			UpdateDocumentFunc: func(ctx context.Context, doc document.Document) error {
+//			UpdateDocumentFunc: func(ctx context.Context, doc documentCore.Document) error {
 //				panic("mock out the UpdateDocument method")
 //			},
-//			UpdateDocumentBranchMetadataFunc: func(ctx context.Context, doc document.Document) error {
+//			UpdateDocumentBranchMetadataFunc: func(ctx context.Context, doc documentCore.Document) error {
 //				panic("mock out the UpdateDocumentBranchMetadata method")
 //			},
 //			UpdateDocumentCommentFunc: func(ctx context.Context, c comment.Comment) error {
@@ -245,7 +249,7 @@ var _ DB = &DBMock{}
 //			UpdateDocumentParentIDFunc: func(ctx context.Context, id xid.ID, parentID null.Value[xid.ID], organizationID string) error {
 //				panic("mock out the UpdateDocumentParentID method")
 //			},
-//			UpdateDocumentTreeFunc: func(ctx context.Context, ss document.Summaries, organizationID string) error {
+//			UpdateDocumentTreeFunc: func(ctx context.Context, ss documentCore.Summaries, organizationID string) error {
 //				panic("mock out the UpdateDocumentTree method")
 //			},
 //			UpdateGithubInstallationOrganizationIDFunc: func(ctx context.Context, installationID int64, organizationID string) error {
@@ -309,6 +313,9 @@ type DBMock struct {
 	// DeleteDocumentCommentsByBranchIDFunc mocks the DeleteDocumentCommentsByBranchID method.
 	DeleteDocumentCommentsByBranchIDFunc func(ctx context.Context, branchID xid.ID, organizationID string) error
 
+	// DeleteDocumentFileFunc mocks the DeleteDocumentFile method.
+	DeleteDocumentFileFunc func(ctx context.Context, id string) error
+
 	// DeleteDocumentHookFunc mocks the DeleteDocumentHook method.
 	DeleteDocumentHookFunc func(ctx context.Context, id xid.ID, organizationID string) error
 
@@ -322,10 +329,10 @@ type DBMock struct {
 	DeleteSlackUserLinkFunc func(ctx context.Context, slackUserID string, teamID string) error
 
 	// FetchBranchReviewerFunc mocks the FetchBranchReviewer method.
-	FetchBranchReviewerFunc func(ctx context.Context, branchID xid.ID, userID string, organizationID string) (*document.BranchReviewer, error)
+	FetchBranchReviewerFunc func(ctx context.Context, branchID xid.ID, userID string, organizationID string) (*documentCore.BranchReviewer, error)
 
 	// FetchBranchReviewersFunc mocks the FetchBranchReviewers method.
-	FetchBranchReviewersFunc func(ctx context.Context, branchID xid.ID, organizationID string) ([]document.BranchReviewer, error)
+	FetchBranchReviewersFunc func(ctx context.Context, branchID xid.ID, organizationID string) ([]documentCore.BranchReviewer, error)
 
 	// FetchDataSourceFunc mocks the FetchDataSource method.
 	FetchDataSourceFunc func(ctx context.Context, id xid.ID, organizationID string) (*datasource.DataSource, error)
@@ -334,16 +341,16 @@ type DBMock struct {
 	FetchDataSourcesFunc func(ctx context.Context, organizationID string) ([]datasource.DataSource, error)
 
 	// FetchDocumentFunc mocks the FetchDocument method.
-	FetchDocumentFunc func(ctx context.Context, id xid.ID, organizationID string, branchName string) (*document.Document, error)
+	FetchDocumentFunc func(ctx context.Context, id xid.ID, organizationID string, branchName string) (*documentCore.Document, error)
 
 	// FetchDocumentBranchesFunc mocks the FetchDocumentBranches method.
-	FetchDocumentBranchesFunc func(ctx context.Context, docID xid.ID, organizationID string) ([]document.BranchSummary, error)
+	FetchDocumentBranchesFunc func(ctx context.Context, docID xid.ID, organizationID string) ([]documentCore.BranchSummary, error)
 
 	// FetchDocumentBranchesUnsafeFunc mocks the FetchDocumentBranchesUnsafe method.
-	FetchDocumentBranchesUnsafeFunc func(ctx context.Context, docID xid.ID) ([]document.BranchSummary, error)
+	FetchDocumentBranchesUnsafeFunc func(ctx context.Context, docID xid.ID) ([]documentCore.BranchSummary, error)
 
 	// FetchDocumentByBranchIDFunc mocks the FetchDocumentByBranchID method.
-	FetchDocumentByBranchIDFunc func(ctx context.Context, branchID xid.ID, organizationID string) (*document.Document, error)
+	FetchDocumentByBranchIDFunc func(ctx context.Context, branchID xid.ID, organizationID string) (*documentCore.Document, error)
 
 	// FetchDocumentCommentFunc mocks the FetchDocumentComment method.
 	FetchDocumentCommentFunc func(ctx context.Context, id xid.ID, documentID xid.ID, organizationID string) (*comment.Comment, error)
@@ -355,7 +362,7 @@ type DBMock struct {
 	FetchDocumentCommentsByBranchIDFunc func(ctx context.Context, branchID xid.ID, organizationID string) ([]comment.Comment, error)
 
 	// FetchDocumentFileFunc mocks the FetchDocumentFile method.
-	FetchDocumentFileFunc func(ctx context.Context, blockID string, organizationID string) (*document.File, error)
+	FetchDocumentFileFunc func(ctx context.Context, id string, organizationID string) (*file.File, error)
 
 	// FetchDocumentHookFunc mocks the FetchDocumentHook method.
 	FetchDocumentHookFunc func(ctx context.Context, id xid.ID, organizationID string) (*hook.Hook, error)
@@ -370,13 +377,13 @@ type DBMock struct {
 	FetchDocumentMaintainersFunc func(ctx context.Context, documentID xid.ID, organizationID string) ([]string, error)
 
 	// FetchDocumentTreeFunc mocks the FetchDocumentTree method.
-	FetchDocumentTreeFunc func(ctx context.Context, organizationID string) (document.Summaries, error)
+	FetchDocumentTreeFunc func(ctx context.Context, organizationID string) (documentCore.Summaries, error)
 
 	// FetchDocumentTreeByDocumentParentIDFunc mocks the FetchDocumentTreeByDocumentParentID method.
-	FetchDocumentTreeByDocumentParentIDFunc func(ctx context.Context, parentID null.Value[xid.ID], organizationID string) (document.Summaries, error)
+	FetchDocumentTreeByDocumentParentIDFunc func(ctx context.Context, parentID null.Value[xid.ID], organizationID string) (documentCore.Summaries, error)
 
 	// FetchDocumentUnsafeByBranchIDFunc mocks the FetchDocumentUnsafeByBranchID method.
-	FetchDocumentUnsafeByBranchIDFunc func(ctx context.Context, branchID xid.ID) (*document.Document, error)
+	FetchDocumentUnsafeByBranchIDFunc func(ctx context.Context, branchID xid.ID) (*documentCore.Document, error)
 
 	// FetchGithubInstallationByOrganizationIDFunc mocks the FetchGithubInstallationByOrganizationID method.
 	FetchGithubInstallationByOrganizationIDFunc func(ctx context.Context, organizationID string) (int64, error)
@@ -412,13 +419,13 @@ type DBMock struct {
 	ForkDocumentBranchFunc func(ctx context.Context, docID xid.ID, orgID string, sourceBranch string, targetBranch string, createdBy string) error
 
 	// InsertBranchReviewerFunc mocks the InsertBranchReviewer method.
-	InsertBranchReviewerFunc func(ctx context.Context, reviewer document.BranchReviewer) error
+	InsertBranchReviewerFunc func(ctx context.Context, reviewer documentCore.BranchReviewer) error
 
 	// InsertDataSourceFunc mocks the InsertDataSource method.
 	InsertDataSourceFunc func(ctx context.Context, ds *datasource.DataSource) error
 
 	// InsertDocumentFunc mocks the InsertDocument method.
-	InsertDocumentFunc func(ctx context.Context, doc document.Document) error
+	InsertDocumentFunc func(ctx context.Context, doc documentCore.Document) error
 
 	// InsertDocumentCommentFunc mocks the InsertDocumentComment method.
 	InsertDocumentCommentFunc func(ctx context.Context, c comment.Comment) error
@@ -427,7 +434,7 @@ type DBMock struct {
 	InsertDocumentCommentReplyFunc func(ctx context.Context, r comment.Reply) error
 
 	// InsertDocumentFileFunc mocks the InsertDocumentFile method.
-	InsertDocumentFileFunc func(ctx context.Context, f document.File) error
+	InsertDocumentFileFunc func(ctx context.Context, f file.File) error
 
 	// InsertDocumentHookFunc mocks the InsertDocumentHook method.
 	InsertDocumentHookFunc func(ctx context.Context, hk hook.Hook) error
@@ -466,16 +473,16 @@ type DBMock struct {
 	UnassignSlackAppOrganizationFunc func(ctx context.Context, organizationID string) error
 
 	// UpdateBranchReviewerFunc mocks the UpdateBranchReviewer method.
-	UpdateBranchReviewerFunc func(ctx context.Context, reviewer document.BranchReviewer) error
+	UpdateBranchReviewerFunc func(ctx context.Context, reviewer documentCore.BranchReviewer) error
 
 	// UpdateDataSourceFunc mocks the UpdateDataSource method.
 	UpdateDataSourceFunc func(ctx context.Context, ds *datasource.DataSource) error
 
 	// UpdateDocumentFunc mocks the UpdateDocument method.
-	UpdateDocumentFunc func(ctx context.Context, doc document.Document) error
+	UpdateDocumentFunc func(ctx context.Context, doc documentCore.Document) error
 
 	// UpdateDocumentBranchMetadataFunc mocks the UpdateDocumentBranchMetadata method.
-	UpdateDocumentBranchMetadataFunc func(ctx context.Context, doc document.Document) error
+	UpdateDocumentBranchMetadataFunc func(ctx context.Context, doc documentCore.Document) error
 
 	// UpdateDocumentCommentFunc mocks the UpdateDocumentComment method.
 	UpdateDocumentCommentFunc func(ctx context.Context, c comment.Comment) error
@@ -490,7 +497,7 @@ type DBMock struct {
 	UpdateDocumentParentIDFunc func(ctx context.Context, id xid.ID, parentID null.Value[xid.ID], organizationID string) error
 
 	// UpdateDocumentTreeFunc mocks the UpdateDocumentTree method.
-	UpdateDocumentTreeFunc func(ctx context.Context, ss document.Summaries, organizationID string) error
+	UpdateDocumentTreeFunc func(ctx context.Context, ss documentCore.Summaries, organizationID string) error
 
 	// UpdateGithubInstallationOrganizationIDFunc mocks the UpdateGithubInstallationOrganizationID method.
 	UpdateGithubInstallationOrganizationIDFunc func(ctx context.Context, installationID int64, organizationID string) error
@@ -625,6 +632,13 @@ type DBMock struct {
 			BranchID xid.ID
 			// OrganizationID is the organizationID argument value.
 			OrganizationID string
+		}
+		// DeleteDocumentFile holds details about calls to the DeleteDocumentFile method.
+		DeleteDocumentFile []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// ID is the id argument value.
+			ID string
 		}
 		// DeleteDocumentHook holds details about calls to the DeleteDocumentHook method.
 		DeleteDocumentHook []struct {
@@ -765,8 +779,8 @@ type DBMock struct {
 		FetchDocumentFile []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
-			// BlockID is the blockID argument value.
-			BlockID string
+			// ID is the id argument value.
+			ID string
 			// OrganizationID is the organizationID argument value.
 			OrganizationID string
 		}
@@ -931,7 +945,7 @@ type DBMock struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
 			// Reviewer is the reviewer argument value.
-			Reviewer document.BranchReviewer
+			Reviewer documentCore.BranchReviewer
 		}
 		// InsertDataSource holds details about calls to the InsertDataSource method.
 		InsertDataSource []struct {
@@ -945,7 +959,7 @@ type DBMock struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
 			// Doc is the doc argument value.
-			Doc document.Document
+			Doc documentCore.Document
 		}
 		// InsertDocumentComment holds details about calls to the InsertDocumentComment method.
 		InsertDocumentComment []struct {
@@ -966,7 +980,7 @@ type DBMock struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
 			// F is the f argument value.
-			F document.File
+			F file.File
 		}
 		// InsertDocumentHook holds details about calls to the InsertDocumentHook method.
 		InsertDocumentHook []struct {
@@ -1067,7 +1081,7 @@ type DBMock struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
 			// Reviewer is the reviewer argument value.
-			Reviewer document.BranchReviewer
+			Reviewer documentCore.BranchReviewer
 		}
 		// UpdateDataSource holds details about calls to the UpdateDataSource method.
 		UpdateDataSource []struct {
@@ -1081,14 +1095,14 @@ type DBMock struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
 			// Doc is the doc argument value.
-			Doc document.Document
+			Doc documentCore.Document
 		}
 		// UpdateDocumentBranchMetadata holds details about calls to the UpdateDocumentBranchMetadata method.
 		UpdateDocumentBranchMetadata []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
 			// Doc is the doc argument value.
-			Doc document.Document
+			Doc documentCore.Document
 		}
 		// UpdateDocumentComment holds details about calls to the UpdateDocumentComment method.
 		UpdateDocumentComment []struct {
@@ -1127,7 +1141,7 @@ type DBMock struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
 			// Ss is the ss argument value.
-			Ss document.Summaries
+			Ss documentCore.Summaries
 			// OrganizationID is the organizationID argument value.
 			OrganizationID string
 		}
@@ -1198,6 +1212,7 @@ type DBMock struct {
 	lockDeleteDocumentComment                   sync.RWMutex
 	lockDeleteDocumentCommentReply              sync.RWMutex
 	lockDeleteDocumentCommentsByBranchID        sync.RWMutex
+	lockDeleteDocumentFile                      sync.RWMutex
 	lockDeleteDocumentHook                      sync.RWMutex
 	lockDeleteGithubInstallation                sync.RWMutex
 	lockDeleteSlackApp                          sync.RWMutex
@@ -1798,6 +1813,45 @@ func (mock *DBMock) DeleteDocumentCommentsByBranchIDCalls() []struct {
 	return calls
 }
 
+// DeleteDocumentFile calls DeleteDocumentFileFunc.
+func (mock *DBMock) DeleteDocumentFile(ctx context.Context, id string) error {
+	callInfo := struct {
+		Ctx context.Context
+		ID  string
+	}{
+		Ctx: ctx,
+		ID:  id,
+	}
+	mock.lockDeleteDocumentFile.Lock()
+	mock.calls.DeleteDocumentFile = append(mock.calls.DeleteDocumentFile, callInfo)
+	mock.lockDeleteDocumentFile.Unlock()
+	if mock.DeleteDocumentFileFunc == nil {
+		var (
+			errOut error
+		)
+		return errOut
+	}
+	return mock.DeleteDocumentFileFunc(ctx, id)
+}
+
+// DeleteDocumentFileCalls gets all the calls that were made to DeleteDocumentFile.
+// Check the length with:
+//
+//	len(mockedDB.DeleteDocumentFileCalls())
+func (mock *DBMock) DeleteDocumentFileCalls() []struct {
+	Ctx context.Context
+	ID  string
+} {
+	var calls []struct {
+		Ctx context.Context
+		ID  string
+	}
+	mock.lockDeleteDocumentFile.RLock()
+	calls = mock.calls.DeleteDocumentFile
+	mock.lockDeleteDocumentFile.RUnlock()
+	return calls
+}
+
 // DeleteDocumentHook calls DeleteDocumentHookFunc.
 func (mock *DBMock) DeleteDocumentHook(ctx context.Context, id xid.ID, organizationID string) error {
 	callInfo := struct {
@@ -1963,7 +2017,7 @@ func (mock *DBMock) DeleteSlackUserLinkCalls() []struct {
 }
 
 // FetchBranchReviewer calls FetchBranchReviewerFunc.
-func (mock *DBMock) FetchBranchReviewer(ctx context.Context, branchID xid.ID, userID string, organizationID string) (*document.BranchReviewer, error) {
+func (mock *DBMock) FetchBranchReviewer(ctx context.Context, branchID xid.ID, userID string, organizationID string) (*documentCore.BranchReviewer, error) {
 	callInfo := struct {
 		Ctx            context.Context
 		BranchID       xid.ID
@@ -1980,7 +2034,7 @@ func (mock *DBMock) FetchBranchReviewer(ctx context.Context, branchID xid.ID, us
 	mock.lockFetchBranchReviewer.Unlock()
 	if mock.FetchBranchReviewerFunc == nil {
 		var (
-			branchReviewerOut *document.BranchReviewer
+			branchReviewerOut *documentCore.BranchReviewer
 			errOut            error
 		)
 		return branchReviewerOut, errOut
@@ -2011,7 +2065,7 @@ func (mock *DBMock) FetchBranchReviewerCalls() []struct {
 }
 
 // FetchBranchReviewers calls FetchBranchReviewersFunc.
-func (mock *DBMock) FetchBranchReviewers(ctx context.Context, branchID xid.ID, organizationID string) ([]document.BranchReviewer, error) {
+func (mock *DBMock) FetchBranchReviewers(ctx context.Context, branchID xid.ID, organizationID string) ([]documentCore.BranchReviewer, error) {
 	callInfo := struct {
 		Ctx            context.Context
 		BranchID       xid.ID
@@ -2026,7 +2080,7 @@ func (mock *DBMock) FetchBranchReviewers(ctx context.Context, branchID xid.ID, o
 	mock.lockFetchBranchReviewers.Unlock()
 	if mock.FetchBranchReviewersFunc == nil {
 		var (
-			branchReviewersOut []document.BranchReviewer
+			branchReviewersOut []documentCore.BranchReviewer
 			errOut             error
 		)
 		return branchReviewersOut, errOut
@@ -2139,7 +2193,7 @@ func (mock *DBMock) FetchDataSourcesCalls() []struct {
 }
 
 // FetchDocument calls FetchDocumentFunc.
-func (mock *DBMock) FetchDocument(ctx context.Context, id xid.ID, organizationID string, branchName string) (*document.Document, error) {
+func (mock *DBMock) FetchDocument(ctx context.Context, id xid.ID, organizationID string, branchName string) (*documentCore.Document, error) {
 	callInfo := struct {
 		Ctx            context.Context
 		ID             xid.ID
@@ -2156,7 +2210,7 @@ func (mock *DBMock) FetchDocument(ctx context.Context, id xid.ID, organizationID
 	mock.lockFetchDocument.Unlock()
 	if mock.FetchDocumentFunc == nil {
 		var (
-			documentOut *document.Document
+			documentOut *documentCore.Document
 			errOut      error
 		)
 		return documentOut, errOut
@@ -2187,7 +2241,7 @@ func (mock *DBMock) FetchDocumentCalls() []struct {
 }
 
 // FetchDocumentBranches calls FetchDocumentBranchesFunc.
-func (mock *DBMock) FetchDocumentBranches(ctx context.Context, docID xid.ID, organizationID string) ([]document.BranchSummary, error) {
+func (mock *DBMock) FetchDocumentBranches(ctx context.Context, docID xid.ID, organizationID string) ([]documentCore.BranchSummary, error) {
 	callInfo := struct {
 		Ctx            context.Context
 		DocID          xid.ID
@@ -2202,7 +2256,7 @@ func (mock *DBMock) FetchDocumentBranches(ctx context.Context, docID xid.ID, org
 	mock.lockFetchDocumentBranches.Unlock()
 	if mock.FetchDocumentBranchesFunc == nil {
 		var (
-			branchSummarysOut []document.BranchSummary
+			branchSummarysOut []documentCore.BranchSummary
 			errOut            error
 		)
 		return branchSummarysOut, errOut
@@ -2231,7 +2285,7 @@ func (mock *DBMock) FetchDocumentBranchesCalls() []struct {
 }
 
 // FetchDocumentBranchesUnsafe calls FetchDocumentBranchesUnsafeFunc.
-func (mock *DBMock) FetchDocumentBranchesUnsafe(ctx context.Context, docID xid.ID) ([]document.BranchSummary, error) {
+func (mock *DBMock) FetchDocumentBranchesUnsafe(ctx context.Context, docID xid.ID) ([]documentCore.BranchSummary, error) {
 	callInfo := struct {
 		Ctx   context.Context
 		DocID xid.ID
@@ -2244,7 +2298,7 @@ func (mock *DBMock) FetchDocumentBranchesUnsafe(ctx context.Context, docID xid.I
 	mock.lockFetchDocumentBranchesUnsafe.Unlock()
 	if mock.FetchDocumentBranchesUnsafeFunc == nil {
 		var (
-			branchSummarysOut []document.BranchSummary
+			branchSummarysOut []documentCore.BranchSummary
 			errOut            error
 		)
 		return branchSummarysOut, errOut
@@ -2271,7 +2325,7 @@ func (mock *DBMock) FetchDocumentBranchesUnsafeCalls() []struct {
 }
 
 // FetchDocumentByBranchID calls FetchDocumentByBranchIDFunc.
-func (mock *DBMock) FetchDocumentByBranchID(ctx context.Context, branchID xid.ID, organizationID string) (*document.Document, error) {
+func (mock *DBMock) FetchDocumentByBranchID(ctx context.Context, branchID xid.ID, organizationID string) (*documentCore.Document, error) {
 	callInfo := struct {
 		Ctx            context.Context
 		BranchID       xid.ID
@@ -2286,7 +2340,7 @@ func (mock *DBMock) FetchDocumentByBranchID(ctx context.Context, branchID xid.ID
 	mock.lockFetchDocumentByBranchID.Unlock()
 	if mock.FetchDocumentByBranchIDFunc == nil {
 		var (
-			documentOut *document.Document
+			documentOut *documentCore.Document
 			errOut      error
 		)
 		return documentOut, errOut
@@ -2455,14 +2509,14 @@ func (mock *DBMock) FetchDocumentCommentsByBranchIDCalls() []struct {
 }
 
 // FetchDocumentFile calls FetchDocumentFileFunc.
-func (mock *DBMock) FetchDocumentFile(ctx context.Context, blockID string, organizationID string) (*document.File, error) {
+func (mock *DBMock) FetchDocumentFile(ctx context.Context, id string, organizationID string) (*file.File, error) {
 	callInfo := struct {
 		Ctx            context.Context
-		BlockID        string
+		ID             string
 		OrganizationID string
 	}{
 		Ctx:            ctx,
-		BlockID:        blockID,
+		ID:             id,
 		OrganizationID: organizationID,
 	}
 	mock.lockFetchDocumentFile.Lock()
@@ -2470,12 +2524,12 @@ func (mock *DBMock) FetchDocumentFile(ctx context.Context, blockID string, organ
 	mock.lockFetchDocumentFile.Unlock()
 	if mock.FetchDocumentFileFunc == nil {
 		var (
-			fileOut *document.File
+			fileOut *file.File
 			errOut  error
 		)
 		return fileOut, errOut
 	}
-	return mock.FetchDocumentFileFunc(ctx, blockID, organizationID)
+	return mock.FetchDocumentFileFunc(ctx, id, organizationID)
 }
 
 // FetchDocumentFileCalls gets all the calls that were made to FetchDocumentFile.
@@ -2484,12 +2538,12 @@ func (mock *DBMock) FetchDocumentFile(ctx context.Context, blockID string, organ
 //	len(mockedDB.FetchDocumentFileCalls())
 func (mock *DBMock) FetchDocumentFileCalls() []struct {
 	Ctx            context.Context
-	BlockID        string
+	ID             string
 	OrganizationID string
 } {
 	var calls []struct {
 		Ctx            context.Context
-		BlockID        string
+		ID             string
 		OrganizationID string
 	}
 	mock.lockFetchDocumentFile.RLock()
@@ -2675,7 +2729,7 @@ func (mock *DBMock) FetchDocumentMaintainersCalls() []struct {
 }
 
 // FetchDocumentTree calls FetchDocumentTreeFunc.
-func (mock *DBMock) FetchDocumentTree(ctx context.Context, organizationID string) (document.Summaries, error) {
+func (mock *DBMock) FetchDocumentTree(ctx context.Context, organizationID string) (documentCore.Summaries, error) {
 	callInfo := struct {
 		Ctx            context.Context
 		OrganizationID string
@@ -2688,7 +2742,7 @@ func (mock *DBMock) FetchDocumentTree(ctx context.Context, organizationID string
 	mock.lockFetchDocumentTree.Unlock()
 	if mock.FetchDocumentTreeFunc == nil {
 		var (
-			summariesOut document.Summaries
+			summariesOut documentCore.Summaries
 			errOut       error
 		)
 		return summariesOut, errOut
@@ -2715,7 +2769,7 @@ func (mock *DBMock) FetchDocumentTreeCalls() []struct {
 }
 
 // FetchDocumentTreeByDocumentParentID calls FetchDocumentTreeByDocumentParentIDFunc.
-func (mock *DBMock) FetchDocumentTreeByDocumentParentID(ctx context.Context, parentID null.Value[xid.ID], organizationID string) (document.Summaries, error) {
+func (mock *DBMock) FetchDocumentTreeByDocumentParentID(ctx context.Context, parentID null.Value[xid.ID], organizationID string) (documentCore.Summaries, error) {
 	callInfo := struct {
 		Ctx            context.Context
 		ParentID       null.Value[xid.ID]
@@ -2730,7 +2784,7 @@ func (mock *DBMock) FetchDocumentTreeByDocumentParentID(ctx context.Context, par
 	mock.lockFetchDocumentTreeByDocumentParentID.Unlock()
 	if mock.FetchDocumentTreeByDocumentParentIDFunc == nil {
 		var (
-			summariesOut document.Summaries
+			summariesOut documentCore.Summaries
 			errOut       error
 		)
 		return summariesOut, errOut
@@ -2759,7 +2813,7 @@ func (mock *DBMock) FetchDocumentTreeByDocumentParentIDCalls() []struct {
 }
 
 // FetchDocumentUnsafeByBranchID calls FetchDocumentUnsafeByBranchIDFunc.
-func (mock *DBMock) FetchDocumentUnsafeByBranchID(ctx context.Context, branchID xid.ID) (*document.Document, error) {
+func (mock *DBMock) FetchDocumentUnsafeByBranchID(ctx context.Context, branchID xid.ID) (*documentCore.Document, error) {
 	callInfo := struct {
 		Ctx      context.Context
 		BranchID xid.ID
@@ -2772,7 +2826,7 @@ func (mock *DBMock) FetchDocumentUnsafeByBranchID(ctx context.Context, branchID 
 	mock.lockFetchDocumentUnsafeByBranchID.Unlock()
 	if mock.FetchDocumentUnsafeByBranchIDFunc == nil {
 		var (
-			documentOut *document.Document
+			documentOut *documentCore.Document
 			errOut      error
 		)
 		return documentOut, errOut
@@ -3279,10 +3333,10 @@ func (mock *DBMock) ForkDocumentBranchCalls() []struct {
 }
 
 // InsertBranchReviewer calls InsertBranchReviewerFunc.
-func (mock *DBMock) InsertBranchReviewer(ctx context.Context, reviewer document.BranchReviewer) error {
+func (mock *DBMock) InsertBranchReviewer(ctx context.Context, reviewer documentCore.BranchReviewer) error {
 	callInfo := struct {
 		Ctx      context.Context
-		Reviewer document.BranchReviewer
+		Reviewer documentCore.BranchReviewer
 	}{
 		Ctx:      ctx,
 		Reviewer: reviewer,
@@ -3305,11 +3359,11 @@ func (mock *DBMock) InsertBranchReviewer(ctx context.Context, reviewer document.
 //	len(mockedDB.InsertBranchReviewerCalls())
 func (mock *DBMock) InsertBranchReviewerCalls() []struct {
 	Ctx      context.Context
-	Reviewer document.BranchReviewer
+	Reviewer documentCore.BranchReviewer
 } {
 	var calls []struct {
 		Ctx      context.Context
-		Reviewer document.BranchReviewer
+		Reviewer documentCore.BranchReviewer
 	}
 	mock.lockInsertBranchReviewer.RLock()
 	calls = mock.calls.InsertBranchReviewer
@@ -3357,10 +3411,10 @@ func (mock *DBMock) InsertDataSourceCalls() []struct {
 }
 
 // InsertDocument calls InsertDocumentFunc.
-func (mock *DBMock) InsertDocument(ctx context.Context, doc document.Document) error {
+func (mock *DBMock) InsertDocument(ctx context.Context, doc documentCore.Document) error {
 	callInfo := struct {
 		Ctx context.Context
-		Doc document.Document
+		Doc documentCore.Document
 	}{
 		Ctx: ctx,
 		Doc: doc,
@@ -3383,11 +3437,11 @@ func (mock *DBMock) InsertDocument(ctx context.Context, doc document.Document) e
 //	len(mockedDB.InsertDocumentCalls())
 func (mock *DBMock) InsertDocumentCalls() []struct {
 	Ctx context.Context
-	Doc document.Document
+	Doc documentCore.Document
 } {
 	var calls []struct {
 		Ctx context.Context
-		Doc document.Document
+		Doc documentCore.Document
 	}
 	mock.lockInsertDocument.RLock()
 	calls = mock.calls.InsertDocument
@@ -3474,10 +3528,10 @@ func (mock *DBMock) InsertDocumentCommentReplyCalls() []struct {
 }
 
 // InsertDocumentFile calls InsertDocumentFileFunc.
-func (mock *DBMock) InsertDocumentFile(ctx context.Context, f document.File) error {
+func (mock *DBMock) InsertDocumentFile(ctx context.Context, f file.File) error {
 	callInfo := struct {
 		Ctx context.Context
-		F   document.File
+		F   file.File
 	}{
 		Ctx: ctx,
 		F:   f,
@@ -3500,11 +3554,11 @@ func (mock *DBMock) InsertDocumentFile(ctx context.Context, f document.File) err
 //	len(mockedDB.InsertDocumentFileCalls())
 func (mock *DBMock) InsertDocumentFileCalls() []struct {
 	Ctx context.Context
-	F   document.File
+	F   file.File
 } {
 	var calls []struct {
 		Ctx context.Context
-		F   document.File
+		F   file.File
 	}
 	mock.lockInsertDocumentFile.RLock()
 	calls = mock.calls.InsertDocumentFile
@@ -4001,10 +4055,10 @@ func (mock *DBMock) UnassignSlackAppOrganizationCalls() []struct {
 }
 
 // UpdateBranchReviewer calls UpdateBranchReviewerFunc.
-func (mock *DBMock) UpdateBranchReviewer(ctx context.Context, reviewer document.BranchReviewer) error {
+func (mock *DBMock) UpdateBranchReviewer(ctx context.Context, reviewer documentCore.BranchReviewer) error {
 	callInfo := struct {
 		Ctx      context.Context
-		Reviewer document.BranchReviewer
+		Reviewer documentCore.BranchReviewer
 	}{
 		Ctx:      ctx,
 		Reviewer: reviewer,
@@ -4027,11 +4081,11 @@ func (mock *DBMock) UpdateBranchReviewer(ctx context.Context, reviewer document.
 //	len(mockedDB.UpdateBranchReviewerCalls())
 func (mock *DBMock) UpdateBranchReviewerCalls() []struct {
 	Ctx      context.Context
-	Reviewer document.BranchReviewer
+	Reviewer documentCore.BranchReviewer
 } {
 	var calls []struct {
 		Ctx      context.Context
-		Reviewer document.BranchReviewer
+		Reviewer documentCore.BranchReviewer
 	}
 	mock.lockUpdateBranchReviewer.RLock()
 	calls = mock.calls.UpdateBranchReviewer
@@ -4079,10 +4133,10 @@ func (mock *DBMock) UpdateDataSourceCalls() []struct {
 }
 
 // UpdateDocument calls UpdateDocumentFunc.
-func (mock *DBMock) UpdateDocument(ctx context.Context, doc document.Document) error {
+func (mock *DBMock) UpdateDocument(ctx context.Context, doc documentCore.Document) error {
 	callInfo := struct {
 		Ctx context.Context
-		Doc document.Document
+		Doc documentCore.Document
 	}{
 		Ctx: ctx,
 		Doc: doc,
@@ -4105,11 +4159,11 @@ func (mock *DBMock) UpdateDocument(ctx context.Context, doc document.Document) e
 //	len(mockedDB.UpdateDocumentCalls())
 func (mock *DBMock) UpdateDocumentCalls() []struct {
 	Ctx context.Context
-	Doc document.Document
+	Doc documentCore.Document
 } {
 	var calls []struct {
 		Ctx context.Context
-		Doc document.Document
+		Doc documentCore.Document
 	}
 	mock.lockUpdateDocument.RLock()
 	calls = mock.calls.UpdateDocument
@@ -4118,10 +4172,10 @@ func (mock *DBMock) UpdateDocumentCalls() []struct {
 }
 
 // UpdateDocumentBranchMetadata calls UpdateDocumentBranchMetadataFunc.
-func (mock *DBMock) UpdateDocumentBranchMetadata(ctx context.Context, doc document.Document) error {
+func (mock *DBMock) UpdateDocumentBranchMetadata(ctx context.Context, doc documentCore.Document) error {
 	callInfo := struct {
 		Ctx context.Context
-		Doc document.Document
+		Doc documentCore.Document
 	}{
 		Ctx: ctx,
 		Doc: doc,
@@ -4144,11 +4198,11 @@ func (mock *DBMock) UpdateDocumentBranchMetadata(ctx context.Context, doc docume
 //	len(mockedDB.UpdateDocumentBranchMetadataCalls())
 func (mock *DBMock) UpdateDocumentBranchMetadataCalls() []struct {
 	Ctx context.Context
-	Doc document.Document
+	Doc documentCore.Document
 } {
 	var calls []struct {
 		Ctx context.Context
-		Doc document.Document
+		Doc documentCore.Document
 	}
 	mock.lockUpdateDocumentBranchMetadata.RLock()
 	calls = mock.calls.UpdateDocumentBranchMetadata
@@ -4321,10 +4375,10 @@ func (mock *DBMock) UpdateDocumentParentIDCalls() []struct {
 }
 
 // UpdateDocumentTree calls UpdateDocumentTreeFunc.
-func (mock *DBMock) UpdateDocumentTree(ctx context.Context, ss document.Summaries, organizationID string) error {
+func (mock *DBMock) UpdateDocumentTree(ctx context.Context, ss documentCore.Summaries, organizationID string) error {
 	callInfo := struct {
 		Ctx            context.Context
-		Ss             document.Summaries
+		Ss             documentCore.Summaries
 		OrganizationID string
 	}{
 		Ctx:            ctx,
@@ -4349,12 +4403,12 @@ func (mock *DBMock) UpdateDocumentTree(ctx context.Context, ss document.Summarie
 //	len(mockedDB.UpdateDocumentTreeCalls())
 func (mock *DBMock) UpdateDocumentTreeCalls() []struct {
 	Ctx            context.Context
-	Ss             document.Summaries
+	Ss             documentCore.Summaries
 	OrganizationID string
 } {
 	var calls []struct {
 		Ctx            context.Context
-		Ss             document.Summaries
+		Ss             documentCore.Summaries
 		OrganizationID string
 	}
 	mock.lockUpdateDocumentTree.RLock()
