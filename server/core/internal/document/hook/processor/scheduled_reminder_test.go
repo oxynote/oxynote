@@ -131,4 +131,18 @@ func Test_ScheduledReminder_Reset(t *testing.T) {
 
 		assert.True(t, score.Equal(decimal.Zero))
 	})
+
+	t.Run("Unknown scale is rejected", func(t *testing.T) {
+		t.Parallel()
+
+		// accepting it here would create a hook that fails on every
+		// processing cycle instead of being refused at creation.
+		sr := ScheduledReminder{
+			Scale:    ScaleType("exponential"),
+			Schedule: time.Now().Add(time.Hour),
+		}
+
+		_, _, err := sr.Reset(context.Background(), stubInput{})
+		assert.Equal(t, ErrInvalidScaleType, err)
+	})
 }

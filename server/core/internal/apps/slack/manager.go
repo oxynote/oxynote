@@ -26,6 +26,10 @@ var (
 	ErrNotConfigured = errutil.New(http.StatusConflict, "slack.not_configured", "slack app is not configured")
 )
 
+// _maxRequestBodyBytes bounds a Slack request body read during signature
+// verification.
+const _maxRequestBodyBytes = 10 << 20
+
 // Options holds configuration options for the Slack manager.
 type Options struct {
 	// RedirectURL is the URL to redirect users to connect their Slack organization.
@@ -188,9 +192,12 @@ func (m *Manager) VerifyMiddleware(r *http.Request) error {
 		return err
 	}
 
-	reqBody, err := io.ReadAll(r.Body)
+	// the payloads verified here are form-encoded, so a read failure is a
+	// transport problem rather than malformed JSON. The limit keeps the
+	// internal surface bounded even when it is reached without the proxy.
+	reqBody, err := io.ReadAll(io.LimitReader(r.Body, _maxRequestBodyBytes))
 	if err != nil {
-		return httpserver.ErrInvalidJSON
+		return httpserver.ErrInvalidForm
 	}
 
 	// The body is read and replaced to ensure that the request

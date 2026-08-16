@@ -38,6 +38,7 @@ func Test_Parse(t *testing.T) {
 		assert.Equal(t, time.Date(2026, 1, 2, 8, 0, 0, 0, time.UTC), tim)
 	})
 }
+
 func Test_Now(t *testing.T) {
 	n := Now()
 	assert.NotZero(t, n)

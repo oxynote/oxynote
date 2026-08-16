@@ -2,6 +2,7 @@ package document
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -909,6 +910,38 @@ func Test_Handler_UpdateDocumentTree(t *testing.T) {
 			assert.Equal(t, c.TreeCbs, cnt.tree)
 		})
 	}
+
+	t.Run("Response carries the swapped ordering", func(t *testing.T) {
+		t.Parallel()
+
+		moved, other := _documentID, xid.New()
+
+		tx := &TxMock{
+			FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
+				return storedDoc(), nil
+			},
+			FetchDocumentTreeByDocumentParentIDFunc: func(context.Context, null.Value[xid.ID], string) (documentCore.Summaries, error) {
+				return documentCore.Summaries{{ID: other}, {ID: moved}}, nil
+			},
+		}
+
+		hdl, _ := newTestHandler(withTx(&DBMock{}, tx, nil), &fakePublisher{})
+
+		rec := httptest.NewRecorder()
+
+		body := `{"id":"` + moved.String() + `","sortIndex":0}`
+		hdl.UpdateDocumentTree(rec, newRequest(http.MethodPut, body, false, true, true))
+
+		require.Equal(t, http.StatusOK, rec.Code)
+
+		// the persisted ordering is the swapped one, so the client must not
+		// be handed back the ordering it asked to change.
+		var got documentCore.Summaries
+
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+		require.Len(t, got, 2)
+		assert.Equal(t, moved, got[0].ID)
+	})
 }
 
 func Test_Handler_SearchDocuments(t *testing.T) {

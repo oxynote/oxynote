@@ -105,7 +105,8 @@ func Test_Comment_Replace(t *testing.T) {
 	c := stubComment()
 	head := c.Replies[0]
 
-	nc := c.Replace(head)
+	nc, ok := c.Replace()
+	require.True(t, ok)
 
 	// the head reply's content and author take over the comment.
 	assert.Equal(t, c.ID, nc.ID)
@@ -118,6 +119,15 @@ func Test_Comment_Replace(t *testing.T) {
 	// the promoted reply drops out of the reply list.
 	require.Len(t, nc.Replies, 1)
 	assert.Equal(t, c.Replies[1], nc.Replies[0])
+
+	// a comment with no replies has nothing to promote and is returned
+	// unchanged rather than panicking on an empty list.
+	empty := c
+	empty.Replies = nil
+
+	same, ok := empty.Replace()
+	assert.False(t, ok)
+	assert.Equal(t, empty, same)
 }
 
 func Test_NewReply(t *testing.T) {

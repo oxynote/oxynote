@@ -439,6 +439,13 @@ func (h *Handler) ResolveDocumentComment(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// resolving currently destroys the comment and its replies, so it needs
+	// the same ownership guard the delete route applies.
+	if !c.UserID.Valid || c.UserID.String != session.UserID {
+		httpserver.RespondError(h.log, w, httpserver.ErrNotPermitted)
+		return
+	}
+
 	if err := h.db.DeleteDocumentComment(r.Context(), commentID, documentID, session.ActiveOrganizationID); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -556,10 +563,8 @@ func (h *Handler) DeleteDocumentComment(w http.ResponseWriter, r *http.Request) 
 
 	var cct ChangeType
 
-	if len(c.Replies) > 0 {
+	if nc, ok := c.Replace(); ok {
 		reply := c.Replies[0]
-
-		nc := c.Replace(reply)
 
 		if err := tx.ReplaceDocumentComment(r.Context(), nc); err != nil {
 			httpserver.RespondError(h.log, w, err)

@@ -20,7 +20,7 @@ func (a *agent) InsertSlackApp(ctx context.Context, app slack.App) error {
 			ON CONFLICT (team_id)
 			DO UPDATE SET
 				token = EXCLUDED.token,
-				fk_organization_id = EXCLUDED.fk_organization_id
+				fk_organization_id = COALESCE(EXCLUDED.fk_organization_id, slack_apps.fk_organization_id)
 		`).
 		MustSql()
 

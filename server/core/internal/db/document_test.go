@@ -297,6 +297,7 @@ func Test_agent_InsertDocument(t *testing.T) {
 		assert.Equal(t, 0, sortIndex(other.ID))
 	})
 }
+
 func Test_agent_CheckDocumentExists(t *testing.T) {
 	db := prepTempDB(t)
 

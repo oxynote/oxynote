@@ -3,14 +3,19 @@ package processor
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/guregu/null/v5"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/shopspring/decimal"
 )
+
+// ErrInvalidScaleType is returned when a scheduled reminder carries a scale
+// the processor does not implement.
+var ErrInvalidScaleType = errutil.New(http.StatusBadRequest, "document_hook.invalid_scale_type", "invalid scale type")
 
 // ScaleType represents the type of scale used for scoring.
 type ScaleType string
@@ -63,7 +68,7 @@ func (sr *ScheduledReminder) Process(_ context.Context, inp Input) (decimal.Deci
 		elapsedPercent := decimal.NewFromFloat(elapsed.Seconds() / totalDuration.Seconds()).Mul(_fullScore)
 		score = score.Sub(elapsedPercent).Round(0)
 	default:
-		return decimal.Zero, nil, errors.New("invalid scale type")
+		return decimal.Zero, nil, ErrInvalidScaleType
 	}
 
 	state, err := json.Marshal(srs)
@@ -76,6 +81,12 @@ func (sr *ScheduledReminder) Process(_ context.Context, inp Input) (decimal.Deci
 
 // Reset resets the state of the scheduled reminder processor.
 func (sr *ScheduledReminder) Reset(_ context.Context, _ Input) (decimal.Decimal, State, error) {
+	// validated here as well as in Process: an unknown scale would otherwise
+	// be accepted at creation and then fail on every processing cycle.
+	if sr.Scale != ScaleTypeLinear {
+		return decimal.Zero, nil, ErrInvalidScaleType
+	}
+
 	srs := ScheduledReminderState{
 		StartedAt: timeutil.Now(),
 	}

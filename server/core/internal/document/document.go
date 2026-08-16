@@ -268,8 +268,9 @@ func (d Document) Search() map[string]search.Block {
 	res := d.Content.Search(d.OrganizationID, d.ID)
 
 	res[d.ID.String()] = search.Block{
-		// this is a special block representing the name/title of
-		// the document, so its block ID matches the doc ID
+		// a special block carrying the document name. The map is keyed by the
+		// document ID while the indexed block ID is prefixed, so the title
+		// never collides with a content block that happens to share the ID.
 		ID:             "docname" + d.ID.String(),
 		OrganizationID: d.OrganizationID,
 		DocumentID:     d.ID,

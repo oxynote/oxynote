@@ -224,35 +224,7 @@ func (h *Handler) ConnectOrganization(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if is.OrganizationID.Valid {
-		if is.OrganizationID.String != session.ActiveOrganizationID {
-			httpserver.RespondError(h.log, w, ErrMissingInstallationState)
-			return
-		}
-
-		code := r.URL.Query().Get("code")
-		if code == "" {
-			httpserver.RespondError(h.log, w, ErrMissingCode)
-			return
-		}
-
-		var appAccess *slack.AppAccess
-
-		appAccess, err = h.man.ExchangeCode(r.Context(), code)
-		if err != nil {
-			httpserver.RespondError(h.log, w, err)
-			return
-		}
-
-		err = h.db.InsertSlackApp(r.Context(), slack.App{
-			TeamID:         appAccess.TeamID,
-			Token:          appAccess.AccessToken,
-			OrganizationID: is.OrganizationID,
-		})
-		if err != nil {
-			httpserver.RespondError(h.log, w, err)
-			return
-		}
-
+		h.connectExternalOrganization(w, r, session.ActiveOrganizationID, is)
 		return
 	}
 
@@ -592,4 +564,60 @@ type UserLinkDB interface {
 
 	// FetchOrganizationMembers retrieves the members of an organization.
 	FetchOrganizationMembers(ctx context.Context, organizationID string) ([]string, error)
+}
+
+// connectExternalOrganization completes the externally initiated install
+// flow, exchanging the OAuth code and claiming the workspace for the
+// organization named in the installation state.
+func (h *Handler) connectExternalOrganization(
+	w http.ResponseWriter,
+	r *http.Request,
+	organizationID string,
+	is *slack.InstallationState,
+) {
+	if is.OrganizationID.String != organizationID {
+		httpserver.RespondError(h.log, w, ErrMissingInstallationState)
+		return
+	}
+
+	code := r.URL.Query().Get("code")
+	if code == "" {
+		httpserver.RespondError(h.log, w, ErrMissingCode)
+		return
+	}
+
+	appAccess, err := h.man.ExchangeCode(r.Context(), code)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	// the workspace may already belong to another organization; the
+	// upsert would otherwise hand it over silently.
+	existing, ferr := h.db.FetchSlackAppByTeamID(r.Context(), appAccess.TeamID)
+
+	switch {
+	case ferr == nil:
+		if existing.OrganizationID.Valid &&
+			existing.OrganizationID.String != is.OrganizationID.String {
+			httpserver.RespondError(h.log, w, ErrOrganizationAlreadyConnected)
+
+			return
+		}
+	case errutil.IsNotFound(ferr):
+		// a first installation.
+	default:
+		httpserver.RespondError(h.log, w, ferr)
+
+		return
+	}
+
+	if err = h.db.InsertSlackApp(r.Context(), slack.App{
+		TeamID:         appAccess.TeamID,
+		Token:          appAccess.AccessToken,
+		OrganizationID: is.OrganizationID,
+	}); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
 }

@@ -17,7 +17,10 @@ func (a *agent) InsertSlackUserLink(ctx context.Context, link slack.UserLink) er
 			"fk_user_id":    link.UserID,
 			"settings":      link.Settings,
 			"created_at":    link.CreatedAt,
-		}).MustSql()
+		}).
+		Suffix(`ON CONFLICT (slack_user_id, fk_team_id) DO UPDATE SET ` +
+			`fk_user_id = excluded.fk_user_id, settings = excluded.settings`).
+		MustSql()
 
 	_, err := a.sql.ExecContext(ctx, q, args...)
 

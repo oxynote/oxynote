@@ -7,6 +7,7 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/guregu/null/v5"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -196,6 +197,31 @@ func Test_agent_UpdateGithubInstallationOrganizationID(t *testing.T) {
 			assert.Equal(t, null.StringFrom(c.OrganizationID), organizationID)
 		})
 	}
+
+	t.Run("An already claimed installation is not reassigned", func(t *testing.T) {
+		t.Parallel()
+
+		db := prepTempDB(t)
+		orgs := prepOrganizations(t, db, 2)
+
+		const installationID = int64(4242)
+
+		require.NoError(t, db.InsertGithubInstallation(context.Background(), installationID))
+		require.NoError(t, db.UpdateGithubInstallationOrganizationID(
+			context.Background(), installationID, orgs[0],
+		))
+
+		// a second connect must lose the race rather than take the
+		// installation away from the organization that claimed it.
+		err := db.UpdateGithubInstallationOrganizationID(
+			context.Background(), installationID, orgs[1],
+		)
+		testutil.AssertEqualError(t, errutil.ErrNotFound, err)
+
+		res, err := db.FetchGithubInstallationByOrganizationID(context.Background(), orgs[0])
+		require.NoError(t, err)
+		assert.Equal(t, installationID, res)
+	})
 }
 
 func Test_agent_DeleteGithubInstallation(t *testing.T) {

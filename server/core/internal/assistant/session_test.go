@@ -562,6 +562,7 @@ func Test_Session_callAnthropic(t *testing.T) {
 		require.Error(t, err)
 	})
 }
+
 func Test_Session_dispatchTools(t *testing.T) {
 	t.Run("Reads execute without confirmation", func(t *testing.T) {
 		t.Parallel()

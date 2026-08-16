@@ -62,7 +62,9 @@ func (s *State) Scan(src any) error {
 	case string:
 		*s = State(v)
 	case []byte:
-		*s = State(v)
+		// the driver may reuse the slice after Scan returns, so it has to be
+		// copied rather than aliased.
+		*s = append(State(nil), v...)
 	default:
 		return errors.New("invalid state type")
 	}
@@ -102,7 +104,9 @@ func (s *Settings) Scan(src any) error {
 	case string:
 		*s = Settings(v)
 	case []byte:
-		*s = Settings(v)
+		// the driver may reuse the slice after Scan returns, so it has to be
+		// copied rather than aliased.
+		*s = append(Settings(nil), v...)
 	default:
 		return errors.New("invalid settings type")
 	}

@@ -399,7 +399,7 @@ func (h *Handler) UpdateDocumentTree(w http.ResponseWriter, r *http.Request) {
 	httpserver.Respond(
 		h.log,
 		w,
-		tree,
+		swappedTree,
 		http.StatusOK,
 	)
 }

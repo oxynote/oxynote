@@ -154,6 +154,33 @@ func Test_agent_InsertSlackApp(t *testing.T) {
 			assert.Equal(t, c.App, app)
 		})
 	}
+
+	t.Run("Reinstall keeps the existing organization", func(t *testing.T) {
+		t.Parallel()
+
+		db := prepTempDB(t)
+		org := prepOrganizations(t, db, 1)[0]
+
+		app := slack.App{
+			TeamID:         "team-reinstall",
+			Token:          "token-1",
+			OrganizationID: null.StringFrom(org),
+		}
+
+		require.NoError(t, db.InsertSlackApp(context.Background(), app))
+
+		// a reinstall carries no organization; it must refresh the token
+		// without disconnecting the workspace.
+		require.NoError(t, db.InsertSlackApp(context.Background(), slack.App{
+			TeamID: app.TeamID,
+			Token:  "token-2",
+		}))
+
+		res, err := db.FetchSlackAppByTeamID(context.Background(), app.TeamID)
+		require.NoError(t, err)
+		assert.Equal(t, "token-2", res.Token)
+		assert.Equal(t, org, res.OrganizationID.String)
+	})
 }
 
 func Test_agent_InsertSlackMessage(t *testing.T) {

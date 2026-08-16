@@ -6,6 +6,7 @@ import (
 	sq "github.com/Masterminds/squirrel"
 	"github.com/guregu/null/v5"
 	"github.com/jmoiron/sqlx"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 )
 
 // InsertGithubInstallation inserts a new Github installation into the database.
@@ -27,6 +28,8 @@ func (a *agent) FetchGithubInstallationByOrganizationID(ctx context.Context, org
 		Where(sq.Eq{
 			"fk_organization_id": organizationID,
 		}).
+		OrderBy("installation_id").
+		Limit(1).
 		MustSql()
 
 	var installationID int64
@@ -56,20 +59,36 @@ func (a *agent) FetchGithubInstallationOrganizationID(ctx context.Context, insta
 	return organizationID, nil
 }
 
-// UpdateGithubInstallationOrganizationID updates the organization ID for a given Github installation.
+// UpdateGithubInstallationOrganizationID assigns an unclaimed Github
+// installation to an organization. It returns errutil.ErrNotFound when the
+// installation is already claimed, so two concurrent connects cannot both
+// succeed with the second overwriting the first.
 func (a *agent) UpdateGithubInstallationOrganizationID(ctx context.Context, installationID int64, organizationID string) error {
 	q, args := a.builder.Update("github_installations").
 		SetMap(map[string]any{
 			"fk_organization_id": organizationID,
 		}).
 		Where(sq.Eq{
-			"installation_id": installationID,
+			"installation_id":    installationID,
+			"fk_organization_id": nil,
 		}).
 		MustSql()
 
-	_, err := a.sql.ExecContext(ctx, q, args...)
+	res, err := a.sql.ExecContext(ctx, q, args...)
+	if err != nil {
+		return err
+	}
 
-	return err
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if n == 0 {
+		return errutil.ErrNotFound
+	}
+
+	return nil
 }
 
 // DeleteGithubInstallation removes a Github installation from the database.

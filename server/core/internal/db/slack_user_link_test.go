@@ -127,6 +127,24 @@ func Test_agent_InsertSlackUserLink(t *testing.T) {
 			testutil.AssertFilterEqual(t, c.Link, link)
 		})
 	}
+
+	t.Run("Re-linking updates the existing row", func(t *testing.T) {
+		t.Parallel()
+
+		db := prepTempDB(t)
+		link := prepSlackUserLinks(t, db, 1, nil)[0]
+
+		// linking the same slack user again used to trip the primary key
+		// and surface as an unmapped 500.
+		relinked := link
+		relinked.UserID = prepUsers(t, db, 1)[0]
+
+		require.NoError(t, db.InsertSlackUserLink(context.Background(), relinked))
+
+		res, err := db.FetchSlackUserLink(context.Background(), link.SlackUserID, link.TeamID)
+		require.NoError(t, err)
+		assert.Equal(t, relinked.UserID, res.UserID)
+	})
 }
 
 func Test_agent_UpdateSlackUserLink(t *testing.T) {

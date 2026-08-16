@@ -167,9 +167,17 @@ func (c Comment) Unresolve() Comment {
 	return nc
 }
 
-// Replace returns a new comment with content and author replaced by the given
-// reply, which is removed from the head of the reply list.
-func (c Comment) Replace(r Reply) Comment {
+// Replace returns a new comment whose content and author are taken from the
+// head of the reply list, with that reply removed. The second return value
+// reports whether there was a reply to promote; a comment with none is
+// returned unchanged.
+func (c Comment) Replace() (Comment, bool) {
+	if len(c.Replies) == 0 {
+		return c, false
+	}
+
+	r := c.Replies[0]
+
 	nc := c
 	nc.UserID = r.UserID
 	nc.Content = r.Content
@@ -177,7 +185,7 @@ func (c Comment) Replace(r Reply) Comment {
 	nc.UpdatedAt = r.UpdatedAt
 	nc.Replies = c.Replies[1:]
 
-	return nc
+	return nc, true
 }
 
 // NewReply creates a new reply instance with the provided input.

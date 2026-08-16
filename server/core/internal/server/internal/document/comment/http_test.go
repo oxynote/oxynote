@@ -749,10 +749,18 @@ func Test_Handler_ResolveDocumentComment(t *testing.T) {
 			},
 			RespCode: http.StatusInternalServerError,
 		},
-		"Comment deletion error": {
+		"Another user's comment": {
 			DB: &DBMock{
 				FetchDocumentCommentFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Comment, error) {
 					return storedComment("u2"), nil
+				},
+			},
+			RespCode: http.StatusForbidden,
+		},
+		"Comment deletion error": {
+			DB: &DBMock{
+				FetchDocumentCommentFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Comment, error) {
+					return storedComment("u1"), nil
 				},
 				DeleteDocumentCommentFunc: func(context.Context, xid.ID, xid.ID, string) error {
 					return errors.New("boom")
@@ -764,7 +772,7 @@ func Test_Handler_ResolveDocumentComment(t *testing.T) {
 		"Successful resolution": {
 			DB: &DBMock{
 				FetchDocumentCommentFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Comment, error) {
-					return storedComment("u2"), nil
+					return storedComment("u1"), nil
 				},
 			},
 			RespCode: http.StatusOK,

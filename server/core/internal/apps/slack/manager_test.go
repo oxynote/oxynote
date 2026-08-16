@@ -21,6 +21,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/internal/notification/interpreter"
 	"github.com/oxynote/oxynote/server/core/pkg/cryptoutil"
+	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -401,6 +402,18 @@ func Test_Manager_VerifyMiddleware(t *testing.T) {
 
 		assert.Error(t, man.VerifyMiddleware(r))
 	})
+
+	t.Run("Body read failure is a form error", func(t *testing.T) {
+		t.Parallel()
+
+		r := httptest.NewRequest(http.MethodPost, "/slack/events", &failingReader{})
+		r.Header.Set("X-Slack-Request-Timestamp", strconv.FormatInt(time.Now().Unix(), 10))
+		r.Header.Set("X-Slack-Signature", "v0=deadbeef")
+
+		// a transport failure is not malformed JSON, and these payloads are
+		// form-encoded in the first place.
+		assert.Equal(t, httpserver.ErrInvalidForm, man.VerifyMiddleware(r))
+	})
 }
 
 func Test_Manager_ProcessNotification(t *testing.T) {
@@ -522,4 +535,13 @@ func Test_Manager_ProcessNotification(t *testing.T) {
 			}
 		})
 	}
+}
+
+// failingReader always fails, standing in for a request body that dies
+// mid-transport.
+type failingReader struct{}
+
+// Read always returns an error.
+func (failingReader) Read([]byte) (int, error) {
+	return 0, assert.AnError
 }
