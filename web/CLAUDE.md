@@ -111,7 +111,13 @@ Prettier uses **tabs**, no semicolons, trailing commas — see [prettier.config.
 
 ESLint ([eslint.config.mjs](eslint.config.mjs)) runs **type-aware**: `eslint.config.typescript.tsconfigPath` in `nuxt.config.ts` switches the generated Nuxt preset to the `*-type-checked` rule sets, on top of which the config adds `eslint:recommended` (the Nuxt preset ships no base JS rules), typescript-eslint **strict + stylistic**, and `@intlify/eslint-plugin-vue-i18n`. Consequences worth knowing:
 
-- Linting builds a full TS program, so `check-eslint` takes minutes, not seconds.
+- Linting builds a full TS program, so a cold `check-eslint` takes about a
+  minute. Runs are cached (`node_modules/.cache/eslint`) — unchanged files
+  are near-instant. Caveat: the cache is per-file while type-aware results
+  depend on *other* files' types, so after cross-file type changes a cached
+  file can report stale results locally. CI always runs cold and is the
+  gate of record; locally, `rm -rf node_modules/.cache/eslint` forces a
+  full run.
 - ESLint's TS program cannot resolve `.vue` imports (only `vue-tsc` can), so calls through a component ref are reported as unsafe. Those carry an inline disable with the reason `eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this`.
 - Every `eslint-disable` **must** state a reason after `--`. It is for false positives only, never to avoid a fix. Stale disables are errors (`reportUnusedDisableDirectives`), and eslint runs with `--max-warnings 0`, so warnings fail the gate too.
 - `@typescript-eslint/no-explicit-any` is off; `prefer-function-type` is off (keeps the `defineEmits<{ (e: ...): void }>()` style).
