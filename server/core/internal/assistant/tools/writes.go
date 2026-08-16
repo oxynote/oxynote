@@ -230,6 +230,17 @@ func (m *Manager) moveDocument(ctx context.Context, args json.RawMessage) (json.
 			return nil, fmt.Errorf("move_document: new parent not found: %w", err)
 		}
 
+		cycle, cerr := m.db.CheckDocumentCycle(ctx, docID, pid, m.orgID)
+		if cerr != nil {
+			return nil, fmt.Errorf("move_document: parent check: %w", cerr)
+		}
+
+		if cycle {
+			return nil, errors.New(
+				"move_document: a document cannot be moved under itself or one of its descendants",
+			)
+		}
+
 		newParent = null.ValueFrom(pid)
 	}
 

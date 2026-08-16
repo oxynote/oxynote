@@ -246,6 +246,87 @@ func Test_agent_CheckDocumentExists(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func Test_agent_CheckDocumentCycle(t *testing.T) {
+	// error - failing query
+	a, mock := prepMockDB(t)
+
+	mock.ExpectQuery("WITH RECURSIVE").WillReturnError(assert.AnError)
+
+	_, err := a.CheckDocumentCycle(context.Background(), xid.New(), xid.New(), "org-id")
+	assert.Equal(t, assert.AnError, err)
+
+	// success
+	db := prepTempDB(t)
+	org := prepOrganizations(t, db, 1)[0]
+
+	prepChild := func(parent null.Value[xid.ID]) *document.Document {
+		return prepDocuments(t, db, 1, func(_ int, d *document.Document) {
+			d.OrganizationID = org
+			d.ParentID = parent
+		})[0]
+	}
+
+	root := prepChild(null.Value[xid.ID]{})
+	child := prepChild(null.ValueFrom(root.ID))
+	grandchild := prepChild(null.ValueFrom(child.ID))
+	other := prepChild(null.Value[xid.ID]{})
+
+	cc := map[string]struct {
+		ID             xid.ID
+		ParentID       xid.ID
+		OrganizationID string
+		Result         bool
+	}{
+		"Document adopted by itself": {
+			ID:       root.ID,
+			ParentID: root.ID,
+			Result:   true,
+		},
+		"Document adopted by its child": {
+			ID:       root.ID,
+			ParentID: child.ID,
+			Result:   true,
+		},
+		"Document adopted by a deeper descendant": {
+			ID:       root.ID,
+			ParentID: grandchild.ID,
+			Result:   true,
+		},
+		"Document adopted by its own parent": {
+			ID:       child.ID,
+			ParentID: root.ID,
+		},
+		"Document adopted by an unrelated document": {
+			ID:       root.ID,
+			ParentID: other.ID,
+		},
+		"Parent does not exist": {
+			ID:       root.ID,
+			ParentID: xid.New(),
+		},
+		"Parent belongs to another organization": {
+			ID:             root.ID,
+			ParentID:       child.ID,
+			OrganizationID: "other-org-id",
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			organizationID := c.OrganizationID
+			if organizationID == "" {
+				organizationID = org
+			}
+
+			res, err := db.CheckDocumentCycle(context.Background(), c.ID, c.ParentID, organizationID)
+			assert.NoError(t, err)
+			assert.Equal(t, c.Result, res)
+		})
+	}
+}
+
 func Test_agent_FetchDocument(t *testing.T) {
 	db := prepTempDB(t)
 

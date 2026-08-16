@@ -28,6 +28,10 @@ var ErrInvalidSearchQuery = errutil.New(http.StatusBadRequest, "document.invalid
 // the document identified by the request path.
 var ErrBranchMismatch = errutil.New(http.StatusNotFound, "document.branch_mismatch", "branch does not belong to the document")
 
+// ErrInvalidDocumentParent is returned when a document would be moved under
+// itself or one of its own descendants.
+var ErrInvalidDocumentParent = errutil.New(http.StatusBadRequest, "document.invalid_parent", "document cannot be moved under itself or its descendant")
+
 // Handler holds dependencies required for tenant app-related operations.
 type Handler struct {
 	log             *slog.Logger
@@ -299,6 +303,26 @@ func (h *Handler) UpdateDocumentTree(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if data.ParentID.Valid {
+		if err = tx.CheckDocumentExists(r.Context(), data.ParentID.V, session.ActiveOrganizationID); err != nil {
+			httpserver.RespondError(h.log, w, err)
+			return
+		}
+
+		var cycle bool
+
+		cycle, err = tx.CheckDocumentCycle(r.Context(), doc.ID, data.ParentID.V, session.ActiveOrganizationID)
+		if err != nil {
+			httpserver.RespondError(h.log, w, err)
+			return
+		}
+
+		if cycle {
+			httpserver.RespondError(h.log, w, ErrInvalidDocumentParent)
+			return
+		}
+	}
+
 	tree, err := tx.FetchDocumentTreeByDocumentParentID(r.Context(), data.ParentID, session.ActiveOrganizationID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
@@ -457,6 +481,13 @@ func (h *Handler) CreateDocument(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
 
 	doc := documentCore.NewDocument(di, session.ActiveOrganizationID, session.UserID)
+
+	if doc.ParentID.Valid {
+		if err = tx.CheckDocumentExists(r.Context(), doc.ParentID.V, session.ActiveOrganizationID); err != nil {
+			httpserver.RespondError(h.log, w, err)
+			return
+		}
+	}
 
 	if err = tx.InsertDocument(r.Context(), doc); err != nil {
 		httpserver.RespondError(h.log, w, err)
@@ -1302,6 +1333,10 @@ type DocumentsDBAgent interface {
 
 	// CheckDocumentExists returns nil if the document exists and belongs to the given organization.
 	CheckDocumentExists(ctx context.Context, id xid.ID, organizationID string) error
+
+	// CheckDocumentCycle should report whether making parentID the parent of id
+	// would create a cycle in the document tree.
+	CheckDocumentCycle(ctx context.Context, id, parentID xid.ID, organizationID string) (bool, error)
 
 	// FetchDocument should fetch a document joined against the given branch for the given id.
 	FetchDocument(ctx context.Context, id xid.ID, organizationID, branchName string) (*documentCore.Document, error)

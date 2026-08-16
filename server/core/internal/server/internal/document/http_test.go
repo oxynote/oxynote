@@ -837,6 +837,42 @@ func Test_Handler_UpdateDocumentTree(t *testing.T) {
 			Committed: 1,
 			TreeCbs:   2,
 		},
+		"New parent does not exist": {
+			Tx: &TxMock{
+				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
+				CheckDocumentExistsFunc: func(context.Context, xid.ID, string) error {
+					return errutil.ErrNotFound
+				},
+			},
+			Body:     newParentBody,
+			RespCode: http.StatusNotFound,
+		},
+		"New parent cycle check error": {
+			Tx: &TxMock{
+				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
+				CheckDocumentCycleFunc: func(context.Context, xid.ID, xid.ID, string) (bool, error) {
+					return false, errors.New("boom")
+				},
+			},
+			Body:     newParentBody,
+			RespCode: http.StatusInternalServerError,
+		},
+		"New parent is the document or its descendant": {
+			Tx: &TxMock{
+				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
+				CheckDocumentCycleFunc: func(context.Context, xid.ID, xid.ID, string) (bool, error) {
+					return true, nil
+				},
+			},
+			Body:     newParentBody,
+			RespCode: http.StatusBadRequest,
+		},
 		"Move with parent update error": {
 			Tx: &TxMock{
 				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
@@ -946,6 +982,7 @@ func Test_Handler_SearchDocuments(t *testing.T) {
 
 func Test_Handler_CreateDocument(t *testing.T) {
 	validBody := `{"name":"New doc","icon":"icon"}`
+	parentBody := `{"name":"New doc","icon":"icon","parentId":"` + xid.New().String() + `"}`
 
 	// insertAwareTx returns the freshly inserted document in the parent
 	// subtree so the sort-index swap can find it.
@@ -983,6 +1020,15 @@ func Test_Handler_CreateDocument(t *testing.T) {
 			BeginErr: errors.New("boom"),
 			Body:     validBody,
 			RespCode: http.StatusInternalServerError,
+		},
+		"Parent document does not exist": {
+			Tx: &TxMock{
+				CheckDocumentExistsFunc: func(context.Context, xid.ID, string) error {
+					return errutil.ErrNotFound
+				},
+			},
+			Body:     parentBody,
+			RespCode: http.StatusNotFound,
 		},
 		"Document insertion error": {
 			Tx: &TxMock{

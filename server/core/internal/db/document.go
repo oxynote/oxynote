@@ -101,6 +101,36 @@ func (a *agent) CheckDocumentExists(ctx context.Context, id xid.ID, organization
 	return sqlx.GetContext(ctx, a.sql, &n, q, args...)
 }
 
+// CheckDocumentCycle reports whether making parentID the parent of id would
+// create a cycle in the document tree, i.e. whether parentID is the document
+// itself or one of its descendants. It walks the candidate parent's ancestor
+// chain, so the work is bounded by the tree depth rather than its size. A
+// parent outside the organization yields false; callers check existence
+// separately.
+func (a *agent) CheckDocumentCycle(ctx context.Context, id, parentID xid.ID, organizationID string) (bool, error) {
+	const q = `
+		WITH RECURSIVE ancestors AS (
+			SELECT id, fk_parent_id
+			FROM documents
+			WHERE id = $1 AND fk_organization_id = $3
+			UNION ALL
+			SELECT d.id, d.fk_parent_id
+			FROM documents d
+			JOIN ancestors a ON d.id = a.fk_parent_id
+			WHERE d.fk_organization_id = $3
+		)
+		SELECT EXISTS (SELECT 1 FROM ancestors WHERE id = $2)
+	`
+
+	var cycle bool
+
+	if err := sqlx.GetContext(ctx, a.sql, &cycle, q, parentID, id, organizationID); err != nil {
+		return false, err
+	}
+
+	return cycle, nil
+}
+
 // FetchDocument retrieves a document by its ID and organization ID,
 // joined against the specified branch.
 func (a *agent) FetchDocument(ctx context.Context, id xid.ID, organizationID, branchName string) (*document.Document, error) {

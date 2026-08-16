@@ -27,6 +27,9 @@ var _ DB = &DBMock{}
 //			BeginTxFunc: func(ctx context.Context, dest any) error {
 //				panic("mock out the BeginTx method")
 //			},
+//			CheckDocumentCycleFunc: func(ctx context.Context, id xid.ID, parentID xid.ID, organizationID string) (bool, error) {
+//				panic("mock out the CheckDocumentCycle method")
+//			},
 //			CheckDocumentExistsFunc: func(ctx context.Context, id xid.ID, organizationID string) error {
 //				panic("mock out the CheckDocumentExists method")
 //			},
@@ -133,6 +136,9 @@ type DBMock struct {
 	// BeginTxFunc mocks the BeginTx method.
 	BeginTxFunc func(ctx context.Context, dest any) error
 
+	// CheckDocumentCycleFunc mocks the CheckDocumentCycle method.
+	CheckDocumentCycleFunc func(ctx context.Context, id xid.ID, parentID xid.ID, organizationID string) (bool, error)
+
 	// CheckDocumentExistsFunc mocks the CheckDocumentExists method.
 	CheckDocumentExistsFunc func(ctx context.Context, id xid.ID, organizationID string) error
 
@@ -237,6 +243,17 @@ type DBMock struct {
 			Ctx context.Context
 			// Dest is the dest argument value.
 			Dest any
+		}
+		// CheckDocumentCycle holds details about calls to the CheckDocumentCycle method.
+		CheckDocumentCycle []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// ID is the id argument value.
+			ID xid.ID
+			// ParentID is the parentID argument value.
+			ParentID xid.ID
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
 		}
 		// CheckDocumentExists holds details about calls to the CheckDocumentExists method.
 		CheckDocumentExists []struct {
@@ -526,6 +543,7 @@ type DBMock struct {
 		}
 	}
 	lockBeginTx                             sync.RWMutex
+	lockCheckDocumentCycle                  sync.RWMutex
 	lockCheckDocumentExists                 sync.RWMutex
 	lockCheckOrganizationMember             sync.RWMutex
 	lockCountDocumentBranches               sync.RWMutex
@@ -596,6 +614,54 @@ func (mock *DBMock) BeginTxCalls() []struct {
 	mock.lockBeginTx.RLock()
 	calls = mock.calls.BeginTx
 	mock.lockBeginTx.RUnlock()
+	return calls
+}
+
+// CheckDocumentCycle calls CheckDocumentCycleFunc.
+func (mock *DBMock) CheckDocumentCycle(ctx context.Context, id xid.ID, parentID xid.ID, organizationID string) (bool, error) {
+	callInfo := struct {
+		Ctx            context.Context
+		ID             xid.ID
+		ParentID       xid.ID
+		OrganizationID string
+	}{
+		Ctx:            ctx,
+		ID:             id,
+		ParentID:       parentID,
+		OrganizationID: organizationID,
+	}
+	mock.lockCheckDocumentCycle.Lock()
+	mock.calls.CheckDocumentCycle = append(mock.calls.CheckDocumentCycle, callInfo)
+	mock.lockCheckDocumentCycle.Unlock()
+	if mock.CheckDocumentCycleFunc == nil {
+		var (
+			bOut   bool
+			errOut error
+		)
+		return bOut, errOut
+	}
+	return mock.CheckDocumentCycleFunc(ctx, id, parentID, organizationID)
+}
+
+// CheckDocumentCycleCalls gets all the calls that were made to CheckDocumentCycle.
+// Check the length with:
+//
+//	len(mockedDB.CheckDocumentCycleCalls())
+func (mock *DBMock) CheckDocumentCycleCalls() []struct {
+	Ctx            context.Context
+	ID             xid.ID
+	ParentID       xid.ID
+	OrganizationID string
+} {
+	var calls []struct {
+		Ctx            context.Context
+		ID             xid.ID
+		ParentID       xid.ID
+		OrganizationID string
+	}
+	mock.lockCheckDocumentCycle.RLock()
+	calls = mock.calls.CheckDocumentCycle
+	mock.lockCheckDocumentCycle.RUnlock()
 	return calls
 }
 

@@ -24,6 +24,9 @@ var _ Tx = &TxMock{}
 //
 //		// make and configure a mocked Tx
 //		mockedTx := &TxMock{
+//			CheckDocumentCycleFunc: func(ctx context.Context, id xid.ID, parentID xid.ID, organizationID string) (bool, error) {
+//				panic("mock out the CheckDocumentCycle method")
+//			},
 //			CheckDocumentExistsFunc: func(ctx context.Context, id xid.ID, organizationID string) error {
 //				panic("mock out the CheckDocumentExists method")
 //			},
@@ -133,6 +136,9 @@ var _ Tx = &TxMock{}
 //
 //	}
 type TxMock struct {
+	// CheckDocumentCycleFunc mocks the CheckDocumentCycle method.
+	CheckDocumentCycleFunc func(ctx context.Context, id xid.ID, parentID xid.ID, organizationID string) (bool, error)
+
 	// CheckDocumentExistsFunc mocks the CheckDocumentExists method.
 	CheckDocumentExistsFunc func(ctx context.Context, id xid.ID, organizationID string) error
 
@@ -237,6 +243,17 @@ type TxMock struct {
 
 	// calls tracks calls to the methods.
 	calls struct {
+		// CheckDocumentCycle holds details about calls to the CheckDocumentCycle method.
+		CheckDocumentCycle []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// ID is the id argument value.
+			ID xid.ID
+			// ParentID is the parentID argument value.
+			ParentID xid.ID
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+		}
 		// CheckDocumentExists holds details about calls to the CheckDocumentExists method.
 		CheckDocumentExists []struct {
 			// Ctx is the ctx argument value.
@@ -530,6 +547,7 @@ type TxMock struct {
 			MaintainerIDs []string
 		}
 	}
+	lockCheckDocumentCycle                  sync.RWMutex
 	lockCheckDocumentExists                 sync.RWMutex
 	lockCheckOrganizationMember             sync.RWMutex
 	lockCommit                              sync.RWMutex
@@ -564,6 +582,54 @@ type TxMock struct {
 	lockUpdateDocumentParentID              sync.RWMutex
 	lockUpdateDocumentTree                  sync.RWMutex
 	lockUpsertDocumentMaintainers           sync.RWMutex
+}
+
+// CheckDocumentCycle calls CheckDocumentCycleFunc.
+func (mock *TxMock) CheckDocumentCycle(ctx context.Context, id xid.ID, parentID xid.ID, organizationID string) (bool, error) {
+	callInfo := struct {
+		Ctx            context.Context
+		ID             xid.ID
+		ParentID       xid.ID
+		OrganizationID string
+	}{
+		Ctx:            ctx,
+		ID:             id,
+		ParentID:       parentID,
+		OrganizationID: organizationID,
+	}
+	mock.lockCheckDocumentCycle.Lock()
+	mock.calls.CheckDocumentCycle = append(mock.calls.CheckDocumentCycle, callInfo)
+	mock.lockCheckDocumentCycle.Unlock()
+	if mock.CheckDocumentCycleFunc == nil {
+		var (
+			bOut   bool
+			errOut error
+		)
+		return bOut, errOut
+	}
+	return mock.CheckDocumentCycleFunc(ctx, id, parentID, organizationID)
+}
+
+// CheckDocumentCycleCalls gets all the calls that were made to CheckDocumentCycle.
+// Check the length with:
+//
+//	len(mockedTx.CheckDocumentCycleCalls())
+func (mock *TxMock) CheckDocumentCycleCalls() []struct {
+	Ctx            context.Context
+	ID             xid.ID
+	ParentID       xid.ID
+	OrganizationID string
+} {
+	var calls []struct {
+		Ctx            context.Context
+		ID             xid.ID
+		ParentID       xid.ID
+		OrganizationID string
+	}
+	mock.lockCheckDocumentCycle.RLock()
+	calls = mock.calls.CheckDocumentCycle
+	mock.lockCheckDocumentCycle.RUnlock()
+	return calls
 }
 
 // CheckDocumentExists calls CheckDocumentExistsFunc.

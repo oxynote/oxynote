@@ -148,6 +148,11 @@ type DB interface {
 	// the given org. Used by move_document to validate the new
 	// parent before issuing UPDATE.
 	CheckDocumentExists(ctx context.Context, id xid.ID, organizationID string) error
+
+	// CheckDocumentCycle reports whether making parentID the parent
+	// of id would create a cycle in the document tree. Used by
+	// move_document to reject self and descendant parents.
+	CheckDocumentCycle(ctx context.Context, id, parentID xid.ID, organizationID string) (bool, error)
 }
 
 // Searcher is the full-text search surface search_documents uses.

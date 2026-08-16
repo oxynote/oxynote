@@ -538,6 +538,9 @@ func Test_Manager_moveDocument(t *testing.T) {
 		db.CheckDocumentExistsFunc = func(_ context.Context, _ xid.ID, _ string) error {
 			return checkErr
 		}
+		db.CheckDocumentCycleFunc = func(_ context.Context, _, _ xid.ID, _ string) (bool, error) {
+			return false, nil
+		}
 		db.UpdateDocumentParentIDFunc = func(_ context.Context, _ xid.ID, _ null.Value[xid.ID], _ string) error {
 			return updateErr
 		}
@@ -574,6 +577,30 @@ func Test_Manager_moveDocument(t *testing.T) {
 		},
 		"Error returned by db.CheckDocumentExists": {
 			DB:   okDB(nil, assert.AnError, nil),
+			Args: `{"document_id":"` + docID.String() + `","new_parent_id":"` + newParent.String() + `"}`,
+			Err:  assert.AnError,
+		},
+		"Error returned by db.CheckDocumentCycle": {
+			DB: func() *DBMock {
+				db := okDB(nil, nil, nil)
+				db.CheckDocumentCycleFunc = func(_ context.Context, _, _ xid.ID, _ string) (bool, error) {
+					return false, assert.AnError
+				}
+
+				return db
+			}(),
+			Args: `{"document_id":"` + docID.String() + `","new_parent_id":"` + newParent.String() + `"}`,
+			Err:  assert.AnError,
+		},
+		"New parent is the document or its descendant": {
+			DB: func() *DBMock {
+				db := okDB(nil, nil, nil)
+				db.CheckDocumentCycleFunc = func(_ context.Context, _, _ xid.ID, _ string) (bool, error) {
+					return true, nil
+				}
+
+				return db
+			}(),
 			Args: `{"document_id":"` + docID.String() + `","new_parent_id":"` + newParent.String() + `"}`,
 			Err:  assert.AnError,
 		},
