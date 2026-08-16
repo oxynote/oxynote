@@ -699,6 +699,41 @@ func Test_PostgreSQL_connect(t *testing.T) {
 
 	_, err = p.connect(context.Background())
 	assert.Error(t, err)
+
+	// the session refuses writes, and the simple protocol cannot be
+	// re-enabled through the data source URL to smuggle a second statement
+	// past the gate.
+	cc := map[string]struct {
+		URL   string
+		Query string
+	}{
+		"Write statement": {
+			URL:   pgTestURL(_pgUser, _pgPass),
+			Query: "DELETE FROM metrics",
+		},
+		"Write smuggled through the simple protocol": {
+			URL:   pgTestURL(_pgUser, _pgPass) + "&default_query_exec_mode=simple_protocol",
+			Query: "SET transaction_read_only = off; DELETE FROM metrics",
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			p := NewPostgreSQL(&InputMock{
+				URLFunc: func() string { return c.URL },
+			})
+
+			_, err := p.Query(context.Background(), c.Query, _testTimeRange)
+			assert.Error(t, err)
+
+			// the rows are still there.
+			res, err := p.Query(context.Background(), "SELECT time FROM metrics ORDER BY time", _testTimeRange)
+			require.NoError(t, err)
+			assert.Len(t, res.Rows, 2)
+		})
+	}
 }
 
 func Test_PostgreSQL_buildConnectionString(t *testing.T) {

@@ -51,8 +51,13 @@ func (p *PostgreSQL) TestConnection(ctx context.Context) (ConnectionStatus, erro
 
 	var readOnly bool
 
+	// connect puts the session into read-only mode, which masks
+	// current_setting; reset_val still reports the value the data source
+	// itself defines through the server, database or role.
 	err = conn.QueryRow(ctx,
-		"SELECT current_setting('default_transaction_read_only')::bool OR pg_is_in_recovery()",
+		"SELECT COALESCE((SELECT reset_val FROM pg_settings "+
+			"WHERE name = 'default_transaction_read_only') = 'on', false) "+
+			"OR pg_is_in_recovery()",
 	).Scan(&readOnly)
 	if err != nil {
 		return ConnectionStatusUnreachable, nil
@@ -241,15 +246,36 @@ func (p *PostgreSQL) Query(ctx context.Context, q string, tr TimeRange) (*Postgr
 }
 
 // connect creates a pgx connection using the data source URL and credentials.
+//
+// Two things are locked down on every connection. The query execution mode is
+// pinned to the extended protocol whatever the data source URL asks for: under
+// the simple protocol a single stored query may carry several statements,
+// which would let a leading "SET transaction_read_only = off" disarm the
+// read-only gate. The session is then put into read-only mode, so the server
+// itself rejects any write the query text attempts instead of the code
+// trusting a status recorded earlier on a different connection.
 func (p *PostgreSQL) connect(ctx context.Context) (*pgx.Conn, error) {
 	connStr, err := p.buildConnectionString()
 	if err != nil {
 		return nil, err
 	}
 
-	conn, err := pgx.Connect(ctx, connStr)
+	cfg, err := pgx.ParseConfig(connStr)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing postgresql connection string: %w", err)
+	}
+
+	cfg.DefaultQueryExecMode = pgx.QueryExecModeCacheStatement
+
+	conn, err := pgx.ConnectConfig(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("error connecting to postgresql: %w", err)
+	}
+
+	if _, err = conn.Exec(ctx, "SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY"); err != nil {
+		conn.Close(ctx) //nolint:errcheck,gosec // error provides no meaningful info
+
+		return nil, fmt.Errorf("error enforcing a read-only session: %w", err)
 	}
 
 	return conn, nil
