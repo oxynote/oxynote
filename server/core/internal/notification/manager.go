@@ -16,6 +16,12 @@ import (
 // _maxBackoffRetries is the maximum number of retries.
 const _maxBackoffRetries = 5
 
+// _newBackoff creates the retry backoff strategy. Variable so tests
+// can substitute a faster strategy.
+var _newBackoff = func() backoff.BackOff {
+	return backoff.NewExponentialBackOff()
+}
+
 // Unsubscribe is a function used to unsubscribe from notifications.
 type Unsubscribe func()
 
@@ -87,7 +93,7 @@ func (m *Manager) PublishNotifications(organizationID string, nc Core, userIDs .
 				},
 				backoff.WithMaxRetries(
 					backoff.WithContext(
-						backoff.NewExponentialBackOff(),
+						_newBackoff(),
 						ctx,
 					),
 					_maxBackoffRetries,
@@ -126,6 +132,8 @@ type Receiver interface {
 }
 
 // DB is an interface that handles communication with the notifications database.
+//
+//go:generate ../../scripts/codegen/mock -t internal DB db
 type DB interface {
 	// CreateNotification should create a new notification.
 	CreateNotification(ctx context.Context, nt *Notification) error

@@ -25,13 +25,15 @@ var (
 // Interpreter is the notification interpreter.
 type Interpreter struct {
 	db     DB
+	fm     Formatter
 	appURL string
 }
 
 // NewInterpreter creates a new notification interpreter.
-func NewInterpreter(db DB, appURL string) *Interpreter {
+func NewInterpreter(db DB, fm Formatter, appURL string) *Interpreter {
 	return &Interpreter{
 		db:     db,
+		fm:     fm,
 		appURL: appURL,
 	}
 }
@@ -69,12 +71,13 @@ func (i *Interpreter) interpretDocumentReviewRequestNotification(ctx context.Con
 		return nil, err
 	}
 
+	url := fmt.Sprintf("%s/%s/%s-%s", i.appURL, orgSlug, slug.Make(doc.DocumentName), doc.ID.String())
+
 	return &Message{
 		Text: fmt.Sprintf(
-			"Your review was requested on the %s branch of <%s|%s>",
+			"Your review was requested on the %s branch of %s",
 			doc.BranchName,
-			fmt.Sprintf("%s/%s/%s-%s", i.appURL, orgSlug, slug.Make(doc.DocumentName), doc.ID.String()),
-			doc.DocumentName,
+			i.fm.Link(url, doc.DocumentName),
 		),
 	}, nil
 }
@@ -118,9 +121,8 @@ func (i *Interpreter) interpretDocumentHookTriggeredNotification(ctx context.Con
 
 	return &Message{
 		Text: fmt.Sprintf(
-			"<%s|%s> may be outdated — %s",
-			url,
-			subject,
+			"%s may be outdated — %s",
+			i.fm.Link(url, subject),
 			tp.HumanizedString(),
 		),
 	}, nil
@@ -165,10 +167,9 @@ func (i *Interpreter) interpretDocumentNewCommentNotification(ctx context.Contex
 
 	return &Message{
 		Text: fmt.Sprintf(
-			"%s left a comment on <%s|%s>",
+			"%s left a comment on %s",
 			name,
-			url,
-			doc.DocumentName,
+			i.fm.Link(url, doc.DocumentName),
 		),
 	}, nil
 }
@@ -212,15 +213,16 @@ func (i *Interpreter) interpretDocumentNewCommentReplyNotification(ctx context.C
 
 	return &Message{
 		Text: fmt.Sprintf(
-			"%s replied to a comment on <%s|%s>",
+			"%s replied to a comment on %s",
 			name,
-			url,
-			doc.DocumentName,
+			i.fm.Link(url, doc.DocumentName),
 		),
 	}, nil
 }
 
 // DB is the interface for database operations needed by the interpreter.
+//
+//go:generate ../../../scripts/codegen/mock -t internal DB db
 type DB interface {
 	// FetchDocumentByBranchID should fetch a document joined against the branch
 	// identified by branchID.
@@ -233,17 +235,28 @@ type DB interface {
 	FetchUserName(ctx context.Context, userID string) (string, error)
 }
 
+// Formatter is an interface that handles platform-specific message
+// formatting.
+type Formatter interface {
+	// Link should render a link with the given URL and display text.
+	Link(url, text string) string
+}
+
 // metaBranchID extracts the branch ID from notification metadata.
+// The value is a typed xid.ID when the notification comes from the
+// in-memory fan-out and a string after a JSON round-trip.
 func metaBranchID(n notification.Notification) (xid.ID, bool) {
-	s, ok := n.Metadata["branchId"].(string)
-	if !ok || s == "" {
-		return xid.ID{}, false
+	switch v := n.Metadata["branchId"].(type) {
+	case xid.ID:
+		return v, true
+	case string:
+		id, err := xid.FromString(v)
+		if err != nil {
+			return xid.ID{}, false
+		}
+
+		return id, true
 	}
 
-	id, err := xid.FromString(s)
-	if err != nil {
-		return xid.ID{}, false
-	}
-
-	return id, true
+	return xid.ID{}, false
 }

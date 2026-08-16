@@ -10,6 +10,18 @@ import (
 // Code represents a notification code.
 type Code string
 
+// Metadata keys used by the notification constructors.
+const (
+	_metaKeyUserID         = "userId"
+	_metaKeyDocumentID     = "documentId"
+	_metaKeyBranchID       = "branchId"
+	_metaKeyBlockID        = "blockId"
+	_metaKeyType           = "type"
+	_metaKeyCommentID      = "commentId"
+	_metaKeyCommentReplyID = "commentReplyId"
+	_metaKeyAnchorBlockID  = "anchorBlockId"
+)
+
 const (
 	// NotificationDocumentReviewRequest is the notification code for document review requests.
 	NotificationDocumentReviewRequest Code = "notification.document.review_request"
@@ -29,9 +41,9 @@ func NewDocumentReviewRequestNotification(userID string, documentID, branchID xi
 	return Core{
 		Code: NotificationDocumentReviewRequest,
 		Metadata: map[string]any{
-			"userId":     userID,
-			"documentId": documentID,
-			"branchId":   branchID,
+			_metaKeyUserID:     userID,
+			_metaKeyDocumentID: documentID,
+			_metaKeyBranchID:   branchID,
 		},
 	}
 }
@@ -41,10 +53,10 @@ func NewDocumentHookTriggeredNotification(documentID xid.ID, tp hook.Type, block
 	return Core{
 		Code: NotificationDocumentHookTriggered,
 		Metadata: map[string]any{
-			"documentId": documentID,
-			"blockId":    blockID,
-			"type":       tp,
-			"branchId":   branchID,
+			_metaKeyDocumentID: documentID,
+			_metaKeyBlockID:    blockID,
+			_metaKeyType:       tp,
+			_metaKeyBranchID:   branchID,
 		},
 	}
 }
@@ -59,11 +71,11 @@ func NewDocumentNewCommentNotification(
 	return Core{
 		Code: NotificationDocumentNewComment,
 		Metadata: map[string]any{
-			"userId":        userID,
-			"documentId":    documentID,
-			"commentId":     commentID,
-			"anchorBlockId": anchorBlockID,
-			"branchId":      branchID,
+			_metaKeyUserID:        userID,
+			_metaKeyDocumentID:    documentID,
+			_metaKeyCommentID:     commentID,
+			_metaKeyAnchorBlockID: anchorBlockID,
+			_metaKeyBranchID:      branchID,
 		},
 	}
 }
@@ -78,12 +90,12 @@ func NewDocumentNewCommentReplyNotification(
 	return Core{
 		Code: NotificationDocumentNewCommentReply,
 		Metadata: map[string]any{
-			"userId":         userID,
-			"documentId":     documentID,
-			"commentId":      commentID,
-			"commentReplyId": commentReplyID,
-			"anchorBlockId":  anchorBlockID,
-			"branchId":       branchID,
+			_metaKeyUserID:         userID,
+			_metaKeyDocumentID:     documentID,
+			_metaKeyCommentID:      commentID,
+			_metaKeyCommentReplyID: commentReplyID,
+			_metaKeyAnchorBlockID:  anchorBlockID,
+			_metaKeyBranchID:       branchID,
 		},
 	}
 }
