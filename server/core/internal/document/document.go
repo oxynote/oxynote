@@ -242,10 +242,14 @@ func (d Document) ApplyBranchUpdate(name null.String, protected null.Bool, updat
 }
 
 // Changelog returns a changelog entry for the current state of the document.
+// Entries aggregate per branch and per time bucket: the branch is part of the
+// ID so that two branches of one document edited within the same bucket keep
+// separate entries instead of overwriting each other.
 func (d Document) Changelog() Changelog {
 	id := fmt.Sprintf(
-		"%s-%s",
+		"%s-%s-%s",
 		d.ID,
+		d.BranchID,
 		d.UpdatedAt.Truncate(_aggregationDuration).
 			Format(_changelogTimeLayout),
 	)

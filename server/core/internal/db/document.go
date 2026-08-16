@@ -249,6 +249,10 @@ func (a *agent) DeleteDocument(ctx context.Context, id xid.ID, organizationID st
 }
 
 // fetchDocumentTree fetchs the document tree for the given query and arguments.
+// Rows arrive ordered by sort index alone, so parents and children interleave.
+// The tree is therefore indexed first and materialised afterwards: attaching
+// children while scanning would mean holding pointers into child slices that
+// a later append can reallocate, silently dropping whole subtrees.
 func (a *agent) fetchDocumentTree(ctx context.Context, rootID null.Value[xid.ID], q string, args ...any) (document.Summaries, error) {
 	var data []struct {
 		*document.Summary
@@ -262,42 +266,53 @@ func (a *agent) fetchDocumentTree(ctx context.Context, rootID null.Value[xid.ID]
 
 	var (
 		root      []xid.ID
-		documents = make(map[xid.ID]*document.Summary)
-		childrens = make(map[xid.ID][]xid.ID)
+		summaries = make(map[xid.ID]*document.Summary, len(data))
+		children  = make(map[xid.ID][]xid.ID)
 	)
 
 	for _, d := range data {
-		for _, childID := range childrens[d.ID] {
-			d.Children = append(d.Children, *documents[childID])
-			documents[childID] = &d.Children[len(d.Children)-1]
-		}
+		summaries[d.ID] = d.Summary
 
 		if d.ParentID == rootID {
 			root = append(root, d.ID)
-			documents[d.ID] = d.Summary
 
 			continue
 		}
 
-		parent, ok := documents[d.ParentID.V]
-		if !ok {
-			childrens[d.ParentID.V] = append(childrens[d.ParentID.V], d.ID)
-			documents[d.ID] = d.Summary
-
-			continue
-		}
-
-		parent.Children = append(parent.Children, *d.Summary)
-		documents[d.ID] = &parent.Children[len(parent.Children)-1]
+		children[d.ParentID.V] = append(children[d.ParentID.V], d.ID)
 	}
 
 	res := make(document.Summaries, 0, len(root))
 
 	for _, id := range root {
-		res = append(res, *documents[id])
+		res = append(res, buildDocumentSubtree(id, summaries, children))
 	}
 
 	return res, nil
+}
+
+// buildDocumentSubtree materialises the subtree rooted at the given id.
+// Documents whose parent is absent from the result set are unreachable from
+// any root and stay out of the tree, as they did before.
+func buildDocumentSubtree(
+	id xid.ID,
+	summaries map[xid.ID]*document.Summary,
+	children map[xid.ID][]xid.ID,
+) document.Summary {
+	res := *summaries[id]
+
+	ids := children[id]
+	if len(ids) == 0 {
+		return res
+	}
+
+	res.Children = make(document.Summaries, 0, len(ids))
+
+	for _, childID := range ids {
+		res.Children = append(res.Children, buildDocumentSubtree(childID, summaries, children))
+	}
+
+	return res
 }
 
 // selectDocumentTree prepares a sql select statement for fetching the document tree.

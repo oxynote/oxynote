@@ -470,6 +470,52 @@ func Test_agent_FetchDocumentTree(t *testing.T) {
 	assert.Equal(t, exp1, res)
 }
 
+func Test_agent_fetchDocumentTree(t *testing.T) {
+	// sort_index drives row order, so the levels arrive interleaved: root,
+	// child, grandchild, second child, second grandchild. The second child
+	// grows the root's children slice after the first grandchild was
+	// already attached to the first child.
+	t.Run("Grandchildren survive sibling appends", func(t *testing.T) {
+		t.Parallel()
+
+		db := prepTempDB(t)
+		org := prepOrganizations(t, db, 1)[0]
+
+		ids := make([]xid.ID, 5)
+		for i := range ids {
+			ids[i] = xid.New()
+		}
+
+		parents := []null.Value[xid.ID]{
+			{},
+			null.ValueFrom(ids[0]),
+			null.ValueFrom(ids[1]),
+			null.ValueFrom(ids[0]),
+			null.ValueFrom(ids[1]),
+		}
+
+		prepDocuments(t, db, len(ids), func(i int, doc *document.Document) {
+			doc.ID = ids[i]
+			doc.OrganizationID = org
+			doc.ParentID = parents[i]
+		})
+
+		res, err := db.FetchDocumentTree(context.Background(), org)
+		require.NoError(t, err)
+
+		require.Len(t, res, 1)
+		assert.Equal(t, ids[0], res[0].ID)
+
+		require.Len(t, res[0].Children, 2)
+		assert.Equal(t, ids[1], res[0].Children[0].ID)
+		assert.Equal(t, ids[3], res[0].Children[1].ID)
+
+		require.Len(t, res[0].Children[0].Children, 2)
+		assert.Equal(t, ids[2], res[0].Children[0].Children[0].ID)
+		assert.Equal(t, ids[4], res[0].Children[0].Children[1].ID)
+	})
+}
+
 func Test_agent_FetchDocumentTreeByDocumentParentID(t *testing.T) {
 	db := prepTempDB(t)
 
@@ -555,6 +601,33 @@ func Test_agent_UpdateDocument(t *testing.T) {
 
 		err := a.UpdateDocument(context.Background(), document.Document{})
 		assert.Equal(t, assert.AnError, err)
+	})
+
+	t.Run("Changelogs are kept per branch", func(t *testing.T) {
+		t.Parallel()
+
+		db := prepTempDB(t)
+
+		// two branches of one document, updated inside the same
+		// aggregation window.
+		branches := prepDocumentBranches(t, db, 2, nil)
+		now := timeutil.Now().Truncate(time.Second)
+
+		for _, b := range branches {
+			b.UpdatedAt = now
+
+			require.NoError(t, db.UpdateDocument(context.Background(), *b))
+		}
+
+		var logs uint64
+
+		q, args := db.builder.Select("COUNT(*)").From("document_branch_changelogs").
+			Where(sq.Eq{
+				"fk_document_id": branches[0].ID,
+			}).MustSql()
+
+		require.NoError(t, db.sql.Get(&logs, q, args...))
+		assert.Equal(t, uint64(2), logs)
 	})
 
 	type tcase struct {

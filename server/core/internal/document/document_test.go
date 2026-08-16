@@ -244,11 +244,18 @@ func Test_Document_Changelog(t *testing.T) {
 	cl := doc.Changelog()
 
 	// the timestamp is truncated to the 30-minute aggregation window.
-	assert.Equal(t, doc.ID.String()+"-2026-01-01T10:30:00", cl.ID)
+	assert.Equal(t, doc.ID.String()+"-"+doc.BranchID.String()+"-2026-01-01T10:30:00", cl.ID)
 	assert.Equal(t, doc.ID, cl.DocumentID)
 	assert.Equal(t, doc.Content, cl.Content)
 	assert.Equal(t, doc.RawContent, cl.RawContent)
 	assert.Equal(t, doc.UpdatedAt, cl.CreatedAt)
+
+	// a second branch of the same document updated within the same window
+	// keeps an entry of its own.
+	other := doc
+	other.BranchID = xid.New()
+
+	assert.NotEqual(t, cl.ID, other.Changelog().ID)
 }
 
 func Test_Document_Search(t *testing.T) {
