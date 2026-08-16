@@ -9,8 +9,8 @@ Some rules reference small shared utility packages (`errutil`, `sqlutil`,
 friends). They live in this repo under `pkg/`; supervisors come from
 `github.com/jellydator/xync`. The in-repo implementations are the source of truth
 for their contracts. A helper referenced here but not ported yet (`syncutil`'s
-context-aware mutex, `mathutil`) gets ported before its first use — the contracts
-are part of the convention.
+context-aware mutex) gets ported before its first use — the contracts are part
+of the convention.
 
 ## Non-negotiables (summary)
 
@@ -23,14 +23,14 @@ are part of the convention.
 4. Table-driven tests use `map[string]struct{...}` tables named `cc`, run with
    `t.Run(cn, ...)` + `t.Parallel()`.
 5. The database is accessed through the **agent pattern**: consumers own narrow
-   `DB`/`DBTx`/`DBAgent` interfaces and run transactions without ever seeing
+   `DB`/`Tx`/`DBAgent` interfaces and run transactions without ever seeing
    `*sql.Tx`/`*sqlx.Tx`.
 6. Doc comment on every declaration — exported *and* unexported — ending with a
    period. Interface method docs say what the method *should* do.
 7. Package-level variables/constants that are unexported are prefixed with `_`.
    Exported globals are allowed only for `Err*` sentinels.
-8. `timeutil.Now()` instead of `time.Now()`. `decimal.Decimal` for money/market
-   values. `any` instead of `interface{}`.
+8. `timeutil.Now()` instead of `time.Now()`. `decimal.Decimal` for exact numeric
+   values (hook scores, watch thresholds). `any` instead of `interface{}`.
 9. Goroutines are owned by a supervisor and every package's tests run under
    `goleak.VerifyTestMain`.
 10. Lint clean under a strict golangci-lint profile (gofumpt extra rules, wsl, godot,
@@ -56,8 +56,8 @@ make check-lint  # golangci-lint run (verification only)
   domain-agnostic helpers (`errcode`, `ptrutil`, `sliceutil`-style). Business
   logic never goes here.
 - Package names: short, lowercase, no underscores. Helper siblings are named
-  `<parentabbrev><role>` (`stratutil`, `exchmarket`, `tenantpool`) or a bare role
-  name when nesting disambiguates (`intercept`, `execution`, `ratelimit`).
+  `<parentabbrev><role>` (`searchgw`, `redkit`) or a bare role
+  name when nesting disambiguates (`block`, `edit`, `processor`).
 - Files: snake_case, named after the primary type/concern. Recurring names across
   packages: `manager.go`, `options.go`, `metrics.go`, `client.go`, `event.go`,
   `util.go`, `error.go`, `http.go`, `ws.go`.
@@ -114,14 +114,15 @@ make check-lint  # golangci-lint run (verification only)
 
 ### Naming
 
-- Receivers: 1–3 lowercase letters from the type's initials (`m` Manager, `t` Tenant,
-  `el` EventLogger, `so` SequenceOperator), consistent across all methods of a type.
-- Short local vocabulary is idiomatic: `cfg`, `opts`, `inp` (input), `rep` (report),
-  `exec`, `supv` (supervisor), `res`, `evt`, `tnt`. Secondary error variables get a
+- Receivers: 1–3 lowercase letters from the type's initials (`m` Manager, `ic`
+  InstallationClient, `tr` TimeRange, `pqr` PrometheusQueryResult), consistent
+  across all methods of a type.
+- Short local vocabulary is idiomatic: `cfg`, `opts`, `inp` (input), `exec`,
+  `supv` (supervisor), `res`, `evt`. Secondary error variables get a
   prefix letter: `cerr` (close), `rerr` (recover/retry), `perr` (parse).
 - Acronyms stay uppercase everywhere, including at the start of unexported
-  identifiers' interior: `httpClient`, `BaseHTTPURL`, `individualETFChecker`, `ID`,
-  `DSN`, `TTL`. Exception: `Ws` in compounds (`BaseWsURL`, `setupWs`).
+  identifiers' interior: `httpClient`, `demoPrometheusURL`, `queryMySQLGeneric`,
+  `ID`, `DSN`, `TTL`. Exception: `Ws` in compounds (`BaseWsURL`, `setupWs`).
 - `any`, never `interface{}`.
 - Unused parameters are `_`.
 - When restructuring, audit every exported identifier with `grep -rn "pkg\.Name"`.
@@ -150,8 +151,8 @@ make check-lint  # golangci-lint run (verification only)
   after `Lock()`; `defer resp.Body.Close() //nolint:errcheck // ...` after HTTP calls.
 - Import grouping: one stdlib block, then one block of everything else sorted by
   path. Alias collisions with lowercase concatenations
-  (`marketExchange "example.com/lib/market/exchange"`) and mock imports as
-  `<pkg>Mock` (see Testing).
+  (`hookMan "…/internal/document/hook/manager"`, `githubCore "…/internal/apps/github"`)
+  and mock imports as `<pkg>Mock` (see Testing).
 
 ## API design
 
@@ -169,9 +170,9 @@ make check-lint  # golangci-lint run (verification only)
   //
   //go:generate ../../scripts/codegen/mock -t internal DB db
   type DB interface {
-      eventlog.DB
-      statistics.DB
-      strategy.DB
+      document.DB
+      comment.DB
+      files.DB
   }
   ```
 
@@ -179,8 +180,8 @@ make check-lint  # golangci-lint run (verification only)
 - The `//go:generate` mock directive lives inside the interface's doc comment block,
   after the prose, separated by a bare `//` line (see Mock generation).
 - Interfaces are declared **at the bottom of the file that uses them**.
-- Naming: `-er` agent nouns where natural (`EventPublisher`, `SafeExecutor`,
-  `Accessor`), otherwise role nouns (`DB`, `DBTx`, `Components`, `Input`, `Cache`).
+- Naming: `-er` agent nouns where natural (`Notifier`, `Storer`, `Interpreter`),
+  otherwise role nouns (`DB`, `SessionConn`, `Input`).
 
 ### Constructors
 
@@ -272,8 +273,8 @@ Two tiers, kept in the same `var (...)` block when convenient:
 Rules:
 
 - Machine-readable codes live in a central `pkg/errcode` package: untyped string
-  constants, dotted-namespace values (`"config.duplicate_name"`,
-  `"capabilities.webhook_limit_exceeded"`), grouped in per-domain `const` blocks,
+  constants, dotted-namespace values (`"document_summary.invalid_sort_index"`,
+  `"document.branch_mismatch"`), grouped in per-domain `const` blocks,
   each doc-commented.
 - Sentinels are package-level `Err*` vars, doc-commented
   `// ErrX is returned when ...`.
@@ -388,8 +389,8 @@ Rules:
   ```
 
 - Periodic work: a periodic executor (`timeutil.NewPeriodicExec(interval, offset,
-  fn, recoveryValue, immediate)`) or cron with 6-field specs; never hand-rolled
-  ticker loops.
+  fn, recoveryValue, immediate)`) or cron (`timeutil.NewCron`) with 6-field
+  specs; never hand-rolled ticker loops.
 - Shutdown coordination: a `chan struct{}` closed once, exposed as
   `ShutDownCh() <-chan struct{}`; loops `select` on it.
 - Ctx-bound sleeps use `select { case <-ctx.Done(): ...; case <-time.After(d): }`,
@@ -406,10 +407,10 @@ Rules:
 - Durations are named `_`-prefixed package constants/vars with doc comments, never
   magic values at call sites.
 - IDs: `rs/xid` (`xid.New()`, `xid.ID` fields, `.IsZero()`/`.IsNil()` checks).
-- Money and market values: `shopspring/decimal`, never floats. Zero is
-  `decimal.Zero`. All non-trivial decimal math lives in `pkg/mathutil` (not
-  ported yet — port before first use: `SafeDiv` guarding division by zero,
-  `PercentChange`, `CmpDecimal` for validator plumbing, shared `Hundred`); call
+- Exact numeric values (hook scores, watch thresholds): `shopspring/decimal`,
+  never floats. Zero is `decimal.Zero`. All non-trivial decimal math lives in
+  `pkg/mathutil` (`SafeDiv` guarding division by zero, `PercentChange` for hook
+  score deltas, `CmpDecimal` for validator plumbing, shared `Hundred`); call
   sites never inline formulas.
 - Nullable **database** columns: `github.com/guregu/null/v5` (`null.Time`,
   `null.String`), set via `null.TimeFrom(...)`, cleared with the zero literal.
@@ -608,22 +609,19 @@ running in one.
 Each consumer package declares a triple at the bottom of its main file:
 
 ```go
-// DBTx is an interface that handles communication with the item
-// database in a transaction.
+// Tx is an interface that combines sqlutil.Tx and DBAgent.
 //
-//go:generate ../../scripts/codegen/mock -t internal DBTx db_tx
-type DBTx interface {
+//go:generate ../../scripts/codegen/mock -t internal Tx tx
+type Tx interface {
     sqlutil.Tx
-    subpkg.DBTx // compose child packages' transaction needs
     DBAgent
 }
 
-// DB is an interface that handles communication with the item database.
+// DB is an interface that combines sqlutil.DB and DBAgent.
 //
-//go:generate ../../scripts/codegen/mock -t both DB db
+//go:generate ../../scripts/codegen/mock -t internal DB db
 type DB interface {
     sqlutil.DB
-    subpkg.DB
     DBAgent
 }
 
@@ -638,15 +636,16 @@ type DBAgent interface {
 }
 ```
 
-`DBAgent` holds the shared methods; `DB` adds `BeginTx`; `DBTx` adds
-`Commit`/`Rollback`. Parent packages compose child packages' `DB`/`DBTx` interfaces
-by embedding, so a single concrete `*db.DB` satisfies the entire tree. Leaf
-consumers that never transact declare a flat `DB` without the `sqlutil.DB` embed.
+`DBAgent` holds the shared methods; `DB` adds `BeginTx`; `Tx` adds
+`Commit`/`Rollback`. Parent packages compose child packages' `DB` interfaces
+by embedding (the server root `DB` embeds every handler's `DB`), so a single
+concrete `*db.DB` satisfies the entire tree. Leaf consumers that never transact
+declare a flat `DB` without the `sqlutil.DB` embed.
 
 ### The transaction idiom
 
 ```go
-var tx DBTx
+var tx Tx
 
 err := m.db.BeginTx(ctx, &tx)
 if err != nil {
@@ -685,11 +684,12 @@ the db package contains only queries. Section order within a file:
 3. `Update*` / `MarkX*`
 4. `Delete*` / `Cleanup*`
 5. `select<Entity>` — a lowercase builder helper that appends the full aliased
-   column list, `FROM`, and the mandatory owner/tenant scope so it cannot be
-   forgotten by any query.
+   column list, `FROM`, and the mandatory owner/organization scope so it cannot
+   be forgotten by any query.
 6. `apply<Entity>Filter`, `apply<Entity>Sort` — whitelist free functions.
 
-Method naming: `<Verb><Entity>[By<Key>]` (`FetchOrderByID`, `DeleteItemsByOwnerID`).
+Method naming: `<Verb><Entity>[By<Key>]` (`FetchDocumentByBranchID`,
+`DeleteDocumentCommentsByBranchID`).
 
 ### Query idioms
 
@@ -754,16 +754,16 @@ Method naming: `<Verb><Entity>[By<Key>]` (`FetchOrderByID`, `DeleteItemsByOwnerI
 - Middleware baseline: CORS (only when origins are configured), request timeout,
   recoverer, method-not-allowed/not-found handlers, then the metrics wrapper.
 - Handler shape: a `Handler` struct holding only `log` + process-wide deps, with
-  `NewHandler(log, deps...)`. Methods are **not** `http.HandlerFunc` — they take
-  extra arguments for per-request/per-tenant services, wired by route-level
-  closures: `func (h *Handler) HandleCreateItem(w http.ResponseWriter,
-  r *http.Request, ownerID xid.ID, exec SafeExecutor)`.
-- Handler method names are `Handle<DomainVerb><Entity>` — the domain verb, never
-  the HTTP verb (the router file already says `GET`/`PUT`/`POST`):
-  `HandleFetchX` for GET of a single resource, `HandleFetchXs` for a collection
-  (not `HandleListX`), `HandleExtractX`/`HandleReextractX` for action endpoints
-  (not `HandlePutX`), `HandleCreateX`/`HandleUpdateX`/`HandleDeleteX` for the
-  obvious CRUD verbs.
+  `NewHandler(log, deps...)`. Methods are plain `func (h *Handler)
+  X(w http.ResponseWriter, r *http.Request)`; per-request identity comes from
+  the request context populated by the auth middleware.
+- Handler method names are `<DomainVerb><Entity>` — the domain verb, never the
+  HTTP verb (the router file already says `GET`/`PUT`/`POST`): `FetchX` for GET
+  of a single resource, `FetchXs` for a collection (not `ListX`), action verbs
+  for action endpoints (`RequestBranchReviewer`, `ConnectOrganization`,
+  `DuplicateDocument` — not `PutX`), `CreateX`/`UpdateX`/`DeleteX` for the
+  obvious CRUD verbs. The `Handle` prefix appears only where the route has no
+  entity of its own (`HandleChat`, the `HandleEvent` webhooks).
 - Identity is resolved once in middleware into a private context key
   (`type ctxKey int` + `_ctxKeyUserID`), then passed to handlers as a plain
   argument — handlers never read the context for it.
@@ -786,8 +786,8 @@ Method naming: `<Verb><Entity>[By<Key>]` (`FetchOrderByID`, `DeleteItemsByOwnerI
   subscriber / unsubscribe on last, guarding the unsubscribe closure with a mutex.
   Payloads are inline anonymous structs; deletion events publish just the ID.
   Topics are registered centrally next to the router, named `<event>@<domain.path>`
-  (`update@exchange.orders`), with per-topic metrics injected by wrapping the
-  binder function.
+  (`change@documents.{documentId}.comments`), with per-topic metrics injected by
+  wrapping the binder function.
 - HTTP metrics label by chi `RoutePattern()` (bounded cardinality), method, and
   identity; measured around `next.ServeHTTP` so post-auth context values are
   available.
@@ -825,10 +825,10 @@ standards from day one.
   bundled `package_test.go`. When tests span two files, they live in the one
   that pairs with the *primary* file driving the test (round-trip tests land
   with the file that initiates the round-trip).
-- `Test_<Type>_<Method>` for methods (`Test_Manager_SafeUpdate`), `Test_<Func>`
-  for functions (`Test_New`, `Test_applyItemFilter`). Unexported names keep their
-  casing: `Test_agent_CreateEvent`, `Test_webhook_Exec`,
-  `Test_Tenant_maybeUpdateCapabilities`. The only `Test<X>` (no underscore) forms
+- `Test_<Type>_<Method>` for methods (`Test_Manager_VerifyLinkState`), `Test_<Func>`
+  for functions (`Test_New`, `Test_applyNotificationFilter`). Unexported names keep
+  their casing: `Test_agent_CreateNotification`, `Test_metrics_recordTokenUsage`,
+  `Test_DataSource_updateCredentials`. The only `Test<X>` (no underscore) forms
   are `TestMain` and `TestIntegration_*`.
 - Every package with tests has:
 
@@ -999,13 +999,13 @@ A `scripts/codegen/mock` wrapper drives `matryer/moq`; directives sit in the
 interface doc block:
 
 ```go
-//go:generate ../../scripts/codegen/mock -t internal DBTx db_tx
-//go:generate ../../scripts/codegen/mock -t both DB db
-//go:generate ../../scripts/codegen/mock -t external EventPublisher
+//go:generate ../../scripts/codegen/mock -t internal DB db
+//go:generate ../../scripts/codegen/mock -t both Searcher searcher
+//go:generate ../../scripts/codegen/mock -t external SessionWriter session_writer
 ```
 
 - `-t internal` → `moq -fmt goimports -out 0mock_<name>_test.go -stub . <Iface>` —
-  an in-package, test-only mock named `<Iface>Mock` (`DBMock`, `DBTxMock`).
+  an in-package, test-only mock named `<Iface>Mock` (`DBMock`, `TxMock`).
 - `-t external` (default) → `moq -fmt goimports -out ./_mock/<name>.go -stub
   -pkg mock . "<Iface>:<Iface>"` — an importable mock package for *other*
   packages' tests, type keeps the bare interface name (`mock.DB`).
@@ -1018,7 +1018,7 @@ interface doc block:
   hand-written adapter helper). Mocks for third-party interfaces go in a shared
   `internal/_mock` package.
 - Cross-package mock imports are always aliased `<pkg>Mock`:
-  `eventlogMock "example.com/app/internal/eventlog/_mock"`.
+  `toolsMock "…/internal/assistant/tools/_mock"`.
 
 ### Using mocks
 
@@ -1035,7 +1035,7 @@ interface doc block:
 - Reassign `XxxFunc` mid-test to move from the error phase to the success phase.
 - Factories for repeated shapes are local closures named `stub*`, parameterized by
   the errors each method should return:
-  `stubTx := func(createErr, commitErr, rollbackErr error) *DBTxMock {...}`.
+  `stubTx := func(createErr, commitErr, rollbackErr error) *TxMock {...}`.
 - Assert calls exclusively through the generated recorders:
 
   ```go
@@ -1054,24 +1054,24 @@ When a function touches several mocks, replace per-field expectations with a
 `Checks []check` field. Define locally, per test function:
 
 ```go
-type check func(*testing.T, *DBMock, *DBTxMock, error)
+type check func(*testing.T, *DBMock, *TxMock, error)
 
 checks := func(cc ...check) []check { return cc }
 
 hasError := func(exp error) check {
-    return func(t *testing.T, _ *DBMock, _ *DBTxMock, err error) {
+    return func(t *testing.T, _ *DBMock, _ *TxMock, err error) {
         testutil.AssertEqualError(t, exp, err)
     }
 }
 
 wasTxCommitCalled := func(count int) check {
-    return func(t *testing.T, _ *DBMock, tx *DBTxMock, _ error) {
+    return func(t *testing.T, _ *DBMock, tx *TxMock, _ error) {
         require.Len(t, tx.CommitCalls(), count)
     }
 }
 
 wasDBCreateItemCalled := func(count int) check {
-    return func(t *testing.T, db *DBMock, _ *DBTxMock, _ error) {
+    return func(t *testing.T, db *DBMock, _ *TxMock, _ error) {
         ff := db.CreateItemCalls()
         require.Len(t, ff, count)
 
@@ -1107,7 +1107,7 @@ The DB mock injects the Tx mock through the `dest any` pointer exactly the way t
 real implementation does:
 
 ```go
-stubDB := func(tx *DBTxMock, beginErr error) *DBMock {
+stubDB := func(tx *TxMock, beginErr error) *DBMock {
     return &DBMock{
         BeginTxFunc: func(_ context.Context, dest any) error {
             if beginErr != nil {
@@ -1124,7 +1124,7 @@ stubDB := func(tx *DBTxMock, beginErr error) *DBMock {
 }
 ```
 
-Store the `*DBTxMock` on the case struct so `was*` checks can inspect
+Store the `*TxMock` on the case struct so `was*` checks can inspect
 `CommitCalls()`/`RollbackCalls()` afterwards. Standard cases for every
 transactional function: BeginTx error, each statement's error, Commit error, and
 success — each asserting the exact commit/rollback counts.
@@ -1230,16 +1230,16 @@ handed to the SUT through its `HTTPClient` dependency (mock func or field).
 
 - Files end `_integration_test.go` with `//go:build integration` on line 1;
   functions are `TestIntegration_<Name>`; run with
-  `go test -run '^TestIntegration' -race --tags=integration` (a make target will
-  gate this once the QA harness lands).
-- Golden JSON round-trips guard serialization compatibility: `.golden` files in
-  `testdata/`, processed by a helper that enumerates them, unmarshals into a fresh
-  instance, re-marshals, and `assert.JSONEq`s against the file (subtest per file,
-  failing if the directory is empty).
+  `go test -run '^TestIntegration' -race --tags=integration`.
+- Golden JSON round-trips guard serialization compatibility (branch `content`
+  payloads, block trees): `.golden` files in `testdata/`, processed by a helper
+  that enumerates them, unmarshals into a fresh instance, re-marshals, and
+  `assert.JSONEq`s against the file (subtest per file, failing if the directory
+  is empty).
 
 ### Test hygiene
 
-- Package-level test fixtures are `_`-prefixed (`_pgDSN`, `_stratJSON`, `_formEnc`).
+- Package-level test fixtures are `_`-prefixed (`_pgDSN`, `_pgUser`, `_testSigningSecret`).
 - `t.Helper()` in named helper functions (`prep*`, `dial`); closures don't need it.
 - White-box construction is normal: build the SUT as a struct literal with
   unexported fields when the constructor's side effects are unwanted.
