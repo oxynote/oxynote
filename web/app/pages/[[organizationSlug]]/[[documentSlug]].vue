@@ -61,7 +61,7 @@ definePageMeta({
 		const docTree = await fetchDocumentTree.refresh()
 		const docSlugName = docSlugInfo.name
 		const docRealName = docNameByIdInDocumentTree(
-			docTree.data || [],
+			docTree.data ?? [],
 			docSlugInfo.id,
 		)
 
@@ -154,7 +154,7 @@ const activeDocMetadata = computed(() => {
 	}
 
 	const elem = extractDocumentTreeElement(
-		fetchDocumentTree.data.value || [],
+		fetchDocumentTree.data.value ?? [],
 		docInfo.id,
 	)
 	if (!elem) {
@@ -205,8 +205,8 @@ watch(fetchDocumentTree.state, (newV) => {
 
 	// handle the case where the current document got deleted or the user lost
 	// access to it, by redirecting to the first available document
-	if (!isIdInDocumentTree(newV.data || [], activeDocMetadata.value.id)) {
-		redirectToFirst(null, fetchOrganization, fetchDocumentTree, null)
+	if (!isIdInDocumentTree(newV.data ?? [], activeDocMetadata.value.id)) {
+		void redirectToFirst(null, fetchOrganization, fetchDocumentTree, null)
 	}
 })
 
@@ -366,7 +366,7 @@ function applyDocumentNameChange(name: string) {
 		protected: activeDocMetadata.value.protected,
 	})
 
-	pageRouter.replace(
+	void pageRouter.replace(
 		`/${createNameSlug(fetchOrganization.data.value?.data?.slug || "")}/${createNameSlugWithId(
 			name,
 			activeDocMetadata.value.id,
@@ -379,7 +379,7 @@ function refreshOrganizationRouteSlug() {
 		return
 	}
 
-	pageRouter.replace(
+	void pageRouter.replace(
 		`/${createNameSlug(fetchOrganization.data.value?.data?.slug || "")}/${createNameSlugWithId(
 			activeDocMetadata.value.name,
 			activeDocMetadata.value.id,
@@ -430,14 +430,14 @@ async function handleDocumentCreation(
 }
 
 // null/undefined deletes the active document.
-async function handleDocumentDeletion(id: string | null | undefined) {
+function handleDocumentDeletion(id: string | null | undefined) {
 	id = id ?? activeDocMetadata.value?.id
 	if (!id) {
 		return
 	}
 
 	const name = extractDocumentTreeElement(
-		fetchDocumentTree.data.value || [],
+		fetchDocumentTree.data.value ?? [],
 		id,
 	)?.documentName
 	if (!name) {

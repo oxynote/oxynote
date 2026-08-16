@@ -89,7 +89,7 @@ const createWindow = () => {
 	// denied — the app shouldn't be opening new in-app windows.
 	win.webContents.setWindowOpenHandler(({ url }) => {
 		if (!isInternalUrl(url)) {
-			shell.openExternal(url)
+			void shell.openExternal(url)
 		}
 
 		return { action: "deny" }
@@ -100,19 +100,19 @@ const createWindow = () => {
 	win.webContents.on("will-navigate", (event, url) => {
 		if (!isInternalUrl(url)) {
 			event.preventDefault()
-			shell.openExternal(url)
+			void shell.openExternal(url)
 		}
 	})
 
 	if (app.isPackaged) {
-		win.loadURL("oxynote://app/index.html")
+		void win.loadURL("oxynote://app/index.html")
 	} else {
-		win.loadURL("http://localhost:3000")
+		void win.loadURL("http://localhost:3000")
 		win.webContents.openDevTools({ mode: "detach" })
 	}
 }
 
-app.whenReady().then(() => {
+void app.whenReady().then(() => {
 	ipcMain.handle("shell:openExternal", (_event, url: string) =>
 		shell.openExternal(url),
 	)

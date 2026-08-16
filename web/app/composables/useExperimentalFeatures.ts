@@ -23,7 +23,7 @@ export default function () {
 			for (const featureConfig of featureConfigs) {
 				const [name, orgs] = featureConfig.split(":")
 				if (name === featureName) {
-					const orgList = orgs?.split(",").map((org) => org.trim()) || []
+					const orgList = orgs?.split(",").map((org) => org.trim()) ?? []
 					return orgList.includes(organizationId)
 				}
 			}

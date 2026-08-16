@@ -23,11 +23,11 @@ async function deleteAccount() {
 	loading.value = true
 	await delay(300) // show loading spinner for at least a moment
 
-	const { error } = await deleteUser({
+	const { error } = (await deleteUser({
 		callbackURL: addDeletionSuccessStatusToUrl(
 			`${config.public.appBaseURL}/signup`,
 		),
-	})
+	})) as AuthResponse
 	if (error) {
 		showToastMessage(
 			"error",

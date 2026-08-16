@@ -73,7 +73,7 @@ const targetBranchIcon = ref<string | null>(null)
 const activeBranchIconFragment =
 	props.activeBranchProvider.document.getText("icon")
 const targetBranchIconFragment =
-	props.targetBranchProvider?.document.getText("icon") || null
+	props.targetBranchProvider?.document.getText("icon") ?? null
 
 const showTitleDiff = computed(
 	() => editorStore.reviewableDiffActive && !!props.targetBranchProvider,
@@ -131,9 +131,7 @@ const processedReviewableAction = computed<ReviewableAction | null>({
 			val = ReviewableAction.ApproveUnapprove
 		}
 
-		if (val === null) {
-			val = ReviewableAction.ApproveUnapprove
-		}
+		val ??= ReviewableAction.ApproveUnapprove
 
 		selectedReviewableAction.value = val
 	},
@@ -153,18 +151,20 @@ const approvedByActiveUser = computed(() => {
 	return currentUserReviewer?.currentlyApproved ?? false
 })
 
-activeBranchIcon.value = activeBranchIconFragment.toString()
+// toJSON is the typed alias of YText.toString, which the bundled yjs
+// declarations omit
+activeBranchIcon.value = activeBranchIconFragment.toJSON()
 const activeBranchIconObserverCallback = () => {
-	activeBranchIcon.value = activeBranchIconFragment.toString()
+	activeBranchIcon.value = activeBranchIconFragment.toJSON()
 	emit("updated-live-icon", activeBranchIcon.value)
 }
 activeBranchIconFragment.observe(activeBranchIconObserverCallback)
 
 let targetBranchIconObserverCallback: (() => void) | null = null
 if (targetBranchIconFragment) {
-	targetBranchIcon.value = targetBranchIconFragment.toString()
+	targetBranchIcon.value = targetBranchIconFragment.toJSON()
 	targetBranchIconObserverCallback = () => {
-		targetBranchIcon.value = targetBranchIconFragment.toString()
+		targetBranchIcon.value = targetBranchIconFragment.toJSON()
 	}
 
 	targetBranchIconFragment.observe(targetBranchIconObserverCallback)
@@ -258,7 +258,7 @@ function updateDiffMode(active: boolean) {
 	editorStore.setReviewableDiffActive(active)
 	emit("diff-mode-changed", active)
 
-	nextTick(() => {
+	void nextTick(() => {
 		requestAnimationFrame(() => {
 			window.scrollTo({ top: scrollY })
 		})

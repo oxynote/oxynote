@@ -48,8 +48,9 @@ const fetchDocumentHooks = documentHookAPI.useFetchDocumentHooksByDocID(
 
 const userCaretDetails = computed(() => {
 	const caretColors = editorCaretColors()
-	const randomColor =
-		caretColors[Math.floor(Math.random() * caretColors.length)]!
+	const randomIndex = Math.floor(Math.random() * caretColors.length)
+	// eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- editorCaretColors always returns a non-empty list, so the random index is in bounds
+	const randomColor = caretColors[randomIndex]!
 
 	return {
 		name:
@@ -71,19 +72,11 @@ const activeBranch = computed(() => {
 const branchProviders = shallowReactive(new Map<string, BranchProviderEntry>())
 const activeBranchProvider = computed<BranchProviderEntry | null>(() => {
 	const bid = editorStore.activeBranchId
-	if (bid && branchProviders.has(bid)) {
-		return branchProviders.get(bid)!
-	}
-
-	return null
+	return bid ? (branchProviders.get(bid) ?? null) : null
 })
 const targetBranchProvider = computed<BranchProviderEntry | null>(() => {
 	const bid = editorStore.targetBranchId
-	if (bid && branchProviders.has(bid)) {
-		return branchProviders.get(bid)!
-	}
-
-	return null
+	return bid ? (branchProviders.get(bid) ?? null) : null
 })
 
 const nameEditor = ref<Editor | null>(null)
@@ -111,14 +104,17 @@ watchImmediate(
 		[preloadedBranchIds, activeBranchId, targetBranchId],
 		[_1, oldActiveBranchId],
 	) => {
-		if (!editorStore.activeDocumentId) {
+		// bound to a local so the guard still narrows inside the callbacks
+		// below — a "null-<branchId>" name would open a bogus Y.Doc
+		const documentId = editorStore.activeDocumentId
+		if (!documentId) {
 			return
 		}
 
 		preloadedBranchIds.forEach((branchId) => {
 			if (!branchProviders.has(branchId)) {
 				const entry = createBranchProvider(
-					`${editorStore.activeDocumentId}-${branchId}`,
+					`${documentId}-${branchId}`,
 					activeBranchId === branchId && !oldActiveBranchId, // treat as initial load if this is the active branch
 				)
 				branchProviders.set(branchId, entry)
@@ -127,7 +123,7 @@ watchImmediate(
 
 		if (activeBranchId && !branchProviders.has(activeBranchId)) {
 			const entry = createBranchProvider(
-				`${editorStore.activeDocumentId}-${activeBranchId}`,
+				`${documentId}-${activeBranchId}`,
 				oldActiveBranchId ? false : true, // only treat as initial load if there was no previous branch, otherwise it's a branch switch
 			)
 			branchProviders.set(activeBranchId, entry)
@@ -135,7 +131,7 @@ watchImmediate(
 
 		if (targetBranchId && !branchProviders.has(targetBranchId)) {
 			const entry = createBranchProvider(
-				`${editorStore.activeDocumentId}-${targetBranchId}`,
+				`${documentId}-${targetBranchId}`,
 				false,
 			)
 			branchProviders.set(targetBranchId, entry)
@@ -180,7 +176,7 @@ watch(nameEditor, (v) => {
 })
 
 watchImmediate([isEditable, activeBranch, nameEditor, contentEditor], () => {
-	const editable = activeBranch.value ? !activeBranch.value?.protected : false
+	const editable = activeBranch.value ? !activeBranch.value.protected : false
 	setEditable(editable)
 
 	if (nameEditor.value) {
@@ -207,10 +203,10 @@ function createBranchProvider(
 			// TODO handle edit permissions properly?
 		},
 		onAuthenticationFailed() {
-			redirectToLogin(route.fullPath, true, nuxtApp)
+			void redirectToLogin(route.fullPath, true, nuxtApp)
 		},
 		onStateless({ payload }) {
-			const data = JSON.parse(payload)
+			const data = JSON.parse(payload) as { type?: string }
 			if (data.type === "error") {
 				// TODO show toast
 				console.error(`Error in provider ${streamName}:`, data)
@@ -237,7 +233,7 @@ function updateEditor(editor: Editor) {
 	contentEditor.value = editor
 
 	// force placeholder decorations to recompute
-	contentEditor.value?.chain().run()
+	contentEditor.value.chain().run()
 }
 
 function handleDiffModeChange() {

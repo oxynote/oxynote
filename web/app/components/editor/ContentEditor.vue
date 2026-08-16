@@ -163,6 +163,7 @@ const contentEditor = useEditor({
 				nodeCommentState.value = v
 			},
 			onNodeCommentClick: (id: string) => {
+				// eslint-disable-next-line @typescript-eslint/no-unsafe-call -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 				commentRendererElem.value?.selectComment({
 					textComment: false,
 					id: id,
@@ -242,7 +243,7 @@ const contentEditor = useEditor({
 		const { $anchor } = editor.state.selection
 		for (let depth = $anchor.depth; depth > 0; depth--) {
 			const node = $anchor.node(depth)
-			const uid = node.attrs?.uid
+			const uid = node.attrs.uid as string | null | undefined
 
 			if (uid) {
 				setEditingNodeInAwareness(props.activeBranchProvider, {
@@ -293,7 +294,7 @@ watch(
 			nodeCommentState.value = null
 			textCommentState.value = null
 
-			nextTick(() => {
+			void nextTick(() => {
 				contentEditor.value?.commands.refreshNodeCommentOverlays()
 				contentEditor.value?.commands.refreshTextCommentIndicators()
 			})
@@ -327,6 +328,7 @@ watchImmediate(
 )
 
 function editLink() {
+	// eslint-disable-next-line @typescript-eslint/no-unsafe-call -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 	linkBubbleMenuElem.value?.editSelection()
 }
 
@@ -336,6 +338,7 @@ function setNodeCommentIndicatorHoverChange(
 ) {
 	if (
 		!contentEditor.value ||
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-call -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 		commentRendererElem.value?.isCommentPopoverOpen(nodeCommentId)
 	) {
 		return
@@ -353,6 +356,7 @@ function setTextCommentIndicatorHoverChange(
 ) {
 	if (
 		!contentEditor.value ||
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-call -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 		commentRendererElem.value?.isCommentPopoverOpen(commentId)
 	) {
 		return

@@ -22,9 +22,9 @@ async function removeMember() {
 	await delay(300) // show loading spinner for at least a moment
 
 	if (props.member.invitationPending) {
-		const { error } = await cancelOrganizationInvitation({
+		const { error } = (await cancelOrganizationInvitation({
 			invitationId: props.member.id,
-		})
+		})) as AuthResponse
 		if (error) {
 			loading.value = false
 			showToastMessage(
@@ -47,9 +47,9 @@ async function removeMember() {
 			return
 		}
 	} else {
-		const { error } = await removeOrganizationMember({
+		const { error } = (await removeOrganizationMember({
 			memberIdOrEmail: props.member.id,
-		})
+		})) as AuthResponse
 		if (error) {
 			loading.value = false
 			showToastMessage(

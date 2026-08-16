@@ -123,12 +123,10 @@ function tokensToJSON(
 // cannot be expanded (non-text inline content or atom/non-textblock
 // nodes with no content).
 function expandTextblock(node: JSONContent): JSONContent | null {
-	const oldNodeRaw = node.attrs?.oldNode
-	if (!oldNodeRaw) {
+	const oldNodeJSON = node.attrs?.oldNode as JSONContent | undefined
+	if (!oldNodeJSON) {
 		return null
 	}
-
-	const oldNodeJSON: JSONContent = oldNodeRaw as JSONContent
 
 	// skip atom / leaf nodes that have no content — they are not
 	// textblocks and should keep their oldNode for component-level
@@ -206,7 +204,7 @@ function expandTextblock(node: JSONContent): JSONContent | null {
 
 // recursively walk the tree and expand modified textblocks.
 function expandNode(node: JSONContent): JSONContent {
-	if (node.attrs?.diffStatus === DiffStatus.Modified && node.attrs?.oldNode) {
+	if (node.attrs?.diffStatus === DiffStatus.Modified && node.attrs.oldNode) {
 		const expanded = expandTextblock(node)
 
 		if (expanded) {
@@ -229,6 +227,7 @@ function expandNode(node: JSONContent): JSONContent {
 		return result
 	})
 
+	// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- changed is set inside the synchronous map callback, which TS narrowing does not track
 	return changed ? { ...node, content: newContent } : node
 }
 

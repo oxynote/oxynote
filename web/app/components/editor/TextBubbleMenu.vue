@@ -39,10 +39,6 @@ const showBubbleMenu = ref(false)
 const showLinkCreateMenu = ref(false)
 
 function handleLinkButtonClick() {
-	if (!props.editor) {
-		return
-	}
-
 	// Check if the selection already has a link
 	if (props.editor.isActive(Link.name)) {
 		emit("edit-link")

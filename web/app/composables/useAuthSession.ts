@@ -93,10 +93,9 @@ export default function () {
 
 	async function updateSessionOnInviteAccept(orgId: string) {
 		const args = { organizationId: orgId }
+		// See `as never` rationale on fetchAuthSession above.
 		const res = __DESKTOP_BUILD__
-			? ((await getHost().auth.setActiveOrganization(args)) as Awaited<
-					ReturnType<typeof $authClient.organization.setActive>
-				>)
+			? ((await getHost().auth.setActiveOrganization(args)) as never)
 			: await $authClient.organization.setActive(args)
 		if (res.error) {
 			return false
@@ -109,17 +108,17 @@ export default function () {
 	}
 
 	async function safeSignOut() {
-		let res: Awaited<ReturnType<typeof $authClient.signOut>>
 		if (__DESKTOP_BUILD__) {
 			// window.signOut clears main's electron-store session; renderer
 			// query cache is still cleared below.
 			await window.signOut()
-			res = { data: null, error: null } as Awaited<
-				ReturnType<typeof $authClient.signOut>
-			>
-		} else {
-			res = await $authClient.signOut()
 		}
+
+		// See `as never` rationale on fetchAuthSession above.
+		const res = __DESKTOP_BUILD__
+			? ({ data: null, error: null } as never)
+			: await $authClient.signOut()
+
 		if (res.error) {
 			return res
 		}
@@ -149,9 +148,7 @@ export default function () {
 		if (__DESKTOP_BUILD__) {
 			const params = args[0] as { provider?: string }
 			void window.requestAuth({ provider: params.provider })
-			return Promise.resolve({ data: null, error: null }) as ReturnType<
-				typeof $authClient.signIn.social
-			>
+			return Promise.resolve({ data: null, error: null }) as never
 		}
 		return $authClient.signIn.social(...args)
 	}
@@ -160,9 +157,7 @@ export default function () {
 		...args: Parameters<typeof $authClient.signIn.email>
 	) {
 		if (__DESKTOP_BUILD__) {
-			return getHost().auth.signInEmailPassword(args[0]) as ReturnType<
-				typeof $authClient.signIn.email
-			>
+			return getHost().auth.signInEmailPassword(args[0]) as never
 		}
 		return $authClient.signIn.email(...args)
 	}
@@ -171,9 +166,7 @@ export default function () {
 		...args: Parameters<typeof $authClient.requestPasswordReset>
 	) {
 		if (__DESKTOP_BUILD__) {
-			return getHost().auth.requestPasswordReset(args[0]) as ReturnType<
-				typeof $authClient.requestPasswordReset
-			>
+			return getHost().auth.requestPasswordReset(args[0]) as never
 		}
 		return $authClient.requestPasswordReset(...args)
 	}
@@ -194,9 +187,7 @@ export default function () {
 		...args: Parameters<typeof $authClient.signUp.email>
 	) {
 		if (__DESKTOP_BUILD__) {
-			return getHost().auth.signUpEmailPassword(args[0]) as ReturnType<
-				typeof $authClient.signUp.email
-			>
+			return getHost().auth.signUpEmailPassword(args[0]) as never
 		}
 		return $authClient.signUp.email(...args)
 	}
@@ -215,36 +206,28 @@ export default function () {
 		...args: Parameters<typeof $authClient.changePassword>
 	) {
 		if (__DESKTOP_BUILD__) {
-			return getHost().auth.changePassword(args[0]) as ReturnType<
-				typeof $authClient.changePassword
-			>
+			return getHost().auth.changePassword(args[0]) as never
 		}
 		return $authClient.changePassword(...args)
 	}
 
 	function updateUser(...args: Parameters<typeof $authClient.updateUser>) {
 		if (__DESKTOP_BUILD__) {
-			return getHost().auth.updateUser(args[0]) as ReturnType<
-				typeof $authClient.updateUser
-			>
+			return getHost().auth.updateUser(args[0]) as never
 		}
 		return $authClient.updateUser(...args)
 	}
 
 	function changeEmail(...args: Parameters<typeof $authClient.changeEmail>) {
 		if (__DESKTOP_BUILD__) {
-			return getHost().auth.changeEmail(args[0]) as ReturnType<
-				typeof $authClient.changeEmail
-			>
+			return getHost().auth.changeEmail(args[0]) as never
 		}
 		return $authClient.changeEmail(...args)
 	}
 
 	function deleteUser(...args: Parameters<typeof $authClient.deleteUser>) {
 		if (__DESKTOP_BUILD__) {
-			return getHost().auth.deleteUser(args[0]) as ReturnType<
-				typeof $authClient.deleteUser
-			>
+			return getHost().auth.deleteUser(args[0]) as never
 		}
 		return $authClient.deleteUser(...args)
 	}
@@ -253,9 +236,7 @@ export default function () {
 		...args: Parameters<typeof $authClient.organization.checkSlug>
 	) {
 		if (__DESKTOP_BUILD__) {
-			return getHost().auth.checkOrganizationSlug(args[0]) as ReturnType<
-				typeof $authClient.organization.checkSlug
-			>
+			return getHost().auth.checkOrganizationSlug(args[0]) as never
 		}
 		return $authClient.organization.checkSlug(...args)
 	}
@@ -264,9 +245,7 @@ export default function () {
 		...args: Parameters<typeof $authClient.organization.create>
 	) {
 		if (__DESKTOP_BUILD__) {
-			return getHost().auth.createOrganization(args[0]) as ReturnType<
-				typeof $authClient.organization.create
-			>
+			return getHost().auth.createOrganization(args[0]) as never
 		}
 		return $authClient.organization.create(...args)
 	}
@@ -275,9 +254,7 @@ export default function () {
 		...args: Parameters<typeof $authClient.organization.setActive>
 	) {
 		if (__DESKTOP_BUILD__) {
-			return getHost().auth.setActiveOrganization(args[0]) as ReturnType<
-				typeof $authClient.organization.setActive
-			>
+			return getHost().auth.setActiveOrganization(args[0]) as never
 		}
 		return $authClient.organization.setActive(...args)
 	}
@@ -286,9 +263,7 @@ export default function () {
 		...args: Parameters<typeof $authClient.organization.acceptInvitation>
 	) {
 		if (__DESKTOP_BUILD__) {
-			return getHost().auth.acceptOrganizationInvitation(args[0]) as ReturnType<
-				typeof $authClient.organization.acceptInvitation
-			>
+			return getHost().auth.acceptOrganizationInvitation(args[0]) as never
 		}
 		return $authClient.organization.acceptInvitation(...args)
 	}
@@ -297,9 +272,7 @@ export default function () {
 		...args: Parameters<typeof $authClient.organization.update>
 	) {
 		if (__DESKTOP_BUILD__) {
-			return getHost().auth.updateOrganization(args[0]) as ReturnType<
-				typeof $authClient.organization.update
-			>
+			return getHost().auth.updateOrganization(args[0]) as never
 		}
 		return $authClient.organization.update(...args)
 	}
@@ -308,9 +281,7 @@ export default function () {
 		...args: Parameters<typeof $authClient.organization.inviteMember>
 	) {
 		if (__DESKTOP_BUILD__) {
-			return getHost().auth.inviteOrganizationMember(args[0]) as ReturnType<
-				typeof $authClient.organization.inviteMember
-			>
+			return getHost().auth.inviteOrganizationMember(args[0]) as never
 		}
 		return $authClient.organization.inviteMember(...args)
 	}
@@ -319,9 +290,7 @@ export default function () {
 		...args: Parameters<typeof $authClient.organization.cancelInvitation>
 	) {
 		if (__DESKTOP_BUILD__) {
-			return getHost().auth.cancelOrganizationInvitation(args[0]) as ReturnType<
-				typeof $authClient.organization.cancelInvitation
-			>
+			return getHost().auth.cancelOrganizationInvitation(args[0]) as never
 		}
 		return $authClient.organization.cancelInvitation(...args)
 	}
@@ -330,9 +299,7 @@ export default function () {
 		...args: Parameters<typeof $authClient.organization.removeMember>
 	) {
 		if (__DESKTOP_BUILD__) {
-			return getHost().auth.removeOrganizationMember(args[0]) as ReturnType<
-				typeof $authClient.organization.removeMember
-			>
+			return getHost().auth.removeOrganizationMember(args[0]) as never
 		}
 		return $authClient.organization.removeMember(...args)
 	}

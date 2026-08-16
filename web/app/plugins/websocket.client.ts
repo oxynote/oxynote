@@ -3,7 +3,7 @@ export default defineNuxtPlugin({
 	setup: async (nuxtApp) => {
 		const { fetchAuthSession } = useAuthSession()
 		const sessionReq = await fetchAuthSession.refresh()
-		const sessionActive = computed(() => !!sessionReq?.data?.data?.session)
+		const sessionActive = computed(() => !!sessionReq.data?.data?.session)
 
 		const { init } = useWebSocketStateStore()
 		init()
@@ -17,7 +17,7 @@ export default defineNuxtPlugin({
 		})
 
 		// open a connections only when the user is authenticated
-		nuxtApp.runWithContext(() => {
+		void nuxtApp.runWithContext(() => {
 			let beforeUnloadHandler: (() => void) | null = null
 
 			watchImmediate(sessionActive, (isAuth, wasAuth) => {
@@ -31,8 +31,10 @@ export default defineNuxtPlugin({
 						window.addEventListener("beforeunload", beforeUnloadHandler)
 
 						if (import.meta.hot) {
+							const handler = beforeUnloadHandler
+
 							import.meta.hot.dispose(() => {
-								window.removeEventListener("beforeunload", beforeUnloadHandler!)
+								window.removeEventListener("beforeunload", handler)
 							})
 						}
 					}

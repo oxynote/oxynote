@@ -23,6 +23,7 @@ const editor = useEditor({
 watchDeep(
 	() => props.content,
 	(newContent) => {
+		// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- content originates from an untyped api payload and may be nullish at runtime despite the prop type
 		if (editor.value && newContent) {
 			editor.value.commands.setContent(newContent)
 		}

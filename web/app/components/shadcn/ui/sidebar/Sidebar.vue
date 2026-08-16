@@ -27,7 +27,7 @@ const props = withDefaults(
 
 const { isMobile, state, openMobile, setOpenMobile } = useSidebar()
 const { setWidth } = useSidebarWidth()
-const resizeHandle = useTemplateRef("resize-handle")
+const resizeHandle = useTemplateRef<HTMLDivElement>("resize-handle")
 const isDragging = ref(false)
 const currentWidth = ref(SIDEBAR_DEFAULT_WIDTH)
 

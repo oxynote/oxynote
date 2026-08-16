@@ -43,9 +43,9 @@ const onSubmit = form.handleSubmit(async (values) => {
 	loading.value = true
 	await delay(300) // show loading spinner for at least a moment
 
-	const res = await checkOrganizationSlug({
+	const res = (await checkOrganizationSlug({
 		slug: values.url,
-	})
+	})) as AuthResponse
 	if (res.error) {
 		loading.value = false
 
@@ -69,12 +69,12 @@ const onSubmit = form.handleSubmit(async (values) => {
 		return
 	}
 
-	const { error } = await updateOrganization({
+	const { error } = (await updateOrganization({
 		data: {
 			slug: values.url,
 		},
 		organizationId: fetchOrganization.state.value.data?.data?.id || "",
-	})
+	})) as AuthResponse
 	if (error) {
 		form.setErrors({ url: error.message })
 		loading.value = false

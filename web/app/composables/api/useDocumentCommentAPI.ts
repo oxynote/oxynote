@@ -46,7 +46,7 @@ export default function () {
 	}
 
 	const createDocumentCommentByDocId = useMutation({
-		onMutate: async ({
+		onMutate: ({
 			docId,
 			req,
 		}: {
@@ -87,7 +87,7 @@ export default function () {
 				updatedAt: null,
 				diffDeletionContext: req.diffDeletionContext ?? null,
 			}
-			const newComments = [newComment, ...(oldComments || [])]
+			const newComments = [newComment, ...(oldComments ?? [])]
 
 			queryCache.setQueryData(key, newComments)
 			queryCache.cancelQueries({ key })
@@ -115,7 +115,8 @@ export default function () {
 			)
 		},
 		async onSuccess(_data, { docId, req }, ctx) {
-			if (!isXid(docId) || !isXid(req.branchId) || !ctx || !ctx.key) {
+			// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- onMutate returns no context when it bails out, so key is missing at runtime
+			if (!isXid(docId) || !isXid(req.branchId) || !ctx.key) {
 				// optimisticInserts use nanoid
 				return
 			}
@@ -125,7 +126,7 @@ export default function () {
 			})
 		},
 		onError(_err, { docId, req }, ctx) {
-			if (!isXid(docId) || !isXid(req.branchId) || !ctx || !ctx.key) {
+			if (!isXid(docId) || !isXid(req.branchId) || !ctx.key) {
 				return
 			}
 
@@ -162,7 +163,7 @@ export default function () {
 			const oldComments = clone(
 				queryCache.getQueryData<DocumentCommentsResponse>(key),
 			)
-			const newComments = clone(oldComments) || []
+			const newComments = clone(oldComments) ?? []
 
 			for (const h of newComments) {
 				if (h.id === commentId) {
@@ -200,13 +201,8 @@ export default function () {
 			})
 		},
 		async onSuccess(_data, { docId, branchId, commentId }, ctx) {
-			if (
-				!isXid(docId) ||
-				!isXid(branchId) ||
-				!isXid(commentId) ||
-				!ctx ||
-				!ctx.key
-			) {
+			// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- onMutate returns no context when it bails out, so key is missing at runtime
+			if (!isXid(docId) || !isXid(branchId) || !isXid(commentId) || !ctx.key) {
 				// optimisticInserts use nanoid
 				return
 			}
@@ -216,13 +212,7 @@ export default function () {
 			})
 		},
 		onError(_err, { docId, branchId, commentId }, ctx) {
-			if (
-				!isXid(docId) ||
-				!isXid(branchId) ||
-				!isXid(commentId) ||
-				!ctx ||
-				!ctx.key
-			) {
+			if (!isXid(docId) || !isXid(branchId) || !isXid(commentId) || !ctx.key) {
 				return
 			}
 
@@ -255,7 +245,7 @@ export default function () {
 			const oldComments = clone(
 				queryCache.getQueryData<DocumentCommentsResponse>(key),
 			)
-			const newComments = clone(oldComments) || []
+			const newComments = clone(oldComments) ?? []
 
 			const index = newComments.findIndex((h) => h.id === commentId)
 			if (index !== -1) {
@@ -289,13 +279,8 @@ export default function () {
 			)
 		},
 		async onSuccess(_data, { docId, branchId, commentId }, ctx) {
-			if (
-				!isXid(docId) ||
-				!isXid(branchId) ||
-				!isXid(commentId) ||
-				!ctx ||
-				!ctx.key
-			) {
+			// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- onMutate returns no context when it bails out, so key is missing at runtime
+			if (!isXid(docId) || !isXid(branchId) || !isXid(commentId) || !ctx.key) {
 				// optimisticInserts use nanoid
 				return
 			}
@@ -305,13 +290,7 @@ export default function () {
 			})
 		},
 		onError(_err, { docId, branchId, commentId }, ctx) {
-			if (
-				!isXid(docId) ||
-				!isXid(branchId) ||
-				!isXid(commentId) ||
-				!ctx ||
-				!ctx.key
-			) {
+			if (!isXid(docId) || !isXid(branchId) || !isXid(commentId) || !ctx.key) {
 				return
 			}
 
@@ -346,11 +325,12 @@ export default function () {
 			const oldComments = clone(
 				queryCache.getQueryData<DocumentCommentsResponse>(key),
 			)
-			const newComments = clone(oldComments) || []
+			const newComments = clone(oldComments) ?? []
 
 			const index = newComments.findIndex((h) => h.id === commentId)
-			if (index !== -1) {
-				const promoted = promoteFirstDocumentReplyToComment(newComments[index]!)
+			const target = newComments[index]
+			if (target) {
+				const promoted = promoteFirstDocumentReplyToComment(target)
 				if (promoted) {
 					newComments[index] = promoted
 				} else {
@@ -382,13 +362,8 @@ export default function () {
 			})
 		},
 		async onSuccess(_data, { docId, branchId, commentId }, ctx) {
-			if (
-				!isXid(docId) ||
-				!isXid(branchId) ||
-				!isXid(commentId) ||
-				!ctx ||
-				!ctx.key
-			) {
+			// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- onMutate returns no context when it bails out, so key is missing at runtime
+			if (!isXid(docId) || !isXid(branchId) || !isXid(commentId) || !ctx.key) {
 				// optimisticInserts use nanoid
 				return
 			}
@@ -398,13 +373,7 @@ export default function () {
 			})
 		},
 		onError(_err, { docId, branchId, commentId }, ctx) {
-			if (
-				!isXid(docId) ||
-				!isXid(branchId) ||
-				!isXid(commentId) ||
-				!ctx ||
-				!ctx.key
-			) {
+			if (!isXid(docId) || !isXid(branchId) || !isXid(commentId) || !ctx.key) {
 				return
 			}
 
@@ -421,7 +390,7 @@ export default function () {
 	})
 
 	const createDocumentCommentReplyByCommentId = useMutation({
-		onMutate: async ({
+		onMutate: ({
 			docId,
 			branchId,
 			commentId,
@@ -465,7 +434,7 @@ export default function () {
 				return
 			}
 
-			modComment.replies = [newReply, ...(modComment.replies || [])]
+			modComment.replies = [newReply, ...(modComment.replies ?? [])]
 
 			queryCache.setQueryData(key, newComments)
 			queryCache.cancelQueries({ key })
@@ -497,13 +466,8 @@ export default function () {
 			)
 		},
 		async onSuccess(_data, { docId, branchId, commentId }, ctx) {
-			if (
-				!isXid(docId) ||
-				!isXid(branchId) ||
-				!isXid(commentId) ||
-				!ctx ||
-				!ctx.key
-			) {
+			// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- onMutate returns no context when it bails out, so key is missing at runtime
+			if (!isXid(docId) || !isXid(branchId) || !isXid(commentId) || !ctx.key) {
 				// optimisticInserts use nanoid
 				return
 			}
@@ -513,13 +477,7 @@ export default function () {
 			})
 		},
 		onError(_err, { docId, branchId, commentId }, ctx) {
-			if (
-				!isXid(docId) ||
-				!isXid(branchId) ||
-				!isXid(commentId) ||
-				!ctx ||
-				!ctx.key
-			) {
+			if (!isXid(docId) || !isXid(branchId) || !isXid(commentId) || !ctx.key) {
 				return
 			}
 
@@ -569,7 +527,7 @@ export default function () {
 				return
 			}
 
-			for (const h of modComment?.replies || []) {
+			for (const h of modComment.replies ?? []) {
 				if (h.id === replyId) {
 					h.content = req.content
 					h.updatedAt = new Date()
@@ -620,7 +578,7 @@ export default function () {
 				!isXid(branchId) ||
 				!isXid(commentId) ||
 				!isXid(replyId) ||
-				!ctx ||
+				// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- onMutate returns no context when it bails out, so key is missing at runtime
 				!ctx.key
 			) {
 				// optimisticInserts use nanoid
@@ -637,7 +595,6 @@ export default function () {
 				!isXid(branchId) ||
 				!isXid(commentId) ||
 				!isXid(replyId) ||
-				!ctx ||
 				!ctx.key
 			) {
 				return
@@ -730,7 +687,7 @@ export default function () {
 				!isXid(branchId) ||
 				!isXid(commentId) ||
 				!isXid(replyId) ||
-				!ctx ||
+				// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- onMutate returns no context when it bails out, so key is missing at runtime
 				!ctx.key
 			) {
 				// optimisticInserts use nanoid
@@ -747,7 +704,6 @@ export default function () {
 				!isXid(branchId) ||
 				!isXid(commentId) ||
 				!isXid(replyId) ||
-				!ctx ||
 				!ctx.key
 			) {
 				return

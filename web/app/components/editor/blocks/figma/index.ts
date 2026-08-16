@@ -18,6 +18,10 @@ export function convertToEmbedUrl(src: string, isDark: boolean): string {
 	const fileKey = parts[1]
 	const embedType = type === "file" ? "design" : type
 
+	// both segments are only missing when src is not a figma URL, which
+	// already yields an unusable embed — the caller is expected to have
+	// checked isFigmaUrl first
+	// eslint-disable-next-line @typescript-eslint/restrict-template-expressions -- see above
 	const embedUrl = new URL(`https://embed.figma.com/${embedType}/${fileKey}`)
 	embedUrl.searchParams.set("embed-host", "oxynote")
 	embedUrl.searchParams.set("theme", isDark ? "dark" : "light")
@@ -43,7 +47,7 @@ export const FigmaBlock = Node.create({
 				parseHTML: (element) => element.getAttribute("data-src"),
 				renderHTML: (attrs) => {
 					if (!attrs.src) return {}
-					return { "data-src": attrs.src }
+					return { "data-src": attrs.src as string }
 				},
 			},
 			width: {
@@ -54,7 +58,7 @@ export const FigmaBlock = Node.create({
 				},
 				renderHTML: (attrs) => {
 					if (!attrs.width) return {}
-					return { "data-width": attrs.width }
+					return { "data-width": attrs.width as number }
 				},
 			},
 			height: {
@@ -65,7 +69,7 @@ export const FigmaBlock = Node.create({
 				},
 				renderHTML: (attrs) => {
 					if (!attrs.height) return {}
-					return { "data-height": attrs.height }
+					return { "data-height": attrs.height as number }
 				},
 			},
 		}
@@ -80,6 +84,7 @@ export const FigmaBlock = Node.create({
 		]
 	},
 	addNodeView() {
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-argument -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 		return VueNodeViewRenderer(FigmaBlockComponent)
 	},
 })
@@ -92,7 +97,7 @@ export function createFigmaLinkHandler() {
 				new Plugin({
 					props: {
 						handlePaste(view, event) {
-							const text = event.clipboardData?.getData("text/plain")?.trim()
+							const text = event.clipboardData?.getData("text/plain").trim()
 							if (!text || !isFigmaUrl(text)) {
 								return false
 							}

@@ -24,16 +24,18 @@ export default function () {
 	const mode = useColorMode({
 		storageKey: null,
 		storageRef: colorCookie,
-		initialValue: colorCookie.value ?? "auto",
+		initialValue: colorCookie.value,
 		selector: "html",
 		attribute: "class",
-		onChanged: () => {}, // disable automatic class handling
+		onChanged: () => {
+			// disable automatic class handling
+		},
 	})
 	const resolvedMode = computed<"light" | "dark">(() => {
 		if (mode.store.value === "auto") {
 			if (import.meta.server) {
 				// on SSR, fall back to last auto (or light by default)
-				return lastAutoColorCookie.value ?? "light"
+				return lastAutoColorCookie.value
 			}
 
 			// on client, use system preference from useColorMode

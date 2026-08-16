@@ -4,7 +4,7 @@ export default function () {
 
 	function openExternalLink(url: string) {
 		if (isDesktop.value) {
-			$host?.openExternal(url)
+			void $host?.openExternal(url)
 			return
 		}
 

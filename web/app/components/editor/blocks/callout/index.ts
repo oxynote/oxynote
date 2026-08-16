@@ -35,7 +35,7 @@ export const CalloutBlock = Node.create({
 				parseHTML: (element) => {
 					return element.getAttribute("data-icon")
 				},
-				renderHTML: (attrs) => ({ "data-icon": attrs.icon }),
+				renderHTML: (attrs) => ({ "data-icon": attrs.icon as string }),
 			},
 			previousIcon: {
 				default: null,
@@ -44,7 +44,7 @@ export const CalloutBlock = Node.create({
 				},
 				renderHTML: (attrs) => {
 					if (attrs.previousIcon) {
-						return { "data-previous-icon": attrs.previousIcon }
+						return { "data-previous-icon": attrs.previousIcon as string }
 					}
 					return {}
 				},
@@ -88,6 +88,7 @@ export const CalloutBlock = Node.create({
 		]
 	},
 	addNodeView() {
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-argument -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 		return VueNodeViewRenderer(MainBlock)
 	},
 })

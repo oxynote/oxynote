@@ -118,11 +118,10 @@ function buildGaugeSeries(
 ): GaugeSeriesOption[] {
 	const st = chartStyles()
 	const { min, max } = bounds
-	const baseThresholdColor =
-		props.baseThresholdColor ?? st.gaugeChart.emptyGauge
+	const baseThresholdColor = props.baseThresholdColor
 
 	// normalize thresholds to 0-1 range for axisLine segments
-	const sortedThresholds = (clone(props.thresholds) || []).sort(
+	const sortedThresholds = (clone(props.thresholds) ?? []).sort(
 		(a, b) => a.value - b.value,
 	)
 
@@ -131,14 +130,12 @@ function buildGaugeSeries(
 	const thresholdSegments: [number, string][] = []
 	let lastPos = 0
 
-	for (let i = 0; i < sortedThresholds.length; i++) {
-		const t = sortedThresholds[i]!
+	for (const [i, t] of sortedThresholds.entries()) {
 		const pos = Math.max(0, Math.min(1, (t.value - min) / (max - min)))
 
 		// fill from lastPos to this threshold with the previous color
 		if (pos > lastPos) {
-			const prevColor =
-				i === 0 ? baseThresholdColor : sortedThresholds[i - 1]!.color
+			const prevColor = sortedThresholds[i - 1]?.color ?? baseThresholdColor
 			thresholdSegments.push([pos, prevColor])
 			lastPos = pos
 		}
@@ -146,9 +143,8 @@ function buildGaugeSeries(
 
 	// fill remaining to 100% with the last threshold's color (or base if none)
 	if (lastPos < 1) {
-		const lastColor = sortedThresholds.length
-			? sortedThresholds[sortedThresholds.length - 1]!.color
-			: baseThresholdColor
+		const lastColor =
+			sortedThresholds[sortedThresholds.length - 1]?.color ?? baseThresholdColor
 		thresholdSegments.push([1, lastColor])
 	}
 
@@ -259,7 +255,7 @@ function buildGaugeSeries(
 				lineHeight: VALUE_LINE_HEIGHT,
 				fontWeight: "bolder",
 				fontFamily: st.fontFamily,
-				color: valueColor ?? st.gaugeChart.text,
+				color: valueColor,
 				width: TEXT_WIDTH,
 				overflow: "break",
 				ellipsis: "...",
@@ -340,9 +336,7 @@ const option = computed<ECOption>(() => {
 	// Calculate offset to center gauges when container is wider than needed
 	const offsetX = Math.max(0, (containerWidth.value - totalWidth) / 2)
 
-	for (let i = 0; i < count; i++) {
-		const gauge = props.gauges[i]!
-
+	for (const [i, gauge] of props.gauges.entries()) {
 		let centerX: number
 		if (count === 1) {
 			centerX = containerWidth.value / 2
@@ -367,7 +361,7 @@ const option = computed<ECOption>(() => {
 				{ ...props.unit },
 				props.decimals ?? null,
 				bounds,
-				props.disableAnimation ?? false,
+				props.disableAnimation,
 			),
 		)
 	}

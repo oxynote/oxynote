@@ -119,6 +119,7 @@ export default defineNuxtConfig({
 				noUncheckedIndexedAccess: true,
 				noImplicitOverride: true,
 				verbatimModuleSyntax: true,
+				allowUnreachableCode: false,
 			},
 		},
 	},

@@ -48,7 +48,9 @@ export function extractTokensFromPMNode(node: PMNode): DiffToken[] {
 		if (!child.isText || !child.text) {
 			return
 		}
-		const marks = stripCommentMarks(child.marks.map((m) => m.toJSON()))
+		const marks = stripCommentMarks(
+			child.marks.map((m) => m.toJSON() as JSONContent),
+		)
 		for (const char of child.text) {
 			tokens.push({ text: char, marks })
 		}

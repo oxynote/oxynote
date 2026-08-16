@@ -19,12 +19,12 @@ const oldNode = computed<JSONContent | null>(() => {
 		return null
 	}
 
-	const raw = props.node.attrs.oldNode
+	const raw = props.node.attrs.oldNode as string | JSONContent | null
 	if (!raw) {
 		return null
 	}
 
-	return typeof raw === "string" ? JSON.parse(raw) : raw
+	return typeof raw === "string" ? (JSON.parse(raw) as JSONContent) : raw
 })
 
 const isIconModified = computed(() => {

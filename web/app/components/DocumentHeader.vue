@@ -81,12 +81,16 @@ async function toggleReviewability() {
 				protectedMode: true,
 			})
 		} else {
+			// read once here: the narrowing from the guard above does not reach
+			// inside the map callback
+			const docId = editorStore.activeDocumentId
+
 			await Promise.all(
 				fetchBranches.state.value.data
 					?.filter((b) => !b.default)
 					.map((b) =>
 						deleteDocumentBranch.mutateAsync({
-							docId: editorStore.activeDocumentId!,
+							docId,
 							branchId: b.branchId,
 						}),
 					) ?? [],

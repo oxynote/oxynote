@@ -75,5 +75,5 @@ export function generateUniqueIds(
 	}
 
 	// Return the updated document
-	return tr.doc.toJSON()
+	return tr.doc.toJSON() as JSONContent
 }

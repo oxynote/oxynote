@@ -1,5 +1,5 @@
 import { type Editor, mergeAttributes, Node, type Range } from "@tiptap/core"
-import type { Node as PMNode } from "@tiptap/pm/model"
+import type { Node as PMNode, ResolvedPos } from "@tiptap/pm/model"
 import { VueNodeViewRenderer } from "@tiptap/vue-3"
 import MainBlock from "./MainBlock.vue"
 import Paragraph from "@tiptap/extension-paragraph"
@@ -133,6 +133,7 @@ export const SplitDocumentationLeftSide = Node.create({
 		]
 	},
 	addNodeView() {
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-argument -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 		return VueNodeViewRenderer(LeftSideBlock)
 	},
 })
@@ -157,6 +158,7 @@ export const SplitDocumentationRightSide = Node.create({
 		]
 	},
 	addNodeView() {
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-argument -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 		return VueNodeViewRenderer(RightSideBlock)
 	},
 })
@@ -281,7 +283,7 @@ export const SplitDocumentation = Node.create({
 						splitDocNode = $from.node(splitDocDepth)
 					}
 
-					if (!splitDocNode || splitDocPos == null) {
+					if (splitDocPos == null) {
 						return false
 					}
 
@@ -319,7 +321,7 @@ export const SplitDocumentation = Node.create({
 							null,
 							[titleNode, extendedCode],
 						)
-					} else if (blockType === "metrics") {
+					} else {
 						newBlock = schema.nodes[METRIC_BLOCK_NAME]?.createAndFill()
 					}
 
@@ -515,7 +517,7 @@ export const SplitDocumentation = Node.create({
 							null,
 							[titleNode, extendedCode],
 						)
-					} else if (blockType === "metrics") {
+					} else {
 						newBlock = schema.nodes[METRIC_BLOCK_NAME]?.createAndFill()
 					}
 
@@ -722,6 +724,7 @@ export const SplitDocumentation = Node.create({
 		]
 	},
 	addNodeView() {
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-argument -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 		return VueNodeViewRenderer(MainBlock)
 	},
 })
@@ -774,7 +777,7 @@ export function insertSplitDocumentation(editor: Editor, range: Range) {
 		.run()
 }
 
-function findAncestorDepth(pos: any, names: string[]): number {
+function findAncestorDepth(pos: ResolvedPos, names: string[]): number {
 	for (let d = pos.depth; d >= 0; d--) {
 		if (names.includes(pos.node(d).type.name)) {
 			return d

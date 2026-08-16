@@ -84,8 +84,9 @@ export const UniqueID = Extension.create<UniqueIDOptions>({
 							}
 
 							return {
-								[`data-${this.options.attributeName}`]:
-									attributes[this.options.attributeName],
+								[`data-${this.options.attributeName}`]: attributes[
+									this.options.attributeName
+								] as string,
 							}
 						},
 					},
@@ -107,9 +108,20 @@ export const UniqueID = Extension.create<UniqueIDOptions>({
 			(ext) => ext.name === "collaborationCaret",
 		)
 
+		// the provider is only used for its event emitter interface, so a
+		// minimal structural type is enough here.
+		interface SyncedEventProvider {
+			on: (event: "synced", handler: () => void) => void
+			off: (event: "synced", handler: () => void) => void
+		}
+
 		const collabExtensions = [collaboration, collaborationCaret].filter(Boolean)
-		const collab = collabExtensions.find((ext) => ext?.options?.provider)
-		const provider = collab?.options?.provider
+
+		const providerOf = (ext: (typeof collabExtensions)[number]) =>
+			(ext?.options as { provider?: SyncedEventProvider } | undefined)?.provider
+
+		const collab = collabExtensions.find((ext) => providerOf(ext))
+		const provider = providerOf(collab)
 
 		const createIds = () => {
 			const { view, state } = this.editor
@@ -124,7 +136,7 @@ export const UniqueID = Extension.create<UniqueIDOptions>({
 			nodesWithoutId.forEach(({ node, pos }) => {
 				tr.setNodeMarkup(pos, undefined, {
 					...node.attrs,
-					[attributeName]: generateID({ node, pos }),
+					[attributeName]: generateID({ node, pos }) as string,
 				})
 			})
 
@@ -209,7 +221,7 @@ export const UniqueID = Extension.create<UniqueIDOptions>({
 						)
 
 						const newIds = newNodes
-							.map(({ node }) => node.attrs[attributeName])
+							.map(({ node }) => node.attrs[attributeName] as string | null)
 							.filter((id) => id !== null)
 
 						newNodes.forEach(({ node, pos }, i) => {
@@ -217,12 +229,14 @@ export const UniqueID = Extension.create<UniqueIDOptions>({
 							// we look at the current state of the node within `tr.doc`.
 							// this helps to prevent adding new ids to the same node
 							// if the node changed multiple times within one transaction
-							const id = tr.doc.nodeAt(pos)?.attrs[attributeName]
+							const id = tr.doc.nodeAt(pos)?.attrs[attributeName] as
+								| string
+								| null
 
 							if (id === null) {
 								tr.setNodeMarkup(pos, undefined, {
 									...node.attrs,
-									[attributeName]: generateID({ node, pos }),
+									[attributeName]: generateID({ node, pos }) as string,
 								})
 
 								return
@@ -270,7 +284,7 @@ export const UniqueID = Extension.create<UniqueIDOptions>({
 								})
 								newIds[i + 1] = id
 
-								const generatedId = generateID({ node, pos })
+								const generatedId = generateID({ node, pos }) as string
 
 								tr.setNodeMarkup(pos, undefined, {
 									...node.attrs,
@@ -291,7 +305,7 @@ export const UniqueID = Extension.create<UniqueIDOptions>({
 							if (newNode) {
 								tr.setNodeMarkup(pos, undefined, {
 									...node.attrs,
-									[attributeName]: generateID({ node, pos }),
+									[attributeName]: generateID({ node, pos }) as string,
 								})
 							}
 						})

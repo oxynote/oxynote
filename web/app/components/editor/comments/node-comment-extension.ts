@@ -34,6 +34,11 @@ export interface NodeCommentOptions {
 	onNodeCommentClick?: (nodeCommentId: string) => void
 }
 
+export interface NodeCommentStorage {
+	forcedHighlights: Set<string>
+	updateOverlays: (() => void) | null
+}
+
 declare module "@tiptap/core" {
 	interface Commands<ReturnType> {
 		nodeComment: {
@@ -53,7 +58,10 @@ declare module "@tiptap/core" {
 const COMMENT_HIGHLIGHT_VERTICAL_OFFSET = 5
 const COMMENT_HIGHLIGHT_HORIZONTAL_OFFSET = 5
 
-export const NodeComment = Extension.create<NodeCommentOptions>({
+export const NodeComment = Extension.create<
+	NodeCommentOptions,
+	NodeCommentStorage
+>({
 	name: "nodeComment",
 	addOptions() {
 		return {
@@ -80,7 +88,7 @@ export const NodeComment = Extension.create<NodeCommentOptions>({
 								return {}
 							}
 							return {
-								"data-node-comment-id": attrs.nodeCommentId,
+								"data-node-comment-id": attrs.nodeCommentId as string,
 							}
 						},
 					},
@@ -149,6 +157,7 @@ export const NodeComment = Extension.create<NodeCommentOptions>({
 						}
 					})
 
+					// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- found is set inside the synchronous descendants callback, which TS cannot see
 					if (!found) {
 						return false
 					}
@@ -164,10 +173,8 @@ export const NodeComment = Extension.create<NodeCommentOptions>({
 				(pos: number) =>
 				({ state }) => {
 					const node = state.doc.nodeAt(pos)
-					return (
-						!!node?.attrs.nodeCommentId &&
-						!isPendingCommentId(node.attrs.nodeCommentId)
-					)
+					const id = node?.attrs.nodeCommentId as string | null | undefined
+					return !!id && !isPendingCommentId(id)
 				},
 
 			setNodeCommentForcedHighlight:
@@ -285,12 +292,12 @@ export const NodeComment = Extension.create<NodeCommentOptions>({
 									}
 								}
 								const leave = (e: Event) => {
-									const relatedTarget = (e as MouseEvent)
-										.relatedTarget as HTMLElement | null
+									const relatedTarget = (e as MouseEvent).relatedTarget
 									// Check if moving to another commented node (including parent)
-									const targetCommentNode = relatedTarget?.closest?.(
-										"[data-node-comment-id]",
-									)
+									const targetCommentNode =
+										relatedTarget instanceof Element
+											? relatedTarget.closest("[data-node-comment-id]")
+											: null
 									const targetCommentId = targetCommentNode?.getAttribute(
 										"data-node-comment-id",
 									)
@@ -329,8 +336,11 @@ export const NodeComment = Extension.create<NodeCommentOptions>({
 
 								const click = (e: Event) => {
 									// Don't fire if clicking on a comment mark inside this node
-									const target = e.target as HTMLElement
-									if (target.closest?.(".comment-mark")) {
+									const target = e.target
+									if (
+										target instanceof Element &&
+										target.closest(".comment-mark")
+									) {
 										return
 									}
 
@@ -366,7 +376,7 @@ export const NodeComment = Extension.create<NodeCommentOptions>({
 						// Iterate over document to find nodes with nodeCommentId
 						// (instead of using decorations which conflict with Vue node views)
 						state.doc.descendants((node, pos) => {
-							const nodeCommentId = node.attrs.nodeCommentId
+							const nodeCommentId = node.attrs.nodeCommentId as string | null
 							if (!nodeCommentId) {
 								return
 							}
@@ -490,7 +500,7 @@ export function deletePendingNodeComments(
 	const { tr } = state
 
 	state.doc.descendants((node, pos) => {
-		const id = node.attrs.nodeCommentId
+		const id = node.attrs.nodeCommentId as string | null
 		if (!id) {
 			return
 		}
@@ -534,7 +544,7 @@ export function findNodeCommentAtPos(
 	return {
 		pos,
 		node,
-		nodeCommentId: node.attrs.nodeCommentId,
+		nodeCommentId: node.attrs.nodeCommentId as string,
 	}
 }
 
@@ -572,12 +582,12 @@ export function reinjectDeletedContentNodeComments(
 	const uidToEntry = new Map<string, { startPos: number; nodeSize: number }>()
 
 	diffEditor.state.doc.descendants((node, pos) => {
-		const uid = node.attrs?.uid
+		const uid = node.attrs.uid as string | undefined
 		if (!uid) {
 			return true
 		}
 
-		if (node.attrs?.diffStatus === DiffStatus.Removed) {
+		if (node.attrs.diffStatus === DiffStatus.Removed) {
 			uidToEntry.set(uid, { startPos: pos, nodeSize: node.nodeSize })
 			return true
 		}
@@ -586,10 +596,10 @@ export function reinjectDeletedContentNodeComments(
 		// diffStatus stripped during merge and propagated to children.
 		// detect them by checking that the wrapper has no status itself
 		// but all children are removed.
-		if (!node.attrs?.diffStatus && node.childCount > 0) {
+		if (!node.attrs.diffStatus && node.childCount > 0) {
 			let allRemoved = true
 			for (let i = 0; i < node.childCount; i++) {
-				if (node.child(i).attrs?.diffStatus !== DiffStatus.Removed) {
+				if (node.child(i).attrs.diffStatus !== DiffStatus.Removed) {
 					allRemoved = false
 					break
 				}

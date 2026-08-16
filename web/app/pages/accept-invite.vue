@@ -39,11 +39,11 @@ const {
 const pageRoute = useRoute()
 const inviteInfo = computed(() => {
 	return {
-		id: pageRoute.query.id! as string,
-		email: pageRoute.query.email! as string,
-		inviter: pageRoute.query.inviter! as string,
-		orgName: pageRoute.query.orgName! as string,
-		orgId: pageRoute.query.orgId! as string,
+		id: pageRoute.query.id as string,
+		email: pageRoute.query.email as string,
+		inviter: pageRoute.query.inviter as string,
+		orgName: pageRoute.query.orgName as string,
+		orgId: pageRoute.query.orgId as string,
 	}
 })
 const loading = ref<"logout" | "accept" | null>(null)
@@ -74,7 +74,7 @@ async function acceptInvite() {
 			t("onboarding.accept-invite.warn.email-mismatch.title"),
 			t("onboarding.accept-invite.warn.email-mismatch.description"),
 		)
-		navigateTo({ name: "onboarding" })
+		void navigateTo({ name: "onboarding" })
 
 		return
 	}
@@ -82,9 +82,9 @@ async function acceptInvite() {
 	loading.value = "accept"
 	await delay(300) // show loading spinner for at least a moment
 
-	const { error } = await acceptOrganizationInvitation({
+	const { error } = (await acceptOrganizationInvitation({
 		invitationId: inviteInfo.value.id,
-	})
+	})) as AuthResponse
 	if (error) {
 		loading.value = null
 
@@ -121,13 +121,13 @@ async function acceptInvite() {
 		return
 	}
 
-	navigateTo("/")
+	void navigateTo("/")
 }
 
 async function logOut(silent = false) {
 	loading.value = "logout"
 
-	const res = await safeSignOut()
+	const res = (await safeSignOut()) as AuthResponse
 	if (res.error) {
 		if (!silent) {
 			showToastMessage(
@@ -142,7 +142,7 @@ async function logOut(silent = false) {
 		return
 	}
 
-	navigateTo({ name: "login" })
+	void navigateTo({ name: "login" })
 }
 </script>
 <template>

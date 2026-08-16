@@ -73,11 +73,12 @@ interface Section {
 }
 
 const sections = computed<Section[]>(() => {
+	const topSection: Section = {
+		// no group heading
+		items: [],
+	}
 	const rootItems: Section[] = [
-		{
-			// no group heading
-			items: [],
-		},
+		topSection,
 		{
 			heading: t("sidebar.sections.main-workspace.heading"),
 			headingAction: {
@@ -89,10 +90,10 @@ const sections = computed<Section[]>(() => {
 				},
 			},
 			items: processDocumentTree(
-				fetchDocumentTree.data.value || [],
+				fetchDocumentTree.data.value ?? [],
 				editorStore.activeDocumentId,
 				t("sidebar.item-placeholder-name"),
-				fetchOrganization.data?.value?.data?.name || "",
+				fetchOrganization.data.value?.data?.name || "",
 			),
 			isEmptyAfterLoad:
 				!fetchDocumentTree.data.value?.length &&
@@ -129,7 +130,7 @@ const sections = computed<Section[]>(() => {
 		},
 	]
 
-	rootItems[0]!.items = topSectionItems
+	topSection.items = topSectionItems
 	const nextStepsItems: SidebarItem[] = []
 
 	if (
@@ -203,15 +204,15 @@ const sections = computed<Section[]>(() => {
 })
 
 onBeforeMount(() => {
-	fetchDocumentTree.refresh()
-	fetchOrganization.refresh()
-	fetchNotificationCount.refresh()
+	void fetchDocumentTree.refresh()
+	void fetchOrganization.refresh()
+	void fetchNotificationCount.refresh()
 })
 onMounted(() => {
 	unsubWsTreeChange = wsState.state?.subscribe(
 		WS_DOCUMENT_TREE_CHANGE_TOPIC,
 		() => {
-			fetchDocumentTree.refetch()
+			void fetchDocumentTree.refetch()
 		},
 	)
 })
@@ -239,13 +240,13 @@ function toggleSettings() {
 }
 
 async function handleLogout() {
-	const res = await safeSignOut()
+	const res = (await safeSignOut()) as AuthResponse
 	if (res.error) {
 		showToastMessage("error", t("sidebar.errors.signout-failed"))
 		return
 	}
 
-	navigateTo({ name: "login" })
+	void navigateTo({ name: "login" })
 }
 
 function handleCreate(data: SidebarItemCreate) {
@@ -268,7 +269,7 @@ async function handleLocationUpdate(data: SidebarItemLocationUpdate) {
 	}
 }
 
-async function handleDelete(data: SidebarItemDelete) {
+function handleDelete(data: SidebarItemDelete) {
 	emit("delete-document", data.id)
 }
 

@@ -61,13 +61,12 @@ function mergeAdjacentTextNodes(nodes: JSONContent[]): JSONContent[] {
 		return nodes
 	}
 
-	const merged: JSONContent[] = [nodes[0]!]
-	for (let i = 1; i < nodes.length; i++) {
-		const prev = merged[merged.length - 1]!
-		const curr = nodes[i]!
+	const merged: JSONContent[] = nodes.slice(0, 1)
+	for (const curr of nodes.slice(1)) {
+		const prev = merged[merged.length - 1]
 
 		if (
-			prev.type === "text" &&
+			prev?.type === "text" &&
 			curr.type === "text" &&
 			marksEqual(prev.marks, curr.marks)
 		) {

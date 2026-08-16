@@ -75,11 +75,7 @@
 				"email-invalid": "Please enter a valid email address",
 				"password-required": "Please enter your password",
 				"invalid-credentials": "Invalid email or password",
-				"password-reset-failed": "Could not send the reset link. Please try again",
-				"organization-limit-reached": {
-					"title": "We're sorry, but we can't create a new workspace for you at the moment because we've reached our limit for new workspaces",
-					"description": "Please join the waitlist and we'll notify you as soon as we can create a new workspace for you"
-				}
+				"password-reset-failed": "Could not send the reset link. Please try again"
 			},
 			"no-methods": "No login methods are configured on this server."
 		},

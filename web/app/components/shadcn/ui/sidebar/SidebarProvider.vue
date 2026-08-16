@@ -34,7 +34,7 @@ const openMobile = ref(false)
 
 const persistedOpen = usePersistentState<boolean>({
 	key: SIDEBAR_COOKIE_NAME,
-	defaultValue: props.defaultOpen ?? false,
+	defaultValue: props.defaultOpen,
 	cookie: {
 		maxAge: SIDEBAR_COOKIE_MAX_AGE,
 	},
@@ -56,6 +56,7 @@ function setOpenMobile(value: boolean) {
 
 // Helper to toggle the sidebar.
 function toggleSidebar() {
+	// eslint-disable-next-line @typescript-eslint/no-unused-expressions -- upstream shadcn-vue source, kept verbatim so the shadcn CLI can regenerate this file
 	isMobile.value ? setOpenMobile(!openMobile.value) : setOpen(!open.value)
 }
 

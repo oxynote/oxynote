@@ -19,7 +19,14 @@ const isSearching = ref(false)
 const isTyping = computed(
 	() => trimmedSearchQuery.value !== debouncedSearchQuery.value,
 )
-const inputElem = useTemplateRef("search-input")
+// ShadcnUiInput renders a bare <input>, so the ref resolves to the component
+// instance whose $el is that element. Spelling the shape out keeps eslint's ts
+// program — which cannot type .vue imports — from treating it as `any`, and
+// keeps the focus fallback below type-checked
+const inputElem = useTemplateRef<{
+	$el?: HTMLInputElement
+	focus?: () => void
+}>("search-input")
 
 watch(debouncedSearchQuery, async (query) => {
 	if (!query) {
@@ -33,6 +40,7 @@ watch(debouncedSearchQuery, async (query) => {
 
 	try {
 		const results = await searchDocuments(query)
+		// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the core API serializes an empty result set as JSON null, which the declared array type does not admit
 		searchResults.value = results || []
 	} catch {
 		searchResults.value = []
@@ -44,7 +52,7 @@ watch(debouncedSearchQuery, async (query) => {
 watchImmediate(open, (open) => {
 	if (open) {
 		setTimeout(() => {
-			const input = inputElem.value?.$el || inputElem.value
+			const input = inputElem.value?.$el ?? inputElem.value
 			if (input && typeof input.focus === "function") {
 				input.focus()
 			}
@@ -77,7 +85,7 @@ function resultLink(result: DocumentSearchResult) {
 	return href
 }
 
-function resultIcon(type: "document" | "heading" | string) {
+function resultIcon(type: string) {
 	switch (type) {
 		case "document":
 			return "lucide:file-text"
@@ -88,7 +96,7 @@ function resultIcon(type: "document" | "heading" | string) {
 	}
 }
 
-function resultTypeText(type: "document" | "heading" | string) {
+function resultTypeText(type: string) {
 	return type // TODO i18n
 }
 </script>

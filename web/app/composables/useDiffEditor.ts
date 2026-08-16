@@ -160,8 +160,12 @@ export function useDiffEditor(
 	editor.value = editorInstance
 
 	// subscribe to yjs updates on both documents
-	const onTargetUpdate = () => scheduleRecompute()
-	const onActiveUpdate = () => scheduleRecompute()
+	const onTargetUpdate = () => {
+		void scheduleRecompute()
+	}
+	const onActiveUpdate = () => {
+		void scheduleRecompute()
+	}
 
 	let currentTargetYdoc = targetYdoc()
 	let currentActiveYdoc = activeYdoc()
@@ -198,6 +202,10 @@ export function useDiffEditor(
 	recompute()
 
 	function extractJSON(ydoc: Y.Doc) {
+		if (!editor.value) {
+			return null
+		}
+
 		try {
 			const fragment = ydoc.getXmlFragment("content")
 			// check if the fragment has content
@@ -206,8 +214,8 @@ export function useDiffEditor(
 			}
 			return yXmlFragmentToProseMirrorRootNode(
 				fragment,
-				editor.value!.schema,
-			).toJSON()
+				editor.value.schema,
+			).toJSON() as JSONContent
 		} catch {
 			return null
 		}
@@ -221,9 +229,9 @@ export function useDiffEditor(
 
 		let end = doc.content.length
 		while (end > 0) {
-			const node = doc.content[end - 1]!
+			const node = doc.content[end - 1]
 			if (
-				node.type !== Paragraph.name ||
+				node?.type !== Paragraph.name ||
 				(node.content && node.content.length > 0)
 			) {
 				break

@@ -18,7 +18,7 @@ function addNeighborBlock(
 	side: "above" | "below",
 	blockType: "code" | "metrics",
 ) {
-	if (!props.editor || props.hovered == null) {
+	if (props.hovered == null) {
 		return
 	}
 

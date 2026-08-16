@@ -22,8 +22,14 @@ export function useFormField() {
 	return {
 		id,
 		name,
+		// id is undefined outside a <FormItem>; the three ids below are kept
+		// verbatim from upstream shadcn-vue so the component survives CLI
+		// regeneration
+		// eslint-disable-next-line @typescript-eslint/restrict-template-expressions -- see above
 		formItemId: `${id}-form-item`,
+		// eslint-disable-next-line @typescript-eslint/restrict-template-expressions -- see above
 		formDescriptionId: `${id}-form-item-description`,
+		// eslint-disable-next-line @typescript-eslint/restrict-template-expressions -- see above
 		formMessageId: `${id}-form-item-message`,
 		...fieldState,
 	}

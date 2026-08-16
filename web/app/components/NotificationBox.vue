@@ -26,15 +26,15 @@ const fetchNotificationCount = useFetchNotificationCount({ read: false })
 const fetchNotifications = useFetchManyNotifications({ limit: 100, page: 1 }) // static for now
 
 const notifications = computed(
-	() => fetchNotifications.data.value?.notifications || [],
+	() => fetchNotifications.data.value?.notifications ?? [],
 )
 
 onMounted(() => {
 	unsubWsNotifications = wsState.state?.subscribe(
 		WS_NOTIFICATION_CREATION_TOPIC,
 		() => {
-			fetchNotificationCount.refetch()
-			fetchNotifications.refetch()
+			void fetchNotificationCount.refetch()
+			void fetchNotifications.refetch()
 		},
 	)
 })
@@ -44,14 +44,14 @@ onUnmounted(() => {
 
 function findDocumentName(documentId: string) {
 	return docNameByIdInDocumentTree(
-		fetchDocumentTree.data.value || [],
+		fetchDocumentTree.data.value ?? [],
 		documentId,
 	)
 }
 
 function findUserName(userId: string) {
 	return (
-		fetchOrganization.state.value.data?.data?.members?.find(
+		fetchOrganization.state.value.data?.data?.members.find(
 			(m) => m.userId === userId,
 		)?.user.name || "deleted"
 	)
@@ -59,7 +59,7 @@ function findUserName(userId: string) {
 
 async function buildNotificationHref(notification: Notification) {
 	const doc = docNameByIdInDocumentTree(
-		fetchDocumentTree.data.value || [],
+		fetchDocumentTree.data.value ?? [],
 		notification.metadata.documentId,
 	)
 	if (!doc) {
@@ -135,9 +135,11 @@ function findNotificationIcon(notification: Notification) {
 					return "lucide:timer"
 				case DocumentHookType.ContainerImageWatcher:
 					return "lucide:container"
+				default:
+					// a newer server may send a hook type this build does
+					// not know
+					return "lucide:file-exclamation-point"
 			}
-
-			return "lucide:file-exclamation-point"
 		case NotificationCode.DocumentNewComment:
 			return "mingcute:message-4-fill"
 		case NotificationCode.DocumentNewCommentReply:
@@ -201,7 +203,7 @@ async function handleNotificationClick(notification: Notification) {
 	const href = await buildNotificationHref(notification)
 	if (href) {
 		emit("notification-navigation")
-		handleMarkRead(notification, true) // non blocking
+		void handleMarkRead(notification, true) // non blocking
 		await navigateTo(href)
 	}
 }

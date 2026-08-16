@@ -89,7 +89,7 @@ function buildDiffDecorations(
 	const decorations: Decoration[] = []
 
 	doc.descendants((node, pos) => {
-		const status = node.attrs.diffStatus
+		const status = node.attrs.diffStatus as DiffStatus | null
 		if (!status || status === DiffStatus.Unchanged) {
 			return true
 		}
@@ -125,7 +125,7 @@ function buildDiffDecorations(
 		}
 
 		if (node.isTextblock) {
-			const oldNodeRaw = node.attrs.oldNode
+			const oldNodeRaw = node.attrs.oldNode as JSONContent | null
 			if (!oldNodeRaw) {
 				return false
 			}
@@ -224,7 +224,7 @@ function createDiffOverlayElement(
 
 /** check if a task item's checked attribute differs from its old version */
 function hasTaskListItemCheckedChanged(node: PMNode): boolean {
-	const raw = node.attrs.oldNode
+	const raw = node.attrs.oldNode as JSONContent | null
 	if (!raw) {
 		return false
 	}
@@ -257,6 +257,7 @@ function renderDeletedTokens(tokens: DiffToken[]): HTMLElement {
 	for (const token of tokens) {
 		let marksKey: string
 		if (token.marks === currentMarksRef) {
+			// eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- currentMarksRef only becomes non-null in an iteration that also assigns currentMarksKey
 			marksKey = currentMarksKey!
 		} else {
 			marksKey = token.marks.length > 0 ? jsonStableStringify(token.marks) : ""
@@ -271,6 +272,7 @@ function renderDeletedTokens(tokens: DiffToken[]): HTMLElement {
 			currentMarksKey = marksKey
 		}
 
+		// eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- currentMarksKey starts null, so the first iteration always creates a span
 		currentSpan!.textContent += token.text
 	}
 

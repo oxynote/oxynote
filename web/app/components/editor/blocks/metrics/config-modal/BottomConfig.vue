@@ -115,7 +115,7 @@ function addNewQuery() {
 	// we need to create a new array/object reference to ensure reactivity,
 	// since we're updating a nested field inside the queries array
 	metricConfig.value.queries = [
-		...(metricConfig.value.queries || []),
+		...(metricConfig.value.queries ?? []),
 		{
 			name: t("editor.metrics.config.query-name-default-format", {
 				index: (metricConfig.value.queries?.length ?? 0) + 1,

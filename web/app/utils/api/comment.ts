@@ -74,13 +74,16 @@ export interface DocumentCommentDiffDeletionContext {
 export function promoteFirstDocumentReplyToComment(
 	comment: DocumentComment,
 ): DocumentComment | null {
-	if (!comment.replies?.length) {
+	// sort mutates in place, so this keeps sorting comment.replies itself
+	// whenever there are replies to sort
+	const replies = comment.replies ?? []
+
+	const firstReply = replies.sort((a, b) =>
+		compareAsc(new Date(a.createdAt), new Date(b.createdAt)),
+	)[0]
+	if (!firstReply) {
 		return null
 	}
-
-	const firstReply = comment.replies.sort((a, b) =>
-		compareAsc(new Date(a.createdAt), new Date(b.createdAt)),
-	)[0]!
 
 	return {
 		...comment,
@@ -88,7 +91,7 @@ export function promoteFirstDocumentReplyToComment(
 		content: firstReply.content,
 		createdAt: firstReply.createdAt,
 		updatedAt: firstReply.updatedAt,
-		replies: comment.replies.filter((r) => r.id !== firstReply.id),
+		replies: replies.filter((r) => r.id !== firstReply.id),
 	}
 }
 

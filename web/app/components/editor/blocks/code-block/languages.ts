@@ -1,4 +1,5 @@
 import { common } from "lowlight"
+import type { LanguageFn } from "highlight.js"
 import curl from "highlightjs-curl"
 
 export const languageNames: Record<string, string> = {
@@ -42,7 +43,7 @@ export const languageNames: Record<string, string> = {
 	yaml: "YAML",
 }
 export const extendedCodeBlockLanguages = common
-extendedCodeBlockLanguages.curl = curl
+extendedCodeBlockLanguages.curl = curl as LanguageFn
 
 export const extendedCodeBlockLanguageOptions = Object.fromEntries(
 	Object.keys(extendedCodeBlockLanguages)

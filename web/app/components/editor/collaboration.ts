@@ -14,14 +14,14 @@ export function renderCollaborationCaret(
 	caret.className = cn(
 		"border-l border-r border-solid -mx-px pointer-events-none relative break-normal",
 	)
-	caret.setAttribute("style", `border-color: ${user.color}`)
+	caret.setAttribute("style", `border-color: ${user.color as string}`)
 
 	const label = document.createElement("div")
 	label.className = cn(
 		"z-5 absolute font-medium text-white text-xs rounded-sm -left-px -top-[1.1em] whitespace-nowrap px-[0.1rem] pointer-events-none select-none caret-transparent",
 	)
-	label.setAttribute("style", `background-color: ${user.color}`)
-	label.insertBefore(document.createTextNode(user.name), null)
+	label.setAttribute("style", `background-color: ${user.color as string}`)
+	label.insertBefore(document.createTextNode(user.name as string), null)
 	caret.insertBefore(label, null)
 
 	return caret
@@ -61,7 +61,7 @@ export function otherUserDraggingUids(
 
 	provider.awareness.getStates().forEach((state, clientId) => {
 		if (clientId !== localClientId && state.draggingNodeUid) {
-			uids.add(state.draggingNodeUid)
+			uids.add(state.draggingNodeUid as string)
 		}
 	})
 
@@ -91,7 +91,8 @@ export function findRemoteUserCaretColor(
 	}
 
 	const state = provider.awareness.getStates().get(clientId)
-	return state?.user?.color ?? null
+	const user = state?.user as EditingUser | undefined
+	return user?.color ?? null
 }
 
 // editing awareness helpers for collaborative edit conflict resolution.
@@ -112,7 +113,8 @@ export function isEditingNodeInAwarenessOfType(
 	}
 
 	const localState = provider.awareness.getLocalState()
-	return localState?.editingNodeUid?.type === type
+	const info = localState?.editingNodeUid as EditingNodeInfo | null | undefined
+	return info?.type === type
 }
 
 /**
@@ -142,9 +144,12 @@ export function deleteEditingNodeInAwareness(
 	}
 
 	const localState = provider.awareness.getLocalState()
-	const current = localState?.editingNodeUid
+	const current = localState?.editingNodeUid as
+		| EditingNodeInfo
+		| null
+		| undefined
 
-	if (current?.uid === info.uid && current?.type === info.type) {
+	if (current?.uid === info.uid && current.type === info.type) {
 		setEditingNodeInAwareness(provider, null)
 	}
 }
@@ -164,7 +169,7 @@ export function otherUserEditingUids(
 
 	provider.awareness.getStates().forEach((state, clientId) => {
 		if (clientId !== localClientId && state.editingNodeUid) {
-			uids.add(state.editingNodeUid.uid)
+			uids.add((state.editingNodeUid as EditingNodeInfo).uid)
 		}
 	})
 
@@ -186,7 +191,7 @@ export function otherUserEditingNodes(
 
 	provider.awareness.getStates().forEach((state, clientId) => {
 		if (clientId !== localClientId && state.editingNodeUid) {
-			nodes.push(state.editingNodeUid)
+			nodes.push(state.editingNodeUid as EditingNodeInfo)
 		}
 	})
 
@@ -215,9 +220,12 @@ export function findEditingUsersByNodeUid(
 	const localClientId = provider.awareness.clientID
 
 	for (const [clientId, state] of provider.awareness.getStates()) {
-		if (clientId !== localClientId && state.editingNodeUid?.uid === uid) {
-			const user = state.user
-			if (user?.name && user?.color) {
+		const editing = state.editingNodeUid as EditingNodeInfo | null | undefined
+
+		if (clientId !== localClientId && editing?.uid === uid) {
+			const user = state.user as Partial<EditingUser> | undefined
+
+			if (user?.name && user.color) {
 				users.push({ name: user.name, color: user.color })
 			}
 		}
@@ -246,7 +254,7 @@ export function isNodeOrDescendantsBeingEditedByOther(
 	}
 
 	// check the node itself
-	const nodeUid = node.attrs?.uid
+	const nodeUid = node.attrs.uid as string | undefined
 	if (nodeUid && editingUids.has(nodeUid)) {
 		return true
 	}
@@ -258,7 +266,7 @@ export function isNodeOrDescendantsBeingEditedByOther(
 			return false // stop traversal
 		}
 
-		const childUid = childNode.attrs?.uid
+		const childUid = childNode.attrs.uid as string | undefined
 		if (childUid && editingUids.has(childUid)) {
 			found = true
 			return false
@@ -290,7 +298,7 @@ export function isRangeBeingEditedByOther(
 			return false
 		}
 
-		const nodeUid = node.attrs?.uid
+		const nodeUid = node.attrs.uid as string | undefined
 		if (nodeUid && editingUids.has(nodeUid)) {
 			found = true
 			return false
@@ -313,8 +321,9 @@ export function extractHocuspocusProviderFromEditor(
 	const ext = editor.extensionManager.extensions.find(
 		(e) => e.name === CollaborationCaret.name,
 	)
+	const options = ext?.options as { provider?: HocuspocusProvider } | undefined
 
-	return ext?.options?.provider ?? null
+	return options?.provider ?? null
 }
 
 /**

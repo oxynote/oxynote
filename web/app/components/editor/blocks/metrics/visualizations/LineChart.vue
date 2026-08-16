@@ -300,7 +300,9 @@ const option = computed<ECOption>(() => {
 })
 const legendHandler = computed(() => {
 	if (!chartElem.value) {
-		return () => {}
+		return () => {
+			// no-op until the chart element is mounted
+		}
 	}
 
 	return installSoloLegendBehavior(chartElem.value)

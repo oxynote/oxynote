@@ -45,7 +45,7 @@ export default function () {
 			const query = queryParams.toString()
 			const url = query ? `/api/slack/connect?${query}` : "/api/slack/connect"
 
-			return await $coreAPIClient(url, { method: "GET" })
+			return await $coreAPIClient<unknown>(url, { method: "GET" })
 		},
 	})
 
@@ -57,12 +57,12 @@ export default function () {
 				? `/api/slack/users/link?${query}`
 				: "/api/slack/users/link"
 
-			return await $coreAPIClient(url, { method: "GET" })
+			return await $coreAPIClient<{ linked: boolean }>(url, { method: "GET" })
 		},
 	})
 
 	const disconnectSlack = useMutation({
-		onMutate: async () => {
+		onMutate: () => {
 			const oldStatus = clone(
 				queryCache.getQueryData<SlackConnectionStatus>(
 					SLACK_QUERY_KEYS.connected,
@@ -81,7 +81,7 @@ export default function () {
 			return { newStatus, oldStatus }
 		},
 		mutation: async () => {
-			return await $coreAPIClient(`/api/slack`, { method: "DELETE" })
+			return await $coreAPIClient<unknown>(`/api/slack`, { method: "DELETE" })
 		},
 		async onSuccess() {
 			await queryCache.invalidateQueries({ key: SLACK_QUERY_KEYS.connected })
@@ -126,7 +126,7 @@ export default function () {
 	})
 
 	const updateSlackUserLinkSettings = useMutation({
-		onMutate: async (req) => {
+		onMutate: (req) => {
 			const oldSettings = clone(
 				queryCache.getQueryData<SlackUserLinkSettings | null>(
 					SLACK_QUERY_KEYS.userLinkSettings,
@@ -142,10 +142,13 @@ export default function () {
 			return { newSettings, oldSettings }
 		},
 		mutation: async (req: SlackUserLinkSettings) => {
-			return await $coreAPIClient(`/api/slack/users/settings`, {
-				method: "PUT",
-				body: req,
-			})
+			return await $coreAPIClient<SlackUserLinkSettings>(
+				`/api/slack/users/settings`,
+				{
+					method: "PUT",
+					body: req,
+				},
+			)
 		},
 		async onSuccess() {
 			await queryCache.invalidateQueries({
@@ -167,7 +170,7 @@ export default function () {
 	})
 
 	const unlinkSlackUser = useMutation({
-		onMutate: async () => {
+		onMutate: () => {
 			const oldSettings = clone(
 				queryCache.getQueryData<SlackUserLinkSettings | null>(
 					SLACK_QUERY_KEYS.userLinkSettings,
@@ -182,7 +185,9 @@ export default function () {
 			return { oldSettings }
 		},
 		mutation: async () => {
-			return await $coreAPIClient(`/api/slack/users`, { method: "DELETE" })
+			return await $coreAPIClient<unknown>(`/api/slack/users`, {
+				method: "DELETE",
+			})
 		},
 		async onSuccess() {
 			await queryCache.invalidateQueries({

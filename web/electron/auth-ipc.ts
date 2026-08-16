@@ -5,7 +5,12 @@ import { authClient } from "./auth-client"
 // main with the electron-store-backed session; the renderer never sees the
 // session cookie, only the operation's result. Adding a new auth op here is
 // the only way to expose it to the renderer.
-const handlers: Record<string, (args: any) => Promise<unknown>> = {
+//
+// The shared `never` parameter is what lets one record type hold handlers
+// whose better-auth argument types all differ: every one of them accepts
+// `never`, so no signature has to widen to `any`. The IPC payload is asserted
+// to it once, at the boundary below — the auth server validates the shape.
+const handlers: Record<string, (args: never) => Promise<unknown>> = {
 	"auth:getSession": () => authClient.getSession(),
 	"auth:signInEmailPassword": (args) => authClient.signIn.email(args),
 	"auth:signUpEmailPassword": (args) => authClient.signUp.email(args),
@@ -35,6 +40,6 @@ const handlers: Record<string, (args: any) => Promise<unknown>> = {
 
 export function registerAuthIpcHandlers() {
 	for (const [channel, handler] of Object.entries(handlers)) {
-		ipcMain.handle(channel, (_event, args) => handler(args))
+		ipcMain.handle(channel, (_event, args: unknown) => handler(args as never))
 	}
 }

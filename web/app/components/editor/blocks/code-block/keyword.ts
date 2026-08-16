@@ -1,6 +1,7 @@
 import { Extension } from "@tiptap/core"
 import { Plugin, PluginKey } from "prosemirror-state"
 import { Decoration, DecorationSet } from "@tiptap/pm/view"
+import type { Node as PMNode } from "@tiptap/pm/model"
 import { CODE_BLOCK_TITLE_NAME } from "../node-names"
 
 const patterns: { regex: RegExp; class: string; offset?: number }[] = [
@@ -35,17 +36,17 @@ const patterns: { regex: RegExp; class: string; offset?: number }[] = [
 export const KeywordColor = Extension.create({
 	name: "keywordColor",
 	addProseMirrorPlugins() {
-		const buildDecorations = (doc: any) => {
+		const buildDecorations = (doc: PMNode) => {
 			const decos: Decoration[] = []
 
-			doc.descendants((node: any, pos: number) => {
-				if (node.type?.name !== CODE_BLOCK_TITLE_NAME) {
+			doc.descendants((node, pos) => {
+				if (node.type.name !== CODE_BLOCK_TITLE_NAME) {
 					return
 				}
 
 				// collect all text nodes (even if split by marks)
 				const textNodes: { text: string; from: number }[] = []
-				node.descendants((child: any, childPos: number) => {
+				node.descendants((child, childPos) => {
 					if (child.isText && child.text) {
 						// absolute position in the whole doc
 						textNodes.push({ text: child.text, from: pos + 1 + childPos })
@@ -69,24 +70,29 @@ export const KeywordColor = Extension.create({
 
 				// helper to map regex index -> absolute document pos
 				const indexToPos = (idx: number) => {
-					const lastEnd = boundaries[boundaries.length - 1]!.end
+					const last = boundaries[boundaries.length - 1]
+					if (!last) {
+						return 0
+					}
+
 					if (idx < 0) {
 						idx = 0
-					} else if (idx > lastEnd) {
-						idx = lastEnd
+					} else if (idx > last.end) {
+						idx = last.end
 					}
 
 					for (let i = 0; i < boundaries.length; i++) {
-						const prevEnd = i === 0 ? 0 : boundaries[i - 1]!.end
-						const b = boundaries[i]!
-						if (idx <= b.end) {
+						const prevEnd = i === 0 ? 0 : (boundaries[i - 1]?.end ?? 0)
+						const b = boundaries[i]
+						if (b && idx <= b.end) {
 							return b.from + (idx - prevEnd)
 						}
 					}
 
-					const last = boundaries[boundaries.length - 1]!
 					const prevEnd =
-						boundaries.length > 1 ? boundaries[boundaries.length - 2]!.end : 0
+						boundaries.length > 1
+							? (boundaries[boundaries.length - 2]?.end ?? 0)
+							: 0
 
 					return last.from + (last.end - prevEnd)
 				}
@@ -125,7 +131,7 @@ export const KeywordColor = Extension.create({
 				},
 				props: {
 					decorations(state) {
-						return (this as any).getState(state)
+						return this.getState(state)
 					},
 				},
 			}),

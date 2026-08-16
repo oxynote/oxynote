@@ -29,7 +29,7 @@ const collapseOpen = usePersistentState<Record<string, number>>({
 	},
 	serializer: {
 		write: (data) => btoa(jsonStableStringify(data)),
-		read: (data) => JSON.parse(atob(data)),
+		read: (data) => JSON.parse(atob(data)) as Record<string, number>,
 	},
 })
 
@@ -42,8 +42,8 @@ if (!props.itemId && !Object.keys(collapseOpen.value).length) {
 	items.value?.forEach((item) => {
 		if (
 			!item.children?.length ||
-			(item.children?.length === 1 &&
-				item.children[0]!.id === SIDEBAR_ITEM_PLACEHOLDER_ID)
+			(item.children.length === 1 &&
+				item.children[0]?.id === SIDEBAR_ITEM_PLACEHOLDER_ID)
 		) {
 			return
 		}

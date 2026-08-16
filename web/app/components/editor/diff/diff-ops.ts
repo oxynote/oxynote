@@ -29,6 +29,7 @@ export function computeTokenDiff(
 		// spread iterates code points (not UTF-16 units) so emoji
 		// and other surrogate pairs count as one, matching DiffToken
 		// granularity
+		// eslint-disable-next-line @typescript-eslint/no-misused-spread -- code point granularity is exactly what DiffToken uses
 		const len = [...change.value].length
 
 		if (change.removed) {
@@ -102,7 +103,9 @@ function splitEqualByMarks(
 	for (let i = 0; i < len; i++) {
 		if (
 			!marksMatch(
+				// eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- the equal region spans len tokens on both sides, so both reads are in bounds
 				oldTokens[oldStart + i]!.marks,
+				// eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- the equal region spans len tokens on both sides, so both reads are in bounds
 				newTokens[newStart + i]!.marks,
 			)
 		) {
@@ -117,6 +120,7 @@ function splitEqualByMarks(
 
 	let offset = 0
 	for (const wordToken of wordTokens) {
+		// eslint-disable-next-line @typescript-eslint/no-misused-spread -- the changed mask is indexed by code point, matching DiffToken granularity
 		const tokenLen = [...wordToken].length
 		const tokenEnd = offset + tokenLen
 

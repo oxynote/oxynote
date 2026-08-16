@@ -80,15 +80,16 @@ export function extractDocInfoFromSlug(
 ): { id: string; name?: string } | undefined {
 	const parts = slug.split("-")
 	if (parts.length < 2) {
-		if (parts.length == 1 && isXid(parts[0]!)) {
-			return { id: parts[0]! }
+		const [onlyPart] = parts
+		if (onlyPart !== undefined && isXid(onlyPart)) {
+			return { id: onlyPart }
 		}
 
 		return undefined
 	}
 
 	const name = parts.slice(0, -1).join("-")
-	const id = parts[parts.length - 1]!
+	const id = parts[parts.length - 1] ?? ""
 
 	// default length of https://github.com/rs/xid
 	if (isXid(id)) {

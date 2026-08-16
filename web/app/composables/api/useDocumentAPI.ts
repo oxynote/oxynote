@@ -63,29 +63,32 @@ export default function () {
 				queryCache.getQueryData<DocumentTreeResponse>(DOCUMENT_QUERY_KEYS.root),
 			)
 
-			const newTree = clone(oldTree) || []
+			const newTree = clone(oldTree) ?? []
 
-			let targetItem: DocumentTreeElement | null = null
-			let targetItemOldIndex: number | null = null
-			let newParent: DocumentTreeElement | "root" | null = null
-			let oldParent: DocumentTreeElement | "root" | null = null
+			// the assertions keep the declared union as the flow type: walkTree
+			// assigns these from a closure, which TS's flow analysis ignores,
+			// so without them every check below looks dead to TS.
+			let targetItem = null as DocumentTreeElement | null
+			let targetItemOldIndex = null as number | null
+			let newParent = null as DocumentTreeElement | "root" | null
+			let oldParent = null as DocumentTreeElement | "root" | null
 
 			const walkTree = (
 				elems: DocumentTreeElement[],
 				parent: DocumentTreeElement | "root",
 			): boolean => {
-				for (let i = 0; i < elems.length; i++) {
+				for (const [i, elem] of elems.entries()) {
 					if (!targetItem) {
-						if (elems[i]!.id === req.id) {
-							targetItem = elems[i]!
+						if (elem.id === req.id) {
+							targetItem = elem
 							targetItemOldIndex = i
 							oldParent = parent
 						}
 					}
 
 					if (!newParent) {
-						if (elems[i]!.id === req.parentId) {
-							newParent = elems[i]!
+						if (elem.id === req.parentId) {
+							newParent = elem
 						}
 					}
 
@@ -98,8 +101,8 @@ export default function () {
 						return true
 					}
 
-					if (elems[i]!.children) {
-						if (walkTree(elems[i]!.children!, elems[i]!)) {
+					if (elem.children) {
+						if (walkTree(elem.children, elem)) {
 							return true
 						}
 					}
@@ -126,7 +129,7 @@ export default function () {
 			if (oldParent === "root") {
 				newTree.splice(targetItemOldIndex, 1)
 			} else {
-				const oldP = oldParent as DocumentTreeElement // need to cast
+				const oldP = oldParent
 				oldP.children?.splice(targetItemOldIndex, 1)
 
 				if (!oldP.children?.length) {
@@ -138,8 +141,8 @@ export default function () {
 
 			if (newParent === "root") {
 				if (req.insertBeforeId) {
-					for (let i = 0; i < newTree.length; i++) {
-						if (newTree[i]!.id === req.insertBeforeId) {
+					for (const [i, elem] of newTree.entries()) {
+						if (elem.id === req.insertBeforeId) {
 							// this item will be pushed down and the new item
 							// will be inserted in its place
 							targetItemNewIndex = i
@@ -150,11 +153,11 @@ export default function () {
 
 				newTree.splice(targetItemNewIndex, 0, targetItem)
 			} else {
-				const newP = newParent as DocumentTreeElement // need to cast
+				const newP = newParent
 
 				if (req.insertBeforeId) {
-					for (let i = 0; i < (newP.children?.length || 0); i++) {
-						if (newP.children![i]!.id === req.insertBeforeId) {
+					for (const [i, child] of (newP.children ?? []).entries()) {
+						if (child.id === req.insertBeforeId) {
 							// this item will be pushed down and the new item
 							// will be inserted in its place
 							targetItemNewIndex = i
@@ -163,9 +166,7 @@ export default function () {
 					}
 				}
 
-				if (!newP.children) {
-					newP.children = []
-				}
+				newP.children ??= []
 
 				newP.children.splice(targetItemNewIndex, 0, targetItem)
 			}
@@ -228,7 +229,7 @@ export default function () {
 				localOptimisticInsert: true,
 			}
 
-			const newTree = clone(oldTree) || []
+			const newTree = clone(oldTree) ?? []
 			if (!newTree.length) {
 				newTree.push(newTreeElem)
 			} else {
@@ -238,9 +239,7 @@ export default function () {
 					const walkTree = (elems: DocumentTreeElement[]): boolean => {
 						for (const elem of elems) {
 							if (elem.id === req.parentId) {
-								if (!elem.children) {
-									elem.children = []
-								}
+								elem.children ??= []
 
 								elem.children.unshift(newTreeElem)
 
@@ -305,19 +304,19 @@ export default function () {
 				queryCache.getQueryData<DocumentTreeResponse>(DOCUMENT_QUERY_KEYS.root),
 			)
 
-			const newTree = clone(oldTree) || []
+			const newTree = clone(oldTree) ?? []
 			const walkTree = (elems: DocumentTreeElement[]): boolean => {
-				for (let i = 0; i < elems.length; i++) {
-					if (elems[i]!.id === id) {
+				for (const [i, elem] of elems.entries()) {
+					if (elem.id === id) {
 						elems.splice(i, 1)
 
 						return true
 					}
 
-					if (elems[i]!.children) {
-						if (walkTree(elems[i]!.children!)) {
-							if (!elems[i]!.children!.length) {
-								delete elems[i]!.children
+					if (elem.children) {
+						if (walkTree(elem.children)) {
+							if (!elem.children.length) {
+								delete elem.children
 							}
 
 							return true
@@ -411,7 +410,9 @@ export default function () {
 			// Find the source document to get its name, icon, and parent
 			let name = "New Document"
 			let icon = "mingcute:document-2-fill"
-			let parentId: string | null = null
+			// the assertion keeps the declared union as the flow type: findSource
+			// assigns parentId from a closure, which TS's flow analysis ignores.
+			let parentId = null as string | null
 
 			const findSource = (
 				elems: DocumentTreeElement[],
@@ -435,7 +436,7 @@ export default function () {
 				return false
 			}
 
-			const newTree = clone(oldTree) || []
+			const newTree = clone(oldTree) ?? []
 			findSource(newTree, null)
 
 			const now = new Date()
@@ -458,9 +459,7 @@ export default function () {
 				const insertAsSibling = (elems: DocumentTreeElement[]): boolean => {
 					for (const elem of elems) {
 						if (elem.id === parentId) {
-							if (!elem.children) {
-								elem.children = []
-							}
+							elem.children ??= []
 
 							elem.children.unshift(newTreeElem)
 
@@ -540,17 +539,17 @@ export default function () {
 			const oldTree = clone(
 				queryCache.getQueryData<DocumentTreeResponse>(DOCUMENT_QUERY_KEYS.root),
 			)
-			const newTree = clone(oldTree) || []
+			const newTree = clone(oldTree) ?? []
 
 			const walkTree = (elems: DocumentTreeElement[]): boolean => {
-				for (let i = 0; i < elems.length; i++) {
-					if (elems[i]!.id === id) {
-						elems[i]!.protected = protectedMode
+				for (const elem of elems) {
+					if (elem.id === id) {
+						elem.protected = protectedMode
 						return true
 					}
 
-					if (elems[i]!.children) {
-						if (walkTree(elems[i]!.children!)) {
+					if (elem.children) {
+						if (walkTree(elem.children)) {
 							return true
 						}
 					}
@@ -636,7 +635,7 @@ export default function () {
 				updatedAt: new Date(),
 			}
 
-			const newBranches = [...(oldBranches || []), newBranch]
+			const newBranches = [...(oldBranches ?? []), newBranch]
 
 			queryCache.setQueryData(key, newBranches)
 			queryCache.cancelQueries({ key })
@@ -663,7 +662,8 @@ export default function () {
 			)
 		},
 		async onSuccess(_data, { docId }, ctx) {
-			if (!isXid(docId) || !ctx || !ctx.key) {
+			// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- onMutate returns no context when it bails out, so key is missing at runtime
+			if (!isXid(docId) || !ctx.key) {
 				return
 			}
 
@@ -672,7 +672,7 @@ export default function () {
 			})
 		},
 		onError(_err, { docId, req }, ctx) {
-			if (!isXid(docId) || !isXid(req.sourceBranchId) || !ctx || !ctx.key) {
+			if (!isXid(docId) || !isXid(req.sourceBranchId) || !ctx.key) {
 				return
 			}
 
@@ -698,7 +698,7 @@ export default function () {
 			const oldBranches = clone(
 				queryCache.getQueryData<DocumentBranchesResponse>(key),
 			)
-			const newBranches = clone(oldBranches) || []
+			const newBranches = clone(oldBranches) ?? []
 
 			const index = newBranches.findIndex((b) => b.branchId === branchId)
 			if (index !== -1) {
@@ -726,7 +726,8 @@ export default function () {
 			})
 		},
 		async onSuccess(_data, { docId, branchId }, ctx) {
-			if (!isXid(docId) || !isXid(branchId) || !ctx || !ctx.key) {
+			// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- onMutate returns no context when it bails out, so key is missing at runtime
+			if (!isXid(docId) || !isXid(branchId) || !ctx.key) {
 				return
 			}
 
@@ -735,7 +736,7 @@ export default function () {
 			})
 		},
 		onError(_err, { docId, branchId }, ctx) {
-			if (!isXid(docId) || !isXid(branchId) || !ctx || !ctx.key) {
+			if (!isXid(docId) || !isXid(branchId) || !ctx.key) {
 				return
 			}
 
@@ -869,7 +870,7 @@ export default function () {
 	}
 
 	const updateBranchApproval = useMutation({
-		onMutate: async ({
+		onMutate: ({
 			docId,
 			branchId,
 			approved,
@@ -896,7 +897,7 @@ export default function () {
 			const oldReviewers = clone(
 				queryCache.getQueryData<BranchReviewersResponse>(key),
 			)
-			const newReviewers = clone(oldReviewers) || []
+			const newReviewers = clone(oldReviewers) ?? []
 
 			const found = newReviewers.find((r) => r.userId === userId)
 			if (found) {
@@ -947,7 +948,7 @@ export default function () {
 			})
 		},
 		onError(_err, { docId, branchId }, ctx) {
-			if (!isXid(docId) || !isXid(branchId) || !ctx || !ctx.key) {
+			if (!isXid(docId) || !isXid(branchId) || !ctx.key) {
 				return
 			}
 
@@ -963,7 +964,7 @@ export default function () {
 	})
 
 	const inviteBranchReviewer = useMutation({
-		onMutate: async ({
+		onMutate: ({
 			docId,
 			branchId,
 			userId,
@@ -985,7 +986,7 @@ export default function () {
 			const oldReviewers = clone(
 				queryCache.getQueryData<BranchReviewersResponse>(key),
 			)
-			const newReviewers = clone(oldReviewers) || []
+			const newReviewers = clone(oldReviewers) ?? []
 			const existing = newReviewers.find((r) => r.userId === userId)
 
 			if (existing) {
@@ -1032,7 +1033,7 @@ export default function () {
 				!isXid(docId) ||
 				!isXid(branchId) ||
 				isOptimisticInsertId(userId) ||
-				!ctx ||
+				// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- onMutate returns no context when it bails out, so key is missing at runtime
 				!ctx.key
 			) {
 				return
@@ -1047,7 +1048,6 @@ export default function () {
 				!isXid(docId) ||
 				!isXid(branchId) ||
 				isOptimisticInsertId(userId) ||
-				!ctx ||
 				!ctx.key
 			) {
 				return
@@ -1065,7 +1065,7 @@ export default function () {
 	})
 
 	const removeBranchReviewer = useMutation({
-		onMutate: async ({
+		onMutate: ({
 			docId,
 			branchId,
 			userId,
@@ -1082,7 +1082,7 @@ export default function () {
 			const oldReviewers = clone(
 				queryCache.getQueryData<BranchReviewersResponse>(key),
 			)
-			const newReviewers = clone(oldReviewers) || []
+			const newReviewers = clone(oldReviewers) ?? []
 
 			const index = newReviewers.findIndex((h) => h.userId === userId)
 			if (index !== -1) {
@@ -1128,7 +1128,6 @@ export default function () {
 				!isXid(docId) ||
 				!isXid(branchId) ||
 				isOptimisticInsertId(userId) ||
-				!ctx ||
 				!ctx.key
 			) {
 				return

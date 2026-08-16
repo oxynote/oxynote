@@ -71,7 +71,7 @@ const onSubmit = form.handleSubmit(async (values) => {
 	}
 
 	// loading stays set so the spinner shows while redirecting
-	navigateTo({ path: "/login", query: { reset: "true" } })
+	void navigateTo({ path: "/login", query: { reset: "true" } })
 })
 </script>
 <template>

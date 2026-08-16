@@ -1,6 +1,7 @@
 import type { ComputePositionConfig } from "@floating-ui/dom"
 import type { Editor } from "@tiptap/vue-3"
 import type { HocuspocusProvider } from "@hocuspocus/provider"
+import type { Node } from "@tiptap/pm/model"
 import type { PropType } from "vue"
 import { defineComponent, h, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { PluginKey } from "@tiptap/pm/state"
@@ -79,6 +80,7 @@ export const DragHandle = defineComponent({
 			editor.registerPlugin(
 				DragHandlePlugin({
 					editor,
+					// eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- the render function always attaches this ref, so it is set by onMounted
 					element: root.value!,
 					pluginKey,
 					provider,

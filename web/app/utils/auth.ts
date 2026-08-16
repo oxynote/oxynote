@@ -2,6 +2,7 @@ export interface AuthError {
 	message?: string | undefined
 	status: number
 	statusText: string
+	code?: string | undefined
 }
 
 export interface AuthResponse {

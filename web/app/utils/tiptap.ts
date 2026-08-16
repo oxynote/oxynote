@@ -34,7 +34,7 @@ export function nodeOverlayOffset(nodeDOM: HTMLElement): NodeOverlayOffset {
 		case ImageBlock.name: {
 			const img =
 				nodeDOM.querySelector("img") ??
-				nodeDOM.firstElementChild?.querySelector?.("img")
+				nodeDOM.firstElementChild?.querySelector("img")
 
 			if (!img) {
 				return defaults
@@ -88,7 +88,7 @@ export function highlightTiptapScrollElement(
 	const target =
 		element.isConnected || !elementId
 			? element
-			: document.getElementById(elementId) || element
+			: (document.getElementById(elementId) ?? element)
 
 	if (!target.isConnected) {
 		return
@@ -122,7 +122,7 @@ export function highlightTiptapScrollElement(
 
 	const updateOverlayPosition = () => {
 		const rect = target.getBoundingClientRect()
-		const containerRect = container?.getBoundingClientRect()
+		const containerRect = container.getBoundingClientRect()
 		const width =
 			rect.width ||
 			target.offsetWidth ||
@@ -147,8 +147,8 @@ export function highlightTiptapScrollElement(
 		const scrollLeft =
 			container instanceof HTMLElement ? container.scrollLeft : 0
 
-		const top = rect.top - (containerRect?.top ?? 0) + scrollTop
-		const left = rect.left - (containerRect?.left ?? 0) + scrollLeft
+		const top = rect.top - containerRect.top + scrollTop
+		const left = rect.left - containerRect.left + scrollLeft
 
 		overlay.style.top = `${top - offsets.extraTop - SCROLL_HIGHLIGHT_VERTICAL_OFFSET}px`
 		overlay.style.left = `${left - offsets.extraLeft - SCROLL_HIGHLIGHT_HORIZONTAL_OFFSET}px`
@@ -319,7 +319,10 @@ export function restrictTiptapInputRulesInsideNode(
 			return rules.map((rule) => {
 				// if the rule's type is explicitly allowed inside,
 				// skip blocking
-				const ruleTypeName = (rule as any).type?.name
+				// only the rules built by nodeInputRule/markInputRule carry a
+				// `type`; it is absent from InputRule's public shape
+				const ruleTypeName = (rule as InputRule & { type?: { name: string } })
+					.type?.name
 				if (ruleTypeName && allowedNodesInside.includes(ruleTypeName)) {
 					return rule
 				}
@@ -347,25 +350,28 @@ export function startRandomNumberInsertion(
 	let count = 0
 
 	const intervalId = setInterval(() => {
-		if (!editor || editor.isDestroyed) {
+		if (editor.isDestroyed) {
 			clearInterval(intervalId)
 			return
 		}
 
 		const { doc } = editor.state
 
-		// find the first node with the given name
-		let targetPos: number | null = null
+		// find the first node with the given name. The match is collected into
+		// an array because TS's flow analysis cannot see an assignment made
+		// inside the traversal callback
+		const targetPositions: number[] = []
 		doc.descendants((node, pos) => {
-			if (targetPos === null && node.type.name === nodeName) {
-				targetPos = pos
+			if (targetPositions.length === 0 && node.type.name === nodeName) {
+				targetPositions.push(pos)
 				return false // stop traversal
 			}
 
 			return true
 		})
 
-		if (targetPos === null) {
+		const targetPos = targetPositions[0]
+		if (targetPos === undefined) {
 			return
 		}
 

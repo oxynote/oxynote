@@ -56,11 +56,11 @@ const onChangeSubmit = form.handleSubmit(async (values) => {
 	loading.value = true
 	await delay(300) // show loading spinner for at least a moment
 
-	const { error } = await changePassword({
+	const { error } = (await changePassword({
 		currentPassword: values.currentPassword,
 		newPassword: values.newPassword,
 		revokeOtherSessions: true,
-	})
+	})) as AuthResponse
 	if (error) {
 		loading.value = false
 
@@ -108,10 +108,10 @@ async function onSetSubmit() {
 	loading.value = true
 	await delay(300) // show loading spinner for at least a moment
 
-	const { error } = await requestPasswordReset({
+	const { error } = (await requestPasswordReset({
 		email,
 		redirectTo: `${config.public.appBaseURL}/reset-password`,
-	})
+	})) as AuthResponse
 	if (error) {
 		loading.value = false
 		showToastMessage(

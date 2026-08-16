@@ -49,9 +49,9 @@ export function buildPositionMap(mergedDoc: JSONContent): PositionMap {
 
 	for (const block of blocks) {
 		const attrs = block.attrs ?? {}
-		const diffStatus: DiffStatus = attrs.diffStatus ?? DiffStatus.Unchanged
-		const modifiedIndex: number | null = attrs.modifiedIndex ?? null
-		const originalIndex: number | null = attrs.originalIndex ?? null
+		const diffStatus = (attrs.diffStatus ?? DiffStatus.Unchanged) as DiffStatus
+		const modifiedIndex = (attrs.modifiedIndex ?? null) as number | null
+		const originalIndex = (attrs.originalIndex ?? null) as number | null
 
 		let source: "original" | "modified"
 		let blockIndex: number
@@ -73,7 +73,7 @@ export function buildPositionMap(mergedDoc: JSONContent): PositionMap {
 			startPos: pos,
 			nodeSize,
 			diffStatus,
-			uid: attrs.uid ?? null,
+			uid: (attrs.uid ?? null) as string | null,
 		})
 
 		pos += nodeSize
@@ -111,10 +111,10 @@ export function buildPositionMapFromDoc(doc: PMNode): PositionMap {
 
 	doc.forEach((node, offset) => {
 		const pos = offset
-		const attrs = node.attrs ?? {}
-		const diffStatus: DiffStatus = attrs.diffStatus ?? DiffStatus.Unchanged
-		const modifiedIndex: number | null = attrs.modifiedIndex ?? null
-		const originalIndex: number | null = attrs.originalIndex ?? null
+		const attrs = node.attrs
+		const diffStatus = (attrs.diffStatus ?? DiffStatus.Unchanged) as DiffStatus
+		const modifiedIndex = (attrs.modifiedIndex ?? null) as number | null
+		const originalIndex = (attrs.originalIndex ?? null) as number | null
 
 		let source: "original" | "modified"
 		let blockIndex: number
@@ -133,7 +133,7 @@ export function buildPositionMapFromDoc(doc: PMNode): PositionMap {
 			startPos: pos,
 			nodeSize: node.nodeSize,
 			diffStatus,
-			uid: attrs.uid ?? null,
+			uid: (attrs.uid ?? null) as string | null,
 		})
 	})
 

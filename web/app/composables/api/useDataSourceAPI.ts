@@ -111,7 +111,7 @@ export default function () {
 				createdAt: new Date(),
 				updatedAt: null,
 			}
-			const newDataSources = [newDataSource, ...(oldDataSources || [])]
+			const newDataSources = [newDataSource, ...(oldDataSources ?? [])]
 
 			queryCache.setQueryData(DATA_SOURCE_QUERY_KEYS.list, newDataSources)
 			queryCache.cancelQueries({ key: DATA_SOURCE_QUERY_KEYS.list })
@@ -155,7 +155,7 @@ export default function () {
 					DATA_SOURCE_QUERY_KEYS.list,
 				),
 			)
-			const newDataSources = clone(oldDataSources) || []
+			const newDataSources = clone(oldDataSources) ?? []
 
 			const oldDataSourceById = clone(
 				queryCache.getQueryData<DataSourceResponse>(
@@ -287,7 +287,7 @@ export default function () {
 					DATA_SOURCE_QUERY_KEYS.list,
 				),
 			)
-			const newDataSources = clone(oldDataSources) || []
+			const newDataSources = clone(oldDataSources) ?? []
 
 			const oldDataSourceById = clone(
 				queryCache.getQueryData<DataSourceResponse>(
@@ -415,7 +415,6 @@ export default function () {
 					dataSourceId !== undefined &&
 					dataSourceId !== null &&
 					params?.q !== undefined &&
-					params?.q !== null &&
 					params.q.trim().length > 0
 				)
 			},
@@ -442,7 +441,7 @@ export default function () {
 
 				return DATA_SOURCE_QUERY_KEYS.queries(
 					dataSourceId || "",
-					queries?.sort() || [],
+					queries?.sort() ?? [],
 					params?.timeRangeKey || "",
 				)
 			},
@@ -450,7 +449,7 @@ export default function () {
 				const dataSourceId = toValue(dataSourceIdRef)
 				const params = toValue(paramsRef)
 
-				if (!dataSourceId || !params?.queries?.length) {
+				if (!dataSourceId || !params?.queries.length) {
 					return []
 				}
 

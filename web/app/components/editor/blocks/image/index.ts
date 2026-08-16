@@ -38,7 +38,7 @@ export const ImageBlock = Node.create({
 						return {}
 					}
 
-					return { width: attrs.width }
+					return { width: attrs.width as number }
 				},
 			},
 			uploading: {
@@ -59,6 +59,7 @@ export const ImageBlock = Node.create({
 		]
 	},
 	addNodeView() {
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-argument -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 		return VueNodeViewRenderer(ImageBlockComponent)
 	},
 })
@@ -113,7 +114,7 @@ function isRootInsertPosition(editor: Editor, pos?: number): boolean {
 	return $pos.depth <= 2
 }
 
-async function insertImageWithUpload(
+function insertImageWithUpload(
 	editor: Editor,
 	file: File,
 	documentId: string,
@@ -145,7 +146,7 @@ async function insertImageWithUpload(
 			const src = buildDocumentFileSrc(documentId, blockId)
 			updateImageAttrsByUid(editor, blockId, { src, uploading: false })
 		})
-		.catch((error) => {
+		.catch((error: unknown) => {
 			console.error("Failed to upload image:", error)
 			updateImageAttrsByUid(editor, blockId, { uploading: false })
 			showToastMessage("error", $t("editor.image.errors.upload-failed"))
@@ -158,7 +159,11 @@ function updateImageAttrsByUid(
 	attrs: Record<string, unknown>,
 ): void {
 	const { doc } = editor.state
-	let nodePos: number | null = null
+
+	// -1 sentinel instead of null: typescript does not track assignments made
+	// inside the descendants callback, so a null check here would be reported
+	// as always-true and the closure below would need non-null assertions.
+	let nodePos = -1
 
 	doc.descendants((node, pos) => {
 		if (node.type.name === ImageBlock.name && node.attrs.uid === uid) {
@@ -169,17 +174,17 @@ function updateImageAttrsByUid(
 		return true
 	})
 
-	if (nodePos === null) {
+	if (nodePos === -1) {
 		return
 	}
 
 	editor.commands.command(({ tr }) => {
-		const node = tr.doc.nodeAt(nodePos!)
+		const node = tr.doc.nodeAt(nodePos)
 		if (!node) {
 			return false
 		}
 
-		tr.setNodeMarkup(nodePos!, undefined, { ...node.attrs, ...attrs })
+		tr.setNodeMarkup(nodePos, undefined, { ...node.attrs, ...attrs })
 		return true
 	})
 }

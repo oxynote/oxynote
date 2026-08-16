@@ -19,11 +19,14 @@ export default function (
 	if (shortcut && handler) {
 		const combo = normalizeShortcut(shortcut, osType.value)
 
-		const stop = whenever(magicKeys[combo]!, () => {
+		// eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- useMagicKeys returns a proxy that materializes a ref for any key
+		const comboKey = magicKeys[combo]!
+
+		const stop = whenever(comboKey, () => {
 			handler()
 		})
 		const stopPrevent = useEventListener(window, "keydown", (ev) => {
-			if (magicKeys[combo]!.value) {
+			if (comboKey.value) {
 				ev.preventDefault()
 			}
 		})

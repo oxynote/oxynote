@@ -109,10 +109,10 @@ export class PrometheusDataSourceClient implements PrometheusClient {
 		return this.labelValues("__name__")
 	}
 
-	async flags(): Promise<Record<string, string>> {
+	flags(): Promise<Record<string, string>> {
 		// no-op for now
 		// existing implementation: https://github.com/prometheus/prometheus/blob/main/web/ui/module/codemirror-promql/src/client/prometheus.ts#L197
-		return {}
+		return Promise.resolve({})
 	}
 
 	destroy(): void {

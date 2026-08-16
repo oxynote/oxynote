@@ -16,7 +16,7 @@ const props = defineProps<{
 }>()
 
 function addParameterList() {
-	if (!props.editor || props.hovered == null) {
+	if (props.hovered == null) {
 		return
 	}
 
@@ -31,6 +31,7 @@ function addParameterList() {
 		}
 	})
 
+	// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- assignment happens inside the forEach callback, which control-flow analysis cannot see
 	if (leftSideNodePos == null) {
 		return
 	}
@@ -43,7 +44,7 @@ function addParameterList() {
 }
 
 function invertSplitDocumentation() {
-	if (!props.editor || props.hovered == null) {
+	if (props.hovered == null) {
 		return
 	}
 

@@ -57,7 +57,7 @@ onMounted(async () => {
 
 	try {
 		await connectGitHub.mutateAsync(params)
-		fetchGitHubConnectionStatus.refetch()
+		void fetchGitHubConnectionStatus.refetch()
 		connectionState.value = "success"
 	} catch {
 		connectionState.value = "error"

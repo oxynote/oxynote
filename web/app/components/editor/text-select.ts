@@ -1,11 +1,11 @@
 import { Extension } from "@tiptap/core"
 import { Selection, TextSelection } from "prosemirror-state"
 import { Plugin, PluginKey } from "@tiptap/pm/state"
-import { Slice, Fragment } from "@tiptap/pm/model"
+import { Slice, Fragment, type Node } from "@tiptap/pm/model"
 
-function hasAnyTextblock(doc: any): boolean {
+function hasAnyTextblock(doc: Node): boolean {
 	let found = false
-	doc.descendants((node: any) => {
+	doc.descendants((node) => {
 		if (node.isTextblock) {
 			found = true
 			return false
@@ -15,7 +15,7 @@ function hasAnyTextblock(doc: any): boolean {
 	return found
 }
 
-function firstTextPos(doc: any): number | null {
+function firstTextPos(doc: Node): number | null {
 	const end = doc.content.size
 	for (let pos = 1; pos < end; pos++) {
 		const $pos = doc.resolve(pos)
@@ -24,7 +24,7 @@ function firstTextPos(doc: any): number | null {
 	return null
 }
 
-function lastTextPos(doc: any): number | null {
+function lastTextPos(doc: Node): number | null {
 	const end = doc.content.size
 	for (let pos = end - 1; pos > 0; pos--) {
 		const $pos = doc.resolve(pos)
@@ -35,7 +35,7 @@ function lastTextPos(doc: any): number | null {
 
 // Move a raw pos to a nearby valid *text* cursor position.
 // bias: -1 for up/left, +1 for down/right.
-function clampToText(doc: any, pos: number, bias: -1 | 1): number | null {
+function clampToText(doc: Node, pos: number, bias: -1 | 1): number | null {
 	try {
 		const sel = Selection.near(doc.resolve(pos), bias)
 		if (sel instanceof TextSelection) return sel.head
@@ -64,7 +64,7 @@ export const TextSelectClipboard = Extension.create({
 
 							fragment.forEach((node) => {
 								if (node.isText) {
-									text += node.text
+									text += node.text ?? ""
 								} else if (node.content.size > 0) {
 									text += extractText(node.content)
 								}
@@ -108,7 +108,7 @@ export const TextSelectShortcuts = Extension.create({
 				const { $from } = state.selection
 				const node = $from.node()
 
-				if (!node || node.isTextblock) {
+				if (node.isTextblock) {
 					const pos = $from.start()
 					const end = $from.end()
 
@@ -157,10 +157,9 @@ export const TextSelectShortcuts = Extension.create({
 						doc.resolve(targetWithin),
 						-1,
 					)
-					if (sel) {
-						view.dispatch(state.tr.setSelection(sel).scrollIntoView())
-						return true
-					}
+
+					view.dispatch(state.tr.setSelection(sel).scrollIntoView())
+					return true
 				}
 
 				// jump to previous non-empty block start (by scanning upward)
@@ -174,10 +173,9 @@ export const TextSelectShortcuts = Extension.create({
 							doc.resolve(target),
 							-1,
 						)
-						if (sel) {
-							view.dispatch(state.tr.setSelection(sel).scrollIntoView())
-							return true
-						}
+
+						view.dispatch(state.tr.setSelection(sel).scrollIntoView())
+						return true
 					}
 					pos--
 				}
@@ -188,9 +186,8 @@ export const TextSelectShortcuts = Extension.create({
 					doc.resolve(first),
 					-1,
 				)
-				if (sel) {
-					view.dispatch(state.tr.setSelection(sel).scrollIntoView())
-				}
+
+				view.dispatch(state.tr.setSelection(sel).scrollIntoView())
 
 				return true
 			},
@@ -204,8 +201,8 @@ export const TextSelectShortcuts = Extension.create({
 				const last = lastTextPos(doc)
 				if (first == null || last == null) return true
 
-				const anchorClamped = clampToText(doc, selection.anchor, +1) ?? last
-				const headClamped = clampToText(doc, selection.head, +1) ?? last
+				const anchorClamped = clampToText(doc, selection.anchor, 1) ?? last
+				const headClamped = clampToText(doc, selection.head, 1) ?? last
 
 				// already full-doc selection? do nothing
 				if (
@@ -222,17 +219,16 @@ export const TextSelectShortcuts = Extension.create({
 				const blockEnd = $head.end()
 
 				// extend within current block first
-				const targetWithin = clampToText(doc, blockEnd, +1) ?? last
+				const targetWithin = clampToText(doc, blockEnd, 1) ?? last
 				if (headClamped !== targetWithin) {
 					const sel = TextSelection.between(
 						doc.resolve(anchorClamped),
 						doc.resolve(targetWithin),
-						+1,
+						1,
 					)
-					if (sel) {
-						view.dispatch(state.tr.setSelection(sel).scrollIntoView())
-						return true
-					}
+
+					view.dispatch(state.tr.setSelection(sel).scrollIntoView())
+					return true
 				}
 
 				// jump to next non-empty block end (by scanning downward)
@@ -241,16 +237,15 @@ export const TextSelectShortcuts = Extension.create({
 				while (pos < docEnd) {
 					const $p = doc.resolve(pos)
 					if ($p.parent.isTextblock && $p.parent.content.size > 0) {
-						const target = clampToText(doc, $p.end(), +1) ?? last
+						const target = clampToText(doc, $p.end(), 1) ?? last
 						const sel = TextSelection.between(
 							doc.resolve(anchorClamped),
 							doc.resolve(target),
-							+1,
+							1,
 						)
-						if (sel) {
-							view.dispatch(state.tr.setSelection(sel).scrollIntoView())
-							return true
-						}
+
+						view.dispatch(state.tr.setSelection(sel).scrollIntoView())
+						return true
 					}
 					pos++
 				}
@@ -259,11 +254,10 @@ export const TextSelectShortcuts = Extension.create({
 				const sel = TextSelection.between(
 					doc.resolve(anchorClamped),
 					doc.resolve(last),
-					+1,
+					1,
 				)
-				if (sel) {
-					view.dispatch(state.tr.setSelection(sel).scrollIntoView())
-				}
+
+				view.dispatch(state.tr.setSelection(sel).scrollIntoView())
 
 				return true
 			},

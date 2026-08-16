@@ -15,7 +15,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
 	const { fetchAuthSession, fetchOrganization } = useAuthSession()
 
 	const sessionReq = await fetchAuthSession.refresh()
-	const session = sessionReq?.data?.data?.session
+	const session = sessionReq.data?.data?.session
 
 	if (to.name === "accept-invite") {
 		// only 1 organization can be joined per user
@@ -65,15 +65,15 @@ export default defineNuxtRouteMiddleware(async (to) => {
 		// redirect to /login — looping forever on the login page itself.
 		const { fetchDocumentTree } = useDocumentAPI()
 		const docTree = await fetchDocumentTree.refresh()
-		if (!docTree.data?.length) {
+
+		const firstDoc = docTree.data?.[0]
+		if (!firstDoc) {
 			return nuxtApp.runWithContext(() => {
 				return navigateTo(`/${createNameSlug(orgName)}`, {
 					replace: true,
 				})
 			})
 		}
-
-		const firstDoc = docTree.data[0]!
 
 		return nuxtApp.runWithContext(() => {
 			return navigateTo(

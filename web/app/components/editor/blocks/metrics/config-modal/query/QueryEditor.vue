@@ -9,7 +9,7 @@ import {
 	closeCompletion,
 	startCompletion,
 } from "@codemirror/autocomplete"
-import { keymap, tooltips } from "@codemirror/view"
+import { type EditorView, keymap, tooltips } from "@codemirror/view"
 import { minimalSetup } from "codemirror"
 import { cn } from "~/lib/utils"
 import {
@@ -89,9 +89,9 @@ function handleFocusChange(focused: boolean) {
 	if (focused) {
 		wasFocusedAtLeastOnce = true
 		emit("focus-change", true)
-	} else if (!focused && wasFocusedAtLeastOnce) {
+	} else if (wasFocusedAtLeastOnce) {
 		try {
-			const view = queryEditorElem.value?.view
+			const view = queryEditorElem.value?.view as EditorView | undefined
 			if (view) {
 				closeCompletion(view) // close autocomplete tooltip
 				trimEditorWhitespace(view)

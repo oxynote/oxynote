@@ -58,7 +58,10 @@ const lastValidHovered = useLastValidRef(() => {
 	return props.hovered
 		? {
 				hovered: props.hovered,
-				uid: props.editor.state.doc.nodeAt(props.hovered.nodePos)?.attrs.uid,
+				uid: props.editor.state.doc.nodeAt(props.hovered.nodePos)?.attrs.uid as
+					| string
+					| null
+					| undefined,
 				insideSplitDocRightSide: isNodeInsideTiptapNode(
 					props.editor.state,
 					props.hovered.nodePos,
@@ -116,7 +119,12 @@ const hasNodeComment = computed(() => {
 })
 
 const nodeUid = computed(() => {
-	return lastValidHovered.value?.hovered.node.attrs.uid ?? null
+	return (
+		(lastValidHovered.value?.hovered.node.attrs.uid as
+			| string
+			| null
+			| undefined) ?? null
+	)
 })
 
 async function addNodeComment() {
@@ -124,7 +132,7 @@ async function addNodeComment() {
 	// before making document changes that trigger plugin updates
 	await nextTick()
 
-	if (!props.editor || !props.hovered) {
+	if (!props.hovered) {
 		return
 	}
 
@@ -132,7 +140,7 @@ async function addNodeComment() {
 }
 
 function showNodeComment() {
-	if (!props.editor || !props.hovered) {
+	if (!props.hovered) {
 		return
 	}
 
@@ -146,7 +154,7 @@ async function deleteBlock() {
 	// before making document changes that trigger plugin updates
 	await nextTick()
 
-	if (!props.editor || !props.hovered) {
+	if (!props.hovered) {
 		return
 	}
 
@@ -181,7 +189,7 @@ async function deleteBlock() {
 
 function copyLink() {
 	const url = createCurrentUrl({ hash: nodeUid.value })
-	navigator.clipboard.writeText(url.toString())
+	void navigator.clipboard.writeText(url.toString())
 }
 
 function stripNode(node: JSONContent): JSONContent {
@@ -207,7 +215,7 @@ function stripNode(node: JSONContent): JSONContent {
 }
 
 function duplicateBlock() {
-	if (!props.editor || props.hovered == null) {
+	if (props.hovered == null) {
 		return
 	}
 
@@ -219,7 +227,7 @@ function duplicateBlock() {
 	}
 
 	const insertPos = pos + node.nodeSize
-	const clonedNode = stripNode(node.toJSON())
+	const clonedNode = stripNode(node.toJSON() as JSONContent)
 
 	const chain = props.editor.chain()
 

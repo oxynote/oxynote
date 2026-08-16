@@ -47,7 +47,7 @@ export default function (opts: {
 				store.state.ws = null
 			}
 		},
-		onMessage: (_: WebSocket, msg: MessageEvent) => {
+		onMessage: (_: WebSocket, msg: MessageEvent<string>) => {
 			if (store.state) {
 				store.state.processMessage(msg)
 			}

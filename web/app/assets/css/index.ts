@@ -13,6 +13,7 @@ function cssColorHex(name: string) {
 		const canvas = document.createElement("canvas")
 		canvas.width = 1
 		canvas.height = 1
+		// eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- a fresh canvas always yields a 2d context; it is only null when the type is unsupported or already bound to another one
 		colorCtx = canvas.getContext("2d", { willReadFrequently: true })!
 	}
 	colorCtx.clearRect(0, 0, 1, 1)

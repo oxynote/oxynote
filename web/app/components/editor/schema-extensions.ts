@@ -63,7 +63,10 @@ export const UniqueIDWithDomId = UniqueID.extend({
 							element.getAttribute(`data-${this.options.attributeName}`) ||
 							element.getAttribute("id"),
 						renderHTML: (attributes) => {
-							const value = attributes[this.options.attributeName]
+							const value = attributes[this.options.attributeName] as
+								| string
+								| null
+								| undefined
 							if (!value) {
 								return {}
 							}
@@ -149,7 +152,7 @@ export function contentExtensionsWithIDs(
 		UniqueIDWithDomId.configure({
 			types: nodeExtensions.map((v) => v.name),
 			attributeName: "uid",
-			generateID: () => nanoid(),
+			generateID: (): string => nanoid(),
 		}),
 		defaultContentPlaceholder(t, isEditingDisabled),
 	]

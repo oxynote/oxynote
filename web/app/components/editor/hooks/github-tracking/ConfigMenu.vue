@@ -82,6 +82,14 @@ async function upsertHook() {
 	isSubOpen.value = false
 	emit("force-close")
 
+	const repository = selectedRepository.value
+	const branch = selectedBranch.value
+	const paths = selectedPaths.value
+
+	if (!repository || !branch || !paths) {
+		return
+	}
+
 	if (!props.hook) {
 		try {
 			await documentHookAPI.createDocumentHookByDocID.mutateAsync({
@@ -91,9 +99,9 @@ async function upsertHook() {
 					branchId: editorStore.activeBranchId,
 					blockId: props.nodeId,
 					settings: {
-						repository: selectedRepository.value!,
-						branch: selectedBranch.value!,
-						paths: selectedPaths.value!,
+						repository,
+						branch,
+						paths,
 					},
 				},
 			})
@@ -121,9 +129,9 @@ async function upsertHook() {
 			hookId: props.hook.id,
 			req: {
 				settings: {
-					repository: selectedRepository.value!,
-					branch: selectedBranch.value!,
-					paths: selectedPaths.value!,
+					repository,
+					branch,
+					paths,
 				},
 			},
 		})

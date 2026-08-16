@@ -58,6 +58,7 @@ const action = computed(() => {
 		case "email-change":
 			return {
 				title: t("settings.action-modals.email-change.title"),
+				// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 				component: EmailChangeAction,
 			}
 		case "password-change":
@@ -65,16 +66,19 @@ const action = computed(() => {
 				title: hasPassword.value
 					? t("settings.action-modals.password-change.title")
 					: t("settings.action-modals.password-change.title-set"),
+				// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 				component: PasswordChangeAction,
 			}
 		case "account-deletion":
 			return {
 				title: t("settings.action-modals.account-deletion.title"),
+				// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 				component: AccountDeletionAction,
 			}
 		case "url-change":
 			return {
 				title: t("settings.action-modals.workspace-url-change.title"),
+				// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 				component: WorkspaceURLChangeAction,
 			}
 		case "workspace-invitation":
@@ -84,15 +88,18 @@ const action = computed(() => {
 							"settings.action-modals.workspace-invitation.title-max-members-reached",
 						)
 					: t("settings.action-modals.workspace-invitation.title"),
+				// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 				component: WorkspaceInvitationAction,
 			}
 		case "workspace-member-removal":
+			// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the cast hides that opts can still hold a DataSource here, so the user check is a real runtime guard
 			if (!props.opts || !(props.opts as OrganizationMember).user) {
 				return null
 			}
 
 			return {
 				title: t("settings.action-modals.workspace-member-removal.title"),
+				// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 				component: WorkspaceMemberRemovalAction,
 				opts: {
 					member: props.opts as OrganizationMember,
@@ -105,8 +112,9 @@ const action = computed(() => {
 
 			return {
 				title: t(
-					`settings.action-modals.data-source-upsert.title.creation.${props.opts}`,
+					`settings.action-modals.data-source-upsert.title.creation.${props.opts as DataSourceType}`,
 				),
+				// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 				component: DataSourceUpsertAction,
 				opts: {
 					creationType: props.opts as DataSourceType,
@@ -121,6 +129,7 @@ const action = computed(() => {
 				title: t(
 					`settings.action-modals.data-source-upsert.title.update.${(props.opts as DataSource).type}`,
 				),
+				// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 				component: DataSourceUpsertAction,
 				opts: {
 					updateTarget: props.opts as DataSource,
@@ -135,6 +144,7 @@ const action = computed(() => {
 				title: t(
 					`settings.action-modals.data-source-removal.title.${(props.opts as DataSource).type}`,
 				),
+				// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 				component: DataSourceRemovalAction,
 				opts: {
 					data: props.opts as DataSource,

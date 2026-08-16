@@ -4,6 +4,7 @@ import CodeButtons from "./CodeButtons.vue"
 import { cn } from "~/lib/utils"
 import { explicitContentPlaceholder } from "../../placeholder"
 import { TITLED_CODE_BLOCK_NAME } from "../node-names"
+import type { CodeBlockOptions } from "./index"
 import { DiffStatus } from "~/components/editor/diff/position-map"
 
 const props = defineProps(nodeViewProps)
@@ -19,7 +20,9 @@ const isEditingDisabled = computed(() => {
 // we keep the <pre> class here to make the <pre> element short, because
 // we cannot format it/its content with newlines as that would insert
 // extra whitespaces
-const diffStatus = computed(() => props.node.attrs.diffStatus)
+const diffStatus = computed(
+	() => props.node.attrs.diffStatus as DiffStatus | null,
+)
 
 const preClass = computed(() =>
 	cn(
@@ -30,14 +33,18 @@ const preClass = computed(() =>
 		"font-mono font-normal text-foreground!",
 		// hide the default placeholder
 		"before:hidden!",
-		props.extension.options.type === "comment" ? "text-2sm" : "text-sm",
+		(props.extension.options as CodeBlockOptions).type === "comment"
+			? "text-2sm"
+			: "text-sm",
 	),
 )
 
 const codeContentClass = cn(
 	"block py-3 pl-4 w-full",
 	"whitespace-pre min-w-max break-normal",
-	props.extension.options.type === "comment" ? "min-h-9" : "min-h-11",
+	(props.extension.options as CodeBlockOptions).type === "comment"
+		? "min-h-9"
+		: "min-h-11",
 )
 
 const placeholderText = computed(() => {
@@ -54,7 +61,7 @@ const contentProps = computed(() => {
 
 const isActive = computed(() => {
 	const { state } = props.editor
-	const pos = props.getPos?.()
+	const pos = props.getPos()
 	if (typeof pos !== "number") {
 		return false
 	}

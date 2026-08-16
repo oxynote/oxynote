@@ -3,6 +3,7 @@ import type { Node as ProsemirrorNode } from "@tiptap/pm/model"
 import { Plugin, PluginKey } from "@tiptap/pm/state"
 import { Decoration, DecorationSet } from "@tiptap/pm/view"
 import type { LanguageFn } from "highlight.js"
+import type { RootContent } from "hast"
 import { createLowlight } from "lowlight"
 
 // Mermaid syntax grammar for highlight.js / lowlight.
@@ -164,15 +165,24 @@ interface ParsedToken {
 	classes: string[]
 }
 
-function parseNodes(nodes: any[], className: string[] = []): ParsedToken[] {
+function parseNodes(
+	nodes: RootContent[],
+	className: string[] = [],
+): ParsedToken[] {
 	return nodes.flatMap((node) => {
-		const classes = [...className, ...(node.properties?.className ?? [])]
+		if (node.type === "element") {
+			const nodeClasses = node.properties.className
+			const classes = Array.isArray(nodeClasses)
+				? [...className, ...nodeClasses.map(String)]
+				: className
 
-		if (node.children) {
 			return parseNodes(node.children, classes)
 		}
 
-		return { text: node.value as string, classes }
+		return {
+			text: "value" in node ? node.value : "",
+			classes: className,
+		}
 	})
 }
 
@@ -183,7 +193,7 @@ function getDecorations(doc: ProsemirrorNode, name: string) {
 		let from = block.pos + 1
 		const result = lowlight.highlight("mermaid", block.node.textContent)
 
-		parseNodes(result.children ?? []).forEach((token) => {
+		parseNodes(result.children).forEach((token) => {
 			const to = from + token.text.length
 
 			if (token.classes.length) {

@@ -54,7 +54,7 @@ onMounted(async () => {
 			await linkSlackUser.mutateAsync(params)
 		} else {
 			await connectSlack.mutateAsync(params)
-			fetchSlackConnectionStatus.refetch()
+			void fetchSlackConnectionStatus.refetch()
 		}
 		connectionState.value = "success"
 	} catch {

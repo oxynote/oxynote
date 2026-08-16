@@ -91,10 +91,13 @@ const onSubmit = form.handleSubmit(async (values) => {
 					password: values.password || "",
 				},
 			})
-		} catch (err: any) {
+		} catch (err) {
 			loading.value = false
 
-			const statusParts = (err.data?.code as string | undefined)?.split(".")
+			// the mutation rejects with an ofetch FetchError, whose `data` holds the
+			// core API's JSON body
+			const { data } = err as { data?: { code?: string } }
+			const statusParts = data?.code?.split(".")
 			const status =
 				statusParts && statusParts.length > 1 ? statusParts[1] : undefined
 
@@ -161,18 +164,12 @@ const onSubmit = form.handleSubmit(async (values) => {
 		}
 
 		if (values.username) {
-			if (!req.credentials) {
-				req.credentials = {}
-			}
-
+			req.credentials ??= {}
 			req.credentials.username = values.username
 		}
 
 		if (values.password) {
-			if (!req.credentials) {
-				req.credentials = {}
-			}
-
+			req.credentials ??= {}
 			req.credentials.password = values.password
 		}
 
@@ -188,10 +185,13 @@ const onSubmit = form.handleSubmit(async (values) => {
 				dataSourceId: props.updateTarget.id,
 				req: req,
 			})
-		} catch (err: any) {
+		} catch (err) {
 			loading.value = false
 
-			const statusParts = (err.data?.code as string | undefined)?.split(".")
+			// the mutation rejects with an ofetch FetchError, whose `data` holds the
+			// core API's JSON body
+			const { data } = err as { data?: { code?: string } }
+			const statusParts = data?.code?.split(".")
 			const status =
 				statusParts && statusParts.length > 1 ? statusParts[1] : undefined
 

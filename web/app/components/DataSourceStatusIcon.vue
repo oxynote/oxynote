@@ -24,9 +24,10 @@ const icon = computed(() => {
 			return "devicon:mysql"
 		case DataSourceType.MariaDB:
 			return "devicon:mariadb"
+		default:
+			// a newer server may send a type this build does not know
+			return "devicon:prometheus"
 	}
-
-	return "devicon:prometheus"
 })
 </script>
 <template>

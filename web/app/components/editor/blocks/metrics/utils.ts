@@ -130,13 +130,16 @@ export function defaultMetricConfig(): MetricConfig {
 export function buildConfigFromNodeAttrs(
 	attrs: Record<string, any>,
 ): MetricConfig {
-	const legacy = attrs.config as MetricConfig | null
+	// legacy blobs may miss fields entirely and may still use the old "type"
+	// field name, so Partial reflects the actual runtime shape.
+	const legacy = attrs.config as
+		| (Partial<MetricConfig> & { type?: GenericQueryChartType | null })
+		| null
 	if (legacy) {
 		return {
 			title: legacy.title ?? "",
 			dataSourceId: legacy.dataSourceId ?? null,
-			visualizationType:
-				(legacy as any).type ?? legacy.visualizationType ?? null,
+			visualizationType: legacy.type ?? legacy.visualizationType ?? null,
 			queries: legacy.queries ?? null,
 			timeRange: legacy.timeRange ?? null,
 			refreshInterval: legacy.refreshInterval ?? null,
@@ -155,22 +158,25 @@ export function buildConfigFromNodeAttrs(
 	}
 
 	return {
-		title: attrs.title ?? "",
-		dataSourceId: attrs.dataSourceId ?? null,
-		visualizationType: attrs.visualizationType ?? null,
-		queries: attrs.queries ?? null,
-		timeRange: attrs.timeRange ?? null,
-		refreshInterval: attrs.refreshInterval ?? null,
-		thresholds: attrs.thresholds ?? null,
-		baseThresholdColor: attrs.baseThresholdColor ?? "",
-		decimals: attrs.decimals ?? null,
+		title: (attrs.title as string | undefined) ?? "",
+		dataSourceId: (attrs.dataSourceId as string | null | undefined) ?? null,
+		visualizationType:
+			(attrs.visualizationType as GenericQueryChartType | null | undefined) ??
+			null,
+		queries: (attrs.queries as MetricConfig["queries"] | undefined) ?? null,
+		timeRange: (attrs.timeRange as TimeRangePreset | null | undefined) ?? null,
+		refreshInterval:
+			(attrs.refreshInterval as RefreshInterval | null | undefined) ?? null,
+		thresholds: (attrs.thresholds as MetricConfig["thresholds"]) ?? null,
+		baseThresholdColor: (attrs.baseThresholdColor as string | undefined) ?? "",
+		decimals: (attrs.decimals as number | null | undefined) ?? null,
 		unit: {
-			type: attrs.unitType ?? null,
-			custom: attrs.unitCustom ?? null,
+			type: (attrs.unitType as VisualizationUnit | null | undefined) ?? null,
+			custom: (attrs.unitCustom as string | null | undefined) ?? null,
 		},
 		axisBounds: {
-			min: attrs.axisBoundsMin ?? null,
-			max: attrs.axisBoundsMax ?? null,
+			min: (attrs.axisBoundsMin as number | null | undefined) ?? null,
+			max: (attrs.axisBoundsMax as number | null | undefined) ?? null,
 		},
 	}
 }

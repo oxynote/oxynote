@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { Component, ComputedRef } from "vue"
 import GitHubTrackingConfigMenu from "./github-tracking/ConfigMenu.vue"
 import ScheduledReminderConfigMenu from "./scheduled-reminder/ConfigMenu.vue"
 import URLWatcherConfigMenu from "./url-watcher/ConfigMenu.vue"
@@ -50,22 +51,29 @@ const matchingTriggeredHooks = computed(() => {
 		})
 })
 
-function hookComponent(type: string) {
+function hookComponent(type: DocumentHookType): Component | null {
 	switch (type) {
 		case DocumentHookType.ScheduledReminder:
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-return -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 			return ScheduledReminderConfigMenu
 		case DocumentHookType.GitHubTracking:
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-return -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 			return GitHubTrackingConfigMenu
 		case DocumentHookType.URLWatcher:
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-return -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 			return URLWatcherConfigMenu
 		case DocumentHookType.ContainerImageWatcher:
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-return -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 			return ContainerImageWatcherConfigMenu
 		default:
 			return null
 	}
 }
 
-function hookProps(type: string, hook: DocumentHook): any {
+function hookProps(
+	type: DocumentHookType,
+	hook: DocumentHook,
+): ComputedRef<Record<string, unknown>> {
 	switch (type) {
 		case DocumentHookType.ScheduledReminder:
 			return computed(() => ({

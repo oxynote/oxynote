@@ -65,7 +65,6 @@ export default function () {
 					dataSourceId !== undefined &&
 					dataSourceId !== null &&
 					params?.q !== undefined &&
-					params?.q !== null &&
 					params.q.trim().length > 0 &&
 					enable
 				)
@@ -93,7 +92,7 @@ export default function () {
 
 				return PROMETHEUS_QUERY_KEYS.queries(
 					dataSourceId || "",
-					queries?.sort() || [],
+					queries?.sort() ?? [],
 					params?.timeRangeKey || "",
 				)
 			},
@@ -101,7 +100,7 @@ export default function () {
 				const dataSourceId = toValue(dataSourceIdRef)
 				const params = toValue(paramsRef)
 
-				if (!dataSourceId || !params?.queries?.length) {
+				if (!dataSourceId || !params?.queries.length) {
 					return []
 				}
 
@@ -273,7 +272,6 @@ export default function () {
 					dataSourceId !== undefined &&
 					dataSourceId !== null &&
 					params?.label !== undefined &&
-					params?.label !== null &&
 					enable
 				)
 			},
@@ -306,7 +304,7 @@ export default function () {
 				const dataSourceId = toValue(dataSourceIdRef)
 				const params = toValue(paramsRef)
 
-				if (!dataSourceId || !params?.matchers?.length) {
+				if (!dataSourceId || !params?.matchers.length) {
 					return null
 				}
 

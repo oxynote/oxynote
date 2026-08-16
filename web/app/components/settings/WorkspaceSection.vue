@@ -49,7 +49,7 @@ const members = computed<OrganizationMember[]>(() => {
 				role: m.role,
 				user: { name: m.user.name, email: m.user.email, image: m.user.image },
 			}
-		}) || []
+		}) ?? []
 	const invs: OrganizationMember[] =
 		fetchOrganization.state.value.data?.data?.invitations
 			.filter((inv) => inv.status === "pending")
@@ -61,12 +61,12 @@ const members = computed<OrganizationMember[]>(() => {
 					role: inv.role,
 					user: { name: extractNameFromEmail(inv.email), email: inv.email },
 				}
-			}) || []
+			}) ?? []
 
 	return members.concat(invs)
 })
 const loading = ref<"logo" | null>(null)
-const logoInput = useTemplateRef("logoInput")
+const logoInput = useTemplateRef<HTMLInputElement>("logoInput")
 
 const onSubmit = form.handleSubmit(async (values) => {
 	const data: { logo?: string; name?: string } = {}
@@ -82,10 +82,10 @@ const onSubmit = form.handleSubmit(async (values) => {
 		return
 	}
 
-	const { error } = await updateOrganization({
+	const { error } = (await updateOrganization({
 		data: data,
 		organizationId: fetchOrganization.state.value.data?.data?.id || "",
-	})
+	})) as AuthResponse
 	if (error) {
 		loading.value = null
 

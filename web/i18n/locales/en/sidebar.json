@@ -15,8 +15,7 @@
 		"sections": {
 			"top": {
 				"search-button": "Search",
-				"inbox": "Inbox",
-				"ai-assistant": "AI Assistant"
+				"inbox": "Inbox"
 			},
 			"main-workspace": {
 				"heading": "Workspace",
@@ -48,7 +47,6 @@
 		"errors": {
 			"create-document-failed": "Failed to create a page. Please try again",
 			"update-tree-failed": "Failed to update the page location. Please try again",
-			"delete-document-failed": "Failed to delete the page. Please try again",
 			"signout-failed": "Failed to log out. Please try again"
 		},
 		"search": {
@@ -57,6 +55,10 @@
 			"input-placeholder": "Search for pages...",
 			"empty-state": "Start typing to search for pages...",
 			"no-results": "No results found for {query}"
+		},
+		"notification-sheet": {
+			"title": "Sidebar",
+			"description": "Displays the mobile sidebar."
 		}
 	}
 }

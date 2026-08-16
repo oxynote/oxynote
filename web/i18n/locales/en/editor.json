@@ -71,16 +71,10 @@
 			"document-options": {
 				"review-workflow": {
 					"enable-title": "Make Reviewable",
-					"disable-title": "Make Non Reviewable",
-					"disable-content": "Are you sure you want to make this page non-reviewable? This action will discard the draft.",
-					"disable-confirm": "Confirm",
-					"cancel": "Cancel"
+					"disable-title": "Make Non Reviewable"
 				},
 				"delete": {
-					"title": "Delete",
-					"content": "Are you sure you want to delete this page? This action cannot be undone.",
-					"confirm": "Yes, delete page",
-					"cancel": "Cancel"
+					"title": "Delete"
 				},
 				"duplicate": {
 					"title": "Duplicate"
@@ -133,10 +127,8 @@
 			"more-indicator": "+{count}"
 		},
 		"figma": {
-			"label": "Figma Embed",
 			"description": "Embed Figma",
 			"placeholder": "https://www.figma.com/... + Enter",
-			"link": "Link",
 			"edit": "Edit URL",
 			"empty": "No Figma embed"
 		},
@@ -204,7 +196,6 @@
 			"options": {
 				"copy-link": "Copy Link",
 				"add-node-comment": "Add Comment",
-				"delete-node-comment": "Delete Comment",
 				"open-node-comment": "Open Comment",
 				"delete-block": "Delete",
 				"default": {
@@ -247,9 +238,7 @@
 			"page-or-url-placeholder": "https://example.com + Enter",
 			"open": "Open",
 			"edit": "Edit",
-			"delete": "Delete Link",
-			"cancel": "Cancel",
-			"save": "Save"
+			"delete": "Delete Link"
 		},
 		"hooks": {
 			"add-new": "New freshness hook",
@@ -275,16 +264,6 @@
 				"triggered-item": "Reminded on {value}",
 				"existing-item-block-explanation": "A reminder will be sent on {value} to the maintainers of the page and the block will be highlighted.",
 				"existing-item-full-document-explanation": "A reminder will be sent on {value} to the maintainers of the page and the relevant sections will be highlighted.",
-				"duration-sentence-components": {
-					"1m": "a minute (dev)",
-					"24h": "a day",
-					"72h": "3 days",
-					"168h": "a week",
-					"336h": "2 weeks",
-					"720h": "a month",
-					"2160h": "3 months",
-					"4320h": "6 months"
-				},
 				"duration-options": {
 					"0": "Instant (dev)",
 					"1m": "In 1 minute (dev)",
@@ -388,20 +367,13 @@
 				},
 				"query-error": {
 					"title": "Query Error",
-					"multi-query-description": "Query {index}: {error}",
-					"single-query-description": "Query returned an error: {error}",
-					"normal-action-button": "Edit Metrics",
-					"readonly-action-button": "View Metrics"
+					"multi-query-description": "Query {index}: {error}"
 				},
 				"no-data-loaded": {
 					"title": "No Data",
 					"description": "The current configuration returned no data. Please adjust your queries or data sources",
 					"normal-action-button": "Edit Metrics",
 					"readonly-action-button": "View Metrics"
-				},
-				"no-data-still-loading": {
-					"title": "Data Is Loading",
-					"description": "The metric data is still loading. Please wait a moment"
 				}
 			},
 			"config": {
@@ -416,7 +388,6 @@
 				"modal-description-normal": "Configure the metric visualization settings",
 				"modal-description-readonly": "View the metric visualization settings",
 				"data-source-label": "Data Source",
-				"data-source-placeholder": "Select data source",
 				"data-source-no-options": {
 					"main": "{icon}No data sources available. You can connect one in the {placeholder}.",
 					"placeholder": "settings"
@@ -424,20 +395,15 @@
 				"data-source-label-missing": "No data source selected",
 				"data-source-label-deleted": "Deleted data source",
 				"data-source-description-missing": "Click to select a data source",
-				"type-label": "Metric Visualization",
-				"type-placeholder": "Select visualization",
 				"type-options": {
 					"line-chart": {
-						"title": "Time Series",
-						"description": "See how metric values change over time"
+						"title": "Time Series"
 					},
 					"bar-chart": {
-						"title": "Bar Chart",
-						"description": "Compare metric values side by side"
+						"title": "Bar Chart"
 					},
 					"gauge-chart": {
-						"title": "Gauge",
-						"description": "Display a single metric value on a scale"
+						"title": "Gauge"
 					}
 				},
 				"query-label": "Query",
@@ -587,7 +553,6 @@
 					"mariadb": "Enter a SQL query..."
 				},
 				"query-name-default-format": "Query {index}",
-				"query-no-data-source-selected": "To enter a query, first select a data source",
 				"add-query-button": "Add Query",
 				"query-info": {
 					"prometheus": {
@@ -667,7 +632,6 @@
 				"legend-format-label": "Legend",
 				"legend-format-placeholder": "{'{{'}some label{'}}'} {'{{'}another label{'}}'}",
 				"legend-format-empty-value-placeholder": "[empty]",
-				"legend-format-no-data-source-selected": "To edit the legend format, first select a data source",
 				"time-range-label": "Time Range",
 				"time-range-placeholder": "Select time range",
 				"time-range-options": {
@@ -728,7 +692,6 @@
 				}
 			}
 		},
-		"icon-stack-image-alt": "User Avatar",
 		"no-document-indicator": {
 			"heading": "Time to create something great",
 			"subheading": "Pages are where the magic happens. Create one to dive in.",

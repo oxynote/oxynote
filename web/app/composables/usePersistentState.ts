@@ -31,6 +31,8 @@ export interface PersistentStateOptions<T> {
 export default function <T>(opts: PersistentStateOptions<T>) {
 	const { isWeb } = useDetectHost()
 
+	const serializer = opts.serializer
+
 	const defaultValue =
 		typeof opts.defaultValue === "function"
 			? (opts.defaultValue as () => T)()
@@ -53,13 +55,13 @@ export default function <T>(opts: PersistentStateOptions<T>) {
 			domain: opts.cookie?.domain,
 			sameSite: opts.cookie?.sameSite,
 			secure: opts.cookie?.secure,
-			...(opts.serializer
+			...(serializer
 				? {
-						encode: (value) => opts.serializer!.write(value),
+						encode: (value) => serializer.write(value),
 						decode: (raw) => {
 							if (raw == null) return defaultValue
 							try {
-								return opts.serializer!.read(raw)
+								return serializer.read(raw)
 							} catch {
 								return defaultValue
 							}
@@ -70,16 +72,16 @@ export default function <T>(opts: PersistentStateOptions<T>) {
 	}
 
 	return useLocalStorage<T>(opts.key, defaultValue, {
-		serializer: opts.serializer
+		serializer: serializer
 			? {
 					read: (raw) => {
 						try {
-							return opts.serializer!.read(raw)
+							return serializer.read(raw)
 						} catch {
 							return defaultValue
 						}
 					},
-					write: (value) => opts.serializer!.write(value),
+					write: (value) => serializer.write(value),
 				}
 			: undefined,
 		shallow: opts.watch === "shallow",

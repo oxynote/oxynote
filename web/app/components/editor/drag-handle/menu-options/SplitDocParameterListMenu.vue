@@ -14,7 +14,7 @@ const props = defineProps<{
 }>()
 
 function addNeighborBlock(side: "above" | "below") {
-	if (!props.editor || props.hovered == null) {
+	if (props.hovered == null) {
 		return
 	}
 

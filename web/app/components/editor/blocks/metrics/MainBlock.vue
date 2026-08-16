@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import { nodeViewProps, NodeViewWrapper } from "@tiptap/vue-3"
+import type { JSONContent } from "@tiptap/core"
 import VisualizationContainer from "./VisualizationContainer.vue"
 import { cn } from "~/lib/utils"
 import PopoverConfigBox from "./PopoverConfigBox.vue"
@@ -11,6 +12,12 @@ import {
 } from "./utils"
 import { DiffStatus } from "~/components/editor/diff/position-map"
 
+// legacy blobs may miss fields entirely and may still use the old "type"
+// field name, so Partial reflects the actual runtime shape.
+type LegacyMetricConfig = Partial<MetricConfig> & {
+	type?: MetricConfig["visualizationType"]
+}
+
 const props = defineProps(nodeViewProps)
 
 const { isEditable } = useEditorMeta()
@@ -19,7 +26,8 @@ const { editingUsersRef } = useCollaborationAwareness(() => props.editor)
 
 const sizeClass = computed(() => {
 	const size =
-		(props.node.attrs.width as MetricBlockWidth) || MetricBlockWidth.Standard
+		(props.node.attrs.width as MetricBlockWidth | null) ??
+		MetricBlockWidth.Standard
 	return `metric-block-${size}`
 })
 const isEditingDisabled = computed(() => {
@@ -47,7 +55,7 @@ function safeUpdateAttributes(attrs: Record<string, any>) {
 
 // reads the legacy monolithic config attr reactively (null when already migrated)
 const legacyConfig = computed(
-	() => props.node.attrs.config as MetricConfig | null,
+	() => props.node.attrs.config as LegacyMetricConfig | null,
 )
 
 // when the legacy blob still exists, the first edit on any field migrates all
@@ -65,7 +73,7 @@ function migrateLegacyIfNeeded(fieldAttrs: Record<string, any>) {
 	safeUpdateAttributes({
 		title: legacy.title ?? "",
 		dataSourceId: legacy.dataSourceId ?? null,
-		visualizationType: (legacy as any).type ?? legacy.visualizationType ?? null,
+		visualizationType: legacy.type ?? legacy.visualizationType ?? null,
 		queries: legacy.queries ?? null,
 		timeRange: legacy.timeRange ?? null,
 		refreshInterval: legacy.refreshInterval ?? null,
@@ -93,37 +101,48 @@ function migrateLegacyIfNeeded(fieldAttrs: Record<string, any>) {
 // once migrated (legacyConfig is null), flat attrs are the source of truth.
 const config = reactive({
 	title: computed<MetricConfig["title"]>({
-		get: () => legacyConfig.value?.title ?? props.node.attrs.title ?? "",
+		get: () =>
+			legacyConfig.value?.title ??
+			(props.node.attrs.title as string | undefined) ??
+			"",
 		set: (v) => {
 			migrateLegacyIfNeeded({ title: v })
 		},
 	}),
 	dataSourceId: computed<MetricConfig["dataSourceId"]>({
 		get: () =>
-			legacyConfig.value?.dataSourceId ?? props.node.attrs.dataSourceId ?? null,
+			legacyConfig.value?.dataSourceId ??
+			(props.node.attrs.dataSourceId as MetricConfig["dataSourceId"]) ??
+			null,
 		set: (v) => {
 			migrateLegacyIfNeeded({ dataSourceId: v })
 		},
 	}),
 	visualizationType: computed<MetricConfig["visualizationType"]>({
 		get: () =>
-			(legacyConfig.value as any)?.type ??
+			legacyConfig.value?.type ??
 			legacyConfig.value?.visualizationType ??
-			props.node.attrs.visualizationType ??
+			(props.node.attrs
+				.visualizationType as MetricConfig["visualizationType"]) ??
 			null,
 		set: (v) => {
 			migrateLegacyIfNeeded({ visualizationType: v })
 		},
 	}),
 	queries: computed<MetricConfig["queries"]>({
-		get: () => legacyConfig.value?.queries ?? props.node.attrs.queries ?? null,
+		get: () =>
+			legacyConfig.value?.queries ??
+			(props.node.attrs.queries as MetricConfig["queries"]) ??
+			null,
 		set: (v) => {
 			migrateLegacyIfNeeded({ queries: v })
 		},
 	}),
 	timeRange: computed<MetricConfig["timeRange"]>({
 		get: () =>
-			legacyConfig.value?.timeRange ?? props.node.attrs.timeRange ?? null,
+			legacyConfig.value?.timeRange ??
+			(props.node.attrs.timeRange as MetricConfig["timeRange"]) ??
+			null,
 		set: (v) => {
 			migrateLegacyIfNeeded({ timeRange: v })
 		},
@@ -131,7 +150,7 @@ const config = reactive({
 	refreshInterval: computed<MetricConfig["refreshInterval"]>({
 		get: () =>
 			legacyConfig.value?.refreshInterval ??
-			props.node.attrs.refreshInterval ??
+			(props.node.attrs.refreshInterval as MetricConfig["refreshInterval"]) ??
 			null,
 		set: (v) => {
 			migrateLegacyIfNeeded({ refreshInterval: v })
@@ -139,7 +158,9 @@ const config = reactive({
 	}),
 	thresholds: computed<Required<MetricConfig>["thresholds"]>({
 		get: () =>
-			legacyConfig.value?.thresholds ?? props.node.attrs.thresholds ?? null,
+			legacyConfig.value?.thresholds ??
+			(props.node.attrs.thresholds as MetricConfig["thresholds"]) ??
+			null,
 		set: (v) => {
 			migrateLegacyIfNeeded({ thresholds: v })
 		},
@@ -147,7 +168,7 @@ const config = reactive({
 	baseThresholdColor: computed<MetricConfig["baseThresholdColor"]>({
 		get: () =>
 			legacyConfig.value?.baseThresholdColor ??
-			props.node.attrs.baseThresholdColor ??
+			(props.node.attrs.baseThresholdColor as string | undefined) ??
 			"",
 		set: (v) => {
 			migrateLegacyIfNeeded({ baseThresholdColor: v })
@@ -155,7 +176,9 @@ const config = reactive({
 	}),
 	decimals: computed<Required<MetricConfig>["decimals"]>({
 		get: () =>
-			legacyConfig.value?.decimals ?? props.node.attrs.decimals ?? null,
+			legacyConfig.value?.decimals ??
+			(props.node.attrs.decimals as MetricConfig["decimals"]) ??
+			null,
 		set: (v) => {
 			migrateLegacyIfNeeded({ decimals: v })
 		},
@@ -163,14 +186,18 @@ const config = reactive({
 	unit: reactive({
 		type: computed<Required<MetricConfig["unit"]>["type"]>({
 			get: () =>
-				legacyConfig.value?.unit?.type ?? props.node.attrs.unitType ?? null,
+				legacyConfig.value?.unit?.type ??
+				(props.node.attrs.unitType as MetricConfig["unit"]["type"]) ??
+				null,
 			set: (v) => {
 				migrateLegacyIfNeeded({ unitType: v })
 			},
 		}),
 		custom: computed<Required<MetricConfig["unit"]>["custom"]>({
 			get: () =>
-				legacyConfig.value?.unit?.custom ?? props.node.attrs.unitCustom ?? null,
+				legacyConfig.value?.unit?.custom ??
+				(props.node.attrs.unitCustom as MetricConfig["unit"]["custom"]) ??
+				null,
 			set: (v) => {
 				migrateLegacyIfNeeded({ unitCustom: v })
 			},
@@ -180,7 +207,7 @@ const config = reactive({
 		min: computed<Required<NonNullable<MetricConfig["axisBounds"]>>["min"]>({
 			get: () =>
 				legacyConfig.value?.axisBounds?.min ??
-				props.node.attrs.axisBoundsMin ??
+				(props.node.attrs.axisBoundsMin as MetricConfig["axisBounds"]["min"]) ??
 				null,
 			set: (v) => {
 				migrateLegacyIfNeeded({ axisBoundsMin: v })
@@ -189,7 +216,7 @@ const config = reactive({
 		max: computed<Required<NonNullable<MetricConfig["axisBounds"]>>["max"]>({
 			get: () =>
 				legacyConfig.value?.axisBounds?.max ??
-				props.node.attrs.axisBoundsMax ??
+				(props.node.attrs.axisBoundsMax as MetricConfig["axisBounds"]["max"]) ??
 				null,
 			set: (v) => {
 				migrateLegacyIfNeeded({ axisBoundsMax: v })
@@ -198,7 +225,7 @@ const config = reactive({
 	}),
 })
 
-const otherEditingUsers = editingUsersRef(() => props.node.attrs.uid)
+const otherEditingUsers = editingUsersRef(() => props.node.attrs.uid as string)
 const lastOtherEditingUser = computed(() => {
 	return otherEditingUsers.value.length
 		? otherEditingUsers.value[otherEditingUsers.value.length - 1]
@@ -211,8 +238,8 @@ watchImmediate(
 	[
 		() => editorStore.activeDocumentId,
 		() => editorStore.activeBranchId,
-		() => props.node.attrs.uid,
-		() => props.node.attrs.diffStatus,
+		() => props.node.attrs.uid as string,
+		() => props.node.attrs.diffStatus as DiffStatus | null,
 	],
 	([docId, branchId, uid], [prevDocId, prevBranchId, prevUid]) => {
 		if (
@@ -236,7 +263,7 @@ watchImmediate(
 			if (diffStatus) {
 				let oldConfig: MetricConfig | null = null
 				if (diffStatus === DiffStatus.Modified && props.node.attrs.oldNode) {
-					const oldNode = props.node.attrs.oldNode
+					const oldNode = props.node.attrs.oldNode as JSONContent
 					oldConfig = buildConfigFromNodeAttrs(oldNode.attrs ?? {})
 				}
 				editorStore.setMetricBlockDiffInfo(uid, diffStatus, oldConfig)
@@ -261,7 +288,7 @@ onMounted(() => {
 // because tiptap doesn't always delete/recreate the node, it just switches the
 // attributes)
 watch(
-	() => props.node.attrs.uid,
+	() => props.node.attrs.uid as string,
 	() => {
 		disableVisualizationRefreshTemporarily()
 	},
@@ -269,7 +296,7 @@ watch(
 
 function disableVisualizationRefreshTemporarily() {
 	disableVisualizationRefresh.value = true
-	nextTick(() => {
+	void nextTick(() => {
 		setTimeout(() => {
 			disableVisualizationRefresh.value = false
 		}, NODE_ATTR_UPDATE_REFRESH_DISABLE_MS)

@@ -12,9 +12,7 @@ export function showToastMessage(
 			title: title,
 			description: description,
 			onClose: () => {
-				if (toastId !== undefined) {
-					toast.dismiss(toastId)
-				}
+				toast.dismiss(toastId)
 			},
 		}),
 	)

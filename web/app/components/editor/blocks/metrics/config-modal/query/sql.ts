@@ -269,9 +269,9 @@ function mySQLCompletions(t: (key: string) => string): Completion[] {
 function completeDollar(context: CompletionContext, completions: Completion[]) {
 	// this supports ${...} and $... style completions
 	const match =
-		context.matchBefore(/\$[_A-Za-z][\w]*$/) ||
-		context.matchBefore(/\$$/) ||
-		context.matchBefore(/\$\{[_A-Za-z][\w:]*$/) ||
+		context.matchBefore(/\$[_A-Za-z][\w]*$/) ??
+		context.matchBefore(/\$$/) ??
+		context.matchBefore(/\$\{[_A-Za-z][\w:]*$/) ??
 		context.matchBefore(/\$\{$/)
 
 	if (!match && !context.explicit) {
@@ -355,7 +355,7 @@ export function useSQLQueryExtension(
 	// prevents redundant requests)
 	const refreshOnFocus = EditorView.updateListener.of((update) => {
 		if (update.focusChanged && update.view.hasFocus) {
-			fetchSQLMetadata.refresh()
+			void fetchSQLMetadata.refresh()
 		}
 	})
 

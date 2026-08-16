@@ -95,6 +95,7 @@ export const CodeBlockTitle = Node.create({
 		}
 	},
 	addNodeView() {
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-argument -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 		return VueNodeViewRenderer(CodeTitle)
 	},
 })
@@ -120,6 +121,8 @@ export const CodeBlock = CodeBlockLowlight.extend<CodeBlockOptions>({
 		]
 	},
 	renderHTML({ node, HTMLAttributes }) {
+		const language = node.attrs.language as string | null
+
 		return [
 			"pre",
 			mergeAttributes(HTMLAttributes, {
@@ -128,8 +131,8 @@ export const CodeBlock = CodeBlockLowlight.extend<CodeBlockOptions>({
 			[
 				"code",
 				{
-					class: node.attrs.language
-						? this.options.languageClassPrefix + node.attrs.language
+					class: language
+						? (this.options.languageClassPrefix ?? "") + language
 						: null,
 				},
 				0,
@@ -138,6 +141,7 @@ export const CodeBlock = CodeBlockLowlight.extend<CodeBlockOptions>({
 	},
 	addOptions(): CodeBlockOptions {
 		return {
+			// eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- extending CodeBlockLowlight guarantees a parent addOptions, and its defaults are required to satisfy CodeBlockOptions
 			...this.parent!(),
 			defaultLanguage: null,
 			enableTabIndentation: true,
@@ -151,7 +155,7 @@ export const CodeBlock = CodeBlockLowlight.extend<CodeBlockOptions>({
 	},
 	addKeyboardShortcuts() {
 		return {
-			...this.parent!(),
+			...this.parent?.(),
 			Backspace: () => {
 				const { state, view } = this.editor
 				const { empty, $anchor } = state.selection
@@ -225,7 +229,7 @@ export const CodeBlock = CodeBlockLowlight.extend<CodeBlockOptions>({
 				const nodeAfter = $posAfter.nodeAfter
 
 				// If next node is a textblock, move caret to its start
-				if (nodeAfter && nodeAfter.isTextblock) {
+				if (nodeAfter?.isTextblock) {
 					const tr = state.tr.setSelection(
 						TextSelection.create(state.doc, posAfter + 1),
 					)
@@ -294,6 +298,7 @@ export const CodeBlock = CodeBlockLowlight.extend<CodeBlockOptions>({
 		}
 	},
 	addNodeView() {
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-argument -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 		return VueNodeViewRenderer(Code)
 	},
 })
@@ -329,7 +334,7 @@ export function setUpCodeBlockNode(
 		.insertContent({
 			type: CODE_BLOCK_NAME,
 			attrs: {
-				language: (match?.[1] || "").toLowerCase(),
+				language: (match[1] || "").toLowerCase(),
 			},
 		})
 		.run()

@@ -162,10 +162,8 @@ export function extractVisualizationData(
 			const res: MultipleGaugeChartData = []
 
 			for (const series of input.data) {
-				if (
-					!series.metrics.length ||
-					series.metrics[series.metrics.length - 1]?.length !== 2
-				) {
+				const lastMetric = series.metrics[series.metrics.length - 1]
+				if (!series.metrics.length || lastMetric?.length !== 2) {
 					continue
 				}
 
@@ -176,7 +174,7 @@ export function extractVisualizationData(
 						orderedLegendLabelFn,
 						series.labels,
 					),
-					value: cleanNum(series.metrics[series.metrics.length - 1]![1]),
+					value: cleanNum(lastMetric[1]),
 				})
 			}
 
@@ -197,8 +195,8 @@ function nameFromMetric(
 	if (legendLabelFormat) {
 		return legendLabelFormat.replace(
 			/\{\{([a-zA-Z_][\w:]*)\}\}/g,
-			(match, variable) => {
-				return variable in labels ? labels[variable]! : match
+			(match: string, variable: string) => {
+				return labels[variable] ?? match
 			},
 		)
 	}
@@ -365,7 +363,7 @@ export function yAxisLabelFormatter(
 		}
 
 		if (value === 0) {
-			return { value: 0, label: units[startIndex]!.label }
+			return { value: 0, label: units[startIndex]?.label ?? "" }
 		}
 
 		let scaled = value
@@ -373,7 +371,7 @@ export function yAxisLabelFormatter(
 		let absValue = Math.abs(scaled)
 
 		while (index < units.length - 1) {
-			const factor = units[index]!.factorToNext
+			const factor = units[index]?.factorToNext
 			if (!factor || absValue < factor) {
 				break
 			}
@@ -384,7 +382,7 @@ export function yAxisLabelFormatter(
 		}
 
 		while (index > 0 && absValue > 0 && absValue < 1) {
-			const factor = units[index - 1]!.factorToNext
+			const factor = units[index - 1]?.factorToNext
 			if (!factor) {
 				break
 			}
@@ -394,7 +392,7 @@ export function yAxisLabelFormatter(
 			absValue = Math.abs(scaled)
 		}
 
-		return { value: scaled, label: units[index]!.label }
+		return { value: scaled, label: units[index]?.label ?? "" }
 	}
 
 	const timeUnits: UnitScale[] = [
@@ -589,8 +587,8 @@ export function calculateYAxisBounds(
 	const min = dataMin >= 0 ? Math.max(0, minRounded) : minRounded
 
 	return {
-		min: bounds?.min != null ? bounds.min : min,
-		max: bounds?.max != null ? bounds.max : max,
+		min: bounds?.min ?? min,
+		max: bounds?.max ?? max,
 	}
 }
 
@@ -637,8 +635,8 @@ export function calculateGaugeAxisBounds(
 				? Math.max(0, roundDownToStep(dataMin - step, step))
 				: roundDownToStep(dataMin - step, step)
 		return {
-			min: bounds?.min != null ? bounds.min : min,
-			max: bounds?.max != null ? bounds.max : max,
+			min: bounds?.min ?? min,
+			max: bounds?.max ?? max,
 		}
 	}
 
@@ -659,7 +657,7 @@ export function calculateGaugeAxisBounds(
 	const min = dataMin >= 0 ? Math.max(0, minRounded) : minRounded
 
 	return {
-		min: bounds?.min != null ? bounds.min : min,
-		max: bounds?.max != null ? bounds.max : max,
+		min: bounds?.min ?? min,
+		max: bounds?.max ?? max,
 	}
 }

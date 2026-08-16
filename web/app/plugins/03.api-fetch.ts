@@ -31,7 +31,7 @@ export default defineNuxtPlugin((nuxtApp) => {
 			options.headers = h
 		},
 		onResponseError: async ({ response }: { response: Response }) => {
-			if (response?.status === 401) {
+			if (response.status === 401) {
 				const current = route.fullPath || "/"
 				await redirectToLogin(current, false, nuxtApp)
 			}
@@ -59,7 +59,7 @@ export default defineNuxtPlugin((nuxtApp) => {
 			options.headers = h
 		},
 		onResponseError: async ({ response }: { response: Response }) => {
-			if (response?.status === 401) {
+			if (response.status === 401) {
 				const current = route.fullPath || "/"
 				await redirectToLogin(current, false, nuxtApp)
 			}
@@ -81,29 +81,17 @@ export function redirectToLogin(
 		runWithContext: <T>(fn: () => Promise<T>) => Promise<T>
 	},
 ) {
-	if (nuxtApp) {
-		return nuxtApp.runWithContext(async () => {
-			return navigateTo(
-				{
-					name: "login",
-					query: {
-						next: currentPath ? encodeURIComponent(currentPath) : undefined,
-					},
+	return nuxtApp.runWithContext(async () => {
+		return navigateTo(
+			{
+				name: "login",
+				query: {
+					next: currentPath ? encodeURIComponent(currentPath) : undefined,
 				},
-				{ replace },
-			)
-		})
-	}
-
-	return navigateTo(
-		{
-			name: "login",
-			query: {
-				next: currentPath ? encodeURIComponent(currentPath) : undefined,
 			},
-		},
-		{ replace },
-	)
+			{ replace },
+		)
+	})
 }
 
 export async function redirectToDocId(

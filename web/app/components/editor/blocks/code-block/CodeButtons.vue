@@ -5,7 +5,7 @@ import {
 	defaultExtendedCodeBlockLanguage,
 	extendedCodeBlockLanguageOptions,
 } from "./languages"
-import { lowlight } from "./index"
+import { lowlight, type CodeBlockOptions } from "./index"
 
 const props = defineProps({
 	...nodeViewProps,
@@ -13,7 +13,9 @@ const props = defineProps({
 const { isEditable } = useEditorMeta()
 const isCopied = ref(false)
 const typeClass = computed(() => {
-	return props.extension.options.type === "comment" ? "text-2sm" : "text-sm"
+	return (props.extension.options as CodeBlockOptions).type === "comment"
+		? "text-2sm"
+		: "text-sm"
 })
 
 const detectedLanguage = ref(defaultExtendedCodeBlockLanguage)
@@ -34,7 +36,7 @@ function detectLanguage() {
 
 		if (
 			result.data?.language &&
-			result.data?.relevance &&
+			result.data.relevance &&
 			result.data.relevance >= 2
 		) {
 			detectedLanguage.value = result.data.language
@@ -64,12 +66,12 @@ const currentLang = computed({
 			return detectedLanguage.value
 		}
 
-		return props.node.attrs.language
+		return props.node.attrs.language as string
 	},
 	set: (lang: string) => {
 		// User selected a language - set it (no longer auto)
 		if (props.node.attrs.language !== lang) {
-			props.updateAttributes?.({ language: lang })
+			props.updateAttributes({ language: lang })
 		}
 	},
 })

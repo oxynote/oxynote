@@ -12,7 +12,8 @@ const props = defineProps<{
 }>()
 
 const processedBreadcrumbs = computed(() => {
-	if (!props.breadcrumbs.length) {
+	const last = props.breadcrumbs[props.breadcrumbs.length - 1]
+	if (!last) {
 		return null
 	}
 
@@ -22,28 +23,28 @@ const processedBreadcrumbs = computed(() => {
 				first: null,
 				collapsed: false,
 				preLast: null,
-				last: props.breadcrumbs[0]!,
+				last,
 			}
 		case 2:
 			return {
-				first: props.breadcrumbs[0]!,
+				first: props.breadcrumbs[0] ?? null,
 				collapsed: false,
 				preLast: null,
-				last: props.breadcrumbs[1]!,
+				last,
 			}
 		case 3:
 			return {
-				first: props.breadcrumbs[0]!,
+				first: props.breadcrumbs[0] ?? null,
 				collapsed: false,
-				preLast: props.breadcrumbs[1]!,
-				last: props.breadcrumbs[2]!,
+				preLast: props.breadcrumbs[1] ?? null,
+				last,
 			}
 		default:
 			return {
-				first: props.breadcrumbs[0]!,
+				first: props.breadcrumbs[0] ?? null,
 				collapsed: true,
-				preLast: props.breadcrumbs[props.breadcrumbs.length - 2]!,
-				last: props.breadcrumbs[props.breadcrumbs.length - 1]!,
+				preLast: props.breadcrumbs[props.breadcrumbs.length - 2] ?? null,
+				last,
 			}
 	}
 })

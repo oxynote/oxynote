@@ -15,7 +15,9 @@ defineOptions({
 })
 
 const props = withDefaults(
+	// eslint-disable-next-line @typescript-eslint/no-unsafe-argument -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 	defineProps<
+		// eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 		SidebarMenuButtonProps & {
 			tooltip?: string | Component
 		}

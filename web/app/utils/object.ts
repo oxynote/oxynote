@@ -8,7 +8,7 @@ export function clone<T>(obj: T): T {
 
 	// it seems this is the only way to deep clone an object :/
 	// https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/assign#warning_for_deep_clone
-	return JSON.parse(jsonStableStringify(obj))
+	return JSON.parse(jsonStableStringify(obj)) as T
 }
 
 export function isValidDescendent(
@@ -30,7 +30,7 @@ export function lastFilePathElement(filePath: string): string {
 	const normalized = filePath.replace(/\\/g, "/")
 	const parts = normalized.split("/").filter((part) => part !== "")
 
-	return parts.length ? parts[parts.length - 1]! : ""
+	return parts[parts.length - 1] ?? ""
 }
 
 export function arraysEqual<T>(
@@ -72,6 +72,7 @@ export function extractInitials(input: string, max?: number): string {
 	const letterRe = /\p{L}/u // any Unicode letter
 
 	for (const p of parts) {
+		// eslint-disable-next-line @typescript-eslint/no-misused-spread -- code-point iteration is what this needs: it looks for the first Unicode letter, and emoji never match letterRe
 		const firstLetter = [...p].find((ch) => letterRe.test(ch))
 		if (firstLetter) {
 			initials.push(firstLetter.toLocaleUpperCase())

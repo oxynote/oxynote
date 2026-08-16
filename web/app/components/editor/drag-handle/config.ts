@@ -39,7 +39,10 @@ import {
 // neighboring MetricBlock shows up instead)
 export const DRAG_HANDLE_APPROX_WIDTH_PX = 9
 
-export const DEBUG_SHOW_GAPS = false
+// widened to boolean on purpose: this is a debug toggle flipped by hand, and a
+// literal `false` type would make every guard reading it look like dead code
+// eslint-disable-next-line @typescript-eslint/no-inferrable-types -- see above
+export const DEBUG_SHOW_GAPS: boolean = false
 
 // Nodes that "absorb" their children for drag purposes
 // (children should not be treated as separate drag targets).
@@ -514,7 +517,7 @@ export function highlightOverlayByNodeType(
 		case ImageBlock.name: {
 			const img =
 				target.querySelector("img") ??
-				target.firstElementChild?.querySelector?.("img")
+				target.firstElementChild?.querySelector("img")
 
 			if (!img) {
 				break

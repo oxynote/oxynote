@@ -19,7 +19,7 @@ function addElement(btn: "first" | "second") {
 
 	if (btn === "first") {
 		props.editor.chain().focus().appendBlockOnRightSide(pos, "code").run()
-	} else if (btn === "second") {
+	} else {
 		props.editor
 			.chain()
 			.setMeta(SUPPRESS_SCROLL_TO_SELECTION_META, true)

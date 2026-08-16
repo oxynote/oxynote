@@ -28,7 +28,7 @@ const currentLink = ref<{
 let hoverTimeout: ReturnType<typeof setTimeout> | null = null
 let closeTimeout: ReturnType<typeof setTimeout> | null = null
 const isHoveringPopover = ref(false)
-const popoverElem = useTemplateRef("link-bubble-popover")
+const popoverElem = useTemplateRef<HTMLDivElement>("link-bubble-popover")
 const referenceElem = ref<Element | null>(null)
 let isSyncingFromEditor = false
 
@@ -68,7 +68,7 @@ function syncEditedLink() {
 		return
 	}
 
-	const currentHref = linkMark.attrs.href
+	const currentHref = linkMark.attrs.href as string
 	const currentText = state.doc.textBetween(range.from, range.to, "")
 
 	// Update refs if they differ from current state
@@ -87,7 +87,7 @@ function syncEditedLink() {
 		}
 		editLinkText.value = currentText
 		editLinkUrl.value = currentHref
-		nextTick(() => {
+		void nextTick(() => {
 			isSyncingFromEditor = false
 		})
 	}
@@ -102,7 +102,7 @@ function updatePopoverPosition() {
 	}
 
 	const commentMarkType =
-		props.editor.state.schema.marks[COMMENT_MARK_NAME] || null
+		props.editor.state.schema.marks[COMMENT_MARK_NAME] ?? null
 
 	const preferTop =
 		currentLink.value &&
@@ -114,20 +114,20 @@ function updatePopoverPosition() {
 			commentMarkType,
 		)
 
-	computePosition(reference, popover, {
+	void computePosition(reference, popover, {
 		placement: preferTop ? "top-start" : "bottom-start",
 		strategy: "absolute",
 		middleware: [
 			offset({ mainAxis: 5 }),
 			flip({
-				boundary: props.container || undefined,
+				boundary: props.container ?? undefined,
 				fallbackPlacements: preferTop
 					? ["top", "top-end"]
 					: ["bottom", "bottom-end"],
 				padding: 8,
 			}),
 			shift({
-				boundary: props.container || undefined,
+				boundary: props.container ?? undefined,
 				padding: 8,
 			}),
 		],
@@ -173,14 +173,14 @@ function handleMouseEnter(event: MouseEvent) {
 
 		const rangeNode = state.doc.nodeAt(range.from)
 		const linkMark =
-			rangeNode?.marks?.find((mark) => mark.type === linkMarkType) ||
+			rangeNode?.marks.find((mark) => mark.type === linkMarkType) ??
 			$pos.marks().find((mark) => mark.type === linkMarkType)
 
 		if (!linkMark) {
 			return
 		}
 
-		const href = linkMark.attrs.href
+		const href = linkMark.attrs.href as string
 		const text = state.doc.textBetween(range.from, range.to, "")
 
 		currentLink.value = {
@@ -195,7 +195,7 @@ function handleMouseEnter(event: MouseEvent) {
 		renderPopover.value = true
 
 		// Position the popover using floating-ui
-		nextTick(updatePopoverPosition)
+		void nextTick(updatePopoverPosition)
 	}, 200)
 }
 
@@ -250,7 +250,7 @@ function handleClickOutside(event?: MouseEvent) {
 		return
 	}
 
-	const target = (event?.target as Node) || undefined
+	const target = event?.target as Node | null | undefined
 	if (!target || !popoverElem.value.contains(target)) {
 		cancelEdit()
 	}
@@ -418,7 +418,7 @@ watch(editLinkUrl, (val) => {
 		return
 	}
 
-	updateLink(editLinkText.value, val)
+	void updateLink(editLinkText.value, val)
 })
 
 watch(editLinkText, (val) => {
@@ -426,7 +426,7 @@ watch(editLinkText, (val) => {
 		return
 	}
 
-	updateLink(val, editLinkUrl.value)
+	void updateLink(val, editLinkUrl.value)
 })
 
 function editSelection() {
@@ -454,7 +454,7 @@ function editSelection() {
 		return
 	}
 
-	const href = linkMark.attrs.href
+	const href = linkMark.attrs.href as string
 	const text = state.doc.textBetween(range.from, range.to, "")
 
 	// Set current link data
@@ -491,7 +491,7 @@ function editSelection() {
 	document.addEventListener("mousedown", handleClickOutside)
 
 	// Position the popover using floating-ui
-	nextTick(updatePopoverPosition)
+	void nextTick(updatePopoverPosition)
 }
 
 onKeyStroke("Escape", () => {

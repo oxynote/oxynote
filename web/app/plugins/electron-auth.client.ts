@@ -20,7 +20,7 @@ export default defineNuxtPlugin(() => {
 	})
 
 	const unsubscribeUserUpdated = window.onUserUpdated(() => {
-		fetchAuthSession.refetch()
+		void fetchAuthSession.refetch()
 	})
 
 	const unsubscribeAuthError = window.onAuthError((ctx) => {

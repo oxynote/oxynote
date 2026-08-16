@@ -34,6 +34,12 @@ export interface CommentMarkOptions {
 	onIndicatorStateChange?: (state: TextCommentIndicatorState) => void
 }
 
+export interface CommentMarkStorage {
+	forcedHighlights: Set<string>
+	updateForcedHighlightStyle: (() => void) | null
+	refreshIndicators: (() => void) | null
+}
+
 declare module "@tiptap/core" {
 	interface Commands<ReturnType> {
 		comment: {
@@ -49,7 +55,7 @@ declare module "@tiptap/core" {
 	}
 }
 
-export const CommentMark = Mark.create<CommentMarkOptions>({
+export const CommentMark = Mark.create<CommentMarkOptions, CommentMarkStorage>({
 	name: COMMENT_MARK_NAME,
 	inclusive: false,
 	priority: 1000,
@@ -71,7 +77,7 @@ export const CommentMark = Mark.create<CommentMarkOptions>({
 				parseHTML: (element) => element.getAttribute("data-comment-id"),
 				renderHTML: (attrs) => {
 					return {
-						"data-comment-id": attrs.commentId,
+						"data-comment-id": attrs.commentId as string,
 					}
 				},
 			},
@@ -165,8 +171,11 @@ export const CommentMark = Mark.create<CommentMarkOptions>({
 					}
 
 					function handleMouseEnter(event: MouseEvent) {
-						const target = event.target as HTMLElement
-						if (!target.hasAttribute?.("data-comment-id")) {
+						const target = event.target
+						if (
+							!(target instanceof Element) ||
+							!target.hasAttribute("data-comment-id")
+						) {
 							return
 						}
 
@@ -177,13 +186,19 @@ export const CommentMark = Mark.create<CommentMarkOptions>({
 					}
 
 					function handleMouseLeave(event: MouseEvent) {
-						const target = event.target as HTMLElement
-						if (!target.hasAttribute?.("data-comment-id")) {
+						const target = event.target
+						if (
+							!(target instanceof Element) ||
+							!target.hasAttribute("data-comment-id")
+						) {
 							return
 						}
 
-						const relatedTarget = event.relatedTarget as HTMLElement | null
-						const newCommentEl = relatedTarget?.closest?.("[data-comment-id]")
+						const relatedTarget = event.relatedTarget
+						const newCommentEl =
+							relatedTarget instanceof Element
+								? relatedTarget.closest("[data-comment-id]")
+								: null
 						const newCommentId = newCommentEl?.getAttribute("data-comment-id")
 
 						if (newCommentId !== currentHoveredId) {
@@ -214,14 +229,14 @@ export const CommentMark = Mark.create<CommentMarkOptions>({
 								// indicator to appear at the leftmost edge of any line
 								// rather than where the comment text actually starts.
 								const rects = el.getClientRects()
+								const rect = rects[0]
 
 								// skip elements hidden by v-show (e.g. inside a
 								// collapsed mermaid block).
-								if (rects.length === 0) {
+								if (!rect) {
 									return
 								}
 
-								const rect = rects[0]!
 								indicators.push({
 									commentId,
 									top: rect.top - editorRect.top + editorView.dom.scrollTop,
@@ -352,6 +367,7 @@ export const CommentMark = Mark.create<CommentMarkOptions>({
 						}
 					})
 
+					// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- found is set inside the synchronous descendants callback, which TS cannot see
 					if (!found) {
 						return false
 					}
@@ -433,7 +449,10 @@ export const CommentMark = Mark.create<CommentMarkOptions>({
 	},
 })
 
-export function findCommentMarkAtPos(state: any, pos: number) {
+export function findCommentMarkAtPos(
+	state: EditorState,
+	pos: number,
+): { from: number; to: number; attrs: CommentAttrs } | null {
 	const markType = state.schema.marks[COMMENT_MARK_NAME]
 	if (!markType) {
 		return null
@@ -444,17 +463,17 @@ export function findCommentMarkAtPos(state: any, pos: number) {
 	}
 
 	const $pos = state.doc.resolve(pos)
-	const direct = $pos.marks().find((m: any) => m.type === markType)
+	const direct = $pos.marks().find((m) => m.type === markType)
 	if (direct) {
 		const range = getMarkRange($pos, markType, direct.attrs)
-		return range ? { ...range, attrs: direct.attrs } : null
+		return range ? { ...range, attrs: direct.attrs as CommentAttrs } : null
 	}
 
 	const range = getMarkRange($pos, markType)
 	if (range) {
 		const node = state.doc.nodeAt(range.from)
-		const mark = node?.marks?.find((m: any) => m.type === markType)
-		return mark ? { ...range, attrs: mark.attrs } : null
+		const mark = node?.marks.find((m) => m.type === markType)
+		return mark ? { ...range, attrs: mark.attrs as CommentAttrs } : null
 	}
 
 	return null
@@ -526,7 +545,7 @@ export function deletePendingCommentMarks(
 	}
 
 	state.doc.descendants((node, pos) => {
-		if (!node.marks?.length) {
+		if (!node.marks.length) {
 			return
 		}
 
@@ -535,7 +554,7 @@ export function deletePendingCommentMarks(
 				return
 			}
 
-			const id = mark.attrs.commentId
+			const id = mark.attrs.commentId as string
 
 			if (
 				pendingCommentBelongsToActiveUser(id, activeUserId) &&
@@ -696,9 +715,7 @@ function findExistingCommentRanges(
 			)
 
 		if (hasMatch) {
-			if (rangeStart === null) {
-				rangeStart = childStart
-			}
+			rangeStart ??= childStart
 		} else {
 			if (rangeStart !== null) {
 				ranges.push({ from: rangeStart, to: childStart })
@@ -749,8 +766,8 @@ export function reinjectDeletedContentMarks(
 	>()
 
 	diffEditor.state.doc.descendants((node, pos) => {
-		const status = node.attrs?.diffStatus
-		const uid = node.attrs?.uid
+		const status = node.attrs.diffStatus as DiffStatus | undefined
+		const uid = node.attrs.uid as string | undefined
 
 		if (
 			uid &&
@@ -792,7 +809,7 @@ export function reinjectDeletedContentMarks(
 				continue
 			}
 
-			const isModified = entry.node.attrs?.diffStatus === DiffStatus.Modified
+			const isModified = entry.node.attrs.diffStatus === DiffStatus.Modified
 			const fromOffset = isModified
 				? originalOffsetToMergedOffset(entry.node, anchor.fromOffset, "start")
 				: anchor.fromOffset
@@ -827,8 +844,9 @@ export function reinjectDeletedContentMarks(
 		// reference ranges (sibling anchors + existing doc marks),
 		// apply snap, and add marks.
 		for (const [nodeUid, ranges] of nodeGroups) {
+			// eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- nodeGroups only contains uids that resolved in uidToEntry above
 			const entry = uidToEntry.get(nodeUid)!
-			const isModified = entry.node.attrs?.diffStatus === DiffStatus.Modified
+			const isModified = entry.node.attrs.diffStatus === DiffStatus.Modified
 			const needsSnap = isModified && ranges.some((r) => r.snapFrom || r.snapTo)
 
 			// combine base ranges with existing comment marks in the

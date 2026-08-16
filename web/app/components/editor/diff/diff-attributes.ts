@@ -32,7 +32,9 @@ export const DiffAttributes = Extension.create<DiffAttributeOptions>({
 								return {}
 							}
 
-							return { "data-diff-status": attributes.diffStatus }
+							return {
+								"data-diff-status": attributes.diffStatus as string,
+							}
 						},
 						parseHTML: (element) =>
 							element.getAttribute("data-diff-status") ?? null,

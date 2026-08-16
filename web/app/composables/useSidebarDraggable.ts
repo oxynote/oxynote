@@ -109,11 +109,12 @@ export function useSidebarDraggable(
 				return
 			}
 
-			if (Math.abs(dragFirstPosition.y - pos.y) < opts.minDistance!) {
+			if (Math.abs(dragFirstPosition.y - pos.y) < (opts.minDistance ?? 0)) {
 				return
 			}
 
 			store.updateDraggedElem({
+				// eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- dragging can only start from a mounted item, so its wrapper is set
 				wrapper: toValue(wrapperElem)!,
 				item: toValue(elemSidebarItem),
 			})

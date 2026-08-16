@@ -45,6 +45,7 @@ export const ParameterListItemHeaderType = Node.create({
 		]
 	},
 	addNodeView() {
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-argument -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 		return VueNodeViewRenderer(ParameterListItemHeaderTypeView)
 	},
 })
@@ -123,6 +124,7 @@ export const ParameterListItemHeaderTitle = Node.create({
 		}
 	},
 	addNodeView() {
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-argument -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 		return VueNodeViewRenderer(ParameterListItemHeaderTitleView)
 	},
 })
@@ -151,6 +153,7 @@ export const ParameterListItemHeader = Node.create({
 		]
 	},
 	addNodeView() {
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-argument -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 		return VueNodeViewRenderer(ParameterListItemHeaderView)
 	},
 })
@@ -261,6 +264,7 @@ export const ParameterListHeader = Node.create({
 		}
 	},
 	addNodeView() {
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-argument -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 		return VueNodeViewRenderer(ParameterListHeaderView)
 	},
 })

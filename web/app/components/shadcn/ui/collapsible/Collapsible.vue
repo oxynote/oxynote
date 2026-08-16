@@ -9,7 +9,13 @@ const forwarded = useForwardPropsEmits(props, emits)
 </script>
 
 <template>
-	<CollapsibleRoot v-slot="{ open }" data-slot="collapsible" v-bind="forwarded">
-		<slot :open="open" />
+	<!-- the slot exposes reka-ui's live open state, which diverges from the
+		open prop in uncontrolled usage — hence the distinct name -->
+	<CollapsibleRoot
+		v-slot="{ open: isOpen }"
+		data-slot="collapsible"
+		v-bind="forwarded"
+	>
+		<slot :open="isOpen" />
 	</CollapsibleRoot>
 </template>

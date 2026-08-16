@@ -31,8 +31,8 @@ export interface Document {
 	parentId: string | null
 	organizationId: string
 	icon: string
-	content: any | null
-	rawContent: any | null
+	content: any
+	rawContent: any
 	protected: boolean
 	default: boolean
 	createdAt: Date | string
@@ -231,7 +231,7 @@ export interface DocumentSearchResult {
 	id: string // block/node ID
 	documentId: string
 	organizationId: string
-	type: "document" | "heading" | string
+	type: string
 	text: string
 }
 

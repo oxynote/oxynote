@@ -33,13 +33,13 @@ const onSubmit = form.handleSubmit(async (values) => {
 	loading.value = true
 	await delay(300) // show loading spinner for at least a moment
 
-	const { error } = await changeEmail({
+	const { error } = (await changeEmail({
 		newEmail: values.email,
 		callbackURL: postEmailVerificationUrl(
 			config.public.appBaseURL,
 			values.email,
 		),
-	})
+	})) as AuthResponse
 	if (error) {
 		form.setErrors({ email: error.message })
 		loading.value = false

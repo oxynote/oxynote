@@ -27,9 +27,11 @@ const leftPosition = computed(() => {
 	>
 		<ShadcnUiSheetContent side="left" class="w-fit p-0">
 			<ShadcnUiSheetHeader class="sr-only">
-				<ShadcnUiSheetTitle>Sidebar</ShadcnUiSheetTitle>
+				<ShadcnUiSheetTitle>
+					{{ $t("sidebar.notification-sheet.title") }}
+				</ShadcnUiSheetTitle>
 				<ShadcnUiSheetDescription>
-					Displays the mobile sidebar.
+					{{ $t("sidebar.notification-sheet.description") }}
 				</ShadcnUiSheetDescription>
 			</ShadcnUiSheetHeader>
 			<NotificationBox

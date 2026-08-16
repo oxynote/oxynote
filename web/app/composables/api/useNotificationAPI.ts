@@ -76,7 +76,7 @@ export default function () {
 
 	const markNotificationsRead = useMutation({
 		// count is hard to optimistically update, so we skip it
-		onMutate: async (req) => {
+		onMutate: (req) => {
 			const entries = queryCache.getEntries({
 				key: NOTIFICATION_QUERY_KEYS.listRoot,
 			})
@@ -86,10 +86,11 @@ export default function () {
 				const oldNotifPage = clone(
 					queryCache.getQueryData<NotificationsResponse>(entry.key),
 				)
+				// eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- list entries are only cached once their query resolved, so they hold data
 				oldNotifs.push({ ...oldNotifPage!, key: clone(entry.key) })
 			})
 
-			const newNotifs = clone(oldNotifs) || []
+			const newNotifs = clone(oldNotifs)
 			newNotifs.forEach((notifPage) => {
 				notifPage.notifications.forEach((notif) => {
 					if (req.ids.length === 0 || req.ids.includes(notif.id)) {
@@ -129,6 +130,7 @@ export default function () {
 				const cachedNotifPage = clone(
 					queryCache.getQueryData<NotificationsResponse>(entry.key),
 				)
+				// eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- list entries are only cached once their query resolved, so they hold data
 				cachedNotifs.push({ ...cachedNotifPage!, key: clone(entry.key) })
 			})
 

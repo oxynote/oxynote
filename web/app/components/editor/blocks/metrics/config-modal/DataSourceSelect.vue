@@ -35,7 +35,7 @@ const selectedDataSource = computed(() => {
 		return res
 	}
 
-	if (id && !res) {
+	if (id) {
 		return "selected-but-not-found"
 	}
 

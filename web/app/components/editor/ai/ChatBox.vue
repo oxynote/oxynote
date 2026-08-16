@@ -32,6 +32,7 @@ const {
 	sendMessage,
 	resetChat,
 } = useAIChat({
+	// eslint-disable-next-line @typescript-eslint/require-await -- tool execution is synchronous, but the toolExecutor option is typed to return a promise
 	toolExecutor: async (tool: AIToolName, args: ExecuteToolArgs) => {
 		if (!props.contentEditor) {
 			return { error: "content editor not available" }
@@ -95,7 +96,7 @@ function handleKeydown(e: KeyboardEvent) {
 watch(
 	() => messages.value.length,
 	() => {
-		nextTick(() => {
+		void nextTick(() => {
 			if (messageContainer.value) {
 				messageContainer.value.scrollTop = messageContainer.value.scrollHeight
 			}
@@ -107,7 +108,7 @@ watch(
 watch(
 	() => messages.value[messages.value.length - 1]?.text,
 	() => {
-		nextTick(() => {
+		void nextTick(() => {
 			if (messageContainer.value) {
 				messageContainer.value.scrollTop = messageContainer.value.scrollHeight
 			}

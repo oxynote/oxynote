@@ -25,12 +25,13 @@ export function lcs<T>(
 
 	for (let i = 1; i <= n; i++) {
 		for (let j = 1; j <= m; j++) {
+			// eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- i and j run within 1..length, so both element reads are in bounds
 			if (eq(a[i - 1]!, b[j - 1]!)) {
-				dp[i * cols + j] = dp[(i - 1) * cols + (j - 1)]! + 1
+				dp[i * cols + j] = (dp[(i - 1) * cols + (j - 1)] ?? 0) + 1
 			} else {
 				dp[i * cols + j] = Math.max(
-					dp[(i - 1) * cols + j]!,
-					dp[i * cols + (j - 1)]!,
+					dp[(i - 1) * cols + j] ?? 0,
+					dp[i * cols + (j - 1)] ?? 0,
 				)
 			}
 		}
@@ -44,6 +45,7 @@ export function lcs<T>(
 	let j = m
 	while (i > 0 && j > 0) {
 		if (
+			// eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- the loop guard keeps i and j above 0, so both element reads are in bounds
 			eq(a[i - 1]!, b[j - 1]!) &&
 			dp[i * cols + j] !== dp[i * cols + (j - 1)] &&
 			dp[i * cols + j] !== dp[(i - 1) * cols + j]
@@ -51,7 +53,7 @@ export function lcs<T>(
 			result.push([i - 1, j - 1])
 			i--
 			j--
-		} else if (dp[(i - 1) * cols + j]! > dp[i * cols + (j - 1)]!) {
+		} else if ((dp[(i - 1) * cols + j] ?? 0) > (dp[i * cols + (j - 1)] ?? 0)) {
 			i--
 		} else {
 			j--

@@ -69,7 +69,7 @@ function extractBlocks(doc: JSONContent, options: MergeOptions): BlockInfo[] {
 	return blocks.map((node, i) => ({
 		node,
 		hash: hashBlockContent(node, options),
-		uid: node.attrs?.[uidAttr] ?? null,
+		uid: (node.attrs?.[uidAttr] as string | undefined) ?? null,
 		sourceIndex: i,
 	}))
 }
@@ -101,8 +101,7 @@ function mergeBlocks(
 			}
 		}
 
-		for (let mi = 0; mi < modifiedBlocks.length; mi++) {
-			const modifiedBlock = modifiedBlocks[mi]!
+		for (const [mi, modifiedBlock] of modifiedBlocks.entries()) {
 			if (!modifiedBlock.uid) {
 				continue
 			}
@@ -133,9 +132,10 @@ function mergeBlocks(
 		unmatchedOriginalBlocks.length > 0 &&
 		unmatchedModifiedIndices.length > 0
 	) {
-		const unmatchedModifiedBlocks = unmatchedModifiedIndices.map(
-			(mi) => modifiedBlocks[mi]!,
-		)
+		const unmatchedModifiedBlocks = unmatchedModifiedIndices.flatMap((mi) => {
+			const block = modifiedBlocks[mi]
+			return block ? [block] : []
+		})
 
 		const lcsMatches = lcs(
 			unmatchedOriginalBlocks,
@@ -144,8 +144,13 @@ function mergeBlocks(
 		)
 
 		for (const [oi, mi] of lcsMatches) {
-			const originalBlock = unmatchedOriginalBlocks[oi]!
-			const modifiedIdx = unmatchedModifiedIndices[mi]!
+			const originalBlock = unmatchedOriginalBlocks[oi]
+			const modifiedIdx = unmatchedModifiedIndices[mi]
+
+			if (!originalBlock || modifiedIdx === undefined) {
+				continue
+			}
+
 			modifiedToOriginal.set(modifiedIdx, originalBlock)
 			matchedOriginalIndices.add(originalBlock.sourceIndex)
 		}
@@ -170,9 +175,8 @@ function mergeBlocks(
 		const lisMatches = lcs(origIndices, sorted, (a, b) => a === b)
 		const lisSet = new Set(lisMatches.map(([i]) => i))
 
-		for (let i = 0; i < matchedPairs.length; i++) {
+		for (const [i, [mi, origSourceIdx]] of matchedPairs.entries()) {
 			if (!lisSet.has(i)) {
-				const [mi, origSourceIdx] = matchedPairs[i]!
 				modifiedToOriginal.delete(mi)
 				matchedOriginalIndices.delete(origSourceIdx)
 			}
@@ -187,14 +191,18 @@ function mergeBlocks(
 	const mergedContent: JSONContent[] = []
 	let removedIdx = 0
 
-	for (let mi = 0; mi < modifiedBlocks.length; mi++) {
-		const modifiedBlock = modifiedBlocks[mi]!
+	for (const [mi, modifiedBlock] of modifiedBlocks.entries()) {
 		const matchedOriginal = modifiedToOriginal.get(mi)
 
 		// insert any removed blocks that should appear before this modified block
 		if (matchedOriginal) {
 			while (removedIdx < removedOriginalBlocks.length) {
-				const removed = removedOriginalBlocks[removedIdx]!
+				const removed = removedOriginalBlocks[removedIdx]
+
+				if (!removed) {
+					break
+				}
+
 				if (removed.sourceIndex < matchedOriginal.sourceIndex) {
 					mergedContent.push(
 						injectDiffAttrs(removed.node, {
@@ -241,7 +249,12 @@ function mergeBlocks(
 
 	// append any remaining removed blocks at the end
 	while (removedIdx < removedOriginalBlocks.length) {
-		const removed = removedOriginalBlocks[removedIdx]!
+		const removed = removedOriginalBlocks[removedIdx]
+
+		if (!removed) {
+			break
+		}
+
 		mergedContent.push(
 			injectDiffAttrs(removed.node, {
 				diffStatus: DiffStatus.Removed,
@@ -254,8 +267,7 @@ function mergeBlocks(
 	// step 5a: always unwrap transparent types (e.g. metricGrid) —
 	// they never carry diff status, only their children do.
 	if (options.transparentTypes?.length) {
-		for (let i = 0; i < mergedContent.length; i++) {
-			const block = mergedContent[i]!
+		for (const [i, block] of mergedContent.entries()) {
 			if (!block.type || !options.transparentTypes.includes(block.type)) {
 				continue
 			}
@@ -267,8 +279,7 @@ function mergeBlocks(
 	// step 5b: unwrap compound types only when modified — the parent
 	// keeps its own status for added/removed/unchanged.
 	if (options.unwrapTypes?.length) {
-		for (let i = 0; i < mergedContent.length; i++) {
-			const block = mergedContent[i]!
+		for (const [i, block] of mergedContent.entries()) {
 			if (
 				block.attrs?.diffStatus !== DiffStatus.Modified ||
 				!block.type ||

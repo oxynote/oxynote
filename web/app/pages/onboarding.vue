@@ -60,9 +60,9 @@ const onSubmit = form.handleSubmit(async (values) => {
 	await delay(300) // show loading spinner for at least a moment
 
 	if (values.workspaceSlug) {
-		const res = await checkOrganizationSlug({
+		const res = (await checkOrganizationSlug({
 			slug: values.workspaceSlug,
-		})
+		})) as AuthResponse
 		if (res.error) {
 			loading.value = null
 
@@ -83,11 +83,13 @@ const onSubmit = form.handleSubmit(async (values) => {
 		}
 	}
 
-	const { data: orgData, error: orgError } = await createOrganization({
+	// better-auth fills data whenever error is null, so the organization is
+	// typed as always present rather than re-checked after the error branch
+	const { data: orgData, error: orgError } = (await createOrganization({
 		name: values.workspaceName,
 		slug: values.workspaceSlug,
 		logo: "https://example.com/logo.png", // TODO allow uploading logo later
-	})
+	})) as AuthResponse & { data: { id: string; slug: string } }
 	if (orgError) {
 		// reset only on error so that the loading spinner shows while
 		// redirecting
@@ -107,10 +109,10 @@ const onSubmit = form.handleSubmit(async (values) => {
 		return
 	}
 
-	const res = await setActiveOrganization({
+	const res = (await setActiveOrganization({
 		organizationId: orgData.id,
 		organizationSlug: orgData.slug,
-	})
+	})) as AuthResponse
 	if (res.error) {
 		showToastMessage("error", t("onboarding.welcome.errors.activation-failed"))
 		// reset only on error so that the loading spinner shows while
@@ -127,8 +129,10 @@ const onSubmit = form.handleSubmit(async (values) => {
 	// may need to retry fetching the document tree a few times
 	for (let retry = 0; retry < 50; retry++) {
 		const docTree = await fetchDocumentTree.refetch()
-		if (docTree.data?.length) {
-			firstDoc = docTree.data[0]!
+
+		const doc = docTree.data?.[0]
+		if (doc) {
+			firstDoc = doc
 			break
 		}
 
@@ -145,7 +149,7 @@ const onSubmit = form.handleSubmit(async (values) => {
 		return
 	}
 
-	navigateTo(
+	void navigateTo(
 		`/${createNameSlug(values.workspaceName)}/${createNameSlugWithId(firstDoc.documentName, firstDoc.id)}`,
 		{
 			replace: true,
@@ -156,7 +160,7 @@ const onSubmit = form.handleSubmit(async (values) => {
 async function logOut() {
 	loading.value = "logout"
 
-	const res = await safeSignOut()
+	const res = (await safeSignOut()) as AuthResponse
 	if (res.error) {
 		showToastMessage("error", t("onboarding.welcome.errors.signout-failed"))
 		// reset only on error
@@ -164,7 +168,7 @@ async function logOut() {
 		return
 	}
 
-	navigateTo({ name: "login" })
+	void navigateTo({ name: "login" })
 }
 </script>
 <template>

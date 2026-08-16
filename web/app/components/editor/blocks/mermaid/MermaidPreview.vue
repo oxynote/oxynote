@@ -28,6 +28,7 @@ const debouncedSource = refDebounced(
 watchImmediate([debouncedSource, isDark], async ([source], oldValues) => {
 	// when the theme changes, wait for the browser to apply the
 	// new CSS variables before reading them.
+	// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- oldValues is undefined on the immediate first run despite the declared type
 	if (oldValues && oldValues[1] !== isDark.value) {
 		// nextTick isn't sufficient, the CSS update happens after the next
 		// paint. Wait for the next animation frame to ensure styles are up
@@ -120,11 +121,15 @@ watchImmediate([debouncedSource, isDark], async ([source], oldValues) => {
 				</ShadcnUiEmptyHeader>
 			</ShadcnUiEmpty>
 		</div>
+		<!-- the block form is required: disable-next-line cannot reach the
+			v-html attribute inside a multi-line element -->
+		<!-- eslint-disable vue/no-v-html -- the svg is sanitized with DOMPurify right after rendering -->
 		<div
 			v-else-if="renderedSvg"
 			class="flex items-center justify-center overflow-x-auto [&>svg]:h-auto [&>svg]:max-w-full"
 			v-html="renderedSvg"
 		/>
+		<!-- eslint-enable vue/no-v-html -->
 		<div v-else class="text-foreground">
 			<ShadcnUiEmpty>
 				<ShadcnUiEmptyHeader>

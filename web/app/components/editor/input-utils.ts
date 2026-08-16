@@ -99,7 +99,8 @@ export const ParagraphDeletionHandler =
 				Backspace: () => {
 					const { state, view } = this.editor
 					const { selection } = state
-					const cursor = (selection as any).$cursor
+					const cursor =
+						selection instanceof TextSelection ? selection.$cursor : null
 
 					if (!cursor) {
 						return false
@@ -275,6 +276,7 @@ function findPreviousParagraph(
 		lastParagraphEnd = pos + node.nodeSize - 1
 	})
 
+	// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- assigned inside the nodesBetween callback, which TS narrowing does not track
 	if (lastParagraphEnd === null) {
 		return null
 	}

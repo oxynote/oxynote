@@ -55,18 +55,16 @@ watch(open, (newV) => {
 		iconFilter.value = ""
 		tooltipOpen.value = null
 
-		nextTick(() => {
+		void nextTick(() => {
 			document.addEventListener("mousedown", handleClickOutside)
 			document.addEventListener("keydown", handleEscape)
 
-			updatePosition()
+			void updatePosition()
 
 			if (anchor.value && floatingElem.value) {
-				cleanupAutoUpdate = autoUpdate(
-					anchor.value,
-					floatingElem.value,
-					updatePosition,
-				)
+				cleanupAutoUpdate = autoUpdate(anchor.value, floatingElem.value, () => {
+					void updatePosition()
+				})
 			}
 		})
 	} else {
@@ -109,7 +107,7 @@ function handleClickOutside(e: MouseEvent) {
 		return
 	}
 
-	// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- eslint can't resolve floatingElem's type here, vue-tsc needs the assertion
+	// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion, @typescript-eslint/no-unsafe-call -- eslint can't resolve floatingElem's type here, vue-tsc needs the assertion
 	if (!floatingElem.value.contains(e.target as Node)) {
 		closeIconPicker()
 	}

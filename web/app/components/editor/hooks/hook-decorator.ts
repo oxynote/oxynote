@@ -36,13 +36,20 @@ const key = new PluginKey("hook-decorator")
 
 function toAvailableIDs(hooks: DocumentHook[]): Set<string> {
 	return new Set(
-		(hooks ?? [])
+		hooks
 			.filter((h) => h.blockId !== null && Number(h.score) === 0)
 			.map((h) => String(h.blockId)),
 	)
 }
 
 const HOOK_DECORATION_ATTR = "data-hook-decoration"
+
+// extra properties the widget element carries so its position can be
+// recomputed from outside the decoration.
+interface HookDecorationElement extends HTMLElement {
+	__updatePosition?: () => void
+	ignoreMutation?: boolean
+}
 
 function buildDecorations(
 	doc: PMNode,
@@ -56,10 +63,10 @@ function buildDecorations(
 			return false
 		}
 
-		const val = node.attrs?.[opt.attributeName]
+		const val = node.attrs[opt.attributeName] as string | null | undefined
 		const hasAttr = val != null && val !== ""
 
-		if (!hasAttr || !ids.has(String(val))) {
+		if (!hasAttr || !ids.has(val)) {
 			return true
 		}
 
@@ -96,7 +103,7 @@ function buildDecorations(
 			Decoration.widget(
 				widgetPos,
 				(view) => {
-					const el = document.createElement("span")
+					const el: HookDecorationElement = document.createElement("span")
 
 					el.setAttribute("aria-hidden", "true")
 					el.setAttribute(CLONE_IGNORE_ATTR, "true")
@@ -130,7 +137,7 @@ function buildDecorations(
 					}
 
 					// Store update function on the element itself
-					;(el as any).__updatePosition = updatePosition
+					el.__updatePosition = updatePosition
 
 					requestAnimationFrame(updatePosition)
 
@@ -139,7 +146,7 @@ function buildDecorations(
 						"w-1.25 bg-hook-decoration block rounded-r-lg",
 						placeOutside && "m-0!",
 					)
-					;(el as any).ignoreMutation = true
+					el.ignoreMutation = true
 					return el
 				},
 				{
@@ -188,17 +195,19 @@ export const HookDecorator = Extension.create<Partial<Options>>({
 				key,
 				state: {
 					init: (_cfg, { doc }) => {
-						const ids = toAvailableIDs(opt.getHooks() ?? [])
+						const ids = toAvailableIDs(opt.getHooks())
 						return {
 							ids,
 							decos: buildDecorations(doc, opt, ids),
 						}
 					},
 					apply(tr, old, _oldState, newState) {
-						const meta = tr.getMeta(key)
+						const meta = tr.getMeta(key) as
+							| { hooksChanged?: boolean }
+							| undefined
 
 						if (tr.docChanged || meta?.hooksChanged) {
-							const ids = toAvailableIDs(opt.getHooks() ?? [])
+							const ids = toAvailableIDs(opt.getHooks())
 							return {
 								ids,
 								decos: buildDecorations(newState.doc, opt, ids),
@@ -213,7 +222,7 @@ export const HookDecorator = Extension.create<Partial<Options>>({
 				},
 				props: {
 					decorations(state) {
-						return this.getState(state)!.decos
+						return this.getState(state)?.decos
 					},
 				},
 				view(editorView: EditorView) {
@@ -222,7 +231,7 @@ export const HookDecorator = Extension.create<Partial<Options>>({
 							`[${HOOK_DECORATION_ATTR}]`,
 						)
 						decorations.forEach((el) => {
-							;(el as any).__updatePosition?.()
+							;(el as HookDecorationElement).__updatePosition?.()
 						})
 					}
 

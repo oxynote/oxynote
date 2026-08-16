@@ -35,14 +35,10 @@ function applySelection(
 	parents?: GitHubFileTreeItem[],
 	old?: string[],
 ): string[] {
-	if (!old) {
-		old = selected.value ? clone(selected.value) : undefined
-	}
+	old ??= selected.value ? clone(selected.value) : undefined
 
 	if (active) {
-		if (!old) {
-			old = []
-		}
+		old ??= []
 
 		if (!old.includes(item.name)) {
 			old.push(item.name)
@@ -63,7 +59,7 @@ function applySelection(
 		}
 	}
 
-	return old || []
+	return old ?? []
 }
 
 function handleSelection(

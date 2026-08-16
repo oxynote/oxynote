@@ -42,7 +42,7 @@ const currentSize = computed<MetricBlockWidth>(() => {
 })
 
 function setSize(width: MetricBlockWidth) {
-	if (!props.editor || props.hovered == null) {
+	if (props.hovered == null) {
 		return
 	}
 

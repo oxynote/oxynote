@@ -156,7 +156,7 @@ function openPopover() {
 	if (isEditingDisabled.value) return
 	urlInput.value = src.value ?? ""
 	showPopover.value = true
-	nextTick(updatePopoverPos)
+	void nextTick(updatePopoverPos)
 }
 
 function closePopover() {
@@ -195,7 +195,7 @@ function handleClickOutside(event: MouseEvent) {
 
 watch(showPopover, (val) => {
 	if (val) {
-		nextTick(() => {
+		void nextTick(() => {
 			document.addEventListener("mousedown", handleClickOutside)
 		})
 	} else {

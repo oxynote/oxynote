@@ -49,11 +49,11 @@ const onSubmit = form.handleSubmit(async (values) => {
 	loading.value = true
 	await delay(300) // show loading spinner for at least a moment
 
-	const { error } = await inviteOrganizationMember({
+	const { error } = (await inviteOrganizationMember({
 		email: values.email,
 		role: "owner", // in the future we will allow selecting roles
 		resend: true,
-	})
+	})) as AuthResponse
 	if (error) {
 		form.setErrors({ email: error.message })
 		loading.value = false

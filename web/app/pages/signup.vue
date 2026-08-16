@@ -111,56 +111,22 @@ async function signUpWithProvider(provider: "github" | "google" | "slack") {
 	}
 
 	loading.value = provider
-	let res: AuthResponse | null = null
 
-	switch (provider) {
-		case "github":
-			res = await signInSocial({
-				provider: "github",
-				callbackURL: postAuthDocumentUrl(
-					config.public.appBaseURL,
-					route.query.next as string | undefined,
-				),
-				newUserCallbackURL: postAuthDocumentUrl(
-					config.public.appBaseURL,
-					route.query.next as string | undefined,
-					"/welcome",
-				),
-				fetchOptions: { query: route.query },
-			})
-			break
-		case "slack":
-			res = await signInSocial({
-				provider: "slack",
-				callbackURL: postAuthDocumentUrl(
-					config.public.appBaseURL,
-					route.query.next as string | undefined,
-				),
-				newUserCallbackURL: postAuthDocumentUrl(
-					config.public.appBaseURL,
-					route.query.next as string | undefined,
-					"/welcome",
-				),
-				fetchOptions: { query: route.query },
-			})
-			break
-		case "google":
-			res = await signInSocial({
-				provider: "google",
-				callbackURL: postAuthDocumentUrl(
-					config.public.appBaseURL,
-					route.query.next as string | undefined,
-				),
-				newUserCallbackURL: postAuthDocumentUrl(
-					config.public.appBaseURL,
-					route.query.next as string | undefined,
-					"/welcome",
-				),
-				fetchOptions: { query: route.query },
-			})
-	}
+	const res = (await signInSocial({
+		provider,
+		callbackURL: postAuthDocumentUrl(
+			config.public.appBaseURL,
+			route.query.next as string | undefined,
+		),
+		newUserCallbackURL: postAuthDocumentUrl(
+			config.public.appBaseURL,
+			route.query.next as string | undefined,
+			"/welcome",
+		),
+		fetchOptions: { query: route.query },
+	})) as AuthResponse
 
-	if (res?.error) {
+	if (res.error) {
 		showToastMessage("error", t("onboarding.signup.errors.signup-failed"))
 		// reset only on error so that the loading spinner shows while
 		// redirecting
@@ -187,12 +153,12 @@ const onEmailPasswordSubmit = emailPasswordForm.handleSubmit(async (values) => {
 	// would resolve against the auth server's origin, which does not
 	// serve the frontend in host-dev mode), with a flag the login page
 	// confirms via a toast.
-	const res = await signUpEmailPassword({
+	const res = (await signUpEmailPassword({
 		email: values.email,
 		password: values.password,
 		name: values.email.split("@")[0] || values.email,
 		callbackURL: `${config.public.appBaseURL}/login?verified=true`,
-	})
+	})) as AuthResponse
 	// no duplicate-email branch on purpose: better-auth answers duplicate
 	// signups with a synthetic success so the browser can't probe which
 	// emails have accounts. The existing owner is notified through their
@@ -204,7 +170,7 @@ const onEmailPasswordSubmit = emailPasswordForm.handleSubmit(async (values) => {
 		return
 	}
 
-	navigateTo({
+	void navigateTo({
 		path: "/verify-email",
 		query: { new: values.email, sent: "true" },
 	})

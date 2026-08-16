@@ -39,7 +39,7 @@ const placeholderText = computed(() => {
 		: ""
 })
 
-const otherEditingUsers = editingUsersRef(() => props.node.attrs.uid)
+const otherEditingUsers = editingUsersRef(uid)
 const lastOtherEditingUser = computed(() => {
 	return otherEditingUsers.value.length
 		? otherEditingUsers.value[otherEditingUsers.value.length - 1]
@@ -79,12 +79,13 @@ const diffClass = computed(() => {
 // expansion) so the preview only renders the modified version.
 const previewSource = computed(() => {
 	return (
-		(props.node.attrs.modifiedTextContent as string) ?? props.node.textContent
+		(props.node.attrs.modifiedTextContent as string | undefined) ??
+		props.node.textContent
 	)
 })
 
 watch(showCode, () => {
-	nextTick(() => {
+	void nextTick(() => {
 		props.editor.commands.refreshTextCommentIndicators()
 	})
 })

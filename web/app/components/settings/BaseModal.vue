@@ -35,19 +35,26 @@ const actionOpts = ref<OrganizationMember | DataSourceType | DataSource | null>(
 	null,
 )
 const sections = [
-	{ title: t("settings.profile.title"), component: ProfileSection },
+	{
+		title: t("settings.profile.title"),
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
+		component: ProfileSection,
+	},
 	{
 		title: t("settings.workspace.title"),
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 		component: WorkspaceSection,
 		id: ORG_SECTION_ID,
 	},
 	{
 		title: t("settings.apps.title"),
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 		component: AppsSection,
 		id: APP_SECTION_ID, // for scrolling into view when opened
 	},
 	{
 		title: t("settings.data-sources.title"),
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 		component: DataSourceSection,
 		id: DATA_SOURCE_SECTION_ID,
 	},

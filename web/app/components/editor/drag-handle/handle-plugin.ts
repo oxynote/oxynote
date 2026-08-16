@@ -18,7 +18,9 @@ import {
 	absolutePositionToRelativePosition,
 	relativePositionToAbsolutePosition,
 	ySyncPluginKey,
+	type ProsemirrorBinding,
 } from "@tiptap/y-tiptap"
+import type * as Y from "yjs"
 import {
 	getSelectionRanges,
 	NodeRangeSelection,
@@ -26,6 +28,7 @@ import {
 import { Fragment, Slice } from "@tiptap/pm/model"
 import type { HocuspocusProvider } from "@hocuspocus/provider"
 import { findDraggableNodeAtCoords } from "./node-detection.js"
+import type { DragHandleDragging } from "./drag"
 import { enableGapZones, disableGapZones } from "./gap-decorations"
 import {
 	handlePositionByNodeType,
@@ -38,8 +41,19 @@ import {
 	isNodeBeingDraggedByOther,
 } from "../collaboration"
 
-const findRelativePos = (state: EditorState, absolutePos: number) => {
-	const ystate = ySyncPluginKey.getState(state)
+// ySyncPluginKey is declared as PluginKey<any> upstream; this is the slice of
+// its state that the drag handle reads
+interface YSyncPluginState {
+	doc: Y.Doc
+	type: Y.XmlFragment
+	binding: ProsemirrorBinding
+}
+
+const findRelativePos = (
+	state: EditorState,
+	absolutePos: number,
+): Y.RelativePosition | null => {
+	const ystate = ySyncPluginKey.getState(state) as YSyncPluginState | undefined
 	if (!ystate) {
 		return null
 	}
@@ -48,11 +62,14 @@ const findRelativePos = (state: EditorState, absolutePos: number) => {
 		absolutePos,
 		ystate.type,
 		ystate.binding.mapping,
-	)
+	) as Y.RelativePosition
 }
 
-const findAbsolutePos = (state: EditorState, relativePos: any) => {
-	const ystate = ySyncPluginKey.getState(state)
+const findAbsolutePos = (
+	state: EditorState,
+	relativePos: Y.RelativePosition | null,
+) => {
+	const ystate = ySyncPluginKey.getState(state) as YSyncPluginState | undefined
 	if (!ystate) {
 		return -1
 	}
@@ -71,8 +88,8 @@ function getCSSText(element: Element) {
 	let value = ""
 	const style = getComputedStyle(element)
 
-	for (let i = 0; i < style.length; i += 1) {
-		value += `${style[i]}:${style.getPropertyValue(style[i]!)};`
+	for (const property of style) {
+		value += `${property}:${style.getPropertyValue(property)};`
 	}
 
 	return value
@@ -90,7 +107,7 @@ function cloneElement(node: HTMLElement) {
 	] as HTMLElement[]
 
 	sourceElements.forEach((sourceElement, index) => {
-		const targetEl = targetElements[index]!
+		const targetEl = targetElements[index]
 
 		// If the source is a canvas, copy its bitmap into a fresh canvas
 		if (sourceElement instanceof HTMLCanvasElement) {
@@ -111,7 +128,7 @@ function cloneElement(node: HTMLElement) {
 				newCanvas.style.cssText = getCSSText(sourceElement)
 
 				// Replace the cloned canvas node with the new canvas that contains pixels
-				if (targetEl && targetEl.parentNode) {
+				if (targetEl?.parentNode) {
 					targetEl.parentNode.replaceChild(newCanvas, targetEl)
 					// update the corresponding entry in targetElements so later code
 					// that references this array sees the replacement
@@ -240,7 +257,11 @@ function handleDragData(event: DragEvent, editor: Editor, nodePos: number) {
 
 	if (shouldDragFullSelection) {
 		// The dragged node is one of the selected nodes - use full selection
+		// shouldDragFullSelection can only be true when some() matched, so the
+		// range list is non-empty here
+		// eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- see above
 		const from = selectionRanges[0]!.$from.pos
+		// eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- see above
 		const to = selectionRanges[selectionRanges.length - 1]!.$to.pos
 		const selection = NodeRangeSelection.create(doc, from, to)
 		slice = selection.content()
@@ -259,7 +280,7 @@ function handleDragData(event: DragEvent, editor: Editor, nodePos: number) {
 	const wrapper = document.createElement("div")
 
 	ranges.forEach((range) => {
-		const element = view.nodeDOM(range.$from.pos) as HTMLElement
+		const element = view.nodeDOM(range.$from.pos) as HTMLElement | null
 		if (element) {
 			const clonedElement = cloneElement(element)
 			wrapper.append(clonedElement)
@@ -282,12 +303,13 @@ function handleDragData(event: DragEvent, editor: Editor, nodePos: number) {
 	// Store the slice, parent list type, and wrapper bounds in view.dragging
 	// The parentListType will be used when wrapping list items at the drop location
 	// The sourceWrapperBounds will be used to prevent dropping adjacent to the source wrapper
-	view.dragging = {
+	const dragging: DragHandleDragging = {
 		slice,
 		move: true,
 		parentListType,
 		sourceWrapperBounds,
-	} as any
+	}
+	view.dragging = dragging
 	view.dispatch(tr)
 
 	document.addEventListener(
@@ -323,6 +345,11 @@ export interface DragHandlePluginProps {
 	locked?: boolean
 }
 
+interface DragHandlePluginState {
+	depth: number
+	lastWasRemote: boolean
+}
+
 export const dragHandlePluginDefaultKey = new PluginKey("dragHandle")
 
 export const DragHandlePlugin = ({
@@ -340,44 +367,36 @@ export const DragHandlePlugin = ({
 	const wrapper = document.createElement("div")
 	let currentNode: Node | null = null
 	let currentNodePos = -1
-	let currentNodeRelPos: any // needed for yjs mapping
+	let currentNodeRelPos: Y.RelativePosition | null = null // needed for yjs mapping
 	let animationFrameId: number | null = null
 	let pendingMouseCoords: { x: number; y: number } | null = null
 	let draggingNodeUid: string | null = null // tracks the UID of the node currently being dragged
 
 	// resolve the plugin key once for use throughout the plugin
-	const resolvedPluginKey =
+	const resolvedPluginKey: PluginKey<DragHandlePluginState> =
 		typeof pluginKey === "string" ? new PluginKey(pluginKey) : pluginKey
 
 	function hideHandle() {
-		if (!element) {
-			return
-		}
-
 		element.style.visibility = "hidden"
 		element.style.pointerEvents = "none"
 	}
 
 	function showHandle() {
-		if (!element) {
-			return
-		}
-
 		element.style.visibility = ""
 		element.style.pointerEvents = "auto"
 	}
 
 	function repositionDragHandle(dom: Element, currentNodePos: number) {
-		const virtualElement = getReferencedVirtualElement?.() || {
+		const virtualElement = getReferencedVirtualElement?.() ?? {
 			getBoundingClientRect: () => dom.getBoundingClientRect(),
 		}
 		const config = handlePositionByNodeType(editor, currentNodePos)
 
-		computePosition(virtualElement, element, config).then((val) => {
+		void computePosition(virtualElement, element, config).then((val) => {
 			Object.assign(element.style, {
 				position: val.strategy,
-				left: `${val.x + (config?.xOffset || 0)}px`,
-				top: `${val.y + (config?.yOffset || 0)}px`,
+				left: `${val.x + config.xOffset}px`,
+				top: `${val.y + config.yOffset}px`,
 			})
 		})
 	}
@@ -390,7 +409,7 @@ export const DragHandlePlugin = ({
 		}
 
 		// Check if another user is dragging the same node (by UID)
-		const nodeUid = draggedNode.attrs.uid
+		const nodeUid = draggedNode.attrs.uid as string | null | undefined
 		if (nodeUid && isNodeBeingDraggedByOther(provider, nodeUid)) {
 			// Another user is dragging this node - prevent the drag
 			e.preventDefault()
@@ -410,17 +429,13 @@ export const DragHandlePlugin = ({
 			setDraggingNodeInAwareness(provider, nodeUid)
 		}
 
-		if (draggedNode) {
-			enableGapZones(editor, draggedNode, currentNodePos)
-		}
+		enableGapZones(editor, draggedNode, currentNodePos)
 
 		// disable pointer events on the handle to avoid flickering during drag;
 		// we need to do this after the drag event has started otherwise the
 		// drag might not start
 		setTimeout(() => {
-			if (element) {
-				element.style.pointerEvents = "none"
-			}
+			element.style.pointerEvents = "none"
 		}, 0)
 	}
 
@@ -463,44 +478,34 @@ export const DragHandlePlugin = ({
 		disableGapZones()
 		clearDragAwareness()
 
-		if (element) {
-			element.style.pointerEvents = "auto"
-		}
+		element.style.pointerEvents = "auto"
 
 		// redetect which node is under the cursor after the drop completes
 		setTimeout(() => {
-			if (!editor.view || !element) {
+			const result = findDraggableNodeAtCoords(editor, e.clientX, e.clientY)
+			if (!result) {
+				hideHandle()
+
+				currentNode = null
+				currentNodePos = -1
+
+				onNodeChange?.({ editor, node: null, pos: -1, depth: 0 })
+
 				return
 			}
 
-			if (e.clientX != null && e.clientY != null) {
-				const result = findDraggableNodeAtCoords(editor, e.clientX, e.clientY)
-				if (!result) {
-					hideHandle()
+			currentNode = result.node
+			currentNodePos = result.pos
+			currentNodeRelPos = findRelativePos(editor.view.state, currentNodePos)
 
-					currentNode = null
-					currentNodePos = -1
-
-					onNodeChange?.({ editor, node: null, pos: -1, depth: 0 })
-
-					return
-				}
-
-				currentNode = result.node
-				currentNodePos = result.pos
-				currentNodeRelPos = findRelativePos(editor.view.state, currentNodePos)
-
-				onNodeChange?.({
-					editor,
-					node: currentNode,
-					pos: currentNodePos,
-					depth: result.depth,
-				})
-				repositionDragHandle(result.dom, currentNodePos)
-				showHandle()
-			} else {
-				hideHandle()
-			}
+			onNodeChange?.({
+				editor,
+				node: currentNode,
+				pos: currentNodePos,
+				depth: result.depth,
+			})
+			repositionDragHandle(result.dom, currentNodePos)
+			showHandle()
 		}, 10)
 	}
 
@@ -521,7 +526,7 @@ export const DragHandlePlugin = ({
 				pendingMouseCoords = null
 			}
 		},
-		plugin: new Plugin({
+		plugin: new Plugin<DragHandlePluginState>({
 			key: resolvedPluginKey,
 
 			state: {
@@ -530,12 +535,14 @@ export const DragHandlePlugin = ({
 				},
 				apply(
 					tr: Transaction,
-					value: any,
+					value: DragHandlePluginState,
 					_oldState: EditorState,
 					state: EditorState,
 				) {
-					const isLocked = tr.getMeta("lockDragHandle")
-					const hideDragHandle = tr.getMeta("hideDragHandle")
+					const isLocked = tr.getMeta("lockDragHandle") as boolean | undefined
+					const hideDragHandle = tr.getMeta("hideDragHandle") as
+						| boolean
+						| undefined
 
 					// track whether this transaction is a remote change for the view update
 					const isRemote = tr.docChanged && isChangeOrigin(tr)
@@ -560,7 +567,7 @@ export const DragHandlePlugin = ({
 						}
 					}
 
-					if (tr.docChanged && currentNodePos !== -1 && element) {
+					if (tr.docChanged && currentNodePos !== -1) {
 						if (isChangeOrigin(tr)) {
 							// For remote Y.js changes, use relative positions to track the node.
 							// Don't use ProseMirror's mapping as it may incorrectly report
@@ -632,10 +639,6 @@ export const DragHandlePlugin = ({
 
 				return {
 					update(_, oldState) {
-						if (!element) {
-							return
-						}
-
 						element.draggable = editor.isEditable
 
 						if (locked) {
@@ -677,16 +680,14 @@ export const DragHandlePlugin = ({
 							pendingMouseCoords = null
 						}
 
-						if (element) {
-							removeNode(wrapper)
-						}
+						removeNode(wrapper)
 					},
 				}
 			},
 			props: {
 				handleDOMEvents: {
 					keydown(view) {
-						if (!element || locked) {
+						if (locked) {
 							return false
 						}
 
@@ -718,7 +719,7 @@ export const DragHandlePlugin = ({
 						return false
 					},
 					mousemove(view, e) {
-						if (!element || locked) {
+						if (locked) {
 							return false
 						}
 

@@ -58,13 +58,19 @@ const processedThresholds = computed(() => {
 		return []
 	}
 
-	return thresholds
-		.filter((v) => v.value !== undefined && v.color !== undefined) // labels can be optional
-		.map((t) => ({
-			value: t.value!,
-			label: t.label,
-			color: t.color!,
-		}))
+	return (
+		thresholds
+			// labels can be optional
+			.filter(
+				(v): v is { value: number; label?: string; color: string } =>
+					v.value !== undefined && v.color !== undefined,
+			)
+			.map((t) => ({
+				value: t.value,
+				label: t.label,
+				color: t.color,
+			}))
+	)
 })
 const fetchMetricData = useMultipleGenericQueries(
 	() => props.config.dataSourceId,
@@ -121,16 +127,18 @@ const data = computed<{
 		| MultipleGaugeChartData
 		| null
 }>(() => {
-	const queryErrIndex = fetchMetricData.state.value.data?.findIndex(
+	const results = fetchMetricData.state.value.data ?? []
+	const queryErrIndex = results.findIndex(
 		(d) => d.status === GenericQueryResultStatus.QueryError,
 	)
-	if (queryErrIndex !== undefined && queryErrIndex !== -1) {
-		const queryErr = fetchMetricData.state.value.data![queryErrIndex]!
+	const queryErr = results[queryErrIndex]
+
+	if (queryErr) {
 		return {
 			status: GenericQueryResultStatus.QueryError,
 			queryErrorMessage: queryErr.queryErrorMessage,
 			queryIndex: queryErrIndex,
-			multipleQueries: fetchMetricData.state.value.data!.length > 1,
+			multipleQueries: results.length > 1,
 			data: null,
 		}
 	}
@@ -165,8 +173,8 @@ const data = computed<{
 })
 
 useIntervalFn(
-	async () => {
-		await refreshData()
+	() => {
+		void refreshData()
 	},
 	() => refreshIntervalToMs(props.config.refreshInterval || RefreshInterval.M5),
 	{

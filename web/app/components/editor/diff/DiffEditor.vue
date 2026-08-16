@@ -36,6 +36,7 @@ const { editor, positionMap, destroy, suppressNextRecompute } = useDiffEditor(
 			nodeCommentState.value = v
 		},
 		onNodeCommentClick: (id: string) => {
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-call -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 			commentRendererElem.value?.selectComment({
 				textComment: false,
 				id: id,

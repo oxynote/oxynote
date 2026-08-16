@@ -1,6 +1,13 @@
 import { Extension } from "@tiptap/core"
 import { type EditorState, Plugin, Selection } from "prosemirror-state"
-import { Fragment, type Node, type Schema, type Slice } from "prosemirror-model"
+import {
+	Fragment,
+	type Node,
+	type ResolvedPos,
+	type Schema,
+	type Slice,
+} from "prosemirror-model"
+import type { EditorView } from "@tiptap/pm/view"
 import { isDraggableNodeType } from "./node-detection"
 import {
 	getGapDropPosition,
@@ -20,7 +27,20 @@ import {
 import { deleteEmptyMetricGrids, MetricGrid } from "../blocks/metrics"
 import { METRIC_BLOCK_NAME } from "../blocks/node-names"
 
-type View = any
+// extra drag metadata that handleDragData in handle-plugin.ts stores on
+// view.dragging alongside ProseMirror's own slice/move fields. The extra
+// fields are optional because external drags produce plain dragging objects
+// without them.
+export interface DragHandleDragging {
+	slice: Slice
+	move: boolean
+	parentListType?: string | null
+	sourceWrapperBounds?: { start: number; end: number } | null
+}
+
+function getDragging(view: EditorView): DragHandleDragging | null {
+	return view.dragging
+}
 
 /**
  * Normalize a drop position at list boundaries.
@@ -78,7 +98,7 @@ function normalizeListBoundaryPosition(
 /**
  * Check if we're dragging a MetricBlock based on the current slice.
  */
-function isDraggingMetricBlock(view: View): boolean {
+function isDraggingMetricBlock(view: EditorView): boolean {
 	const slice = getCurrentSlice(view)
 	if (!slice || slice.content.childCount === 0) {
 		return false
@@ -92,7 +112,7 @@ function isDraggingMetricBlock(view: View): boolean {
  * Returns null if cursor is not within any MetricGrid bounds.
  */
 function findMetricGridAtCoords(
-	view: View,
+	view: EditorView,
 	clientX: number,
 	clientY: number,
 	options?: { includeMargins?: boolean },
@@ -154,7 +174,7 @@ function findMetricGridAtCoords(
  * @param gridElement - The DOM element of the MetricGrid
  */
 function findMetricGridDropPosition(
-	view: View,
+	view: EditorView,
 	clientX: number,
 	clientY: number,
 	gridPos: number,
@@ -205,8 +225,9 @@ function findMetricGridDropPosition(
 		// Find existing row that this block belongs to
 		let foundRow = false
 		for (const row of rows) {
-			if (row.length > 0) {
-				const rowCenterY = row[0]!.rect.top + row[0]!.rect.height / 2
+			const rowStart = row[0]
+			if (rowStart) {
+				const rowCenterY = rowStart.rect.top + rowStart.rect.height / 2
 				if (Math.abs(blockCenterY - rowCenterY) < ROW_TOLERANCE) {
 					row.push(block)
 					foundRow = true
@@ -262,8 +283,14 @@ function findMetricGridDropPosition(
 	// Sort row blocks by X position (left to right)
 	targetRow.sort((a, b) => a.rect.left - b.rect.left)
 
-	const firstBlock = targetRow[0]!
-	const lastBlock = targetRow[targetRow.length - 1]!
+	const firstBlock = targetRow[0]
+	const lastBlock = targetRow[targetRow.length - 1]
+
+	// targetRow is never empty here (allBlocks is the non-empty fallback), so
+	// this only satisfies noUncheckedIndexedAccess
+	if (!firstBlock || !lastBlock) {
+		return null
+	}
 
 	// Check if cursor is in the left margin (before the first block of this row)
 	if (clientX < firstBlock.rect.left) {
@@ -276,8 +303,7 @@ function findMetricGridDropPosition(
 	}
 
 	// Find which block the cursor is over or between using X-axis midpoint
-	for (let i = 0; i < targetRow.length; i++) {
-		const block = targetRow[i]!
+	for (const [i, block] of targetRow.entries()) {
 		const midpointX = block.rect.left + block.rect.width / 2
 
 		// Check if cursor is over this block
@@ -291,12 +317,14 @@ function findMetricGridDropPosition(
 		}
 
 		// Check if cursor is in the gap between this block and the next
-		if (i < targetRow.length - 1) {
-			const nextBlock = targetRow[i + 1]!
-			if (clientX > block.rect.right && clientX < nextBlock.rect.left) {
-				// In the gap - return position after this block (before next)
-				return block.pos + block.node.nodeSize
-			}
+		const nextBlock = targetRow[i + 1]
+		if (
+			nextBlock &&
+			clientX > block.rect.right &&
+			clientX < nextBlock.rect.left
+		) {
+			// In the gap - return position after this block (before next)
+			return block.pos + block.node.nodeSize
 		}
 	}
 
@@ -307,7 +335,7 @@ function findMetricGridDropPosition(
 // Find the appropriate insert position respecting nesting ("snaps" to either
 // before or after the nearest node at some depth).
 function findDropPosition(
-	view: View,
+	view: EditorView,
 	clientX: number,
 	clientY: number,
 ): number | null {
@@ -790,7 +818,7 @@ let lastParentListType: string | null = null
 let lastSourceWrapperBounds: { start: number; end: number } | null = null
 let dropHandled = false
 
-function ensureCursorElemExists(view: View) {
+function ensureCursorElemExists(view: EditorView) {
 	if (!cursorEl) {
 		cursorEl = document.createElement("div")
 		cursorEl.className = "pm-root-dropcursor"
@@ -805,7 +833,7 @@ function ensureCursorElemExists(view: View) {
 			zIndex: "50",
 		})
 
-		const mount = (view.dom.parentNode as HTMLElement) ?? document.body
+		const mount = (view.dom.parentNode as HTMLElement | null) ?? document.body
 		mount.appendChild(cursorEl)
 	}
 }
@@ -819,7 +847,7 @@ function hideCursor() {
 // Shared drop execution logic used by both ProseMirror and global handlers.
 // Returns true if the drop was executed successfully.
 function executeDrop(
-	view: View,
+	view: EditorView,
 	insertPos: number,
 	slice: Slice,
 	moved: boolean,
@@ -910,7 +938,7 @@ function executeDrop(
 // Validates the drop position and shows/hides the cursor accordingly.
 // Returns true if cursor was shown at a valid position.
 function updateDragCursor(
-	view: View,
+	view: EditorView,
 	x: number,
 	y: number,
 	slice: Slice,
@@ -957,7 +985,7 @@ function updateDragCursor(
 	return true
 }
 
-function showCursorAt(view: View, pos: number, clientY?: number) {
+function showCursorAt(view: EditorView, pos: number, clientY?: number) {
 	ensureCursorElemExists(view)
 
 	const editorRect = view.dom.getBoundingClientRect()
@@ -1071,6 +1099,7 @@ function showCursorAt(view: View, pos: number, clientY?: number) {
 	width = width - leftInset - rightInset
 
 	// Reset to horizontal cursor style
+	// eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- showCursorAt calls ensureCursorElemExists before reaching this point
 	Object.assign(cursorEl!.style, {
 		top: `${top}px`,
 		left: `${left - editorRect.left}px`,
@@ -1092,9 +1121,9 @@ function showCursorAt(view: View, pos: number, clientY?: number) {
  * @param clientY - Mouse Y position, used to determine which row to show cursor on at boundaries
  */
 function showVerticalCursorAt(
-	view: View,
+	view: EditorView,
 	_pos: number,
-	$pos: any,
+	$pos: ResolvedPos,
 	editorRect: DOMRect,
 	clientY?: number,
 ) {
@@ -1234,9 +1263,7 @@ function showVerticalCursorAt(
 			break
 		}
 		// Fallback: use any gap we find
-		if (!targetGapElement) {
-			targetGapElement = gapEl
-		}
+		targetGapElement ??= gapEl
 	}
 
 	if (targetGapElement) {
@@ -1286,6 +1313,7 @@ function showVerticalCursorAt(
 	}
 
 	// Apply vertical cursor style
+	// eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- showCursorAt calls ensureCursorElemExists before delegating here
 	Object.assign(cursorEl!.style, {
 		top: `${cursorTop - editorRect.top}px`,
 		left: `${cursorLeft - editorRect.left}px`,
@@ -1296,7 +1324,7 @@ function showVerticalCursorAt(
 }
 
 // Helper to get the current drag slice from either lastSlice or view.dragging
-function getCurrentSlice(view: View): Slice | null {
+function getCurrentSlice(view: EditorView): Slice | null {
 	// First check view.dragging (set by drag handle)
 	if (view.dragging?.slice) {
 		return view.dragging.slice
@@ -1307,11 +1335,11 @@ function getCurrentSlice(view: View): Slice | null {
 
 // Helper to get the parent list type from view.dragging (if available)
 // Also updates lastParentListType for use during drop when view.dragging may be cleared
-function getParentListType(view: View): string | null {
-	const parentListType = view.dragging?.parentListType ?? null
+function getParentListType(view: EditorView): string | null {
+	const parentListType = getDragging(view)?.parentListType ?? null
 	// Always update lastParentListType when we have drag info from view.dragging
 	// This ensures it's set to null when dragging non-list items
-	if (view.dragging !== null && view.dragging !== undefined) {
+	if (view.dragging !== null) {
 		lastParentListType = parentListType
 	}
 	return lastParentListType
@@ -1320,10 +1348,10 @@ function getParentListType(view: View): string | null {
 // Helper to get the source wrapper bounds from view.dragging (if available)
 // Also updates lastSourceWrapperBounds for use during drop when view.dragging may be cleared
 function getSourceWrapperBounds(
-	view: View,
+	view: EditorView,
 ): { start: number; end: number } | null {
-	const sourceWrapperBounds = view.dragging?.sourceWrapperBounds ?? null
-	if (view.dragging !== null && view.dragging !== undefined) {
+	const sourceWrapperBounds = getDragging(view)?.sourceWrapperBounds ?? null
+	if (view.dragging !== null) {
 		lastSourceWrapperBounds = sourceWrapperBounds
 	}
 	return lastSourceWrapperBounds
@@ -1347,10 +1375,6 @@ export const Drag = Extension.create<DragOptions>({
 				props: {
 					handleDOMEvents: {
 						dragover(view, e) {
-							if (e.clientX == null || e.clientY == null) {
-								return false
-							}
-
 							// Reset dropHandled at drag start to allow the next drop
 							if (!lastMouse) {
 								dropHandled = false
@@ -1394,7 +1418,9 @@ export const Drag = Extension.create<DragOptions>({
 						},
 						dragleave(view, e) {
 							const editorElement = view.dom
-							const relatedTarget = e.relatedTarget as any | null
+							// not the imported prosemirror Node: this file shadows the DOM
+							// one, and contains() needs the DOM node
+							const relatedTarget = e.relatedTarget as HTMLElement | null
 
 							if (!relatedTarget || !editorElement.contains(relatedTarget)) {
 								hideCursor()
@@ -1407,13 +1433,7 @@ export const Drag = Extension.create<DragOptions>({
 					handleDrop(view, e, slice, moved) {
 						let insertPos = lastInsertPos
 
-						if (insertPos == null) {
-							if (e.clientX == null || e.clientY == null) {
-								return false
-							}
-
-							insertPos = findDropPosition(view, e.clientX, e.clientY)
-						}
+						insertPos ??= findDropPosition(view, e.clientX, e.clientY)
 
 						// Use the slice from view.dragging if available (internal drag)
 						// otherwise use the slice passed to handleDrop (external drop)
@@ -1500,10 +1520,6 @@ export const Drag = Extension.create<DragOptions>({
 					// For DROP events, both handlers use the shared executeDrop function which has
 					// a guard to prevent double execution.
 					const handleGlobalDragOver = (e: DragEvent) => {
-						if (e.clientX == null || e.clientY == null) {
-							return
-						}
-
 						// Reset dropHandled at drag start to allow the next drop
 						// (mirrors the logic in ProseMirror's dragover handler)
 						if (!lastMouse) {
@@ -1644,7 +1660,7 @@ export const Drag = Extension.create<DragOptions>({
 								}
 
 								lastInsertPos = insertPos
-								showCursorAt(view, insertPos, lastMouse?.y)
+								showCursorAt(view, insertPos, lastMouse.y)
 							}
 						},
 						destroy() {
@@ -1652,7 +1668,7 @@ export const Drag = Extension.create<DragOptions>({
 							document.removeEventListener("dragover", handleGlobalDragOver)
 							document.removeEventListener("drop", handleGlobalDrop)
 
-							if (cursorEl && cursorEl.parentNode) {
+							if (cursorEl?.parentNode) {
 								cursorEl.parentNode.removeChild(cursorEl)
 							}
 

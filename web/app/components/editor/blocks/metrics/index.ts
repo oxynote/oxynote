@@ -5,24 +5,16 @@ import Paragraph from "@tiptap/extension-paragraph"
 import MainBlock from "./MainBlock.vue"
 import GridView from "./GridView.vue"
 import type { EditorState, Transaction } from "@tiptap/pm/state"
-import { Plugin, PluginKey } from "@tiptap/pm/state"
 import { defaultMetricConfig, MetricBlockWidth } from "./utils"
 import { METRIC_BLOCK_NAME, METRIC_GRID_NAME } from "../node-names"
 
 /**
- * Metadata key used to signal that empty MetricGrid cleanup has already been done
- * within the current transaction. This prevents the metricGridAutoManager plugin
- * from running duplicate cleanup in appendTransaction.
- */
-export const METRIC_GRID_CLEANUP_DONE = "metricGridCleanupDone"
-
-/**
  * Deletes all empty MetricGrid nodes from the document within the given transaction.
- * Also sets metadata to prevent duplicate cleanup by metricGridAutoManager.
  *
- * Use this when performing operations that may leave MetricGrids empty (e.g., drag-drop,
- * delete) to ensure cleanup happens in the same transaction and doesn't cause position
- * corruption from appendTransaction running in a separate transaction.
+ * This is the only cleanup mechanism for empty grids — there is no plugin
+ * doing it automatically. Every operation that may leave a MetricGrid empty
+ * (e.g., drag-drop, delete) must call this within the same transaction, so
+ * the deletions cannot shift positions of a follow-up transaction.
  *
  * @param tr - The transaction to apply deletions to
  * @param schema - The document schema
@@ -36,9 +28,6 @@ export function deleteEmptyMetricGrids(
 	if (!metricGridType) {
 		return tr
 	}
-
-	// Mark that we're handling cleanup explicitly
-	tr.setMeta(METRIC_GRID_CLEANUP_DONE, true)
 
 	// Collect empty grids to delete (positions in descending order)
 	const emptyGrids: { pos: number; nodeSize: number }[] = []
@@ -71,7 +60,7 @@ declare module "@tiptap/core" {
 export const MetricGrid = Node.create({
 	name: METRIC_GRID_NAME,
 	group: "block",
-	content: `${METRIC_BLOCK_NAME}*`, // allow zero blocks; empty grids are auto-deleted by metricGridAutoManager
+	content: `${METRIC_BLOCK_NAME}*`, // allow zero blocks; emptying operations delete the grid via deleteEmptyMetricGrids
 	isolating: true,
 	draggable: false,
 	selectable: false,
@@ -88,64 +77,8 @@ export const MetricGrid = Node.create({
 		]
 	},
 	addNodeView() {
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-argument -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 		return VueNodeViewRenderer(GridView)
-	},
-	addProseMirrorPlugins() {
-		const metricGridName = this.name
-
-		return [
-			new Plugin({
-				key: new PluginKey("metricGridAutoManager"),
-				appendTransaction(transactions, _oldState, newState) {
-					return null
-					// Only process if document changed
-					const docChanged = transactions.some((tr) => tr.docChanged)
-					if (!docChanged) {
-						return null
-					}
-
-					// Skip if cleanup was already done explicitly in the same transaction
-					// (e.g., during drag-drop or delete operations)
-					const alreadyCleaned = transactions.some((tr) =>
-						tr.getMeta(METRIC_GRID_CLEANUP_DONE),
-					)
-					if (alreadyCleaned) {
-						return null
-					}
-
-					const { schema, doc } = newState
-					const metricGridType = schema.nodes[metricGridName]
-
-					if (!metricGridType) {
-						return null
-					}
-
-					const tr = newState.tr
-					let modified = false
-
-					// Collect empty grids to delete (positions in descending order)
-					const emptyGrids: { pos: number; nodeSize: number }[] = []
-
-					doc.forEach((node, pos) => {
-						// Check for empty MetricGrids (can happen when all blocks are dragged out)
-						if (node.type === metricGridType && node.childCount === 0) {
-							emptyGrids.push({ pos, nodeSize: node.nodeSize })
-						}
-					})
-
-					// Sort by position descending to preserve positions during deletions
-					emptyGrids.sort((a, b) => b.pos - a.pos)
-
-					// Delete empty grids
-					for (const { pos, nodeSize } of emptyGrids) {
-						tr.delete(pos, pos + nodeSize)
-						modified = true
-					}
-
-					return modified ? tr : null
-				},
-			}),
-		]
 	},
 })
 
@@ -178,15 +111,15 @@ export const MetricBlock = Node.create({
 			decimals: { default: defaults.decimals },
 			unitType: { default: defaults.unit.type },
 			unitCustom: { default: defaults.unit.custom },
-			axisBoundsMin: { default: defaults.axisBounds?.min ?? null },
-			axisBoundsMax: { default: defaults.axisBounds?.max ?? null },
+			axisBoundsMin: { default: defaults.axisBounds.min ?? null },
+			axisBoundsMax: { default: defaults.axisBounds.max ?? null },
 			width: {
 				default: MetricBlockWidth.Standard,
 				parseHTML: (element) =>
-					(element.getAttribute("data-width") as MetricBlockWidth) ||
+					(element.getAttribute("data-width") as MetricBlockWidth | null) ||
 					MetricBlockWidth.Standard,
 				renderHTML: (attributes) => ({
-					"data-width": attributes.width,
+					"data-width": attributes.width as MetricBlockWidth,
 				}),
 			},
 		}
@@ -204,6 +137,7 @@ export const MetricBlock = Node.create({
 		]
 	},
 	addNodeView() {
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-argument -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 		return VueNodeViewRenderer(MainBlock)
 	},
 	addCommands() {
@@ -261,12 +195,7 @@ export function setUpMetricBlock(
 	let nodeToInsert: PMNode
 	if (isAtRootLevel) {
 		// Wrap MetricBlock in MetricGrid at root level
-		const metricGrid = metricGridType.create(null, metricBlock)
-		if (!metricGrid) {
-			return false
-		}
-
-		nodeToInsert = metricGrid
+		nodeToInsert = metricGridType.create(null, metricBlock)
 	} else {
 		// Insert MetricBlock directly when nested (e.g., inside
 		// SplitDocumentation right side etc.)

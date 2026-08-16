@@ -47,7 +47,7 @@ const form = useForm({
 })
 const { uploadUserImage } = useUserAPI()
 const loading = ref<"avatar" | null>(null)
-const avatarInput = useTemplateRef("avatarInput")
+const avatarInput = useTemplateRef<HTMLInputElement>("avatarInput")
 const slackNotificationsEnabled = ref(false)
 const slackNotificationsSwitchActive = refAutoReset(true, 500) // false - disabled (we use this to have a smoother loading state/animation)
 
@@ -66,7 +66,7 @@ const onSubmit = form.handleSubmit(async (values) => {
 		return
 	}
 
-	const { error } = await updateUser(data)
+	const { error } = (await updateUser(data)) as AuthResponse
 	if (error) {
 		loading.value = null
 

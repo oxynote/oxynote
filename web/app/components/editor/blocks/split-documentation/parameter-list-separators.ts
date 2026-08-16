@@ -1,8 +1,11 @@
 import { Extension } from "@tiptap/core"
+import type { Node as PMNode, Schema } from "prosemirror-model"
 import { Plugin, PluginKey } from "prosemirror-state"
 import { Decoration, DecorationSet } from "prosemirror-view"
 
-const parameterListSeparatorsKey = new PluginKey("parameterListSeparators")
+const parameterListSeparatorsKey = new PluginKey<DecorationSet | null>(
+	"parameterListSeparators",
+)
 
 export const ParameterListSeparators = Extension.create({
 	name: "splitDocumentationParameterListSeparators",
@@ -39,8 +42,8 @@ export const ParameterListSeparators = Extension.create({
 let separatorWidgetCounter = 0
 
 function createSeparatorDecorations(
-	doc: any,
-	schema: any,
+	doc: PMNode,
+	schema: Schema,
 ): DecorationSet | null {
 	const decorations: Decoration[] = []
 
@@ -50,7 +53,7 @@ function createSeparatorDecorations(
 		return null
 	}
 
-	doc.descendants((node: any, pos: number) => {
+	doc.descendants((node, pos) => {
 		if (node.type !== parameterListType) {
 			return
 		}
@@ -58,7 +61,7 @@ function createSeparatorDecorations(
 		let isFirstChild = true
 		let childIndex = 0
 
-		node.forEach((_child: any, offset: number) => {
+		node.forEach((_child, offset) => {
 			if (!isFirstChild) {
 				const widgetPos = pos + offset + 1
 

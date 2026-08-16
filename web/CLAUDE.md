@@ -106,11 +106,41 @@ Form validation (vee-validate) uses its own internal messages — see [README.md
 
 ## Formatting & TS
 
-Prettier uses **tabs**, no semicolons, trailing commas — see [prettier.config.js](prettier.config.js). ESLint extends Nuxt's flat config; `@typescript-eslint/no-explicit-any` is **off**.
+Prettier uses **tabs**, no semicolons, trailing commas — see [prettier.config.js](prettier.config.js).
 
-TypeScript strictness (set in [nuxt.config.ts:96-112](nuxt.config.ts#L96-L112)): `noUnusedLocals`, `noUnusedParameters`, `noUncheckedIndexedAccess`, `noImplicitOverride`, `verbatimModuleSyntax` all on; `noImplicitAny` off. Path aliases `@/*` and `~/*` both point to `app/*`.
+ESLint ([eslint.config.mjs](eslint.config.mjs)) runs **type-aware**: `eslint.config.typescript.tsconfigPath` in `nuxt.config.ts` switches the generated Nuxt preset to the `*-type-checked` rule sets, on top of which the config adds `eslint:recommended` (the Nuxt preset ships no base JS rules), typescript-eslint **strict + stylistic**, and `@intlify/eslint-plugin-vue-i18n`. Consequences worth knowing:
+
+- Linting builds a full TS program, so `check-lint` takes minutes, not seconds.
+- ESLint's TS program cannot resolve `.vue` imports (only `vue-tsc` can), so calls through a component ref are reported as unsafe. Those carry an inline disable with the reason `eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this`.
+- Every `eslint-disable` **must** state a reason after `--`. It is for false positives only, never to avoid a fix. Stale disables are errors (`reportUnusedDisableDirectives`), and `check-lint` runs with `--max-warnings 0`, so warnings fail the gate too.
+- `@typescript-eslint/no-explicit-any` is off; `prefer-function-type` is off (keeps the `defineEmits<{ (e: ...): void }>()` style).
+- The vendored `packages/lezer-promql` fork is excluded so upstream re-syncs cannot break the gate.
+
+TypeScript strictness (set in [nuxt.config.ts](nuxt.config.ts)): `noUnusedLocals`, `noUnusedParameters`, `noUncheckedIndexedAccess`, `noImplicitOverride`, `verbatimModuleSyntax`, and `noImplicitAny` all on; `allowUnreachableCode: false` (mirrored in [electron/tsconfig.json](electron/tsconfig.json)). Path aliases `@/*` and `~/*` both point to `app/*`.
+
+Note `noUncheckedIndexedAccess` makes every index access `T | undefined`, and TypeScript does not track assignments made inside a callback — so a variable filled in by a `forEach`/`descendants` callback stays narrowed to its initializer afterwards. Prefer a sentinel value or a restructure over a non-null assertion when that happens.
 
 ## Code style
+
+### Assignments
+
+**One assignment per statement.** Never chain them, and never assign from inside
+an expression — enforced by `no-multi-assign`.
+
+```ts
+// no: the line both mutates the map and binds a local
+const group = (groups[key] ??= { items: [] })
+
+// yes
+let group = groups[key]
+if (!group) {
+	group = { items: [] }
+	groups[key] = group
+}
+```
+
+`??=` itself is fine and used across the codebase; keep it as its own
+statement (`elem.children ??= []`).
 
 ### Vue `<script setup>` ordering
 

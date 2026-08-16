@@ -8,7 +8,7 @@ import {
 import CodeMirror from "vue-codemirror6"
 import { githubLight, githubDark } from "@uiw/codemirror-theme-github"
 import { minimalSetup } from "codemirror"
-import { keymap, tooltips } from "@codemirror/view"
+import { type EditorView, keymap, tooltips } from "@codemirror/view"
 import {
 	bracketMatching,
 	LanguageSupport,
@@ -185,9 +185,9 @@ function legendLabelCompletionSource() {
 function handleFocusChange(focused: boolean) {
 	if (focused) {
 		wasFocusedAtLeastOnce = true
-	} else if (!focused && wasFocusedAtLeastOnce) {
+	} else if (wasFocusedAtLeastOnce) {
 		try {
-			const view = legendEditorElem.value?.view
+			const view = legendEditorElem.value?.view as EditorView | undefined
 			if (view) {
 				closeCompletion(view) // close autocomplete tooltip
 				trimEditorWhitespace(view)

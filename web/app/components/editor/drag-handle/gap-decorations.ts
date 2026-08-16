@@ -1,7 +1,8 @@
-import { Extension, type Editor } from "@tiptap/core"
+import { Extension, type CommandProps, type Editor } from "@tiptap/core"
 import { Plugin, PluginKey, type EditorState } from "prosemirror-state"
 import { Decoration, DecorationSet } from "prosemirror-view"
 import type { Node, NodeType } from "prosemirror-model"
+import type { Mapping } from "prosemirror-transform"
 import {
 	DEBUG_SHOW_GAPS,
 	DRAG_CONTAINER_NODE_TYPES,
@@ -660,7 +661,7 @@ function collectGapsForContainer(
 	node.forEach((child) => {
 		const childPos = contentStart + offset
 		// Get stable child ID for key generation
-		const childUid = child.attrs?.uid as string | undefined
+		const childUid = child.attrs.uid as string | undefined
 		const childId = childUid ?? `idx-${offset}`
 		const config = gapZoneConfigByType(
 			child.type.name,
@@ -723,6 +724,7 @@ function collectGapsForContainer(
 	})
 
 	// Add gap at the end of this container (after last child)
+	// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- both are assigned inside the forEach callback above, which control-flow analysis cannot see
 	if (node.childCount > 0 && lastHeight !== null && lastConfig !== null) {
 		const lastChild = node.child(node.childCount - 1)
 		gaps.push({
@@ -738,6 +740,7 @@ function collectGapsForContainer(
 			width: (lastConfig as GapZoneConfig).width,
 			xOffset: (lastConfig as GapZoneConfig).xOffsetLast ?? 0,
 			// Key identifies the gap by being after the last child
+			// eslint-disable-next-line @typescript-eslint/restrict-template-expressions -- lastChildId is assigned inside a forEach callback, which control-flow analysis does not track
 			key: `${containerKey}:after:${lastChildId}`,
 		})
 	}
@@ -802,7 +805,7 @@ function collectAllGaps(doc: Node): GapInfo[] {
 			// contentStart is pos + 1 (after the node's opening tag)
 			// Pass the parent node type for context-aware gap config (e.g., MetricGrid)
 			// Use node's uid attribute if available, otherwise fall back to position-based key
-			const nodeId = node.attrs?.uid as string | undefined
+			const nodeId = node.attrs.uid as string | undefined
 			collectGapsForContainer(
 				node,
 				pos + 1,
@@ -954,7 +957,7 @@ function createGapDecorations(doc: Node): {
 function updateGapDecorations(
 	oldDecorations: DecorationSet,
 	doc: Node,
-	mapping: any,
+	mapping: Mapping,
 ): { decorations: DecorationSet; gapsByKey: Map<string, number> } {
 	const newGaps = collectAllGaps(doc)
 	const newGapsByKey = new Map<string, number>()
@@ -977,8 +980,8 @@ function updateGapDecorations(
 	const allFoundDecos: Decoration[] = []
 	decorations.find(0, doc.content.size + 1).forEach((deco) => {
 		allFoundDecos.push(deco)
-		const spec = (deco as any).spec
-		const key = spec?.key as string | undefined
+		const spec = deco.spec as { key?: string } | undefined
+		const key = spec?.key
 		if (key) {
 			if (DEBUG_SHOW_GAPS) {
 				if (existingByKey.has(key)) {
@@ -1226,7 +1229,7 @@ export function disableGapZones() {
 }
 
 export function refreshGapDecorationsInBackground(editor: Ref<Editor | null>) {
-	until(editor)
+	void until(editor)
 		.not.toBeNull()
 		.then(() => {
 			editor.value?.commands.refreshGapDecorations()
@@ -1243,7 +1246,7 @@ export const GapDecorations = Extension.create({
 		return {
 			refreshGapDecorations:
 				() =>
-				({ tr, dispatch }: { tr: any; dispatch: any }) => {
+				({ tr, dispatch }: CommandProps) => {
 					if (dispatch) {
 						dispatch(tr.setMeta(REFRESH_GAP_DECORATIONS_META, true))
 					}

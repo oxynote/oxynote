@@ -1,4 +1,4 @@
-import type { Ref } from "vue"
+import type { InjectionKey, Ref } from "vue"
 
 interface IconPickerContext {
 	open: Ref<boolean>
@@ -11,7 +11,7 @@ interface IconPickerContext {
 	selectIcon: (icon: string) => void
 }
 
-const ICON_PICKER_KEY = Symbol("icon-picker")
+const ICON_PICKER_KEY = Symbol("icon-picker") as InjectionKey<IconPickerContext>
 
 export default function () {
 	const existing = inject(ICON_PICKER_KEY, null)

@@ -79,7 +79,7 @@ export default function () {
 				createdAt: new Date(),
 				updatedAt: new Date(),
 			}
-			const newHooks = [newHook, ...(oldHooks || [])]
+			const newHooks = [newHook, ...(oldHooks ?? [])]
 
 			queryCache.setQueryData(key, newHooks)
 			queryCache.cancelQueries({ key })
@@ -107,7 +107,8 @@ export default function () {
 			)
 		},
 		async onSuccess(_data, { docId, req }, ctx) {
-			if (!isXid(docId) || !isXid(req.branchId) || !ctx || !ctx.key) {
+			// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- onMutate returns no context when it bails out, so key is missing at runtime
+			if (!isXid(docId) || !isXid(req.branchId) || !ctx.key) {
 				// optimisticInserts use nanoid
 				return
 			}
@@ -117,7 +118,7 @@ export default function () {
 			})
 		},
 		onError(_err, { docId, req }, ctx) {
-			if (!isXid(docId) || !isXid(req.branchId) || !ctx || !ctx.key) {
+			if (!isXid(docId) || !isXid(req.branchId) || !ctx.key) {
 				return
 			}
 
@@ -154,7 +155,7 @@ export default function () {
 			const oldHooks = clone(
 				queryCache.getQueryData<DocumentHooksResponse>(key),
 			)
-			const newHooks = clone(oldHooks) || []
+			const newHooks = clone(oldHooks) ?? []
 
 			for (const h of newHooks) {
 				if (h.id === hookId) {
@@ -195,13 +196,8 @@ export default function () {
 			)
 		},
 		async onSuccess(_data, { docId, branchId, hookId }, ctx) {
-			if (
-				!isXid(docId) ||
-				!isXid(branchId) ||
-				!isXid(hookId) ||
-				!ctx ||
-				!ctx.key
-			) {
+			// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- onMutate returns no context when it bails out, so key is missing at runtime
+			if (!isXid(docId) || !isXid(branchId) || !isXid(hookId) || !ctx.key) {
 				// optimisticInserts use nanoid
 				return
 			}
@@ -211,13 +207,7 @@ export default function () {
 			})
 		},
 		onError(_err, { docId, branchId, hookId }, ctx) {
-			if (
-				!isXid(docId) ||
-				!isXid(branchId) ||
-				!isXid(hookId) ||
-				!ctx ||
-				!ctx.key
-			) {
+			if (!isXid(docId) || !isXid(branchId) || !isXid(hookId) || !ctx.key) {
 				return
 			}
 
@@ -250,7 +240,7 @@ export default function () {
 			const oldHooks = clone(
 				queryCache.getQueryData<DocumentHooksResponse>(key),
 			)
-			const newHooks = clone(oldHooks) || []
+			const newHooks = clone(oldHooks) ?? []
 
 			const index = newHooks.findIndex((h) => h.id === hookId)
 			if (index !== -1) {
@@ -281,13 +271,8 @@ export default function () {
 			})
 		},
 		async onSuccess(_data, { docId, branchId, hookId }, ctx) {
-			if (
-				!isXid(docId) ||
-				!isXid(branchId) ||
-				!isXid(hookId) ||
-				!ctx ||
-				!ctx.key
-			) {
+			// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- onMutate returns no context when it bails out, so key is missing at runtime
+			if (!isXid(docId) || !isXid(branchId) || !isXid(hookId) || !ctx.key) {
 				// optimisticInserts use nanoid
 				return
 			}
@@ -297,13 +282,7 @@ export default function () {
 			})
 		},
 		onError(_err, { docId, branchId, hookId }, ctx) {
-			if (
-				!isXid(docId) ||
-				!isXid(branchId) ||
-				!isXid(hookId) ||
-				!ctx ||
-				!ctx.key
-			) {
+			if (!isXid(docId) || !isXid(branchId) || !isXid(hookId) || !ctx.key) {
 				return
 			}
 
@@ -336,7 +315,7 @@ export default function () {
 			const oldHooks = clone(
 				queryCache.getQueryData<DocumentHooksResponse>(key),
 			)
-			const newHooks = clone(oldHooks) || []
+			const newHooks = clone(oldHooks) ?? []
 
 			for (const h of newHooks) {
 				if (h.id === hookId) {
@@ -374,13 +353,8 @@ export default function () {
 			)
 		},
 		async onSuccess(_data, { docId, branchId, hookId }, ctx) {
-			if (
-				!isXid(docId) ||
-				!isXid(branchId) ||
-				!isXid(hookId) ||
-				!ctx ||
-				!ctx.key
-			) {
+			// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- onMutate returns no context when it bails out, so key is missing at runtime
+			if (!isXid(docId) || !isXid(branchId) || !isXid(hookId) || !ctx.key) {
 				// optimisticInserts use nanoid
 				return
 			}
@@ -390,13 +364,7 @@ export default function () {
 			})
 		},
 		onError(_err, { docId, branchId, hookId }, ctx) {
-			if (
-				!isXid(docId) ||
-				!isXid(branchId) ||
-				!isXid(hookId) ||
-				!ctx ||
-				!ctx.key
-			) {
+			if (!isXid(docId) || !isXid(branchId) || !isXid(hookId) || !ctx.key) {
 				return
 			}
 

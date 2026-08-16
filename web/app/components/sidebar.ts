@@ -16,7 +16,7 @@ export function sidebarItemPlaceholder(name: string): SidebarItem {
 }
 
 export interface SidebarItem {
-	id: string | typeof SIDEBAR_ITEM_PLACEHOLDER_ID
+	id: string
 	name: string
 	url?: string | null
 	onClick?: (() => void) | (() => Promise<void>) // URL takes precedence over onClick

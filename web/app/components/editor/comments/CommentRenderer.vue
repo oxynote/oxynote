@@ -2,7 +2,7 @@
 import { useEditor, EditorContent, posToDOMRect } from "@tiptap/vue-3"
 import type { Editor } from "@tiptap/core"
 import type { Node as PMNode } from "@tiptap/pm/model"
-import type { EditorState } from "@tiptap/pm/state"
+import type { EditorState, Transaction } from "@tiptap/pm/state"
 import { computePosition, flip, offset, shift } from "@floating-ui/dom"
 import { cn } from "@/lib/utils"
 import Comment from "./Comment.vue"
@@ -28,6 +28,7 @@ import {
 	findCommentMarkById,
 	mergedOffsetToOriginalOffset,
 	reinjectDeletedContentMarks,
+	type CommentAttrs,
 } from "./comment-mark"
 import { isChangeOrigin } from "@tiptap/extension-collaboration"
 import { compareAsc, formatDistanceToNowStrict } from "date-fns"
@@ -120,7 +121,7 @@ const wsState = useWebSocketStateStore()
 let unsubWsCommentChange: (() => void) | null | undefined = null
 
 const userData = computed(() => {
-	const id = fetchAuthSession.state.value?.data?.data?.user.id || null
+	const id = fetchAuthSession.state.value.data?.data?.user.id || null
 	return {
 		id: id,
 	}
@@ -141,7 +142,7 @@ const selectedComment = ref<{
 	textComment?: {
 		from: number
 		to: number
-		attrs: any
+		attrs: CommentAttrs
 	}
 	nodeComment?: NodeCommentMatch
 } | null>(null)
@@ -159,7 +160,7 @@ const loadedComment = computed(() => {
 		return null
 	}
 
-	const comments = fetchComments.state.value?.data
+	const comments = fetchComments.state.value.data
 	if (!comments) {
 		return null
 	}
@@ -179,7 +180,7 @@ const loadedCommentReplies = computed(() => {
 	const exist = !!loadedComment.value.replies?.length
 
 	return {
-		data: (loadedComment.value.replies || []).reduce<
+		data: (loadedComment.value.replies ?? []).reduce<
 			Record<string, DocumentCommentReply>
 		>((acc, reply) => {
 			acc[reply.id] = reply
@@ -207,8 +208,8 @@ const loadedCommentThread = computed<
 		return []
 	}
 
-	const orgMembers = fetchOrganization.state.value?.data?.data?.members
-	const user = fetchAuthSession.state.value?.data?.data?.user
+	const orgMembers = fetchOrganization.state.value.data?.data?.members
+	const user = fetchAuthSession.state.value.data?.data?.user
 
 	if (!orgMembers?.length || !user) {
 		return []
@@ -236,7 +237,7 @@ const loadedCommentThread = computed<
 		},
 	]
 
-	Object.values(loadedCommentReplies.value?.data || {})
+	Object.values(loadedCommentReplies.value?.data ?? {})
 		.sort((a, b) => {
 			return compareAsc(new Date(a.createdAt), new Date(b.createdAt))
 		})
@@ -294,7 +295,7 @@ watchDeep(
 	() => editorStore.mermaidBlockShowCode,
 	async () => {
 		await nextTick()
-		selectComment("refresh")
+		void selectComment("refresh")
 	},
 )
 
@@ -314,7 +315,7 @@ watchImmediate(
 			makeWsDocumentCommentChangeTopic(newV),
 			() => {
 				// TODO: refetch only the affected branch comments
-				fetchComments.refetch()
+				void fetchComments.refetch()
 			},
 		)
 	},
@@ -373,7 +374,7 @@ watchDeep([fetchComments.state, fetchComments.isPending], () => {
 // both are needed because the position map may already be set when
 // comments are still loading (page reload, re-entering diff mode).
 watchImmediate(
-	[() => props.diffContext?.positionMap, () => fetchComments.state.value?.data],
+	[() => props.diffContext?.positionMap, () => fetchComments.state.value.data],
 	() => {
 		if (!props.diffContext) {
 			return
@@ -383,7 +384,7 @@ watchImmediate(
 			return
 		}
 
-		const comments = fetchComments.state.value?.data
+		const comments = fetchComments.state.value.data
 		if (!comments?.length) {
 			return
 		}
@@ -425,13 +426,9 @@ function removeEditorListeners() {
 
 // handles clicks on the editor to open/close text comment popovers.
 function handleEditorClick() {
-	if (!activeEditor.value) {
-		return
-	}
-
 	const { from } = activeEditor.value.state.selection
 
-	selectComment({
+	void selectComment({
 		textComment: true,
 		pos: from,
 		closeIfOutside: true,
@@ -441,7 +438,7 @@ function handleEditorClick() {
 /**
  * Handle remote document changes that may delete the currently viewed comment.
  */
-function handleRemoteDocChange({ transaction }: { transaction: any }) {
+function handleRemoteDocChange({ transaction }: { transaction: Transaction }) {
 	// bail early if no comment is open
 	if (!selectedComment.value) {
 		return
@@ -473,7 +470,7 @@ function handleRemoteDocChange({ transaction }: { transaction: any }) {
 }
 
 function handleScrollOrResize() {
-	selectComment("refresh")
+	void selectComment("refresh")
 }
 
 function isCommentPopoverOpen(targetId?: string) {
@@ -509,7 +506,7 @@ async function selectComment(
 			let found: {
 				from: number
 				to: number
-				attrs: any
+				attrs: CommentAttrs
 			} | null = null
 
 			if (pos.id) {
@@ -681,7 +678,7 @@ async function addNewComment(pos: number | "text-selection") {
 	}
 }
 
-async function updateNewSelectedCommentId(serverComment: DocumentComment) {
+function updateNewSelectedCommentId(serverComment: DocumentComment) {
 	if (!activePendingId.value) {
 		return
 	}
@@ -708,9 +705,9 @@ async function updateNewSelectedCommentId(serverComment: DocumentComment) {
 		// visual gap when the mark DOM element is recreated
 		activeEditor.value.commands.setCommentMarkForcedHighlight(newId, true)
 
-		if (isDiffMode.value) {
+		if (props.diffContext) {
 			updateCommentMarkIdInEditor(
-				props.diffContext!.diffEditor,
+				props.diffContext.diffEditor,
 				pendingId,
 				newId,
 				true,
@@ -721,7 +718,7 @@ async function updateNewSelectedCommentId(serverComment: DocumentComment) {
 				!isRemovedDiffPosition(selectedComment.value.textComment.to)
 
 			if (hasExistingContent) {
-				props.diffContext!.suppressNextRecompute()
+				props.diffContext.suppressNextRecompute()
 				props.contentEditor.commands.updateCommentMarkId(pendingId, newId)
 			}
 		} else {
@@ -749,16 +746,16 @@ async function updateNewSelectedCommentId(serverComment: DocumentComment) {
 		// pre-set the forced highlight for the new ID
 		activeEditor.value.commands.setNodeCommentForcedHighlight(newId, true)
 
-		if (isDiffMode.value) {
+		if (props.diffContext) {
 			updateNodeCommentIdInEditor(
-				props.diffContext!.diffEditor,
+				props.diffContext.diffEditor,
 				pendingId,
 				newId,
 				true,
 			)
 
 			if (!isRemovedDiffPosition(selectedComment.value.nodeComment.pos)) {
-				props.diffContext!.suppressNextRecompute()
+				props.diffContext.suppressNextRecompute()
 				props.contentEditor.commands.updateNodeCommentId(pendingId, newId)
 			}
 		} else {
@@ -829,7 +826,7 @@ function computeDiffDeletionContext():
 
 					for (let d = $from.depth; d >= 1; d--) {
 						const n = $from.node(d)
-						if (n.attrs?.diffStatus) {
+						if (n.attrs.diffStatus) {
 							diffNode = n
 							diffNodeStart = $from.before(d)
 							break
@@ -840,7 +837,7 @@ function computeDiffDeletionContext():
 						return []
 					}
 
-					const uid = diffNode.attrs?.uid
+					const uid = diffNode.attrs.uid as string | undefined
 					if (!uid) {
 						return []
 					}
@@ -901,7 +898,7 @@ async function saveComment() {
 	}
 
 	const content = editor.value?.getJSON()
-	if (!content || (editTarget.value && editTarget.value.reply)) {
+	if (!content || editTarget.value?.reply) {
 		return
 	}
 
@@ -944,7 +941,7 @@ async function saveComment() {
 				req,
 			})
 			if (res) {
-				await updateNewSelectedCommentId(res)
+				updateNewSelectedCommentId(res)
 			}
 		} catch {
 			showToastMessage("error", t("editor.comment-thread.errors.create-failed"))
@@ -970,7 +967,7 @@ async function deleteSelectedComment() {
 	const commentId = loadedComment.value.id
 	const comment = loadedComment.value
 
-	if (!comment?.replies?.length) {
+	if (!comment.replies?.length) {
 		closePopover()
 	}
 
@@ -1173,7 +1170,7 @@ function resetEditor() {
 }
 
 function scrollToBottom() {
-	nextTick(() => {
+	void nextTick(() => {
 		scrollerElem.value?.scrollToBottom()
 		// Call again after a short delay to account for dynamic height recalculation
 		setTimeout(() => {
@@ -1195,14 +1192,14 @@ function handleScrollerScroll() {
 }
 
 function updateCanScrollToBottom() {
-	nextTick(() => {
+	void nextTick(() => {
 		handleScrollerScroll()
 	})
 }
 
 function getNodeUid(node?: PMNode | null) {
-	const uid = node?.attrs?.uid
-	return uid !== null && uid !== undefined && uid !== "" ? String(uid) : ""
+	const uid = node?.attrs.uid as string | null | undefined
+	return uid !== null && uid !== undefined && uid !== "" ? uid : ""
 }
 
 function findNearestUidAtPos(
@@ -1259,7 +1256,7 @@ function startEdit(replyId?: string) {
 	}
 
 	const content = replyId
-		? loadedCommentReplies.value?.data?.[replyId]?.content
+		? loadedCommentReplies.value?.data[replyId]?.content
 		: loadedComment.value?.content
 	if (!content) {
 		return
@@ -1296,12 +1293,12 @@ async function updatePopoverPosition() {
 						: { mainAxis: 5 },
 				),
 				flip({
-					boundary: props.container || undefined,
+					boundary: props.container ?? undefined,
 					fallbackPlacements: ["bottom", "bottom-end"],
 					padding: 8,
 				}),
 				shift({
-					boundary: props.container || undefined,
+					boundary: props.container ?? undefined,
 					padding: 8,
 				}),
 			],
@@ -1311,6 +1308,25 @@ async function updatePopoverPosition() {
 }
 
 // --- diff mode helpers ---
+
+// find the position of the node carrying the given uid in the source
+// (content) editor document.
+function findSourcePosByUid(uid: string): number | null {
+	let result: number | null = null
+
+	props.contentEditor.state.doc.descendants((node, pos) => {
+		if (result !== null) {
+			return false
+		}
+
+		if (node.attrs.uid === uid) {
+			result = pos
+			return false
+		}
+	})
+
+	return result
+}
 
 /**
  * map a position from the diff editor to the source (content) editor.
@@ -1337,7 +1353,7 @@ function mapDiffPosToSourcePos(diffPos: number): number | null {
 
 	for (let depth = $pos.depth; depth >= 0; depth--) {
 		const node = $pos.node(depth)
-		const uid = node.attrs?.uid
+		const uid = node.attrs.uid as string | undefined
 		if (uid) {
 			nodeUid = uid
 			nodeStartPos = depth === 0 ? 0 : $pos.before(depth)
@@ -1387,17 +1403,7 @@ function mapDiffPosToSourcePos(diffPos: number): number | null {
 	}
 
 	// find the same uid in the source editor
-	let sourceNodePos: number | null = null
-	sourceState.doc.descendants((node, pos) => {
-		if (sourceNodePos !== null) {
-			return false
-		}
-
-		if (node.attrs?.uid === nodeUid) {
-			sourceNodePos = pos
-			return false
-		}
-	})
+	const sourceNodePos = findSourcePosByUid(nodeUid)
 
 	if (sourceNodePos === null) {
 		return null
@@ -1446,16 +1452,16 @@ function isRemovedDiffPosition(diffPos: number): boolean {
 	// check the node directly at this position (for node-comment
 	// positions that point to the node's start)
 	const nodeAt = doc.nodeAt(diffPos)
-	if (nodeAt?.attrs?.diffStatus === DiffStatus.Removed) {
+	if (nodeAt?.attrs.diffStatus === DiffStatus.Removed) {
 		return true
 	}
 
 	// transparent wrapper nodes (e.g. titledCodeBlock) have no
 	// diffStatus themselves — check if all children are removed.
-	if (nodeAt && !nodeAt.attrs?.diffStatus && nodeAt.childCount > 0) {
+	if (nodeAt && !nodeAt.attrs.diffStatus && nodeAt.childCount > 0) {
 		let allRemoved = true
 		for (let i = 0; i < nodeAt.childCount; i++) {
-			if (nodeAt.child(i).attrs?.diffStatus !== DiffStatus.Removed) {
+			if (nodeAt.child(i).attrs.diffStatus !== DiffStatus.Removed) {
 				allRemoved = false
 				break
 			}
@@ -1469,7 +1475,7 @@ function isRemovedDiffPosition(diffPos: number): boolean {
 	// walk ancestors from deepest to shallowest
 	for (let depth = $pos.depth; depth >= 1; depth--) {
 		const ancestor = $pos.node(depth)
-		if (ancestor.attrs?.diffStatus === DiffStatus.Removed) {
+		if (ancestor.attrs.diffStatus === DiffStatus.Removed) {
 			return true
 		}
 	}
@@ -1589,6 +1595,7 @@ function updateCommentMarkIdInEditor(
 		}
 	})
 
+	// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- found is set inside the synchronous descendants callback, which TS cannot see
 	if (!found) {
 		return false
 	}
@@ -1626,20 +1633,9 @@ async function addNewDiffNodeComment(pos: number, pendingCommentId: string) {
 
 	if (!removed) {
 		// find the matching node in the source editor by uid
-		const uid = node.attrs?.uid
+		const uid = node.attrs.uid as string | undefined
 		if (uid) {
-			let sourcePos: number | null = null
-
-			props.contentEditor.state.doc.descendants((srcNode, srcPos) => {
-				if (sourcePos !== null) {
-					return false
-				}
-
-				if (srcNode.attrs?.uid === uid) {
-					sourcePos = srcPos
-					return false
-				}
-			})
+			const sourcePos = findSourcePosByUid(uid)
 
 			if (sourcePos !== null) {
 				const sourceNode = props.contentEditor.state.doc.nodeAt(sourcePos)
@@ -1688,6 +1684,7 @@ function updateNodeCommentIdInEditor(
 		}
 	})
 
+	// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- found is set inside the synchronous descendants callback, which TS cannot see
 	if (!found) {
 		return false
 	}

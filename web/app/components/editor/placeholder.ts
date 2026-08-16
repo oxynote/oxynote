@@ -110,7 +110,7 @@ export function defaultContentPlaceholder(
 
 							if (location === "document") {
 								return t("editor.placeholders.content.paragraph")
-							} else if (location === "comment" && editor.isEmpty) {
+							} else if (editor.isEmpty) {
 								return t("editor.placeholders.content.comment")
 							}
 					}

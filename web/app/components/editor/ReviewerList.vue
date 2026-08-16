@@ -38,27 +38,26 @@ let unsubWsReviewersChange: (() => void) | null | undefined = null
 // reviewers that have approved the branch or are invited to review (but
 // haven't approved yet)
 const participatingReviewers = computed<ReviewerEntry[]>(() => {
-	const reviewerData = fetchActiveBranchReviewers.state.value.data || []
+	const reviewerData = fetchActiveBranchReviewers.state.value.data ?? []
 
-	return reviewerData
-		.filter((r) => {
-			return fetchOrganization.state.value.data?.data?.members.some(
-				(m) => m.userId === r.userId,
-			)
-		})
-		.map((r) => {
-			const member = fetchOrganization.state.value.data?.data?.members.find(
-				(m) => m.userId === r.userId,
-			)
+	return reviewerData.flatMap((r) => {
+		const member = fetchOrganization.state.value.data?.data?.members.find(
+			(m) => m.userId === r.userId,
+		)
+		if (!member) {
+			return []
+		}
 
-			return {
-				id: member!.userId,
-				name: member!.user.name,
-				email: member!.user.email,
-				url: member!.user.image,
+		return [
+			{
+				id: member.userId,
+				name: member.user.name,
+				email: member.user.email,
+				url: member.user.image,
 				approved: r.currentlyApproved,
-			}
-		})
+			},
+		]
+	})
 })
 const reviewerSuggestions = computed<Omit<ReviewerEntry, "approved">[]>(() => {
 	const existingReviewerIds = new Set(
@@ -68,7 +67,7 @@ const reviewerSuggestions = computed<Omit<ReviewerEntry, "approved">[]>(() => {
 	return (
 		fetchOrganization.state.value.data?.data?.members
 			.filter((m) =>
-				fetchTargetBranchReviewers.state.value?.data?.some(
+				fetchTargetBranchReviewers.state.value.data?.some(
 					(r) =>
 						!existingReviewerIds.has(m.userId) &&
 						fetchAuthSession.data.value?.data?.user.id !== m.userId &&
@@ -80,7 +79,7 @@ const reviewerSuggestions = computed<Omit<ReviewerEntry, "approved">[]>(() => {
 				name: m.user.name,
 				email: m.user.email,
 				url: m.user.image,
-			})) || []
+			})) ?? []
 	)
 })
 
@@ -107,7 +106,7 @@ const invitableReviewers = computed<ReviewerInviteEntry[]>(() => {
 				name: m.user.name,
 				email: m.user.email,
 				url: m.user.image,
-			})) || []
+			})) ?? []
 	)
 })
 
@@ -147,8 +146,8 @@ watchImmediate(
 		unsubWsReviewersChange = wsState.state?.subscribe(
 			makeWsDocumentReviewersChangeTopic(newV),
 			() => {
-				fetchTargetBranchReviewers.refetch()
-				fetchActiveBranchReviewers.refetch()
+				void fetchTargetBranchReviewers.refetch()
+				void fetchActiveBranchReviewers.refetch()
 			},
 		)
 	},

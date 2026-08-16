@@ -196,9 +196,7 @@ async function handleFileChange(event: Event) {
 			showToastMessage("error", t("editor.image.errors.upload-failed"))
 		}
 	} finally {
-		if (target) {
-			target.value = ""
-		}
+		target.value = ""
 	}
 }
 

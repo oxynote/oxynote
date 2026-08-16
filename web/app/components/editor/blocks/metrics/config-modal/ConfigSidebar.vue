@@ -26,14 +26,14 @@ const isEditingDisabled = computed(() => {
 })
 const configThresholdBounds = computed(() => {
 	const min = config.value.thresholds?.reduce((min, threshold) => {
-		if (threshold.value !== undefined && threshold.value !== null) {
+		if (threshold.value != null) {
 			return Math.min(min, threshold.value)
 		}
 
 		return min
 	}, Infinity)
 	const max = config.value.thresholds?.reduce((max, threshold) => {
-		if (threshold.value !== undefined && threshold.value !== null) {
+		if (threshold.value != null) {
 			return Math.max(max, threshold.value)
 		}
 
@@ -54,7 +54,7 @@ const configDecimals = computed({
 const configBoundsMin = computed({
 	get: () => config.value.axisBounds.min ?? undefined,
 	set: (value) => {
-		if (value === undefined || value === null) {
+		if (value == null) {
 			config.value.axisBounds.min = null
 			return
 		}
@@ -72,7 +72,7 @@ const configBoundsMin = computed({
 const configBoundsMax = computed({
 	get: () => config.value.axisBounds.max ?? undefined,
 	set: (value) => {
-		if (value === undefined || value === null) {
+		if (value == null) {
 			config.value.axisBounds.max = null
 			return
 		}
@@ -114,8 +114,8 @@ const isUnitModified = computed(() => {
 	return (
 		isDiffModified.value &&
 		!!props.oldConfig &&
-		(props.oldConfig.unit?.type !== config.value.unit?.type ||
-			props.oldConfig.unit?.custom !== config.value.unit?.custom)
+		(props.oldConfig.unit.type !== config.value.unit.type ||
+			props.oldConfig.unit.custom !== config.value.unit.custom)
 	)
 })
 const areThresholdsModified = computed(() => {
@@ -144,14 +144,14 @@ const isBoundsMinModified = computed(() => {
 	return (
 		isDiffModified.value &&
 		!!props.oldConfig &&
-		props.oldConfig.axisBounds?.min !== config.value.axisBounds?.min
+		props.oldConfig.axisBounds.min !== config.value.axisBounds.min
 	)
 })
 const isBoundsMaxModified = computed(() => {
 	return (
 		isDiffModified.value &&
 		!!props.oldConfig &&
-		props.oldConfig.axisBounds?.max !== config.value.axisBounds?.max
+		props.oldConfig.axisBounds.max !== config.value.axisBounds.max
 	)
 })
 
@@ -225,7 +225,7 @@ const diffThresholdEntries = computed<DiffThresholdEntry[]>(() => {
 function updateThresholdField(
 	index: number,
 	field: "value" | "label" | "color",
-	val: any,
+	val: number | string | undefined,
 ) {
 	config.value.thresholds =
 		config.value.thresholds?.map((t, i) =>
@@ -235,7 +235,7 @@ function updateThresholdField(
 
 function addThreshold() {
 	config.value.thresholds = [
-		...(config.value.thresholds || []),
+		...(config.value.thresholds ?? []),
 		{
 			value: undefined,
 			label: undefined,

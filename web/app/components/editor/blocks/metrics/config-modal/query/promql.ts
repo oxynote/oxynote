@@ -164,8 +164,10 @@ export function usePromQLQueryExtension(
 
 	const basePromQL = newCompleteStrategy({
 		remote: new PrometheusDataSourceClient({
-			timeRangeFn: async () => {
-				return toValue(timeRange) || TimeRangePreset.Last5Minutes
+			timeRangeFn: () => {
+				return Promise.resolve(
+					toValue(timeRange) || TimeRangePreset.Last5Minutes,
+				)
 			},
 			metricMetadataFn: async () => {
 				return (
@@ -286,7 +288,7 @@ export function usePromQLLegendExtension(
 
 	async function fetchExampleLabelValues(): Promise<Record<string, string>> {
 		const res = await fetchPrometheusSeries.refresh()
-		if (!res.data?.result?.length) {
+		if (!res.data?.result.length) {
 			return {}
 		}
 

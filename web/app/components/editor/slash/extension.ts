@@ -4,7 +4,11 @@ import { PluginKey, type Transaction } from "@tiptap/pm/state"
 import { computePosition, flip, offset, shift } from "@floating-ui/dom"
 import { VueRenderer } from "@tiptap/vue-3"
 import CommandList from "./CommandList.vue"
-import { allowSlashItemsByContext, filterSlashItems } from "./items"
+import {
+	allowSlashItemsByContext,
+	filterSlashItems,
+	type CommandItem,
+} from "./items"
 import { ReplaceStep } from "@tiptap/pm/transform"
 
 export const SLASH_COMMAND_TRIGGER_CHAR = "/"
@@ -28,6 +32,12 @@ declare module "@tiptap/core" {
 	}
 }
 
+// the VueRenderer ref is untyped, so mirror what CommandList exposes.
+interface CommandListRef {
+	close: (afterClose: () => void) => void
+	onKeyDown: (event: KeyboardEvent) => boolean
+}
+
 // inspired by: https://github.com/ueberdosis/tiptap/tree/main/demos/src/Experiments/Commands/Vue
 export const SlashCommands = Extension.create<
 	SlashCommandOptions,
@@ -47,7 +57,7 @@ export const SlashCommands = Extension.create<
 	},
 	addProseMirrorPlugins() {
 		return [
-			Suggestion({
+			Suggestion<CommandItem, CommandItem>({
 				...this.options,
 				editor: this.editor,
 				char: SLASH_COMMAND_TRIGGER_CHAR,
@@ -71,6 +81,7 @@ export const SlashCommands = Extension.create<
 
 					return {
 						onStart: (props) => {
+							// eslint-disable-next-line @typescript-eslint/no-unsafe-argument -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 							component = new VueRenderer(CommandList, {
 								editor: props.editor,
 								props: {
@@ -91,7 +102,7 @@ export const SlashCommands = Extension.create<
 							if (
 								!props.clientRect ||
 								!props.decorationNode ||
-								!component?.element
+								!component.element
 							) {
 								return
 							}
@@ -151,7 +162,14 @@ export const SlashCommands = Extension.create<
 								return false
 							}
 
-							return component?.ref?.onKeyDown(props.event)
+							const componentRef = component?.ref as
+								| CommandListRef
+								| null
+								| undefined
+
+							// without a mounted list there is nothing to handle
+							// the key, so report it as unhandled
+							return componentRef?.onKeyDown(props.event) ?? false
 						},
 						onExit() {
 							storage.sequenceWithTriggerChar = false
@@ -161,8 +179,9 @@ export const SlashCommands = Extension.create<
 							// delayed removal might conflict with new
 							// component creation in onStart
 							const exitComp = component
+							const exitRef = exitComp?.ref as CommandListRef | null | undefined
 
-							exitComp?.ref?.close(() => {
+							exitRef?.close(() => {
 								exitComp?.destroy()
 								exitComp?.element?.remove()
 							})
@@ -178,7 +197,7 @@ function updateCommandListPosition(
 	reference: Element,
 	commandElem: HTMLElement,
 ) {
-	computePosition(reference, commandElem, {
+	void computePosition(reference, commandElem, {
 		placement: "bottom-start",
 		strategy: "absolute",
 		middleware: [shift(), flip(), offset(3)],
@@ -201,7 +220,7 @@ export function processSlashCommandTransaction(
 	if (tx.steps.length === 1) {
 		const step = tx.steps[0]
 
-		if (step instanceof ReplaceStep && step.slice && step.slice.content) {
+		if (step instanceof ReplaceStep) {
 			const newText = step.slice.content.textBetween(
 				0,
 				step.slice.content.size,

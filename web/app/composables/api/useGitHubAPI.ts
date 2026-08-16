@@ -54,12 +54,12 @@ export default function () {
 			const query = queryParams.toString()
 			const url = query ? `/api/github/connect?${query}` : "/api/github/connect"
 
-			return await $coreAPIClient(url, { method: "GET" })
+			return await $coreAPIClient<unknown>(url, { method: "GET" })
 		},
 	})
 
 	const disconnectGitHub = useMutation({
-		onMutate: async () => {
+		onMutate: () => {
 			const oldStatus = clone(
 				queryCache.getQueryData<GitHubConnectionStatus>(
 					GITHUB_QUERY_KEYS.connected,
@@ -78,7 +78,7 @@ export default function () {
 			return { newStatus, oldStatus }
 		},
 		mutation: async () => {
-			return await $coreAPIClient(`/api/github`, { method: "DELETE" })
+			return await $coreAPIClient<unknown>(`/api/github`, { method: "DELETE" })
 		},
 		async onSuccess() {
 			await queryCache.invalidateQueries({ key: GITHUB_QUERY_KEYS.connected })

@@ -25,7 +25,7 @@ watchImmediate(
 		unsubWsMaintainersChange = wsState.state?.subscribe(
 			makeWsDocumentMaintainersChangeTopic(newV),
 			() => {
-				fetchMaintainers.refetch()
+				void fetchMaintainers.refetch()
 			},
 		)
 	},
@@ -40,7 +40,7 @@ const maintainers = computed<IconMetadata[]>(() => {
 				id: m.userId,
 				name: m.user.name,
 				url: m.user.image,
-			})) || []
+			})) ?? []
 	)
 })
 </script>

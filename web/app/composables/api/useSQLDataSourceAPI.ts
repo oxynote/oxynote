@@ -70,7 +70,6 @@ export default function () {
 			enabled: () =>
 				toValue(dataSourceIdRef) !== null &&
 				toValue(dataSourceIdRef) !== undefined &&
-				toValue(paramsRef)?.q !== null &&
 				toValue(paramsRef)?.q !== undefined &&
 				toValue(enableFetch),
 			refetchOnMount: false,

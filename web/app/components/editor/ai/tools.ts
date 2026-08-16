@@ -9,7 +9,9 @@ function getYDoc(editor: Editor): YDoc | null {
 		(e) => e.name === Collaboration.name,
 	)
 
-	return (collaboration?.options?.document as YDoc) ?? null
+	const options = collaboration?.options as { document?: YDoc } | undefined
+
+	return options?.document ?? null
 }
 
 function findNodeByUid(
@@ -23,7 +25,7 @@ function findNodeByUid(
 			return false
 		}
 
-		if (node.attrs?.uid === uid) {
+		if (node.attrs.uid === uid) {
 			result = { node, pos }
 			return false
 		}
@@ -64,10 +66,12 @@ export function executeReadDocument(
 	nameEditor: Editor,
 ): object {
 	const ydoc = getYDoc(contentEditor)
-	const icon = ydoc?.getText("icon")?.toString() ?? ""
+	// toJSON is the typed alias of YText.toString, which the bundled yjs
+	// declarations omit
+	const icon = ydoc?.getText("icon").toJSON() ?? ""
 
 	return {
-		name: nameEditor?.getText() ?? "",
+		name: nameEditor.getText(),
 		icon,
 		editable: contentEditor.isEditable,
 		content: stripNullAttrs(contentEditor.getJSON()),
@@ -242,6 +246,6 @@ export function executeTool(
 		case AIToolName.DeleteBlocks:
 			return executeDeleteBlocks(contentEditor, args as DeleteBlocksArgs)
 		default:
-			return { error: `unknown tool: ${tool}` }
+			return { error: `unknown tool: ${String(tool)}` }
 	}
 }

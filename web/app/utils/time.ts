@@ -6,7 +6,7 @@ const dateFnsLocales: Record<string, Locale> = {
 }
 
 export function convertDateFnsLocale(locale: string) {
-	return dateFnsLocales[locale.split("-")[0]!] ?? enUS
+	return dateFnsLocales[locale.split("-")[0] ?? ""] ?? enUS
 }
 
 export function delay(ms: number): Promise<void> {
@@ -36,7 +36,7 @@ export function parseDurationString(dur: string): number {
 			continue
 		}
 
-		totalMs += parseFloat(value) * conversionFactors[unit]!
+		totalMs += parseFloat(value) * (conversionFactors[unit] ?? 0)
 	}
 
 	return totalMs

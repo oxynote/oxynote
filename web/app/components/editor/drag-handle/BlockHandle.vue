@@ -2,6 +2,7 @@
 import { highlightOverlayByNodeType } from "./config"
 import { DragHandle } from "./MainElement"
 import type { Editor } from "@tiptap/vue-3"
+import type { Node } from "@tiptap/pm/model"
 import type { HocuspocusProvider } from "@hocuspocus/provider"
 import { cn } from "~/lib/utils"
 import HookMenuContent from "../hooks/HookMenuContent.vue"
@@ -32,7 +33,9 @@ const editorStore = useEditorStore()
 const isEditingDisabled = computed(() => {
 	return !isEditable.value || editorStore.reviewableDiffActive
 })
-const dragOverlayElement = ref<HTMLElement | null>(null)
+const dragOverlayElement = ref<
+	(HTMLElement & { _cleanup?: () => void }) | null
+>(null)
 const nodeActionMenuOpen = ref(false)
 const hookMenuOpen = ref(false)
 const hoveringDrag = ref(false)
@@ -42,7 +45,7 @@ const processedDocumentHooks = computed(() => {
 })
 const hoveredNodePos = ref<number | null>(null)
 const hoveredMetadata = computed(() => {
-	if (!props.editor || hoveredNodePos.value == null) {
+	if (hoveredNodePos.value == null) {
 		return null
 	}
 
@@ -100,7 +103,7 @@ whenever(isScrolling, () => {
 	removeDragOverlay()
 })
 
-function handleNodeHover(data: { pos: number; node: any | null }) {
+function handleNodeHover(data: { pos: number; node: Node | null }) {
 	if (!data.node) {
 		hoveredNodePos.value = null
 		return
@@ -110,7 +113,7 @@ function handleNodeHover(data: { pos: number; node: any | null }) {
 }
 
 function getCurrentNodeEl(): HTMLElement | null {
-	if (!props.editor || hoveredNodePos.value == null) {
+	if (hoveredNodePos.value == null) {
 		return null
 	}
 
@@ -178,11 +181,9 @@ function createDragOverlay(nodeEl: HTMLElement) {
 
 function removeDragOverlay() {
 	const el = dragOverlayElement.value
-	if (el && (el as any)._cleanup) {
-		;(el as any)._cleanup()
-	}
+	el?._cleanup?.()
 
-	if (el && el.parentNode) {
+	if (el?.parentNode) {
 		el.parentNode.removeChild(el)
 	}
 

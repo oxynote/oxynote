@@ -59,8 +59,8 @@ function findVerticalBounds(el: HTMLElement): { top: number; bottom: number } {
  */
 function isIgnoredAtY(container: Element, y: number): boolean {
 	const ignored = container.getElementsByClassName(DRAG_HANDLE_IGNORE_CLASS)
-	for (let i = 0; i < ignored.length; i++) {
-		const bounds = findVerticalBounds(ignored[i] as HTMLElement)
+	for (const el of ignored) {
+		const bounds = findVerticalBounds(el as HTMLElement)
 		if (y >= bounds.top && y <= bounds.bottom) {
 			return true
 		}
@@ -235,7 +235,7 @@ function findFromElement(
 					const dom = view.nodeDOM(wrapperPos) as HTMLElement | null
 					if (
 						dom === nodeViewWrapper &&
-						dom?.nodeType === 1 &&
+						dom.nodeType === 1 &&
 						!dom.classList.contains(DRAG_HANDLE_IGNORE_SELF_CLASS)
 					) {
 						const $pos = state.doc.resolve(wrapperPos)
@@ -296,7 +296,7 @@ function findFromElement(
 			const dom = view.nodeDOM(pos) as HTMLElement | null
 			if (
 				dom === current &&
-				dom?.nodeType === 1 &&
+				dom.nodeType === 1 &&
 				!dom.classList.contains(DRAG_HANDLE_IGNORE_SELF_CLASS) &&
 				shouldShowDragHandle($pos, $pos.depth + 1, nodeAtPos.type.name)
 			) {
@@ -344,8 +344,8 @@ function findByY(
 	container: Element,
 	y: number,
 ): DraggableNodeResult | null {
-	for (let i = 0; i < container.children.length; i++) {
-		const child = container.children[i] as HTMLElement
+	for (const rawChild of container.children) {
+		const child = rawChild as HTMLElement
 		if (child.nodeType !== 1) {
 			continue
 		}
@@ -496,9 +496,7 @@ export function findDraggableNodeAtCoords(
 		// handle appears before hovering on the actual element. If
 		// we can't find an element with an offset, we try finding without.
 		let element = document.elementFromPoint(x + DRAG_HANDLE_APPROX_WIDTH_PX, y)
-		if (!element) {
-			element = document.elementFromPoint(x, y)
-		}
+		element ??= document.elementFromPoint(x, y)
 
 		if (element) {
 			// Check if element has ignore-self class - return null (no drag handle)

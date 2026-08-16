@@ -90,56 +90,22 @@ onUnmounted(() => {
 
 async function logInWithProvider(provider: "github" | "google" | "slack") {
 	loading.value = provider
-	let res: AuthResponse | null = null
 
-	switch (provider) {
-		case "github":
-			res = await signInSocial({
-				provider: "github",
-				callbackURL: postAuthDocumentUrl(
-					config.public.appBaseURL,
-					route.query.next as string | undefined,
-				),
-				newUserCallbackURL: postAuthDocumentUrl(
-					config.public.appBaseURL,
-					route.query.next as string | undefined,
-					"/welcome",
-				),
-				fetchOptions: { query: route.query },
-			})
-			break
-		case "slack":
-			res = await signInSocial({
-				provider: "slack",
-				callbackURL: postAuthDocumentUrl(
-					config.public.appBaseURL,
-					route.query.next as string | undefined,
-				),
-				newUserCallbackURL: postAuthDocumentUrl(
-					config.public.appBaseURL,
-					route.query.next as string | undefined,
-					"/welcome",
-				),
-				fetchOptions: { query: route.query },
-			})
-			break
-		case "google":
-			res = await signInSocial({
-				provider: "google",
-				callbackURL: postAuthDocumentUrl(
-					config.public.appBaseURL,
-					route.query.next as string | undefined,
-				),
-				newUserCallbackURL: postAuthDocumentUrl(
-					config.public.appBaseURL,
-					route.query.next as string | undefined,
-					"/welcome",
-				),
-				fetchOptions: { query: route.query },
-			})
-	}
+	const res = (await signInSocial({
+		provider,
+		callbackURL: postAuthDocumentUrl(
+			config.public.appBaseURL,
+			route.query.next as string | undefined,
+		),
+		newUserCallbackURL: postAuthDocumentUrl(
+			config.public.appBaseURL,
+			route.query.next as string | undefined,
+			"/welcome",
+		),
+		fetchOptions: { query: route.query },
+	})) as AuthResponse
 
-	if (res?.error) {
+	if (res.error) {
 		showToastMessage("error", t("onboarding.login.errors.login-failed"))
 		// reset only on error so that the loading spinner shows while
 		// redirecting
@@ -155,18 +121,18 @@ const onEmailPasswordSubmit = emailPasswordForm.handleSubmit(async (values) => {
 	// here with the confirmation flag. Absolute against the app origin
 	// because a relative path would resolve against the auth server's
 	// origin, which does not serve the frontend in host-dev mode.
-	const res = await signInEmailPassword({
+	const res = (await signInEmailPassword({
 		email: values.email,
 		password: values.password,
 		callbackURL: `${config.public.appBaseURL}/login?verified=true`,
-	})
+	})) as AuthResponse
 
 	if (res.error) {
 		// the sign-in attempt re-sent the verification link
 		// (sendOnSignIn), so the check-your-inbox page is accurate.
 		// Loading stays set so the spinner shows while redirecting.
 		if (res.error.code === "EMAIL_NOT_VERIFIED") {
-			navigateTo({
+			void navigateTo({
 				path: "/verify-email",
 				query: { new: values.email, sent: "true" },
 			})
@@ -196,7 +162,9 @@ const onEmailPasswordSubmit = emailPasswordForm.handleSubmit(async (values) => {
 	await fetchAuthSession.refetch()
 
 	const nextUrl = route.query.next as string | undefined
-	navigateTo(nextUrl ? decodeURIComponent(nextUrl) : "/", { replace: true })
+	void navigateTo(nextUrl ? decodeURIComponent(nextUrl) : "/", {
+		replace: true,
+	})
 })
 
 // the reset-request view reuses the login form's email field (a second
@@ -207,18 +175,17 @@ const onEmailPasswordSubmit = emailPasswordForm.handleSubmit(async (values) => {
 async function onPasswordResetSubmit() {
 	const { valid } = await emailPasswordForm.validateField("email")
 
-	if (!valid) {
+	const email = emailPasswordForm.values.email
+	if (!valid || !email) {
 		return
 	}
 
-	const email = emailPasswordForm.values.email!
-
 	loading.value = "password-reset"
 
-	const res = await requestPasswordReset({
+	const res = (await requestPasswordReset({
 		email,
 		redirectTo: `${config.public.appBaseURL}/reset-password`,
-	})
+	})) as AuthResponse
 
 	loading.value = null
 

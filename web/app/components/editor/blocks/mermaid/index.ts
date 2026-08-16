@@ -141,7 +141,7 @@ export const MermaidBlock = Node.create({
 				const $posAfter = state.doc.resolve(posAfter)
 				const nodeAfter = $posAfter.nodeAfter
 
-				if (nodeAfter && nodeAfter.isTextblock) {
+				if (nodeAfter?.isTextblock) {
 					const tr = state.tr.setSelection(
 						TextSelection.create(state.doc, posAfter + 1),
 					)
@@ -198,6 +198,7 @@ export const MermaidBlock = Node.create({
 		return [mermaidHighlightPlugin(this.name)]
 	},
 	addNodeView() {
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-argument -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 		return VueNodeViewRenderer(MainBlock)
 	},
 })

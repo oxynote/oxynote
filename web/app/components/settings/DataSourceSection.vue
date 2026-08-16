@@ -19,7 +19,7 @@ const sections = computed(() => {
 					(ds) =>
 						ds.type === DataSourceType.Prometheus &&
 						ds.status !== DataSourceStatus.LocalOptimisticInsert,
-				) || [],
+				) ?? [],
 			create: () => {
 				emit("data-source-creation", DataSourceType.Prometheus)
 			},
@@ -38,7 +38,7 @@ const sections = computed(() => {
 					(ds) =>
 						ds.type === DataSourceType.PostgreSQL &&
 						ds.status !== DataSourceStatus.LocalOptimisticInsert,
-				) || [],
+				) ?? [],
 			create: () => {
 				emit("data-source-creation", DataSourceType.PostgreSQL)
 			},
@@ -57,7 +57,7 @@ const sections = computed(() => {
 					(ds) =>
 						ds.type === DataSourceType.MySQL &&
 						ds.status !== DataSourceStatus.LocalOptimisticInsert,
-				) || [],
+				) ?? [],
 			create: () => {
 				emit("data-source-creation", DataSourceType.MySQL)
 			},
@@ -76,7 +76,7 @@ const sections = computed(() => {
 					(ds) =>
 						ds.type === DataSourceType.MariaDB &&
 						ds.status !== DataSourceStatus.LocalOptimisticInsert,
-				) || [],
+				) ?? [],
 			create: () => {
 				emit("data-source-creation", DataSourceType.MariaDB)
 			},

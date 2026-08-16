@@ -39,7 +39,7 @@ export function useAIChat(opts: {
 			delay: 2500,
 		},
 		onMessage: (_: WebSocket, event: MessageEvent) => {
-			handleMessage(event)
+			void handleMessage(event)
 		},
 	})
 
@@ -71,7 +71,7 @@ export function useAIChat(opts: {
 		let msg: ServerMessage
 
 		try {
-			msg = JSON.parse(event.data as string)
+			msg = JSON.parse(event.data as string) as ServerMessage
 		} catch {
 			return
 		}
@@ -107,11 +107,13 @@ export function useAIChat(opts: {
 				}
 
 				toolStatus.value = t(
+					// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the server may send a tool name outside the enum, which leaves the lookup undefined
 					TOOL_STATUS_I18N_KEYS[msg.tool] ??
 						"editor.ai-chat.tool-status.working",
 				)
 
 				try {
+					// eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- argless tools (read_document, read_available_icons) arrive without args
 					const result = await opts.toolExecutor(msg.tool, msg.args!)
 
 					if (isConnected.value) {

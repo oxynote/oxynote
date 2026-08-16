@@ -19,11 +19,9 @@ function autoJoin(
 	nodeTypes: NodeType[], // The node type to join
 ) {
 	// Find all ranges where we might want to join.
-	const ranges: number[] = []
-	for (let i = 0; i < tr.mapping.maps.length; i++) {
-		const map = tr.mapping.maps[i]
-		if (!map) continue
-		for (let j = 0; j < ranges.length; j++) ranges[j] = map.map(ranges[j]!)
+	let ranges: number[] = []
+	for (const map of tr.mapping.maps) {
+		ranges = ranges.map((range) => map.map(range))
 		map.forEach((_s, _e, from, to) => ranges.push(from, to))
 	}
 
@@ -33,12 +31,13 @@ function autoJoin(
 	for (let i = 0; i < ranges.length; i += 2) {
 		const from = ranges[i],
 			to = ranges[i + 1]
-		const $from = tr.doc.resolve(from!),
-			depth = $from.sharedDepth(to!),
+		if (from === undefined || to === undefined) continue
+		const $from = tr.doc.resolve(from),
+			depth = $from.sharedDepth(to),
 			parent = $from.node(depth)
 		for (
 			let index = $from.indexAfter(depth), pos = $from.after(depth + 1);
-			pos <= to!;
+			pos <= to;
 			++index
 		) {
 			const after = parent.maybeChild(index)
@@ -57,7 +56,8 @@ function autoJoin(
 	// Join the joinable points
 	joinable.sort((a, b) => a - b)
 	for (let i = joinable.length - 1; i >= 0; i--) {
-		const joinPos = joinable[i]!
+		const joinPos = joinable[i]
+		if (joinPos === undefined) continue
 		// Check canJoin against the newTr's current document state, not the old tr.doc
 		// The positions were calculated from tr.doc but we need to verify they're still valid
 		// in newTr.doc before attempting the join

@@ -2,6 +2,7 @@
 import {
 	commandGroupSortIndex,
 	type CommandData,
+	type CommandGroup,
 	type CommandItem,
 } from "./items"
 import CommandButton from "./CommandButton.vue"
@@ -36,14 +37,16 @@ const processedItems = computed(() => {
 
 	if (props.items.length) {
 		props.items.forEach((item) => {
-			if (!groups[item.group]) {
-				groups[item.group] = {
+			let group = groups[item.group]
+			if (!group) {
+				group = {
 					sortIndex: commandGroupSortIndex(item.group),
 					items: [],
 				}
+				groups[item.group] = group
 			}
 
-			groups[item.group]!.items.push(item)
+			group.items.push(item)
 		})
 	}
 
@@ -58,7 +61,7 @@ const processedItems = computed(() => {
 	return res
 })
 const multipleGroups = computed(() => {
-	let firstGroup = ""
+	let firstGroup: CommandGroup | "" = ""
 
 	for (const item of processedItems.value) {
 		if (!firstGroup) {

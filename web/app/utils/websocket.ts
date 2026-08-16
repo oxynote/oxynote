@@ -13,15 +13,16 @@ export function extractFromTopic(
 		return ["", "", [], ""]
 	}
 
-	const descriptor = strs[0]!
-	const cleanTopic = strs[1]!
+	// the length checks guarantee every entry read below exists; the
+	// destructuring defaults are only here to satisfy noUncheckedIndexedAccess
+	const [descriptor = "", cleanTopic = ""] = strs
 
-	strs = strs[1]!.split("@")
+	strs = cleanTopic.split("@")
 	if (strs.length != 2) {
 		return ["", "", [], ""]
 	}
 
-	const operation = strs[0]!
+	const [operation = ""] = strs
 
 	return [descriptor, operation, strs.slice(1), cleanTopic]
 }
@@ -54,7 +55,7 @@ export default class WsState {
 		}
 	}
 
-	processMessage(msg: MessageEvent) {
+	processMessage(msg: MessageEvent<string>) {
 		const ev = JSON.parse(msg.data, jsonReviver) as APIEvent
 
 		// confirm a subscription
@@ -117,11 +118,11 @@ export default class WsState {
 		const delIndex = state.subIndex
 
 		return () => {
-			if (!this.topics.has(topic) || unsubbed) {
+			const delState = this.topics.get(topic)
+			if (!delState || unsubbed) {
 				return
 			}
 
-			const delState = this.topics.get(topic)!
 			delState.subs.delete(delIndex)
 
 			if (delState.subs.size === 0) {
