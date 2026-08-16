@@ -116,6 +116,28 @@ func Test_Expand(t *testing.T) {
 				},
 			},
 		},
+		"Blockquote wraps items": {
+			Input: Block{
+				Type: BlockBlockquote,
+				Items: []Block{
+					{Type: BlockParagraph, Text: "one"},
+					{Type: BlockParagraph, Text: "two"},
+				},
+			},
+			Expected: document.Block{
+				Type: document.BlockNodeBlockquote,
+				Content: []document.Block{
+					{
+						Type:    document.BlockNodeParagraph,
+						Content: []document.Block{{Type: "text", Text: "one"}},
+					},
+					{
+						Type:    document.BlockNodeParagraph,
+						Content: []document.Block{{Type: "text", Text: "two"}},
+					},
+				},
+			},
+		},
 		"Bullet list wraps each item in listItem > paragraph": {
 			Input: Block{
 				Type: BlockBulletList,
@@ -480,6 +502,13 @@ func Test_Expand_RoundTrip(t *testing.T) {
 		"Paragraph":  {Input: Block{Type: BlockParagraph, Text: "hi **there**"}},
 		"Heading":    {Input: Block{Type: BlockHeading, Text: "Title", Attrs: map[string]any{"level": 1}}},
 		"Blockquote": {Input: Block{Type: BlockBlockquote, Text: "quote"}},
+		"Blockquote with items": {Input: Block{
+			Type: BlockBlockquote,
+			Items: []Block{
+				{Type: BlockParagraph, Text: "one"},
+				{Type: BlockParagraph, Text: "two"},
+			},
+		}},
 		"Bullet list": {Input: Block{
 			Type:  BlockBulletList,
 			Items: []Block{{Type: BlockParagraph, Text: "one"}, {Type: BlockParagraph, Text: "two"}},

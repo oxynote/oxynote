@@ -243,7 +243,7 @@ func (f *factory) CollectRuntimeMetrics(ctx context.Context, dur time.Duration) 
 			mallocs = memStats.Mallocs
 			numGC = memStats.NumGC
 
-			metrics.memory.PauseTotal.Set(float64(memStats.PauseTotalNs * _nanosecondsPerSecond))
+			metrics.memory.PauseTotal.Set(float64(memStats.PauseTotalNs) / _nanosecondsPerSecond)
 			metrics.memory.StackInuse.Set(float64(memStats.StackInuse))
 			metrics.memory.TotalAlloc.Set(float64(memStats.TotalAlloc))
 
@@ -262,7 +262,7 @@ func observeGCPauses(pause Observer, memStats *runtime.MemStats, prevNumGC uint3
 
 	if memStats.NumGC-prevNumGC >= uint32(len(memStats.PauseNs)) {
 		for i = range uint32(len(memStats.PauseNs)) {
-			pause.Observe(float64(memStats.PauseNs[i] * _nanosecondsPerSecond))
+			pause.Observe(float64(memStats.PauseNs[i]) / _nanosecondsPerSecond)
 		}
 
 		return
@@ -270,13 +270,13 @@ func observeGCPauses(pause Observer, memStats *runtime.MemStats, prevNumGC uint3
 
 	if i > ii {
 		for ; i < uint32(len(memStats.PauseNs)); i++ {
-			pause.Observe(float64(memStats.PauseNs[i] * _nanosecondsPerSecond))
+			pause.Observe(float64(memStats.PauseNs[i]) / _nanosecondsPerSecond)
 		}
 
 		i = 0
 	}
 
 	for ; i < ii; i++ {
-		pause.Observe(float64(memStats.PauseNs[i] * _nanosecondsPerSecond))
+		pause.Observe(float64(memStats.PauseNs[i]) / _nanosecondsPerSecond)
 	}
 }

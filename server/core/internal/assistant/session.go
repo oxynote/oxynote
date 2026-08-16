@@ -144,9 +144,18 @@ func (s *session) Process(ctx context.Context, msg []byte) {
 		s.processing = true
 		s.mu.Unlock()
 
-		s.supv.Go(func(_ context.Context) {
+		s.supv.Go(func(sctx context.Context) {
+			// Close cancels the supervisor context, so merge it into the
+			// connection context: otherwise a closing session cannot
+			// interrupt a turn parked on a confirmation or a model stream.
+			turnCtx, cancel := context.WithCancel(ctx)
+			defer cancel()
+
+			stop := context.AfterFunc(sctx, cancel)
+			defer stop()
+
 			s.handleUserMessage(
-				ctx,
+				turnCtx,
 				gjson.GetBytes(msg, "content").String(),
 			)
 
@@ -401,8 +410,9 @@ func (s *session) callAnthropic(ctx context.Context, activeDocumentID string) (a
 
 // dispatchTools splits the streamed tool_use blocks into reads and
 // writes, runs reads concurrently, gates writes behind a confirm
-// prompt, and returns the tool_result blocks in input order so the
-// next Anthropic call sees a consistent dialogue.
+// prompt and applies them sequentially in input order, and returns the
+// tool_result blocks in input order so the next Anthropic call sees a
+// consistent dialogue.
 func (s *session) dispatchTools(
 	ctx context.Context,
 	assistantBlocks []anthropic.ContentBlockParamUnion,
@@ -477,12 +487,7 @@ func (s *session) dispatchTools(
 	for i := range calls {
 		c := calls[i]
 
-		if c.write && !approved {
-			results[c.idx] = makeToolResult(c.id, mustJSON(map[string]any{
-				"approved": false,
-				"reason":   "user declined",
-			}))
-
+		if c.write {
 			continue
 		}
 
@@ -492,6 +497,29 @@ func (s *session) dispatchTools(
 	}
 
 	wg.Wait()
+
+	// writes run one at a time, in the order the model asked for. Each is a
+	// separate round trip to the document service, so running them
+	// concurrently would let two edits of one document land in either order
+	// and would break a call that references a block an earlier call created.
+	for i := range calls {
+		c := calls[i]
+
+		if !c.write {
+			continue
+		}
+
+		if !approved {
+			results[c.idx] = makeToolResult(c.id, mustJSON(map[string]any{
+				"approved": false,
+				"reason":   "user declined",
+			}))
+
+			continue
+		}
+
+		results[c.idx] = s.runTool(ctx, c.id, tools.Name(c.name), c.args)
+	}
 
 	return results
 }

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -15,12 +16,14 @@ import (
 	anthropic "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/jellydator/xync"
+	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/protocol"
 	protocolMock "github.com/oxynote/oxynote/server/core/internal/assistant/protocol/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
 	toolsMock "github.com/oxynote/oxynote/server/core/internal/assistant/tools/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
+	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -296,6 +299,10 @@ func Test_Session_Process(t *testing.T) {
 		s := newTestSession(client, writer, nil, store, nil)
 
 		s.Process(context.Background(), []byte(`{"type":"message","content":"hi"}`))
+
+		// drain without cancelling: Close interrupts a running turn.
+		s.supv.Wait()
+
 		require.NoError(t, s.Close())
 
 		assert.Equal(t, []string{"text_delta", "text_end:message", "done"}, writtenTypes(writer))
@@ -458,6 +465,119 @@ func Test_Session_callAnthropic(t *testing.T) {
 		_, err := s.callAnthropic(context.Background(), "")
 		require.Error(t, err)
 	})
+}
+
+func Test_Session_Close_interruptsPendingConfirmation(t *testing.T) {
+	t.Parallel()
+
+	client := anthClient(t, func(_ int) (int, string) {
+		return http.StatusOK, sseToolTurn("delete_document", `{"document_id":"doc-1"}`)
+	})
+
+	s := newTestSession(client, &protocolMock.SessionWriter{}, nil, nil, nil)
+
+	s.Process(context.Background(), []byte(`{"type":"message","content":"hi"}`))
+
+	// no completion signal exists for "the turn has parked on the confirm
+	// prompt", so poll for the pending channel the prompt installs.
+	require.Eventually(t, func() bool {
+		s.confirmMu.Lock()
+		defer s.confirmMu.Unlock()
+
+		return s.confirmCh != nil
+	}, 5*time.Second, time.Millisecond)
+
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+
+		assert.NoError(t, s.Close())
+	}()
+
+	// Close cancels the turn instead of waiting out _confirmTimeout, which
+	// is ten minutes.
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Close did not interrupt the pending confirmation")
+	}
+}
+
+func Test_Session_dispatchTools_writesRunSequentially(t *testing.T) {
+	t.Parallel()
+
+	var s *session
+
+	writer := &protocolMock.SessionWriter{
+		WriteJSONFunc: func(_ context.Context, msg any) {
+			if req, ok := msg.(protocol.ConfirmRequest); ok {
+				s.deliverConfirmResponse(req.TurnID, true, false)
+			}
+		},
+	}
+
+	db := &toolsMock.DB{
+		FetchDocumentFunc: func(_ context.Context, id xid.ID, _, _ string) (*document.Document, error) {
+			return &document.Document{
+				ID:     id,
+				Branch: document.Branch{BranchID: xid.New()},
+			}, nil
+		},
+	}
+
+	var (
+		active     atomic.Int32
+		overlapped atomic.Bool
+		orderMu    sync.Mutex
+		order      []string
+	)
+
+	applier := &toolsMock.EditApplier{
+		ApplyFunc: func(_ context.Context, documentID, _ string, _ []edit.Operation) (edit.Result, error) {
+			if active.Add(1) > 1 {
+				overlapped.Store(true)
+			}
+
+			// widen the window a concurrent second write would land in.
+			// Sequential execution can never overlap, so this only ever
+			// slows the test down.
+			time.Sleep(20 * time.Millisecond)
+
+			orderMu.Lock()
+
+			order = append(order, documentID)
+			orderMu.Unlock()
+
+			active.Add(-1)
+
+			return edit.Result{Applied: 1}, nil
+		},
+	}
+
+	first, second := xid.New(), xid.New()
+
+	s = newTestSession(nil, writer, db, nil, nil)
+	s.tools = tools.NewManager(
+		slog.New(slog.DiscardHandler),
+		db,
+		&toolsMock.Searcher{},
+		applier,
+		&toolsMock.TreeNotifier{},
+		"org",
+		"user",
+	)
+
+	results := s.dispatchTools(context.Background(), []anthropic.ContentBlockParamUnion{
+		toolUseBlock("t1", "append_block",
+			`{"document_id":"`+first.String()+`","block":{"type":"paragraph","text":"a"}}`),
+		toolUseBlock("t2", "append_block",
+			`{"document_id":"`+second.String()+`","block":{"type":"paragraph","text":"b"}}`),
+	})
+
+	require.Len(t, results, 2)
+	assert.False(t, overlapped.Load(), "approved writes must not run concurrently")
+	assert.Equal(t, []string{first.String(), second.String()}, order)
 }
 
 func Test_Session_dispatchTools(t *testing.T) {

@@ -25,7 +25,7 @@ func Expand(b Block) (document.Block, error) {
 	case BlockHeading:
 		return expandHeading(b), nil
 	case BlockBlockquote:
-		return expandBlockquote(b), nil
+		return expandBlockquote(b)
 	case BlockBulletList:
 		return expandBulletOrOrderedList(b, document.BlockNodeBulletList)
 	case BlockOrderedList:
@@ -125,20 +125,32 @@ func expandHeading(b Block) document.Block {
 	}
 }
 
-// expandBlockquote builds a blockquote node wrapping a single
-// paragraph carrying the inline text.
-func expandBlockquote(b Block) document.Block {
-	inner := document.Block{
-		Type:    document.BlockNodeParagraph,
-		Attrs:   uidAttrs(strutil.NanoID()),
-		Content: ParseInlineMarkdown(b.Text),
+// expandBlockquote builds a blockquote node. Either Text (single-paragraph
+// shorthand) or Items (any combination of paragraphs and lists) supplies the
+// content, matching what Validate accepts and what Compact produces.
+func expandBlockquote(b Block) (document.Block, error) {
+	var children []document.Block
+
+	if len(b.Items) > 0 {
+		expanded, err := expandMany(b.Items)
+		if err != nil {
+			return document.Block{}, fmt.Errorf("blockquote items: %w", err)
+		}
+
+		children = expanded
+	} else {
+		children = []document.Block{{
+			Type:    document.BlockNodeParagraph,
+			Attrs:   uidAttrs(strutil.NanoID()),
+			Content: ParseInlineMarkdown(b.Text),
+		}}
 	}
 
 	return document.Block{
 		Type:    document.BlockNodeBlockquote,
 		Attrs:   uidAttrs(resolveUID(b.UID)),
-		Content: []document.Block{inner},
-	}
+		Content: children,
+	}, nil
 }
 
 // expandBulletOrOrderedList builds a bulletList or orderedList node.
