@@ -10,6 +10,8 @@ import (
 	"github.com/jarcoal/httpmock"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
+	"github.com/oxynote/wetsocks/wsserver"
+	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -207,6 +209,56 @@ func Test_FilterOrganization(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, c.Result, FilterOrganization("org1")(c.Ctx, "topic"))
+		})
+	}
+}
+
+func Test_FilterOrganizationDocument(t *testing.T) {
+	t.Parallel()
+
+	docID := xid.New()
+
+	// withDocument puts the topic parameter a subscriber's context carries
+	// next to the session, the way the topic does when it publishes.
+	withDocument := func(ctx context.Context, id string) context.Context {
+		return wsserver.NewTopicParamsContext(ctx, map[string]string{"documentId": id})
+	}
+
+	session := AddSessionToContext(context.Background(), Session{
+		UserID:               "u1",
+		ActiveOrganizationID: "org1",
+	})
+
+	cc := map[string]struct {
+		Ctx    context.Context
+		Result bool
+	}{
+		"No session in context": {
+			Ctx: withDocument(context.Background(), docID.String()),
+		},
+		"No document in context": {
+			Ctx: session,
+		},
+		"Another document": {
+			Ctx: withDocument(session, xid.New().String()),
+		},
+		"Another organization": {
+			Ctx: withDocument(AddSessionToContext(context.Background(), Session{
+				UserID:               "u1",
+				ActiveOrganizationID: "org2",
+			}), docID.String()),
+		},
+		"Matching organization and document": {
+			Ctx:    withDocument(session, docID.String()),
+			Result: true,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, FilterOrganizationDocument("org1", docID)(c.Ctx, "topic"))
 		})
 	}
 }

@@ -371,10 +371,11 @@ func Test_Interpreter_interpretDocumentHookTriggeredNotification(t *testing.T) {
 	}
 }
 
-func Test_Interpreter_interpretDocumentNewCommentNotification(t *testing.T) {
+func Test_Interpreter_interpretDocumentCommentNotification(t *testing.T) {
 	cc := map[string]struct {
 		DB     *DBMock
 		N      notification.Notification
+		Verb   string
 		Result *Message
 		Err    error
 	}{
@@ -384,7 +385,8 @@ func Test_Interpreter_interpretDocumentNewCommentNotification(t *testing.T) {
 				Code:     notification.NotificationDocumentNewComment,
 				Metadata: notification.Metadata{},
 			}),
-			Err: ErrInvalidNotificationMetadata,
+			Verb: _commentVerb,
+			Err:  ErrInvalidNotificationMetadata,
 		},
 		"Invalid anchor block metadata": {
 			DB: stubDB(),
@@ -395,7 +397,8 @@ func Test_Interpreter_interpretDocumentNewCommentNotification(t *testing.T) {
 					"anchorBlockId": "not-a-null-string",
 				},
 			}),
-			Err: ErrInvalidNotificationMetadata,
+			Verb: _commentVerb,
+			Err:  ErrInvalidNotificationMetadata,
 		},
 		"Invalid branch metadata": {
 			DB: stubDB(),
@@ -406,7 +409,8 @@ func Test_Interpreter_interpretDocumentNewCommentNotification(t *testing.T) {
 					"anchorBlockId": null.String{},
 				},
 			}),
-			Err: ErrInvalidNotificationMetadata,
+			Verb: _commentVerb,
+			Err:  ErrInvalidNotificationMetadata,
 		},
 		"Error returned by db.FetchDocumentByBranchID": {
 			DB: func() *DBMock {
@@ -424,25 +428,8 @@ func Test_Interpreter_interpretDocumentNewCommentNotification(t *testing.T) {
 				null.String{},
 				_testBranchID,
 			)),
-			Err: assert.AnError,
-		},
-		"Error returned by db.FetchUserName": {
-			DB: func() *DBMock {
-				db := stubDB()
-				db.FetchUserNameFunc = func(_ context.Context, _ string) (string, error) {
-					return "", assert.AnError
-				}
-
-				return db
-			}(),
-			N: stubNotification(notification.NewDocumentNewCommentNotification(
-				"user1",
-				_testDocID,
-				xid.New(),
-				null.String{},
-				_testBranchID,
-			)),
-			Err: assert.AnError,
+			Verb: _commentVerb,
+			Err:  assert.AnError,
 		},
 		"Error returned by db.FetchOrganizationSlug": {
 			DB: func() *DBMock {
@@ -460,9 +447,29 @@ func Test_Interpreter_interpretDocumentNewCommentNotification(t *testing.T) {
 				null.String{},
 				_testBranchID,
 			)),
-			Err: assert.AnError,
+			Verb: _commentVerb,
+			Err:  assert.AnError,
 		},
-		"Successful interpretation": {
+		"Error returned by db.FetchUserName": {
+			DB: func() *DBMock {
+				db := stubDB()
+				db.FetchUserNameFunc = func(_ context.Context, _ string) (string, error) {
+					return "", assert.AnError
+				}
+
+				return db
+			}(),
+			N: stubNotification(notification.NewDocumentNewCommentNotification(
+				"user1",
+				_testDocID,
+				xid.New(),
+				null.String{},
+				_testBranchID,
+			)),
+			Verb: _commentVerb,
+			Err:  assert.AnError,
+		},
+		"Successful comment interpretation": {
 			DB: stubDB(),
 			N: stubNotification(notification.NewDocumentNewCommentNotification(
 				"user1",
@@ -471,11 +478,12 @@ func Test_Interpreter_interpretDocumentNewCommentNotification(t *testing.T) {
 				null.String{},
 				_testBranchID,
 			)),
+			Verb: _commentVerb,
 			Result: &Message{
 				Text: fmt.Sprintf("Alice left a comment on <%s|My Doc>", _testDocURL),
 			},
 		},
-		"Successful interpretation with anchor block": {
+		"Successful comment interpretation with anchor block": {
 			DB: stubDB(),
 			N: stubNotification(notification.NewDocumentNewCommentNotification(
 				"user1",
@@ -484,129 +492,12 @@ func Test_Interpreter_interpretDocumentNewCommentNotification(t *testing.T) {
 				null.StringFrom("blk1"),
 				_testBranchID,
 			)),
+			Verb: _commentVerb,
 			Result: &Message{
 				Text: fmt.Sprintf("Alice left a comment on <%s#blk1|My Doc>", _testDocURL),
 			},
 		},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			i := NewInterpreter(c.DB, NewSlackFormatter(), "https://app.test")
-
-			res, err := i.interpretDocumentNewCommentNotification(context.Background(), c.N)
-			testutil.AssertEqualError(t, c.Err, err)
-
-			if err != nil {
-				return
-			}
-
-			assert.Equal(t, c.Result, res)
-
-			ff := c.DB.FetchUserNameCalls()
-			require.Len(t, ff, 1)
-			assert.Equal(t, "user1", ff[0].UserID)
-		})
-	}
-}
-
-func Test_Interpreter_interpretDocumentNewCommentReplyNotification(t *testing.T) {
-	cc := map[string]struct {
-		DB     *DBMock
-		N      notification.Notification
-		Result *Message
-		Err    error
-	}{
-		"Invalid user metadata": {
-			DB: stubDB(),
-			N: stubNotification(notification.Core{
-				Code:     notification.NotificationDocumentNewCommentReply,
-				Metadata: notification.Metadata{},
-			}),
-			Err: ErrInvalidNotificationMetadata,
-		},
-		"Invalid anchor block metadata": {
-			DB: stubDB(),
-			N: stubNotification(notification.Core{
-				Code: notification.NotificationDocumentNewCommentReply,
-				Metadata: notification.Metadata{
-					"userId":        "user1",
-					"anchorBlockId": "not-a-null-string",
-				},
-			}),
-			Err: ErrInvalidNotificationMetadata,
-		},
-		"Invalid branch metadata": {
-			DB: stubDB(),
-			N: stubNotification(notification.Core{
-				Code: notification.NotificationDocumentNewCommentReply,
-				Metadata: notification.Metadata{
-					"userId":        "user1",
-					"anchorBlockId": null.String{},
-				},
-			}),
-			Err: ErrInvalidNotificationMetadata,
-		},
-		"Error returned by db.FetchDocumentByBranchID": {
-			DB: func() *DBMock {
-				db := stubDB()
-				db.FetchDocumentByBranchIDFunc = func(_ context.Context, _ xid.ID, _ string) (*document.Document, error) {
-					return nil, assert.AnError
-				}
-
-				return db
-			}(),
-			N: stubNotification(notification.NewDocumentNewCommentReplyNotification(
-				"user1",
-				_testDocID,
-				xid.New(),
-				xid.New(),
-				null.String{},
-				_testBranchID,
-			)),
-			Err: assert.AnError,
-		},
-		"Error returned by db.FetchUserName": {
-			DB: func() *DBMock {
-				db := stubDB()
-				db.FetchUserNameFunc = func(_ context.Context, _ string) (string, error) {
-					return "", assert.AnError
-				}
-
-				return db
-			}(),
-			N: stubNotification(notification.NewDocumentNewCommentReplyNotification(
-				"user1",
-				_testDocID,
-				xid.New(),
-				xid.New(),
-				null.String{},
-				_testBranchID,
-			)),
-			Err: assert.AnError,
-		},
-		"Error returned by db.FetchOrganizationSlug": {
-			DB: func() *DBMock {
-				db := stubDB()
-				db.FetchOrganizationSlugFunc = func(_ context.Context, _ string) (string, error) {
-					return "", assert.AnError
-				}
-
-				return db
-			}(),
-			N: stubNotification(notification.NewDocumentNewCommentReplyNotification(
-				"user1",
-				_testDocID,
-				xid.New(),
-				xid.New(),
-				null.String{},
-				_testBranchID,
-			)),
-			Err: assert.AnError,
-		},
-		"Successful interpretation": {
+		"Successful reply interpretation": {
 			DB: stubDB(),
 			N: stubNotification(notification.NewDocumentNewCommentReplyNotification(
 				"user1",
@@ -616,11 +507,12 @@ func Test_Interpreter_interpretDocumentNewCommentReplyNotification(t *testing.T)
 				null.String{},
 				_testBranchID,
 			)),
+			Verb: _commentReplyVerb,
 			Result: &Message{
 				Text: fmt.Sprintf("Alice replied to a comment on <%s|My Doc>", _testDocURL),
 			},
 		},
-		"Successful interpretation with anchor block": {
+		"Successful reply interpretation with anchor block": {
 			DB: stubDB(),
 			N: stubNotification(notification.NewDocumentNewCommentReplyNotification(
 				"user1",
@@ -630,6 +522,7 @@ func Test_Interpreter_interpretDocumentNewCommentReplyNotification(t *testing.T)
 				null.StringFrom("blk1"),
 				_testBranchID,
 			)),
+			Verb: _commentReplyVerb,
 			Result: &Message{
 				Text: fmt.Sprintf("Alice replied to a comment on <%s#blk1|My Doc>", _testDocURL),
 			},
@@ -642,7 +535,7 @@ func Test_Interpreter_interpretDocumentNewCommentReplyNotification(t *testing.T)
 
 			i := NewInterpreter(c.DB, NewSlackFormatter(), "https://app.test")
 
-			res, err := i.interpretDocumentNewCommentReplyNotification(context.Background(), c.N)
+			res, err := i.interpretDocumentCommentNotification(context.Background(), c.N, c.Verb)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {
@@ -650,6 +543,10 @@ func Test_Interpreter_interpretDocumentNewCommentReplyNotification(t *testing.T)
 			}
 
 			assert.Equal(t, c.Result, res)
+
+			ff := c.DB.FetchUserNameCalls()
+			require.Len(t, ff, 1)
+			assert.Equal(t, "user1", ff[0].UserID)
 		})
 	}
 }

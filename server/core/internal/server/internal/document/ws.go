@@ -72,33 +72,23 @@ type BranchMetadata struct {
 
 // BindReviewersChange binds a reviewers change event to the given topic.
 func (h *Handler) BindReviewersChange(tpc wsserver.Topic) {
-	h.reviewers.changeCallback = func(organizationID string, documentID xid.ID) {
-		ctx, cancel := context.WithTimeout(context.Background(), _publishTimeout)
-		defer cancel()
-
-		tpc.PublishMany(ctx, struct{}{}, func(ctx context.Context, rawTopic string) bool {
-			if wsserver.TopicParamFromContext(ctx, "documentId") != documentID.String() {
-				return false
-			}
-
-			return auth.FilterOrganization(organizationID)(ctx, rawTopic)
-		})
-	}
+	h.reviewers.changeCallback = publishDocumentChange(tpc)
 }
 
 // BindMaintainersChange binds a maintainers change event to the given topic.
 func (h *Handler) BindMaintainersChange(tpc wsserver.Topic) {
-	h.maintainers.changeCallback = func(organizationID string, documentID xid.ID) {
+	h.maintainers.changeCallback = publishDocumentChange(tpc)
+}
+
+// publishDocumentChange builds the callback that announces a bare change of
+// a document to its watchers. Reviewers and maintainers differ only in the
+// callback slot it is assigned to.
+func publishDocumentChange(tpc wsserver.Topic) func(organizationID string, documentID xid.ID) {
+	return func(organizationID string, documentID xid.ID) {
 		ctx, cancel := context.WithTimeout(context.Background(), _publishTimeout)
 		defer cancel()
 
-		tpc.PublishMany(ctx, struct{}{}, func(ctx context.Context, rawTopic string) bool {
-			if wsserver.TopicParamFromContext(ctx, "documentId") != documentID.String() {
-				return false
-			}
-
-			return auth.FilterOrganization(organizationID)(ctx, rawTopic)
-		})
+		tpc.PublishMany(ctx, struct{}{}, auth.FilterOrganizationDocument(organizationID, documentID))
 	}
 }
 
@@ -141,13 +131,11 @@ func (h *Handler) BindMetadataChange(tpc wsserver.Topic) {
 		pubCtx, pubCancel := context.WithTimeout(context.Background(), _publishTimeout)
 		defer pubCancel()
 
-		tpc.PublishMany(pubCtx, branchMetadataFrom(doc), func(ctx context.Context, rawTopic string) bool {
-			if wsserver.TopicParamFromContext(ctx, "documentId") != doc.ID.String() {
-				return false
-			}
-
-			return auth.FilterOrganization(organizationID)(ctx, rawTopic)
-		})
+		tpc.PublishMany(
+			pubCtx,
+			branchMetadataFrom(doc),
+			auth.FilterOrganizationDocument(organizationID, doc.ID),
+		)
 	}
 }
 

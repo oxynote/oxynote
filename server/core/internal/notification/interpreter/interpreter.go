@@ -22,6 +22,15 @@ var (
 	ErrInvalidNotificationMetadata = errutil.New(http.StatusBadRequest, "notification.invalid_metadata", "invalid notification metadata")
 )
 
+const (
+	// _commentVerb names what the commenter did in a new comment message.
+	_commentVerb = "left a comment on"
+
+	// _commentReplyVerb names what the commenter did in a comment reply
+	// message.
+	_commentReplyVerb = "replied to a comment on"
+)
+
 // Interpreter is the notification interpreter.
 type Interpreter struct {
 	db     DB
@@ -46,9 +55,9 @@ func (i *Interpreter) InterpretNotification(ctx context.Context, n notification.
 	case notification.NotificationDocumentHookTriggered:
 		return i.interpretDocumentHookTriggeredNotification(ctx, n)
 	case notification.NotificationDocumentNewComment:
-		return i.interpretDocumentNewCommentNotification(ctx, n)
+		return i.interpretDocumentCommentNotification(ctx, n, _commentVerb)
 	case notification.NotificationDocumentNewCommentReply:
-		return i.interpretDocumentNewCommentReplyNotification(ctx, n)
+		return i.interpretDocumentCommentNotification(ctx, n, _commentReplyVerb)
 	}
 
 	return nil, ErrUnknownNotificationCode
@@ -56,28 +65,16 @@ func (i *Interpreter) InterpretNotification(ctx context.Context, n notification.
 
 // interpretDocumentReviewRequestNotification interprets a document review request notification.
 func (i *Interpreter) interpretDocumentReviewRequestNotification(ctx context.Context, n notification.Notification) (*Message, error) {
-	branchID, ok := metaBranchID(n)
-	if !ok {
-		return nil, ErrInvalidNotificationMetadata
-	}
-
-	doc, err := i.db.FetchDocumentByBranchID(ctx, branchID, n.OrganizationID)
+	doc, orgSlug, err := i.resolveDocument(ctx, n)
 	if err != nil {
 		return nil, err
 	}
-
-	orgSlug, err := i.db.FetchOrganizationSlug(ctx, n.OrganizationID)
-	if err != nil {
-		return nil, err
-	}
-
-	url := fmt.Sprintf("%s/%s/%s-%s", i.appURL, orgSlug, slug.Make(doc.DocumentName), doc.ID.String())
 
 	return &Message{
 		Text: fmt.Sprintf(
 			"Your review was requested on the %s branch of %s",
 			doc.BranchName,
-			i.fm.Link(url, doc.DocumentName),
+			i.fm.Link(i.documentURL(doc, orgSlug, null.String{}), doc.DocumentName),
 		),
 	}, nil
 }
@@ -94,24 +91,9 @@ func (i *Interpreter) interpretDocumentHookTriggeredNotification(ctx context.Con
 		return nil, ErrInvalidNotificationMetadata
 	}
 
-	branchID, ok := metaBranchID(n)
-	if !ok {
-		return nil, ErrInvalidNotificationMetadata
-	}
-
-	doc, err := i.db.FetchDocumentByBranchID(ctx, branchID, n.OrganizationID)
+	doc, orgSlug, err := i.resolveDocument(ctx, n)
 	if err != nil {
 		return nil, err
-	}
-
-	orgSlug, err := i.db.FetchOrganizationSlug(ctx, n.OrganizationID)
-	if err != nil {
-		return nil, err
-	}
-
-	url := fmt.Sprintf("%s/%s/%s-%s", i.appURL, orgSlug, slug.Make(doc.DocumentName), doc.ID.String())
-	if blockID.Valid {
-		url = fmt.Sprintf("%s#%s", url, blockID.String)
 	}
 
 	subject := doc.DocumentName
@@ -122,14 +104,20 @@ func (i *Interpreter) interpretDocumentHookTriggeredNotification(ctx context.Con
 	return &Message{
 		Text: fmt.Sprintf(
 			"%s may be outdated — %s",
-			i.fm.Link(url, subject),
+			i.fm.Link(i.documentURL(doc, orgSlug, blockID), subject),
 			tp.HumanizedString(),
 		),
 	}, nil
 }
 
-// interpretDocumentNewCommentNotification interprets a document new comment notification.
-func (i *Interpreter) interpretDocumentNewCommentNotification(ctx context.Context, n notification.Notification) (*Message, error) {
+// interpretDocumentCommentNotification interprets both comment
+// notifications: a comment and a reply to one differ only in the verb naming
+// what the commenter did.
+func (i *Interpreter) interpretDocumentCommentNotification(
+	ctx context.Context,
+	n notification.Notification,
+	verb string,
+) (*Message, error) {
 	userID, ok := n.Metadata["userId"].(string)
 	if !ok {
 		return nil, ErrInvalidNotificationMetadata
@@ -140,12 +128,7 @@ func (i *Interpreter) interpretDocumentNewCommentNotification(ctx context.Contex
 		return nil, ErrInvalidNotificationMetadata
 	}
 
-	branchID, ok := metaBranchID(n)
-	if !ok {
-		return nil, ErrInvalidNotificationMetadata
-	}
-
-	doc, err := i.db.FetchDocumentByBranchID(ctx, branchID, n.OrganizationID)
+	doc, orgSlug, err := i.resolveDocument(ctx, n)
 	if err != nil {
 		return nil, err
 	}
@@ -155,69 +138,50 @@ func (i *Interpreter) interpretDocumentNewCommentNotification(ctx context.Contex
 		return nil, err
 	}
 
-	orgSlug, err := i.db.FetchOrganizationSlug(ctx, n.OrganizationID)
-	if err != nil {
-		return nil, err
-	}
-
-	url := fmt.Sprintf("%s/%s/%s-%s", i.appURL, orgSlug, slug.Make(doc.DocumentName), doc.ID.String())
-	if anchorBlockID.Valid {
-		url = fmt.Sprintf("%s#%s", url, anchorBlockID.String)
-	}
-
 	return &Message{
 		Text: fmt.Sprintf(
-			"%s left a comment on %s",
+			"%s %s %s",
 			name,
-			i.fm.Link(url, doc.DocumentName),
+			verb,
+			i.fm.Link(i.documentURL(doc, orgSlug, anchorBlockID), doc.DocumentName),
 		),
 	}, nil
 }
 
-// interpretDocumentNewCommentReplyNotification interprets a document new comment reply notification.
-func (i *Interpreter) interpretDocumentNewCommentReplyNotification(ctx context.Context, n notification.Notification) (*Message, error) {
-	userID, ok := n.Metadata["userId"].(string)
-	if !ok {
-		return nil, ErrInvalidNotificationMetadata
-	}
-
-	anchorBlockID, ok := metaNullString(n, "anchorBlockId")
-	if !ok {
-		return nil, ErrInvalidNotificationMetadata
-	}
-
+// resolveDocument reads the branch the notification points at and returns the
+// document together with the slug of the organization owning it, which is
+// what every message needs to address its reader.
+func (i *Interpreter) resolveDocument(
+	ctx context.Context,
+	n notification.Notification,
+) (*document.Document, string, error) {
 	branchID, ok := metaBranchID(n)
 	if !ok {
-		return nil, ErrInvalidNotificationMetadata
+		return nil, "", ErrInvalidNotificationMetadata
 	}
 
 	doc, err := i.db.FetchDocumentByBranchID(ctx, branchID, n.OrganizationID)
 	if err != nil {
-		return nil, err
-	}
-
-	name, err := i.db.FetchUserName(ctx, userID)
-	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	orgSlug, err := i.db.FetchOrganizationSlug(ctx, n.OrganizationID)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
+	return doc, orgSlug, nil
+}
+
+// documentURL builds the front-end URL of a document, anchored at a block
+// when the notification names one.
+func (i *Interpreter) documentURL(doc *document.Document, orgSlug string, anchor null.String) string {
 	url := fmt.Sprintf("%s/%s/%s-%s", i.appURL, orgSlug, slug.Make(doc.DocumentName), doc.ID.String())
-	if anchorBlockID.Valid {
-		url = fmt.Sprintf("%s#%s", url, anchorBlockID.String)
+	if anchor.Valid {
+		return fmt.Sprintf("%s#%s", url, anchor.String)
 	}
 
-	return &Message{
-		Text: fmt.Sprintf(
-			"%s replied to a comment on %s",
-			name,
-			i.fm.Link(url, doc.DocumentName),
-		),
-	}, nil
+	return url
 }
 
 // DB is the interface for database operations needed by the interpreter.

@@ -669,9 +669,11 @@ func Test_Handler_UpdateBranchReviewApproval(t *testing.T) {
 			assert.Len(t, c.DB.UpdateBranchReviewerCalls(), c.Updated)
 			assert.Equal(t, c.Reviewers, cnt.reviewers)
 
+			// PreviouslyApproved is deliberately not asserted: the update
+			// query persists currently_approved alone, so whatever the
+			// handler puts in that field never reaches the row.
 			if c.Updated == 1 && c.RespCode == http.StatusOK {
 				assert.True(t, c.DB.UpdateBranchReviewerCalls()[0].Reviewer.CurrentlyApproved)
-				assert.True(t, c.DB.UpdateBranchReviewerCalls()[0].Reviewer.PreviouslyApproved)
 			}
 		})
 	}

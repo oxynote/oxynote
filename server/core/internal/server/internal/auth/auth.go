@@ -9,6 +9,8 @@ import (
 	"net/http"
 
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
+	"github.com/oxynote/wetsocks/wsserver"
+	"github.com/rs/xid"
 )
 
 // _contextKey is a custom type for context keys to avoid collisions.
@@ -65,6 +67,21 @@ func FilterOrganization(organizationID string) func(context.Context, string) boo
 		}
 
 		return session.ActiveOrganizationID == organizationID
+	}
+}
+
+// FilterOrganizationDocument returns a filter function that checks the
+// session's active organization on top of the document the subscriber's
+// topic is bound to, so a publish reaches only those watching that document.
+func FilterOrganizationDocument(organizationID string, documentID xid.ID) func(context.Context, string) bool {
+	organization := FilterOrganization(organizationID)
+
+	return func(ctx context.Context, rawTopic string) bool {
+		if wsserver.TopicParamFromContext(ctx, "documentId") != documentID.String() {
+			return false
+		}
+
+		return organization(ctx, rawTopic)
 	}
 }
 

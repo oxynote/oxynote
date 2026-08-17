@@ -42,12 +42,6 @@ func (h *Handler) BindCommentsChange(tpc wsserver.Topic) {
 		ctx, cancel := context.WithTimeout(context.Background(), _publishTimeout)
 		defer cancel()
 
-		tpc.PublishMany(ctx, msg, func(ctx context.Context, rawTopic string) bool {
-			if wsserver.TopicParamFromContext(ctx, "documentId") != documentId.String() {
-				return false
-			}
-
-			return auth.FilterOrganization(organizationID)(ctx, rawTopic)
-		})
+		tpc.PublishMany(ctx, msg, auth.FilterOrganizationDocument(organizationID, documentId))
 	}
 }

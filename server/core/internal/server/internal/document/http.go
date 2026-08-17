@@ -193,29 +193,14 @@ func (h *Handler) RequestBranchReviewer(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	_, err = h.db.FetchBranchReviewer(r.Context(), branchDoc.BranchID, inp.UserID, session.ActiveOrganizationID)
-
-	switch {
-	case err == nil:
-		if err = h.db.UpdateBranchReviewer(r.Context(), documentCore.BranchReviewer{
-			BranchID:          branchDoc.BranchID,
-			UserID:            inp.UserID,
-			OrganizationID:    session.ActiveOrganizationID,
-			CurrentlyApproved: false,
-		}); err != nil {
-			httpserver.RespondError(h.log, w, err)
-			return
-		}
-	case errutil.IsNotFound(err):
-		if err = h.db.InsertBranchReviewer(r.Context(), documentCore.BranchReviewer{
-			BranchID:       branchDoc.BranchID,
-			UserID:         inp.UserID,
-			OrganizationID: session.ActiveOrganizationID,
-		}); err != nil {
-			httpserver.RespondError(h.log, w, err)
-			return
-		}
-	default:
+	err = h.upsertBranchReviewer(
+		r.Context(),
+		branchDoc.BranchID,
+		inp.UserID,
+		session.ActiveOrganizationID,
+		false,
+	)
+	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -482,64 +467,9 @@ func (h *Handler) CreateDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var tx Tx
-
-	err = h.db.BeginTx(r.Context(), &tx)
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
-
 	doc := documentCore.NewDocument(di, session.ActiveOrganizationID, session.UserID)
 
-	if doc.ParentID.Valid {
-		if err = tx.CheckDocumentExists(r.Context(), doc.ParentID.V, session.ActiveOrganizationID); err != nil {
-			httpserver.RespondError(h.log, w, err)
-			return
-		}
-	}
-
-	if err = tx.InsertDocument(r.Context(), doc); err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	if err = tx.UpsertDocumentMaintainers(r.Context(), doc.ID, session.ActiveOrganizationID, []string{session.UserID}); err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	if err = tx.InsertDocumentSearchJob(r.Context(), search.BlocksDiff(nil, doc.Search())); err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	tree, err := tx.FetchDocumentTreeByDocumentParentID(
-		r.Context(),
-		di.ParentID,
-		session.ActiveOrganizationID,
-	)
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	swappedTree, err := tree.Swap(doc.ID, 0)
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	err = tx.UpdateDocumentTree(r.Context(), swappedTree, session.ActiveOrganizationID)
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	err = tx.Commit()
-	if err != nil {
+	if err = h.insertDocumentTx(r.Context(), doc, session); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -800,31 +730,14 @@ func (h *Handler) UpdateBranchReviewApproval(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	existing, err := h.db.FetchBranchReviewer(r.Context(), branchDoc.BranchID, session.UserID, session.ActiveOrganizationID)
-
-	switch {
-	case err == nil:
-		if err = h.db.UpdateBranchReviewer(r.Context(), documentCore.BranchReviewer{
-			BranchID:           branchDoc.BranchID,
-			UserID:             session.UserID,
-			OrganizationID:     session.ActiveOrganizationID,
-			CurrentlyApproved:  inp.Approved,
-			PreviouslyApproved: existing.PreviouslyApproved,
-		}); err != nil {
-			httpserver.RespondError(h.log, w, err)
-			return
-		}
-	case errutil.IsNotFound(err):
-		if err = h.db.InsertBranchReviewer(r.Context(), documentCore.BranchReviewer{
-			BranchID:          branchDoc.BranchID,
-			UserID:            session.UserID,
-			OrganizationID:    session.ActiveOrganizationID,
-			CurrentlyApproved: inp.Approved,
-		}); err != nil {
-			httpserver.RespondError(h.log, w, err)
-			return
-		}
-	default:
+	err = h.upsertBranchReviewer(
+		r.Context(),
+		branchDoc.BranchID,
+		session.UserID,
+		session.ActiveOrganizationID,
+		inp.Approved,
+	)
+	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -1045,55 +958,7 @@ func (h *Handler) DuplicateDocument(w http.ResponseWriter, r *http.Request) {
 
 	duplDoc, files := doc.Duplicate(session.UserID)
 
-	var tx Tx
-
-	err = h.db.BeginTx(r.Context(), &tx)
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
-
-	if err = tx.InsertDocument(r.Context(), duplDoc); err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	if err = tx.UpsertDocumentMaintainers(r.Context(), duplDoc.ID, session.ActiveOrganizationID, []string{session.UserID}); err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	if err = tx.InsertDocumentSearchJob(r.Context(), search.BlocksDiff(nil, duplDoc.Search())); err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	tree, err := tx.FetchDocumentTreeByDocumentParentID(
-		r.Context(),
-		duplDoc.ParentID,
-		session.ActiveOrganizationID,
-	)
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	swappedTree, err := tree.Swap(duplDoc.ID, 0)
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	err = tx.UpdateDocumentTree(r.Context(), swappedTree, session.ActiveOrganizationID)
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	err = tx.Commit()
-	if err != nil {
+	if err = h.insertDocumentTx(r.Context(), duplDoc, session); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -1374,6 +1239,89 @@ func (h *Handler) copyHooksToBranch(ctx context.Context, fromBranchID, toBranchI
 	}
 
 	return nil
+}
+
+// upsertBranchReviewer records the reviewer's approval state, inserting the
+// row when the user is not yet a reviewer of the branch. PreviouslyApproved
+// is never written here: UpdateBranchReviewer persists currently_approved
+// alone, and the promotion on merge owns the other column.
+func (h *Handler) upsertBranchReviewer(
+	ctx context.Context,
+	branchID xid.ID,
+	userID string,
+	organizationID string,
+	approved bool,
+) error {
+	reviewer := documentCore.BranchReviewer{
+		BranchID:          branchID,
+		UserID:            userID,
+		OrganizationID:    organizationID,
+		CurrentlyApproved: approved,
+	}
+
+	_, err := h.db.FetchBranchReviewer(ctx, branchID, userID, organizationID)
+
+	switch {
+	case err == nil:
+		return h.db.UpdateBranchReviewer(ctx, reviewer)
+	case errutil.IsNotFound(err):
+		return h.db.InsertBranchReviewer(ctx, reviewer)
+	default:
+		return err
+	}
+}
+
+// insertDocumentTx inserts a new document together with its maintainer and
+// its search job, and slots it at the top of its parent's tree, all in one
+// transaction. The tree-change notification is left to the caller, since it
+// must not fire before the commit.
+func (h *Handler) insertDocumentTx(ctx context.Context, doc documentCore.Document, session auth.Session) error {
+	var tx Tx
+
+	if err := h.db.BeginTx(ctx, &tx); err != nil {
+		return err
+	}
+
+	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
+
+	if doc.ParentID.Valid {
+		if err := tx.CheckDocumentExists(ctx, doc.ParentID.V, session.ActiveOrganizationID); err != nil {
+			return err
+		}
+	}
+
+	if err := tx.InsertDocument(ctx, doc); err != nil {
+		return err
+	}
+
+	if err := tx.UpsertDocumentMaintainers(
+		ctx,
+		doc.ID,
+		session.ActiveOrganizationID,
+		[]string{session.UserID},
+	); err != nil {
+		return err
+	}
+
+	if err := tx.InsertDocumentSearchJob(ctx, search.BlocksDiff(nil, doc.Search())); err != nil {
+		return err
+	}
+
+	tree, err := tx.FetchDocumentTreeByDocumentParentID(ctx, doc.ParentID, session.ActiveOrganizationID)
+	if err != nil {
+		return err
+	}
+
+	swappedTree, err := tree.Swap(doc.ID, 0)
+	if err != nil {
+		return err
+	}
+
+	if err = tx.UpdateDocumentTree(ctx, swappedTree, session.ActiveOrganizationID); err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 // DB is an interface that combines sqlutil.DB and DBAgent.

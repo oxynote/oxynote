@@ -12,16 +12,9 @@ import (
 
 // FetchBranchReviewers retrieves all reviewers for a specific branch.
 func (a *agent) FetchBranchReviewers(ctx context.Context, branchID xid.ID, organizationID string) ([]document.BranchReviewer, error) {
-	q, args := a.builder.Select(
-		"fk_branch_id",
-		"fk_user_id",
-		"fk_organization_id",
-		"currently_approved",
-		"previously_approved",
-	).From("branch_reviewers").
+	q, args := a.selectBranchReviewer(a.builder.Select(), organizationID).
 		Where(sq.Eq{
-			"fk_branch_id":       branchID,
-			"fk_organization_id": organizationID,
+			"fk_branch_id": branchID,
 		}).MustSql()
 
 	reviewers := []document.BranchReviewer{}
@@ -35,17 +28,10 @@ func (a *agent) FetchBranchReviewers(ctx context.Context, branchID xid.ID, organ
 
 // FetchBranchReviewer retrieves a single reviewer for a branch by user ID.
 func (a *agent) FetchBranchReviewer(ctx context.Context, branchID xid.ID, userID, organizationID string) (*document.BranchReviewer, error) {
-	q, args := a.builder.Select(
-		"fk_branch_id",
-		"fk_user_id",
-		"fk_organization_id",
-		"currently_approved",
-		"previously_approved",
-	).From("branch_reviewers").
+	q, args := a.selectBranchReviewer(a.builder.Select(), organizationID).
 		Where(sq.Eq{
-			"fk_branch_id":       branchID,
-			"fk_user_id":         userID,
-			"fk_organization_id": organizationID,
+			"fk_branch_id": branchID,
+			"fk_user_id":   userID,
 		}).
 		Limit(1).
 		MustSql()
@@ -169,4 +155,17 @@ func (a *agent) PromoteBranchApprovals(ctx context.Context, fromBranchID, toBran
 
 		return err
 	})
+}
+
+// selectBranchReviewer prepares a select statement for branch reviewers,
+// carrying the organization scope so that no query can forget it.
+func (a *agent) selectBranchReviewer(b sq.SelectBuilder, organizationID string) sq.SelectBuilder {
+	return b.Columns(
+		"fk_branch_id",
+		"fk_user_id",
+		"fk_organization_id",
+		"currently_approved",
+		"previously_approved",
+	).From("branch_reviewers").
+		Where(sq.Eq{"fk_organization_id": organizationID})
 }

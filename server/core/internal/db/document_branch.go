@@ -134,16 +134,7 @@ func (a *agent) FetchMainBranchContent(ctx context.Context, docID xid.ID, organi
 
 // FetchDocumentBranches fetches all branches for a document as lightweight summaries.
 func (a *agent) FetchDocumentBranches(ctx context.Context, docID xid.ID, organizationID string) ([]document.BranchSummary, error) {
-	q, args := a.builder.Select(
-		`id AS "branch_id"`,
-		`branch_name AS "branch_name"`,
-		`document_name AS "document_name"`,
-		`icon AS "icon"`,
-		`protected AS "protected"`,
-		`"default" AS "default"`,
-		`created_at AS "created_at"`,
-		`updated_at AS "updated_at"`,
-	).From("document_branches").
+	q, args := a.selectBranchSummary(a.builder.Select()).
 		Where(sq.Eq{
 			"fk_document_id":     docID,
 			"fk_organization_id": organizationID,
@@ -217,24 +208,7 @@ func (a *agent) UpdateDocumentBranchMetadata(ctx context.Context, doc document.D
 
 // FetchDocumentByBranchID fetches a document joined against the branch identified by branchID.
 func (a *agent) FetchDocumentByBranchID(ctx context.Context, branchID xid.ID, organizationID string) (*document.Document, error) {
-	q, args := a.builder.Select(
-		`db.id AS "branch_id"`,
-		`documents.id AS "id"`,
-		`documents.fk_organization_id AS "fk_organization_id"`,
-		`documents.fk_parent_id AS "fk_parent_id"`,
-		`db.branch_name AS "branch_name"`,
-		`db.document_name AS "document_name"`,
-		`db.icon AS "icon"`,
-		`db.content AS "content"`,
-		`db.raw_content AS "raw_content"`,
-		`db.protected AS "protected"`,
-		`db."default" AS "default"`,
-		`db.created_at AS "created_at"`,
-		`db.fk_created_by AS "fk_created_by"`,
-		`db.updated_at AS "updated_at"`,
-		`db.fk_last_updated_by AS "fk_last_updated_by"`,
-	).From("documents").
-		Join("document_branches db ON db.fk_document_id = documents.id").
+	q, args := a.selectDocumentBranch(a.builder.Select()).
 		Where(sq.Eq{
 			"db.id":                        branchID,
 			"documents.fk_organization_id": organizationID,
@@ -255,16 +229,7 @@ func (a *agent) FetchDocumentByBranchID(ctx context.Context, branchID xid.ID, or
 // summaries without checking organization ownership.
 // This is intended only for internal system use cases.
 func (a *agent) FetchDocumentBranchesUnsafe(ctx context.Context, docID xid.ID) ([]document.BranchSummary, error) {
-	q, args := a.builder.Select(
-		`id AS "branch_id"`,
-		`branch_name AS "branch_name"`,
-		`document_name AS "document_name"`,
-		`icon AS "icon"`,
-		`protected AS "protected"`,
-		`"default" AS "default"`,
-		`created_at AS "created_at"`,
-		`updated_at AS "updated_at"`,
-	).From("document_branches").
+	q, args := a.selectBranchSummary(a.builder.Select()).
 		Where(sq.Eq{
 			"fk_document_id": docID,
 		}).
@@ -283,7 +248,27 @@ func (a *agent) FetchDocumentBranchesUnsafe(ctx context.Context, docID xid.ID) (
 // identified by branchID without checking organization ownership.
 // This is intended only for internal system use cases.
 func (a *agent) FetchDocumentUnsafeByBranchID(ctx context.Context, branchID xid.ID) (*document.Document, error) {
-	q, args := a.builder.Select(
+	q, args := a.selectDocumentBranch(a.builder.Select()).
+		Where(sq.Eq{
+			"db.id": branchID,
+		}).
+		Limit(1).
+		MustSql()
+
+	doc := &document.Document{}
+
+	if err := sqlx.GetContext(ctx, a.sql, doc, q, args...); err != nil {
+		return nil, err
+	}
+
+	return doc, nil
+}
+
+// selectDocumentBranch prepares a select statement joining a document against
+// one of its branches. The organization scope is left to the caller, since
+// the unsafe variants exist precisely to go without it.
+func (a *agent) selectDocumentBranch(b sq.SelectBuilder) sq.SelectBuilder {
+	return b.Columns(
 		`db.id AS "branch_id"`,
 		`documents.id AS "id"`,
 		`documents.fk_organization_id AS "fk_organization_id"`,
@@ -300,20 +285,23 @@ func (a *agent) FetchDocumentUnsafeByBranchID(ctx context.Context, branchID xid.
 		`db.updated_at AS "updated_at"`,
 		`db.fk_last_updated_by AS "fk_last_updated_by"`,
 	).From("documents").
-		Join("document_branches db ON db.fk_document_id = documents.id").
-		Where(sq.Eq{
-			"db.id": branchID,
-		}).
-		Limit(1).
-		MustSql()
+		Join("document_branches db ON db.fk_document_id = documents.id")
+}
 
-	doc := &document.Document{}
-
-	if err := sqlx.GetContext(ctx, a.sql, doc, q, args...); err != nil {
-		return nil, err
-	}
-
-	return doc, nil
+// selectBranchSummary prepares a select statement for the lightweight branch
+// summary columns. The organization scope is left to the caller, since the
+// unsafe variants exist precisely to go without it.
+func (a *agent) selectBranchSummary(b sq.SelectBuilder) sq.SelectBuilder {
+	return b.Columns(
+		`id AS "branch_id"`,
+		`branch_name AS "branch_name"`,
+		`document_name AS "document_name"`,
+		`icon AS "icon"`,
+		`protected AS "protected"`,
+		`"default" AS "default"`,
+		`created_at AS "created_at"`,
+		`updated_at AS "updated_at"`,
+	).From("document_branches")
 }
 
 // insertDocumentBranchChangelog inserts a changelog entry for a branch update.

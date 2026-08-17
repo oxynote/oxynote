@@ -441,25 +441,8 @@ func (a *agent) selectDocumentTree(b sq.SelectBuilder, organizationID string) sq
 		OrderBy("documents.sort_index")
 }
 
-// selectDocumentWithBranch prepares a sql select statement for fetching a document
-// with a specific branch.
+// selectDocumentWithBranch narrows the document-branch select down to the
+// branch carrying the given name.
 func (a *agent) selectDocumentWithBranch(b sq.SelectBuilder, branchName string) sq.SelectBuilder {
-	return b.Columns(
-		`db.id AS "branch_id"`,
-		`documents.id AS "id"`,
-		`documents.fk_organization_id AS "fk_organization_id"`,
-		`documents.fk_parent_id AS "fk_parent_id"`,
-		`db.branch_name AS "branch_name"`,
-		`db.document_name AS "document_name"`,
-		`db.icon AS "icon"`,
-		`db.content AS "content"`,
-		`db.raw_content AS "raw_content"`,
-		`db.protected AS "protected"`,
-		`db."default" AS "default"`,
-		`db.created_at AS "created_at"`,
-		`db.fk_created_by AS "fk_created_by"`,
-		`db.updated_at AS "updated_at"`,
-		`db.fk_last_updated_by AS "fk_last_updated_by"`,
-	).From("documents").
-		Join("document_branches db ON db.fk_document_id = documents.id AND db.branch_name = ?", branchName)
+	return a.selectDocumentBranch(b).Where(sq.Eq{"db.branch_name": branchName})
 }
