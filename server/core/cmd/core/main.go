@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jellydator/xync"
 	"github.com/meilisearch/meilisearch-go"
 	"github.com/oxynote/oxynote/server/core/internal/apps/github"
 	"github.com/oxynote/oxynote/server/core/internal/apps/slack"
@@ -275,7 +276,18 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 
 	closers = append([]io.Closer{srv}, closers...)
 
-	var serverWg, backgroundWg sync.WaitGroup
+	// the managers own the process's periodic work, so they run under a
+	// supervisor that contains a panic none of their own recovery plans
+	// caught rather than letting it take the process down.
+	backgroundSupv := xync.NewSupervisor(
+		xync.WithSupervisorBaseContext(termCtx),
+		xync.WithSupervisorRecovery(
+			logutil.RecoveryValue(log, logutil.NewRecoveryPlan("recovered from a panic in a background manager")),
+		),
+	)
+	defer backgroundSupv.Close()
+
+	var serverWg sync.WaitGroup
 
 	serverWg.Go(func() {
 		srv.Listen()
@@ -286,21 +298,15 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 		termCancel()
 	})
 
-	backgroundWg.Go(func() {
-		hooksMan.Start(termCtx)
-	})
-	backgroundWg.Go(func() {
-		searchManager.Start(termCtx)
-	})
-	backgroundWg.Go(func() {
-		filesMan.Start(termCtx)
-	})
+	backgroundSupv.Go(hooksMan.Start)
+	backgroundSupv.Go(searchManager.Start)
+	backgroundSupv.Go(filesMan.Start)
 
 	<-termCtx.Done()
 
 	// the managers query the database and redis, so let them finish their
 	// current pass before the closer chain tears those pools down.
-	backgroundWg.Wait()
+	backgroundSupv.Wait()
 
 	cerr := ioutil.MultiCloser(true, closers...).Close()
 	if cerr != nil {

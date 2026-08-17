@@ -203,7 +203,7 @@ func Test_Recover(t *testing.T) {
 	ShowCritical = false
 }
 
-func Test_processRecoveryValue(t *testing.T) {
+func Test_RecoveryValue(t *testing.T) {
 	// the nil plan branch inside the returned closure is reachable
 	// only through a direct call, since Recover replaces a nil plan
 	// before invoking this helper.
@@ -218,7 +218,7 @@ func Test_processRecoveryValue(t *testing.T) {
 		},
 	}))
 
-	processRecoveryValue(log, nil)("error")
+	RecoveryValue(log, nil)("error")
 
 	require.NoError(t, out.Flush())
 	assert.JSONEq(t, `{

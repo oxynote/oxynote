@@ -14,6 +14,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
 	"github.com/oxynote/oxynote/server/core/internal/notification"
+	"github.com/oxynote/oxynote/server/core/pkg/mathutil"
 	"github.com/rs/xid"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
@@ -53,7 +54,7 @@ func stubHook(t *testing.T, branchID xid.ID, schedule, startedAt time.Time) hook
 		BranchID:       null.ValueFrom(branchID),
 		Settings:       processor.Settings(settings),
 		State:          processor.State(state),
-		Score:          _fullScore,
+		Score:          mathutil.Hundred,
 	}
 }
 
@@ -82,6 +83,39 @@ func newTestManager(t *testing.T, db *DBMock, pub *fakePublisher) *Manager {
 	require.NoError(t, err)
 
 	return NewManager(slog.New(slog.DiscardHandler), db, githubMan, nil, pub)
+}
+
+func Test_Manager_Start(t *testing.T) {
+	t.Parallel()
+
+	fetched := make(chan struct{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	db := &DBMock{
+		FetchPaginatedDocumentHooksFunc: func(context.Context, xid.ID, int64) ([]hook.Hook, error) {
+			close(fetched)
+			cancel()
+
+			return nil, nil
+		},
+	}
+
+	man := newTestManager(t, db, &fakePublisher{})
+
+	stopped := make(chan struct{})
+
+	go func() {
+		defer close(stopped)
+
+		man.Start(ctx)
+	}()
+
+	<-fetched
+	<-stopped
+
+	assert.Len(t, db.FetchPaginatedDocumentHooksCalls(), 1)
 }
 
 func Test_Manager_processHooks(t *testing.T) {

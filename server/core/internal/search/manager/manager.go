@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/oxynote/oxynote/server/core/internal/search"
+	"github.com/oxynote/oxynote/server/core/pkg/logutil"
+	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
 )
 
@@ -40,23 +42,18 @@ func (m *Manager) Start(ctx context.Context) {
 	m.log.Info("starting")
 	defer m.log.Info("stopped")
 
-	tm := time.NewTimer(0)
-	defer tm.Stop()
-
-	for {
-		select {
-		case <-tm.C:
-			err := m.processJobs(ctx)
-			if err != nil {
+	timeutil.NewPeriodicExec(
+		_processingInterval,
+		0,
+		func(ctx context.Context) {
+			if err := m.processJobs(ctx); err != nil {
 				m.log.With("error", err).
 					Error("processing document search jobs")
 			}
-
-			tm.Reset(_processingInterval)
-		case <-ctx.Done():
-			return
-		}
-	}
+		},
+		logutil.RecoveryValue(m.log, logutil.NewRecoveryPlan("recovered from a panic while processing document search jobs")),
+		true,
+	).Start(ctx)
 }
 
 // processJobs processes document search jobs in a paginated manner. Failed

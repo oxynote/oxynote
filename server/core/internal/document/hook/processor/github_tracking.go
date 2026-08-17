@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/oxynote/oxynote/server/core/internal/apps/github"
+	"github.com/oxynote/oxynote/server/core/pkg/mathutil"
 	"github.com/shopspring/decimal"
 )
 
@@ -79,7 +80,7 @@ func (gt *GithubTracking) Process(ctx context.Context, inp Input) (decimal.Decim
 		}
 	}
 
-	score := _fullScore
+	score := mathutil.Hundred
 	if modified {
 		score = decimal.Zero
 	}
@@ -112,7 +113,7 @@ func (gt *GithubTracking) Reset(ctx context.Context, inp Input) (decimal.Decimal
 		gts.PathsChecksums[path] = item.Checksum
 	}
 
-	return gts.EncodeState(_fullScore, GithubTrackingStatusActive)
+	return gts.EncodeState(mathutil.Hundred, GithubTrackingStatusActive)
 }
 
 // fetchTree resolves the GitHub client and pulls the tracked repository's

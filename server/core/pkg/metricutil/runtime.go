@@ -5,6 +5,8 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"time"
+
+	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 )
 
 // _nanosecondsPerSecond is the number of nanoseconds in a second.
@@ -204,7 +206,9 @@ func newRuntimeMetrics(f *factory) runtimeMetrics {
 }
 
 // CollectRuntimeMetrics collects runtime metrics. It blocks
-// until the context is canceled.
+// until the context is canceled. A panic is left to propagate to the
+// goroutine's owner: a runtime read that panics is not something the next
+// tick would do any better at.
 // Ported from: https://github.com/rcrowley/go-metrics/blob/master/runtime.go#L73
 func (f *factory) CollectRuntimeMetrics(ctx context.Context, dur time.Duration) {
 	var (
@@ -218,39 +222,34 @@ func (f *factory) CollectRuntimeMetrics(ctx context.Context, dur time.Duration) 
 		numGC    uint32
 	)
 
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.Tick(dur):
-			runtime.ReadMemStats(&memStats)
+	timeutil.NewPeriodicExec(dur, 0, func(context.Context) {
+		runtime.ReadMemStats(&memStats)
 
-			metrics.memory.Frees.Set(float64(memStats.Frees - frees))
-			metrics.memory.HeapAlloc.Set(float64(memStats.HeapAlloc))
-			metrics.memory.HeapIdle.Set(float64(memStats.HeapIdle))
-			metrics.memory.HeapInuse.Set(float64(memStats.HeapInuse))
-			metrics.memory.HeapObjects.Set(float64(memStats.HeapObjects))
-			metrics.memory.LastGC.Set(float64(memStats.LastGC))
-			metrics.memory.Lookups.Set(float64(memStats.Lookups - lookups))
-			metrics.memory.Mallocs.Set(float64(memStats.Mallocs - mallocs))
-			metrics.memory.NextGC.Set(float64(memStats.NextGC))
-			metrics.memory.NumGC.Set(float64(memStats.NumGC - numGC))
+		metrics.memory.Frees.Set(float64(memStats.Frees - frees))
+		metrics.memory.HeapAlloc.Set(float64(memStats.HeapAlloc))
+		metrics.memory.HeapIdle.Set(float64(memStats.HeapIdle))
+		metrics.memory.HeapInuse.Set(float64(memStats.HeapInuse))
+		metrics.memory.HeapObjects.Set(float64(memStats.HeapObjects))
+		metrics.memory.LastGC.Set(float64(memStats.LastGC))
+		metrics.memory.Lookups.Set(float64(memStats.Lookups - lookups))
+		metrics.memory.Mallocs.Set(float64(memStats.Mallocs - mallocs))
+		metrics.memory.NextGC.Set(float64(memStats.NextGC))
+		metrics.memory.NumGC.Set(float64(memStats.NumGC - numGC))
 
-			observeGCPauses(metrics.memory.Pause, &memStats, numGC)
+		observeGCPauses(metrics.memory.Pause, &memStats, numGC)
 
-			frees = memStats.Frees
-			lookups = memStats.Lookups
-			mallocs = memStats.Mallocs
-			numGC = memStats.NumGC
+		frees = memStats.Frees
+		lookups = memStats.Lookups
+		mallocs = memStats.Mallocs
+		numGC = memStats.NumGC
 
-			metrics.memory.PauseTotal.Set(float64(memStats.PauseTotalNs) / _nanosecondsPerSecond)
-			metrics.memory.StackInuse.Set(float64(memStats.StackInuse))
-			metrics.memory.TotalAlloc.Set(float64(memStats.TotalAlloc))
+		metrics.memory.PauseTotal.Set(float64(memStats.PauseTotalNs) / _nanosecondsPerSecond)
+		metrics.memory.StackInuse.Set(float64(memStats.StackInuse))
+		metrics.memory.TotalAlloc.Set(float64(memStats.TotalAlloc))
 
-			metrics.NumGoroutine.Set(float64(runtime.NumGoroutine()))
-			metrics.NumThread.Set(float64(threadCreateProfile.Count()))
-		}
-	}
+		metrics.NumGoroutine.Set(float64(runtime.NumGoroutine()))
+		metrics.NumThread.Set(float64(threadCreateProfile.Count()))
+	}, nil, false).Start(ctx)
 }
 
 // observeGCPauses observes the garbage collection pause durations

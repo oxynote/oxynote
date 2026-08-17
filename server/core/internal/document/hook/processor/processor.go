@@ -8,14 +8,7 @@ import (
 
 	"github.com/oxynote/oxynote/server/core/internal/apps/github"
 	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
-	"github.com/shopspring/decimal"
 )
-
-// _fullScorePercent is the maximum freshness score in percent.
-const _fullScorePercent = 100
-
-// _fullScore is the maximum freshness score (100%) a hook can report.
-var _fullScore = decimal.NewFromInt(_fullScorePercent)
 
 // Input represents an input that provides state information
 // for processing freshness hooks.

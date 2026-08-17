@@ -67,13 +67,14 @@ func Recover(log *slog.Logger, plan *RecoveryPlan) {
 
 		plan.skipFrames = 3
 
-		processRecoveryValue(log, plan)(r)
+		RecoveryValue(log, plan)(r)
 	}
 }
 
-// processRecoveryValue handles panic values, sends their info to the
-// remote error tracking service and logs them locally.
-func processRecoveryValue(log *slog.Logger, plan *RecoveryPlan) func(any) {
+// RecoveryValue returns a handler for panic values, which sends their info
+// to the remote error tracking service and logs them locally. It is the
+// shape a supervisor's recovery option and the periodic executor both take.
+func RecoveryValue(log *slog.Logger, plan *RecoveryPlan) func(any) {
 	skipFrames := uint(_defaultSkipFrames)
 	if plan != nil && plan.skipFrames != 0 {
 		skipFrames = plan.skipFrames

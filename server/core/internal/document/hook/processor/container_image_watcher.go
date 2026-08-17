@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/oxynote/oxynote/server/core/internal/apps/registry"
+	"github.com/oxynote/oxynote/server/core/pkg/mathutil"
 	"github.com/shopspring/decimal"
 )
 
@@ -54,7 +55,7 @@ func (ciw *ContainerImageWatcher) Process(ctx context.Context, inp Input) (decim
 		return decimal.Zero, nil, fmt.Errorf("fetching container image digest: %w", err)
 	}
 
-	score := _fullScore
+	score := mathutil.Hundred
 	if ciws.Digest != digest {
 		score = decimal.Zero
 	}
@@ -106,7 +107,7 @@ func (ciw *ContainerImageWatcher) Reset(ctx context.Context, inp Input) (decimal
 		return decimal.Zero, state, nil
 	}
 
-	return _fullScore, state, nil
+	return mathutil.Hundred, state, nil
 }
 
 // ContainerImageWatcherState represents the state of the container image

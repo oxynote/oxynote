@@ -8,6 +8,7 @@ import (
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
+	"github.com/oxynote/oxynote/server/core/pkg/mathutil"
 	"github.com/shopspring/decimal"
 )
 
@@ -64,7 +65,7 @@ func (uw *URLWatcher) Process(ctx context.Context, inp Input) (decimal.Decimal, 
 
 	uws.Status = URLWatcherStatusActive
 
-	score := _fullScore
+	score := mathutil.Hundred
 
 	if !uws.LastChangedAt.Valid {
 		uws.LastChangedAt = null.TimeFrom(watch.LastChangedAt)
@@ -123,7 +124,7 @@ func (uw *URLWatcher) Reset(ctx context.Context, inp Input) (decimal.Decimal, St
 		return decimal.Zero, nil, err
 	}
 
-	return _fullScore, state, nil
+	return mathutil.Hundred, state, nil
 }
 
 // Delete deletes the URL watcher processor's state.

@@ -41,6 +41,37 @@ func Test_NewManager(t *testing.T) {
 	require.NotNil(t, man)
 }
 
+func Test_Manager_Start(t *testing.T) {
+	t.Parallel()
+
+	fetched := make(chan struct{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	db := &DBMock{
+		FetchDocumentSearchJobsFunc: func(context.Context, int64, int64) ([]search.DocumentSearchJob, error) {
+			close(fetched)
+			cancel()
+
+			return nil, nil
+		},
+	}
+
+	stopped := make(chan struct{})
+
+	go func() {
+		defer close(stopped)
+
+		NewManager(slog.New(slog.DiscardHandler), db, &SearchGatewayMock{}).Start(ctx)
+	}()
+
+	<-fetched
+	<-stopped
+
+	assert.Len(t, db.FetchDocumentSearchJobsCalls(), 1)
+}
+
 func Test_Manager_processJobs(t *testing.T) {
 	t.Parallel()
 

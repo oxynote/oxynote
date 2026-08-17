@@ -9,6 +9,7 @@ import (
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/mathutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/shopspring/decimal"
 )
@@ -53,7 +54,7 @@ func (sr *ScheduledReminder) Process(_ context.Context, inp Input) (decimal.Deci
 		return decimal.Zero, nil, fmt.Errorf("unmarshaling scheduled reminder state: %w", err)
 	}
 
-	score := _fullScore
+	score := mathutil.Hundred
 
 	switch sr.Scale {
 	case ScaleTypeLinear:
@@ -65,7 +66,7 @@ func (sr *ScheduledReminder) Process(_ context.Context, inp Input) (decimal.Deci
 			break
 		}
 
-		elapsedPercent := decimal.NewFromFloat(elapsed.Seconds() / totalDuration.Seconds()).Mul(_fullScore)
+		elapsedPercent := decimal.NewFromFloat(elapsed.Seconds() / totalDuration.Seconds()).Mul(mathutil.Hundred)
 		score = score.Sub(elapsedPercent).Round(0)
 	default:
 		return decimal.Zero, nil, ErrInvalidScaleType
@@ -96,7 +97,7 @@ func (sr *ScheduledReminder) Reset(_ context.Context, _ Input) (decimal.Decimal,
 		return decimal.Zero, nil, fmt.Errorf("marshaling scheduled reminder state: %w", err)
 	}
 
-	score := _fullScore
+	score := mathutil.Hundred
 
 	if srs.StartedAt.Add(_scheduleGracePeriod).After(sr.Schedule) {
 		score = decimal.Zero

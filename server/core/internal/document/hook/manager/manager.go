@@ -14,9 +14,9 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/logutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
-	"github.com/shopspring/decimal"
 )
 
 const (
@@ -29,12 +29,6 @@ const (
 	// _hookRetentionDuration defines how long to retain inactive hooks.
 	_hookRetentionDuration = time.Hour * 24
 )
-
-// _fullScorePercent is the maximum freshness score in percent.
-const _fullScorePercent = 100
-
-// _fullScore is the maximum freshness score (100%) a hook can report.
-var _fullScore = decimal.NewFromInt(_fullScorePercent)
 
 // Manager manages document freshness hooks.
 type Manager struct {
@@ -67,23 +61,18 @@ func (m *Manager) Start(ctx context.Context) {
 	m.log.Info("starting")
 	defer m.log.Info("stopped")
 
-	tm := time.NewTimer(0)
-	defer tm.Stop()
-
-	for {
-		select {
-		case <-tm.C:
-			err := m.processHooks(ctx)
-			if err != nil {
+	timeutil.NewPeriodicExec(
+		_processingInterval,
+		0,
+		func(ctx context.Context) {
+			if err := m.processHooks(ctx); err != nil {
 				m.log.With("error", err).
 					Error("processing document hooks")
 			}
-
-			tm.Reset(_processingInterval)
-		case <-ctx.Done():
-			return
-		}
-	}
+		},
+		logutil.RecoveryValue(m.log, logutil.NewRecoveryPlan("recovered from a panic while processing document hooks")),
+		true,
+	).Start(ctx)
 }
 
 // ProcessingState holds the state during hook processing.
