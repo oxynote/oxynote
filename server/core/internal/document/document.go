@@ -339,8 +339,12 @@ type UpdateInput struct {
 	// Content is the content of the document.
 	Content RootBlock `json:"content"`
 
-	// Maintainers specifies the list of maintainers for the document.
-	// These are the people who initiated this update.
+	// Maintainers specifies the people who initiated this update, not the
+	// document's maintainer set: a content persist carries whoever was
+	// editing at the time, and the store hook sends none at all for a
+	// system write. The set they join is add-only — anyone missing here
+	// stays a maintainer — so this list must never be treated as
+	// authoritative and diffed against the stored one.
 	Maintainers []string `json:"maintainers"`
 
 	// RawContent is the raw content of the document, typically in
@@ -356,7 +360,7 @@ type UpdateInput struct {
 }
 
 // InitialDocumentContent returns the initial content for a new document.
-func InitialDocumentContent(dataSourceID xid.ID) (RootBlock, error) {
+func InitialDocumentContent(dataSourceID null.Value[xid.ID]) (RootBlock, error) {
 	var drb RootBlock
 
 	if err := json.Unmarshal(_gettingStartedContent, &drb); err != nil {
@@ -375,7 +379,26 @@ func InitialDocumentContent(dataSourceID xid.ID) (RootBlock, error) {
 // applyMetrics replaces every metricBlock in rb with a metricBlock from
 // metricGrids (shuffled, without repetition) and sets all dataSourceId config
 // attrs to dataSourceID.
-func applyMetrics(rb RootBlock, metricGrids []Block, dataSourceID xid.ID) RootBlock {
+func applyMetrics(rb RootBlock, metricGrids []Block, dataSourceID null.Value[xid.ID]) RootBlock {
+	// without a data source the metrics have nothing to read, so they are
+	// dropped rather than left pointing at an id that was never stored.
+	if !dataSourceID.Valid {
+		newContent := make([]Block, 0, len(rb.Content))
+
+		for _, b := range rb.Content {
+			if b.Type == BlockNodeMetricBlock {
+				continue
+			}
+
+			newContent = append(newContent, b)
+		}
+
+		return RootBlock{
+			Type:    rb.Type,
+			Content: newContent,
+		}
+	}
+
 	shuffled := make([]Block, len(metricGrids))
 	copy(shuffled, metricGrids)
 	rand.Shuffle(len(shuffled), func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
@@ -384,7 +407,7 @@ func applyMetrics(rb RootBlock, metricGrids []Block, dataSourceID xid.ID) RootBl
 	newContent := make([]Block, len(rb.Content))
 
 	for i, b := range rb.Content {
-		newContent[i] = applyMetricsToBlock(b, shuffled, &idx, dataSourceID)
+		newContent[i] = applyMetricsToBlock(b, shuffled, &idx, dataSourceID.V)
 	}
 
 	return RootBlock{
@@ -397,7 +420,7 @@ func applyMetrics(rb RootBlock, metricGrids []Block, dataSourceID xid.ID) RootBl
 // entry from the shuffled pool (wrapping if exhausted) and updates dataSourceId
 // in all block attrs.
 func applyMetricsToBlock(b Block, metricGrids []Block, idx *int, dataSourceID xid.ID) Block {
-	if b.Type == "metricBlock" && len(metricGrids) > 0 {
+	if b.Type == BlockNodeMetricBlock && len(metricGrids) > 0 {
 		chosen := metricGrids[*idx%len(metricGrids)]
 		*idx++
 

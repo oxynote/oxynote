@@ -695,6 +695,9 @@ func (h *Handler) UpdateDocumentBranchByIDUnsafe(w http.ResponseWriter, r *http.
 		return
 	}
 
+	// the update carries the editors of one persist, so the set is only
+	// ever added to. Diffing it against the stored maintainers would drop
+	// everyone who happens not to be editing right now.
 	var maintainersAdded bool
 
 	for _, maintainer := range ui.Maintainers {

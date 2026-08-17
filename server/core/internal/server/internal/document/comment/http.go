@@ -11,10 +11,15 @@ import (
 	commentCore "github.com/oxynote/oxynote/server/core/internal/document/comment"
 	"github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 	"github.com/rs/xid"
 )
+
+// ErrBranchMismatch is returned when the requested branch does not belong to
+// the document identified by the request path.
+var ErrBranchMismatch = errutil.New(http.StatusNotFound, "document.branch_mismatch", "branch does not belong to the document")
 
 // Handler holds dependencies required for document comment operations.
 type Handler struct {
@@ -67,9 +72,17 @@ func (h *Handler) CreateDocumentComment(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// a comment addressed under one document but anchored to another's
+	// branch is reachable from the wrong document and cites the wrong one
+	// in its notifications.
+	if branchDoc.ID != documentID {
+		httpserver.RespondError(h.log, w, ErrBranchMismatch)
+		return
+	}
+
 	c := commentCore.NewComment(
 		ci,
-		documentID,
+		branchDoc.ID,
 		branchDoc.BranchID,
 		session.UserID,
 		session.ActiveOrganizationID,

@@ -10,6 +10,7 @@ import (
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/pkg/cryptoutil"
+	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 )
 
 // _slackHost is the Slack host.
@@ -61,7 +62,7 @@ func (m *Manager) CreateExternalInstallationURL(organizationID string) (string, 
 
 	data, err := json.Marshal(InstallationState{
 		OrganizationID: null.StringFrom(organizationID),
-		CreatedAt:      time.Now(),
+		CreatedAt:      timeutil.Now(),
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal installation state: %w", err)
@@ -97,7 +98,7 @@ func (m *Manager) CreateInternalInstallationURL(teamID string) (string, error) {
 
 	data, err := json.Marshal(InstallationState{
 		TeamID:    null.StringFrom(teamID),
-		CreatedAt: time.Now(),
+		CreatedAt: timeutil.Now(),
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal installation state: %w", err)

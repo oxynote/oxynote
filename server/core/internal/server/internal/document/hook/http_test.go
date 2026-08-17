@@ -276,6 +276,18 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 				wasInsertCalled(1),
 			),
 		},
+		"Branch belongs to another document": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*document.Document, error) {
+					return &document.Document{ID: xid.New()}, nil
+				},
+			},
+			Body: validBody,
+			Checks: checks(
+				hasResp(http.StatusNotFound, `{"code":"document.branch_mismatch","message":"branch does not belong to the document"}`),
+				wasInsertCalled(0),
+			),
+		},
 		"Successful creation": {
 			DB:   &DBMock{},
 			Body: validBody,
@@ -292,6 +304,12 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
+
+			if c.DB.FetchDocumentByBranchIDFunc == nil {
+				c.DB.FetchDocumentByBranchIDFunc = func(context.Context, xid.ID, string) (*document.Document, error) {
+					return &document.Document{ID: _documentID}, nil
+				}
+			}
 
 			hdl := Handler{
 				log: slog.New(slog.DiscardHandler),

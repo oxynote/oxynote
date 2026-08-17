@@ -130,6 +130,12 @@ linters:
     goconst:
       min-occurrences: 5
       numbers: true
+    forbidigo:
+      forbid:
+        # timeutil.Now is mockable; time.Now is not, which makes every
+        # clock-dependent path untestable through it.
+        - pattern: ^time\.Now$
+          msg: use timeutil.Now instead
     gocritic:
       disabled-checks:
         - hugeParam
@@ -238,6 +244,14 @@ linters:
           - forbidigo
         path: cmd
         text: fmt.Print
+      - linters:
+          - forbidigo
+        path: pkg/timeutil
+        text: time.Now
+      - linters:
+          - forbidigo
+        path: _test.go
+        text: time.Now
       - linters:
           - gochecknoglobals
         text: ^_.+

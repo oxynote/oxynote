@@ -9,6 +9,7 @@ import (
 
 	"github.com/oxynote/oxynote/server/core/pkg/cryptoutil"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 )
 
 // ErrLinkStateExpired is returned when the link state has expired.
@@ -43,7 +44,7 @@ func (m *Manager) CreateLinkURL(slackUserID, slackTeamID, organizationID string)
 		SlackUserID:    slackUserID,
 		TeamID:         slackTeamID,
 		OrganizationID: organizationID,
-		CreatedAt:      time.Now(),
+		CreatedAt:      timeutil.Now(),
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal link state: %w", err)

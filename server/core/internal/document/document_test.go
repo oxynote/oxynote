@@ -380,7 +380,7 @@ func Test_InitialDocumentContent(t *testing.T) {
 
 	dataSourceID := xid.New()
 
-	rb, err := InitialDocumentContent(dataSourceID)
+	rb, err := InitialDocumentContent(null.ValueFrom(dataSourceID))
 	require.NoError(t, err)
 
 	assert.Equal(t, BlockNodeDoc, rb.Type)
@@ -414,4 +414,15 @@ func Test_InitialDocumentContent(t *testing.T) {
 	}
 
 	assert.NotZero(t, dataSourceAttrs, "the seeded content should reference the data source")
+
+	// without a data source the charts have nothing to read, so they are
+	// dropped instead of pointing at an id that was never stored.
+	rb, err = InitialDocumentContent(null.Value[xid.ID]{})
+	require.NoError(t, err)
+
+	assert.NotEmpty(t, rb.Content)
+
+	for _, b := range rb.Content {
+		assert.NotEqual(t, BlockNodeMetricBlock, b.Type)
+	}
 }

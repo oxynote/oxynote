@@ -7,12 +7,12 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"time"
 
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/internal/storage"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
+	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 )
 
 // _userImageFolderFormat is the folder where user images are stored.
@@ -109,7 +109,7 @@ func (h *Handler) UploadUserImage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Append a timestamp to the URL to prevent caching issues.
-	imageLocation := fmt.Sprintf(h.imageLocationFormat, session.UserID) + "?v=" + time.Now().Format("20060102150405")
+	imageLocation := fmt.Sprintf(h.imageLocationFormat, session.UserID) + "?v=" + timeutil.Now().Format("20060102150405")
 
 	err = h.db.UpdateUserImage(r.Context(), session.UserID, imageLocation)
 	if err != nil {

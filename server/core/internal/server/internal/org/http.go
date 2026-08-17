@@ -7,8 +7,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"time"
 
+	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/apps/github"
 	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
@@ -20,6 +20,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
+	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
 )
 
@@ -82,17 +83,7 @@ func (h *Handler) InitializeOrganization(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	var tx Tx
-
-	err = h.db.BeginTx(r.Context(), &tx)
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
-
-	members, err := tx.FetchOrganizationMembers(r.Context(), id)
+	members, err := h.db.FetchOrganizationMembers(r.Context(), id)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -103,25 +94,29 @@ func (h *Handler) InitializeOrganization(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	ds := datasource.NewDataSource(datasource.CreateInput{
-		Type:        datasource.TypePrometheus,
-		Name:        "Demo",
-		URL:         h.demoPrometheusURL,
-		Credentials: []byte(`{}`),
-	}, id)
+	// the demo data source is inserted before the transaction opens: a
+	// failed statement aborts a Postgres transaction, so logging and
+	// carrying on inside one would only move the failure to the commit.
+	// The welcome document drops its charts when the source is missing
+	// rather than pointing them at an id that was never stored.
+	dataSourceID := h.insertDemoDataSource(r.Context(), id)
 
-	if err = tx.InsertDataSource(r.Context(), ds); err != nil {
-		// NOTE: We log the error instead of returning it to avoid failing the entire
-		// initialization process due to a single data source insertion failure.
-		h.log.Error("inserting demo data source", slog.String("error", err.Error()))
+	var tx Tx
+
+	err = h.db.BeginTx(r.Context(), &tx)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
 	}
+
+	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
 
 	doc := document.NewDocument(document.CreateInput{
 		Name: "Welcome to Oxynote!",
 		Icon: "mingcute:flag-4-fill",
 	}, id, members[0])
 
-	content, err := document.InitialDocumentContent(ds.ID)
+	content, err := document.InitialDocumentContent(dataSourceID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -182,7 +177,7 @@ func (h *Handler) UploadOrganizationLogo(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Append a timestamp to the URL to prevent caching issues.
-	logoLocation := h.logoLocation + "?v=" + time.Now().Format("20060102150405")
+	logoLocation := h.logoLocation + "?v=" + timeutil.Now().Format("20060102150405")
 
 	err = h.db.UpdateOrganizationLogo(r.Context(), session.ActiveOrganizationID, logoLocation)
 	if err != nil {
@@ -318,6 +313,26 @@ func (h *Handler) TeardownOrganization(w http.ResponseWriter, r *http.Request) {
 		nil,
 		http.StatusNoContent,
 	)
+}
+
+// insertDemoDataSource inserts the demo Prometheus data source and reports
+// its id. A failure is logged rather than returned: the demo content is a
+// nicety, and an organization without it is still fully initialized.
+func (h *Handler) insertDemoDataSource(ctx context.Context, organizationID string) null.Value[xid.ID] {
+	ds := datasource.NewDataSource(datasource.CreateInput{
+		Type:        datasource.TypePrometheus,
+		Name:        "Demo",
+		URL:         h.demoPrometheusURL,
+		Credentials: []byte(`{}`),
+	}, organizationID)
+
+	if err := h.db.InsertDataSource(ctx, ds); err != nil {
+		h.log.Error("inserting demo data source", slog.String("error", err.Error()))
+
+		return null.Value[xid.ID]{}
+	}
+
+	return null.ValueFrom(ds.ID)
 }
 
 // extractOrganizationParameter extracts the document ID from the request parameters.

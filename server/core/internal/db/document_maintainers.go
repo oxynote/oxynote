@@ -8,7 +8,9 @@ import (
 	"github.com/rs/xid"
 )
 
-// UpsertDocumentMaintainers updates or inserts maintainers for a document.
+// UpsertDocumentMaintainers adds maintainers to a document, ignoring the ones
+// already there. The set only ever grows: it accumulates everyone who has
+// edited the document, and no path removes a maintainer from it.
 func (a *agent) UpsertDocumentMaintainers(ctx context.Context, documentID xid.ID, organizationID string, maintainerIDs []string) error {
 	if len(maintainerIDs) == 0 {
 		return nil

@@ -132,6 +132,10 @@ func Test_IsDevEnv(t *testing.T) {
 	// the environment name lives in the package-level _info variable,
 	// so the false branch temporarily mutates it. No t.Parallel to
 	// keep other tests from observing the mutation.
+	//
+	// init copies it from _env, which the release build injects through
+	// ldflags; an unbuilt binary is a dev one.
+	assert.Equal(t, _env, _info.Env)
 	assert.True(t, IsDevEnv())
 
 	env := _info.Env

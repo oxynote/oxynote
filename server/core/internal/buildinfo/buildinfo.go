@@ -12,20 +12,30 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 )
 
+// _envDev is the environment every build carries unless a release
+// injects another one.
+const _envDev = "dev"
+
 var (
 	_name            = "oxynote_core"
 	_version         = "0.0.0-dev"
 	_commit          = "0000000"
 	_timestampString = "2006-12-09T19:00:00Z"
 
+	// _env is injected by the release build; only a struct field cannot
+	// be set through ldflags, so the environment lives in a var of its
+	// own and reaches BuildInfo through init.
+	_env = _envDev
+
 	_info = BuildInfo{
-		Env:    "dev",
 		Name:   _name,
 		Commit: _commit,
 	}
 )
 
 func init() { //nolint:gochecknoinits // we need to prepare build info
+	_info.Env = _env
+
 	logutil.ShowCritical = IsDevEnv()
 
 	_info.Version, _info.Timestamp = parseBuildValues(_version, _timestampString)
@@ -120,5 +130,5 @@ func Full() BuildInfo {
 
 // IsDevEnv determines whether the environment is dev.
 func IsDevEnv() bool {
-	return _info.Env == "dev"
+	return _info.Env == _envDev
 }

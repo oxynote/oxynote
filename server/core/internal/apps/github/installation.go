@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/oxynote/oxynote/server/core/pkg/cryptoutil"
+	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 )
 
 // githubHost is the GitHub host.
@@ -41,7 +42,7 @@ func (m *Manager) CreateInstallationURL(organizationID string) (string, error) {
 
 	data, err := json.Marshal(InstallationState{
 		OrganizationID: organizationID,
-		CreatedAt:      time.Now(),
+		CreatedAt:      timeutil.Now(),
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal installation state: %w", err)

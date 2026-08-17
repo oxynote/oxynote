@@ -222,6 +222,15 @@ func Test_Handler_CreateDocumentComment(t *testing.T) {
 			Inserted: 1,
 			Changes:  []ChangeMessage{{Type: ChangeTypeCreated}},
 		},
+		"Branch belongs to another document": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return &documentCore.Document{ID: xid.New(), Branch: documentCore.Branch{BranchID: _branchID}}, nil
+				},
+			},
+			Body:     validBody,
+			RespCode: http.StatusNotFound,
+		},
 		"Successful creation notifies other maintainers": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {

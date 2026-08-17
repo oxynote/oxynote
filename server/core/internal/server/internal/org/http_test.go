@@ -103,12 +103,12 @@ func Test_NewHandler(t *testing.T) {
 }
 
 func Test_Handler_InitializeOrganization(t *testing.T) {
-	type check func(*testing.T, *TxMock, *httptest.ResponseRecorder)
+	type check func(*testing.T, *DBMock, *TxMock, *httptest.ResponseRecorder)
 
 	checks := func(cc ...check) []check { return cc }
 
 	hasResp := func(code int, body string) check {
-		return func(t *testing.T, _ *TxMock, rec *httptest.ResponseRecorder) {
+		return func(t *testing.T, _ *DBMock, _ *TxMock, rec *httptest.ResponseRecorder) {
 			assert.Equal(t, code, rec.Code)
 
 			if body == "" {
@@ -121,8 +121,8 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 	}
 
 	wasInsertDataSourceCalled := func(count int) check {
-		return func(t *testing.T, tx *TxMock, _ *httptest.ResponseRecorder) {
-			ff := tx.InsertDataSourceCalls()
+		return func(t *testing.T, db *DBMock, _ *TxMock, _ *httptest.ResponseRecorder) {
+			ff := db.InsertDataSourceCalls()
 			require.Len(t, ff, count)
 
 			if count == 0 {
@@ -137,7 +137,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 	}
 
 	wasInsertDocumentCalled := func(count int) check {
-		return func(t *testing.T, tx *TxMock, _ *httptest.ResponseRecorder) {
+		return func(t *testing.T, _ *DBMock, tx *TxMock, _ *httptest.ResponseRecorder) {
 			ff := tx.InsertDocumentCalls()
 			require.Len(t, ff, count)
 
@@ -152,7 +152,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 	}
 
 	wasUpsertMaintainersCalled := func(count int) check {
-		return func(t *testing.T, tx *TxMock, _ *httptest.ResponseRecorder) {
+		return func(t *testing.T, _ *DBMock, tx *TxMock, _ *httptest.ResponseRecorder) {
 			ff := tx.UpsertDocumentMaintainersCalls()
 			require.Len(t, ff, count)
 
@@ -166,24 +166,27 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 	}
 
 	wasSearchJobInserted := func(count int) check {
-		return func(t *testing.T, tx *TxMock, _ *httptest.ResponseRecorder) {
+		return func(t *testing.T, _ *DBMock, tx *TxMock, _ *httptest.ResponseRecorder) {
 			assert.Len(t, tx.InsertDocumentSearchJobCalls(), count)
 		}
 	}
 
 	wasCommitCalled := func(count int) check {
-		return func(t *testing.T, tx *TxMock, _ *httptest.ResponseRecorder) {
+		return func(t *testing.T, _ *DBMock, tx *TxMock, _ *httptest.ResponseRecorder) {
 			assert.Len(t, tx.CommitCalls(), count)
 			assert.NotEmpty(t, tx.RollbackCalls())
 		}
 	}
 
 	cc := map[string]struct {
-		Tx       *TxMock
-		BeginErr error
-		NoProm   bool
-		OmitID   bool
-		Checks   []check
+		DB         *DBMock
+		Tx         *TxMock
+		Members    []string
+		MembersErr error
+		BeginErr   error
+		NoProm     bool
+		OmitID     bool
+		Checks     []check
 	}{
 		"Missing organization ID parameter": {
 			Tx:     &TxMock{},
@@ -204,59 +207,63 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 		},
 		"Transaction start error": {
 			Tx:       &TxMock{},
+			Members:  []string{"member1"},
 			BeginErr: errors.New("boom"),
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasInsertDocumentCalled(0),
 			),
 		},
+		// both of these fail before anything is written, so no data source
+		// is created and no transaction is opened.
 		"Member fetch error": {
-			Tx: &TxMock{
-				FetchOrganizationMembersFunc: func(context.Context, string) ([]string, error) {
-					return nil, errors.New("boom")
-				},
-			},
+			Tx:         &TxMock{},
+			MembersErr: errors.New("boom"),
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasInsertDataSourceCalled(0),
-				wasCommitCalled(0),
+				wasInsertDocumentCalled(0),
 			),
 		},
 		"No organization members": {
-			Tx: &TxMock{
-				FetchOrganizationMembersFunc: func(context.Context, string) ([]string, error) {
-					return nil, nil
-				},
-			},
+			Tx: &TxMock{},
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"organization.no_members","message":"organization has no members"}`),
 				wasInsertDataSourceCalled(0),
-				wasCommitCalled(0),
+				wasInsertDocumentCalled(0),
 			),
 		},
 		"Data source insertion error is tolerated": {
-			Tx: &TxMock{
-				FetchOrganizationMembersFunc: func(context.Context, string) ([]string, error) {
-					return []string{"member1"}, nil
-				},
+			Members: []string{"member1"},
+			DB: &DBMock{
 				InsertDataSourceFunc: func(context.Context, *datasource.DataSource) error {
 					return errors.New("boom")
 				},
 			},
+			Tx: &TxMock{},
 			Checks: checks(
-				func(t *testing.T, _ *TxMock, rec *httptest.ResponseRecorder) {
+				func(t *testing.T, _ *DBMock, _ *TxMock, rec *httptest.ResponseRecorder) {
 					assert.Equal(t, http.StatusCreated, rec.Code)
 				},
 				wasInsertDataSourceCalled(1),
 				wasInsertDocumentCalled(1),
 				wasCommitCalled(1),
+				// the charts have no data source to read, so the welcome
+				// document ships without them rather than with a dangling
+				// reference.
+				func(t *testing.T, _ *DBMock, tx *TxMock, _ *httptest.ResponseRecorder) {
+					ff := tx.InsertDocumentCalls()
+					require.NotEmpty(t, ff)
+
+					for _, b := range ff[0].Doc.Content.Content {
+						assert.NotEqual(t, document.BlockNodeMetricBlock, b.Type)
+					}
+				},
 			),
 		},
 		"Document insertion error": {
+			Members: []string{"member1"},
 			Tx: &TxMock{
-				FetchOrganizationMembersFunc: func(context.Context, string) ([]string, error) {
-					return []string{"member1"}, nil
-				},
 				InsertDocumentFunc: func(context.Context, document.Document) error {
 					return errors.New("boom")
 				},
@@ -268,10 +275,8 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 			),
 		},
 		"Maintainer upsert error": {
+			Members: []string{"member1"},
 			Tx: &TxMock{
-				FetchOrganizationMembersFunc: func(context.Context, string) ([]string, error) {
-					return []string{"member1"}, nil
-				},
 				UpsertDocumentMaintainersFunc: func(context.Context, xid.ID, string, []string) error {
 					return errors.New("boom")
 				},
@@ -283,10 +288,8 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 			),
 		},
 		"Search job insertion error": {
+			Members: []string{"member1"},
 			Tx: &TxMock{
-				FetchOrganizationMembersFunc: func(context.Context, string) ([]string, error) {
-					return []string{"member1"}, nil
-				},
 				InsertDocumentSearchJobFunc: func(context.Context, search.BlocksDifference) error {
 					return errors.New("boom")
 				},
@@ -298,10 +301,8 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 			),
 		},
 		"Commit error": {
+			Members: []string{"member1"},
 			Tx: &TxMock{
-				FetchOrganizationMembersFunc: func(context.Context, string) ([]string, error) {
-					return []string{"member1"}, nil
-				},
 				CommitFunc: func() error {
 					return errors.New("boom")
 				},
@@ -312,13 +313,14 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 			),
 		},
 		"Successful initialization": {
+			Members: []string{"member1"},
 			Tx: &TxMock{
 				FetchOrganizationMembersFunc: func(context.Context, string) ([]string, error) {
 					return []string{"member1", "member2"}, nil
 				},
 			},
 			Checks: checks(
-				func(t *testing.T, _ *TxMock, rec *httptest.ResponseRecorder) {
+				func(t *testing.T, _ *DBMock, _ *TxMock, rec *httptest.ResponseRecorder) {
 					assert.Equal(t, http.StatusCreated, rec.Code)
 					assert.Contains(t, rec.Body.String(), "Welcome to Oxynote!")
 				},
@@ -341,9 +343,18 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 				promURL = ""
 			}
 
+			db := c.DB
+			if db == nil {
+				db = &DBMock{}
+			}
+
+			db.FetchOrganizationMembersFunc = func(context.Context, string) ([]string, error) {
+				return c.Members, c.MembersErr
+			}
+
 			hdl := Handler{
 				log:               slog.New(slog.DiscardHandler),
-				db:                withTx(&DBMock{}, c.Tx, c.BeginErr),
+				db:                withTx(db, c.Tx, c.BeginErr),
 				demoPrometheusURL: promURL,
 			}
 
@@ -360,7 +371,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 			hdl.InitializeOrganization(rec, req.WithContext(ctx))
 
 			for _, ch := range c.Checks {
-				ch(t, c.Tx, rec)
+				ch(t, db, c.Tx, rec)
 			}
 		})
 	}

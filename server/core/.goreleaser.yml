@@ -22,6 +22,7 @@ builds:
     ldflags:
       - "-s -w"
       - "-X github.com/oxynote/oxynote/server/core/internal/buildinfo._name={{ .ProjectName }}_core"
+      - "-X github.com/oxynote/oxynote/server/core/internal/buildinfo._env={{if .IsSnapshot}}dev{{else}}production{{end}}"
       - "-X github.com/oxynote/oxynote/server/core/internal/buildinfo._version={{ .Version }}"
       - "-X github.com/oxynote/oxynote/server/core/internal/buildinfo._commit={{ .ShortCommit }}"
       - "-X github.com/oxynote/oxynote/server/core/internal/buildinfo._timestampString={{ .CommitDate }}"

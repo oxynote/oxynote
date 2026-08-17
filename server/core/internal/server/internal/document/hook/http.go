@@ -11,9 +11,14 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	hookCore "github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/rs/xid"
 )
+
+// ErrBranchMismatch is returned when the requested branch does not belong to
+// the document identified by the request path.
+var ErrBranchMismatch = errutil.New(http.StatusNotFound, "document.branch_mismatch", "branch does not belong to the document")
 
 // Handler holds dependencies required for document hook operations.
 type Handler struct {
@@ -93,15 +98,24 @@ func (h *Handler) CreateDocumentHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err = h.db.FetchDocumentByBranchID(r.Context(), hi.BranchID, session.ActiveOrganizationID); err != nil {
+	branchDoc, err := h.db.FetchDocumentByBranchID(r.Context(), hi.BranchID, session.ActiveOrganizationID)
+	if err != nil {
 		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	// a hook addressed under one document but attached to another's branch
+	// is missed by that document's cleanup and cites the wrong one in its
+	// notifications.
+	if branchDoc.ID != documentID {
+		httpserver.RespondError(h.log, w, ErrBranchMismatch)
 		return
 	}
 
 	hk, err := hookCore.NewHook(
 		r.Context(),
 		hi,
-		documentID,
+		branchDoc.ID,
 		hi.BranchID,
 		session.ActiveOrganizationID,
 		hookCore.NewInput(
