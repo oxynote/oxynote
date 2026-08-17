@@ -431,7 +431,7 @@ func Test_agent_DeleteDocumentBranchByID(t *testing.T) {
 
 			hk := prepDocumentHooks(t, db, 1, func(_ int, hk *hook.Hook) {
 				hk.DocumentID = null.ValueFrom(branch.ID)
-				hk.OrganizationID = branch.OrganizationID
+				hk.OrganizationID = null.StringFrom(branch.OrganizationID)
 				hk.BranchID = null.ValueFrom(branch.BranchID)
 			})[0]
 

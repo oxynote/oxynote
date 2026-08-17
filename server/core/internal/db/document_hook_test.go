@@ -53,7 +53,7 @@ func prepDocumentHooks(t *testing.T, db *DB, count int, fn func(int, *hook.Hook)
 			}
 
 			hk.DocumentID = null.ValueFrom(branch.ID)
-			hk.OrganizationID = branch.OrganizationID
+			hk.OrganizationID = null.StringFrom(branch.OrganizationID)
 			hk.BranchID = null.ValueFrom(branch.BranchID)
 		}
 
@@ -105,7 +105,7 @@ func Test_agent_InsertDocumentHook(t *testing.T) {
 					ID:             xid.New(),
 					Type:           hook.TypeScheduledReminder,
 					DocumentID:     null.ValueFrom(branch.ID),
-					OrganizationID: branch.OrganizationID,
+					OrganizationID: null.StringFrom(branch.OrganizationID),
 					BranchID:       null.ValueFrom(branch.BranchID),
 					Settings:       processor.Settings(`{"schedule": "0 0 * * * *"}`),
 					State:          processor.State(`{}`),
@@ -131,7 +131,7 @@ func Test_agent_InsertDocumentHook(t *testing.T) {
 				return
 			}
 
-			res, err := db.FetchDocumentHook(context.Background(), c.Hook.ID, c.Hook.OrganizationID)
+			res, err := db.FetchDocumentHook(context.Background(), c.Hook.ID, c.Hook.OrganizationID.String)
 			require.NoError(t, err)
 			testutil.AssertFilterEqual(t, &c.Hook, res)
 		})
@@ -149,7 +149,7 @@ func Test_agent_FetchDocumentHook(t *testing.T) {
 	// success
 	hk := prepDocumentHooks(t, db, 1, nil)[0]
 
-	res, err = db.FetchDocumentHook(context.Background(), hk.ID, hk.OrganizationID)
+	res, err = db.FetchDocumentHook(context.Background(), hk.ID, hk.OrganizationID.String)
 	assert.NoError(t, err)
 	testutil.AssertFilterEqual(t, &hk, res)
 }
@@ -173,7 +173,7 @@ func Test_agent_FetchDocumentHooksByDocumentID(t *testing.T) {
 	// success
 	hooks := prepDocumentHooks(t, db, 2, nil)
 
-	res, err = db.FetchDocumentHooksByDocumentID(context.Background(), hooks[0].DocumentID.V, hooks[0].OrganizationID)
+	res, err = db.FetchDocumentHooksByDocumentID(context.Background(), hooks[0].DocumentID.V, hooks[0].OrganizationID.String)
 	assert.NoError(t, err)
 	testutil.AssertFilterEqual(t, hooks, res)
 }
@@ -259,7 +259,7 @@ func Test_agent_UpdateDocumentHook(t *testing.T) {
 				return
 			}
 
-			res, err := db.FetchDocumentHook(context.Background(), c.Hook.ID, c.Hook.OrganizationID)
+			res, err := db.FetchDocumentHook(context.Background(), c.Hook.ID, c.Hook.OrganizationID.String)
 			require.NoError(t, err)
 			testutil.AssertFilterEqual(t, &c.Hook, res)
 		})
@@ -306,14 +306,14 @@ func Test_agent_DeleteDocumentHook(t *testing.T) {
 				cancel()
 			}
 
-			err := db.DeleteDocumentHook(ctx, c.Hook.ID, c.Hook.OrganizationID)
+			err := db.DeleteDocumentHook(ctx, c.Hook.ID)
 			testutil.RequireEqualError(t, c.Err, err)
 
 			if err != nil {
 				return
 			}
 
-			res, err := db.FetchDocumentHook(context.Background(), c.Hook.ID, c.Hook.OrganizationID)
+			res, err := db.FetchDocumentHook(context.Background(), c.Hook.ID, c.Hook.OrganizationID.String)
 			testutil.AssertEqualError(t, sql.ErrNoRows, err)
 			assert.Nil(t, res)
 		})
@@ -343,7 +343,7 @@ func Test_agent_FetchDocumentHooksByBranchID(t *testing.T) {
 		}
 	})
 
-	res, err = db.FetchDocumentHooksByBranchID(context.Background(), hooks[0].BranchID.V, hooks[0].OrganizationID)
+	res, err = db.FetchDocumentHooksByBranchID(context.Background(), hooks[0].BranchID.V, hooks[0].OrganizationID.String)
 	assert.NoError(t, err)
 	testutil.AssertFilterEqual(t, hooks[:1], res)
 }
@@ -368,7 +368,7 @@ func Test_agent_SoftDeleteDocumentHooksByBranchID(t *testing.T) {
 		}
 	})
 
-	err = db.SoftDeleteDocumentHooksByBranchID(context.Background(), hooks[0].BranchID.V, hooks[0].OrganizationID)
+	err = db.SoftDeleteDocumentHooksByBranchID(context.Background(), hooks[0].BranchID.V, hooks[0].OrganizationID.String)
 	require.NoError(t, err)
 
 	var stamps []null.Time
@@ -389,4 +389,77 @@ func Test_agent_SoftDeleteDocumentHooksByBranchID(t *testing.T) {
 	assert.WithinDuration(t, timeutil.Now(), stamps[0].Time, time.Minute)
 	assert.True(t, stamps[1].Valid)
 	assert.WithinDuration(t, deletedAt, stamps[1].Time, time.Second)
+}
+
+func Test_agent_FetchDocumentHooksByOrganizationID(t *testing.T) {
+	t.Parallel()
+
+	db := prepTempDB(t)
+
+	branch := prepDocumentBranches(t, db, 1, nil)[0]
+
+	hooks := prepDocumentHooks(t, db, 2, func(_ int, hk *hook.Hook) {
+		hk.DocumentID = null.ValueFrom(branch.ID)
+		hk.OrganizationID = null.StringFrom(branch.OrganizationID)
+		hk.BranchID = null.ValueFrom(branch.BranchID)
+	})
+
+	other := prepDocumentBranches(t, db, 1, nil)[0]
+
+	prepDocumentHooks(t, db, 1, func(_ int, hk *hook.Hook) {
+		hk.DocumentID = null.ValueFrom(other.ID)
+		hk.OrganizationID = null.StringFrom(other.OrganizationID)
+		hk.BranchID = null.ValueFrom(other.BranchID)
+	})
+
+	// cancelled context
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	res, err := db.FetchDocumentHooksByOrganizationID(ctx, branch.OrganizationID)
+	require.Error(t, err)
+	assert.Nil(t, res)
+
+	// success
+	res, err = db.FetchDocumentHooksByOrganizationID(context.Background(), branch.OrganizationID)
+	require.NoError(t, err)
+	require.Len(t, res, 2)
+
+	ids := []xid.ID{res[0].ID, res[1].ID}
+	assert.ElementsMatch(t, []xid.ID{hooks[0].ID, hooks[1].ID}, ids)
+}
+
+// the organization row is deleted by the auth service, outside of core: the
+// hook rows have to survive it, or the watchers they hold can never be found
+// again.
+func Test_agent_documentHooksOutliveTheOrganization(t *testing.T) {
+	t.Parallel()
+
+	db := prepTempDB(t)
+
+	branch := prepDocumentBranches(t, db, 1, nil)[0]
+
+	hk := prepDocumentHooks(t, db, 1, func(_ int, hk *hook.Hook) {
+		hk.DocumentID = null.ValueFrom(branch.ID)
+		hk.OrganizationID = null.StringFrom(branch.OrganizationID)
+		hk.BranchID = null.ValueFrom(branch.BranchID)
+	})[0]
+
+	q, args := db.builder.Delete("organizations").
+		Where(sq.Eq{"id": branch.OrganizationID}).
+		MustSql()
+
+	_, err := db.sql.Exec(q, args...)
+	require.NoError(t, err)
+
+	var stored hook.Hook
+
+	q, args = db.selectDocumentHook(db.builder.Select()).
+		Where(sq.Eq{"document_hooks.id": hk.ID}).
+		MustSql()
+
+	require.NoError(t, db.sql.Get(&stored, q, args...))
+	assert.False(t, stored.OrganizationID.Valid)
+	assert.False(t, stored.DocumentID.Valid)
+	assert.NotEmpty(t, stored.State, "the watcher stays addressable without its organization")
 }

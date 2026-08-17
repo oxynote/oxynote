@@ -971,12 +971,9 @@ func (h *Handler) DeleteDocument(w http.ResponseWriter, r *http.Request) {
 
 	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
 
+	// the search index entries of the document and its cascade-deleted
+	// descendants are queued for removal by DeleteDocument itself.
 	if err = tx.DeleteDocument(r.Context(), doc.ID, session.ActiveOrganizationID); err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	if err = tx.InsertDocumentSearchJob(r.Context(), search.BlocksDiff(doc.Search(), nil)); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}

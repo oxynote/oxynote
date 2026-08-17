@@ -12,8 +12,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/guregu/null/v5"
+	"github.com/oxynote/oxynote/server/core/internal/apps/github"
+	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/hook"
+	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/internal/storage"
@@ -75,11 +80,24 @@ func Test_NewHandler(t *testing.T) {
 	db := &DBMock{}
 	storer := &StorerMock{}
 
-	hdl := NewHandler(slog.New(slog.DiscardHandler), db, storer, "loc", "http://prom.test")
+	githubMan := &github.Manager{}
+	webchangeClient := &webchange.Client{}
+
+	hdl := NewHandler(
+		slog.New(slog.DiscardHandler),
+		db,
+		storer,
+		githubMan,
+		webchangeClient,
+		"loc",
+		"http://prom.test",
+	)
 	require.NotNil(t, hdl)
 	assert.NotNil(t, hdl.log)
 	assert.Same(t, db, hdl.db)
 	assert.Same(t, storer, hdl.storer)
+	assert.Same(t, githubMan, hdl.githubMan)
+	assert.Same(t, webchangeClient, hdl.webchangeClient)
 	assert.Equal(t, "loc", hdl.logoLocation)
 	assert.Equal(t, "http://prom.test", hdl.demoPrometheusURL)
 }
@@ -652,6 +670,259 @@ func Test_Handler_RetrieveOrganizationLogo(t *testing.T) {
 
 			for _, ch := range c.Checks {
 				ch(t, c.Storer, rec)
+			}
+		})
+	}
+}
+
+// teardownHook builds a stored hook whose processor needs no external
+// dependencies.
+func teardownHook(typ hook.Type) hook.Hook {
+	return hook.Hook{
+		ID:             xid.New(),
+		Type:           typ,
+		DocumentID:     null.ValueFrom(xid.New()),
+		OrganizationID: null.StringFrom("org2"),
+		BranchID:       null.ValueFrom(xid.New()),
+		Settings:       processor.Settings(`{"scale":"linear"}`),
+	}
+}
+
+func Test_Handler_TeardownOrganization(t *testing.T) {
+	type check func(*testing.T, *DBMock, *TxMock, *StorerMock, *httptest.ResponseRecorder)
+
+	checks := func(cc ...check) []check { return cc }
+
+	hasResp := func(code int) check {
+		return func(t *testing.T, _ *DBMock, _ *TxMock, _ *StorerMock, rec *httptest.ResponseRecorder) {
+			assert.Equal(t, code, rec.Code)
+		}
+	}
+
+	wasSearchJobInserted := func(count int) check {
+		return func(t *testing.T, _ *DBMock, tx *TxMock, _ *StorerMock, _ *httptest.ResponseRecorder) {
+			ff := tx.InsertDocumentSearchJobCalls()
+			require.Len(t, ff, count)
+
+			if count == 0 {
+				return
+			}
+
+			assert.Equal(t, []string{"org2"}, ff[0].Diff.RemovedOrganizations)
+		}
+	}
+
+	wasSlackDeleted := func(count int) check {
+		return func(t *testing.T, _ *DBMock, tx *TxMock, _ *StorerMock, _ *httptest.ResponseRecorder) {
+			ff := tx.DeleteSlackAppsByOrganizationIDCalls()
+			require.Len(t, ff, count)
+
+			if count == 0 {
+				return
+			}
+
+			assert.Equal(t, "org2", ff[0].OrganizationID)
+		}
+	}
+
+	wasGithubDeleted := func(count int) check {
+		return func(t *testing.T, _ *DBMock, tx *TxMock, _ *StorerMock, _ *httptest.ResponseRecorder) {
+			ff := tx.DeleteGithubInstallationsByOrganizationIDCalls()
+			require.Len(t, ff, count)
+
+			if count == 0 {
+				return
+			}
+
+			assert.Equal(t, "org2", ff[0].OrganizationID)
+		}
+	}
+
+	wasLogoDeleted := func(count int) check {
+		return func(t *testing.T, _ *DBMock, _ *TxMock, storer *StorerMock, _ *httptest.ResponseRecorder) {
+			ff := storer.DeleteCalls()
+			require.Len(t, ff, count)
+
+			if count == 0 {
+				return
+			}
+
+			assert.Equal(t, "organizations/org2/logo", ff[0].Folder)
+			assert.Equal(t, "org2", ff[0].ID)
+		}
+	}
+
+	wasCommitted := func(count int) check {
+		return func(t *testing.T, _ *DBMock, tx *TxMock, _ *StorerMock, _ *httptest.ResponseRecorder) {
+			require.Len(t, tx.CommitCalls(), count)
+		}
+	}
+
+	hooksFound := func(hooks ...hook.Hook) *DBMock {
+		return &DBMock{
+			FetchDocumentHooksByOrganizationIDFunc: func(context.Context, string) ([]hook.Hook, error) {
+				return hooks, nil
+			},
+		}
+	}
+
+	cc := map[string]struct {
+		DB       *DBMock
+		Tx       *TxMock
+		Storer   *StorerMock
+		BeginErr error
+		OmitID   bool
+		Checks   []check
+	}{
+		"Missing organization ID parameter": {
+			DB:     &DBMock{},
+			Tx:     &TxMock{},
+			OmitID: true,
+			Checks: checks(
+				hasResp(http.StatusNotFound),
+				wasSearchJobInserted(0),
+			),
+		},
+		"Hook fetch error": {
+			DB: &DBMock{
+				FetchDocumentHooksByOrganizationIDFunc: func(context.Context, string) ([]hook.Hook, error) {
+					return nil, errors.New("boom")
+				},
+			},
+			Tx: &TxMock{},
+			Checks: checks(
+				hasResp(http.StatusInternalServerError),
+				wasSearchJobInserted(0),
+			),
+		},
+		// the teardown is refused rather than letting the organization go
+		// away with a watcher nothing can reach any more.
+		"Hook cleanup error": {
+			DB: hooksFound(teardownHook("bogus")),
+			Tx: &TxMock{},
+			Checks: checks(
+				hasResp(http.StatusInternalServerError),
+				wasSearchJobInserted(0),
+				wasCommitted(0),
+			),
+		},
+		"Transaction start error": {
+			DB:       &DBMock{},
+			Tx:       &TxMock{},
+			BeginErr: errors.New("boom"),
+			Checks: checks(
+				hasResp(http.StatusInternalServerError),
+				wasSearchJobInserted(0),
+			),
+		},
+		"Search job insertion error": {
+			DB: &DBMock{},
+			Tx: &TxMock{
+				InsertDocumentSearchJobFunc: func(context.Context, search.BlocksDifference) error {
+					return errors.New("boom")
+				},
+			},
+			Checks: checks(
+				hasResp(http.StatusInternalServerError),
+				wasSlackDeleted(0),
+				wasCommitted(0),
+			),
+		},
+		"Slack app deletion error": {
+			DB: &DBMock{},
+			Tx: &TxMock{
+				DeleteSlackAppsByOrganizationIDFunc: func(context.Context, string) error {
+					return errors.New("boom")
+				},
+			},
+			Checks: checks(
+				hasResp(http.StatusInternalServerError),
+				wasGithubDeleted(0),
+				wasCommitted(0),
+			),
+		},
+		"Github installation deletion error": {
+			DB: &DBMock{},
+			Tx: &TxMock{
+				DeleteGithubInstallationsByOrganizationIDFunc: func(context.Context, string) error {
+					return errors.New("boom")
+				},
+			},
+			Checks: checks(
+				hasResp(http.StatusInternalServerError),
+				wasCommitted(0),
+			),
+		},
+		"Commit error": {
+			DB: &DBMock{},
+			Tx: &TxMock{
+				CommitFunc: func() error {
+					return errors.New("boom")
+				},
+			},
+			Checks: checks(
+				hasResp(http.StatusInternalServerError),
+				wasCommitted(1),
+				wasLogoDeleted(0),
+			),
+		},
+		"Logo deletion error": {
+			DB: &DBMock{},
+			Tx: &TxMock{},
+			Storer: &StorerMock{
+				DeleteFunc: func(context.Context, string, string) error {
+					return errors.New("boom")
+				},
+			},
+			Checks: checks(
+				hasResp(http.StatusInternalServerError),
+				wasCommitted(1),
+				wasLogoDeleted(1),
+			),
+		},
+		"Successful teardown": {
+			DB: hooksFound(teardownHook(hook.TypeScheduledReminder)),
+			Tx: &TxMock{},
+			Checks: checks(
+				hasResp(http.StatusNoContent),
+				wasSearchJobInserted(1),
+				wasSlackDeleted(1),
+				wasGithubDeleted(1),
+				wasCommitted(1),
+				wasLogoDeleted(1),
+			),
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			storer := c.Storer
+			if storer == nil {
+				storer = &StorerMock{}
+			}
+
+			hdl := Handler{
+				log:    slog.New(slog.DiscardHandler),
+				db:     withTx(c.DB, c.Tx, c.BeginErr),
+				storer: storer,
+			}
+
+			req := httptest.NewRequest(http.MethodPost, "http://test.com/", http.NoBody)
+
+			ctx := req.Context()
+
+			if !c.OmitID {
+				ctx = testutil.AddChiCtx(ctx, "organizationId", "org2")
+			}
+
+			rec := httptest.NewRecorder()
+
+			hdl.TeardownOrganization(rec, req.WithContext(ctx))
+
+			for _, ch := range c.Checks {
+				ch(t, c.DB, c.Tx, storer, rec)
 			}
 		})
 	}

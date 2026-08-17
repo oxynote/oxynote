@@ -255,7 +255,7 @@ func (h *Handler) DeleteDocumentHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.db.DeleteDocumentHook(r.Context(), hk.ID, session.ActiveOrganizationID); err != nil {
+	if err := h.db.DeleteDocumentHook(r.Context(), hk.ID); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -298,5 +298,6 @@ type DB interface {
 	UpdateDocumentHook(ctx context.Context, hk hookCore.Hook) error
 
 	// DeleteDocumentHook should delete the document hook for the given id.
-	DeleteDocumentHook(ctx context.Context, id xid.ID, organizationID string) error
+	// The caller is expected to have fetched the hook org-scoped first.
+	DeleteDocumentHook(ctx context.Context, id xid.ID) error
 }

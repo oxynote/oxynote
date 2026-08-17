@@ -69,6 +69,22 @@ func (a *agent) FetchDocumentHooksByDocumentID(ctx context.Context, documentID x
 	return hooks, nil
 }
 
+// FetchDocumentHooksByOrganizationID retrieves every hook of an organization.
+func (a *agent) FetchDocumentHooksByOrganizationID(ctx context.Context, organizationID string) ([]hook.Hook, error) {
+	q, args := a.selectDocumentHook(a.builder.Select()).
+		Where(sq.Eq{
+			"document_hooks.fk_organization_id": organizationID,
+		}).
+		MustSql()
+
+	hooks := []hook.Hook{}
+	if err := sqlx.SelectContext(ctx, a.sql, &hooks, q, args...); err != nil {
+		return nil, err
+	}
+
+	return hooks, nil
+}
+
 // FetchPaginatedDocumentHooks retrieves a list of document hooks
 // from the database with pagination support.
 func (a *agent) FetchPaginatedDocumentHooks(ctx context.Context, offsetID xid.ID, limit int64) ([]hook.Hook, error) {
@@ -114,11 +130,10 @@ func (a *agent) UpdateDocumentHook(ctx context.Context, hk hook.Hook) error {
 }
 
 // DeleteDocumentHook deletes a document hook from the database.
-func (a *agent) DeleteDocumentHook(ctx context.Context, id xid.ID, organizationID string) error {
+func (a *agent) DeleteDocumentHook(ctx context.Context, id xid.ID) error {
 	q, args := a.builder.Delete("document_hooks").
 		Where(sq.Eq{
-			"id":                 id,
-			"fk_organization_id": organizationID,
+			"id": id,
 		}).MustSql()
 
 	_, err := a.sql.ExecContext(ctx, q, args...)

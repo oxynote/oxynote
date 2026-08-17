@@ -104,6 +104,21 @@ func (a *agent) DeleteGithubInstallation(ctx context.Context, installationID int
 	return err
 }
 
+// DeleteGithubInstallationsByOrganizationID removes the Github installations
+// of an organization. The app itself stays installed on the Github account;
+// only the link to the organization is destroyed.
+func (a *agent) DeleteGithubInstallationsByOrganizationID(ctx context.Context, organizationID string) error {
+	q, args := a.builder.Delete("github_installations").
+		Where(sq.Eq{
+			"fk_organization_id": organizationID,
+		}).
+		MustSql()
+
+	_, err := a.sql.ExecContext(ctx, q, args...)
+
+	return err
+}
+
 // UnassignGithubInstallationOrganization removes the organization association from a Github installation.
 func (a *agent) UnassignGithubInstallationOrganization(ctx context.Context, organizationID string) error {
 	q, args := a.builder.Update("github_installations").

@@ -125,6 +125,7 @@ func (s *Server) internalRouter() chi.Router {
 	})
 
 	r.Post("/organizations/{organizationId}/initialize", s.handlers.organization.InitializeOrganization)
+	r.Post("/organizations/{organizationId}/teardown", s.handlers.organization.TeardownOrganization)
 
 	r.Route("/slack", func(sr chi.Router) {
 		sr.Get("/install", s.handlers.slack.InstallApp)

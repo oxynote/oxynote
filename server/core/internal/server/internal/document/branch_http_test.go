@@ -26,7 +26,7 @@ func storedHook(typ hookCore.Type) hookCore.Hook {
 		ID:             xid.New(),
 		Type:           typ,
 		DocumentID:     null.ValueFrom(_documentID),
-		OrganizationID: "org1",
+		OrganizationID: null.StringFrom("org1"),
 		BranchID:       null.ValueFrom(_branchID),
 		Settings:       processor.Settings(`{"scale":"linear"}`),
 	}
@@ -586,15 +586,6 @@ func Test_Handler_DeleteDocument(t *testing.T) {
 			},
 			RespCode: http.StatusInternalServerError,
 		},
-		"Search job insertion error": {
-			DB: &DBMock{FetchDocumentFunc: fetchStored},
-			Tx: &TxMock{
-				InsertDocumentSearchJobFunc: func(context.Context, search.BlocksDifference) error {
-					return errors.New("boom")
-				},
-			},
-			RespCode: http.StatusInternalServerError,
-		},
 		"Commit error": {
 			DB: &DBMock{FetchDocumentFunc: fetchStored},
 			Tx: &TxMock{
@@ -636,6 +627,10 @@ func Test_Handler_DeleteDocument(t *testing.T) {
 			if c.RespCode == http.StatusOK {
 				require.Len(t, c.Tx.DeleteDocumentCalls(), 1)
 				assert.Equal(t, _documentID, c.Tx.DeleteDocumentCalls()[0].ID)
+
+				// the search removal is queued by DeleteDocument itself,
+				// which is what makes it cover the cascaded descendants.
+				assert.Empty(t, c.Tx.InsertDocumentSearchJobCalls())
 			}
 		})
 	}

@@ -351,3 +351,78 @@ func Test_agent_UnassignGithubInstallationOrganization(t *testing.T) {
 		})
 	}
 }
+
+func Test_agent_DeleteGithubInstallationsByOrganizationID(t *testing.T) {
+	type tcase struct {
+		CancelledContext bool
+		OrganizationID   string
+		KeptID           int64
+		Err              error
+	}
+
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Cancelled context": func(t *testing.T, db *DB) tcase {
+			org := prepOrganizations(t, db, 1)[0]
+			prepGithubInstallations(t, db, 1, org)
+
+			return tcase{
+				CancelledContext: true,
+				OrganizationID:   org,
+				Err:              assert.AnError,
+			}
+		},
+		"Only the organization's installations go": func(t *testing.T, db *DB) tcase {
+			orgs := prepOrganizations(t, db, 2)
+
+			prepGithubInstallations(t, db, 1, orgs[0])
+
+			// the fixture numbers installations from one, so the second
+			// organization's row is inserted with an id of its own.
+			const keptID = int64(2)
+
+			q, args := db.builder.Insert("github_installations").
+				SetMap(map[string]any{
+					"installation_id":    keptID,
+					"fk_organization_id": orgs[1],
+				}).MustSql()
+
+			_, err := db.sql.Exec(q, args...)
+			require.NoError(t, err)
+
+			return tcase{
+				OrganizationID: orgs[0],
+				KeptID:         keptID,
+			}
+		},
+	}
+
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			if c.CancelledContext {
+				cancel()
+			}
+
+			err := db.DeleteGithubInstallationsByOrganizationID(ctx, c.OrganizationID)
+			testutil.RequireEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			var ids []int64
+
+			q, args := db.builder.Select("installation_id").From("github_installations").MustSql()
+
+			require.NoError(t, db.sql.Select(&ids, q, args...))
+			assert.Equal(t, []int64{c.KeptID}, ids)
+		})
+	}
+}

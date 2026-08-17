@@ -855,6 +855,7 @@ func Test_agent_DeleteDocument(t *testing.T) {
 		OrganizationID string
 		FileID         string
 		HookID         xid.ID
+		SearchRemoved  []xid.ID
 		Err            error
 	}
 
@@ -864,6 +865,34 @@ func Test_agent_DeleteDocument(t *testing.T) {
 
 			return tcase{
 				ID:             doc.ID,
+				OrganizationID: doc.OrganizationID,
+				SearchRemoved:  []xid.ID{doc.ID},
+			}
+		},
+		// the descendants go away with the cascade, so their index entries
+		// have to be queued for removal by the delete that destroys them.
+		"Descendants are queued for search removal": func(t *testing.T, db *DB) tcase {
+			organizationID := prepOrganizations(t, db, 1)[0]
+
+			docs := prepDocuments(t, db, 4, func(_ int, doc *document.Document) {
+				doc.OrganizationID = organizationID
+			})
+
+			// parent -> child -> grandchild, plus an untouched sibling.
+			setParent(t, db, docs[1].ID, docs[0].ID)
+			setParent(t, db, docs[2].ID, docs[1].ID)
+
+			return tcase{
+				ID:             docs[0].ID,
+				OrganizationID: organizationID,
+				SearchRemoved:  []xid.ID{docs[0].ID, docs[1].ID, docs[2].ID},
+			}
+		},
+		"Unknown document queues nothing": func(t *testing.T, db *DB) tcase {
+			doc := prepDocuments(t, db, 1, nil)[0]
+
+			return tcase{
+				ID:             xid.New(),
 				OrganizationID: doc.OrganizationID,
 			}
 		},
@@ -880,7 +909,7 @@ func Test_agent_DeleteDocument(t *testing.T) {
 
 			hk := prepDocumentHooks(t, db, 1, func(_ int, hk *hook.Hook) {
 				hk.DocumentID = null.ValueFrom(doc.ID)
-				hk.OrganizationID = doc.OrganizationID
+				hk.OrganizationID = null.StringFrom(doc.OrganizationID)
 				hk.BranchID = null.ValueFrom(doc.BranchID)
 			})[0]
 
@@ -889,6 +918,7 @@ func Test_agent_DeleteDocument(t *testing.T) {
 				OrganizationID: doc.OrganizationID,
 				FileID:         f.ID,
 				HookID:         hk.ID,
+				SearchRemoved:  []xid.ID{doc.ID},
 			}
 		},
 	}
@@ -918,6 +948,16 @@ func Test_agent_DeleteDocument(t *testing.T) {
 			err = db.sql.Get(&doc, q, args...)
 			require.Equal(t, sql.ErrNoRows, err)
 
+			jobs, err := db.FetchDocumentSearchJobs(context.Background(), 0, 10)
+			require.NoError(t, err)
+
+			if len(c.SearchRemoved) == 0 {
+				assert.Empty(t, jobs)
+			} else {
+				require.Len(t, jobs, 1)
+				assert.ElementsMatch(t, c.SearchRemoved, jobs[0].BlockDiff.RemovedDocuments)
+			}
+
 			if c.FileID == "" {
 				return
 			}
@@ -944,4 +984,18 @@ func Test_agent_DeleteDocument(t *testing.T) {
 			assert.False(t, hk.BranchID.Valid)
 		})
 	}
+}
+
+// setParent re-parents a document, building a tree out of documents the
+// fixture inserts as roots.
+func setParent(t *testing.T, db *DB, id, parentID xid.ID) {
+	t.Helper()
+
+	q, args := db.builder.Update("documents").
+		SetMap(map[string]any{"fk_parent_id": parentID}).
+		Where(sq.Eq{"id": id}).
+		MustSql()
+
+	_, err := db.sql.Exec(q, args...)
+	require.NoError(t, err)
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jmoiron/sqlx"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 	"github.com/rs/xid"
 )
@@ -293,17 +294,66 @@ func (a *agent) UpdateDocumentParentID(ctx context.Context, id xid.ID, parentID 
 	})
 }
 
-// DeleteDocument deletes a document from the database.
+// DeleteDocument deletes a document from the database and queues the removal
+// of its search index entries. Deleting the row cascades to the descendants,
+// so the removal is queued here rather than at the call sites: after the
+// delete there is nothing left to tell the index which documents went away.
 func (a *agent) DeleteDocument(ctx context.Context, id xid.ID, organizationID string) error {
-	q, args := a.builder.Delete("documents").
-		Where(sq.Eq{
-			"id":                 id,
-			"fk_organization_id": organizationID,
-		}).MustSql()
+	return sqlutil.WrapTx(ctx, a.sql, func(tx *sqlx.Tx) error {
+		ids, err := a.fetchDocumentSubtreeIDs(ctx, tx, id, organizationID)
+		if err != nil {
+			return err
+		}
 
-	_, err := a.sql.ExecContext(ctx, q, args...)
+		q, args := a.builder.Delete("documents").
+			Where(sq.Eq{
+				"id":                 id,
+				"fk_organization_id": organizationID,
+			}).MustSql()
 
-	return err
+		if _, err = tx.ExecContext(ctx, q, args...); err != nil {
+			return err
+		}
+
+		if len(ids) == 0 {
+			return nil
+		}
+
+		return a.insertDocumentSearchJob(ctx, tx, search.BlocksDifference{
+			RemovedDocuments: ids,
+		})
+	})
+}
+
+// fetchDocumentSubtreeIDs retrieves the IDs of the document and of every
+// document below it in the tree.
+func (a *agent) fetchDocumentSubtreeIDs(
+	ctx context.Context,
+	q sqlx.QueryerContext,
+	id xid.ID,
+	organizationID string,
+) ([]xid.ID, error) {
+	const query = `
+		WITH RECURSIVE subtree AS (
+			SELECT id
+			FROM documents
+			WHERE id = $1 AND fk_organization_id = $2
+			UNION ALL
+			SELECT d.id
+			FROM documents d
+			JOIN subtree s ON d.fk_parent_id = s.id
+			WHERE d.fk_organization_id = $2
+		)
+		SELECT id FROM subtree
+	`
+
+	var ids []xid.ID
+
+	if err := sqlx.SelectContext(ctx, q, &ids, query, id, organizationID); err != nil {
+		return nil, err
+	}
+
+	return ids, nil
 }
 
 // fetchDocumentTree fetchs the document tree for the given query and arguments.

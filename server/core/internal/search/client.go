@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/meilisearch/meilisearch-go"
@@ -88,6 +90,7 @@ func (c *Client) ensureIndex(ctx context.Context) error {
 	// existing deployment.
 	task, err := c.meiliMan.Index(_documentsIndex).UpdateFilterableAttributesWithContext(ctx, &[]any{
 		"organizationId",
+		"documentId",
 	})
 	if err != nil {
 		return fmt.Errorf("updating filterable attributes: %w", err)
@@ -230,6 +233,36 @@ func (c *Client) ReplaceDocumentBlocks(ctx context.Context, bd BlocksDifference)
 		_, err := c.meiliMan.Index(_documentsIndex).DeleteDocumentsWithContext(ctx, ids, nil)
 		if err != nil {
 			return fmt.Errorf("deleting documents: %w", err)
+		}
+	}
+
+	if len(bd.RemovedDocuments) != 0 {
+		ids := make([]string, 0, len(bd.RemovedDocuments))
+
+		for _, id := range bd.RemovedDocuments {
+			ids = append(ids, strconv.Quote(id.String()))
+		}
+
+		filter := fmt.Sprintf("documentId IN [%s]", strings.Join(ids, ", "))
+
+		_, err := c.meiliMan.Index(_documentsIndex).DeleteDocumentsByFilterWithContext(ctx, filter, nil)
+		if err != nil {
+			return fmt.Errorf("deleting documents by filter: %w", err)
+		}
+	}
+
+	if len(bd.RemovedOrganizations) != 0 {
+		ids := make([]string, 0, len(bd.RemovedOrganizations))
+
+		for _, id := range bd.RemovedOrganizations {
+			ids = append(ids, strconv.Quote(id))
+		}
+
+		filter := fmt.Sprintf("organizationId IN [%s]", strings.Join(ids, ", "))
+
+		_, err := c.meiliMan.Index(_documentsIndex).DeleteDocumentsByFilterWithContext(ctx, filter, nil)
+		if err != nil {
+			return fmt.Errorf("deleting organizations by filter: %w", err)
 		}
 	}
 

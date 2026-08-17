@@ -47,7 +47,7 @@ func scheduledHook(typ hookCore.Type) *hookCore.Hook {
 		ID:             _hookID,
 		Type:           typ,
 		DocumentID:     null.ValueFrom(_documentID),
-		OrganizationID: "org1",
+		OrganizationID: null.StringFrom("org1"),
 		Settings:       processor.Settings(`{"scale":"linear"}`),
 	}
 }
@@ -204,7 +204,7 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 
 			assert.Equal(t, hookCore.TypeScheduledReminder, ff[0].Hk.Type)
 			assert.Equal(t, null.ValueFrom(_documentID), ff[0].Hk.DocumentID)
-			assert.Equal(t, "org1", ff[0].Hk.OrganizationID)
+			assert.Equal(t, null.StringFrom("org1"), ff[0].Hk.OrganizationID)
 			assert.NotEmpty(t, ff[0].Hk.State)
 		}
 	}
@@ -609,7 +609,6 @@ func Test_Handler_DeleteDocumentHook(t *testing.T) {
 			}
 
 			assert.Equal(t, _hookID, ff[0].ID)
-			assert.Equal(t, "org1", ff[0].OrganizationID)
 		}
 	}
 
@@ -655,7 +654,7 @@ func Test_Handler_DeleteDocumentHook(t *testing.T) {
 				FetchDocumentHookFunc: func(context.Context, xid.ID, string) (*hookCore.Hook, error) {
 					return scheduledHook(hookCore.TypeScheduledReminder), nil
 				},
-				DeleteDocumentHookFunc: func(context.Context, xid.ID, string) error {
+				DeleteDocumentHookFunc: func(context.Context, xid.ID) error {
 					return errors.New("boom")
 				},
 			},

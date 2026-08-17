@@ -49,7 +49,7 @@ func stubHook(t *testing.T, branchID xid.ID, schedule, startedAt time.Time) hook
 		ID:             xid.New(),
 		Type:           hook.TypeScheduledReminder,
 		DocumentID:     null.ValueFrom(xid.New()),
-		OrganizationID: "org-1",
+		OrganizationID: null.StringFrom("org-1"),
 		BranchID:       null.ValueFrom(branchID),
 		Settings:       processor.Settings(settings),
 		State:          processor.State(state),
@@ -174,6 +174,22 @@ func Test_Manager_processHooks(t *testing.T) {
 			Hooks: func(t *testing.T) []hook.Hook {
 				h := stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
 				h.DocumentID = null.Value[xid.ID]{}
+
+				return []hook.Hook{h}
+			},
+			Checks: checks(
+				hasError(false),
+				wasDeleteCalled(1),
+				wasFetchDocumentCalled(0),
+				wasUpdateCalled(0),
+			),
+		},
+		// the organization row is deleted outside of core, taking the
+		// documents with it; the hook row is what is left of the watcher.
+		"Orphaned hook without an organization is deleted": {
+			Hooks: func(t *testing.T) []hook.Hook {
+				h := stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+				h.OrganizationID = null.String{}
 
 				return []hook.Hook{h}
 			},

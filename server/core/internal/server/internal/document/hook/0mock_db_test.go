@@ -22,7 +22,7 @@ var _ DB = &DBMock{}
 //
 //		// make and configure a mocked DB
 //		mockedDB := &DBMock{
-//			DeleteDocumentHookFunc: func(ctx context.Context, id xid.ID, organizationID string) error {
+//			DeleteDocumentHookFunc: func(ctx context.Context, id xid.ID) error {
 //				panic("mock out the DeleteDocumentHook method")
 //			},
 //			FetchDocumentByBranchIDFunc: func(ctx context.Context, branchID xid.ID, organizationID string) (*document.Document, error) {
@@ -48,7 +48,7 @@ var _ DB = &DBMock{}
 //	}
 type DBMock struct {
 	// DeleteDocumentHookFunc mocks the DeleteDocumentHook method.
-	DeleteDocumentHookFunc func(ctx context.Context, id xid.ID, organizationID string) error
+	DeleteDocumentHookFunc func(ctx context.Context, id xid.ID) error
 
 	// FetchDocumentByBranchIDFunc mocks the FetchDocumentByBranchID method.
 	FetchDocumentByBranchIDFunc func(ctx context.Context, branchID xid.ID, organizationID string) (*document.Document, error)
@@ -73,8 +73,6 @@ type DBMock struct {
 			Ctx context.Context
 			// ID is the id argument value.
 			ID xid.ID
-			// OrganizationID is the organizationID argument value.
-			OrganizationID string
 		}
 		// FetchDocumentByBranchID holds details about calls to the FetchDocumentByBranchID method.
 		FetchDocumentByBranchID []struct {
@@ -127,15 +125,13 @@ type DBMock struct {
 }
 
 // DeleteDocumentHook calls DeleteDocumentHookFunc.
-func (mock *DBMock) DeleteDocumentHook(ctx context.Context, id xid.ID, organizationID string) error {
+func (mock *DBMock) DeleteDocumentHook(ctx context.Context, id xid.ID) error {
 	callInfo := struct {
-		Ctx            context.Context
-		ID             xid.ID
-		OrganizationID string
+		Ctx context.Context
+		ID  xid.ID
 	}{
-		Ctx:            ctx,
-		ID:             id,
-		OrganizationID: organizationID,
+		Ctx: ctx,
+		ID:  id,
 	}
 	mock.lockDeleteDocumentHook.Lock()
 	mock.calls.DeleteDocumentHook = append(mock.calls.DeleteDocumentHook, callInfo)
@@ -146,7 +142,7 @@ func (mock *DBMock) DeleteDocumentHook(ctx context.Context, id xid.ID, organizat
 		)
 		return errOut
 	}
-	return mock.DeleteDocumentHookFunc(ctx, id, organizationID)
+	return mock.DeleteDocumentHookFunc(ctx, id)
 }
 
 // DeleteDocumentHookCalls gets all the calls that were made to DeleteDocumentHook.
@@ -154,14 +150,12 @@ func (mock *DBMock) DeleteDocumentHook(ctx context.Context, id xid.ID, organizat
 //
 //	len(mockedDB.DeleteDocumentHookCalls())
 func (mock *DBMock) DeleteDocumentHookCalls() []struct {
-	Ctx            context.Context
-	ID             xid.ID
-	OrganizationID string
+	Ctx context.Context
+	ID  xid.ID
 } {
 	var calls []struct {
-		Ctx            context.Context
-		ID             xid.ID
-		OrganizationID string
+		Ctx context.Context
+		ID  xid.ID
 	}
 	mock.lockDeleteDocumentHook.RLock()
 	calls = mock.calls.DeleteDocumentHook

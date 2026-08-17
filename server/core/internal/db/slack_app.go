@@ -125,6 +125,20 @@ func (a *agent) DeleteSlackApp(ctx context.Context, teamID string) error {
 	return err
 }
 
+// DeleteSlackAppsByOrganizationID removes the Slack apps of an organization,
+// and with them the workspace tokens they hold.
+func (a *agent) DeleteSlackAppsByOrganizationID(ctx context.Context, organizationID string) error {
+	q, args := a.builder.Delete("slack_apps").
+		Where(sq.Eq{
+			"fk_organization_id": organizationID,
+		}).
+		MustSql()
+
+	_, err := a.sql.ExecContext(ctx, q, args...)
+
+	return err
+}
+
 // UnassignSlackAppOrganization removes the organization association from a Slack app.
 func (a *agent) UnassignSlackAppOrganization(ctx context.Context, organizationID string) error {
 	q, args := a.builder.Update("slack_apps").

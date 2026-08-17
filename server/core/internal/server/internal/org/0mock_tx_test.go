@@ -9,6 +9,7 @@ import (
 
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/rs/xid"
 )
@@ -25,6 +26,15 @@ var _ Tx = &TxMock{}
 //		mockedTx := &TxMock{
 //			CommitFunc: func() error {
 //				panic("mock out the Commit method")
+//			},
+//			DeleteGithubInstallationsByOrganizationIDFunc: func(ctx context.Context, organizationID string) error {
+//				panic("mock out the DeleteGithubInstallationsByOrganizationID method")
+//			},
+//			DeleteSlackAppsByOrganizationIDFunc: func(ctx context.Context, organizationID string) error {
+//				panic("mock out the DeleteSlackAppsByOrganizationID method")
+//			},
+//			FetchDocumentHooksByOrganizationIDFunc: func(ctx context.Context, organizationID string) ([]hook.Hook, error) {
+//				panic("mock out the FetchDocumentHooksByOrganizationID method")
 //			},
 //			FetchOrganizationMembersFunc: func(ctx context.Context, organizationID string) ([]string, error) {
 //				panic("mock out the FetchOrganizationMembers method")
@@ -57,6 +67,15 @@ type TxMock struct {
 	// CommitFunc mocks the Commit method.
 	CommitFunc func() error
 
+	// DeleteGithubInstallationsByOrganizationIDFunc mocks the DeleteGithubInstallationsByOrganizationID method.
+	DeleteGithubInstallationsByOrganizationIDFunc func(ctx context.Context, organizationID string) error
+
+	// DeleteSlackAppsByOrganizationIDFunc mocks the DeleteSlackAppsByOrganizationID method.
+	DeleteSlackAppsByOrganizationIDFunc func(ctx context.Context, organizationID string) error
+
+	// FetchDocumentHooksByOrganizationIDFunc mocks the FetchDocumentHooksByOrganizationID method.
+	FetchDocumentHooksByOrganizationIDFunc func(ctx context.Context, organizationID string) ([]hook.Hook, error)
+
 	// FetchOrganizationMembersFunc mocks the FetchOrganizationMembers method.
 	FetchOrganizationMembersFunc func(ctx context.Context, organizationID string) ([]string, error)
 
@@ -82,6 +101,27 @@ type TxMock struct {
 	calls struct {
 		// Commit holds details about calls to the Commit method.
 		Commit []struct {
+		}
+		// DeleteGithubInstallationsByOrganizationID holds details about calls to the DeleteGithubInstallationsByOrganizationID method.
+		DeleteGithubInstallationsByOrganizationID []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+		}
+		// DeleteSlackAppsByOrganizationID holds details about calls to the DeleteSlackAppsByOrganizationID method.
+		DeleteSlackAppsByOrganizationID []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+		}
+		// FetchDocumentHooksByOrganizationID holds details about calls to the FetchDocumentHooksByOrganizationID method.
+		FetchDocumentHooksByOrganizationID []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
 		}
 		// FetchOrganizationMembers holds details about calls to the FetchOrganizationMembers method.
 		FetchOrganizationMembers []struct {
@@ -135,14 +175,17 @@ type TxMock struct {
 			MaintainerIDs []string
 		}
 	}
-	lockCommit                    sync.RWMutex
-	lockFetchOrganizationMembers  sync.RWMutex
-	lockInsertDataSource          sync.RWMutex
-	lockInsertDocument            sync.RWMutex
-	lockInsertDocumentSearchJob   sync.RWMutex
-	lockRollback                  sync.RWMutex
-	lockUpdateOrganizationLogo    sync.RWMutex
-	lockUpsertDocumentMaintainers sync.RWMutex
+	lockCommit                                    sync.RWMutex
+	lockDeleteGithubInstallationsByOrganizationID sync.RWMutex
+	lockDeleteSlackAppsByOrganizationID           sync.RWMutex
+	lockFetchDocumentHooksByOrganizationID        sync.RWMutex
+	lockFetchOrganizationMembers                  sync.RWMutex
+	lockInsertDataSource                          sync.RWMutex
+	lockInsertDocument                            sync.RWMutex
+	lockInsertDocumentSearchJob                   sync.RWMutex
+	lockRollback                                  sync.RWMutex
+	lockUpdateOrganizationLogo                    sync.RWMutex
+	lockUpsertDocumentMaintainers                 sync.RWMutex
 }
 
 // Commit calls CommitFunc.
@@ -172,6 +215,124 @@ func (mock *TxMock) CommitCalls() []struct {
 	mock.lockCommit.RLock()
 	calls = mock.calls.Commit
 	mock.lockCommit.RUnlock()
+	return calls
+}
+
+// DeleteGithubInstallationsByOrganizationID calls DeleteGithubInstallationsByOrganizationIDFunc.
+func (mock *TxMock) DeleteGithubInstallationsByOrganizationID(ctx context.Context, organizationID string) error {
+	callInfo := struct {
+		Ctx            context.Context
+		OrganizationID string
+	}{
+		Ctx:            ctx,
+		OrganizationID: organizationID,
+	}
+	mock.lockDeleteGithubInstallationsByOrganizationID.Lock()
+	mock.calls.DeleteGithubInstallationsByOrganizationID = append(mock.calls.DeleteGithubInstallationsByOrganizationID, callInfo)
+	mock.lockDeleteGithubInstallationsByOrganizationID.Unlock()
+	if mock.DeleteGithubInstallationsByOrganizationIDFunc == nil {
+		var (
+			errOut error
+		)
+		return errOut
+	}
+	return mock.DeleteGithubInstallationsByOrganizationIDFunc(ctx, organizationID)
+}
+
+// DeleteGithubInstallationsByOrganizationIDCalls gets all the calls that were made to DeleteGithubInstallationsByOrganizationID.
+// Check the length with:
+//
+//	len(mockedTx.DeleteGithubInstallationsByOrganizationIDCalls())
+func (mock *TxMock) DeleteGithubInstallationsByOrganizationIDCalls() []struct {
+	Ctx            context.Context
+	OrganizationID string
+} {
+	var calls []struct {
+		Ctx            context.Context
+		OrganizationID string
+	}
+	mock.lockDeleteGithubInstallationsByOrganizationID.RLock()
+	calls = mock.calls.DeleteGithubInstallationsByOrganizationID
+	mock.lockDeleteGithubInstallationsByOrganizationID.RUnlock()
+	return calls
+}
+
+// DeleteSlackAppsByOrganizationID calls DeleteSlackAppsByOrganizationIDFunc.
+func (mock *TxMock) DeleteSlackAppsByOrganizationID(ctx context.Context, organizationID string) error {
+	callInfo := struct {
+		Ctx            context.Context
+		OrganizationID string
+	}{
+		Ctx:            ctx,
+		OrganizationID: organizationID,
+	}
+	mock.lockDeleteSlackAppsByOrganizationID.Lock()
+	mock.calls.DeleteSlackAppsByOrganizationID = append(mock.calls.DeleteSlackAppsByOrganizationID, callInfo)
+	mock.lockDeleteSlackAppsByOrganizationID.Unlock()
+	if mock.DeleteSlackAppsByOrganizationIDFunc == nil {
+		var (
+			errOut error
+		)
+		return errOut
+	}
+	return mock.DeleteSlackAppsByOrganizationIDFunc(ctx, organizationID)
+}
+
+// DeleteSlackAppsByOrganizationIDCalls gets all the calls that were made to DeleteSlackAppsByOrganizationID.
+// Check the length with:
+//
+//	len(mockedTx.DeleteSlackAppsByOrganizationIDCalls())
+func (mock *TxMock) DeleteSlackAppsByOrganizationIDCalls() []struct {
+	Ctx            context.Context
+	OrganizationID string
+} {
+	var calls []struct {
+		Ctx            context.Context
+		OrganizationID string
+	}
+	mock.lockDeleteSlackAppsByOrganizationID.RLock()
+	calls = mock.calls.DeleteSlackAppsByOrganizationID
+	mock.lockDeleteSlackAppsByOrganizationID.RUnlock()
+	return calls
+}
+
+// FetchDocumentHooksByOrganizationID calls FetchDocumentHooksByOrganizationIDFunc.
+func (mock *TxMock) FetchDocumentHooksByOrganizationID(ctx context.Context, organizationID string) ([]hook.Hook, error) {
+	callInfo := struct {
+		Ctx            context.Context
+		OrganizationID string
+	}{
+		Ctx:            ctx,
+		OrganizationID: organizationID,
+	}
+	mock.lockFetchDocumentHooksByOrganizationID.Lock()
+	mock.calls.FetchDocumentHooksByOrganizationID = append(mock.calls.FetchDocumentHooksByOrganizationID, callInfo)
+	mock.lockFetchDocumentHooksByOrganizationID.Unlock()
+	if mock.FetchDocumentHooksByOrganizationIDFunc == nil {
+		var (
+			hooksOut []hook.Hook
+			errOut   error
+		)
+		return hooksOut, errOut
+	}
+	return mock.FetchDocumentHooksByOrganizationIDFunc(ctx, organizationID)
+}
+
+// FetchDocumentHooksByOrganizationIDCalls gets all the calls that were made to FetchDocumentHooksByOrganizationID.
+// Check the length with:
+//
+//	len(mockedTx.FetchDocumentHooksByOrganizationIDCalls())
+func (mock *TxMock) FetchDocumentHooksByOrganizationIDCalls() []struct {
+	Ctx            context.Context
+	OrganizationID string
+} {
+	var calls []struct {
+		Ctx            context.Context
+		OrganizationID string
+	}
+	mock.lockFetchDocumentHooksByOrganizationID.RLock()
+	calls = mock.calls.FetchDocumentHooksByOrganizationID
+	mock.lockFetchDocumentHooksByOrganizationID.RUnlock()
 	return calls
 }
 

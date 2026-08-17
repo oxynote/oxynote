@@ -111,10 +111,11 @@ func (m *Manager) processHooks(ctx context.Context) error {
 		for _, h := range hooks {
 			ps.OffsetID = h.ID
 
-			// The branch or the document was deleted, which is the only
-			// trace left of the hook: tear down the external resource it
-			// holds before the row goes away with the last reference to it.
-			if !h.BranchID.Valid || !h.DocumentID.Valid {
+			// The branch, the document or the whole organization was
+			// deleted, which is the only trace left of the hook: tear down
+			// the external resource it holds before the row goes away with
+			// the last reference to it.
+			if !h.BranchID.Valid || !h.DocumentID.Valid || !h.OrganizationID.Valid {
 				m.deleteHook(ctx, &h)
 
 				continue
@@ -138,7 +139,7 @@ func (m *Manager) processHooks(ctx context.Context) error {
 			}
 
 			err = h.Process(ctx, hook.NewInput(
-				h.OrganizationID,
+				h.OrganizationID.String,
 				m.githubMan,
 				m.webchangeClient,
 			))
@@ -159,7 +160,7 @@ func (m *Manager) processHooks(ctx context.Context) error {
 			m.updateHook(ctx, h)
 
 			if previousScore.Equal(_fullScore) && h.Score.Equal(decimal.Zero) {
-				maintainers, err := m.db.FetchDocumentMaintainers(ctx, h.DocumentID.V, h.OrganizationID)
+				maintainers, err := m.db.FetchDocumentMaintainers(ctx, h.DocumentID.V, h.OrganizationID.String)
 				if err != nil {
 					m.log.With("hook_id", h.ID).
 						With("error", err).
@@ -169,7 +170,7 @@ func (m *Manager) processHooks(ctx context.Context) error {
 				}
 
 				m.notifPub.PublishNotifications(
-					h.OrganizationID,
+					h.OrganizationID.String,
 					notification.NewDocumentHookTriggeredNotification(
 						h.DocumentID.V,
 						h.Type,
@@ -203,7 +204,7 @@ func (m *Manager) ensureHook(
 	if !ok {
 		var err error
 
-		doc, err = m.db.FetchDocumentByBranchID(ctx, h.BranchID.V, h.OrganizationID)
+		doc, err = m.db.FetchDocumentByBranchID(ctx, h.BranchID.V, h.OrganizationID.String)
 
 		switch {
 		case err == nil:
@@ -244,7 +245,7 @@ func (m *Manager) ensureHook(
 // with nothing left to find it by.
 func (m *Manager) deleteHook(ctx context.Context, h *hook.Hook) {
 	err := h.Delete(ctx, hook.NewInput(
-		h.OrganizationID,
+		h.OrganizationID.String,
 		m.githubMan,
 		m.webchangeClient,
 	))
@@ -256,7 +257,7 @@ func (m *Manager) deleteHook(ctx context.Context, h *hook.Hook) {
 		return
 	}
 
-	err = m.db.DeleteDocumentHook(ctx, h.ID, h.OrganizationID)
+	err = m.db.DeleteDocumentHook(ctx, h.ID)
 	if err != nil {
 		m.log.With("hook_id", h.ID).
 			With("error", err).
@@ -286,7 +287,7 @@ type DB interface {
 	UpdateDocumentHook(ctx context.Context, hk hook.Hook) error
 
 	// DeleteDocumentHook should delete the document hook for the given id.
-	DeleteDocumentHook(ctx context.Context, id xid.ID, organizationID string) error
+	DeleteDocumentHook(ctx context.Context, id xid.ID) error
 
 	// FetchDocumentByBranchID should fetch the document joined against the branch
 	// identified by branchID.

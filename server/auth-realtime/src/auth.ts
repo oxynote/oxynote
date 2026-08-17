@@ -309,6 +309,13 @@ export const auth = betterAuth({
 						organization.id,
 					)
 				},
+				beforeDeleteOrganization: async ({
+					organization,
+				}) => {
+					await teardownOrganization(
+						organization.id,
+					)
+				},
 			},
 			sendInvitationEmail: async (data) => {
 				const inviteLink =
@@ -439,6 +446,17 @@ async function initializeOrganization(organizationId: string): Promise<void> {
 	try {
 		await axios.post(
 			`${backendUrl}/api/x/organizations/${organizationId}/initialize`,
+		)
+	} catch (err) {
+		Sentry.captureException(err)
+		throw err
+	}
+}
+
+async function teardownOrganization(organizationId: string): Promise<void> {
+	try {
+		await axios.post(
+			`${backendUrl}/api/x/organizations/${organizationId}/teardown`,
 		)
 	} catch (err) {
 		Sentry.captureException(err)

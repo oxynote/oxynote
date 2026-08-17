@@ -38,6 +38,17 @@ type BlocksDifference struct {
 
 	// Removed contains blocks that have been removed.
 	Removed []Block `json:"removed"`
+
+	// RemovedDocuments contains documents whose every block is removed.
+	// Deleting a document cascades to its descendants in the database,
+	// which makes enumerating their blocks impossible after the fact, so
+	// the index is cleared by document instead.
+	RemovedDocuments []xid.ID `json:"removedDocuments"`
+
+	// RemovedOrganizations contains organizations whose every block is
+	// removed. Organizations are deleted outside of core, so this is the
+	// only handle left on the content that went with them.
+	RemovedOrganizations []string `json:"removedOrganizations"`
 }
 
 // BlocksDiff compares two slices of Blocks and returns the differences

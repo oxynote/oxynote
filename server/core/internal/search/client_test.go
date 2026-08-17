@@ -3,6 +3,7 @@ package search
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -73,7 +74,7 @@ func Test_NewClient(t *testing.T) {
 				return
 			}
 
-			assert.Equal(t, &[]any{"organizationId"}, ff[0].Request)
+			assert.Equal(t, &[]any{"organizationId", "documentId"}, ff[0].Request)
 		}
 	}
 
@@ -375,6 +376,14 @@ func Test_Client_ReplaceDocumentBlocks(t *testing.T) {
 		}
 	}
 
+	wasDeleteByFilterCalled := func(count int) check {
+		return func(t *testing.T, idx *mock.MeiliIndexManager, _ error) {
+			require.Len(t, idx.DeleteDocumentsByFilterWithContextCalls(), count)
+		}
+	}
+
+	docID1, docID2 := xid.New(), xid.New()
+
 	fullDiff := BlocksDifference{
 		Added:   []Block{{ID: "a"}},
 		Updated: []Block{{ID: "u"}},
@@ -382,11 +391,12 @@ func Test_Client_ReplaceDocumentBlocks(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		Diff      BlocksDifference
-		AddErr    error
-		UpdateErr error
-		DeleteErr error
-		Checks    []check
+		Diff            BlocksDifference
+		AddErr          error
+		UpdateErr       error
+		DeleteErr       error
+		DeleteFilterErr error
+		Checks          []check
 	}{
 		"Empty difference makes no calls": {
 			Checks: checks(
@@ -394,6 +404,45 @@ func Test_Client_ReplaceDocumentBlocks(t *testing.T) {
 				wasAddCalled(0),
 				wasUpdateCalled(0),
 				wasDeleteCalled(0),
+				wasDeleteByFilterCalled(0),
+			),
+		},
+		"Removed documents are cleared by filter": {
+			Diff: BlocksDifference{RemovedDocuments: []xid.ID{docID1, docID2}},
+			Checks: checks(
+				hasError(false),
+				wasDeleteCalled(0),
+				wasDeleteByFilterCalled(1),
+				func(t *testing.T, idx *mock.MeiliIndexManager, _ error) {
+					ff := idx.DeleteDocumentsByFilterWithContextCalls()
+					require.NotEmpty(t, ff)
+					assert.Equal(
+						t,
+						fmt.Sprintf("documentId IN [%q, %q]", docID1, docID2),
+						ff[0].Filter,
+					)
+				},
+			),
+		},
+		"Removed organizations are cleared by filter": {
+			Diff: BlocksDifference{RemovedOrganizations: []string{"org-1", "org-2"}},
+			Checks: checks(
+				hasError(false),
+				wasDeleteCalled(0),
+				wasDeleteByFilterCalled(1),
+				func(t *testing.T, idx *mock.MeiliIndexManager, _ error) {
+					ff := idx.DeleteDocumentsByFilterWithContextCalls()
+					require.NotEmpty(t, ff)
+					assert.Equal(t, `organizationId IN ["org-1", "org-2"]`, ff[0].Filter)
+				},
+			),
+		},
+		"Delete by filter failure is propagated": {
+			Diff:            BlocksDifference{RemovedDocuments: []xid.ID{docID1}},
+			DeleteFilterErr: assert.AnError,
+			Checks: checks(
+				hasError(true),
+				wasDeleteByFilterCalled(1),
 			),
 		},
 		"Full difference dispatches all three": {
@@ -452,6 +501,9 @@ func Test_Client_ReplaceDocumentBlocks(t *testing.T) {
 				},
 				DeleteDocumentsWithContextFunc: func(context.Context, []string, *meilisearch.DocumentOptions) (*meilisearch.TaskInfo, error) {
 					return nil, tc.DeleteErr
+				},
+				DeleteDocumentsByFilterWithContextFunc: func(context.Context, any, *meilisearch.DocumentOptions) (*meilisearch.TaskInfo, error) {
+					return nil, tc.DeleteFilterErr
 				},
 			}
 

@@ -490,3 +490,73 @@ func Test_agent_UnassignSlackAppOrganization(t *testing.T) {
 		})
 	}
 }
+
+func Test_agent_DeleteSlackAppsByOrganizationID(t *testing.T) {
+	type tcase struct {
+		CancelledContext bool
+		OrganizationID   string
+		KeptTeamID       string
+		Err              error
+	}
+
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Cancelled context": func(t *testing.T, db *DB) tcase {
+			org := prepOrganizations(t, db, 1)[0]
+			prepSlackApps(t, db, 1, func(_ int, app *slack.App) {
+				app.OrganizationID = null.StringFrom(org)
+			})
+
+			return tcase{
+				CancelledContext: true,
+				OrganizationID:   org,
+				Err:              assert.AnError,
+			}
+		},
+		"Only the organization's apps go": func(t *testing.T, db *DB) tcase {
+			orgs := prepOrganizations(t, db, 2)
+
+			prepSlackApps(t, db, 1, func(_ int, app *slack.App) {
+				app.OrganizationID = null.StringFrom(orgs[0])
+			})
+
+			kept := prepSlackApps(t, db, 1, func(_ int, app *slack.App) {
+				app.OrganizationID = null.StringFrom(orgs[1])
+			})[0]
+
+			return tcase{
+				OrganizationID: orgs[0],
+				KeptTeamID:     kept.TeamID,
+			}
+		},
+	}
+
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			if c.CancelledContext {
+				cancel()
+			}
+
+			err := db.DeleteSlackAppsByOrganizationID(ctx, c.OrganizationID)
+			testutil.RequireEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			var teamIDs []string
+
+			q, args := db.builder.Select("team_id").From("slack_apps").MustSql()
+
+			require.NoError(t, db.sql.Select(&teamIDs, q, args...))
+			assert.Equal(t, []string{c.KeptTeamID}, teamIDs)
+		})
+	}
+}

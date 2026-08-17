@@ -10,12 +10,22 @@ import (
 
 // InsertDocumentSearchJob inserts a new document search job into the database.
 func (a *agent) InsertDocumentSearchJob(ctx context.Context, blockDiff search.BlocksDifference) error {
+	return a.insertDocumentSearchJob(ctx, a.sql, blockDiff)
+}
+
+// insertDocumentSearchJob inserts a search job through the given executor so
+// an agent method that already opened a transaction can queue one inside it.
+func (a *agent) insertDocumentSearchJob(
+	ctx context.Context,
+	ex sqlx.ExecerContext,
+	blockDiff search.BlocksDifference,
+) error {
 	q, args := a.builder.Insert("document_search_jobs").
 		SetMap(map[string]any{
 			"block_diff": blockDiff,
 		}).MustSql()
 
-	_, err := a.sql.ExecContext(ctx, q, args...)
+	_, err := ex.ExecContext(ctx, q, args...)
 
 	return err
 }

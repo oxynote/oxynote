@@ -140,7 +140,7 @@ CREATE TABLE document_hooks (
 	id TEXT PRIMARY KEY,
 	type TEXT NOT NULL,
 	fk_document_id TEXT REFERENCES documents ON DELETE SET NULL,
-	fk_organization_id TEXT NOT NULL REFERENCES organizations ON DELETE CASCADE,
+	fk_organization_id TEXT REFERENCES organizations ON DELETE SET NULL,
 	fk_branch_id TEXT REFERENCES document_branches(id) ON DELETE SET NULL,
 	block_id TEXT,
 	settings JSONB NOT NULL,

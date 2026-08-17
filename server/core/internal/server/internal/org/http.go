@@ -9,8 +9,11 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/oxynote/oxynote/server/core/internal/apps/github"
+	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/internal/storage"
@@ -31,6 +34,8 @@ type Handler struct {
 	log               *slog.Logger
 	db                DB
 	storer            Storer
+	githubMan         *github.Manager
+	webchangeClient   *webchange.Client
 	logoLocation      string
 	demoPrometheusURL string
 }
@@ -40,6 +45,8 @@ func NewHandler(
 	log *slog.Logger,
 	db DB,
 	storer Storer,
+	githubMan *github.Manager,
+	webchangeClient *webchange.Client,
 	logoLocationFormat string,
 	demoPrometheusURL string,
 ) *Handler {
@@ -47,6 +54,8 @@ func NewHandler(
 		log:               log,
 		db:                db,
 		storer:            storer,
+		githubMan:         githubMan,
+		webchangeClient:   webchangeClient,
 		logoLocation:      logoLocationFormat,
 		demoPrometheusURL: demoPrometheusURL,
 	}
@@ -234,6 +243,83 @@ func (h *Handler) RetrieveOrganizationLogo(w http.ResponseWriter, r *http.Reques
 	}
 }
 
+// TeardownOrganization releases everything an organization owns outside of
+// Postgres before the organization row itself is deleted. It runs while every
+// row still exists, since the deletion cascades them away: hooks lose the
+// state their external watchers are addressed by, and documents lose the ids
+// their search entries are filtered by.
+func (h *Handler) TeardownOrganization(w http.ResponseWriter, r *http.Request) {
+	id, err := h.extractOrganizationParameter(r)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	hooks, err := h.db.FetchDocumentHooksByOrganizationID(r.Context(), id)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	inp := hook.NewInput(id, h.githubMan, h.webchangeClient)
+
+	for _, hk := range hooks {
+		if err = hk.Delete(r.Context(), inp); err != nil {
+			httpserver.RespondError(h.log, w, err)
+			return
+		}
+	}
+
+	var tx Tx
+
+	err = h.db.BeginTx(r.Context(), &tx)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
+
+	if err = tx.InsertDocumentSearchJob(r.Context(), search.BlocksDifference{
+		RemovedOrganizations: []string{id},
+	}); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if err = tx.DeleteSlackAppsByOrganizationID(r.Context(), id); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if err = tx.DeleteGithubInstallationsByOrganizationID(r.Context(), id); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	// the logo is the organization's own object; the documents' files are
+	// left to the file manager, which reclaims them once the cascade nulls
+	// their foreign keys.
+	err = h.storer.Delete(r.Context(), fmt.Sprintf(_organizationsLogoFolderFormat, id), id)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	httpserver.Respond(
+		h.log,
+		w,
+		nil,
+		http.StatusNoContent,
+	)
+}
+
 // extractOrganizationParameter extracts the document ID from the request parameters.
 func (h *Handler) extractOrganizationParameter(r *http.Request) (string, error) {
 	return httpserver.ExtractParam(r, "organizationId")
@@ -265,6 +351,18 @@ type DBAgent interface {
 
 	// InsertDocumentSearchJob should insert the document search job.
 	InsertDocumentSearchJob(ctx context.Context, diff search.BlocksDifference) error
+
+	// FetchDocumentHooksByOrganizationID should return every hook of the
+	// organization.
+	FetchDocumentHooksByOrganizationID(ctx context.Context, organizationID string) ([]hook.Hook, error)
+
+	// DeleteSlackAppsByOrganizationID should remove the organization's slack
+	// apps together with the workspace tokens they hold.
+	DeleteSlackAppsByOrganizationID(ctx context.Context, organizationID string) error
+
+	// DeleteGithubInstallationsByOrganizationID should remove the
+	// organization's github installations.
+	DeleteGithubInstallationsByOrganizationID(ctx context.Context, organizationID string) error
 
 	// UpdateOrganizationLogo should update the organization's logo URL.
 	UpdateOrganizationLogo(ctx context.Context, organizationID, logo string) error

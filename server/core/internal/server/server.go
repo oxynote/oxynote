@@ -134,7 +134,15 @@ func NewServer(
 	}
 
 	srv.handlers.user = user.NewHandler(log, db, storageClient, opts.PublicURL+_userImageLocationFormat)
-	srv.handlers.organization = org.NewHandler(log, db, storageClient, opts.PublicURL+_organizationLogoLocation, opts.DemoPrometheusURL)
+	srv.handlers.organization = org.NewHandler(
+		log,
+		db,
+		storageClient,
+		githubMan,
+		webchangeClient,
+		opts.PublicURL+_organizationLogoLocation,
+		opts.DemoPrometheusURL,
+	)
 	srv.handlers.document = document.NewHandler(log, db, githubMan, webchangeClient, searchGateway, notifier, storageClient)
 	srv.handlers.comment = comment.NewHandler(log, db, notifier)
 	srv.handlers.files = files.NewHandler(log, db, storageClient, opts.PublicURL+documentCore.FilePathFormat)
