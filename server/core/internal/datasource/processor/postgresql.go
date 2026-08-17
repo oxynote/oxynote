@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"maps"
 	"net/url"
-	"regexp"
 	"strings"
 	"time"
 
@@ -20,6 +19,11 @@ import (
 const (
 	// _queryTimeout is the maximum duration for a PostgreSQL query.
 	_queryTimeout = 10 * time.Second
+
+	// _connectTimeout bounds the initial dial. TestConnection runs on the
+	// request's own context, so without it a black-holed host holds the
+	// create and test endpoints until the OS gives up on the TCP handshake.
+	_connectTimeout = 10 * time.Second
 
 	// _queryPayloadLimit is the maximum estimated payload size (in bytes) for a query result.
 	_queryPayloadLimit = 5 * 1024 * 1024 // 5 MB
@@ -41,12 +45,12 @@ func NewPostgreSQL(inp Input) *PostgreSQL {
 func (p *PostgreSQL) TestConnection(ctx context.Context) (ConnectionStatus, error) {
 	conn, err := p.connect(ctx)
 	if err != nil {
-		return ConnectionStatusUnreachable, nil
+		return pgConnectionStatus(err), nil
 	}
 	defer conn.Close(ctx) //nolint:errcheck // error provides no meaningful info
 
 	if err = conn.Ping(ctx); err != nil {
-		return ConnectionStatusUnreachable, nil
+		return pgConnectionStatus(err), nil
 	}
 
 	var readOnly bool
@@ -68,6 +72,21 @@ func (p *PostgreSQL) TestConnection(ctx context.Context) (ConnectionStatus, erro
 	}
 
 	return ConnectionStatusSuccess, nil
+}
+
+// pgConnectionStatus classifies a failed connection attempt. A refused
+// handshake is reported as unauthorized rather than unreachable: the two are
+// indistinguishable to the user otherwise, and a typo in the password is the
+// far more common of them.
+func pgConnectionStatus(err error) ConnectionStatus {
+	var pgErr *pgconn.PgError
+
+	// class 28 is "invalid authorization specification".
+	if errors.As(err, &pgErr) && strings.HasPrefix(pgErr.Code, "28") {
+		return ConnectionStatusUnauthorized
+	}
+
+	return ConnectionStatusUnreachable
 }
 
 // Metadata retrieves all tables and their columns from the PostgreSQL data source.
@@ -173,19 +192,16 @@ func (p *PostgreSQL) QueryLabels(ctx context.Context, q string, tr TimeRange) (m
 	return labels, nil
 }
 
-// sqlSetLimit replaces or appends a LIMIT clause in the query to the given value.
+// sqlSetLimit bounds the query to at most n rows.
 func sqlSetLimit(q string, n int) string {
-	re := regexp.MustCompile(`(?i)\bLIMIT\s+\d+\s*$`)
-
-	limit := fmt.Sprintf("LIMIT %d", n)
-
-	if re.MatchString(strings.TrimSpace(q)) {
-		return re.ReplaceAllString(q, limit)
-	}
-
-	q = strings.TrimRight(q, "; \t\n")
-
-	return q + " " + limit
+	// the query is wrapped rather than patched: appending or rewriting a
+	// LIMIT has to understand everything that can end a statement — a
+	// semicolon, an OFFSET, MySQL's "LIMIT a, b", a trailing comment — and
+	// gets each of them wrong in a different way. A subquery bounds any
+	// shape, including one that carries its own larger limit.
+	// the newlines matter: a query ending in a line comment would otherwise
+	// swallow the closing parenthesis.
+	return fmt.Sprintf("SELECT * FROM (\n%s\n) AS oxynote_limited LIMIT %d", strings.TrimRight(q, "; \t\r\n"), n)
 }
 
 // Query executes a SQL query against the PostgreSQL data source.
@@ -272,6 +288,7 @@ func (p *PostgreSQL) connect(ctx context.Context) (*pgx.Conn, error) {
 	}
 
 	cfg.DefaultQueryExecMode = pgx.QueryExecModeCacheStatement
+	cfg.ConnectTimeout = _connectTimeout
 
 	conn, err := pgx.ConnectConfig(ctx, cfg)
 	if err != nil {
@@ -536,6 +553,10 @@ func pgNormalizeValue(v any) any {
 		return float64(val)
 	case int16:
 		return float64(val)
+	case float32:
+		// pgx decodes real as float32; without this the column reads as a
+		// label and the chart reports a data mismatch.
+		return float64(val)
 	case pgtype.Numeric:
 		f, err := val.Float64Value()
 		if err != nil || !f.Valid {
@@ -574,6 +595,8 @@ func pgParseNumericValue(v any) (float64, bool) {
 	switch val := v.(type) {
 	case float64:
 		return val, true
+	case float32:
+		return float64(val), true
 	default:
 		return 0, false
 	}

@@ -53,17 +53,17 @@ func NewMySQL(inp Input) *MySQL {
 func (m *MySQL) TestConnection(ctx context.Context) (ConnectionStatus, error) {
 	db, err := m.connect()
 	if err != nil {
-		return ConnectionStatusUnreachable, nil
+		return mysqlConnectionStatus(err), nil
 	}
 	defer db.Close() //nolint:errcheck // error provides no meaningful info
 
 	if err = db.PingContext(ctx); err != nil {
-		return ConnectionStatusUnreachable, nil
+		return mysqlConnectionStatus(err), nil
 	}
 
 	readOnly, err := mysqlCheckReadOnly(ctx, db)
 	if err != nil {
-		return ConnectionStatusUnreachable, nil
+		return mysqlConnectionStatus(err), nil
 	}
 
 	if !readOnly {
@@ -71,6 +71,28 @@ func (m *MySQL) TestConnection(ctx context.Context) (ConnectionStatus, error) {
 	}
 
 	return ConnectionStatusSuccess, nil
+}
+
+// _mysqlAuthErrors are the driver error numbers that mean the server refused
+// the credentials rather than failing to answer.
+var _mysqlAuthErrors = map[uint16]bool{
+	1044: true, // access denied for user to database.
+	1045: true, // access denied for user.
+	1698: true, // access denied, authentication plugin refused.
+}
+
+// mysqlConnectionStatus classifies a failed connection attempt. A refused
+// handshake is reported as unauthorized rather than unreachable: the two are
+// indistinguishable to the user otherwise, and a typo in the password is the
+// far more common of them.
+func mysqlConnectionStatus(err error) ConnectionStatus {
+	var mysqlErr *mysql.MySQLError
+
+	if errors.As(err, &mysqlErr) && _mysqlAuthErrors[mysqlErr.Number] {
+		return ConnectionStatusUnauthorized
+	}
+
+	return ConnectionStatusUnreachable
 }
 
 // Metadata retrieves all tables and their columns from the MySQL data source.
@@ -221,6 +243,16 @@ func (m *MySQL) Query(ctx context.Context, q string, tr TimeRange) (*MySQLQueryR
 		return nil, fmt.Errorf("error reading columns: %w", err)
 	}
 
+	types, err := rows.ColumnTypes()
+	if err != nil {
+		return nil, fmt.Errorf("error reading column types: %w", err)
+	}
+
+	columnTypes := make([]string, len(types))
+	for i, ct := range types {
+		columnTypes[i] = ct.DatabaseTypeName()
+	}
+
 	var (
 		resultRows  [][]any
 		payloadSize int
@@ -260,8 +292,9 @@ func (m *MySQL) Query(ctx context.Context, q string, tr TimeRange) (*MySQLQueryR
 	}
 
 	return &MySQLQueryResult{
-		Columns: columns,
-		Rows:    resultRows,
+		Columns:     columns,
+		ColumnTypes: columnTypes,
+		Rows:        resultRows,
 	}, nil
 }
 
@@ -405,6 +438,13 @@ type MySQLQueryResult struct {
 
 	// Rows contains the result rows, each as a slice of values.
 	Rows [][]any `json:"rows"`
+
+	// ColumnTypes contains the database type of each column, which is what
+	// separates a numeric column from a label: the driver hands DECIMAL
+	// over as bytes, exactly like a VARCHAR, so the value alone cannot
+	// tell them apart. Kept out of the payload; it exists for
+	// classification.
+	ColumnTypes []string `json:"-"`
 }
 
 // Transform transforms a MySQLQueryResult into a unified QueryResult
@@ -507,6 +547,29 @@ func (mqr *MySQLQueryResult) Transform(ct ChartType) *QueryResult { //nolint:goc
 	}
 }
 
+// _mysqlNumericTypes are the column types whose values carry a magnitude
+// rather than a name. DECIMAL is the one that matters most: the driver
+// returns it as bytes, so nothing about the value says it is a number.
+var _mysqlNumericTypes = map[string]bool{
+	"TINYINT":            true,
+	"SMALLINT":           true,
+	"MEDIUMINT":          true,
+	"INT":                true,
+	"INTEGER":            true,
+	"BIGINT":             true,
+	"UNSIGNED TINYINT":   true,
+	"UNSIGNED SMALLINT":  true,
+	"UNSIGNED MEDIUMINT": true,
+	"UNSIGNED INT":       true,
+	"UNSIGNED BIGINT":    true,
+	"DECIMAL":            true,
+	"NUMERIC":            true,
+	"FLOAT":              true,
+	"DOUBLE":             true,
+	"REAL":               true,
+	"BIT":                true,
+}
+
 // identifyColumns detects which columns are time, value (numeric), and labels (non-numeric).
 func (mqr *MySQLQueryResult) identifyColumns() (timeIdx int, valueIdxs, labelIdxs []int) {
 	timeIdx = -1
@@ -529,9 +592,24 @@ func (mqr *MySQLQueryResult) identifyColumns() (timeIdx int, valueIdxs, labelIdx
 			continue
 		}
 
+		if i < len(mqr.ColumnTypes) {
+			if _mysqlNumericTypes[strings.ToUpper(mqr.ColumnTypes[i])] {
+				valueIdxs = append(valueIdxs, i)
+
+				continue
+			}
+
+			labelIdxs = append(labelIdxs, i)
+
+			continue
+		}
+
+		// without the declared types — a result assembled by hand rather
+		// than scanned — the value's own shape is all there is to go on.
 		if i < len(firstRow) {
 			if _, ok := mysqlParseNumericValue(firstRow[i]); ok {
 				valueIdxs = append(valueIdxs, i)
+
 				continue
 			}
 		}
@@ -651,6 +729,16 @@ func mysqlParseNumericValue(v any) (float64, bool) {
 		return float64(val), true
 	case []byte:
 		f, err := strconv.ParseFloat(string(val), 64)
+		if err != nil {
+			return 0, false
+		}
+
+		return f, true
+	case string:
+		// the driver hands DECIMAL over as []byte, which Query converts to
+		// a string before the columns are classified; without this the
+		// column reads as a label and the chart reports a data mismatch.
+		f, err := strconv.ParseFloat(val, 64)
 		if err != nil {
 			return 0, false
 		}

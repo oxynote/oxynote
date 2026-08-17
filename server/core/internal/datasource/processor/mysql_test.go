@@ -330,6 +330,11 @@ func Test_MySQL_TestConnection(t *testing.T) {
 			URL:    "mysql://127.0.0.1:1/db",
 			Result: ConnectionStatusUnreachable,
 		},
+		// a refused password is not the same as a host that never answers.
+		"Wrong credentials": {
+			URL:    mysqlTestURL(_readerUser, "wrong-password"),
+			Result: ConnectionStatusUnauthorized,
+		},
 		"Not read-only user": {
 			URL:    mysqlTestURL(_mysqlRootUser, _mysqlRootPass),
 			Result: ConnectionStatusNotReadOnly,
@@ -378,6 +383,13 @@ func Test_MySQL_Metadata(t *testing.T) {
 							{Name: "time"},
 							{Name: "host"},
 							{Name: "value"},
+						},
+					},
+					"testdb.typed_metrics": {
+						Columns: []SQLColumn{
+							{Name: "time"},
+							{Name: "code"},
+							{Name: "total"},
 						},
 					},
 				},
@@ -487,11 +499,23 @@ func Test_MySQL_Query(t *testing.T) {
 			ErrStatus: http.StatusBadRequest,
 			Err:       assert.AnError,
 		},
+		// a DECIMAL arrives as bytes exactly like a VARCHAR does, so only
+		// the declared type separates the value column from the label.
+		"Decimal column keeps its declared type": {
+			URL:   mysqlTestURL(_mysqlRootUser, _mysqlRootPass),
+			Query: "SELECT time, code, total FROM typed_metrics",
+			Result: &MySQLQueryResult{
+				Columns:     []string{"time", "code", "total"},
+				ColumnTypes: []string{"BIGINT", "VARCHAR", "DECIMAL"},
+				Rows:        [][]any{{int64(1700000000), "200", "10.50"}},
+			},
+		},
 		"Successful query": {
 			URL:   mysqlTestURL(_mysqlRootUser, _mysqlRootPass),
 			Query: "SELECT time, host, value FROM metrics ORDER BY time",
 			Result: &MySQLQueryResult{
-				Columns: []string{"time", "host", "value"},
+				Columns:     []string{"time", "host", "value"},
+				ColumnTypes: []string{"BIGINT", "VARCHAR", "DOUBLE"},
 				Rows: [][]any{
 					{int64(1700000000), "web-1", 10.5},
 					{int64(1700000060), "web-2", 20.5},
@@ -705,6 +729,19 @@ func Test_MySQLQueryResult_identifyColumns(t *testing.T) {
 			ValueIdxs: []int{0},
 			LabelIdxs: []int{1},
 		},
+		// the declared type decides: a DECIMAL is a value even though it
+		// arrives as text, and a VARCHAR stays a label even when its text
+		// parses as a number.
+		"Declared types classify the columns": {
+			Result: MySQLQueryResult{
+				Columns:     []string{"time", "code", "total"},
+				ColumnTypes: []string{"BIGINT", "VARCHAR", "DECIMAL"},
+				Rows:        [][]any{{int64(1700000000), "200", "10.50"}},
+			},
+			TimeIdx:   0,
+			ValueIdxs: []int{2},
+			LabelIdxs: []int{1},
+		},
 		"Time value and label columns": {
 			Result: MySQLQueryResult{
 				Columns: []string{"time", "value", "host"},
@@ -907,8 +944,18 @@ func Test_mysqlParseNumericValue(t *testing.T) {
 		"Invalid bytes": {
 			Value: []byte("not-a-number"),
 		},
+		// Query converts every []byte to a string before Transform runs,
+		// which is the form a DECIMAL value arrives in.
+		"Numeric string": {
+			Value:  "10.5",
+			Result: 10.5,
+			OK:     true,
+		},
+		"Non-numeric string": {
+			Value: "web-01",
+		},
 		"Unsupported type": {
-			Value: "10.5",
+			Value: true,
 		},
 	}
 

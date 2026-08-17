@@ -91,6 +91,8 @@ func TestMain(m *testing.M) {
 		pgDocker.WithQueries(
 			"CREATE TABLE metrics (time DOUBLE PRECISION, host TEXT, value DOUBLE PRECISION)",
 			"INSERT INTO metrics VALUES (1700000000, 'web-1', 10.5), (1700000060, 'web-2', 20.5)",
+			"CREATE TABLE typed_metrics (time DOUBLE PRECISION, host TEXT, ratio REAL, total NUMERIC(10,2))",
+			"INSERT INTO typed_metrics VALUES (1700000000, 'web-1', 0.25, 10.50)",
 			fmt.Sprintf("CREATE ROLE %s LOGIN PASSWORD '%s'", _readerUser, _readerPass),
 			fmt.Sprintf("ALTER ROLE %s SET default_transaction_read_only = on", _readerUser),
 			"GRANT SELECT ON metrics TO "+_readerUser,
@@ -148,6 +150,8 @@ func seedMySQL(addr string) error {
 	qq := []string{
 		"CREATE TABLE metrics (time BIGINT, host VARCHAR(64), value DOUBLE)",
 		"INSERT INTO metrics VALUES (1700000000, 'web-1', 10.5), (1700000060, 'web-2', 20.5)",
+		"CREATE TABLE typed_metrics (time BIGINT, code VARCHAR(8), total DECIMAL(10,2))",
+		"INSERT INTO typed_metrics VALUES (1700000000, '200', 10.50)",
 		fmt.Sprintf("CREATE USER '%s'@'%%' IDENTIFIED BY '%s'", _readerUser, _readerPass),
 		fmt.Sprintf("GRANT SELECT ON *.* TO '%s'@'%%'", _readerUser),
 	}

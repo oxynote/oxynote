@@ -3,6 +3,7 @@ package processor
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"testing"
 	"time"
 
@@ -285,120 +286,65 @@ func Test_PostgreSQLQueryResult_Transform(t *testing.T) {
 }
 
 func Test_sqlSetLimit(t *testing.T) {
+	// the query is bounded by wrapping rather than by rewriting its tail,
+	// so every shape produces the same envelope.
+	wrapped := func(q string, n int) string {
+		return "SELECT * FROM (\n" + q + "\n) AS oxynote_limited LIMIT " + strconv.Itoa(n)
+	}
+
 	tests := map[string]struct {
 		Query    string
 		Limit    int
 		Expected string
 	}{
-		"Appends LIMIT to simple query": {
+		"Simple query is wrapped": {
 			Query:    "SELECT * FROM users",
 			Limit:    1,
-			Expected: "SELECT * FROM users LIMIT 1",
+			Expected: wrapped("SELECT * FROM users", 1),
 		},
-		"Replaces existing LIMIT": {
-			Query:    "SELECT * FROM users LIMIT 100",
-			Limit:    1,
-			Expected: "SELECT * FROM users LIMIT 1",
-		},
-		"Replaces existing LIMIT with different value": {
-			Query:    "SELECT * FROM users LIMIT 50",
-			Limit:    5,
-			Expected: "SELECT * FROM users LIMIT 5",
-		},
-		"Case insensitive - lowercase limit": {
-			Query:    "SELECT * FROM users limit 100",
-			Limit:    1,
-			Expected: "SELECT * FROM users LIMIT 1",
-		},
-		"Case insensitive - mixed case": {
-			Query:    "SELECT * FROM users Limit 100",
-			Limit:    1,
-			Expected: "SELECT * FROM users LIMIT 1",
-		},
-		"Strips trailing semicolon": {
-			Query:    "SELECT * FROM users;",
-			Limit:    1,
-			Expected: "SELECT * FROM users LIMIT 1",
-		},
-		"Strips trailing semicolon with spaces": {
+		"Trailing semicolon and whitespace are stripped": {
 			Query:    "SELECT * FROM users ;  ",
 			Limit:    1,
-			Expected: "SELECT * FROM users LIMIT 1",
+			Expected: wrapped("SELECT * FROM users", 1),
 		},
-		"Replaces LIMIT with trailing whitespace": {
-			Query:    "SELECT * FROM users LIMIT 100  ",
+		// the inner limit stays: it is the user's, and the wrapper only
+		// caps what comes out of it.
+		"Existing LIMIT is kept inside the wrapper": {
+			Query:    "SELECT * FROM users LIMIT 100",
 			Limit:    1,
-			Expected: "SELECT * FROM users LIMIT 1",
+			Expected: wrapped("SELECT * FROM users LIMIT 100", 1),
 		},
-		"Does not affect LIMIT inside subquery": {
-			Query:    "SELECT * FROM (SELECT id FROM users LIMIT 10) sub",
-			Limit:    1,
-			Expected: "SELECT * FROM (SELECT id FROM users LIMIT 10) sub LIMIT 1",
-		},
-		"Does not affect LIMIT inside subquery in WHERE clause": {
-			Query:    "SELECT * FROM orders WHERE user_id IN (SELECT id FROM users LIMIT 5) ORDER BY created_at",
-			Limit:    1,
-			Expected: "SELECT * FROM orders WHERE user_id IN (SELECT id FROM users LIMIT 5) ORDER BY created_at LIMIT 1",
-		},
-		"Replaces outer LIMIT with subquery LIMIT present": {
-			Query:    "SELECT * FROM (SELECT id FROM users LIMIT 10) sub LIMIT 50",
-			Limit:    1,
-			Expected: "SELECT * FROM (SELECT id FROM users LIMIT 10) sub LIMIT 1",
-		},
-		"Handles query with ORDER BY": {
-			Query:    "SELECT * FROM users ORDER BY name",
-			Limit:    1,
-			Expected: "SELECT * FROM users ORDER BY name LIMIT 1",
-		},
-		"Replaces LIMIT after ORDER BY": {
-			Query:    "SELECT * FROM users ORDER BY name LIMIT 25",
-			Limit:    1,
-			Expected: "SELECT * FROM users ORDER BY name LIMIT 1",
-		},
-		"Handles query with GROUP BY": {
-			Query:    "SELECT host, COUNT(*) FROM logs GROUP BY host LIMIT 20",
-			Limit:    1,
-			Expected: "SELECT host, COUNT(*) FROM logs GROUP BY host LIMIT 1",
-		},
-		"Handles multiline query": {
-			Query:    "SELECT *\nFROM users\nWHERE active = true",
-			Limit:    1,
-			Expected: "SELECT *\nFROM users\nWHERE active = true LIMIT 1",
-		},
-		"Replaces LIMIT in multiline query": {
-			Query:    "SELECT *\nFROM users\nLIMIT 100",
-			Limit:    1,
-			Expected: "SELECT *\nFROM users\nLIMIT 1",
-		},
-		"Handles CTE with subquery LIMIT": {
-			Query:    "WITH top_users AS (SELECT id FROM users LIMIT 10) SELECT * FROM top_users JOIN orders ON orders.user_id = top_users.id",
-			Limit:    1,
-			Expected: "WITH top_users AS (SELECT id FROM users LIMIT 10) SELECT * FROM top_users JOIN orders ON orders.user_id = top_users.id LIMIT 1",
-		},
-		"Handles OFFSET after LIMIT": {
+		"LIMIT with OFFSET is left alone": {
 			Query:    "SELECT * FROM users LIMIT 100 OFFSET 20",
 			Limit:    1,
-			Expected: "SELECT * FROM users LIMIT 100 OFFSET 20 LIMIT 1",
+			Expected: wrapped("SELECT * FROM users LIMIT 100 OFFSET 20", 1),
 		},
-		"Handles empty query": {
-			Query:    "",
+		"MySQL two-argument LIMIT is left alone": {
+			Query:    "SELECT * FROM users LIMIT 5, 10",
 			Limit:    1,
-			Expected: " LIMIT 1",
+			Expected: wrapped("SELECT * FROM users LIMIT 5, 10", 1),
 		},
-		"Does not match LIMIT in string literal at end": {
-			Query:    "SELECT * FROM users WHERE name = 'LIMIT 100'",
+		// the closing parenthesis has to land on its own line, or the
+		// comment would swallow it and the statement would not parse.
+		"Query ending in a line comment stays bounded": {
+			Query:    "SELECT * FROM users -- only the active ones",
 			Limit:    1,
-			Expected: "SELECT * FROM users WHERE name = 'LIMIT 100' LIMIT 1",
+			Expected: wrapped("SELECT * FROM users -- only the active ones", 1),
 		},
-		"Does not match NOLIMIT or similar": {
-			Query:    "SELECT * FROM users WHERE nolimit = true",
+		"CTE is wrapped whole": {
+			Query:    "WITH top AS (SELECT id FROM users LIMIT 10) SELECT * FROM top",
 			Limit:    1,
-			Expected: "SELECT * FROM users WHERE nolimit = true LIMIT 1",
+			Expected: wrapped("WITH top AS (SELECT id FROM users LIMIT 10) SELECT * FROM top", 1),
 		},
-		"Multiline query with GROUP BY and ORDER BY": {
-			Query:    "SELECT\n\t$__timeGroupAlias(\"time\", \"35m\"),\n\tservice,\n\tCOUNT(*) AS deployments\nFROM deployments\nWHERE $__timeFilter(\"time\")\nGROUP BY 1, 2\nORDER BY 1, 2",
+		"Multiline query keeps its shape": {
+			Query:    "SELECT *\nFROM users\nWHERE active = true",
 			Limit:    1,
-			Expected: "SELECT\n\t$__timeGroupAlias(\"time\", \"35m\"),\n\tservice,\n\tCOUNT(*) AS deployments\nFROM deployments\nWHERE $__timeFilter(\"time\")\nGROUP BY 1, 2\nORDER BY 1, 2 LIMIT 1",
+			Expected: wrapped("SELECT *\nFROM users\nWHERE active = true", 1),
+		},
+		"Limit value is carried through": {
+			Query:    "SELECT * FROM users",
+			Limit:    25,
+			Expected: wrapped("SELECT * FROM users", 25),
 		},
 	}
 
@@ -431,6 +377,12 @@ func Test_pgNormalizeValue(t *testing.T) {
 		"Int32 becomes float64": {
 			In:       int32(7),
 			Expected: 7.0,
+		},
+		// pgx decodes real as float32; a column left unconverted reads as a
+		// label and the chart reports a data mismatch.
+		"Float32 becomes float64": {
+			In:       float32(0.25),
+			Expected: 0.25,
 		},
 		"Int16 becomes float64": {
 			In:       int16(3),
@@ -487,6 +439,11 @@ func Test_PostgreSQL_TestConnection(t *testing.T) {
 			URL:    "postgres://127.0.0.1:1/db",
 			Result: ConnectionStatusUnreachable,
 		},
+		// a refused password is not the same as a host that never answers.
+		"Wrong credentials": {
+			URL:    pgTestURL(_readerUser, "wrong-password"),
+			Result: ConnectionStatusUnauthorized,
+		},
 		"Not read-only user": {
 			URL:    pgTestURL(_pgUser, _pgPass),
 			Result: ConnectionStatusNotReadOnly,
@@ -535,6 +492,14 @@ func Test_PostgreSQL_Metadata(t *testing.T) {
 							{Name: "time"},
 							{Name: "host"},
 							{Name: "value"},
+						},
+					},
+					"public.typed_metrics": {
+						Columns: []SQLColumn{
+							{Name: "time"},
+							{Name: "host"},
+							{Name: "ratio"},
+							{Name: "total"},
 						},
 					},
 				},
@@ -644,6 +609,16 @@ func Test_PostgreSQL_Query(t *testing.T) {
 			URL:   "postgres://127.0.0.1:1/db",
 			Query: "SELECT 1",
 			Err:   assert.AnError,
+		},
+		// a real column decodes as float32 and a numeric as pgtype.Numeric;
+		// both have to arrive as float64 or the chart reads them as labels.
+		"Real and numeric columns become float64": {
+			URL:   pgTestURL(_pgUser, _pgPass),
+			Query: "SELECT ratio, total FROM typed_metrics",
+			Result: &PostgreSQLQueryResult{
+				Columns: []string{"ratio", "total"},
+				Rows:    [][]any{{0.25, 10.5}},
+			},
 		},
 		"Invalid query error": {
 			URL:       pgTestURL(_pgUser, _pgPass),
@@ -950,6 +925,11 @@ func Test_pgParseNumericValue(t *testing.T) {
 		"Float64 value": {
 			Value:  float64(10.5),
 			Result: 10.5,
+			OK:     true,
+		},
+		"Float32 value": {
+			Value:  float32(0.25),
+			Result: 0.25,
 			OK:     true,
 		},
 		"Unsupported type": {

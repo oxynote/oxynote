@@ -300,7 +300,9 @@ linters:
         text: could be replaced by t.Context()
       - linters:
           - unqueryvet
-        path: internal/db|pkg/sqlutil
+        # the processors forward user-written SQL and wrap it to bound the
+        # row count; there are no columns of their own to name.
+        path: internal/db|pkg/sqlutil|internal/datasource/processor
       - linters:
           - revive
         path: pkg/ioutil
