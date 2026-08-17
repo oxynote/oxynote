@@ -52,7 +52,12 @@ export function dateToCalendarDate(date: Date | string): CalendarDate {
 		date = new Date(date)
 	}
 
-	return new CalendarDate(date.getFullYear(), date.getMonth(), date.getDate())
+	// getMonth is 0-based while CalendarDate months are 1-based
+	return new CalendarDate(
+		date.getFullYear(),
+		date.getMonth() + 1,
+		date.getDate(),
+	)
 }
 
 /**

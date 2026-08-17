@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url"
 import { defineVitestProject } from "@nuxt/test-utils/config"
+import { playwright } from "@vitest/browser-playwright"
 import vue from "@vitejs/plugin-vue"
 import Unimport from "unimport/unplugin"
 import {
@@ -19,6 +20,44 @@ const sharedTestOptions = {
 	unstubGlobals: true,
 	unstubEnvs: true,
 } satisfies TestUserConfig
+
+// import graphs of app modules routinely pass through .vue files (e.g.
+// tiptap extensions registering node views), so the node and browser
+// projects must be able to compile them even though they never render
+// one. App code also references app/utils helpers and composable enums
+// (e.g. HostOsType) through nuxt auto-imports — unimport resolves the
+// same real modules here without booting a nuxt runtime. A factory
+// because vite plugin instances cannot be shared between projects.
+function appPlugins() {
+	return [
+		vue(),
+		Unimport.vite({
+			dirs: [
+				fileURLToPath(new URL("./app/utils", import.meta.url)),
+				fileURLToPath(new URL("./app/composables", import.meta.url)),
+			],
+			dts: false,
+		}),
+	]
+}
+
+// build-time constants injected by vite.electron.config.ts (electron)
+// and nuxt.config.ts (app); tests get inert stand-ins
+const appDefine = {
+	__API_BASE_URL__: JSON.stringify("http://test.local/core"),
+	__APP_BASE_URL__: JSON.stringify("http://test.local"),
+	__DESKTOP_BUILD__: "false",
+}
+
+const appAlias = {
+	"~": fileURLToPath(new URL("./app", import.meta.url)),
+	"@": fileURLToPath(new URL("./app", import.meta.url)),
+	// same fork alias as nuxt.config.ts — without it these projects
+	// would resolve the upstream package instead of the vendored grammar
+	"@prometheus-io/lezer-promql": fileURLToPath(
+		new URL("./packages/lezer-promql/dist/index.es.js", import.meta.url),
+	),
+}
 
 export default defineConfig({
 	test: {
@@ -49,36 +88,14 @@ export default defineConfig({
 		},
 
 		// the suffix encodes the environment: .test.ts runs in plain node,
-		// .nuxt.test.ts inside the nuxt runtime, and .browser.test.ts is
-		// reserved for a future browser-mode project
+		// .nuxt.test.ts inside the nuxt runtime, and .browser.test.ts in a
+		// real headless chromium via playwright
 		projects: [
 			{
-				// import graphs of app modules routinely pass through .vue
-				// files (e.g. tiptap extensions registering node views), so
-				// the node project must be able to compile them even though
-				// it never renders one. App code also references app/utils
-				// helpers through nuxt auto-imports — unimport resolves the
-				// same real modules here without booting a nuxt runtime.
-				plugins: [
-					vue(),
-					Unimport.vite({
-						dirs: [fileURLToPath(new URL("./app/utils", import.meta.url))],
-						dts: false,
-					}),
-				],
-				define: {
-					// build-time constants injected by vite.electron.config.ts
-					// (electron) and nuxt.config.ts (app); tests get inert
-					// stand-ins
-					__API_BASE_URL__: JSON.stringify("http://test.local/core"),
-					__APP_BASE_URL__: JSON.stringify("http://test.local"),
-					__DESKTOP_BUILD__: "false",
-				},
+				plugins: appPlugins(),
+				define: appDefine,
 				resolve: {
-					alias: {
-						"~": fileURLToPath(new URL("./app", import.meta.url)),
-						"@": fileURLToPath(new URL("./app", import.meta.url)),
-					},
+					alias: appAlias,
 				},
 				test: {
 					...sharedTestOptions,
@@ -90,6 +107,41 @@ export default defineConfig({
 						"**/*.nuxt.test.ts",
 						"**/*.browser.test.ts",
 					],
+				},
+			},
+			{
+				plugins: appPlugins(),
+				define: appDefine,
+				resolve: {
+					alias: appAlias,
+				},
+				optimizeDeps: {
+					// pre-bundle everything the browser tests pull in, so vite
+					// never discovers a dependency mid-run and reloads the page
+					// (which vitest warns makes runs flaky)
+					include: [
+						"vue",
+						"slugify",
+						"dompurify",
+						"@tiptap/core",
+						"@tiptap/pm/model",
+						"@tiptap/pm/state",
+						"@tiptap/extension-list",
+					],
+				},
+				test: {
+					...sharedTestOptions,
+					name: "browser",
+					include: ["app/**/*.browser.test.ts"],
+					browser: {
+						enabled: true,
+						provider: playwright(),
+						headless: true,
+						// failure screenshots would pollute the source tree
+						// with __screenshots__ directories
+						screenshotFailures: false,
+						instances: [{ browser: "chromium" }],
+					},
 				},
 			},
 			await defineVitestProject({
@@ -106,12 +158,17 @@ export default defineConfig({
 					environmentOptions: {
 						nuxt: {
 							overrides: {
-								// deterministic base for anything url-building;
+								// deterministic bases for anything url-building;
 								// mocking useRuntimeConfig instead would starve
-								// nuxt's own bootstrap, which consumes it too
+								// nuxt's own bootstrap, which consumes it too.
+								// The auth-realtime url must be absolute or the
+								// 02.auth plugin fails app init on every nuxt
+								// test file (better-auth rejects relative bases)
 								runtimeConfig: {
 									public: {
 										appBaseURL: "http://test.local",
+										authRealtimeAPIBaseHttpURL:
+											"http://test.local/auth-realtime",
 									},
 								},
 							},

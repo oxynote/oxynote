@@ -13,7 +13,9 @@ Package manager is **pnpm** (workspace; uses `nodeLinker: hoisted` so Electron F
 
 ```bash
 pnpm install                  # installs deps; runs `prepare` (builds lezer-promql + nuxt prepare)
-pnpm setup                    # deps + explicit prepare (guarantees fresh lezer build + .nuxt types)
+pnpm setup                    # deps + explicit prepare (guarantees fresh lezer
+                              # build + .nuxt types) + playwright chromium for
+                              # browser-mode tests
 
 pnpm start:dev:web            # nuxt dev on :3000 (web build)
 pnpm start:dev:desktop        # concurrently runs nuxt dev + electron-forge start with DESKTOP_BUILD=hybrid
@@ -26,7 +28,11 @@ pnpm check-lint               # check-types + check-eslint + check-fmt +
 pnpm lint                     # fixing variant: check-types + knip --fix
                               # (removes dead exports/deps/files!) + eslint
                               # --fix + prettier --write
-pnpm qa                       # check-lint (will grow tests later); qa-fix = lint
+pnpm test                     # vitest run --coverage (node + browser + nuxt
+                              # projects; browser needs the playwright chromium
+                              # that `pnpm setup` installs)
+pnpm test-watch               # vitest in watch mode
+pnpm qa                       # check-lint + test; qa-fix = lint + test
 pnpm check-types              # nuxt typecheck (regenerates .nuxt types, then
                               # vue-tsc -b --noEmit; plain vue-tsc --noEmit on
                               # the solution-style root tsconfig checks nothing)
@@ -39,7 +45,6 @@ pnpm check-knip               # dead exports/files/dependencies ([knip.ts](knip.
 pnpm build:lezer-promql       # rebuild the forked PromQL grammar package
 ```
 
-There is no test runner configured in web/.
 
 ## Build modes (critical)
 
@@ -144,6 +149,9 @@ Note `noUncheckedIndexedAccess` makes every index access `T | undefined`, and Ty
 - When a test exercises behaviour spanning two source files, it lives
   with the file that initiates the behaviour (a round-trip test lands
   beside the file that starts the round-trip).
+- **The test file mirrors the source file's order**: top-level
+  `describe` blocks appear in the same order as the functions they test
+  appear in the source, so the two files read side by side.
 - **The suffix encodes the test environment** — never `.spec.ts`, never an
   `@vitest-environment` pragma comment:
 
@@ -151,7 +159,7 @@ Note `noUncheckedIndexedAccess` makes every index access `T | undefined`, and Ty
   | --- | --- | --- |
   | `.test.ts` | node, no DOM | pure logic: utils, editor diff/blocks helpers, `electron/` (with `vi.mock("electron")`) |
   | `.nuxt.test.ts` | nuxt runtime | composables/stores (auto-imports, `registerEndpoint`) and **all component tests** (`mountSuspended`, real children, mocked network) |
-  | `.browser.test.ts` | vitest browser mode | DOM behavior happy-dom fakes (e.g. `getBoundingClientRect` geometry in drag-handle) |
+  | `.browser.test.ts` | vitest browser mode (headless chromium via playwright) | DOM behavior happy-dom fakes (e.g. real `getBoundingClientRect` geometry in tiptap overlays, DOMPurify) |
   | `.test-d.ts` | typecheck only | compile-time contracts (`expectTypeOf`), e.g. `app/utils/api/` types |
   | `.bench.ts` | `vitest bench` | perf on hot paths (diff/lcs) — add only when a regression bites |
 
