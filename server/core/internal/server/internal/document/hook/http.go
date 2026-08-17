@@ -52,9 +52,9 @@ func (h *Handler) FetchDocumentHooks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	branchID, err := xid.FromString(r.URL.Query().Get("branchId"))
+	branchID, err := httpserver.ExtractQueryID(r, "branchId")
 	if err != nil {
-		httpserver.RespondError(h.log, w, httpserver.ErrInvalidForm)
+		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
@@ -80,7 +80,7 @@ func (h *Handler) CreateDocumentHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	documentID, err := h.extractDocumentParameter(r)
+	documentID, err := httpserver.ExtractNamedID(r, "documentId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -150,7 +150,7 @@ func (h *Handler) UpdateDocumentHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := h.extractDocumentHookParameter(r)
+	id, err := httpserver.ExtractNamedID(r, "hookId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -204,7 +204,7 @@ func (h *Handler) ResetDocumentHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := h.extractDocumentHookParameter(r)
+	id, err := httpserver.ExtractNamedID(r, "hookId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -247,7 +247,7 @@ func (h *Handler) DeleteDocumentHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := h.extractDocumentHookParameter(r)
+	id, err := httpserver.ExtractNamedID(r, "hookId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -280,16 +280,6 @@ func (h *Handler) DeleteDocumentHook(w http.ResponseWriter, r *http.Request) {
 		nil,
 		http.StatusNoContent,
 	)
-}
-
-// extractDocumentParameter extracts the document ID from the request parameters.
-func (h *Handler) extractDocumentParameter(r *http.Request) (xid.ID, error) {
-	return httpserver.ExtractNamedID(r, "documentId")
-}
-
-// extractDocumentHookParameter extracts the document hook ID from the request parameters.
-func (h *Handler) extractDocumentHookParameter(r *http.Request) (xid.ID, error) {
-	return httpserver.ExtractNamedID(r, "hookId")
 }
 
 // DB is an interface that handles communication with the document hooks database.

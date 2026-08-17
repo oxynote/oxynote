@@ -54,7 +54,7 @@ func (h *Handler) CreateDocumentComment(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	documentID, err := h.extractDocumentParameter(r)
+	documentID, err := httpserver.ExtractNamedID(r, "documentId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -156,13 +156,13 @@ func (h *Handler) CreateDocumentCommentReply(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	documentID, err := h.extractDocumentParameter(r)
+	documentID, err := httpserver.ExtractNamedID(r, "documentId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	commentID, err := h.extractCommentParameter(r)
+	commentID, err := httpserver.ExtractNamedID(r, "commentId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -250,13 +250,13 @@ func (h *Handler) FetchDocumentComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	documentID, err := h.extractDocumentParameter(r)
+	documentID, err := httpserver.ExtractNamedID(r, "documentId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	commentID, err := h.extractCommentParameter(r)
+	commentID, err := httpserver.ExtractNamedID(r, "commentId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -285,9 +285,9 @@ func (h *Handler) FetchDocumentComments(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	branchID, err := xid.FromString(r.URL.Query().Get("branchId"))
+	branchID, err := httpserver.ExtractQueryID(r, "branchId")
 	if err != nil {
-		httpserver.RespondError(h.log, w, httpserver.ErrInvalidForm)
+		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
@@ -313,13 +313,13 @@ func (h *Handler) UpdateDocumentComment(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	documentID, err := h.extractDocumentParameter(r)
+	documentID, err := httpserver.ExtractNamedID(r, "documentId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	commentID, err := h.extractCommentParameter(r)
+	commentID, err := httpserver.ExtractNamedID(r, "commentId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -378,19 +378,19 @@ func (h *Handler) UpdateDocumentCommentReply(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	documentID, err := h.extractDocumentParameter(r)
+	documentID, err := httpserver.ExtractNamedID(r, "documentId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	commentID, err := h.extractCommentParameter(r)
+	commentID, err := httpserver.ExtractNamedID(r, "commentId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	replyID, err := h.extractReplyParameter(r)
+	replyID, err := httpserver.ExtractNamedID(r, "replyId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -454,13 +454,13 @@ func (h *Handler) ResolveDocumentComment(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	documentID, err := h.extractDocumentParameter(r)
+	documentID, err := httpserver.ExtractNamedID(r, "documentId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	commentID, err := h.extractCommentParameter(r)
+	commentID, err := httpserver.ExtractNamedID(r, "commentId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -512,13 +512,13 @@ func (h *Handler) ResolveDocumentComment(w http.ResponseWriter, r *http.Request)
 //		return
 //	}
 //
-//	documentID, err := h.extractDocumentParameter(r)
+//	documentID, err := httpserver.ExtractNamedID(r, "documentId")
 //	if err != nil {
 //		httpserver.RespondError(h.log, w, err)
 //		return
 //	}
 //
-//	commentID, err := h.extractCommentParameter(r)
+//	commentID, err := httpserver.ExtractNamedID(r, "commentId")
 //	if err != nil {
 //		httpserver.RespondError(h.log, w, err)
 //		return
@@ -562,13 +562,13 @@ func (h *Handler) DeleteDocumentComment(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	documentID, err := h.extractDocumentParameter(r)
+	documentID, err := httpserver.ExtractNamedID(r, "documentId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	commentID, err := h.extractCommentParameter(r)
+	commentID, err := httpserver.ExtractNamedID(r, "commentId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -647,19 +647,19 @@ func (h *Handler) DeleteDocumentCommentReply(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	documentID, err := h.extractDocumentParameter(r)
+	documentID, err := httpserver.ExtractNamedID(r, "documentId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	commentID, err := h.extractCommentParameter(r)
+	commentID, err := httpserver.ExtractNamedID(r, "commentId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	replyID, err := h.extractReplyParameter(r)
+	replyID, err := httpserver.ExtractNamedID(r, "replyId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -694,21 +694,6 @@ func (h *Handler) DeleteDocumentCommentReply(w http.ResponseWriter, r *http.Requ
 		reply,
 		http.StatusOK,
 	)
-}
-
-// extractCommentParameter extracts the comment ID from the request parameters.
-func (h *Handler) extractCommentParameter(r *http.Request) (xid.ID, error) {
-	return httpserver.ExtractNamedID(r, "commentId")
-}
-
-// extractDocumentParameter extracts the document ID from the request parameters.
-func (h *Handler) extractDocumentParameter(r *http.Request) (xid.ID, error) {
-	return httpserver.ExtractNamedID(r, "documentId")
-}
-
-// extractReplyParameter extracts the reply ID from the request parameters.
-func (h *Handler) extractReplyParameter(r *http.Request) (xid.ID, error) {
-	return httpserver.ExtractNamedID(r, "replyId")
 }
 
 // DB is an interface that combines sqlutil.DB and DBAgent.

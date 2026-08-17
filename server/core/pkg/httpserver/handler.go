@@ -5,6 +5,7 @@ package httpserver
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"reflect"
@@ -134,13 +135,7 @@ func RespondError(
 	err error,
 	headers ...ResponseHeader,
 ) {
-	headers = append(headers, errorHeaders)
-	respErr := errutil.Detect(err, false)
-	statusCode := errutil.StatusCode(respErr, false)
-
-	Respond(log, w, respErr, statusCode, headers...)
-
-	if statusCode >= http.StatusInternalServerError {
+	if respondError(log, w, err, headers...) >= http.StatusInternalServerError {
 		logutil.CriticalSkipFrames(log, err, _criticalSkipFrames).Error("internal server error")
 	}
 }
@@ -152,11 +147,24 @@ func RespondSuppressedError(
 	err error,
 	headers ...ResponseHeader,
 ) {
+	respondError(log, w, err, headers...)
+}
+
+// respondError sends the provided error to the client and returns the status
+// code it responded with.
+func respondError(
+	log *slog.Logger,
+	w http.ResponseWriter,
+	err error,
+	headers ...ResponseHeader,
+) int {
 	headers = append(headers, errorHeaders)
 	respErr := errutil.Detect(err, false)
-	code := errutil.StatusCode(respErr, false)
+	statusCode := errutil.StatusCode(respErr, false)
 
-	Respond(log, w, respErr, code, headers...)
+	Respond(log, w, respErr, statusCode, headers...)
+
+	return statusCode
 }
 
 // DecodeJSON decodes request's JSON body into destination object.
@@ -218,6 +226,29 @@ func Recoverer(log *slog.Logger) func(http.Handler) http.Handler {
 	}
 }
 
+// ServeObject streams a stored object to the client, replying with 304 when
+// the client's cached copy is still current.
+func ServeObject(
+	log *slog.Logger,
+	w http.ResponseWriter,
+	r *http.Request,
+	etag string,
+	contentType string,
+	body io.Reader,
+) {
+	if match := r.Header.Get("If-None-Match"); match == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Content-Type", contentType)
+
+	if _, err := io.Copy(w, body); err != nil {
+		log.Error("cannot stream object", slog.String("error", err.Error()))
+	}
+}
+
 // ExtractNamedID extracts ID by a specific name from the URL.
 func ExtractNamedID(r *http.Request, name string) (xid.ID, error) {
 	strID, err := ExtractParam(r, name)
@@ -239,6 +270,16 @@ func ExtractParam(r *http.Request, p string) (string, error) {
 	id := chi.URLParam(r, p)
 	if id == "" {
 		return "", errutil.ErrNotFound
+	}
+
+	return id, nil
+}
+
+// ExtractQueryID extracts an ID by a specific name from the URL query.
+func ExtractQueryID(r *http.Request, name string) (xid.ID, error) {
+	id, err := xid.FromString(r.URL.Query().Get(name))
+	if err != nil {
+		return xid.ID{}, ErrInvalidForm
 	}
 
 	return id, nil

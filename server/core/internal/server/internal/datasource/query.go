@@ -1,7 +1,6 @@
 package datasource
 
 import (
-	"log/slog"
 	"net/http"
 
 	datasourceCore "github.com/oxynote/oxynote/server/core/internal/datasource"
@@ -20,7 +19,7 @@ func (h *Handler) QueryDataSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := h.extractDataSourceID(r)
+	id, err := httpserver.ExtractNamedID(r, "dataSourceId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -70,16 +69,7 @@ func (h *Handler) queryPrometheusGeneric(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	if status != ds.Status {
-		ds.Status = status
-
-		if uerr := h.db.UpdateDataSource(r.Context(), ds); uerr != nil {
-			h.log.Error("failed to update data source status", slog.Any("error", uerr))
-		}
-	}
-
-	if ds.Status != processor.ConnectionStatusSuccess {
-		httpserver.RespondError(h.log, w, status.Error())
+	if !h.syncDataSourceStatus(w, r, ds, status) {
 		return
 	}
 
@@ -105,16 +95,7 @@ func (h *Handler) queryMySQLGeneric(w http.ResponseWriter, r *http.Request, ds *
 		return
 	}
 
-	if status != ds.Status {
-		ds.Status = status
-
-		if uerr := h.db.UpdateDataSource(r.Context(), ds); uerr != nil {
-			h.log.Error("failed to update data source status", slog.Any("error", uerr))
-		}
-	}
-
-	if ds.Status != processor.ConnectionStatusSuccess {
-		httpserver.RespondError(h.log, w, status.Error())
+	if !h.syncDataSourceStatus(w, r, ds, status) {
 		return
 	}
 
@@ -140,16 +121,7 @@ func (h *Handler) queryPostgreSQLGeneric(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	if status != ds.Status {
-		ds.Status = status
-
-		if uerr := h.db.UpdateDataSource(r.Context(), ds); uerr != nil {
-			h.log.Error("failed to update data source status", slog.Any("error", uerr))
-		}
-	}
-
-	if ds.Status != processor.ConnectionStatusSuccess {
-		httpserver.RespondError(h.log, w, status.Error())
+	if !h.syncDataSourceStatus(w, r, ds, status) {
 		return
 	}
 

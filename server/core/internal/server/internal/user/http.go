@@ -70,19 +70,14 @@ func (h *Handler) RetrieveUserImage(w http.ResponseWriter, r *http.Request) {
 
 	defer obj.Body.Close() //nolint:errcheck // error provides no meaningful info
 
-	if match := r.Header.Get("If-None-Match"); match == obj.ETag {
-		w.WriteHeader(http.StatusNotModified)
-		return
-	}
-
-	w.Header().Set("ETag", obj.ETag)
-	w.Header().Set("Content-Type", obj.ContentType)
-
-	_, err = io.Copy(w, obj.Body)
-	if err != nil {
-		h.log.Error("streaming user image", slog.String("error", err.Error()))
-		return
-	}
+	httpserver.ServeObject(
+		h.log,
+		w,
+		r,
+		obj.ETag,
+		obj.ContentType,
+		obj.Body,
+	)
 }
 
 // UploadUserImage handles the upload of a user's image.

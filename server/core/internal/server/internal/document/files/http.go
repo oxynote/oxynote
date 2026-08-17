@@ -47,7 +47,7 @@ func (h *Handler) UploadDocumentFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	documentID, err := h.extractDocumentParameter(r)
+	documentID, err := httpserver.ExtractNamedID(r, "documentId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -129,13 +129,13 @@ func (h *Handler) RetrieveDocumentFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	documentID, err := h.extractDocumentParameter(r)
+	documentID, err := httpserver.ExtractNamedID(r, "documentId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	id, err := h.extractIDParameter(r)
+	id, err := httpserver.ExtractParam(r, "id")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -171,29 +171,14 @@ func (h *Handler) RetrieveDocumentFile(w http.ResponseWriter, r *http.Request) {
 
 	defer obj.Body.Close() //nolint:errcheck // error provides no meaningful info
 
-	if match := r.Header.Get("If-None-Match"); match == obj.ETag {
-		w.WriteHeader(http.StatusNotModified)
-		return
-	}
-
-	w.Header().Set("ETag", obj.ETag)
-	w.Header().Set("Content-Type", obj.ContentType)
-
-	_, err = io.Copy(w, obj.Body)
-	if err != nil {
-		h.log.Error("streaming document file", "error", err.Error())
-		return
-	}
-}
-
-// extractDocumentParameter extracts the document ID from the request parameters.
-func (h *Handler) extractDocumentParameter(r *http.Request) (xid.ID, error) {
-	return httpserver.ExtractNamedID(r, "documentId")
-}
-
-// extractIDParameter extracts the ID from the request parameters.
-func (h *Handler) extractIDParameter(r *http.Request) (string, error) {
-	return httpserver.ExtractParam(r, "id")
+	httpserver.ServeObject(
+		h.log,
+		w,
+		r,
+		obj.ETag,
+		obj.ContentType,
+		obj.Body,
+	)
 }
 
 // DB is an interface that handles communication with the document files database.

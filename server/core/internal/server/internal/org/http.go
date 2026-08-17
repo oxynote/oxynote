@@ -223,19 +223,14 @@ func (h *Handler) RetrieveOrganizationLogo(w http.ResponseWriter, r *http.Reques
 
 	defer obj.Body.Close() //nolint:errcheck // error provides no meaningful info
 
-	if match := r.Header.Get("If-None-Match"); match == obj.ETag {
-		w.WriteHeader(http.StatusNotModified)
-		return
-	}
-
-	w.Header().Set("ETag", obj.ETag)
-	w.Header().Set("Content-Type", obj.ContentType)
-
-	_, err = io.Copy(w, obj.Body)
-	if err != nil {
-		h.log.Error("streaming organization logo", slog.String("error", err.Error()))
-		return
-	}
+	httpserver.ServeObject(
+		h.log,
+		w,
+		r,
+		obj.ETag,
+		obj.ContentType,
+		obj.Body,
+	)
 }
 
 // TeardownOrganization releases everything an organization owns outside of

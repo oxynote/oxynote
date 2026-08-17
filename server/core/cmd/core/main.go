@@ -83,11 +83,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 
 	maxDocumentChangelogs, err := parseUintEnv("DB_MAX_DOCUMENT_CHANGELOGS", _defaultMaxDocumentChangelogs)
 	if err != nil {
-		err = ioutil.AppendCloseErr(ioutil.MultiCloser(true, closers...), err)
-
-		log.With("error", err).
-			Error("cannot read the configuration")
-
+		fail(log, closers, "cannot read the configuration", err)
 		return
 	}
 
@@ -96,11 +92,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 		_defaultDocumentChangelogRetention,
 	)
 	if err != nil {
-		err = ioutil.AppendCloseErr(ioutil.MultiCloser(true, closers...), err)
-
-		log.With("error", err).
-			Error("cannot read the configuration")
-
+		fail(log, closers, "cannot read the configuration", err)
 		return
 	}
 
@@ -112,14 +104,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 		DataSourceCredentialsSigningSecret: buildinfo.Getenv("DB_DATA_SOURCE_CREDENTIALS_SIGNING_SECRET"),
 	})
 	if err != nil {
-		err = ioutil.AppendCloseErr(
-			ioutil.MultiCloser(true, closers...),
-			err,
-		)
-
-		log.With("error", err).
-			Error("cannot create a database connection")
-
+		fail(log, closers, "cannot create a database connection", err)
 		return
 	}
 
@@ -130,14 +115,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 		buildinfo.Getenv("VALKEY_ADDRESS"),
 	)
 	if err != nil {
-		err = ioutil.AppendCloseErr(
-			ioutil.MultiCloser(true, closers...),
-			fmt.Errorf("cannot create a redis pool: %w", err),
-		)
-
-		log.With("error", err).
-			Error("cannot create a redis pool")
-
+		fail(log, closers, "cannot create a redis pool", err)
 		return
 	}
 
@@ -151,14 +129,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 	if v := buildinfo.Getenv("GITHUB_APP_ID"); v != "" {
 		githubAppID, err = strconv.ParseInt(v, 10, 64)
 		if err != nil {
-			err = ioutil.AppendCloseErr(
-				ioutil.MultiCloser(true, closers...),
-				fmt.Errorf("invalid GITHUB_APP_ID: %w", err),
-			)
-
-			log.With("error", err).
-				Error("cannot parse GITHUB_APP_ID")
-
+			fail(log, closers, "cannot parse GITHUB_APP_ID", err)
 			return
 		}
 	}
@@ -171,14 +142,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 		InstallationSigningSecret: buildinfo.Getenv("GITHUB_INSTALLATION_SIGNING_SECRET"),
 	})
 	if err != nil {
-		err = ioutil.AppendCloseErr(
-			ioutil.MultiCloser(true, closers...),
-			fmt.Errorf("cannot create github app manager: %w", err),
-		)
-
-		log.With("error", err).
-			Error("cannot create github app manager")
-
+		fail(log, closers, "cannot create github app manager", err)
 		return
 	}
 
@@ -199,14 +163,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 		},
 	)
 	if err != nil {
-		err = ioutil.AppendCloseErr(
-			ioutil.MultiCloser(true, closers...),
-			fmt.Errorf("cannot create slack app manager: %w", err),
-		)
-
-		log.With("error", err).
-			Error("cannot create slack app manager")
-
+		fail(log, closers, "cannot create slack app manager", err)
 		return
 	}
 
@@ -228,14 +185,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 		),
 	)
 	if err != nil {
-		err = ioutil.AppendCloseErr(
-			ioutil.MultiCloser(true, closers...),
-			fmt.Errorf("cannot create search gateway client: %w", err),
-		)
-
-		log.With("error", err).
-			Error("cannot create search gateway client")
-
+		fail(log, closers, "cannot create search gateway client", err)
 		return
 	}
 
@@ -249,14 +199,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 		},
 	)
 	if err != nil {
-		err = ioutil.AppendCloseErr(
-			ioutil.MultiCloser(true, closers...),
-			fmt.Errorf("cannot create storage client: %w", err),
-		)
-
-		log.With("error", err).
-			Error("cannot create storage client")
-
+		fail(log, closers, "cannot create storage client", err)
 		return
 	}
 
@@ -274,14 +217,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 		},
 	)
 	if err != nil {
-		err = ioutil.AppendCloseErr(
-			ioutil.MultiCloser(true, closers...),
-			fmt.Errorf("cannot create email sender: %w", err),
-		)
-
-		log.With("error", err).
-			Error("cannot create email sender")
-
+		fail(log, closers, "cannot create email sender", err)
 		return
 	}
 
@@ -327,14 +263,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 		http.DefaultClient,
 	)
 	if err != nil {
-		err = ioutil.AppendCloseErr(
-			ioutil.MultiCloser(true, closers...),
-			err,
-		)
-
-		log.With("error", err).
-			Error("cannot create a server")
-
+		fail(log, closers, "cannot create a server", err)
 		return
 	}
 
@@ -381,6 +310,17 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 
 	// closing the server above is what unblocks Listen.
 	serverWg.Wait()
+}
+
+// fail logs a wiring failure and releases everything opened so far. The
+// message is logged before the closers run, since the log flusher is itself
+// one of them and would otherwise flush before the message it must carry.
+func fail(log *slog.Logger, closers []io.Closer, msg string, err error) {
+	log.With("error", err).Error(msg)
+
+	if cerr := ioutil.MultiCloser(true, closers...).Close(); cerr != nil {
+		log.With("error", cerr).Error("cannot release the opened resources")
+	}
 }
 
 // newLogger initializes a new logger with Sentry support.

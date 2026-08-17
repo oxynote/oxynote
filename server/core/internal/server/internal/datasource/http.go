@@ -75,7 +75,7 @@ func (h *Handler) FetchDataSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := h.extractDataSourceID(r)
+	id, err := httpserver.ExtractNamedID(r, "dataSourceId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -98,7 +98,7 @@ func (h *Handler) TestDataSourceConnection(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	id, err := h.extractDataSourceID(r)
+	id, err := httpserver.ExtractNamedID(r, "dataSourceId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -110,21 +110,13 @@ func (h *Handler) TestDataSourceConnection(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	prevStatus := ds.Status
-
 	status, err := h.executor.TestConnection(r.Context(), *ds)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	ds.Status = status
-
-	if prevStatus != ds.Status {
-		if uerr := h.db.UpdateDataSource(r.Context(), ds); uerr != nil {
-			h.log.Error("failed to update data source status", slog.Any("error", uerr))
-		}
-	}
+	h.persistDataSourceStatus(r, ds, status)
 
 	httpserver.Respond(
 		h.log,
@@ -163,7 +155,7 @@ func (h *Handler) UpdateDataSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := h.extractDataSourceID(r)
+	id, err := httpserver.ExtractNamedID(r, "dataSourceId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -216,7 +208,7 @@ func (h *Handler) DeleteDataSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := h.extractDataSourceID(r)
+	id, err := httpserver.ExtractNamedID(r, "dataSourceId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -230,9 +222,43 @@ func (h *Handler) DeleteDataSource(w http.ResponseWriter, r *http.Request) {
 	httpserver.Respond(h.log, w, nil, http.StatusNoContent)
 }
 
-// extractDataSourceID extracts the data source ID from the request parameters.
-func (h *Handler) extractDataSourceID(r *http.Request) (xid.ID, error) {
-	return httpserver.ExtractNamedID(r, "dataSourceId")
+// persistDataSourceStatus stores the connection status observed by the last
+// executor call whenever it differs from the recorded one. A failure to store
+// it is logged rather than returned, since the status is an observation about
+// the data source and not the answer the caller asked for.
+func (h *Handler) persistDataSourceStatus(
+	r *http.Request,
+	ds *datasourceCore.DataSource,
+	status processor.ConnectionStatus,
+) {
+	if status == ds.Status {
+		return
+	}
+
+	ds.Status = status
+
+	if uerr := h.db.UpdateDataSource(r.Context(), ds); uerr != nil {
+		h.log.Error("cannot update data source status", slog.String("error", uerr.Error()))
+	}
+}
+
+// syncDataSourceStatus persists the connection status observed by the last
+// executor call and reports whether the data source is usable. When it is
+// not, the client has already been responded to with the status error.
+func (h *Handler) syncDataSourceStatus(
+	w http.ResponseWriter,
+	r *http.Request,
+	ds *datasourceCore.DataSource,
+	status processor.ConnectionStatus,
+) bool {
+	h.persistDataSourceStatus(r, ds, status)
+
+	if ds.Status != processor.ConnectionStatusSuccess {
+		httpserver.RespondError(h.log, w, status.Error())
+		return false
+	}
+
+	return true
 }
 
 // DB is an interface that handles communication with the data source database.

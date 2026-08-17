@@ -4,11 +4,13 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -309,6 +311,73 @@ func Test_Recoverer(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), strings.ToLower(http.StatusText(http.StatusInternalServerError)))
 }
 
+func Test_ServeObject(t *testing.T) {
+	cc := map[string]struct {
+		Match       string
+		Body        io.Reader
+		RespCode    int
+		RespBody    string
+		RespETag    string
+		RespType    string
+		LogContains string
+	}{
+		"Cached copy is still current": {
+			Match:    "etag-1",
+			Body:     strings.NewReader("data"),
+			RespCode: http.StatusNotModified,
+		},
+		"Error returned by io.Copy": {
+			Body:        iotest.ErrReader(assert.AnError),
+			RespCode:    http.StatusOK,
+			RespETag:    "etag-1",
+			RespType:    "image/png",
+			LogContains: "cannot stream object",
+		},
+		"Successful stream": {
+			Match:    "etag-0",
+			Body:     strings.NewReader("data"),
+			RespCode: http.StatusOK,
+			RespBody: "data",
+			RespETag: "etag-1",
+			RespType: "image/png",
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			buf := &bytes.Buffer{}
+
+			req := httptest.NewRequest("GET", "http://test.com/", http.NoBody)
+			req.Header.Set("If-None-Match", c.Match)
+
+			rec := httptest.NewRecorder()
+
+			ServeObject(
+				slog.New(slog.NewTextHandler(buf, nil)),
+				rec,
+				req,
+				"etag-1",
+				"image/png",
+				c.Body,
+			)
+
+			assert.Equal(t, c.RespCode, rec.Code)
+			assert.Equal(t, c.RespBody, rec.Body.String())
+			assert.Equal(t, c.RespETag, rec.Header().Get("ETag"))
+			assert.Equal(t, c.RespType, rec.Header().Get("Content-Type"))
+
+			if c.LogContains == "" {
+				assert.Empty(t, buf.String())
+				return
+			}
+
+			assert.Contains(t, buf.String(), c.LogContains)
+		})
+	}
+}
+
 func Test_ExtractNamedID(t *testing.T) {
 	req := httptest.NewRequest("GET", "http://test.com/", http.NoBody)
 	id, err := ExtractNamedID(req, "id")
@@ -348,6 +417,25 @@ func Test_ExtractParam(t *testing.T) {
 
 	val, err = ExtractParam(req, "key")
 	assert.Equal(t, "123", val)
+	assert.NoError(t, err)
+}
+
+func Test_ExtractQueryID(t *testing.T) {
+	req := httptest.NewRequest("GET", "http://test.com/", http.NoBody)
+	id, err := ExtractQueryID(req, "branchId")
+	assert.Zero(t, id)
+	assert.Equal(t, ErrInvalidForm, err)
+
+	req = httptest.NewRequest("GET", "http://test.com/?branchId=invalid", http.NoBody)
+	id, err = ExtractQueryID(req, "branchId")
+	assert.Zero(t, id)
+	assert.Equal(t, ErrInvalidForm, err)
+
+	expID := xid.New()
+	req = httptest.NewRequest("GET", "http://test.com/?branchId="+expID.String(), http.NoBody)
+
+	id, err = ExtractQueryID(req, "branchId")
+	assert.Equal(t, expID, id)
 	assert.NoError(t, err)
 }
 

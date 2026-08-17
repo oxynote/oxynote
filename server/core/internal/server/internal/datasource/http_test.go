@@ -15,7 +15,6 @@ import (
 	datasourceCore "github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
-	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
@@ -75,7 +74,7 @@ func hasJSONResp(code int, v any) check {
 // the data source status update failure.
 func hasUpdateFailedLog() check {
 	return func(t *testing.T, _ *DBMock, _ *ExecutorMock, _ *httptest.ResponseRecorder, logs *bytes.Buffer) {
-		assert.Contains(t, logs.String(), "failed to update data source status")
+		assert.Contains(t, logs.String(), "cannot update data source status")
 	}
 }
 
@@ -799,29 +798,99 @@ func Test_Handler_DeleteDataSource(t *testing.T) {
 	}
 }
 
-func Test_Handler_extractDataSourceID(t *testing.T) {
-	t.Parallel()
+func Test_Handler_persistDataSourceStatus(t *testing.T) {
+	cc := map[string]struct {
+		DB     *DBMock
+		Status processor.ConnectionStatus
+		Result processor.ConnectionStatus
+		Checks []check
+	}{
+		"Unchanged status skips the update": {
+			Status: processor.ConnectionStatusSuccess,
+			Result: processor.ConnectionStatusSuccess,
+			Checks: checks(wasDBUpdateDataSourceCalled(0)),
+		},
+		"Error returned by db.UpdateDataSource": {
+			DB: &DBMock{
+				UpdateDataSourceFunc: func(_ context.Context, _ *datasourceCore.DataSource) error {
+					return assert.AnError
+				},
+			},
+			Status: processor.ConnectionStatusUnreachable,
+			Result: processor.ConnectionStatusUnreachable,
+			Checks: checks(
+				wasDBUpdateDataSourceCalled(1),
+				hasUpdateFailedLog(),
+			),
+		},
+		"Changed status is stored": {
+			Status: processor.ConnectionStatusUnreachable,
+			Result: processor.ConnectionStatusUnreachable,
+			Checks: checks(wasDBUpdateDataSourceCalled(1)),
+		},
+	}
 
-	hdl := &Handler{}
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	// missing parameter
-	req := httptest.NewRequest("GET", "http://test.com/", http.NoBody)
+			hdl, db, exec, logs := prepHandler(c.DB, nil)
+			ds := stubDataSource(datasourceCore.TypePrometheus)
 
-	_, err := hdl.extractDataSourceID(req)
-	testutil.AssertEqualError(t, errutil.ErrNotFound, err)
+			hdl.persistDataSourceStatus(prepRequest("GET", "http://test.com/", "", true, ""), ds, c.Status)
 
-	// invalid identifier
-	req = httptest.NewRequest("GET", "http://test.com/", http.NoBody)
-	req = req.WithContext(testutil.AddChiCtx(req.Context(), "dataSourceId", "bogus"))
+			assert.Equal(t, c.Result, ds.Status)
 
-	_, err = hdl.extractDataSourceID(req)
-	assert.Error(t, err)
+			for _, ch := range c.Checks {
+				ch(t, db, exec, httptest.NewRecorder(), logs)
+			}
+		})
+	}
+}
 
-	// success
-	req = httptest.NewRequest("GET", "http://test.com/", http.NoBody)
-	req = req.WithContext(testutil.AddChiCtx(req.Context(), "dataSourceId", _testID.String()))
+func Test_Handler_syncDataSourceStatus(t *testing.T) {
+	cc := map[string]struct {
+		Status processor.ConnectionStatus
+		Result bool
+		Checks []check
+	}{
+		"Unusable data source": {
+			Status: processor.ConnectionStatusUnreachable,
+			Checks: checks(
+				hasResp(http.StatusBadRequest, `{"code":"data_source.unreachable","message":"The data source is unreachable."}`),
+				wasDBUpdateDataSourceCalled(1),
+			),
+		},
+		"Usable data source": {
+			Status: processor.ConnectionStatusSuccess,
+			Result: true,
+			Checks: checks(
+				hasResp(http.StatusOK, ""),
+				wasDBUpdateDataSourceCalled(0),
+			),
+		},
+	}
 
-	id, err := hdl.extractDataSourceID(req)
-	require.NoError(t, err)
-	assert.Equal(t, _testID, id)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			hdl, db, exec, logs := prepHandler(nil, nil)
+			ds := stubDataSource(datasourceCore.TypePrometheus)
+			rec := httptest.NewRecorder()
+
+			res := hdl.syncDataSourceStatus(
+				rec,
+				prepRequest("GET", "http://test.com/", "", true, ""),
+				ds,
+				c.Status,
+			)
+
+			assert.Equal(t, c.Result, res)
+
+			for _, ch := range c.Checks {
+				ch(t, db, exec, rec, logs)
+			}
+		})
+	}
 }

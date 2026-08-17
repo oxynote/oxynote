@@ -94,7 +94,7 @@ func (h *Handler) FetchDocumentMaintainers(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	id, err := h.extractDocumentParameter(r)
+	id, err := httpserver.ExtractNamedID(r, "documentId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -122,7 +122,7 @@ func (h *Handler) FetchBranchReviewers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	branchID, err := h.extractBranchParameter(r)
+	branchID, err := httpserver.ExtractNamedID(r, "branchId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -150,13 +150,13 @@ func (h *Handler) RequestBranchReviewer(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	id, err := h.extractDocumentParameter(r)
+	id, err := httpserver.ExtractNamedID(r, "documentId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	branchID, err := h.extractBranchParameter(r)
+	branchID, err := httpserver.ExtractNamedID(r, "branchId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -249,13 +249,13 @@ func (h *Handler) RemoveBranchReviewer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := h.extractDocumentParameter(r)
+	id, err := httpserver.ExtractNamedID(r, "documentId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	branchID, err := h.extractBranchParameter(r)
+	branchID, err := httpserver.ExtractNamedID(r, "branchId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -564,7 +564,7 @@ func (h *Handler) UpdateDocumentBranch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	branchID, err := h.extractBranchParameter(r)
+	branchID, err := httpserver.ExtractNamedID(r, "branchId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -615,7 +615,7 @@ func (h *Handler) UpdateDocumentBranch(w http.ResponseWriter, r *http.Request) {
 // FetchDocumentBranchesUnsafe handles the retrieval of all branches for a document
 // without organization ownership checks. Intended for internal system use only.
 func (h *Handler) FetchDocumentBranchesUnsafe(w http.ResponseWriter, r *http.Request) {
-	id, err := h.extractDocumentParameter(r)
+	id, err := httpserver.ExtractNamedID(r, "documentId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -773,13 +773,13 @@ func (h *Handler) UpdateBranchReviewApproval(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	id, err := h.extractDocumentParameter(r)
+	id, err := httpserver.ExtractNamedID(r, "documentId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	branchID, err := h.extractBranchParameter(r)
+	branchID, err := httpserver.ExtractNamedID(r, "branchId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -958,7 +958,7 @@ func (h *Handler) DeleteDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := h.extractDocumentParameter(r)
+	id, err := httpserver.ExtractNamedID(r, "documentId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -1031,7 +1031,7 @@ func (h *Handler) DuplicateDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := h.extractDocumentParameter(r)
+	id, err := httpserver.ExtractNamedID(r, "documentId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -1179,7 +1179,7 @@ func (h *Handler) FetchDocumentBranches(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	docID, err := h.extractDocumentParameter(r)
+	docID, err := httpserver.ExtractNamedID(r, "documentId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -1293,7 +1293,7 @@ func (h *Handler) DeleteDocumentBranch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	branchID, err := h.extractBranchParameter(r)
+	branchID, err := httpserver.ExtractNamedID(r, "branchId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -1374,16 +1374,6 @@ func (h *Handler) copyHooksToBranch(ctx context.Context, fromBranchID, toBranchI
 	}
 
 	return nil
-}
-
-// extractDocumentParameter extracts the document ID from the request parameters.
-func (h *Handler) extractDocumentParameter(r *http.Request) (xid.ID, error) {
-	return httpserver.ExtractNamedID(r, "documentId")
-}
-
-// extractBranchParameter extracts the branch ID from the request parameters.
-func (h *Handler) extractBranchParameter(r *http.Request) (xid.ID, error) {
-	return httpserver.ExtractNamedID(r, "branchId")
 }
 
 // DB is an interface that combines sqlutil.DB and DBAgent.
