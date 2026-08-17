@@ -141,12 +141,13 @@ func Test_Manager_processHooks(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		Hooks    func(t *testing.T) []hook.Hook
-		FetchErr error
-		DocErr   error
-		Doc      *document.Document
-		MaintErr error
-		Checks   []check
+		Hooks     func(t *testing.T) []hook.Hook
+		FetchErr  error
+		DocErr    error
+		Doc       *document.Document
+		MaintErr  error
+		UpdateErr error
+		Checks    []check
 	}{
 		"Hook fetch failure is propagated": {
 			Hooks:    func(*testing.T) []hook.Hook { return nil },
@@ -281,6 +282,51 @@ func Test_Manager_processHooks(t *testing.T) {
 				wasPublished(1),
 			),
 		},
+		// the score decays gradually, so by the time it reaches zero the
+		// previous one is somewhere below full: the notification has to
+		// trigger on the arrival at zero, not on a full-to-zero jump.
+		"Partly decayed score reaching zero notifies the maintainers": {
+			Hooks: func(t *testing.T) []hook.Hook {
+				h := stubHook(t, branchID, time.Now().Add(-time.Hour), time.Now().Add(-2*time.Hour))
+				h.Score = decimal.NewFromInt(40)
+
+				return []hook.Hook{h}
+			},
+			Doc: stubDocument(),
+			Checks: checks(
+				hasError(false),
+				hasUpdatedScore(decimal.Zero),
+				wasPublished(1),
+			),
+		},
+		"Already zero score is not re-notified": {
+			Hooks: func(t *testing.T) []hook.Hook {
+				h := stubHook(t, branchID, time.Now().Add(-time.Hour), time.Now().Add(-2*time.Hour))
+				h.Score = decimal.Zero
+
+				return []hook.Hook{h}
+			},
+			Doc: stubDocument(),
+			Checks: checks(
+				hasError(false),
+				wasUpdateCalled(1),
+				wasPublished(0),
+			),
+		},
+		// the unpersisted score would be recomputed into the same
+		// transition on the next cycle, notifying again every five minutes.
+		"Failed score persist suppresses the notification": {
+			Hooks: func(t *testing.T) []hook.Hook {
+				return []hook.Hook{stubHook(t, branchID, time.Now().Add(-time.Hour), time.Now().Add(-2*time.Hour))}
+			},
+			Doc:       stubDocument(),
+			UpdateErr: assert.AnError,
+			Checks: checks(
+				hasError(false),
+				wasUpdateCalled(1),
+				wasPublished(0),
+			),
+		},
 		"Maintainer fetch failure suppresses the notification": {
 			Hooks: func(t *testing.T) []hook.Hook {
 				return []hook.Hook{stubHook(t, branchID, time.Now().Add(-time.Hour), time.Now().Add(-2*time.Hour))}
@@ -380,6 +426,9 @@ func Test_Manager_processHooks(t *testing.T) {
 				},
 				FetchDocumentMaintainersFunc: func(context.Context, xid.ID, string) ([]string, error) {
 					return []string{"user-1"}, tc.MaintErr
+				},
+				UpdateDocumentHookFunc: func(context.Context, hook.Hook) error {
+					return tc.UpdateErr
 				},
 			}
 

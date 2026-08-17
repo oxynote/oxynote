@@ -882,11 +882,6 @@ func (h *Handler) MergeBranches(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.copyHooksToBranch(r.Context(), tx, fromDoc.BranchID, toDoc.BranchID, toDoc.ID, session.ActiveOrganizationID); err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
 	if err := tx.UpdateDocument(r.Context(), ndoc); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -905,6 +900,21 @@ func (h *Handler) MergeBranches(w http.ResponseWriter, r *http.Request) {
 	if err := tx.Commit(); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
+	}
+
+	// the hooks are copied after the commit: creating one creates its
+	// external watcher too, and a rollback cannot take that back.
+	if err := h.copyHooksToBranch(
+		r.Context(),
+		fromDoc.BranchID,
+		toDoc.BranchID,
+		toDoc.ID,
+		session.ActiveOrganizationID,
+	); err != nil {
+		logutil.Critical(h.log, err).Error(
+			"cannot copy hooks to the merged branch",
+			slog.String("branch_id", toDoc.BranchID.String()),
+		)
 	}
 
 	if h.metadata.changeCallback != nil {
@@ -1229,14 +1239,24 @@ func (h *Handler) CreateDocumentBranch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.copyHooksToBranch(r.Context(), tx, sourceDoc.BranchID, newDoc.BranchID, sourceDoc.ID, session.ActiveOrganizationID); err != nil {
+	if err := tx.Commit(); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	if err := tx.Commit(); err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
+	// the hooks are copied after the commit: creating one creates its
+	// external watcher too, and a rollback cannot take that back.
+	if err := h.copyHooksToBranch(
+		r.Context(),
+		sourceDoc.BranchID,
+		newDoc.BranchID,
+		sourceDoc.ID,
+		session.ActiveOrganizationID,
+	); err != nil {
+		logutil.Critical(h.log, err).Error(
+			"cannot copy hooks to the forked branch",
+			slog.String("branch_id", newDoc.BranchID.String()),
+		)
 	}
 
 	httpserver.Respond(
@@ -1300,8 +1320,13 @@ func (h *Handler) DeleteDocumentBranch(w http.ResponseWriter, r *http.Request) {
 // copyHooksToBranch fetches all hooks from fromBranchID and re-creates them on
 // toBranchID with fresh state. This is handler-level business logic; the DB
 // layer is not involved in the re-creation decision.
-func (h *Handler) copyHooksToBranch(ctx context.Context, db HooksDBAgent, fromBranchID, toBranchID, documentID xid.ID, organizationID string) error {
-	hooks, err := db.FetchDocumentHooksByBranchID(ctx, fromBranchID, organizationID)
+//
+// Creating a hook creates its external resource as a side effect, so this runs
+// outside the caller's transaction: a rollback cannot take a changedetection.io
+// watcher back, and the row that would have pointed at it is gone. A failed
+// insert tears the watcher down again for the same reason.
+func (h *Handler) copyHooksToBranch(ctx context.Context, fromBranchID, toBranchID, documentID xid.ID, organizationID string) error {
+	hooks, err := h.db.FetchDocumentHooksByBranchID(ctx, fromBranchID, organizationID)
 	if err != nil {
 		return err
 	}
@@ -1319,7 +1344,14 @@ func (h *Handler) copyHooksToBranch(ctx context.Context, db HooksDBAgent, fromBr
 			return err
 		}
 
-		if err := db.InsertDocumentHook(ctx, *newHk); err != nil {
+		if err := h.db.InsertDocumentHook(ctx, *newHk); err != nil {
+			if derr := newHk.Delete(ctx, inp); derr != nil {
+				logutil.Critical(h.log, derr).Error(
+					"cannot delete the hook external resource after a failed insert",
+					slog.String("hook_id", newHk.ID.String()),
+				)
+			}
+
 			return err
 		}
 	}

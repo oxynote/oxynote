@@ -157,28 +157,18 @@ func (m *Manager) processHooks(ctx context.Context) error {
 				continue
 			}
 
-			m.updateHook(ctx, h)
+			// a notification for a score that was not persisted would be
+			// published again on every cycle, since the next one recomputes
+			// the same transition from the same stored score.
+			if !m.updateHook(ctx, h) {
+				continue
+			}
 
-			if previousScore.Equal(_fullScore) && h.Score.Equal(decimal.Zero) {
-				maintainers, err := m.db.FetchDocumentMaintainers(ctx, h.DocumentID.V, h.OrganizationID.String)
-				if err != nil {
-					m.log.With("hook_id", h.ID).
-						With("error", err).
-						Error("fetching document maintainers for hook notification")
-
-					continue
-				}
-
-				m.notifPub.PublishNotifications(
-					h.OrganizationID.String,
-					notification.NewDocumentHookTriggeredNotification(
-						h.DocumentID.V,
-						h.Type,
-						h.BlockID,
-						h.BranchID.V,
-					),
-					maintainers...,
-				)
+			// the score decays gradually — a scheduled reminder walks down
+			// through 99…1 — so the transition to watch for is the arrival
+			// at zero, not an exact full-to-zero jump within one cycle.
+			if !previousScore.IsZero() && h.Score.IsZero() {
+				m.notifyMaintainers(ctx, h)
 			}
 		}
 
@@ -190,6 +180,30 @@ func (m *Manager) processHooks(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// notifyMaintainers tells the document's maintainers that the hook ran out of
+// freshness.
+func (m *Manager) notifyMaintainers(ctx context.Context, h hook.Hook) {
+	maintainers, err := m.db.FetchDocumentMaintainers(ctx, h.DocumentID.V, h.OrganizationID.String)
+	if err != nil {
+		m.log.With("hook_id", h.ID).
+			With("error", err).
+			Error("fetching document maintainers for hook notification")
+
+		return
+	}
+
+	m.notifPub.PublishNotifications(
+		h.OrganizationID.String,
+		notification.NewDocumentHookTriggeredNotification(
+			h.DocumentID.V,
+			h.Type,
+			h.BlockID,
+			h.BranchID.V,
+		),
+		maintainers...,
+	)
 }
 
 // ensureHook ensures the hook is valid and handles deletions if necessary.
@@ -265,14 +279,18 @@ func (m *Manager) deleteHook(ctx context.Context, h *hook.Hook) {
 	}
 }
 
-// updateHook persists the hook's current state.
-func (m *Manager) updateHook(ctx context.Context, h hook.Hook) {
+// updateHook persists the hook's current state and reports whether it stuck.
+func (m *Manager) updateHook(ctx context.Context, h hook.Hook) bool {
 	err := m.db.UpdateDocumentHook(ctx, h)
 	if err != nil {
 		m.log.With("hook_id", h.ID).
 			With("error", err).
 			Error("updating document hook")
+
+		return false
 	}
+
+	return true
 }
 
 // DB defines the database operations required by the Manager.
