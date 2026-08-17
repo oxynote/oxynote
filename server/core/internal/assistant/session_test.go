@@ -324,6 +324,18 @@ func Test_Session_Process(t *testing.T) {
 		assert.Equal(t, []string{"error:already processing a message"}, writtenTypes(writer))
 	})
 
+	t.Run("Blank message is rejected", func(t *testing.T) {
+		t.Parallel()
+
+		writer := &protocolMock.SessionWriter{}
+		s := newTestSession(nil, writer, nil, nil, nil)
+
+		s.Process(context.Background(), []byte(`{"type":"message","content":"  "}`))
+
+		assert.Equal(t, []string{"error:message content is required"}, writtenTypes(writer))
+		assert.False(t, s.processing)
+	})
+
 	t.Run("Message runs a full turn", func(t *testing.T) {
 		t.Parallel()
 

@@ -150,6 +150,14 @@ func Test_ParseInlineMarkdown(t *testing.T) {
 				{Type: "text", Text: "[x]y"},
 			},
 		},
+		"Escaped paren stays inside the href": {
+			Input: `[Go](https://x/Go_\(lang\))`,
+			Expected: []document.Block{
+				{Type: "text", Text: "Go", Marks: []document.Mark{
+					{Type: "link", Attrs: map[string]any{"href": "https://x/Go_(lang)"}},
+				}},
+			},
+		},
 		"Link with missing closing paren is literal": {
 			Input: "[x](u",
 			Expected: []document.Block{
@@ -262,6 +270,14 @@ func Test_emitInlineMarkdown(t *testing.T) {
 			},
 			Expected: "[x](https://y)",
 		},
+		"Link emit escapes a paren in the href": {
+			Input: []document.Block{
+				{Type: "text", Text: "x", Marks: []document.Mark{
+					{Type: "link", Attrs: map[string]any{"href": "https://y/a_(b)"}},
+				}},
+			},
+			Expected: `[x](https://y/a_(b\))`,
+		},
 		"Non-text nodes are skipped": {
 			Input: []document.Block{
 				{Type: document.BlockNodeParagraph},
@@ -327,6 +343,8 @@ func Test_InlineMarkdownRoundTrip(t *testing.T) {
 		"Escaped literal":       {Input: `escaped \* literal`},
 		"Link inside bold":      {Input: "**[link inside bold](https://y)**"},
 		"Strike with code mark": {Input: "~~strike with `code` inside~~"},
+		"Parenthesised href":    {Input: `[Go](https://en.wikipedia.org/wiki/Go_\(programming_language\))`},
+		"Bracket in label":      {Input: `[label with \] bracket](https://x)`},
 	}
 
 	for name, tc := range tests {
@@ -378,7 +396,11 @@ func Test_closeDelim(t *testing.T) {
 		"Strike":    {Mark: activeMark{kind: "strike"}, Result: "~~"},
 		"Code":      {Mark: activeMark{kind: "code"}, Result: "`"},
 		"Link":      {Mark: activeMark{kind: "link", href: "https://x"}, Result: "](https://x)"},
-		"Unknown":   {Mark: activeMark{kind: "sparkle"}, Result: ""},
+		"Link with a parenthesis in the href": {
+			Mark:   activeMark{kind: "link", href: "https://x/a_(b)"},
+			Result: `](https://x/a_(b\))`,
+		},
+		"Unknown": {Mark: activeMark{kind: "sparkle"}, Result: ""},
 	}
 
 	for cn, c := range cc {

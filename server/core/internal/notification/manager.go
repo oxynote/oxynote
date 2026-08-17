@@ -99,9 +99,16 @@ func (m *Manager) PublishNotifications(organizationID string, nc Core, userIDs .
 					_maxBackoffRetries,
 				),
 			)
-			if rerr != nil && !errors.Is(rerr, context.Canceled) {
-				logutil.Critical(m.log, rerr).
-					Error("cannot create a new notification")
+			// a notification the subscribers deliver but the database never
+			// stored disappears on the next reload, so a failed persist has
+			// to stop the fan-out rather than fall through to it.
+			if rerr != nil {
+				if !errors.Is(rerr, context.Canceled) {
+					logutil.Critical(m.log, rerr).
+						Error("cannot create a new notification")
+				}
+
+				return
 			}
 
 			m.mu.RLock()

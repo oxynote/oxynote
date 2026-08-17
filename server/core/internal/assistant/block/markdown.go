@@ -275,12 +275,14 @@ func scanLink(s string, i int) (label, href string, end int, ok bool) {
 			return "", "", 0, false
 		case ']':
 			if j+1 < len(s) && s[j+1] == '(' {
-				end := strings.IndexByte(s[j+2:], ')')
+				hrefStart := j + len("](")
+
+				end := scanHrefClose(s, hrefStart)
 				if end < 0 {
 					return "", "", 0, false
 				}
 
-				return s[i+1 : j], s[j+2 : j+2+end], j + 2 + end + 1, true
+				return s[i+1 : j], unescapeLinkHref(s[hrefStart:end]), end + 1, true
 			}
 
 			return "", "", 0, false
@@ -290,6 +292,25 @@ func scanLink(s string, i int) (label, href string, end int, ok bool) {
 	}
 
 	return "", "", 0, false
+}
+
+// scanHrefClose returns the byte offset of the ')' closing a link
+// href starting at start, or -1 when there is none. An escaped ')'
+// belongs to the URL and does not close it.
+func scanHrefClose(s string, start int) int {
+	for i := start; i < len(s); i++ {
+		if s[i] == '\\' && i+1 < len(s) {
+			i++
+
+			continue
+		}
+
+		if s[i] == ')' {
+			return i
+		}
+	}
+
+	return -1
 }
 
 // scanDelimClose returns the byte offset of the closing delimiter
@@ -517,10 +538,57 @@ func closeDelim(m activeMark) string {
 	case _markCode:
 		return "`"
 	case _markLink:
-		return "](" + m.href + ")"
+		return "](" + escapeLinkHref(m.href) + ")"
 	}
 
 	return ""
+}
+
+// escapeLinkHref escapes the characters that would otherwise end the
+// URL early when the emitted link is parsed back, so an href such as
+// ".../Go_(programming_language)" survives the round trip.
+func escapeLinkHref(href string) string {
+	if !strings.ContainsAny(href, "\\)") {
+		return href
+	}
+
+	var b strings.Builder
+
+	b.Grow(len(href) + _escapeGrowHeadroom)
+
+	for i := range len(href) {
+		c := href[i]
+		if c == '\\' || c == ')' {
+			b.WriteByte('\\')
+		}
+
+		b.WriteByte(c)
+	}
+
+	return b.String()
+}
+
+// unescapeLinkHref is the inverse of escapeLinkHref: it drops the
+// backslash from every escaped pair, mirroring how parseSpan treats
+// escapes in ordinary text.
+func unescapeLinkHref(href string) string {
+	if !strings.Contains(href, "\\") {
+		return href
+	}
+
+	var b strings.Builder
+
+	b.Grow(len(href))
+
+	for i := 0; i < len(href); i++ {
+		if href[i] == '\\' && i+1 < len(href) {
+			i++
+		}
+
+		b.WriteByte(href[i])
+	}
+
+	return b.String()
 }
 
 // escapeMarkdown returns text with markdown metacharacters escaped
@@ -533,7 +601,7 @@ func escapeMarkdown(text string, active []activeMark) string {
 		}
 	}
 
-	if !strings.ContainsAny(text, "\\*_~`[") {
+	if !strings.ContainsAny(text, "\\*_~`[]") {
 		return text
 	}
 
@@ -544,7 +612,7 @@ func escapeMarkdown(text string, active []activeMark) string {
 	for i := range len(text) {
 		c := text[i]
 		switch c {
-		case '\\', '*', '_', '~', '`', '[':
+		case '\\', '*', '_', '~', '`', '[', ']':
 			b.WriteByte('\\')
 			b.WriteByte(c)
 		default:

@@ -72,6 +72,7 @@ func Test_Manager_PublishNotifications(t *testing.T) {
 		DB          *DBMock
 		Backoff     backoff.BackOff
 		UserIDs     []string
+		Delivered   bool
 		LogContains string
 		LogOmits    string
 	}{
@@ -96,9 +97,10 @@ func Test_Manager_PublishNotifications(t *testing.T) {
 			LogOmits: "cannot create a new notification",
 		},
 		"Successful publication to multiple users": {
-			DB:       &DBMock{},
-			UserIDs:  []string{"user1", "user2"},
-			LogOmits: "cannot create a new notification",
+			DB:        &DBMock{},
+			UserIDs:   []string{"user1", "user2"},
+			Delivered: true,
+			LogOmits:  "cannot create a new notification",
 		},
 	}
 
@@ -128,31 +130,44 @@ func Test_Manager_PublishNotifications(t *testing.T) {
 				received <- n
 			})
 
+			// waiting on the create call keeps the supervisor context from
+			// cancelling a retry mid-flight; the fan-out cannot be used for
+			// that, as a failed write is not supposed to produce one.
+			created := make(chan struct{}, len(c.UserIDs))
+			create := c.DB.CreateNotificationFunc
+
+			c.DB.CreateNotificationFunc = func(ctx context.Context, nt *Notification) error {
+				var err error
+
+				if create != nil {
+					err = create(ctx, nt)
+				}
+
+				created <- struct{}{}
+
+				return err
+			}
+
 			nc := NewDocumentReviewRequestNotification("user1", xid.New(), xid.New())
 
 			m.PublishNotifications("org1", nc, c.UserIDs...)
 
-			// subscribers are notified once per target user even when
-			// the database write failed. Receiving the fan-out first
-			// also guarantees the create-and-log step has finished, so
-			// the supervisor context cannot cancel a retry mid-flight.
-			users := make(map[string]bool)
-
 			for range c.UserIDs {
-				n := <-received
-
-				users[n.UserID] = true
-
-				assert.Equal(t, nc, n.Core)
-				assert.Equal(t, "org1", n.OrganizationID)
-				assert.False(t, n.ID.IsNil())
+				<-created
 			}
 
-			for _, userID := range c.UserIDs {
-				assert.True(t, users[userID])
+			// a notification the database never stored must not reach the
+			// subscribers: it would show up as a toast and then vanish on
+			// the next reload.
+			if c.Delivered {
+				assertDelivered(t, received, nc, c.UserIDs)
 			}
 
 			m.supv.CloseAndWait()
+
+			if !c.Delivered {
+				assert.Empty(t, received)
+			}
 
 			require.NoError(t, out.Flush())
 
@@ -167,5 +182,27 @@ func Test_Manager_PublishNotifications(t *testing.T) {
 			ff := c.DB.CreateNotificationCalls()
 			require.Len(t, ff, len(c.UserIDs))
 		})
+	}
+}
+
+// assertDelivered drains one fan-out notification per target user and checks
+// it carries the published core.
+func assertDelivered(t *testing.T, received <-chan Notification, nc Core, userIDs []string) {
+	t.Helper()
+
+	users := make(map[string]bool)
+
+	for range userIDs {
+		n := <-received
+
+		users[n.UserID] = true
+
+		assert.Equal(t, nc, n.Core)
+		assert.Equal(t, "org1", n.OrganizationID)
+		assert.False(t, n.ID.IsNil())
+	}
+
+	for _, userID := range userIDs {
+		assert.True(t, users[userID])
 	}
 }

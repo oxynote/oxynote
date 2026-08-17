@@ -134,6 +134,17 @@ func (s *session) Process(ctx context.Context, msg []byte) {
 
 	switch protocol.ClientMessageType(tp) {
 	case protocol.ClientTypeMessage:
+		content := gjson.GetBytes(msg, "content").String()
+
+		// the API rejects an empty text block, and the rejected turn would
+		// roll back to its own checkpoint only, leaving the empty message in
+		// the history to fail every later turn as well.
+		if strings.TrimSpace(content) == "" {
+			s.writer.WriteJSON(ctx, protocol.NewErrorMessage("message content is required"))
+
+			return
+		}
+
 		s.mu.Lock()
 		if s.processing {
 			s.mu.Unlock()
@@ -175,10 +186,7 @@ func (s *session) Process(ctx context.Context, msg []byte) {
 			stop := context.AfterFunc(sctx, cancel)
 			defer stop()
 
-			s.handleUserMessage(
-				turnCtx,
-				gjson.GetBytes(msg, "content").String(),
-			)
+			s.handleUserMessage(turnCtx, content)
 		})
 
 	case protocol.ClientTypeReset:
