@@ -208,6 +208,9 @@ func Test_Handler_CreateDocumentComment(t *testing.T) {
 			RespCode: http.StatusInternalServerError,
 			Inserted: 1,
 		},
+		// the comment is already stored and announced by the time the
+		// maintainers are read, so a failure there costs notifications, not
+		// the request.
 		"Maintainer fetch error": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
@@ -218,7 +221,7 @@ func Test_Handler_CreateDocumentComment(t *testing.T) {
 				},
 			},
 			Body:     validBody,
-			RespCode: http.StatusInternalServerError,
+			RespCode: http.StatusCreated,
 			Inserted: 1,
 			Changes:  []ChangeMessage{{Type: ChangeTypeCreated}},
 		},
@@ -904,7 +907,7 @@ func Test_Handler_DeleteDocumentComment(t *testing.T) {
 					return storedComment("u1"), nil
 				},
 			},
-			RespCode:   http.StatusOK,
+			RespCode:   http.StatusNoContent,
 			Committed:  1,
 			ChangeType: ChangeTypeDeleted,
 		},
@@ -914,7 +917,7 @@ func Test_Handler_DeleteDocumentComment(t *testing.T) {
 					return storedComment("u1", storedReply("u2")), nil
 				},
 			},
-			RespCode:   http.StatusOK,
+			RespCode:   http.StatusNoContent,
 			Committed:  1,
 			ChangeType: ChangeTypeUpdated,
 		},

@@ -119,7 +119,7 @@ func Test_Options_Validate(t *testing.T) {
 		ClientSecret:              "secret",
 		SignatureSecret:           "sig",
 		RedirectURL:               _testRedirectURL,
-		InstallationSigningSecret: "signing",
+		InstallationSigningSecret: _testSigningSecret,
 	}
 
 	tests := map[string]struct {
@@ -158,6 +158,14 @@ func Test_Options_Validate(t *testing.T) {
 				o.InstallationSigningSecret = ""
 			},
 			ExpectedErr: "installation signing secret is required",
+		},
+		// the secret is an AES key: a wrong-length one used to boot fine and
+		// then fail every install, link and verify call.
+		"Wrong-length installation signing secret fails": {
+			Mutate: func(o *Options) {
+				o.InstallationSigningSecret = "too-short"
+			},
+			ExpectedErr: "installation signing secret: key must be 32 bytes long",
 		},
 	}
 
@@ -204,7 +212,7 @@ func Test_NewManager(t *testing.T) {
 				ClientSecret:              "secret",
 				SignatureSecret:           "sig",
 				RedirectURL:               _testRedirectURL,
-				InstallationSigningSecret: "signing",
+				InstallationSigningSecret: _testSigningSecret,
 			},
 			WantConfigured: true,
 		},
@@ -265,7 +273,7 @@ func Test_Manager_Close(t *testing.T) {
 				ClientSecret:              "secret",
 				SignatureSecret:           "sig",
 				RedirectURL:               _testRedirectURL,
-				InstallationSigningSecret: "signing",
+				InstallationSigningSecret: _testSigningSecret,
 			},
 		)
 		require.NoError(t, err)

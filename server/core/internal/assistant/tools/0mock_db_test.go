@@ -9,6 +9,7 @@ import (
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/rs/xid"
 )
 
@@ -22,6 +23,9 @@ var _ DB = &DBMock{}
 //
 //		// make and configure a mocked DB
 //		mockedDB := &DBMock{
+//			BeginTxFunc: func(ctx context.Context, dest any) error {
+//				panic("mock out the BeginTx method")
+//			},
 //			CheckDocumentCycleFunc: func(ctx context.Context, id xid.ID, parentID xid.ID, organizationID string) (bool, error) {
 //				panic("mock out the CheckDocumentCycle method")
 //			},
@@ -46,6 +50,9 @@ var _ DB = &DBMock{}
 //			InsertDocumentFunc: func(ctx context.Context, doc document.Document) error {
 //				panic("mock out the InsertDocument method")
 //			},
+//			InsertDocumentSearchJobFunc: func(ctx context.Context, diff search.BlocksDifference) error {
+//				panic("mock out the InsertDocumentSearchJob method")
+//			},
 //			UpdateDocumentParentIDFunc: func(ctx context.Context, id xid.ID, parentID null.Value[xid.ID], organizationID string) error {
 //				panic("mock out the UpdateDocumentParentID method")
 //			},
@@ -59,6 +66,9 @@ var _ DB = &DBMock{}
 //
 //	}
 type DBMock struct {
+	// BeginTxFunc mocks the BeginTx method.
+	BeginTxFunc func(ctx context.Context, dest any) error
+
 	// CheckDocumentCycleFunc mocks the CheckDocumentCycle method.
 	CheckDocumentCycleFunc func(ctx context.Context, id xid.ID, parentID xid.ID, organizationID string) (bool, error)
 
@@ -83,6 +93,9 @@ type DBMock struct {
 	// InsertDocumentFunc mocks the InsertDocument method.
 	InsertDocumentFunc func(ctx context.Context, doc document.Document) error
 
+	// InsertDocumentSearchJobFunc mocks the InsertDocumentSearchJob method.
+	InsertDocumentSearchJobFunc func(ctx context.Context, diff search.BlocksDifference) error
+
 	// UpdateDocumentParentIDFunc mocks the UpdateDocumentParentID method.
 	UpdateDocumentParentIDFunc func(ctx context.Context, id xid.ID, parentID null.Value[xid.ID], organizationID string) error
 
@@ -91,6 +104,13 @@ type DBMock struct {
 
 	// calls tracks calls to the methods.
 	calls struct {
+		// BeginTx holds details about calls to the BeginTx method.
+		BeginTx []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Dest is the dest argument value.
+			Dest any
+		}
 		// CheckDocumentCycle holds details about calls to the CheckDocumentCycle method.
 		CheckDocumentCycle []struct {
 			// Ctx is the ctx argument value.
@@ -163,6 +183,13 @@ type DBMock struct {
 			// Doc is the doc argument value.
 			Doc document.Document
 		}
+		// InsertDocumentSearchJob holds details about calls to the InsertDocumentSearchJob method.
+		InsertDocumentSearchJob []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Diff is the diff argument value.
+			Diff search.BlocksDifference
+		}
 		// UpdateDocumentParentID holds details about calls to the UpdateDocumentParentID method.
 		UpdateDocumentParentID []struct {
 			// Ctx is the ctx argument value.
@@ -186,6 +213,7 @@ type DBMock struct {
 			MaintainerIDs []string
 		}
 	}
+	lockBeginTx                             sync.RWMutex
 	lockCheckDocumentCycle                  sync.RWMutex
 	lockCheckDocumentExists                 sync.RWMutex
 	lockDeleteDocument                      sync.RWMutex
@@ -194,8 +222,48 @@ type DBMock struct {
 	lockFetchDocumentTreeByDocumentParentID sync.RWMutex
 	lockFetchMainBranchContent              sync.RWMutex
 	lockInsertDocument                      sync.RWMutex
+	lockInsertDocumentSearchJob             sync.RWMutex
 	lockUpdateDocumentParentID              sync.RWMutex
 	lockUpsertDocumentMaintainers           sync.RWMutex
+}
+
+// BeginTx calls BeginTxFunc.
+func (mock *DBMock) BeginTx(ctx context.Context, dest any) error {
+	callInfo := struct {
+		Ctx  context.Context
+		Dest any
+	}{
+		Ctx:  ctx,
+		Dest: dest,
+	}
+	mock.lockBeginTx.Lock()
+	mock.calls.BeginTx = append(mock.calls.BeginTx, callInfo)
+	mock.lockBeginTx.Unlock()
+	if mock.BeginTxFunc == nil {
+		var (
+			errOut error
+		)
+		return errOut
+	}
+	return mock.BeginTxFunc(ctx, dest)
+}
+
+// BeginTxCalls gets all the calls that were made to BeginTx.
+// Check the length with:
+//
+//	len(mockedDB.BeginTxCalls())
+func (mock *DBMock) BeginTxCalls() []struct {
+	Ctx  context.Context
+	Dest any
+} {
+	var calls []struct {
+		Ctx  context.Context
+		Dest any
+	}
+	mock.lockBeginTx.RLock()
+	calls = mock.calls.BeginTx
+	mock.lockBeginTx.RUnlock()
+	return calls
 }
 
 // CheckDocumentCycle calls CheckDocumentCycleFunc.
@@ -544,6 +612,45 @@ func (mock *DBMock) InsertDocumentCalls() []struct {
 	mock.lockInsertDocument.RLock()
 	calls = mock.calls.InsertDocument
 	mock.lockInsertDocument.RUnlock()
+	return calls
+}
+
+// InsertDocumentSearchJob calls InsertDocumentSearchJobFunc.
+func (mock *DBMock) InsertDocumentSearchJob(ctx context.Context, diff search.BlocksDifference) error {
+	callInfo := struct {
+		Ctx  context.Context
+		Diff search.BlocksDifference
+	}{
+		Ctx:  ctx,
+		Diff: diff,
+	}
+	mock.lockInsertDocumentSearchJob.Lock()
+	mock.calls.InsertDocumentSearchJob = append(mock.calls.InsertDocumentSearchJob, callInfo)
+	mock.lockInsertDocumentSearchJob.Unlock()
+	if mock.InsertDocumentSearchJobFunc == nil {
+		var (
+			errOut error
+		)
+		return errOut
+	}
+	return mock.InsertDocumentSearchJobFunc(ctx, diff)
+}
+
+// InsertDocumentSearchJobCalls gets all the calls that were made to InsertDocumentSearchJob.
+// Check the length with:
+//
+//	len(mockedDB.InsertDocumentSearchJobCalls())
+func (mock *DBMock) InsertDocumentSearchJobCalls() []struct {
+	Ctx  context.Context
+	Diff search.BlocksDifference
+} {
+	var calls []struct {
+		Ctx  context.Context
+		Diff search.BlocksDifference
+	}
+	mock.lockInsertDocumentSearchJob.RLock()
+	calls = mock.calls.InsertDocumentSearchJob
+	mock.lockInsertDocumentSearchJob.RUnlock()
 	return calls
 }
 

@@ -175,15 +175,24 @@ func Test_ContainerImageWatcher_Reset(t *testing.T) {
 		assert.Equal(t, digest, ciws.Digest)
 	})
 
-	t.Run("Unauthorized registry fails the reset", func(t *testing.T) {
+	// Process records an unauthorized registry as a status; the reset does
+	// the same, or a hook for an image whose credentials are currently wrong
+	// could never be created or updated at all.
+	t.Run("Unauthorized registry resets to a status", func(t *testing.T) {
 		t.Parallel()
 
 		image, _ := newFakeRegistryImage(t, true)
 
 		ciw := ContainerImageWatcher{Image: image}
 
-		_, _, err := ciw.Reset(context.Background(), stubInput{})
-		require.Error(t, err)
+		score, state, err := ciw.Reset(context.Background(), stubInput{})
+		require.NoError(t, err)
+		assert.True(t, score.IsZero())
+
+		var ciws ContainerImageWatcherState
+
+		require.NoError(t, json.Unmarshal(state, &ciws))
+		assert.Equal(t, ContainerImageWatcherStatusUnauthorized, ciws.Status)
 	})
 
 	t.Run("Malformed state fails", func(t *testing.T) {

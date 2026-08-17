@@ -273,7 +273,7 @@ func (h *Handler) ConnectOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
+	httpserver.Respond(h.log, w, nil, http.StatusNoContent)
 }
 
 // FetchMessages retrieves Slack messages.
@@ -313,7 +313,7 @@ func (h *Handler) DisconnectOrganization(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
+	httpserver.Respond(h.log, w, nil, http.StatusNoContent)
 }
 
 // HandleEvent handles slack events.
@@ -376,7 +376,7 @@ func (h *Handler) HandleEvent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	w.WriteHeader(http.StatusOK)
+	httpserver.Respond(h.log, w, nil, http.StatusNoContent)
 }
 
 // HandleCommand handles slack interaction commands.
@@ -441,7 +441,7 @@ func (h *Handler) HandleCommand(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		w.WriteHeader(http.StatusOK)
+		httpserver.Respond(h.log, w, nil, http.StatusNoContent)
 
 		return
 	}
@@ -474,7 +474,7 @@ func (h *Handler) HandleCommand(w http.ResponseWriter, r *http.Request) {
 	default:
 	}
 
-	w.WriteHeader(http.StatusOK)
+	httpserver.Respond(h.log, w, nil, http.StatusNoContent)
 }
 
 // sendEphemeralResponse sends an ephemeral response to a Slack interaction.

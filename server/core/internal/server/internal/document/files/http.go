@@ -114,7 +114,7 @@ func (h *Handler) UploadDocumentFile(w http.ResponseWriter, r *http.Request) {
 		h.log,
 		w,
 		nil,
-		http.StatusOK,
+		http.StatusCreated,
 		httpserver.LocationHeader(
 			fmt.Sprintf(h.fileLocationFormat, documentID, fileID),
 		),

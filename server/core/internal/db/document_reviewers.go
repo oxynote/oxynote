@@ -24,7 +24,7 @@ func (a *agent) FetchBranchReviewers(ctx context.Context, branchID xid.ID, organ
 			"fk_organization_id": organizationID,
 		}).MustSql()
 
-	var reviewers []document.BranchReviewer
+	reviewers := []document.BranchReviewer{}
 
 	if err := sqlx.SelectContext(ctx, a.sql, &reviewers, q, args...); err != nil {
 		return nil, err
@@ -127,10 +127,13 @@ func (a *agent) PromoteBranchApprovals(ctx context.Context, fromBranchID, toBran
 			return err
 		}
 
-		// Move currently_approved → previously_approved on the target branch.
+		// Fold currently_approved into previously_approved on the target
+		// branch. Assigning instead of folding would clear the history q1
+		// just kept these rows alive for, and the next promotion's q1 would
+		// then delete them.
 		q2, args2 := a.builder.Update("branch_reviewers").
 			SetMap(map[string]any{
-				"previously_approved": sq.Expr("currently_approved"),
+				"previously_approved": sq.Expr("previously_approved OR currently_approved"),
 				"currently_approved":  false,
 			}).
 			Where(sq.Eq{

@@ -3,9 +3,11 @@ package processor
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/guregu/null/v5"
+	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	"github.com/shopspring/decimal"
 )
 
@@ -39,6 +41,13 @@ func (uw *URLWatcher) Process(ctx context.Context, inp Input) (decimal.Decimal, 
 
 	watch, err := inp.ChangeDetection().FetchWatcher(ctx, uws.WatcherID)
 	if err != nil {
+		// a watcher removed on the changedetection.io side would otherwise
+		// fail this hook on every cycle forever; recreating it is what the
+		// reset path does anyway.
+		if errors.Is(err, webchange.ErrWatcherNotFound) {
+			return uw.Reset(ctx, inp)
+		}
+
 		return decimal.Zero, nil, fmt.Errorf("fetching url watcher: %w", err)
 	}
 

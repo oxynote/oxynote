@@ -114,7 +114,9 @@ func (a *agent) FetchMainBranchContent(ctx context.Context, docID xid.ID, organi
 		Where(sq.Eq{
 			"fk_document_id":     docID,
 			"fk_organization_id": organizationID,
-			"branch_name":        document.DefaultBranch,
+			// the flag, not the name: the name is user-facing and the
+			// document would read as contentless the moment it changed.
+			`"default"`: true,
 		}).
 		Limit(1).
 		MustSql()

@@ -8,6 +8,7 @@ import (
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
 	gogithub "github.com/google/go-github/v72/github"
+	"github.com/oxynote/oxynote/server/core/pkg/cryptoutil"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 )
 
@@ -78,6 +79,12 @@ func (o Options) Validate() error {
 
 	if o.InstallationSigningSecret == "" {
 		return errors.New("installation signing secret is required")
+	}
+
+	// the secret is an AES key; a wrong-length one boots fine and then fails
+	// every install, link and verify call with "invalid key size".
+	if err := cryptoutil.ValidateKey(o.InstallationSigningSecret); err != nil {
+		return fmt.Errorf("installation signing secret: %w", err)
 	}
 
 	return nil

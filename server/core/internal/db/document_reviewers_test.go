@@ -394,10 +394,10 @@ func Test_agent_PromoteBranchApprovals(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, res)
 
-		// users[0] never approved and is dropped; users[1] is demoted
-		// to previously approved and re-approves via the source branch;
-		// users[2] loses the stale previous approval; users[3] joins
-		// without an approval.
+		// users[0] never approved and is dropped; users[1] is demoted to
+		// previously approved and re-approves via the source branch;
+		// users[2] keeps the earlier approval that spared it from the
+		// cleanup; users[3] joins without an approval.
 		res, err = db.FetchBranchReviewers(context.Background(), target.BranchID, target.OrganizationID)
 		require.NoError(t, err)
 		assert.ElementsMatch(t, []document.BranchReviewer{
@@ -413,7 +413,7 @@ func Test_agent_PromoteBranchApprovals(t *testing.T) {
 				UserID:             users[2],
 				OrganizationID:     target.OrganizationID,
 				CurrentlyApproved:  false,
-				PreviouslyApproved: false,
+				PreviouslyApproved: true,
 			},
 			{
 				BranchID:           target.BranchID,

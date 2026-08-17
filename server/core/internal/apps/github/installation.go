@@ -2,17 +2,27 @@ package github
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"time"
 
 	"github.com/oxynote/oxynote/server/core/pkg/cryptoutil"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 )
 
 // githubHost is the GitHub host.
 const _githubHost = "github.com"
+
+// ErrInstallationStateExpired is returned when the installation state has
+// expired. A user who leaves the install page open long enough is a client
+// error, not a server fault worth paging anyone over.
+var ErrInstallationStateExpired = errutil.New(http.StatusBadRequest, "github.installation_state_expired", "installation state has expired")
+
+// ErrInvalidInstallationState is returned when the installation state cannot
+// be decrypted or decoded, which means it was tampered with or truncated.
+var ErrInvalidInstallationState = errutil.New(http.StatusBadRequest, "github.invalid_installation_state", "installation state is invalid")
 
 // _installationStateTTL is the time-to-live for the installation state.
 const _installationStateTTL = time.Minute * 15
@@ -69,17 +79,17 @@ func (m *Manager) VerifyInstallationState(state string) (*InstallationState, err
 
 	decrypted, err := cryptoutil.DecryptText(state, []byte(m.opt.InstallationSigningSecret))
 	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt installation state: %w", err)
+		return nil, ErrInvalidInstallationState
 	}
 
 	var is InstallationState
 
 	if err := json.Unmarshal([]byte(decrypted), &is); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal installation state: %w", err)
+		return nil, ErrInvalidInstallationState
 	}
 
 	if time.Since(is.CreatedAt) > _installationStateTTL {
-		return nil, errors.New("installation state has expired")
+		return nil, ErrInstallationStateExpired
 	}
 
 	return &is, nil

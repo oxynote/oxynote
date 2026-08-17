@@ -2,12 +2,9 @@ package processor
 
 import (
 	"fmt"
-	"regexp"
+	"strings"
 	"time"
 )
-
-// _mysqlMacroRe matches MySQL macro invocations: $__macroName(args...).
-var _mysqlMacroRe = regexp.MustCompile(`\$__(\w+)\(([^)]*)\)`)
 
 // ProcessMySQLQuery processes the query string to replace MySQL-specific
 // macros with appropriate SQL expressions.
@@ -34,50 +31,44 @@ func (tr TimeRange) ProcessMySQLQuery(q string) string {
 	// (e.g., $__timeGroupAlias("time", $__interval)).
 	q = tr.ProcessQuery(q)
 
-	q = _mysqlMacroRe.ReplaceAllStringFunc(q, func(match string) string {
-		submatch := _mysqlMacroRe.FindStringSubmatch(match)
-		if len(submatch) != _macroSubmatchCount {
-			return match
-		}
-
-		name := submatch[1]
-		args := parseMacroArgs(submatch[2])
+	return expandMacros(q, func(name string, args []string) (string, bool) {
+		// the macro helpers fall back to the invocation itself when the
+		// arguments do not fit, so the raw form is rebuilt for them.
+		match := _macroPrefix + name + "(" + strings.Join(args, ",") + ")"
 
 		switch name {
 		case _timeColumn, "timeEpoch":
-			return mysqlMacroTime(args, match)
+			return mysqlMacroTime(args, match), true
 		case "timeFilter":
-			return mysqlMacroTimeFilter(tr, args, match)
+			return mysqlMacroTimeFilter(tr, args, match), true
 		case "timeFrom":
-			return mysqlMacroTimeFrom(tr)
+			return mysqlMacroTimeFrom(tr), true
 		case "timeTo":
-			return mysqlMacroTimeTo(tr)
+			return mysqlMacroTimeTo(tr), true
 		case "timeGroup":
-			return mysqlMacroTimeGroup(args, match)
+			return mysqlMacroTimeGroup(args, match), true
 		case "timeGroupAlias":
-			return mysqlMacroTimeGroupAlias(args, match)
+			return mysqlMacroTimeGroupAlias(args, match), true
 		case "unixEpochFilter":
-			return pgMacroUnixEpochFilter(tr, args, match)
+			return pgMacroUnixEpochFilter(tr, args, match), true
 		case "unixEpochFrom":
-			return pgMacroUnixEpochFrom(tr)
+			return pgMacroUnixEpochFrom(tr), true
 		case "unixEpochTo":
-			return pgMacroUnixEpochTo(tr)
+			return pgMacroUnixEpochTo(tr), true
 		case "unixEpochNanoFilter":
-			return pgMacroUnixEpochNanoFilter(tr, args, match)
+			return pgMacroUnixEpochNanoFilter(tr, args, match), true
 		case "unixEpochNanoFrom":
-			return pgMacroUnixEpochNanoFrom(tr)
+			return pgMacroUnixEpochNanoFrom(tr), true
 		case "unixEpochNanoTo":
-			return pgMacroUnixEpochNanoTo(tr)
+			return pgMacroUnixEpochNanoTo(tr), true
 		case "unixEpochGroup":
-			return pgMacroUnixEpochGroup(args, match)
+			return pgMacroUnixEpochGroup(args, match), true
 		case "unixEpochGroupAlias":
-			return mysqlMacroUnixEpochGroupAlias(args, match)
+			return mysqlMacroUnixEpochGroupAlias(args, match), true
 		default:
-			return match
+			return "", false
 		}
 	})
-
-	return q
 }
 
 // $__time(dateColumn) / $__timeEpoch(dateColumn).

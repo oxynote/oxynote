@@ -13,6 +13,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
+	"github.com/oxynote/oxynote/server/core/pkg/logutil"
 	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 	"github.com/rs/xid"
 )
@@ -100,10 +101,17 @@ func (h *Handler) CreateDocumentComment(w http.ResponseWriter, r *http.Request) 
 		})
 	}
 
+	// the comment is already committed and announced; a failure from here
+	// on can only cost notifications, and answering with an error would
+	// have the client post the comment a second time.
 	maintainers, err := h.db.FetchDocumentMaintainers(r.Context(), documentID, session.ActiveOrganizationID)
 	if err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
+		logutil.Critical(h.log, err).Error(
+			"cannot fetch maintainers for a new comment notification",
+			slog.String("document_id", documentID.String()),
+		)
+
+		maintainers = nil
 	}
 
 	var userIDs []string
@@ -118,17 +126,19 @@ func (h *Handler) CreateDocumentComment(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	h.notifPub.PublishNotifications(
-		session.ActiveOrganizationID,
-		notification.NewDocumentNewCommentNotification(
-			session.UserID,
-			documentID,
-			c.ID,
-			c.AnchorBlockID,
-			c.BranchID,
-		),
-		userIDs...,
-	)
+	if len(userIDs) > 0 {
+		h.notifPub.PublishNotifications(
+			session.ActiveOrganizationID,
+			notification.NewDocumentNewCommentNotification(
+				session.UserID,
+				documentID,
+				c.ID,
+				c.AnchorBlockID,
+				c.BranchID,
+			),
+			userIDs...,
+		)
+	}
 
 	httpserver.Respond(
 		h.log,
@@ -333,6 +343,11 @@ func (h *Handler) UpdateDocumentComment(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if err := ui.Validate(); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
 	nc := c.ApplyUpdate(ui)
 
 	if err := h.db.UpdateDocumentComment(r.Context(), nc); err != nil {
@@ -400,6 +415,11 @@ func (h *Handler) UpdateDocumentCommentReply(w http.ResponseWriter, r *http.Requ
 	var ui commentCore.ReplyInput
 
 	if err := httpserver.DecodeJSON(r, &ui); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if err := ui.Validate(); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -590,7 +610,6 @@ func (h *Handler) DeleteDocumentComment(w http.ResponseWriter, r *http.Request) 
 		}
 
 		cct = ChangeTypeUpdated
-		c = &nc
 	} else {
 		if err := tx.DeleteDocumentComment(r.Context(), commentID, documentID, session.ActiveOrganizationID); err != nil {
 			httpserver.RespondError(h.log, w, err)
@@ -615,8 +634,8 @@ func (h *Handler) DeleteDocumentComment(w http.ResponseWriter, r *http.Request) 
 	httpserver.Respond(
 		h.log,
 		w,
-		c,
-		http.StatusOK,
+		nil,
+		http.StatusNoContent,
 	)
 }
 

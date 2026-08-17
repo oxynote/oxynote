@@ -10,6 +10,25 @@ import (
 	"io"
 )
 
+// KeySize is the key length EncryptText and DecryptText expect, in bytes.
+// AES itself also accepts 16 and 24, but pinning one size keeps every caller
+// on AES-256 instead of silently dropping to a weaker cipher.
+const KeySize = 32
+
+// ErrInvalidKeySize is returned when a key is not KeySize bytes long.
+var ErrInvalidKeySize = errors.New("key must be 32 bytes long")
+
+// ValidateKey checks whether the key can be used for encryption. Callers
+// validate their configured keys at boot, so a misconfigured deployment
+// fails to start rather than failing every encrypt call at runtime.
+func ValidateKey(key string) error {
+	if len(key) != KeySize {
+		return ErrInvalidKeySize
+	}
+
+	return nil
+}
+
 // EncryptText encrypts the text using the key.
 // Key must be 32 bytes long.
 // The result is a hex encoded string.

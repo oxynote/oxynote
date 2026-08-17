@@ -122,3 +122,25 @@ func (cui *CredentialsUpdateInput) UnmarshalJSON(data []byte) error {
 
 	return nil
 }
+
+// _columnScanRows caps how far column classification looks for a value that
+// says what a column holds.
+const _columnScanRows = 20
+
+// columnIsNumeric reports whether column i carries numbers, reading past the
+// leading NULLs. Classifying on the first row alone turns a column whose first
+// value happens to be NULL into a label, which drops the series from the chart
+// even though every later row carries a number.
+func columnIsNumeric(rows [][]any, i int, parse func(any) (float64, bool)) bool {
+	for r := 0; r < len(rows) && r < _columnScanRows; r++ {
+		if i >= len(rows[r]) || rows[r][i] == nil {
+			continue
+		}
+
+		_, ok := parse(rows[r][i])
+
+		return ok
+	}
+
+	return false
+}

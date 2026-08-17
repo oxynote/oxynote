@@ -117,7 +117,7 @@ func Test_Manager_VerifyInstallationState(t *testing.T) {
 			State: func(*testing.T) string {
 				return "not-a-state"
 			},
-			ExpectedErr: "failed to decrypt installation state",
+			ExpectedErr: "installation state is invalid",
 		},
 		"Non-JSON state payload fails unmarshalling": {
 			Configured: true,
@@ -127,7 +127,7 @@ func Test_Manager_VerifyInstallationState(t *testing.T) {
 
 				return state
 			},
-			ExpectedErr: "failed to unmarshal installation state",
+			ExpectedErr: "installation state is invalid",
 		},
 	}
 

@@ -432,7 +432,9 @@ func (a *agent) selectDocumentTree(b sq.SelectBuilder, organizationID string) sq
 		`db.protected AS "protected"`,
 		`documents.fk_parent_id AS "fk_parent_id"`,
 	).From("documents").
-		LeftJoin("document_branches db ON db.fk_document_id = documents.id AND db.branch_name = ?", document.DefaultBranch).
+		// joined on the flag rather than the name, which is user-facing:
+		// a renamed main branch would leave every row nameless.
+		LeftJoin(`document_branches db ON db.fk_document_id = documents.id AND db."default"`).
 		Where(sq.Eq{
 			"documents.fk_organization_id": organizationID,
 		}).

@@ -254,7 +254,7 @@ func Test_Handler_UploadDocumentFile(t *testing.T) {
 			Query:  "?id=f1&location=comment",
 			Checks: checks(
 				func(t *testing.T, _ *DBMock, _ *StorerMock, rec *httptest.ResponseRecorder) {
-					assert.Equal(t, http.StatusOK, rec.Code)
+					assert.Equal(t, http.StatusCreated, rec.Code)
 					assert.Zero(t, rec.Body.Len(), rec.Body.String())
 					assert.Equal(t, "loc/"+_documentID.String()+"/f1", rec.Header().Get("Location"))
 				},

@@ -2,6 +2,7 @@ package sqlutil
 
 import (
 	"context"
+	"regexp"
 	"time"
 
 	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
@@ -85,7 +86,7 @@ func NewHooks(
 	h.queriesDuration = fc.NewHistogramVec(
 		metricutil.Options{
 			Subsystem: h.dbName, //nolint:promlinter // cannot validate a variable
-			Name:      "database_queries_seconds_duration",
+			Name:      "database_queries_duration_seconds",
 			Help:      "Tracks the durations of database queries.",
 		},
 		[]string{
@@ -103,7 +104,7 @@ func (h *Hooks) Before(
 	_ ...any,
 ) (context.Context, error) {
 	h.queriesCounter.With(prometheus.Labels{
-		_queryLabel: query,
+		_queryLabel: normalizeQuery(query),
 	}).Inc()
 
 	return context.WithValue(ctx, timeKey, timeutil.Now()), nil
@@ -127,9 +128,20 @@ func (h *Hooks) After(
 	startedAt, ok := ctx.Value(timeKey).(time.Time)
 	if ok && time.Since(startedAt) > h.durationThreshold {
 		h.queriesDuration.With(prometheus.Labels{
-			_queryLabel: query,
+			_queryLabel: normalizeQuery(query),
 		}).Observe(time.Since(startedAt).Seconds())
 	}
 
 	return ctx, nil
+}
+
+// _placeholderListRe matches a run of two or more positional placeholders,
+// which is the one part of a squirrel query that varies with the data.
+var _placeholderListRe = regexp.MustCompile(`\$\d+(\s*,\s*\$\d+)+`)
+
+// normalizeQuery collapses the parts of a query that vary per call, so an IN
+// clause over a slice mints one label value instead of one per slice length.
+// Every squirrel query is otherwise constant-shaped.
+func normalizeQuery(query string) string {
+	return _placeholderListRe.ReplaceAllString(query, "$$?")
 }

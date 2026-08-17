@@ -58,7 +58,7 @@ func (h *Handler) HandleSlashCommand(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		w.WriteHeader(http.StatusOK)
+		httpserver.Respond(h.log, w, nil, http.StatusNoContent)
 	}
 }
 
@@ -81,7 +81,7 @@ func (h *Handler) handleLinkCommand(w http.ResponseWriter, r *http.Request, user
 			return
 		}
 
-		w.WriteHeader(http.StatusOK)
+		httpserver.Respond(h.log, w, nil, http.StatusNoContent)
 
 		return
 	}
@@ -103,7 +103,7 @@ func (h *Handler) handleLinkCommand(w http.ResponseWriter, r *http.Request, user
 			return
 		}
 
-		w.WriteHeader(http.StatusOK)
+		httpserver.Respond(h.log, w, nil, http.StatusNoContent)
 
 		return
 	}
@@ -120,7 +120,7 @@ func (h *Handler) handleLinkCommand(w http.ResponseWriter, r *http.Request, user
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
+	httpserver.Respond(h.log, w, nil, http.StatusNoContent)
 }
 
 // handleUnlinkCommand handles the /unlink slash command.
@@ -138,7 +138,7 @@ func (h *Handler) handleUnlinkCommand(w http.ResponseWriter, r *http.Request, us
 				return
 			}
 
-			w.WriteHeader(http.StatusOK)
+			httpserver.Respond(h.log, w, nil, http.StatusNoContent)
 
 			return
 		}
@@ -163,7 +163,7 @@ func (h *Handler) handleUnlinkCommand(w http.ResponseWriter, r *http.Request, us
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
+	httpserver.Respond(h.log, w, nil, http.StatusNoContent)
 }
 
 // FetchUserLink retrieves the user's Slack link settings.
@@ -239,7 +239,7 @@ func (h *Handler) DeleteUserLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httpserver.Respond(h.log, w, nil, http.StatusOK)
+	httpserver.Respond(h.log, w, nil, http.StatusNoContent)
 }
 
 // LinkUser handles the completion of the user linking flow.

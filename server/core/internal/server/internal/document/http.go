@@ -5,6 +5,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"slices"
 
 	"github.com/guregu/null/v5"
@@ -29,6 +30,9 @@ var ErrInvalidSearchQuery = errutil.New(http.StatusBadRequest, "document.invalid
 // ErrBranchMismatch is returned when the requested branch does not belong to
 // the document identified by the request path.
 var ErrBranchMismatch = errutil.New(http.StatusNotFound, "document.branch_mismatch", "branch does not belong to the document")
+
+// ErrDefaultBranchRename is returned when a rename targets the default branch.
+var ErrDefaultBranchRename = errutil.New(http.StatusBadRequest, "document.default_branch_rename", "the default branch cannot be renamed")
 
 // ErrInvalidDocumentParent is returned when a document would be moved under
 // itself or one of its own descendants.
@@ -231,6 +235,9 @@ func (h *Handler) RequestBranchReviewer(w http.ResponseWriter, r *http.Request) 
 		w,
 		nil,
 		http.StatusCreated,
+		// the reviewer is addressable only through the collection plus the
+		// user it belongs to, which is the same shape its delete takes.
+		httpserver.LocationHeader(r.URL.Path+"?userId="+url.QueryEscape(inp.UserID)),
 	)
 }
 
@@ -273,7 +280,7 @@ func (h *Handler) RemoveBranchReviewer(w http.ResponseWriter, r *http.Request) {
 		h.log,
 		w,
 		nil,
-		http.StatusOK,
+		http.StatusNoContent,
 	)
 }
 
@@ -576,6 +583,13 @@ func (h *Handler) UpdateDocumentBranch(w http.ResponseWriter, r *http.Request) {
 
 	if err := httpserver.DecodeJSON(r, &ui); err != nil {
 		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	// the main branch is found by name in the tree and content queries, and
+	// a rename would make the document look nameless and contentless.
+	if doc.Default && ui.Name.Valid && ui.Name.String != doc.BranchName {
+		httpserver.RespondError(h.log, w, ErrDefaultBranchRename)
 		return
 	}
 
@@ -1316,7 +1330,7 @@ func (h *Handler) DeleteDocumentBranch(w http.ResponseWriter, r *http.Request) {
 		h.log,
 		w,
 		nil,
-		http.StatusOK,
+		http.StatusNoContent,
 	)
 }
 

@@ -285,6 +285,9 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 		return
 	}
 
+	// the sender delivers on its own goroutines, so shutdown drains them.
+	closers = append([]io.Closer{emailSender}, closers...)
+
 	editClient := edit.NewClient(
 		http.DefaultClient,
 		buildinfo.Getenv("AUTH_REALTIME_URL"),

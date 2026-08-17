@@ -325,10 +325,12 @@ func Test_Handler_ConnectOrganization(t *testing.T) {
 			RawID:    "abc",
 			RespCode: http.StatusBadRequest,
 		},
+		// a tampered or truncated state is the caller's problem, not a
+		// server fault worth paging anyone over.
 		"Invalid installation state": {
 			DB:       &DBMock{},
 			RawState: "garbage",
-			RespCode: http.StatusInternalServerError,
+			RespCode: http.StatusBadRequest,
 		},
 		"State organization mismatch": {
 			DB:       &DBMock{},
@@ -366,7 +368,7 @@ func Test_Handler_ConnectOrganization(t *testing.T) {
 		"Successful connection": {
 			DB:       &DBMock{},
 			StateOrg: "org1",
-			RespCode: http.StatusOK,
+			RespCode: http.StatusNoContent,
 			Updated:  1,
 		},
 	}
@@ -449,7 +451,7 @@ func Test_Handler_HandleEvent(t *testing.T) {
 			DB:        &DBMock{},
 			EventType: "installation",
 			Payload:   `{"action":"created","installation":{"id":42}}`,
-			RespCode:  http.StatusOK,
+			RespCode:  http.StatusNoContent,
 			Inserted:  1,
 		},
 		"Installation creation insert error": {
@@ -467,7 +469,7 @@ func Test_Handler_HandleEvent(t *testing.T) {
 			DB:        &DBMock{},
 			EventType: "installation",
 			Payload:   `{"action":"deleted","installation":{"id":42}}`,
-			RespCode:  http.StatusOK,
+			RespCode:  http.StatusNoContent,
 			Deleted:   1,
 		},
 		"Installation deletion error": {
@@ -485,13 +487,13 @@ func Test_Handler_HandleEvent(t *testing.T) {
 			DB:        &DBMock{},
 			EventType: "installation",
 			Payload:   `{"action":"suspend","installation":{"id":42}}`,
-			RespCode:  http.StatusOK,
+			RespCode:  http.StatusNoContent,
 		},
 		"Ignored event type": {
 			DB:        &DBMock{},
 			EventType: "push",
 			Payload:   `{"ref":"refs/heads/main"}`,
-			RespCode:  http.StatusOK,
+			RespCode:  http.StatusNoContent,
 		},
 	}
 
@@ -556,7 +558,7 @@ func Test_Handler_DisconnectOrganization(t *testing.T) {
 		},
 		"Successful disconnection": {
 			DB:         &DBMock{},
-			RespCode:   http.StatusOK,
+			RespCode:   http.StatusNoContent,
 			Unassigned: 1,
 		},
 	}

@@ -33,6 +33,7 @@ func prepDocuments(t *testing.T, db *DB, count int, fn func(int, *document.Docum
 			Branch: document.Branch{
 				BranchID:     xid.New(),
 				BranchName:   document.DefaultBranch,
+				Default:      true,
 				DocumentName: "Test Document " + strconv.Itoa(i),
 				Icon:         "icon-test",
 				Content: document.RootBlock{
@@ -88,6 +89,7 @@ func prepDocuments(t *testing.T, db *DB, count int, fn func(int, *document.Docum
 				"content":            doc.Content,
 				"raw_content":        doc.RawContent,
 				"protected":          doc.Protected,
+				`"default"`:          doc.Default,
 				"created_at":         doc.CreatedAt,
 				"fk_created_by":      doc.CreatedBy,
 				"updated_at":         doc.UpdatedAt,

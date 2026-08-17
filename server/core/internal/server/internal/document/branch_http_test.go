@@ -1249,7 +1249,7 @@ func Test_Handler_DeleteDocumentBranch(t *testing.T) {
 					return 2, nil
 				},
 			},
-			RespCode: http.StatusOK,
+			RespCode: http.StatusNoContent,
 			Deleted:  1,
 		},
 	}

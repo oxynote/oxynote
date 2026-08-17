@@ -5,12 +5,17 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/guregu/null/v5"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
 )
+
+// ErrMissingContent is returned when a comment or reply carries no content.
+var ErrMissingContent = errutil.New(http.StatusBadRequest, "comment.missing_content", "comment content is required")
 
 // Comment represents a comment on a document.
 type Comment struct {
@@ -226,8 +231,29 @@ type Input struct {
 	BranchID xid.ID `json:"branchId"`
 }
 
+// Validate checks whether the input carries the content a comment cannot
+// exist without. The column is NOT NULL, so a missing body would otherwise
+// surface as an unmapped database error.
+func (inp Input) Validate() error {
+	if len(inp.Content) == 0 {
+		return ErrMissingContent
+	}
+
+	return nil
+}
+
 // ReplyInput is the input structure for a reply.
 type ReplyInput struct {
 	// Content is the content of the reply.
 	Content Content `json:"content"`
+}
+
+// Validate checks whether the input carries the content a reply cannot exist
+// without.
+func (inp ReplyInput) Validate() error {
+	if len(inp.Content) == 0 {
+		return ErrMissingContent
+	}
+
+	return nil
 }

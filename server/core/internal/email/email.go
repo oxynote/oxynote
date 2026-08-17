@@ -9,6 +9,9 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/cenkalti/backoff/v4"
+	"github.com/jellydator/xync"
+	"github.com/oxynote/oxynote/server/core/pkg/logutil"
 	"github.com/wneessen/go-mail"
 )
 
@@ -59,11 +62,21 @@ type Config struct {
 	FromAddress string
 }
 
+// _maxSendRetries caps the retries of one delivery.
+const _maxSendRetries = 3
+
+// _newBackoff creates the delivery retry strategy. Variable so tests can
+// substitute a faster one.
+var _newBackoff = func() backoff.BackOff {
+	return backoff.NewExponentialBackOff()
+}
+
 // Sender holds dependencies required for email sending.
 type Sender struct {
 	log    *slog.Logger
 	client client
 
+	supv      *xync.Supervisor
 	fromEmail string
 }
 
@@ -73,6 +86,7 @@ type Sender struct {
 func NewSender(log *slog.Logger, cfg Config) (*Sender, error) {
 	sender := &Sender{
 		log:       log,
+		supv:      xync.NewSupervisor(),
 		fromEmail: cfg.FromAddress,
 	}
 
@@ -184,12 +198,32 @@ func (s *Sender) send(toEmail, subject string, tmpl Template, args map[string]st
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), _sendTimeout)
+	// the caller is an HTTP handler answering auth-realtime, so the delivery
+	// runs on its own: a hanging SMTP server would otherwise stall a signup
+	// or a password reset for the full send timeout.
+	s.supv.Go(func(ctx context.Context) {
+		s.deliver(ctx, msg, toEmail, subject, tmpl)
+	})
+}
+
+// deliver dials the SMTP server and sends the message, retrying a transient
+// failure. A password reset lost to a blip is a user who cannot get back in,
+// so the last failure is reported rather than merely logged.
+func (s *Sender) deliver(ctx context.Context, msg *mail.Msg, toEmail, subject string, tmpl Template) {
+	ctx, cancel := context.WithTimeout(ctx, _sendTimeout)
 	defer cancel()
 
-	err = s.client.DialAndSendWithContext(ctx, msg)
+	err := backoff.Retry(
+		func() error {
+			return s.client.DialAndSendWithContext(ctx, msg)
+		},
+		backoff.WithMaxRetries(
+			backoff.WithContext(_newBackoff(), ctx),
+			_maxSendRetries,
+		),
+	)
 	if err != nil {
-		s.log.Error(
+		logutil.Critical(s.log, err).Error(
 			"cannot send an email",
 			slog.String("from", s.fromEmail),
 			slog.String("to", toEmail),
@@ -307,4 +341,11 @@ type client interface {
 	// DialAndSendWithContext should establish a connection to the SMTP
 	// server and send the provided messages.
 	DialAndSendWithContext(ctx context.Context, msgs ...*mail.Msg) error
+}
+
+// Close waits for the deliveries still in flight and releases the sender.
+func (s *Sender) Close() error {
+	s.supv.CloseAndWait()
+
+	return nil
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/search"
+	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 	"github.com/rs/xid"
 )
 
@@ -50,6 +51,19 @@ const (
 	NameUpdateBlockAttrs Name = "update_block_attrs"
 	NameDeleteBlock      Name = "delete_block"
 )
+
+// IsDestructive reports whether the named tool removes content. These are
+// confirmed every time, even inside a turn the user auto-approved: their tool
+// descriptions promise as much, and an approve-all meant for text edits is not
+// consent to delete a document.
+func IsDestructive(name Name) bool {
+	switch name {
+	case NameDeleteDocument, NameDeleteBlock:
+		return true
+	default:
+		return false
+	}
+}
 
 // IsWrite reports whether the named tool requires user confirmation
 // before execution. Unknown names default to false (treated as a
@@ -106,7 +120,10 @@ func IsValid(name Name) bool {
 // db package's agent satisfies it.
 //
 //go:generate ../../../scripts/codegen/mock -t both DB db
+//nolint:interfacebloat // the list is exactly what the tools call, and splitting it by nothing but count would only hide that
 type DB interface {
+	sqlutil.DB
+
 	// FetchDocumentTree returns all documents for the org as a
 	// nested summary tree (sort_index order). Used by
 	// list_documents.
@@ -137,6 +154,11 @@ type DB interface {
 	// of any document the assistant creates on their behalf.
 	UpsertDocumentMaintainers(ctx context.Context, documentID xid.ID, organizationID string, maintainerIDs []string) error
 
+	// InsertDocumentSearchJob should queue the search index update for a
+	// document. Used by create_document, whose document would otherwise
+	// stay unindexed until its first edit.
+	InsertDocumentSearchJob(ctx context.Context, diff search.BlocksDifference) error
+
 	// DeleteDocument removes a document. Used by delete_document.
 	DeleteDocument(ctx context.Context, id xid.ID, organizationID string) error
 
@@ -153,6 +175,25 @@ type DB interface {
 	// of id would create a cycle in the document tree. Used by
 	// move_document to reject self and descendant parents.
 	CheckDocumentCycle(ctx context.Context, id, parentID xid.ID, organizationID string) (bool, error)
+}
+
+// Tx is the transactional half of DB, so a tool whose write spans tables can
+// commit or abandon all of it at once.
+//
+//go:generate ../../../scripts/codegen/mock -t both Tx tx
+type Tx interface {
+	sqlutil.Tx
+
+	// InsertDocument should create a new document. Used by create_document.
+	InsertDocument(ctx context.Context, doc document.Document) error
+
+	// UpsertDocumentMaintainers should add the given user ids to a
+	// document's maintainer set. Used by create_document.
+	UpsertDocumentMaintainers(ctx context.Context, documentID xid.ID, organizationID string, maintainerIDs []string) error
+
+	// InsertDocumentSearchJob should queue the search index update for a
+	// document. Used by create_document.
+	InsertDocumentSearchJob(ctx context.Context, diff search.BlocksDifference) error
 }
 
 // Searcher is the full-text search surface search_documents uses.

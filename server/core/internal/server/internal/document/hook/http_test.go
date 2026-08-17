@@ -685,7 +685,7 @@ func Test_Handler_DeleteDocumentHook(t *testing.T) {
 					return scheduledHook(hookCore.TypeScheduledReminder), nil
 				},
 			},
-			RespCode: http.StatusOK,
+			RespCode: http.StatusNoContent,
 			Checks:   checks(wasDeleteCalled(1)),
 		},
 	}

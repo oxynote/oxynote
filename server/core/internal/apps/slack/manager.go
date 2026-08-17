@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/internal/notification/interpreter"
+	"github.com/oxynote/oxynote/server/core/pkg/cryptoutil"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	goslack "github.com/slack-go/slack"
@@ -70,7 +73,22 @@ func (o Options) Validate() error {
 		return errors.New("installation signing secret is required")
 	}
 
+	// the secret is an AES key; a wrong-length one boots fine and then fails
+	// every install, link and verify call with "invalid key size".
+	if err := cryptoutil.ValidateKey(o.InstallationSigningSecret); err != nil {
+		return fmt.Errorf("installation signing secret: %w", err)
+	}
+
 	return nil
+}
+
+// _maxNotificationRetries caps the retries of one Slack delivery.
+const _maxNotificationRetries = 3
+
+// _newBackoff creates the delivery retry strategy. Variable so tests can
+// substitute a faster one.
+var _newBackoff = func() backoff.BackOff {
+	return backoff.NewExponentialBackOff()
 }
 
 // Manager represents a Slack App manager for handling Slack integrations.
@@ -170,10 +188,24 @@ func (m *Manager) ProcessNotification(ctx context.Context, n notification.Notifi
 		return
 	}
 
-	_, _, err = client.PostMessageContext(
-		ctx,
-		ul.SlackUserID,
-		goslack.MsgOptionText(msg.Text, false),
+	// the notification is retried on its way into the database, so a
+	// transient Slack outage should not be the one hop that drops it. A
+	// final failure is still swallowed: the notification exists either way
+	// and the DM is the lesser copy of it.
+	err = backoff.Retry(
+		func() error {
+			_, _, perr := client.PostMessageContext(
+				ctx,
+				ul.SlackUserID,
+				goslack.MsgOptionText(msg.Text, false),
+			)
+
+			return perr
+		},
+		backoff.WithMaxRetries(
+			backoff.WithContext(_newBackoff(), ctx),
+			_maxNotificationRetries,
+		),
 	)
 	if err != nil {
 		m.log.Error(

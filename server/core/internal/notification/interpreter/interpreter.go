@@ -84,12 +84,12 @@ func (i *Interpreter) interpretDocumentReviewRequestNotification(ctx context.Con
 
 // interpretDocumentHookTriggeredNotification interprets a document hook triggered notification.
 func (i *Interpreter) interpretDocumentHookTriggeredNotification(ctx context.Context, n notification.Notification) (*Message, error) {
-	tp, ok := n.Metadata["type"].(hook.Type)
+	tp, ok := metaHookType(n)
 	if !ok {
 		return nil, ErrInvalidNotificationMetadata
 	}
 
-	blockID, ok := n.Metadata["blockId"].(null.String)
+	blockID, ok := metaNullString(n, "blockId")
 	if !ok {
 		return nil, ErrInvalidNotificationMetadata
 	}
@@ -135,7 +135,7 @@ func (i *Interpreter) interpretDocumentNewCommentNotification(ctx context.Contex
 		return nil, ErrInvalidNotificationMetadata
 	}
 
-	anchorBlockID, ok := n.Metadata["anchorBlockId"].(null.String)
+	anchorBlockID, ok := metaNullString(n, "anchorBlockId")
 	if !ok {
 		return nil, ErrInvalidNotificationMetadata
 	}
@@ -181,7 +181,7 @@ func (i *Interpreter) interpretDocumentNewCommentReplyNotification(ctx context.C
 		return nil, ErrInvalidNotificationMetadata
 	}
 
-	anchorBlockID, ok := n.Metadata["anchorBlockId"].(null.String)
+	anchorBlockID, ok := metaNullString(n, "anchorBlockId")
 	if !ok {
 		return nil, ErrInvalidNotificationMetadata
 	}
@@ -240,6 +240,44 @@ type DB interface {
 type Formatter interface {
 	// Link should render a link with the given URL and display text.
 	Link(url, text string) string
+}
+
+// metaHookType extracts the hook type from notification metadata. Like every
+// metadata reader here it accepts both the typed value the in-memory fan-out
+// carries and the plain string a stored notification decodes into.
+func metaHookType(n notification.Notification) (hook.Type, bool) {
+	switch v := n.Metadata["type"].(type) {
+	case hook.Type:
+		return v, true
+	case string:
+		tp := hook.Type(v)
+		if tp.Validate() != nil {
+			return "", false
+		}
+
+		return tp, true
+	}
+
+	return "", false
+}
+
+// metaNullString extracts an optional string from notification metadata. A
+// null.String survives the fan-out as itself, decodes from JSON as a string,
+// and is absent altogether when it was never set.
+func metaNullString(n notification.Notification, key string) (null.String, bool) {
+	value, ok := n.Metadata[key]
+	if !ok || value == nil {
+		return null.String{}, true
+	}
+
+	switch v := value.(type) {
+	case null.String:
+		return v, true
+	case string:
+		return null.StringFrom(v), true
+	}
+
+	return null.String{}, false
 }
 
 // metaBranchID extracts the branch ID from notification metadata.

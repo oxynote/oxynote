@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -11,6 +12,7 @@ import (
 	"testing"
 
 	gogithub "github.com/google/go-github/v72/github"
+	"github.com/oxynote/oxynote/server/core/pkg/cryptoutil"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
@@ -117,6 +119,12 @@ func Test_Options_Validate(t *testing.T) {
 		"Missing installation signing secret": {
 			Mutate: func(o *Options) { o.InstallationSigningSecret = "" },
 			Err:    errors.New("installation signing secret is required"),
+		},
+		// the secret is an AES key: a wrong-length one used to boot fine and
+		// then fail every install and verify call.
+		"Wrong-length installation signing secret": {
+			Mutate: func(o *Options) { o.InstallationSigningSecret = "too-short" },
+			Err:    fmt.Errorf("installation signing secret: %w", cryptoutil.ErrInvalidKeySize),
 		},
 	}
 

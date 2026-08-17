@@ -81,16 +81,29 @@ func (ciw *ContainerImageWatcher) Reset(ctx context.Context, inp Input) (decimal
 		ctx,
 		ciw.Image,
 	)
-	if err != nil {
-		return decimal.Zero, nil, err
+
+	switch {
+	case err == nil:
+		ciws.Status = ContainerImageWatcherStatusActive
+	case errors.Is(err, registry.ErrUnauthorized):
+		// Process records this as a status rather than an error; refusing to
+		// create the hook here would make a currently-unauthorized image
+		// impossible to watch at all, even though the status is exactly what
+		// tells the user why.
+		ciws.Status = ContainerImageWatcherStatusUnauthorized
+	default:
+		return decimal.Zero, nil, fmt.Errorf("fetching container image digest: %w", err)
 	}
 
-	ciws.Status = ContainerImageWatcherStatusActive
 	ciws.Digest = digest
 
 	state, err := json.Marshal(ciws)
 	if err != nil {
-		return decimal.Zero, nil, err
+		return decimal.Zero, nil, fmt.Errorf("marshaling container image watcher state: %w", err)
+	}
+
+	if ciws.Status == ContainerImageWatcherStatusUnauthorized {
+		return decimal.Zero, state, nil
 	}
 
 	return _fullScore, state, nil

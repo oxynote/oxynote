@@ -385,10 +385,12 @@ func Test_Handler_ConnectOrganization(t *testing.T) {
 			RawState: "-",
 			RespCode: http.StatusBadRequest,
 		},
+		// a tampered or truncated state is the caller's problem, not a
+		// server fault worth paging anyone over.
 		"Invalid installation state": {
 			DB:       &DBMock{},
 			RawState: "garbage",
-			RespCode: http.StatusInternalServerError,
+			RespCode: http.StatusBadRequest,
 		},
 		"External state organization mismatch": {
 			DB:       &DBMock{},
@@ -438,7 +440,7 @@ func Test_Handler_ConnectOrganization(t *testing.T) {
 				},
 			},
 			StateFor: "internal",
-			RespCode: http.StatusOK,
+			RespCode: http.StatusNoContent,
 			Updated:  1,
 		},
 	}
@@ -590,7 +592,7 @@ func Test_Handler_DisconnectOrganization(t *testing.T) {
 					return connectedApp(), nil
 				},
 			},
-			RespCode:   http.StatusOK,
+			RespCode:   http.StatusNoContent,
 			Unassigned: 1,
 		},
 	}
@@ -641,7 +643,7 @@ func Test_Handler_HandleEvent(t *testing.T) {
 		"App uninstalled": {
 			DB:       &DBMock{},
 			Body:     `{"type":"event_callback","team_id":"team1","event":{"type":"app_uninstalled"}}`,
-			RespCode: http.StatusOK,
+			RespCode: http.StatusNoContent,
 			Deleted:  1,
 		},
 		"App uninstall deletion error": {
@@ -661,7 +663,7 @@ func Test_Handler_HandleEvent(t *testing.T) {
 				},
 			},
 			Body:     `{"type":"event_callback","team_id":"team1","event":{"type":"im_open","user":"slack-u1","channel":"chan1"}}`,
-			RespCode: http.StatusOK,
+			RespCode: http.StatusNoContent,
 		},
 		"Channel open app lookup error": {
 			DB: &DBMock{
@@ -675,7 +677,7 @@ func Test_Handler_HandleEvent(t *testing.T) {
 		"Ignored event type": {
 			DB:       &DBMock{},
 			Body:     `{"type":"event_callback","team_id":"team1","event":{"type":"reaction_added"}}`,
-			RespCode: http.StatusOK,
+			RespCode: http.StatusNoContent,
 		},
 	}
 
@@ -755,7 +757,7 @@ func Test_Handler_HandleCommand(t *testing.T) {
 				},
 			},
 			Payload:  interaction("view_submission"),
-			RespCode: http.StatusOK,
+			RespCode: http.StatusNoContent,
 			Inserted: 1,
 			Posted:   1,
 		},
@@ -766,7 +768,7 @@ func Test_Handler_HandleCommand(t *testing.T) {
 				},
 			},
 			Payload:  interaction("shortcut"),
-			RespCode: http.StatusOK,
+			RespCode: http.StatusNoContent,
 		},
 	}
 
@@ -818,7 +820,7 @@ func Test_Handler_HandleSlashCommand(t *testing.T) {
 		"Unknown command sends ephemeral response": {
 			DB:       &DBMock{},
 			Command:  "/bogus",
-			RespCode: http.StatusOK,
+			RespCode: http.StatusNoContent,
 			Hits:     1,
 		},
 		"Link with app lookup error": {
@@ -837,7 +839,7 @@ func Test_Handler_HandleSlashCommand(t *testing.T) {
 				},
 			},
 			Command:  _linkCommand,
-			RespCode: http.StatusOK,
+			RespCode: http.StatusNoContent,
 			Hits:     1,
 		},
 		"Link with lookup error on user link": {
@@ -862,7 +864,7 @@ func Test_Handler_HandleSlashCommand(t *testing.T) {
 				},
 			},
 			Command:  _linkCommand,
-			RespCode: http.StatusOK,
+			RespCode: http.StatusNoContent,
 			Hits:     1,
 		},
 		"Successful link invitation": {
@@ -875,7 +877,7 @@ func Test_Handler_HandleSlashCommand(t *testing.T) {
 				},
 			},
 			Command:  _linkCommand,
-			RespCode: http.StatusOK,
+			RespCode: http.StatusNoContent,
 			Hits:     1,
 		},
 		"Unlink when not linked": {
@@ -885,7 +887,7 @@ func Test_Handler_HandleSlashCommand(t *testing.T) {
 				},
 			},
 			Command:  _unlinkCommand,
-			RespCode: http.StatusOK,
+			RespCode: http.StatusNoContent,
 			Hits:     1,
 		},
 		"Unlink with lookup error": {
@@ -917,7 +919,7 @@ func Test_Handler_HandleSlashCommand(t *testing.T) {
 				},
 			},
 			Command:  _unlinkCommand,
-			RespCode: http.StatusOK,
+			RespCode: http.StatusNoContent,
 			Hits:     1,
 			Deleted:  1,
 		},
@@ -1139,7 +1141,7 @@ func Test_Handler_DeleteUserLink(t *testing.T) {
 					return userLink(), nil
 				},
 			},
-			RespCode: http.StatusOK,
+			RespCode: http.StatusNoContent,
 			Deleted:  1,
 		},
 	}

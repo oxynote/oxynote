@@ -5,11 +5,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"time"
 )
+
+// ErrWatcherNotFound is returned when the watcher no longer exists on the
+// changedetection.io side, which a caller can recover from by creating it
+// again rather than failing forever.
+var ErrWatcherNotFound = errors.New("watcher not found")
 
 // Client is a client for the changedetection.io API.
 type Client struct {
@@ -43,6 +49,10 @@ func (c *Client) FetchWatcher(ctx context.Context, uuid string) (*Watch, error) 
 		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
 	defer resp.Body.Close() //nolint:errcheck // error provides no meaningful info
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrWatcherNotFound
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, c.parseErrorResponse(resp)

@@ -53,7 +53,7 @@ func (a *agent) FetchSlackMessages(ctx context.Context, organizationID string) (
 		OrderBy("created_at DESC").
 		MustSql()
 
-	var messages []slack.Message
+	messages := []slack.Message{}
 
 	if err := sqlx.SelectContext(ctx, a.sql, &messages, q, args...); err != nil {
 		return nil, err

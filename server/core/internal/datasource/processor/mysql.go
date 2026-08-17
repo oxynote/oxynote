@@ -585,8 +585,6 @@ func (mqr *MySQLQueryResult) identifyColumns() (timeIdx int, valueIdxs, labelIdx
 		return timeIdx, valueIdxs, labelIdxs
 	}
 
-	firstRow := mqr.Rows[0]
-
 	for i := range mqr.Columns {
 		if i == timeIdx {
 			continue
@@ -605,13 +603,11 @@ func (mqr *MySQLQueryResult) identifyColumns() (timeIdx int, valueIdxs, labelIdx
 		}
 
 		// without the declared types — a result assembled by hand rather
-		// than scanned — the value's own shape is all there is to go on.
-		if i < len(firstRow) {
-			if _, ok := mysqlParseNumericValue(firstRow[i]); ok {
-				valueIdxs = append(valueIdxs, i)
+		// than scanned — the values' own shape is all there is to go on.
+		if columnIsNumeric(mqr.Rows, i, mysqlParseNumericValue) {
+			valueIdxs = append(valueIdxs, i)
 
-				continue
-			}
+			continue
 		}
 
 		labelIdxs = append(labelIdxs, i)

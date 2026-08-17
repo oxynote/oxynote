@@ -65,8 +65,18 @@ func Test_Client_FetchWatcher(t *testing.T) {
 		Status        int
 		Body          string
 		ExpectErr     bool
+		ExpectedErr   error
 		ExpectedWatch *Watch
 	}{
+		// a watcher deleted on the changedetection.io side is recoverable —
+		// the caller recreates it — so it gets a sentinel of its own instead
+		// of the generic api error.
+		"Missing watcher reports the sentinel": {
+			Status:      http.StatusNotFound,
+			Body:        `{"detail": "not found"}`,
+			ExpectErr:   true,
+			ExpectedErr: ErrWatcherNotFound,
+		},
 		"Watch without errors is reachable": {
 			Status: http.StatusOK,
 			Body:   `{"url": "https://example.com", "last_changed": 1700000000, "last_error": false}`,
@@ -147,6 +157,10 @@ func Test_Client_FetchWatcher(t *testing.T) {
 
 			if tc.ExpectErr {
 				require.Error(t, err)
+
+				if tc.ExpectedErr != nil {
+					assert.Equal(t, tc.ExpectedErr, err)
+				}
 
 				return
 			}

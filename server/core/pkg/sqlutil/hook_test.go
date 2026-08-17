@@ -90,3 +90,39 @@ func Test_Hooks_After(t *testing.T) {
 
 	assert.Len(t, hv.WithCalls(), 1)
 }
+
+func Test_normalizeQuery(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Query    string
+		Expected string
+	}{
+		"Constant query is unchanged": {
+			Query:    "SELECT id FROM items WHERE id = $1",
+			Expected: "SELECT id FROM items WHERE id = $1",
+		},
+		// each slice length would otherwise mint its own label value, and
+		// with it its own histogram series.
+		"Placeholder list collapses": {
+			Query:    "SELECT id FROM items WHERE id IN ($1,$2,$3)",
+			Expected: "SELECT id FROM items WHERE id IN ($?)",
+		},
+		"Spaced placeholder list collapses": {
+			Query:    "SELECT id FROM items WHERE id IN ($1, $2)",
+			Expected: "SELECT id FROM items WHERE id IN ($?)",
+		},
+		"Lists collapse independently of the rest": {
+			Query:    "SELECT id FROM items WHERE org = $1 AND id IN ($2, $3, $4)",
+			Expected: "SELECT id FROM items WHERE org = $1 AND id IN ($?)",
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Expected, normalizeQuery(c.Query))
+		})
+	}
+}

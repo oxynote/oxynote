@@ -136,7 +136,9 @@ func Delete(blockUID string) Operation {
 }
 
 // SetName builds an operation that updates the document's display
-// name. Empty name leaves the document title empty.
+// name. An empty name is omitted from the wire form, so it leaves the
+// title as it is rather than clearing it — callers that mean to clear a
+// title need a wire field that can carry the difference.
 func SetName(name string) Operation {
 	return func() (wireOp, error) {
 		return wireOp{Kind: "set_name", Name: name}, nil

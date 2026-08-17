@@ -263,7 +263,7 @@ func (h *Handler) ConnectOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
+	httpserver.Respond(h.log, w, nil, http.StatusNoContent)
 }
 
 // HandleEvent handles incoming Github events.
@@ -301,7 +301,7 @@ func (h *Handler) HandleEvent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	w.WriteHeader(http.StatusOK)
+	httpserver.Respond(h.log, w, nil, http.StatusNoContent)
 }
 
 // FetchRepositories retrieves Github repositories files.
@@ -412,7 +412,7 @@ func (h *Handler) DisconnectOrganization(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
+	httpserver.Respond(h.log, w, nil, http.StatusNoContent)
 }
 
 // FetchRepositoryTree retrieves Github repository files.

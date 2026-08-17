@@ -260,7 +260,7 @@ func Test_Interpreter_interpretDocumentHookTriggeredNotification(t *testing.T) {
 				Code: notification.NotificationDocumentHookTriggered,
 				Metadata: notification.Metadata{
 					"type":    hook.TypeScheduledReminder,
-					"blockId": "not-a-null-string",
+					"blockId": 42,
 				},
 			}),
 			Err: ErrInvalidNotificationMetadata,
@@ -320,6 +320,23 @@ func Test_Interpreter_interpretDocumentHookTriggeredNotification(t *testing.T) {
 			)),
 			Result: &Message{
 				Text: fmt.Sprintf("<%s|My Doc> may be outdated — Scheduled Reminder", _testDocURL),
+			},
+		},
+		// a stored notification decodes into plain strings; before the
+		// readers tolerated both forms, every one of these failed.
+		"Successful interpretation of a stored notification": {
+			DB: stubDB(),
+			N: stubNotification(notification.Core{
+				Code: notification.NotificationDocumentHookTriggered,
+				Metadata: notification.Metadata{
+					"type":       string(hook.TypeScheduledReminder),
+					"blockId":    "blk1",
+					"branchId":   _testBranchID.String(),
+					"documentId": _testDocID.String(),
+				},
+			}),
+			Result: &Message{
+				Text: fmt.Sprintf("<%s#blk1|a block in My Doc> may be outdated — Scheduled Reminder", _testDocURL),
 			},
 		},
 		"Successful interpretation with block": {

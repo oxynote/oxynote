@@ -652,11 +652,37 @@ func Test_session_dispatchTools(t *testing.T) {
 		s.autoApproveTurn = true
 
 		results := s.dispatchTools(context.Background(), []anthropic.ContentBlockParamUnion{
-			toolUseBlock("t1", "delete_block", `{"document_id":"not-an-xid","block_uid":"b"}`),
+			toolUseBlock("t1", "rename_document", `{"document_id":"not-an-xid","name":"x"}`),
 		})
 
 		require.Len(t, results, 1)
 		assert.NotContains(t, writtenTypes(writer), "confirm_request")
+	})
+
+	// the delete tools tell the model and the user that they are always
+	// confirmed, so an approve-all earlier in the turn cannot cover them.
+	t.Run("Auto-approve still prompts for a delete", func(t *testing.T) {
+		t.Parallel()
+
+		var s *session
+
+		writer := &protocolMock.SessionWriter{
+			WriteJSONFunc: func(_ context.Context, msg any) {
+				if req, ok := msg.(protocol.ConfirmRequest); ok {
+					s.deliverConfirmResponse(req.TurnID, false, false)
+				}
+			},
+		}
+
+		s = newTestSession(nil, writer, &toolsMock.DB{}, nil, nil)
+		s.autoApproveTurn = true
+
+		results := s.dispatchTools(context.Background(), []anthropic.ContentBlockParamUnion{
+			toolUseBlock("t1", "delete_block", `{"document_id":"not-an-xid","block_uid":"b"}`),
+		})
+
+		require.Len(t, results, 1)
+		assert.Contains(t, results[0].OfToolResult.Content[0].OfText.Text, "user declined")
 	})
 
 	t.Run("Non-tool blocks are ignored", func(t *testing.T) {

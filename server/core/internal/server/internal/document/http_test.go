@@ -504,7 +504,7 @@ func Test_Handler_RemoveBranchReviewer(t *testing.T) {
 		"Successful removal": {
 			DB:        &DBMock{},
 			Query:     "?userId=u2",
-			RespCode:  http.StatusOK,
+			RespCode:  http.StatusNoContent,
 			Deleted:   1,
 			Reviewers: 1,
 		},
@@ -1170,6 +1170,7 @@ func Test_Handler_UpdateDocumentBranch(t *testing.T) {
 		DB        *DBMock
 		NoSession bool
 		Body      string
+		WantName  string
 		RespCode  int
 		Updated   int
 		Metadata  int
@@ -1201,7 +1202,7 @@ func Test_Handler_UpdateDocumentBranch(t *testing.T) {
 		"Metadata update error": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
-					return storedDoc(), nil
+					return branchDoc(_branchID), nil
 				},
 				UpdateDocumentBranchMetadataFunc: func(context.Context, documentCore.Document) error {
 					return errors.New("boom")
@@ -1211,13 +1212,38 @@ func Test_Handler_UpdateDocumentBranch(t *testing.T) {
 			RespCode: http.StatusInternalServerError,
 			Updated:  1,
 		},
-		"Successful update": {
+		// the main branch is found by its flag in the tree and content
+		// queries, but its name is what the user sees; renaming it would
+		// leave the document looking nameless.
+		"Renaming the default branch is rejected": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
 					return storedDoc(), nil
 				},
 			},
 			Body:     validBody,
+			RespCode: http.StatusBadRequest,
+		},
+		"Protecting the default branch is allowed": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
+			},
+			Body:     `{"protected":true}`,
+			WantName: documentCore.DefaultBranch,
+			RespCode: http.StatusOK,
+			Updated:  1,
+			Metadata: 1,
+		},
+		"Successful update": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return branchDoc(_branchID), nil
+				},
+			},
+			Body:     validBody,
+			WantName: "Renamed",
 			RespCode: http.StatusOK,
 			Updated:  1,
 			Metadata: 1,
@@ -1239,8 +1265,10 @@ func Test_Handler_UpdateDocumentBranch(t *testing.T) {
 			assert.Equal(t, c.Metadata, cnt.metadata)
 
 			if c.RespCode == http.StatusOK {
-				assert.Equal(t, "Renamed", c.DB.UpdateDocumentBranchMetadataCalls()[0].Doc.BranchName)
-				assert.True(t, c.DB.UpdateDocumentBranchMetadataCalls()[0].Doc.Protected)
+				ff := c.DB.UpdateDocumentBranchMetadataCalls()
+				require.NotEmpty(t, ff)
+				assert.Equal(t, c.WantName, ff[0].Doc.BranchName)
+				assert.True(t, ff[0].Doc.Protected)
 			}
 		})
 	}

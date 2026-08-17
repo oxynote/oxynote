@@ -107,7 +107,7 @@ func (a *agent) FetchDataSources(ctx context.Context, organizationID string) ([]
 		OrderBy("created_at DESC").
 		MustSql()
 
-	var sources []datasource.DataSource
+	sources := []datasource.DataSource{}
 
 	if err := sqlx.SelectContext(ctx, a.sql, &sources, q, args...); err != nil {
 		return nil, err

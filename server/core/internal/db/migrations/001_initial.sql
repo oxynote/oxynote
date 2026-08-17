@@ -284,4 +284,3 @@ DROP TABLE organizations;
 DROP TABLE user_verifications;
 DROP TABLE user_accounts;
 DROP TABLE users;
-DROP EXTENSION IF EXISTS vector;

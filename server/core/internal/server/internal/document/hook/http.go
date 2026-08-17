@@ -277,8 +277,8 @@ func (h *Handler) DeleteDocumentHook(w http.ResponseWriter, r *http.Request) {
 	httpserver.Respond(
 		h.log,
 		w,
-		hk,
-		http.StatusOK,
+		nil,
+		http.StatusNoContent,
 	)
 }
 

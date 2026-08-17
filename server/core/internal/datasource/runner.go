@@ -41,8 +41,9 @@ func (r *Runner) TestConnection(ctx context.Context) (processor.ConnectionStatus
 	return r.runner.TestConnection(ctx)
 }
 
-// Prometheus returns a prometheus client or an error in case data source is not of type prometheus.
-// The boolean return value indicates whether the data source status has changed.
+// Prometheus returns a prometheus client, along with the status its
+// connection test reported, or an error when the data source is not of type
+// prometheus.
 func (r *Runner) Prometheus(ctx context.Context) (Prometheus, processor.ConnectionStatus, error) {
 	if r.Type != TypePrometheus {
 		return nil, "", errutil.ErrNotFound
@@ -60,8 +61,9 @@ func (r *Runner) Prometheus(ctx context.Context) (Prometheus, processor.Connecti
 	return r.runner.(*processor.Prometheus), cs, nil //nolint:forcetypeassert // the type is static
 }
 
-// PostgreSQL returns a postgresql client or an error in case data source is not of type postgresql.
-// The boolean return value indicates whether the data source status has changed.
+// PostgreSQL returns a postgresql client, along with the status its
+// connection test reported, or an error when the data source is not of that
+// type.
 func (r *Runner) PostgreSQL(ctx context.Context) (PostgreSQL, processor.ConnectionStatus, error) {
 	if r.Type != TypePostgreSQL {
 		return nil, "", errutil.ErrNotFound

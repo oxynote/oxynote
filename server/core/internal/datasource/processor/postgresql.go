@@ -128,9 +128,17 @@ func (p *PostgreSQL) Metadata(ctx context.Context) (*SQLMetadataResult, error) {
 		return nil, fmt.Errorf("error iterating metadata: %w", err)
 	}
 
+	var defaultSchema string
+
+	// a role with its own search_path, or a database without a public
+	// schema, would otherwise be told its tables live somewhere they do not.
+	if serr := conn.QueryRow(ctx, "SELECT current_schema()").Scan(&defaultSchema); serr != nil {
+		return nil, fmt.Errorf("error reading the default schema: %w", serr)
+	}
+
 	return &SQLMetadataResult{
 		Tables:        tables,
-		DefaultSchema: "public",
+		DefaultSchema: defaultSchema,
 	}, nil
 }
 
@@ -518,19 +526,15 @@ func (pqr *PostgreSQLQueryResult) identifyColumns() (timeIdx int, valueIdxs, lab
 		return timeIdx, valueIdxs, labelIdxs
 	}
 
-	// Classify remaining columns by inspecting the first row's values.
-	firstRow := pqr.Rows[0]
-
 	for i := range pqr.Columns {
 		if i == timeIdx {
 			continue
 		}
 
-		if i < len(firstRow) {
-			if _, ok := firstRow[i].(float64); ok {
-				valueIdxs = append(valueIdxs, i)
-				continue
-			}
+		if columnIsNumeric(pqr.Rows, i, pgParseNumericValue) {
+			valueIdxs = append(valueIdxs, i)
+
+			continue
 		}
 
 		labelIdxs = append(labelIdxs, i)

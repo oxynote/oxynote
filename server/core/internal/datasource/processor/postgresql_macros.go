@@ -2,20 +2,12 @@ package processor
 
 import (
 	"fmt"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
 )
 
-// _pgMacroRe matches PostgreSQL macro invocations: $__macroName(args...).
-var _pgMacroRe = regexp.MustCompile(`\$__(\w+)\(([^)]*)\)`)
-
 const (
-	// _macroSubmatchCount specifies the number of submatches a macro
-	// regexp match yields (full match, name, args).
-	_macroSubmatchCount = 3
-
 	// _timeGroupMinArgs specifies the minimum number of arguments a
 	// time-group macro requires (column, interval).
 	_timeGroupMinArgs = 2
@@ -56,67 +48,44 @@ func (tr TimeRange) ProcessPostgreSQLQuery(q string) string {
 	// (e.g., $__timeGroupAlias("time", $__interval)).
 	q = tr.ProcessQuery(q)
 
-	q = _pgMacroRe.ReplaceAllStringFunc(q, func(match string) string {
-		submatch := _pgMacroRe.FindStringSubmatch(match)
-		if len(submatch) != _macroSubmatchCount {
-			return match
-		}
-
-		name := submatch[1]
-		args := parseMacroArgs(submatch[2])
+	return expandMacros(q, func(name string, args []string) (string, bool) {
+		// the macro helpers fall back to the invocation itself when the
+		// arguments do not fit, so the raw form is rebuilt for them.
+		match := _macroPrefix + name + "(" + strings.Join(args, ",") + ")"
 
 		switch name {
 		case _timeColumn, "timeEpoch":
-			return pgMacroTime(args, match)
+			return pgMacroTime(args, match), true
 		case "timeFilter":
-			return pgMacroTimeFilter(tr, args, match)
+			return pgMacroTimeFilter(tr, args, match), true
 		case "timeFrom":
-			return pgMacroTimeFrom(tr)
+			return pgMacroTimeFrom(tr), true
 		case "timeTo":
-			return pgMacroTimeTo(tr)
+			return pgMacroTimeTo(tr), true
 		case "timeGroup":
-			return pgMacroTimeGroup(args, match)
+			return pgMacroTimeGroup(args, match), true
 		case "timeGroupAlias":
-			return pgMacroTimeGroupAlias(args, match)
+			return pgMacroTimeGroupAlias(args, match), true
 		case "unixEpochFilter":
-			return pgMacroUnixEpochFilter(tr, args, match)
+			return pgMacroUnixEpochFilter(tr, args, match), true
 		case "unixEpochFrom":
-			return pgMacroUnixEpochFrom(tr)
+			return pgMacroUnixEpochFrom(tr), true
 		case "unixEpochTo":
-			return pgMacroUnixEpochTo(tr)
+			return pgMacroUnixEpochTo(tr), true
 		case "unixEpochNanoFilter":
-			return pgMacroUnixEpochNanoFilter(tr, args, match)
+			return pgMacroUnixEpochNanoFilter(tr, args, match), true
 		case "unixEpochNanoFrom":
-			return pgMacroUnixEpochNanoFrom(tr)
+			return pgMacroUnixEpochNanoFrom(tr), true
 		case "unixEpochNanoTo":
-			return pgMacroUnixEpochNanoTo(tr)
+			return pgMacroUnixEpochNanoTo(tr), true
 		case "unixEpochGroup":
-			return pgMacroUnixEpochGroup(args, match)
+			return pgMacroUnixEpochGroup(args, match), true
 		case "unixEpochGroupAlias":
-			return pgMacroUnixEpochGroupAlias(args, match)
+			return pgMacroUnixEpochGroupAlias(args, match), true
 		default:
-			return match
+			return "", false
 		}
 	})
-
-	return q
-}
-
-// parseMacroArgs parses comma-separated macro arguments, stripping surrounding
-// whitespace and quotes from each argument.
-func parseMacroArgs(raw string) []string {
-	if strings.TrimSpace(raw) == "" {
-		return nil
-	}
-
-	parts := strings.Split(raw, ",")
-	args := make([]string, len(parts))
-
-	for i, p := range parts {
-		args[i] = strings.Trim(strings.TrimSpace(p), "'\"")
-	}
-
-	return args
 }
 
 // parseInterval parses an interval string (e.g., "5m", "1h", "30s") to seconds.

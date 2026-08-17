@@ -10,6 +10,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/assistant/block"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/rs/xid"
 )
 
@@ -90,14 +91,35 @@ func (m *Manager) createDocument(ctx context.Context, args json.RawMessage) (jso
 		ParentID: parentID,
 	}, m.orgID, m.userID)
 
-	if err := m.db.InsertDocument(ctx, doc); err != nil {
+	// the three writes go together: a half-created document the model then
+	// retries leaves two of them behind, one without a maintainer and
+	// invisible to search.
+	var tx Tx
+
+	if err := m.db.BeginTx(ctx, &tx); err != nil {
+		return nil, fmt.Errorf("create_document: begin: %w", err)
+	}
+
+	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
+
+	if err := tx.InsertDocument(ctx, doc); err != nil {
 		return nil, fmt.Errorf("create_document: insert: %w", err)
 	}
 
 	// Mirror the HTTP create path: whoever asked for the document
 	// becomes its first maintainer so they own it from the start.
-	if err := m.db.UpsertDocumentMaintainers(ctx, doc.ID, m.orgID, []string{m.userID}); err != nil {
+	if err := tx.UpsertDocumentMaintainers(ctx, doc.ID, m.orgID, []string{m.userID}); err != nil {
 		return nil, fmt.Errorf("create_document: upsert maintainers: %w", err)
+	}
+
+	// without this the document is invisible to search until someone edits
+	// it, since only the persist path queues a job.
+	if err := tx.InsertDocumentSearchJob(ctx, search.BlocksDiff(nil, doc.Search())); err != nil {
+		return nil, fmt.Errorf("create_document: insert search job: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("create_document: commit: %w", err)
 	}
 
 	m.notifyTreeChange(doc.ParentID)

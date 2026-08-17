@@ -501,6 +501,7 @@ func (d Document) Duplicate(duplicatedBy string) (Document, map[string]string) {
 		Branch: Branch{
 			BranchID:      xid.New(),
 			BranchName:    DefaultBranch,
+			Default:       true,
 			DocumentName:  fmt.Sprintf("%s (%s)", d.DocumentName, tstamp.Format("2006 Jan. 02 15:04")),
 			Icon:          d.Icon,
 			Content:       content,

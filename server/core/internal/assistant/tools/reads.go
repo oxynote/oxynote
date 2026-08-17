@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/block"
@@ -219,7 +220,15 @@ func (m *Manager) searchDocuments(ctx context.Context, args json.RawMessage) (js
 	// AI can talk about hits without a follow-up lookup per document.
 	names := map[string]string{}
 
-	if tree, err := m.db.FetchDocumentTree(ctx, m.orgID); err == nil {
+	tree, err := m.db.FetchDocumentTree(ctx, m.orgID)
+	if err != nil {
+		// the names decorate the hits; losing them is not worth failing the
+		// search over, but it should not pass unnoticed either.
+		m.log.Warn(
+			"cannot fetch the document tree for search hit names",
+			slog.String("error", err.Error()),
+		)
+	} else {
 		collectDocumentNames(tree, names)
 	}
 

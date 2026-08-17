@@ -830,6 +830,19 @@ func Test_PostgreSQLQueryResult_identifyColumns(t *testing.T) {
 		ValueIdxs []int
 		LabelIdxs []int
 	}{
+		// a column whose first row is NULL is still a value column; reading
+		// only the first row drops the series from the chart.
+		"Leading NULL does not turn a value column into a label": {
+			Result: PostgreSQLQueryResult{
+				Columns: []string{"time", "value"},
+				Rows: [][]any{
+					{float64(1700000000), nil},
+					{float64(1700000060), float64(10)},
+				},
+			},
+			TimeIdx:   0,
+			ValueIdxs: []int{1},
+		},
 		"No rows": {
 			Result: PostgreSQLQueryResult{
 				Columns: []string{"time", "value"},

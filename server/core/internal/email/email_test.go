@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"testing"
 
+	"github.com/cenkalti/backoff/v4"
+	"github.com/jellydator/xync"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -152,11 +154,13 @@ func Test_Sender_send(t *testing.T) {
 					return assert.AnError
 				},
 			},
-			From:        "team@oxynote.io",
-			To:          "user@example.com",
-			Template:    TemplatePasswordReset,
-			Args:        map[string]string{"link": "https://example.com/reset"},
-			WantCalls:   1,
+			From:     "team@oxynote.io",
+			To:       "user@example.com",
+			Template: TemplatePasswordReset,
+			Args:     map[string]string{"link": "https://example.com/reset"},
+			// a lost password reset locks a user out, so the delivery is
+			// retried before it is given up on.
+			WantCalls:   1 + _maxSendRetries,
 			LogContains: "cannot send an email",
 		},
 		"Successful send": {
@@ -170,16 +174,21 @@ func Test_Sender_send(t *testing.T) {
 		},
 	}
 
+	// no t.Parallel on the subtests: they share the backoff strategy.
+	orig := _newBackoff
+	_newBackoff = func() backoff.BackOff { return &backoff.ZeroBackOff{} }
+
+	defer func() { _newBackoff = orig }()
+
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
 			var buf bytes.Buffer
 
 			s := &Sender{
 				log: slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{
 					Level: slog.LevelDebug,
 				})),
+				supv:      xync.NewSupervisor(),
 				fromEmail: c.From,
 			}
 
@@ -190,6 +199,10 @@ func Test_Sender_send(t *testing.T) {
 			}
 
 			s.send(c.To, "subject", c.Template, c.Args)
+
+			// the delivery runs off the request path; Wait drains it without
+			// the cancellation Close would bring.
+			s.supv.Wait()
 
 			assert.Contains(t, buf.String(), c.LogContains)
 
@@ -218,6 +231,8 @@ func Test_Sender_SendEmailVerification(t *testing.T) {
 
 	s.SendEmailVerification("user@example.com", "https://example.com/verify")
 
+	s.supv.Wait()
+
 	msg := sentMsg(t, client)
 	assert.Equal(t, "user@example.com", msgTo(t, msg))
 	assert.Equal(t, []string{"Verify your new email address"}, msg.GetGenHeader(mail.HeaderSubject))
@@ -231,6 +246,8 @@ func Test_Sender_SendOrganizationInvitation(t *testing.T) {
 	s := stubSender(client)
 
 	s.SendOrganizationInvitation("user@example.com", "Acme", "https://example.com/join")
+
+	s.supv.Wait()
 
 	msg := sentMsg(t, client)
 	assert.Equal(t, "user@example.com", msgTo(t, msg))
@@ -249,6 +266,8 @@ func Test_Sender_SendUserDeletionConfirmation(t *testing.T) {
 
 	s.SendUserDeletionConfirmation("user@example.com", "https://example.com/delete")
 
+	s.supv.Wait()
+
 	msg := sentMsg(t, client)
 	assert.Equal(t, "user@example.com", msgTo(t, msg))
 	assert.Equal(t, []string{"Confirm your account deletion"}, msg.GetGenHeader(mail.HeaderSubject))
@@ -262,6 +281,8 @@ func Test_Sender_SendUserCreation(t *testing.T) {
 	s := stubSender(client)
 
 	s.SendUserCreation("user@example.com")
+
+	s.supv.Wait()
 
 	msg := sentMsg(t, client)
 	assert.Equal(t, "user@example.com", msgTo(t, msg))
@@ -277,6 +298,8 @@ func Test_Sender_SendPasswordReset(t *testing.T) {
 
 	s.SendPasswordReset("user@example.com", "https://example.com/reset")
 
+	s.supv.Wait()
+
 	msg := sentMsg(t, client)
 	assert.Equal(t, "user@example.com", msgTo(t, msg))
 	assert.Equal(t, []string{"Reset your password"}, msg.GetGenHeader(mail.HeaderSubject))
@@ -290,6 +313,8 @@ func Test_Sender_SendSignupVerification(t *testing.T) {
 	s := stubSender(client)
 
 	s.SendSignupVerification("user@example.com", "https://example.com/activate")
+
+	s.supv.Wait()
 
 	msg := sentMsg(t, client)
 	assert.Equal(t, "user@example.com", msgTo(t, msg))
@@ -305,6 +330,8 @@ func Test_Sender_SendAccountExists(t *testing.T) {
 
 	s.SendAccountExists("user@example.com", "https://example.com/login")
 
+	s.supv.Wait()
+
 	msg := sentMsg(t, client)
 	assert.Equal(t, "user@example.com", msgTo(t, msg))
 	assert.Equal(t, []string{"You already have an Oxynote account"}, msg.GetGenHeader(mail.HeaderSubject))
@@ -316,6 +343,7 @@ func stubSender(client *clientMock) *Sender {
 	return &Sender{
 		log:       slog.New(slog.DiscardHandler),
 		client:    client,
+		supv:      xync.NewSupervisor(),
 		fromEmail: "Oxynote <team@oxynote.io>",
 	}
 }

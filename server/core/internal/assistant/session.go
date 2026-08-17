@@ -494,6 +494,14 @@ func (s *session) dispatchTools(
 		autoApprove := s.autoApproveTurn
 		s.mu.Unlock()
 
+		for _, i := range writeIndexes {
+			if tools.IsDestructive(tools.Name(calls[i].name)) {
+				autoApprove = false
+
+				break
+			}
+		}
+
 		if !autoApprove {
 			actions := make([]protocol.ConfirmAction, 0, len(writeIndexes))
 			for _, i := range writeIndexes {
@@ -803,7 +811,7 @@ func (s *session) pruneStaleReads() {
 // was once read without paying tokens to keep the full content.
 func (s *session) prunePriorReadResult(assistantIdx int, toolUseID string) {
 	resultIdx := assistantIdx + 1
-	if resultIdx >= len(s.messages)-1 {
+	if resultIdx >= len(s.messages) {
 		return
 	}
 
@@ -839,6 +847,14 @@ func (s *session) trimMessages() {
 	}
 
 	s.messages = s.messages[excess:]
+
+	// stripToolMessages drops assistant messages that carry no text, so the
+	// history is not reliably alternating and an even trim can leave it
+	// starting with an assistant message — which the API rejects for every
+	// later turn.
+	for len(s.messages) > 0 && s.messages[0].Role != anthropic.MessageParamRoleUser {
+		s.messages = s.messages[1:]
+	}
 }
 
 // makeToolResult wraps a json payload as a ToolResultBlockParam.
