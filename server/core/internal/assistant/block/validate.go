@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/oxynote/oxynote/server/core/internal/document"
 )
 
 // Allowed child-type sets, mirroring the editor's schema rules.
@@ -211,7 +213,7 @@ func validateHeading(b Block, path string) error {
 		return err
 	}
 
-	if a, ok := b.Attrs.Get(_attrLevel); !ok || a.Int() < 1 || a.Int() > 3 {
+	if a, ok := b.Attrs.Get(document.AttrLevel); !ok || a.Int() < 1 || a.Int() > 3 {
 		return verr(joinPath(path, "attrs.level"), "heading level must be 1, 2, or 3")
 	}
 
@@ -330,7 +332,7 @@ func validateTitledCode(b Block, path string) error {
 		return err
 	}
 
-	if a, ok := b.Attrs.Get(_attrTitle); !ok || strings.TrimSpace(a.String()) == "" {
+	if a, ok := b.Attrs.Get(document.AttrTitle); !ok || strings.TrimSpace(a.String()) == "" {
 		return verr(joinPath(path, "attrs.title"), "titled_code requires a non-empty title")
 	}
 
@@ -360,7 +362,7 @@ func validateAtomWithSrc(b Block, path string) error {
 		return err
 	}
 
-	if a, ok := b.Attrs.Get(_attrSrc); !ok || strings.TrimSpace(a.String()) == "" {
+	if a, ok := b.Attrs.Get(document.AttrSrc); !ok || strings.TrimSpace(a.String()) == "" {
 		return verr(joinPath(path, "attrs.src"), fmt.Sprintf("%s requires a non-empty src", b.Type))
 	}
 
@@ -431,7 +433,7 @@ func validateSplitDoc(b Block, path string) error {
 		return verr(joinPath(path, "left[0]"), "split_doc left must begin with a heading")
 	}
 
-	if a, ok := b.Left[0].Attrs.Get(_attrLevel); !ok || a.Int() != 1 {
+	if a, ok := b.Left[0].Attrs.Get(document.AttrLevel); !ok || a.Int() != 1 {
 		return verr(
 			joinPath(path, "left[0].attrs.level"),
 			"split_doc left heading must be level 1",

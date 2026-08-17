@@ -5,7 +5,6 @@ import (
 
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
-	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 )
 
@@ -34,7 +33,7 @@ func (h *Handler) QueryPrometheusDataSource(w http.ResponseWriter, r *http.Reque
 
 	query := r.URL.Query().Get("q")
 	if query == "" {
-		httpserver.RespondError(h.log, w, errutil.New(http.StatusBadRequest, "query.required", "Query parameter is required."))
+		httpserver.RespondError(h.log, w, ErrQueryRequired)
 		return
 	}
 

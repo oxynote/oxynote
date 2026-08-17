@@ -93,7 +93,7 @@ func resolveUID(supplied string) string {
 
 // uidAttrs returns the standard {uid: …} attribute map.
 func uidAttrs(uid string) document.Attributes {
-	return document.Attributes{_attrUID: uid}
+	return document.Attributes{document.AttrUID: uid}
 }
 
 // expandParagraph builds a paragraph node from a canonical block,
@@ -111,12 +111,12 @@ func expandParagraph(b Block) document.Block {
 // already enforced 1-3.
 func expandHeading(b Block) document.Block {
 	level := 1
-	if a, ok := b.Attrs.Get(_attrLevel); ok {
+	if a, ok := b.Attrs.Get(document.AttrLevel); ok {
 		level = a.Int()
 	}
 
 	attrs := uidAttrs(resolveUID(b.UID))
-	attrs[_attrLevel] = level
+	attrs[document.AttrLevel] = level
 
 	return document.Block{
 		Type:    document.BlockNodeHeading,
@@ -208,7 +208,7 @@ func expandTaskList(b Block) (document.Block, error) {
 		content := append([]document.Block{expanded}, nested...)
 
 		attrs := uidAttrs(resolveUID(item.UID))
-		attrs[_attrChecked] = item.Checked
+		attrs[document.AttrChecked] = item.Checked
 
 		children = append(children, document.Block{
 			Type:    document.BlockNodeTaskItem,
@@ -231,9 +231,9 @@ func expandTaskList(b Block) (document.Block, error) {
 func expandCallout(b Block) (document.Block, error) {
 	attrs := uidAttrs(resolveUID(b.UID))
 
-	attrs[_attrIcon] = "lucide:text"
-	if a, ok := b.Attrs.Get(_attrIcon); ok {
-		attrs[_attrIcon] = a.String()
+	attrs[document.AttrIcon] = "lucide:text"
+	if a, ok := b.Attrs.Get(document.AttrIcon); ok {
+		attrs[document.AttrIcon] = a.String()
 	}
 
 	var children []document.Block
@@ -264,8 +264,8 @@ func expandCallout(b Block) (document.Block, error) {
 // emitted as a single text node (no markdown parsing).
 func expandCode(b Block) document.Block {
 	attrs := uidAttrs(resolveUID(b.UID))
-	if a, ok := b.Attrs.Get(_attrLanguage); ok && a.String() != "" {
-		attrs[_attrLanguage] = a.String()
+	if a, ok := b.Attrs.Get(document.AttrLanguage); ok && a.String() != "" {
+		attrs[document.AttrLanguage] = a.String()
 	}
 
 	return document.Block{
@@ -281,17 +281,17 @@ func expandCode(b Block) document.Block {
 func expandTitledCode(b Block) document.Block {
 	var title, lang string
 
-	if a, ok := b.Attrs.Get(_attrTitle); ok {
+	if a, ok := b.Attrs.Get(document.AttrTitle); ok {
 		title = a.String()
 	}
 
-	if a, ok := b.Attrs.Get(_attrLanguage); ok {
+	if a, ok := b.Attrs.Get(document.AttrLanguage); ok {
 		lang = a.String()
 	}
 
 	codeAttrs := uidAttrs(strutil.NanoID())
 	if lang != "" {
-		codeAttrs[_attrLanguage] = lang
+		codeAttrs[document.AttrLanguage] = lang
 	}
 
 	titleNode := document.Block{
@@ -336,20 +336,20 @@ func expandHorizontalRule(b Block) document.Block {
 func expandImage(b Block) document.Block {
 	attrs := uidAttrs(resolveUID(b.UID))
 
-	if a, ok := b.Attrs.Get(_attrSrc); ok && a.String() != "" {
-		attrs[_attrSrc] = a.String()
+	if a, ok := b.Attrs.Get(document.AttrSrc); ok && a.String() != "" {
+		attrs[document.AttrSrc] = a.String()
 	}
 
-	if a, ok := b.Attrs.Get(_attrAlt); ok && a.String() != "" {
-		attrs[_attrAlt] = a.String()
+	if a, ok := b.Attrs.Get(document.AttrAlt); ok && a.String() != "" {
+		attrs[document.AttrAlt] = a.String()
 	}
 
-	if a, ok := b.Attrs.Get(_attrTitle); ok && a.String() != "" {
-		attrs[_attrTitle] = a.String()
+	if a, ok := b.Attrs.Get(document.AttrTitle); ok && a.String() != "" {
+		attrs[document.AttrTitle] = a.String()
 	}
 
-	if a, ok := b.Attrs.Get(_attrWidth); ok && a.Int() > 0 {
-		attrs[_attrWidth] = a.Int()
+	if a, ok := b.Attrs.Get(document.AttrWidth); ok && a.Int() > 0 {
+		attrs[document.AttrWidth] = a.Int()
 	}
 
 	return document.Block{
@@ -362,16 +362,16 @@ func expandImage(b Block) document.Block {
 func expandFigma(b Block) document.Block {
 	attrs := uidAttrs(resolveUID(b.UID))
 
-	if a, ok := b.Attrs.Get(_attrSrc); ok && a.String() != "" {
-		attrs[_attrSrc] = a.String()
+	if a, ok := b.Attrs.Get(document.AttrSrc); ok && a.String() != "" {
+		attrs[document.AttrSrc] = a.String()
 	}
 
-	if a, ok := b.Attrs.Get(_attrWidth); ok && a.Int() > 0 {
-		attrs[_attrWidth] = a.Int()
+	if a, ok := b.Attrs.Get(document.AttrWidth); ok && a.Int() > 0 {
+		attrs[document.AttrWidth] = a.Int()
 	}
 
-	if a, ok := b.Attrs.Get(_attrHeight); ok && a.Int() > 0 {
-		attrs[_attrHeight] = a.Int()
+	if a, ok := b.Attrs.Get(document.AttrHeight); ok && a.Int() > 0 {
+		attrs[document.AttrHeight] = a.Int()
 	}
 
 	return document.Block{
@@ -386,7 +386,7 @@ func expandFigma(b Block) document.Block {
 // or freshly generated.
 func expandMetric(b Block) document.Block {
 	attrs := b.Attrs.Copy()
-	attrs[_attrUID] = resolveUID(b.UID)
+	attrs[document.AttrUID] = resolveUID(b.UID)
 
 	return document.Block{
 		Type:  document.BlockNodeMetricBlock,
@@ -436,8 +436,8 @@ func expandSplitDoc(b Block) (document.Block, error) {
 	}
 
 	attrs := uidAttrs(resolveUID(b.UID))
-	if a, ok := b.Attrs.Get(_attrInversed); ok && a.Bool() {
-		attrs[_attrInversed] = true
+	if a, ok := b.Attrs.Get(document.AttrInversed); ok && a.Bool() {
+		attrs[document.AttrInversed] = true
 	}
 
 	return document.Block{

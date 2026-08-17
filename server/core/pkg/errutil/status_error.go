@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+
+	"github.com/oxynote/oxynote/server/core/pkg/errcode"
 )
 
 // ErrNotFound is returned when the target resource is not found.
@@ -86,7 +88,7 @@ func Detect(err error, passthru bool) error {
 		return wrap(
 			err,
 			http.StatusUnauthorized,
-			"account.not_authenticated",
+			errcode.AccountNotAuthenticated,
 			strings.ToLower(http.StatusText(http.StatusUnauthorized)),
 		)
 	case errors.Is(err, context.Canceled),

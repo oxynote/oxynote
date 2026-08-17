@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/schema"
+	"github.com/oxynote/oxynote/server/core/pkg/errcode"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/logutil"
 	"github.com/rs/xid"
@@ -24,7 +25,7 @@ const _criticalSkipFrames = 2
 
 var (
 	// ErrNotAuthenticated is returned when authorization process fails.
-	ErrNotAuthenticated = errutil.New(http.StatusUnauthorized, "account.not_authenticated", "not authenticated")
+	ErrNotAuthenticated = errutil.New(http.StatusUnauthorized, errcode.AccountNotAuthenticated, "not authenticated")
 
 	// ErrNotPermitted is returned when authorization process fails due
 	// to insufficient permissions.

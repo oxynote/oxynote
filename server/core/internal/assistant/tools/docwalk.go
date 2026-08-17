@@ -5,16 +5,13 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/document"
 )
 
-// Attribute keys shared between the summary walker and the tool
-// schemas.
-const (
-	_attrLevel    = "level"
-	_attrIcon     = "icon"
-	_attrLanguage = "language"
-	_attrChecked  = "checked"
-	_attrSrc      = "src"
-	_attrInversed = "inversed"
-)
+// _walkerKinds names the list wrappers the canonical model has no type
+// for. The summary reports them anyway, since it describes the hierarchy
+// the AI targets its edits at.
+var _walkerKinds = map[document.BlockNodeType]string{
+	document.BlockNodeListItem: "list_item",
+	document.BlockNodeTaskItem: "task_item",
+}
 
 // docSummaryEntry is one row in the assistant-facing document
 // summary. Every directly editable block surfaces with its uid so
@@ -164,54 +161,25 @@ func (w *docWalker) emitParamList(b document.Block, uid string, depth int, paren
 	})
 }
 
-// canonicalKindForPM maps a ProseMirror node type to the canonical
-// kind name the assistant uses elsewhere. Keeping the AI on one
-// vocabulary (snake_case canonical names) avoids surprises when it
-// reads a summary, then writes via tools that use the canonical
-// names.
+// canonicalKindForPM maps a ProseMirror node type to the canonical kind
+// name the assistant uses elsewhere. Keeping the AI on one vocabulary
+// (snake_case canonical names) avoids surprises when it reads a summary,
+// then writes via tools that use the canonical names.
+//
+// listItem and taskItem have no canonical type — the canonical model folds
+// them into their list's typed fields — but the summary names them anyway,
+// since it reports the hierarchy the AI targets its edits at.
 func canonicalKindForPM(pm document.BlockNodeType) string {
-	switch pm {
-	case document.BlockNodeParagraph:
-		return string(block.BlockParagraph)
-	case document.BlockNodeHeading:
-		return string(block.BlockHeading)
-	case document.BlockNodeBlockquote:
-		return string(block.BlockBlockquote)
-	case document.BlockNodeBulletList:
-		return string(block.BlockBulletList)
-	case document.BlockNodeOrderedList:
-		return string(block.BlockOrderedList)
-	case document.BlockNodeTaskList:
-		return string(block.BlockTaskList)
-	case document.BlockNodeListItem:
-		return "list_item"
-	case document.BlockNodeTaskItem:
-		return "task_item"
-	case document.BlockNodeCalloutBlock:
-		return string(block.BlockCallout)
-	case document.BlockNodeCodeBlock:
-		return string(block.BlockCode)
-	case document.BlockNodeTitledCodeBlock:
-		return string(block.BlockTitledCode)
-	case document.BlockNodeMermaidBlock:
-		return string(block.BlockMermaid)
-	case document.BlockNodeHorizontalRule:
-		return string(block.BlockHorizontalRule)
-	case document.BlockNodeImageBlock:
-		return string(block.BlockImage)
-	case document.BlockNodeFigmaBlock:
-		return string(block.BlockFigma)
-	case document.BlockNodeMetricBlock:
-		return string(block.BlockMetric)
-	case document.BlockNodeMetricGrid:
-		return string(block.BlockMetricGrid)
-	case document.BlockNodeSplitDoc:
-		return string(block.BlockSplitDoc)
-	case document.BlockNodeParamList:
-		return string(block.BlockParamList)
-	default:
+	if kind, ok := _walkerKinds[pm]; ok {
+		return kind
+	}
+
+	t, ok := block.CanonicalType(pm)
+	if !ok {
 		return string(pm)
 	}
+
+	return string(t)
 }
 
 // summaryAttrs filters the block's raw PM attrs down to the small
@@ -222,25 +190,25 @@ func canonicalKindForPM(pm document.BlockNodeType) string {
 func summaryAttrs(b document.Block) map[string]any { //nolint:cyclop // this function is complex, however, it's well-structured
 	switch b.Type {
 	case document.BlockNodeHeading:
-		if v, ok := b.Attrs[_attrLevel]; ok {
-			return map[string]any{_attrLevel: v}
+		if v, ok := b.Attrs[document.AttrLevel]; ok {
+			return map[string]any{document.AttrLevel: v}
 		}
 	case document.BlockNodeCalloutBlock:
-		if v, ok := b.Attrs[_attrIcon]; ok {
-			return map[string]any{_attrIcon: v}
+		if v, ok := b.Attrs[document.AttrIcon]; ok {
+			return map[string]any{document.AttrIcon: v}
 		}
 	case document.BlockNodeCodeBlock:
-		if v, ok := b.Attrs[_attrLanguage]; ok && v != "" {
-			return map[string]any{_attrLanguage: v}
+		if v, ok := b.Attrs[document.AttrLanguage]; ok && v != "" {
+			return map[string]any{document.AttrLanguage: v}
 		}
 	case document.BlockNodeTaskItem:
-		if v, ok := b.Attrs[_attrChecked]; ok {
-			return map[string]any{_attrChecked: v}
+		if v, ok := b.Attrs[document.AttrChecked]; ok {
+			return map[string]any{document.AttrChecked: v}
 		}
 	case document.BlockNodeImageBlock:
 		out := map[string]any{}
 
-		for _, k := range []string{_attrSrc, "alt", "title", "width"} {
+		for _, k := range []string{document.AttrSrc, document.AttrAlt, document.AttrTitle, document.AttrWidth} {
 			if v, ok := b.Attrs[k]; ok && v != nil && v != "" {
 				out[k] = v
 			}
@@ -252,7 +220,7 @@ func summaryAttrs(b document.Block) map[string]any { //nolint:cyclop // this fun
 	case document.BlockNodeFigmaBlock:
 		out := map[string]any{}
 
-		for _, k := range []string{_attrSrc, "width", "height"} {
+		for _, k := range []string{document.AttrSrc, document.AttrWidth, document.AttrHeight} {
 			if v, ok := b.Attrs[k]; ok && v != nil && v != "" {
 				out[k] = v
 			}
@@ -262,8 +230,8 @@ func summaryAttrs(b document.Block) map[string]any { //nolint:cyclop // this fun
 			return out
 		}
 	case document.BlockNodeSplitDoc:
-		if a, ok := b.Attrs.Get(_attrInversed); ok && a.Bool() {
-			return map[string]any{_attrInversed: true}
+		if a, ok := b.Attrs.Get(document.AttrInversed); ok && a.Bool() {
+			return map[string]any{document.AttrInversed: true}
 		}
 	default:
 		return nil

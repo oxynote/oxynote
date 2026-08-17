@@ -2,6 +2,7 @@ package tools
 
 import (
 	anthropic "github.com/anthropics/anthropic-sdk-go"
+	"github.com/oxynote/oxynote/server/core/internal/document"
 )
 
 // JSON-schema literals shared by the tool definitions below.
@@ -172,7 +173,7 @@ func writeCreateDocument() anthropic.ToolUnionParam {
 						_keyType:        _typeString,
 						_keyDescription: "Display name for the new document.",
 					},
-					_attrIcon: map[string]any{
+					document.AttrIcon: map[string]any{
 						_keyType:        _typeString,
 						_keyDescription: "Lucide icon identifier (e.g. \"lucide:file-text\"). Defaults to \"lucide:file\" when empty.",
 					},
@@ -238,12 +239,12 @@ func writeSetDocumentIcon() anthropic.ToolUnionParam {
 						_keyType:        _typeString,
 						_keyDescription: _descDocumentID,
 					},
-					_attrIcon: map[string]any{
+					document.AttrIcon: map[string]any{
 						_keyType:        _typeString,
 						_keyDescription: "The new icon identifier.",
 					},
 				},
-				Required: []string{_keyDocumentID, _attrIcon},
+				Required: []string{_keyDocumentID, document.AttrIcon},
 			},
 		},
 	}

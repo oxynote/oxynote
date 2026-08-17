@@ -474,7 +474,7 @@ func NewDocumentContent() RootBlock {
 			{
 				Type: "paragraph",
 				Attrs: map[string]any{
-					_nodeUIDAttr: strutil.NanoID(),
+					AttrUID: strutil.NanoID(),
 				},
 				Content: []Block{},
 			},

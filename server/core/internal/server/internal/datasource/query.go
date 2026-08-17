@@ -33,7 +33,7 @@ func (h *Handler) QueryDataSource(w http.ResponseWriter, r *http.Request) {
 
 	query := r.URL.Query().Get("q")
 	if query == "" {
-		httpserver.RespondError(h.log, w, errutil.New(http.StatusBadRequest, "query.required", "Query parameter is required."))
+		httpserver.RespondError(h.log, w, ErrQueryRequired)
 		return
 	}
 

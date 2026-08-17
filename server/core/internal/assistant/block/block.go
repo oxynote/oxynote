@@ -100,21 +100,6 @@ const (
 	BlockParamList Type = "split_doc_param_list"
 )
 
-// Attribute keys that recur across multiple node types.
-const (
-	_attrUID      = "uid"
-	_attrLevel    = "level"
-	_attrIcon     = "icon"
-	_attrLanguage = "language"
-	_attrSrc      = "src"
-	_attrAlt      = "alt"
-	_attrTitle    = "title"
-	_attrWidth    = "width"
-	_attrHeight   = "height"
-	_attrInversed = "inversed"
-	_attrChecked  = "checked"
-)
-
 // Block is the canonical representation of a single block as the AI
 // reads and writes it. Not every field is meaningful for every block
 // type:

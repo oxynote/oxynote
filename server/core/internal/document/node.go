@@ -14,13 +14,6 @@ import (
 	"github.com/rs/xid"
 )
 
-const (
-	_nodeCommentIDAttr   = "nodeCommentId"
-	_nodeUIDAttr         = "uid"
-	_nodeSrcAttr         = "src"
-	_nodeCommentMarkType = "comment"
-)
-
 // FilePathFormat is the URL path format under which document files are
 // served. Duplication matches stored src attributes against it, so the
 // router mounts the file routes on this very format.
@@ -120,7 +113,7 @@ type Block struct {
 // callers that need to distinguish "no uid" from "empty uid" should
 // branch on it.
 func (b Block) UID() (string, bool) {
-	id, ok := b.Attrs[_nodeUIDAttr].(string)
+	id, ok := b.Attrs[AttrUID].(string)
 	return id, ok
 }
 
@@ -300,7 +293,7 @@ func (b Block) copyStripped(dc *duplication) Block {
 		newMarks := make([]Mark, 0, len(b.Marks))
 
 		for _, m := range b.Marks {
-			if m.Type != _nodeCommentMarkType {
+			if m.Type != MarkComment {
 				newMarks = append(newMarks, m)
 			}
 		}
@@ -314,11 +307,11 @@ func (b Block) copyStripped(dc *duplication) Block {
 		newAttrs := make(map[string]any)
 
 		for k, v := range b.Attrs {
-			if k == _nodeCommentIDAttr {
+			if k == AttrCommentID {
 				continue
 			}
 
-			if dc != nil && k == _nodeUIDAttr {
+			if dc != nil && k == AttrUID {
 				newAttrs[k] = strutil.NanoID()
 				continue
 			}
@@ -343,17 +336,17 @@ func (b Block) copyStripped(dc *duplication) Block {
 // source document's file route are left as they are: an externally hosted
 // image has no object to copy.
 func (d *duplication) rewriteFileRef(attrs, newAttrs Attributes) {
-	oldID, ok := attrs[_nodeUIDAttr].(string)
+	oldID, ok := attrs[AttrUID].(string)
 	if !ok {
 		return
 	}
 
-	newID, ok := newAttrs[_nodeUIDAttr].(string)
+	newID, ok := newAttrs[AttrUID].(string)
 	if !ok {
 		return
 	}
 
-	src, ok := attrs[_nodeSrcAttr].(string)
+	src, ok := attrs[AttrSrc].(string)
 	if !ok {
 		return
 	}
@@ -373,6 +366,6 @@ func (d *duplication) rewriteFileRef(attrs, newAttrs Attributes) {
 	u.Path = strings.TrimSuffix(u.Path, oldPath) +
 		fmt.Sprintf(FilePathFormat, d.newDocumentID, newID)
 
-	newAttrs[_nodeSrcAttr] = u.String()
+	newAttrs[AttrSrc] = u.String()
 	d.files[oldID] = newID
 }

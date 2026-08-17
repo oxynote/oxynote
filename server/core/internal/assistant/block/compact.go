@@ -92,7 +92,7 @@ func compactParagraph(b document.Block, uid string) Block {
 // alongside the inline text.
 func compactHeading(b document.Block, uid string) Block {
 	level := 1
-	if a, ok := b.Attrs.Get(_attrLevel); ok {
+	if a, ok := b.Attrs.Get(document.AttrLevel); ok {
 		level = a.Int()
 	}
 
@@ -100,7 +100,7 @@ func compactHeading(b document.Block, uid string) Block {
 		Type:  BlockHeading,
 		UID:   uid,
 		Text:  emitInlineMarkdown(b.Content),
-		Attrs: document.Attributes{_attrLevel: level},
+		Attrs: document.Attributes{document.AttrLevel: level},
 	}
 }
 
@@ -181,7 +181,7 @@ func compactTaskList(b document.Block, uid string) (Block, error) {
 		itemUID, _ := ti.UID()
 
 		var checked bool
-		if a, ok := ti.Attrs.Get(_attrChecked); ok {
+		if a, ok := ti.Attrs.Get(document.AttrChecked); ok {
 			checked = a.Bool()
 		}
 
@@ -222,8 +222,8 @@ func compactTaskList(b document.Block, uid string) (Block, error) {
 // shorthand; otherwise Items carries the child blocks verbatim.
 func compactCallout(b document.Block, uid string) (Block, error) {
 	attrs := document.Attributes{}
-	if a, ok := b.Attrs.Get(_attrIcon); ok && a.String() != "" {
-		attrs[_attrIcon] = a.String()
+	if a, ok := b.Attrs.Get(document.AttrIcon); ok && a.String() != "" {
+		attrs[document.AttrIcon] = a.String()
 	}
 
 	if len(b.Content) == 1 && b.Content[0].Type == document.BlockNodeParagraph {
@@ -252,8 +252,8 @@ func compactCallout(b document.Block, uid string) (Block, error) {
 // into raw text (no markdown emission).
 func compactCode(b document.Block, uid string) Block {
 	attrs := document.Attributes{}
-	if a, ok := b.Attrs.Get(_attrLanguage); ok && a.String() != "" {
-		attrs[_attrLanguage] = a.String()
+	if a, ok := b.Attrs.Get(document.AttrLanguage); ok && a.String() != "" {
+		attrs[document.AttrLanguage] = a.String()
 	}
 
 	return Block{
@@ -284,7 +284,7 @@ func compactTitledCode(b document.Block, uid string) Block {
 		case document.BlockNodeCodeBlock:
 			body = flattenText(child.Content)
 
-			if a, ok := child.Attrs.Get(_attrLanguage); ok {
+			if a, ok := child.Attrs.Get(document.AttrLanguage); ok {
 				lang = a.String()
 			}
 		default:
@@ -292,11 +292,11 @@ func compactTitledCode(b document.Block, uid string) Block {
 	}
 
 	if title != "" {
-		attrs[_attrTitle] = title
+		attrs[document.AttrTitle] = title
 	}
 
 	if lang != "" {
-		attrs[_attrLanguage] = lang
+		attrs[document.AttrLanguage] = lang
 	}
 
 	return Block{
@@ -322,20 +322,20 @@ func compactMermaid(b document.Block, uid string) Block {
 func compactImage(b document.Block, uid string) Block {
 	attrs := document.Attributes{}
 
-	if a, ok := b.Attrs.Get(_attrSrc); ok && a.String() != "" {
-		attrs[_attrSrc] = a.String()
+	if a, ok := b.Attrs.Get(document.AttrSrc); ok && a.String() != "" {
+		attrs[document.AttrSrc] = a.String()
 	}
 
-	if a, ok := b.Attrs.Get(_attrAlt); ok && a.String() != "" {
-		attrs[_attrAlt] = a.String()
+	if a, ok := b.Attrs.Get(document.AttrAlt); ok && a.String() != "" {
+		attrs[document.AttrAlt] = a.String()
 	}
 
-	if a, ok := b.Attrs.Get(_attrTitle); ok && a.String() != "" {
-		attrs[_attrTitle] = a.String()
+	if a, ok := b.Attrs.Get(document.AttrTitle); ok && a.String() != "" {
+		attrs[document.AttrTitle] = a.String()
 	}
 
-	if a, ok := b.Attrs.Get(_attrWidth); ok && a.Int() > 0 {
-		attrs[_attrWidth] = a.Int()
+	if a, ok := b.Attrs.Get(document.AttrWidth); ok && a.Int() > 0 {
+		attrs[document.AttrWidth] = a.Int()
 	}
 
 	return Block{
@@ -350,16 +350,16 @@ func compactImage(b document.Block, uid string) Block {
 func compactFigma(b document.Block, uid string) Block {
 	attrs := document.Attributes{}
 
-	if a, ok := b.Attrs.Get(_attrSrc); ok && a.String() != "" {
-		attrs[_attrSrc] = a.String()
+	if a, ok := b.Attrs.Get(document.AttrSrc); ok && a.String() != "" {
+		attrs[document.AttrSrc] = a.String()
 	}
 
-	if a, ok := b.Attrs.Get(_attrWidth); ok && a.Int() > 0 {
-		attrs[_attrWidth] = a.Int()
+	if a, ok := b.Attrs.Get(document.AttrWidth); ok && a.Int() > 0 {
+		attrs[document.AttrWidth] = a.Int()
 	}
 
-	if a, ok := b.Attrs.Get(_attrHeight); ok && a.Int() > 0 {
-		attrs[_attrHeight] = a.Int()
+	if a, ok := b.Attrs.Get(document.AttrHeight); ok && a.Int() > 0 {
+		attrs[document.AttrHeight] = a.Int()
 	}
 
 	return Block{
@@ -374,7 +374,7 @@ func compactFigma(b document.Block, uid string) Block {
 // layer and the AI sees it through-pass.
 func compactMetric(b document.Block, uid string) Block {
 	attrs := b.Attrs.Copy()
-	delete(attrs, _attrUID)
+	delete(attrs, document.AttrUID)
 
 	return Block{
 		Type:  BlockMetric,
@@ -404,8 +404,8 @@ func compactMetricGrid(b document.Block, uid string) (Block, error) {
 func compactSplitDoc(b document.Block, uid string) (Block, error) {
 	out := Block{Type: BlockSplitDoc, UID: uid}
 
-	if a, ok := b.Attrs.Get(_attrInversed); ok && a.Bool() {
-		out.Attrs = document.Attributes{_attrInversed: true}
+	if a, ok := b.Attrs.Get(document.AttrInversed); ok && a.Bool() {
+		out.Attrs = document.Attributes{document.AttrInversed: true}
 	}
 
 	for _, side := range b.Content {

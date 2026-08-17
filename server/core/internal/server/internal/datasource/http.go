@@ -9,9 +9,15 @@ import (
 	datasourceCore "github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
+	"github.com/oxynote/oxynote/server/core/pkg/errcode"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/rs/xid"
 )
+
+// ErrQueryRequired is returned when the request carries no query to run
+// against the data source.
+var ErrQueryRequired = errutil.New(http.StatusBadRequest, errcode.DataSourceQueryRequired, "Query parameter is required.")
 
 // Handler holds dependencies required for data source operations.
 type Handler struct {

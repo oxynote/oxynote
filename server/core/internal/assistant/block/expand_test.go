@@ -23,7 +23,7 @@ func stripUIDsPM(b document.Block) document.Block {
 	if b.Attrs != nil {
 		na := make(map[string]any, len(b.Attrs))
 		for k, v := range b.Attrs {
-			if k == _attrUID {
+			if k == document.AttrUID {
 				continue
 			}
 
