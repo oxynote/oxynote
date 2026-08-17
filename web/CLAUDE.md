@@ -133,6 +133,270 @@ TypeScript strictness (set in [nuxt.config.ts](nuxt.config.ts)): `noUnusedLocals
 
 Note `noUncheckedIndexedAccess` makes every index access `T | undefined`, and TypeScript does not track assignments made inside a callback — so a variable filled in by a `forEach`/`descendants` callback stays narrowed to its initializer afterwards. Prefer a sentinel value or a restructure over a non-null assertion when that happens.
 
+## Testing
+
+### Layout
+
+- **All tests except e2e are co-located**: the test file lives in the same
+  directory as the file it tests, paired 1:1 — `string.ts` →
+  `string.test.ts`, `CalendarInput.vue` → `CalendarInput.nuxt.test.ts`.
+  Never a parallel `tests/unit/...` mirror tree.
+- When a test exercises behaviour spanning two source files, it lives
+  with the file that initiates the behaviour (a round-trip test lands
+  beside the file that starts the round-trip).
+- **The suffix encodes the test environment** — never `.spec.ts`, never an
+  `@vitest-environment` pragma comment:
+
+  | suffix | environment | for |
+  | --- | --- | --- |
+  | `.test.ts` | node, no DOM | pure logic: utils, editor diff/blocks helpers, `electron/` (with `vi.mock("electron")`) |
+  | `.nuxt.test.ts` | nuxt runtime | composables/stores (auto-imports, `registerEndpoint`) and **all component tests** (`mountSuspended`, real children, mocked network) |
+  | `.browser.test.ts` | vitest browser mode | DOM behavior happy-dom fakes (e.g. `getBoundingClientRect` geometry in drag-handle) |
+  | `.test-d.ts` | typecheck only | compile-time contracts (`expectTypeOf`), e.g. `app/utils/api/` types |
+  | `.bench.ts` | `vitest bench` | perf on hot paths (diff/lcs) — add only when a regression bites |
+
+- Only **e2e** (Playwright, incl. visual regression via `toHaveScreenshot`)
+  lives outside the source tree, in `tests/`.
+- There is no separate "integration" tier: component tests are the
+  integration layer (real children, mocked IO); e2e covers cross-system.
+- Co-location inside `app/` is safe by design: Nuxt's default `ignore`
+  list excludes `**/*.{spec,test}.*` from all scanners, so a test file
+  next to a plugin or middleware is never registered as one. The
+  `.nuxt.test.ts` suffix is the officially documented environment opt-in;
+  the vitest config still declares the env-by-suffix globs explicitly so
+  the mapping is configuration, not tool default.
+
+### Naming
+
+**The rule: `describe` names the subject, `it` completes the sentence
+"it …" with observable behaviour.**
+
+```ts
+describe("useCart", () => {
+	describe("addItem", () => {
+		it("increments the total by the item price")
+		it("merges duplicate items into one line with summed quantity")
+		it("throws when the item is out of stock")
+	})
+})
+```
+
+Read it aloud: "useCart addItem increments the total by the item price."
+If the concatenation isn't a grammatical sentence, the name is off. This
+matters practically because reporters print exactly that concatenation on
+failure, and a good name lets you diagnose without opening the file.
+
+**`describe`**
+
+- Top level: **always required** — every test file wraps its tests in a
+  root `describe` identifying the testable unit by its real identifier —
+  `useCart`, `<PriceTag>`, `formatDate`. Never bare top-level `it` calls.
+  Don't paraphrase ("cart logic"), use the greppable name.
+- Nested level (optional): a method, prop, or condition — `addItem`,
+  `when the user is anonymous`. One level of nesting is usually right,
+  two is the ceiling. Deeply nested describes with `beforeEach` at each
+  level are a classic readability trap: state gets assembled across four
+  scopes and no single test is comprehensible alone.
+- `describe("when X", ...)` grouping is good when several tests share a
+  precondition; otherwise put the condition in the `it` name.
+
+**`it`**
+
+- Present tense, third person, no "should".
+  `it("returns null for empty input")`, not `it("should return null…")` —
+  "should" is eight wasted characters on every line and adds nothing.
+- State behaviour + condition, not implementation:
+  `it("retries the request twice before failing")`, not
+  `it("calls fetchWithRetry with maxRetries=2")`. The test name should
+  survive a refactor that preserves behaviour.
+- Be specific enough that a failure is informative. `it("works")`,
+  `it("handles errors")`, `it("renders correctly")` are useless — which
+  error, what is correct? `it("renders the fallback avatar when the image
+  404s")` tells you what broke.
+- Edge cases worth naming explicitly: empty input, boundary values, error
+  paths. A suite skeleton often reads: happy path first, then
+  `it("returns [] when the list is empty")`,
+  `it("throws TypeError for non-ISO strings")`, etc.
+
+For components, name from the user's perspective where possible:
+`it("shows the discount badge when price is reduced")` rather than
+`it("sets showBadge to true")`.
+
+Parameterized tests: use the format placeholders so each case gets a
+distinct name — `it.for(cases)("parses %s as %i", ...)` — otherwise
+failures all report the same string.
+
+### Parameterized tests
+
+**Use `it.for` wherever cases differ only in inputs and expected
+outputs — pure data tables.** The moment cases differ in behaviour —
+different mock wiring, different setup, different assertions — they are
+separate `it`s inside the method's `describe` (see the next section),
+never rows sharing one callback: divergent cases in a shared callback
+breed conditionals, and neither a breakpoint nor a reporter line can
+target a single row.
+
+For data tables, writing a separate test per case gets repetitive;
+`it.for` defines the cases as data and runs the same test logic for all
+of them:
+
+```ts
+it.for([
+	[1, 1, 2],
+	[1, 2, 3],
+	[2, 1, 3],
+])("add(%i, %i) -> %i", ([a, b, expected], { expect }) => {
+	expect(a + b).toBe(expected)
+})
+```
+
+The placeholders `%i`, `%s`, and `%f` in the test name are replaced with
+the corresponding values from each row, so the output shows
+`add(1, 1) -> 2`, `add(1, 2) -> 3`, and so on.
+
+When cases have more than two or three values, objects are more readable.
+Use `$property` in the name to interpolate fields:
+
+```ts
+it.for([
+	{ input: "", expected: [] },
+	{ input: "a", expected: ["a"] },
+	{ input: "a,b", expected: ["a", "b"] },
+])("splits $input into $expected", ({ input, expected }, { expect }) => {
+	expect(split(input)).toEqual(expected)
+})
+```
+
+- When placeholder interpolation cannot form a grammatical sentence, give
+  the case an explicit `name` field and use it as the whole title:
+  `it.for(cases)("$name", …)`.
+- Case objects use the same field vocabulary everywhere: `name`, `input`,
+  `expected`.
+- Hoist bulky case data into named builders above the table instead of
+  inlining large literals. Store mutable case values as thunks
+  (`makeDoc: () => …`) invoked inside the test body, so a case object
+  can never leak state between tests.
+- Always `it.for`, never `it.each`: `.for` passes the test context as
+  the second callback argument — which the concurrency rule below
+  requires for `expect` — while `.each` spreads the case and provides no
+  context.
+
+### Mocks & path coverage
+
+- **Every path gets a test** — the success path and each failure path,
+  including one per collaborator that can fail, especially in unit tests.
+  A `describe` per method groups them; the linear `it`s are the rows,
+  named after the observable behaviour
+  (`it("propagates the error from db.createItem")`).
+- A branch that genuinely cannot be reproduced in tests carries a
+  `// NOCOV: <lowercase reason>.` comment as the first line inside the
+  branch body. Environment-bound code is the typical legitimate case:
+  `__DESKTOP_BUILD__` splits, SSR guards, browser-quirk workarounds.
+- NOCOV is a reviewer covenant, not a tool directive: it is deliberately
+  not wired to the coverage provider (whose ignore hints require the
+  banned `/* */` comment form), so coverage reports stay truthful and
+  the marker explains the residual gap in place. It never excuses a
+  testable path.
+- Per-test mock behaviour is configured inline with `vi.fn()`
+  (`mockResolvedValue`, `mockRejectedValue`, `mockImplementation`).
+  `vi.mock` module mocks are hoisted and file-level — they cannot vary
+  per test, so anything that must differ between tests is injected, not
+  module-mocked.
+- Repeated stub shapes become local factory closures
+  (`const stubDb = (err?: Error) => …`) defined next to the tests that
+  use them; dependencies shared across many tests become `test.extend`
+  fixtures.
+- **One act per test**: arrange once, invoke the unit once, then assert
+  as many facets of that single outcome as needed — result, error, and
+  interactions all belong in the same test when they describe one
+  scenario. Needing a second invocation of the unit is the real "and"
+  smell — split the test, not the assertions.
+- **Every injected dependency is accounted for in every test**: assert
+  the calls that must have happened (count and arguments) and the zero
+  counts of the ones that must not —
+  `expect(db.createItem).toHaveBeenCalledTimes(0)` after a failed
+  precondition is as load-bearing as any positive assertion. This holds
+  even when the return value already proves the outcome: a call is a
+  potential side effect, and output assertions cannot reveal a stray one.
+- Interaction assertions at injected boundaries are behaviour, not
+  implementation: they pin the unit's contract — which effects occur,
+  with what, and when — and survive any behaviour-preserving refactor of
+  the unit's internals.
+- **Only e2e is allowed a real backend**: unit and component tests never
+  perform real IO — network, filesystem, IPC — every such boundary is
+  mocked (`registerEndpoint`, injected stubs).
+- Test through the module's public exports. Never export something
+  solely for tests — an internal complex enough to need direct tests is
+  extracted into its own module.
+- Plain `expect` for guards and preconditions; `expect.soft` is
+  permitted in the final outcome-accounting block, where it reports the
+  whole broken accounting at once instead of stopping at the first
+  failed count.
+
+### Snapshots
+
+Snapshots are golden files, not lazy assertion dumps: use them only for
+golden-style serialized outputs (ProseMirror JSON, diff structures) —
+`toMatchInlineSnapshot` for small values, file snapshots for large ones,
+explicit assertions everywhere else. Under concurrency they require the
+context-local `expect` (see below).
+
+### Independence & concurrency
+
+- **Every test is completely independent**: it creates its own fresh
+  state (a new instance, store, or mount per test) and never depends on
+  execution order or on state left behind by another test. Each
+  `describe` block focuses on one method; each test verifies one specific
+  behaviour — the suite reads like a specification of the unit, and a
+  failure's name plus assertion tell you exactly what broke without
+  opening the file.
+- Repeating the same setup in every test is a candidate for `beforeEach`
+  or a `test.extend` fixture — never for module-level shared mutable
+  state.
+- **All tests run concurrently**: the vitest config sets
+  `sequence.concurrent: true`. Test independence is what makes this safe;
+  a test that needs sequential execution is a smell, not a config
+  exception.
+- Under concurrency, snapshots and assertions must use the `expect` from
+  the local test context (`it("…", ({ expect }) => …)`) — the global
+  `expect` cannot reliably attribute them to the right test when tests
+  interleave. See
+  [test.concurrent](https://vitest.dev/api/test#test-concurrent).
+- Mock and global state cannot leak between tests by construction: the
+  vitest config sets `restoreMocks: true`, `unstubGlobals: true`, and
+  `unstubEnvs: true`, so spies, stubbed globals, and env stubs are
+  restored after every test without per-file `afterEach` cleanup.
+
+### Determinism
+
+- Never sleepy: no `setTimeout`-based waiting in tests. Await concrete
+  signals — `nextTick()`, `flushPromises()`, an emitted event, a promise
+  returned by the unit itself.
+- Time is driven, not waited on: `vi.useFakeTimers()` +
+  `advanceTimersByTime()` for timer-dependent code, `vi.setSystemTime()`
+  for deterministic timestamps — assert exact dates, never wall-clock
+  deltas.
+- `vi.waitFor` is the last resort for genuinely nondeterministic
+  scheduling and always carries a comment justifying why no concrete
+  signal exists.
+
+### Prior art
+
+Co-location is established practice across the ecosystem, including
+dependencies of this app:
+[Reka UI](https://github.com/unovue/reka-ui/tree/v2/packages/core/src/Dialog)
+(`Dialog.test.ts` among the Dialog `.vue` components),
+[Pinia Colada](https://github.com/posva/pinia-colada/tree/main/src)
+(co-located specs plus `.test-d.ts` type tests),
+[VueUse](https://github.com/vueuse/vueuse/tree/main/packages/core/useMouse),
+[PrimeVue](https://github.com/primefaces/primevue/tree/master/packages/primevue/src/button)
+(`Button.spec.js` beside `Button.vue`),
+[SvelteKit](https://github.com/sveltejs/kit/tree/main/packages/kit/src/utils),
+[immich](https://github.com/immich-app/immich) (co-located specs + a
+dedicated `e2e/` package), and — on nuxt 4's `app/` layout specifically —
+[kun-galgame-forum](https://github.com/KunMoe/kun-galgame-forum/tree/master/apps/web/app/components/editkit)
+(specs beside components inside `app/`).
+
 ## Code style
 
 ### Assignments
