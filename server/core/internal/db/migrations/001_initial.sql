@@ -84,7 +84,6 @@ CREATE TABLE data_sources (
 	updated_at TIMESTAMPTZ,
 	UNIQUE(fk_organization_id, name)
 );
-CREATE INDEX data_sources_fk_organization_id_idx ON data_sources (fk_organization_id);
 
 -- Document tree. Per-branch content lives in document_branches; the
 -- documents row only carries identity, parent, and audit fields.
@@ -104,6 +103,8 @@ CREATE TABLE documents (
 );
 CREATE INDEX documents_fk_organization_id_idx ON documents (fk_organization_id);
 CREATE INDEX documents_fk_parent_id_idx ON documents (fk_parent_id);
+CREATE INDEX documents_fk_created_by_idx ON documents (fk_created_by);
+CREATE INDEX documents_fk_last_updated_by_idx ON documents (fk_last_updated_by);
 
 CREATE TABLE document_branches (
 	id TEXT NOT NULL,
@@ -124,6 +125,8 @@ CREATE TABLE document_branches (
 	UNIQUE (fk_document_id, branch_name)
 );
 CREATE INDEX document_branches_fk_organization_id_idx ON document_branches (fk_organization_id);
+CREATE INDEX document_branches_fk_created_by_idx ON document_branches (fk_created_by);
+CREATE INDEX document_branches_fk_last_updated_by_idx ON document_branches (fk_last_updated_by);
 
 CREATE TABLE document_branch_changelogs (
 	id TEXT PRIMARY KEY,
@@ -151,6 +154,7 @@ CREATE TABLE document_hooks (
 	soft_deleted_at TIMESTAMP
 );
 CREATE INDEX document_hooks_fk_document_id_idx ON document_hooks (fk_document_id);
+CREATE INDEX document_hooks_fk_branch_id_idx ON document_hooks (fk_branch_id);
 
 CREATE TABLE document_comments (
 	id TEXT PRIMARY KEY,
@@ -167,6 +171,9 @@ CREATE TABLE document_comments (
 	updated_at TIMESTAMP
 );
 CREATE INDEX document_comments_fk_document_id_idx ON document_comments (fk_document_id);
+CREATE INDEX document_comments_fk_branch_id_idx ON document_comments (fk_branch_id);
+CREATE INDEX document_comments_fk_user_id_idx ON document_comments (fk_user_id);
+CREATE INDEX document_comments_fk_resolved_by_idx ON document_comments (fk_resolved_by);
 
 CREATE TABLE document_comment_replies (
 	id TEXT PRIMARY KEY,
@@ -178,6 +185,7 @@ CREATE TABLE document_comment_replies (
 	updated_at TIMESTAMP
 );
 CREATE INDEX document_comment_replies_fk_document_comment_id_idx ON document_comment_replies (fk_document_comment_id);
+CREATE INDEX document_comment_replies_fk_user_id_idx ON document_comment_replies (fk_user_id);
 
 CREATE TABLE document_maintainers (
 	fk_document_id TEXT NOT NULL REFERENCES documents ON DELETE CASCADE,
@@ -195,8 +203,8 @@ CREATE TABLE branch_reviewers (
 	previously_approved BOOLEAN NOT NULL DEFAULT FALSE,
 	PRIMARY KEY (fk_branch_id, fk_user_id)
 );
-CREATE INDEX branch_reviewers_fk_branch_id_idx ON branch_reviewers (fk_branch_id);
 CREATE INDEX branch_reviewers_fk_organization_id_idx ON branch_reviewers (fk_organization_id);
+CREATE INDEX branch_reviewers_fk_user_id_idx ON branch_reviewers (fk_user_id);
 
 CREATE TABLE document_files (
 	id TEXT PRIMARY KEY,
@@ -233,7 +241,6 @@ CREATE TABLE slack_user_links (
 	PRIMARY KEY (slack_user_id, fk_team_id)
 );
 CREATE INDEX slack_user_links_fk_user_id_idx ON slack_user_links (fk_user_id);
-CREATE INDEX slack_user_links_fk_team_id_idx ON slack_user_links (fk_team_id);
 CREATE INDEX slack_user_links_fk_team_id_fk_user_id_idx ON slack_user_links (fk_team_id, fk_user_id);
 
 CREATE TABLE github_installations (
@@ -248,7 +255,7 @@ CREATE TABLE slack_messages (
 	TEXT TEXT NOT NULL,
 	created_at TIMESTAMP NOT NULL
 );
-CREATE INDEX slack_messages_fk_organization_id_idx ON slack_messages (fk_organization_id);
+CREATE INDEX slack_messages_fk_organization_id_created_at_idx ON slack_messages (fk_organization_id, created_at DESC);
 
 CREATE TABLE notifications (
 	id TEXT PRIMARY KEY,
@@ -260,6 +267,7 @@ CREATE TABLE notifications (
 	created_at TIMESTAMPTZ NOT NULL
 );
 CREATE INDEX notifications_fk_organization_id_fk_user_id_idx ON notifications (fk_organization_id, fk_user_id);
+CREATE INDEX notifications_fk_user_id_idx ON notifications (fk_user_id);
 
 -- +migrate Down
 DROP TABLE notifications;

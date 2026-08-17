@@ -185,8 +185,10 @@ func Test_agent_InsertSlackApp(t *testing.T) {
 
 func Test_agent_InsertSlackMessage(t *testing.T) {
 	type tcase struct {
-		Message slack.Message
-		Err     error
+		Message   slack.Message
+		Remaining int
+		Trimmed   xid.ID
+		Err       error
 	}
 
 	cc := map[string]func(*testing.T, *DB) tcase{
@@ -208,6 +210,27 @@ func Test_agent_InsertSlackMessage(t *testing.T) {
 					Text:           "Hello from Slack",
 					CreatedAt:      timeutil.Now().Truncate(time.Second),
 				},
+			}
+		},
+		"Successful insert with retention trimming": func(t *testing.T, db *DB) tcase {
+			db.opts.MaxSlackMessages = 2
+
+			org := prepOrganizations(t, db, 1)[0]
+			existing := prepSlackMessages(t, db, 2, func(_ int, msg *slack.Message) {
+				msg.OrganizationID = org
+			})
+
+			return tcase{
+				Message: slack.Message{
+					ID:             xid.New(),
+					OrganizationID: org,
+					Text:           "Hello from Slack",
+					// prepSlackMessages walks backwards from now, so the
+					// newest existing message is the first one.
+					CreatedAt: existing[0].CreatedAt.Add(time.Hour),
+				},
+				Remaining: 2,
+				Trimmed:   existing[len(existing)-1].ID,
 			}
 		},
 	}
@@ -236,6 +259,18 @@ func Test_agent_InsertSlackMessage(t *testing.T) {
 			err = db.sql.Get(&msg, q, args...)
 			require.NoError(t, err)
 			testutil.AssertFilterEqual(t, c.Message, msg)
+
+			if c.Remaining == 0 {
+				return
+			}
+
+			res, err := db.FetchSlackMessages(context.Background(), c.Message.OrganizationID)
+			require.NoError(t, err)
+			require.Len(t, res, c.Remaining)
+
+			for _, m := range res {
+				assert.NotEqual(t, c.Trimmed, m.ID, "the oldest message must have been trimmed")
+			}
 		})
 	}
 }
@@ -265,6 +300,13 @@ func Test_agent_FetchSlackMessages(t *testing.T) {
 	res, err = db.FetchSlackMessages(context.Background(), org)
 	assert.NoError(t, err)
 	testutil.AssertFilterEqual(t, messages, res)
+
+	// success - retention bounds the listing
+	db.opts.MaxSlackMessages = 2
+
+	res, err = db.FetchSlackMessages(context.Background(), org)
+	assert.NoError(t, err)
+	testutil.AssertFilterEqual(t, messages[:2], res)
 }
 
 func Test_agent_UpdateSlackAppOrganizationID(t *testing.T) {

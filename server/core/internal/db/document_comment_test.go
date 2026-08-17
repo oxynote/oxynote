@@ -660,11 +660,16 @@ func Test_agent_FetchDocumentCommentsByBranchID(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, res)
 
-		// success - newest comment first, replies in creation order
+		// success - newest comment first, replies in creation order and
+		// attached to the comment they belong to rather than the first one
 		comments := prepDocumentComments(t, db, 2, nil)
 		comments[0].Replies = prepDocumentCommentReplies(t, db, 2, func(_ int, r *comment.Reply) {
 			r.CommentID = comments[0].ID
 			r.OrganizationID = comments[0].OrganizationID
+		})
+		comments[1].Replies = prepDocumentCommentReplies(t, db, 1, func(_ int, r *comment.Reply) {
+			r.CommentID = comments[1].ID
+			r.OrganizationID = comments[1].OrganizationID
 		})
 
 		res, err = db.FetchDocumentCommentsByBranchID(context.Background(), comments[0].BranchID, comments[0].OrganizationID)

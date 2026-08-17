@@ -17,6 +17,12 @@ import (
 // again rather than failing forever.
 var ErrWatcherNotFound = errors.New("watcher not found")
 
+// _requestTimeout bounds a single changedetection.io request. The callers
+// are hook processors running under the periodic executor's long-lived
+// context, so without a deadline of its own a hung connection would stall
+// the whole processing pass rather than just its own call.
+const _requestTimeout = 30 * time.Second
+
 // Client is a client for the changedetection.io API.
 type Client struct {
 	baseURL string
@@ -29,7 +35,7 @@ func NewClient(baseURL, apiKey string) *Client {
 	return &Client{
 		baseURL: baseURL,
 		apiKey:  apiKey,
-		client:  http.DefaultClient,
+		client:  &http.Client{Timeout: _requestTimeout},
 	}
 }
 

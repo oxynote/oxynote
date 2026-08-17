@@ -55,7 +55,8 @@ func Test_NewClient(t *testing.T) {
 	require.NotNil(t, c)
 	assert.Equal(t, "http://test.com", c.baseURL)
 	assert.Equal(t, "key", c.apiKey)
-	assert.Same(t, http.DefaultClient, c.client)
+	require.NotNil(t, c.client)
+	assert.Equal(t, _requestTimeout, c.client.Timeout)
 }
 
 func Test_Client_FetchWatcher(t *testing.T) {

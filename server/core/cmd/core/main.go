@@ -49,6 +49,10 @@ const (
 	// retained per user.
 	_maxNotifications = 500
 
+	// _maxSlackMessages specifies the maximum number of Slack messages
+	// retained per organization.
+	_maxSlackMessages = 500
+
 	// _defaultMaxDocumentChangelogs specifies how many changelog snapshots
 	// are retained per document branch when the environment says nothing.
 	_defaultMaxDocumentChangelogs = 100
@@ -100,6 +104,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 	dbc, err := db.New(log, metrics, db.Options{
 		DSN:                                buildinfo.Getenv("DB_DSN"),
 		MaxNotifications:                   _maxNotifications,
+		MaxSlackMessages:                   _maxSlackMessages,
 		MaxDocumentChangelogs:              maxDocumentChangelogs,
 		DocumentChangelogRetention:         documentChangelogRetention,
 		DataSourceCredentialsSigningSecret: buildinfo.Getenv("DB_DATA_SOURCE_CREDENTIALS_SIGNING_SECRET"),

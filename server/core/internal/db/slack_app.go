@@ -6,6 +6,7 @@ import (
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
 	"github.com/oxynote/oxynote/server/core/internal/apps/slack"
+	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 )
 
 // InsertSlackApp inserts or updates a Slack app document in the database.
@@ -29,29 +30,63 @@ func (a *agent) InsertSlackApp(ctx context.Context, app slack.App) error {
 	return err
 }
 
-// InsertSlackMessage inserts a Slack message into the database.
+// InsertSlackMessage inserts a Slack message into the database, dropping
+// the organization's oldest messages once retention is exceeded. Nothing
+// else ever deletes from this table, so the insert is what keeps it from
+// growing without end.
 func (a *agent) InsertSlackMessage(ctx context.Context, msg slack.Message) error {
-	q, args := a.builder.Insert("slack_messages").
-		SetMap(map[string]any{
-			"id":                 msg.ID,
-			"fk_organization_id": msg.OrganizationID,
-			"text":               msg.Text,
-			"created_at":         msg.CreatedAt,
+	return sqlutil.WrapTx(ctx, a.sql, func(tx *sqlx.Tx) error {
+		q, args := a.builder.Insert("slack_messages").
+			SetMap(map[string]any{
+				"id":                 msg.ID,
+				"fk_organization_id": msg.OrganizationID,
+				"text":               msg.Text,
+				"created_at":         msg.CreatedAt,
+			}).MustSql()
+
+		if _, err := tx.ExecContext(ctx, q, args...); err != nil {
+			return err
+		}
+
+		// a zero limit means unlimited retention; without this guard the
+		// subquery below would emit LIMIT 0 and the delete would drop
+		// every message of the organization.
+		if a.opts.MaxSlackMessages == 0 {
+			return nil
+		}
+
+		b := a.builder.Select("id").
+			From("slack_messages").
+			Where(sq.Eq{"fk_organization_id": msg.OrganizationID}).
+			OrderBy("created_at DESC").
+			Limit(a.opts.MaxSlackMessages).
+			Prefix("id NOT IN (").
+			Suffix(")")
+
+		q, args = a.builder.Delete("slack_messages").Where(sq.And{
+			b,
+			sq.Eq{"fk_organization_id": msg.OrganizationID},
 		}).MustSql()
 
-	_, err := a.sql.ExecContext(ctx, q, args...)
+		_, err := tx.ExecContext(ctx, q, args...)
 
-	return err
+		return err
+	})
 }
 
 // FetchSlackMessages retrieves Slack messages for a given organization ID from the database.
 func (a *agent) FetchSlackMessages(ctx context.Context, organizationID string) ([]slack.Message, error) {
-	q, args := a.selectSlackMessage(a.builder.Select()).
+	b := a.selectSlackMessage(a.builder.Select()).
 		Where(sq.Eq{
 			"fk_organization_id": organizationID,
 		}).
-		OrderBy("created_at DESC").
-		MustSql()
+		OrderBy("created_at DESC")
+
+	if a.opts.MaxSlackMessages > 0 {
+		b = b.Limit(a.opts.MaxSlackMessages)
+	}
+
+	q, args := b.MustSql()
 
 	messages := []slack.Message{}
 

@@ -91,6 +91,12 @@ type Options struct {
 	// Zero means no limit.
 	MaxDocumentChangelogs uint64
 
+	// MaxSlackMessages specifies the maximum number of Slack messages to
+	// keep per organization. It bounds the listing as well, which can
+	// never legitimately need more than retention holds.
+	// Zero means no limit.
+	MaxSlackMessages uint64
+
 	// DocumentChangelogRetention specifies how long changelog snapshots
 	// are kept before the file manager trims them.
 	// Zero means no age limit.

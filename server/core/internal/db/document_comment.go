@@ -7,7 +7,6 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/oxynote/oxynote/server/core/internal/document/comment"
 	"github.com/rs/xid"
-	"golang.org/x/sync/errgroup"
 )
 
 // InsertDocumentComment inserts a new comment into the database.
@@ -210,32 +209,40 @@ func (a *agent) FetchDocumentCommentsByBranchID(ctx context.Context, branchID xi
 		return nil, err
 	}
 
-	eg, ectx := errgroup.WithContext(ctx)
-
-	for i := range comments {
-		eg.Go(func() error {
-			q, args := a.selectDocumentCommentReply(a.builder.Select()).
-				Where(sq.Eq{
-					"document_comment_replies.fk_document_comment_id": comments[i].ID,
-					"document_comment_replies.fk_organization_id":     organizationID,
-				}).
-				OrderBy("document_comment_replies.created_at ASC").
-				MustSql()
-
-			var replies []comment.Reply
-
-			if err := sqlx.SelectContext(ectx, a.sql, &replies, q, args...); err != nil {
-				return err
-			}
-
-			comments[i].Replies = replies
-
-			return nil
-		})
+	if len(comments) == 0 {
+		return comments, nil
 	}
 
-	if err := eg.Wait(); err != nil {
+	commentIDs := make([]xid.ID, 0, len(comments))
+	for _, c := range comments {
+		commentIDs = append(commentIDs, c.ID)
+	}
+
+	// one query rather than one per comment: the fan-out held a pool
+	// connection per comment, and would have corrupted the protocol
+	// outright had this method ever run on a transaction, which is a
+	// single connection.
+	q, args = a.selectDocumentCommentReply(a.builder.Select()).
+		Where(sq.Eq{
+			"document_comment_replies.fk_document_comment_id": commentIDs,
+			"document_comment_replies.fk_organization_id":     organizationID,
+		}).
+		OrderBy("document_comment_replies.created_at ASC").
+		MustSql()
+
+	var replies []comment.Reply
+
+	if err := sqlx.SelectContext(ctx, a.sql, &replies, q, args...); err != nil {
 		return nil, err
+	}
+
+	byComment := make(map[xid.ID][]comment.Reply, len(comments))
+	for _, r := range replies {
+		byComment[r.CommentID] = append(byComment[r.CommentID], r)
+	}
+
+	for i := range comments {
+		comments[i].Replies = byComment[comments[i].ID]
 	}
 
 	return comments, nil
