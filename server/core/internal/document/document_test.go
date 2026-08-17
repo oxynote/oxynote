@@ -287,6 +287,8 @@ func Test_Document_Search(t *testing.T) {
 func Test_Document_Duplicate(t *testing.T) {
 	t.Parallel()
 
+	t.Run("File references are remapped to the duplicate", testDocumentDuplicateFiles)
+
 	doc := stubDocument()
 	doc.Protected = true
 
@@ -313,7 +315,9 @@ func Test_Document_Duplicate(t *testing.T) {
 	assert.NotEqual(t, origUID, dupUID)
 }
 
-func Test_Document_Duplicate_files(t *testing.T) {
+// testDocumentDuplicateFiles covers the file-reference half of Duplicate,
+// which reaches the content through RootBlock.Duplicate.
+func testDocumentDuplicateFiles(t *testing.T) {
 	t.Parallel()
 
 	doc := stubDocument()

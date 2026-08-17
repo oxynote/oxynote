@@ -35,7 +35,17 @@ func docTopicCtx(orgID string, documentID xid.ID) context.Context {
 	)
 }
 
-func Test_Handler_BindTreeChange_and_NotifyTreeChange(t *testing.T) {
+func Test_Handler_BindTreeChange(t *testing.T) {
+	t.Parallel()
+
+	hdl := &Handler{}
+	tpc := &wsMock.Topic{}
+
+	hdl.BindTreeChange(tpc)
+	require.NotNil(t, hdl.tree.changeCallback)
+}
+
+func Test_Handler_NotifyTreeChange(t *testing.T) {
 	t.Parallel()
 
 	hdl := &Handler{}
@@ -46,7 +56,6 @@ func Test_Handler_BindTreeChange_and_NotifyTreeChange(t *testing.T) {
 	tpc := &wsMock.Topic{}
 
 	hdl.BindTreeChange(tpc)
-	require.NotNil(t, hdl.tree.changeCallback)
 
 	parentID := null.ValueFrom(xid.New())
 

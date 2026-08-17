@@ -12,7 +12,7 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }
 
-func Test_New(t *testing.T) {
+func Test_NewFactory(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	f := NewFactory("test", reg)
 	assert.Equal(t, reg, f.(*factory).RegistererGatherer)
@@ -177,6 +177,6 @@ func Test_discarder_Add(_ *testing.T) {
 	(&discarder{}).Add(5)
 }
 
-func Test_discarder_Observer(_ *testing.T) {
+func Test_discarder_Observe(_ *testing.T) {
 	(&discarder{}).Observe(1.0)
 }

@@ -100,6 +100,10 @@ func (s *Server) httpRouter() chi.Router {
 	r.Route("/api", func(sr chi.Router) {
 		sr.Mount("/", s.router())
 
+		// Third parties deliver here, so this subtree has to stay
+		// reachable through the front door — unlike /x below.
+		sr.Mount("/apps", s.appsRouter())
+
 		// Note that private routes are not protected by any
 		// authentication middlewares (a reverse proxy like Caddy
 		// should handle that).
@@ -119,13 +123,35 @@ func (s *Server) internalRouter() chi.Router {
 		s.fc, promhttp.HandlerFor(s.fc, promhttp.HandlerOpts{}),
 	))
 
+	r.Post("/organizations/{organizationId}/initialize", s.handlers.organization.InitializeOrganization)
+	r.Post("/organizations/{organizationId}/teardown", s.handlers.organization.TeardownOrganization)
+
+	r.Route("/documents/{documentId}", func(sr chi.Router) {
+		sr.Get("/branches", s.handlers.document.FetchDocumentBranchesUnsafe)
+		sr.Route("/branch/{branchId}", func(ssr chi.Router) {
+			ssr.Get("/", s.handlers.document.FetchDocumentBranchByIDUnsafe)
+			ssr.Put("/", s.handlers.document.UpdateDocumentBranchByIDUnsafe)
+		})
+	})
+
+	r.Post("/email", s.handlers.email.SendEmail)
+
+	return r
+}
+
+// appsRouter prepares the routes GitHub and Slack call directly: webhook
+// deliveries and the Slack install callback. They carry no session — each
+// request proves itself with the provider's request signature or with an
+// encrypted state parameter — and third parties reach them through the same
+// front door as the rest of the API, which is why they cannot live on the
+// internal surface the reverse proxy blocks.
+func (s *Server) appsRouter() chi.Router {
+	r := chi.NewRouter()
+
 	r.Route("/github", func(sr chi.Router) {
 		sr.Use(s.handlers.github.VerifySignature)
 		sr.Post("/events", s.handlers.github.HandleEvent)
 	})
-
-	r.Post("/organizations/{organizationId}/initialize", s.handlers.organization.InitializeOrganization)
-	r.Post("/organizations/{organizationId}/teardown", s.handlers.organization.TeardownOrganization)
 
 	r.Route("/slack", func(sr chi.Router) {
 		sr.Get("/install", s.handlers.slack.InstallApp)
@@ -137,16 +163,6 @@ func (s *Server) internalRouter() chi.Router {
 			ssr.Post("/slash", s.handlers.slack.HandleSlashCommand)
 		})
 	})
-
-	r.Route("/documents/{documentId}", func(sr chi.Router) {
-		sr.Get("/branches", s.handlers.document.FetchDocumentBranchesUnsafe)
-		sr.Route("/branch/{branchId}", func(ssr chi.Router) {
-			ssr.Get("/", s.handlers.document.FetchDocumentBranchByIDUnsafe)
-			ssr.Put("/", s.handlers.document.UpdateDocumentBranchByIDUnsafe)
-		})
-	})
-
-	r.Post("/email", s.handlers.email.SendEmail)
 
 	return r
 }

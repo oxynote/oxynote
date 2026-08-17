@@ -29,8 +29,22 @@ func Test_NewManager(t *testing.T) {
 	require.NotNil(t, man)
 }
 
+// testManagerProcessJobsContextCancelled is a case of Manager_processJobs, run as a subtest of it.
+func testManagerProcessJobsContextCancelled(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	man := NewManager(slog.New(slog.DiscardHandler), &DBMock{}, &SearchGatewayMock{})
+
+	assert.ErrorIs(t, man.processJobs(ctx), context.Canceled)
+}
+
 func Test_Manager_processJobs(t *testing.T) {
 	t.Parallel()
+
+	t.Run("Cancelled context stops the run", testManagerProcessJobsContextCancelled)
 
 	type check func(*testing.T, *DBMock, *SearchGatewayMock, error)
 
@@ -173,15 +187,4 @@ func Test_Manager_processJobs(t *testing.T) {
 			}
 		})
 	}
-}
-
-func Test_Manager_processJobs_ContextCancelled(t *testing.T) {
-	t.Parallel()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	man := NewManager(slog.New(slog.DiscardHandler), &DBMock{}, &SearchGatewayMock{})
-
-	assert.ErrorIs(t, man.processJobs(ctx), context.Canceled)
 }

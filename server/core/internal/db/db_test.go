@@ -88,7 +88,7 @@ func Test_New(t *testing.T) {
 	assert.NoError(t, db.closer.Close())
 }
 
-func Test_SystemDB_Close(t *testing.T) {
+func Test_DB_Close(t *testing.T) {
 	db := &DB{
 		closer: ioutil.CloserFunc(func() error {
 			return assert.AnError
@@ -162,7 +162,7 @@ func Test_DetectError(t *testing.T) {
 	})
 }
 
-func Test_SystemDB_BeginTx(t *testing.T) {
+func Test_DB_BeginTx(t *testing.T) {
 	db := prepTempDB(t)
 
 	// provided destination isn't a pointer

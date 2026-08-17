@@ -80,7 +80,7 @@ func Test_Comment_ApplyUpdate(t *testing.T) {
 	assert.Equal(t, c.Replies, nc.Replies)
 }
 
-func Test_Comment_Resolve_Unresolve(t *testing.T) {
+func Test_Comment_Resolve(t *testing.T) {
 	t.Parallel()
 
 	c := stubComment()
@@ -91,8 +91,14 @@ func Test_Comment_Resolve_Unresolve(t *testing.T) {
 	assert.Equal(t, c.BranchID, resolved.BranchID)
 	assert.Equal(t, c.Content, resolved.Content)
 	assert.Equal(t, c.DiffDeletionContext, resolved.DiffDeletionContext)
+}
 
-	unresolved := resolved.Unresolve()
+func Test_Comment_Unresolve(t *testing.T) {
+	t.Parallel()
+
+	c := stubComment()
+
+	unresolved := c.Resolve("resolver").Unresolve()
 	assert.False(t, unresolved.Resolved)
 	assert.False(t, unresolved.ResolvedBy.Valid)
 	assert.Equal(t, c.BranchID, unresolved.BranchID)
@@ -160,7 +166,7 @@ func Test_Reply_ApplyUpdate(t *testing.T) {
 	assert.True(t, nr.UpdatedAt.Valid)
 }
 
-func Test_Content_Value_Scan(t *testing.T) {
+func Test_Content_Scan(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
@@ -207,6 +213,10 @@ func Test_Content_Value_Scan(t *testing.T) {
 			assert.Equal(t, c.Expected, decoded)
 		})
 	}
+}
+
+func Test_Content_Value(t *testing.T) {
+	t.Parallel()
 
 	t.Run("Value round-trips through Scan", func(t *testing.T) {
 		t.Parallel()

@@ -1,14 +1,28 @@
 package search
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
+// testBlocksDiffEmpty is a case of BlocksDiff, run as a subtest of it.
+func testBlocksDiffEmpty(t *testing.T) {
+	t.Parallel()
+
+	diff := BlocksDiff(nil, nil)
+
+	assert.Empty(t, diff.Added)
+	assert.Empty(t, diff.Updated)
+	assert.Empty(t, diff.Removed)
+}
+
 func Test_BlocksDiff(t *testing.T) {
 	t.Parallel()
+
+	t.Run("Empty inputs produce an empty difference", testBlocksDiffEmpty)
 
 	kept := Block{ID: "kept", Text: "same"}
 	changed := Block{ID: "changed", Text: "old"}
@@ -26,24 +40,35 @@ func Test_BlocksDiff(t *testing.T) {
 	assert.Equal(t, []Block{removed}, diff.Removed)
 }
 
-func Test_BlocksDiff_Empty(t *testing.T) {
-	t.Parallel()
-
-	diff := BlocksDiff(nil, nil)
-
-	assert.Empty(t, diff.Added)
-	assert.Empty(t, diff.Updated)
-	assert.Empty(t, diff.Removed)
-}
-
-func Test_BlocksDifference_Value_Scan(t *testing.T) {
-	t.Parallel()
-
-	orig := BlocksDifference{
+// stubBlocksDifference builds a difference carrying one block of each kind.
+func stubBlocksDifference() BlocksDifference {
+	return BlocksDifference{
 		Added:   []Block{{ID: "a", Text: "added"}},
 		Updated: []Block{{ID: "u", Text: "updated"}},
 		Removed: []Block{{ID: "r", Text: "removed"}},
 	}
+}
+
+func Test_BlocksDifference_Value(t *testing.T) {
+	t.Parallel()
+
+	orig := stubBlocksDifference()
+
+	val, err := orig.Value()
+	require.NoError(t, err)
+
+	data, ok := val.([]byte)
+	require.True(t, ok)
+
+	exp, err := json.Marshal(orig)
+	require.NoError(t, err)
+	assert.JSONEq(t, string(exp), string(data))
+}
+
+func Test_BlocksDifference_Scan(t *testing.T) {
+	t.Parallel()
+
+	orig := stubBlocksDifference()
 
 	val, err := orig.Value()
 	require.NoError(t, err)

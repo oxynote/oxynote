@@ -11,19 +11,43 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_Input(t *testing.T) {
-	t.Parallel()
+// stubInput builds an input carrying an unconfigured GitHub manager and a
+// changedetection client pointing nowhere.
+func stubInput(t *testing.T) (*Input, *webchange.Client) {
+	t.Helper()
 
 	githubMan, err := github.NewManager(nil, github.Options{})
 	require.NoError(t, err)
 
 	webchangeClient := webchange.NewClient("http://test", "key")
 
-	inp := NewInput("org-1", githubMan, webchangeClient)
+	return NewInput("org-1", githubMan, webchangeClient), webchangeClient
+}
+
+func Test_NewInput(t *testing.T) {
+	t.Parallel()
+
+	inp, webchangeClient := stubInput(t)
+
+	require.NotNil(t, inp)
+	assert.Equal(t, "org-1", inp.organizationID)
+	assert.Same(t, webchangeClient, inp.webchangeClient)
+}
+
+func Test_Input_Github(t *testing.T) {
+	t.Parallel()
+
+	inp, _ := stubInput(t)
 
 	// the unconfigured manager surfaces its sentinel through the getter.
-	_, err = inp.Github(context.Background())
+	_, err := inp.Github(context.Background())
 	assert.ErrorIs(t, err, github.ErrNotConfigured)
+}
+
+func Test_Input_ChangeDetection(t *testing.T) {
+	t.Parallel()
+
+	inp, webchangeClient := stubInput(t)
 
 	assert.Same(t, webchangeClient, inp.ChangeDetection())
 }

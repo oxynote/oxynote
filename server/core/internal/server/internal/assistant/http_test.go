@@ -73,7 +73,8 @@ func Test_NewHandler(t *testing.T) {
 	assert.Same(t, man, hdl.assistant)
 }
 
-func Test_Handler_HandleChat_NoSession(t *testing.T) {
+// testHandlerHandleChatNoSession is a case of Handler_HandleChat, run as a subtest of it.
+func testHandlerHandleChatNoSession(t *testing.T) {
 	t.Parallel()
 
 	man := &ManagerMock{}
@@ -93,7 +94,8 @@ func Test_Handler_HandleChat_NoSession(t *testing.T) {
 	assert.Empty(t, man.ChatCalls())
 }
 
-func Test_Handler_HandleChat_UpgradeFailure(t *testing.T) {
+// testHandlerHandleChatUpgradeFailure is a case of Handler_HandleChat, run as a subtest of it.
+func testHandlerHandleChatUpgradeFailure(t *testing.T) {
 	t.Parallel()
 
 	man := &ManagerMock{}
@@ -118,7 +120,8 @@ func Test_Handler_HandleChat_UpgradeFailure(t *testing.T) {
 	assert.Empty(t, man.ChatCalls())
 }
 
-func Test_Handler_HandleChat_ChatError(t *testing.T) {
+// testHandlerHandleChatChatError is a case of Handler_HandleChat, run as a subtest of it.
+func testHandlerHandleChatChatError(t *testing.T) {
 	t.Parallel()
 
 	man := &ManagerMock{
@@ -153,7 +156,8 @@ func Test_Handler_HandleChat_ChatError(t *testing.T) {
 	assert.NotNil(t, ff[0].Conn)
 }
 
-func Test_Handler_HandleChat_ConversationRoundTrip(t *testing.T) {
+// testHandlerHandleChatConversationRoundTrip is a case of Handler_HandleChat, run as a subtest of it.
+func testHandlerHandleChatConversationRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	// the chat loop reads a message, echoes a reply, and sees the
@@ -208,7 +212,8 @@ func Test_Handler_HandleChat_ConversationRoundTrip(t *testing.T) {
 	}
 }
 
-func Test_Handler_HandleChat_AbruptClose(t *testing.T) {
+// testHandlerHandleChatAbruptClose is a case of Handler_HandleChat, run as a subtest of it.
+func testHandlerHandleChatAbruptClose(t *testing.T) {
 	t.Parallel()
 
 	// an abrupt transport drop surfaces as a raw io.EOF, which counts
@@ -247,8 +252,65 @@ func Test_Handler_HandleChat_AbruptClose(t *testing.T) {
 	}
 }
 
+func Test_Handler_HandleChat(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Unauthenticated request", testHandlerHandleChatNoSession)
+	t.Run("Websocket upgrade failure", testHandlerHandleChatUpgradeFailure)
+	t.Run("Chat failure closes the socket", testHandlerHandleChatChatError)
+	t.Run("Conversation round trip", testHandlerHandleChatConversationRoundTrip)
+	t.Run("Abrupt client close", testHandlerHandleChatAbruptClose)
+}
+
+// testWsConnWriteJSONCancelsOnError is a case of wsConn_WriteJSON, run as a subtest of it.
+func testWsConnWriteJSONCancelsOnError(t *testing.T) {
+	t.Parallel()
+
+	conns := make(chan *wsConn, 1)
+	man := &ManagerMock{
+		ChatFunc: func(ctx context.Context, _, _ string, conn protocol.SessionConn) error {
+			conns <- conn.(*wsConn)
+
+			// block until the write failure cancels the context.
+			<-ctx.Done()
+
+			return nil
+		},
+	}
+
+	hdl := &Handler{
+		log:        slog.New(slog.DiscardHandler),
+		assistant:  man,
+		acceptOpts: websocket.AcceptOptions{InsecureSkipVerify: true},
+	}
+
+	srv := chatServer(t, hdl)
+	conn := dial(t, srv)
+
+	defer conn.CloseNow() //nolint:errcheck // error provides no meaningful info
+
+	var wc *wsConn
+
+	select {
+	case wc = <-conns:
+	case <-time.After(5 * time.Second):
+		t.Fatal("chat was not started")
+	}
+
+	// writing on a closed connection must trip the cancel callback,
+	// which unblocks the chat loop above.
+	require.NoError(t, wc.conn.CloseNow())
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	wc.WriteJSON(ctx, struct{}{})
+}
+
 func Test_wsConn_WriteJSON(t *testing.T) {
 	t.Parallel()
+
+	t.Run("A write error cancels the connection", testWsConnWriteJSONCancelsOnError)
 
 	type msg struct {
 		N int `json:"n"`
@@ -312,48 +374,4 @@ func Test_wsConn_WriteJSON(t *testing.T) {
 	assert.Len(t, seen, 10)
 
 	require.NoError(t, conn.Close(websocket.StatusNormalClosure, ""))
-}
-
-func Test_wsConn_WriteJSON_CancelsOnError(t *testing.T) {
-	t.Parallel()
-
-	conns := make(chan *wsConn, 1)
-	man := &ManagerMock{
-		ChatFunc: func(ctx context.Context, _, _ string, conn protocol.SessionConn) error {
-			conns <- conn.(*wsConn)
-
-			// block until the write failure cancels the context.
-			<-ctx.Done()
-
-			return nil
-		},
-	}
-
-	hdl := &Handler{
-		log:        slog.New(slog.DiscardHandler),
-		assistant:  man,
-		acceptOpts: websocket.AcceptOptions{InsecureSkipVerify: true},
-	}
-
-	srv := chatServer(t, hdl)
-	conn := dial(t, srv)
-
-	defer conn.CloseNow() //nolint:errcheck // error provides no meaningful info
-
-	var wc *wsConn
-
-	select {
-	case wc = <-conns:
-	case <-time.After(5 * time.Second):
-		t.Fatal("chat was not started")
-	}
-
-	// writing on a closed connection must trip the cancel callback,
-	// which unblocks the chat loop above.
-	require.NoError(t, wc.conn.CloseNow())
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
-	wc.WriteJSON(ctx, struct{}{})
 }

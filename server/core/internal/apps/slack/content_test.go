@@ -42,8 +42,25 @@ func Test_UserLinkSettings_Value(t *testing.T) {
 	assert.JSONEq(t, `{"notifications": true}`, string(val.([]byte)))
 }
 
+// testUserLinkSettingsRoundTrip is a case of UserLinkSettings_Scan, run as a subtest of it.
+func testUserLinkSettingsRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	orig := UserLinkSettings{Notifications: true}
+
+	val, err := orig.Value()
+	require.NoError(t, err)
+
+	var decoded UserLinkSettings
+
+	require.NoError(t, decoded.Scan(val))
+	assert.Equal(t, orig, decoded)
+}
+
 func Test_UserLinkSettings_Scan(t *testing.T) {
 	t.Parallel()
+
+	t.Run("Value round-trips through Scan", testUserLinkSettingsRoundTrip)
 
 	tests := map[string]struct {
 		Value     any
@@ -89,19 +106,4 @@ func Test_UserLinkSettings_Scan(t *testing.T) {
 			assert.Equal(t, tc.Expected, uls)
 		})
 	}
-}
-
-// Value round-trips through Scan.
-func Test_UserLinkSettings_RoundTrip(t *testing.T) {
-	t.Parallel()
-
-	orig := UserLinkSettings{Notifications: true}
-
-	val, err := orig.Value()
-	require.NoError(t, err)
-
-	var decoded UserLinkSettings
-
-	require.NoError(t, decoded.Scan(val))
-	assert.Equal(t, orig, decoded)
 }

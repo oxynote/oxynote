@@ -1,6 +1,7 @@
 package document
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -280,6 +281,8 @@ func Test_RootBlock_StripCommentMarks(t *testing.T) {
 func Test_RootBlock_Duplicate(t *testing.T) {
 	t.Parallel()
 
+	t.Run("File references are remapped to the new document", testRootBlockDuplicateFiles)
+
 	orig := stubMarkedTree()
 	dup, files := orig.Duplicate(xid.New(), xid.New())
 
@@ -304,7 +307,9 @@ func Test_RootBlock_Duplicate(t *testing.T) {
 	assert.Equal(t, "left", orig.Content[0].Attrs["align"])
 }
 
-func Test_RootBlock_Duplicate_files(t *testing.T) {
+// testRootBlockDuplicateFiles covers the file-reference half of Duplicate: the
+// uid mapping it returns and the src rewriting that goes with it.
+func testRootBlockDuplicateFiles(t *testing.T) {
 	t.Parallel()
 
 	oldDocumentID := xid.New()
@@ -383,7 +388,23 @@ func Test_RootBlock_RegenerateUIDs(t *testing.T) {
 	assert.NotEqual(t, "p1", uid)
 }
 
-func Test_RootBlock_Value_Scan(t *testing.T) {
+func Test_RootBlock_Value(t *testing.T) {
+	t.Parallel()
+
+	orig := stubTree()
+
+	val, err := orig.Value()
+	require.NoError(t, err)
+
+	data, ok := val.([]byte)
+	require.True(t, ok)
+
+	exp, err := json.Marshal(orig)
+	require.NoError(t, err)
+	assert.JSONEq(t, string(exp), string(data))
+}
+
+func Test_RootBlock_Scan(t *testing.T) {
 	t.Parallel()
 
 	orig := stubTree()

@@ -188,7 +188,7 @@ func Test_Handler_VerifySignature(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/x/github/events", http.NoBody)
+	req := httptest.NewRequest(http.MethodPost, "/api/apps/github/events", http.NoBody)
 	rec := httptest.NewRecorder()
 
 	h.VerifySignature(next).ServeHTTP(rec, req)

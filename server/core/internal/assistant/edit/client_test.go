@@ -33,8 +33,33 @@ func Test_NewClient(t *testing.T) {
 	assert.Same(t, hc, c.httpClient)
 }
 
+// testClientApplyExpansionError is a case of Client_Apply, run as a subtest of it.
+func testClientApplyExpansionError(t *testing.T) {
+	t.Parallel()
+
+	// An unknown canonical type fails at Expand time, before the
+	// HTTP round-trip. Use a sentinel server to detect that no
+	// request was sent.
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		called = true
+	}))
+	t.Cleanup(srv.Close)
+
+	c := NewClient(srv.Client(), srv.URL)
+
+	_, err := c.Apply(context.Background(), "doc", "branch", []Operation{
+		Append(block.Block{Type: "totally_not_a_real_type"}),
+	})
+
+	require.Error(t, err)
+	assert.False(t, called, "expansion failure must short-circuit before any HTTP request")
+}
+
 func Test_Client_Apply(t *testing.T) {
 	t.Parallel()
+
+	t.Run("Expansion failure skips the request", testClientApplyExpansionError)
 
 	type capture struct {
 		path   string
@@ -180,26 +205,4 @@ func Test_Client_Apply(t *testing.T) {
 			}
 		})
 	}
-}
-
-func Test_Client_Apply_ExpansionError(t *testing.T) {
-	t.Parallel()
-
-	// An unknown canonical type fails at Expand time, before the
-	// HTTP round-trip. Use a sentinel server to detect that no
-	// request was sent.
-	called := false
-	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
-		called = true
-	}))
-	t.Cleanup(srv.Close)
-
-	c := NewClient(srv.Client(), srv.URL)
-
-	_, err := c.Apply(context.Background(), "doc", "branch", []Operation{
-		Append(block.Block{Type: "totally_not_a_real_type"}),
-	})
-
-	require.Error(t, err)
-	assert.False(t, called, "expansion failure must short-circuit before any HTTP request")
 }

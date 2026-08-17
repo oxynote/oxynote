@@ -11,7 +11,7 @@ infrastructure, and the non-Go services.
 
 `server/` is the backend half of the Oxynote collaborative documentation product. Paths below are relative to the repository root; three buildable components, all orchestrated through `docker-compose`:
 
-- `server/core/` — Go module `github.com/oxynote/oxynote/server/core`. One binary: `cmd/core` (`oxynote-core`) — main API server. Listens on `:8080`. Exposes `/api/...` (auth-required) and `/api/x/...` (internal-only, no auth; the reverse proxy is expected to firewall this). Owns Postgres, Meilisearch, Valkey (Redis), MinIO, the GitHub/Slack apps, the assistant, and the outbound data-source connections (`internal/datasource`).
+- `server/core/` — Go module `github.com/oxynote/oxynote/server/core`. One binary: `cmd/core` (`oxynote-core`) — main API server. Listens on `:8080`. Exposes `/api/...` (auth-required), `/api/apps/...` (public, sessionless third-party callbacks), and `/api/x/...` (internal-only, no auth; the reverse proxy is expected to firewall this). Owns Postgres, Meilisearch, Valkey (Redis), MinIO, the GitHub/Slack apps, the assistant, and the outbound data-source connections (`internal/datasource`).
 - `server/auth-realtime/` — `@oxynote/auth-realtime` package. TypeScript ES-module service that runs Better Auth (organization plugin) and a Hocuspocus (Yjs CRDT) server in a single Hono process on port `8081`. Forwards non-auth `/api/...` traffic to core (`OXYNOTE_AUTH_REALTIME_BACKEND_URL`).
 - `datagen/` — separate Go module `github.com/oxynote/oxynote/datagen`. Synthesises demo Postgres/MariaDB content and a fake metrics endpoint scraped by Prometheus for the demo data sources.
 
@@ -55,14 +55,15 @@ Go dependencies are fetched into the module cache at build time (`make deps` run
 - `:8082` — changedetection.io
 - `:8083` — Grafana (direct, not via Caddy)
 
-So from a frontend's point of view: auth + realtime is `:8080/auth-realtime/...`, the core API is `:8080/core/api/...`. Internal-only Go routes (`/api/x/...`) are not exposed by Caddy.
+So from a frontend's point of view: auth + realtime is `:8080/auth-realtime/...`, the core API is `:8080/core/api/...`. Internal-only Go routes (`/api/x/...`) are not exposed by Caddy; the GitHub and Slack callback URLs configured in those apps must point at `:8080/core/api/apps/...`, which is.
 
 ## Core request surface
 
 `server/core/internal/server/router.go` is the canonical map. Three layers:
 
 - `/api/...` (public): auth middleware (`internal/server/internal/auth`) validates sessions by calling auth-realtime's `/api/auth/get-session` (configured via `SERVER_AUTH_BETTER_AUTH_URL`). Routes for documents, branches, comments, reviewers, hooks, files, GitHub, Slack, notifications, data-sources, AI chat.
-- `/api/x/...` (internal): no auth at all — reverse proxy must firewall. Used by auth-realtime to fetch/store branch content (`/x/documents/{id}/branches`, `/x/documents/{id}/branch/{branchId}`), trigger emails, initialize orgs, and receive GitHub/Slack webhooks.
+- `/api/x/...` (internal): no auth at all — reverse proxy must firewall. Used by auth-realtime to fetch/store branch content (`/x/documents/{id}/branches`, `/x/documents/{id}/branch/{branchId}`), trigger emails, and initialize or tear down orgs.
+- `/api/apps/...` (public, sessionless): where GitHub and Slack deliver. `POST /apps/github/events` and `POST /apps/slack/{events,commands,slash}` are gated by the provider's request signature; `GET /apps/slack/install` completes the direct-install OAuth exchange. These must stay outside `/api/x` — third parties reach core through the same front door as browsers, and the proxy 403s the internal subtree.
 - WebSocket topics under `/api/ws` (routed by `wetsocks/wsserver` from the first-party `github.com/oxynote/wetsocks` library): `change@document-tree`, `change@documents.{documentId}.comments|metadata|reviewers|maintainers`, `post@slack.messages`, `creation@notifications`, `ping@version`. Topic binders live on the per-domain handler types under `internal/server/internal/...` (`Handler.BindXxx`).
 
 Most public routes in the README (`/api/documents`, `/api/documents/tree`, etc.) are served by core; the README is the closest thing to a contract spec — when changing handlers, update it.

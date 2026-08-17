@@ -180,7 +180,7 @@ func writtenTypes(writer *protocolMock.SessionWriter) []string {
 	return out
 }
 
-func Test_Session_Close(t *testing.T) {
+func Test_session_Close(t *testing.T) {
 	t.Parallel()
 
 	s := newTestSession(nil, &protocolMock.SessionWriter{}, nil, nil, nil)
@@ -224,7 +224,7 @@ func Test_Session_Close(t *testing.T) {
 	})
 }
 
-func Test_Session_SetActiveDocument(t *testing.T) {
+func Test_session_SetActiveDocument(t *testing.T) {
 	t.Parallel()
 
 	s := newTestSession(nil, &protocolMock.SessionWriter{}, nil, nil, nil)
@@ -233,7 +233,7 @@ func Test_Session_SetActiveDocument(t *testing.T) {
 	assert.Equal(t, "doc-1", s.activeDocumentID)
 }
 
-func Test_Session_sendHistory(t *testing.T) {
+func Test_session_sendHistory(t *testing.T) {
 	t.Parallel()
 
 	// empty history sends nothing
@@ -250,7 +250,7 @@ func Test_Session_sendHistory(t *testing.T) {
 	assert.Equal(t, []string{"history"}, writtenTypes(writer))
 }
 
-func Test_Session_Process(t *testing.T) {
+func Test_session_Process(t *testing.T) {
 	t.Run("Unknown message type", func(t *testing.T) {
 		t.Parallel()
 
@@ -387,7 +387,7 @@ func Test_Session_Process(t *testing.T) {
 	})
 }
 
-func Test_Session_handleUserMessage(t *testing.T) {
+func Test_session_handleUserMessage(t *testing.T) {
 	t.Run("Anthropic failure rolls back the turn", func(t *testing.T) {
 		t.Parallel()
 
@@ -480,7 +480,7 @@ func Test_Session_handleUserMessage(t *testing.T) {
 	})
 }
 
-func Test_Session_callAnthropic(t *testing.T) {
+func Test_session_callAnthropic(t *testing.T) {
 	t.Run("Text turn relays deltas and records the answer", func(t *testing.T) {
 		t.Parallel()
 
@@ -575,7 +575,7 @@ func Test_Session_callAnthropic(t *testing.T) {
 	})
 }
 
-func Test_Session_dispatchTools(t *testing.T) {
+func Test_session_dispatchTools(t *testing.T) {
 	t.Run("Reads execute without confirmation", func(t *testing.T) {
 		t.Parallel()
 
@@ -789,7 +789,7 @@ func Test_Session_dispatchTools(t *testing.T) {
 	})
 }
 
-func Test_Session_runTool(t *testing.T) {
+func Test_session_runTool(t *testing.T) {
 	t.Run("Unknown tool", func(t *testing.T) {
 		t.Parallel()
 
@@ -844,7 +844,7 @@ func Test_Session_runTool(t *testing.T) {
 	})
 }
 
-func Test_Session_requestConfirmation(t *testing.T) {
+func Test_session_requestConfirmation(t *testing.T) {
 	t.Run("Approved", func(t *testing.T) {
 		t.Parallel()
 
@@ -894,7 +894,7 @@ func Test_Session_requestConfirmation(t *testing.T) {
 	})
 }
 
-func Test_Session_deliverConfirmResponse(t *testing.T) {
+func Test_session_deliverConfirmResponse(t *testing.T) {
 	t.Parallel()
 
 	s := newTestSession(nil, &protocolMock.SessionWriter{}, nil, nil, nil)
@@ -920,7 +920,7 @@ func Test_Session_deliverConfirmResponse(t *testing.T) {
 	s.deliverConfirmResponse("turn-1", false, false)
 }
 
-func Test_Session_pruneStaleReads(t *testing.T) {
+func Test_session_pruneStaleReads(t *testing.T) {
 	readTurn := func(id, args string) []anthropic.MessageParam {
 		return []anthropic.MessageParam{
 			assistantMsg(toolUseBlock(id, "read_block", args)),
@@ -987,7 +987,7 @@ func Test_Session_pruneStaleReads(t *testing.T) {
 	})
 }
 
-func Test_Session_prunePriorReadResult(t *testing.T) {
+func Test_session_prunePriorReadResult(t *testing.T) {
 	t.Parallel()
 
 	s := newTestSession(nil, &protocolMock.SessionWriter{}, nil, nil, nil)
@@ -1013,7 +1013,7 @@ func Test_Session_prunePriorReadResult(t *testing.T) {
 	assert.Contains(t, s.messages[1].Content[1].OfToolResult.Content[0].OfText.Text, "pruned")
 }
 
-func Test_Session_trimMessages(t *testing.T) {
+func Test_session_trimMessages(t *testing.T) {
 	buildMessages := func(n int) []anthropic.MessageParam {
 		out := make([]anthropic.MessageParam, 0, n)
 		for range n {

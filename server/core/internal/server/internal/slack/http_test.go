@@ -224,7 +224,7 @@ func Test_Handler_VerifySignature(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/x/slack/events", http.NoBody)
+	req := httptest.NewRequest(http.MethodPost, "/api/apps/slack/events", http.NoBody)
 	rec := httptest.NewRecorder()
 
 	h.VerifySignature(next).ServeHTTP(rec, req)
@@ -239,7 +239,7 @@ func Test_Handler_InstallApp(t *testing.T) {
 
 	h := newTestHandler(t, false)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/x/slack/install?code=abc", http.NoBody)
+	req := httptest.NewRequest(http.MethodGet, "/api/apps/slack/install?code=abc", http.NoBody)
 	rec := httptest.NewRecorder()
 
 	h.InstallApp(rec, req)

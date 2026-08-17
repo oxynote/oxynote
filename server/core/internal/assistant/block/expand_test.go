@@ -78,7 +78,126 @@ func stripUIDsCanonical(b Block) Block {
 	return b
 }
 
+// testExpandPreservesUID is a case of Expand, run as a subtest of it.
+func testExpandPreservesUID(t *testing.T) {
+	t.Parallel()
+
+	got, err := Expand(Block{Type: BlockParagraph, UID: "preserve-me", Text: "x"})
+	require.NoError(t, err)
+
+	uid, ok := got.UID()
+	require.True(t, ok)
+	assert.Equal(t, "preserve-me", uid)
+}
+
+// testExpandGeneratesUID is a case of Expand, run as a subtest of it.
+func testExpandGeneratesUID(t *testing.T) {
+	t.Parallel()
+
+	got, err := Expand(Block{Type: BlockParagraph, Text: "x"})
+	require.NoError(t, err)
+
+	uid, ok := got.UID()
+	require.True(t, ok)
+	assert.NotEmpty(t, uid)
+}
+
+// testExpandRoundTrip is a case of Expand, run as a subtest of it.
+func testExpandRoundTrip(t *testing.T) {
+	tests := map[string]struct {
+		Input Block
+	}{
+		"Paragraph":  {Input: Block{Type: BlockParagraph, Text: "hi **there**"}},
+		"Heading":    {Input: Block{Type: BlockHeading, Text: "Title", Attrs: map[string]any{"level": 1}}},
+		"Blockquote": {Input: Block{Type: BlockBlockquote, Text: "quote"}},
+		"Blockquote with items": {Input: Block{
+			Type: BlockBlockquote,
+			Items: []Block{
+				{Type: BlockParagraph, Text: "one"},
+				{Type: BlockParagraph, Text: "two"},
+			},
+		}},
+		"Bullet list": {Input: Block{
+			Type:  BlockBulletList,
+			Items: []Block{{Type: BlockParagraph, Text: "one"}, {Type: BlockParagraph, Text: "two"}},
+		}},
+		"Task list": {Input: Block{
+			Type: BlockTaskList,
+			TaskItems: []TaskItem{
+				{Checked: true, Block: Block{Type: BlockParagraph, Text: "done"}},
+			},
+		}},
+		"Callout text shorthand": {Input: Block{
+			Type:  BlockCallout,
+			Text:  "warn",
+			Attrs: map[string]any{"icon": "lucide:warning"},
+		}},
+		"Code": {Input: Block{
+			Type:  BlockCode,
+			Text:  "x := 1",
+			Attrs: map[string]any{"language": "go"},
+		}},
+		"Titled code": {Input: Block{
+			Type:  BlockTitledCode,
+			Text:  "x := 1",
+			Attrs: map[string]any{"title": "ex.go", "language": "go"},
+		}},
+		"Mermaid":         {Input: Block{Type: BlockMermaid, Text: "graph TD; A-->B;"}},
+		"Horizontal rule": {Input: Block{Type: BlockHorizontalRule}},
+		"Image": {Input: Block{
+			Type:  BlockImage,
+			Attrs: map[string]any{"src": "http://x", "alt": "x", "width": 100},
+		}},
+		"Figma": {Input: Block{
+			Type:  BlockFigma,
+			Attrs: map[string]any{"src": "http://figma", "width": 320, "height": 200},
+		}},
+		"Split doc": {Input: Block{
+			Type:  BlockSplitDoc,
+			Attrs: map[string]any{"inversed": true},
+			Left: []Block{
+				{Type: BlockHeading, Text: "API", Attrs: map[string]any{"level": 1}},
+				{Type: BlockParagraph, Text: "explain"},
+			},
+			Right: []Block{
+				{Type: BlockTitledCode, Text: "ok", Attrs: map[string]any{"title": "example"}},
+			},
+		}},
+		"Param list": {Input: Block{
+			Type:   BlockParamList,
+			Header: "Body",
+			Params: []ParamItem{
+				{Name: "id", Type: "string", Description: "the **user** id"},
+				{Name: "limit", Type: "number?", Description: "page size"},
+			},
+		}},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			require.NoError(t, Validate(tc.Input), "input should validate")
+
+			expanded, err := Expand(tc.Input)
+			require.NoError(t, err)
+
+			compacted, err := Compact(expanded)
+			require.NoError(t, err)
+
+			assert.Equal(t,
+				stripUIDsCanonical(tc.Input),
+				stripUIDsCanonical(compacted),
+			)
+		})
+	}
+}
+
 func Test_Expand(t *testing.T) {
+	t.Run("Compact round-trips through Expand", testExpandRoundTrip)
+	t.Run("A missing uid is generated", testExpandGeneratesUID)
+	t.Run("An explicit uid is preserved", testExpandPreservesUID)
+
 	tests := map[string]struct {
 		Input     Block
 		Expected  document.Block
@@ -469,118 +588,6 @@ func Test_Expand(t *testing.T) {
 
 			require.NoError(t, err)
 			assert.Equal(t, tc.Expected, stripUIDsPM(got))
-		})
-	}
-}
-
-func Test_Expand_PreservesUID(t *testing.T) {
-	t.Parallel()
-
-	got, err := Expand(Block{Type: BlockParagraph, UID: "preserve-me", Text: "x"})
-	require.NoError(t, err)
-
-	uid, ok := got.UID()
-	require.True(t, ok)
-	assert.Equal(t, "preserve-me", uid)
-}
-
-func Test_Expand_GeneratesUID(t *testing.T) {
-	t.Parallel()
-
-	got, err := Expand(Block{Type: BlockParagraph, Text: "x"})
-	require.NoError(t, err)
-
-	uid, ok := got.UID()
-	require.True(t, ok)
-	assert.NotEmpty(t, uid)
-}
-
-func Test_Expand_RoundTrip(t *testing.T) {
-	tests := map[string]struct {
-		Input Block
-	}{
-		"Paragraph":  {Input: Block{Type: BlockParagraph, Text: "hi **there**"}},
-		"Heading":    {Input: Block{Type: BlockHeading, Text: "Title", Attrs: map[string]any{"level": 1}}},
-		"Blockquote": {Input: Block{Type: BlockBlockquote, Text: "quote"}},
-		"Blockquote with items": {Input: Block{
-			Type: BlockBlockquote,
-			Items: []Block{
-				{Type: BlockParagraph, Text: "one"},
-				{Type: BlockParagraph, Text: "two"},
-			},
-		}},
-		"Bullet list": {Input: Block{
-			Type:  BlockBulletList,
-			Items: []Block{{Type: BlockParagraph, Text: "one"}, {Type: BlockParagraph, Text: "two"}},
-		}},
-		"Task list": {Input: Block{
-			Type: BlockTaskList,
-			TaskItems: []TaskItem{
-				{Checked: true, Block: Block{Type: BlockParagraph, Text: "done"}},
-			},
-		}},
-		"Callout text shorthand": {Input: Block{
-			Type:  BlockCallout,
-			Text:  "warn",
-			Attrs: map[string]any{"icon": "lucide:warning"},
-		}},
-		"Code": {Input: Block{
-			Type:  BlockCode,
-			Text:  "x := 1",
-			Attrs: map[string]any{"language": "go"},
-		}},
-		"Titled code": {Input: Block{
-			Type:  BlockTitledCode,
-			Text:  "x := 1",
-			Attrs: map[string]any{"title": "ex.go", "language": "go"},
-		}},
-		"Mermaid":         {Input: Block{Type: BlockMermaid, Text: "graph TD; A-->B;"}},
-		"Horizontal rule": {Input: Block{Type: BlockHorizontalRule}},
-		"Image": {Input: Block{
-			Type:  BlockImage,
-			Attrs: map[string]any{"src": "http://x", "alt": "x", "width": 100},
-		}},
-		"Figma": {Input: Block{
-			Type:  BlockFigma,
-			Attrs: map[string]any{"src": "http://figma", "width": 320, "height": 200},
-		}},
-		"Split doc": {Input: Block{
-			Type:  BlockSplitDoc,
-			Attrs: map[string]any{"inversed": true},
-			Left: []Block{
-				{Type: BlockHeading, Text: "API", Attrs: map[string]any{"level": 1}},
-				{Type: BlockParagraph, Text: "explain"},
-			},
-			Right: []Block{
-				{Type: BlockTitledCode, Text: "ok", Attrs: map[string]any{"title": "example"}},
-			},
-		}},
-		"Param list": {Input: Block{
-			Type:   BlockParamList,
-			Header: "Body",
-			Params: []ParamItem{
-				{Name: "id", Type: "string", Description: "the **user** id"},
-				{Name: "limit", Type: "number?", Description: "page size"},
-			},
-		}},
-	}
-
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			require.NoError(t, Validate(tc.Input), "input should validate")
-
-			expanded, err := Expand(tc.Input)
-			require.NoError(t, err)
-
-			compacted, err := Compact(expanded)
-			require.NoError(t, err)
-
-			assert.Equal(t,
-				stripUIDsCanonical(tc.Input),
-				stripUIDsCanonical(compacted),
-			)
 		})
 	}
 }

@@ -205,6 +205,25 @@ func Test_agent_FetchPaginatedDocumentHooks(t *testing.T) {
 	res, err = db.FetchPaginatedDocumentHooks(context.Background(), hooks[1].ID, 2)
 	assert.NoError(t, err)
 	testutil.AssertFilterEqual(t, hooks[2:], res)
+
+	// success - the organization is deleted by the auth service, outside of
+	// core, and the rows it leaves behind are the only trace of the external
+	// watchers: the sweep has to keep finding them.
+	q, args := db.builder.Delete("organizations").
+		Where(sq.Eq{"id": hooks[0].OrganizationID}).
+		MustSql()
+
+	_, err = db.sql.Exec(q, args...)
+	require.NoError(t, err)
+
+	res, err = db.FetchPaginatedDocumentHooks(context.Background(), xid.NilID(), 10)
+	require.NoError(t, err)
+	require.Len(t, res, len(hooks))
+
+	for _, hk := range res {
+		assert.False(t, hk.OrganizationID.Valid)
+		assert.NotEmpty(t, hk.State, "the watcher stays addressable without its organization")
+	}
 }
 
 func Test_agent_UpdateDocumentHook(t *testing.T) {
@@ -427,39 +446,4 @@ func Test_agent_FetchDocumentHooksByOrganizationID(t *testing.T) {
 
 	ids := []xid.ID{res[0].ID, res[1].ID}
 	assert.ElementsMatch(t, []xid.ID{hooks[0].ID, hooks[1].ID}, ids)
-}
-
-// the organization row is deleted by the auth service, outside of core: the
-// hook rows have to survive it, or the watchers they hold can never be found
-// again.
-func Test_agent_documentHooksOutliveTheOrganization(t *testing.T) {
-	t.Parallel()
-
-	db := prepTempDB(t)
-
-	branch := prepDocumentBranches(t, db, 1, nil)[0]
-
-	hk := prepDocumentHooks(t, db, 1, func(_ int, hk *hook.Hook) {
-		hk.DocumentID = null.ValueFrom(branch.ID)
-		hk.OrganizationID = null.StringFrom(branch.OrganizationID)
-		hk.BranchID = null.ValueFrom(branch.BranchID)
-	})[0]
-
-	q, args := db.builder.Delete("organizations").
-		Where(sq.Eq{"id": branch.OrganizationID}).
-		MustSql()
-
-	_, err := db.sql.Exec(q, args...)
-	require.NoError(t, err)
-
-	var stored hook.Hook
-
-	q, args = db.selectDocumentHook(db.builder.Select()).
-		Where(sq.Eq{"document_hooks.id": hk.ID}).
-		MustSql()
-
-	require.NoError(t, db.sql.Get(&stored, q, args...))
-	assert.False(t, stored.OrganizationID.Valid)
-	assert.False(t, stored.DocumentID.Valid)
-	assert.NotEmpty(t, stored.State, "the watcher stays addressable without its organization")
 }

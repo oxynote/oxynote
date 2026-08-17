@@ -14,7 +14,9 @@
 	import common
 
 	# /api/x/* is core's internal, auth-less service-to-service surface —
-	# it must never be reachable through the front door.
+	# it must never be reachable through the front door. /api/apps/* is the
+	# opposite: GitHub and Slack deliver their webhooks and OAuth callbacks
+	# there, so it stays open and is guarded by request signatures instead.
 	handle /core/api/x/* {
 		respond 403
 	}

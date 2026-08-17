@@ -19,8 +19,53 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }
 
+// testMiddlewareForwardsCookies is a case of Middleware, run as a subtest of it.
+func testMiddlewareForwardsCookies(t *testing.T) {
+	t.Parallel()
+
+	client, mt := testutil.MockHTTP()
+
+	var gotCookies []*http.Cookie
+
+	mt.RegisterResponder(http.MethodGet, "http://test.com/get-session",
+		func(r *http.Request) (*http.Response, error) {
+			gotCookies = r.Cookies()
+
+			return httpmock.NewStringResponse(
+				http.StatusOK,
+				`{"session":{"userId":"u1","activeOrganizationId":"org1"}}`,
+			), nil
+		},
+	)
+
+	hdl := Middleware(
+		slog.New(slog.DiscardHandler),
+		Options{BetterAuthURL: "http://test.com/get-session"},
+		client,
+	)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "http://test.com/", http.NoBody)
+	req.AddCookie(&http.Cookie{Name: "session_token", Value: "tkn", Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
+	req.AddCookie(&http.Cookie{Name: "other", Value: "val", Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
+
+	rec := httptest.NewRecorder()
+
+	hdl.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNoContent, rec.Code)
+	require.Len(t, gotCookies, 2)
+	assert.Equal(t, "session_token", gotCookies[0].Name)
+	assert.Equal(t, "tkn", gotCookies[0].Value)
+	assert.Equal(t, "other", gotCookies[1].Name)
+	assert.Equal(t, "val", gotCookies[1].Value)
+}
+
 func Test_Middleware(t *testing.T) {
 	t.Parallel()
+
+	t.Run("Cookies are forwarded to the auth service", testMiddlewareForwardsCookies)
 
 	cc := map[string]struct {
 		URL      string
@@ -127,48 +172,6 @@ func Test_Middleware(t *testing.T) {
 	}
 }
 
-func Test_Middleware_ForwardsCookies(t *testing.T) {
-	t.Parallel()
-
-	client, mt := testutil.MockHTTP()
-
-	var gotCookies []*http.Cookie
-
-	mt.RegisterResponder(http.MethodGet, "http://test.com/get-session",
-		func(r *http.Request) (*http.Response, error) {
-			gotCookies = r.Cookies()
-
-			return httpmock.NewStringResponse(
-				http.StatusOK,
-				`{"session":{"userId":"u1","activeOrganizationId":"org1"}}`,
-			), nil
-		},
-	)
-
-	hdl := Middleware(
-		slog.New(slog.DiscardHandler),
-		Options{BetterAuthURL: "http://test.com/get-session"},
-		client,
-	)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
-	}))
-
-	req := httptest.NewRequest(http.MethodGet, "http://test.com/", http.NoBody)
-	req.AddCookie(&http.Cookie{Name: "session_token", Value: "tkn", Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
-	req.AddCookie(&http.Cookie{Name: "other", Value: "val", Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
-
-	rec := httptest.NewRecorder()
-
-	hdl.ServeHTTP(rec, req)
-
-	require.Equal(t, http.StatusNoContent, rec.Code)
-	require.Len(t, gotCookies, 2)
-	assert.Equal(t, "session_token", gotCookies[0].Name)
-	assert.Equal(t, "tkn", gotCookies[0].Value)
-	assert.Equal(t, "other", gotCookies[1].Name)
-	assert.Equal(t, "val", gotCookies[1].Value)
-}
-
 func Test_FilterOrganization(t *testing.T) {
 	t.Parallel()
 
@@ -248,9 +251,23 @@ func Test_FilterUser(t *testing.T) {
 	}
 }
 
-func Test_AddSessionToContext_and_ExtractSessionFromContext(t *testing.T) {
+func Test_AddSessionToContext(t *testing.T) {
 	t.Parallel()
 
+	session := Session{
+		UserID:               "u1",
+		ActiveOrganizationID: "org1",
+	}
+
+	got, err := ExtractSessionFromContext(AddSessionToContext(context.Background(), session))
+	require.NoError(t, err)
+	assert.Equal(t, session, got)
+}
+
+func Test_ExtractSessionFromContext(t *testing.T) {
+	t.Parallel()
+
+	// a context without a session is the unauthenticated case.
 	_, err := ExtractSessionFromContext(context.Background())
 	testutil.AssertEqualError(t, httpserver.ErrNotAuthenticated, err)
 

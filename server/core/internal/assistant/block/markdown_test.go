@@ -228,7 +228,44 @@ func Test_ParseInlineMarkdown(t *testing.T) {
 	}
 }
 
+// testInlineMarkdownRoundTrip is a case of emitInlineMarkdown, run as a subtest of it.
+func testInlineMarkdownRoundTrip(t *testing.T) {
+	tests := map[string]struct {
+		Input string
+	}{
+		"Plain text":            {Input: "plain text"},
+		"Bold":                  {Input: "**bold**"},
+		"Italic":                {Input: "*italic*"},
+		"Underline":             {Input: "_underline_"},
+		"Strike":                {Input: "~~strike~~"},
+		"Code":                  {Input: "`code`"},
+		"Link":                  {Input: "[label](https://x)"},
+		"Mixed marks":           {Input: "mix **bold** and *italic* and `code`"},
+		"Escaped literal":       {Input: `escaped \* literal`},
+		"Link inside bold":      {Input: "**[link inside bold](https://y)**"},
+		"Strike with code mark": {Input: "~~strike with `code` inside~~"},
+		"Parenthesised href":    {Input: `[Go](https://en.wikipedia.org/wiki/Go_\(programming_language\))`},
+		"Bracket in label":      {Input: `[label with \] bracket](https://x)`},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			parsed := ParseInlineMarkdown(tc.Input)
+			emitted := emitInlineMarkdown(parsed)
+			reparsed := ParseInlineMarkdown(emitted)
+
+			require.Equal(t, parsed, reparsed,
+				"parse(emit(parse(x))) must equal parse(x); emit produced %q", emitted,
+			)
+		})
+	}
+}
+
 func Test_emitInlineMarkdown(t *testing.T) {
+	t.Run("Emitted markdown re-parses to the same atoms", testInlineMarkdownRoundTrip)
+
 	tests := map[string]struct {
 		Input    []document.Block
 		Expected string
@@ -324,40 +361,6 @@ func Test_emitInlineMarkdown(t *testing.T) {
 
 			got := emitInlineMarkdown(tc.Input)
 			assert.Equal(t, tc.Expected, got)
-		})
-	}
-}
-
-func Test_InlineMarkdownRoundTrip(t *testing.T) {
-	tests := map[string]struct {
-		Input string
-	}{
-		"Plain text":            {Input: "plain text"},
-		"Bold":                  {Input: "**bold**"},
-		"Italic":                {Input: "*italic*"},
-		"Underline":             {Input: "_underline_"},
-		"Strike":                {Input: "~~strike~~"},
-		"Code":                  {Input: "`code`"},
-		"Link":                  {Input: "[label](https://x)"},
-		"Mixed marks":           {Input: "mix **bold** and *italic* and `code`"},
-		"Escaped literal":       {Input: `escaped \* literal`},
-		"Link inside bold":      {Input: "**[link inside bold](https://y)**"},
-		"Strike with code mark": {Input: "~~strike with `code` inside~~"},
-		"Parenthesised href":    {Input: `[Go](https://en.wikipedia.org/wiki/Go_\(programming_language\))`},
-		"Bracket in label":      {Input: `[label with \] bracket](https://x)`},
-	}
-
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			parsed := ParseInlineMarkdown(tc.Input)
-			emitted := emitInlineMarkdown(parsed)
-			reparsed := ParseInlineMarkdown(emitted)
-
-			require.Equal(t, parsed, reparsed,
-				"parse(emit(parse(x))) must equal parse(x); emit produced %q", emitted,
-			)
 		})
 	}
 }

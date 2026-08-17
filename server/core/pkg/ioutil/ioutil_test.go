@@ -26,7 +26,7 @@ func Test_MultiCloser(t *testing.T) {
 	assert.Same(t, c2, mc.(*multiCloser).closers[1])
 }
 
-func Test_multiClose_Close(t *testing.T) {
+func Test_multiCloser_Close(t *testing.T) {
 	// error
 	c1, c2 := &closerMock{err: assert.AnError}, &closerMock{}
 	mc := &multiCloser{closers: []io.Closer{c1, c2}}

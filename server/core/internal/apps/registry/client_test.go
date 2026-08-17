@@ -70,8 +70,19 @@ func newFakeRegistry(t *testing.T, authorization string) (string, string) {
 	return strings.TrimPrefix(authSrv.URL, "http://"), digest.String()
 }
 
+// testDigestInvalidReference is a case of Digest, run as a subtest of it.
+func testDigestInvalidReference(t *testing.T) {
+	t.Parallel()
+
+	_, err := Digest(context.Background(), "UPPERCASE not allowed")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "parsing image reference")
+}
+
 func Test_Digest(t *testing.T) {
 	t.Parallel()
+
+	t.Run("Invalid image reference", testDigestInvalidReference)
 
 	// dXNlcjpwYXNz is the base64 form of user:pass.
 	const basicAuthorization = "Basic dXNlcjpwYXNz"
@@ -125,12 +136,4 @@ func Test_Digest(t *testing.T) {
 			assert.Equal(t, seeded, digest)
 		})
 	}
-}
-
-func Test_Digest_InvalidReference(t *testing.T) {
-	t.Parallel()
-
-	_, err := Digest(context.Background(), "UPPERCASE not allowed")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "parsing image reference")
 }
