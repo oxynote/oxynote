@@ -155,7 +155,7 @@ func NewServer(
 	// rename/set-icon.
 	assistantMan.SetTreeNotifier(srv.handlers.document)
 	srv.handlers.github = github.NewHandler(log, db, client, githubMan)
-	srv.handlers.slack = slack.NewHandler(log, db, http.DefaultClient, slackMan)
+	srv.handlers.slack = slack.NewHandler(log, db, client, slackMan)
 	srv.handlers.notification = notification.NewHandler(log, db, notifier)
 	srv.handlers.datasource = datasource.NewHandler(log, db)
 	srv.handlers.email = email.NewHandler(log, emailSender)

@@ -1,13 +1,12 @@
 package github
 
 import (
-	"encoding/json"
-	"fmt"
+	"errors"
 	"net/http"
 	"net/url"
 	"time"
 
-	"github.com/oxynote/oxynote/server/core/pkg/cryptoutil"
+	"github.com/oxynote/oxynote/server/core/internal/apps/state"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 )
@@ -37,6 +36,11 @@ type InstallationState struct {
 	CreatedAt time.Time `json:"createdAt"`
 }
 
+// Created reports when the installation state was issued.
+func (is InstallationState) Created() time.Time {
+	return is.CreatedAt
+}
+
 // CreateInstallationURL generates the GitHub App installation URL for the
 // specified organization ID.
 func (m *Manager) CreateInstallationURL(organizationID string) (string, error) {
@@ -50,21 +54,16 @@ func (m *Manager) CreateInstallationURL(organizationID string) (string, error) {
 		Path:   "/apps/" + m.opt.AppSlug + "/installations/new",
 	}
 
-	data, err := json.Marshal(InstallationState{
+	token, err := state.Encode(InstallationState{
 		OrganizationID: organizationID,
 		CreatedAt:      timeutil.Now(),
-	})
+	}, m.opt.InstallationSigningSecret)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal installation state: %w", err)
-	}
-
-	state, err := cryptoutil.EncryptText(string(data), []byte(m.opt.InstallationSigningSecret))
-	if err != nil {
-		return "", fmt.Errorf("failed to encrypt installation state: %w", err)
+		return "", err
 	}
 
 	q := u.Query()
-	q.Add("state", state)
+	q.Add("state", token)
 	u.RawQuery = q.Encode()
 
 	return u.String(), nil
@@ -72,24 +71,18 @@ func (m *Manager) CreateInstallationURL(organizationID string) (string, error) {
 
 // VerifyInstallationState verifies and decrypts the installation state
 // from the given state string.
-func (m *Manager) VerifyInstallationState(state string) (*InstallationState, error) {
+func (m *Manager) VerifyInstallationState(token string) (*InstallationState, error) {
 	if !m.Configured() {
 		return nil, ErrNotConfigured
 	}
 
-	decrypted, err := cryptoutil.DecryptText(state, []byte(m.opt.InstallationSigningSecret))
+	is, err := state.Decode[InstallationState](token, m.opt.InstallationSigningSecret, _installationStateTTL)
 	if err != nil {
+		if errors.Is(err, state.ErrExpired) {
+			return nil, ErrInstallationStateExpired
+		}
+
 		return nil, ErrInvalidInstallationState
-	}
-
-	var is InstallationState
-
-	if err := json.Unmarshal([]byte(decrypted), &is); err != nil {
-		return nil, ErrInvalidInstallationState
-	}
-
-	if time.Since(is.CreatedAt) > _installationStateTTL {
-		return nil, ErrInstallationStateExpired
 	}
 
 	return &is, nil

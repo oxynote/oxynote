@@ -9,13 +9,13 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"time"
 
-	"github.com/cenkalti/backoff/v4"
 	"github.com/oxynote/oxynote/server/core/internal/apps/slack"
+	"github.com/oxynote/oxynote/server/core/internal/server/internal/apps"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
+	"github.com/oxynote/oxynote/server/core/pkg/retryutil"
 	"github.com/rs/xid"
 	goslack "github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
@@ -33,14 +33,6 @@ var (
 
 	// ErrOpeningView is returned when there is an error opening a Slack view.
 	ErrOpeningView = errutil.New(http.StatusInternalServerError, "slack.opening_view", "error opening view")
-)
-
-const (
-	// _maxBackoffRetries is the maximum number of retries.
-	_maxBackoffRetries = 5
-
-	// _backoffRetryInterval is the interval between retries.
-	_backoffRetryInterval = time.Second
 )
 
 // Handler holds dependencies required for Slack related operations.
@@ -69,33 +61,23 @@ func NewHandler(log *slog.Logger, db DB, client *http.Client, man *slack.Manager
 // slack.ErrNotConfigured when the Slack App integration is not configured
 // on this deployment.
 func (h *Handler) RequireConfigured(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !h.man.Configured() {
-			httpserver.RespondError(h.log, w, slack.ErrNotConfigured)
-			return
-		}
-
-		next.ServeHTTP(w, r)
-	})
+	return apps.RequireConfigured(h.log, h.man.Configured, slack.ErrNotConfigured)(next)
 }
 
 // VerifySignature is a middleware that verifies the Slack request signature.
 func (h *Handler) VerifySignature(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// respond with a bare 404 when the Slack App is not configured:
-		// no Slack App can be pointing its callbacks at this deployment.
-		if !h.man.Configured() {
-			httpserver.RespondError(h.log, w, errutil.NewPlain(http.StatusNotFound))
-			return
-		}
+	// respond with a bare 404 when the Slack App is not configured: no
+	// Slack App can be pointing its callbacks at this deployment.
+	guard := apps.RequireConfigured(h.log, h.man.Configured, errutil.NewPlain(http.StatusNotFound))
 
+	return guard(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := h.man.VerifyMiddleware(r); err != nil {
 			httpserver.RespondError(h.log, w, err)
 			return
 		}
 
 		next.ServeHTTP(w, r)
-	})
+	}))
 }
 
 // InstallApp handles the installation of a Slack app by exchanging the
@@ -178,29 +160,17 @@ func (h *Handler) CheckInstallation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var connected bool
+	connected, err := apps.Connected(r.Context(), h.man.Configured(), func(ctx context.Context) error {
+		_, ferr := h.db.FetchSlackAppByOrganizationID(ctx, session.ActiveOrganizationID)
 
-	// skip the DB lookup when the Slack App is not configured: this
-	// endpoint always responds 200 so the frontend can use the configured
-	// flag as the capability signal.
-	if h.man.Configured() {
-		_, err = h.db.FetchSlackAppByOrganizationID(r.Context(), session.ActiveOrganizationID)
-
-		switch {
-		case errutil.IsNotFound(err):
-			// OK.
-		case err == nil:
-			connected = true
-		default:
-			httpserver.RespondError(h.log, w, err)
-			return
-		}
+		return ferr
+	})
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
 	}
 
-	httpserver.Respond(h.log, w, map[string]bool{
-		"connected":  connected,
-		"configured": h.man.Configured(),
-	}, http.StatusOK)
+	apps.RespondCapability(h.log, w, h.man.Configured(), connected)
 }
 
 // ConnectOrganization handles the connection of a Slack organization to the application.
@@ -230,29 +200,11 @@ func (h *Handler) ConnectOrganization(w http.ResponseWriter, r *http.Request) {
 
 	var app *slack.App
 
-	rerr := backoff.Retry(
-		func() error { //nolint:contextcheck // the retry closure runs synchronously within the request
-			app, err = h.db.FetchSlackAppByTeamID(r.Context(), is.TeamID.String)
-			if err != nil {
-				if !errutil.IsNotFound(err) {
-					return &backoff.PermanentError{
-						Err: err,
-					}
-				}
+	rerr := retryutil.UntilFound(r.Context(), func(ctx context.Context) error {
+		app, err = h.db.FetchSlackAppByTeamID(ctx, is.TeamID.String)
 
-				return err
-			}
-
-			return nil
-		},
-		backoff.WithMaxRetries(
-			backoff.WithContext(
-				backoff.NewConstantBackOff(_backoffRetryInterval),
-				r.Context(),
-			),
-			_maxBackoffRetries,
-		),
-	)
+		return err
+	})
 	if rerr != nil {
 		httpserver.RespondError(h.log, w, rerr)
 		return

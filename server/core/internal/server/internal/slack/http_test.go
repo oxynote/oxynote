@@ -1193,7 +1193,7 @@ func Test_Handler_LinkUser(t *testing.T) {
 		"Invalid link state": {
 			DB:       &DBMock{},
 			RawState: "garbage",
-			RespCode: http.StatusInternalServerError,
+			RespCode: http.StatusBadRequest,
 		},
 		"App lookup error": {
 			DB: &DBMock{

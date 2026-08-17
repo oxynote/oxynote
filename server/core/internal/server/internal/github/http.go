@@ -6,15 +6,15 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
-	"time"
 
-	"github.com/cenkalti/backoff/v4"
 	gogithub "github.com/google/go-github/v72/github"
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/apps/github"
+	"github.com/oxynote/oxynote/server/core/internal/server/internal/apps"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
+	"github.com/oxynote/oxynote/server/core/pkg/retryutil"
 )
 
 var (
@@ -46,14 +46,6 @@ type _ctxKey string
 // _ctxKeyPayload is the context key used to store the Github payload.
 const _ctxKeyPayload _ctxKey = "github_payload"
 
-const (
-	// _maxBackoffRetries is the maximum number of retries.
-	_maxBackoffRetries = 5
-
-	// _backoffRetryInterval is the interval between retries.
-	_backoffRetryInterval = time.Second
-)
-
 // Handler holds dependencies required for Github related operations.
 type Handler struct {
 	log    *slog.Logger
@@ -81,26 +73,16 @@ func NewHandler(
 // github.ErrNotConfigured when the GitHub App integration is not
 // configured on this deployment.
 func (h *Handler) RequireConfigured(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !h.man.Configured() {
-			httpserver.RespondError(h.log, w, github.ErrNotConfigured)
-			return
-		}
-
-		next.ServeHTTP(w, r)
-	})
+	return apps.RequireConfigured(h.log, h.man.Configured, github.ErrNotConfigured)(next)
 }
 
 // VerifySignature is a middleware that verifies the Github request signature.
 func (h *Handler) VerifySignature(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// respond with a bare 404 when the GitHub App is not configured:
-		// no GitHub App can be pointing its webhooks at this deployment.
-		if !h.man.Configured() {
-			httpserver.RespondError(h.log, w, errutil.NewPlain(http.StatusNotFound))
-			return
-		}
+	// respond with a bare 404 when the GitHub App is not configured: no
+	// GitHub App can be pointing its webhooks at this deployment.
+	guard := apps.RequireConfigured(h.log, h.man.Configured, errutil.NewPlain(http.StatusNotFound))
 
+	return guard(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		payload, err := gogithub.ValidatePayload(r, []byte(h.man.SignatureSecret()))
 		if err != nil {
 			httpserver.RespondError(h.log, w, ErrInvalidSignature)
@@ -113,7 +95,7 @@ func (h *Handler) VerifySignature(next http.Handler) http.Handler {
 				payload,
 			),
 		))
-	})
+	}))
 }
 
 // FetchInstall handles the fetching of the Github installation URL.
@@ -158,29 +140,17 @@ func (h *Handler) CheckInstallation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var connected bool
+	connected, err := apps.Connected(r.Context(), h.man.Configured(), func(ctx context.Context) error {
+		_, ferr := h.db.FetchGithubInstallationByOrganizationID(ctx, session.ActiveOrganizationID)
 
-	// skip the DB lookup when the GitHub App is not configured: this
-	// endpoint always responds 200 so the frontend can use the configured
-	// flag as the capability signal.
-	if h.man.Configured() {
-		_, err = h.db.FetchGithubInstallationByOrganizationID(r.Context(), session.ActiveOrganizationID)
-
-		switch {
-		case errutil.IsNotFound(err):
-			// OK.
-		case err == nil:
-			connected = true
-		default:
-			httpserver.RespondError(h.log, w, err)
-			return
-		}
+		return ferr
+	})
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
 	}
 
-	httpserver.Respond(h.log, w, map[string]bool{
-		"connected":  connected,
-		"configured": h.man.Configured(),
-	}, http.StatusOK)
+	apps.RespondCapability(h.log, w, h.man.Configured(), connected)
 }
 
 // ConnectOrganization handles the connection of a Github organization to the application.
@@ -224,29 +194,11 @@ func (h *Handler) ConnectOrganization(w http.ResponseWriter, r *http.Request) {
 
 	var organizationID null.String
 
-	rerr := backoff.Retry(
-		func() error { //nolint:contextcheck // the retry closure runs synchronously within the request
-			organizationID, err = h.db.FetchGithubInstallationOrganizationID(r.Context(), installationID)
-			if err != nil {
-				if !errutil.IsNotFound(err) {
-					return &backoff.PermanentError{
-						Err: err,
-					}
-				}
+	rerr := retryutil.UntilFound(r.Context(), func(ctx context.Context) error {
+		organizationID, err = h.db.FetchGithubInstallationOrganizationID(ctx, installationID)
 
-				return err
-			}
-
-			return nil
-		},
-		backoff.WithMaxRetries(
-			backoff.WithContext(
-				backoff.NewConstantBackOff(_backoffRetryInterval),
-				r.Context(),
-			),
-			_maxBackoffRetries,
-		),
-	)
+		return err
+	})
 	if rerr != nil {
 		httpserver.RespondError(h.log, w, rerr)
 		return

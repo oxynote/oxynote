@@ -5,6 +5,10 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	githubCore "github.com/oxynote/oxynote/server/core/internal/apps/github"
+	slackCore "github.com/oxynote/oxynote/server/core/internal/apps/slack"
+	"github.com/oxynote/oxynote/server/core/internal/server/internal/github"
+	"github.com/oxynote/oxynote/server/core/internal/server/internal/slack"
 	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
@@ -22,6 +26,18 @@ func Test_Server_httpRouter(t *testing.T) {
 		log: discardLog(),
 		fc:  metricutil.NewFactory("test", prometheus.NewRegistry()),
 	}
+
+	// the app handlers read their manager while the routes are being
+	// mounted, so they have to exist; unconfigured managers are enough,
+	// since only the mount points are under test.
+	githubMan, err := githubCore.NewManager(nil, githubCore.Options{})
+	require.NoError(t, err)
+
+	slackMan, err := slackCore.NewManager(s.log, nil, nil, nil, slackCore.Options{})
+	require.NoError(t, err)
+
+	s.handlers.github = github.NewHandler(s.log, nil, nil, githubMan)
+	s.handlers.slack = slack.NewHandler(s.log, nil, nil, slackMan)
 
 	routes := make(map[string]bool)
 

@@ -81,7 +81,7 @@ func Test_Manager_VerifyLinkState(t *testing.T) {
 			State: func(*testing.T) string {
 				return "not-a-state"
 			},
-			ExpectedErr: "failed to decrypt link state",
+			ExpectedErr: "link state is invalid",
 		},
 	}
 
