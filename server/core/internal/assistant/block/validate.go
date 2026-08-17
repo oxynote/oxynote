@@ -159,7 +159,7 @@ func validateBlock(b Block, path string) error {
 	switch b.Type {
 	case "":
 		return verr(path, "block type is required")
-	case BlockParagraph:
+	case BlockParagraph, BlockCode, BlockMermaid:
 		return validateTextBearing(b, path)
 	case BlockHeading:
 		return validateHeading(b, path)
@@ -171,20 +171,12 @@ func validateBlock(b Block, path string) error {
 		return validateTaskList(b, path)
 	case BlockCallout:
 		return validateCallout(b, path)
-	case BlockCode:
-		return validateCode(b, path)
 	case BlockTitledCode:
 		return validateTitledCode(b, path)
-	case BlockMermaid:
-		return validateRawText(b, path)
-	case BlockHorizontalRule:
-		return validateHorizontalRule(b, path)
-	case BlockImage:
-		return validateImage(b, path)
-	case BlockFigma:
-		return validateFigma(b, path)
-	case BlockMetric:
-		return validateMetric(b, path)
+	case BlockHorizontalRule, BlockMetric:
+		return validateContentless(b, path)
+	case BlockImage, BlockFigma:
+		return validateAtomWithSrc(b, path)
 	case BlockMetricGrid:
 		return validateMetricGrid(b, path)
 	case BlockSplitDoc:
@@ -197,8 +189,9 @@ func validateBlock(b Block, path string) error {
 }
 
 // validateTextBearing checks that the block carries only inline Text
-// content and no compound fields. Used for paragraph (heading and
-// blockquote layer their own rules on top of this).
+// content and no compound fields. Used for paragraph, code and mermaid
+// (heading, blockquote and titled_code layer their own rules on top of
+// this).
 func validateTextBearing(b Block, path string) error {
 	if err := mustNotHaveCompoundFields(b, path); err != nil {
 		return err
@@ -330,29 +323,11 @@ func validateCallout(b Block, path string) error {
 	return validateItemsAllowed(b.Items, joinPath(path, "items"), _allowedCalloutItems)
 }
 
-// validateCode checks that a code block carries no compound
-// content.
-func validateCode(b Block, path string) error {
-	if err := mustNotHaveCompoundFields(b, path); err != nil {
-		return err
-	}
-
-	if len(b.Items) != 0 {
-		return verr(path, "code does not accept items")
-	}
-
-	return nil
-}
-
 // validateTitledCode checks that a titled_code block carries a
 // non-empty title attr and no compound content.
 func validateTitledCode(b Block, path string) error {
-	if err := mustNotHaveCompoundFields(b, path); err != nil {
+	if err := validateTextBearing(b, path); err != nil {
 		return err
-	}
-
-	if len(b.Items) != 0 {
-		return verr(path, "titled_code does not accept items")
 	}
 
 	if a, ok := b.Attrs.Get(_attrTitle); !ok || strings.TrimSpace(a.String()) == "" {
@@ -362,79 +337,31 @@ func validateTitledCode(b Block, path string) error {
 	return nil
 }
 
-// validateRawText checks a raw-text block (mermaid): no compound
-// content, no items.
-func validateRawText(b Block, path string) error {
-	if err := mustNotHaveCompoundFields(b, path); err != nil {
-		return err
-	}
-
-	if len(b.Items) != 0 {
-		return verr(path, fmt.Sprintf("%s does not accept items", b.Type))
-	}
-
-	return nil
-}
-
-// validateHorizontalRule checks that the divider carries no
-// content at all.
-func validateHorizontalRule(b Block, path string) error {
+// validateContentless checks that the block carries no content at all,
+// leaving its attrs as the only thing it can say. Used for
+// horizontal_rule and metric (image and figma layer the src rule on
+// top of this).
+func validateContentless(b Block, path string) error {
 	if err := mustNotHaveCompoundFields(b, path); err != nil {
 		return err
 	}
 
 	if b.Text != "" || len(b.Items) != 0 {
-		return verr(path, "horizontal_rule does not accept content")
+		return verr(path, fmt.Sprintf("%s does not accept content", b.Type))
 	}
 
 	return nil
 }
 
-// validateImage checks that an image block carries a non-empty src
-// attr and no content.
-func validateImage(b Block, path string) error {
-	if err := mustNotHaveCompoundFields(b, path); err != nil {
+// validateAtomWithSrc checks that the block carries no content and
+// points somewhere. Used for image and figma.
+func validateAtomWithSrc(b Block, path string) error {
+	if err := validateContentless(b, path); err != nil {
 		return err
-	}
-
-	if b.Text != "" || len(b.Items) != 0 {
-		return verr(path, "image does not accept content")
 	}
 
 	if a, ok := b.Attrs.Get(_attrSrc); !ok || strings.TrimSpace(a.String()) == "" {
-		return verr(joinPath(path, "attrs.src"), "image requires a non-empty src")
-	}
-
-	return nil
-}
-
-// validateFigma checks that a figma block carries a non-empty src
-// attr and no content.
-func validateFigma(b Block, path string) error {
-	if err := mustNotHaveCompoundFields(b, path); err != nil {
-		return err
-	}
-
-	if b.Text != "" || len(b.Items) != 0 {
-		return verr(path, "figma does not accept content")
-	}
-
-	if a, ok := b.Attrs.Get(_attrSrc); !ok || strings.TrimSpace(a.String()) == "" {
-		return verr(joinPath(path, "attrs.src"), "figma requires a non-empty src")
-	}
-
-	return nil
-}
-
-// validateMetric checks that a metric block carries no content;
-// its attrs are opaque configuration.
-func validateMetric(b Block, path string) error {
-	if err := mustNotHaveCompoundFields(b, path); err != nil {
-		return err
-	}
-
-	if b.Text != "" || len(b.Items) != 0 {
-		return verr(path, "metric does not accept content")
+		return verr(joinPath(path, "attrs.src"), fmt.Sprintf("%s requires a non-empty src", b.Type))
 	}
 
 	return nil

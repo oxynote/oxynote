@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/block"
@@ -513,9 +514,10 @@ func (m *Manager) notifyTreeChangeForDocument(ctx context.Context, documentID st
 func (m *Manager) applyEdit(ctx context.Context, documentID string, ops []edit.Operation) (json.RawMessage, error) {
 	ref, err := m.resolveDoc(ctx, documentID)
 	if err != nil {
-		m.log.Warn("edit resolve failed",
-			"document_id", documentID,
-			"error", err.Error(),
+		m.log.Warn(
+			"edit resolve failed",
+			slog.String("document_id", documentID),
+			slog.String("error", err.Error()),
 		)
 
 		return nil, err
@@ -523,28 +525,31 @@ func (m *Manager) applyEdit(ctx context.Context, documentID string, ops []edit.O
 
 	res, err := m.applier.Apply(ctx, ref.DocumentID, ref.BranchID, ops)
 	if err != nil {
-		m.log.Error("edit apply failed",
-			"document_id", ref.DocumentID,
-			"branch_id", ref.BranchID,
-			"op_count", len(ops),
-			"error", err.Error(),
+		m.log.Error(
+			"edit apply failed",
+			slog.String("document_id", ref.DocumentID),
+			slog.String("branch_id", ref.BranchID),
+			slog.Int("op_count", len(ops)),
+			slog.String("error", err.Error()),
 		)
 
 		return nil, fmt.Errorf("apply edit: %w", err)
 	}
 
 	if len(res.Errors) > 0 {
-		m.log.Warn("edit partial failure",
-			"document_id", ref.DocumentID,
-			"branch_id", ref.BranchID,
-			"applied", res.Applied,
-			"errors", res.Errors,
+		m.log.Warn(
+			"edit partial failure",
+			slog.String("document_id", ref.DocumentID),
+			slog.String("branch_id", ref.BranchID),
+			slog.Int("applied", res.Applied),
+			slog.Any("errors", res.Errors),
 		)
 	} else {
-		m.log.Debug("edit applied",
-			"document_id", ref.DocumentID,
-			"branch_id", ref.BranchID,
-			"applied", res.Applied,
+		m.log.Debug(
+			"edit applied",
+			slog.String("document_id", ref.DocumentID),
+			slog.String("branch_id", ref.BranchID),
+			slog.Int("applied", res.Applied),
 		)
 	}
 

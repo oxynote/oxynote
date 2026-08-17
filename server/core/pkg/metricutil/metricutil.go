@@ -71,6 +71,30 @@ func NewFactory(namespace string, rg RegistererGatherer) Factory {
 	}
 }
 
+// registerOrExisting registers the collector and returns it, or returns the
+// equivalent collector the registry already holds. Anything else is a defect
+// in the metric declaration itself, which cannot be recovered from.
+func registerOrExisting[T prometheus.Collector](rg prometheus.Registerer, c T) T {
+	err := rg.Register(c)
+	if err == nil {
+		return c
+	}
+
+	are := &prometheus.AlreadyRegisteredError{}
+	if !errors.As(err, are) {
+		// NOCOV: this should never happen
+		panic(err)
+	}
+
+	ec, ok := are.ExistingCollector.(T)
+	if !ok {
+		// NOCOV: this should never happen
+		panic("existing collector has a different type")
+	}
+
+	return ec
+}
+
 // NewHistogram creates a new histogram.
 func (f *factory) NewHistogram(opts Options) Observer {
 	if f.RegistererGatherer == nil {
@@ -85,21 +109,7 @@ func (f *factory) NewHistogram(opts Options) Observer {
 		Buckets:   histogramBuckets(opts.Buckets),
 	}, []string{_hostLabel})
 
-	if err := f.Register(hv); err != nil {
-		are := &prometheus.AlreadyRegisteredError{}
-		if !errors.As(err, are) {
-			// NOCOV: this should never happen
-			panic(err)
-		}
-
-		nh, ok := are.ExistingCollector.(*prometheus.HistogramVec)
-		if !ok {
-			// NOCOV: this should never happen
-			panic("existing collector is not a histogram")
-		}
-
-		hv = nh
-	}
+	hv = registerOrExisting(f, hv)
 
 	return hv.With(
 		prometheus.Labels{
@@ -121,21 +131,7 @@ func (f *factory) NewGauge(opts Options) Gauge {
 		Help:      opts.Help,
 	}, []string{_hostLabel})
 
-	if err := f.Register(gv); err != nil {
-		are := &prometheus.AlreadyRegisteredError{}
-		if !errors.As(err, are) {
-			// NOCOV: this should never happen
-			panic(err)
-		}
-
-		ngv, ok := are.ExistingCollector.(*prometheus.GaugeVec)
-		if !ok {
-			// NOCOV: this should never happen
-			panic("existing collector is not a gauge")
-		}
-
-		gv = ngv
-	}
+	gv = registerOrExisting(f, gv)
 
 	return gv.With(
 		prometheus.Labels{
@@ -161,21 +157,7 @@ func (f *factory) NewCounterVec(opts Options, labels []string) CounterVec {
 		Help:      opts.Help,
 	}, append(labels, _hostLabel))
 
-	if err := f.Register(cv.counter); err != nil {
-		are := &prometheus.AlreadyRegisteredError{}
-		if !errors.As(err, are) {
-			// NOCOV: this should never happen
-			panic(err)
-		}
-
-		ncv, ok := are.ExistingCollector.(*prometheus.CounterVec)
-		if !ok {
-			// NOCOV: this should never happen
-			panic("existing collector is not a counter vector")
-		}
-
-		cv.counter = ncv
-	}
+	cv.counter = registerOrExisting(f, cv.counter)
 
 	return cv
 }
@@ -198,21 +180,7 @@ func (f *factory) NewHistogramVec(opts Options, labels []string) HistogramVec {
 		Buckets:   histogramBuckets(opts.Buckets),
 	}, append(labels, _hostLabel))
 
-	if err := f.Register(hv.histogram); err != nil {
-		are := &prometheus.AlreadyRegisteredError{}
-		if !errors.As(err, are) {
-			// NOCOV: this should never happen
-			panic(err)
-		}
-
-		nhv, ok := are.ExistingCollector.(*prometheus.HistogramVec)
-		if !ok {
-			// NOCOV: this should never happen
-			panic("existing collector is not a histogram vector")
-		}
-
-		hv.histogram = nhv
-	}
+	hv.histogram = registerOrExisting(f, hv.histogram)
 
 	return hv
 }

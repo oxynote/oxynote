@@ -4,7 +4,7 @@ package slack
 import (
 	"database/sql/driver"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"time"
 
 	"github.com/guregu/null/v5"
@@ -86,31 +86,34 @@ type UserLinkSettings struct {
 	Notifications bool `json:"notifications"`
 }
 
-// Value implements the driver.Valuer interface for database storage.
-// It converts the UserLinkSettings to JSON for storage in the database.
+// Value transforms the user link settings into a database entry.
 func (uls UserLinkSettings) Value() (driver.Value, error) {
+	// NOCOV: error case cannot happen since the data
+	// is already validated.
 	return json.Marshal(uls)
 }
 
-// Scan implements the sql.Scanner interface for database retrieval.
-// It converts JSON data from the database back to UserLinkSettings.
-func (uls *UserLinkSettings) Scan(value any) error {
-	if value == nil {
-		return nil
-	}
+// Scan transforms a database entry into a user link settings type.
+func (uls *UserLinkSettings) Scan(src any) error {
+	var pv []byte
 
-	var data []byte
-
-	switch v := value.(type) {
+	switch v := src.(type) {
 	case []byte:
-		data = v
+		pv = v
 	case string:
-		data = []byte(v)
+		pv = []byte(v)
 	default:
-		return fmt.Errorf("cannot scan %T into UserLinkSettings", value)
+		return errors.New("invalid user link settings type")
 	}
 
-	return json.Unmarshal(data, uls)
+	data := &UserLinkSettings{}
+	if err := json.Unmarshal(pv, data); err != nil {
+		return err
+	}
+
+	*uls = *data
+
+	return nil
 }
 
 // AppAccess represents access information for a Slack app.

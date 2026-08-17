@@ -19,9 +19,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// _installationJSON is a GetInstallation response with a complete account.
-const _installationJSON = `{"id": 42, "account": {"login": "own", "type": "Organization"}}`
-
 // stubDB creates a DB mock resolving organization installations to the
 // given installation ID or error.
 func stubDB(installationID int64, err error) *DBMock {
@@ -206,99 +203,6 @@ func Test_Manager_SignatureSecret(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "sig", man.SignatureSecret())
-}
-
-func Test_Manager_HasInstallationClient(t *testing.T) {
-	t.Parallel()
-
-	tests := map[string]struct {
-		Configured  bool
-		DB          *DBMock
-		Handler     func(t *testing.T) http.Handler
-		ExpectedErr error
-		ExpectedHas bool
-	}{
-		"Unconfigured manager fails": {
-			ExpectedErr: ErrNotConfigured,
-		},
-		"Database error is propagated": {
-			Configured:  true,
-			DB:          stubDB(0, assert.AnError),
-			ExpectedErr: assert.AnError,
-		},
-		"Missing installation record reports no client": {
-			Configured: true,
-			DB:         stubDB(0, sql.ErrNoRows),
-		},
-		"Missing GitHub installation reports no client": {
-			Configured: true,
-			DB:         stubDB(42, nil),
-			Handler: func(t *testing.T) http.Handler {
-				t.Helper()
-
-				return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-					w.WriteHeader(http.StatusNotFound)
-				})
-			},
-		},
-		"GitHub API failure is propagated": {
-			Configured: true,
-			DB:         stubDB(42, nil),
-			Handler: func(t *testing.T) http.Handler {
-				t.Helper()
-
-				return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-					w.WriteHeader(http.StatusInternalServerError)
-				})
-			},
-			ExpectedErr: assert.AnError,
-		},
-		"Installation without an account reports no client": {
-			Configured: true,
-			DB:         stubDB(42, nil),
-			Handler: func(t *testing.T) http.Handler {
-				t.Helper()
-
-				return installationHandler(t, `{"id": 42}`)
-			},
-		},
-		"Complete installation reports a client": {
-			Configured: true,
-			DB:         stubDB(42, nil),
-			Handler: func(t *testing.T) http.Handler {
-				t.Helper()
-
-				return installationHandler(t, _installationJSON)
-			},
-			ExpectedHas: true,
-		},
-	}
-
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			var man *Manager
-
-			if tc.Configured {
-				man = newTestManager(t, tc.DB)
-			} else {
-				var err error
-
-				man, err = NewManager(tc.DB, Options{})
-				require.NoError(t, err)
-			}
-
-			if tc.Handler != nil {
-				pointManagerAt(t, man, tc.Handler(t))
-			}
-
-			has, err := man.HasInstallationClient(context.Background(), "org-1")
-
-			testutil.AssertEqualError(t, tc.ExpectedErr, err)
-			assert.Equal(t, tc.ExpectedHas, has)
-		})
-	}
 }
 
 func Test_Manager_GetInstallationClient(t *testing.T) {

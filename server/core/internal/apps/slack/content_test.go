@@ -66,8 +66,9 @@ func Test_UserLinkSettings_Scan(t *testing.T) {
 			Value:    `{"notifications": true}`,
 			Expected: UserLinkSettings{Notifications: true},
 		},
-		"Nil leaves the settings untouched": {
-			Value: nil,
+		"Nil fails": {
+			Value:     nil,
+			ExpectErr: true,
 		},
 		"Unsupported type fails": {
 			Value:     42,

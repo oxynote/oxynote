@@ -35,13 +35,7 @@ type State json.RawMessage
 
 // MarshalJSON returns the JSON representation of the state.
 func (s State) MarshalJSON() ([]byte, error) {
-	// mirror json.RawMessage: a nil value marshals as JSON null instead
-	// of failing the entire enclosing marshal.
-	if s == nil {
-		return []byte("null"), nil
-	}
-
-	return s, nil
+	return marshalRawJSON(s)
 }
 
 // UnmarshalJSON sets the state from the given JSON data.
@@ -58,16 +52,12 @@ func (s State) Value() (driver.Value, error) {
 
 // Scan transforms a database entry into a state type.
 func (s *State) Scan(src any) error {
-	switch v := src.(type) {
-	case string:
-		*s = State(v)
-	case []byte:
-		// the driver may reuse the slice after Scan returns, so it has to be
-		// copied rather than aliased.
-		*s = append(State(nil), v...)
-	default:
+	raw, ok := rawJSONBytes(src)
+	if !ok {
 		return errors.New("invalid state type")
 	}
+
+	*s = State(raw)
 
 	return nil
 }
@@ -77,13 +67,7 @@ type Settings json.RawMessage
 
 // MarshalJSON returns the JSON representation of the settings.
 func (s Settings) MarshalJSON() ([]byte, error) {
-	// mirror json.RawMessage: a nil value marshals as JSON null instead
-	// of failing the entire enclosing marshal.
-	if s == nil {
-		return []byte("null"), nil
-	}
-
-	return s, nil
+	return marshalRawJSON(s)
 }
 
 // UnmarshalJSON sets the settings from the given JSON data.
@@ -100,18 +84,38 @@ func (s Settings) Value() (driver.Value, error) {
 
 // Scan transforms a database entry into a settings type.
 func (s *Settings) Scan(src any) error {
-	switch v := src.(type) {
-	case string:
-		*s = Settings(v)
-	case []byte:
-		// the driver may reuse the slice after Scan returns, so it has to be
-		// copied rather than aliased.
-		*s = append(Settings(nil), v...)
-	default:
+	raw, ok := rawJSONBytes(src)
+	if !ok {
 		return errors.New("invalid settings type")
 	}
 
+	*s = Settings(raw)
+
 	return nil
+}
+
+// marshalRawJSON mirrors json.RawMessage: a nil value marshals as JSON null
+// instead of failing the entire enclosing marshal.
+func marshalRawJSON(raw []byte) ([]byte, error) {
+	if raw == nil {
+		return []byte("null"), nil
+	}
+
+	return raw, nil
+}
+
+// rawJSONBytes copies a raw JSON database entry into a slice of its own,
+// since the driver may reuse the one it hands over once Scan returns. The
+// second return value reports whether src carried raw JSON at all.
+func rawJSONBytes(src any) ([]byte, bool) {
+	switch v := src.(type) {
+	case string:
+		return []byte(v), true
+	case []byte:
+		return append([]byte(nil), v...), true
+	default:
+		return nil, false
+	}
 }
 
 // Github represents a GitHub client interface.

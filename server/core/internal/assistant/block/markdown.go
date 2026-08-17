@@ -74,7 +74,7 @@ func emitInlineMarkdown(nodes []document.Block) string {
 		// order, until the active stack is a prefix of desired.
 		for len(active) > 0 {
 			top := active[len(active)-1]
-			if isMarkPrefix(active, desired) && containsMark(desired, top) {
+			if isMarkPrefix(active, desired) && slices.Contains(desired, top) {
 				break
 			}
 
@@ -87,7 +87,7 @@ func emitInlineMarkdown(nodes []document.Block) string {
 		// open them in the order they appear in desired so the
 		// nesting matches the parse output.
 		for _, m := range desired {
-			if !containsMark(active, m) {
+			if !slices.Contains(active, m) {
 				buf.WriteString(openDelim(m))
 				active = append(active, m)
 			}
@@ -472,18 +472,6 @@ func extractMarks(marks []document.Mark) []activeMark {
 	}
 
 	return out
-}
-
-// containsMark reports whether the stack contains a mark with the
-// same kind (and, for link, the same href) as m.
-func containsMark(stack []activeMark, m activeMark) bool {
-	for _, s := range stack {
-		if s.kind == m.kind && s.href == m.href {
-			return true
-		}
-	}
-
-	return false
 }
 
 // isMarkPrefix reports whether prefix is an order-preserving prefix

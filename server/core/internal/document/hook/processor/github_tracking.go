@@ -60,31 +60,13 @@ func (gt *GithubTracking) Process(ctx context.Context, inp Input) (decimal.Decim
 		return decimal.Zero, nil, fmt.Errorf("unmarshaling github tracking state: %w", err)
 	}
 
-	client, err := inp.Github(ctx)
-
-	switch {
-	case err == nil:
-		// OK.
-	case errors.Is(err, github.ErrInstallationNotFound),
-		errors.Is(err, github.ErrNotConfigured):
-		return gts.EncodeState(decimal.Zero, GithubTrackingStatusMissingInstallation)
-	default:
-		return decimal.Zero, nil, fmt.Errorf("getting github client: %w", err)
+	tree, status, err := gt.fetchTree(ctx, inp)
+	if err != nil {
+		return decimal.Zero, nil, err
 	}
 
-	tree, err := client.FetchRepositoryTree(ctx, gt.Repository, gt.Branch)
-
-	switch {
-	case err == nil:
-		// OK.
-	case errors.Is(err, github.ErrRepositoryNotFound):
-		return gts.EncodeState(decimal.Zero, GithubTrackingStatusRepositoryNotFound)
-	case errors.Is(err, github.ErrRepositoryBranchNotFound):
-		return gts.EncodeState(decimal.Zero, GithubTrackingStatusBranchNotFound)
-	case errors.Is(err, github.ErrTreeTruncated):
-		return gts.EncodeState(decimal.Zero, GithubTrackingStatusTreeTruncated)
-	default:
-		return decimal.Zero, nil, fmt.Errorf("fetching repository tree: %w", err)
+	if status != "" {
+		return gts.EncodeState(decimal.Zero, status)
 	}
 
 	var modified bool
@@ -112,29 +94,13 @@ func (gt *GithubTracking) Reset(ctx context.Context, inp Input) (decimal.Decimal
 		PathsChecksums: make(map[string]string),
 	}
 
-	client, err := inp.Github(ctx)
-
-	switch {
-	case err == nil:
-		// OK.
-	case errors.Is(err, github.ErrInstallationNotFound),
-		errors.Is(err, github.ErrNotConfigured):
-		return gts.EncodeState(decimal.Zero, GithubTrackingStatusMissingInstallation)
-	default:
-		return decimal.Zero, nil, fmt.Errorf("getting github client: %w", err)
+	tree, status, err := gt.fetchTree(ctx, inp)
+	if err != nil {
+		return decimal.Zero, nil, err
 	}
 
-	tree, err := client.FetchRepositoryTree(ctx, gt.Repository, gt.Branch)
-
-	switch {
-	case err == nil:
-		// OK.
-	case errors.Is(err, github.ErrRepositoryNotFound):
-		return gts.EncodeState(decimal.Zero, GithubTrackingStatusRepositoryNotFound)
-	case errors.Is(err, github.ErrRepositoryBranchNotFound):
-		return gts.EncodeState(decimal.Zero, GithubTrackingStatusBranchNotFound)
-	default:
-		return decimal.Zero, nil, fmt.Errorf("fetching repository tree: %w", err)
+	if status != "" {
+		return gts.EncodeState(decimal.Zero, status)
 	}
 
 	for _, path := range gt.Paths {
@@ -147,6 +113,40 @@ func (gt *GithubTracking) Reset(ctx context.Context, inp Input) (decimal.Decimal
 	}
 
 	return gts.EncodeState(_fullScore, GithubTrackingStatusActive)
+}
+
+// fetchTree resolves the GitHub client and pulls the tracked repository's
+// tree. A non-empty status means the tree could not be read for a reason the
+// hook reports as its own state rather than fails on.
+func (gt *GithubTracking) fetchTree(ctx context.Context, inp Input) (github.Tree, GithubTrackingStatus, error) {
+	client, err := inp.Github(ctx)
+
+	switch {
+	case err == nil:
+		// OK.
+	case errors.Is(err, github.ErrInstallationNotFound),
+		errors.Is(err, github.ErrNotConfigured):
+		return nil, GithubTrackingStatusMissingInstallation, nil
+	default:
+		return nil, "", fmt.Errorf("getting github client: %w", err)
+	}
+
+	tree, err := client.FetchRepositoryTree(ctx, gt.Repository, gt.Branch)
+
+	switch {
+	case err == nil:
+		// OK.
+	case errors.Is(err, github.ErrRepositoryNotFound):
+		return nil, GithubTrackingStatusRepositoryNotFound, nil
+	case errors.Is(err, github.ErrRepositoryBranchNotFound):
+		return nil, GithubTrackingStatusBranchNotFound, nil
+	case errors.Is(err, github.ErrTreeTruncated):
+		return nil, GithubTrackingStatusTreeTruncated, nil
+	default:
+		return nil, "", fmt.Errorf("fetching repository tree: %w", err)
+	}
+
+	return tree, "", nil
 }
 
 // GithubTrackingState represents the state of the

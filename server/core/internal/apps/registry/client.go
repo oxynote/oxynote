@@ -16,7 +16,7 @@ import (
 )
 
 // ErrUnauthorized is returned when access to the container registry is unauthorized.
-var ErrUnauthorized = errutil.New(http.StatusBadRequest, "registry.unauthorized", "Unauthorized access to the container registry.")
+var ErrUnauthorized = errutil.New(http.StatusBadRequest, "registry.unauthorized", "unauthorized access to the container registry")
 
 // digestOptions holds options for configuring the Digest function.
 type digestOptions struct {

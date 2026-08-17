@@ -19,6 +19,25 @@ func Test_NewFactory(t *testing.T) {
 	assert.Equal(t, "test", f.(*factory).namespace)
 }
 
+func Test_registerOrExisting(t *testing.T) {
+	t.Parallel()
+
+	reg := prometheus.NewRegistry()
+
+	opts := prometheus.GaugeOpts{
+		Name: "test_registered",
+		Help: "test help",
+	}
+
+	gv := prometheus.NewGaugeVec(opts, []string{_hostLabel})
+
+	// a fresh collector is registered and handed back as it is.
+	assert.Same(t, gv, registerOrExisting(reg, gv))
+
+	// an equivalent collector is replaced by the registered one.
+	assert.Same(t, gv, registerOrExisting(reg, prometheus.NewGaugeVec(opts, []string{_hostLabel})))
+}
+
 func Test_factory_NewHistogram(t *testing.T) {
 	var f factory
 

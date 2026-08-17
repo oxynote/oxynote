@@ -137,45 +137,6 @@ func (m *Manager) SignatureSecret() string {
 	return m.opt.SignatureSecret
 }
 
-// HasInstallationClient checks whether InstallationClient exists for the given organization ID.
-func (m *Manager) HasInstallationClient(ctx context.Context, organizationID string) (bool, error) {
-	if !m.Configured() {
-		return false, ErrNotConfigured
-	}
-
-	installationID, err := m.db.FetchGithubInstallationByOrganizationID(ctx, organizationID)
-
-	switch {
-	case err == nil:
-		// OK.
-	case errutil.IsNotFound(err):
-		return false, nil
-	default:
-		return false, err
-	}
-
-	_, err = m.createInstallationClient(installationID)
-	if err != nil {
-		return false, err
-	}
-
-	inst, resp, err := m.appClient.Apps.GetInstallation(ctx, installationID)
-	if err != nil {
-		if resp != nil && resp.StatusCode == http.StatusNotFound {
-			return false, nil
-		}
-
-		return false, parseGithubError(err)
-	}
-
-	account := inst.GetAccount()
-	if account == nil || account.Login == nil || account.Type == nil {
-		return false, nil
-	}
-
-	return true, nil
-}
-
 // GetInstallationClient fetches an InstallationClient for the given installation ID.
 func (m *Manager) GetInstallationClient(ctx context.Context, organizationID string) (*InstallationClient, error) {
 	if !m.Configured() {
