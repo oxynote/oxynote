@@ -97,6 +97,11 @@ export default defineConfig({
 					...sharedTestOptions,
 					name: "nuxt",
 					environment: "nuxt",
+					// @nuxt/test-utils boots the whole nuxt runtime in a
+					// beforeAll hook before the first .nuxt.test.ts file; on
+					// cold CI runners that routinely exceeds the 10s default
+					// and fails the suite before any test runs
+					hookTimeout: 60_000,
 					include: ["app/**/*.nuxt.test.ts"],
 					environmentOptions: {
 						nuxt: {

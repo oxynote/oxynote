@@ -283,6 +283,12 @@ it.for([
 
 ### Mocks & path coverage
 
+- **Every exported function is covered by unit tests** — a module's
+  exports are its testable contract, and none of them ships untested.
+  Modules with no exports whose evaluation wires things up (entry
+  points like `electron/main.ts` and `electron/preload.ts`) are tested
+  through their module side effects: mock the boundaries, import the
+  module, assert the wiring.
 - **Every path gets a test** — the success path and each failure path,
   including one per collaborator that can fail, especially in unit tests.
   A `describe` per method groups them; the linear `it`s are the rows,
