@@ -30,10 +30,12 @@
 		"check-fmt": "prettier --check .",
 		"knip": "knip --fix --allow-remove-files --cache",
 		"check-knip": "knip --cache",
+		"test": "vitest run --coverage",
+		"test-watch": "vitest",
 		"lint": "pnpm run check-types && pnpm run knip && pnpm run eslint && pnpm run fmt",
 		"check-lint": "pnpm run check-types && pnpm run check-eslint && pnpm run check-fmt && pnpm run check-knip",
-		"qa": "pnpm run check-lint",
-		"qa-fix": "pnpm run lint"
+		"qa": "pnpm run check-lint && pnpm run test",
+		"qa-fix": "pnpm run lint && pnpm run test"
 	},
 	"dependencies": {
 		"@better-auth/electron": "^1.6.28",
@@ -124,17 +126,23 @@
 		"@iconify-json/simple-icons": "^1.2.46",
 		"@iconify-json/svg-spinners": "^1.2.4",
 		"@intlify/eslint-plugin-vue-i18n": "^4.5.1",
+		"@nuxt/test-utils": "^4.1.0",
 		"@tailwindcss/typography": "^0.5.16",
 		"@types/markdown-it": "^14.1.2",
 		"@typescript-eslint/eslint-plugin": "^8.56.1",
+		"@vitest/coverage-v8": "^4.1.10",
+		"@vitest/eslint-plugin": "^1.6.27",
+		"@vue/test-utils": "^2.4.11",
 		"concurrently": "^9.1.0",
 		"electron": "42.0.1",
 		"eslint": "^9.32.0",
 		"eslint-config-prettier": "^10.1.8",
+		"happy-dom": "^20.11.2",
 		"knip": "^6.32.2",
 		"prettier": "^3.6.2",
 		"prettier-plugin-tailwindcss": "^0.6.14",
 		"typescript": "^5.9.2",
+		"vitest": "^4.1.10",
 		"vue-tsc": "^3.3.10",
 		"wait-on": "^8.0.1"
 	}

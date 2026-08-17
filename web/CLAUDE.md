@@ -356,7 +356,12 @@ context-local `expect` (see below).
 - **All tests run concurrently**: the vitest config sets
   `sequence.concurrent: true`. Test independence is what makes this safe;
   a test that needs sequential execution is a smell, not a config
-  exception.
+  exception. The one principled exception: suites asserting call
+  accounting on shared module-level mocks (`vi.mock` singletons) run
+  under `describe("…", { concurrent: false }, …)` with a comment —
+  module mocks are per-file singletons and cannot be isolated across
+  interleaving tests. Prefer per-test injected mocks wherever the design
+  allows; they stay concurrency-safe.
 - Under concurrency, snapshots and assertions must use the `expect` from
   the local test context (`it("…", ({ expect }) => …)`) — the global
   `expect` cannot reliably attribute them to the right test when tests
@@ -364,8 +369,11 @@ context-local `expect` (see below).
   [test.concurrent](https://vitest.dev/api/test#test-concurrent).
 - Mock and global state cannot leak between tests by construction: the
   vitest config sets `restoreMocks: true`, `unstubGlobals: true`, and
-  `unstubEnvs: true`, so spies, stubbed globals, and env stubs are
-  restored after every test without per-file `afterEach` cleanup.
+  `unstubEnvs: true`, so `vi.spyOn` spies, stubbed globals, and env stubs
+  are restored after every test without per-file `afterEach` cleanup.
+  Caveat: since vitest 4, `restoreMocks` does **not** touch hand-made
+  `vi.fn()` singletons — suites holding them (module-mock trees) reset
+  them explicitly in a `beforeEach`.
 
 ### Determinism
 

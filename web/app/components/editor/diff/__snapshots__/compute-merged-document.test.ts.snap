@@ -1,0 +1,91 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`computeMergedDocument > produces the golden merged document for a mixed change set 1`] = `
+{
+  "content": [
+    {
+      "attrs": {
+        "diffStatus": "unchanged",
+        "modifiedIndex": 0,
+        "oldNode": null,
+        "originalIndex": 0,
+        "uid": "u1",
+      },
+      "content": [
+        {
+          "text": "kept",
+          "type": "text",
+        },
+      ],
+      "type": "paragraph",
+    },
+    {
+      "attrs": {
+        "diffStatus": "removed",
+        "modifiedIndex": null,
+        "oldNode": null,
+        "originalIndex": 1,
+        "uid": "u2",
+      },
+      "content": [
+        {
+          "text": "dropped",
+          "type": "text",
+        },
+      ],
+      "type": "paragraph",
+    },
+    {
+      "attrs": {
+        "diffStatus": "modified",
+        "modifiedIndex": 1,
+        "oldNode": null,
+        "originalIndex": 2,
+        "uid": "u3",
+      },
+      "content": [
+        {
+          "text": "edited ",
+          "type": "text",
+        },
+        {
+          "marks": [
+            {
+              "type": "diffTextRemoved",
+            },
+          ],
+          "text": "before",
+          "type": "text",
+        },
+        {
+          "marks": [
+            {
+              "type": "diffTextAdded",
+            },
+          ],
+          "text": "after",
+          "type": "text",
+        },
+      ],
+      "type": "paragraph",
+    },
+    {
+      "attrs": {
+        "diffStatus": "added",
+        "modifiedIndex": 2,
+        "oldNode": null,
+        "originalIndex": null,
+        "uid": "u4",
+      },
+      "content": [
+        {
+          "text": "brand new",
+          "type": "text",
+        },
+      ],
+      "type": "paragraph",
+    },
+  ],
+  "type": "doc",
+}
+`;

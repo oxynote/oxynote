@@ -2,10 +2,15 @@
 import js from "@eslint/js"
 import vueI18n from "@intlify/eslint-plugin-vue-i18n"
 import pluginTs from "@typescript-eslint/eslint-plugin"
+import vitest from "@vitest/eslint-plugin"
 import eslintConfigPrettier from "eslint-config-prettier/flat"
 import withNuxt from "./.nuxt/eslint.config.mjs"
 
 // collects the merged rule entries of one or more flat configs
+/**
+ * @param {{ rules?: Record<string, any> } | { rules?: Record<string, any> }[]} configs
+ * @returns {Record<string, any>}
+ */
 const rulesOf = (configs) =>
 	(Array.isArray(configs) ? configs : [configs]).reduce(
 		(acc, c) => ({ ...acc, ...c.rules }),
@@ -90,6 +95,7 @@ export default withNuxt([
 			"forge.config.ts",
 			"knip.ts",
 			"vite.electron.config.ts",
+			"vitest.config.ts",
 			"electron/preload.d.ts",
 		],
 		languageOptions: {
@@ -100,6 +106,20 @@ export default withNuxt([
 			},
 		},
 		rules: rulesOf(pluginTs.configs["flat/disable-type-checked"]),
+	},
+
+	// test files: vitest's recommended rules, plus every test file must
+	// wrap its tests in a root describe naming the unit under test
+	{
+		name: "oxynote/vitest",
+		files: ["**/*.test.ts", "**/*.nuxt.test.ts", "**/*.browser.test.ts"],
+		plugins: {
+			vitest,
+		},
+		rules: {
+			...vitest.configs.recommended.rules,
+			"vitest/require-top-level-describe": "error",
+		},
 	},
 
 	...vueI18n.configs["flat/recommended"],

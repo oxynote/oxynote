@@ -6,7 +6,10 @@
 		"golang.go",
 		"bradlc.vscode-tailwindcss",
 		"lokalise.i18n-ally",
-		"antfu.iconify"
+		"antfu.iconify",
+		"vitest.explorer"
 	],
-	"unwantedRecommendations": ["octref.vetur"]
+	"unwantedRecommendations": [
+		"octref.vetur"
+	]
 }
