@@ -113,30 +113,18 @@ func (ds *DataSource) updateCredentials(inp null.Value[processor.CredentialsUpda
 	}
 
 	switch ds.Type {
-	case TypePrometheus:
-		creds, err := processor.UpdatePrometheusCredentials(ds.Credentials, inp.V)
-		if err != nil {
-			return err
-		}
-
-		ds.Credentials = creds
-	case TypePostgreSQL:
-		creds, err := processor.UpdatePostgreSQLCredentials(ds.Credentials, inp.V)
-		if err != nil {
-			return err
-		}
-
-		ds.Credentials = creds
-	case TypeMariaDB, TypeMySQL:
-		creds, err := processor.UpdateMySQLCredentials(ds.Credentials, inp.V)
-		if err != nil {
-			return err
-		}
-
-		ds.Credentials = creds
+	case TypePrometheus, TypePostgreSQL, TypeMariaDB, TypeMySQL:
+		// OK.
 	default:
 		return errors.New("invalid data source type")
 	}
+
+	creds, err := processor.UpdateBasicCredentials(ds.Credentials, inp.V)
+	if err != nil {
+		return err
+	}
+
+	ds.Credentials = creds
 
 	return nil
 }

@@ -2,7 +2,6 @@ package processor
 
 import (
 	"fmt"
-	"strings"
 	"time"
 )
 
@@ -27,47 +26,14 @@ import (
 //	$__unixEpochGroup(dateColumn,'5m'[, fill])   → floor(dateColumn/300)*300
 //	$__unixEpochGroupAlias(dateColumn,'5m'[, fill]) → floor(dateColumn/300)*300 AS `time`
 func (tr TimeRange) ProcessMySQLQuery(q string) string {
-	// Resolve generic macros first so they can be used as macro arguments
-	// (e.g., $__timeGroupAlias("time", $__interval)).
-	q = tr.ProcessQuery(q)
-
-	return expandMacros(q, func(name string, args []string) (string, bool) {
-		// the macro helpers fall back to the invocation itself when the
-		// arguments do not fit, so the raw form is rebuilt for them.
-		match := _macroPrefix + name + "(" + strings.Join(args, ",") + ")"
-
-		switch name {
-		case _timeColumn, "timeEpoch":
-			return mysqlMacroTime(args, match), true
-		case "timeFilter":
-			return mysqlMacroTimeFilter(tr, args, match), true
-		case "timeFrom":
-			return mysqlMacroTimeFrom(tr), true
-		case "timeTo":
-			return mysqlMacroTimeTo(tr), true
-		case "timeGroup":
-			return mysqlMacroTimeGroup(args, match), true
-		case "timeGroupAlias":
-			return mysqlMacroTimeGroupAlias(args, match), true
-		case "unixEpochFilter":
-			return pgMacroUnixEpochFilter(tr, args, match), true
-		case "unixEpochFrom":
-			return pgMacroUnixEpochFrom(tr), true
-		case "unixEpochTo":
-			return pgMacroUnixEpochTo(tr), true
-		case "unixEpochNanoFilter":
-			return pgMacroUnixEpochNanoFilter(tr, args, match), true
-		case "unixEpochNanoFrom":
-			return pgMacroUnixEpochNanoFrom(tr), true
-		case "unixEpochNanoTo":
-			return pgMacroUnixEpochNanoTo(tr), true
-		case "unixEpochGroup":
-			return pgMacroUnixEpochGroup(args, match), true
-		case "unixEpochGroupAlias":
-			return mysqlMacroUnixEpochGroupAlias(args, match), true
-		default:
-			return "", false
-		}
+	return tr.processSQLQuery(q, sqlMacros{
+		time:                mysqlMacroTime,
+		timeFilter:          mysqlMacroTimeFilter,
+		timeFrom:            mysqlMacroTimeFrom,
+		timeTo:              mysqlMacroTimeTo,
+		timeGroup:           mysqlMacroTimeGroup,
+		timeGroupAlias:      mysqlMacroTimeGroupAlias,
+		unixEpochGroupAlias: mysqlMacroUnixEpochGroupAlias,
 	})
 }
 

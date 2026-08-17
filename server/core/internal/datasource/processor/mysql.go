@@ -7,14 +7,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
-	"github.com/guregu/null/v5"
 )
 
 const (
@@ -106,7 +104,7 @@ func (m *MySQL) Metadata(ctx context.Context) (*SQLMetadataResult, error) {
 	}
 	defer db.Close() //nolint:errcheck // error provides no meaningful info
 
-	rows, err := db.QueryContext(ctx,
+	rows, err := db.QueryContext(ctx, //nolint:rowserrcheck // scanInformationSchema checks rows.Err
 		"SELECT table_schema, table_name, column_name FROM information_schema.columns WHERE table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys') ORDER BY table_schema, table_name, ordinal_position",
 	)
 	if err != nil {
@@ -114,24 +112,9 @@ func (m *MySQL) Metadata(ctx context.Context) (*SQLMetadataResult, error) {
 	}
 	defer rows.Close() //nolint:errcheck // error provides no meaningful info
 
-	tables := make(map[string]SQLTable)
-
-	for rows.Next() {
-		var schema, tableName, columnName string
-
-		if err = rows.Scan(&schema, &tableName, &columnName); err != nil {
-			return nil, fmt.Errorf("error scanning metadata: %w", err)
-		}
-
-		key := schema + "." + tableName
-
-		table := tables[key]
-		table.Columns = append(table.Columns, SQLColumn{Name: columnName})
-		tables[key] = table
-	}
-
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating metadata: %w", err)
+	tables, err := scanInformationSchema(rows)
+	if err != nil {
+		return nil, err
 	}
 
 	var defaultSchema string
@@ -271,7 +254,7 @@ func (m *MySQL) Query(ctx context.Context, q string, tr TimeRange) (*MySQLQueryR
 		}
 
 		for i, v := range dest {
-			payloadSize += mysqlEstimateValueSize(v)
+			payloadSize += estimateValueSize(v)
 
 			// The MySQL driver returns string values as []byte.
 			// Convert to string so they JSON-marshal as strings, not base64.
@@ -337,7 +320,7 @@ func (m *MySQL) buildDSN() (string, error) {
 	}
 
 	if m.inp.Credentials() != nil {
-		var creds MySQLCredentials
+		var creds BasicCredentials
 
 		if err := json.Unmarshal(m.inp.Credentials(), &creds); err != nil {
 			return "", fmt.Errorf("error unmarshaling credentials: %w", err)
@@ -377,60 +360,6 @@ func (m *MySQL) buildDSN() (string, error) {
 	return cfg.FormatDSN(), nil
 }
 
-// UpdateMySQLCredentials updates the credentials for a MySQL data source.
-func UpdateMySQLCredentials(rawCreds Credentials, inp CredentialsUpdateInput) (Credentials, error) {
-	var creds MySQLCredentials
-
-	if rawCreds != nil {
-		if err := json.Unmarshal(rawCreds, &creds); err != nil {
-			return nil, fmt.Errorf("error unmarshaling credentials: %w", err)
-		}
-	}
-
-	var update MySQLCredentialsUpdate
-
-	if err := json.Unmarshal(inp, &update); err != nil {
-		return nil, fmt.Errorf("error unmarshaling credentials update input: %w", err)
-	}
-
-	if update.Username.Valid {
-		creds.Username = update.Username.String
-	}
-
-	if update.Password.Valid {
-		creds.Password = update.Password.String
-	}
-
-	if creds.Username == "" && creds.Password == "" {
-		return nil, nil
-	}
-
-	data, err := json.Marshal(creds) //nolint:gosec // credentials are encrypted before storage
-	if err != nil {
-		return nil, fmt.Errorf("error marshaling updated credentials: %w", err)
-	}
-
-	return data, nil
-}
-
-// MySQLCredentials represents the credentials for a MySQL data source.
-type MySQLCredentials struct {
-	// Username is the username for the MySQL data source.
-	Username string `json:"username"`
-
-	// Password is the password for the MySQL data source.
-	Password string `json:"password"`
-}
-
-// MySQLCredentialsUpdate represents the input for updating MySQL credentials.
-type MySQLCredentialsUpdate struct {
-	// Username is the username for the MySQL data source.
-	Username null.String `json:"username"`
-
-	// Password is the password for the MySQL data source.
-	Password null.String `json:"password"`
-}
-
 // MySQLQueryResult represents the result of a MySQL query.
 type MySQLQueryResult struct {
 	// Columns contains the column names of the result set.
@@ -447,110 +376,26 @@ type MySQLQueryResult struct {
 	ColumnTypes []string `json:"-"`
 }
 
-// Transform transforms a MySQLQueryResult into a unified QueryResult
-// based on the requested chart type.
-func (mqr *MySQLQueryResult) Transform(ct ChartType) *QueryResult { //nolint:gocognit // this method is complex, however, it's well-structured
-	if ct == "" {
-		return &QueryResult{Status: QueryStatusTypeNotSelected}
-	}
-
-	if len(mqr.Columns) == 0 || len(mqr.Rows) == 0 {
-		return &QueryResult{Status: QueryStatusNoData}
-	}
-
-	timeIdx, valueIdxs, labelIdxs := mqr.identifyColumns()
-	if timeIdx < 0 || len(valueIdxs) == 0 {
-		return &QueryResult{Status: QueryStatusChartAndDataMismatch}
-	}
-
-	multipleValues := len(valueIdxs) > 1
-
-	seriesMap := make(map[string]*QueryResultSeries)
-
-	var seriesOrder []string
-
-	for _, row := range mqr.Rows {
-		if len(row) <= timeIdx {
-			continue
-		}
-
-		ts, ok := mysqlParseTimestamp(row[timeIdx])
-		if !ok {
-			continue
-		}
-
-		labels := make(map[string]string, len(labelIdxs))
-
-		var labelKeyParts []string
-
-		for _, li := range labelIdxs {
-			var lbl string
-			if li < len(row) && row[li] != nil {
-				lbl = fmt.Sprintf("%v", row[li])
-			}
-
-			labels[mqr.Columns[li]] = lbl
-			labelKeyParts = append(labelKeyParts, mqr.Columns[li]+"="+lbl)
-		}
-
-		labelKey := strings.Join(labelKeyParts, "\x00")
-
-		for _, vi := range valueIdxs {
-			if vi >= len(row) {
-				continue
-			}
-
-			val, ok := mysqlParseNumericValue(row[vi])
-			if !ok || !isValidValue(val) {
-				continue
-			}
-
-			key := mqr.Columns[vi] + "\x00" + labelKey
-
-			if _, exists := seriesMap[key]; !exists {
-				seriesLabels := make(map[string]string, len(labels)+1)
-				maps.Copy(seriesLabels, labels)
-
-				if multipleValues {
-					seriesLabels["__name__"] = mqr.Columns[vi]
-				}
-
-				seriesMap[key] = &QueryResultSeries{
-					Labels: seriesLabels,
-				}
-				seriesOrder = append(seriesOrder, key)
-			}
-
-			seriesMap[key].Metrics = append(seriesMap[key].Metrics, [2]any{ts, val})
-		}
-	}
-
-	if len(seriesMap) == 0 {
-		return &QueryResult{Status: QueryStatusNoData}
-	}
-
-	series := make([]QueryResultSeries, 0, len(seriesOrder))
-
-	for _, key := range seriesOrder {
-		s := seriesMap[key]
-
-		if ct == ChartTypeGauge && len(s.Metrics) > 0 {
-			s.Metrics = s.Metrics[len(s.Metrics)-1:]
-		}
-
-		series = append(series, *s)
-	}
-
-	return &QueryResult{
-		Status: QueryStatusOK,
-		Data:   series,
+// sql returns the dialect-agnostic view of the result, which is where the
+// transformation into series lives.
+func (mqr *MySQLQueryResult) sql() sqlQueryResult {
+	return sqlQueryResult{
+		Columns:     mqr.Columns,
+		Rows:        mqr.Rows,
+		ColumnTypes: mqr.ColumnTypes,
 	}
 }
 
-// _mysqlNumericTypes are the column types whose values carry a magnitude
+// Transform transforms a MySQLQueryResult into a unified QueryResult
+// based on the requested chart type.
+func (mqr *MySQLQueryResult) Transform(ct ChartType) *QueryResult {
+	return mqr.sql().transform(ct, mysqlParseTimestamp, mysqlParseNumericValue)
+}
+
+// _sqlNumericTypes are the column types whose values carry a magnitude
 // rather than a name. DECIMAL is the one that matters most: the driver
 // returns it as bytes, so nothing about the value says it is a number.
-var _mysqlNumericTypes = map[string]bool{
+var _sqlNumericTypes = map[string]bool{
 	"TINYINT":            true,
 	"SMALLINT":           true,
 	"MEDIUMINT":          true,
@@ -568,52 +413,6 @@ var _mysqlNumericTypes = map[string]bool{
 	"DOUBLE":             true,
 	"REAL":               true,
 	"BIT":                true,
-}
-
-// identifyColumns detects which columns are time, value (numeric), and labels (non-numeric).
-func (mqr *MySQLQueryResult) identifyColumns() (timeIdx int, valueIdxs, labelIdxs []int) {
-	timeIdx = -1
-
-	for i, col := range mqr.Columns {
-		if strings.EqualFold(col, _timeColumn) {
-			timeIdx = i
-			break
-		}
-	}
-
-	if len(mqr.Rows) == 0 {
-		return timeIdx, valueIdxs, labelIdxs
-	}
-
-	for i := range mqr.Columns {
-		if i == timeIdx {
-			continue
-		}
-
-		if i < len(mqr.ColumnTypes) {
-			if _mysqlNumericTypes[strings.ToUpper(mqr.ColumnTypes[i])] {
-				valueIdxs = append(valueIdxs, i)
-
-				continue
-			}
-
-			labelIdxs = append(labelIdxs, i)
-
-			continue
-		}
-
-		// without the declared types — a result assembled by hand rather
-		// than scanned — the values' own shape is all there is to go on.
-		if columnIsNumeric(mqr.Rows, i, mysqlParseNumericValue) {
-			valueIdxs = append(valueIdxs, i)
-
-			continue
-		}
-
-		labelIdxs = append(labelIdxs, i)
-	}
-
-	return timeIdx, valueIdxs, labelIdxs
 }
 
 // mysqlCheckReadOnly checks whether the connected user has only read-only privileges
@@ -742,22 +541,5 @@ func mysqlParseNumericValue(v any) (float64, bool) {
 		return f, true
 	default:
 		return 0, false
-	}
-}
-
-// mysqlEstimateValueSize returns a rough byte-size estimate for a single value
-// as it would appear in a JSON-encoded response.
-func mysqlEstimateValueSize(v any) int {
-	switch val := v.(type) {
-	case nil:
-		return _jsonNullSize
-	case bool:
-		return _jsonBoolSize
-	case string:
-		return len(val) + _jsonQuotesSize
-	case []byte:
-		return len(val)
-	default:
-		return _jsonNumericSize
 	}
 }

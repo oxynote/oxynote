@@ -9,7 +9,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/guregu/null/v5"
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/config"
@@ -198,48 +197,12 @@ func (p *Prometheus) Series(ctx context.Context, matchers []string, tr TimeRange
 	}, nil
 }
 
-// UpdatePrometheusCredentials updates the credentials for the Prometheus data source.
-func UpdatePrometheusCredentials(rawCreds Credentials, inp CredentialsUpdateInput) (Credentials, error) {
-	var creds PrometheusCredentials
-
-	if rawCreds != nil {
-		if err := json.Unmarshal(rawCreds, &creds); err != nil {
-			return nil, fmt.Errorf("error unmarshaling credentials: %w", err)
-		}
-	}
-
-	var update PrometheusCredentialsUpdate
-
-	if err := json.Unmarshal(inp, &update); err != nil {
-		return nil, fmt.Errorf("error unmarshaling credentials update input: %w", err)
-	}
-
-	if update.Username.Valid {
-		creds.Username = update.Username.String
-	}
-
-	if update.Password.Valid {
-		creds.Password = update.Password.String
-	}
-
-	if creds.Username == "" && creds.Password == "" {
-		return nil, nil
-	}
-
-	data, err := json.Marshal(creds) //nolint:gosec // credentials are encrypted before storage
-	if err != nil {
-		return nil, fmt.Errorf("error marshaling updated credentials: %w", err)
-	}
-
-	return data, nil
-}
-
 // createPrometheusClient creates a Prometheus API client using the provided URL and credentials.
 func createPrometheusClient(url string, creds Credentials) (v1.API, error) {
 	var roundTripper http.RoundTripper
 
 	if creds != nil {
-		var promCreds PrometheusCredentials
+		var promCreds BasicCredentials
 
 		if err := json.Unmarshal(creds, &promCreds); err != nil {
 			return nil, fmt.Errorf("error unmarshaling credentials: %w", err)
@@ -261,24 +224,6 @@ func createPrometheusClient(url string, creds Credentials) (v1.API, error) {
 	}
 
 	return v1.NewAPI(client), nil
-}
-
-// PrometheusCredentials represents the credentials for a Prometheus data source.
-type PrometheusCredentials struct {
-	// Username is the username for the Prometheus data source.
-	Username string `json:"username"`
-
-	// Password is the password for the Prometheus data source.
-	Password string `json:"password"`
-}
-
-// PrometheusCredentialsUpdate represents the input for updating Prometheus credentials.
-type PrometheusCredentialsUpdate struct {
-	// Username is the username for the Prometheus data source.
-	Username null.String `json:"username"`
-
-	// Password is the password for the Prometheus data source.
-	Password null.String `json:"password"`
 }
 
 // PrometheusMetadataResult represents the result of a metadata query.

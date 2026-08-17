@@ -359,58 +359,6 @@ func Test_Prometheus_Series(t *testing.T) {
 	}
 }
 
-func Test_UpdatePrometheusCredentials(t *testing.T) {
-	cc := map[string]struct {
-		Creds  Credentials
-		Inp    CredentialsUpdateInput
-		Result Credentials
-		Err    error
-	}{
-		"Error returned by unmarshaling credentials": {
-			Creds: Credentials(`{`),
-			Inp:   CredentialsUpdateInput(`{"username":"user"}`),
-			Err:   assert.AnError,
-		},
-		"Error returned by unmarshaling update input": {
-			Inp: CredentialsUpdateInput(`{`),
-			Err: assert.AnError,
-		},
-		"Updated username retains password": {
-			Creds:  Credentials(`{"username":"old","password":"secret"}`),
-			Inp:    CredentialsUpdateInput(`{"username":"new"}`),
-			Result: Credentials(`{"username":"new","password":"secret"}`),
-		},
-		"Updated password retains username": {
-			Creds:  Credentials(`{"username":"user","password":"old"}`),
-			Inp:    CredentialsUpdateInput(`{"password":"new"}`),
-			Result: Credentials(`{"username":"user","password":"new"}`),
-		},
-		"Cleared credentials": {
-			Creds: Credentials(`{"username":"user","password":"pass"}`),
-			Inp:   CredentialsUpdateInput(`{"username":"","password":""}`),
-		},
-		"Created credentials from scratch": {
-			Inp:    CredentialsUpdateInput(`{"username":"user","password":"pass"}`),
-			Result: Credentials(`{"username":"user","password":"pass"}`),
-		},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			creds, err := UpdatePrometheusCredentials(c.Creds, c.Inp)
-			testutil.AssertEqualError(t, c.Err, err)
-
-			if err != nil {
-				return
-			}
-
-			assert.Equal(t, c.Result, creds)
-		})
-	}
-}
-
 func Test_createPrometheusClient(t *testing.T) {
 	t.Parallel()
 

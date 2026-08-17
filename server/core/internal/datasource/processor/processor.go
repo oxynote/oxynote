@@ -1,9 +1,11 @@
 package processor
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 
+	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/pkg/cryptoutil"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 )
@@ -121,6 +123,64 @@ func (cui *CredentialsUpdateInput) UnmarshalJSON(data []byte) error {
 	*cui = data
 
 	return nil
+}
+
+// BasicCredentials represents the username and password every data source
+// authenticates with.
+type BasicCredentials struct {
+	// Username is the username for the data source.
+	Username string `json:"username"`
+
+	// Password is the password for the data source.
+	Password string `json:"password"`
+}
+
+// BasicCredentialsUpdate represents the input for updating credentials. An
+// absent field leaves the stored value as it is.
+type BasicCredentialsUpdate struct {
+	// Username is the username for the data source.
+	Username null.String `json:"username"`
+
+	// Password is the password for the data source.
+	Password null.String `json:"password"`
+}
+
+// UpdateBasicCredentials applies the update input to the stored credentials.
+// Credentials emptied by the update are dropped altogether, so a data source
+// falls back to whatever its URL carries.
+func UpdateBasicCredentials(rawCreds Credentials, inp CredentialsUpdateInput) (Credentials, error) {
+	var creds BasicCredentials
+
+	if rawCreds != nil {
+		if err := json.Unmarshal(rawCreds, &creds); err != nil {
+			return nil, fmt.Errorf("error unmarshaling credentials: %w", err)
+		}
+	}
+
+	var update BasicCredentialsUpdate
+
+	if err := json.Unmarshal(inp, &update); err != nil {
+		return nil, fmt.Errorf("error unmarshaling credentials update input: %w", err)
+	}
+
+	if update.Username.Valid {
+		creds.Username = update.Username.String
+	}
+
+	if update.Password.Valid {
+		creds.Password = update.Password.String
+	}
+
+	if creds.Username == "" && creds.Password == "" {
+		return nil, nil
+	}
+
+	data, err := json.Marshal(creds) //nolint:gosec // credentials are encrypted before storage
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling updated credentials: %w", err)
+	}
+
+	return data, nil
 }
 
 // _columnScanRows caps how far column classification looks for a value that

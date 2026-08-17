@@ -15,6 +15,7 @@ import (
 	"github.com/orlangure/gnomock"
 	pgDocker "github.com/orlangure/gnomock/preset/postgres"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -286,4 +287,56 @@ func Test_CredentialsUpdateInput_UnmarshalJSON(t *testing.T) {
 
 	require.NoError(t, cui.UnmarshalJSON([]byte(`{"username":"user"}`)))
 	assert.Equal(t, CredentialsUpdateInput(`{"username":"user"}`), cui)
+}
+
+func Test_UpdateBasicCredentials(t *testing.T) {
+	cc := map[string]struct {
+		Creds  Credentials
+		Inp    CredentialsUpdateInput
+		Result Credentials
+		Err    error
+	}{
+		"Error returned by unmarshaling credentials": {
+			Creds: Credentials(`{`),
+			Inp:   CredentialsUpdateInput(`{"username":"user"}`),
+			Err:   assert.AnError,
+		},
+		"Error returned by unmarshaling update input": {
+			Inp: CredentialsUpdateInput(`{`),
+			Err: assert.AnError,
+		},
+		"Updated username retains password": {
+			Creds:  Credentials(`{"username":"old","password":"secret"}`),
+			Inp:    CredentialsUpdateInput(`{"username":"new"}`),
+			Result: Credentials(`{"username":"new","password":"secret"}`),
+		},
+		"Updated password retains username": {
+			Creds:  Credentials(`{"username":"user","password":"old"}`),
+			Inp:    CredentialsUpdateInput(`{"password":"new"}`),
+			Result: Credentials(`{"username":"user","password":"new"}`),
+		},
+		"Cleared credentials": {
+			Creds: Credentials(`{"username":"user","password":"pass"}`),
+			Inp:   CredentialsUpdateInput(`{"username":"","password":""}`),
+		},
+		"Created credentials from scratch": {
+			Inp:    CredentialsUpdateInput(`{"username":"user","password":"pass"}`),
+			Result: Credentials(`{"username":"user","password":"pass"}`),
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			creds, err := UpdateBasicCredentials(c.Creds, c.Inp)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, creds)
+		})
+	}
 }

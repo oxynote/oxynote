@@ -175,9 +175,6 @@ type PostgreSQL interface {
 
 	// Query executes a SQL query against the data source.
 	Query(ctx context.Context, q string, tr processor.TimeRange) (*processor.PostgreSQLQueryResult, error)
-
-	// QueryLabels executes a SQL query with LIMIT 1 and returns string column names with example values.
-	QueryLabels(ctx context.Context, q string, tr processor.TimeRange) (map[string]string, error)
 }
 
 // MySQL represents a MySQL data source processor.
@@ -186,9 +183,6 @@ type MySQL interface {
 
 	// Query executes a SQL query against the data source.
 	Query(ctx context.Context, q string, tr processor.TimeRange) (*processor.MySQLQueryResult, error)
-
-	// QueryLabels executes a SQL query with LIMIT 1 and returns string column names with example values.
-	QueryLabels(ctx context.Context, q string, tr processor.TimeRange) (map[string]string, error)
 }
 
 // runner represents a data source runner.

@@ -3,7 +3,6 @@ package processor
 import (
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -44,47 +43,14 @@ const (
 //	$__unixEpochGroup(dateColumn,'5m'[, fill])   → floor(dateColumn/300)*300
 //	$__unixEpochGroupAlias(dateColumn,'5m'[, fill]) → floor(dateColumn/300)*300 AS "time"
 func (tr TimeRange) ProcessPostgreSQLQuery(q string) string {
-	// Resolve generic macros first so they can be used as macro arguments
-	// (e.g., $__timeGroupAlias("time", $__interval)).
-	q = tr.ProcessQuery(q)
-
-	return expandMacros(q, func(name string, args []string) (string, bool) {
-		// the macro helpers fall back to the invocation itself when the
-		// arguments do not fit, so the raw form is rebuilt for them.
-		match := _macroPrefix + name + "(" + strings.Join(args, ",") + ")"
-
-		switch name {
-		case _timeColumn, "timeEpoch":
-			return pgMacroTime(args, match), true
-		case "timeFilter":
-			return pgMacroTimeFilter(tr, args, match), true
-		case "timeFrom":
-			return pgMacroTimeFrom(tr), true
-		case "timeTo":
-			return pgMacroTimeTo(tr), true
-		case "timeGroup":
-			return pgMacroTimeGroup(args, match), true
-		case "timeGroupAlias":
-			return pgMacroTimeGroupAlias(args, match), true
-		case "unixEpochFilter":
-			return pgMacroUnixEpochFilter(tr, args, match), true
-		case "unixEpochFrom":
-			return pgMacroUnixEpochFrom(tr), true
-		case "unixEpochTo":
-			return pgMacroUnixEpochTo(tr), true
-		case "unixEpochNanoFilter":
-			return pgMacroUnixEpochNanoFilter(tr, args, match), true
-		case "unixEpochNanoFrom":
-			return pgMacroUnixEpochNanoFrom(tr), true
-		case "unixEpochNanoTo":
-			return pgMacroUnixEpochNanoTo(tr), true
-		case "unixEpochGroup":
-			return pgMacroUnixEpochGroup(args, match), true
-		case "unixEpochGroupAlias":
-			return pgMacroUnixEpochGroupAlias(args, match), true
-		default:
-			return "", false
-		}
+	return tr.processSQLQuery(q, sqlMacros{
+		time:                pgMacroTime,
+		timeFilter:          pgMacroTimeFilter,
+		timeFrom:            pgMacroTimeFrom,
+		timeTo:              pgMacroTimeTo,
+		timeGroup:           pgMacroTimeGroup,
+		timeGroupAlias:      pgMacroTimeGroupAlias,
+		unixEpochGroupAlias: pgMacroUnixEpochGroupAlias,
 	})
 }
 

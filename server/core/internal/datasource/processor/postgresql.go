@@ -5,12 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"net/url"
 	"strings"
 	"time"
 
-	"github.com/guregu/null/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -108,24 +106,9 @@ func (p *PostgreSQL) Metadata(ctx context.Context) (*SQLMetadataResult, error) {
 	}
 	defer rows.Close()
 
-	tables := make(map[string]SQLTable)
-
-	for rows.Next() {
-		var schema, tableName, columnName string
-
-		if err := rows.Scan(&schema, &tableName, &columnName); err != nil {
-			return nil, fmt.Errorf("error scanning metadata: %w", err)
-		}
-
-		key := schema + "." + tableName
-
-		table := tables[key]
-		table.Columns = append(table.Columns, SQLColumn{Name: columnName})
-		tables[key] = table
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating metadata: %w", err)
+	tables, err := scanInformationSchema(rows)
+	if err != nil {
+		return nil, err
 	}
 
 	var defaultSchema string
@@ -254,7 +237,7 @@ func (p *PostgreSQL) Query(ctx context.Context, q string, tr TimeRange) (*Postgr
 		}
 
 		for i, v := range values {
-			payloadSize += pgEstimateValueSize(v)
+			payloadSize += estimateValueSize(v)
 			values[i] = pgNormalizeValue(v)
 		}
 
@@ -320,7 +303,7 @@ func (p *PostgreSQL) buildConnectionString() (string, error) {
 	}
 
 	if p.inp.Credentials() != nil {
-		var creds PostgreSQLCredentials
+		var creds BasicCredentials
 
 		if err := json.Unmarshal(p.inp.Credentials(), &creds); err != nil {
 			return "", fmt.Errorf("error unmarshaling credentials: %w", err)
@@ -334,60 +317,6 @@ func (p *PostgreSQL) buildConnectionString() (string, error) {
 	return u.String(), nil
 }
 
-// UpdatePostgreSQLCredentials updates the credentials for the PostgreSQL data source.
-func UpdatePostgreSQLCredentials(rawCreds Credentials, inp CredentialsUpdateInput) (Credentials, error) {
-	var creds PostgreSQLCredentials
-
-	if rawCreds != nil {
-		if err := json.Unmarshal(rawCreds, &creds); err != nil {
-			return nil, fmt.Errorf("error unmarshaling credentials: %w", err)
-		}
-	}
-
-	var update PostgreSQLCredentialsUpdate
-
-	if err := json.Unmarshal(inp, &update); err != nil {
-		return nil, fmt.Errorf("error unmarshaling credentials update input: %w", err)
-	}
-
-	if update.Username.Valid {
-		creds.Username = update.Username.String
-	}
-
-	if update.Password.Valid {
-		creds.Password = update.Password.String
-	}
-
-	if creds.Username == "" && creds.Password == "" {
-		return nil, nil
-	}
-
-	data, err := json.Marshal(creds) //nolint:gosec // credentials are encrypted before storage
-	if err != nil {
-		return nil, fmt.Errorf("error marshaling updated credentials: %w", err)
-	}
-
-	return data, nil
-}
-
-// PostgreSQLCredentials represents the credentials for a PostgreSQL data source.
-type PostgreSQLCredentials struct {
-	// Username is the username for the PostgreSQL data source.
-	Username string `json:"username"`
-
-	// Password is the password for the PostgreSQL data source.
-	Password string `json:"password"`
-}
-
-// PostgreSQLCredentialsUpdate represents the input for updating PostgreSQL credentials.
-type PostgreSQLCredentialsUpdate struct {
-	// Username is the username for the PostgreSQL data source.
-	Username null.String `json:"username"`
-
-	// Password is the password for the PostgreSQL data source.
-	Password null.String `json:"password"`
-}
-
 // PostgreSQLQueryResult represents the result of a PostgreSQL query.
 type PostgreSQLQueryResult struct {
 	// Columns contains the column names of the result set.
@@ -397,150 +326,20 @@ type PostgreSQLQueryResult struct {
 	Rows [][]any `json:"rows"`
 }
 
-// Transform transforms a PostgreSQLQueryResult into a unified QueryResult
-// based on the requested chart type.
-//
-// The SQL query is expected to return:
-//   - A time column named "time" (as RFC3339 string or unix seconds)
-//   - One or more numeric columns, each producing a separate series
-//   - Any non-numeric, non-time columns are treated as series labels
-//
-// Each numeric column generates its own set of series. When there are multiple
-// numeric columns, the column name is added as the "__name__" label to distinguish them.
-func (pqr *PostgreSQLQueryResult) Transform(ct ChartType) *QueryResult { //nolint:gocognit // this method is complex, however, it's well-structured
-	if ct == "" {
-		return &QueryResult{Status: QueryStatusTypeNotSelected}
-	}
-
-	if len(pqr.Columns) == 0 || len(pqr.Rows) == 0 {
-		return &QueryResult{Status: QueryStatusNoData}
-	}
-
-	timeIdx, valueIdxs, labelIdxs := pqr.identifyColumns()
-	if timeIdx < 0 || len(valueIdxs) == 0 {
-		return &QueryResult{Status: QueryStatusChartAndDataMismatch}
-	}
-
-	multipleValues := len(valueIdxs) > 1
-
-	// Group rows by (value column, label combination) into series, preserving insertion order.
-	seriesMap := make(map[string]*QueryResultSeries)
-
-	var seriesOrder []string
-
-	for _, row := range pqr.Rows {
-		if len(row) <= timeIdx {
-			continue
-		}
-
-		ts, ok := pgParseTimestamp(row[timeIdx])
-		if !ok {
-			continue
-		}
-
-		// Build label key once per row (shared across value columns).
-		labels := make(map[string]string, len(labelIdxs))
-
-		var labelKeyParts []string
-
-		for _, li := range labelIdxs {
-			var lbl string
-			if li < len(row) && row[li] != nil {
-				lbl = fmt.Sprintf("%v", row[li])
-			}
-
-			labels[pqr.Columns[li]] = lbl
-			labelKeyParts = append(labelKeyParts, pqr.Columns[li]+"="+lbl)
-		}
-
-		labelKey := strings.Join(labelKeyParts, "\x00")
-
-		// Create a data point for each numeric value column.
-		for _, vi := range valueIdxs {
-			if vi >= len(row) {
-				continue
-			}
-
-			val, ok := pgParseNumericValue(row[vi])
-			if !ok || !isValidValue(val) {
-				continue
-			}
-
-			// Build series key: value column name + label key.
-			key := pqr.Columns[vi] + "\x00" + labelKey
-
-			if _, exists := seriesMap[key]; !exists {
-				seriesLabels := make(map[string]string, len(labels)+1)
-				maps.Copy(seriesLabels, labels)
-
-				if multipleValues {
-					seriesLabels["__name__"] = pqr.Columns[vi]
-				}
-
-				seriesMap[key] = &QueryResultSeries{
-					Labels: seriesLabels,
-				}
-				seriesOrder = append(seriesOrder, key)
-			}
-
-			seriesMap[key].Metrics = append(seriesMap[key].Metrics, [2]any{ts, val})
-		}
-	}
-
-	if len(seriesMap) == 0 {
-		return &QueryResult{Status: QueryStatusNoData}
-	}
-
-	series := make([]QueryResultSeries, 0, len(seriesOrder))
-
-	for _, key := range seriesOrder {
-		s := seriesMap[key]
-
-		if ct == ChartTypeGauge && len(s.Metrics) > 0 {
-			// For gauge, only keep the last value.
-			s.Metrics = s.Metrics[len(s.Metrics)-1:]
-		}
-
-		series = append(series, *s)
-	}
-
-	return &QueryResult{
-		Status: QueryStatusOK,
-		Data:   series,
+// sql returns the dialect-agnostic view of the result, which is where the
+// transformation into series lives. pgx reports no column types, so the
+// classification falls back to the values' own shape.
+func (pqr *PostgreSQLQueryResult) sql() sqlQueryResult {
+	return sqlQueryResult{
+		Columns: pqr.Columns,
+		Rows:    pqr.Rows,
 	}
 }
 
-// identifyColumns detects which columns are time, value (numeric), and labels (non-numeric).
-func (pqr *PostgreSQLQueryResult) identifyColumns() (timeIdx int, valueIdxs, labelIdxs []int) {
-	timeIdx = -1
-
-	// Identify time column by name.
-	for i, col := range pqr.Columns {
-		if strings.EqualFold(col, _timeColumn) {
-			timeIdx = i
-			break
-		}
-	}
-
-	if len(pqr.Rows) == 0 {
-		return timeIdx, valueIdxs, labelIdxs
-	}
-
-	for i := range pqr.Columns {
-		if i == timeIdx {
-			continue
-		}
-
-		if columnIsNumeric(pqr.Rows, i, pgParseNumericValue) {
-			valueIdxs = append(valueIdxs, i)
-
-			continue
-		}
-
-		labelIdxs = append(labelIdxs, i)
-	}
-
-	return timeIdx, valueIdxs, labelIdxs
+// Transform transforms a PostgreSQLQueryResult into a unified QueryResult
+// based on the requested chart type.
+func (pqr *PostgreSQLQueryResult) Transform(ct ChartType) *QueryResult {
+	return pqr.sql().transform(ct, pgParseTimestamp, pgParseNumericValue)
 }
 
 // pgNormalizeValue converts native pgx row values into the JSON-shaped values
@@ -603,23 +402,6 @@ func pgParseNumericValue(v any) (float64, bool) {
 		return float64(val), true
 	default:
 		return 0, false
-	}
-}
-
-// pgEstimateValueSize returns a rough byte-size estimate for a single value
-// as it would appear in a JSON-encoded response.
-func pgEstimateValueSize(v any) int {
-	switch val := v.(type) {
-	case nil:
-		return _jsonNullSize
-	case bool:
-		return _jsonBoolSize
-	case string:
-		return len(val) + _jsonQuotesSize
-	case []byte:
-		return len(val)
-	default:
-		return _jsonNumericSize
 	}
 }
 

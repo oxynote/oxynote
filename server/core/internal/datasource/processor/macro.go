@@ -125,3 +125,76 @@ func parseMacroArgs(raw string) []string {
 func trimMacroArg(arg string) string {
 	return strings.Trim(strings.TrimSpace(arg), "'\"")
 }
+
+// processSQLQuery resolves the generic macros first, so they can be used as
+// macro arguments, and then the SQL ones, taking every expansion that depends
+// on the dialect from mm.
+func (tr TimeRange) processSQLQuery(q string, mm sqlMacros) string {
+	q = tr.ProcessQuery(q)
+
+	return expandMacros(q, func(name string, args []string) (string, bool) {
+		// the macro helpers fall back to the invocation itself when the
+		// arguments do not fit, so the raw form is rebuilt for them.
+		match := _macroPrefix + name + "(" + strings.Join(args, ",") + ")"
+
+		switch name {
+		case _timeColumn, "timeEpoch":
+			return mm.time(args, match), true
+		case "timeFilter":
+			return mm.timeFilter(tr, args, match), true
+		case "timeFrom":
+			return mm.timeFrom(tr), true
+		case "timeTo":
+			return mm.timeTo(tr), true
+		case "timeGroup":
+			return mm.timeGroup(args, match), true
+		case "timeGroupAlias":
+			return mm.timeGroupAlias(args, match), true
+		case "unixEpochGroupAlias":
+			return mm.unixEpochGroupAlias(args, match), true
+		case "unixEpochFilter":
+			return pgMacroUnixEpochFilter(tr, args, match), true
+		case "unixEpochFrom":
+			return pgMacroUnixEpochFrom(tr), true
+		case "unixEpochTo":
+			return pgMacroUnixEpochTo(tr), true
+		case "unixEpochNanoFilter":
+			return pgMacroUnixEpochNanoFilter(tr, args, match), true
+		case "unixEpochNanoFrom":
+			return pgMacroUnixEpochNanoFrom(tr), true
+		case "unixEpochNanoTo":
+			return pgMacroUnixEpochNanoTo(tr), true
+		case "unixEpochGroup":
+			return pgMacroUnixEpochGroup(args, match), true
+		default:
+			return "", false
+		}
+	})
+}
+
+// sqlMacros carries the macro expansions that differ between the SQL
+// dialects. The unix-epoch family is absent because it renders the same
+// either way, and lives in the dispatcher itself.
+type sqlMacros struct {
+	// time expands $__time and $__timeEpoch.
+	time func(args []string, original string) string
+
+	// timeFilter expands $__timeFilter.
+	timeFilter func(tr TimeRange, args []string, original string) string
+
+	// timeFrom expands $__timeFrom.
+	timeFrom func(tr TimeRange) string
+
+	// timeTo expands $__timeTo.
+	timeTo func(tr TimeRange) string
+
+	// timeGroup expands $__timeGroup.
+	timeGroup func(args []string, original string) string
+
+	// timeGroupAlias expands $__timeGroupAlias.
+	timeGroupAlias func(args []string, original string) string
+
+	// unixEpochGroupAlias expands $__unixEpochGroupAlias, which differs only
+	// in how the dialect quotes the time alias.
+	unixEpochGroupAlias func(args []string, original string) string
+}
