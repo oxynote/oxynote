@@ -48,6 +48,7 @@ Multi-paragraph content is multiple blocks, not one block with newlines. Inside 
 | bullet_list | items: [Block] | - |
 | ordered_list | items: [Block] | - |
 | task_list | task_items: [{checked, block}] | - |
+| (any list entry) | the entry Block, plus children: [Block] for what is indented under it | - |
 | callout | text (shorthand) **or** items: [Block] | icon (defaults to lucide:text) |
 | code | text (raw) | language (optional, default empty) |
 | titled_code | text (raw code body) | title (required), language (optional) |
@@ -59,6 +60,21 @@ Multi-paragraph content is multiple blocks, not one block with newlines. Inside 
 | metric_grid | items: [metric] | - |
 | split_doc | left: [Block], right: [Block] | inversed (optional) |
 | split_doc_param_list | header (plain text), params: [{name, type, description}] | - |
+
+### Nested lists
+
+items are the list's own entries; children is what sits indented under one entry. A list entry is a single block — usually a paragraph — so anything nested beneath it goes in that block's children, never in a second entry. Reads report existing nesting the same way, so a block read with children has to be written back with them or the nested content is lost.
+
+  Example:
+  {
+    "type": "bullet_list",
+    "items": [
+      {"type": "paragraph", "text": "Deploy", "children": [
+        {"type": "bullet_list", "items": [{"type": "paragraph", "text": "Staging first"}]}
+      ]},
+      {"type": "paragraph", "text": "Verify"}
+    ]
+  }
 
 ### Compound blocks
 

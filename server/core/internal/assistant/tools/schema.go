@@ -284,6 +284,7 @@ var _blockSchema = map[string]any{
 		"text":       map[string]any{_keyType: _typeString},
 		"attrs":      map[string]any{_keyType: "object"},
 		"items":      map[string]any{_keyType: _typeArray},
+		"children":   map[string]any{_keyType: _typeArray},
 		"task_items": map[string]any{_keyType: _typeArray},
 		"left":       map[string]any{_keyType: _typeArray},
 		"right":      map[string]any{_keyType: _typeArray},

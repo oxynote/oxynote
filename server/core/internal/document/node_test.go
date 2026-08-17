@@ -281,97 +281,115 @@ func Test_RootBlock_StripCommentMarks(t *testing.T) {
 func Test_RootBlock_Duplicate(t *testing.T) {
 	t.Parallel()
 
-	t.Run("File references are remapped to the new document", testRootBlockDuplicateFiles)
-
-	orig := stubMarkedTree()
-	dup, files := orig.Duplicate(xid.New(), xid.New())
-
-	assert.Empty(t, files)
-
-	require.Len(t, dup.Content, 1)
-
-	p := dup.Content[0]
-	assert.Equal(t, Attributes{"align": "left"}, Attributes{"align": p.Attrs["align"]})
-	assert.NotContains(t, p.Attrs, "nodeCommentId")
-
-	uid, ok := p.UID()
-	require.True(t, ok)
-	assert.NotEqual(t, "p1", uid, "uid should be regenerated")
-	assert.Len(t, uid, 21)
-
-	require.Len(t, p.Content, 1)
-	assert.Equal(t, []Mark{{Type: "bold"}}, p.Content[0].Marks)
-
-	// mutating the duplicate must not touch the original.
-	p.Attrs["align"] = "right"
-	assert.Equal(t, "left", orig.Content[0].Attrs["align"])
-}
-
-// testRootBlockDuplicateFiles covers the file-reference half of Duplicate: the
-// uid mapping it returns and the src rewriting that goes with it.
-func testRootBlockDuplicateFiles(t *testing.T) {
-	t.Parallel()
-
-	oldDocumentID := xid.New()
-	newDocumentID := xid.New()
-
-	orig := RootBlock{
-		Type: BlockNodeDoc,
-		Content: []Block{
-			{
-				Type: BlockNodeImageBlock,
-				Attrs: Attributes{
-					"uid": "img1",
-					"src": "https://app.test/core" + fmt.Sprintf(FilePathFormat, oldDocumentID, "img1"),
-				},
-			},
-			{
-				Type: BlockNodeImageBlock,
-				Attrs: Attributes{
-					"uid": "img2",
-					"src": "https://cdn.test/photo.png",
-				},
-			},
-			{
-				Type: BlockNodeImageBlock,
-				Attrs: Attributes{
-					"uid": "img3",
-					"src": "https://app.test/core" + fmt.Sprintf(FilePathFormat, xid.New(), "img3"),
-				},
-			},
-			{
-				Type:  BlockNodeImageBlock,
-				Attrs: Attributes{"uid": "img4"},
-			},
-		},
+	type tcase struct {
+		Input         RootBlock
+		OldDocumentID xid.ID
+		NewDocumentID xid.ID
+		Check         func(t *testing.T, orig, dup RootBlock, files map[string]string)
 	}
 
-	dup, files := orig.Duplicate(oldDocumentID, newDocumentID)
+	cc := map[string]tcase{
+		"Uids are regenerated and the original is left alone": {
+			Input:         stubMarkedTree(),
+			OldDocumentID: xid.New(),
+			NewDocumentID: xid.New(),
+			Check: func(t *testing.T, orig, dup RootBlock, files map[string]string) {
+				assert.Empty(t, files)
 
-	// only the image served by the source document is remapped.
-	require.Len(t, files, 1)
+				require.Len(t, dup.Content, 1)
 
-	newID, ok := files["img1"]
-	require.True(t, ok)
+				p := dup.Content[0]
+				assert.Equal(t, Attributes{"align": "left"}, Attributes{"align": p.Attrs["align"]})
+				assert.NotContains(t, p.Attrs, "nodeCommentId")
 
-	uid, ok := dup.Content[0].UID()
-	require.True(t, ok)
-	assert.Equal(t, newID, uid)
-	assert.Equal(
-		t,
-		"https://app.test/core"+fmt.Sprintf(FilePathFormat, newDocumentID, newID),
-		dup.Content[0].Attrs["src"],
-		"the host and path prefix must survive the rewrite",
-	)
+				uid, ok := p.UID()
+				require.True(t, ok)
+				assert.NotEqual(t, "p1", uid, "uid should be regenerated")
+				assert.Len(t, uid, 21)
 
-	// an externally hosted image, an image of another document and an
-	// image without a src are all left as they are.
-	assert.Equal(t, "https://cdn.test/photo.png", dup.Content[1].Attrs["src"])
-	assert.Equal(t, orig.Content[2].Attrs["src"], dup.Content[2].Attrs["src"])
-	assert.NotContains(t, dup.Content[3].Attrs, "src")
+				require.Len(t, p.Content, 1)
+				assert.Equal(t, []Mark{{Type: "bold"}}, p.Content[0].Marks)
 
-	// the original is untouched.
-	assert.Equal(t, "img1", orig.Content[0].Attrs["uid"])
+				// mutating the duplicate must not touch the original.
+				p.Attrs["align"] = "right"
+				assert.Equal(t, "left", orig.Content[0].Attrs["align"])
+			},
+		},
+		"File references are remapped to the new document": func() tcase {
+			oldDocumentID, newDocumentID := xid.New(), xid.New()
+
+			return tcase{
+				OldDocumentID: oldDocumentID,
+				NewDocumentID: newDocumentID,
+				Input: RootBlock{
+					Type: BlockNodeDoc,
+					Content: []Block{
+						{
+							Type: BlockNodeImageBlock,
+							Attrs: Attributes{
+								"uid": "img1",
+								"src": "https://app.test/core" + fmt.Sprintf(FilePathFormat, oldDocumentID, "img1"),
+							},
+						},
+						{
+							Type: BlockNodeImageBlock,
+							Attrs: Attributes{
+								"uid": "img2",
+								"src": "https://cdn.test/photo.png",
+							},
+						},
+						{
+							Type: BlockNodeImageBlock,
+							Attrs: Attributes{
+								"uid": "img3",
+								"src": "https://app.test/core" + fmt.Sprintf(FilePathFormat, xid.New(), "img3"),
+							},
+						},
+						{
+							Type:  BlockNodeImageBlock,
+							Attrs: Attributes{"uid": "img4"},
+						},
+					},
+				},
+				Check: func(t *testing.T, orig, dup RootBlock, files map[string]string) {
+					// only the image served by the source document is remapped.
+					require.Len(t, files, 1)
+
+					newID, ok := files["img1"]
+					require.True(t, ok)
+
+					uid, ok := dup.Content[0].UID()
+					require.True(t, ok)
+					assert.Equal(t, newID, uid)
+					assert.Equal(
+						t,
+						"https://app.test/core"+fmt.Sprintf(FilePathFormat, newDocumentID, newID),
+						dup.Content[0].Attrs["src"],
+						"the host and path prefix must survive the rewrite",
+					)
+
+					// an externally hosted image, an image of another document
+					// and an image without a src are all left as they are.
+					assert.Equal(t, "https://cdn.test/photo.png", dup.Content[1].Attrs["src"])
+					assert.Equal(t, orig.Content[2].Attrs["src"], dup.Content[2].Attrs["src"])
+					assert.NotContains(t, dup.Content[3].Attrs, "src")
+
+					// the original is untouched.
+					assert.Equal(t, "img1", orig.Content[0].Attrs["uid"])
+				},
+			}
+		}(),
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			dup, files := c.Input.Duplicate(c.OldDocumentID, c.NewDocumentID)
+
+			c.Check(t, c.Input, dup, files)
+		})
+	}
 }
 
 func Test_RootBlock_RegenerateUIDs(t *testing.T) {

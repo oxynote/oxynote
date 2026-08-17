@@ -262,7 +262,7 @@ func validateList(b Block, path string) error {
 		return verr(path, fmt.Sprintf("%s requires at least one item", b.Type))
 	}
 
-	return validateItemsAllowed(b.Items, joinPath(path, "items"), _allowedListItemContent)
+	return validateListItems(b.Items, joinPath(path, "items"))
 }
 
 // validateTaskList checks that rows live in task_items and each
@@ -282,6 +282,10 @@ func validateTaskList(b Block, path string) error {
 
 	for i, ti := range b.TaskItems {
 		itemPath := joinPath(path, fmt.Sprintf("task_items[%d]", i))
+
+		children := ti.Block.Children
+		ti.Block.Children = nil
+
 		if err := validateBlock(ti.Block, joinPath(itemPath, "block")); err != nil {
 			return err
 		}
@@ -290,6 +294,14 @@ func validateTaskList(b Block, path string) error {
 			return verr(joinPath(itemPath, "block"),
 				fmt.Sprintf("task_item content must be one of %s, got %s", listAllowed(_allowedListItemContent), ti.Block.Type),
 			)
+		}
+
+		if err := validateItemsAllowed(
+			children,
+			joinPath(itemPath, "block/children"),
+			_allowedListItemContent,
+		); err != nil {
+			return err
 		}
 	}
 
@@ -584,6 +596,13 @@ func validateParamList(b Block, path string) error {
 // macro-only fields (TaskItems, Left, Right, Header, Params). Used
 // by simple block types that should never see them.
 func mustNotHaveCompoundFields(b Block, path string) error {
+	if len(b.Children) != 0 {
+		return verr(path, fmt.Sprintf(
+			"%s does not accept children; only a list or task-list item's content block carries them",
+			b.Type,
+		))
+	}
+
 	if len(b.TaskItems) != 0 {
 		return verr(path, fmt.Sprintf("%s does not accept task_items", b.Type))
 	}
@@ -637,6 +656,28 @@ func mustHaveNoCanonicalCompoundExcept(b Block, path string, allowed ...string) 
 
 // validateItemsAllowed validates a slice of items, requiring each
 // to be of a type in allowed.
+// validateListItems checks the content blocks of a list or task list.
+// An item's own children — a nested list, in practice — are validated
+// separately, since every other position rejects them outright.
+func validateListItems(items []Block, path string) error {
+	for i, item := range items {
+		itemPath := joinPath(path, fmt.Sprintf("[%d]", i))
+
+		children := item.Children
+		item.Children = nil
+
+		if err := validateItemsAllowed([]Block{item}, path, _allowedListItemContent); err != nil {
+			return err
+		}
+
+		if err := validateItemsAllowed(children, joinPath(itemPath, "children"), _allowedListItemContent); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func validateItemsAllowed(items []Block, path string, allowed map[Type]bool) error {
 	for i, item := range items {
 		itemPath := joinPath(path, fmt.Sprintf("[%d]", i))

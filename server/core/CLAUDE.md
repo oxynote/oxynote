@@ -905,6 +905,12 @@ Rules:
   the loop body), `Result`, `Err`, `Checks`, `RespCode`, `RespJSON`.
 - `t.Parallel()` is the first statement of the subtest closure (~everywhere; omit
   only for genuinely shared mutable state). No `c := c` rebinding.
+- **Cases live in the table, never in their own function.** A scenario that
+  doesn't fit the existing fields earns a new field — a flag, an input, or a
+  closure attribute (`Check func(t *testing.T, got X)`, `Do func(...)`) built
+  inline in the case literal — not a `func testSomethingSpecificCase(t)` called
+  through `t.Run`. Helper functions exist only when they are genuinely reused
+  across tests (`prep*` fixtures, `stub*` builders, `check` combinators).
 - When a case needs setup or must keep a mock reference for later assertions,
   hoist a `type tcase struct {...}` above the table and build cases with
   immediately-invoked closures:

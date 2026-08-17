@@ -649,8 +649,9 @@ func Test_Manager_insertBlock(t *testing.T) {
 	branchID := xid.New()
 
 	cc := map[string]struct {
-		Args string
-		Err  error
+		Args    string
+		Content document.RootBlock
+		Err     error
 	}{
 		"Malformed args": {
 			Args: `{broken`,
@@ -663,6 +664,27 @@ func Test_Manager_insertBlock(t *testing.T) {
 		"Invalid block": {
 			Args: `{"document_id":"` + docID.String() + `","reference_block_uid":"r","position":"after","block":{"type":"heading"}}`,
 			Err:  assert.AnError,
+		},
+		// a macro internal next to a root block would land at the root,
+		// where the editor schema has no place for it.
+		"Macro internal next to a root block": {
+			Args: `{"document_id":"` + docID.String() + `","reference_block_uid":"r","position":"after","block":{"type":"titled_code","text":"x","attrs":{"title":"t"}}}`,
+			Content: document.RootBlock{
+				Type: document.BlockNodeDoc,
+				Content: []document.Block{
+					{Type: document.BlockNodeParagraph, Attrs: document.Attributes{"uid": "r"}},
+				},
+			},
+			Err: assert.AnError,
+		},
+		"Macro internal next to a nested block": {
+			Args: `{"document_id":"` + docID.String() + `","reference_block_uid":"r","position":"after","block":{"type":"titled_code","text":"x","attrs":{"title":"t"}}}`,
+			Content: document.RootBlock{
+				Type: document.BlockNodeDoc,
+				Content: []document.Block{
+					{Type: document.BlockNodeParagraph, Attrs: document.Attributes{"uid": "other"}},
+				},
+			},
 		},
 		"Invalid position": {
 			Args: `{"document_id":"` + docID.String() + `","reference_block_uid":"r","position":"sideways","block":{"type":"paragraph"}}`,
@@ -680,7 +702,12 @@ func Test_Manager_insertBlock(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			m := stubEditManager(stubResolvingDB(branchID, null.Value[xid.ID]{}, nil), stubOKApplier(), nil)
+			db := stubResolvingDB(branchID, null.Value[xid.ID]{}, nil)
+			db.FetchMainBranchContentFunc = func(context.Context, xid.ID, string) (document.Content, error) {
+				return document.Content{Content: c.Content}, nil
+			}
+
+			m := stubEditManager(db, stubOKApplier(), nil)
 
 			res, err := m.insertBlock(context.Background(), json.RawMessage(c.Args))
 			testutil.AssertEqualError(t, c.Err, err)
@@ -777,8 +804,9 @@ func Test_Manager_replaceBlock(t *testing.T) {
 	branchID := xid.New()
 
 	cc := map[string]struct {
-		Args string
-		Err  error
+		Args    string
+		Content document.RootBlock
+		Err     error
 	}{
 		"Malformed args": {
 			Args: `{broken`,
@@ -792,6 +820,18 @@ func Test_Manager_replaceBlock(t *testing.T) {
 			Args: `{"document_id":"` + docID.String() + `","block_uid":"b","block":{"type":"heading"}}`,
 			Err:  assert.AnError,
 		},
+		// the replacement lands where the target sits, so replacing a root
+		// block with a macro internal puts it at the root.
+		"Macro internal replacing a root block": {
+			Args: `{"document_id":"` + docID.String() + `","block_uid":"b","block":{"type":"titled_code","text":"x","attrs":{"title":"t"}}}`,
+			Content: document.RootBlock{
+				Type: document.BlockNodeDoc,
+				Content: []document.Block{
+					{Type: document.BlockNodeParagraph, Attrs: document.Attributes{"uid": "b"}},
+				},
+			},
+			Err: assert.AnError,
+		},
 		"Successful replace": {
 			Args: `{"document_id":"` + docID.String() + `","block_uid":"b","block":{"type":"paragraph","text":"x"}}`,
 		},
@@ -801,7 +841,12 @@ func Test_Manager_replaceBlock(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			m := stubEditManager(stubResolvingDB(branchID, null.Value[xid.ID]{}, nil), stubOKApplier(), nil)
+			db := stubResolvingDB(branchID, null.Value[xid.ID]{}, nil)
+			db.FetchMainBranchContentFunc = func(context.Context, xid.ID, string) (document.Content, error) {
+				return document.Content{Content: c.Content}, nil
+			}
+
+			m := stubEditManager(db, stubOKApplier(), nil)
 
 			res, err := m.replaceBlock(context.Background(), json.RawMessage(c.Args))
 			testutil.AssertEqualError(t, c.Err, err)

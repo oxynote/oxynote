@@ -208,6 +208,54 @@ func Test_Validate(t *testing.T) {
 			ExpectErr:    true,
 			ExpectedPath: "items[0]",
 		},
+		"List item children are accepted": {
+			Input: Block{
+				Type: BlockBulletList,
+				Items: []Block{{
+					Type: BlockParagraph,
+					Text: "one",
+					Children: []Block{{
+						Type:  BlockBulletList,
+						Items: []Block{{Type: BlockParagraph, Text: "nested"}},
+					}},
+				}},
+			},
+			ExpectErr: false,
+		},
+		"List item children of a disallowed type are rejected": {
+			Input: Block{
+				Type: BlockBulletList,
+				Items: []Block{{
+					Type:     BlockParagraph,
+					Text:     "one",
+					Children: []Block{{Type: BlockCode, Text: "x"}},
+				}},
+			},
+			ExpectErr:    true,
+			ExpectedPath: "items[0]/children[0]",
+		},
+		"Task item children are accepted": {
+			Input: Block{
+				Type: BlockTaskList,
+				TaskItems: []TaskItem{{
+					Block: Block{
+						Type: BlockParagraph,
+						Text: "one",
+						Children: []Block{{
+							Type:  BlockBulletList,
+							Items: []Block{{Type: BlockParagraph, Text: "nested"}},
+						}},
+					},
+				}},
+			},
+			ExpectErr: false,
+		},
+		// only a list or task-list item's content block carries children;
+		// anywhere else they would be silently dropped by Expand.
+		"Children outside a list item are rejected": {
+			Input:     Block{Type: BlockParagraph, Text: "x", Children: []Block{{Type: BlockParagraph}}},
+			ExpectErr: true,
+		},
 		"Bullet list with text is rejected": {
 			Input:     Block{Type: BlockBulletList, Text: "x", Items: []Block{{Type: BlockParagraph}}},
 			ExpectErr: true,

@@ -55,6 +55,10 @@ func stripUIDsCanonical(b Block) Block {
 		b.Items[i] = stripUIDsCanonical(c)
 	}
 
+	for i, c := range b.Children {
+		b.Children[i] = stripUIDsCanonical(c)
+	}
+
 	for i, t := range b.TaskItems {
 		b.TaskItems[i] = TaskItem{
 			Checked: t.Checked,
@@ -78,81 +82,94 @@ func stripUIDsCanonical(b Block) Block {
 	return b
 }
 
-// testExpandPreservesUID is a case of Expand, run as a subtest of it.
-func testExpandPreservesUID(t *testing.T) {
-	t.Parallel()
-
-	got, err := Expand(Block{Type: BlockParagraph, UID: "preserve-me", Text: "x"})
-	require.NoError(t, err)
-
-	uid, ok := got.UID()
-	require.True(t, ok)
-	assert.Equal(t, "preserve-me", uid)
-}
-
-// testExpandGeneratesUID is a case of Expand, run as a subtest of it.
-func testExpandGeneratesUID(t *testing.T) {
-	t.Parallel()
-
-	got, err := Expand(Block{Type: BlockParagraph, Text: "x"})
-	require.NoError(t, err)
-
-	uid, ok := got.UID()
-	require.True(t, ok)
-	assert.NotEmpty(t, uid)
-}
-
-// testExpandRoundTrip is a case of Expand, run as a subtest of it.
-func testExpandRoundTrip(t *testing.T) {
+func Test_Expand(t *testing.T) {
 	tests := map[string]struct {
-		Input Block
+		Input     Block
+		Expected  document.Block
+		ExpectErr bool
+
+		// RoundTrip asserts that compacting the expanded block returns the
+		// input instead of comparing against Expected.
+		RoundTrip bool
+
+		// Check replaces the expected-block comparison for a case that
+		// asserts on something the comparison strips, such as the uid.
+		Check func(t *testing.T, got document.Block)
 	}{
-		"Paragraph":  {Input: Block{Type: BlockParagraph, Text: "hi **there**"}},
-		"Heading":    {Input: Block{Type: BlockHeading, Text: "Title", Attrs: map[string]any{"level": 1}}},
-		"Blockquote": {Input: Block{Type: BlockBlockquote, Text: "quote"}},
-		"Blockquote with items": {Input: Block{
+		"Round trip: paragraph":  {Input: Block{Type: BlockParagraph, Text: "hi **there**"}, RoundTrip: true},
+		"Round trip: heading":    {Input: Block{Type: BlockHeading, Text: "Title", Attrs: map[string]any{"level": 1}}, RoundTrip: true},
+		"Round trip: blockquote": {Input: Block{Type: BlockBlockquote, Text: "quote"}, RoundTrip: true},
+		"Round trip: blockquote with items": {RoundTrip: true, Input: Block{
 			Type: BlockBlockquote,
 			Items: []Block{
 				{Type: BlockParagraph, Text: "one"},
 				{Type: BlockParagraph, Text: "two"},
 			},
 		}},
-		"Bullet list": {Input: Block{
+		"Round trip: bullet list with a nested list": {RoundTrip: true, Input: Block{
+			Type: BlockBulletList,
+			Items: []Block{
+				{
+					Type: BlockParagraph,
+					Text: "one",
+					Children: []Block{{
+						Type:  BlockBulletList,
+						Items: []Block{{Type: BlockParagraph, Text: "nested"}},
+					}},
+				},
+				{Type: BlockParagraph, Text: "two"},
+			},
+		}},
+		"Round trip: task list with a nested list": {RoundTrip: true, Input: Block{
+			Type: BlockTaskList,
+			TaskItems: []TaskItem{{
+				Checked: true,
+				Block: Block{
+					Type: BlockParagraph,
+					Text: "done",
+					Children: []Block{{
+						Type:  BlockBulletList,
+						Items: []Block{{Type: BlockParagraph, Text: "nested"}},
+					}},
+				},
+			}},
+		}},
+		"Round trip: bullet list": {RoundTrip: true, Input: Block{
 			Type:  BlockBulletList,
 			Items: []Block{{Type: BlockParagraph, Text: "one"}, {Type: BlockParagraph, Text: "two"}},
 		}},
-		"Task list": {Input: Block{
+		"Round trip: task list": {RoundTrip: true, Input: Block{
 			Type: BlockTaskList,
 			TaskItems: []TaskItem{
 				{Checked: true, Block: Block{Type: BlockParagraph, Text: "done"}},
 			},
 		}},
-		"Callout text shorthand": {Input: Block{
+		"Round trip: callout text shorthand": {RoundTrip: true, Input: Block{
 			Type:  BlockCallout,
 			Text:  "warn",
 			Attrs: map[string]any{"icon": "lucide:warning"},
 		}},
-		"Code": {Input: Block{
+		"Round trip: code": {RoundTrip: true, Input: Block{
 			Type:  BlockCode,
 			Text:  "x := 1",
 			Attrs: map[string]any{"language": "go"},
 		}},
-		"Titled code": {Input: Block{
+		"Round trip: titled code": {RoundTrip: true, Input: Block{
 			Type:  BlockTitledCode,
 			Text:  "x := 1",
 			Attrs: map[string]any{"title": "ex.go", "language": "go"},
 		}},
-		"Mermaid":         {Input: Block{Type: BlockMermaid, Text: "graph TD; A-->B;"}},
-		"Horizontal rule": {Input: Block{Type: BlockHorizontalRule}},
-		"Image": {Input: Block{
+		"Round trip: mermaid":         {Input: Block{Type: BlockMermaid, Text: "graph TD; A-->B;"}, RoundTrip: true},
+		"Round trip: horizontal rule": {Input: Block{Type: BlockHorizontalRule}, RoundTrip: true},
+		"Round trip: image": {RoundTrip: true, Input: Block{
 			Type:  BlockImage,
 			Attrs: map[string]any{"src": "http://x", "alt": "x", "width": 100},
 		}},
-		"Figma": {Input: Block{
+		"Round trip: figma": {RoundTrip: true, Input: Block{
 			Type:  BlockFigma,
 			Attrs: map[string]any{"src": "http://figma", "width": 320, "height": 200},
 		}},
-		"Split doc": {Input: Block{
+		"Round trip: split doc": {RoundTrip: true, Input: Block{
 			Type:  BlockSplitDoc,
 			Attrs: map[string]any{"inversed": true},
 			Left: []Block{
@@ -163,7 +180,7 @@ func testExpandRoundTrip(t *testing.T) {
 				{Type: BlockTitledCode, Text: "ok", Attrs: map[string]any{"title": "example"}},
 			},
 		}},
-		"Param list": {Input: Block{
+		"Round trip: param list": {RoundTrip: true, Input: Block{
 			Type:   BlockParamList,
 			Header: "Body",
 			Params: []ParamItem{
@@ -171,38 +188,22 @@ func testExpandRoundTrip(t *testing.T) {
 				{Name: "limit", Type: "number?", Description: "page size"},
 			},
 		}},
-	}
-
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			require.NoError(t, Validate(tc.Input), "input should validate")
-
-			expanded, err := Expand(tc.Input)
-			require.NoError(t, err)
-
-			compacted, err := Compact(expanded)
-			require.NoError(t, err)
-
-			assert.Equal(t,
-				stripUIDsCanonical(tc.Input),
-				stripUIDsCanonical(compacted),
-			)
-		})
-	}
-}
-
-func Test_Expand(t *testing.T) {
-	t.Run("Compact round-trips through Expand", testExpandRoundTrip)
-	t.Run("A missing uid is generated", testExpandGeneratesUID)
-	t.Run("An explicit uid is preserved", testExpandPreservesUID)
-
-	tests := map[string]struct {
-		Input     Block
-		Expected  document.Block
-		ExpectErr bool
-	}{
+		"An explicit uid is preserved": {
+			Input: Block{Type: BlockParagraph, UID: "preserve-me", Text: "x"},
+			Check: func(t *testing.T, got document.Block) {
+				uid, ok := got.UID()
+				require.True(t, ok)
+				assert.Equal(t, "preserve-me", uid)
+			},
+		},
+		"A missing uid is generated": {
+			Input: Block{Type: BlockParagraph, Text: "x"},
+			Check: func(t *testing.T, got document.Block) {
+				uid, ok := got.UID()
+				require.True(t, ok)
+				assert.NotEmpty(t, uid)
+			},
+		},
 		"Paragraph with bold mark": {
 			Input: Block{Type: BlockParagraph, Text: "say **hi**"},
 			Expected: document.Block{
@@ -587,6 +588,27 @@ func Test_Expand(t *testing.T) {
 			}
 
 			require.NoError(t, err)
+
+			if tc.RoundTrip {
+				require.NoError(t, Validate(tc.Input), "input should validate")
+
+				compacted, cerr := Compact(got)
+				require.NoError(t, cerr)
+
+				assert.Equal(t,
+					stripUIDsCanonical(tc.Input),
+					stripUIDsCanonical(compacted),
+				)
+
+				return
+			}
+
+			if tc.Check != nil {
+				tc.Check(t, got)
+
+				return
+			}
+
 			assert.Equal(t, tc.Expected, stripUIDsPM(got))
 		})
 	}

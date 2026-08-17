@@ -3,9 +3,11 @@ package manager
 import (
 	"context"
 	"log/slog"
+	"strconv"
 	"testing"
 
 	"github.com/oxynote/oxynote/server/core/internal/search"
+	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -21,6 +23,16 @@ func jobs(start, n int) []search.DocumentSearchJob {
 	return jj
 }
 
+// docJob builds a job whose difference touches the given document.
+func docJob(id int64, documentID xid.ID) search.DocumentSearchJob {
+	return search.DocumentSearchJob{
+		ID: id,
+		BlockDiff: search.BlocksDifference{
+			Added: []search.Block{{ID: "b" + strconv.FormatInt(id, 10), DocumentID: documentID}},
+		},
+	}
+}
+
 func Test_NewManager(t *testing.T) {
 	t.Parallel()
 
@@ -29,22 +41,8 @@ func Test_NewManager(t *testing.T) {
 	require.NotNil(t, man)
 }
 
-// testManagerProcessJobsContextCancelled is a case of Manager_processJobs, run as a subtest of it.
-func testManagerProcessJobsContextCancelled(t *testing.T) {
-	t.Parallel()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	man := NewManager(slog.New(slog.DiscardHandler), &DBMock{}, &SearchGatewayMock{})
-
-	assert.ErrorIs(t, man.processJobs(ctx), context.Canceled)
-}
-
 func Test_Manager_processJobs(t *testing.T) {
 	t.Parallel()
-
-	t.Run("Cancelled context stops the run", testManagerProcessJobsContextCancelled)
 
 	type check func(*testing.T, *DBMock, *SearchGatewayMock, error)
 
@@ -73,12 +71,29 @@ func Test_Manager_processJobs(t *testing.T) {
 		}
 	}
 
+	docA, docB := xid.New(), xid.New()
+
+	isCancelled := func() check {
+		return func(t *testing.T, _ *DBMock, _ *SearchGatewayMock, err error) {
+			assert.ErrorIs(t, err, context.Canceled)
+		}
+	}
+
 	tests := map[string]struct {
-		Batches    [][]search.DocumentSearchJob
-		ReplaceErr error
-		DeleteErr  error
-		Checks     []check
+		Batches          [][]search.DocumentSearchJob
+		CancelledContext bool
+		ReplaceErr       error
+		FailJobs         map[int64]bool
+		DeleteErr        error
+		Checks           []check
 	}{
+		"Cancelled context stops the run": {
+			CancelledContext: true,
+			Checks: checks(
+				isCancelled(),
+				wasReplaceCalled(0),
+			),
+		},
 		"Fetch failure is propagated": {
 			Batches: nil,
 			Checks: checks(
@@ -132,6 +147,60 @@ func Test_Manager_processJobs(t *testing.T) {
 				wasDeleteCalled(0),
 			),
 		},
+		// a diff is a delta against what the previous ones left, so replaying
+		// a failed one after a newer one would resurrect what the newer one
+		// removed — including the blocks of a document that no longer exists.
+		"A failed job holds the later diffs of its document": {
+			Batches: [][]search.DocumentSearchJob{{
+				docJob(1, docA),
+				docJob(2, docA),
+				docJob(3, docA),
+			}},
+			FailJobs: map[int64]bool{1: true},
+			Checks: checks(
+				hasError(false),
+				wasReplaceCalled(1),
+				wasDeleteCalled(0),
+			),
+		},
+		"A failure holds only its own document": {
+			Batches: [][]search.DocumentSearchJob{{
+				docJob(1, docA),
+				docJob(2, docB),
+				docJob(3, docA),
+			}},
+			FailJobs: map[int64]bool{1: true},
+			Checks: checks(
+				hasError(false),
+				wasReplaceCalled(2),
+				wasDeleteCalled(1),
+				func(t *testing.T, db *DBMock, _ *SearchGatewayMock, _ error) {
+					ff := db.DeleteDocumentSearchJobCalls()
+					require.Len(t, ff, 1)
+					assert.Equal(t, int64(2), ff[0].ID, "the other document keeps moving")
+				},
+			),
+		},
+		"An organization removal waits for anything held": {
+			Batches: [][]search.DocumentSearchJob{{
+				docJob(1, docA),
+				{
+					ID: 2,
+					BlockDiff: search.BlocksDifference{
+						RemovedOrganizations: []string{"org-1"},
+					},
+				},
+				docJob(3, docB),
+			}},
+			FailJobs: map[int64]bool{1: true},
+			Checks: checks(
+				hasError(false),
+				// the organization removal covers documents this run cannot
+				// enumerate, so everything after it waits as well.
+				wasReplaceCalled(1),
+				wasDeleteCalled(0),
+			),
+		},
 		"Delete failure still advances the offset": {
 			Batches: [][]search.DocumentSearchJob{
 				jobs(1, _processingBatch),
@@ -172,15 +241,35 @@ func Test_Manager_processJobs(t *testing.T) {
 				},
 			}
 
+			applied := 0
+
 			gw := &SearchGatewayMock{
 				ReplaceDocumentBlocksFunc: func(context.Context, search.BlocksDifference) error {
+					applied++
+
+					if tc.FailJobs != nil {
+						// the fixture numbers jobs from one in fetch order.
+						if tc.FailJobs[int64(applied)] {
+							return assert.AnError
+						}
+
+						return nil
+					}
+
 					return tc.ReplaceErr
 				},
 			}
 
 			man := NewManager(slog.New(slog.DiscardHandler), db, gw)
 
-			err := man.processJobs(context.Background())
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			if tc.CancelledContext {
+				cancel()
+			}
+
+			err := man.processJobs(ctx)
 
 			for _, ch := range tc.Checks {
 				ch(t, db, gw, err)

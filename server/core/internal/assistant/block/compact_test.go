@@ -100,6 +100,109 @@ func Test_Compact(t *testing.T) {
 				Items: []Block{{Type: BlockParagraph}},
 			},
 		},
+		// the item wrapper holds a paragraph plus whatever is nested under
+		// it; dropping the rest deletes it from the document on write-back.
+		"List item keeps its nested list": {
+			Input: document.Block{
+				Type:  document.BlockNodeBulletList,
+				Attrs: map[string]any{"uid": "l1"},
+				Content: []document.Block{
+					{
+						Type: document.BlockNodeListItem,
+						Content: []document.Block{
+							{
+								Type:    document.BlockNodeParagraph,
+								Attrs:   map[string]any{"uid": "p1"},
+								Content: []document.Block{{Type: "text", Text: "one"}},
+							},
+							{
+								Type:  document.BlockNodeBulletList,
+								Attrs: map[string]any{"uid": "l2"},
+								Content: []document.Block{
+									{
+										Type: document.BlockNodeListItem,
+										Content: []document.Block{
+											{
+												Type:    document.BlockNodeParagraph,
+												Attrs:   map[string]any{"uid": "p2"},
+												Content: []document.Block{{Type: "text", Text: "nested"}},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			Expected: Block{
+				Type: BlockBulletList,
+				UID:  "l1",
+				Items: []Block{{
+					Type: BlockParagraph,
+					UID:  "p1",
+					Text: "one",
+					Children: []Block{{
+						Type:  BlockBulletList,
+						UID:   "l2",
+						Items: []Block{{Type: BlockParagraph, UID: "p2", Text: "nested"}},
+					}},
+				}},
+			},
+		},
+		"Task item keeps its nested list": {
+			Input: document.Block{
+				Type:  document.BlockNodeTaskList,
+				Attrs: map[string]any{"uid": "t1"},
+				Content: []document.Block{
+					{
+						Type:  document.BlockNodeTaskItem,
+						Attrs: map[string]any{"uid": "ti1", "checked": true},
+						Content: []document.Block{
+							{
+								Type:    document.BlockNodeParagraph,
+								Attrs:   map[string]any{"uid": "p1"},
+								Content: []document.Block{{Type: "text", Text: "one"}},
+							},
+							{
+								Type:  document.BlockNodeBulletList,
+								Attrs: map[string]any{"uid": "l2"},
+								Content: []document.Block{
+									{
+										Type: document.BlockNodeListItem,
+										Content: []document.Block{
+											{
+												Type:    document.BlockNodeParagraph,
+												Attrs:   map[string]any{"uid": "p2"},
+												Content: []document.Block{{Type: "text", Text: "nested"}},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			Expected: Block{
+				Type: BlockTaskList,
+				UID:  "t1",
+				TaskItems: []TaskItem{{
+					UID:     "ti1",
+					Checked: true,
+					Block: Block{
+						Type: BlockParagraph,
+						UID:  "p1",
+						Text: "one",
+						Children: []Block{{
+							Type:  BlockBulletList,
+							UID:   "l2",
+							Items: []Block{{Type: BlockParagraph, UID: "p2", Text: "nested"}},
+						}},
+					},
+				}},
+			},
+		},
 		"List with non-listItem child fails": {
 			Input: document.Block{
 				Type:    document.BlockNodeBulletList,

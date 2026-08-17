@@ -42,31 +42,22 @@ func Test_UserLinkSettings_Value(t *testing.T) {
 	assert.JSONEq(t, `{"notifications": true}`, string(val.([]byte)))
 }
 
-// testUserLinkSettingsRoundTrip is a case of UserLinkSettings_Scan, run as a subtest of it.
-func testUserLinkSettingsRoundTrip(t *testing.T) {
-	t.Parallel()
-
-	orig := UserLinkSettings{Notifications: true}
-
-	val, err := orig.Value()
-	require.NoError(t, err)
-
-	var decoded UserLinkSettings
-
-	require.NoError(t, decoded.Scan(val))
-	assert.Equal(t, orig, decoded)
-}
-
 func Test_UserLinkSettings_Scan(t *testing.T) {
 	t.Parallel()
-
-	t.Run("Value round-trips through Scan", testUserLinkSettingsRoundTrip)
 
 	tests := map[string]struct {
 		Value     any
 		ExpectErr bool
 		Expected  UserLinkSettings
+
+		// FromValue scans what Value produced for the given settings,
+		// instead of a hand-written payload.
+		FromValue *UserLinkSettings
 	}{
+		"Value round-trips through Scan": {
+			FromValue: &UserLinkSettings{Notifications: true},
+			Expected:  UserLinkSettings{Notifications: true},
+		},
 		"Byte slice is decoded": {
 			Value:    []byte(`{"notifications": true}`),
 			Expected: UserLinkSettings{Notifications: true},
@@ -92,9 +83,18 @@ func Test_UserLinkSettings_Scan(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
+			value := tc.Value
+
+			if tc.FromValue != nil {
+				var verr error
+
+				value, verr = tc.FromValue.Value()
+				require.NoError(t, verr)
+			}
+
 			var uls UserLinkSettings
 
-			err := uls.Scan(tc.Value)
+			err := uls.Scan(value)
 
 			if tc.ExpectErr {
 				require.Error(t, err)

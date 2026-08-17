@@ -150,6 +150,14 @@ func compactList(b document.Block, uid string, kind Type) (Block, error) {
 			return Block{}, fmt.Errorf("%s item %d: %w", kind, i, err)
 		}
 
+		// an item wraps a paragraph plus whatever follows it, typically a
+		// nested list; dropping the rest here would delete it from the
+		// document on the way back through replace_block.
+		inner.Children, err = compactMany(li.Content[1:])
+		if err != nil {
+			return Block{}, fmt.Errorf("%s item %d: %w", kind, i, err)
+		}
+
 		items = append(items, inner)
 	}
 
@@ -181,6 +189,11 @@ func compactTaskList(b document.Block, uid string) (Block, error) {
 
 		if len(ti.Content) > 0 {
 			c, err := Compact(ti.Content[0])
+			if err != nil {
+				return Block{}, fmt.Errorf("task_list item %d: %w", i, err)
+			}
+
+			c.Children, err = compactMany(ti.Content[1:])
 			if err != nil {
 				return Block{}, fmt.Errorf("task_list item %d: %w", i, err)
 			}

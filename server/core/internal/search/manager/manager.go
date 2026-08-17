@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/oxynote/oxynote/server/core/internal/search"
+	"github.com/rs/xid"
 )
 
 const (
@@ -59,9 +60,15 @@ func (m *Manager) Start(ctx context.Context) {
 }
 
 // processJobs processes document search jobs in a paginated manner. Failed
-// jobs stay in the database and are retried on the next processing interval.
+// jobs stay in the database and are retried on the next processing interval,
+// together with every later job of the same document: a diff describes a
+// change against the state its predecessors left behind, so applying one out
+// of order resurrects blocks a newer diff removed.
 func (m *Manager) processJobs(ctx context.Context) error {
-	var offsetID int64
+	var (
+		offsetID int64
+		held     = newHoldSet()
+	)
 
 	for {
 		if err := ctx.Err(); err != nil {
@@ -76,11 +83,21 @@ func (m *Manager) processJobs(ctx context.Context) error {
 		for _, job := range jobs {
 			offsetID = job.ID
 
+			documentIDs, global := jobScope(job.BlockDiff)
+
+			if held.blocks(documentIDs, global) {
+				held.hold(documentIDs, global)
+
+				continue
+			}
+
 			err := m.searchGateway.ReplaceDocumentBlocks(ctx, job.BlockDiff)
 			if err != nil {
 				m.log.With("job_id", job.ID).
 					With("error", err).
 					Error("processing document search job")
+
+				held.hold(documentIDs, global)
 
 				continue
 			}
@@ -90,6 +107,10 @@ func (m *Manager) processJobs(ctx context.Context) error {
 				m.log.With("job_id", job.ID).
 					With("error", err).
 					Error("deleting document search job")
+
+				// the diff is applied but the job survives, so it runs again
+				// next interval — after anything newer, unless held.
+				held.hold(documentIDs, global)
 			}
 		}
 
@@ -99,6 +120,86 @@ func (m *Manager) processJobs(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// jobScope reports the documents a difference touches. An organization
+// removal is global: it clears the entries of every document the
+// organization owns, which no per-document bound can enumerate.
+func jobScope(bd search.BlocksDifference) (documentIDs []xid.ID, global bool) {
+	if len(bd.RemovedOrganizations) > 0 {
+		return nil, true
+	}
+
+	seen := make(map[xid.ID]struct{})
+
+	add := func(id xid.ID) {
+		if _, ok := seen[id]; ok {
+			return
+		}
+
+		seen[id] = struct{}{}
+
+		documentIDs = append(documentIDs, id)
+	}
+
+	for _, blocks := range [][]search.Block{bd.Added, bd.Updated, bd.Removed} {
+		for _, b := range blocks {
+			add(b.DocumentID)
+		}
+	}
+
+	for _, id := range bd.RemovedDocuments {
+		add(id)
+	}
+
+	return documentIDs, false
+}
+
+// holdSet tracks the documents whose diffs have to wait for the next
+// interval, in the order-preserving sense: once one diff of a document is
+// held back, every later one is held with it.
+type holdSet struct {
+	documentIDs map[xid.ID]struct{}
+	all         bool
+}
+
+// newHoldSet creates an empty hold set.
+func newHoldSet() *holdSet {
+	return &holdSet{documentIDs: make(map[xid.ID]struct{})}
+}
+
+// blocks reports whether a difference of the given scope has to wait.
+func (h *holdSet) blocks(documentIDs []xid.ID, global bool) bool {
+	if h.all {
+		return true
+	}
+
+	// a global difference covers documents this run knows nothing about, so
+	// anything held at all can be one of them.
+	if global {
+		return len(h.documentIDs) > 0
+	}
+
+	for _, id := range documentIDs {
+		if _, ok := h.documentIDs[id]; ok {
+			return true
+		}
+	}
+
+	return false
+}
+
+// hold makes every later difference of the same scope wait too.
+func (h *holdSet) hold(documentIDs []xid.ID, global bool) {
+	if global {
+		h.all = true
+
+		return
+	}
+
+	for _, id := range documentIDs {
+		h.documentIDs[id] = struct{}{}
+	}
 }
 
 // DB defines the database operations required by the Manager.

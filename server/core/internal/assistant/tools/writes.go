@@ -271,6 +271,39 @@ func (m *Manager) moveDocument(ctx context.Context, args json.RawMessage) (json.
 	return marshalResult(out)
 }
 
+// validatePlacement validates a block that is about to land next to, or in
+// place of, the block referenceUID names. Types the document root accepts are
+// legal wherever their parent takes them, so only a macro internal — a
+// titled_code, metric or param_list, which the editor's schema binds to its
+// container — has to look at where it is going.
+func (m *Manager) validatePlacement(ctx context.Context, documentID, referenceUID string, b block.Block) error {
+	if err := block.Validate(b); err != nil {
+		return err
+	}
+
+	if block.ValidateAsRoot(b) == nil {
+		return nil
+	}
+
+	docID, err := xid.FromString(documentID)
+	if err != nil {
+		return fmt.Errorf("document_id is not a valid xid: %w", err)
+	}
+
+	content, err := m.db.FetchMainBranchContent(ctx, docID, m.orgID)
+	if err != nil {
+		return fmt.Errorf("fetch content: %w", err)
+	}
+
+	for _, rb := range content.Content.Content {
+		if uid, ok := rb.UID(); ok && uid == referenceUID {
+			return block.ValidateAsRoot(b)
+		}
+	}
+
+	return nil
+}
+
 func (m *Manager) insertBlock(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
 	var in struct {
 		DocumentID        string      `json:"document_id"`
@@ -287,7 +320,7 @@ func (m *Manager) insertBlock(ctx context.Context, args json.RawMessage) (json.R
 		return nil, errors.New("insert_block: reference_block_uid is required")
 	}
 
-	if err := block.Validate(in.Block); err != nil {
+	if err := m.validatePlacement(ctx, in.DocumentID, in.ReferenceBlockUID, in.Block); err != nil {
 		return nil, fmt.Errorf("insert_block: %w", err)
 	}
 
@@ -354,7 +387,9 @@ func (m *Manager) replaceBlock(ctx context.Context, args json.RawMessage) (json.
 		return nil, errors.New("replace_block: block_uid is required")
 	}
 
-	if err := block.Validate(in.Block); err != nil {
+	// the replacement lands where the target sits, so the target is what
+	// decides whether this is a root placement.
+	if err := m.validatePlacement(ctx, in.DocumentID, in.BlockUID, in.Block); err != nil {
 		return nil, fmt.Errorf("replace_block: %w", err)
 	}
 

@@ -167,10 +167,17 @@ func expandBulletOrOrderedList(b Block, pmType document.BlockNodeType) (document
 			return document.Block{}, fmt.Errorf("list item %d: %w", i, err)
 		}
 
+		nested, err := expandMany(item.Children)
+		if err != nil {
+			return document.Block{}, fmt.Errorf("list item %d children: %w", i, err)
+		}
+
+		content := append([]document.Block{expanded}, nested...)
+
 		children = append(children, document.Block{
 			Type:    document.BlockNodeListItem,
 			Attrs:   uidAttrs(strutil.NanoID()),
-			Content: []document.Block{expanded},
+			Content: content,
 		})
 	}
 
@@ -193,13 +200,20 @@ func expandTaskList(b Block) (document.Block, error) {
 			return document.Block{}, fmt.Errorf("task item %d: %w", i, err)
 		}
 
+		nested, err := expandMany(item.Block.Children)
+		if err != nil {
+			return document.Block{}, fmt.Errorf("task item %d children: %w", i, err)
+		}
+
+		content := append([]document.Block{expanded}, nested...)
+
 		attrs := uidAttrs(resolveUID(item.UID))
 		attrs[_attrChecked] = item.Checked
 
 		children = append(children, document.Block{
 			Type:    document.BlockNodeTaskItem,
 			Attrs:   attrs,
-			Content: []document.Block{expanded},
+			Content: content,
 		})
 	}
 

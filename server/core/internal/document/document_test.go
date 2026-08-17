@@ -287,61 +287,78 @@ func Test_Document_Search(t *testing.T) {
 func Test_Document_Duplicate(t *testing.T) {
 	t.Parallel()
 
-	t.Run("File references are remapped to the duplicate", testDocumentDuplicateFiles)
-
-	doc := stubDocument()
-	doc.Protected = true
-
-	dup, files := doc.Duplicate("user-2")
-
-	assert.Empty(t, files)
-
-	assert.NotEqual(t, doc.ID, dup.ID)
-	assert.NotEqual(t, doc.BranchID, dup.BranchID)
-	assert.Equal(t, doc.ParentID, dup.ParentID)
-	assert.Equal(t, doc.OrganizationID, dup.OrganizationID)
-	assert.Equal(t, DefaultBranch, dup.BranchName)
-	assert.Contains(t, dup.DocumentName, "Runbook (")
-	assert.Equal(t, doc.Icon, dup.Icon)
-	assert.Nil(t, dup.RawContent)
-	assert.False(t, dup.Protected)
-	assert.Equal(t, null.StringFrom("user-2"), dup.CreatedBy)
-	assert.Equal(t, null.StringFrom("user-2"), dup.LastUpdatedBy)
-
-	// content is duplicated with fresh uids.
-	origUID, _ := doc.Content.Content[0].UID()
-	dupUID, ok := dup.Content.Content[0].UID()
-	require.True(t, ok)
-	assert.NotEqual(t, origUID, dupUID)
-}
-
-// testDocumentDuplicateFiles covers the file-reference half of Duplicate,
-// which reaches the content through RootBlock.Duplicate.
-func testDocumentDuplicateFiles(t *testing.T) {
-	t.Parallel()
-
-	doc := stubDocument()
-	doc.Content.Content[0] = Block{
-		Type: BlockNodeImageBlock,
-		Attrs: Attributes{
-			"uid": "img1",
-			"src": "https://app.test/core" + fmt.Sprintf(FilePathFormat, doc.ID, "img1"),
-		},
+	type tcase struct {
+		Document Document
+		Check    func(t *testing.T, orig, dup Document, files map[string]string)
 	}
 
-	dup, files := doc.Duplicate("user-2")
+	cc := map[string]tcase{
+		"Metadata is reset and the content gets fresh uids": func() tcase {
+			doc := stubDocument()
+			doc.Protected = true
 
-	require.Len(t, files, 1)
+			return tcase{
+				Document: doc,
+				Check: func(t *testing.T, orig, dup Document, files map[string]string) {
+					assert.Empty(t, files)
 
-	newID, ok := files["img1"]
-	require.True(t, ok)
+					assert.NotEqual(t, orig.ID, dup.ID)
+					assert.NotEqual(t, orig.BranchID, dup.BranchID)
+					assert.Equal(t, orig.ParentID, dup.ParentID)
+					assert.Equal(t, orig.OrganizationID, dup.OrganizationID)
+					assert.Equal(t, DefaultBranch, dup.BranchName)
+					assert.Contains(t, dup.DocumentName, "Runbook (")
+					assert.Equal(t, orig.Icon, dup.Icon)
+					assert.Nil(t, dup.RawContent)
+					assert.False(t, dup.Protected)
+					assert.Equal(t, null.StringFrom("user-2"), dup.CreatedBy)
+					assert.Equal(t, null.StringFrom("user-2"), dup.LastUpdatedBy)
 
-	// the duplicate refers to its own copy under its own document.
-	assert.Equal(
-		t,
-		"https://app.test/core"+fmt.Sprintf(FilePathFormat, dup.ID, newID),
-		dup.Content.Content[0].Attrs["src"],
-	)
+					origUID, _ := orig.Content.Content[0].UID()
+					dupUID, ok := dup.Content.Content[0].UID()
+					require.True(t, ok)
+					assert.NotEqual(t, origUID, dupUID)
+				},
+			}
+		}(),
+		"File references are remapped to the duplicate": func() tcase {
+			doc := stubDocument()
+			doc.Content.Content[0] = Block{
+				Type: BlockNodeImageBlock,
+				Attrs: Attributes{
+					"uid": "img1",
+					"src": "https://app.test/core" + fmt.Sprintf(FilePathFormat, doc.ID, "img1"),
+				},
+			}
+
+			return tcase{
+				Document: doc,
+				Check: func(t *testing.T, _, dup Document, files map[string]string) {
+					require.Len(t, files, 1)
+
+					newID, ok := files["img1"]
+					require.True(t, ok)
+
+					// the duplicate refers to its own copy under its own document.
+					assert.Equal(
+						t,
+						"https://app.test/core"+fmt.Sprintf(FilePathFormat, dup.ID, newID),
+						dup.Content.Content[0].Attrs["src"],
+					)
+				},
+			}
+		}(),
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			dup, files := c.Document.Duplicate("user-2")
+
+			c.Check(t, c.Document, dup, files)
+		})
+	}
 }
 
 func Test_NewDocumentContent(t *testing.T) {

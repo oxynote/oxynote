@@ -154,8 +154,20 @@ type Block struct {
 	// rejects unknown or wrong-typed attrs before Expand runs.
 	Attrs document.Attributes `json:"attrs,omitempty"`
 
-	// Items holds child blocks for symmetric compound containers.
+	// Items holds what a container block holds: a list's entries, a
+	// blockquote's or callout's contents, a metric_grid's metrics.
 	Items []Block `json:"items,omitempty"`
+
+	// Children holds the tail of a single list or task-list item. The
+	// editor's item wrapper is a paragraph followed by any number of
+	// further blocks — everything indented under the entry — and Children
+	// is that second half.
+	//
+	// It describes a different relationship than Items: Items is what a
+	// container holds, Children is what hangs under one of its entries.
+	// Both can appear on one block, when an entry's own content is a list.
+	// Every position other than a list item rejects Children.
+	Children []Block `json:"children,omitempty"`
 
 	// TaskItems holds the rows of a task_list. Each row pairs a
 	// content Block with a Checked flag.

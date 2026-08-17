@@ -8,22 +8,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// testBlocksDiffEmpty is a case of BlocksDiff, run as a subtest of it.
-func testBlocksDiffEmpty(t *testing.T) {
-	t.Parallel()
-
-	diff := BlocksDiff(nil, nil)
-
-	assert.Empty(t, diff.Added)
-	assert.Empty(t, diff.Updated)
-	assert.Empty(t, diff.Removed)
-}
-
 func Test_BlocksDiff(t *testing.T) {
 	t.Parallel()
 
-	t.Run("Empty inputs produce an empty difference", testBlocksDiffEmpty)
+	// empty inputs
+	empty := BlocksDiff(nil, nil)
 
+	assert.Empty(t, empty.Added)
+	assert.Empty(t, empty.Updated)
+	assert.Empty(t, empty.Removed)
+
+	// added, updated and removed blocks
 	kept := Block{ID: "kept", Text: "same"}
 	changed := Block{ID: "changed", Text: "old"}
 	changedNew := Block{ID: "changed", Text: "new"}

@@ -19,62 +19,24 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }
 
-// testMiddlewareForwardsCookies is a case of Middleware, run as a subtest of it.
-func testMiddlewareForwardsCookies(t *testing.T) {
-	t.Parallel()
-
-	client, mt := testutil.MockHTTP()
-
-	var gotCookies []*http.Cookie
-
-	mt.RegisterResponder(http.MethodGet, "http://test.com/get-session",
-		func(r *http.Request) (*http.Response, error) {
-			gotCookies = r.Cookies()
-
-			return httpmock.NewStringResponse(
-				http.StatusOK,
-				`{"session":{"userId":"u1","activeOrganizationId":"org1"}}`,
-			), nil
-		},
-	)
-
-	hdl := Middleware(
-		slog.New(slog.DiscardHandler),
-		Options{BetterAuthURL: "http://test.com/get-session"},
-		client,
-	)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
-	}))
-
-	req := httptest.NewRequest(http.MethodGet, "http://test.com/", http.NoBody)
-	req.AddCookie(&http.Cookie{Name: "session_token", Value: "tkn", Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
-	req.AddCookie(&http.Cookie{Name: "other", Value: "val", Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
-
-	rec := httptest.NewRecorder()
-
-	hdl.ServeHTTP(rec, req)
-
-	require.Equal(t, http.StatusNoContent, rec.Code)
-	require.Len(t, gotCookies, 2)
-	assert.Equal(t, "session_token", gotCookies[0].Name)
-	assert.Equal(t, "tkn", gotCookies[0].Value)
-	assert.Equal(t, "other", gotCookies[1].Name)
-	assert.Equal(t, "val", gotCookies[1].Value)
-}
-
 func Test_Middleware(t *testing.T) {
 	t.Parallel()
 
-	t.Run("Cookies are forwarded to the auth service", testMiddlewareForwardsCookies)
-
-	cc := map[string]struct {
+	type tcase struct {
 		URL      string
 		Resp     httpmock.Responder
+		Cookies  []*http.Cookie
 		NextCode int
 		RespCode int
 		RespJSON string
 		Session  Session
-	}{
+
+		// After runs once the response is asserted, for a case that has to
+		// inspect what the middleware sent upstream.
+		After func(t *testing.T)
+	}
+
+	cc := map[string]tcase{
 		"Invalid request creation": {
 			URL:      "http://test.com/\x7f",
 			RespCode: http.StatusInternalServerError,
@@ -114,6 +76,38 @@ func Test_Middleware(t *testing.T) {
 				ActiveOrganizationID: "org1",
 			},
 		},
+		"Cookies are forwarded to the auth service": func() tcase {
+			var gotCookies []*http.Cookie
+
+			return tcase{
+				URL: "http://test.com/get-session",
+				Resp: func(r *http.Request) (*http.Response, error) {
+					gotCookies = r.Cookies()
+
+					return httpmock.NewStringResponse(
+						http.StatusOK,
+						`{"session":{"userId":"u1","activeOrganizationId":"org1"}}`,
+					), nil
+				},
+				Cookies: []*http.Cookie{
+					{Name: "session_token", Value: "tkn", Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode},
+					{Name: "other", Value: "val", Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode},
+				},
+				NextCode: http.StatusNoContent,
+				RespCode: http.StatusNoContent,
+				Session: Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				},
+				After: func(t *testing.T) {
+					require.Len(t, gotCookies, 2)
+					assert.Equal(t, "session_token", gotCookies[0].Name)
+					assert.Equal(t, "tkn", gotCookies[0].Value)
+					assert.Equal(t, "other", gotCookies[1].Name)
+					assert.Equal(t, "val", gotCookies[1].Value)
+				},
+			}
+		}(),
 	}
 
 	for cn, c := range cc {
@@ -149,6 +143,11 @@ func Test_Middleware(t *testing.T) {
 			)(next)
 
 			req := httptest.NewRequest(http.MethodGet, "http://test.com/", http.NoBody)
+
+			for _, ck := range c.Cookies {
+				req.AddCookie(ck)
+			}
+
 			rec := httptest.NewRecorder()
 
 			hdl.ServeHTTP(rec, req)
@@ -168,6 +167,10 @@ func Test_Middleware(t *testing.T) {
 
 			assert.True(t, nextCalled)
 			assert.Equal(t, c.Session, gotSession)
+
+			if c.After != nil {
+				c.After(t)
+			}
 		})
 	}
 }

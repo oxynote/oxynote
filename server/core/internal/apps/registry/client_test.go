@@ -70,29 +70,24 @@ func newFakeRegistry(t *testing.T, authorization string) (string, string) {
 	return strings.TrimPrefix(authSrv.URL, "http://"), digest.String()
 }
 
-// testDigestInvalidReference is a case of Digest, run as a subtest of it.
-func testDigestInvalidReference(t *testing.T) {
-	t.Parallel()
-
-	_, err := Digest(context.Background(), "UPPERCASE not allowed")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "parsing image reference")
-}
-
 func Test_Digest(t *testing.T) {
 	t.Parallel()
-
-	t.Run("Invalid image reference", testDigestInvalidReference)
 
 	// dXNlcjpwYXNz is the base64 form of user:pass.
 	const basicAuthorization = "Basic dXNlcjpwYXNz"
 
 	tests := map[string]struct {
 		Authorization string
+		Reference     string
 		Opts          []DigestOption
 		ExpectedErr   string
+		ErrContains   string
 	}{
 		"Anonymous fetch returns the seeded digest": {},
+		"Invalid image reference": {
+			Reference:   "UPPERCASE not allowed",
+			ErrContains: "parsing image reference",
+		},
 		"Basic auth credentials are attached": {
 			Authorization: basicAuthorization,
 			Opts:          []DigestOption{WithBasicAuth("user", "pass")},
@@ -123,7 +118,19 @@ func Test_Digest(t *testing.T) {
 
 			host, seeded := newFakeRegistry(t, tc.Authorization)
 
-			digest, err := Digest(context.Background(), host+"/test/img:v1", tc.Opts...)
+			reference := tc.Reference
+			if reference == "" {
+				reference = host + "/test/img:v1"
+			}
+
+			digest, err := Digest(context.Background(), reference, tc.Opts...)
+
+			if tc.ErrContains != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.ErrContains)
+
+				return
+			}
 
 			if tc.ExpectedErr != "" {
 				require.Error(t, err)

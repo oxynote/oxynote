@@ -33,33 +33,8 @@ func Test_NewClient(t *testing.T) {
 	assert.Same(t, hc, c.httpClient)
 }
 
-// testClientApplyExpansionError is a case of Client_Apply, run as a subtest of it.
-func testClientApplyExpansionError(t *testing.T) {
-	t.Parallel()
-
-	// An unknown canonical type fails at Expand time, before the
-	// HTTP round-trip. Use a sentinel server to detect that no
-	// request was sent.
-	called := false
-	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
-		called = true
-	}))
-	t.Cleanup(srv.Close)
-
-	c := NewClient(srv.Client(), srv.URL)
-
-	_, err := c.Apply(context.Background(), "doc", "branch", []Operation{
-		Append(block.Block{Type: "totally_not_a_real_type"}),
-	})
-
-	require.Error(t, err)
-	assert.False(t, called, "expansion failure must short-circuit before any HTTP request")
-}
-
 func Test_Client_Apply(t *testing.T) {
 	t.Parallel()
-
-	t.Run("Expansion failure skips the request", testClientApplyExpansionError)
 
 	type capture struct {
 		path   string
@@ -78,7 +53,17 @@ func Test_Client_Apply(t *testing.T) {
 		ExpectedErrors  []OpError
 		ExpectErr       bool
 		ExpectedPath    string
+
+		// NoRequest asserts the operation failed before any HTTP round trip.
+		NoRequest bool
 	}{
+		"Expansion failure skips the request": {
+			// an unknown canonical type fails at Expand time, before the
+			// client builds a request at all.
+			Ops:       []Operation{Append(block.Block{Type: "totally_not_a_real_type"})},
+			ExpectErr: true,
+			NoRequest: true,
+		},
 		"Successful batch reports applied count": {
 			Ops: []Operation{
 				Append(block.Block{Type: block.BlockParagraph, Text: "hi"}),
@@ -187,6 +172,10 @@ func Test_Client_Apply(t *testing.T) {
 			res, err := c.Apply(context.Background(), "doc-1", "branch-1", tc.Ops)
 			if tc.ExpectErr {
 				require.Error(t, err)
+
+				if tc.NoRequest {
+					assert.Empty(t, captured.method, "expansion failure must short-circuit before any HTTP request")
+				}
 
 				return
 			}
