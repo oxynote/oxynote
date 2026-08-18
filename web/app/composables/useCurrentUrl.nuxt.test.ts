@@ -1,5 +1,5 @@
 import { mockNuxtImport } from "@nuxt/test-utils/runtime"
-import { describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 import useCurrentUrl from "./useCurrentUrl"
 
 const { useRouteMock } = vi.hoisted(() => ({
@@ -9,13 +9,18 @@ const { useRouteMock } = vi.hoisted(() => ({
 mockNuxtImport("useRoute", () => useRouteMock)
 
 // the app base url comes from the runtimeConfig override in
-// vitest.config.ts ("http://test.local"). restoreMocks wipes
-// implementations between tests, so every test arranges its own route.
+// vitest.config.ts ("http://test.local"); every test arranges its own route
 function arrange(fullPath: string) {
 	useRouteMock.mockReturnValue({ fullPath })
 }
 
 describe("useCurrentUrl", () => {
+	// restoreMocks does not touch hand-made vi.fn() singletons in vitest 4
+	// — reset the module-level mock explicitly
+	beforeEach(() => {
+		useRouteMock.mockReset()
+	})
+
 	describe("createCurrentUrl", () => {
 		it("builds the url from the app base and the route path", () => {
 			arrange("/docs/abc?x=1")

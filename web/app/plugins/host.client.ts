@@ -15,6 +15,8 @@ interface HostBridge {
 export default defineNuxtPlugin(() => {
 	if (!__DESKTOP_BUILD__) return
 
+	// NOCOV: desktop-only wiring below; __DESKTOP_BUILD__ is literal false
+	// in web and test bundles.
 	const host = (window as { __host?: HostBridge }).__host
 	if (!host) {
 		console.warn("[host] preload bridge not found on window.__host")

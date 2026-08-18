@@ -31,6 +31,8 @@ export default defineNuxtPlugin({
 						window.addEventListener("beforeunload", beforeUnloadHandler)
 
 						if (import.meta.hot) {
+							// NOCOV: vite hmr hook; import.meta.hot is undefined in
+							// test bundles.
 							const handler = beforeUnloadHandler
 
 							import.meta.hot.dispose(() => {

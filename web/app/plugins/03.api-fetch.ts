@@ -20,6 +20,8 @@ export default defineNuxtPlugin((nuxtApp) => {
 				return
 			}
 
+			// NOCOV: ssrHeaders is only captured during SSR; tests run the
+			// client bundle, so the merge below is unreachable there.
 			const h = new Headers(options.headers)
 
 			for (const [k, v] of Object.entries(ssrHeaders)) {
@@ -48,6 +50,8 @@ export default defineNuxtPlugin((nuxtApp) => {
 				return
 			}
 
+			// NOCOV: ssrHeaders is only captured during SSR; tests run the
+			// client bundle, so the merge below is unreachable there.
 			const h = new Headers(options.headers)
 
 			for (const [k, v] of Object.entries(ssrHeaders)) {
@@ -101,6 +105,13 @@ export async function redirectToDocId(
 	const orgData = await fetchOrganization.refresh()
 	const orgRealName = orgData.data?.data?.slug || ""
 
+	// without an organization slug the document path would start with a
+	// double slash, which the router treats as a protocol-relative url —
+	// fall back to the root and let the redirect middleware resolve it
+	if (!orgRealName) {
+		return navigateTo("/", { replace: true })
+	}
+
 	return navigateTo(`/${createNameSlug(orgRealName)}/${docId}`, {
 		replace: true,
 	})
@@ -126,6 +137,13 @@ export async function redirectToFirst(
 	if (orgRealName === null) {
 		const orgData = await fetchOrganization.refresh()
 		orgRealName = orgData.data?.data?.slug || ""
+	}
+
+	// without an organization slug the document path would start with a
+	// double slash, which the router treats as a protocol-relative url —
+	// fall back to the root and let the redirect middleware resolve it
+	if (!orgRealName) {
+		return navigateTo("/", { replace: true })
 	}
 
 	const docTree = await fetchDocumentTree.refresh()

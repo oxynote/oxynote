@@ -8,6 +8,8 @@ import { showToastMessage } from "~/components/toast"
 export default defineNuxtPlugin(() => {
 	if (!__DESKTOP_BUILD__) return
 
+	// NOCOV: desktop-only wiring below; __DESKTOP_BUILD__ is literal false
+	// in web and test bundles.
 	const { fetchAuthSession, fetchOrganization } = useAuthSession()
 
 	const unsubscribeAuthenticated = window.onAuthenticated(async () => {
