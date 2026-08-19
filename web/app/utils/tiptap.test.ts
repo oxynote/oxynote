@@ -148,14 +148,17 @@ describe("tiptapNodePosByCursor", () => {
 })
 
 describe("isNodeInsideTiptapNode", () => {
+	// the function ignores the selection and resolves the explicit position;
+	// the selection just has to be valid — position 0 would sit directly in
+	// the doc node and make prosemirror warn
 	it("detects a position nested inside the container", ({ expect }) => {
-		expect(isNodeInsideTiptapNode(stateWithSelection(0), 14, ["callout"])).toBe(
+		expect(isNodeInsideTiptapNode(stateWithSelection(1), 14, ["callout"])).toBe(
 			true,
 		)
 	})
 
 	it("rejects a position outside the container", ({ expect }) => {
-		expect(isNodeInsideTiptapNode(stateWithSelection(0), 1, ["callout"])).toBe(
+		expect(isNodeInsideTiptapNode(stateWithSelection(1), 1, ["callout"])).toBe(
 			false,
 		)
 	})

@@ -71,6 +71,17 @@ vi.mock("better-auth/vue", () => {
 	}
 })
 
+// the composable's queries inject() their option defaults, which vue only
+// allows inside a component or an app context — runWithContext provides
+// the latter, keeping the tests free of inject() warnings. The assertion
+// is for eslint's ts program, which resolves the call through
+// runWithContext as error typed; vue-tsc infers it fine.
+function makeAuthSession() {
+	return useNuxtApp().runWithContext(() => useAuthSession()) as ReturnType<
+		typeof useAuthSession
+	>
+}
+
 // the delegating methods differ only in which auth client method they wrap
 // — a pure data table. The desktop (__DESKTOP_BUILD__) halves of these
 // methods are compile-time dead in the web bundle tests run in.
@@ -210,7 +221,7 @@ describe("useAuthSession", { concurrent: false }, () => {
 	it("fetches the session through the auth client", async ({ expect }) => {
 		const sessionData = { data: { session: { id: "s1" } }, error: null }
 		authClientStub.getSession.mockResolvedValue(sessionData as never)
-		const auth = useAuthSession()
+		const auth = makeAuthSession()
 
 		const result = await auth.fetchAuthSession.refetch()
 
@@ -223,7 +234,7 @@ describe("useAuthSession", { concurrent: false }, () => {
 		authClientStub.organization.getFullOrganization.mockResolvedValue(
 			orgData as never,
 		)
-		const auth = useAuthSession()
+		const auth = makeAuthSession()
 
 		const result = await auth.fetchOrganization.refetch()
 
@@ -243,7 +254,7 @@ describe("useAuthSession", { concurrent: false }, () => {
 				data: [{ providerId: "github" }, { providerId: "credential" }],
 				error: null,
 			} as never)
-			const auth = useAuthSession()
+			const auth = makeAuthSession()
 
 			await auth.fetchAuthSession.refetch()
 			await auth.fetchAccounts.refetch()
@@ -260,7 +271,7 @@ describe("useAuthSession", { concurrent: false }, () => {
 				data: [{ providerId: "github" }],
 				error: null,
 			} as never)
-			const auth = useAuthSession()
+			const auth = makeAuthSession()
 
 			await auth.fetchAuthSession.refetch()
 			await auth.fetchAccounts.refetch()
@@ -277,7 +288,7 @@ describe("useAuthSession", { concurrent: false }, () => {
 				data: null,
 				error: { message: "denied" },
 			})
-			const auth = useAuthSession()
+			const auth = makeAuthSession()
 
 			const result = await auth.updateSessionOnInviteAccept("o1")
 
@@ -299,7 +310,7 @@ describe("useAuthSession", { concurrent: false }, () => {
 				data: { id: "o1" },
 				error: null,
 			} as never)
-			const auth = useAuthSession()
+			const auth = makeAuthSession()
 
 			const result = await auth.updateSessionOnInviteAccept("o1")
 
@@ -324,7 +335,7 @@ describe("useAuthSession", { concurrent: false }, () => {
 				data: { id: "other" },
 				error: null,
 			} as never)
-			const auth = useAuthSession()
+			const auth = makeAuthSession()
 
 			const result = await auth.updateSessionOnInviteAccept("o1")
 
@@ -338,7 +349,7 @@ describe("useAuthSession", { concurrent: false }, () => {
 		}) => {
 			const failure = { data: null, error: { message: "nope" } }
 			authClientStub.signOut.mockResolvedValue(failure)
-			const auth = useAuthSession()
+			const auth = makeAuthSession()
 
 			const result = await auth.safeSignOut()
 
@@ -353,7 +364,7 @@ describe("useAuthSession", { concurrent: false }, () => {
 			} as never)
 			const success = { data: {}, error: null }
 			authClientStub.signOut.mockResolvedValue(success)
-			const auth = useAuthSession()
+			const auth = makeAuthSession()
 			await auth.fetchAuthSession.refetch()
 
 			const result = await auth.safeSignOut()
@@ -361,7 +372,7 @@ describe("useAuthSession", { concurrent: false }, () => {
 			expect(result).toBe(success)
 			// the cache entry is removed, so a fresh consumer starts without
 			// a session
-			const fresh = useAuthSession()
+			const fresh = makeAuthSession()
 			expect(fresh.fetchAuthSession.data.value).toBeUndefined()
 		})
 	})
@@ -372,7 +383,7 @@ describe("useAuthSession", { concurrent: false }, () => {
 			const clientMethod = mock()
 			const response = { data: { ok: true }, error: null }
 			clientMethod.mockResolvedValue(response)
-			const auth = useAuthSession()
+			const auth = makeAuthSession()
 
 			const result = await invoke(auth)
 

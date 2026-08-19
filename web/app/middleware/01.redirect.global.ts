@@ -63,7 +63,9 @@ export default defineNuxtRouteMiddleware(async (to) => {
 		// instantiated outside a component fetches immediately, and an
 		// unauthenticated tree fetch 401s, which the API client turns into a
 		// redirect to /login — looping forever on the login page itself.
-		const { fetchDocumentTree } = useDocumentAPI()
+		const { fetchDocumentTree } = nuxtApp.runWithContext(() =>
+			useDocumentAPI(),
+		) as ReturnType<typeof useDocumentAPI>
 		const docTree = await fetchDocumentTree.refresh()
 
 		const firstDoc = docTree.data?.[0]

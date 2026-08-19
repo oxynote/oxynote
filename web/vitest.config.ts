@@ -19,6 +19,14 @@ const sharedTestOptions = {
 	restoreMocks: true,
 	unstubGlobals: true,
 	unstubEnvs: true,
+	// @nuxt/test-utils mounts the test app inside <Suspense>, so vue's dev
+	// build prints its experimental-feature notice once per nuxt test file
+	// — pure noise in test output
+	onConsoleLog(log: string) {
+		if (log.includes("<Suspense> is an experimental feature")) {
+			return false
+		}
+	},
 } satisfies TestUserConfig
 
 // import graphs of app modules routinely pass through .vue files (e.g.
