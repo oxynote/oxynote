@@ -5,6 +5,7 @@ export default function (opts: {
 	authenticated: MaybeRefOrGetter<boolean>
 }) {
 	if (!import.meta.client) {
+		// NOCOV: server-only guard; tests run the client bundle.
 		return undefined
 	}
 

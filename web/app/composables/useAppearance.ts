@@ -34,7 +34,8 @@ export default function () {
 	const resolvedMode = computed<"light" | "dark">(() => {
 		if (mode.store.value === "auto") {
 			if (import.meta.server) {
-				// on SSR, fall back to last auto (or light by default)
+				// NOCOV: server-only branch; tests run the client bundle. On
+				// SSR, fall back to last auto (or light by default).
 				return lastAutoColorCookie.value
 			}
 

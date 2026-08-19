@@ -80,10 +80,10 @@ export default defineConfig({
 			// untestable branches stay visible in the report, marked with
 			// NOCOV comments in place
 			thresholds: {
-				statements: 15,
-				branches: 8,
-				functions: 8,
-				lines: 15,
+				statements: 19,
+				branches: 11,
+				functions: 14,
+				lines: 19,
 			},
 		},
 

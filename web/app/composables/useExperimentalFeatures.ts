@@ -9,7 +9,9 @@ export default function () {
 	function isExperimentalFeatureEnabled(featureName: ExperimentalFeature) {
 		return computed(() => {
 			if (import.meta.dev) {
-				// In development, enable all experimental features for easier testing
+				// NOCOV: dev-only shortcut; the vitest nuxt environment is a
+				// non-dev build. In development, all experimental features are
+				// enabled for easier testing.
 				return true
 			}
 
