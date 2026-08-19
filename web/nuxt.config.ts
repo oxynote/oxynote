@@ -230,6 +230,7 @@ export default defineNuxtConfig({
 		org: "oxynote",
 		project: "bifrost",
 		authToken: process.env.SENTRY_AUTH_TOKEN,
+		telemetry: false,
 	},
 
 	// hidden sourcemaps exist only for the Sentry upload. Skip generating

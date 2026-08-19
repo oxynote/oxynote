@@ -320,6 +320,14 @@ it.for([
   (`const stubDb = (err?: Error) => …`) defined next to the tests that
   use them; dependencies shared across many tests become `test.extend`
   fixtures.
+- Helpers repeated across a directory's test files live in a colocated
+  `test-helpers.ts` module (e.g.
+  [app/composables/api/test-helpers.ts](app/composables/api/test-helpers.ts)).
+  It must never be re-exported for app use (in `composables/`, keep it
+  out of `index.ts` — nested files only enter the auto-imports through
+  that re-export), and the `app/**/test-helpers.ts` coverage exclude in
+  [vitest.config.ts](vitest.config.ts) keeps it out of the coverage
+  denominator. Domain-specific fixtures and factories stay file-local.
 - **One act per test**: arrange once, invoke the unit once, then assert
   as many facets of that single outcome as needed — result, error, and
   interactions all belong in the same test when they describe one
