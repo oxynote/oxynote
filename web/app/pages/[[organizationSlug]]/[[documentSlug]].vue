@@ -615,11 +615,7 @@ function clearLinkHighlightNodeOnce() {
 					</div>
 				</EditorIconPickerProvider>
 			</main>
-			<AIChatSidebar
-				v-if="experimentalFeatures.aiAssistant.value"
-				:content-editor="contentEditorRef"
-				:name-editor="nameEditorRef"
-			/>
+			<AIChatSidebar v-if="experimentalFeatures.aiAssistant.value" />
 		</ShadcnUiTooltipProvider>
 	</ShadcnUiSidebarProvider>
 </template>

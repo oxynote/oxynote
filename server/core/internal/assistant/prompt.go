@@ -1,8 +1,12 @@
 package assistant
 
 import (
+	"context"
 	"fmt"
 	"strings"
+
+	"github.com/cloudwego/eino/adk"
+	"github.com/cloudwego/eino/schema"
 )
 
 // _basePrompt is the system prompt sent to Anthropic on every
@@ -158,4 +162,39 @@ func buildSystemPrompt(activeDocumentID string) string {
 	fmt.Fprintf(&sb, "The user is currently viewing document `%s`. When they say \"this document\", \"here\", or \"the doc\" without naming one, this is the document they mean.\n", activeDocumentID)
 
 	return sb.String()
+}
+
+// _sessionKeyActiveDocument carries the document the user is looking
+// at into the system prompt for one turn.
+const _sessionKeyActiveDocument = "oxynote_assistant_active_document"
+
+// genModelInput builds the model's input for one run: the system
+// prompt, anchored to whichever document the user currently has open,
+// followed by the conversation so far.
+//
+// The prompt is assembled here rather than through the framework's
+// template support because it contains literal braces, which the
+// template would try to interpolate.
+func genModelInput(ctx context.Context, _ string, input *adk.AgentInput) ([]*schema.Message, error) {
+	msgs := make([]*schema.Message, 0, len(input.Messages)+1)
+	msgs = append(msgs, schema.SystemMessage(buildSystemPrompt(activeDocumentID(ctx))))
+
+	return append(msgs, input.Messages...), nil
+}
+
+// activeDocumentID returns the document the user is viewing for this
+// run, or an empty string when the client has not reported one.
+func activeDocumentID(ctx context.Context) string {
+	v, ok := adk.GetSessionValue(ctx, _sessionKeyActiveDocument)
+	if !ok {
+		return ""
+	}
+
+	id, ok := v.(string)
+	if !ok {
+		// NOCOV: the value is only ever written as a string.
+		return ""
+	}
+
+	return id
 }

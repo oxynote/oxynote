@@ -1,5 +1,5 @@
 // Package assistant provides an HTTP/WebSocket handler for AI-assisted
-// document editing via the Anthropic Messages API.
+// document editing over a WebSocket.
 package assistant
 
 import (

@@ -1,13 +1,9 @@
 <script lang="ts" setup>
-import type { Editor } from "@tiptap/core"
 import DOMPurify from "dompurify"
 import MarkdownIt from "markdown-it"
-import { executeTool } from "./tools"
 
 const props = defineProps<{
 	mobile?: boolean
-	contentEditor: Editor | null
-	nameEditor: Editor | null
 }>()
 const emit = defineEmits<{
 	(event: "close-chat-box"): void
@@ -22,29 +18,32 @@ const markdown = new MarkdownIt({
 	breaks: true,
 })
 
+const editorStore = useEditorStore()
+
 const {
 	messages,
 	isConnected,
 	isStreaming,
 	toolStatus,
+	streamingText,
+	pendingConfirm,
 	connect,
 	disconnect,
 	sendMessage,
+	setActiveDocument,
+	answerConfirm,
 	resetChat,
-} = useAIChat({
-	// eslint-disable-next-line @typescript-eslint/require-await -- tool execution is synchronous, but the toolExecutor option is typed to return a promise
-	toolExecutor: async (tool: AIToolName, args: ExecuteToolArgs) => {
-		if (!props.contentEditor) {
-			return { error: "content editor not available" }
-		}
+} = useAIChat()
 
-		if (!props.nameEditor) {
-			return { error: "name editor not available" }
-		}
-
-		return executeTool(props.contentEditor, props.nameEditor, tool, args)
+// the model resolves "this document" from whatever the user has open,
+// so every navigation is reported.
+watch(
+	() => editorStore.activeDocumentId,
+	(id) => {
+		setActiveDocument(id)
 	},
-})
+	{ immediate: true },
+)
 
 const defaultLinkRenderer =
 	markdown.renderer.rules.link_open ??
@@ -80,7 +79,7 @@ function renderMarkdown(text: string): string {
 
 function handleSend() {
 	const text = inputText.value.trim()
-	if (!text || isStreaming.value) return
+	if (!text || isStreaming.value || pendingConfirm.value) return
 
 	sendMessage(text)
 	inputText.value = ""
@@ -202,6 +201,60 @@ onUnmounted(() => {
 					</div>
 				</div>
 			</template>
+			<div v-if="streamingText" class="flex justify-start">
+				<div
+					class="max-w-[85%] min-w-0 rounded-lg bg-muted px-3 py-2 text-sm text-foreground"
+				>
+					<!-- eslint-disable vue/no-v-html -->
+					<div
+						class="prose prose-sm max-w-none [overflow-wrap:anywhere] break-words prose-headings:my-2 prose-p:my-2 prose-p:break-words prose-a:break-all prose-a:text-current prose-a:underline prose-code:text-inherit prose-code:before:content-none prose-code:after:content-none prose-pre:my-2 prose-pre:overflow-x-auto prose-ol:my-2 prose-ul:my-2"
+						v-html="renderMarkdown(streamingText)"
+					/>
+					<!-- eslint-enable vue/no-v-html -->
+				</div>
+			</div>
+			<div v-if="pendingConfirm" class="flex flex-col gap-2">
+				<div class="rounded-lg border border-border bg-background p-3">
+					<div class="mb-2 flex items-center gap-2 text-sm font-medium">
+						<Icon name="lucide:shield-question" class="size-4" />
+						{{ t("editor.ai-chat.confirm.title") }}
+					</div>
+					<ul class="mb-3 flex flex-col gap-1.5">
+						<li
+							v-for="(action, i) in pendingConfirm.actions"
+							:key="i"
+							class="flex flex-col text-sm"
+						>
+							<span class="text-foreground">{{ action.summary }}</span>
+							<span
+								v-if="action.document_name"
+								class="text-xs text-muted-foreground"
+							>
+								{{ action.document_name }}
+							</span>
+						</li>
+					</ul>
+					<div class="flex flex-wrap gap-2">
+						<ShadcnUiButton size="2sm" @click="answerConfirm(true)">
+							{{ t("editor.ai-chat.confirm.approve") }}
+						</ShadcnUiButton>
+						<ShadcnUiButton
+							size="2sm"
+							variant="outline"
+							@click="answerConfirm(true, true)"
+						>
+							{{ t("editor.ai-chat.confirm.approve-all") }}
+						</ShadcnUiButton>
+						<ShadcnUiButton
+							size="2sm"
+							variant="ghost"
+							@click="answerConfirm(false)"
+						>
+							{{ t("editor.ai-chat.confirm.decline") }}
+						</ShadcnUiButton>
+					</div>
+				</div>
+			</div>
 			<div v-if="toolStatus" class="flex justify-start">
 				<div
 					class="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground italic"
@@ -209,7 +262,10 @@ onUnmounted(() => {
 					{{ toolStatus }}
 				</div>
 			</div>
-			<div v-if="isStreaming && !toolStatus" class="flex justify-start">
+			<div
+				v-if="isStreaming && !toolStatus && !streamingText"
+				class="flex justify-start"
+			>
 				<div class="flex gap-1 rounded-lg bg-muted px-3 py-2">
 					<span
 						class="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:-0.3s]"
@@ -230,21 +286,26 @@ onUnmounted(() => {
 					class="flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
 					:placeholder="t('editor.ai-chat.input-placeholder')"
 					rows="2"
-					:disabled="!isConnected || isStreaming"
+					:disabled="!isConnected || isStreaming || !!pendingConfirm"
 					@keydown="handleKeydown"
 				/>
 				<div class="flex justify-between">
 					<ShadcnUiButton
 						size="2sm"
 						variant="outline"
-						:disabled="!isConnected || isStreaming"
+						:disabled="!isConnected || isStreaming || !!pendingConfirm"
 						@click="resetChat"
 					>
 						{{ t("editor.ai-chat.new-chat") }}
 					</ShadcnUiButton>
 					<ShadcnUiButton
 						size="2sm"
-						:disabled="!inputText.trim() || !isConnected || isStreaming"
+						:disabled="
+							!inputText.trim() ||
+							!isConnected ||
+							isStreaming ||
+							!!pendingConfirm
+						"
 						@click="handleSend"
 					>
 						{{ t("editor.ai-chat.send") }}

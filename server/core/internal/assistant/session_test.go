@@ -1,1095 +1,774 @@
 package assistant
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"log/slog"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
-	anthropic "github.com/anthropics/anthropic-sdk-go"
-	"github.com/anthropics/anthropic-sdk-go/option"
-	"github.com/jellydator/xync"
+	"github.com/cloudwego/eino/schema"
+	mock "github.com/oxynote/oxynote/server/core/internal/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
+	"github.com/oxynote/oxynote/server/core/internal/assistant/middleware"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/protocol"
 	protocolMock "github.com/oxynote/oxynote/server/core/internal/assistant/protocol/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
 	toolsMock "github.com/oxynote/oxynote/server/core/internal/assistant/tools/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/document"
-	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// sseEvent renders one server-sent event frame.
-func sseEvent(name, data string) string {
-	return "event: " + name + "\ndata: " + data + "\n\n"
+// _turnTimeout bounds how long a test waits for a turn to finish.
+var _turnTimeout = 10 * time.Second
+
+// recorder captures everything a session writes to its client and
+// signals when the turn reaches a terminal message.
+type recorder struct {
+	mu   sync.Mutex
+	msgs []any
+
+	// settled receives once per terminal message: a done, or a request
+	// for the user to confirm a batch of writes. Both mean the session
+	// has handed control back to the client. It is buffered rather than
+	// closed so a test can await several turns in sequence.
+	settled chan struct{}
 }
 
-// sseTextTurn renders a streamed Anthropic response carrying a
-// single text block that ends with the given stop reason.
-func sseTextTurn(text string) string {
-	return sseEvent("message_start",
-		`{"type":"message_start","message":{"id":"m1","type":"message","role":"assistant","content":[],"model":"claude","usage":{"input_tokens":1,"output_tokens":1}}}`) +
-		sseEvent("content_block_start",
-			`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`) +
-		sseEvent("content_block_delta",
-			`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"`+text+`"}}`) +
-		sseEvent("content_block_stop", `{"type":"content_block_stop","index":0}`) +
-		sseEvent("message_delta",
-			`{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":3,"output_tokens":5,"cache_creation_input_tokens":2,"cache_read_input_tokens":4}}`) +
-		sseEvent("message_stop", `{"type":"message_stop"}`)
-}
+// newRecorder builds a recorder wired into a session writer mock.
+func newRecorder() (*recorder, *protocolMock.SessionWriter) {
+	r := &recorder{settled: make(chan struct{}, 16)}
 
-// sseToolTurn renders a streamed response invoking one tool. An
-// empty args string omits the input_json_delta event entirely so
-// the empty-input fallback path is exercised.
-func sseToolTurn(toolName, args string) string {
-	body := sseEvent("message_start",
-		`{"type":"message_start","message":{"id":"m1","type":"message","role":"assistant","content":[],"model":"claude","usage":{"input_tokens":1,"output_tokens":1}}}`) +
-		sseEvent("content_block_start",
-			`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"tu1","name":"`+toolName+`","input":{}}}`)
+	return r, &protocolMock.SessionWriter{
+		WriteJSONFunc: func(_ context.Context, msg any) {
+			r.mu.Lock()
+			r.msgs = append(r.msgs, msg)
+			r.mu.Unlock()
 
-	if args != "" {
-		body += sseEvent("content_block_delta",
-			`{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":`+strconv(args)+`}}`)
+			switch msg.(type) {
+			case protocol.DoneMessage, protocol.ConfirmRequest:
+				select {
+				case r.settled <- struct{}{}:
+				default:
+				}
+			}
+		},
 	}
-
-	return body +
-		sseEvent("content_block_stop", `{"type":"content_block_stop","index":0}`) +
-		sseEvent("message_delta",
-			`{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"input_tokens":1,"output_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}`) +
-		sseEvent("message_stop", `{"type":"message_stop"}`)
 }
 
-// strconv JSON-quotes a string for embedding in an SSE data frame.
-func strconv(s string) string {
-	out, err := json.Marshal(s)
-	if err != nil {
-		return `""`
-	}
-
-	return string(out)
-}
-
-// anthClient starts a fake Anthropic endpoint whose n-th call (1
-// based) answers with the body returned by respond. Retries are
-// disabled so 5xx responses surface immediately.
-func anthClient(t *testing.T, respond func(call int) (int, string)) *anthropic.Client {
+// wait blocks until the turn settles.
+func (r *recorder) wait(t *testing.T) {
 	t.Helper()
 
-	var calls atomic.Int64
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		status, body := respond(int(calls.Add(1)))
-
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.WriteHeader(status)
-
-		_, err := w.Write([]byte(body))
-		assert.NoError(t, err)
-	}))
-	t.Cleanup(srv.Close)
-
-	client := anthropic.NewClient(
-		option.WithBaseURL(srv.URL),
-		option.WithAPIKey("test"),
-		option.WithMaxRetries(0),
-	)
-
-	return &client
-}
-
-// newTestSession wires a Session around the given collaborators,
-// defaulting any nil dependency to a benign stub.
-func newTestSession(
-	client *anthropic.Client,
-	writer protocol.SessionWriter,
-	db tools.DB,
-	store SessionStore,
-	log *slog.Logger,
-) *session {
-	if log == nil {
-		log = slog.New(slog.DiscardHandler)
-	}
-
-	if store == nil {
-		store = &SessionStoreMock{}
-	}
-
-	if db == nil {
-		db = &toolsMock.DB{}
-	}
-
-	man := &Manager{
-		log:     log,
-		store:   store,
-		client:  client,
-		metrics: newMetrics(metricutil.NewFactory("test", nil)),
-	}
-
-	return &session{
-		man:    man,
-		orgID:  "org",
-		userID: "user",
-		writer: writer,
-		supv:   xync.NewSupervisor(),
-		tools: tools.NewManager(
-			log,
-			db,
-			&toolsMock.Searcher{},
-			&toolsMock.EditApplier{},
-			&toolsMock.TreeNotifier{},
-			"org",
-			"user",
-		),
+	select {
+	case <-r.settled:
+	case <-time.After(_turnTimeout):
+		require.FailNow(t, "the turn never settled", "captured: %v", r.types())
 	}
 }
 
-// writtenTypes extracts the protocol message type of every WriteJSON
-// call for order assertions.
-func writtenTypes(writer *protocolMock.SessionWriter) []string {
-	var out []string
+// types lists the message types captured, in order.
+func (r *recorder) types() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
-	for _, call := range writer.WriteJSONCalls() {
-		switch msg := call.Msg.(type) {
+	out := make([]string, 0, len(r.msgs))
+
+	for _, m := range r.msgs {
+		switch v := m.(type) {
 		case protocol.TextDeltaMessage:
-			out = append(out, string(msg.Type))
+			out = append(out, string(protocol.ServerTypeTextDelta))
 		case protocol.TextEndMessage:
-			out = append(out, string(msg.Type)+":"+string(msg.Kind))
+			out = append(out, string(protocol.ServerTypeTextEnd)+":"+string(v.Kind))
 		case protocol.ToolStatusMessage:
-			out = append(out, string(msg.Type))
-		case protocol.DoneMessage:
-			out = append(out, string(msg.Type))
-		case protocol.ErrorMessage:
-			out = append(out, string(msg.Type)+":"+msg.Message)
-		case protocol.HistoryMessage:
-			out = append(out, string(msg.Type))
+			out = append(out, string(protocol.ServerTypeToolStatus)+":"+v.Tool)
 		case protocol.ConfirmRequest:
-			out = append(out, string(msg.Type))
+			out = append(out, string(protocol.ServerTypeConfirmRequest))
+		case protocol.DoneMessage:
+			out = append(out, string(protocol.ServerTypeDone))
+		case protocol.ErrorMessage:
+			out = append(out, string(protocol.ServerTypeError))
+		case protocol.HistoryMessage:
+			out = append(out, string(protocol.ServerTypeHistory))
 		}
 	}
 
 	return out
 }
 
+// deltaText joins every streamed text fragment.
+func (r *recorder) deltaText() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	var out strings.Builder
+
+	for _, m := range r.msgs {
+		if v, ok := m.(protocol.TextDeltaMessage); ok {
+			out.WriteString(v.Content)
+		}
+	}
+
+	return out.String()
+}
+
+// find returns the first captured message of the given type.
+func find[T any](r *recorder) (T, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for _, m := range r.msgs {
+		if v, ok := m.(T); ok {
+			return v, true
+		}
+	}
+
+	var zero T
+
+	return zero, false
+}
+
+// toolCall builds an assistant message asking for one tool call.
+func toolCall(id, name, args string) *schema.Message {
+	return schema.AssistantMessage("", []schema.ToolCall{
+		{
+			ID:       id,
+			Type:     "function",
+			Function: schema.FunctionCall{Name: name, Arguments: args},
+		},
+	})
+}
+
+// stubDocumentDB answers every document lookup with the same document,
+// so an edit tool can name what it is about to change.
+func stubDocumentDB() *toolsMock.DB {
+	branchID := xid.New()
+
+	return &toolsMock.DB{
+		FetchDocumentFunc: func(_ context.Context, id xid.ID, orgID, _ string) (*document.Document, error) {
+			return &document.Document{
+				Branch: document.Branch{
+					BranchID:     branchID,
+					DocumentName: "Runbook",
+				},
+				ID:             id,
+				OrganizationID: orgID,
+			}, nil
+		},
+	}
+}
+
+// stubEditApplier accepts every edit it is handed.
+func stubEditApplier() *toolsMock.EditApplier {
+	return &toolsMock.EditApplier{
+		ApplyFunc: func(_ context.Context, _, _ string, _ []edit.Operation) (edit.Result, error) {
+			return edit.Result{Applied: 1, Errors: []edit.OpError{}}, nil
+		},
+	}
+}
+
+// prepSession builds a session over the given manager, wired to a
+// recorder capturing everything the session writes back.
+func prepSession(t *testing.T, m *Manager) (*session, *recorder) {
+	t.Helper()
+
+	rec, writer := newRecorder()
+
+	s, err := m.newSession(context.Background(), "org", "user", writer)
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		require.NoError(t, s.Close())
+	})
+
+	return s, rec
+}
+
+func Test_Manager_newSession(t *testing.T) {
+	t.Parallel()
+
+	m := testManager()
+	m.history = &HistoryStoreMock{
+		GetFunc: func(_ context.Context, _ string) (*[]*schema.Message, error) {
+			return &[]*schema.Message{schema.UserMessage("earlier question")}, nil
+		},
+	}
+
+	s, rec := prepSession(t, m)
+
+	assert.Equal(t, createSessionKey("org", "user"), s.key)
+	assert.NotNil(t, s.runner)
+	assert.NotNil(t, s.tools)
+	require.Len(t, s.messages, 1)
+
+	// a reconnecting client is handed the conversation it lost, so the
+	// chat pane is not empty after a reload.
+	msg, ok := find[protocol.HistoryMessage](rec)
+	require.True(t, ok)
+	require.Len(t, msg.Messages, 1)
+	assert.Equal(t, "earlier question", msg.Messages[0].Content)
+}
+
 func Test_session_Close(t *testing.T) {
 	t.Parallel()
 
-	s := newTestSession(nil, &protocolMock.SessionWriter{}, nil, nil, nil)
-	assert.NoError(t, s.Close())
+	rec, writer := newRecorder()
 
-	t.Run("Close interrupts a pending confirmation", func(t *testing.T) {
-		t.Parallel()
+	s, err := testManager().newSession(context.Background(), "org", "user", writer)
+	require.NoError(t, err)
 
-		client := anthClient(t, func(_ int) (int, string) {
-			return http.StatusOK, sseToolTurn("delete_document", `{"document_id":"doc-1"}`)
-		})
-
-		s := newTestSession(client, &protocolMock.SessionWriter{}, nil, nil, nil)
-
-		s.Process(context.Background(), []byte(`{"type":"message","content":"hi"}`))
-
-		// no completion signal exists for "the turn has parked on the confirm
-		// prompt", so poll for the pending channel the prompt installs.
-		require.Eventually(t, func() bool {
-			s.confirmMu.Lock()
-			defer s.confirmMu.Unlock()
-
-			return s.confirmCh != nil
-		}, 5*time.Second, time.Millisecond)
-
-		done := make(chan struct{})
-
-		go func() {
-			defer close(done)
-
-			assert.NoError(t, s.Close())
-		}()
-
-		// Close cancels the turn instead of waiting out _confirmTimeout, which
-		// is ten minutes.
-		select {
-		case <-done:
-		case <-time.After(10 * time.Second):
-			t.Fatal("Close did not interrupt the pending confirmation")
-		}
-	})
+	require.NoError(t, s.Close())
+	assert.Empty(t, rec.types())
 }
 
 func Test_session_SetActiveDocument(t *testing.T) {
 	t.Parallel()
 
-	s := newTestSession(nil, &protocolMock.SessionWriter{}, nil, nil, nil)
-	s.SetActiveDocument("doc-1")
+	s, _ := prepSession(t, testManager())
 
-	assert.Equal(t, "doc-1", s.activeDocumentID)
+	s.SetActiveDocument("doc-9")
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	assert.Equal(t, "doc-9", s.activeDocumentID)
+}
+
+func Test_session_rememberMessages(t *testing.T) {
+	t.Parallel()
+
+	s, _ := prepSession(t, testManager())
+
+	msgs := []*schema.Message{schema.UserMessage("hi")}
+	s.rememberMessages(msgs)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// the next turn starts from the conversation the middlewares
+	// compacted, not the raw one this session began with.
+	assert.Equal(t, msgs, s.messages)
 }
 
 func Test_session_sendHistory(t *testing.T) {
 	t.Parallel()
 
-	// empty history sends nothing
-	writer := &protocolMock.SessionWriter{}
-	s := newTestSession(nil, writer, nil, nil, nil)
+	s, rec := prepSession(t, testManager())
 
+	// nothing to restore sends nothing.
 	s.sendHistory(context.Background())
-	assert.Empty(t, writer.WriteJSONCalls())
+	assert.Empty(t, rec.types())
 
-	// non-empty history replays as one history message
-	s.messages = []anthropic.MessageParam{userMsg("hi")}
-
+	s.messages = []*schema.Message{schema.UserMessage("hi")}
 	s.sendHistory(context.Background())
-	assert.Equal(t, []string{"history"}, writtenTypes(writer))
+
+	msg, ok := find[protocol.HistoryMessage](rec)
+	require.True(t, ok)
+	require.Len(t, msg.Messages, 1)
+	assert.Equal(t, "hi", msg.Messages[0].Content)
 }
 
 func Test_session_Process(t *testing.T) {
-	t.Run("Unknown message type", func(t *testing.T) {
-		t.Parallel()
-
-		writer := &protocolMock.SessionWriter{}
-		s := newTestSession(nil, writer, nil, nil, nil)
-
-		s.Process(context.Background(), []byte(`{"type":"wibble"}`))
-		assert.Equal(t, []string{"error:unknown message type"}, writtenTypes(writer))
-	})
-
-	t.Run("Set active document", func(t *testing.T) {
-		t.Parallel()
-
-		s := newTestSession(nil, &protocolMock.SessionWriter{}, nil, nil, nil)
-
-		s.Process(context.Background(), []byte(`{"type":"set_active_document","document_id":"doc-9"}`))
-		assert.Equal(t, "doc-9", s.activeDocumentID)
-	})
-
-	t.Run("Confirm response routed to pending confirm", func(t *testing.T) {
-		t.Parallel()
-
-		s := newTestSession(nil, &protocolMock.SessionWriter{}, nil, nil, nil)
-
-		ch := make(chan bool, 1)
-		s.confirmCh = ch
-		s.confirmID = "turn-1"
-
-		s.Process(context.Background(), []byte(`{"type":"confirm_response","turn_id":"turn-1","approved":true}`))
-
-		select {
-		case approved := <-ch:
-			assert.True(t, approved)
-		default:
-			t.Fatal("confirm response was not delivered")
-		}
-	})
-
-	t.Run("Reset clears history", func(t *testing.T) {
-		t.Parallel()
-
-		store := &SessionStoreMock{}
-		s := newTestSession(nil, &protocolMock.SessionWriter{}, nil, store, nil)
-		s.messages = []anthropic.MessageParam{userMsg("hi")}
-
-		s.Process(context.Background(), []byte(`{"type":"reset"}`))
-
-		assert.Nil(t, s.messages)
-		assert.Len(t, store.DeleteCalls(), 1)
-	})
-
-	t.Run("Reset while processing is rejected", func(t *testing.T) {
-		t.Parallel()
-
-		writer := &protocolMock.SessionWriter{}
-		s := newTestSession(nil, writer, nil, nil, nil)
-		s.processing = true
-
-		s.Process(context.Background(), []byte(`{"type":"reset"}`))
-		assert.Equal(t, []string{"error:cannot reset while processing"}, writtenTypes(writer))
-	})
-
-	t.Run("Message while processing is rejected", func(t *testing.T) {
-		t.Parallel()
-
-		writer := &protocolMock.SessionWriter{}
-		s := newTestSession(nil, writer, nil, nil, nil)
-		s.processing = true
-
-		s.Process(context.Background(), []byte(`{"type":"message","content":"hi"}`))
-		assert.Equal(t, []string{"error:already processing a message"}, writtenTypes(writer))
-	})
-
-	t.Run("Blank message is rejected", func(t *testing.T) {
-		t.Parallel()
-
-		writer := &protocolMock.SessionWriter{}
-		s := newTestSession(nil, writer, nil, nil, nil)
-
-		s.Process(context.Background(), []byte(`{"type":"message","content":"  "}`))
-
-		assert.Equal(t, []string{"error:message content is required"}, writtenTypes(writer))
-		assert.False(t, s.processing)
-	})
-
-	t.Run("Message runs a full turn", func(t *testing.T) {
-		t.Parallel()
-
-		client := anthClient(t, func(_ int) (int, string) {
-			return http.StatusOK, sseTextTurn("hello")
-		})
-
-		writer := &protocolMock.SessionWriter{}
-		store := &SessionStoreMock{}
-		s := newTestSession(client, writer, nil, store, nil)
-
-		s.Process(context.Background(), []byte(`{"type":"message","content":"hi"}`))
-
-		// drain without cancelling: Close interrupts a running turn.
-		s.supv.Wait()
-
-		require.NoError(t, s.Close())
-
-		assert.Equal(t, []string{"text_delta", "text_end:message", "done"}, writtenTypes(writer))
-		assert.Len(t, store.SetCalls(), 1)
-		assert.False(t, s.processing)
-	})
-
-	t.Run("A panicking turn is released", func(t *testing.T) {
-		t.Parallel()
-
-		client := anthClient(t, func(int) (int, string) {
-			return http.StatusOK, sseTextTurn("hello")
-		})
-
-		// panic partway through the turn, while still letting the recovery path
-		// deliver its error and done messages.
-		writer := &protocolMock.SessionWriter{}
-		writer.WriteJSONFunc = func(_ context.Context, msg any) {
-			if _, ok := msg.(protocol.TextDeltaMessage); ok {
-				panic("writer exploded")
-			}
-		}
-
-		s := newTestSession(client, writer, nil, nil, nil)
-
-		s.Process(context.Background(), []byte(`{"type":"message","content":"hi"}`))
-		s.supv.Wait()
-
-		// the turn is released and the client is told, rather than the session
-		// rejecting every later message with "already processing".
-		assert.False(t, s.processing)
-		assert.Contains(t, writtenTypes(writer), "done")
-	})
-}
-
-func Test_session_handleUserMessage(t *testing.T) {
-	t.Run("Anthropic failure rolls back the turn", func(t *testing.T) {
-		t.Parallel()
-
-		client := anthClient(t, func(_ int) (int, string) {
-			return http.StatusInternalServerError, `{"error":"boom"}`
-		})
-
-		writer := &protocolMock.SessionWriter{}
-		s := newTestSession(client, writer, nil, nil, nil)
-
-		s.handleUserMessage(context.Background(), "hi")
-
-		assert.Empty(t, s.messages)
-		assert.Equal(t, []string{"error:failed to execute AI request", "done"}, writtenTypes(writer))
-	})
-
-	t.Run("Successful turn saves stripped history", func(t *testing.T) {
-		t.Parallel()
-
-		client := anthClient(t, func(_ int) (int, string) {
-			return http.StatusOK, sseTextTurn("answer")
-		})
-
-		writer := &protocolMock.SessionWriter{}
-		store := &SessionStoreMock{}
-		s := newTestSession(client, writer, nil, store, nil)
-
-		s.handleUserMessage(context.Background(), "hi")
-
-		require.Len(t, s.messages, 2)
-		assert.Equal(t, anthropic.MessageParamRoleUser, s.messages[0].Role)
-		assert.Equal(t, anthropic.MessageParamRoleAssistant, s.messages[1].Role)
-		assert.Len(t, store.SetCalls(), 1)
-		assert.Equal(t, []string{"text_delta", "text_end:message", "done"}, writtenTypes(writer))
-	})
-
-	t.Run("Maximum turns reached", func(t *testing.T) {
-		// mutates the package-level turn cap; must not run parallel
-		orig := _maxAgentTurns
-		_maxAgentTurns = 2
-
-		t.Cleanup(func() { _maxAgentTurns = orig })
-
-		client := anthClient(t, func(_ int) (int, string) {
-			return http.StatusOK, sseToolTurn("list_documents", "{}")
-		})
-
-		writer := &protocolMock.SessionWriter{}
-		db := &toolsMock.DB{}
-		s := newTestSession(client, writer, db, nil, nil)
-
-		s.handleUserMessage(context.Background(), "hi")
-
-		types := writtenTypes(writer)
-		assert.Contains(t, types, "error:maximum agent turns reached")
-		assert.Equal(t, "done", types[len(types)-1])
-		assert.Len(t, db.FetchDocumentTreeCalls(), 2)
-	})
-
-	t.Run("Empty text blocks are dropped", func(t *testing.T) {
-		t.Parallel()
-
-		// a text block that never receives a delta, which is what the API emits
-		// ahead of a tool_use and then rejects on the way back in.
-		body := sseEvent("message_start",
-			`{"type":"message_start","message":{"id":"m1","type":"message","role":"assistant","content":[],"model":"claude","usage":{"input_tokens":1,"output_tokens":1}}}`) +
-			sseEvent("content_block_start",
-				`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`) +
-			sseEvent("content_block_stop", `{"type":"content_block_stop","index":0}`) +
-			sseEvent("message_delta",
-				`{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":1,"output_tokens":1}}`) +
-			sseEvent("message_stop", `{"type":"message_stop"}`)
-
-		client := anthClient(t, func(int) (int, string) {
-			return http.StatusOK, body
-		})
-
-		s := newTestSession(client, &protocolMock.SessionWriter{}, nil, nil, nil)
-
-		s.Process(context.Background(), []byte(`{"type":"message","content":"hi"}`))
-		s.supv.Wait()
-
-		for _, m := range s.messages {
-			for _, b := range m.Content {
-				if b.OfText != nil {
-					assert.NotEmpty(t, b.OfText.Text, "an empty text block would be rejected on the next turn")
-				}
-			}
-		}
-	})
-}
-
-func Test_session_callAnthropic(t *testing.T) {
-	t.Run("Text turn relays deltas and records the answer", func(t *testing.T) {
-		t.Parallel()
-
-		client := anthClient(t, func(_ int) (int, string) {
-			return http.StatusOK, sseTextTurn("hello")
-		})
-
-		writer := &protocolMock.SessionWriter{}
-		s := newTestSession(client, writer, nil, nil, nil)
-
-		stop, err := s.callAnthropic(context.Background(), "")
-		require.NoError(t, err)
-
-		assert.Equal(t, anthropic.StopReasonEndTurn, stop)
-		assert.Equal(t, []string{"text_delta", "text_end:message"}, writtenTypes(writer))
-
-		require.Len(t, s.messages, 1)
-		require.Len(t, s.messages[0].Content, 1)
-		assert.Equal(t, "hello", s.messages[0].Content[0].OfText.Text)
-	})
-
-	t.Run("Narration before tools ends as a status pill", func(t *testing.T) {
-		t.Parallel()
-
-		// one turn carrying narration text and a tool_use block
-		body := sseEvent("message_start",
-			`{"type":"message_start","message":{"id":"m1","type":"message","role":"assistant","content":[],"model":"claude","usage":{"input_tokens":1,"output_tokens":1}}}`) +
-			sseEvent("content_block_start",
-				`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`) +
-			sseEvent("content_block_delta",
-				`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"let me look"}}`) +
-			sseEvent("content_block_stop", `{"type":"content_block_stop","index":0}`) +
-			sseEvent("content_block_start",
-				`{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"tu1","name":"list_documents","input":{}}}`) +
-			sseEvent("content_block_stop", `{"type":"content_block_stop","index":1}`) +
-			sseEvent("message_delta",
-				`{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"input_tokens":1,"output_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}`) +
-			sseEvent("message_stop", `{"type":"message_stop"}`)
-
-		client := anthClient(t, func(_ int) (int, string) {
-			return http.StatusOK, body
-		})
-
-		writer := &protocolMock.SessionWriter{}
-		s := newTestSession(client, writer, nil, nil, nil)
-
-		stop, err := s.callAnthropic(context.Background(), "")
-		require.NoError(t, err)
-
-		assert.Equal(t, anthropic.StopReasonToolUse, stop)
-		assert.Equal(t, []string{"text_delta", "text_end:status"}, writtenTypes(writer))
-	})
-
-	t.Run("Tool turn executes the tool and appends results", func(t *testing.T) {
-		t.Parallel()
-
-		client := anthClient(t, func(_ int) (int, string) {
-			// empty args exercise the missing-input fallback
-			return http.StatusOK, sseToolTurn("list_documents", "")
-		})
-
-		writer := &protocolMock.SessionWriter{}
-		db := &toolsMock.DB{}
-		s := newTestSession(client, writer, db, nil, nil)
-
-		stop, err := s.callAnthropic(context.Background(), "")
-		require.NoError(t, err)
-
-		assert.Equal(t, anthropic.StopReasonToolUse, stop)
-		assert.Len(t, db.FetchDocumentTreeCalls(), 1)
-
-		// assistant tool_use turn plus the tool_result user turn
-		require.Len(t, s.messages, 2)
-		assert.Equal(t, anthropic.MessageParamRoleAssistant, s.messages[0].Role)
-		assert.Equal(t, anthropic.MessageParamRoleUser, s.messages[1].Role)
-
-		// pure tool turns stream no text, so no text_end is owed
-		assert.Empty(t, writtenTypes(writer))
-	})
-
-	t.Run("Stream failure returns the error", func(t *testing.T) {
-		t.Parallel()
-
-		client := anthClient(t, func(_ int) (int, string) {
-			return http.StatusInternalServerError, `{"error":"boom"}`
-		})
-
-		s := newTestSession(client, &protocolMock.SessionWriter{}, nil, nil, nil)
-
-		_, err := s.callAnthropic(context.Background(), "")
-		require.Error(t, err)
-	})
-}
-
-func Test_session_dispatchTools(t *testing.T) {
-	t.Run("Reads execute without confirmation", func(t *testing.T) {
-		t.Parallel()
-
-		writer := &protocolMock.SessionWriter{}
-		db := &toolsMock.DB{}
-		s := newTestSession(nil, writer, db, nil, nil)
-
-		results := s.dispatchTools(context.Background(), []anthropic.ContentBlockParamUnion{
-			toolUseBlock("t1", "list_documents", `{}`),
-			toolUseBlock("t2", "list_documents", `{}`),
-		})
-
-		require.Len(t, results, 2)
-		assert.Len(t, db.FetchDocumentTreeCalls(), 2)
-		assert.NotContains(t, writtenTypes(writer), "confirm_request")
-	})
-
-	t.Run("Declined writes are skipped", func(t *testing.T) {
-		t.Parallel()
-
-		var s *session
-
-		writer := &protocolMock.SessionWriter{
-			WriteJSONFunc: func(_ context.Context, msg any) {
-				if req, ok := msg.(protocol.ConfirmRequest); ok {
-					s.deliverConfirmResponse(req.TurnID, false, false)
-				}
-			},
-		}
-
-		db := &toolsMock.DB{}
-		s = newTestSession(nil, writer, db, nil, nil)
-
-		results := s.dispatchTools(context.Background(), []anthropic.ContentBlockParamUnion{
-			toolUseBlock("t1", "delete_block", `{"document_id":"d","block_uid":"b"}`),
-		})
-
-		require.Len(t, results, 1)
-		assert.Contains(t, results[0].OfToolResult.Content[0].OfText.Text, "user declined")
-		assert.Empty(t, db.FetchDocumentCalls())
-	})
-
-	t.Run("Approved writes execute", func(t *testing.T) {
-		t.Parallel()
-
-		var s *session
-
-		writer := &protocolMock.SessionWriter{
-			WriteJSONFunc: func(_ context.Context, msg any) {
-				if req, ok := msg.(protocol.ConfirmRequest); ok {
-					s.deliverConfirmResponse(req.TurnID, true, false)
-				}
-			},
-		}
-
-		db := &toolsMock.DB{}
-		s = newTestSession(nil, writer, db, nil, nil)
-
-		results := s.dispatchTools(context.Background(), []anthropic.ContentBlockParamUnion{
-			toolUseBlock("t1", "delete_block", `{"document_id":"not-an-xid","block_uid":"b"}`),
-		})
-
-		// the write ran (and failed inside the tool on the bad id),
-		// proving approval unblocked execution
-		require.Len(t, results, 1)
-		assert.Contains(t, results[0].OfToolResult.Content[0].OfText.Text, "error")
-	})
-
-	t.Run("Auto-approve skips the prompt", func(t *testing.T) {
-		t.Parallel()
-
-		writer := &protocolMock.SessionWriter{}
-		s := newTestSession(nil, writer, &toolsMock.DB{}, nil, nil)
-		s.autoApproveTurn = true
-
-		results := s.dispatchTools(context.Background(), []anthropic.ContentBlockParamUnion{
-			toolUseBlock("t1", "rename_document", `{"document_id":"not-an-xid","name":"x"}`),
-		})
-
-		require.Len(t, results, 1)
-		assert.NotContains(t, writtenTypes(writer), "confirm_request")
-	})
-
-	// the delete tools tell the model and the user that they are always
-	// confirmed, so an approve-all earlier in the turn cannot cover them.
-	t.Run("Auto-approve still prompts for a delete", func(t *testing.T) {
-		t.Parallel()
-
-		var s *session
-
-		writer := &protocolMock.SessionWriter{
-			WriteJSONFunc: func(_ context.Context, msg any) {
-				if req, ok := msg.(protocol.ConfirmRequest); ok {
-					s.deliverConfirmResponse(req.TurnID, false, false)
-				}
-			},
-		}
-
-		s = newTestSession(nil, writer, &toolsMock.DB{}, nil, nil)
-		s.autoApproveTurn = true
-
-		results := s.dispatchTools(context.Background(), []anthropic.ContentBlockParamUnion{
-			toolUseBlock("t1", "delete_block", `{"document_id":"not-an-xid","block_uid":"b"}`),
-		})
-
-		require.Len(t, results, 1)
-		assert.Contains(t, results[0].OfToolResult.Content[0].OfText.Text, "user declined")
-	})
-
-	t.Run("Non-tool blocks are ignored", func(t *testing.T) {
-		t.Parallel()
-
-		s := newTestSession(nil, &protocolMock.SessionWriter{}, nil, nil, nil)
-
-		results := s.dispatchTools(context.Background(), []anthropic.ContentBlockParamUnion{
-			anthropic.NewTextBlock("just narration"),
-		})
-
-		assert.Empty(t, results)
-	})
-
-	t.Run("Nil input defaults to empty args", func(t *testing.T) {
-		t.Parallel()
-
-		db := &toolsMock.DB{}
-		s := newTestSession(nil, &protocolMock.SessionWriter{}, db, nil, nil)
-
-		results := s.dispatchTools(context.Background(), []anthropic.ContentBlockParamUnion{
-			{OfToolUse: &anthropic.ToolUseBlockParam{ID: "t1", Name: "list_documents"}},
-		})
-
-		require.Len(t, results, 1)
-		assert.Len(t, db.FetchDocumentTreeCalls(), 1)
-	})
-
-	t.Run("Writes run sequentially in input order", func(t *testing.T) {
-		t.Parallel()
-
-		var s *session
-
-		writer := &protocolMock.SessionWriter{
-			WriteJSONFunc: func(_ context.Context, msg any) {
-				if req, ok := msg.(protocol.ConfirmRequest); ok {
-					s.deliverConfirmResponse(req.TurnID, true, false)
-				}
-			},
-		}
-
-		db := &toolsMock.DB{
-			FetchDocumentFunc: func(_ context.Context, id xid.ID, _, _ string) (*document.Document, error) {
-				return &document.Document{
-					ID:     id,
-					Branch: document.Branch{BranchID: xid.New()},
-				}, nil
-			},
-		}
-
-		var (
-			active     atomic.Int32
-			overlapped atomic.Bool
-			orderMu    sync.Mutex
-			order      []string
-		)
-
-		applier := &toolsMock.EditApplier{
-			ApplyFunc: func(_ context.Context, documentID, _ string, _ []edit.Operation) (edit.Result, error) {
-				if active.Add(1) > 1 {
-					overlapped.Store(true)
-				}
-
-				// widen the window a concurrent second write would land in.
-				// Sequential execution can never overlap, so this only ever
-				// slows the test down.
-				time.Sleep(20 * time.Millisecond)
-
-				orderMu.Lock()
-
-				order = append(order, documentID)
-				orderMu.Unlock()
-
-				active.Add(-1)
-
-				return edit.Result{Applied: 1}, nil
-			},
-		}
-
-		first, second := xid.New(), xid.New()
-
-		s = newTestSession(nil, writer, db, nil, nil)
-		s.tools = tools.NewManager(
-			slog.New(slog.DiscardHandler),
-			db,
-			&toolsMock.Searcher{},
-			applier,
-			&toolsMock.TreeNotifier{},
-			"org",
-			"user",
-		)
-
-		results := s.dispatchTools(context.Background(), []anthropic.ContentBlockParamUnion{
-			toolUseBlock("t1", "append_block",
-				`{"document_id":"`+first.String()+`","block":{"type":"paragraph","text":"a"}}`),
-			toolUseBlock("t2", "append_block",
-				`{"document_id":"`+second.String()+`","block":{"type":"paragraph","text":"b"}}`),
-		})
-
-		require.Len(t, results, 2)
-		assert.False(t, overlapped.Load(), "approved writes must not run concurrently")
-		assert.Equal(t, []string{first.String(), second.String()}, order)
-	})
-
-	t.Run("A panicking tool is contained", func(t *testing.T) {
-		t.Parallel()
-
-		writer := &protocolMock.SessionWriter{}
-
-		db := &toolsMock.DB{
-			FetchDocumentTreeFunc: func(context.Context, string) (document.Summaries, error) {
-				panic("tool exploded")
-			},
-		}
-
-		s := newTestSession(nil, writer, db, nil, nil)
-
-		// a panicking tool degrades to an error result instead of taking the
-		// process down or abandoning the rest of the batch.
-		var results []anthropic.ContentBlockParamUnion
-
-		require.NotPanics(t, func() {
-			results = s.dispatchTools(context.Background(), []anthropic.ContentBlockParamUnion{
-				toolUseBlock("t1", "list_documents", `{}`),
-			})
-		})
-
-		require.Len(t, results, 1)
-		require.NotNil(t, results[0].OfToolResult)
-	})
-}
-
-func Test_session_runTool(t *testing.T) {
-	t.Run("Unknown tool", func(t *testing.T) {
-		t.Parallel()
-
-		s := newTestSession(nil, &protocolMock.SessionWriter{}, nil, nil, nil)
-
-		result := s.runTool(context.Background(), "t1", "wibble", json.RawMessage(`{}`))
-		assert.Contains(t, result.OfToolResult.Content[0].OfText.Text, "unknown tool")
-	})
-
-	t.Run("Tool failure becomes an error envelope", func(t *testing.T) {
-		t.Parallel()
-
-		var buf bytes.Buffer
-
-		db := &toolsMock.DB{
-			FetchDocumentTreeFunc: func(_ context.Context, _ string) (document.Summaries, error) {
-				return nil, assert.AnError
-			},
-		}
-		s := newTestSession(nil, &protocolMock.SessionWriter{}, db, nil, slog.New(slog.NewTextHandler(&buf, nil)))
-
-		result := s.runTool(context.Background(), "t1", "list_documents", json.RawMessage(`{}`))
-		assert.Contains(t, result.OfToolResult.Content[0].OfText.Text, "error")
-		assert.Contains(t, buf.String(), "assistant tool error")
-	})
-
-	t.Run("Oversized result is truncated", func(t *testing.T) {
-		t.Parallel()
-
-		huge := strings.Repeat("x", _maxToolResultBytes)
-
-		db := &toolsMock.DB{
-			FetchDocumentTreeFunc: func(_ context.Context, _ string) (document.Summaries, error) {
-				return document.Summaries{{DocumentName: huge}}, nil
-			},
-		}
-		s := newTestSession(nil, &protocolMock.SessionWriter{}, db, nil, nil)
-
-		result := s.runTool(context.Background(), "t1", "list_documents", json.RawMessage(`{}`))
-		assert.Contains(t, result.OfToolResult.Content[0].OfText.Text, "result too large")
-	})
-
-	t.Run("Successful run emits a status pill", func(t *testing.T) {
-		t.Parallel()
-
-		writer := &protocolMock.SessionWriter{}
-		s := newTestSession(nil, writer, nil, nil, nil)
-
-		result := s.runTool(context.Background(), "t1", "search_documents", json.RawMessage(`{"query":"cats"}`))
-		assert.JSONEq(t, `{"hits":[]}`, result.OfToolResult.Content[0].OfText.Text)
-		assert.Equal(t, []string{"tool_status"}, writtenTypes(writer))
-	})
-}
-
-func Test_session_requestConfirmation(t *testing.T) {
-	t.Run("Approved", func(t *testing.T) {
-		t.Parallel()
-
-		var s *session
-
-		writer := &protocolMock.SessionWriter{
-			WriteJSONFunc: func(_ context.Context, msg any) {
-				if req, ok := msg.(protocol.ConfirmRequest); ok {
-					s.deliverConfirmResponse(req.TurnID, true, false)
-				}
-			},
-		}
-		s = newTestSession(nil, writer, nil, nil, nil)
-
-		assert.True(t, s.requestConfirmation(context.Background(), []protocol.ConfirmAction{{Tool: "delete_block"}}))
-		assert.Nil(t, s.confirmCh)
-		assert.Empty(t, s.confirmID)
-	})
-
-	t.Run("Timeout declines", func(t *testing.T) {
-		// mutates the package-level timeout; must not run parallel
-		orig := _confirmTimeout
-		_confirmTimeout = 25 * time.Millisecond
-
-		t.Cleanup(func() { _confirmTimeout = orig })
-
-		s := newTestSession(nil, &protocolMock.SessionWriter{}, nil, nil, nil)
-
-		assert.False(t, s.requestConfirmation(context.Background(), []protocol.ConfirmAction{{Tool: "delete_block"}}))
-	})
-
-	t.Run("Context cancellation declines", func(t *testing.T) {
-		t.Parallel()
-
-		ctx, cancel := context.WithCancel(context.Background())
-
-		writer := &protocolMock.SessionWriter{
-			WriteJSONFunc: func(_ context.Context, msg any) {
-				if _, ok := msg.(protocol.ConfirmRequest); ok {
-					cancel()
-				}
-			},
-		}
-		s := newTestSession(nil, writer, nil, nil, nil)
-
-		assert.False(t, s.requestConfirmation(ctx, []protocol.ConfirmAction{{Tool: "delete_block"}}))
-	})
-}
-
-func Test_session_deliverConfirmResponse(t *testing.T) {
 	t.Parallel()
-
-	s := newTestSession(nil, &protocolMock.SessionWriter{}, nil, nil, nil)
-
-	// no pending confirm is a no-op
-	s.deliverConfirmResponse("turn-1", true, false)
-
-	// mismatched turn id is dropped
-	ch := make(chan bool, 1)
-	s.confirmCh = ch
-	s.confirmID = "turn-1"
-
-	s.deliverConfirmResponse("turn-2", true, false)
-	assert.Empty(t, ch)
-
-	// matching id delivers; all=true arms auto-approve
-	s.deliverConfirmResponse("turn-1", true, true)
-	assert.True(t, <-ch)
-	assert.True(t, s.autoApproveTurn)
-
-	// a duplicate answer for the same turn is dropped without blocking
-	s.deliverConfirmResponse("turn-1", false, false)
-	s.deliverConfirmResponse("turn-1", false, false)
-}
-
-func Test_session_pruneStaleReads(t *testing.T) {
-	readTurn := func(id, args string) []anthropic.MessageParam {
-		return []anthropic.MessageParam{
-			assistantMsg(toolUseBlock(id, "read_block", args)),
-			{
-				Role:    anthropic.MessageParamRoleUser,
-				Content: []anthropic.ContentBlockParamUnion{makeToolResult(id, json.RawMessage(`{"full":"content"}`))},
-			},
-		}
-	}
-
-	t.Run("Older duplicate read is pruned", func(t *testing.T) {
-		t.Parallel()
-
-		s := newTestSession(nil, &protocolMock.SessionWriter{}, nil, nil, nil)
-
-		s.messages = append(readTurn("t1", `{"document_id":"d","block_uid":"b"}`),
-			readTurn("t2", `{"document_id":"d","block_uid":"b"}`)...)
-
-		s.pruneStaleReads()
-
-		pruned := s.messages[1].Content[0].OfToolResult.Content[0].OfText.Text
-		assert.Contains(t, pruned, "pruned")
-
-		kept := s.messages[3].Content[0].OfToolResult.Content[0].OfText.Text
-		assert.Contains(t, kept, "full")
-	})
-
-	t.Run("Different targets are kept", func(t *testing.T) {
-		t.Parallel()
-
-		s := newTestSession(nil, &protocolMock.SessionWriter{}, nil, nil, nil)
-
-		s.messages = append(readTurn("t1", `{"document_id":"d","block_uid":"b1"}`),
-			readTurn("t2", `{"document_id":"d","block_uid":"b2"}`)...)
-
-		s.pruneStaleReads()
-
-		assert.Contains(t, s.messages[1].Content[0].OfToolResult.Content[0].OfText.Text, "full")
-		assert.Contains(t, s.messages[3].Content[0].OfToolResult.Content[0].OfText.Text, "full")
-	})
-
-	t.Run("Malformed args are logged and skipped", func(t *testing.T) {
-		t.Parallel()
-
-		var buf bytes.Buffer
-
-		s := newTestSession(nil, &protocolMock.SessionWriter{}, nil, nil, slog.New(slog.NewTextHandler(&buf, nil)))
-		s.messages = readTurn("t1", `{broken`)
-
-		s.pruneStaleReads()
-		assert.Contains(t, buf.String(), "probe unmarshal failed")
-	})
-
-	t.Run("Non-read tools are ignored", func(t *testing.T) {
-		t.Parallel()
-
-		s := newTestSession(nil, &protocolMock.SessionWriter{}, nil, nil, nil)
-		s.messages = []anthropic.MessageParam{
-			assistantMsg(anthropic.NewTextBlock("narration"), toolUseBlock("t1", "delete_block", `{"document_id":"d"}`)),
-			assistantMsg(toolUseBlock("t2", "delete_block", `{"document_id":"d"}`)),
-		}
-
-		s.pruneStaleReads()
-	})
-}
-
-func Test_session_prunePriorReadResult(t *testing.T) {
-	t.Parallel()
-
-	s := newTestSession(nil, &protocolMock.SessionWriter{}, nil, nil, nil)
-	s.messages = []anthropic.MessageParam{
-		assistantMsg(toolUseBlock("t1", "read_block", `{}`)),
-		{
-			Role: anthropic.MessageParamRoleUser,
-			Content: []anthropic.ContentBlockParamUnion{
-				makeToolResult("other", json.RawMessage(`{"full":"other"}`)),
-				makeToolResult("t1", json.RawMessage(`{"full":"content"}`)),
-			},
-		},
-		assistantMsg(anthropic.NewTextBlock("later")),
-	}
-
-	// an index at the tail is guarded against
-	s.prunePriorReadResult(len(s.messages)-1, "t1")
-	assert.Contains(t, s.messages[1].Content[1].OfToolResult.Content[0].OfText.Text, "full")
-
-	// only the matching tool result is replaced
-	s.prunePriorReadResult(0, "t1")
-	assert.Contains(t, s.messages[1].Content[0].OfToolResult.Content[0].OfText.Text, "other")
-	assert.Contains(t, s.messages[1].Content[1].OfToolResult.Content[0].OfText.Text, "pruned")
-}
-
-func Test_session_trimMessages(t *testing.T) {
-	buildMessages := func(n int) []anthropic.MessageParam {
-		out := make([]anthropic.MessageParam, 0, n)
-		for range n {
-			out = append(out, userMsg("x"))
-		}
-
-		return out
-	}
 
 	cc := map[string]struct {
-		Count  int
-		Result int
+		JSON   string
+		Expect func(t *testing.T, s *session, rec *recorder)
 	}{
-		"Under the limit":            {Count: 10, Result: 10},
-		"At the limit":               {Count: _maxMessages, Result: _maxMessages},
-		"Even excess trims in pairs": {Count: _maxMessages + 2, Result: _maxMessages},
-		"Odd excess rounds up":       {Count: _maxMessages + 3, Result: _maxMessages - 1},
+		"Unknown message type is reported": {
+			JSON: `{"type":"nonsense"}`,
+			Expect: func(t *testing.T, _ *session, rec *recorder) {
+				msg, ok := find[protocol.ErrorMessage](rec)
+				require.True(t, ok)
+				assert.Equal(t, "unknown message type", msg.Message)
+			},
+		},
+		"Active document is recorded": {
+			JSON: `{"type":"set_active_document","document_id":"doc-1"}`,
+			Expect: func(t *testing.T, s *session, _ *recorder) {
+				s.mu.Lock()
+				defer s.mu.Unlock()
+
+				assert.Equal(t, "doc-1", s.activeDocumentID)
+			},
+		},
+		"Empty message content is refused": {
+			JSON: `{"type":"message","content":""}`,
+			Expect: func(t *testing.T, _ *session, rec *recorder) {
+				_, ok := find[protocol.ErrorMessage](rec)
+				assert.True(t, ok)
+			},
+		},
+		"Stale confirm response is ignored": {
+			JSON: `{"type":"confirm_response","turn_id":"gone","approved":true}`,
+			Expect: func(t *testing.T, _ *session, rec *recorder) {
+				assert.Empty(t, rec.types())
+			},
+		},
+		"Reset clears the conversation": {
+			JSON: `{"type":"reset"}`,
+			Expect: func(t *testing.T, s *session, _ *recorder) {
+				s.mu.Lock()
+				defer s.mu.Unlock()
+
+				assert.Nil(t, s.messages)
+			},
+		},
 	}
 
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			s := newTestSession(nil, &protocolMock.SessionWriter{}, nil, nil, nil)
-			s.messages = buildMessages(c.Count)
+			s, rec := prepSession(t, testManager())
 
-			s.trimMessages()
-			assert.Len(t, s.messages, c.Result)
+			s.Process(context.Background(), []byte(c.JSON))
+
+			c.Expect(t, s, rec)
 		})
 	}
 }
 
-func Test_makeToolResult(t *testing.T) {
+func Test_session_handleMessage(t *testing.T) {
 	t.Parallel()
 
-	result := makeToolResult("t1", json.RawMessage(`{"ok":true}`))
+	cc := map[string]struct {
+		Responses []*schema.Message
+		Content   string
+		Settles   bool
+		Expect    func(t *testing.T, rec *recorder, cm *mock.ChatModel)
+	}{
+		"Read turn answers without asking": {
+			Responses: []*schema.Message{
+				toolCall("1", string(tools.NameSearchDocuments), `{"query":"rate limit"}`),
+				schema.AssistantMessage("there are no documents yet", nil),
+			},
+			Content: "what documents do we have",
+			Settles: true,
+			Expect: func(t *testing.T, rec *recorder, cm *mock.ChatModel) {
+				// the user is told which tool is running before it runs,
+				// sees the answer stream in, and the turn closes cleanly.
+				assert.Contains(t, rec.types(),
+					string(protocol.ServerTypeToolStatus)+":"+string(tools.NameSearchDocuments))
+				assert.Contains(t, rec.types(), string(protocol.ServerTypeDone))
+				assert.Equal(t, "there are no documents yet", rec.deltaText())
 
-	require.NotNil(t, result.OfToolResult)
-	assert.Equal(t, "t1", result.OfToolResult.ToolUseID)
-	require.Len(t, result.OfToolResult.Content, 1)
-	assert.JSONEq(t, `{"ok":true}`, result.OfToolResult.Content[0].OfText.Text)
+				// a read tool never asks permission.
+				_, asked := find[protocol.ConfirmRequest](rec)
+				assert.False(t, asked, "a read must not prompt for confirmation")
+
+				assert.Len(t, cm.StreamCalls(), 2)
+			},
+		},
+		"Empty content is refused": {
+			Content: "   ",
+			Expect: func(t *testing.T, rec *recorder, cm *mock.ChatModel) {
+				msg, ok := find[protocol.ErrorMessage](rec)
+				require.True(t, ok)
+				assert.Equal(t, "message content is required", msg.Message)
+
+				// an empty message never reaches the model, so the
+				// conversation is not left carrying it.
+				assert.Empty(t, cm.StreamCalls())
+			},
+		},
+		"Write parks on a confirmation": {
+			Responses: []*schema.Message{
+				toolCall("1", string(tools.NameCreateDocument), `{"name":"Runbook"}`),
+				schema.AssistantMessage("created", nil),
+			},
+			Content: "make a runbook",
+			Settles: true,
+			Expect: func(t *testing.T, rec *recorder, _ *mock.ChatModel) {
+				req, ok := find[protocol.ConfirmRequest](rec)
+				require.True(t, ok, "a write must prompt, got %v", rec.types())
+				require.Len(t, req.Actions, 1)
+				assert.Equal(t, string(tools.NameCreateDocument), req.Actions[0].Tool)
+				assert.NotEmpty(t, req.TurnID)
+
+				// the turn is parked, not finished: no done was sent.
+				assert.NotContains(t, rec.types(), string(protocol.ServerTypeDone))
+			},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			cm := stubChatModel(c.Responses...)
+
+			m := testManager()
+			m.model = cm
+
+			s, rec := prepSession(t, m)
+
+			s.handleMessage(context.Background(), c.Content)
+
+			if c.Settles {
+				rec.wait(t)
+			}
+
+			c.Expect(t, rec, cm)
+		})
+	}
 }
 
-func Test_mustJSON(t *testing.T) {
+func Test_session_handleReset(t *testing.T) {
 	t.Parallel()
 
-	// success
-	assert.JSONEq(t, `{"ok":true}`, string(mustJSON(map[string]any{"ok": true})))
+	cc := map[string]struct {
+		Processing bool
+		History    *HistoryStoreMock
+		Cleared    bool
+	}{
+		"Conversation is cleared": {
+			History: &HistoryStoreMock{},
+			Cleared: true,
+		},
+		"Error returned by history.Delete": {
+			// a failed delete still clears the session's own copy, so
+			// the user gets the fresh start they asked for.
+			History: &HistoryStoreMock{
+				DeleteFunc: func(_ context.Context, _ string) error {
+					return assert.AnError
+				},
+			},
+			Cleared: true,
+		},
+		"Reset is refused mid-turn": {
+			Processing: true,
+			History:    &HistoryStoreMock{},
+		},
+	}
 
-	// marshal failure degrades to an error envelope
-	out := mustJSON(make(chan int))
-	assert.Contains(t, string(out), "error")
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			m := testManager()
+			m.history = c.History
+
+			s, rec := prepSession(t, m)
+
+			s.mu.Lock()
+			s.messages = []*schema.Message{schema.UserMessage("hi")}
+			s.processing = c.Processing
+			s.mu.Unlock()
+
+			s.handleReset(context.Background())
+
+			s.mu.Lock()
+			left := s.messages
+			s.mu.Unlock()
+
+			if !c.Cleared {
+				assert.NotEmpty(t, left)
+				assert.Empty(t, c.History.DeleteCalls())
+
+				msg, ok := find[protocol.ErrorMessage](rec)
+				require.True(t, ok)
+				assert.Equal(t, "cannot reset while processing", msg.Message)
+
+				return
+			}
+
+			assert.Nil(t, left)
+
+			// the paused turn goes with the conversation: nothing can
+			// resume writes belonging to a chat that no longer exists.
+			assert.Len(t, c.History.DeleteCalls(), 1)
+			assert.Len(t, m.pendings.(*PendingStoreMock).DeleteCalls(), 1)
+			assert.Len(t, m.blobs.(*BlobStoreMock).DeleteCalls(), 1)
+		})
+	}
+}
+
+func Test_session_handleConfirmResponse(t *testing.T) {
+	t.Parallel()
+
+	docID := xid.New().String()
+	edit1 := `{"document_id":"` + docID + `","block_uid":"a","text":"one"}`
+	edit2 := `{"document_id":"` + docID + `","block_uid":"b","text":"two"}`
+
+	oneWrite := []*schema.Message{
+		toolCall("1", string(tools.NameUpdateBlockText), edit1),
+		schema.AssistantMessage("updated the intro", nil),
+	}
+
+	cc := map[string]struct {
+		Responses []*schema.Message
+		StaleTurn bool
+		Approved  bool
+		All       bool
+		Applied   int
+	}{
+		"Approving resumes the parked write": {
+			Responses: oneWrite,
+			Approved:  true,
+			Applied:   1,
+		},
+		"Declining finishes the turn without writing": {
+			Responses: oneWrite,
+		},
+		"Approving all covers later writes in the same turn": {
+			// two separate write batches: the first is confirmed, the
+			// second must ride on the same answer.
+			Responses: []*schema.Message{
+				toolCall("1", string(tools.NameUpdateBlockText), edit1),
+				toolCall("2", string(tools.NameUpdateBlockText), edit2),
+				schema.AssistantMessage("both edits applied", nil),
+			},
+			Approved: true,
+			All:      true,
+			Applied:  2,
+		},
+		"Answer to another turn is ignored": {
+			// only the outstanding confirmation can be answered, or a
+			// stale reply would approve writes the user never saw.
+			Responses: oneWrite,
+			StaleTurn: true,
+			Approved:  true,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			applier := stubEditApplier()
+
+			m := testManager()
+			m.model = stubChatModel(c.Responses...)
+			m.db = stubDocumentDB()
+			m.applier = applier
+
+			s, rec := prepSession(t, m)
+
+			s.handleMessage(context.Background(), "reword the intro")
+			rec.wait(t)
+
+			req, ok := find[protocol.ConfirmRequest](rec)
+			require.True(t, ok, "the write did not prompt, got %v", rec.types())
+			require.Empty(t, applier.ApplyCalls(), "nothing may be applied while the user decides")
+
+			turnID := req.TurnID
+			if c.StaleTurn {
+				turnID = "some-other-turn"
+			}
+
+			s.handleConfirmResponse(context.Background(), turnID, c.Approved, c.All)
+
+			pendings := m.pendings.(*PendingStoreMock)
+
+			if c.StaleTurn {
+				assert.Empty(t, applier.ApplyCalls())
+
+				stored, err := pendings.Get(context.Background(), createPendingKey(s.key))
+				require.NoError(t, err)
+				assert.Equal(t, req.TurnID, stored.TurnID)
+
+				return
+			}
+
+			rec.wait(t)
+
+			assert.Len(t, applier.ApplyCalls(), c.Applied)
+			assert.Contains(t, rec.types(), string(protocol.ServerTypeDone))
+
+			// the answered confirmation is forgotten, so a reconnect
+			// does not re-ask a question the user already settled.
+			_, err := pendings.Get(context.Background(), createPendingKey(s.key))
+			assert.Equal(t, errutil.ErrNotFound, err)
+		})
+	}
+}
+
+func Test_session_beginTurn(t *testing.T) {
+	t.Parallel()
+
+	s, rec := prepSession(t, testManager())
+
+	require.True(t, s.beginTurn(context.Background()))
+
+	// a second turn is refused while the first runs, so two messages
+	// cannot interleave in one conversation.
+	assert.False(t, s.beginTurn(context.Background()))
+
+	msg, ok := find[protocol.ErrorMessage](rec)
+	require.True(t, ok)
+	assert.Equal(t, "already processing a message", msg.Message)
+}
+
+func Test_session_goTurn(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Pending *pendingConfirm
+		Panic   bool
+	}{
+		"Finished turn releases the session": {},
+		"Parked turn asks the user once the session is free": {
+			Pending: &pendingConfirm{TurnID: "t1"},
+		},
+		"Panicking turn still closes the turn out": {
+			Panic: true,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			m := testManager()
+			s, rec := prepSession(t, m)
+
+			require.True(t, s.beginTurn(context.Background()))
+
+			s.goTurn(context.Background(), func(context.Context) *pendingConfirm {
+				if c.Panic {
+					panic("turn exploded")
+				}
+
+				return c.Pending
+			})
+
+			if c.Panic {
+				// the supervisor's recovery plan absorbs the panic; the
+				// client must still hear that the turn ended.
+				s.supv.CloseAndWait()
+
+				assert.Contains(t, rec.types(), string(protocol.ServerTypeError))
+				assert.Contains(t, rec.types(), string(protocol.ServerTypeDone))
+
+				return
+			}
+
+			if c.Pending != nil {
+				rec.wait(t)
+			} else {
+				s.supv.Wait()
+			}
+
+			// the session is released before the question is asked, so
+			// an immediate answer is not refused as a second turn.
+			s.mu.Lock()
+			assert.False(t, s.processing)
+			s.mu.Unlock()
+
+			if c.Pending == nil {
+				assert.Empty(t, rec.types())
+
+				return
+			}
+
+			req, ok := find[protocol.ConfirmRequest](rec)
+			require.True(t, ok)
+			assert.Equal(t, "t1", req.TurnID)
+			assert.Len(t, m.pendings.(*PendingStoreMock).SetCalls(), 1)
+		})
+	}
+}
+
+func Test_session_runOptions(t *testing.T) {
+	t.Parallel()
+
+	s, _ := prepSession(t, testManager())
+	s.SetActiveDocument("doc-3")
+
+	// the checkpoint id and the active document snapshot, so a mid-turn
+	// navigation cannot shift the prompt under an in-flight turn.
+	assert.Len(t, s.runOptions(), 2)
+}
+
+func Test_session_resendPendingConfirmation(t *testing.T) {
+	t.Parallel()
+
+	m := testManager()
+	m.model = stubChatModel(
+		toolCall("1", string(tools.NameCreateDocument), `{"name":"Runbook"}`),
+		schema.AssistantMessage("created", nil),
+	)
+
+	s, rec := prepSession(t, m)
+
+	s.handleMessage(context.Background(), "make a runbook")
+	rec.wait(t)
+
+	first, ok := find[protocol.ConfirmRequest](rec)
+	require.True(t, ok, "the write did not prompt, got %v", rec.types())
+
+	// a new connection for the same conversation, as though the user had
+	// reloaded the page while the assistant waited on them.
+	_, second := prepSession(t, m)
+
+	again, ok := find[protocol.ConfirmRequest](second)
+	require.True(t, ok, "the pending confirmation was not re-delivered")
+
+	// the same question, so the answer the user gives still addresses
+	// the writes the original turn parked on.
+	assert.Equal(t, first.TurnID, again.TurnID)
+	assert.Equal(t, first.Actions, again.Actions)
+}
+
+func Test_cloneMessages(t *testing.T) {
+	t.Parallel()
+
+	orig := []*schema.Message{schema.UserMessage("a")}
+	clone := cloneMessages(orig)
+
+	clone = append(clone, schema.UserMessage("b"))
+
+	// appending to the clone must not reach the original, or an
+	// in-flight turn could be mutated underneath itself.
+	assert.Len(t, orig, 1)
+	assert.Len(t, clone, 2)
+}
+
+func Test_Manager_newAgent(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		OmitSummary bool
+		Err         error
+	}{
+		"Agent is built": {},
+		"Summarization needs a model": {
+			// the compaction middlewares are built from the summary
+			// model, so the agent cannot exist without one.
+			OmitSummary: true,
+			Err:         assert.AnError,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			m := testManager()
+			if c.OmitSummary {
+				m.summary = nil
+			}
+
+			toolSet := tools.New(tools.NewInput(m.log, m.db, m.search, m.applier, m.tree, "org", "user"))
+
+			agent, err := m.newAgent(
+				context.Background(),
+				toolSet,
+				middleware.NewObserver(toolSet, nil, nil),
+			)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			require.NotNil(t, agent)
+			assert.Equal(t, _agentName, agent.Name(context.Background()))
+		})
+	}
 }

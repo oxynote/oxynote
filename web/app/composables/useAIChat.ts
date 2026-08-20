@@ -1,27 +1,23 @@
-const TOOL_STATUS_I18N_KEYS: Record<AIToolName, string> = {
-	[AIToolName.ReadDocument]: "editor.ai-chat.tool-status.read-document",
-	[AIToolName.InsertBlocks]: "editor.ai-chat.tool-status.insert-blocks",
-	[AIToolName.ReplaceBlockContent]:
-		"editor.ai-chat.tool-status.replace-block-content",
-	[AIToolName.ReplaceBlockAttributes]:
-		"editor.ai-chat.tool-status.replace-block-attributes",
-	[AIToolName.ReadAvailableIcons]:
-		"editor.ai-chat.tool-status.read-available-icons",
-	[AIToolName.UpdateDocumentName]:
-		"editor.ai-chat.tool-status.update-document-name",
-	[AIToolName.UpdateDocumentIcon]:
-		"editor.ai-chat.tool-status.update-document-icon",
-	[AIToolName.DeleteBlocks]: "editor.ai-chat.tool-status.delete-blocks",
-}
-
-export function useAIChat(opts: {
-	toolExecutor: (tool: AIToolName, args: ExecuteToolArgs) => Promise<object>
-}) {
+export function useAIChat() {
 	const { t } = useI18n({ useScope: "global" })
 	const config = useRuntimeConfig()
 	const messages = ref<ChatMessage[]>([])
 	const isStreaming = ref(false)
 	const toolStatus = ref<string | null>(null)
+
+	// pendingConfirm is the batch of writes awaiting the user's answer.
+	// The server keeps its own copy, so a reconnect re-delivers it and
+	// the question survives a page reload.
+	const pendingConfirm = ref<ConfirmRequest | null>(null)
+
+	// streamingText accumulates the current run of assistant text. It is
+	// only committed to the chat once the server says the run was a
+	// final reply rather than narration before a tool call.
+	const streamingText = ref("")
+
+	// activeDocumentId is echoed to the server on connect and whenever
+	// it changes, so the model can resolve "this document".
+	const activeDocumentId = ref<string | null>(null)
 
 	const wsUrl = computed(() => {
 		const base = config.public.coreAPIBaseWsURL
@@ -34,12 +30,16 @@ export function useAIChat(opts: {
 		onDisconnected: () => {
 			isStreaming.value = false
 			toolStatus.value = null
+			streamingText.value = ""
+		},
+		onConnected: () => {
+			sendActiveDocument()
 		},
 		autoReconnect: {
 			delay: 2500,
 		},
 		onMessage: (_: WebSocket, event: MessageEvent) => {
-			void handleMessage(event)
+			handleMessage(event)
 		},
 	})
 
@@ -54,6 +54,8 @@ export function useAIChat(opts: {
 		messages.value = []
 		isStreaming.value = false
 		toolStatus.value = null
+		streamingText.value = ""
+		pendingConfirm.value = null
 	}
 
 	function sendMessage(content: string) {
@@ -63,11 +65,71 @@ export function useAIChat(opts: {
 
 		messages.value.push({ role: ChatMessageRole.User, text: content })
 		isStreaming.value = true
+		streamingText.value = ""
 
 		send(JSON.stringify({ type: ClientMessageType.Message, content }))
 	}
 
-	async function handleMessage(event: MessageEvent) {
+	// setActiveDocument records which document the user is looking at.
+	// Called on navigation; the value is also replayed on reconnect.
+	function setActiveDocument(documentId: string | null) {
+		activeDocumentId.value = documentId
+		sendActiveDocument()
+	}
+
+	function sendActiveDocument() {
+		if (!isConnected.value) {
+			return
+		}
+
+		send(
+			JSON.stringify({
+				type: ClientMessageType.SetActiveDocument,
+				document_id: activeDocumentId.value ?? "",
+			}),
+		)
+	}
+
+	// answerConfirm approves or declines the outstanding batch of writes.
+	// "all" approves the rest of this turn as well, which the server
+	// still overrides for deletes.
+	function answerConfirm(approved: boolean, all = false) {
+		const pending = pendingConfirm.value
+		if (!pending || !isConnected.value) {
+			return
+		}
+
+		pendingConfirm.value = null
+		isStreaming.value = true
+
+		send(
+			JSON.stringify({
+				type: ClientMessageType.ConfirmResponse,
+				turn_id: pending.turn_id,
+				approved,
+				all,
+			}),
+		)
+	}
+
+	function pushError(text: string) {
+		messages.value.push({ role: ChatMessageRole.Error, text })
+	}
+
+	// commitStreamedText moves the accumulated run into the chat. A run
+	// that merely narrated an upcoming tool call is dropped instead.
+	function commitStreamedText(kind: TextEndKind) {
+		const text = streamingText.value
+		streamingText.value = ""
+
+		if (kind !== TextEndKind.Message || !text) {
+			return
+		}
+
+		messages.value.push({ role: ChatMessageRole.Assistant, text })
+	}
+
+	function handleMessage(event: MessageEvent) {
 		let msg: ServerMessage
 
 		try {
@@ -88,78 +150,51 @@ export function useAIChat(opts: {
 				break
 			}
 			case ServerMessageType.TextDelta: {
-				const last = messages.value[messages.value.length - 1]
-
-				if (last?.role === ChatMessageRole.Assistant) {
-					last.text += msg.content ?? ""
-				} else {
-					messages.value.push({
-						role: ChatMessageRole.Assistant,
-						text: msg.content ?? "",
-					})
-				}
+				streamingText.value += msg.content ?? ""
+				toolStatus.value = null
 
 				break
 			}
-			case ServerMessageType.ToolCall: {
-				if (!msg.id || !msg.tool) {
+			case ServerMessageType.TextEnd: {
+				commitStreamedText(msg.kind ?? TextEndKind.Message)
+
+				break
+			}
+			case ServerMessageType.ToolStatus: {
+				toolStatus.value = msg.label ?? t("editor.ai-chat.tool-status.working")
+
+				break
+			}
+			case ServerMessageType.ConfirmRequest: {
+				if (!msg.turn_id) {
 					break
 				}
 
-				toolStatus.value = t(
-					// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the server may send a tool name outside the enum, which leaves the lookup undefined
-					TOOL_STATUS_I18N_KEYS[msg.tool] ??
-						"editor.ai-chat.tool-status.working",
-				)
-
-				try {
-					// eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- argless tools (read_document, read_available_icons) arrive without args
-					const result = await opts.toolExecutor(msg.tool, msg.args!)
-
-					if (isConnected.value) {
-						send(
-							JSON.stringify({
-								type: ClientMessageType.ToolResult,
-								id: msg.id,
-								result,
-							}),
-						)
-					}
-				} catch (err) {
-					if (isConnected.value) {
-						send(
-							JSON.stringify({
-								type: ClientMessageType.ToolResult,
-								id: msg.id,
-								result: {
-									error:
-										err instanceof Error
-											? err.message
-											: "tool execution failed",
-								},
-							}),
-						)
-					}
-				} finally {
-					toolStatus.value = null
+				pendingConfirm.value = {
+					turn_id: msg.turn_id,
+					actions: msg.actions ?? [],
 				}
+
+				// the turn is parked until the user answers, so stop
+				// showing it as working.
+				isStreaming.value = false
+				toolStatus.value = null
 
 				break
 			}
 			case ServerMessageType.Done: {
 				isStreaming.value = false
 				toolStatus.value = null
+				streamingText.value = ""
 
 				break
 			}
 			case ServerMessageType.Error: {
-				messages.value.push({
-					role: ChatMessageRole.Error,
-					text: msg.message ?? t("editor.ai-chat.generic-error"),
-				})
+				pushError(msg.message ?? t("editor.ai-chat.generic-error"))
 
 				isStreaming.value = false
 				toolStatus.value = null
+				streamingText.value = ""
 
 				break
 			}
@@ -170,6 +205,8 @@ export function useAIChat(opts: {
 		messages.value = []
 		isStreaming.value = false
 		toolStatus.value = null
+		streamingText.value = ""
+		pendingConfirm.value = null
 
 		if (isConnected.value) {
 			send(JSON.stringify({ type: ClientMessageType.Reset }))
@@ -181,9 +218,13 @@ export function useAIChat(opts: {
 		isConnected,
 		isStreaming,
 		toolStatus,
+		streamingText,
+		pendingConfirm,
 		connect,
 		disconnect,
 		sendMessage,
+		setActiveDocument,
+		answerConfirm,
 		resetChat,
 	}
 }

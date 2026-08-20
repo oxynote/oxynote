@@ -1,16 +1,16 @@
-// Package tools owns the AI assistant's tool surface: the read and
-// write tools the model can call, the per-tool input schemas
-// exposed to Anthropic, and the dispatcher that turns a tool_use
-// block into a tool_result. All tools execute server-side — there
+// Package tools owns the AI assistant's tool surface. Each tool the
+// model can call lives in its own file holding its schema, its
+// implementation, and the words shown to the user while it runs; Set
+// gathers them for one session. All tools execute server-side — there
 // is no client-side forwarding.
 package tools
 
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"log/slog"
+	"slices"
 
+	"github.com/cloudwego/eino/components/tool"
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
 	"github.com/oxynote/oxynote/server/core/internal/document"
@@ -20,8 +20,8 @@ import (
 )
 
 // Name is the canonical identifier of one tool the assistant
-// exposes to Anthropic. Names use snake_case; they double as the
-// Anthropic tool_use.name and the protocol confirm-action's "tool"
+// exposes to the model. Names use snake_case; they double as the
+// model-facing tool name and the protocol confirm-action's "tool"
 // field.
 type Name string
 
@@ -52,72 +52,131 @@ const (
 	NameDeleteBlock      Name = "delete_block"
 )
 
-// IsDestructive reports whether the named tool removes content. These are
-// confirmed every time, even inside a turn the user auto-approved: their tool
-// descriptions promise as much, and an approve-all meant for text edits is not
-// consent to delete a document.
-func IsDestructive(name Name) bool {
-	switch name {
-	case NameDeleteDocument, NameDeleteBlock:
-		return true
-	default:
-		return false
-	}
+// Set is the tools one session offers the model: an immutable registry
+// built once from an Input and handed straight to the agent.
+//
+// It is the only place that names every tool. What a tool is — whether
+// it needs confirming, whether it survives an approve-all, what the
+// user is told while it runs — is asked of the tool itself, so there is
+// no second list to keep in step with this one.
+type Set struct {
+	// tools maps each tool's name to the value that serves it, already
+	// wrapped in its confirmation gate where one applies.
+	tools map[Name]tool.InvokableTool
+
+	// writes lists the tools that mutate a document.
+	writes []string
 }
 
-// IsWrite reports whether the named tool requires user confirmation
-// before execution. Unknown names default to false (treated as a
-// read) so a typo in a tool_use name never silently bypasses the
-// confirm gate.
-func IsWrite(name Name) bool {
-	switch name {
-	case NameCreateDocument,
-		NameDeleteDocument,
-		NameRenameDocument,
-		NameSetDocumentIcon,
-		NameMoveDocument,
-		NameInsertBlock,
-		NameAppendBlock,
-		NamePrependBlock,
-		NameReplaceBlock,
-		NameUpdateBlockText,
-		NameUpdateBlockAttrs,
-		NameDeleteBlock:
-		return true
-	default:
-		return false
-	}
-}
+// New creates a fresh instance of Set.
+func New(inp *Input) *Set {
+	registerConfirmTypes()
 
-// IsValid reports whether name is one of the assistant's known
-// tools.
-func IsValid(name Name) bool {
-	switch name {
-	case NameListDocuments,
-		NameGetDocument,
-		NameReadDocumentSummary,
-		NameReadBlock,
-		NameSearchDocuments,
-		NameCreateDocument,
-		NameDeleteDocument,
-		NameRenameDocument,
-		NameSetDocumentIcon,
-		NameMoveDocument,
-		NameInsertBlock,
-		NameAppendBlock,
-		NamePrependBlock,
-		NameReplaceBlock,
-		NameUpdateBlockText,
-		NameUpdateBlockAttrs,
-		NameDeleteBlock:
-		return true
+	all := []struct {
+		Name Name
+		Tool tool.InvokableTool
+	}{
+		{NameListDocuments, &listDocuments{inp}},
+		{NameGetDocument, &getDocument{inp}},
+		{NameReadDocumentSummary, &readDocumentSummary{inp}},
+		{NameReadBlock, &readBlock{inp}},
+		{NameSearchDocuments, &searchDocuments{inp}},
+
+		{NameCreateDocument, &createDocument{inp}},
+		{NameDeleteDocument, &deleteDocument{inp}},
+		{NameRenameDocument, &renameDocument{inp}},
+		{NameSetDocumentIcon, &setDocumentIcon{inp}},
+		{NameMoveDocument, &moveDocument{inp}},
+		{NameInsertBlock, &insertBlock{inp}},
+		{NameAppendBlock, &appendBlock{inp}},
+		{NamePrependBlock, &prependBlock{inp}},
+		{NameReplaceBlock, &replaceBlock{inp}},
+		{NameUpdateBlockText, &updateBlockText{inp}},
+		{NameUpdateBlockAttrs, &updateBlockAttrs{inp}},
+		{NameDeleteBlock, &deleteBlock{inp}},
 	}
 
-	return false
+	s := &Set{tools: make(map[Name]tool.InvokableTool, len(all))}
+
+	for _, e := range all {
+		t := e.Tool
+
+		// a tool that can describe a pending write is a tool that
+		// performs one, so the gate goes on here rather than being
+		// something every write has to remember to ask for.
+		if c, ok := t.(Confirmer); ok {
+			_, destructive := t.(Destructive)
+
+			t = &confirming{InvokableTool: t, summary: c, destructive: destructive}
+
+			s.writes = append(s.writes, string(e.Name))
+		}
+
+		s.tools[e.Name] = t
+	}
+
+	return s
 }
 
-// DB is the persistence surface the tools manager requires. The
-// db package's agent satisfies it.
+// Tools returns every tool, ready to hand to the agent.
+func (s *Set) Tools() []tool.BaseTool {
+	out := make([]tool.BaseTool, 0, len(s.tools))
+	for _, t := range s.tools {
+		out = append(out, t)
+	}
+
+	return out
+}
+
+// Label returns a short line describing what the named tool is about to
+// do, or an empty string for tools too noisy or too generic to
+// announce. An unknown name is not an error: the agent also runs tools
+// this set does not own, such as the offloaded-result reader.
+func (s *Set) Label(ctx context.Context, name Name, args json.RawMessage) string {
+	t, ok := s.tools[name]
+	if !ok {
+		return ""
+	}
+
+	l, ok := unwrap(t).(labeller)
+	if !ok {
+		// NOCOV: every tool in the registry implements labeller.
+		return ""
+	}
+
+	return l.Label(ctx, args)
+}
+
+// WriteNames returns every tool that mutates a document.
+//
+// The context middlewares use it to decide what must never be cleared
+// from the conversation: the model has to keep knowing what it changed,
+// while a stale read can always be taken again. The list is exactly the
+// set of tools gated behind confirmation, so the two cannot drift.
+func (s *Set) WriteNames() []string {
+	return slices.Clone(s.writes)
+}
+
+// unwrap returns the tool underneath a confirmation gate, or the tool
+// itself when it is not gated.
+func unwrap(t tool.InvokableTool) tool.InvokableTool {
+	if c, ok := t.(*confirming); ok {
+		return c.InvokableTool
+	}
+
+	return t
+}
+
+// labeller is implemented by every tool in the registry, so it can
+// describe itself while it runs.
+type labeller interface {
+	// Label should return a short line describing what the tool is
+	// about to do, or an empty string to run without announcement.
+	Label(ctx context.Context, args json.RawMessage) string
+}
+
+// DB is the persistence surface the tools require. The db package's
+// agent satisfies it.
 //
 //go:generate ../../../scripts/codegen/mock -t both DB db
 //nolint:interfacebloat // the list is exactly what the tools call, and splitting it by nothing but count would only hide that
@@ -230,104 +289,4 @@ type EditApplier interface {
 	// for the (documentID, branchID) document and return the per-op
 	// outcome.
 	Apply(ctx context.Context, documentID, branchID string, ops []edit.Operation) (edit.Result, error)
-}
-
-// Manager dispatches AI tool calls. One Manager is constructed per
-// session and is scoped to a single (organization, user) pair so
-// cross-org access is impossible by construction.
-type Manager struct {
-	// log is scoped to the session's (org, user) and used to record
-	// per-tool outcomes so we can diagnose AI loops without
-	// re-running the conversation.
-	log *slog.Logger
-
-	// db is the persistence used by read tools and the
-	// non-content write tools (create/delete/move).
-	db DB
-
-	// search is the full-text index behind search_documents.
-	search Searcher
-
-	// applier is the edit client for content mutations and the
-	// rename/set-icon ops that must propagate to connected
-	// editors.
-	applier EditApplier
-
-	// tree notifies tree-change subscribers after the assistant
-	// mutates the document tree.
-	tree TreeNotifier
-
-	// orgID scopes every tool call to one organization.
-	orgID string
-
-	// userID identifies the user the assistant is acting for. Used
-	// when a tool creates audit-relevant rows (the created_by
-	// fields on a new document, for instance).
-	userID string
-}
-
-// NewManager constructs a Manager. Every dependency is required;
-// nil values surface as nil-pointer panics on the first tool call
-// rather than at startup, but in practice the cmd-level wiring
-// passes all of them.
-func NewManager(log *slog.Logger, db DB, searcher Searcher, applier EditApplier, tree TreeNotifier, orgID, userID string) *Manager {
-	return &Manager{
-		log: log.With(
-			"component", "assistant-tools",
-			"org_id", orgID,
-			"user_id", userID,
-		),
-		db:      db,
-		search:  searcher,
-		applier: applier,
-		tree:    tree,
-		orgID:   orgID,
-		userID:  userID,
-	}
-}
-
-// Execute runs the named tool with the supplied JSON arguments and
-// returns the JSON tool_result the caller should hand back to
-// Anthropic. Errors from the tool (validation, persistence, RPC) are
-// returned as Go errors; the caller surfaces them as a structured
-// tool_result on the model's behalf.
-func (m *Manager) Execute(ctx context.Context, name Name, args json.RawMessage) (json.RawMessage, error) {
-	switch name {
-	case NameListDocuments:
-		return m.listDocuments(ctx, args)
-	case NameGetDocument:
-		return m.getDocument(ctx, args)
-	case NameReadDocumentSummary:
-		return m.readDocumentSummary(ctx, args)
-	case NameReadBlock:
-		return m.readBlock(ctx, args)
-	case NameSearchDocuments:
-		return m.searchDocuments(ctx, args)
-	case NameCreateDocument:
-		return m.createDocument(ctx, args)
-	case NameDeleteDocument:
-		return m.deleteDocument(ctx, args)
-	case NameRenameDocument:
-		return m.renameDocument(ctx, args)
-	case NameSetDocumentIcon:
-		return m.setDocumentIcon(ctx, args)
-	case NameMoveDocument:
-		return m.moveDocument(ctx, args)
-	case NameInsertBlock:
-		return m.insertBlock(ctx, args)
-	case NameAppendBlock:
-		return m.appendBlock(ctx, args)
-	case NamePrependBlock:
-		return m.prependBlock(ctx, args)
-	case NameReplaceBlock:
-		return m.replaceBlock(ctx, args)
-	case NameUpdateBlockText:
-		return m.updateBlockText(ctx, args)
-	case NameUpdateBlockAttrs:
-		return m.updateBlockAttrs(ctx, args)
-	case NameDeleteBlock:
-		return m.deleteBlock(ctx, args)
-	}
-
-	return nil, fmt.Errorf("unknown tool: %s", name)
 }

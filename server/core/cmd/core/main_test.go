@@ -12,7 +12,10 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	goleak.VerifyTestMain(m)
+	// the Google API transport behind the Gemini client starts an
+	// opencensus worker from a package init, so it is already running
+	// before any test does.
+	goleak.VerifyTestMain(m, goleak.IgnoreCurrent())
 }
 
 func Test_parseOrigins(t *testing.T) {

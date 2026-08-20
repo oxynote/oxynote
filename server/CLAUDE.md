@@ -115,11 +115,40 @@ Env lives in `docker/env/`: committed `*.example.env` templates list **every** v
 
 - core vars are prefixed `OXYNOTE_CORE_`; `buildinfo.Getenv("FOO")` reads `OXYNOTE_CORE_FOO`.
 - auth-realtime vars are prefixed `OXYNOTE_AUTH_REALTIME_`.
-- All integrations are optional. The GitHub App is enabled by setting `OXYNOTE_CORE_GITHUB_APP_ID` and dropping the app's private key into `docker/github/` (mounted into the core container); an empty `OXYNOTE_CORE_GITHUB_APP_ID` disables it — core boots, GitHub routes respond `github.not_configured` (the always-200 `GET /api/github` status endpoint reports `configured: false` as the frontend's capability signal), and github-tracking hooks are skipped. A set app ID with a missing/unreadable key is a boot error. Slack works the same way keyed on `OXYNOTE_CORE_SLACK_CLIENT_ID` (`slack.not_configured`, `GET /api/slack` reports `configured`); a set client ID with other `SLACK_*` values missing is a boot error. The assistant needs `ANTHROPIC_API_KEY`; without it the AI chat can't complete a turn. Email is keyed on `OXYNOTE_CORE_EMAIL_SMTP_HOST`: when empty, core boots and each would-be email is logged instead of sent; with a set host, an invalid `EMAIL_SMTP_PORT` or `EMAIL_SMTP_TLS` (`none` | `starttls` | `tls`) is a boot error. The dev stack presets the mailpit container as the SMTP target (`mailpit:1025`, plaintext, no auth; web UI on host `:8025`) — the four HTML templates are embedded in the core binary from `server/core/internal/email/templates/`.
+- All integrations are optional. The GitHub App is enabled by setting `OXYNOTE_CORE_GITHUB_APP_ID` and dropping the app's private key into `docker/github/` (mounted into the core container); an empty `OXYNOTE_CORE_GITHUB_APP_ID` disables it — core boots, GitHub routes respond `github.not_configured` (the always-200 `GET /api/github` status endpoint reports `configured: false` as the frontend's capability signal), and github-tracking hooks are skipped. A set app ID with a missing/unreadable key is a boot error. Slack works the same way keyed on `OXYNOTE_CORE_SLACK_CLIENT_ID` (`slack.not_configured`, `GET /api/slack` reports `configured`); a set client ID with other `SLACK_*` values missing is a boot error. The assistant needs `ASSISTANT_PROVIDER` and `ASSISTANT_MODEL`, and an `ASSISTANT_API_KEY` for every provider except ollama; missing or unsupported values are a boot error, since a chat that cannot reach a model is worse than a refusal to start. Provider-specific credentials (`ASSISTANT_BEDROCK_*`, `ASSISTANT_VERTEX_*`, `ASSISTANT_AZURE_API_VERSION`) are only read when the selected provider uses them. Email is keyed on `OXYNOTE_CORE_EMAIL_SMTP_HOST`: when empty, core boots and each would-be email is logged instead of sent; with a set host, an invalid `EMAIL_SMTP_PORT` or `EMAIL_SMTP_TLS` (`none` | `starttls` | `tls`) is a boot error. The dev stack presets the mailpit container as the SMTP target (`mailpit:1025`, plaintext, no auth; web UI on host `:8025`) — the four HTML templates are embedded in the core binary from `server/core/internal/email/templates/`.
 
 ## Assistant prompt
 
 The system prompt at `server/core/internal/assistant/prompt.go` codifies behaviour for the Rubber Duck AI chat. When fixing a behaviour bug, state the underlying principle in one or two sentences. Don't enumerate edge cases or add numbered steps — spelling every case out drowns the core guidance in noise. Worked examples and tables belong in the prompt only when the model genuinely needs the structure to anchor a concept (the block-schema table and the split_doc example qualify; most rules don't).
+
+## Assistant tools
+
+One tool, one file, named after the tool (`insert_block.go` defines
+`insert_block`). That file holds everything about it: the JSON schema shown to
+the model, the implementation, the status line the user sees while it runs, and
+— for a write — the summary shown on the confirm card. `tools.Set` is the only
+place that names every tool; adding one means writing its file and adding a line
+to that list.
+
+What a tool *is* is asked of the tool, never looked up:
+
+- Implementing `Confirmer` makes it a write. That single fact gates it behind
+  user confirmation **and** protects its result from being cleared by the
+  context middlewares — the model has to keep knowing what it changed, while a
+  stale read can always be taken again. The two cannot drift because they are
+  the same interface.
+- Implementing `Destructive` keeps it outside an "approve all" answer. Only
+  `delete_document` and `delete_block` do.
+
+The confirmation gate is applied by the registry, not by each tool, so a write
+cannot skip it by forgetting to ask. Shared work that needs dependencies lives
+on `*Input` (which every tool embeds); dependency-free helpers live in
+`util.go`.
+
+`testdata/tool_schemas.golden` pins every tool's model-facing description. Any
+change to a schema or a tool description has to be deliberate enough to update
+that file — a silently altered description degrades the assistant in ways no
+other test catches.
 
 ## Node formatting & TS
 

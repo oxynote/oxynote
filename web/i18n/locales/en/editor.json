@@ -729,7 +729,13 @@
 				"delete-blocks": "Deleting blocks...",
 				"working": "Working..."
 			},
-			"generic-error": "An error occurred"
+			"generic-error": "An error occurred",
+			"confirm": {
+				"title": "Apply these changes?",
+				"approve": "Approve",
+				"approve-all": "Approve all",
+				"decline": "Decline"
+			}
 		}
 	}
 }

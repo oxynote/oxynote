@@ -53,7 +53,7 @@ func Test_NewServer(t *testing.T) {
 	log := discardLog()
 	fc := metricutil.NewFactory("test", prometheus.NewRegistry())
 
-	assistantMan := assistantCore.NewManager(log, nil, &redis.Pool{}, "key", fc, nil, nil)
+	assistantMan := assistantCore.NewManager(log, nil, &redis.Pool{}, nil, nil, fc, nil, nil, "claude")
 
 	githubMan, err := github.NewManager(nil, github.Options{})
 	require.NoError(t, err)

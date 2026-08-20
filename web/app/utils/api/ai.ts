@@ -1,3 +1,7 @@
+// wire contract for the assistant chat socket. It mirrors
+// server/core/internal/assistant/protocol/protocol.go; the two must be
+// changed together.
+
 export enum ChatMessageRole {
 	User = "user",
 	Assistant = "assistant",
@@ -6,10 +10,27 @@ export enum ChatMessageRole {
 
 export enum ServerMessageType {
 	TextDelta = "text_delta",
-	ToolCall = "tool_call",
+	TextEnd = "text_end",
+	ToolStatus = "tool_status",
+	ConfirmRequest = "confirm_request",
 	Done = "done",
 	Error = "error",
 	History = "history",
+}
+
+// TextEndKind decides what happens to the text run that just ended.
+// Narration the model produced on its way to a tool call is shown while
+// it works and then discarded; a final reply is kept in the chat.
+export enum TextEndKind {
+	Status = "status",
+	Message = "message",
+}
+
+export enum ClientMessageType {
+	Message = "message",
+	Reset = "reset",
+	ConfirmResponse = "confirm_response",
+	SetActiveDocument = "set_active_document",
 }
 
 export interface HistoryEntry {
@@ -17,75 +38,34 @@ export interface HistoryEntry {
 	content: string
 }
 
-export enum ClientMessageType {
-	Message = "message",
-	ToolResult = "tool_result",
-	Reset = "reset",
+// ConfirmAction is one write the assistant is asking permission for.
+export interface ConfirmAction {
+	tool: string
+	document_id?: string
+	document_name?: string
+	summary: string
 }
 
-export enum AIToolName {
-	ReadDocument = "read_document",
-	InsertBlocks = "insert_blocks",
-	ReplaceBlockContent = "replace_block_content",
-	DeleteBlocks = "delete_blocks",
-	ReplaceBlockAttributes = "replace_block_attributes",
-	ReadAvailableIcons = "read_available_icons",
-	UpdateDocumentName = "update_document_name",
-	UpdateDocumentIcon = "update_document_icon",
-}
-
-export enum InsertPosition {
-	Before = "before",
-	After = "after",
-}
-
-export interface InsertBlocksArgs {
-	reference_uid: string
-	position: InsertPosition
-	blocks: object[]
-}
-
-export interface ReplaceBlockContentArgs {
-	uid: string
-	content: object[]
-}
-
-export interface ReplaceBlockAttributesArgs {
-	uid: string
-	attributes: Record<string, unknown>
-}
-
-export interface UpdateDocumentNameArgs {
-	name: string
-}
-
-export interface UpdateDocumentIconArgs {
-	icon: string
-}
-
-export interface DeleteBlocksArgs {
-	uids: string[]
-}
-
-export type ExecuteToolArgs =
-	| InsertBlocksArgs
-	| ReplaceBlockContentArgs
-	| ReplaceBlockAttributesArgs
-	| UpdateDocumentNameArgs
-	| UpdateDocumentIconArgs
-	| DeleteBlocksArgs
-
-export interface ChatMessage {
-	role: ChatMessageRole
-	text: string
+// ConfirmRequest asks the user to approve every write the assistant
+// proposed in one turn.
+export interface ConfirmRequest {
+	turn_id: string
+	actions: ConfirmAction[]
 }
 
 export interface ServerMessage {
 	type: ServerMessageType
 	content?: string
 	message?: string
-	id?: string
-	tool?: AIToolName
-	args?: ExecuteToolArgs
+	kind?: TextEndKind
+	tool?: string
+	label?: string
+	turn_id?: string
+	actions?: ConfirmAction[]
 	messages?: HistoryEntry[]
+}
+
+export interface ChatMessage {
+	role: ChatMessageRole
+	text: string
 }

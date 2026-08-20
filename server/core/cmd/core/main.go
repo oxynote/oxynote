@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cloudwego/eino/components/model"
 	"github.com/jellydator/xync"
 	"github.com/meilisearch/meilisearch-go"
 	"github.com/oxynote/oxynote/server/core/internal/apps/github"
@@ -22,6 +23,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	"github.com/oxynote/oxynote/server/core/internal/assistant"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
+	"github.com/oxynote/oxynote/server/core/internal/assistant/provider"
 	"github.com/oxynote/oxynote/server/core/internal/buildinfo"
 	"github.com/oxynote/oxynote/server/core/internal/db"
 	fileMan "github.com/oxynote/oxynote/server/core/internal/document/file/manager"
@@ -52,6 +54,10 @@ const (
 	// _maxSlackMessages specifies the maximum number of Slack messages
 	// retained per organization.
 	_maxSlackMessages = 500
+
+	// _defaultAssistantMaxTokens caps the assistant's response length for
+	// one turn when the environment says nothing.
+	_defaultAssistantMaxTokens = 64000
 
 	// _defaultMaxDocumentChangelogs specifies how many changelog snapshots
 	// are retained per document branch when the environment says nothing.
@@ -235,14 +241,34 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 		buildinfo.Getenv("AUTH_REALTIME_URL"),
 	)
 
+	assistantOpts, err := assistantProviderOptions()
+	if err != nil {
+		fail(log, closers, "cannot read the assistant configuration", err)
+		return
+	}
+
+	chatModel, err := provider.New(termCtx, assistantOpts)
+	if err != nil {
+		fail(log, closers, "cannot create the assistant chat model", err)
+		return
+	}
+
+	summaryModel, err := assistantSummaryModel(termCtx, assistantOpts, chatModel)
+	if err != nil {
+		fail(log, closers, "cannot create the assistant summarization model", err)
+		return
+	}
+
 	assistantMan := assistant.NewManager(
 		log,
 		dbc,
 		rdb,
-		buildinfo.Getenv("ANTHROPIC_API_KEY"),
+		chatModel,
+		summaryModel,
 		metrics,
 		editClient,
 		searchClient,
+		string(assistantOpts.Provider),
 	)
 
 	srv, err := server.NewServer(
@@ -442,4 +468,75 @@ func parseOrigins(val string) []string {
 	}
 
 	return strings.Split(val, ",")
+}
+
+// assistantProviderOptions assembles the assistant's model configuration
+// from the environment. Provider-specific credentials are only read for
+// the provider actually selected, so an operator running Ollama is never
+// asked about AWS regions.
+func assistantProviderOptions() (provider.Options, error) {
+	opts := provider.Options{
+		Provider: provider.ParseProvider(buildinfo.Getenv("ASSISTANT_PROVIDER")),
+		Model:    buildinfo.Getenv("ASSISTANT_MODEL"),
+		APIKey:   buildinfo.Getenv("ASSISTANT_API_KEY"),
+		BaseURL:  buildinfo.Getenv("ASSISTANT_BASE_URL"),
+	}
+
+	maxTokens, err := parseUintEnv("ASSISTANT_MAX_TOKENS", _defaultAssistantMaxTokens)
+	if err != nil {
+		return provider.Options{}, err
+	}
+
+	opts.MaxTokens = int(maxTokens)
+
+	timeout, err := parseDurationEnv("ASSISTANT_REQUEST_TIMEOUT", 0)
+	if err != nil {
+		return provider.Options{}, err
+	}
+
+	opts.RequestTimeout = timeout
+
+	switch opts.Provider {
+	case provider.ProviderOpenAI:
+		opts.Azure = provider.AzureOptions{
+			Enabled:    buildinfo.Getenv("ASSISTANT_AZURE_API_VERSION") != "",
+			APIVersion: buildinfo.Getenv("ASSISTANT_AZURE_API_VERSION"),
+		}
+	case provider.ProviderClaude:
+		opts.Bedrock = provider.BedrockOptions{
+			Enabled:         buildinfo.Getenv("ASSISTANT_BEDROCK_REGION") != "",
+			Region:          buildinfo.Getenv("ASSISTANT_BEDROCK_REGION"),
+			AccessKey:       buildinfo.Getenv("ASSISTANT_BEDROCK_ACCESS_KEY"),
+			SecretAccessKey: buildinfo.Getenv("ASSISTANT_BEDROCK_SECRET_ACCESS_KEY"),
+			SessionToken:    buildinfo.Getenv("ASSISTANT_BEDROCK_SESSION_TOKEN"),
+		}
+		opts.Vertex = provider.VertexOptions{
+			Enabled:            buildinfo.Getenv("ASSISTANT_VERTEX_PROJECT_ID") != "",
+			ProjectID:          buildinfo.Getenv("ASSISTANT_VERTEX_PROJECT_ID"),
+			Region:             buildinfo.Getenv("ASSISTANT_VERTEX_REGION"),
+			ServiceAccountJSON: []byte(buildinfo.Getenv("ASSISTANT_VERTEX_SERVICE_ACCOUNT_JSON")),
+		}
+	case provider.ProviderGemini, provider.ProviderOllama, provider.ProviderOpenRouter:
+		// no vendor-specific settings beyond the common ones.
+	}
+
+	return opts, nil
+}
+
+// assistantSummaryModel builds the model used to summarise long
+// conversations. It defaults to the chat model, so summarisation costs
+// nothing to configure; pointing it at a cheaper model is opt-in.
+func assistantSummaryModel(
+	ctx context.Context,
+	opts provider.Options,
+	chatModel model.ToolCallingChatModel,
+) (model.ToolCallingChatModel, error) {
+	name := buildinfo.Getenv("ASSISTANT_SUMMARY_MODEL")
+	if name == "" {
+		return chatModel, nil
+	}
+
+	opts.Model = name
+
+	return provider.New(ctx, opts)
 }

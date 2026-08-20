@@ -1,38 +1,62 @@
 package tools
 
 import (
+	"context"
+	"encoding/json"
+	"log/slog"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func Test_AnthropicTools(t *testing.T) {
+// Test_toolInfo_parity asserts every tool still presents the model the
+// exact description it did before the tools were split into their own
+// files. The golden file was captured from the previous implementation.
+//
+// This is the load-bearing test of the restructure: seventeen schemas
+// were retyped by hand, and a dropped required field or a truncated
+// description degrades the assistant in a way no compile error catches.
+func Test_toolInfo(t *testing.T) {
 	t.Parallel()
 
-	defs := AnthropicTools()
+	want, err := os.ReadFile("testdata/tool_schemas.golden")
+	require.NoError(t, err)
 
-	// one definition per known tool, in the read-then-write order
-	expected := append(append([]Name{}, _readNames...), _writeNames...)
-	require.Len(t, defs, len(expected))
+	s := New(NewInput(slog.New(slog.DiscardHandler), nil, nil, nil, nil, "org", "user"))
 
-	seen := map[string]bool{}
+	got := map[string]any{}
 
-	for i, def := range defs {
-		tool := def.OfTool
-		require.NotNil(t, tool, "definition %d must be a plain tool", i)
+	for _, bt := range s.Tools() {
+		info, ierr := bt.Info(context.Background())
+		require.NoError(t, ierr)
 
-		name := tool.Name
-		assert.True(t, IsValid(Name(name)), "unknown tool name %q", name)
-		assert.False(t, seen[name], "duplicate tool name %q", name)
-		assert.NotEmpty(t, tool.Description.Value, "tool %q needs a description", name)
-		assert.NotNil(t, tool.InputSchema.Properties, "tool %q needs schema properties", name)
+		raw, merr := json.Marshal(info)
+		require.NoError(t, merr)
 
-		seen[name] = true
+		var v any
+		require.NoError(t, json.Unmarshal(raw, &v))
+
+		got[info.Name] = v
 	}
 
-	// the declared order matches the canonical read/write grouping
-	for i, def := range defs {
-		assert.Equal(t, string(expected[i]), def.OfTool.Name)
-	}
+	data, err := json.Marshal(got)
+	require.NoError(t, err)
+
+	assert.JSONEq(t, string(want), string(data))
+}
+
+func Test_stringProp(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, map[string]any{"type": "string", "description": "a doc"}, stringProp("a doc"))
+}
+
+func Test_documentIDProp(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t,
+		map[string]any{"document_id": map[string]any{"type": "string", "description": "a doc"}},
+		documentIDProp("a doc"))
 }

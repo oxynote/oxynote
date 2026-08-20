@@ -52,6 +52,42 @@ gitignored). The defaults work out of the box; integrations (GitHub app,
 Slack app, AI assistant, email) are optional and stay disabled until their
 variables are set.
 
+## AI assistant
+
+The assistant is not tied to any one vendor. Pick a provider and a model
+with two environment variables in `docker/env/core.local.env`:
+
+```sh
+OXYNOTE_CORE_ASSISTANT_PROVIDER=claude
+OXYNOTE_CORE_ASSISTANT_MODEL=claude-opus-4-6
+OXYNOTE_CORE_ASSISTANT_API_KEY=sk-...
+```
+
+Switching providers is an env change and a restart — no rebuild.
+
+| provider | credentials | known-good models |
+| --- | --- | --- |
+| `claude` | `ASSISTANT_API_KEY`, or `ASSISTANT_BEDROCK_*` / `ASSISTANT_VERTEX_*` | `claude-opus-4-6`, `claude-sonnet-4-6` |
+| `openai` | `ASSISTANT_API_KEY` (+ `ASSISTANT_AZURE_API_VERSION` for Azure) | `gpt-5`, `gpt-5-mini` |
+| `gemini` | `ASSISTANT_API_KEY` | `gemini-2.5-pro`, `gemini-2.5-flash` |
+| `ollama` | none; set `ASSISTANT_BASE_URL` to your server | `llama3.3:70b`, `qwen3:32b` |
+| `openrouter` | `ASSISTANT_API_KEY` | any tool-calling model OpenRouter offers |
+
+`ASSISTANT_BASE_URL` also points the `openai` provider at anything that
+speaks the OpenAI chat-completions protocol — a local inference server, a
+gateway, or a hosted compatibility layer.
+
+**The model must be good at tool calling.** The assistant does everything
+through tools, against a large document schema, so a model that calls them
+unreliably looks broken rather than merely weaker. That rules out most
+small local models; prefer the sizes listed above. There is no automatic
+check — an unsuitable model is a configuration mistake, not an error the
+server can detect for you.
+
+`ASSISTANT_SUMMARY_MODEL` optionally points conversation summarisation at
+a cheaper model; it defaults to the chat model. See
+`docker/env/core.example.env` for the full list of assistant variables.
+
 ## Repository layout
 
 - `web/` — Nuxt 4 + Vue 3 frontend; ships as both a web app (SSR) and an
