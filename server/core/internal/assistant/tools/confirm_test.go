@@ -3,12 +3,14 @@ package tools
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
 	"testing"
 
+	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
-	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
+	"github.com/cloudwego/eino/schema"
+	"github.com/guregu/null/v5"
+	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -57,59 +59,282 @@ func Test_confirming_destructiveIgnoresAutoApprove(t *testing.T) {
 	}
 }
 
+// gateCase is one Test_confirming_InvokableRun scenario.
+type gateCase struct {
+	// Name selects the gated tool under test.
+	Name Name
+
+	// Args is the JSON argument payload handed to the tool.
+	Args string
+
+	// AutoApprove runs the tool under a session carrying an
+	// approve-all answer.
+	AutoApprove bool
+
+	// Decision answers the pending confirmation. Nil leaves it
+	// unanswered.
+	Decision *Decision
+
+	// ResumeOther resumes the run without targeting this
+	// confirmation.
+	ResumeOther bool
+
+	// Interrupted expects the final outcome to be a pending
+	// confirmation.
+	Interrupted bool
+
+	// RespJSON is the final tool result when the run completes.
+	RespJSON string
+
+	// ApplyCalls is the number of edits that must have reached the
+	// applier.
+	ApplyCalls int
+}
+
 func Test_confirming_InvokableRun(t *testing.T) {
 	t.Parallel()
+
+	docID := xid.New()
+	writeArgs := `{"document_id":"` + docID.String() + `","block_uid":"b","text":"hi"}`
+	deleteArgs := `{"document_id":"` + docID.String() + `","block_uid":"b"}`
 
 	// every write tool must ask before it acts. Resuming an approved
 	// turn reruns the tool from the top, so a tool that applied its
 	// edit before interrupting would apply it a second time.
-	cc := map[string]struct {
-		Name Name
-		Args string
-	}{
-		"Insert block asks first":      {Name: NameInsertBlock, Args: `{"document_id":"d","block_uid":"b"}`},
-		"Delete block asks first":      {Name: NameDeleteBlock, Args: `{"document_id":"d","block_uid":"b"}`},
-		"Delete document asks first":   {Name: NameDeleteDocument, Args: `{"document_id":"d"}`},
-		"Rename document asks first":   {Name: NameRenameDocument, Args: `{"document_id":"d","name":"n"}`},
-		"Create document asks first":   {Name: NameCreateDocument, Args: `{"name":"n"}`},
-		"Update block text asks first": {Name: NameUpdateBlockText, Args: `{"document_id":"d","block_uid":"b"}`},
+	cc := map[string]gateCase{
+		"Insert block asks first":      {Name: NameInsertBlock, Args: `{"document_id":"d","block_uid":"b"}`, Interrupted: true},
+		"Delete block asks first":      {Name: NameDeleteBlock, Args: `{"document_id":"d","block_uid":"b"}`, Interrupted: true},
+		"Delete document asks first":   {Name: NameDeleteDocument, Args: `{"document_id":"d"}`, Interrupted: true},
+		"Rename document asks first":   {Name: NameRenameDocument, Args: `{"document_id":"d","name":"n"}`, Interrupted: true},
+		"Create document asks first":   {Name: NameCreateDocument, Args: `{"name":"n"}`, Interrupted: true},
+		"Update block text asks first": {Name: NameUpdateBlockText, Args: `{"document_id":"d","block_uid":"b"}`, Interrupted: true},
+		"Approve-all covers a later non-destructive write": {
+			Name:        NameUpdateBlockText,
+			Args:        writeArgs,
+			AutoApprove: true,
+			RespJSON:    `{"applied":1,"errors":[]}`,
+			ApplyCalls:  1,
+		},
+		"Approve-all never covers a destructive write": {
+			Name:        NameDeleteBlock,
+			Args:        deleteArgs,
+			AutoApprove: true,
+			Interrupted: true,
+		},
+		"Approved confirmation reruns the tool": {
+			Name:       NameUpdateBlockText,
+			Args:       writeArgs,
+			Decision:   &Decision{Approved: true},
+			RespJSON:   `{"applied":1,"errors":[]}`,
+			ApplyCalls: 1,
+		},
+		"Declined confirmation reports the refusal": {
+			Name:     NameUpdateBlockText,
+			Args:     writeArgs,
+			Decision: &Decision{Approved: false},
+			RespJSON: `{"approved":false,"reason":"user declined"}`,
+		},
+		"Resume of another interrupt point re-interrupts": {
+			Name:        NameUpdateBlockText,
+			Args:        writeArgs,
+			ResumeOther: true,
+			Interrupted: true,
+		},
 	}
 
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			applier := &EditApplierMock{
-				ApplyFunc: func(_ context.Context, _, _ string, _ []edit.Operation) (edit.Result, error) {
-					require.FailNow(t, "the tool applied an edit before the user approved it")
-
-					return edit.Result{}, nil
-				},
-			}
-
-			inp := &Input{
-				log:     slog.New(slog.DiscardHandler),
-				db:      &DBMock{},
-				applier: applier,
-				orgID:   "org",
-			}
-
+			applier := stubOKApplier()
+			inp := stubEditInput(stubResolvingDB(xid.New(), null.Value[xid.ID]{}, nil), applier, nil)
 			ct := gatedTool(t, New(inp), c.Name)
 
-			res, err := ct.InvokableRun(context.Background(), c.Args)
-			require.Error(t, err)
-			assert.Empty(t, res)
+			var (
+				res string
+				err error
+			)
 
-			info, ok := compose.IsInterruptRerunError(err)
-			require.True(t, ok, "a pending write must interrupt the run")
+			if c.AutoApprove {
+				res, err = runGateInSession(ct, c.Args)
+			} else {
+				res, err = runGateParked(t, ct, c)
+			}
 
-			summary, ok := info.(ConfirmActionSummary)
-			require.True(t, ok, "the interrupt must carry a confirm summary, got %T", info)
-			assert.Equal(t, string(c.Name), summary.Tool)
+			if c.Interrupted {
+				requireConfirmInterrupt(t, err, c.Name)
+			}
 
-			assert.Empty(t, applier.ApplyCalls())
+			assert.Len(t, applier.ApplyCalls(), c.ApplyCalls)
+
+			if c.Interrupted {
+				return
+			}
+
+			require.NoError(t, err)
+			assert.JSONEq(t, c.RespJSON, res)
 		})
 	}
+}
+
+// runGateInSession runs one gated tool call inside an adk run carrying
+// an approve-all answer, which is the only host whose context has
+// session values, and returns the captured outcome.
+func runGateInSession(ct tool.InvokableTool, args string) (string, error) {
+	ag := &sessionAgent{tool: ct, args: args}
+
+	iter := adk.NewRunner(context.Background(), adk.RunnerConfig{Agent: ag}).Run(
+		context.Background(),
+		[]adk.Message{schema.UserMessage("go")},
+		adk.WithSessionValues(map[string]any{SessionKeyAutoApprove: true}),
+	)
+
+	for {
+		if _, ok := iter.Next(); !ok {
+			break
+		}
+	}
+
+	return ag.res, ag.err
+}
+
+// runGateParked hosts the gated tool in a checkpointed graph, asserts
+// the run parks on the tool's confirmation, and replays the case's
+// answer — or leaves the confirmation unanswered when the case gives
+// none.
+func runGateParked(t *testing.T, ct tool.InvokableTool, c gateCase) (string, error) {
+	t.Helper()
+
+	r := gateHost(t, ct, c.Args)
+
+	_, err := r.Invoke(context.Background(), "go", compose.WithCheckPointID("cp"))
+	id := requireConfirmInterrupt(t, err, c.Name)
+
+	if c.Decision == nil && !c.ResumeOther {
+		return "", err
+	}
+
+	ctx := context.Background()
+
+	if c.ResumeOther {
+		ctx = compose.ResumeWithData(ctx, "not-this-confirmation", Decision{Approved: true})
+	} else {
+		ctx = compose.ResumeWithData(ctx, id, *c.Decision)
+	}
+
+	return r.Invoke(ctx, "go", compose.WithCheckPointID("cp"))
+}
+
+// gateHost compiles a one-node graph around the gated tool, the
+// smallest host that can park the gate on its interrupt and resume it
+// with the user's answer.
+func gateHost(t *testing.T, ct tool.InvokableTool, args string) compose.Runnable[string, string] {
+	t.Helper()
+
+	g := compose.NewGraph[string, string]()
+	require.NoError(t, g.AddLambdaNode("gate", compose.InvokableLambda(
+		func(ctx context.Context, _ string) (string, error) {
+			return ct.InvokableRun(ctx, args)
+		},
+	)))
+	require.NoError(t, g.AddEdge(compose.START, "gate"))
+	require.NoError(t, g.AddEdge("gate", compose.END))
+
+	r, err := g.Compile(
+		context.Background(),
+		compose.WithCheckPointStore(&memStore{m: map[string][]byte{}}),
+	)
+	require.NoError(t, err)
+
+	return r
+}
+
+// requireConfirmInterrupt asserts that err is an interrupt carrying the
+// named tool's confirm summary and returns the interrupt id to resume
+// with. It accepts both shapes an interrupt travels in: wrapped in a
+// graph run's interrupt info, or raw from a direct tool call.
+func requireConfirmInterrupt(t *testing.T, err error, name Name) string {
+	t.Helper()
+
+	require.Error(t, err, "a pending write must interrupt the run")
+
+	var (
+		id   string
+		info any
+	)
+
+	if gi, ok := compose.ExtractInterruptInfo(err); ok {
+		require.Len(t, gi.InterruptContexts, 1)
+
+		id = gi.InterruptContexts[0].ID
+		info = gi.InterruptContexts[0].Info
+	} else {
+		ri, ok := compose.IsInterruptRerunError(err)
+		require.True(t, ok, "a pending write must interrupt the run")
+
+		info = ri
+	}
+
+	summary, ok := info.(ConfirmActionSummary)
+	require.True(t, ok, "the interrupt must carry a confirm summary, got %T", info)
+	assert.Equal(t, string(name), summary.Tool)
+
+	return id
+}
+
+// sessionAgent runs one gated tool call inside an adk run, which is
+// the only host whose context carries session values.
+type sessionAgent struct {
+	// tool is the gated tool under test.
+	tool tool.InvokableTool
+
+	// args is the JSON argument payload handed to the tool.
+	args string
+
+	// res is the tool result captured from the run.
+	res string
+
+	// err is the tool error captured from the run.
+	err error
+}
+
+// Name identifies the agent.
+func (a *sessionAgent) Name(_ context.Context) string { return "session-agent" }
+
+// Description describes the agent.
+func (a *sessionAgent) Description(_ context.Context) string { return "runs one gated tool" }
+
+// Run invokes the gated tool with the run's session-aware context and
+// captures its outcome.
+func (a *sessionAgent) Run(ctx context.Context, _ *adk.AgentInput, _ ...adk.AgentRunOption) *adk.AsyncIterator[*adk.AgentEvent] {
+	iter, gen := adk.NewAsyncIteratorPair[*adk.AgentEvent]()
+
+	a.res, a.err = a.tool.InvokableRun(ctx, a.args)
+
+	gen.Close()
+
+	return iter
+}
+
+// memStore is a throwaway in-memory checkpoint store, so the gate
+// tests can park and resume a run without external infrastructure.
+type memStore struct {
+	// m maps checkpoint ids to their serialised payloads.
+	m map[string][]byte
+}
+
+// Get returns the stored checkpoint, when one exists.
+func (s *memStore) Get(_ context.Context, id string) ([]byte, bool, error) {
+	data, ok := s.m[id]
+
+	return data, ok, nil
+}
+
+// Set stores a checkpoint under the given id.
+func (s *memStore) Set(_ context.Context, id string, data []byte) error {
+	s.m[id] = data
+
+	return nil
 }
 
 func Test_declinedResult(t *testing.T) {
@@ -154,15 +379,4 @@ func Test_Destructive(t *testing.T) {
 	// an ordinary write is not destructive, so approve-all covers it.
 	_, ok = unwrap(s.tools[NameUpdateBlockText]).(Destructive)
 	assert.False(t, ok)
-}
-
-func Test_SetAutoApprove(t *testing.T) {
-	t.Parallel()
-
-	// outside a run there is no session to record the answer in, so the
-	// call is a no-op and the next write still asks.
-	ctx := context.Background()
-
-	SetAutoApprove(ctx)
-	assert.False(t, autoApproved(ctx))
 }

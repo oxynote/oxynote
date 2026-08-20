@@ -19,9 +19,9 @@ type listDocuments struct{ *Input }
 func (t *listDocuments) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return toolInfo(
 		NameListDocuments,
-		"List documents in the organisation. Returns the document tree (id, name, icon, children). Use parent_id to scope to one subtree; omit to list the whole org.",
+		"List documents in the organisation. Returns the document tree (id, name, icon, children). Use parent_id to list only the direct children of that document; omit to list the whole org.",
 		map[string]any{
-			"parent_id": stringProp("Optional. Only return documents under this parent id. Omit for the full tree."),
+			"parent_id": stringProp("Optional. Only return the direct children of this parent id. Omit for the full tree."),
 		},
 	)
 }

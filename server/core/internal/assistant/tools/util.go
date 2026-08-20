@@ -9,15 +9,12 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/strutil"
 )
 
-// _maxPreviewLen caps the quoted text preview shown in the confirm UI.
-const _maxPreviewLen = 60
-
 // result is the single place tool result envelopes are serialised;
 // centralising it keeps the JSON shape consistent.
 func result(v any) (string, error) {
 	data, err := json.Marshal(v)
 	if err != nil {
-		return "", fmt.Errorf("marshal tool result: %w", err)
+		return "", fmt.Errorf("marshalling tool result: %w", err)
 	}
 
 	return string(data), nil
@@ -31,20 +28,6 @@ func subjectFor(docName string) string {
 	}
 
 	return docName
-}
-
-// blockType reads the canonical type of the block a write tool was
-// handed, for the confirm summary.
-func blockType(inp *Input, args json.RawMessage) string {
-	var in struct {
-		Block struct {
-			Type string `json:"type"`
-		} `json:"block"`
-	}
-
-	inp.parseToolArgs(args, &in)
-
-	return in.Block.Type
 }
 
 // blockKindLabel turns a canonical type string into a friendlier label

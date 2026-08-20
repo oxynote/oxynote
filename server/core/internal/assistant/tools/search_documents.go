@@ -92,19 +92,23 @@ func (t *searchDocuments) InvokableRun(
 
 	// the index stores block text keyed by (document, block uid) but not
 	// display names; join names in from the document tree so the AI can
-	// talk about hits without a follow-up lookup per document.
+	// talk about hits without a follow-up lookup per document. Zero hits
+	// have nothing to decorate, so the fetch is skipped.
 	names := map[string]string{}
 
-	tree, err := t.db.FetchDocumentTree(ctx, t.orgID)
-	if err != nil {
-		// the names decorate the hits; losing them is not worth failing
-		// the search over, but it should not pass unnoticed either.
-		t.log.Warn(
-			"cannot fetch the document tree for search hit names",
-			slog.String("error", err.Error()),
-		)
-	} else {
-		collectDocumentNames(tree, names)
+	if len(blocks) > 0 {
+		tree, terr := t.db.FetchDocumentTree(ctx, t.orgID)
+		if terr != nil {
+			// the names decorate the hits; losing them is not worth
+			// failing the search over, but it should not pass unnoticed
+			// either.
+			t.log.Warn(
+				"cannot fetch the document tree for search hit names",
+				slog.String("error", terr.Error()),
+			)
+		} else {
+			collectDocumentNames(tree, names)
+		}
 	}
 
 	hits := make([]searchHit, 0, len(blocks))

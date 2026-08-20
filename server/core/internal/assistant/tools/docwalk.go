@@ -60,7 +60,10 @@ func walkDocForAssistant(blocks []document.Block) []docSummaryEntry {
 	return w.out
 }
 
+// docWalker accumulates the summary entries walkDocForAssistant
+// produces as it recurses through the document tree.
 type docWalker struct {
+	// out collects the emitted entries in document order.
 	out []docSummaryEntry
 }
 
@@ -81,11 +84,12 @@ func (w *docWalker) walkLevel(blocks []document.Block, depth int, parentUID stri
 
 		switch b.Type {
 		// list items surface flat because their visible content is
-		// the first child paragraph; titled code blocks surface as a
-		// single entry because they only exist inside split_doc.right
-		// and are editable as a unit — the AI replaces them whole
-		// rather than poking at their codeBlockTitle / codeBlock
-		// children. Deeper recursion isn't useful for either.
+		// the first child paragraph; deeper recursion isn't useful.
+		// The macro kinds (split_doc, param_list) also surface as a
+		// single entry without descending — their internals are not
+		// editable as standalone blocks, so the AI drills into them
+		// via read_block. Titled code blocks never reach this walk:
+		// they exist only inside split_doc.right.
 		case document.BlockNodeParagraph,
 			document.BlockNodeHeading,
 			document.BlockNodeBlockquote,
@@ -97,7 +101,8 @@ func (w *docWalker) walkLevel(blocks []document.Block, depth int, parentUID stri
 			document.BlockNodeMetricBlock,
 			document.BlockNodeListItem,
 			document.BlockNodeTaskItem,
-			document.BlockNodeTitledCodeBlock:
+			document.BlockNodeSplitDoc,
+			document.BlockNodeParamList:
 			w.emit(b, uid, depth, parentUID)
 
 		case document.BlockNodeBulletList,
@@ -107,12 +112,6 @@ func (w *docWalker) walkLevel(blocks []document.Block, depth int, parentUID stri
 			document.BlockNodeMetricGrid:
 			w.emit(b, uid, depth, parentUID)
 			w.walkLevel(b.Content, depth+1, uid)
-
-		case document.BlockNodeSplitDoc:
-			w.emitSplitDoc(b, uid, depth, parentUID)
-
-		case document.BlockNodeParamList:
-			w.emitParamList(b, uid, depth, parentUID)
 		default:
 		}
 	}
@@ -131,34 +130,6 @@ func (w *docWalker) emit(b document.Block, uid string, depth int, parentUID stri
 	}
 
 	w.out = append(w.out, entry)
-}
-
-// emitSplitDoc emits one entry for a splitDocumentation node with
-// a text preview drawn from both sides. Children are not descended
-// — the AI uses read_block to see the macro's structure when it
-// wants to edit individual pieces.
-func (w *docWalker) emitSplitDoc(b document.Block, uid string, depth int, parentUID string) {
-	w.out = append(w.out, docSummaryEntry{
-		UID:       uid,
-		Kind:      string(block.BlockSplitDoc),
-		Text:      b.Flatten(),
-		Depth:     depth,
-		ParentUID: parentUID,
-		Attrs:     summaryAttrs(b),
-	})
-}
-
-// emitParamList emits one entry for a splitDocumentationParameterList
-// node with text drawn from its header and item names. Children are
-// not descended — see emitSplitDoc.
-func (w *docWalker) emitParamList(b document.Block, uid string, depth int, parentUID string) {
-	w.out = append(w.out, docSummaryEntry{
-		UID:       uid,
-		Kind:      string(block.BlockParamList),
-		Text:      b.Flatten(),
-		Depth:     depth,
-		ParentUID: parentUID,
-	})
 }
 
 // canonicalKindForPM maps a ProseMirror node type to the canonical kind

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/guregu/null/v5"
+	"github.com/oxynote/oxynote/server/core/internal/assistant/block"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
@@ -137,7 +138,6 @@ func Test_Input_resolveDoc(t *testing.T) {
 			Result: docRef{
 				DocumentID: docID.String(),
 				BranchID:   branchID.String(),
-				OrgID:      "org",
 			},
 		},
 	}
@@ -271,14 +271,96 @@ func Test_Input_applyEdit(t *testing.T) {
 	}
 }
 
+func Test_Input_validatePlacement(t *testing.T) {
+	docID := xid.New()
+
+	// a titled_code block is a macro internal: legal only inside a
+	// split_doc, so it forces the placement check to look at the
+	// reference block's position.
+	macro := block.Block{
+		Type:  block.BlockTitledCode,
+		Text:  "x",
+		Attrs: document.Attributes{"title": "t"},
+	}
+
+	cc := map[string]struct {
+		Block      block.Block
+		DocumentID string
+		Content    document.RootBlock
+		FetchErr   error
+		Fetches    int
+		Err        error
+	}{
+		"Invalid block": {
+			Block:      block.Block{Type: "wibble"},
+			DocumentID: docID.String(),
+			Err:        assert.AnError,
+		},
+		"Root-legal block skips the content fetch": {
+			Block:      block.Block{Type: block.BlockParagraph, Text: "hi"},
+			DocumentID: docID.String(),
+		},
+		"Invalid document id": {
+			Block:      macro,
+			DocumentID: "nope",
+			Err:        assert.AnError,
+		},
+		"Error returned by db.FetchMainBranchContent": {
+			Block:      macro,
+			DocumentID: docID.String(),
+			FetchErr:   assert.AnError,
+			Fetches:    1,
+			Err:        assert.AnError,
+		},
+		"Macro internal beside a root block": {
+			Block:      macro,
+			DocumentID: docID.String(),
+			Content: document.RootBlock{
+				Type:    document.BlockNodeDoc,
+				Content: []document.Block{pmBlock(document.BlockNodeParagraph, "r", nil)},
+			},
+			Fetches: 1,
+			Err:     assert.AnError,
+		},
+		"Macro internal beside a nested block": {
+			Block:      macro,
+			DocumentID: docID.String(),
+			Content: document.RootBlock{
+				Type:    document.BlockNodeDoc,
+				Content: []document.Block{pmBlock(document.BlockNodeParagraph, "other", nil)},
+			},
+			Fetches: 1,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := &DBMock{
+				FetchMainBranchContentFunc: func(_ context.Context, _ xid.ID, _ string) (document.Content, error) {
+					return document.Content{Content: c.Content}, c.FetchErr
+				},
+			}
+
+			inp := stubEditInput(db, nil, nil)
+
+			err := inp.validatePlacement(context.Background(), c.DocumentID, "r", c.Block)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, db.FetchMainBranchContentCalls(), c.Fetches)
+		})
+	}
+}
+
 func Test_Input_notifyTreeChange(t *testing.T) {
 	t.Parallel()
 
-	// nil notifier is a silent no-op
+	// nil notifier is a silent no-op.
 	inp := stubEditInput(&DBMock{}, nil, nil)
 	inp.notifyTreeChange(null.Value[xid.ID]{})
 
-	// configured notifier receives the parent
+	// configured notifier receives the parent.
 	tree := &TreeNotifierMock{}
 	inp = stubEditInput(&DBMock{}, nil, tree)
 
@@ -336,7 +418,7 @@ func Test_Input_parseToolArgs(t *testing.T) {
 
 	inp := &Input{log: slog.New(slog.DiscardHandler)}
 
-	// valid args populate dst
+	// valid args populate dst.
 	var dst struct {
 		Name string `json:"name"`
 	}
@@ -344,7 +426,7 @@ func Test_Input_parseToolArgs(t *testing.T) {
 	inp.parseToolArgs(json.RawMessage(`{"name":"x"}`), &dst)
 	assert.Equal(t, "x", dst.Name)
 
-	// malformed args leave dst zeroed
+	// malformed args leave dst zeroed.
 	dst.Name = ""
 
 	inp.parseToolArgs(json.RawMessage(`{broken`), &dst)
@@ -394,4 +476,97 @@ func Test_Input_lookupDocumentName(t *testing.T) {
 			assert.Equal(t, c.Result, inp.lookupDocumentName(context.Background(), c.ID))
 		})
 	}
+}
+
+func Test_Input_subject(t *testing.T) {
+	docID := xid.New().String()
+
+	cc := map[string]struct {
+		DB      *DBMock
+		Args    string
+		Lookups int
+		Result  string
+	}{
+		"No document id skips the lookup": {
+			DB:     &DBMock{},
+			Args:   `{}`,
+			Result: "document",
+		},
+		"Unresolvable document falls back": {
+			DB:      stubNamedDB("", assert.AnError),
+			Args:    `{"document_id":"` + docID + `"}`,
+			Lookups: 1,
+			Result:  "document",
+		},
+		"Resolvable document is named": {
+			DB:      stubNamedDB("Runbook", nil),
+			Args:    `{"document_id":"` + docID + `"}`,
+			Lookups: 1,
+			Result:  "Runbook",
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			inp := stubEditInput(c.DB, nil, nil)
+
+			assert.Equal(t, c.Result, inp.subject(context.Background(), json.RawMessage(c.Args)))
+			assert.Len(t, c.DB.FetchDocumentCalls(), c.Lookups)
+		})
+	}
+}
+
+func Test_Input_summarize(t *testing.T) {
+	t.Parallel()
+
+	docID := xid.New()
+	inp := stubEditInput(stubNamedDB("Runbook", nil), nil, nil)
+
+	// a write that names its target carries the id and resolved name.
+	got := inp.summarize(
+		context.Background(),
+		NameDeleteBlock,
+		json.RawMessage(`{"document_id":"`+docID.String()+`"}`),
+		func(subject string) string { return "Delete a block in " + subject },
+	)
+
+	assert.Equal(t, ConfirmActionSummary{
+		Tool:         string(NameDeleteBlock),
+		DocumentID:   docID.String(),
+		DocumentName: "Runbook",
+		Summary:      "Delete a block in Runbook",
+	}, got)
+
+	// args without a document id leave the target empty.
+	got = inp.summarize(
+		context.Background(),
+		NameDeleteBlock,
+		json.RawMessage(`{}`),
+		func(subject string) string { return "Delete a block in " + subject },
+	)
+
+	assert.Equal(t, ConfirmActionSummary{
+		Tool:    string(NameDeleteBlock),
+		Summary: "Delete a block in document",
+	}, got)
+}
+
+func Test_Input_documentID(t *testing.T) {
+	t.Parallel()
+
+	inp := &Input{log: slog.New(slog.DiscardHandler)}
+
+	assert.Equal(t, "d1", inp.documentID(json.RawMessage(`{"document_id":"d1"}`)))
+	assert.Empty(t, inp.documentID(json.RawMessage(`{}`)))
+}
+
+func Test_Input_blockType(t *testing.T) {
+	t.Parallel()
+
+	inp := &Input{log: slog.New(slog.DiscardHandler)}
+
+	assert.Equal(t, "callout", inp.blockType(json.RawMessage(`{"block":{"type":"callout"}}`)))
+	assert.Empty(t, inp.blockType(json.RawMessage(`{}`)))
 }

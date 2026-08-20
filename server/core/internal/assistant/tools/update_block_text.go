@@ -11,6 +11,9 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
 )
 
+// _maxPreviewLen caps the quoted text preview shown in the confirm UI.
+const _maxPreviewLen = 60
+
 // updateBlockText replaces the inline text of a text-bearing block.
 type updateBlockText struct{ *Input }
 

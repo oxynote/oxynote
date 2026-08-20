@@ -16,9 +16,10 @@ func Test_insertBlock_InvokableRun(t *testing.T) {
 	branchID := xid.New()
 
 	cc := map[string]struct {
-		Args    string
-		Content document.RootBlock
-		Err     error
+		Args         string
+		Content      document.RootBlock
+		ContentReads int
+		Err          error
 	}{
 		"Malformed args": {
 			Args: `{broken`,
@@ -42,7 +43,8 @@ func Test_insertBlock_InvokableRun(t *testing.T) {
 					{Type: document.BlockNodeParagraph, Attrs: document.Attributes{"uid": "r"}},
 				},
 			},
-			Err: assert.AnError,
+			ContentReads: 1,
+			Err:          assert.AnError,
 		},
 		"Macro internal next to a nested block": {
 			Args: `{"document_id":"` + docID.String() + `","reference_block_uid":"r","position":"after","block":{"type":"titled_code","text":"x","attrs":{"title":"t"}}}`,
@@ -52,9 +54,16 @@ func Test_insertBlock_InvokableRun(t *testing.T) {
 					{Type: document.BlockNodeParagraph, Attrs: document.Attributes{"uid": "other"}},
 				},
 			},
+			ContentReads: 1,
 		},
 		"Invalid position": {
 			Args: `{"document_id":"` + docID.String() + `","reference_block_uid":"r","position":"sideways","block":{"type":"paragraph"}}`,
+			Err:  assert.AnError,
+		},
+		// the position enum is checked before the placement validation,
+		// so a bad position never reaches the database.
+		"Invalid position skips the placement validation": {
+			Args: `{"document_id":"` + docID.String() + `","reference_block_uid":"r","position":"sideways","block":{"type":"titled_code","text":"x","attrs":{"title":"t"}}}`,
 			Err:  assert.AnError,
 		},
 		"Insert before": {
@@ -78,6 +87,8 @@ func Test_insertBlock_InvokableRun(t *testing.T) {
 
 			res, err := (&insertBlock{inp}).InvokableRun(context.Background(), c.Args)
 			testutil.AssertEqualError(t, c.Err, err)
+
+			assert.Len(t, db.FetchMainBranchContentCalls(), c.ContentReads)
 
 			if err != nil {
 				return

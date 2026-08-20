@@ -66,7 +66,7 @@ func (cs *checkpointStore) Delete(ctx context.Context, checkPointID string) erro
 // would otherwise sit in Redis holding a whole conversation until it
 // expired.
 func (m *Manager) clearCheckpoint(ctx context.Context, key string) {
-	if err := (&checkpointStore{store: m.blobs}).Delete(ctx, key); err != nil {
+	if err := m.blobs.Delete(ctx, createCheckpointKey(key)); err != nil {
 		m.log.Error("failed to clear checkpoint",
 			slog.String("error", err.Error()),
 			slog.String("key", key),

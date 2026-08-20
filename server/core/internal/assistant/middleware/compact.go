@@ -43,7 +43,7 @@ func NewCompaction(
 		Backend:              backend,
 		ReadFileToolName:     offload.ReadToolName,
 		ClearExcludeTools:    writeNames,
-		ClearMessageRewriter: rewriteClearedRead,
+		ClearMessageRewriter: newClearRewriter(writeNames),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("building context reduction: %w", err)
@@ -57,24 +57,48 @@ func NewCompaction(
 	return []adk.ChatModelAgentMiddleware{red, sum}, nil
 }
 
-// rewriteClearedRead replaces a cleared read with a short note saying the
-// content is stale, so the model knows it once read the document and that
-// what it remembers may no longer be current.
-func rewriteClearedRead(
-	_ context.Context,
+// newClearRewriter builds the rewriter that replaces a cleared read
+// round with a short note saying the content is stale, so the model
+// knows it once read the document and that what it remembers may no
+// longer be current.
+//
+// eino invokes the rewriter for every round before it consults
+// ClearExcludeTools, so a round containing any write call is handed
+// back exactly as it was — rewriting it here would destroy the write
+// result despite the exclusion list and invite the model to re-execute
+// the write. The later per-call pass then clears whatever reads share
+// the round while keeping the writes.
+func newClearRewriter(writeNames []string) func(
+	ctx context.Context,
 	toolCallMsg *schema.Message,
-	_ []*schema.Message,
+	toolResponseMsgs []*schema.Message,
 ) ([]*schema.Message, error) {
-	names := make([]string, 0, len(toolCallMsg.ToolCalls))
-	for _, tc := range toolCallMsg.ToolCalls {
-		names = append(names, tc.Function.Name)
+	writes := make(map[string]struct{}, len(writeNames))
+	for _, name := range writeNames {
+		writes[name] = struct{}{}
 	}
 
-	return []*schema.Message{
-		schema.UserMessage(fmt.Sprintf(
-			"<system-reminder>Earlier output from %s was cleared to save space. "+
-				"Call the tool again if you need current content.</system-reminder>",
-			strings.Join(names, ", "),
-		)),
-	}, nil
+	return func(
+		_ context.Context,
+		toolCallMsg *schema.Message,
+		toolResponseMsgs []*schema.Message,
+	) ([]*schema.Message, error) {
+		names := make([]string, 0, len(toolCallMsg.ToolCalls))
+
+		for _, tc := range toolCallMsg.ToolCalls {
+			if _, ok := writes[tc.Function.Name]; ok {
+				return append([]*schema.Message{toolCallMsg}, toolResponseMsgs...), nil
+			}
+
+			names = append(names, tc.Function.Name)
+		}
+
+		return []*schema.Message{
+			schema.UserMessage(fmt.Sprintf(
+				"<system-reminder>Earlier output from %s was cleared to save space. "+
+					"Call the tool again if you need current content.</system-reminder>",
+				strings.Join(names, ", "),
+			)),
+		}, nil
+	}
 }

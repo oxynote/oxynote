@@ -2,10 +2,12 @@ package offload
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/cloudwego/eino/adk/filesystem"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -23,6 +25,16 @@ func Test_New(t *testing.T) {
 	b := New(store)
 	require.NotNil(t, b)
 	assert.Equal(t, store, b.store)
+}
+
+func Test_Backend_ReadTool(t *testing.T) {
+	t.Parallel()
+
+	b := New(&StoreMock{})
+
+	rt, ok := b.ReadTool().(*readTool)
+	require.True(t, ok)
+	assert.Same(t, b, rt.backend)
 }
 
 func Test_key(t *testing.T) {
@@ -52,7 +64,7 @@ func Test_Backend_Write(t *testing.T) {
 	cc := map[string]struct {
 		Store *StoreMock
 		Req   *filesystem.WriteRequest
-		Err   bool
+		Err   error
 	}{
 		"Stored": {
 			Store: &StoreMock{},
@@ -65,7 +77,7 @@ func Test_Backend_Write(t *testing.T) {
 				},
 			},
 			Req: &filesystem.WriteRequest{FilePath: "trunc/1", Content: "payload"},
-			Err: true,
+			Err: assert.AnError,
 		},
 	}
 
@@ -74,13 +86,12 @@ func Test_Backend_Write(t *testing.T) {
 			t.Parallel()
 
 			err := New(c.Store).Write(context.Background(), c.Req)
-			if c.Err {
-				require.Error(t, err)
+			testutil.AssertEqualError(t, c.Err, err)
 
+			if err != nil {
 				return
 			}
 
-			require.NoError(t, err)
 			require.Len(t, c.Store.SetCalls(), 1)
 			assert.Equal(t, "assistant:offload:trunc/1", c.Store.SetCalls()[0].Key)
 		})
@@ -93,7 +104,7 @@ func Test_Backend_read(t *testing.T) {
 	cc := map[string]struct {
 		Store  *StoreMock
 		Result string
-		Err    bool
+		Err    error
 	}{
 		"Stored output is returned": {
 			Store: &StoreMock{
@@ -109,7 +120,7 @@ func Test_Backend_read(t *testing.T) {
 					return nil, errutil.ErrNotFound
 				},
 			},
-			Err: true,
+			Err: errors.New(`no stored output at "trunc/1"; it has expired, so re-run the tool`),
 		},
 		"Error returned by store.Get": {
 			Store: &StoreMock{
@@ -117,7 +128,7 @@ func Test_Backend_read(t *testing.T) {
 					return nil, assert.AnError
 				},
 			},
-			Err: true,
+			Err: assert.AnError,
 		},
 	}
 
@@ -126,13 +137,12 @@ func Test_Backend_read(t *testing.T) {
 			t.Parallel()
 
 			res, err := New(c.Store).read(context.Background(), "trunc/1")
-			if c.Err {
-				require.Error(t, err)
+			testutil.AssertEqualError(t, c.Err, err)
 
+			if err != nil {
 				return
 			}
 
-			require.NoError(t, err)
 			assert.Equal(t, c.Result, res)
 		})
 	}
@@ -158,17 +168,17 @@ func Test_readTool_InvokableRun(t *testing.T) {
 		Store  *StoreMock
 		Args   string
 		Result string
-		Err    bool
+		Err    error
 	}{
 		"Malformed arguments": {
 			Store: &StoreMock{},
 			Args:  `{`,
-			Err:   true,
+			Err:   assert.AnError,
 		},
 		"Missing path": {
 			Store: &StoreMock{},
 			Args:  `{}`,
-			Err:   true,
+			Err:   errors.New("read_tool_output: file_path is required"),
 		},
 		"Stored output is returned": {
 			Store: &StoreMock{
@@ -186,13 +196,12 @@ func Test_readTool_InvokableRun(t *testing.T) {
 			t.Parallel()
 
 			res, err := New(c.Store).ReadTool().InvokableRun(context.Background(), c.Args)
-			if c.Err {
-				require.Error(t, err)
+			testutil.AssertEqualError(t, c.Err, err)
 
+			if err != nil {
 				return
 			}
 
-			require.NoError(t, err)
 			assert.Equal(t, c.Result, res)
 		})
 	}

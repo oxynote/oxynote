@@ -104,34 +104,13 @@ func Test_listDocuments_InvokableRun(t *testing.T) {
 	}
 }
 
-func Test_collectDocumentNames(t *testing.T) {
-	t.Parallel()
-
-	parentID := xid.New()
-	childID := xid.New()
-
-	out := map[string]string{}
-	collectDocumentNames(document.Summaries{
-		{
-			ID:           parentID,
-			DocumentName: "Root",
-			Children:     document.Summaries{{ID: childID, DocumentName: "Child"}},
-		},
-	}, out)
-
-	assert.Equal(t, map[string]string{
-		parentID.String(): "Root",
-		childID.String():  "Child",
-	}, out)
-}
-
 func Test_summariesToTree(t *testing.T) {
 	t.Parallel()
 
-	// empty input yields nil
+	// empty input yields nil.
 	assert.Nil(t, summariesToTree(nil))
 
-	// nested summaries convert recursively
+	// nested summaries convert recursively.
 	parentID := xid.New()
 	childID := xid.New()
 

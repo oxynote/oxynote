@@ -24,6 +24,28 @@ const _escapeGrowHeadroom = 4
 // _attrHref is the attribute key carrying a link mark's target URL.
 const _attrHref = "href"
 
+// activeMark is one mark in the open-stack used during emit.
+type activeMark struct {
+	// kind is the mark type ("bold", "italic", "link", …).
+	kind string
+
+	// href is set when kind == _markLink.
+	href string
+}
+
+// inlineAtom is a maximal run of text sharing the same ordered set
+// of marks. The parser produces a stream of atoms which are then
+// merged into ProseMirror text nodes.
+type inlineAtom struct {
+	// text is the literal run.
+	text string
+
+	// marks is the ordered set of marks active over text. The order
+	// matches the open order so emit can re-derive the same
+	// nesting.
+	marks []activeMark
+}
+
 // ParseInlineMarkdown converts a minimal-markdown string into a slice
 // of ProseMirror text nodes with marks. The supported syntax is:
 //
@@ -70,15 +92,29 @@ func emitInlineMarkdown(nodes []document.Block) string {
 
 		desired := extractMarks(n.Marks)
 
+		// A code span cannot represent a literal backtick, so text
+		// carrying one falls back to escaped plain text without the
+		// code mark.
+		if strings.ContainsRune(n.Text, '`') {
+			desired = slices.DeleteFunc(desired, func(m activeMark) bool {
+				return m.kind == _markCode
+			})
+		}
+
+		// ProseMirror mark order is not semantic, so reorder the
+		// desired marks to share the longest possible prefix with
+		// the open stack: keeping delimiters open avoids ambiguous
+		// adjacent delimiter runs.
+		desired = reorderMarks(desired, active)
+
 		// Close marks that are no longer desired, in reverse open
 		// order, until the active stack is a prefix of desired.
 		for len(active) > 0 {
-			top := active[len(active)-1]
-			if isMarkPrefix(active, desired) && slices.Contains(desired, top) {
+			if isMarkPrefix(active, desired) {
 				break
 			}
 
-			buf.WriteString(closeDelim(top))
+			buf.WriteString(closeDelim(active[len(active)-1]))
 
 			active = active[:len(active)-1]
 		}
@@ -102,28 +138,6 @@ func emitInlineMarkdown(nodes []document.Block) string {
 	}
 
 	return buf.String()
-}
-
-// activeMark is one mark in the open-stack used during emit.
-type activeMark struct {
-	// kind is the mark type ("bold", "italic", "link", …).
-	kind string
-
-	// href is set when kind == _markLink.
-	href string
-}
-
-// inlineAtom is a maximal run of text sharing the same ordered set
-// of marks. The parser produces a stream of atoms which are then
-// merged into ProseMirror text nodes.
-type inlineAtom struct {
-	// text is the literal run.
-	text string
-
-	// marks is the ordered set of marks active over text. The order
-	// matches the open order so emit can re-derive the same
-	// nesting.
-	marks []activeMark
 }
 
 // parseSpan parses the entire input string with the given outer
@@ -317,7 +331,15 @@ func scanHrefClose(s string, start int) int {
 // matching delim starting from byte position start, or -1 if no
 // closing delimiter is found. It skips over escapes, code spans,
 // and link labels so a delimiter inside those does not end the span.
+//
+// For two-character delimiters it also tracks lone occurrences of
+// the delimiter character: when a match sits at the start of a
+// three-plus run and a lone character is pending inside the span
+// (as in "**a*b***" or "***ab***"), the run's first character
+// closes the inner single-character span, so the real close starts
+// one character later.
 func scanDelimClose(s string, start int, delim string) int {
+	lone := 0
 	i := start
 
 	for i < len(s) {
@@ -350,7 +372,18 @@ func scanDelimClose(s string, start int, delim string) int {
 		}
 
 		if strings.HasPrefix(s[i:], delim) {
+			if len(delim) == 2 && lone%2 == 1 && i+len(delim) < len(s) && s[i+len(delim)] == delim[0] {
+				lone--
+				i++
+
+				continue
+			}
+
 			return i
+		}
+
+		if len(delim) == 2 && c == delim[0] {
+			lone++
 		}
 
 		i++
@@ -472,6 +505,30 @@ func extractMarks(marks []document.Mark) []activeMark {
 	}
 
 	return out
+}
+
+// reorderMarks returns desired reordered so that its common prefix
+// with active is as long as possible; the marks not shared with
+// active keep their original relative order.
+func reorderMarks(desired, active []activeMark) []activeMark {
+	if len(desired) == 0 || len(active) == 0 {
+		return desired
+	}
+
+	out := make([]activeMark, 0, len(desired))
+	rest := slices.Clone(desired)
+
+	for _, a := range active {
+		i := slices.Index(rest, a)
+		if i < 0 {
+			break
+		}
+
+		out = append(out, rest[i])
+		rest = slices.Delete(rest, i, i+1)
+	}
+
+	return append(out, rest...)
 }
 
 // isMarkPrefix reports whether prefix is an order-preserving prefix

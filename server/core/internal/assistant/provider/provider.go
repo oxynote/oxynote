@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/cloudwego/eino/components/model"
@@ -53,13 +54,12 @@ var _providers = []Provider{
 // Validate checks whether the provider is one this build supports,
 // naming the offending value and the supported set when it is not.
 func (p Provider) Validate() error {
-	switch p {
-	case ProviderClaude, ProviderOpenAI, ProviderGemini, ProviderOllama, ProviderOpenRouter:
+	if slices.Contains(_providers, p) {
 		return nil
-	default:
-		return fmt.Errorf("%w: %q is not supported, expected one of: %s",
-			ErrInvalidProvider, string(p), Supported())
 	}
+
+	return fmt.Errorf("%w: %q is not supported, expected one of: %s",
+		ErrInvalidProvider, string(p), supported())
 }
 
 // ParseProvider normalises a provider name as it arrives from the
@@ -69,9 +69,9 @@ func ParseProvider(s string) Provider {
 	return Provider(strings.ToLower(strings.TrimSpace(s)))
 }
 
-// Supported returns the comma-separated list of provider names this build
-// accepts, for error messages and documentation.
-func Supported() string {
+// supported returns the comma-separated list of provider names this build
+// accepts, for error messages.
+func supported() string {
 	names := make([]string, 0, len(_providers))
 	for _, p := range _providers {
 		names = append(names, string(p))

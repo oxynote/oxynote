@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
@@ -69,7 +70,7 @@ func (t *getDocument) InvokableRun(
 		BranchID:   doc.BranchID.String(),
 		BranchName: doc.BranchName,
 		Protected:  doc.Protected,
-		UpdatedAt:  doc.UpdatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+		UpdatedAt:  doc.UpdatedAt.UTC().Format(time.RFC3339),
 	}
 
 	if doc.ParentID.Valid {

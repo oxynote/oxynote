@@ -1,6 +1,6 @@
 {
   "append_block": {
-    "desc": "Append a single canonical block at the end of a document.",
+    "desc": "Append a single canonical block at the end of a document. Block uid is generated server-side if omitted.",
     "has_params_one_of": true,
     "json_schema": {
       "properties": {
@@ -85,7 +85,7 @@
     "name": "create_document"
   },
   "delete_block": {
-    "desc": "Delete a block from the document by uid. Destructive — the user is always asked to confirm.",
+    "desc": "Delete a block from the document by uid. This is destructive — the user is always asked to confirm and there is no auto-approve.",
     "has_params_one_of": true,
     "json_schema": {
       "properties": {
@@ -215,12 +215,12 @@
     "name": "insert_block"
   },
   "list_documents": {
-    "desc": "List documents in the organisation. Returns the document tree (id, name, icon, children). Use parent_id to scope to one subtree; omit to list the whole org.",
+    "desc": "List documents in the organisation. Returns the document tree (id, name, icon, children). Use parent_id to list only the direct children of that document; omit to list the whole org.",
     "has_params_one_of": true,
     "json_schema": {
       "properties": {
         "parent_id": {
-          "description": "Optional. Only return documents under this parent id. Omit for the full tree.",
+          "description": "Optional. Only return the direct children of this parent id. Omit for the full tree.",
           "type": "string"
         }
       },
@@ -250,7 +250,7 @@
     "name": "move_document"
   },
   "prepend_block": {
-    "desc": "Prepend a single canonical block at the start of a document.",
+    "desc": "Prepend a single canonical block at the start of a document. Block uid is generated server-side if omitted.",
     "has_params_one_of": true,
     "json_schema": {
       "properties": {
@@ -371,7 +371,7 @@
     "name": "rename_document"
   },
   "replace_block": {
-    "desc": "Replace an existing block by uid with a new block. The replacement keeps the same position in its parent. Useful for changing a block's type or its full structure.",
+    "desc": "Replace an existing block by uid with a new block. The replacement keeps the same position in its parent. Useful for changing a block's type or its full structure. Block uid is generated server-side if omitted.",
     "has_params_one_of": true,
     "json_schema": {
       "properties": {

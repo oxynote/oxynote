@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
@@ -18,14 +19,16 @@ func Test_createDocument_InvokableRun(t *testing.T) {
 	parentID := xid.New()
 
 	type tcase struct {
-		DB          *DBMock
-		Tx          *TxMock
-		Tree        *TreeNotifierMock
-		Args        string
-		Icon        string
-		NotifyCalls int
-		Commits     int
-		Err         error
+		DB           *DBMock
+		Tx           *TxMock
+		Tree         *TreeNotifierMock
+		Args         string
+		Icon         string
+		Parent       null.Value[xid.ID]
+		ParentChecks int
+		NotifyCalls  int
+		Commits      int
+		Err          error
 	}
 
 	// the writes run in one transaction, so the mock hands the tool a Tx the
@@ -160,13 +163,15 @@ func Test_createDocument_InvokableRun(t *testing.T) {
 			tx := okTx(nil, nil, nil, nil)
 
 			return tcase{
-				DB:          okDB(tx, nil, nil),
-				Tx:          tx,
-				Tree:        &TreeNotifierMock{},
-				Args:        `{"name":"Doc","icon":"lucide:cat","parent_id":"` + parentID.String() + `"}`,
-				Icon:        "lucide:cat",
-				NotifyCalls: 1,
-				Commits:     1,
+				DB:           okDB(tx, nil, nil),
+				Tx:           tx,
+				Tree:         &TreeNotifierMock{},
+				Args:         `{"name":"Doc","icon":"lucide:cat","parent_id":"` + parentID.String() + `"}`,
+				Icon:         "lucide:cat",
+				Parent:       null.ValueFrom(parentID),
+				ParentChecks: 1,
+				NotifyCalls:  1,
+				Commits:      1,
 			}
 		}(),
 	}
@@ -195,10 +200,13 @@ func Test_createDocument_InvokableRun(t *testing.T) {
 				return
 			}
 
+			assert.Len(t, c.DB.CheckDocumentExistsCalls(), c.ParentChecks)
+
 			ff := c.Tx.InsertDocumentCalls()
 			require.Len(t, ff, 1)
 			assert.Equal(t, c.Icon, ff[0].Doc.Icon)
 			assert.Equal(t, "Doc", ff[0].Doc.DocumentName)
+			assert.Equal(t, c.Parent, ff[0].Doc.ParentID)
 
 			var out struct {
 				DocumentID string `json:"document_id"`

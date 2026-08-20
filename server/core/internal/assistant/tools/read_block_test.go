@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"log/slog"
 	"testing"
 
 	"github.com/oxynote/oxynote/server/core/internal/document"
@@ -75,7 +74,7 @@ func Test_readBlock_InvokableRun(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			inp := &Input{log: slog.New(slog.DiscardHandler), db: c.DB, orgID: "org"}
+			inp := stubEditInput(c.DB, nil, nil)
 
 			res, err := (&readBlock{inp}).InvokableRun(context.Background(), c.Args)
 			testutil.AssertEqualError(t, c.Err, err)

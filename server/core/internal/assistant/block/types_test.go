@@ -49,8 +49,8 @@ func Test_canonicalTypesCoverExpand(t *testing.T) {
 
 	covered := make(map[Type]bool, len(_canonicalTypes))
 
-	for _, t := range _canonicalTypes {
-		covered[t] = true
+	for _, ct := range _canonicalTypes {
+		covered[ct] = true
 	}
 
 	for _, tp := range []Type{

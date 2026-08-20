@@ -85,7 +85,7 @@ export function useAIChat() {
 		send(
 			JSON.stringify({
 				type: ClientMessageType.SetActiveDocument,
-				document_id: activeDocumentId.value ?? "",
+				documentId: activeDocumentId.value ?? "",
 			}),
 		)
 	}
@@ -105,7 +105,7 @@ export function useAIChat() {
 		send(
 			JSON.stringify({
 				type: ClientMessageType.ConfirmResponse,
-				turn_id: pending.turn_id,
+				turnId: pending.turnId,
 				approved,
 				all,
 			}),
@@ -166,12 +166,12 @@ export function useAIChat() {
 				break
 			}
 			case ServerMessageType.ConfirmRequest: {
-				if (!msg.turn_id) {
+				if (!msg.turnId) {
 					break
 				}
 
 				pendingConfirm.value = {
-					turn_id: msg.turn_id,
+					turnId: msg.turnId,
 					actions: msg.actions ?? [],
 				}
 

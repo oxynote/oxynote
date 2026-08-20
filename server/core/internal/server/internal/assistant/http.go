@@ -12,7 +12,6 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
-	assistantCore "github.com/oxynote/oxynote/server/core/internal/assistant"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/protocol"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
@@ -31,7 +30,7 @@ type Handler struct {
 // NewHandler creates a new AI handler.
 func NewHandler(
 	log *slog.Logger,
-	assistantMan *assistantCore.Manager,
+	assistantMan Manager,
 	acceptOpts websocket.AcceptOptions,
 ) *Handler {
 	return &Handler{
@@ -85,10 +84,15 @@ func (h *Handler) HandleChat(w http.ResponseWriter, r *http.Request) {
 // wsConn adapts a WebSocket connection to the transport-agnostic
 // protocol.SessionConn contract.
 type wsConn struct {
-	mu     sync.Mutex
-	log    *slog.Logger
-	conn   *websocket.Conn
+	// log reports write failures.
+	log *slog.Logger
+
+	// cancel ends the chat context when the connection dies.
 	cancel context.CancelFunc
+
+	// mu serialises writes on the connection.
+	mu   sync.Mutex
+	conn *websocket.Conn
 }
 
 // Read blocks for the next client message, translating a clean client

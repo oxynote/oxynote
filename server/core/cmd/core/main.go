@@ -67,6 +67,10 @@ const (
 	// snapshots are retained when the environment says nothing.
 	_defaultDocumentChangelogRetention = time.Hour * 24 * 90
 
+	// _editClientTimeout bounds one edit-operations request to the Node
+	// service.
+	_editClientTimeout = 30 * time.Second
+
 	// _sentryDedupInterval specifies how long a reported error suppresses
 	// duplicate reports.
 	_sentryDedupInterval = 10 * time.Minute
@@ -237,7 +241,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 	closers = append([]io.Closer{emailSender}, closers...)
 
 	editClient := edit.NewClient(
-		http.DefaultClient,
+		&http.Client{Timeout: _editClientTimeout},
 		buildinfo.Getenv("AUTH_REALTIME_URL"),
 	)
 

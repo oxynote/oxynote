@@ -63,12 +63,6 @@ type Decision struct {
 // interrupt a stable, registered shape.
 type confirmState struct{}
 
-// SetAutoApprove records that the user approved every remaining write
-// in the current turn. Destructive tools ignore it and prompt anyway.
-func SetAutoApprove(ctx context.Context) {
-	adk.AddSessionValue(ctx, SessionKeyAutoApprove, true)
-}
-
 // autoApproved reports whether the current turn is running under an
 // "approve all" answer.
 func autoApproved(ctx context.Context) bool {
@@ -177,6 +171,6 @@ type Confirmer interface {
 // descriptions promise as much, and an approve-all meant for text edits
 // is not consent to delete a document.
 type Destructive interface {
-	// Destructive distinguishes a removal from an ordinary write.
+	// Destructive should distinguish a removal from an ordinary write.
 	Destructive()
 }

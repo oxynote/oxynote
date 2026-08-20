@@ -60,17 +60,20 @@ func Test_Set_Tools(t *testing.T) {
 	t.Parallel()
 
 	ts := New(testInput()).Tools()
-	assert.Len(t, ts, len(allToolNames()))
+	require.Len(t, ts, len(allToolNames()))
 
-	seen := map[string]bool{}
+	got := make([]Name, 0, len(ts))
 
 	for _, bt := range ts {
 		info, err := bt.Info(context.Background())
 		require.NoError(t, err)
 
-		assert.False(t, seen[info.Name], "%s appears twice", info.Name)
-		seen[info.Name] = true
+		got = append(got, Name(info.Name))
 	}
+
+	// the order is the registration order, every session: a shuffled
+	// tool list would defeat provider prompt caching.
+	assert.Equal(t, allToolNames(), got)
 }
 
 func Test_Set_WriteNames(t *testing.T) {
@@ -216,11 +219,11 @@ func Test_unwrap(t *testing.T) {
 
 	s := New(testInput())
 
-	// a read is stored bare, so unwrapping it changes nothing
+	// a read is stored bare, so unwrapping it changes nothing.
 	read := s.tools[NameReadBlock]
 	assert.Equal(t, read, unwrap(read))
 
-	// a write is stored gated, and unwrapping reaches the tool itself
+	// a write is stored gated, and unwrapping reaches the tool itself.
 	write := s.tools[NameInsertBlock]
 	assert.NotEqual(t, write, unwrap(write))
 	assert.IsType(t, &insertBlock{}, unwrap(write))

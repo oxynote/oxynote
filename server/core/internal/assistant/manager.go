@@ -51,8 +51,8 @@ type Manager struct {
 // backs context summarisation and may be the same model. The editClient
 // is the edit pipe to the Node hocuspocus service; the search client
 // backs the search_documents tool; providerName labels token metrics so
-// usage stays readable across a provider change; the tree notifier broadcasts sidebar
-// refresh events after assistant-driven document tree mutations and is
+// usage stays readable across a provider change; the tree notifier
+// broadcasts sidebar refresh events after document tree mutations and is
 // wired post-construction via SetTreeNotifier because the document
 // handler that satisfies it is built later, inside server.NewServer.
 func NewManager(

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/cloudwego/eino/components/tool"
@@ -49,6 +50,10 @@ func (t *updateBlockAttrs) Confirm(ctx context.Context, args json.RawMessage) Co
 	for k := range in.Attrs {
 		keys = append(keys, k)
 	}
+
+	// map iteration order is random, and the confirm card must read
+	// the same every time the same write is proposed.
+	slices.Sort(keys)
 
 	return t.summarize(ctx, NameUpdateBlockAttrs, args, func(subject string) string {
 		if len(keys) == 0 {

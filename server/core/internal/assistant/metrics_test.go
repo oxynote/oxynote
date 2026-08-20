@@ -64,6 +64,20 @@ func Test_newMetrics(t *testing.T) {
 	assert.Equal(t, "claude", m.provider)
 }
 
+func Test_metrics_observeToolCall(t *testing.T) {
+	t.Parallel()
+
+	rg := prometheus.NewRegistry()
+	m := newMetrics(metricutil.NewFactory("test", rg), "claude")
+
+	m.observeToolCall("read_block", "success", 0.25)
+
+	assert.InEpsilon(t, 1.0, gatherValue(t, rg, "test_assistant_tool_calls_total",
+		map[string]string{"tool": "read_block", "status": "success"}), 0.0001)
+	assert.InEpsilon(t, 1.0, gatherValue(t, rg, "test_assistant_tool_call_duration_seconds",
+		map[string]string{"tool": "read_block"}), 0.0001)
+}
+
 func Test_metrics_recordToolCall(t *testing.T) {
 	t.Parallel()
 

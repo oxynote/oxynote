@@ -6,12 +6,15 @@ package middleware
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/components/tool"
+	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/protocol"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
+	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 )
 
 // Observer hooks into the agent run to do two things the framework has
@@ -29,21 +32,28 @@ type Observer struct {
 
 	// history receives the conversation at the end of a completed run.
 	history func(msgs []*schema.Message)
+
+	// observe receives each finished tool call's outcome: the tool,
+	// a "success" or "error" status, and how long it ran.
+	observe func(name tools.Name, status string, seconds float64)
 }
 
 // NewObserver creates a fresh instance of Observer. The history callback
-// is invoked once per completed run; it may be nil when the caller does
-// not retain conversations.
+// is invoked once per completed run and the observe callback once per
+// finished tool call; either may be nil when the caller does not retain
+// conversations or record metrics.
 func NewObserver(
 	labels Labeller,
 	writer Writer,
 	history func(msgs []*schema.Message),
+	observe func(name tools.Name, status string, seconds float64),
 ) *Observer {
 	return &Observer{
 		BaseChatModelAgentMiddleware: &adk.BaseChatModelAgentMiddleware{},
 		labels:                       labels,
 		writer:                       writer,
 		history:                      history,
+		observe:                      observe,
 	}
 }
 
@@ -61,8 +71,9 @@ func (o *Observer) AfterAgent(
 }
 
 // WrapInvokableToolCall announces each tool call to the client before it
-// runs. The tool-result event arrives only once the work is done, which
-// is too late to show the user what is happening.
+// runs and reports its outcome once it finishes. The tool-result event
+// arrives only once the work is done, which is too late to show the user
+// what is happening.
 func (o *Observer) WrapInvokableToolCall(
 	_ context.Context,
 	endpoint adk.InvokableToolCallEndpoint,
@@ -75,7 +86,23 @@ func (o *Observer) WrapInvokableToolCall(
 			o.writer.WriteJSON(ctx, protocol.NewToolStatusMessage(string(name), label))
 		}
 
-		return endpoint(ctx, argumentsInJSON, opts...)
+		start := timeutil.Now()
+		out, err := endpoint(ctx, argumentsInJSON, opts...)
+
+		// an interrupt is a pause for the user's confirmation, not an
+		// outcome: the tool runs for real once the user answers, and
+		// that run is the one worth counting.
+		if _, interrupted := compose.IsInterruptRerunError(err); o.observe != nil && !interrupted {
+			status := "success"
+
+			if err != nil {
+				status = "error"
+			}
+
+			o.observe(name, status, time.Since(start).Seconds())
+		}
+
+		return out, err
 	}, nil
 }
 

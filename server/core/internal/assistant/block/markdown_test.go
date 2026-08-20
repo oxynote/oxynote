@@ -9,7 +9,7 @@ import (
 )
 
 func Test_ParseInlineMarkdown(t *testing.T) {
-	tests := map[string]struct {
+	cc := map[string]struct {
 		Input    string
 		Expected []document.Block
 	}{
@@ -121,6 +121,19 @@ func Test_ParseInlineMarkdown(t *testing.T) {
 				{Type: "text", Text: "ab", Marks: []document.Mark{{Type: "bold"}}},
 			},
 		},
+		"Bold run extended by a bold italic tail": {
+			Input: "**a*b***",
+			Expected: []document.Block{
+				{Type: "text", Text: "a", Marks: []document.Mark{{Type: "bold"}}},
+				{Type: "text", Text: "b", Marks: []document.Mark{{Type: "bold"}, {Type: "italic"}}},
+			},
+		},
+		"Bold wrapping italic via a triple run": {
+			Input: "***bold italic***",
+			Expected: []document.Block{
+				{Type: "text", Text: "bold italic", Marks: []document.Mark{{Type: "bold"}, {Type: "italic"}}},
+			},
+		},
 		"Backtick inside link label": {
 			Input: "[`x`](https://y)",
 			Expected: []document.Block{
@@ -218,18 +231,18 @@ func Test_ParseInlineMarkdown(t *testing.T) {
 		},
 	}
 
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			got := ParseInlineMarkdown(tc.Input)
-			assert.Equal(t, tc.Expected, got)
+			got := ParseInlineMarkdown(c.Input)
+			assert.Equal(t, c.Expected, got)
 		})
 	}
 }
 
 func Test_emitInlineMarkdown(t *testing.T) {
-	tests := map[string]struct {
+	cc := map[string]struct {
 		Input    []document.Block
 		Expected string
 
@@ -240,6 +253,7 @@ func Test_emitInlineMarkdown(t *testing.T) {
 	}{
 		"Round trip: plain text":            {Markdown: "plain text"},
 		"Round trip: bold":                  {Markdown: "**bold**"},
+		"Round trip: bold wrapping italic":  {Markdown: "***both***"},
 		"Round trip: italic":                {Markdown: "*italic*"},
 		"Round trip: underline":             {Markdown: "_underline_"},
 		"Round trip: strike":                {Markdown: "~~strike~~"},
@@ -274,6 +288,12 @@ func Test_emitInlineMarkdown(t *testing.T) {
 			},
 			Expected: `use \* carefully`,
 		},
+		"Code text with a backtick falls back to escaped plain text": {
+			Input: []document.Block{
+				{Type: "text", Text: "a`b", Marks: []document.Mark{{Type: "code"}}},
+			},
+			Expected: "a\\`b",
+		},
 		"Code mark does not escape inside": {
 			Input: []document.Block{
 				{Type: "text", Text: "**", Marks: []document.Mark{{Type: "code"}}},
@@ -303,12 +323,26 @@ func Test_emitInlineMarkdown(t *testing.T) {
 			},
 			Expected: "hi",
 		},
+		"Incompatible mark order reorders to extend the open run": {
+			Input: []document.Block{
+				{Type: "text", Text: "a", Marks: []document.Mark{{Type: "bold"}}},
+				{Type: "text", Text: "b", Marks: []document.Mark{{Type: "italic"}, {Type: "bold"}}},
+			},
+			Expected: "**a*b***",
+		},
 		"Nested mark closes when the next run drops it": {
 			Input: []document.Block{
 				{Type: "text", Text: "a", Marks: []document.Mark{{Type: "bold"}, {Type: "italic"}}},
 				{Type: "text", Text: "b", Marks: []document.Mark{{Type: "bold"}}},
 			},
 			Expected: "***a*b**",
+		},
+		"Disjoint mark pair closes the unshared active mark": {
+			Input: []document.Block{
+				{Type: "text", Text: "a", Marks: []document.Mark{{Type: "bold"}}},
+				{Type: "text", Text: "b", Marks: []document.Mark{{Type: "italic"}, {Type: "underline"}}},
+			},
+			Expected: "**a***_b_*",
 		},
 		"Disjoint marks close and reopen": {
 			Input: []document.Block{
@@ -336,12 +370,12 @@ func Test_emitInlineMarkdown(t *testing.T) {
 		},
 	}
 
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			if tc.Markdown != "" {
-				parsed := ParseInlineMarkdown(tc.Markdown)
+			if c.Markdown != "" {
+				parsed := ParseInlineMarkdown(c.Markdown)
 				emitted := emitInlineMarkdown(parsed)
 
 				require.Equal(t, parsed, ParseInlineMarkdown(emitted),
@@ -351,8 +385,8 @@ func Test_emitInlineMarkdown(t *testing.T) {
 				return
 			}
 
-			got := emitInlineMarkdown(tc.Input)
-			assert.Equal(t, tc.Expected, got)
+			got := emitInlineMarkdown(c.Input)
+			assert.Equal(t, c.Expected, got)
 		})
 	}
 }

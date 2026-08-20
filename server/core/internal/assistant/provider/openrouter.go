@@ -16,12 +16,9 @@ func newOpenRouter(ctx context.Context, opts Options) (model.ToolCallingChatMode
 		APIKey:      opts.APIKey,
 		Model:       opts.Model,
 		BaseURL:     opts.BaseURL,
+		MaxTokens:   opts.maxTokens(),
 		Temperature: opts.Temperature,
 		Timeout:     opts.timeout(),
-	}
-
-	if opts.MaxTokens > 0 {
-		cfg.MaxTokens = &opts.MaxTokens
 	}
 
 	cm, err := openrouter.NewChatModel(ctx, cfg)

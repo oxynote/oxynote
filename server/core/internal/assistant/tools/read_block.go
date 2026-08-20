@@ -65,7 +65,7 @@ func (t *readBlock) InvokableRun(
 
 	blk, ok := content.Content.FindByUID(in.BlockUID)
 	if !ok {
-		return "", errutil.ErrNotFound
+		return "", fmt.Errorf("read_block: block %q not found: %w", in.BlockUID, errutil.ErrNotFound)
 	}
 
 	canon, err := block.Compact(blk)

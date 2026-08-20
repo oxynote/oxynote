@@ -161,3 +161,14 @@ func (o Options) timeout() time.Duration {
 
 	return _defaultRequestTimeout
 }
+
+// maxTokens returns the configured response cap as the pointer the
+// vendor SDKs take, or nil when no cap is set and the provider default
+// should apply.
+func (o Options) maxTokens() *int {
+	if o.MaxTokens > 0 {
+		return &o.MaxTokens
+	}
+
+	return nil
+}

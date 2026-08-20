@@ -42,6 +42,10 @@ func (t *setDocumentIcon) Confirm(ctx context.Context, args json.RawMessage) Con
 	t.parseToolArgs(args, &in)
 
 	return t.summarize(ctx, NameSetDocumentIcon, args, func(subject string) string {
+		if in.Icon == "" {
+			return "Change icon of " + subject
+		}
+
 		return fmt.Sprintf("Change icon of %s to %s", subject, in.Icon)
 	})
 }

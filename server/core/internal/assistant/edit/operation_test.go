@@ -34,10 +34,6 @@ func Test_InsertAfter(t *testing.T) {
 	assert.Equal(t, "ref-uid", w.ReferenceUID)
 	require.NotNil(t, w.Block)
 	assert.Equal(t, document.BlockNodeParagraph, w.Block.Type)
-
-	// an unexpandable block fails before any wire form exists.
-	_, err := InsertAfter("ref", block.Block{Type: "not_a_type"})()
-	require.Error(t, err)
 }
 
 func Test_InsertBefore(t *testing.T) {
@@ -48,6 +44,24 @@ func Test_InsertBefore(t *testing.T) {
 	assert.Equal(t, "insert", w.Kind)
 	assert.Equal(t, "before", w.Position)
 	assert.Equal(t, "ref", w.ReferenceUID)
+}
+
+func Test_insert(t *testing.T) {
+	t.Parallel()
+
+	w := wire(t, insert("before", "ref-uid", paragraph()))
+
+	assert.Equal(t, "insert", w.Kind)
+	assert.Equal(t, "before", w.Position)
+	assert.Equal(t, "ref-uid", w.ReferenceUID)
+	require.NotNil(t, w.Block)
+	assert.Equal(t, document.BlockNodeParagraph, w.Block.Type)
+
+	// an unexpandable block fails before any wire form exists. The
+	// expansion lives in the shared withBlock helper, so this covers
+	// InsertAfter, InsertBefore, Append, Prepend, and Replace alike.
+	_, err := insert("after", "ref", block.Block{Type: "not_a_type"})()
+	require.Error(t, err)
 }
 
 func Test_Append(t *testing.T) {
@@ -68,9 +82,6 @@ func Test_Prepend(t *testing.T) {
 
 	assert.Equal(t, "prepend", w.Kind)
 	require.NotNil(t, w.Block)
-
-	_, err := Prepend(block.Block{Type: "not_a_type"})()
-	require.Error(t, err)
 }
 
 func Test_Replace(t *testing.T) {
@@ -81,9 +92,6 @@ func Test_Replace(t *testing.T) {
 	assert.Equal(t, "replace", w.Kind)
 	assert.Equal(t, "target", w.BlockUID)
 	require.NotNil(t, w.Block)
-
-	_, err := Replace("target", block.Block{Type: "not_a_type"})()
-	require.Error(t, err)
 }
 
 func Test_UpdateText(t *testing.T) {

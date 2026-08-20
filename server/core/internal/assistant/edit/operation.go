@@ -25,9 +25,9 @@ import (
 // returns the JSON shape expected by the Node endpoint; failures
 // (typically canonical expansion errors) are reported as errors so
 // Apply can fail fast before the round-trip. Operations are
-// constructed via the package-level helpers (InsertAfter, Append,
-// Prepend, Replace, UpdateText, UpdateAttrs, Delete, SetName,
-// SetIcon) and applied as a batch via Client.Apply. Blocks are
+// constructed via the package-level helpers (InsertAfter,
+// InsertBefore, Append, Prepend, Replace, UpdateText, UpdateAttrs,
+// Delete, SetName, SetIcon) and applied as a batch via Client.Apply. Blocks are
 // expanded to ProseMirror at wire time so a re-extracted block
 // doesn't ship a stale payload.
 type Operation func() (wireOp, error)
@@ -48,45 +48,30 @@ func InsertBefore(referenceUID string, b block.Block) Operation {
 // insert builds the shared wire closure behind InsertAfter and
 // InsertBefore.
 func insert(position, referenceUID string, b block.Block) Operation {
-	return func() (wireOp, error) {
-		expanded, err := block.Expand(b)
-		if err != nil {
-			return wireOp{}, err
-		}
-
+	return withBlock(b, func(expanded *document.Block) wireOp {
 		return wireOp{
 			Kind:         "insert",
 			Position:     position,
 			ReferenceUID: referenceUID,
-			Block:        &expanded,
-		}, nil
-	}
+			Block:        expanded,
+		}
+	})
 }
 
 // Append builds an operation that adds b at the end of the
 // document's top-level content.
 func Append(b block.Block) Operation {
-	return func() (wireOp, error) {
-		expanded, err := block.Expand(b)
-		if err != nil {
-			return wireOp{}, err
-		}
-
-		return wireOp{Kind: "append", Block: &expanded}, nil
-	}
+	return withBlock(b, func(expanded *document.Block) wireOp {
+		return wireOp{Kind: "append", Block: expanded}
+	})
 }
 
 // Prepend builds an operation that adds b at the start of the
 // document's top-level content.
 func Prepend(b block.Block) Operation {
-	return func() (wireOp, error) {
-		expanded, err := block.Expand(b)
-		if err != nil {
-			return wireOp{}, err
-		}
-
-		return wireOp{Kind: "prepend", Block: &expanded}, nil
-	}
+	return withBlock(b, func(expanded *document.Block) wireOp {
+		return wireOp{Kind: "prepend", Block: expanded}
+	})
 }
 
 // Replace builds an operation that replaces the block identified by
@@ -94,13 +79,22 @@ func Prepend(b block.Block) Operation {
 // in its parent; its uid is taken from b (or freshly generated when
 // b.UID is empty).
 func Replace(blockUID string, b block.Block) Operation {
+	return withBlock(b, func(expanded *document.Block) wireOp {
+		return wireOp{Kind: "replace", BlockUID: blockUID, Block: expanded}
+	})
+}
+
+// withBlock builds an operation that expands b to ProseMirror at
+// wire time and hands the result to wrap for the kind-specific wire
+// form.
+func withBlock(b block.Block, wrap func(expanded *document.Block) wireOp) Operation {
 	return func() (wireOp, error) {
 		expanded, err := block.Expand(b)
 		if err != nil {
 			return wireOp{}, err
 		}
 
-		return wireOp{Kind: "replace", BlockUID: blockUID, Block: &expanded}, nil
+		return wrap(&expanded), nil
 	}
 }
 
@@ -136,9 +130,9 @@ func Delete(blockUID string) Operation {
 }
 
 // SetName builds an operation that updates the document's display
-// name. An empty name is omitted from the wire form, so it leaves the
-// title as it is rather than clearing it — callers that mean to clear a
-// title need a wire field that can carry the difference.
+// name. The op is sent even when name is empty: omitempty drops the
+// name field from the wire form, and Node treats the missing name as
+// falsy and clears the title.
 func SetName(name string) Operation {
 	return func() (wireOp, error) {
 		return wireOp{Kind: "set_name", Name: name}, nil
@@ -157,13 +151,36 @@ func SetIcon(icon string) Operation {
 // operation. Only the fields meaningful to a given kind are set;
 // omitempty keeps the wire payload tight.
 type wireOp struct {
-	Kind         string           `json:"kind"`
-	Position     string           `json:"position,omitempty"`
-	ReferenceUID string           `json:"reference_uid,omitempty"`
-	BlockUID     string           `json:"block_uid,omitempty"`
-	Block        *document.Block  `json:"block,omitempty"`
-	Content      []document.Block `json:"content,omitempty"`
-	Attrs        map[string]any   `json:"attrs,omitempty"`
-	Name         string           `json:"name,omitempty"`
-	Icon         string           `json:"icon,omitempty"`
+	// Kind names the operation ("insert", "append", …); set on
+	// every op.
+	Kind string `json:"kind"`
+
+	// Position is "after" or "before" relative to ReferenceUID;
+	// insert only.
+	Position string `json:"position,omitempty"`
+
+	// ReferenceUID identifies the block an insert is anchored to;
+	// insert only.
+	ReferenceUID string `json:"reference_uid,omitempty"`
+
+	// BlockUID identifies the block the operation targets; replace,
+	// update_text, update_attrs, and delete.
+	BlockUID string `json:"block_uid,omitempty"`
+
+	// Block is the expanded ProseMirror payload; insert, append,
+	// prepend, and replace.
+	Block *document.Block `json:"block,omitempty"`
+
+	// Content is the parsed inline replacement text; update_text
+	// only.
+	Content []document.Block `json:"content,omitempty"`
+
+	// Attrs holds the attributes to set; update_attrs only.
+	Attrs map[string]any `json:"attrs,omitempty"`
+
+	// Name is the new document display name; set_name only.
+	Name string `json:"name,omitempty"`
+
+	// Icon is the new document icon identifier; set_icon only.
+	Icon string `json:"icon,omitempty"`
 }

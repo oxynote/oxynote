@@ -69,7 +69,7 @@ func compactMany(blocks []document.Block) ([]Block, error) {
 	for i, b := range blocks {
 		c, err := Compact(b)
 		if err != nil {
-			return nil, fmt.Errorf("compact block %d (%s): %w", i, b.Type, err)
+			return nil, fmt.Errorf("compacting block %d (%s): %w", i, b.Type, err)
 		}
 
 		out = append(out, c)
@@ -109,11 +109,11 @@ func compactHeading(b document.Block, uid string) Block {
 // has exactly one paragraph child, its text is promoted; otherwise
 // Items carries the content so callers can still see it.
 func compactBlockquote(b document.Block, uid string) (Block, error) {
-	if len(b.Content) == 1 && b.Content[0].Type == document.BlockNodeParagraph {
+	if text, ok := singleParagraphText(b.Content); ok {
 		return Block{
 			Type: BlockBlockquote,
 			UID:  uid,
-			Text: emitInlineMarkdown(b.Content[0].Content),
+			Text: text,
 		}, nil
 	}
 
@@ -150,7 +150,7 @@ func compactList(b document.Block, uid string, kind Type) (Block, error) {
 			return Block{}, fmt.Errorf("%s item %d: %w", kind, i, err)
 		}
 
-		// an item wraps a paragraph plus whatever follows it, typically a
+		// An item wraps a paragraph plus whatever follows it, typically a
 		// nested list; dropping the rest here would delete it from the
 		// document on the way back through replace_block.
 		inner.Children, err = compactMany(li.Content[1:])
@@ -226,11 +226,11 @@ func compactCallout(b document.Block, uid string) (Block, error) {
 		attrs[document.AttrIcon] = a.String()
 	}
 
-	if len(b.Content) == 1 && b.Content[0].Type == document.BlockNodeParagraph {
+	if text, ok := singleParagraphText(b.Content); ok {
 		return Block{
 			Type:  BlockCallout,
 			UID:   uid,
-			Text:  emitInlineMarkdown(b.Content[0].Content),
+			Text:  text,
 			Attrs: attrsOrNil(attrs),
 		}, nil
 	}
@@ -322,21 +322,8 @@ func compactMermaid(b document.Block, uid string) Block {
 func compactImage(b document.Block, uid string) Block {
 	attrs := document.Attributes{}
 
-	if a, ok := b.Attrs.Get(document.AttrSrc); ok && a.String() != "" {
-		attrs[document.AttrSrc] = a.String()
-	}
-
-	if a, ok := b.Attrs.Get(document.AttrAlt); ok && a.String() != "" {
-		attrs[document.AttrAlt] = a.String()
-	}
-
-	if a, ok := b.Attrs.Get(document.AttrTitle); ok && a.String() != "" {
-		attrs[document.AttrTitle] = a.String()
-	}
-
-	if a, ok := b.Attrs.Get(document.AttrWidth); ok && a.Int() > 0 {
-		attrs[document.AttrWidth] = a.Int()
-	}
+	copyStringAttrs(attrs, b.Attrs, document.AttrSrc, document.AttrAlt, document.AttrTitle)
+	copyPositiveIntAttrs(attrs, b.Attrs, document.AttrWidth)
 
 	return Block{
 		Type:  BlockImage,
@@ -350,17 +337,8 @@ func compactImage(b document.Block, uid string) Block {
 func compactFigma(b document.Block, uid string) Block {
 	attrs := document.Attributes{}
 
-	if a, ok := b.Attrs.Get(document.AttrSrc); ok && a.String() != "" {
-		attrs[document.AttrSrc] = a.String()
-	}
-
-	if a, ok := b.Attrs.Get(document.AttrWidth); ok && a.Int() > 0 {
-		attrs[document.AttrWidth] = a.Int()
-	}
-
-	if a, ok := b.Attrs.Get(document.AttrHeight); ok && a.Int() > 0 {
-		attrs[document.AttrHeight] = a.Int()
-	}
+	copyStringAttrs(attrs, b.Attrs, document.AttrSrc)
+	copyPositiveIntAttrs(attrs, b.Attrs, document.AttrWidth, document.AttrHeight)
 
 	return Block{
 		Type:  BlockFigma,
@@ -474,6 +452,37 @@ func compactParamListItem(b document.Block) ParamItem {
 	}
 
 	return item
+}
+
+// singleParagraphText reports whether content is exactly one
+// paragraph node and, when it is, returns that paragraph's inline
+// content emitted as minimal-markdown text.
+func singleParagraphText(content []document.Block) (string, bool) {
+	if len(content) == 1 && content[0].Type == document.BlockNodeParagraph {
+		return emitInlineMarkdown(content[0].Content), true
+	}
+
+	return "", false
+}
+
+// copyStringAttrs copies each named attribute from src into dst when
+// it is present with a non-empty string value.
+func copyStringAttrs(dst, src document.Attributes, keys ...string) {
+	for _, k := range keys {
+		if a, ok := src.Get(k); ok && a.String() != "" {
+			dst[k] = a.String()
+		}
+	}
+}
+
+// copyPositiveIntAttrs copies each named attribute from src into dst
+// when it is present with a positive integer value.
+func copyPositiveIntAttrs(dst, src document.Attributes, keys ...string) {
+	for _, k := range keys {
+		if a, ok := src.Get(k); ok && a.Int() > 0 {
+			dst[k] = a.Int()
+		}
+	}
 }
 
 // flattenText concatenates the text of inline text nodes ignoring

@@ -3,58 +3,70 @@ package block
 import (
 	"testing"
 
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func Test_Validate(t *testing.T) {
-	tests := map[string]struct {
+	cc := map[string]struct {
 		Input        Block
-		ExpectErr    bool
+		Err          error
 		ExpectedPath string
 	}{
 		"Missing type": {
-			Input:     Block{Text: "x"},
-			ExpectErr: true,
+			Input: Block{Text: "x"},
+			Err:   assert.AnError,
 		},
 		"Unknown type": {
-			Input:     Block{Type: "wibble"},
-			ExpectErr: true,
+			Input: Block{Type: "wibble"},
+			Err:   assert.AnError,
 		},
 		"Paragraph with task_items is rejected": {
 			Input:        Block{Type: BlockParagraph, TaskItems: []TaskItem{{Block: Block{Type: BlockParagraph}}}},
-			ExpectErr:    true,
+			Err:          assert.AnError,
 			ExpectedPath: "",
 		},
 		"Heading without level": {
 			Input:        Block{Type: BlockHeading, Text: "x"},
-			ExpectErr:    true,
+			Err:          assert.AnError,
 			ExpectedPath: "attrs.level",
 		},
 		"Heading with invalid level": {
 			Input:        Block{Type: BlockHeading, Text: "x", Attrs: map[string]any{"level": 4}},
-			ExpectErr:    true,
+			Err:          assert.AnError,
 			ExpectedPath: "attrs.level",
 		},
 		"Heading with valid level passes": {
-			Input:     Block{Type: BlockHeading, Text: "x", Attrs: map[string]any{"level": 2}},
-			ExpectErr: false,
+			Input: Block{Type: BlockHeading, Text: "x", Attrs: map[string]any{"level": 2}},
 		},
 		"Bullet list requires items": {
-			Input:     Block{Type: BlockBulletList},
-			ExpectErr: true,
+			Input: Block{Type: BlockBulletList},
+			Err:   assert.AnError,
 		},
 		"Bullet list with non-paragraph item is rejected": {
 			Input: Block{
 				Type:  BlockBulletList,
 				Items: []Block{{Type: BlockCode, Text: "x"}},
 			},
-			ExpectErr:    true,
+			Err:          assert.AnError,
 			ExpectedPath: "items[0]",
 		},
+		"Bullet list reports the index of the offending item": {
+			Input: Block{
+				Type: BlockBulletList,
+				Items: []Block{
+					{Type: BlockParagraph, Text: "a"},
+					{Type: BlockParagraph, Text: "b"},
+					{Type: BlockCode, Text: "x"},
+				},
+			},
+			Err:          assert.AnError,
+			ExpectedPath: "items[2]",
+		},
 		"Task list requires task_items": {
-			Input:     Block{Type: BlockTaskList},
-			ExpectErr: true,
+			Input: Block{Type: BlockTaskList},
+			Err:   assert.AnError,
 		},
 		"Task list with empty content block is allowed only as paragraph": {
 			Input: Block{
@@ -63,12 +75,12 @@ func Test_Validate(t *testing.T) {
 					{Block: Block{Type: BlockCode, Text: "x"}},
 				},
 			},
-			ExpectErr:    true,
+			Err:          assert.AnError,
 			ExpectedPath: "task_items[0]/block",
 		},
 		"Callout requires text or items": {
-			Input:     Block{Type: BlockCallout},
-			ExpectErr: true,
+			Input: Block{Type: BlockCallout},
+			Err:   assert.AnError,
 		},
 		"Callout with both text and items is rejected": {
 			Input: Block{
@@ -76,21 +88,21 @@ func Test_Validate(t *testing.T) {
 				Text:  "hi",
 				Items: []Block{{Type: BlockParagraph, Text: "x"}},
 			},
-			ExpectErr: true,
+			Err: assert.AnError,
 		},
 		"Titled code requires title": {
 			Input:        Block{Type: BlockTitledCode, Text: "x"},
-			ExpectErr:    true,
+			Err:          assert.AnError,
 			ExpectedPath: "attrs.title",
 		},
 		"Image requires src": {
 			Input:        Block{Type: BlockImage},
-			ExpectErr:    true,
+			Err:          assert.AnError,
 			ExpectedPath: "attrs.src",
 		},
 		"Figma requires src": {
 			Input:        Block{Type: BlockFigma},
-			ExpectErr:    true,
+			Err:          assert.AnError,
 			ExpectedPath: "attrs.src",
 		},
 		"Metric grid requires metric items only": {
@@ -98,7 +110,7 @@ func Test_Validate(t *testing.T) {
 				Type:  BlockMetricGrid,
 				Items: []Block{{Type: BlockParagraph, Text: "x"}},
 			},
-			ExpectErr:    true,
+			Err:          assert.AnError,
 			ExpectedPath: "items[0]",
 		},
 		"Split doc requires left starting with heading": {
@@ -107,7 +119,7 @@ func Test_Validate(t *testing.T) {
 				Left:  []Block{{Type: BlockParagraph, Text: "x"}},
 				Right: []Block{{Type: BlockTitledCode, Text: "y", Attrs: map[string]any{"title": "ex"}}},
 			},
-			ExpectErr:    true,
+			Err:          assert.AnError,
 			ExpectedPath: "left[0]",
 		},
 		"Split doc requires right of titled_code or metric": {
@@ -116,7 +128,7 @@ func Test_Validate(t *testing.T) {
 				Left:  []Block{{Type: BlockHeading, Text: "T", Attrs: map[string]any{"level": 1}}},
 				Right: []Block{{Type: BlockParagraph, Text: "x"}},
 			},
-			ExpectErr:    true,
+			Err:          assert.AnError,
 			ExpectedPath: "right[0]",
 		},
 		"Split doc heading must be level 1": {
@@ -129,7 +141,7 @@ func Test_Validate(t *testing.T) {
 					{Type: BlockTitledCode, Text: "x", Attrs: map[string]any{"title": "ex"}},
 				},
 			},
-			ExpectErr:    true,
+			Err:          assert.AnError,
 			ExpectedPath: "left[0].attrs.level",
 		},
 		"Split doc with valid structure passes": {
@@ -143,11 +155,10 @@ func Test_Validate(t *testing.T) {
 					{Type: BlockTitledCode, Text: "x", Attrs: map[string]any{"title": "ex"}},
 				},
 			},
-			ExpectErr: false,
 		},
 		"Param list requires header and params": {
-			Input:     Block{Type: BlockParamList},
-			ExpectErr: true,
+			Input: Block{Type: BlockParamList},
+			Err:   assert.AnError,
 		},
 		"Param list with empty name is rejected": {
 			Input: Block{
@@ -155,7 +166,7 @@ func Test_Validate(t *testing.T) {
 				Header: "Body",
 				Params: []ParamItem{{Name: "  ", Type: "string"}},
 			},
-			ExpectErr:    true,
+			Err:          assert.AnError,
 			ExpectedPath: "params[0]/name",
 		},
 		"Param list with valid rows passes": {
@@ -164,48 +175,54 @@ func Test_Validate(t *testing.T) {
 				Header: "Body",
 				Params: []ParamItem{{Name: "id", Type: "string", Description: "the id"}},
 			},
-			ExpectErr: false,
 		},
 		"Paragraph with items is rejected": {
-			Input:     Block{Type: BlockParagraph, Items: []Block{{Type: BlockParagraph}}},
-			ExpectErr: true,
+			Input: Block{Type: BlockParagraph, Items: []Block{{Type: BlockParagraph}}},
+			Err:   assert.AnError,
 		},
 		"Paragraph with left is rejected": {
-			Input:     Block{Type: BlockParagraph, Left: []Block{{Type: BlockParagraph}}},
-			ExpectErr: true,
+			Input: Block{Type: BlockParagraph, Left: []Block{{Type: BlockParagraph}}},
+			Err:   assert.AnError,
 		},
 		"Paragraph with params is rejected": {
-			Input:     Block{Type: BlockParagraph, Header: "H", Params: []ParamItem{{Name: "x"}}},
-			ExpectErr: true,
+			Input: Block{Type: BlockParagraph, Header: "H", Params: []ParamItem{{Name: "x"}}},
+			Err:   assert.AnError,
 		},
 		"Heading with task_items is rejected": {
-			Input:     Block{Type: BlockHeading, TaskItems: []TaskItem{{Block: Block{Type: BlockParagraph}}}},
-			ExpectErr: true,
+			Input: Block{Type: BlockHeading, TaskItems: []TaskItem{{Block: Block{Type: BlockParagraph}}}},
+			Err:   assert.AnError,
 		},
 		"Blockquote with both text and items is rejected": {
-			Input:     Block{Type: BlockBlockquote, Text: "q", Items: []Block{{Type: BlockParagraph, Text: "x"}}},
-			ExpectErr: true,
+			Input: Block{Type: BlockBlockquote, Text: "q", Items: []Block{{Type: BlockParagraph, Text: "x"}}},
+			Err:   assert.AnError,
 		},
 		"Blockquote without content is rejected": {
-			Input:     Block{Type: BlockBlockquote},
-			ExpectErr: true,
+			Input: Block{Type: BlockBlockquote},
+			Err:   assert.AnError,
 		},
 		"Blockquote with task_items is rejected": {
-			Input:     Block{Type: BlockBlockquote, TaskItems: []TaskItem{{Block: Block{Type: BlockParagraph}}}},
-			ExpectErr: true,
+			Input: Block{Type: BlockBlockquote, TaskItems: []TaskItem{{Block: Block{Type: BlockParagraph}}}},
+			Err:   assert.AnError,
 		},
 		"Blockquote with items passes": {
-			Input:     Block{Type: BlockBlockquote, Items: []Block{{Type: BlockParagraph, Text: "x"}}},
-			ExpectErr: false,
+			Input: Block{Type: BlockBlockquote, Items: []Block{{Type: BlockParagraph, Text: "x"}}},
 		},
 		"Blockquote with disallowed item is rejected": {
 			Input:        Block{Type: BlockBlockquote, Items: []Block{{Type: BlockCode, Text: "x"}}},
-			ExpectErr:    true,
+			Err:          assert.AnError,
 			ExpectedPath: "items[0]",
 		},
 		"Blockquote with invalid nested item is rejected": {
 			Input:        Block{Type: BlockBlockquote, Items: []Block{{Type: BlockBulletList}}},
-			ExpectErr:    true,
+			Err:          assert.AnError,
+			ExpectedPath: "items[0]",
+		},
+		"Bullet list with invalid nested item is rejected": {
+			Input: Block{
+				Type:  BlockBulletList,
+				Items: []Block{{Type: BlockBulletList}},
+			},
+			Err:          assert.AnError,
 			ExpectedPath: "items[0]",
 		},
 		"List item children are accepted": {
@@ -220,7 +237,6 @@ func Test_Validate(t *testing.T) {
 					}},
 				}},
 			},
-			ExpectErr: false,
 		},
 		"List item children of a disallowed type are rejected": {
 			Input: Block{
@@ -231,8 +247,22 @@ func Test_Validate(t *testing.T) {
 					Children: []Block{{Type: BlockCode, Text: "x"}},
 				}},
 			},
-			ExpectErr:    true,
+			Err:          assert.AnError,
 			ExpectedPath: "items[0]/children[0]",
+		},
+		"Task item children of a disallowed type are rejected": {
+			Input: Block{
+				Type: BlockTaskList,
+				TaskItems: []TaskItem{{
+					Block: Block{
+						Type:     BlockParagraph,
+						Text:     "one",
+						Children: []Block{{Type: BlockCode, Text: "x"}},
+					},
+				}},
+			},
+			Err:          assert.AnError,
+			ExpectedPath: "task_items[0]/block/children[0]",
 		},
 		"Task item children are accepted": {
 			Input: Block{
@@ -248,29 +278,27 @@ func Test_Validate(t *testing.T) {
 					},
 				}},
 			},
-			ExpectErr: false,
 		},
 		// only a list or task-list item's content block carries children;
 		// anywhere else they would be silently dropped by Expand.
 		"Children outside a list item are rejected": {
-			Input:     Block{Type: BlockParagraph, Text: "x", Children: []Block{{Type: BlockParagraph}}},
-			ExpectErr: true,
+			Input: Block{Type: BlockParagraph, Text: "x", Children: []Block{{Type: BlockParagraph}}},
+			Err:   assert.AnError,
 		},
 		"Bullet list with text is rejected": {
-			Input:     Block{Type: BlockBulletList, Text: "x", Items: []Block{{Type: BlockParagraph}}},
-			ExpectErr: true,
+			Input: Block{Type: BlockBulletList, Text: "x", Items: []Block{{Type: BlockParagraph}}},
+			Err:   assert.AnError,
 		},
 		"Bullet list with task_items is rejected": {
-			Input:     Block{Type: BlockBulletList, TaskItems: []TaskItem{{Block: Block{Type: BlockParagraph}}}},
-			ExpectErr: true,
+			Input: Block{Type: BlockBulletList, TaskItems: []TaskItem{{Block: Block{Type: BlockParagraph}}}},
+			Err:   assert.AnError,
 		},
 		"Ordered list without items is rejected": {
-			Input:     Block{Type: BlockOrderedList},
-			ExpectErr: true,
+			Input: Block{Type: BlockOrderedList},
+			Err:   assert.AnError,
 		},
 		"Bullet list with paragraph items passes": {
-			Input:     Block{Type: BlockBulletList, Items: []Block{{Type: BlockParagraph, Text: "x"}}},
-			ExpectErr: false,
+			Input: Block{Type: BlockBulletList, Items: []Block{{Type: BlockParagraph, Text: "x"}}},
 		},
 		"Task list with text is rejected": {
 			Input: Block{
@@ -278,7 +306,7 @@ func Test_Validate(t *testing.T) {
 				Text:      "x",
 				TaskItems: []TaskItem{{Block: Block{Type: BlockParagraph}}},
 			},
-			ExpectErr: true,
+			Err: assert.AnError,
 		},
 		"Task list with left is rejected": {
 			Input: Block{
@@ -286,170 +314,159 @@ func Test_Validate(t *testing.T) {
 				Left:      []Block{{Type: BlockParagraph}},
 				TaskItems: []TaskItem{{Block: Block{Type: BlockParagraph}}},
 			},
-			ExpectErr: true,
+			Err: assert.AnError,
 		},
 		"Task list with invalid row block is rejected": {
 			Input: Block{
 				Type:      BlockTaskList,
 				TaskItems: []TaskItem{{Block: Block{Type: BlockHeading, Text: "x"}}},
 			},
-			ExpectErr: true,
+			Err: assert.AnError,
 		},
 		"Task list with valid rows passes": {
 			Input: Block{
 				Type:      BlockTaskList,
 				TaskItems: []TaskItem{{Checked: true, Block: Block{Type: BlockParagraph, Text: "x"}}},
 			},
-			ExpectErr: false,
 		},
 		"Callout with params is rejected": {
-			Input:     Block{Type: BlockCallout, Text: "x", Params: []ParamItem{{Name: "p"}}},
-			ExpectErr: true,
+			Input: Block{Type: BlockCallout, Text: "x", Params: []ParamItem{{Name: "p"}}},
+			Err:   assert.AnError,
 		},
 		"Callout with task_items is rejected": {
-			Input:     Block{Type: BlockCallout, Text: "x", TaskItems: []TaskItem{{Block: Block{Type: BlockParagraph}}}},
-			ExpectErr: true,
+			Input: Block{Type: BlockCallout, Text: "x", TaskItems: []TaskItem{{Block: Block{Type: BlockParagraph}}}},
+			Err:   assert.AnError,
 		},
 		"Metric grid with right is rejected": {
-			Input:     Block{Type: BlockMetricGrid, Right: []Block{{Type: BlockMetric}}, Items: []Block{{Type: BlockMetric}}},
-			ExpectErr: true,
+			Input: Block{Type: BlockMetricGrid, Right: []Block{{Type: BlockMetric}}, Items: []Block{{Type: BlockMetric}}},
+			Err:   assert.AnError,
 		},
 		"Callout with text passes": {
-			Input:     Block{Type: BlockCallout, Text: "watch out"},
-			ExpectErr: false,
+			Input: Block{Type: BlockCallout, Text: "watch out"},
 		},
 		"Callout with items passes": {
-			Input:     Block{Type: BlockCallout, Items: []Block{{Type: BlockParagraph, Text: "x"}}},
-			ExpectErr: false,
+			Input: Block{Type: BlockCallout, Items: []Block{{Type: BlockParagraph, Text: "x"}}},
 		},
 		"Callout with disallowed item is rejected": {
 			Input:        Block{Type: BlockCallout, Items: []Block{{Type: BlockMermaid, Text: "x"}}},
-			ExpectErr:    true,
+			Err:          assert.AnError,
 			ExpectedPath: "items[0]",
 		},
 		"Code with task_items is rejected": {
-			Input:     Block{Type: BlockCode, TaskItems: []TaskItem{{Block: Block{Type: BlockParagraph}}}},
-			ExpectErr: true,
+			Input: Block{Type: BlockCode, TaskItems: []TaskItem{{Block: Block{Type: BlockParagraph}}}},
+			Err:   assert.AnError,
 		},
 		"Code with items is rejected": {
-			Input:     Block{Type: BlockCode, Items: []Block{{Type: BlockParagraph}}},
-			ExpectErr: true,
+			Input: Block{Type: BlockCode, Items: []Block{{Type: BlockParagraph}}},
+			Err:   assert.AnError,
 		},
 		"Code passes": {
-			Input:     Block{Type: BlockCode, Text: "x := 1"},
-			ExpectErr: false,
+			Input: Block{Type: BlockCode, Text: "x := 1"},
 		},
 		"Titled code with task_items is rejected": {
-			Input:     Block{Type: BlockTitledCode, TaskItems: []TaskItem{{Block: Block{Type: BlockParagraph}}}},
-			ExpectErr: true,
+			Input: Block{Type: BlockTitledCode, TaskItems: []TaskItem{{Block: Block{Type: BlockParagraph}}}},
+			Err:   assert.AnError,
 		},
 		"Titled code with items is rejected": {
-			Input:     Block{Type: BlockTitledCode, Items: []Block{{Type: BlockParagraph}}},
-			ExpectErr: true,
+			Input: Block{Type: BlockTitledCode, Items: []Block{{Type: BlockParagraph}}},
+			Err:   assert.AnError,
 		},
 		"Titled code with whitespace title is rejected": {
 			Input:        Block{Type: BlockTitledCode, Text: "x", Attrs: map[string]any{"title": "   "}},
-			ExpectErr:    true,
+			Err:          assert.AnError,
 			ExpectedPath: "attrs.title",
 		},
 		"Titled code with title passes": {
-			Input:     Block{Type: BlockTitledCode, Text: "x", Attrs: map[string]any{"title": "ex.go"}},
-			ExpectErr: false,
+			Input: Block{Type: BlockTitledCode, Text: "x", Attrs: map[string]any{"title": "ex.go"}},
 		},
 		"Mermaid with task_items is rejected": {
-			Input:     Block{Type: BlockMermaid, TaskItems: []TaskItem{{Block: Block{Type: BlockParagraph}}}},
-			ExpectErr: true,
+			Input: Block{Type: BlockMermaid, TaskItems: []TaskItem{{Block: Block{Type: BlockParagraph}}}},
+			Err:   assert.AnError,
 		},
 		"Mermaid with items is rejected": {
-			Input:     Block{Type: BlockMermaid, Items: []Block{{Type: BlockParagraph}}},
-			ExpectErr: true,
+			Input: Block{Type: BlockMermaid, Items: []Block{{Type: BlockParagraph}}},
+			Err:   assert.AnError,
 		},
 		"Mermaid passes": {
-			Input:     Block{Type: BlockMermaid, Text: "graph TD;"},
-			ExpectErr: false,
+			Input: Block{Type: BlockMermaid, Text: "graph TD;"},
 		},
 		"Horizontal rule with task_items is rejected": {
-			Input:     Block{Type: BlockHorizontalRule, TaskItems: []TaskItem{{Block: Block{Type: BlockParagraph}}}},
-			ExpectErr: true,
+			Input: Block{Type: BlockHorizontalRule, TaskItems: []TaskItem{{Block: Block{Type: BlockParagraph}}}},
+			Err:   assert.AnError,
 		},
 		"Horizontal rule with text is rejected": {
-			Input:     Block{Type: BlockHorizontalRule, Text: "x"},
-			ExpectErr: true,
+			Input: Block{Type: BlockHorizontalRule, Text: "x"},
+			Err:   assert.AnError,
 		},
 		"Horizontal rule passes": {
-			Input:     Block{Type: BlockHorizontalRule},
-			ExpectErr: false,
+			Input: Block{Type: BlockHorizontalRule},
 		},
 		"Image with task_items is rejected": {
-			Input:     Block{Type: BlockImage, TaskItems: []TaskItem{{Block: Block{Type: BlockParagraph}}}},
-			ExpectErr: true,
+			Input: Block{Type: BlockImage, TaskItems: []TaskItem{{Block: Block{Type: BlockParagraph}}}},
+			Err:   assert.AnError,
 		},
 		"Image with text is rejected": {
-			Input:     Block{Type: BlockImage, Text: "x", Attrs: map[string]any{"src": "http://x"}},
-			ExpectErr: true,
+			Input: Block{Type: BlockImage, Text: "x", Attrs: map[string]any{"src": "http://x"}},
+			Err:   assert.AnError,
 		},
 		"Image with src passes": {
-			Input:     Block{Type: BlockImage, Attrs: map[string]any{"src": "http://x"}},
-			ExpectErr: false,
+			Input: Block{Type: BlockImage, Attrs: map[string]any{"src": "http://x"}},
 		},
 		"Figma with task_items is rejected": {
-			Input:     Block{Type: BlockFigma, TaskItems: []TaskItem{{Block: Block{Type: BlockParagraph}}}},
-			ExpectErr: true,
+			Input: Block{Type: BlockFigma, TaskItems: []TaskItem{{Block: Block{Type: BlockParagraph}}}},
+			Err:   assert.AnError,
 		},
 		"Figma with text is rejected": {
-			Input:     Block{Type: BlockFigma, Text: "x", Attrs: map[string]any{"src": "http://f"}},
-			ExpectErr: true,
+			Input: Block{Type: BlockFigma, Text: "x", Attrs: map[string]any{"src": "http://f"}},
+			Err:   assert.AnError,
 		},
 		"Figma with src passes": {
-			Input:     Block{Type: BlockFigma, Attrs: map[string]any{"src": "http://f"}},
-			ExpectErr: false,
+			Input: Block{Type: BlockFigma, Attrs: map[string]any{"src": "http://f"}},
 		},
 		"Metric with task_items is rejected": {
-			Input:     Block{Type: BlockMetric, TaskItems: []TaskItem{{Block: Block{Type: BlockParagraph}}}},
-			ExpectErr: true,
+			Input: Block{Type: BlockMetric, TaskItems: []TaskItem{{Block: Block{Type: BlockParagraph}}}},
+			Err:   assert.AnError,
 		},
 		"Metric with text is rejected": {
-			Input:     Block{Type: BlockMetric, Text: "x"},
-			ExpectErr: true,
+			Input: Block{Type: BlockMetric, Text: "x"},
+			Err:   assert.AnError,
 		},
 		"Metric passes": {
-			Input:     Block{Type: BlockMetric, Attrs: map[string]any{"query": "up"}},
-			ExpectErr: false,
+			Input: Block{Type: BlockMetric, Attrs: map[string]any{"query": "up"}},
 		},
 		"Metric grid with header is rejected": {
-			Input:     Block{Type: BlockMetricGrid, Header: "H", Items: []Block{{Type: BlockMetric}}},
-			ExpectErr: true,
+			Input: Block{Type: BlockMetricGrid, Header: "H", Items: []Block{{Type: BlockMetric}}},
+			Err:   assert.AnError,
 		},
 		"Metric grid with text is rejected": {
-			Input:     Block{Type: BlockMetricGrid, Text: "x", Items: []Block{{Type: BlockMetric}}},
-			ExpectErr: true,
+			Input: Block{Type: BlockMetricGrid, Text: "x", Items: []Block{{Type: BlockMetric}}},
+			Err:   assert.AnError,
 		},
 		"Metric grid without items is rejected": {
-			Input:     Block{Type: BlockMetricGrid},
-			ExpectErr: true,
+			Input: Block{Type: BlockMetricGrid},
+			Err:   assert.AnError,
 		},
 		"Metric grid with invalid metric is rejected": {
-			Input:     Block{Type: BlockMetricGrid, Items: []Block{{Type: BlockMetric, Text: "x"}}},
-			ExpectErr: true,
+			Input: Block{Type: BlockMetricGrid, Items: []Block{{Type: BlockMetric, Text: "x"}}},
+			Err:   assert.AnError,
 		},
 		"Metric grid with metrics passes": {
-			Input:     Block{Type: BlockMetricGrid, Items: []Block{{Type: BlockMetric}}},
-			ExpectErr: false,
+			Input: Block{Type: BlockMetricGrid, Items: []Block{{Type: BlockMetric}}},
 		},
 		"Split doc with items is rejected": {
-			Input:     Block{Type: BlockSplitDoc, Items: []Block{{Type: BlockParagraph}}},
-			ExpectErr: true,
+			Input: Block{Type: BlockSplitDoc, Items: []Block{{Type: BlockParagraph}}},
+			Err:   assert.AnError,
 		},
 		"Split doc with text is rejected": {
-			Input:     Block{Type: BlockSplitDoc, Text: "x"},
-			ExpectErr: true,
+			Input: Block{Type: BlockSplitDoc, Text: "x"},
+			Err:   assert.AnError,
 		},
 		"Split doc without left is rejected": {
 			Input: Block{
 				Type:  BlockSplitDoc,
 				Right: []Block{{Type: BlockTitledCode, Text: "y", Attrs: map[string]any{"title": "ex"}}},
 			},
-			ExpectErr:    true,
+			Err:          assert.AnError,
 			ExpectedPath: "left",
 		},
 		"Split doc without right is rejected": {
@@ -457,7 +474,7 @@ func Test_Validate(t *testing.T) {
 				Type: BlockSplitDoc,
 				Left: []Block{{Type: BlockHeading, Text: "T", Attrs: map[string]any{"level": 1}}},
 			},
-			ExpectErr:    true,
+			Err:          assert.AnError,
 			ExpectedPath: "right",
 		},
 		"Split doc with invalid left block is rejected": {
@@ -469,7 +486,7 @@ func Test_Validate(t *testing.T) {
 				},
 				Right: []Block{{Type: BlockTitledCode, Text: "y", Attrs: map[string]any{"title": "ex"}}},
 			},
-			ExpectErr:    true,
+			Err:          assert.AnError,
 			ExpectedPath: "left[1]",
 		},
 		"Split doc body after param_list is rejected": {
@@ -482,7 +499,7 @@ func Test_Validate(t *testing.T) {
 				},
 				Right: []Block{{Type: BlockTitledCode, Text: "y", Attrs: map[string]any{"title": "ex"}}},
 			},
-			ExpectErr:    true,
+			Err:          assert.AnError,
 			ExpectedPath: "left[2]",
 		},
 		"Split doc with disallowed left body is rejected": {
@@ -494,7 +511,7 @@ func Test_Validate(t *testing.T) {
 				},
 				Right: []Block{{Type: BlockTitledCode, Text: "y", Attrs: map[string]any{"title": "ex"}}},
 			},
-			ExpectErr:    true,
+			Err:          assert.AnError,
 			ExpectedPath: "left[1]",
 		},
 		"Split doc with invalid right block is rejected": {
@@ -503,7 +520,7 @@ func Test_Validate(t *testing.T) {
 				Left:  []Block{{Type: BlockHeading, Text: "T", Attrs: map[string]any{"level": 1}}},
 				Right: []Block{{Type: BlockTitledCode, Text: "y"}},
 			},
-			ExpectErr: true,
+			Err: assert.AnError,
 		},
 		"Split doc with trailing param_list passes": {
 			Input: Block{
@@ -515,7 +532,6 @@ func Test_Validate(t *testing.T) {
 				},
 				Right: []Block{{Type: BlockTitledCode, Text: "y", Attrs: map[string]any{"title": "ex"}}},
 			},
-			ExpectErr: false,
 		},
 		"Param list with items is rejected": {
 			Input: Block{
@@ -524,7 +540,7 @@ func Test_Validate(t *testing.T) {
 				Items:  []Block{{Type: BlockParagraph}},
 				Params: []ParamItem{{Name: "x"}},
 			},
-			ExpectErr: true,
+			Err: assert.AnError,
 		},
 		"Param list with text is rejected": {
 			Input: Block{
@@ -533,57 +549,54 @@ func Test_Validate(t *testing.T) {
 				Header: "H",
 				Params: []ParamItem{{Name: "x"}},
 			},
-			ExpectErr: true,
+			Err: assert.AnError,
 		},
 		"Param list without params is rejected": {
 			Input:        Block{Type: BlockParamList, Header: "H"},
-			ExpectErr:    true,
+			Err:          assert.AnError,
 			ExpectedPath: "params",
 		},
 	}
 
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			err := Validate(tc.Input)
-			if !tc.ExpectErr {
-				assert.NoError(t, err)
+			err := Validate(c.Input)
+
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if c.Err == nil {
 				return
 			}
-
-			require.Error(t, err)
 
 			var ve *validationError
 
 			require.ErrorAs(t, err, &ve, "expected validationError, got %T", err)
 
-			if tc.ExpectedPath != "" {
-				assert.Equal(t, tc.ExpectedPath, ve.Path, "validationError path mismatch (full: %s)", ve.Error())
+			if c.ExpectedPath != "" {
+				assert.Equal(t, c.ExpectedPath, ve.Path, "validationError path mismatch (full: %s)", ve.Error())
 			}
 		})
 	}
 }
 
 func Test_ValidateAsRoot(t *testing.T) {
-	tests := map[string]struct {
-		Input     Block
-		ExpectErr bool
+	cc := map[string]struct {
+		Input Block
+		Err   error
 	}{
 		"Paragraph at root passes": {
-			Input:     Block{Type: BlockParagraph, Text: "hi"},
-			ExpectErr: false,
+			Input: Block{Type: BlockParagraph, Text: "hi"},
 		},
 		"Heading at root passes": {
-			Input:     Block{Type: BlockHeading, Text: "T", Attrs: map[string]any{"level": 1}},
-			ExpectErr: false,
+			Input: Block{Type: BlockHeading, Text: "T", Attrs: map[string]any{"level": 1}},
 		},
 		"Metric grid at root passes": {
 			Input: Block{
 				Type:  BlockMetricGrid,
 				Items: []Block{{Type: BlockMetric}},
 			},
-			ExpectErr: false,
 		},
 		"Split doc at root passes": {
 			Input: Block{
@@ -595,7 +608,6 @@ func Test_ValidateAsRoot(t *testing.T) {
 					{Type: BlockTitledCode, Text: "x", Attrs: map[string]any{"title": "ex"}},
 				},
 			},
-			ExpectErr: false,
 		},
 		"Titled code at root is rejected": {
 			Input: Block{
@@ -603,11 +615,11 @@ func Test_ValidateAsRoot(t *testing.T) {
 				Text:  "x",
 				Attrs: map[string]any{"title": "ex"},
 			},
-			ExpectErr: true,
+			Err: assert.AnError,
 		},
 		"Metric at root is rejected": {
-			Input:     Block{Type: BlockMetric},
-			ExpectErr: true,
+			Input: Block{Type: BlockMetric},
+			Err:   assert.AnError,
 		},
 		"Param list at root is rejected": {
 			Input: Block{
@@ -615,28 +627,29 @@ func Test_ValidateAsRoot(t *testing.T) {
 				Header: "Body",
 				Params: []ParamItem{{Name: "x"}},
 			},
-			ExpectErr: true,
+			Err: assert.AnError,
 		},
 		"Invalid block fails before the root check": {
-			Input:     Block{Type: BlockHeading, Text: "x"},
-			ExpectErr: true,
+			Input: Block{Type: BlockHeading, Text: "x"},
+			Err:   assert.AnError,
 		},
 	}
 
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			err := ValidateAsRoot(tc.Input)
-			if tc.ExpectErr {
-				require.Error(t, err)
+			err := ValidateAsRoot(c.Input)
 
-				var ve *validationError
+			testutil.AssertEqualError(t, c.Err, err)
 
-				assert.ErrorAs(t, err, &ve, "expected validationError, got %T", err)
-			} else {
-				assert.NoError(t, err)
+			if c.Err == nil {
+				return
 			}
+
+			var ve *validationError
+
+			assert.ErrorAs(t, err, &ve, "expected validationError, got %T", err)
 		})
 	}
 }

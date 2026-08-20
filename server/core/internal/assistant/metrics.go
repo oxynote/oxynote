@@ -57,6 +57,13 @@ func newMetrics(fc metricutil.Factory, provider string) *metrics {
 	}
 }
 
+// observeToolCall records one finished tool call's outcome. Its shape
+// matches the observer middleware's observe callback.
+func (m *metrics) observeToolCall(tool tools.Name, status string, seconds float64) {
+	m.recordToolCall(tool, status)
+	m.recordToolDuration(tool, seconds)
+}
+
 // recordToolCall records a tool call metric with the given tool name and status.
 func (m *metrics) recordToolCall(tool tools.Name, status string) {
 	m.toolCalls.With(prometheus.Labels{

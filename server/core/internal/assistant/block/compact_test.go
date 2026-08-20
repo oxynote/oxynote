@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 )
 
@@ -14,10 +14,10 @@ func TestMain(m *testing.M) {
 }
 
 func Test_Compact(t *testing.T) {
-	tests := map[string]struct {
-		Input     document.Block
-		Expected  Block
-		ExpectErr bool
+	cc := map[string]struct {
+		Input    document.Block
+		Expected Block
+		Err      error
 	}{
 		"Paragraph emits markdown": {
 			Input: document.Block{
@@ -100,7 +100,7 @@ func Test_Compact(t *testing.T) {
 				Items: []Block{{Type: BlockParagraph}},
 			},
 		},
-		// the item wrapper holds a paragraph plus whatever is nested under
+		// The item wrapper holds a paragraph plus whatever is nested under
 		// it; dropping the rest deletes it from the document on write-back.
 		"List item keeps its nested list": {
 			Input: document.Block{
@@ -208,7 +208,7 @@ func Test_Compact(t *testing.T) {
 				Type:    document.BlockNodeBulletList,
 				Content: []document.Block{{Type: document.BlockNodeParagraph}},
 			},
-			ExpectErr: true,
+			Err: assert.AnError,
 		},
 		"List item with unsupported content fails": {
 			Input: document.Block{
@@ -217,7 +217,22 @@ func Test_Compact(t *testing.T) {
 					{Type: document.BlockNodeListItem, Content: []document.Block{{Type: "weirdNode"}}},
 				},
 			},
-			ExpectErr: true,
+			Err: assert.AnError,
+		},
+		"List item with unsupported nested child fails": {
+			Input: document.Block{
+				Type: document.BlockNodeBulletList,
+				Content: []document.Block{
+					{
+						Type: document.BlockNodeListItem,
+						Content: []document.Block{
+							{Type: document.BlockNodeParagraph},
+							{Type: "weirdNode"},
+						},
+					},
+				},
+			},
+			Err: assert.AnError,
 		},
 		"Blockquote with multiple paragraphs falls back to items": {
 			Input: document.Block{
@@ -242,14 +257,14 @@ func Test_Compact(t *testing.T) {
 				Type:    document.BlockNodeBlockquote,
 				Content: []document.Block{{Type: "weirdNode"}},
 			},
-			ExpectErr: true,
+			Err: assert.AnError,
 		},
 		"Task list with non-taskItem child fails": {
 			Input: document.Block{
 				Type:    document.BlockNodeTaskList,
 				Content: []document.Block{{Type: document.BlockNodeParagraph}},
 			},
-			ExpectErr: true,
+			Err: assert.AnError,
 		},
 		"Task item without content becomes an empty paragraph": {
 			Input: document.Block{
@@ -272,7 +287,22 @@ func Test_Compact(t *testing.T) {
 					{Type: document.BlockNodeTaskItem, Content: []document.Block{{Type: "weirdNode"}}},
 				},
 			},
-			ExpectErr: true,
+			Err: assert.AnError,
+		},
+		"Task item with unsupported nested child fails": {
+			Input: document.Block{
+				Type: document.BlockNodeTaskList,
+				Content: []document.Block{
+					{
+						Type: document.BlockNodeTaskItem,
+						Content: []document.Block{
+							{Type: document.BlockNodeParagraph},
+							{Type: "weirdNode"},
+						},
+					},
+				},
+			},
+			Err: assert.AnError,
 		},
 		"Callout with multiple children falls back to items": {
 			Input: document.Block{
@@ -295,7 +325,7 @@ func Test_Compact(t *testing.T) {
 				Type:    document.BlockNodeCalloutBlock,
 				Content: []document.Block{{Type: "weirdNode"}},
 			},
-			ExpectErr: true,
+			Err: assert.AnError,
 		},
 		"Code without language omits attrs": {
 			Input: document.Block{
@@ -360,7 +390,7 @@ func Test_Compact(t *testing.T) {
 				Type:    document.BlockNodeMetricGrid,
 				Content: []document.Block{{Type: "weirdNode"}},
 			},
-			ExpectErr: true,
+			Err: assert.AnError,
 		},
 		"Split doc left failure propagates": {
 			Input: document.Block{
@@ -369,7 +399,7 @@ func Test_Compact(t *testing.T) {
 					{Type: document.BlockNodeSplitDocLeft, Content: []document.Block{{Type: "weirdNode"}}},
 				},
 			},
-			ExpectErr: true,
+			Err: assert.AnError,
 		},
 		"Split doc right failure propagates": {
 			Input: document.Block{
@@ -378,7 +408,7 @@ func Test_Compact(t *testing.T) {
 					{Type: document.BlockNodeSplitDocRight, Content: []document.Block{{Type: "weirdNode"}}},
 				},
 			},
-			ExpectErr: true,
+			Err: assert.AnError,
 		},
 		"Split doc ignores unknown side nodes": {
 			Input: document.Block{
@@ -388,8 +418,8 @@ func Test_Compact(t *testing.T) {
 			Expected: Block{Type: BlockSplitDoc},
 		},
 		"Unsupported node type fails": {
-			Input:     document.Block{Type: "weirdNode"},
-			ExpectErr: true,
+			Input: document.Block{Type: "weirdNode"},
+			Err:   assert.AnError,
 		},
 		"Param list ignores unknown children at every level": {
 			Input: document.Block{
@@ -420,19 +450,19 @@ func Test_Compact(t *testing.T) {
 		},
 	}
 
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := Compact(tc.Input)
-			if tc.ExpectErr {
-				require.Error(t, err)
+			got, err := Compact(c.Input)
 
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if c.Err != nil {
 				return
 			}
 
-			require.NoError(t, err)
-			assert.Equal(t, tc.Expected, got)
+			assert.Equal(t, c.Expected, got)
 		})
 	}
 }

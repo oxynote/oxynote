@@ -18,7 +18,7 @@ type prependBlock struct{ *Input }
 func (t *prependBlock) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return toolInfo(
 		NamePrependBlock,
-		"Prepend a single canonical block at the start of a document.",
+		"Prepend a single canonical block at the start of a document. Block uid is generated server-side if omitted.",
 		map[string]any{
 			_keyDocumentID: stringProp(_descTargetDocumentID),
 			_keyBlock:      _blockSchema,
@@ -34,7 +34,7 @@ func (t *prependBlock) Label(ctx context.Context, args json.RawMessage) string {
 
 // Confirm describes the block the model wants to prepend.
 func (t *prependBlock) Confirm(ctx context.Context, args json.RawMessage) ConfirmActionSummary {
-	kind := blockKindLabel(blockType(t.Input, args))
+	kind := blockKindLabel(t.blockType(args))
 
 	return t.summarize(ctx, NamePrependBlock, args, func(subject string) string {
 		return fmt.Sprintf("Prepend %s to %s", kind, subject)

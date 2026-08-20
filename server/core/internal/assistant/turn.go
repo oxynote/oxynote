@@ -42,7 +42,7 @@ func (t *turn) fail(ctx context.Context, msg string, err error) {
 	t.sess.writer.WriteJSON(ctx, protocol.NewDoneMessage())
 }
 
-// consume relays one agent run to the client, translating agent events
+// run relays one agent run to the client, translating agent events
 // into protocol messages until the run finishes, fails, or pauses for a
 // confirmation.
 //
@@ -80,7 +80,7 @@ func (t *turn) run(
 	}
 }
 
-// finishTurn persists the conversation and tells the client the turn is
+// finish persists the conversation and tells the client the turn is
 // complete.
 func (t *turn) finish(ctx context.Context) {
 	t.sess.mu.Lock()
@@ -200,7 +200,7 @@ func (t *turn) recordUsage(msg *schema.Message) {
 	t.sess.man.metrics.recordTokenUsage(msg.ResponseMeta.Usage)
 }
 
-// buildConfirmation describes every write the model wants to make, for
+// confirmation describes every write the model wants to make, for
 // the user to approve or refuse. Returning nil means the run interrupted
 // with nothing that can be resumed, which is treated as a finished turn
 // rather than leaving the client waiting forever.

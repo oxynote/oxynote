@@ -71,7 +71,7 @@ func expandMany(blocks []Block) ([]document.Block, error) {
 	for i, b := range blocks {
 		expanded, err := Expand(b)
 		if err != nil {
-			return nil, fmt.Errorf("expand block %d (%s): %w", i, b.Type, err)
+			return nil, fmt.Errorf("expanding block %d (%s): %w", i, b.Type, err)
 		}
 
 		out = append(out, expanded)
@@ -129,21 +129,9 @@ func expandHeading(b Block) document.Block {
 // shorthand) or Items (any combination of paragraphs and lists) supplies the
 // content, matching what Validate accepts and what Compact produces.
 func expandBlockquote(b Block) (document.Block, error) {
-	var children []document.Block
-
-	if len(b.Items) > 0 {
-		expanded, err := expandMany(b.Items)
-		if err != nil {
-			return document.Block{}, fmt.Errorf("blockquote items: %w", err)
-		}
-
-		children = expanded
-	} else {
-		children = []document.Block{{
-			Type:    document.BlockNodeParagraph,
-			Attrs:   uidAttrs(strutil.NanoID()),
-			Content: ParseInlineMarkdown(b.Text),
-		}}
+	children, err := textOrItemsContent(b)
+	if err != nil {
+		return document.Block{}, fmt.Errorf("blockquote items: %w", err)
 	}
 
 	return document.Block{
@@ -236,21 +224,9 @@ func expandCallout(b Block) (document.Block, error) {
 		attrs[document.AttrIcon] = a.String()
 	}
 
-	var children []document.Block
-
-	if len(b.Items) > 0 {
-		expanded, err := expandMany(b.Items)
-		if err != nil {
-			return document.Block{}, fmt.Errorf("callout items: %w", err)
-		}
-
-		children = expanded
-	} else {
-		children = []document.Block{{
-			Type:    document.BlockNodeParagraph,
-			Attrs:   uidAttrs(strutil.NanoID()),
-			Content: ParseInlineMarkdown(b.Text),
-		}}
+	children, err := textOrItemsContent(b)
+	if err != nil {
+		return document.Block{}, fmt.Errorf("callout items: %w", err)
 	}
 
 	return document.Block{
@@ -258,6 +234,22 @@ func expandCallout(b Block) (document.Block, error) {
 		Attrs:   attrs,
 		Content: children,
 	}, nil
+}
+
+// textOrItemsContent builds the child slice of a block that accepts
+// either the single-paragraph Text shorthand or explicit Items:
+// present Items are expanded as-is, otherwise Text becomes one
+// paragraph node.
+func textOrItemsContent(b Block) ([]document.Block, error) {
+	if len(b.Items) > 0 {
+		return expandMany(b.Items)
+	}
+
+	return []document.Block{{
+		Type:    document.BlockNodeParagraph,
+		Attrs:   uidAttrs(strutil.NanoID()),
+		Content: ParseInlineMarkdown(b.Text),
+	}}, nil
 }
 
 // expandCode builds a codeBlock. Text is treated as raw code and
@@ -336,21 +328,8 @@ func expandHorizontalRule(b Block) document.Block {
 func expandImage(b Block) document.Block {
 	attrs := uidAttrs(resolveUID(b.UID))
 
-	if a, ok := b.Attrs.Get(document.AttrSrc); ok && a.String() != "" {
-		attrs[document.AttrSrc] = a.String()
-	}
-
-	if a, ok := b.Attrs.Get(document.AttrAlt); ok && a.String() != "" {
-		attrs[document.AttrAlt] = a.String()
-	}
-
-	if a, ok := b.Attrs.Get(document.AttrTitle); ok && a.String() != "" {
-		attrs[document.AttrTitle] = a.String()
-	}
-
-	if a, ok := b.Attrs.Get(document.AttrWidth); ok && a.Int() > 0 {
-		attrs[document.AttrWidth] = a.Int()
-	}
+	copyStringAttrs(attrs, b.Attrs, document.AttrSrc, document.AttrAlt, document.AttrTitle)
+	copyPositiveIntAttrs(attrs, b.Attrs, document.AttrWidth)
 
 	return document.Block{
 		Type:  document.BlockNodeImageBlock,
@@ -362,17 +341,8 @@ func expandImage(b Block) document.Block {
 func expandFigma(b Block) document.Block {
 	attrs := uidAttrs(resolveUID(b.UID))
 
-	if a, ok := b.Attrs.Get(document.AttrSrc); ok && a.String() != "" {
-		attrs[document.AttrSrc] = a.String()
-	}
-
-	if a, ok := b.Attrs.Get(document.AttrWidth); ok && a.Int() > 0 {
-		attrs[document.AttrWidth] = a.Int()
-	}
-
-	if a, ok := b.Attrs.Get(document.AttrHeight); ok && a.Int() > 0 {
-		attrs[document.AttrHeight] = a.Int()
-	}
+	copyStringAttrs(attrs, b.Attrs, document.AttrSrc)
+	copyPositiveIntAttrs(attrs, b.Attrs, document.AttrWidth, document.AttrHeight)
 
 	return document.Block{
 		Type:  document.BlockNodeFigmaBlock,

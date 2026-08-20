@@ -18,7 +18,7 @@ type deleteBlock struct{ *Input }
 func (t *deleteBlock) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return toolInfo(
 		NameDeleteBlock,
-		"Delete a block from the document by uid. Destructive — the user is always asked to confirm.",
+		"Delete a block from the document by uid. This is destructive — the user is always asked to confirm and there is no auto-approve.",
 		map[string]any{
 			_keyDocumentID: stringProp(_descTargetDocumentID),
 			_keyBlockUID:   stringProp("The uid of the block to delete."),

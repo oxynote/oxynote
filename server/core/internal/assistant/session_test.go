@@ -288,7 +288,7 @@ func Test_session_Process(t *testing.T) {
 			},
 		},
 		"Active document is recorded": {
-			JSON: `{"type":"set_active_document","document_id":"doc-1"}`,
+			JSON: `{"type":"set_active_document","documentId":"doc-1"}`,
 			Expect: func(t *testing.T, s *session, _ *recorder) {
 				s.mu.Lock()
 				defer s.mu.Unlock()
@@ -304,9 +304,17 @@ func Test_session_Process(t *testing.T) {
 			},
 		},
 		"Stale confirm response is ignored": {
-			JSON: `{"type":"confirm_response","turn_id":"gone","approved":true}`,
+			JSON: `{"type":"confirm_response","turnId":"gone","approved":true}`,
 			Expect: func(t *testing.T, _ *session, rec *recorder) {
 				assert.Empty(t, rec.types())
+			},
+		},
+		"Malformed confirm response is refused": {
+			JSON: `{"type":"confirm_response","approved":"yes"}`,
+			Expect: func(t *testing.T, _ *session, rec *recorder) {
+				msg, ok := find[protocol.ErrorMessage](rec)
+				require.True(t, ok)
+				assert.Equal(t, "invalid confirm response", msg.Message)
 			},
 		},
 		"Reset clears the conversation": {
@@ -339,9 +347,28 @@ func Test_session_handleMessage(t *testing.T) {
 	cc := map[string]struct {
 		Responses []*schema.Message
 		Content   string
+		Pending   bool
 		Settles   bool
-		Expect    func(t *testing.T, rec *recorder, cm *mock.ChatModel)
+		Expect    func(t *testing.T, rec *recorder, cm *mock.ChatModel, m *Manager)
 	}{
+		"Outstanding confirmation is abandoned by a new message": {
+			Responses: []*schema.Message{
+				schema.AssistantMessage("fresh answer", nil),
+			},
+			Content: "actually, do something else",
+			Pending: true,
+			Settles: true,
+			Expect: func(t *testing.T, rec *recorder, _ *mock.ChatModel, m *Manager) {
+				// the unanswered confirmation is treated as declined:
+				// its record is cleared rather than left pointing at a
+				// checkpoint the new turn is about to delete.
+				ff := m.pendings.(*PendingStoreMock).DeleteCalls()
+				require.Len(t, ff, 1)
+				assert.Equal(t, createPendingKey(createSessionKey("org", "user")), ff[0].Key)
+
+				assert.Contains(t, rec.types(), string(protocol.ServerTypeDone))
+			},
+		},
 		"Read turn answers without asking": {
 			Responses: []*schema.Message{
 				toolCall("1", string(tools.NameSearchDocuments), `{"query":"rate limit"}`),
@@ -349,7 +376,7 @@ func Test_session_handleMessage(t *testing.T) {
 			},
 			Content: "what documents do we have",
 			Settles: true,
-			Expect: func(t *testing.T, rec *recorder, cm *mock.ChatModel) {
+			Expect: func(t *testing.T, rec *recorder, cm *mock.ChatModel, _ *Manager) {
 				// the user is told which tool is running before it runs,
 				// sees the answer stream in, and the turn closes cleanly.
 				assert.Contains(t, rec.types(),
@@ -366,7 +393,7 @@ func Test_session_handleMessage(t *testing.T) {
 		},
 		"Empty content is refused": {
 			Content: "   ",
-			Expect: func(t *testing.T, rec *recorder, cm *mock.ChatModel) {
+			Expect: func(t *testing.T, rec *recorder, cm *mock.ChatModel, _ *Manager) {
 				msg, ok := find[protocol.ErrorMessage](rec)
 				require.True(t, ok)
 				assert.Equal(t, "message content is required", msg.Message)
@@ -383,7 +410,7 @@ func Test_session_handleMessage(t *testing.T) {
 			},
 			Content: "make a runbook",
 			Settles: true,
-			Expect: func(t *testing.T, rec *recorder, _ *mock.ChatModel) {
+			Expect: func(t *testing.T, rec *recorder, _ *mock.ChatModel, _ *Manager) {
 				req, ok := find[protocol.ConfirmRequest](rec)
 				require.True(t, ok, "a write must prompt, got %v", rec.types())
 				require.Len(t, req.Actions, 1)
@@ -407,13 +434,20 @@ func Test_session_handleMessage(t *testing.T) {
 
 			s, rec := prepSession(t, m)
 
+			if c.Pending {
+				m.savePending(context.Background(), s.key, pendingConfirm{
+					TurnID:       "stale",
+					InterruptIDs: []string{"i1"},
+				})
+			}
+
 			s.handleMessage(context.Background(), c.Content)
 
 			if c.Settles {
 				rec.wait(t)
 			}
 
-			c.Expect(t, rec, cm)
+			c.Expect(t, rec, cm, m)
 		})
 	}
 }
@@ -608,12 +642,17 @@ func Test_session_goTurn(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		Pending *pendingConfirm
-		Panic   bool
+		Pending   *pendingConfirm
+		CancelCtx bool
+		Panic     bool
 	}{
 		"Finished turn releases the session": {},
 		"Parked turn asks the user once the session is free": {
 			Pending: &pendingConfirm{TurnID: "t1"},
+		},
+		"Parked turn is persisted past a dead connection": {
+			Pending:   &pendingConfirm{TurnID: "t1"},
+			CancelCtx: true,
 		},
 		"Panicking turn still closes the turn out": {
 			Panic: true,
@@ -627,9 +666,18 @@ func Test_session_goTurn(t *testing.T) {
 			m := testManager()
 			s, rec := prepSession(t, m)
 
+			ctx := context.Background()
+
+			if c.CancelCtx {
+				cctx, cancel := context.WithCancel(ctx)
+				cancel()
+
+				ctx = cctx
+			}
+
 			require.True(t, s.beginTurn(context.Background()))
 
-			s.goTurn(context.Background(), func(context.Context) *pendingConfirm {
+			s.goTurn(ctx, func(context.Context) *pendingConfirm {
 				if c.Panic {
 					panic("turn exploded")
 				}
@@ -669,7 +717,13 @@ func Test_session_goTurn(t *testing.T) {
 			req, ok := find[protocol.ConfirmRequest](rec)
 			require.True(t, ok)
 			assert.Equal(t, "t1", req.TurnID)
-			assert.Len(t, m.pendings.(*PendingStoreMock).SetCalls(), 1)
+
+			// the record is written on a context that survives the
+			// connection, so a turn parking as the socket dies still
+			// leaves an answerable confirmation behind.
+			ff := m.pendings.(*PendingStoreMock).SetCalls()
+			require.Len(t, ff, 1)
+			assert.NoError(t, ff[0].Ctx.Err())
 		})
 	}
 }
@@ -759,7 +813,7 @@ func Test_Manager_newAgent(t *testing.T) {
 			agent, err := m.newAgent(
 				context.Background(),
 				toolSet,
-				middleware.NewObserver(toolSet, nil, nil),
+				middleware.NewObserver(toolSet, nil, nil, nil),
 			)
 			testutil.AssertEqualError(t, c.Err, err)
 

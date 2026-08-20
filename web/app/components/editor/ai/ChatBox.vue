@@ -227,10 +227,10 @@ onUnmounted(() => {
 						>
 							<span class="text-foreground">{{ action.summary }}</span>
 							<span
-								v-if="action.document_name"
+								v-if="action.documentName"
 								class="text-xs text-muted-foreground"
 							>
-								{{ action.document_name }}
+								{{ action.documentName }}
 							</span>
 						</li>
 					</ul>

@@ -18,8 +18,14 @@ func newOllama(ctx context.Context, opts Options) (model.ToolCallingChatModel, e
 		Timeout: opts.timeout(),
 	}
 
-	if opts.Temperature != nil {
-		cfg.Options = &ollama.Options{Temperature: *opts.Temperature}
+	// NumPredict is Ollama's response cap; its json tag omits the zero
+	// value, so a temperature-only tuning does not clamp the response.
+	if opts.Temperature != nil || opts.MaxTokens > 0 {
+		cfg.Options = &ollama.Options{NumPredict: opts.MaxTokens}
+
+		if opts.Temperature != nil {
+			cfg.Options.Temperature = *opts.Temperature
+		}
 	}
 
 	cm, err := ollama.NewChatModel(ctx, cfg)

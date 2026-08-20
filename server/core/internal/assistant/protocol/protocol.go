@@ -12,12 +12,7 @@ package protocol
 
 import (
 	"context"
-	"encoding/json"
 )
-
-// ServerMessageType identifies a message sent from the server to
-// the client.
-type ServerMessageType string
 
 const (
 	// ServerTypeTextDelta carries a fragment of the streaming
@@ -57,9 +52,9 @@ const (
 	ServerTypeToolStatus ServerMessageType = "tool_status"
 )
 
-// TextEndKind discriminates between intermediate narration and a
-// final assistant response on a text_end message.
-type TextEndKind string
+// ServerMessageType identifies a message sent from the server to
+// the client.
+type ServerMessageType string
 
 const (
 	// TextEndKindStatus means the just-streamed text was the model
@@ -72,9 +67,9 @@ const (
 	TextEndKindMessage TextEndKind = "message"
 )
 
-// ClientMessageType identifies a message sent from the client to
-// the server.
-type ClientMessageType string
+// TextEndKind discriminates between intermediate narration and a
+// final assistant response on a text_end message.
+type TextEndKind string
 
 const (
 	// ClientTypeMessage is a new user prompt for the assistant.
@@ -96,6 +91,10 @@ const (
 	// turn isn't torn down.
 	ClientTypeSetActiveDocument ClientMessageType = "set_active_document"
 )
+
+// ClientMessageType identifies a message sent from the client to
+// the server.
+type ClientMessageType string
 
 // TextDeltaMessage carries one fragment of the streaming assistant
 // response.
@@ -212,7 +211,7 @@ type ConfirmRequest struct {
 	// TurnID identifies the pending confirm. The client echoes it
 	// back in ConfirmResponse so the session matches the answer
 	// to the right batch.
-	TurnID string `json:"turn_id"`
+	TurnID string `json:"turnId"`
 
 	// Actions describes the proposed writes for display in the
 	// confirm UI.
@@ -229,11 +228,11 @@ type ConfirmAction struct {
 	// DocumentName is the human-friendly name of the document the
 	// action targets, when known. Empty for ops that don't
 	// reference an existing document (rare).
-	DocumentName string `json:"document_name,omitempty"`
+	DocumentName string `json:"documentName,omitempty"`
 
 	// DocumentID is the target document's id, for any UI that
 	// wants to render a deep link.
-	DocumentID string `json:"document_id,omitempty"`
+	DocumentID string `json:"documentId,omitempty"`
 
 	// Summary is a one-sentence description of the proposed
 	// change, e.g. "Insert callout after 'Rate limit' section".
@@ -246,11 +245,12 @@ func NewConfirmRequest(turnID string, actions []ConfirmAction) ConfirmRequest {
 }
 
 // ConfirmResponse carries the user's approval decision for a
-// pending ConfirmRequest.
+// pending ConfirmRequest. The session unmarshals the client's
+// confirm_response payload into it.
 type ConfirmResponse struct {
 	// TurnID echoes the ConfirmRequest's TurnID so the session
 	// matches the answer to the right batch.
-	TurnID string `json:"turn_id"`
+	TurnID string `json:"turnId"`
 
 	// Approved is true when the user accepted the batch, false
 	// when they declined.
@@ -270,7 +270,7 @@ type ConfirmResponse struct {
 //
 //go:generate ../../../scripts/codegen/mock -t external SessionWriter session_writer
 type SessionWriter interface {
-	// WriteJSON serialises msg as JSON and sends it on the
+	// WriteJSON should serialise msg as JSON and send it on the
 	// underlying transport.
 	WriteJSON(ctx context.Context, msg any)
 }
@@ -283,20 +283,8 @@ type SessionWriter interface {
 type SessionConn interface {
 	SessionWriter
 
-	// Read blocks until the next client message arrives. It returns
-	// io.EOF when the client ended the conversation cleanly.
+	// Read should block until the next client message arrives,
+	// returning io.EOF when the client ended the conversation
+	// cleanly.
 	Read(ctx context.Context) ([]byte, error)
-}
-
-// ClientMessage is a generic envelope for messages received from
-// the client; the Type field discriminates the rest of the payload.
-// The session uses gjson to peek at the type before unmarshalling
-// into a concrete struct, but the type is kept here for direct
-// callers.
-type ClientMessage struct {
-	// Type identifies the message.
-	Type ClientMessageType `json:"type"`
-
-	// Raw carries the unparsed remainder of the message.
-	Raw json.RawMessage `json:"-"`
 }

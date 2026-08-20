@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Test_toolInfo_parity asserts every tool still presents the model the
+// Test_toolInfo asserts every tool still presents the model the
 // exact description it did before the tools were split into their own
 // files. The golden file was captured from the previous implementation.
 //

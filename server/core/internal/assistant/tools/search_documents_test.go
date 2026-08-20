@@ -25,12 +25,13 @@ func Test_searchDocuments_InvokableRun(t *testing.T) {
 	}
 
 	cc := map[string]struct {
-		DB       *DBMock
-		Search   *SearcherMock
-		Args     string
-		Limit    int
-		RespJSON string
-		Err      error
+		DB          *DBMock
+		Search      *SearcherMock
+		Args        string
+		Limit       int
+		TreeFetches int
+		RespJSON    string
+		Err         error
 	}{
 		"Malformed args": {
 			DB:     &DBMock{},
@@ -57,6 +58,17 @@ func Test_searchDocuments_InvokableRun(t *testing.T) {
 			Limit:    20,
 			RespJSON: `{"hits":[]}`,
 		},
+		"Zero hits skip the name join": {
+			DB: &DBMock{
+				FetchDocumentTreeFunc: func(_ context.Context, _ string) (document.Summaries, error) {
+					return nil, assert.AnError
+				},
+			},
+			Search:   stubSearch(nil),
+			Args:     `{"query":"x"}`,
+			Limit:    20,
+			RespJSON: `{"hits":[]}`,
+		},
 		"Oversized limit clamped": {
 			DB:       &DBMock{},
 			Search:   stubSearch(nil),
@@ -70,9 +82,10 @@ func Test_searchDocuments_InvokableRun(t *testing.T) {
 					return document.Summaries{{ID: docID, DocumentName: "Cat Facts"}}, nil
 				},
 			},
-			Search: stubSearch(nil, search.Block{ID: "b1", DocumentID: docID, Text: "meow"}),
-			Args:   `{"query":"cats","limit":5}`,
-			Limit:  5,
+			Search:      stubSearch(nil, search.Block{ID: "b1", DocumentID: docID, Text: "meow"}),
+			Args:        `{"query":"cats","limit":5}`,
+			Limit:       5,
+			TreeFetches: 1,
 			RespJSON: `{"hits":[{"document_id":"` + docID.String() + `","document_name":"Cat Facts",` +
 				`"block_uid":"b1","text":"meow"}]}`,
 		},
@@ -82,9 +95,10 @@ func Test_searchDocuments_InvokableRun(t *testing.T) {
 					return nil, assert.AnError
 				},
 			},
-			Search: stubSearch(nil, search.Block{ID: "b1", DocumentID: docID, Text: "meow"}),
-			Args:   `{"query":"cats","limit":5}`,
-			Limit:  5,
+			Search:      stubSearch(nil, search.Block{ID: "b1", DocumentID: docID, Text: "meow"}),
+			Args:        `{"query":"cats","limit":5}`,
+			Limit:       5,
+			TreeFetches: 1,
 			RespJSON: `{"hits":[{"document_id":"` + docID.String() + `",` +
 				`"block_uid":"b1","text":"meow"}]}`,
 		},
@@ -109,10 +123,32 @@ func Test_searchDocuments_InvokableRun(t *testing.T) {
 			}
 
 			assert.JSONEq(t, c.RespJSON, res)
+			assert.Len(t, c.DB.FetchDocumentTreeCalls(), c.TreeFetches)
 
 			ff := c.Search.SearchDocumentBlocksCalls()
 			require.Len(t, ff, 1)
 			assert.Equal(t, c.Limit, ff[0].Limit)
 		})
 	}
+}
+
+func Test_collectDocumentNames(t *testing.T) {
+	t.Parallel()
+
+	parentID := xid.New()
+	childID := xid.New()
+
+	out := map[string]string{}
+	collectDocumentNames(document.Summaries{
+		{
+			ID:           parentID,
+			DocumentName: "Root",
+			Children:     document.Summaries{{ID: childID, DocumentName: "Child"}},
+		},
+	}, out)
+
+	assert.Equal(t, map[string]string{
+		parentID.String(): "Root",
+		childID.String():  "Child",
+	}, out)
 }

@@ -41,15 +41,15 @@ export interface HistoryEntry {
 // ConfirmAction is one write the assistant is asking permission for.
 export interface ConfirmAction {
 	tool: string
-	document_id?: string
-	document_name?: string
+	documentId?: string
+	documentName?: string
 	summary: string
 }
 
 // ConfirmRequest asks the user to approve every write the assistant
 // proposed in one turn.
 export interface ConfirmRequest {
-	turn_id: string
+	turnId: string
 	actions: ConfirmAction[]
 }
 
@@ -60,7 +60,7 @@ export interface ServerMessage {
 	kind?: TextEndKind
 	tool?: string
 	label?: string
-	turn_id?: string
+	turnId?: string
 	actions?: ConfirmAction[]
 	messages?: HistoryEntry[]
 }

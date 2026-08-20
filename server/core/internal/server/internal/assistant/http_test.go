@@ -13,9 +13,9 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
-	assistantCore "github.com/oxynote/oxynote/server/core/internal/assistant"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/protocol"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -64,7 +64,7 @@ func dial(t *testing.T, srv *httptest.Server) *websocket.Conn {
 func Test_NewHandler(t *testing.T) {
 	t.Parallel()
 
-	man := &assistantCore.Manager{}
+	man := &ManagerMock{}
 
 	hdl := NewHandler(slog.New(slog.DiscardHandler), man, websocket.AcceptOptions{InsecureSkipVerify: true})
 	require.NotNil(t, hdl)
@@ -244,6 +244,119 @@ func Test_Handler_HandleChat(t *testing.T) {
 			assert.Equal(t, "org1", ff[0].OrgID)
 			assert.Equal(t, "u1", ff[0].UserID)
 			assert.NotNil(t, ff[0].Conn)
+		})
+	}
+}
+
+func Test_wsConn_Read(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Do     func(t *testing.T, conn *websocket.Conn)
+		Status websocket.StatusCode
+		Result []byte
+		Err    error
+	}{
+		"Client message is returned": {
+			Do: func(t *testing.T, conn *websocket.Conn) {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+
+				require.NoError(t, conn.Write(ctx, websocket.MessageText, []byte(`{"a":1}`)))
+			},
+			Result: []byte(`{"a":1}`),
+		},
+		"Normal closure maps to EOF": {
+			Do: func(t *testing.T, conn *websocket.Conn) {
+				require.NoError(t, conn.Close(websocket.StatusNormalClosure, ""))
+			},
+			Err: io.EOF,
+		},
+		"Going away maps to EOF": {
+			Do: func(t *testing.T, conn *websocket.Conn) {
+				require.NoError(t, conn.Close(websocket.StatusGoingAway, "tab closed"))
+			},
+			Err: io.EOF,
+		},
+		"Abnormal close passes through": {
+			Do: func(t *testing.T, conn *websocket.Conn) {
+				require.NoError(t, conn.Close(websocket.StatusPolicyViolation, "nope"))
+			},
+			Status: websocket.StatusPolicyViolation,
+			Err:    assert.AnError,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			var (
+				wcCh = make(chan *wsConn, 1)
+				hold = make(chan struct{})
+			)
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+				if err != nil {
+					return
+				}
+
+				wcCh <- &wsConn{
+					log:    slog.New(slog.DiscardHandler),
+					conn:   conn,
+					cancel: func() {},
+				}
+
+				// keep the handler alive until the test read finished,
+				// or returning would tear the connection down under it.
+				<-hold
+			}))
+
+			t.Cleanup(srv.Close)
+			t.Cleanup(func() { close(hold) })
+
+			conn := dial(t, srv)
+
+			t.Cleanup(func() {
+				conn.CloseNow() //nolint:errcheck,gosec // error provides no meaningful info
+			})
+
+			wc := <-wcCh
+
+			// the read runs concurrently with Do: a client-side Close
+			// performs a handshake that only completes once this side
+			// reads the close frame.
+			type readResult struct {
+				data []byte
+				err  error
+			}
+
+			resCh := make(chan readResult, 1)
+
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+
+				data, err := wc.Read(ctx)
+				resCh <- readResult{data: data, err: err}
+			}()
+
+			c.Do(t, conn)
+
+			res := <-resCh
+			data, err := res.data, res.err
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if c.Status != 0 {
+				assert.Equal(t, c.Status, websocket.CloseStatus(err))
+			}
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, data)
 		})
 	}
 }

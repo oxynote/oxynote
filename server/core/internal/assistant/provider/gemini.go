@@ -6,6 +6,7 @@ import (
 
 	"github.com/cloudwego/eino-ext/components/model/gemini"
 	"github.com/cloudwego/eino/components/model"
+	"github.com/oxynote/oxynote/server/core/pkg/ptrutil"
 	"google.golang.org/genai"
 )
 
@@ -16,6 +17,9 @@ func newGemini(ctx context.Context, opts Options) (model.ToolCallingChatModel, e
 	clientCfg := &genai.ClientConfig{
 		APIKey:  opts.APIKey,
 		Backend: genai.BackendGeminiAPI,
+		HTTPOptions: genai.HTTPOptions{
+			Timeout: ptrutil.New(opts.timeout()),
+		},
 	}
 
 	if opts.BaseURL != "" {
@@ -24,17 +28,15 @@ func newGemini(ctx context.Context, opts Options) (model.ToolCallingChatModel, e
 
 	client, err := genai.NewClient(ctx, clientCfg)
 	if err != nil {
+		// NOCOV: the client constructor only rejects configuration that validate already refused.
 		return nil, fmt.Errorf("creating gemini client: %w", err)
 	}
 
 	cfg := &gemini.Config{
 		Client:      client,
 		Model:       opts.Model,
+		MaxTokens:   opts.maxTokens(),
 		Temperature: opts.Temperature,
-	}
-
-	if opts.MaxTokens > 0 {
-		cfg.MaxTokens = &opts.MaxTokens
 	}
 
 	cm, err := gemini.NewChatModel(ctx, cfg)

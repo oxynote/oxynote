@@ -19,7 +19,7 @@ type replaceBlock struct{ *Input }
 func (t *replaceBlock) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return toolInfo(
 		NameReplaceBlock,
-		"Replace an existing block by uid with a new block. The replacement keeps the same position in its parent. Useful for changing a block's type or its full structure.",
+		"Replace an existing block by uid with a new block. The replacement keeps the same position in its parent. Useful for changing a block's type or its full structure. Block uid is generated server-side if omitted.",
 		map[string]any{
 			_keyDocumentID: stringProp(_descTargetDocumentID),
 			_keyBlockUID:   stringProp("The uid of the block being replaced."),
@@ -36,7 +36,7 @@ func (t *replaceBlock) Label(ctx context.Context, args json.RawMessage) string {
 
 // Confirm describes the replacement the model wants to make.
 func (t *replaceBlock) Confirm(ctx context.Context, args json.RawMessage) ConfirmActionSummary {
-	kind := blockKindLabel(blockType(t.Input, args))
+	kind := blockKindLabel(t.blockType(args))
 
 	return t.summarize(ctx, NameReplaceBlock, args, func(subject string) string {
 		return fmt.Sprintf("Replace a block in %s with %s", subject, kind)

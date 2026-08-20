@@ -22,10 +22,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	// the Google API transport behind the Gemini client starts an
-	// opencensus worker from a package init, so it is already running
-	// before any test does.
-	goleak.VerifyTestMain(m, goleak.IgnoreCurrent())
+	goleak.VerifyTestMain(m)
 }
 
 // discardLog returns a logger that writes nowhere.

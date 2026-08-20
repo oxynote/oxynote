@@ -9,7 +9,6 @@ import (
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/document"
-	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/rs/xid"
 )
 
@@ -47,17 +46,8 @@ var _ DB = &DBMock{}
 //			FetchMainBranchContentFunc: func(ctx context.Context, docID xid.ID, organizationID string) (document.Content, error) {
 //				panic("mock out the FetchMainBranchContent method")
 //			},
-//			InsertDocumentFunc: func(ctx context.Context, doc document.Document) error {
-//				panic("mock out the InsertDocument method")
-//			},
-//			InsertDocumentSearchJobFunc: func(ctx context.Context, diff search.BlocksDifference) error {
-//				panic("mock out the InsertDocumentSearchJob method")
-//			},
 //			UpdateDocumentParentIDFunc: func(ctx context.Context, id xid.ID, parentID null.Value[xid.ID], organizationID string) error {
 //				panic("mock out the UpdateDocumentParentID method")
-//			},
-//			UpsertDocumentMaintainersFunc: func(ctx context.Context, documentID xid.ID, organizationID string, maintainerIDs []string) error {
-//				panic("mock out the UpsertDocumentMaintainers method")
 //			},
 //		}
 //
@@ -90,17 +80,8 @@ type DBMock struct {
 	// FetchMainBranchContentFunc mocks the FetchMainBranchContent method.
 	FetchMainBranchContentFunc func(ctx context.Context, docID xid.ID, organizationID string) (document.Content, error)
 
-	// InsertDocumentFunc mocks the InsertDocument method.
-	InsertDocumentFunc func(ctx context.Context, doc document.Document) error
-
-	// InsertDocumentSearchJobFunc mocks the InsertDocumentSearchJob method.
-	InsertDocumentSearchJobFunc func(ctx context.Context, diff search.BlocksDifference) error
-
 	// UpdateDocumentParentIDFunc mocks the UpdateDocumentParentID method.
 	UpdateDocumentParentIDFunc func(ctx context.Context, id xid.ID, parentID null.Value[xid.ID], organizationID string) error
-
-	// UpsertDocumentMaintainersFunc mocks the UpsertDocumentMaintainers method.
-	UpsertDocumentMaintainersFunc func(ctx context.Context, documentID xid.ID, organizationID string, maintainerIDs []string) error
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -176,20 +157,6 @@ type DBMock struct {
 			// OrganizationID is the organizationID argument value.
 			OrganizationID string
 		}
-		// InsertDocument holds details about calls to the InsertDocument method.
-		InsertDocument []struct {
-			// Ctx is the ctx argument value.
-			Ctx context.Context
-			// Doc is the doc argument value.
-			Doc document.Document
-		}
-		// InsertDocumentSearchJob holds details about calls to the InsertDocumentSearchJob method.
-		InsertDocumentSearchJob []struct {
-			// Ctx is the ctx argument value.
-			Ctx context.Context
-			// Diff is the diff argument value.
-			Diff search.BlocksDifference
-		}
 		// UpdateDocumentParentID holds details about calls to the UpdateDocumentParentID method.
 		UpdateDocumentParentID []struct {
 			// Ctx is the ctx argument value.
@@ -201,17 +168,6 @@ type DBMock struct {
 			// OrganizationID is the organizationID argument value.
 			OrganizationID string
 		}
-		// UpsertDocumentMaintainers holds details about calls to the UpsertDocumentMaintainers method.
-		UpsertDocumentMaintainers []struct {
-			// Ctx is the ctx argument value.
-			Ctx context.Context
-			// DocumentID is the documentID argument value.
-			DocumentID xid.ID
-			// OrganizationID is the organizationID argument value.
-			OrganizationID string
-			// MaintainerIDs is the maintainerIDs argument value.
-			MaintainerIDs []string
-		}
 	}
 	lockBeginTx                             sync.RWMutex
 	lockCheckDocumentCycle                  sync.RWMutex
@@ -221,10 +177,7 @@ type DBMock struct {
 	lockFetchDocumentTree                   sync.RWMutex
 	lockFetchDocumentTreeByDocumentParentID sync.RWMutex
 	lockFetchMainBranchContent              sync.RWMutex
-	lockInsertDocument                      sync.RWMutex
-	lockInsertDocumentSearchJob             sync.RWMutex
 	lockUpdateDocumentParentID              sync.RWMutex
-	lockUpsertDocumentMaintainers           sync.RWMutex
 }
 
 // BeginTx calls BeginTxFunc.
@@ -576,84 +529,6 @@ func (mock *DBMock) FetchMainBranchContentCalls() []struct {
 	return calls
 }
 
-// InsertDocument calls InsertDocumentFunc.
-func (mock *DBMock) InsertDocument(ctx context.Context, doc document.Document) error {
-	callInfo := struct {
-		Ctx context.Context
-		Doc document.Document
-	}{
-		Ctx: ctx,
-		Doc: doc,
-	}
-	mock.lockInsertDocument.Lock()
-	mock.calls.InsertDocument = append(mock.calls.InsertDocument, callInfo)
-	mock.lockInsertDocument.Unlock()
-	if mock.InsertDocumentFunc == nil {
-		var (
-			errOut error
-		)
-		return errOut
-	}
-	return mock.InsertDocumentFunc(ctx, doc)
-}
-
-// InsertDocumentCalls gets all the calls that were made to InsertDocument.
-// Check the length with:
-//
-//	len(mockedDB.InsertDocumentCalls())
-func (mock *DBMock) InsertDocumentCalls() []struct {
-	Ctx context.Context
-	Doc document.Document
-} {
-	var calls []struct {
-		Ctx context.Context
-		Doc document.Document
-	}
-	mock.lockInsertDocument.RLock()
-	calls = mock.calls.InsertDocument
-	mock.lockInsertDocument.RUnlock()
-	return calls
-}
-
-// InsertDocumentSearchJob calls InsertDocumentSearchJobFunc.
-func (mock *DBMock) InsertDocumentSearchJob(ctx context.Context, diff search.BlocksDifference) error {
-	callInfo := struct {
-		Ctx  context.Context
-		Diff search.BlocksDifference
-	}{
-		Ctx:  ctx,
-		Diff: diff,
-	}
-	mock.lockInsertDocumentSearchJob.Lock()
-	mock.calls.InsertDocumentSearchJob = append(mock.calls.InsertDocumentSearchJob, callInfo)
-	mock.lockInsertDocumentSearchJob.Unlock()
-	if mock.InsertDocumentSearchJobFunc == nil {
-		var (
-			errOut error
-		)
-		return errOut
-	}
-	return mock.InsertDocumentSearchJobFunc(ctx, diff)
-}
-
-// InsertDocumentSearchJobCalls gets all the calls that were made to InsertDocumentSearchJob.
-// Check the length with:
-//
-//	len(mockedDB.InsertDocumentSearchJobCalls())
-func (mock *DBMock) InsertDocumentSearchJobCalls() []struct {
-	Ctx  context.Context
-	Diff search.BlocksDifference
-} {
-	var calls []struct {
-		Ctx  context.Context
-		Diff search.BlocksDifference
-	}
-	mock.lockInsertDocumentSearchJob.RLock()
-	calls = mock.calls.InsertDocumentSearchJob
-	mock.lockInsertDocumentSearchJob.RUnlock()
-	return calls
-}
-
 // UpdateDocumentParentID calls UpdateDocumentParentIDFunc.
 func (mock *DBMock) UpdateDocumentParentID(ctx context.Context, id xid.ID, parentID null.Value[xid.ID], organizationID string) error {
 	callInfo := struct {
@@ -698,52 +573,5 @@ func (mock *DBMock) UpdateDocumentParentIDCalls() []struct {
 	mock.lockUpdateDocumentParentID.RLock()
 	calls = mock.calls.UpdateDocumentParentID
 	mock.lockUpdateDocumentParentID.RUnlock()
-	return calls
-}
-
-// UpsertDocumentMaintainers calls UpsertDocumentMaintainersFunc.
-func (mock *DBMock) UpsertDocumentMaintainers(ctx context.Context, documentID xid.ID, organizationID string, maintainerIDs []string) error {
-	callInfo := struct {
-		Ctx            context.Context
-		DocumentID     xid.ID
-		OrganizationID string
-		MaintainerIDs  []string
-	}{
-		Ctx:            ctx,
-		DocumentID:     documentID,
-		OrganizationID: organizationID,
-		MaintainerIDs:  maintainerIDs,
-	}
-	mock.lockUpsertDocumentMaintainers.Lock()
-	mock.calls.UpsertDocumentMaintainers = append(mock.calls.UpsertDocumentMaintainers, callInfo)
-	mock.lockUpsertDocumentMaintainers.Unlock()
-	if mock.UpsertDocumentMaintainersFunc == nil {
-		var (
-			errOut error
-		)
-		return errOut
-	}
-	return mock.UpsertDocumentMaintainersFunc(ctx, documentID, organizationID, maintainerIDs)
-}
-
-// UpsertDocumentMaintainersCalls gets all the calls that were made to UpsertDocumentMaintainers.
-// Check the length with:
-//
-//	len(mockedDB.UpsertDocumentMaintainersCalls())
-func (mock *DBMock) UpsertDocumentMaintainersCalls() []struct {
-	Ctx            context.Context
-	DocumentID     xid.ID
-	OrganizationID string
-	MaintainerIDs  []string
-} {
-	var calls []struct {
-		Ctx            context.Context
-		DocumentID     xid.ID
-		OrganizationID string
-		MaintainerIDs  []string
-	}
-	mock.lockUpsertDocumentMaintainers.RLock()
-	calls = mock.calls.UpsertDocumentMaintainers
-	mock.lockUpsertDocumentMaintainers.RUnlock()
 	return calls
 }

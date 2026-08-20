@@ -44,6 +44,26 @@ func Test_getDocument_InvokableRun(t *testing.T) {
 			Args: `{"document_id":"` + docID.String() + `"}`,
 			Err:  assert.AnError,
 		},
+		"Successful fetch of a root document": {
+			DB: &DBMock{
+				FetchDocumentFunc: func(_ context.Context, id xid.ID, _, _ string) (*document.Document, error) {
+					return &document.Document{
+						Branch: document.Branch{
+							BranchID:     branchID,
+							BranchName:   "main",
+							DocumentName: "Cat Facts",
+							Icon:         "lucide:cat",
+							UpdatedAt:    updated,
+						},
+						ID: id,
+					}, nil
+				},
+			},
+			Args: `{"document_id":"` + docID.String() + `"}`,
+			RespJSON: `{"id":"` + docID.String() + `","name":"Cat Facts","icon":"lucide:cat",` +
+				`"branch_id":"` + branchID.String() + `",` +
+				`"branch_name":"main","protected":false,"updated_at":"2026-08-15T10:00:00Z"}`,
+		},
 		"Successful fetch with parent": {
 			DB: &DBMock{
 				FetchDocumentFunc: func(_ context.Context, id xid.ID, _, _ string) (*document.Document, error) {

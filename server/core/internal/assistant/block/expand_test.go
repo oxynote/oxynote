@@ -4,15 +4,15 @@ import (
 	"testing"
 
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// stripUIDsPM recursively zeroes UID attributes throughout a
+// stripUIDsPM recursively removes uid attributes throughout a
 // document.Block tree so structural equality assertions don't have
-// to know which uids will be generated. The function is destructive
-// on the input copy semantics that callers should provide — it
-// returns a transformed copy.
+// to know which uids will be generated. It returns a transformed
+// copy and leaves the input untouched.
 func stripUIDsPM(b document.Block) document.Block {
 	out := document.Block{
 		Type:  b.Type,
@@ -47,7 +47,9 @@ func stripUIDsPM(b document.Block) document.Block {
 
 // stripUIDsCanonical strips UID fields throughout a canonical Block
 // tree (Block.UID, TaskItem.UID, ParamItem.UID) so round-trip
-// assertions can ignore generated identifiers.
+// assertions can ignore generated identifiers. It rewrites the
+// nested Items/Children/TaskItems/Left/Right/Params slices in
+// place, so the input tree is stripped as a side effect.
 func stripUIDsCanonical(b Block) Block {
 	b.UID = ""
 
@@ -83,10 +85,10 @@ func stripUIDsCanonical(b Block) Block {
 }
 
 func Test_Expand(t *testing.T) {
-	tests := map[string]struct {
-		Input     Block
-		Expected  document.Block
-		ExpectErr bool
+	cc := map[string]struct {
+		Input    Block
+		Expected document.Block
+		Err      error
 
 		// RoundTrip asserts that compacting the expanded block returns the
 		// input instead of comparing against Expected.
@@ -486,21 +488,52 @@ func Test_Expand(t *testing.T) {
 				Type:  BlockCallout,
 				Items: []Block{{Type: "not_a_type"}},
 			},
-			ExpectErr: true,
+			Err: assert.AnError,
+		},
+		"Blockquote with invalid item fails": {
+			Input: Block{
+				Type:  BlockBlockquote,
+				Items: []Block{{Type: "not_a_type"}},
+			},
+			Err: assert.AnError,
 		},
 		"Bullet list with invalid item fails": {
 			Input: Block{
 				Type:  BlockBulletList,
 				Items: []Block{{Type: "not_a_type"}},
 			},
-			ExpectErr: true,
+			Err: assert.AnError,
+		},
+		"Bullet list with invalid nested child fails": {
+			Input: Block{
+				Type: BlockBulletList,
+				Items: []Block{{
+					Type:     BlockParagraph,
+					Text:     "one",
+					Children: []Block{{Type: "not_a_type"}},
+				}},
+			},
+			Err: assert.AnError,
 		},
 		"Task list with invalid item fails": {
 			Input: Block{
 				Type:      BlockTaskList,
 				TaskItems: []TaskItem{{Block: Block{Type: "not_a_type"}}},
 			},
-			ExpectErr: true,
+			Err: assert.AnError,
+		},
+		"Task list with invalid nested child fails": {
+			Input: Block{
+				Type: BlockTaskList,
+				TaskItems: []TaskItem{{
+					Block: Block{
+						Type:     BlockParagraph,
+						Text:     "one",
+						Children: []Block{{Type: "not_a_type"}},
+					},
+				}},
+			},
+			Err: assert.AnError,
 		},
 		"Metric passes attrs through": {
 			Input: Block{Type: BlockMetric, Attrs: map[string]any{"query": "up"}},
@@ -526,14 +559,14 @@ func Test_Expand(t *testing.T) {
 				Type:  BlockMetricGrid,
 				Items: []Block{{Type: "not_a_type"}},
 			},
-			ExpectErr: true,
+			Err: assert.AnError,
 		},
 		"Split doc with invalid left fails": {
 			Input: Block{
 				Type: BlockSplitDoc,
 				Left: []Block{{Type: "not_a_type"}},
 			},
-			ExpectErr: true,
+			Err: assert.AnError,
 		},
 		"Split doc with invalid right fails": {
 			Input: Block{
@@ -541,7 +574,7 @@ func Test_Expand(t *testing.T) {
 				Left:  []Block{{Type: BlockHeading, Text: "T", Attrs: map[string]any{"level": 1}}},
 				Right: []Block{{Type: "not_a_type"}},
 			},
-			ExpectErr: true,
+			Err: assert.AnError,
 		},
 		"Split doc with empty sides yields empty wrappers": {
 			Input: Block{Type: BlockSplitDoc},
@@ -571,45 +604,44 @@ func Test_Expand(t *testing.T) {
 			},
 		},
 		"Unknown block type fails": {
-			Input:     Block{Type: "not_a_type"},
-			ExpectErr: true,
+			Input: Block{Type: "not_a_type"},
+			Err:   assert.AnError,
 		},
 	}
 
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := Expand(tc.Input)
-			if tc.ExpectErr {
-				require.Error(t, err)
+			got, err := Expand(c.Input)
 
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if c.Err != nil {
 				return
 			}
 
-			require.NoError(t, err)
-
-			if tc.RoundTrip {
-				require.NoError(t, Validate(tc.Input), "input should validate")
+			if c.RoundTrip {
+				require.NoError(t, Validate(c.Input), "input should validate")
 
 				compacted, cerr := Compact(got)
 				require.NoError(t, cerr)
 
 				assert.Equal(t,
-					stripUIDsCanonical(tc.Input),
+					stripUIDsCanonical(c.Input),
 					stripUIDsCanonical(compacted),
 				)
 
 				return
 			}
 
-			if tc.Check != nil {
-				tc.Check(t, got)
+			if c.Check != nil {
+				c.Check(t, got)
 
 				return
 			}
 
-			assert.Equal(t, tc.Expected, stripUIDsPM(got))
+			assert.Equal(t, c.Expected, stripUIDsPM(got))
 		})
 	}
 }

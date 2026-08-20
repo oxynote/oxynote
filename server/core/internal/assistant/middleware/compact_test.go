@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/cloudwego/eino/components/model"
@@ -9,6 +10,7 @@ import (
 	mock "github.com/oxynote/oxynote/server/core/internal/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/offload"
 	offloadMock "github.com/oxynote/oxynote/server/core/internal/assistant/offload/_mock"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -20,7 +22,7 @@ func Test_NewCompaction(t *testing.T) {
 		Model   model.ToolCallingChatModel
 		Backend *offload.Backend
 		Writes  []string
-		Err     bool
+		Err     error
 	}{
 		"Both middlewares are built": {
 			Model:   &mock.ChatModel{},
@@ -29,11 +31,11 @@ func Test_NewCompaction(t *testing.T) {
 		},
 		"Summarization needs a model": {
 			Backend: offload.New(&offloadMock.Store{}),
-			Err:     true,
+			Err:     assert.AnError,
 		},
 		"Reduction needs a backend": {
 			Model: &mock.ChatModel{},
-			Err:   true,
+			Err:   errors.New("offload backend is required"),
 		},
 	}
 
@@ -42,13 +44,11 @@ func Test_NewCompaction(t *testing.T) {
 			t.Parallel()
 
 			mws, err := NewCompaction(context.Background(), c.Model, c.Backend, c.Writes)
-			if c.Err {
-				require.Error(t, err)
+			testutil.AssertEqualError(t, c.Err, err)
 
+			if err != nil {
 				return
 			}
-
-			require.NoError(t, err)
 
 			// reduction handles tool-result bloat, summarization handles
 			// conversation length; both are needed.
@@ -57,14 +57,18 @@ func Test_NewCompaction(t *testing.T) {
 	}
 }
 
-func Test_rewriteClearedRead(t *testing.T) {
+func Test_newClearRewriter(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		Msg      *schema.Message
-		Contains []string
+		Writes    []string
+		Msg       *schema.Message
+		Responses []*schema.Message
+		Untouched bool
+		Contains  []string
 	}{
 		"Names the tool whose output was cleared": {
+			Writes: []string{"insert_block"},
 			Msg: schema.AssistantMessage("", []schema.ToolCall{
 				{Function: schema.FunctionCall{Name: "read_document_summary"}},
 			}),
@@ -81,14 +85,37 @@ func Test_rewriteClearedRead(t *testing.T) {
 			Msg:      schema.AssistantMessage("", nil),
 			Contains: []string{"cleared"},
 		},
+		"Round containing a write call is left untouched": {
+			Writes: []string{"insert_block"},
+			Msg: schema.AssistantMessage("", []schema.ToolCall{
+				{ID: "1", Function: schema.FunctionCall{Name: "read_block"}},
+				{ID: "2", Function: schema.FunctionCall{Name: "insert_block"}},
+			}),
+			Responses: []*schema.Message{
+				schema.ToolMessage("read result", "1"),
+				schema.ToolMessage("write result", "2"),
+			},
+			Untouched: true,
+		},
 	}
 
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			msgs, err := rewriteClearedRead(context.Background(), c.Msg, nil)
+			msgs, err := newClearRewriter(c.Writes)(context.Background(), c.Msg, c.Responses)
 			require.NoError(t, err)
+
+			if c.Untouched {
+				// eino invokes the rewriter for every round before it
+				// consults ClearExcludeTools, so the only way a write
+				// result survives clearing is the rewriter handing the
+				// round back exactly as it was.
+				assert.Equal(t, append([]*schema.Message{c.Msg}, c.Responses...), msgs)
+
+				return
+			}
+
 			require.Len(t, msgs, 1)
 
 			// the replacement is addressed to the model as a user-side

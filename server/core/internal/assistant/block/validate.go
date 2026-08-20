@@ -583,8 +583,6 @@ func mustHaveNoCanonicalCompoundExcept(b Block, path string, allowed ...string) 
 	return nil
 }
 
-// validateItemsAllowed validates a slice of items, requiring each
-// to be of a type in allowed.
 // validateListItems checks the content blocks of a list or task list.
 // An item's own children — a nested list, in practice — are validated
 // separately, since every other position rejects them outright.
@@ -595,7 +593,12 @@ func validateListItems(items []Block, path string) error {
 		children := item.Children
 		item.Children = nil
 
-		if err := validateItemsAllowed([]Block{item}, path, _allowedListItemContent); err != nil {
+		if !_allowedListItemContent[item.Type] {
+			return verr(itemPath, fmt.Sprintf("type %s not allowed here; expected one of %s",
+				item.Type, listAllowed(_allowedListItemContent)))
+		}
+
+		if err := validateBlock(item, itemPath); err != nil {
 			return err
 		}
 
@@ -607,6 +610,8 @@ func validateListItems(items []Block, path string) error {
 	return nil
 }
 
+// validateItemsAllowed validates a slice of items, requiring each
+// to be of a type in allowed.
 func validateItemsAllowed(items []Block, path string, allowed map[Type]bool) error {
 	for i, item := range items {
 		itemPath := joinPath(path, fmt.Sprintf("[%d]", i))

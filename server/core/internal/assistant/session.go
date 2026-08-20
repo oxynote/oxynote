@@ -2,6 +2,7 @@ package assistant
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -30,9 +31,8 @@ const (
 )
 
 // _maxAgentTurns caps the model/tool cycles in a single turn so a
-// runaway model cannot burn budget indefinitely. A var so tests can
-// shorten it.
-var _maxAgentTurns = 50
+// runaway model cannot burn budget indefinitely.
+const _maxAgentTurns = 50
 
 // newAgent builds the chat agent for one session. Tools are bound to
 // the session's organisation and user, so an agent can never reach
@@ -92,15 +92,15 @@ type session struct {
 	// key addresses this conversation's history and checkpoint.
 	key string
 
-	// activeDocumentID is the document the user is currently viewing,
-	// surfaced into the system prompt so the model can resolve "this
-	// document" without asking.
-	activeDocumentID string
-
 	supv *xync.Supervisor
 
 	mu         sync.Mutex
 	processing bool
+
+	// activeDocumentID is the document the user is currently viewing,
+	// surfaced into the system prompt so the model can resolve "this
+	// document" without asking.
+	activeDocumentID string
 
 	// messages is the conversation as the last completed turn left it,
 	// after the context middlewares compacted it.
@@ -129,7 +129,7 @@ func (m *Manager) newSession(
 		supv:   xync.NewSupervisor(),
 	}
 
-	obs := middleware.NewObserver(toolSet, writer, s.rememberMessages)
+	obs := middleware.NewObserver(toolSet, writer, s.rememberMessages, m.metrics.observeToolCall)
 
 	agent, err := m.newAgent(ctx, toolSet, obs)
 	if err != nil {
@@ -213,15 +213,18 @@ func (s *session) Process(ctx context.Context, msg []byte) {
 		s.handleReset(ctx)
 
 	case protocol.ClientTypeConfirmResponse:
-		s.handleConfirmResponse(
-			ctx,
-			gjson.GetBytes(msg, "turn_id").String(),
-			gjson.GetBytes(msg, "approved").Bool(),
-			gjson.GetBytes(msg, "all").Bool(),
-		)
+		var resp protocol.ConfirmResponse
+
+		if err := json.Unmarshal(msg, &resp); err != nil {
+			s.writer.WriteJSON(ctx, protocol.NewErrorMessage("invalid confirm response"))
+
+			return
+		}
+
+		s.handleConfirmResponse(ctx, resp.TurnID, resp.Approved, resp.All)
 
 	case protocol.ClientTypeSetActiveDocument:
-		s.SetActiveDocument(gjson.GetBytes(msg, "document_id").String())
+		s.SetActiveDocument(gjson.GetBytes(msg, "documentId").String())
 
 	default:
 		s.writer.WriteJSON(ctx, protocol.NewErrorMessage("unknown message type"))
@@ -240,6 +243,16 @@ func (s *session) handleMessage(ctx context.Context, content string) {
 
 	if !s.beginTurn(ctx) {
 		return
+	}
+
+	// a new message abandons an unanswered confirmation: this turn
+	// finishes under the same checkpoint id the parked turn would
+	// resume from, so treat the confirmation as declined and clear
+	// both records rather than leaving a pending entry whose
+	// checkpoint is about to be deleted.
+	if s.man.loadPending(ctx, s.key) != nil {
+		s.man.clearPending(ctx, s.key)
+		s.man.clearCheckpoint(ctx, s.key)
 	}
 
 	tn := s.newTurn()
@@ -370,7 +383,10 @@ func (s *session) goTurn(ctx context.Context, fn func(context.Context) *pendingC
 			s.mu.Unlock()
 
 			if pending != nil {
-				s.man.savePending(ctx, s.key, *pending)
+				// the pending record must survive the connection: its
+				// checkpoint is already in Redis, and losing the record
+				// would make the parked turn unreachable on reconnect.
+				s.man.savePending(context.WithoutCancel(ctx), s.key, *pending)
 				s.writer.WriteJSON(ctx, protocol.NewConfirmRequest(pending.TurnID, pending.Actions))
 			}
 

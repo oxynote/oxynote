@@ -22,18 +22,25 @@ func Test_Set_Confirm(t *testing.T) {
 		DocName string
 		Result  string
 	}{
-		"Create with name":    {Name: NameCreateDocument, Args: `{"name":"Specs"}`, Result: `Create document "Specs"`},
-		"Create without name": {Name: NameCreateDocument, Args: `{}`, Result: "Create a new document"},
-		"Delete":              {Name: NameDeleteDocument, Args: `{}`, DocName: "Old", Result: "Delete Old"},
-		"Rename with name":    {Name: NameRenameDocument, Args: `{"name":"New"}`, DocName: "Old", Result: `Rename Old to "New"`},
-		"Rename without name": {Name: NameRenameDocument, Args: `{}`, DocName: "Old", Result: "Rename Old"},
-		"Set icon":            {Name: NameSetDocumentIcon, Args: `{"icon":"lucide:cat"}`, DocName: "Old", Result: "Change icon of Old to lucide:cat"},
-		"Move to root":        {Name: NameMoveDocument, Args: `{}`, DocName: "Old", Result: "Move Old to the org root"},
-		"Move under parent":   {Name: NameMoveDocument, Args: `{"new_parent_id":"p"}`, DocName: "Old", Result: "Move Old under another document"},
-		"Insert block":        {Name: NameInsertBlock, Args: `{"position":"after","block":{"type":"callout"}}`, DocName: "Spec", Result: "Insert a callout after a block in Spec"},
-		"Append block":        {Name: NameAppendBlock, Args: `{"block":{"type":"paragraph"}}`, DocName: "Spec", Result: "Append a paragraph to Spec"},
-		"Prepend block":       {Name: NamePrependBlock, Args: `{"block":{"type":"heading"}}`, DocName: "Spec", Result: "Prepend a heading to Spec"},
-		"Replace block":       {Name: NameReplaceBlock, Args: `{"block":{"type":"code"}}`, DocName: "Spec", Result: "Replace a block in Spec with a code block"},
+		"Create with name":      {Name: NameCreateDocument, Args: `{"name":"Specs"}`, Result: `Create document "Specs"`},
+		"Create without name":   {Name: NameCreateDocument, Args: `{}`, Result: "Create a new document"},
+		"Delete":                {Name: NameDeleteDocument, Args: `{}`, DocName: "Old", Result: "Delete Old"},
+		"Rename with name":      {Name: NameRenameDocument, Args: `{"name":"New"}`, DocName: "Old", Result: `Rename Old to "New"`},
+		"Rename without name":   {Name: NameRenameDocument, Args: `{}`, DocName: "Old", Result: "Rename Old"},
+		"Set icon":              {Name: NameSetDocumentIcon, Args: `{"icon":"lucide:cat"}`, DocName: "Old", Result: "Change icon of Old to lucide:cat"},
+		"Set icon without icon": {Name: NameSetDocumentIcon, Args: `{}`, DocName: "Old", Result: "Change icon of Old"},
+		"Move to root":          {Name: NameMoveDocument, Args: `{}`, DocName: "Old", Result: "Move Old to the org root"},
+		"Move under parent":     {Name: NameMoveDocument, Args: `{"new_parent_id":"p"}`, DocName: "Old", Result: "Move Old under another document"},
+		"Insert block":          {Name: NameInsertBlock, Args: `{"position":"after","block":{"type":"callout"}}`, DocName: "Spec", Result: "Insert a callout after a block in Spec"},
+		"Insert block without position": {
+			Name:    NameInsertBlock,
+			Args:    `{"block":{"type":"callout"}}`,
+			DocName: "Spec",
+			Result:  "Insert a callout in Spec",
+		},
+		"Append block":  {Name: NameAppendBlock, Args: `{"block":{"type":"paragraph"}}`, DocName: "Spec", Result: "Append a paragraph to Spec"},
+		"Prepend block": {Name: NamePrependBlock, Args: `{"block":{"type":"heading"}}`, DocName: "Spec", Result: "Prepend a heading to Spec"},
+		"Replace block": {Name: NameReplaceBlock, Args: `{"block":{"type":"code"}}`, DocName: "Spec", Result: "Replace a block in Spec with a code block"},
 		"Update text with preview": {
 			Name:    NameUpdateBlockText,
 			Args:    `{"text":"new\ncontent"}`,
@@ -51,6 +58,12 @@ func Test_Set_Confirm(t *testing.T) {
 			Args:    `{"attrs":{"level":2}}`,
 			DocName: "Spec",
 			Result:  "Update block level in Spec",
+		},
+		"Update attrs with two keys": {
+			Name:    NameUpdateBlockAttrs,
+			Args:    `{"attrs":{"level":2,"icon":"lucide:cat"}}`,
+			DocName: "Spec",
+			Result:  "Update block icon, level in Spec",
 		},
 		"Update attrs without keys": {
 			Name:    NameUpdateBlockAttrs,
@@ -78,7 +91,7 @@ func Test_Set_Confirm(t *testing.T) {
 
 			args := json.RawMessage(c.Args)
 			if c.DocName != "" {
-				// the summary resolves the target by id, so give it one
+				// the summary resolves the target by id, so give it one.
 				args = withDocumentID(t, args)
 			}
 

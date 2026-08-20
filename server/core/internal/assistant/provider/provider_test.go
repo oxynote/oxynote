@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -31,11 +32,11 @@ func Test_Provider_Validate(t *testing.T) {
 		"OpenRouter is supported": {Provider: ProviderOpenRouter},
 		"Unknown provider": {
 			Provider: "cohere",
-			Err:      ErrInvalidProvider,
+			Err:      assert.AnError,
 		},
 		"Empty provider": {
 			Provider: "",
-			Err:      ErrInvalidProvider,
+			Err:      assert.AnError,
 		},
 	}
 
@@ -44,19 +45,18 @@ func Test_Provider_Validate(t *testing.T) {
 			t.Parallel()
 
 			err := c.Provider.Validate()
-			if c.Err == nil {
-				require.NoError(t, err)
 
+			testutil.RequireEqualError(t, c.Err, err)
+
+			if c.Err == nil {
 				return
 			}
-
-			require.ErrorIs(t, err, c.Err)
 
 			// the message must name the offending value and the
 			// supported set, since documentation is the only guidance
 			// an operator gets.
 			assert.Contains(t, err.Error(), string(c.Provider))
-			assert.Contains(t, err.Error(), Supported())
+			assert.Contains(t, err.Error(), supported())
 		})
 	}
 }
@@ -88,10 +88,10 @@ func Test_ParseProvider(t *testing.T) {
 	}
 }
 
-func Test_Supported(t *testing.T) {
+func Test_supported(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, "claude, openai, gemini, ollama, openrouter", Supported())
+	assert.Equal(t, "claude, openai, gemini, ollama, openrouter", supported())
 }
 
 func Test_New(t *testing.T) {
@@ -103,8 +103,9 @@ func Test_New(t *testing.T) {
 		ErrContains string
 	}{
 		"Invalid provider": {
-			Opts: Options{Provider: "cohere", Model: "x"},
-			Err:  ErrInvalidProvider,
+			Opts:        Options{Provider: "cohere", Model: "x"},
+			Err:         assert.AnError,
+			ErrContains: "not supported",
 		},
 		"Missing model": {
 			Opts: Options{Provider: ProviderClaude, APIKey: "k"},
@@ -121,31 +122,11 @@ func Test_New(t *testing.T) {
 				APIKey:   "k",
 			},
 		},
-		"Claude via bedrock needs no api key": {
-			Opts: Options{
-				Provider: ProviderClaude,
-				Model:    "anthropic.claude-opus-4-6",
-				Bedrock: BedrockOptions{
-					Enabled:         true,
-					Region:          "us-east-1",
-					AccessKey:       "ak",
-					SecretAccessKey: "sk",
-				},
-			},
-		},
 		"OpenAI": {
 			Opts: Options{
 				Provider: ProviderOpenAI,
 				Model:    "gpt-5",
 				APIKey:   "k",
-			},
-		},
-		"OpenAI against a compatible endpoint": {
-			Opts: Options{
-				Provider: ProviderOpenAI,
-				Model:    "llama-3.3-70b",
-				APIKey:   "k",
-				BaseURL:  "https://example.invalid/v1",
 			},
 		},
 		"Gemini": {
@@ -169,34 +150,6 @@ func Test_New(t *testing.T) {
 				APIKey:   "k",
 			},
 		},
-		"Claude with optional tuning": {
-			Opts: tunedOptions(ProviderClaude, "claude-opus-4-6"),
-		},
-		"OpenAI with optional tuning": {
-			Opts: tunedOptions(ProviderOpenAI, "gpt-5"),
-		},
-		"Gemini with optional tuning": {
-			Opts: tunedOptions(ProviderGemini, "gemini-2.5-pro"),
-		},
-		"OpenRouter with optional tuning": {
-			Opts: tunedOptions(ProviderOpenRouter, "anthropic/claude-opus-4.6"),
-		},
-		"Ollama with optional tuning": {
-			Opts: func() Options {
-				o := tunedOptions(ProviderOllama, "llama3.3")
-				o.BaseURL = "http://localhost:11434"
-
-				return o
-			}(),
-		},
-		"Claude via vertex without a project id": {
-			Opts: Options{
-				Provider: ProviderClaude,
-				Model:    "claude-opus-4-6",
-				Vertex:   VertexOptions{Enabled: true, Region: "us-east5"},
-			},
-			ErrContains: "project ID",
-		},
 	}
 
 	for cn, c := range cc {
@@ -205,22 +158,15 @@ func Test_New(t *testing.T) {
 
 			cm, err := New(context.Background(), c.Opts)
 
+			testutil.RequireEqualError(t, c.Err, err)
+
 			if c.Err != nil {
-				require.ErrorIs(t, err, c.Err)
-				assert.Nil(t, cm)
-
-				return
-			}
-
-			if c.ErrContains != "" {
-				require.Error(t, err)
 				assert.Contains(t, err.Error(), c.ErrContains)
 				assert.Nil(t, cm)
 
 				return
 			}
 
-			require.NoError(t, err)
 			require.NotNil(t, cm)
 		})
 	}

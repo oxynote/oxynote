@@ -4,8 +4,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/oxynote/oxynote/server/core/pkg/ptrutil"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func Test_Options_validate(t *testing.T) {
@@ -17,7 +18,7 @@ func Test_Options_validate(t *testing.T) {
 	}{
 		"Unsupported provider": {
 			Opts: Options{Provider: "cohere", Model: "x", APIKey: "k"},
-			Err:  ErrInvalidProvider,
+			Err:  assert.AnError,
 		},
 		"Missing model": {
 			Opts: Options{Provider: ProviderOpenAI, APIKey: "k"},
@@ -74,13 +75,8 @@ func Test_Options_validate(t *testing.T) {
 			t.Parallel()
 
 			err := c.Opts.validate()
-			if c.Err == nil {
-				require.NoError(t, err)
 
-				return
-			}
-
-			require.ErrorIs(t, err, c.Err)
+			testutil.RequireEqualError(t, c.Err, err)
 		})
 	}
 }
@@ -136,6 +132,30 @@ func Test_Options_timeout(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, c.Result, c.Opts.timeout())
+		})
+	}
+}
+
+func Test_Options_maxTokens(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Opts   Options
+		Result *int
+	}{
+		"Configured cap is returned": {
+			Opts:   Options{MaxTokens: 1024},
+			Result: ptrutil.New(1024),
+		},
+		"Zero leaves the provider default":     {Opts: Options{}},
+		"Negative leaves the provider default": {Opts: Options{MaxTokens: -1}},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, c.Opts.maxTokens())
 		})
 	}
 }

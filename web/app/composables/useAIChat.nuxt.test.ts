@@ -151,7 +151,7 @@ describe("useAIChat", { concurrent: false }, () => {
 			expect(sentPayloads()).toEqual([
 				{
 					type: ClientMessageType.SetActiveDocument,
-					document_id: "doc-1",
+					documentId: "doc-1",
 				},
 			])
 		})
@@ -162,7 +162,7 @@ describe("useAIChat", { concurrent: false }, () => {
 			chat.setActiveDocument(null)
 
 			expect(sentPayloads()).toEqual([
-				{ type: ClientMessageType.SetActiveDocument, document_id: "" },
+				{ type: ClientMessageType.SetActiveDocument, documentId: "" },
 			])
 		})
 
@@ -180,7 +180,7 @@ describe("useAIChat", { concurrent: false }, () => {
 			expect(sentPayloads()).toHaveLength(2)
 			expect(sentPayloads().at(-1)).toEqual({
 				type: ClientMessageType.SetActiveDocument,
-				document_id: "doc-2",
+				documentId: "doc-2",
 			})
 		})
 
@@ -302,14 +302,14 @@ describe("useAIChat", { concurrent: false }, () => {
 
 			receive({
 				type: ServerMessageType.ConfirmRequest,
-				turn_id: "t1",
+				turnId: "t1",
 				actions: [
 					{ tool: "insert_block", summary: "Insert a callout" },
 					{ tool: "update_block_text", summary: "Reword the intro" },
 				],
 			})
 
-			expect(chat.pendingConfirm.value?.turn_id).toBe("t1")
+			expect(chat.pendingConfirm.value?.turnId).toBe("t1")
 			expect(chat.pendingConfirm.value?.actions).toHaveLength(2)
 		})
 
@@ -319,7 +319,7 @@ describe("useAIChat", { concurrent: false }, () => {
 
 			receive({
 				type: ServerMessageType.ConfirmRequest,
-				turn_id: "t1",
+				turnId: "t1",
 				actions: [],
 			})
 
@@ -345,7 +345,7 @@ describe("useAIChat", { concurrent: false }, () => {
 				const { chat, receive, sentPayloads } = arrange()
 				receive({
 					type: ServerMessageType.ConfirmRequest,
-					turn_id: "t1",
+					turnId: "t1",
 					actions: [],
 				})
 
@@ -353,7 +353,7 @@ describe("useAIChat", { concurrent: false }, () => {
 
 				expect(sentPayloads().at(-1)).toEqual({
 					type: ClientMessageType.ConfirmResponse,
-					turn_id: "t1",
+					turnId: "t1",
 					approved,
 					all,
 				})
@@ -374,14 +374,14 @@ describe("useAIChat", { concurrent: false }, () => {
 			const { chat, receive, send } = arrange({ status: "CLOSED" })
 			receive({
 				type: ServerMessageType.ConfirmRequest,
-				turn_id: "t1",
+				turnId: "t1",
 				actions: [],
 			})
 
 			chat.answerConfirm(true)
 
 			expect(send).toHaveBeenCalledTimes(0)
-			expect(chat.pendingConfirm.value?.turn_id).toBe("t1")
+			expect(chat.pendingConfirm.value?.turnId).toBe("t1")
 		})
 	})
 
@@ -443,7 +443,7 @@ describe("useAIChat", { concurrent: false }, () => {
 			chat.sendMessage("hello")
 			receive({
 				type: ServerMessageType.ConfirmRequest,
-				turn_id: "t1",
+				turnId: "t1",
 				actions: [],
 			})
 

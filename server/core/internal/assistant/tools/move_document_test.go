@@ -105,6 +105,12 @@ func Test_moveDocument_InvokableRun(t *testing.T) {
 			NotifyCalls: 2,
 			RespJSON:    `{"document_id":"` + docID.String() + `","new_parent_id":"` + newParent.String() + `"}`,
 		},
+		"Move within the same parent notifies once": {
+			DB:          okDB(nil, nil, nil),
+			Args:        `{"document_id":"` + docID.String() + `","new_parent_id":"` + oldParent.String() + `"}`,
+			NotifyCalls: 1,
+			RespJSON:    `{"document_id":"` + docID.String() + `","new_parent_id":"` + oldParent.String() + `"}`,
+		},
 	}
 
 	for cn, c := range cc {

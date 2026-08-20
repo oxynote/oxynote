@@ -55,7 +55,7 @@ variables are set.
 ## AI assistant
 
 The assistant is not tied to any one vendor. Pick a provider and a model
-with two environment variables in `docker/env/core.local.env`:
+in `docker/env/core.local.env`:
 
 ```sh
 OXYNOTE_CORE_ASSISTANT_PROVIDER=claude

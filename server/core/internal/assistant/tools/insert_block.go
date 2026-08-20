@@ -51,6 +51,13 @@ func (t *insertBlock) Confirm(ctx context.Context, args json.RawMessage) Confirm
 	t.parseToolArgs(args, &in)
 
 	return t.summarize(ctx, NameInsertBlock, args, func(subject string) string {
+		// echoing a missing or garbage position onto the confirm card
+		// would garble it, so fall back to an un-positioned phrase.
+		if in.Position != "before" && in.Position != "after" {
+			return fmt.Sprintf("Insert %s in %s",
+				blockKindLabel(in.Block.Type), subject)
+		}
+
 		return fmt.Sprintf("Insert %s %s a block in %s",
 			blockKindLabel(in.Block.Type), in.Position, subject)
 	})
@@ -77,10 +84,8 @@ func (t *insertBlock) InvokableRun(
 		return "", errors.New("insert_block: reference_block_uid is required")
 	}
 
-	if err := t.validatePlacement(ctx, in.DocumentID, in.ReferenceBlockUID, in.Block); err != nil {
-		return "", fmt.Errorf("insert_block: %w", err)
-	}
-
+	// the enum check is free while validatePlacement may hit the
+	// database, so a bad position fails before any I/O happens.
 	var op edit.Operation
 
 	switch in.Position {
@@ -90,6 +95,10 @@ func (t *insertBlock) InvokableRun(
 		op = edit.InsertAfter(in.ReferenceBlockUID, in.Block)
 	default:
 		return "", fmt.Errorf("insert_block: position must be \"before\" or \"after\", got %q", in.Position)
+	}
+
+	if err := t.validatePlacement(ctx, in.DocumentID, in.ReferenceBlockUID, in.Block); err != nil {
+		return "", fmt.Errorf("insert_block: %w", err)
 	}
 
 	return t.applyEdit(ctx, in.DocumentID, []edit.Operation{op})

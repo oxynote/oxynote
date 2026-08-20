@@ -110,7 +110,7 @@ func (t *moveDocument) InvokableRun(
 
 	// both the source and destination subtrees changed shape; tell
 	// subscribers about each. When the move is within the same parent
-	// the second call is a duplicate but harmless.
+	// the second notification would be a duplicate, so it is skipped.
 	t.notifyTreeChange(oldParent)
 
 	if oldParent != newParent {

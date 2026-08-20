@@ -10,36 +10,9 @@ import (
 	"net/url"
 )
 
-// Client posts batched operations to the Node hocuspocus service's
-// internal operations endpoint. The base URL points at the Node
-// service (e.g. http://auth-realtime:8081); the path to the
-// endpoint is appended by Apply.
-type Client struct {
-	// httpClient is the underlying HTTP client. Callers should
-	// pass one with a reasonable timeout configured.
-	httpClient *http.Client
-
-	// baseURL is the Node service root, without a trailing slash.
-	baseURL string
-}
-
 // _maxErrorPreviewBytes caps how much of an error response body is
 // surfaced to callers.
 const _maxErrorPreviewBytes = 1024
-
-// NewClient constructs an edit-RPC client. The baseURL must include
-// the scheme and host of the Node service; the operations path is
-// appended per request.
-func NewClient(httpClient *http.Client, baseURL string) *Client {
-	if httpClient == nil {
-		httpClient = http.DefaultClient
-	}
-
-	return &Client{
-		httpClient: httpClient,
-		baseURL:    baseURL,
-	}
-}
 
 // Result is the outcome of an Apply call. Applied counts the
 // operations Node committed to the Y.Doc; Errors lists per-op
@@ -63,6 +36,33 @@ type OpError struct {
 
 	// Message is the short reason from Node.
 	Message string `json:"message"`
+}
+
+// Client posts batched operations to the Node hocuspocus service's
+// internal operations endpoint. The base URL points at the Node
+// service (e.g. http://auth-realtime:8081); endpoint replaces its
+// path with the per-document operations path.
+type Client struct {
+	// httpClient is the underlying HTTP client. Callers should
+	// pass one with a reasonable timeout configured.
+	httpClient *http.Client
+
+	// baseURL is the Node service root, without a trailing slash.
+	baseURL string
+}
+
+// NewClient constructs an edit-RPC client. The baseURL must include
+// the scheme and host of the Node service; the operations path is
+// appended per request.
+func NewClient(httpClient *http.Client, baseURL string) *Client {
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+
+	return &Client{
+		httpClient: httpClient,
+		baseURL:    baseURL,
+	}
 }
 
 // Apply submits the given operations to the Node service for the
@@ -92,7 +92,7 @@ func (c *Client) Apply(ctx context.Context, documentID, branchID string, ops []O
 		Operations []wireOp `json:"operations"`
 	}{Operations: wires})
 	if err != nil {
-		return Result{}, fmt.Errorf("marshal operations: %w", err)
+		return Result{}, fmt.Errorf("marshaling operations: %w", err)
 	}
 
 	endpoint, err := c.endpoint(documentID, branchID)
@@ -105,14 +105,14 @@ func (c *Client) Apply(ctx context.Context, documentID, branchID string, ops []O
 		// NOCOV: the URL is pre-validated by endpoint, so the only
 		// remaining failure is a nil context, which cannot be
 		// simulated in tests without violating the API contract.
-		return Result{}, fmt.Errorf("build request: %w", err)
+		return Result{}, fmt.Errorf("building request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return Result{}, fmt.Errorf("post operations: %w", err)
+		return Result{}, fmt.Errorf("posting operations: %w", err)
 	}
 	defer resp.Body.Close() //nolint:errcheck // error provides no meaningful info
 
@@ -129,22 +129,23 @@ func (c *Client) Apply(ctx context.Context, documentID, branchID string, ops []O
 
 	var out Result
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return Result{}, fmt.Errorf("decode response: %w", err)
+		return Result{}, fmt.Errorf("decoding response: %w", err)
 	}
 
 	return out, nil
 }
 
-// endpoint builds the per-document operations URL.
+// endpoint builds the per-document operations URL. The IDs are
+// assigned raw to the URL path so String escapes them exactly once.
 func (c *Client) endpoint(documentID, branchID string) (string, error) {
 	base, err := url.Parse(c.baseURL)
 	if err != nil {
-		return "", fmt.Errorf("parse base url: %w", err)
+		return "", fmt.Errorf("parsing base url: %w", err)
 	}
 
 	base.Path = fmt.Sprintf("/api/internal/documents/%s/branches/%s/operations",
-		url.PathEscape(documentID),
-		url.PathEscape(branchID),
+		documentID,
+		branchID,
 	)
 
 	return base.String(), nil
