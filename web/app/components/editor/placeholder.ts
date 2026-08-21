@@ -32,7 +32,10 @@ export function defaultNamePlaceholder(t: (i18nPath: string) => string) {
 		name: "defaultNamePlaceholder",
 		addOptions(): DynamicPlaceholderOptions {
 			return {
-				...this.options,
+				// this.options inside addOptions resolves back into this very
+				// override, so the base defaults are read off the parent
+				// extension directly
+				...DynamicPlaceholder.options,
 				placeholder: () => {
 					return t("editor.placeholders.name-default")
 				},
@@ -52,7 +55,10 @@ export function defaultContentPlaceholder(
 		name: "defaultContentPlaceholder",
 		addOptions(): DynamicPlaceholderOptions {
 			return {
-				...this.options,
+				// this.options inside addOptions resolves back into this very
+				// override, so the base defaults are read off the parent
+				// extension directly
+				...DynamicPlaceholder.options,
 				placeholder: ({ node, pos, editor }) => {
 					switch (node.type.name) {
 						case Heading.name:

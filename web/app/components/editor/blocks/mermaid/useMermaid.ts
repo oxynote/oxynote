@@ -247,9 +247,9 @@ async function loadMermaid(dark: boolean) {
 
 	loadPromise = import("mermaid")
 		.then((mod) => {
-			mermaidModule.value = mod
 			mod.default.initialize(buildMermaidConfig(dark))
 			lastInitializedDark = dark
+			mermaidModule.value = mod
 		})
 		.catch((err: unknown) => {
 			loadError.value = err instanceof Error ? err.message : null

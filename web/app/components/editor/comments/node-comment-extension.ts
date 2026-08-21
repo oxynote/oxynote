@@ -106,14 +106,12 @@ export const NodeComment = Extension.create<
 						return false
 					}
 
-					if (!dispatch) {
-						return false
+					if (dispatch) {
+						tr.setNodeMarkup(pos, undefined, {
+							...node.attrs,
+							nodeCommentId: attrs.nodeCommentId,
+						})
 					}
-
-					tr.setNodeMarkup(pos, undefined, {
-						...node.attrs,
-						nodeCommentId: attrs.nodeCommentId,
-					})
 
 					return true
 				},

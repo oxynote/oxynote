@@ -515,9 +515,7 @@ export function highlightOverlayByNodeType(
 			res.extraBottom = 8
 			break
 		case ImageBlock.name: {
-			const img =
-				target.querySelector("img") ??
-				target.firstElementChild?.querySelector("img")
+			const img = target.querySelector("img")
 
 			if (!img) {
 				break

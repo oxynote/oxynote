@@ -42,7 +42,7 @@ const languageNames: Record<string, string> = {
 	xml: "XML / HTML",
 	yaml: "YAML",
 }
-export const extendedCodeBlockLanguages = common
+export const extendedCodeBlockLanguages = { ...common }
 extendedCodeBlockLanguages.curl = curl as LanguageFn
 
 export const extendedCodeBlockLanguageOptions = Object.fromEntries(

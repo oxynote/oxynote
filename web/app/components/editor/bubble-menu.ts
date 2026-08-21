@@ -18,9 +18,7 @@ import { COMMENT_MARK_NAME } from "./mark-names"
 import { CODE_BLOCK_NAME, TITLED_CODE_BLOCK_NAME } from "./blocks/node-names"
 
 // [] means no items are whitelisted
-function whitelistBubbleMenuItemsByContext(
-	state: EditorState,
-): string[] | "all" {
+function whitelistBubbleMenuItemsByContext(state: EditorState): string[] {
 	const allowComment = !isCursorInsideTiptapMark(state, COMMENT_MARK_NAME)
 
 	const baseNodes = [
@@ -60,8 +58,7 @@ export function isBubbleMenuItemAllowedByContext(
 	state: EditorState,
 	itemName: string,
 ): boolean {
-	const res = whitelistBubbleMenuItemsByContext(state)
-	return res === "all" || res.includes(itemName)
+	return whitelistBubbleMenuItemsByContext(state).includes(itemName)
 }
 
 export function shouldShowBubbleMenu(opts: {
@@ -71,8 +68,7 @@ export function shouldShowBubbleMenu(opts: {
 	from: number
 	to: number
 }): boolean {
-	const res = whitelistBubbleMenuItemsByContext(opts.state)
-	if (res !== "all" && !res.length) {
+	if (!whitelistBubbleMenuItemsByContext(opts.state).length) {
 		return false
 	}
 

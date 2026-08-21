@@ -109,6 +109,7 @@ function extractVisualizationData(
 	orderedLegendLabelFn: (type: GenericQueryChartType) => string,
 ): {
 	status: GenericQueryResultStatus
+	queryErrorMessage?: string
 	data?: MultipleLineChartData | MultipleBarChartData | MultipleGaugeChartData
 } {
 	if (!visualizationType) {
@@ -120,7 +121,10 @@ function extractVisualizationData(
 	}
 
 	if (input.status !== GenericQueryResultStatus.Ok) {
-		return { status: input.status }
+		return {
+			status: input.status,
+			queryErrorMessage: input.queryErrorMessage,
+		}
 	}
 
 	const cleanNum = (v: number) => {
@@ -229,6 +233,7 @@ export function mergeVisualizationResults(
 	orderedLegendLabelFn: (type: GenericQueryChartType) => string,
 ): {
 	status: GenericQueryResultStatus
+	queryErrorMessage?: string
 	data?: MultipleLineChartData | MultipleBarChartData | MultipleGaugeChartData
 } {
 	if (!visualizationType) {
@@ -258,6 +263,11 @@ export function mergeVisualizationResults(
 			return { status: GenericQueryResultStatus.ChartAndDataMismatch }
 		} else if (extracted.status === GenericQueryResultStatus.Invalid) {
 			return { status: GenericQueryResultStatus.Invalid }
+		} else if (extracted.status === GenericQueryResultStatus.QueryError) {
+			return {
+				status: GenericQueryResultStatus.QueryError,
+				queryErrorMessage: extracted.queryErrorMessage,
+			}
 		} else if (!extracted.data) {
 			return { status: GenericQueryResultStatus.Invalid }
 		}
@@ -569,6 +579,20 @@ export function calculateYAxisBounds(
 	const dataMin = Math.min(...allValues)
 	const dataMax = Math.max(...allValues)
 	const range = dataMax - dataMin
+
+	// Handle zero range (all values are the same)
+	if (range === 0) {
+		const step = calculateNiceStep(Math.abs(dataMax) || 1)
+		const max = roundUpToStep(dataMax + step, step)
+		const min =
+			dataMin >= 0
+				? Math.max(0, roundDownToStep(dataMin - step, step))
+				: roundDownToStep(dataMin - step, step)
+		return {
+			min: bounds?.min ?? min,
+			max: bounds?.max ?? max,
+		}
+	}
 
 	// Calculate a consistent step size based on the range
 	const step = calculateNiceStep(range)

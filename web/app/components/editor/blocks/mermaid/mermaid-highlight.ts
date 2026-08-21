@@ -31,8 +31,7 @@ const mermaidGrammar: LanguageFn = (hljs) => ({
 			contains: [
 				{
 					className: "attr",
-					begin: /[A-Za-z][A-Za-z0-9_-]*/,
-					end: /(?=:)/,
+					begin: /[A-Za-z][A-Za-z0-9_-]*(?=:)/,
 				},
 				hljs.QUOTE_STRING_MODE,
 			],
@@ -98,6 +97,9 @@ const mermaidGrammar: LanguageFn = (hljs) => ({
 		{
 			className: "operator",
 			variants: [
+				// ER cardinality connectors
+				{ begin: /[|}][|o]--+[|o][|{]/ },
+				{ begin: /[|}][|o]\.\.+[|o][|{]/ },
 				// Bidirectional sequence arrows
 				{ begin: /<<-->>/ },
 				{ begin: /<<->>/ },
@@ -110,21 +112,18 @@ const mermaidGrammar: LanguageFn = (hljs) => ({
 				{ begin: /--\|>/ },
 				{ begin: /\.\.\|>/ },
 				{ begin: /\*--/ },
+				// Flowchart cross / circle ends
+				{ begin: /[xo]--+[xo]/ },
+				{ begin: /--+[xo]/ },
 				{ begin: /o--/ },
 				{ begin: /--o/ },
 				{ begin: /\.\.>/ },
-				// ER cardinality connectors
-				{ begin: /[|}][|o]--+[|o][|{]/ },
-				{ begin: /[|}][|o]\.\.+[|o][|{]/ },
 				// Flowchart thick / dotted
 				{ begin: /<=+=>/ },
 				{ begin: /={2,}>/ },
 				// Dotted arrows
 				{ begin: /-\.-+>/ },
 				{ begin: /-\.-+/ },
-				// Flowchart cross / circle ends
-				{ begin: /--+[xo]/ },
-				{ begin: /[xo]--+[xo]/ },
 				// Standard arrows
 				{ begin: /<--+>/ },
 				{ begin: /--+>/ },
@@ -152,7 +151,7 @@ const mermaidGrammar: LanguageFn = (hljs) => ({
 		{
 			className: "attr",
 			begin:
-				/\b(?:fill|stroke|stroke-width|color|font-size|font-weight|font-style|opacity|rx|ry|background)\b/,
+				/\b(?:stroke-width|font-weight|font-style|background|font-size|opacity|stroke|color|fill|rx|ry)\b/,
 		},
 	],
 })

@@ -88,7 +88,7 @@ export const TextSelectClipboard = Extension.create({
 						const combinedText = lines.join(" ")
 
 						if (!combinedText.length) {
-							return new Slice(new Fragment(), 0, 0)
+							return new Slice(Fragment.empty, 0, 0)
 						}
 
 						const textNode = schema.text(combinedText)

@@ -12,7 +12,6 @@ import {
 	TextSelection,
 	type Transaction,
 } from "@tiptap/pm/state"
-import { ParameterList, ParameterListItem } from "./parameter-list"
 import { CalloutBlock } from "../callout"
 import {
 	CODE_BLOCK_NAME,
@@ -22,6 +21,8 @@ import {
 	SPLIT_DOCUMENTATION_NAME,
 	SPLIT_DOCUMENTATION_LEFT_SIDE_NAME,
 	SPLIT_DOCUMENTATION_RIGHT_SIDE_NAME,
+	SPLIT_DOCUMENTATION_PARAMETER_LIST_NAME,
+	SPLIT_DOCUMENTATION_PARAMETER_LIST_ITEM_NAME,
 } from "../node-names"
 import { deleteNode } from "../../tiptap-utils/node"
 
@@ -63,7 +64,7 @@ const allowedLeftSideContent = [
 	CalloutBlock.name,
 ]
 
-const extraLeftSideContent = [ParameterList.name]
+const extraLeftSideContent = [SPLIT_DOCUMENTATION_PARAMETER_LIST_NAME]
 
 export const SplitDocumentationLeftSide = Node.create({
 	name: SPLIT_DOCUMENTATION_LEFT_SIDE_NAME,
@@ -177,7 +178,7 @@ export const SplitDocumentationPlaceholderParents: {
 	},
 	{
 		parent: true,
-		name: ParameterListItem.name,
+		name: SPLIT_DOCUMENTATION_PARAMETER_LIST_ITEM_NAME,
 	},
 ]
 
@@ -229,7 +230,10 @@ export const SplitDocumentation = Node.create({
 						return false
 					}
 
-					const paramList = schema.nodes[ParameterList.name]?.createAndFill()
+					const paramList =
+						schema.nodes[
+							SPLIT_DOCUMENTATION_PARAMETER_LIST_NAME
+						]?.createAndFill()
 					if (!paramList) {
 						return false
 					}
@@ -358,7 +362,7 @@ export const SplitDocumentation = Node.create({
 
 					// nodePos is the position of a ParameterList
 					const node = doc.nodeAt(nodePos)
-					if (node?.type.name !== ParameterList.name) {
+					if (node?.type.name !== SPLIT_DOCUMENTATION_PARAMETER_LIST_NAME) {
 						return false
 					}
 
@@ -378,7 +382,10 @@ export const SplitDocumentation = Node.create({
 						return false
 					}
 
-					const paramList = schema.nodes[ParameterList.name]?.createAndFill()
+					const paramList =
+						schema.nodes[
+							SPLIT_DOCUMENTATION_PARAMETER_LIST_NAME
+						]?.createAndFill()
 					if (!paramList) {
 						return false
 					}
@@ -415,7 +422,9 @@ export const SplitDocumentation = Node.create({
 
 					// nodePos is the position of a ParameterListItem
 					const node = doc.nodeAt(nodePos)
-					if (node?.type.name !== ParameterListItem.name) {
+					if (
+						node?.type.name !== SPLIT_DOCUMENTATION_PARAMETER_LIST_ITEM_NAME
+					) {
 						return false
 					}
 
@@ -425,7 +434,9 @@ export const SplitDocumentation = Node.create({
 					// Find the nearest ancestor ParameterList
 					let paramListDepth = -1
 					for (let d = $pos.depth; d >= 0; d--) {
-						if ($pos.node(d).type.name === ParameterList.name) {
+						if (
+							$pos.node(d).type.name === SPLIT_DOCUMENTATION_PARAMETER_LIST_NAME
+						) {
 							paramListDepth = d
 							break
 						}
@@ -436,7 +447,9 @@ export const SplitDocumentation = Node.create({
 					}
 
 					const paramListItem =
-						schema.nodes[ParameterListItem.name]?.createAndFill()
+						schema.nodes[
+							SPLIT_DOCUMENTATION_PARAMETER_LIST_ITEM_NAME
+						]?.createAndFill()
 					if (!paramListItem) {
 						return false
 					}
@@ -668,7 +681,7 @@ export const SplitDocumentation = Node.create({
 				const posAfterHeading = $from.after(headingDepth)
 
 				// if there is a next sibling inside the same container
-				if (container.childCount > 1) {
+				if (headingIndex + 1 < container.childCount) {
 					const nextNode = container.child(headingIndex + 1)
 
 					if (

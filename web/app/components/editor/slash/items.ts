@@ -195,7 +195,7 @@ const allItems: CommandItem[] = [
 				.chain()
 				.focus()
 				.deleteRange(range)
-				.setNode("heading", { level: 2 })
+				.setNode("heading", { level: 3 })
 				.run()
 		},
 	},

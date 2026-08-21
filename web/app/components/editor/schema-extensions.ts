@@ -150,7 +150,7 @@ export function contentExtensionsWithIDs(
 		...nodeExtensions,
 		CommentMark.configure(commentMarkOptions),
 		UniqueIDWithDomId.configure({
-			types: nodeExtensions.map((v) => v.name),
+			types: nodeExtensions.filter((v) => v.type === "node").map((v) => v.name),
 			attributeName: "uid",
 			generateID: (): string => nanoid(),
 		}),

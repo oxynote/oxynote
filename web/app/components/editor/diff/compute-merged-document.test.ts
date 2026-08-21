@@ -2,6 +2,7 @@ import type { JSONContent } from "@tiptap/core"
 import { describe, expect, it } from "vitest"
 import { computeMergedDocument } from "./compute-merged-document"
 import { DiffStatus } from "./position-map"
+import { doc } from "../test-helpers"
 
 function paragraph(text: string, uid?: string): JSONContent {
 	return {
@@ -9,10 +10,6 @@ function paragraph(text: string, uid?: string): JSONContent {
 		attrs: uid === undefined ? {} : { uid },
 		content: [{ type: "text", text }],
 	}
-}
-
-function doc(...content: JSONContent[]): JSONContent {
-	return { type: "doc", content }
 }
 
 // compresses the merged doc into [status, text] pairs for readable

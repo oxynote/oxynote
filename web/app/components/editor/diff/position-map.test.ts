@@ -1,4 +1,3 @@
-import type { JSONContent } from "@tiptap/core"
 import { Schema, type Node as PMNode } from "@tiptap/pm/model"
 import { describe, expect, it } from "vitest"
 import {
@@ -8,18 +7,7 @@ import {
 	segmentSelectionByDiffStatus,
 	type PositionMap,
 } from "./position-map"
-
-function paragraph(text: string, attrs?: JSONContent["attrs"]): JSONContent {
-	return {
-		type: "paragraph",
-		attrs,
-		content: text === "" ? undefined : [{ type: "text", text }],
-	}
-}
-
-function doc(...content: JSONContent[]): JSONContent {
-	return { type: "doc", content }
-}
+import { doc, paragraph } from "../test-helpers"
 
 // minimal schema for the live-document variants: block attrs mirror the
 // ones computeMergedDocument stamps, marks mirror the inline diff marks

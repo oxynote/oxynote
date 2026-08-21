@@ -593,13 +593,8 @@ function ensureBlockBoundary(doc: Node, pos: number): number {
 		// Check if we need to go up a level
 		if (!nodeBefore && !nodeAfter && $pos.depth > 1) {
 			// We're at an empty position - try the parent level
-			const parentIndex = $pos.index($pos.depth - 1)
-			const parentNode = $pos.node($pos.depth - 1)
-
-			if (parentIndex === 0) {
+			if ($pos.index($pos.depth - 1) === 0) {
 				return $pos.before($pos.depth)
-			} else if (parentIndex >= parentNode.childCount) {
-				return $pos.after($pos.depth)
 			}
 		}
 
@@ -618,10 +613,6 @@ function getListWrapperType(
 	content: Fragment,
 	parentListType?: string | null,
 ): string | null {
-	if (content.childCount === 0) {
-		return null
-	}
-
 	const firstChild = content.firstChild
 	if (!firstChild) {
 		return null
@@ -705,10 +696,6 @@ function wrapNodesIfNeeded(
 	insertPos: number,
 	content: Fragment,
 ): Fragment {
-	if (content.childCount === 0) {
-		return content
-	}
-
 	const firstChild = content.firstChild
 	if (!firstChild) {
 		return content

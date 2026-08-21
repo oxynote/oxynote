@@ -2,15 +2,7 @@ import type { JSONContent } from "@tiptap/core"
 import { describe, expect, it } from "vitest"
 import { expandInlineDiffs } from "./inline-diff-expansion"
 import { DiffStatus } from "./position-map"
-
-function text(
-	t: string,
-	marks?: NonNullable<JSONContent["marks"]>,
-): JSONContent {
-	return marks === undefined
-		? { type: "text", text: t }
-		: { type: "text", text: t, marks }
-}
+import { doc, text } from "../test-helpers"
 
 // builds a modified block carrying its old content in the oldNode attr,
 // the shape computeMergedDocument hands to the expansion
@@ -27,10 +19,6 @@ function modified(
 		},
 		content,
 	}
-}
-
-function doc(...content: JSONContent[]): JSONContent {
-	return { type: "doc", content }
 }
 
 describe("expandInlineDiffs", () => {

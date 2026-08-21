@@ -303,7 +303,7 @@ export const CommentMark = Mark.create<CommentMarkOptions, CommentMarkStorage>({
 		return {
 			addCommentMark:
 				(attrs: CommentAttrs) =>
-				({ chain, state }) => {
+				({ chain, state, dispatch }) => {
 					const markType = state.schema.marks[this.name]
 					if (!markType) {
 						return false
@@ -319,7 +319,9 @@ export const CommentMark = Mark.create<CommentMarkOptions, CommentMarkStorage>({
 					// Note: this is a workaround for a selection bug where
 					// after adding a comment mark inside a
 					// decorated (keyword syntax) node, the selection expands.
-					fixUserSelectionAroundKeywordColor()
+					if (dispatch) {
+						fixUserSelectionAroundKeywordColor()
+					}
 
 					return res
 				},
@@ -530,6 +532,11 @@ export function deletePendingCommentMarks(
 		return false
 	}
 
+	// one comment can span several text nodes whenever another mark
+	// splits the run, so the callback is reported once per id rather
+	// than once per node
+	const deletedIds = new Set<string>()
+
 	state.doc.descendants((node, pos) => {
 		if (!node.marks.length) {
 			return
@@ -547,7 +554,11 @@ export function deletePendingCommentMarks(
 				id !== excludeId
 			) {
 				tr.removeMark(pos, pos + node.nodeSize, mark.type)
-				onDelete?.(id)
+
+				if (!deletedIds.has(id)) {
+					deletedIds.add(id)
+					onDelete?.(id)
+				}
 			}
 		})
 	})

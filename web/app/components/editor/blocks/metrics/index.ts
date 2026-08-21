@@ -145,14 +145,18 @@ export const MetricBlock = Node.create({
 			insertMetricBlock:
 				(at: number) =>
 				({ tr, state, dispatch }) => {
+					// a can() probe gets a throwaway transaction, so the shared
+					// one is never left carrying the steps of a dry run
+					if (!dispatch) {
+						return setUpMetricBlock(state, state.tr, at)
+					}
+
 					const res = setUpMetricBlock(state, tr, at)
 					if (!res) {
 						return false
 					}
 
-					if (dispatch) {
-						dispatch(tr)
-					}
+					dispatch(tr)
 
 					return true
 				},
@@ -202,9 +206,13 @@ export function setUpMetricBlock(
 		nodeToInsert = metricBlock
 	}
 
-	// single atomic TX: replace paragraph -> metrics (wrapped or not)
-	tr.delete(from, to)
+	// insert before deleting: when the paragraph is the only child of its
+	// parent, deleting it first empties the parent, prosemirror rejects
+	// that step and the paragraph is left stranded beside the new node
+	const insertedSize = nodeToInsert.nodeSize
+
 	tr.insert(from, nodeToInsert)
+	tr.delete(from + insertedSize, to + insertedSize)
 
 	return true
 }

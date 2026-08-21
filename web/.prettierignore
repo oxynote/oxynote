@@ -3,6 +3,7 @@ public
 .output
 .vite
 .nuxt
+coverage
 
 *.md
 *.mdx

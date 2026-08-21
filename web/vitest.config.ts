@@ -85,16 +85,17 @@ export default defineConfig({
 				// test-only helper modules colocated with the suites they
 				// serve — test code, not app code
 				"app/**/test-helpers.ts",
+				"app/**/test-helpers/**",
 			],
 			// set from the measured baseline and ratcheted up as suites
 			// grow — never lowered. 100% is not the target: genuinely
 			// untestable branches stay visible in the report, marked with
 			// NOCOV comments in place
 			thresholds: {
-				statements: 27,
-				branches: 19,
-				functions: 22,
-				lines: 27,
+				statements: 56,
+				branches: 41,
+				functions: 41,
+				lines: 56,
 			},
 		},
 
@@ -138,6 +139,14 @@ export default defineConfig({
 						"@tiptap/pm/model",
 						"@tiptap/pm/state",
 						"@tiptap/extension-list",
+						"safe-stable-stringify",
+						"fast-deep-equal",
+						"@tiptap/extension-document",
+						"@tiptap/extension-paragraph",
+						"@tiptap/extension-text",
+						"@tiptap/y-tiptap",
+						"@floating-ui/dom",
+						"yjs",
 					],
 				},
 				test: {

@@ -152,10 +152,16 @@ export function singleLineExtension() {
 
 		const newText = lines.join(" ")
 
-		return {
-			changes: { from: 0, to: tr.newDoc.length, insert: newText },
-			sequential: true,
-		}
+		// the replacement has to follow the original transaction: codemirror
+		// resolves the first spec against the start document, and only honors
+		// `sequential` from the second spec onwards
+		return [
+			tr,
+			{
+				changes: { from: 0, to: tr.newDoc.length, insert: newText },
+				sequential: true,
+			},
+		]
 	})
 }
 

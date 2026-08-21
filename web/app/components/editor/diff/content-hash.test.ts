@@ -1,15 +1,7 @@
 import type { JSONContent } from "@tiptap/core"
 import { describe, expect, it } from "vitest"
 import { hashBlockContent } from "./content-hash"
-
-function text(
-	t: string,
-	marks?: NonNullable<JSONContent["marks"]>,
-): JSONContent {
-	return marks === undefined
-		? { type: "text", text: t }
-		: { type: "text", text: t, marks }
-}
+import { text } from "../test-helpers"
 
 function paragraph(
 	content: JSONContent[],

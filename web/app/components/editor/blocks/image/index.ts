@@ -132,12 +132,14 @@ function insertImageWithUpload(
 	const insertPos = pos ?? state.selection.anchor
 	const $pos = state.doc.resolve(insertPos)
 
-	// Insert image after the current block
-	const paragraphEnd = $pos.after()
+	// Insert image after the current block. A depth of 0 means the
+	// position already sits between top-level blocks, where there is no
+	// enclosing block to insert after.
+	const imagePos = $pos.depth === 0 ? insertPos : $pos.after()
 
 	const tr = state.tr
 	const image = imageNode.create({ uid: blockId, uploading: true })
-	tr.insert(paragraphEnd, image)
+	tr.insert(imagePos, image)
 
 	view.dispatch(tr)
 

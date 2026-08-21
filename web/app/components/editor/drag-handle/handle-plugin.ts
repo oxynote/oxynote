@@ -74,13 +74,16 @@ const findAbsolutePos = (
 		return -1
 	}
 
+	// a resolved position of 0 is the document start, which is where a
+	// handle on the first node legitimately lands; only a null means the
+	// relative position no longer maps anywhere
 	return (
 		relativePositionToAbsolutePosition(
 			ystate.doc,
 			ystate.type,
 			relativePos,
 			ystate.binding.mapping,
-		) || 0
+		) ?? -1
 	)
 }
 
@@ -402,6 +405,10 @@ export const DragHandlePlugin = ({
 	}
 
 	function onDragStart(e: DragEvent) {
+		if (currentNodePos === -1) {
+			return
+		}
+
 		// Get the dragged node to check if another user is dragging it
 		const draggedNode = editor.state.doc.nodeAt(currentNodePos)
 		if (!draggedNode) {
@@ -575,7 +582,7 @@ export const DragHandlePlugin = ({
 							const newPos = findAbsolutePos(state, currentNodeRelPos)
 
 							// if relative position couldn't be resolved, the node was truly deleted
-							if (newPos === -1 || newPos === 0) {
+							if (newPos === -1) {
 								hideHandle()
 								currentNode = null
 								currentNodePos = -1

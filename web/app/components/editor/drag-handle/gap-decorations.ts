@@ -636,6 +636,18 @@ export function repositionGapZones() {
 }
 
 /**
+ * Pick the taller of two gap heights, comparing the parsed lengths: as
+ * strings "10rem" would sort below "2rem".
+ */
+function tallerHeight(a: string | null, b: string): string {
+	if (a === null) {
+		return b
+	}
+
+	return parseFloat(a) > parseFloat(b) ? a : b
+}
+
+/**
  * Collect gap positions for a container node's children.
  * Checks each child's type to determine if/how to add gap zones.
  * @param indentLevel - List indentation level (0 = non-list or top-level list, higher = nested lists)
@@ -692,8 +704,7 @@ function collectGapsForContainer(
 			} else {
 				// Not first child: add gap before this child
 				// Use the larger height if previous child also had a config (for horizontal gaps)
-				const height =
-					lastHeight && lastHeight > config.height ? lastHeight : config.height
+				const height = tallerHeight(lastHeight, config.height)
 				gaps.push({
 					pos: childPos,
 					height,
@@ -743,6 +754,32 @@ function collectGapsForContainer(
 			// eslint-disable-next-line @typescript-eslint/restrict-template-expressions -- lastChildId is assigned inside a forEach callback, which control-flow analysis does not track
 			key: `${containerKey}:after:${lastChildId}`,
 		})
+	}
+}
+
+/**
+ * Make every collected key unique by suffixing repeats.
+ *
+ * Keys are built from node uids, and two nodes can end up sharing one
+ * (a paste that outruns UniqueID, a merge from another peer). Both the
+ * drop lookup and the decoration diff address a gap by key alone, so a
+ * repeat would leave one of the rendered zones pointing at the other
+ * one's position.
+ */
+function dedupGapKeys(gaps: GapInfo[]): void {
+	const used = new Set<string>()
+
+	for (const gap of gaps) {
+		let key = gap.key
+		let repeat = 1
+
+		while (used.has(key)) {
+			key = `${gap.key}#${repeat}`
+			repeat++
+		}
+
+		used.add(key)
+		gap.key = key
 	}
 }
 
@@ -818,6 +855,8 @@ function collectAllGaps(doc: Node): GapInfo[] {
 		// Continue traversing
 		return true
 	})
+
+	dedupGapKeys(gaps)
 
 	return gaps
 }
@@ -983,12 +1022,6 @@ function updateGapDecorations(
 		const spec = deco.spec as { key?: string } | undefined
 		const key = spec?.key
 		if (key) {
-			if (DEBUG_SHOW_GAPS) {
-				if (existingByKey.has(key)) {
-					console.warn(`Duplicate key found: ${key}`)
-				}
-			}
-
 			existingByKey.set(key, deco)
 		} else if (DEBUG_SHOW_GAPS) {
 			console.warn(`Decoration without key at pos ${deco.from}`)

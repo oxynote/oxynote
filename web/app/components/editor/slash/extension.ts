@@ -145,8 +145,12 @@ export const SlashCommands = Extension.create<
 								return true
 							}
 
+							// key names like "ArrowDown" or "Shift" are not typed
+							// characters, so only single character keys can count
+							// towards the unknown character limit
 							if (
 								matchedItems === 0 &&
+								props.event.key.length === 1 &&
 								(ALPHANUM_REGEX.test(props.event.key) ||
 									ALPHANUM_EXTENDED_REGEX.test(props.event.key))
 							) {
