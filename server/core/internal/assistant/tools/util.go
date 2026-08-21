@@ -20,6 +20,36 @@ func result(v any) (string, error) {
 	return string(data), nil
 }
 
+// summarize builds a confirmation for a write that targets an existing
+// document: the document is resolved once, and the tool supplies only
+// the phrasing for its own change.
+func summarize(inp DescribeInput, name Name, phrase func(subject string) string) ConfirmActionSummary {
+	out := ConfirmActionSummary{Tool: string(name)}
+
+	if docID := inp.DocumentID(); docID != "" {
+		out.DocumentID = docID
+		out.DocumentName = inp.DocumentName(docID)
+	}
+
+	out.Summary = phrase(subjectFor(out.DocumentName))
+
+	return out
+}
+
+// blockType reads the canonical type of the block a write tool was
+// handed, for the confirm summary.
+func blockType(inp DescribeInput) string {
+	var in struct {
+		Block struct {
+			Type string `json:"type"`
+		} `json:"block"`
+	}
+
+	inp.Probe(&in)
+
+	return in.Block.Type
+}
+
 // subjectFor returns the display subject for label and summary strings:
 // the document's name when known, a generic fallback otherwise.
 func subjectFor(docName string) string {

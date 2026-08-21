@@ -1,8 +1,9 @@
-// Package tools owns the AI assistant's tool surface. Each tool the
-// model can call lives in its own file holding its schema, its
-// implementation, and the words shown to the user while it runs; Set
-// gathers them for one session. All tools execute server-side — there
-// is no client-side forwarding.
+// Package tools owns the AI assistant's tool surface. Tools are grouped
+// by what they act on — documents, blocks, the search index — and each
+// describes itself, names what it is about to do, and does its work in
+// this package's own vocabulary; eino.go is the only place that speaks
+// the agent framework's. All tools execute server-side — there is no
+// client-side forwarding.
 package tools
 
 import (
@@ -47,12 +48,12 @@ const (
 )
 
 // Set is the tools one session offers the model: an immutable registry
-// built once from an Input and handed straight to the agent.
+// built once from the session's wiring and handed straight to the agent.
 //
 // It is the only place that names every tool. What a tool is — whether
-// it needs confirming, whether it survives an approve-all, what the
-// user is told while it runs — is asked of the tool itself, so there is
-// no second list to keep in step with this one.
+// it needs confirming, whether it survives an approve-all, whether it
+// belongs on surfaces outside this process — the tool states in its own
+// Traits, so there is no second list to keep in step with this one.
 type Set struct {
 	// tools maps each tool's name to the value that serves it, already
 	// wrapped in its confirmation gate where one applies.
@@ -63,59 +64,106 @@ type Set struct {
 	// provider prompt caching effective.
 	ordered []tool.InvokableTool
 
+	// entries lists the tools in registration order without their
+	// confirmation gates, for surfaces that own their own approval
+	// story. Entries returns it.
+	entries []Entry
+
 	// writes lists the tools that mutate a document.
 	writes []string
 }
 
 // New creates a fresh instance of Set.
-func New(inp *Input) *Set {
+func New(deps *Deps) *Set {
 	registerConfirmTypes()
 
-	all := []struct {
-		Name Name
-		Tool tool.InvokableTool
-	}{
-		{NameListDocuments, &listDocuments{inp}},
-		{NameGetDocument, &getDocument{inp}},
-		{NameReadDocumentSummary, &readDocumentSummary{inp}},
-		{NameReadBlock, &readBlock{inp}},
-		{NameSearchDocuments, &searchDocuments{inp}},
+	all := []ReadTool{
+		listDocuments{},
+		getDocument{},
+		readDocumentSummary{},
+		readBlock{},
+		searchDocuments{},
 
-		{NameCreateDocument, &createDocument{inp}},
-		{NameDeleteDocument, &deleteDocument{inp}},
-		{NameRenameDocument, &renameDocument{inp}},
-		{NameSetDocumentIcon, &setDocumentIcon{inp}},
-		{NameMoveDocument, &moveDocument{inp}},
-		{NameInsertBlock, &insertBlock{inp}},
-		{NameAppendBlock, &appendBlock{inp}},
-		{NamePrependBlock, &prependBlock{inp}},
-		{NameReplaceBlock, &replaceBlock{inp}},
-		{NameUpdateBlockText, &updateBlockText{inp}},
-		{NameUpdateBlockAttrs, &updateBlockAttrs{inp}},
-		{NameDeleteBlock, &deleteBlock{inp}},
+		createDocument{},
+		deleteDocument{},
+		renameDocument{},
+		setDocumentIcon{},
+		moveDocument{},
+		insertBlock{},
+		appendBlock{},
+		prependBlock{},
+		replaceBlock{},
+		updateBlockText{},
+		updateBlockAttrs{},
+		deleteBlock{},
+
+		readToolOutput{},
 	}
 
 	s := &Set{tools: make(map[Name]tool.InvokableTool, len(all))}
 
-	for _, e := range all {
-		t := e.Tool
+	for _, tl := range all {
+		et := newEinoTool(tl, deps)
+		tr := tl.Traits()
 
-		// a tool that can describe a pending write is a tool that
-		// performs one, so the gate goes on here rather than being
-		// something every write has to remember to ask for.
-		if c, ok := t.(Confirmer); ok {
-			_, destructive := t.(Destructive)
+		s.entries = append(s.entries, Entry{
+			Traits: tr,
+			Name:   et.info.Name,
+			Tool:   et,
+		})
 
-			t = &confirming{InvokableTool: t, summary: c, destructive: destructive}
+		var it tool.InvokableTool = et
 
-			s.writes = append(s.writes, string(e.Name))
+		// the gate goes on here rather than being something every write
+		// has to remember to ask for, so a write cannot slip through by
+		// forgetting.
+		if tr.Write {
+			it = &confirming{einoTool: et, destructive: tr.Destructive}
+
+			s.writes = append(s.writes, string(et.info.Name))
 		}
 
-		s.tools[e.Name] = t
-		s.ordered = append(s.ordered, t)
+		s.tools[et.info.Name] = it
+		s.ordered = append(s.ordered, it)
 	}
 
 	return s
+}
+
+// Entry describes one registered tool: what kind of tool it is, its
+// name, and its implementation with no confirmation gate applied.
+type Entry struct {
+	Traits
+
+	// Name is the tool's canonical identifier.
+	Name Name
+
+	// Tool is the tool without its confirmation gate. Running it
+	// performs the write immediately, so it belongs only to surfaces
+	// whose client owns the approval story (the MCP server); the
+	// assistant's chat loop must use Tools.
+	Tool tool.InvokableTool
+}
+
+// Entries returns every tool in registration order, ungated. The MCP
+// surface builds its tool list from this, minus the internal ones; the
+// assistant's chat loop uses Tools, which keeps the confirmation gates.
+func (s *Set) Entries() []Entry {
+	return slices.Clone(s.entries)
+}
+
+// Entry returns the named tool, ungated, reporting whether the set owns
+// it. Callers that want one specific tool ask here rather than searching
+// Entries, so the registry stays the only thing that knows how tools are
+// addressed.
+func (s *Set) Entry(name Name) (Entry, bool) {
+	for _, e := range s.entries {
+		if e.Name == name {
+			return e, true
+		}
+	}
+
+	return Entry{}, false
 }
 
 // Tools returns every tool in registration order, ready to hand to the
@@ -131,21 +179,15 @@ func (s *Set) Tools() []tool.BaseTool {
 
 // Label returns a short line describing what the named tool is about to
 // do, or an empty string for tools too noisy or too generic to
-// announce. An unknown name is not an error: the agent also runs tools
-// this set does not own, such as the offloaded-result reader.
+// announce. An unknown name is not an error: the agent may run tools
+// this set does not own.
 func (s *Set) Label(ctx context.Context, name Name, args json.RawMessage) string {
 	t, ok := s.tools[name]
 	if !ok {
 		return ""
 	}
 
-	l, ok := unwrap(t).(labeller)
-	if !ok {
-		// NOCOV: every tool in the registry implements labeller.
-		return ""
-	}
-
-	return l.Label(ctx, args)
+	return unwrap(t).Title(ctx, args)
 }
 
 // WriteNames returns every tool that mutates a document.
@@ -158,20 +200,15 @@ func (s *Set) WriteNames() []string {
 	return slices.Clone(s.writes)
 }
 
-// unwrap returns the tool underneath a confirmation gate, or the tool
-// itself when it is not gated.
-func unwrap(t tool.InvokableTool) tool.InvokableTool {
+// unwrap returns the adapter underneath a confirmation gate, or the
+// adapter itself when it is not gated.
+func unwrap(t tool.InvokableTool) *einoTool {
 	if c, ok := t.(*confirming); ok {
-		return c.InvokableTool
+		return c.einoTool
 	}
 
-	return t
-}
+	// NOCOV: the registry only ever holds adapters, gated or not.
+	et, _ := t.(*einoTool)
 
-// labeller is implemented by every tool in the registry, so it can
-// describe itself while it runs.
-type labeller interface {
-	// Label should return a short line describing what the tool is
-	// about to do, or an empty string to run without announcement.
-	Label(ctx context.Context, args json.RawMessage) string
+	return et
 }

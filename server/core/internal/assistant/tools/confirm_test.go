@@ -9,7 +9,6 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
-	"github.com/guregu/null/v5"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -29,22 +28,46 @@ func gatedTool(t *testing.T, s *Set, name Name) tool.InvokableTool {
 func Test_confirming_gatesEveryWrite(t *testing.T) {
 	t.Parallel()
 
-	s := New(testInput())
+	s := New(testDeps(stubDocumentDB(), stubApplier(), nil))
 
 	for _, name := range allToolNames() {
 		_, gated := s.tools[name].(*confirming)
-		_, writes := unwrap(s.tools[name]).(Confirmer)
 
-		// the gate and the write classification are the same fact, so
-		// neither can be true without the other.
-		assert.Equal(t, writes, gated, "%s", name)
+		// the gate follows the tool's own trait, so a tool cannot
+		// declare itself a write and quietly skip the prompt.
+		assert.Equal(t, unwrap(s.tools[name]).tl.Traits().Write, gated, "%s", name)
+	}
+}
+
+// Test_ReadTool_traitsMatchImplementation is the guard that keeps a
+// declared trait and the interface it promises in step. Traits are
+// stated rather than derived, so nothing but this stops a tool from
+// claiming a write it cannot describe — or describing one it never
+// declared, and so never being gated.
+func Test_ReadTool_traitsMatchImplementation(t *testing.T) {
+	t.Parallel()
+
+	s := New(testDeps(stubDocumentDB(), stubApplier(), nil))
+
+	for _, name := range allToolNames() {
+		tl := unwrap(s.tools[name]).tl
+
+		_, describes := tl.(WriteTool)
+		assert.Equal(t, tl.Traits().Write, describes,
+			"%s declares Write=%v but WriteTool=%v", name, tl.Traits().Write, describes)
+
+		// a destructive tool is a write first; nothing else can be
+		// destructive.
+		if tl.Traits().Destructive {
+			assert.True(t, tl.Traits().Write, "%s is destructive without being a write", name)
+		}
 	}
 }
 
 func Test_confirming_destructiveIgnoresAutoApprove(t *testing.T) {
 	t.Parallel()
 
-	s := New(testInput())
+	s := New(testDeps(stubDocumentDB(), stubApplier(), nil))
 
 	destructive := map[Name]bool{NameDeleteDocument: true, NameDeleteBlock: true}
 
@@ -146,9 +169,8 @@ func Test_confirming_InvokableRun(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			applier := stubOKApplier()
-			inp := stubEditInput(stubResolvingDB(xid.New(), null.Value[xid.ID]{}, nil), applier, nil)
-			ct := gatedTool(t, New(inp), c.Name)
+			applier := stubApplier()
+			ct := gatedTool(t, New(testDeps(stubDocumentDB(), applier, nil)), c.Name)
 
 			var (
 				res string
@@ -359,24 +381,4 @@ func Test_autoApproved(t *testing.T) {
 	// outside an agent run there is no session, so nothing is
 	// auto-approved and the gate always prompts.
 	assert.False(t, autoApproved(context.Background()))
-}
-
-func Test_Destructive(t *testing.T) {
-	t.Parallel()
-
-	s := New(testInput())
-
-	// the marker is a method, so calling it is what proves the tool
-	// carries it rather than merely satisfying the interface by name.
-	d, ok := unwrap(s.tools[NameDeleteDocument]).(Destructive)
-	require.True(t, ok)
-	d.Destructive()
-
-	d, ok = unwrap(s.tools[NameDeleteBlock]).(Destructive)
-	require.True(t, ok)
-	d.Destructive()
-
-	// an ordinary write is not destructive, so approve-all covers it.
-	_, ok = unwrap(s.tools[NameUpdateBlockText]).(Destructive)
-	assert.False(t, ok)
 }

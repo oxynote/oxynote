@@ -42,9 +42,15 @@ func bufferLog() (*slog.Logger, *testutil.Writer, func() string) {
 func Test_Options_validate(t *testing.T) {
 	t.Parallel()
 
-	assert.NoError(t, Options{Port: 0}.validate())
-	assert.NoError(t, Options{Port: 8080}.validate())
+	mcpOpts := MCPOptions{
+		SessionURL:  "http://auth.test/api/internal/mcp/session",
+		ResourceURL: "http://test.com/core/api/mcp",
+	}
+
+	assert.NoError(t, Options{Port: 0, MCP: mcpOpts}.validate())
+	assert.NoError(t, Options{Port: 8080, MCP: mcpOpts}.validate())
 	assert.EqualError(t, Options{Port: 999}.validate(), "invalid port")
+	assert.EqualError(t, Options{}.validate(), "missing mcp session url")
 }
 
 func Test_NewServer(t *testing.T) {
@@ -87,6 +93,37 @@ func Test_NewServer(t *testing.T) {
 		assert.Nil(t, srv)
 	})
 
+	t.Run("Error returned by mcp.NewHandler", func(t *testing.T) {
+		t.Parallel()
+
+		srv, err := NewServer(
+			log,
+			Options{
+				Port: 8080,
+				MCP: MCPOptions{
+					SessionURL:  "http://auth.test/api/internal/mcp/session",
+					ResourceURL: "://bad",
+				},
+			},
+			db,
+			fc,
+			storer,
+			// a manager of this subtest's own: NewServer calls
+			// SetTreeNotifier, which must not race the parallel
+			// success case's identical call on a shared manager.
+			assistantCore.NewManager(log, nil, &redis.Pool{}, nil, nil, fc, nil, nil, "claude"),
+			githubMan,
+			slackMan,
+			nil,
+			nil,
+			notifier,
+			nil,
+			http.DefaultClient,
+		)
+		require.ErrorContains(t, err, "building mcp handler")
+		assert.Nil(t, srv)
+	})
+
 	t.Run("Successful construction", func(t *testing.T) {
 		t.Parallel()
 
@@ -98,6 +135,10 @@ func Test_NewServer(t *testing.T) {
 				Port:              8080,
 				Origins:           []string{"http://localhost:3000"},
 				Auth:              AuthOptions{BetterAuthURL: "http://auth.test"},
+				MCP: MCPOptions{
+					SessionURL:  "http://auth.test/api/internal/mcp/session",
+					ResourceURL: "http://test.com/core/api/mcp",
+				},
 			},
 			db,
 			fc,
@@ -138,6 +179,7 @@ func Test_NewServer(t *testing.T) {
 		assert.NotNil(t, srv.handlers.datasource)
 		assert.NotNil(t, srv.handlers.email)
 		assert.NotNil(t, srv.handlers.ai)
+		assert.NotNil(t, srv.handlers.mcp)
 	})
 }
 

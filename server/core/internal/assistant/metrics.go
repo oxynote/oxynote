@@ -8,11 +8,21 @@ import (
 )
 
 const (
+	// _subsystemAssistant namespaces every assistant metric.
 	_subsystemAssistant = "assistant"
-	_toolLabel          = "tool"
-	_statusLabel        = "status"
-	_tokenTypeLabel     = "type"
-	_providerLabel      = "provider"
+
+	// _toolLabel labels a metric with the tool it describes.
+	_toolLabel = "tool"
+
+	// _statusLabel labels a tool call with its outcome.
+	_statusLabel = "status"
+
+	// _tokenTypeLabel labels token usage with the kind of token counted.
+	_tokenTypeLabel = "type"
+
+	// _providerLabel labels token usage with the configured model
+	// provider.
+	_providerLabel = "provider"
 )
 
 // metrics holds Prometheus metrics for AI assistant operations.

@@ -29,6 +29,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/email"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/github"
+	"github.com/oxynote/oxynote/server/core/internal/server/internal/mcp"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/notification"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/org"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/slack"
@@ -63,11 +64,18 @@ type Options struct {
 
 	// Auth contains options for authentication.
 	Auth auth.Options
+
+	// MCP contains options for the MCP surface.
+	MCP mcp.Options
 }
 
 // AuthOptions aliases the internal auth package's options so that cmd
 // wiring can populate them without importing an internal package.
 type AuthOptions = auth.Options
+
+// MCPOptions aliases the internal mcp package's options so that cmd
+// wiring can populate them without importing an internal package.
+type MCPOptions = mcp.Options
 
 // validate validates remote server options.
 func (o Options) validate() error {
@@ -75,7 +83,7 @@ func (o Options) validate() error {
 		return errors.New("invalid port")
 	}
 
-	return nil
+	return o.MCP.Validate()
 }
 
 // Server handles remote connections to the system.
@@ -100,6 +108,7 @@ type Server struct {
 		datasource   *datasource.Handler
 		email        *email.Handler
 		ai           *assistant.Handler
+		mcp          *mcp.Handler
 	}
 
 	opts Options
@@ -154,6 +163,16 @@ func NewServer(
 	// tools can notify sidebar subscribers after create/delete/move/
 	// rename/set-icon.
 	assistantMan.SetTreeNotifier(srv.handlers.document)
+
+	// the MCP handler serves the assistant's tool registry over the
+	// Model Context Protocol; it must be built after the tree notifier
+	// is wired so MCP-driven mutations notify sidebars too.
+	mcpHandler, err := mcp.NewHandler(log, assistantMan, db, client, opts.MCP)
+	if err != nil {
+		return nil, fmt.Errorf("building mcp handler: %w", err)
+	}
+
+	srv.handlers.mcp = mcpHandler
 	srv.handlers.github = github.NewHandler(log, db, client, githubMan)
 	srv.handlers.slack = slack.NewHandler(log, db, client, slackMan)
 	srv.handlers.notification = notification.NewHandler(log, db, notifier)
@@ -301,6 +320,7 @@ func (s *Server) bindVersionPing(tpc wsserver.Topic) {
 // DB is an interface that handles communication with the database.
 //
 //go:generate ../../scripts/codegen/mock -t internal DB db
+//nolint:interfacebloat // facade composed of the handlers' interfaces
 type DB interface {
 	document.DB
 	comment.DB
@@ -312,6 +332,7 @@ type DB interface {
 	slack.DB
 	notification.DB
 	datasource.DB
+	mcp.DB
 }
 
 // Storer is an interface that defines methods for uploading and retrieving objects.

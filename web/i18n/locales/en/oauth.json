@@ -1,0 +1,21 @@
+{
+	"oauth": {
+		"consent": {
+			"page-title": "Authorize access",
+			"title": "Authorize {client}",
+			"description": "{client} is requesting access to your Oxynote documents.",
+			"unknown-client": "Unknown application",
+			"scopes-title": "This application will be able to:",
+			"scopes": {
+				"documents-read": "Read and search your documents",
+				"documents-write": "Create, edit and delete your documents"
+			},
+			"approve": "Authorize",
+			"deny": "Deny",
+			"errors": {
+				"invalid-request": "This authorization request is invalid or has expired.",
+				"decision-failed": "Could not complete the authorization. Please try again."
+			}
+		}
+	}
+}

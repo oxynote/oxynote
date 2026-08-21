@@ -2,12 +2,16 @@ import * as Sentry from "@sentry/node"
 import { Hono } from "hono"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
 import { cors } from "hono/cors"
+import { createLocalJWKSet, jwtVerify } from "jose"
 import {
 	auth,
 	totalOrganizationCount,
 	AUTH_METHODS,
 	MAX_ORGANIZATIONS,
+	MCP_RESOURCE,
+	MCP_TOKEN_ISSUER,
 } from "./auth.js"
+import { db } from "./database.js"
 import * as Y from "yjs"
 import { hocuspocus, toAxiosHeaders } from "./hocuspocus.js"
 import { replaceYdocContent } from "./ydocument.js"
@@ -153,6 +157,111 @@ app.put("/documents/:documentId/merge", async (c) => {
 
 		return c.json({ error: "failed to merge" }, 500)
 	}
+})
+
+// cached JWKS for MCP access-token verification. Cleared on a failed
+// verification so a key rotation is picked up on the next request.
+let mcpKeySet: ReturnType<typeof createLocalJWKSet> | null = null
+
+async function mcpTokenKeySet(): Promise<ReturnType<typeof createLocalJWKSet>> {
+	if (!mcpKeySet) {
+		const jwks = await auth.api.getJwks()
+		mcpKeySet = createLocalJWKSet(jwks)
+	}
+
+	return mcpKeySet
+}
+
+// Server-to-server endpoint called by core to validate an MCP bearer token.
+// Signature, issuer, audience and expiry are checked against the local JWKS;
+// on top of that the token is only as alive as the consent that produced it,
+// so revoking a client from the settings UI cuts off its outstanding access
+// tokens immediately. Like the other /internal routes, this is protected by
+// the container network plus Caddy's 403 on /auth-realtime/api/internal/*.
+app.get("/internal/mcp/session", async (c) => {
+	const header = c.req.header("Authorization") ?? ""
+	if (!header.toLowerCase().startsWith("bearer ")) {
+		return c.json({ error: "missing bearer token" }, 401)
+	}
+
+	const token = header.slice("bearer ".length).trim()
+
+	let payload
+	try {
+		payload = (
+			await jwtVerify(token, await mcpTokenKeySet(), {
+				issuer: MCP_TOKEN_ISSUER,
+				audience: MCP_RESOURCE,
+			})
+		).payload
+	} catch {
+		// the cached key set may predate a key rotation; retry once
+		// with a fresh set before rejecting.
+		mcpKeySet = null
+
+		try {
+			payload = (
+				await jwtVerify(token, await mcpTokenKeySet(), {
+					issuer: MCP_TOKEN_ISSUER,
+					audience: MCP_RESOURCE,
+				})
+			).payload
+		} catch {
+			return c.json({ error: "invalid token" }, 401)
+		}
+	}
+
+	const userId = payload.sub
+	const clientId =
+		typeof payload.azp === "string" ? payload.azp : undefined
+	const organizationId =
+		typeof payload.org_id === "string" ? payload.org_id : undefined
+	const scopes =
+		typeof payload.scope === "string"
+			? payload.scope.split(" ").filter(Boolean)
+			: []
+
+	if (!userId || !clientId || !organizationId) {
+		return c.json({ error: "invalid token" }, 401)
+	}
+
+	try {
+		const consent = await db
+			.selectFrom("oauth_consents")
+			.where("client_id", "=", clientId)
+			.where("fk_user_id", "=", userId)
+			.select("client_id")
+			.executeTakeFirst()
+
+		if (!consent) {
+			return c.json({ error: "consent revoked" }, 401)
+		}
+
+		const member = await db
+			.selectFrom("organization_members")
+			.where("fk_user_id", "=", userId)
+			.where("fk_organization_id", "=", organizationId)
+			.select("fk_user_id")
+			.executeTakeFirst()
+
+		if (!member) {
+			return c.json(
+				{ error: "not an organization member" },
+				401,
+			)
+		}
+	} catch (err) {
+		Sentry.captureException(err)
+		return c.json({ error: "token validation failed" }, 500)
+	}
+
+	return c.json({
+		userId,
+		organizationId,
+		clientId,
+		scopes,
+		expiresAt: payload.exp,
+	})
 })
 
 // Server-to-server endpoint called by the Go assistant to apply

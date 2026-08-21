@@ -85,12 +85,10 @@ func autoApproved(ctx context.Context) bool {
 // It is applied by the registry rather than by each tool, so a write
 // cannot slip through by forgetting to ask.
 type confirming struct {
-	// InvokableTool is the gated tool. Embedding it forwards Info, so
-	// the model sees the tool's own description unchanged.
-	tool.InvokableTool
-
-	// summary describes the pending write for the user.
-	summary Confirmer
+	// einoTool is the gated tool's adapter. Embedding it forwards Info,
+	// so the model sees the tool's own description unchanged, and gives
+	// the gate the Confirm it asks the user with.
+	*einoTool
 
 	// destructive tools ask every time, even under an approve-all.
 	destructive bool
@@ -111,7 +109,7 @@ func (c *confirming) InvokableRun(
 		// later write, but never a destructive one: approving a batch
 		// of text edits is not consent to delete.
 		if autoApproved(ctx) && !c.destructive {
-			return c.InvokableTool.InvokableRun(ctx, argumentsInJSON, opts...)
+			return c.einoTool.InvokableRun(ctx, argumentsInJSON, opts...)
 		}
 
 		return "", c.interrupt(ctx, args)
@@ -128,13 +126,13 @@ func (c *confirming) InvokableRun(
 		return declinedResult()
 	}
 
-	return c.InvokableTool.InvokableRun(ctx, argumentsInJSON, opts...)
+	return c.einoTool.InvokableRun(ctx, argumentsInJSON, opts...)
 }
 
 // interrupt suspends the run and hands the client a human-readable
 // description of the write awaiting approval.
 func (c *confirming) interrupt(ctx context.Context, args json.RawMessage) error {
-	return compose.StatefulInterrupt(ctx, c.summary.Confirm(ctx, args), confirmState{})
+	return compose.StatefulInterrupt(ctx, c.Confirm(ctx, args), confirmState{})
 }
 
 // declinedResult is the tool result reported to the model when the user
@@ -151,26 +149,4 @@ func declinedResult() (string, error) {
 	}
 
 	return string(res), nil
-}
-
-// Confirmer is implemented by every tool that mutates a document.
-//
-// Implementing it has two consequences, deliberately welded together:
-// the tool is gated behind user confirmation, and its result is never
-// cleared from the conversation by the context middlewares. The model
-// has to keep knowing what it changed, while a stale read can always be
-// taken again.
-type Confirmer interface {
-	// Confirm should describe the pending write for the user, without
-	// performing it.
-	Confirm(ctx context.Context, args json.RawMessage) ConfirmActionSummary
-}
-
-// Destructive marks a tool that removes content. These are confirmed
-// every time, even inside a turn the user auto-approved: their tool
-// descriptions promise as much, and an approve-all meant for text edits
-// is not consent to delete a document.
-type Destructive interface {
-	// Destructive should distinguish a removal from an ordinary write.
-	Destructive()
 }

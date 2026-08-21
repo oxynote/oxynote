@@ -15,6 +15,7 @@ export interface Database {
 	users: UsersTable
 	organizations: OrganizationsTable
 	organization_members: OrganizationMembersTable
+	oauth_consents: OAuthConsentsTable
 }
 
 export interface UsersTable {
@@ -29,4 +30,9 @@ export interface OrganizationsTable {
 export interface OrganizationMembersTable {
 	fk_user_id: string
 	fk_organization_id: string
+}
+
+export interface OAuthConsentsTable {
+	client_id: string
+	fk_user_id: string
 }

@@ -4,20 +4,19 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/cloudwego/eino/schema"
 	mock "github.com/oxynote/oxynote/server/core/internal/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
-	"github.com/oxynote/oxynote/server/core/internal/assistant/middleware"
+	"github.com/oxynote/oxynote/server/core/internal/assistant/persist"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/protocol"
 	protocolMock "github.com/oxynote/oxynote/server/core/internal/assistant/protocol/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
 	toolsMock "github.com/oxynote/oxynote/server/core/internal/assistant/tools/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/document"
-	"github.com/oxynote/oxynote/server/core/pkg/errutil"
-	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -191,18 +190,27 @@ func prepSession(t *testing.T, m *Manager) (*session, *recorder) {
 func Test_Manager_newSession(t *testing.T) {
 	t.Parallel()
 
-	m := testManager()
-	m.history = &HistoryStoreMock{
-		GetFunc: func(_ context.Context, _ string) (*[]*schema.Message, error) {
-			return &[]*schema.Message{schema.UserMessage("earlier question")}, nil
-		},
+	m, st := testManagerStores()
+	st.history.GetFunc = func(_ context.Context, _ string) (*[]*schema.Message, error) {
+		return &[]*schema.Message{schema.UserMessage("earlier question")}, nil
 	}
 
-	s, rec := prepSession(t, m)
+	rec, writer := newRecorder()
 
-	assert.Equal(t, createSessionKey("org", "user"), s.key)
+	s, err := m.newSession(context.Background(), "org", "user", writer)
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		require.NoError(t, s.Close())
+	})
+
+	assert.Equal(t, persist.SessionKey("org", "user"), s.key)
+	assert.Same(t, m, s.man)
+	assert.Same(t, writer, s.writer)
 	assert.NotNil(t, s.runner)
-	assert.NotNil(t, s.tools)
+	assert.NotNil(t, s.supv)
+	assert.False(t, s.processing)
+	assert.Empty(t, s.activeDocumentID)
 	require.Len(t, s.messages, 1)
 
 	// a reconnecting client is handed the conversation it lost, so the
@@ -349,7 +357,7 @@ func Test_session_handleMessage(t *testing.T) {
 		Content   string
 		Pending   bool
 		Settles   bool
-		Expect    func(t *testing.T, rec *recorder, cm *mock.ChatModel, m *Manager)
+		Expect    func(t *testing.T, rec *recorder, cm *mock.ChatModel, st *stores)
 	}{
 		"Outstanding confirmation is abandoned by a new message": {
 			Responses: []*schema.Message{
@@ -358,13 +366,11 @@ func Test_session_handleMessage(t *testing.T) {
 			Content: "actually, do something else",
 			Pending: true,
 			Settles: true,
-			Expect: func(t *testing.T, rec *recorder, _ *mock.ChatModel, m *Manager) {
+			Expect: func(t *testing.T, rec *recorder, _ *mock.ChatModel, st *stores) {
 				// the unanswered confirmation is treated as declined:
 				// its record is cleared rather than left pointing at a
 				// checkpoint the new turn is about to delete.
-				ff := m.pendings.(*PendingStoreMock).DeleteCalls()
-				require.Len(t, ff, 1)
-				assert.Equal(t, createPendingKey(createSessionKey("org", "user")), ff[0].Key)
+				require.Len(t, st.pendings.DeleteCalls(), 1)
 
 				assert.Contains(t, rec.types(), string(protocol.ServerTypeDone))
 			},
@@ -376,7 +382,7 @@ func Test_session_handleMessage(t *testing.T) {
 			},
 			Content: "what documents do we have",
 			Settles: true,
-			Expect: func(t *testing.T, rec *recorder, cm *mock.ChatModel, _ *Manager) {
+			Expect: func(t *testing.T, rec *recorder, cm *mock.ChatModel, _ *stores) {
 				// the user is told which tool is running before it runs,
 				// sees the answer stream in, and the turn closes cleanly.
 				assert.Contains(t, rec.types(),
@@ -393,7 +399,7 @@ func Test_session_handleMessage(t *testing.T) {
 		},
 		"Empty content is refused": {
 			Content: "   ",
-			Expect: func(t *testing.T, rec *recorder, cm *mock.ChatModel, _ *Manager) {
+			Expect: func(t *testing.T, rec *recorder, cm *mock.ChatModel, _ *stores) {
 				msg, ok := find[protocol.ErrorMessage](rec)
 				require.True(t, ok)
 				assert.Equal(t, "message content is required", msg.Message)
@@ -410,7 +416,7 @@ func Test_session_handleMessage(t *testing.T) {
 			},
 			Content: "make a runbook",
 			Settles: true,
-			Expect: func(t *testing.T, rec *recorder, _ *mock.ChatModel, _ *Manager) {
+			Expect: func(t *testing.T, rec *recorder, _ *mock.ChatModel, _ *stores) {
 				req, ok := find[protocol.ConfirmRequest](rec)
 				require.True(t, ok, "a write must prompt, got %v", rec.types())
 				require.Len(t, req.Actions, 1)
@@ -429,13 +435,13 @@ func Test_session_handleMessage(t *testing.T) {
 
 			cm := stubChatModel(c.Responses...)
 
-			m := testManager()
+			m, st := testManagerStores()
 			m.model = cm
 
 			s, rec := prepSession(t, m)
 
 			if c.Pending {
-				m.savePending(context.Background(), s.key, pendingConfirm{
+				m.pendings.Save(context.Background(), s.key, persist.PendingConfirm{
 					TurnID:       "stale",
 					InterruptIDs: []string{"i1"},
 				})
@@ -447,7 +453,7 @@ func Test_session_handleMessage(t *testing.T) {
 				rec.wait(t)
 			}
 
-			c.Expect(t, rec, cm, m)
+			c.Expect(t, rec, cm, st)
 		})
 	}
 }
@@ -457,26 +463,20 @@ func Test_session_handleReset(t *testing.T) {
 
 	cc := map[string]struct {
 		Processing bool
-		History    *HistoryStoreMock
+		DeleteErr  error
 		Cleared    bool
 	}{
 		"Conversation is cleared": {
-			History: &HistoryStoreMock{},
 			Cleared: true,
 		},
 		"Error returned by history.Delete": {
 			// a failed delete still clears the session's own copy, so
 			// the user gets the fresh start they asked for.
-			History: &HistoryStoreMock{
-				DeleteFunc: func(_ context.Context, _ string) error {
-					return assert.AnError
-				},
-			},
-			Cleared: true,
+			DeleteErr: assert.AnError,
+			Cleared:   true,
 		},
 		"Reset is refused mid-turn": {
 			Processing: true,
-			History:    &HistoryStoreMock{},
 		},
 	}
 
@@ -484,8 +484,13 @@ func Test_session_handleReset(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			m := testManager()
-			m.history = c.History
+			m, st := testManagerStores()
+
+			if c.DeleteErr != nil {
+				st.history.DeleteFunc = func(_ context.Context, _ string) error {
+					return c.DeleteErr
+				}
+			}
 
 			s, rec := prepSession(t, m)
 
@@ -502,7 +507,7 @@ func Test_session_handleReset(t *testing.T) {
 
 			if !c.Cleared {
 				assert.NotEmpty(t, left)
-				assert.Empty(t, c.History.DeleteCalls())
+				assert.Empty(t, st.history.DeleteCalls())
 
 				msg, ok := find[protocol.ErrorMessage](rec)
 				require.True(t, ok)
@@ -515,9 +520,9 @@ func Test_session_handleReset(t *testing.T) {
 
 			// the paused turn goes with the conversation: nothing can
 			// resume writes belonging to a chat that no longer exists.
-			assert.Len(t, c.History.DeleteCalls(), 1)
-			assert.Len(t, m.pendings.(*PendingStoreMock).DeleteCalls(), 1)
-			assert.Len(t, m.blobs.(*BlobStoreMock).DeleteCalls(), 1)
+			assert.Len(t, st.history.DeleteCalls(), 1)
+			assert.Len(t, st.pendings.DeleteCalls(), 1)
+			assert.Len(t, st.blobs.DeleteCalls(), 1)
 		})
 	}
 }
@@ -535,16 +540,27 @@ func Test_session_handleConfirmResponse(t *testing.T) {
 	}
 
 	cc := map[string]struct {
-		Responses []*schema.Message
-		StaleTurn bool
-		Approved  bool
-		All       bool
-		Applied   int
+		Responses         []*schema.Message
+		StaleTurn         bool
+		CorruptCheckpoint bool
+		Approved          bool
+		All               bool
+		Applied           int
 	}{
 		"Approving resumes the parked write": {
 			Responses: oneWrite,
 			Approved:  true,
 			Applied:   1,
+		},
+		"Unresumable checkpoint fails the turn": {
+			// the pending record is the only route back to a checkpoint,
+			// and it is already gone by the time the resume is attempted,
+			// so a resume that cannot run has to reclaim the checkpoint
+			// rather than leave a whole conversation in Redis until it
+			// expires.
+			Responses:         oneWrite,
+			CorruptCheckpoint: true,
+			Approved:          true,
 		},
 		"Declining finishes the turn without writing": {
 			Responses: oneWrite,
@@ -595,15 +611,21 @@ func Test_session_handleConfirmResponse(t *testing.T) {
 				turnID = "some-other-turn"
 			}
 
-			s.handleConfirmResponse(context.Background(), turnID, c.Approved, c.All)
+			if c.CorruptCheckpoint {
+				require.NoError(t, m.checkpoints.Set(
+					context.Background(),
+					s.key,
+					[]byte("not a checkpoint"),
+				))
+			}
 
-			pendings := m.pendings.(*PendingStoreMock)
+			s.handleConfirmResponse(context.Background(), turnID, c.Approved, c.All)
 
 			if c.StaleTurn {
 				assert.Empty(t, applier.ApplyCalls())
 
-				stored, err := pendings.Get(context.Background(), createPendingKey(s.key))
-				require.NoError(t, err)
+				stored := m.pendings.Load(context.Background(), s.key)
+				require.NotNil(t, stored)
 				assert.Equal(t, req.TurnID, stored.TurnID)
 
 				return
@@ -616,8 +638,14 @@ func Test_session_handleConfirmResponse(t *testing.T) {
 
 			// the answered confirmation is forgotten, so a reconnect
 			// does not re-ask a question the user already settled.
-			_, err := pendings.Get(context.Background(), createPendingKey(s.key))
-			assert.Equal(t, errutil.ErrNotFound, err)
+			assert.Nil(t, m.pendings.Load(context.Background(), s.key))
+
+			// and the checkpoint goes with it: nothing can reach a
+			// paused turn once the question behind it is answered, so
+			// leaving one behind only wastes the conversation's TTL.
+			_, found, err := m.checkpoints.Get(context.Background(), s.key)
+			require.NoError(t, err)
+			assert.False(t, found)
 		})
 	}
 }
@@ -642,16 +670,16 @@ func Test_session_goTurn(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		Pending   *pendingConfirm
+		Pending   *persist.PendingConfirm
 		CancelCtx bool
 		Panic     bool
 	}{
 		"Finished turn releases the session": {},
 		"Parked turn asks the user once the session is free": {
-			Pending: &pendingConfirm{TurnID: "t1"},
+			Pending: &persist.PendingConfirm{TurnID: "t1"},
 		},
 		"Parked turn is persisted past a dead connection": {
-			Pending:   &pendingConfirm{TurnID: "t1"},
+			Pending:   &persist.PendingConfirm{TurnID: "t1"},
 			CancelCtx: true,
 		},
 		"Panicking turn still closes the turn out": {
@@ -663,8 +691,23 @@ func Test_session_goTurn(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			m := testManager()
+			m, st := testManagerStores()
 			s, rec := prepSession(t, m)
+
+			// a parked turn's record has to be durable before anything
+			// else can claim the session: the read loop runs on its own
+			// goroutine, and a message arriving in that window would see
+			// no pending confirmation and orphan the checkpoint the
+			// parked turn is waiting on.
+			var processingAtSave atomic.Bool
+
+			st.pendings.SetFunc = func(context.Context, string, persist.PendingConfirm) error {
+				s.mu.Lock()
+				processingAtSave.Store(s.processing)
+				s.mu.Unlock()
+
+				return nil
+			}
 
 			ctx := context.Background()
 
@@ -677,7 +720,7 @@ func Test_session_goTurn(t *testing.T) {
 
 			require.True(t, s.beginTurn(context.Background()))
 
-			s.goTurn(ctx, func(context.Context) *pendingConfirm {
+			s.goTurn(ctx, func(context.Context) *persist.PendingConfirm {
 				if c.Panic {
 					panic("turn exploded")
 				}
@@ -714,16 +757,19 @@ func Test_session_goTurn(t *testing.T) {
 				return
 			}
 
-			req, ok := find[protocol.ConfirmRequest](rec)
-			require.True(t, ok)
+			req, found := find[protocol.ConfirmRequest](rec)
+			require.True(t, found)
 			assert.Equal(t, "t1", req.TurnID)
 
 			// the record is written on a context that survives the
 			// connection, so a turn parking as the socket dies still
 			// leaves an answerable confirmation behind.
-			ff := m.pendings.(*PendingStoreMock).SetCalls()
+			ff := st.pendings.SetCalls()
 			require.Len(t, ff, 1)
 			assert.NoError(t, ff[0].Ctx.Err())
+
+			assert.True(t, processingAtSave.Load(),
+				"the confirmation must be stored before the session is released")
 		})
 	}
 }
@@ -781,48 +827,4 @@ func Test_cloneMessages(t *testing.T) {
 	// in-flight turn could be mutated underneath itself.
 	assert.Len(t, orig, 1)
 	assert.Len(t, clone, 2)
-}
-
-func Test_Manager_newAgent(t *testing.T) {
-	t.Parallel()
-
-	cc := map[string]struct {
-		OmitSummary bool
-		Err         error
-	}{
-		"Agent is built": {},
-		"Summarization needs a model": {
-			// the compaction middlewares are built from the summary
-			// model, so the agent cannot exist without one.
-			OmitSummary: true,
-			Err:         assert.AnError,
-		},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			m := testManager()
-			if c.OmitSummary {
-				m.summary = nil
-			}
-
-			toolSet := tools.New(tools.NewInput(m.log, m.db, m.search, m.applier, m.tree, "org", "user"))
-
-			agent, err := m.newAgent(
-				context.Background(),
-				toolSet,
-				middleware.NewObserver(toolSet, nil, nil, nil),
-			)
-			testutil.AssertEqualError(t, c.Err, err)
-
-			if err != nil {
-				return
-			}
-
-			require.NotNil(t, agent)
-			assert.Equal(t, _agentName, agent.Name(context.Background()))
-		})
-	}
 }

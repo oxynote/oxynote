@@ -88,6 +88,28 @@ server can detect for you.
 a cheaper model; it defaults to the chat model. See
 `docker/env/core.example.env` for the full list of assistant variables.
 
+## MCP server
+
+Oxynote is also a remote [MCP](https://modelcontextprotocol.io) server:
+Claude Code, Claude Desktop and any other MCP client can read and edit
+documents with the same tools the in-app assistant uses, plus browse
+documents as resources. The endpoint is served by core over streamable
+HTTP at `/core/api/mcp` behind the front door and is protected by OAuth
+2.1 — auth-realtime is the authorization server, clients register
+dynamically, and the user approves each client on a consent page. Tokens
+are bound to the user's organization and carry `documents:read` /
+`documents:write` scopes; write tools run without a server-side
+confirmation step, so approval is the client's job (destructive tools are
+annotated as such).
+
+```sh
+claude mcp add --transport http oxynote http://localhost:8080/core/api/mcp
+```
+
+Then authenticate from Claude Code's `/mcp` menu; the browser OAuth flow
+completes against the dev stack. Connected clients can be reviewed and
+revoked in the app's settings.
+
 ## Repository layout
 
 - `web/` — Nuxt 4 + Vue 3 frontend; ships as both a web app (SSR) and an

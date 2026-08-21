@@ -64,6 +64,7 @@ So from a frontend's point of view: auth + realtime is `:8080/auth-realtime/...`
 - `/api/...` (public): auth middleware (`internal/server/internal/auth`) validates sessions by calling auth-realtime's `/api/auth/get-session` (configured via `SERVER_AUTH_BETTER_AUTH_URL`). Routes for documents, branches, comments, reviewers, hooks, files, GitHub, Slack, notifications, data-sources, AI chat.
 - `/api/x/...` (internal): no auth at all — reverse proxy must firewall. Used by auth-realtime to fetch/store branch content (`/x/documents/{id}/branches`, `/x/documents/{id}/branch/{branchId}`), trigger emails, and initialize or tear down orgs.
 - `/api/apps/...` (public, sessionless): where GitHub and Slack deliver. `POST /apps/github/events` and `POST /apps/slack/{events,commands,slash}` are gated by the provider's request signature; `GET /apps/slack/install` completes the direct-install OAuth exchange. These must stay outside `/api/x` — third parties reach core through the same front door as browsers, and the proxy 403s the internal subtree.
+- `/api/mcp` (public, bearer-authed): the MCP surface (`internal/server/internal/mcp`), a streamable HTTP MCP server bridging the assistant's ungated tool registry (`tools.Set.Entries`) plus documents-as-resources. Bearer tokens are JWTs issued by auth-realtime's `@better-auth/mcp` OAuth provider; core validates each request against auth-realtime's internal `GET /api/internal/mcp/session` (JWKS verify + consent-row check, so revoking a client 401s immediately) and scopes the tool list by the token's `documents:read` / `documents:write` scopes. Tokens are org-bound via an `org_id` claim minted at issuance. `SERVER_MCP_SESSION_URL` and `SERVER_MCP_RESOURCE_URL` are required env; the Caddyfile routes `/.well-known/oauth-*` and `/api/auth/*` at the front door to auth-realtime for OAuth discovery.
 - WebSocket topics under `/api/ws` (routed by `wetsocks/wsserver` from the first-party `github.com/oxynote/wetsocks` library): `change@document-tree`, `change@documents.{documentId}.comments|metadata|reviewers|maintainers`, `post@slack.messages`, `creation@notifications`, `ping@version`. Topic binders live on the per-domain handler types under `internal/server/internal/...` (`Handler.BindXxx`).
 
 Most public routes in the README (`/api/documents`, `/api/documents/tree`, etc.) are served by core; the README is the closest thing to a contract spec — when changing handlers, update it.
@@ -123,27 +124,56 @@ The system prompt at `server/core/internal/assistant/prompt.go` codifies behavio
 
 ## Assistant tools
 
-One tool, one file, named after the tool (`insert_block.go` defines
-`insert_block`). That file holds everything about it: the JSON schema shown to
-the model, the implementation, the status line the user sees while it runs, and
-— for a write — the summary shown on the confirm card. `tools.Set` is the only
-place that names every tool; adding one means writing its file and adding a line
-to that list.
+Tools are grouped by what they act on, a few per file: `document.go` (the tree
+and one document's metadata), `block.go` (reading and editing content),
+`search.go`. `eino.go` is the odd one out — it holds the agent-framework
+adapter and `read_tool_output`, the one tool that exists *because* of eino
+rather than because of the domain. `tools.Set` is the only place that names
+every tool; adding one means writing its type and adding a line to that list.
 
-What a tool *is* is asked of the tool, never looked up:
+**Tools do not implement eino's interfaces.** A tool implements this package's
+own `ReadTool` — `Info() Info`, `Title(DescribeInput) string`,
+`Execute(Input) (string, error)` — and `eino.go` translates that into what the
+framework calls. Nothing else in the package imports eino, so the tool files
+stay free of `argumentsInJSON`, `...tool.Option` and `*schema.ToolInfo`.
 
-- Implementing `Confirmer` makes it a write. That single fact gates it behind
-  user confirmation **and** protects its result from being cleared by the
-  context middlewares — the model has to keep knowing what it changed, while a
-  stale read can always be taken again. The two cannot drift because they are
-  the same interface.
-- Implementing `Destructive` keeps it outside an "approve all" answer. Only
-  `delete_document` and `delete_block` do.
+`Input` is built per call and carries the call itself: its context, its raw
+arguments, and every resource a tool reaches through, already scoped to the
+session's (organisation, user) pair — so a tool names only what it wants and
+cannot reach another organisation's documents. `DescribeInput` is its read-only
+half, handed to `Title` and `Confirm`: it can probe the arguments and name the
+target document but reaches nothing that mutates, so describing a pending write
+cannot perform it. Shared work that needs dependencies goes on `Input`;
+dependency-free helpers live in `util.go`.
 
-The confirmation gate is applied by the registry, not by each tool, so a write
-cannot skip it by forgetting to ask. Shared work that needs dependencies lives
-on `*Input` (which every tool embeds); dependency-free helpers live in
-`util.go`.
+What a tool *is*, it states — in one `Traits()` on its own type, not spread
+across marker interfaces and schema fields:
+
+- `Write` gates it behind user confirmation **and** protects its result from
+  being cleared by the context middlewares — the model has to keep knowing what
+  it changed, while a stale read can always be taken again. A tool declaring it
+  must implement `WriteTool`, so it can describe the change it proposes;
+  `Test_ReadTool_traitsMatchImplementation` is what holds the two in step.
+- `Destructive` keeps it outside an "approve all" answer. Only
+  `delete_document` and `delete_block`.
+- `Internal` keeps it off surfaces outside this process. Only
+  `read_tool_output`: the paths it takes are minted by the reduction middleware
+  during a chat turn, so a client holding none of that state would be offered a
+  tool it could never call.
+
+The confirmation gate is applied by the registry from those traits, not by each
+tool, so a write cannot skip it by forgetting to ask.
+
+**A write owns its invariants.** Checks that decide whether a mutation is legal
+live on the `Input` method that performs it, not in the tool's `Execute` — so
+`MoveDocument` is what refuses a missing parent or a move under the document's
+own subtree, and `CreateDocument` is what refuses a missing parent. A tool
+parses its arguments and hands them over; it does not re-derive the rules.
+
+The MCP surface (`internal/server/internal/mcp`) serves the same registry
+**ungated** via `Set.Entries`, minus the internal ones — MCP clients own the
+approval story, and the write/destructive facts become MCP tool annotations
+instead. Adding a tool to `tools.Set` therefore extends the MCP server for free.
 
 `testdata/tool_schemas.golden` pins every tool's model-facing description. Any
 change to a schema or a tool description has to be deliberate enough to update

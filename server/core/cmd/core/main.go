@@ -285,6 +285,10 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 			Auth: server.AuthOptions{
 				BetterAuthURL: buildinfo.Getenv("SERVER_AUTH_BETTER_AUTH_URL"),
 			},
+			MCP: server.MCPOptions{
+				SessionURL:  buildinfo.Getenv("SERVER_MCP_SESSION_URL"),
+				ResourceURL: buildinfo.Getenv("SERVER_MCP_RESOURCE_URL"),
+			},
 		},
 		dbc,
 		metrics,

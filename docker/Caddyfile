@@ -28,6 +28,36 @@
 		respond 403
 	}
 
+	# OAuth discovery for the MCP surface. Spec-compliant MCP clients
+	# resolve these documents at the front-door origin root (RFC 9728 /
+	# RFC 8414 well-known paths), so they are rewritten onto better-auth's
+	# basePath'd endpoints regardless of any issuer path suffix the client
+	# appends.
+	# served by the mcp plugin's request hook, which matches the original
+	# root-anchored path — no rewrite.
+	handle /.well-known/oauth-protected-resource* {
+		reverse_proxy auth-realtime:8081
+	}
+
+	handle /.well-known/oauth-authorization-server* {
+		rewrite * /api/auth/.well-known/oauth-authorization-server
+		reverse_proxy auth-realtime:8081
+	}
+
+	handle /.well-known/openid-configuration* {
+		rewrite * /api/auth/.well-known/openid-configuration
+		reverse_proxy auth-realtime:8081
+	}
+
+	# better-auth builds its OAuth endpoint URLs from the bare origin plus
+	# its /api/auth basePath, so the authorization-server metadata points
+	# MCP clients at /api/auth/... on the front door. Proxy that prefix to
+	# auth-realtime as-is (no path strip — the service serves /api/auth
+	# natively).
+	handle /api/auth/* {
+		reverse_proxy auth-realtime:8081
+	}
+
 	handle_path /core/* {
 		reverse_proxy core:8080
 	}

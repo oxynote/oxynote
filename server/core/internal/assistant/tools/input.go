@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -15,13 +16,14 @@ import (
 	"github.com/rs/xid"
 )
 
-// Input carries everything a tool needs to do its work. Every tool
-// embeds one, so a tool file names only the arguments it takes and the
-// work it does, never the plumbing it needs to get there.
+// Deps carries the wiring a tool set is built from: the services every
+// tool reaches through and the (organization, user) pair every call is
+// scoped to.
 //
-// It is built per session and scoped to a single (organization, user)
-// pair, so cross-org access is impossible by construction.
-type Input struct {
+// It is built once per session. The per-call Input a tool actually sees
+// is assembled from it by the eino adapter, which is the only thing
+// that knows a call's context and arguments.
+type Deps struct {
 	// log is scoped to the session's (org, user) and used to record
 	// per-tool outcomes so we can diagnose AI loops without
 	// re-running the conversation.
@@ -42,6 +44,9 @@ type Input struct {
 	// mutates the document tree.
 	tree TreeNotifier
 
+	// offload retrieves results parked outside the conversation.
+	offload OffloadReader
+
 	// orgID scopes every tool call to one organization.
 	orgID string
 
@@ -51,19 +56,20 @@ type Input struct {
 	userID string
 }
 
-// NewInput creates a fresh instance of Input. Every dependency is
+// NewDeps creates a fresh instance of Deps. Every dependency is
 // required; nil values surface as nil-pointer panics on the first tool
 // call rather than at startup, but in practice the cmd-level wiring
 // passes all of them.
-func NewInput(
+func NewDeps(
 	log *slog.Logger,
 	db DB,
 	searcher Searcher,
 	applier EditApplier,
 	tree TreeNotifier,
+	offload OffloadReader,
 	orgID, userID string,
-) *Input {
-	return &Input{
+) *Deps {
+	return &Deps{
 		log: log.With(
 			"component", "assistant-tools",
 			"org_id", orgID,
@@ -73,34 +79,247 @@ func NewInput(
 		search:  searcher,
 		applier: applier,
 		tree:    tree,
+		offload: offload,
 		orgID:   orgID,
 		userID:  userID,
 	}
 }
 
-// docRef wraps the (documentID, branchID) pair the edit client needs to
-// address a live Y.Doc. The branch is resolved to the document's
-// default branch — multi-branch editing is out of scope for the
-// assistant.
-type docRef struct {
-	// DocumentID is the document's id in string form.
-	DocumentID string
+// input is one tool call: the session's wiring plus the context and
+// arguments of the call being served. It satisfies both DescribeInput
+// and Input; which of the two a tool receives is decided by the method
+// being called, not by what is in here.
+type input struct {
+	*Deps
 
-	// BranchID is the id of the document's default branch.
-	BranchID string
+	// name is the tool being called, so a malformed-argument error can
+	// say which tool rejected it.
+	name Name
+
+	// ctx is the context of this call. It carries the agent session
+	// values a tool may consult, so it belongs to the call rather than
+	// to the session.
+	ctx context.Context //nolint:containedctx // the input is the call, and is rebuilt per call
+
+	// args is the raw JSON the model supplied.
+	args json.RawMessage
+}
+
+// newInput creates a fresh instance of input for one tool call.
+func (d *Deps) newInput(ctx context.Context, name Name, args json.RawMessage) *input {
+	return &input{Deps: d, name: name, ctx: ctx, args: args}
+}
+
+// Context returns the context of the call being served.
+func (i *input) Context() context.Context {
+	return i.ctx
+}
+
+// Decode decodes the call's arguments into dst, naming the tool that
+// rejected them.
+func (i *input) Decode(dst any) error {
+	if err := json.Unmarshal(i.args, dst); err != nil {
+		return fmt.Errorf("%s: invalid input: %w", i.name, err)
+	}
+
+	return nil
+}
+
+// Probe decodes the call's arguments into dst on a best-effort basis.
+//
+// A malformed args payload should degrade the label or the confirm
+// card, not abort the surrounding flow, so we log a warning and let dst
+// keep its zero value rather than propagating the error. The provider
+// enforces the input schema at the tool-call boundary, so a failure
+// here is unusual and worth knowing about.
+func (i *input) Probe(dst any) {
+	if err := json.Unmarshal(i.args, dst); err != nil {
+		i.log.Warn("tool args unmarshal failed",
+			slog.String("tool", string(i.name)),
+			slog.String("error", err.Error()),
+		)
+	}
+}
+
+// OrganizationID returns the organisation every call is scoped to.
+func (i *input) OrganizationID() string {
+	return i.orgID
+}
+
+// UserID returns the user the assistant is acting for.
+func (i *input) UserID() string {
+	return i.userID
+}
+
+// DocumentID returns the document the call's arguments target, or an
+// empty string when they name none.
+func (i *input) DocumentID() string {
+	var probe struct {
+		DocumentID string `json:"document_id"`
+	}
+
+	i.Probe(&probe)
+
+	return probe.DocumentID
+}
+
+// Subject returns the display subject for this call's label and
+// summary: the named document when it can be resolved, a generic
+// fallback otherwise.
+func (i *input) Subject() string {
+	docID := i.DocumentID()
+	if docID == "" {
+		return subjectFor("")
+	}
+
+	return subjectFor(i.DocumentName(docID))
+}
+
+// DocumentName fetches the document's display name. Failures (bad id,
+// not found, transient) return an empty string so the confirm UI
+// gracefully falls back to the id alone.
+func (i *input) DocumentName(documentID string) string {
+	id, err := xid.FromString(documentID)
+	if err != nil {
+		return ""
+	}
+
+	doc, err := i.Document(id)
+	if err != nil || doc == nil {
+		return ""
+	}
+
+	return doc.DocumentName
+}
+
+// Document returns the document's default branch.
+func (i *input) Document(id xid.ID) (*document.Document, error) {
+	return i.db.FetchDocument(i.ctx, id, i.orgID, document.DefaultBranch)
+}
+
+// DocumentContent returns the document's parsed main-branch content.
+func (i *input) DocumentContent(id xid.ID) (document.Content, error) {
+	return i.db.FetchMainBranchContent(i.ctx, id, i.orgID)
+}
+
+// DocumentTree returns every document in the organisation as a nested
+// summary tree.
+func (i *input) DocumentTree() (document.Summaries, error) {
+	return i.db.FetchDocumentTree(i.ctx, i.orgID)
+}
+
+// DocumentChildren returns the direct children of parentID.
+func (i *input) DocumentChildren(parentID null.Value[xid.ID]) (document.Summaries, error) {
+	return i.db.FetchDocumentTreeByDocumentParentID(i.ctx, parentID, i.orgID)
+}
+
+// CreateDocument inserts the document, its maintainer row and its
+// search job.
+//
+// The three writes go together: a half-created document the model then
+// retries leaves two of them behind, one without a maintainer and
+// invisible to search. The parent is checked here rather than by the
+// caller, so the invariant travels with the write that depends on it.
+func (i *input) CreateDocument(doc document.Document) error {
+	if doc.ParentID.Valid {
+		if err := i.db.CheckDocumentExists(i.ctx, doc.ParentID.V, i.orgID); err != nil {
+			return fmt.Errorf("parent not found: %w", err)
+		}
+	}
+
+	var tx Tx
+
+	if err := i.db.BeginTx(i.ctx, &tx); err != nil {
+		return fmt.Errorf("begin: %w", err)
+	}
+
+	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
+
+	if err := tx.InsertDocument(i.ctx, doc); err != nil {
+		return fmt.Errorf("insert: %w", err)
+	}
+
+	// mirror the HTTP create path: whoever asked for the document
+	// becomes its first maintainer so they own it from the start.
+	if err := tx.UpsertDocumentMaintainers(i.ctx, doc.ID, i.orgID, []string{i.userID}); err != nil {
+		return fmt.Errorf("upsert maintainers: %w", err)
+	}
+
+	// without this the document is invisible to search until someone
+	// edits it, since only the persist path queues a job.
+	if err := tx.InsertDocumentSearchJob(i.ctx, search.BlocksDiff(nil, doc.Search())); err != nil {
+		return fmt.Errorf("insert search job: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+
+	return nil
+}
+
+// DeleteDocument removes the document.
+func (i *input) DeleteDocument(id xid.ID) error {
+	return i.db.DeleteDocument(i.ctx, id, i.orgID)
+}
+
+// MoveDocument re-parents the document.
+//
+// The destination is validated here rather than by the caller: a move
+// that lands under a missing parent, or under the document's own
+// subtree, is a broken tree, and the check belongs with the write that
+// would cause it.
+func (i *input) MoveDocument(id xid.ID, parentID null.Value[xid.ID]) error {
+	if parentID.Valid {
+		if err := i.db.CheckDocumentExists(i.ctx, parentID.V, i.orgID); err != nil {
+			return fmt.Errorf("new parent not found: %w", err)
+		}
+
+		cycle, err := i.db.CheckDocumentCycle(i.ctx, id, parentID.V, i.orgID)
+		if err != nil {
+			return fmt.Errorf("parent check: %w", err)
+		}
+
+		if cycle {
+			return errors.New("a document cannot be moved under itself or one of its descendants")
+		}
+	}
+
+	if err := i.db.UpdateDocumentParentID(i.ctx, id, parentID, i.orgID); err != nil {
+		return fmt.Errorf("update: %w", err)
+	}
+
+	return nil
+}
+
+// SearchBlocks returns blocks whose text matches the query.
+func (i *input) SearchBlocks(query string, limit int) ([]search.Block, error) {
+	return i.search.SearchDocumentBlocks(i.ctx, i.orgID, query, limit)
+}
+
+// Warn records something a tool carried on through.
+func (i *input) Warn(msg string, attrs ...slog.Attr) {
+	i.log.LogAttrs(i.ctx, slog.LevelWarn, msg,
+		append([]slog.Attr{slog.String("tool", string(i.name))}, attrs...)...)
+}
+
+// ReadOffloaded returns a tool result that was moved out of the
+// conversation for size.
+func (i *input) ReadOffloaded(path string) (string, error) {
+	return i.offload.Read(i.ctx, path)
 }
 
 // resolveDoc loads the default branch of the given document and returns
 // the ids the edit client needs. The lookup also acts as the cross-org
-// safety check — db.FetchDocument scopes by orgID so a docID from
-// another organisation surfaces as NotFound.
-func (i *Input) resolveDoc(ctx context.Context, documentID string) (docRef, error) {
+// safety check — Document scopes by orgID so a docID from another
+// organisation surfaces as NotFound.
+func (i *input) resolveDoc(documentID string) (docRef, error) {
 	docID, err := xid.FromString(documentID)
 	if err != nil {
 		return docRef{}, fmt.Errorf("document_id is not a valid xid: %w", err)
 	}
 
-	doc, err := i.db.FetchDocument(ctx, docID, i.orgID, document.DefaultBranch)
+	doc, err := i.Document(docID)
 	if err != nil {
 		return docRef{}, fmt.Errorf("fetching document: %w", err)
 	}
@@ -111,17 +330,13 @@ func (i *Input) resolveDoc(ctx context.Context, documentID string) (docRef, erro
 	}, nil
 }
 
-// applyEdit is the shared tail of every content-mutating write tool: it
+// ApplyEdit is the shared tail of every content-mutating write tool: it
 // resolves the document to a (documentID, branchID) pair, ships the
 // operation batch to Node, and surfaces the per-op result. Outcomes are
 // logged so partial failures on the Node side (uid not found, malformed
 // block) are visible without re-running the conversation.
-func (i *Input) applyEdit(
-	ctx context.Context,
-	documentID string,
-	ops []edit.Operation,
-) (string, error) {
-	ref, err := i.resolveDoc(ctx, documentID)
+func (i *input) ApplyEdit(documentID string, ops []edit.Operation) (string, error) {
+	ref, err := i.resolveDoc(documentID)
 	if err != nil {
 		i.log.Warn(
 			"edit resolve failed",
@@ -132,7 +347,7 @@ func (i *Input) applyEdit(
 		return "", err
 	}
 
-	res, err := i.applier.Apply(ctx, ref.DocumentID, ref.BranchID, ops)
+	res, err := i.applier.Apply(i.ctx, ref.DocumentID, ref.BranchID, ops)
 	if err != nil {
 		i.log.Error(
 			"edit apply failed",
@@ -165,16 +380,12 @@ func (i *Input) applyEdit(
 	return result(res)
 }
 
-// validatePlacement validates a block that is about to land next to, or
+// ValidatePlacement validates a block that is about to land next to, or
 // in place of, the block referenceUID names. Types the document root
 // accepts are legal wherever their parent takes them, so only a macro
 // internal — a titled_code, metric or param_list, which the editor's
 // schema binds to its container — has to look at where it is going.
-func (i *Input) validatePlacement(
-	ctx context.Context,
-	documentID, referenceUID string,
-	b block.Block,
-) error {
+func (i *input) ValidatePlacement(documentID, referenceUID string, b block.Block) error {
 	if err := block.Validate(b); err != nil {
 		return err
 	}
@@ -188,7 +399,7 @@ func (i *Input) validatePlacement(
 		return fmt.Errorf("document_id is not a valid xid: %w", err)
 	}
 
-	content, err := i.db.FetchMainBranchContent(ctx, docID, i.orgID)
+	content, err := i.DocumentContent(docID)
 	if err != nil {
 		return fmt.Errorf("fetching content: %w", err)
 	}
@@ -202,10 +413,10 @@ func (i *Input) validatePlacement(
 	return nil
 }
 
-// notifyTreeChange invokes the tree notifier when one is configured.
+// NotifyTreeChange invokes the tree notifier when one is configured.
 // Safe to call from any tool — a nil notifier silently no-ops so tests
 // that don't wire one don't trip.
-func (i *Input) notifyTreeChange(parentID null.Value[xid.ID]) {
+func (i *input) NotifyTreeChange(parentID null.Value[xid.ID]) {
 	if i.tree == nil {
 		return
 	}
@@ -213,112 +424,34 @@ func (i *Input) notifyTreeChange(parentID null.Value[xid.ID]) {
 	i.tree.NotifyTreeChange(i.orgID, parentID)
 }
 
-// notifyTreeChangeForDocument looks up the document's current parent
+// NotifyTreeChangeForDocument looks up the document's current parent
 // and fires a tree-change for that parent. Used by rename/icon ops
 // which don't carry a parent in their args. Failures (e.g. doc fetched
 // after delete) silently skip the notification.
-func (i *Input) notifyTreeChangeForDocument(ctx context.Context, documentID string) {
+func (i *input) NotifyTreeChangeForDocument(documentID string) {
 	docID, err := xid.FromString(documentID)
 	if err != nil {
 		return
 	}
 
-	doc, err := i.db.FetchDocument(ctx, docID, i.orgID, document.DefaultBranch)
+	doc, err := i.Document(docID)
 	if err != nil || doc == nil {
 		return
 	}
 
-	i.notifyTreeChange(doc.ParentID)
+	i.NotifyTreeChange(doc.ParentID)
 }
 
-// lookupDocumentName fetches the document's display name. Failures (bad
-// id, not found, transient) return an empty string so the confirm UI
-// gracefully falls back to the id alone.
-func (i *Input) lookupDocumentName(ctx context.Context, documentID string) string {
-	id, err := xid.FromString(documentID)
-	if err != nil {
-		return ""
-	}
+// docRef wraps the (documentID, branchID) pair the edit client needs to
+// address a live Y.Doc. The branch is resolved to the document's
+// default branch — multi-branch editing is out of scope for the
+// assistant.
+type docRef struct {
+	// DocumentID is the document's id in string form.
+	DocumentID string
 
-	doc, err := i.db.FetchDocument(ctx, id, i.orgID, document.DefaultBranch)
-	if err != nil || doc == nil {
-		return ""
-	}
-
-	return doc.DocumentName
-}
-
-// parseToolArgs unmarshals a tool's JSON args into dst for the
-// best-effort label and summary helpers: a malformed args payload
-// should degrade the label, not abort the surrounding flow. So we log a
-// warning and let dst keep its zero value rather than propagating the
-// error. The provider enforces the input schema at the tool-call
-// boundary, so a failure here is unusual and worth knowing about.
-func (i *Input) parseToolArgs(args json.RawMessage, dst any) {
-	if err := json.Unmarshal(args, dst); err != nil {
-		i.log.Warn("tool args unmarshal failed",
-			slog.String("error", err.Error()),
-		)
-	}
-}
-
-// subject returns the display subject for a tool's label and summary:
-// the named document when it can be resolved, a generic fallback
-// otherwise.
-func (i *Input) subject(ctx context.Context, args json.RawMessage) string {
-	docID := i.documentID(args)
-	if docID == "" {
-		return subjectFor("")
-	}
-
-	return subjectFor(i.lookupDocumentName(ctx, docID))
-}
-
-// summarize builds a confirmation for a write that targets an existing
-// document: the document is resolved once, and the tool supplies only
-// the phrasing for its own change.
-func (i *Input) summarize(
-	ctx context.Context,
-	name Name,
-	args json.RawMessage,
-	phrase func(subject string) string,
-) ConfirmActionSummary {
-	out := ConfirmActionSummary{Tool: string(name)}
-
-	if docID := i.documentID(args); docID != "" {
-		out.DocumentID = docID
-		out.DocumentName = i.lookupDocumentName(ctx, docID)
-	}
-
-	out.Summary = phrase(subjectFor(out.DocumentName))
-
-	return out
-}
-
-// documentID returns the document a tool's args target, or an empty
-// string when the args name none.
-func (i *Input) documentID(args json.RawMessage) string {
-	var probe struct {
-		DocumentID string `json:"document_id"`
-	}
-
-	i.parseToolArgs(args, &probe)
-
-	return probe.DocumentID
-}
-
-// blockType reads the canonical type of the block a write tool was
-// handed, for the confirm summary.
-func (i *Input) blockType(args json.RawMessage) string {
-	var in struct {
-		Block struct {
-			Type string `json:"type"`
-		} `json:"block"`
-	}
-
-	i.parseToolArgs(args, &in)
-
-	return in.Block.Type
+	// BranchID is the id of the document's default branch.
+	BranchID string
 }
 
 // DB is the persistence surface the tools require. The db package's

@@ -1,8 +1,8 @@
 // Package assistant runs the AI chat that lets the user interact with
 // documents in their organisation. The Manager holds shared
-// dependencies (chat model, DB, edit-RPC client, Redis checkpoint and
-// history stores, metrics); each connected user gets a session that
-// drives one agent run per user message.
+// dependencies (chat model, DB, edit-RPC client, the persist stores,
+// metrics); each connected user gets a session that drives one agent
+// run per user message.
 //
 // No vendor SDK appears here: the model arrives as an eino interface
 // built by the provider package, so the assistant behaves identically
@@ -20,6 +20,7 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/gomodule/redigo/redis"
+	"github.com/oxynote/oxynote/server/core/internal/assistant/persist"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/protocol"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
 	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
@@ -33,17 +34,20 @@ const _sessionExpiration = time.Hour * 24 * 7
 
 // Manager holds dependencies shared across assistant sessions.
 type Manager struct {
-	log      *slog.Logger
-	db       tools.DB
-	search   tools.Searcher
-	history  HistoryStore
-	blobs    BlobStore
-	pendings PendingStore
-	model    model.ToolCallingChatModel
-	summary  model.ToolCallingChatModel
-	applier  tools.EditApplier
-	tree     tools.TreeNotifier
-	metrics  *metrics
+	log     *slog.Logger
+	db      tools.DB
+	search  tools.Searcher
+	model   model.ToolCallingChatModel
+	summary model.ToolCallingChatModel
+	applier tools.EditApplier
+	tree    tools.TreeNotifier
+
+	history     *persist.History
+	checkpoints *persist.Checkpoints
+	pendings    *persist.Pendings
+	offload     *persist.Offload
+
+	metrics *metrics
 }
 
 // NewManager constructs an assistant Manager. The chatModel is built by
@@ -70,17 +74,33 @@ func NewManager(
 		summaryModel = chatModel
 	}
 
+	log = log.With("component", "assistant")
+
+	// the checkpoint of a paused turn and the results offloaded out of
+	// the conversation share one byte store: both are opaque payloads
+	// belonging to the same conversation, expiring with it.
+	blobs := redkit.NewBytesStore(pool, _sessionExpiration)
+
 	return &Manager{
-		log:      log.With("component", "assistant"),
-		db:       db,
-		search:   search,
-		history:  redkit.NewValueStore[[]*schema.Message](pool, _sessionExpiration),
-		blobs:    redkit.NewBytesStore(pool, _sessionExpiration),
-		pendings: redkit.NewValueStore[pendingConfirm](pool, _sessionExpiration),
-		model:    chatModel,
-		summary:  summaryModel,
-		applier:  editClient,
-		metrics:  newMetrics(fc, providerName),
+		log:     log,
+		db:      db,
+		search:  search,
+		model:   chatModel,
+		summary: summaryModel,
+		applier: editClient,
+
+		history: persist.NewHistory(
+			log,
+			redkit.NewValueStore[[]*schema.Message](pool, _sessionExpiration),
+		),
+		checkpoints: persist.NewCheckpoints(log, blobs),
+		pendings: persist.NewPendings(
+			log,
+			redkit.NewValueStore[persist.PendingConfirm](pool, _sessionExpiration),
+		),
+		offload: persist.NewOffload(blobs),
+
+		metrics: newMetrics(fc, providerName),
 	}
 }
 
@@ -91,6 +111,22 @@ func NewManager(
 // concurrent use with Chat; wire it before serving traffic.
 func (m *Manager) SetTreeNotifier(tree tools.TreeNotifier) {
 	m.tree = tree
+}
+
+// ToolSet builds the tool registry for one (organization, user) pair
+// from the manager's shared wiring. The MCP surface uses it to serve
+// the same tools the assistant's sessions get, scoped the same way.
+func (m *Manager) ToolSet(orgID, userID string) *tools.Set {
+	return tools.New(tools.NewDeps(
+		m.log,
+		m.db,
+		m.search,
+		m.applier,
+		m.tree,
+		m.offload,
+		orgID,
+		userID,
+	))
 }
 
 // Chat runs an assistant chat over the given connection for the given
@@ -120,11 +156,4 @@ func (m *Manager) Chat(ctx context.Context, orgID, userID string, conn protocol.
 
 		s.Process(ctx, msg)
 	}
-}
-
-// createSessionKey builds the Redis key for an organisation/user pair's
-// conversation. It doubles as the checkpoint id, so a paused turn and
-// the history it belongs to are addressed the same way.
-func createSessionKey(orgID, userID string) string {
-	return fmt.Sprintf("assistant:session:%s:%s", orgID, userID)
 }
