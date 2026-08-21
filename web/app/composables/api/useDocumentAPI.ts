@@ -182,18 +182,23 @@ export default function () {
 
 			return { newTree, oldTree, finalReq }
 		},
-		mutation: async (_, { finalReq }) => {
-			if (!isXid(finalReq.id)) {
-				// optimisticInserts use nanoid
+		mutation: async (req, ctx) => {
+			if (!isXid(req.id)) {
+				// optimisticInserts use nanoid — onMutate bails out without a
+				// context for them, so the guard runs before touching it
 				return
 			}
 
 			await $coreAPIClient(`/api/documents/tree`, {
 				method: "PUT",
-				body: finalReq,
+				body: ctx.finalReq,
 			})
 		},
-		async onSuccess() {
+		async onSuccess(_data, req) {
+			if (!isXid(req.id)) {
+				return
+			}
+
 			await queryCache.invalidateQueries({ key: DOCUMENT_QUERY_KEYS.root })
 		},
 		onError(_err, _title, { oldTree, newTree }) {
@@ -279,7 +284,11 @@ export default function () {
 				body: cleanReq,
 			})
 		},
-		async onSuccess() {
+		async onSuccess(_data, req) {
+			if (req.parentId && !isXid(req.parentId)) {
+				return
+			}
+
 			await queryCache.invalidateQueries({ key: DOCUMENT_QUERY_KEYS.root })
 		},
 		onError(_err, _data, { oldTree, newTree }) {
@@ -344,7 +353,11 @@ export default function () {
 				method: "DELETE",
 			})
 		},
-		async onSuccess() {
+		async onSuccess(_data, id) {
+			if (!isXid(id)) {
+				return
+			}
+
 			await queryCache.invalidateQueries({ key: DOCUMENT_QUERY_KEYS.root })
 		},
 		onError(_err, _title, { oldTree, newTree }) {
@@ -496,7 +509,11 @@ export default function () {
 				},
 			)
 		},
-		async onSuccess() {
+		async onSuccess(_data, id) {
+			if (!isXid(id)) {
+				return
+			}
+
 			await queryCache.invalidateQueries({ key: DOCUMENT_QUERY_KEYS.root })
 		},
 		onError(_err, _id, { oldTree, newTree }) {
@@ -574,7 +591,7 @@ export default function () {
 			branchId: string
 			protectedMode: boolean
 		}) => {
-			if (!isXid(id)) {
+			if (!isXid(id) || !isXid(branchId)) {
 				// optimisticInserts use nanoid
 				return
 			}
@@ -586,7 +603,11 @@ export default function () {
 				},
 			})
 		},
-		async onSuccess(_data, { id }) {
+		async onSuccess(_data, { id, branchId }) {
+			if (!isXid(id) || !isXid(branchId)) {
+				return
+			}
+
 			await queryCache.invalidateQueries({ key: DOCUMENT_QUERY_KEYS.root })
 			await queryCache.invalidateQueries({
 				key: DOCUMENT_QUERY_KEYS.branches(id),
@@ -661,14 +682,13 @@ export default function () {
 				},
 			)
 		},
-		async onSuccess(_data, { docId }, ctx) {
-			// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- onMutate returns no context when it bails out, so key is missing at runtime
-			if (!isXid(docId) || !ctx.key) {
+		async onSuccess(_data, { docId, req }) {
+			if (!isXid(docId) || !isXid(req.sourceBranchId)) {
 				return
 			}
 
 			await queryCache.invalidateQueries({
-				key: ctx.key,
+				key: DOCUMENT_QUERY_KEYS.branches(docId),
 			})
 		},
 		onError(_err, { docId, req }, ctx) {
@@ -725,14 +745,13 @@ export default function () {
 				method: "DELETE",
 			})
 		},
-		async onSuccess(_data, { docId, branchId }, ctx) {
-			// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- onMutate returns no context when it bails out, so key is missing at runtime
-			if (!isXid(docId) || !isXid(branchId) || !ctx.key) {
+		async onSuccess(_data, { docId, branchId }) {
+			if (!isXid(docId) || !isXid(branchId)) {
 				return
 			}
 
 			await queryCache.invalidateQueries({
-				key: ctx.key,
+				key: DOCUMENT_QUERY_KEYS.branches(docId),
 			})
 		},
 		onError(_err, { docId, branchId }, ctx) {
@@ -773,6 +792,10 @@ export default function () {
 			})
 		},
 		async onSuccess(_data, { docId, fromBranchId, toBranchId }) {
+			if (!isXid(docId) || !isXid(fromBranchId) || !isXid(toBranchId)) {
+				return
+			}
+
 			await queryCache.invalidateQueries({
 				key: DOCUMENT_QUERY_KEYS.branchReviewers(docId, fromBranchId),
 			})
@@ -994,8 +1017,8 @@ export default function () {
 			const existing = newReviewers.find((r) => r.userId === userId)
 
 			if (existing) {
-				existing.currentlyApproved = false
 				existing.previouslyApproved = existing.currentlyApproved
+				existing.currentlyApproved = false
 			} else {
 				newReviewers.push({
 					branchId,
@@ -1032,19 +1055,16 @@ export default function () {
 				},
 			)
 		},
-		async onSuccess(_data, { docId, branchId, userId }, ctx) {
-			if (
-				!isXid(docId) ||
-				!isXid(branchId) ||
-				isOptimisticInsertId(userId) ||
-				// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- onMutate returns no context when it bails out, so key is missing at runtime
-				!ctx.key
-			) {
+		async onSuccess(_data, { docId, branchId, userId }) {
+			if (!isXid(docId) || !isXid(branchId) || isOptimisticInsertId(userId)) {
 				return
 			}
 
+			// the key is rebuilt from the variables rather than read off the
+			// context: onMutate skips the optimistic insert (and its context)
+			// without an organization, but the request still went out
 			await queryCache.invalidateQueries({
-				key: ctx.key,
+				key: DOCUMENT_QUERY_KEYS.branchReviewers(docId, branchId),
 			})
 		},
 		onError(_err, { docId, branchId, userId }, ctx) {

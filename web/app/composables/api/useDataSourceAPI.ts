@@ -2,7 +2,10 @@ import { nanoid } from "nanoid"
 import isDeepEqual from "fast-deep-equal"
 
 const DATA_SOURCE_QUERY_KEYS = {
-	list: ["data-sources"] as const,
+	// the explicit "list" segment keeps the key from being a prefix of the
+	// per-data-source keys below, which would make every list invalidation
+	// cascade into them
+	list: ["data-sources", "list"] as const,
 	detail: (dataSourceId: string) => ["data-sources", dataSourceId] as const,
 	connection: (dataSourceId: string) =>
 		["data-sources", dataSourceId, "connection"] as const,
@@ -221,6 +224,11 @@ export default function () {
 			dataSourceId: string
 			req: DataSourceUpdateRequest
 		}) => {
+			if (!isXid(dataSourceId)) {
+				// optimisticInserts use nanoid
+				return
+			}
+
 			return await $coreAPIClient<DataSourceUpdateResponse>(
 				`/api/data-sources/${dataSourceId}`,
 				{
@@ -317,6 +325,11 @@ export default function () {
 			return { newDataSources, oldDataSources, oldDataSourceById }
 		},
 		mutation: async (dataSourceId: string) => {
+			if (!isXid(dataSourceId)) {
+				// optimisticInserts use nanoid
+				return
+			}
+
 			await $coreAPIClient(`/api/data-sources/${dataSourceId}`, {
 				method: "DELETE",
 			})
@@ -503,10 +516,9 @@ export default function () {
 			refetchOnReconnect: false,
 			autoRefetch: false,
 			placeholderData: (previousData) => previousData, // to avoid "no data" state when params change
-			// we don't want query data to be refreshed automatically when
-			// metric blocks are dragged around in the editor (when they are
-			// dropped they sometimes trigger a remount which causes the data
-			// to be refreshed which ), so we set
+			// metric blocks dragged around the editor sometimes remount when
+			// dropped, which would refresh their data; the long stale time
+			// keeps that from happening
 			staleTime: 60 * 60 * 24 * 1000, // 24 hours (longest refresh interval allowed)
 		})
 	}

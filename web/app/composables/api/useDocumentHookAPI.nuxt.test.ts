@@ -149,25 +149,33 @@ describe("useDocumentHookAPI", { concurrent: false }, () => {
 			expect(listCalls).toHaveLength(0)
 		})
 
-		it("sends the create but skips the optimistic insert when no organization is loaded", async ({
+		it("sends the create without an optimistic insert when no organization is loaded and refetches the list", async ({
 			expect,
 		}) => {
+			const serverHooks = [makeHook(OTHER_HOOK_ID), makeHook(HOOK_ID)]
 			seedHooks([makeHook(HOOK_ID)])
-			const listCalls = mockEndpoint("GET", LIST_URL, () => [])
-			const createCalls = mockEndpoint("POST", LIST_URL, () =>
-				makeHook(OTHER_HOOK_ID),
-			)
+			const listCalls = mockEndpoint("GET", LIST_URL, () => serverHooks)
+			let hooksAtRequest: unknown
+			const createCalls = mockEndpoint("POST", LIST_URL, () => {
+				hooksAtRequest = getHooks()
+
+				return makeHook(OTHER_HOOK_ID)
+			})
 			const api = makeDocumentHookAPI()
+			runInApp(() => api.useFetchDocumentHooksByDocID(DOC_ID, BRANCH_ID))
 
 			await api.createDocumentHookByDocID.mutateAsync({
 				docId: DOC_ID,
 				req: CREATE_REQ,
 			})
 
-			expect(getHooks()).toEqual([makeHook(HOOK_ID)])
+			expect(hooksAtRequest).toEqual([makeHook(HOOK_ID)])
 			expect(createCalls).toHaveLength(1)
 			expect(createCalls[0]?.body).toEqual(CREATE_REQ)
-			expect(listCalls).toHaveLength(0)
+			// the request went out, so the active hooks query is refetched
+			// even though the optimistic insert was skipped
+			expect(listCalls).toHaveLength(1)
+			expect(getHooks()).toEqual(serverHooks)
 		})
 
 		it("optimistically prepends the new hook and refetches the list on success", async ({

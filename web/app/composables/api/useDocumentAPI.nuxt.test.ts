@@ -112,7 +112,7 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 	})
 
 	describe("updateDocumentTree", () => {
-		it("rejects for a non-xid document id without touching anything", async ({
+		it("bails out for a non-xid document id without a request", async ({
 			expect,
 		}) => {
 			const treeCalls = mockEndpoint("GET", TREE_URL, () => [])
@@ -120,15 +120,11 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 			seedQueryData(TREE_KEY, [makeElem(DOC_ID, "Doc A")])
 			const api = makeDocumentAPI()
 
-			// onMutate bails out without a context, so the mutation cannot
-			// read finalReq off it and dies before reaching the network
-			await expect(
-				api.updateDocumentTree.mutateAsync({
-					id: SHORT_ID,
-					parentId: null,
-					insertBeforeId: null,
-				}),
-			).rejects.toThrow()
+			await api.updateDocumentTree.mutateAsync({
+				id: SHORT_ID,
+				parentId: null,
+				insertBeforeId: null,
+			})
 
 			expect(readQueryData(TREE_KEY)).toEqual([makeElem(DOC_ID, "Doc A")])
 			expect(putCalls).toHaveLength(0)
@@ -347,7 +343,7 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 			expect(treeCalls).toHaveLength(1)
 		})
 
-		it("bails out for a non-xid parent but still refreshes the tree", async ({
+		it("bails out for a non-xid parent without a request", async ({
 			expect,
 		}) => {
 			const treeCalls = mockEndpoint("GET", TREE_URL, () => [])
@@ -365,8 +361,7 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 
 			expect(readQueryData(TREE_KEY)).toEqual([])
 			expect(postCalls).toHaveLength(0)
-			// onSuccess is not guarded, so the tree still refetches
-			expect(treeCalls).toHaveLength(1)
+			expect(treeCalls).toHaveLength(0)
 		})
 
 		it("inserts the document into an empty tree", async ({ expect }) => {
@@ -506,9 +501,7 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 	})
 
 	describe("deleteDocument", () => {
-		it("bails out for a non-xid id but still refreshes the tree", async ({
-			expect,
-		}) => {
+		it("bails out for a non-xid id without a request", async ({ expect }) => {
 			const treeCalls = mockEndpoint("GET", TREE_URL, () => [
 				makeElem(DOC_ID, "Doc A"),
 			])
@@ -524,8 +517,7 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 
 			expect(readQueryData(TREE_KEY)).toEqual([makeElem(DOC_ID, "Doc A")])
 			expect(deleteCalls).toHaveLength(0)
-			// onSuccess is not guarded, so the tree still refetches
-			expect(treeCalls).toHaveLength(1)
+			expect(treeCalls).toHaveLength(0)
 		})
 
 		it("removes a root document optimistically", async ({ expect }) => {
@@ -639,9 +631,7 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 	})
 
 	describe("duplicateDocument", () => {
-		it("bails out for a non-xid id but still refreshes the tree", async ({
-			expect,
-		}) => {
+		it("bails out for a non-xid id without a request", async ({ expect }) => {
 			const treeCalls = mockEndpoint("GET", TREE_URL, () => [
 				makeElem(DOC_ID, "Doc A"),
 			])
@@ -657,7 +647,7 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 
 			expect(readQueryData(TREE_KEY)).toEqual([makeElem(DOC_ID, "Doc A")])
 			expect(postCalls).toHaveLength(0)
-			expect(treeCalls).toHaveLength(1)
+			expect(treeCalls).toHaveLength(0)
 		})
 
 		it("inserts a timestamped copy next to the source document", async ({
@@ -831,14 +821,15 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 
 			expect(readQueryData(TREE_KEY)).toEqual([makeElem(SHORT_ID, "Doc A")])
 			expect(putCalls).toHaveLength(0)
-			// onSuccess is not guarded, so the tree still refetches
-			expect(treeCalls).toHaveLength(1)
+			expect(treeCalls).toHaveLength(0)
 		})
 
-		it("sends the request for a non-xid branch id without an optimistic update", async ({
+		it("bails out for a non-xid branch id without a request", async ({
 			expect,
 		}) => {
-			mockEndpoint("GET", TREE_URL, () => [makeElem(DOC_ID, "Doc A")])
+			const treeCalls = mockEndpoint("GET", TREE_URL, () => [
+				makeElem(DOC_ID, "Doc A"),
+			])
 			const putCalls = mockEndpoint(
 				"PUT",
 				`/api/documents/${DOC_ID}/branches/${SHORT_ID}`,
@@ -853,10 +844,9 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 				protectedMode: true,
 			})
 
-			// the mutation only guards the document id, so the request still
-			// goes out while the optimistic tree update is skipped
 			expect(readQueryData(TREE_KEY)).toEqual([makeElem(DOC_ID, "Doc A")])
-			expect(putCalls).toHaveLength(1)
+			expect(putCalls).toHaveLength(0)
+			expect(treeCalls).toHaveLength(0)
 		})
 
 		it("flips the protected flag optimistically and refreshes the tree", async ({
@@ -1516,16 +1506,28 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 			expect(postCalls).toHaveLength(0)
 		})
 
-		it("sends the request without an optimistic update when the organization is unknown", async ({
+		it("sends the request without an optimistic update when the organization is unknown and refreshes the reviewers", async ({
 			expect,
 		}) => {
+			const serverReviewers = [makeReviewer(USER_ID_2, false)]
+			const getCalls = mockEndpoint(
+				"GET",
+				`/api/documents/${DOC_ID}/branches/${BRANCH_ID}/reviewers`,
+				() => serverReviewers,
+			)
+			let reviewersAtRequest: unknown
 			const postCalls = mockEndpoint(
 				"POST",
 				`/api/documents/${DOC_ID}/branches/${BRANCH_ID}/reviewers`,
-				() => null,
+				() => {
+					reviewersAtRequest = readQueryData(REVIEWERS_KEY)
+
+					return null
+				},
 			)
 			seedQueryData(REVIEWERS_KEY, [])
 			const api = makeDocumentAPI()
+			runInApp(() => api.useFetchBranchReviewers(DOC_ID, BRANCH_ID))
 
 			await api.inviteBranchReviewer.mutateAsync({
 				docId: DOC_ID,
@@ -1533,9 +1535,13 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 				userId: USER_ID_2,
 			})
 
-			expect(readQueryData(REVIEWERS_KEY)).toEqual([])
+			expect(reviewersAtRequest).toEqual([])
 			expect(postCalls).toHaveLength(1)
 			expect(postCalls[0]?.body).toEqual({ userId: USER_ID_2 })
+			// the request went out, so the active reviewers query is refetched
+			// even though the optimistic insert was skipped
+			expect(getCalls).toHaveLength(1)
+			expect(readQueryData(REVIEWERS_KEY)).toEqual(serverReviewers)
 		})
 
 		it("adds a new reviewer optimistically", async ({ expect }) => {
@@ -1581,10 +1587,10 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 				userId: USER_ID_2,
 			})
 
-			// currentlyApproved is cleared first, so previouslyApproved copies
-			// the already-cleared value and both end up false
+			// the current approval is remembered as the previous one before
+			// the re-invite clears it
 			expect(readQueryData(REVIEWERS_KEY)).toEqual([
-				makeReviewer(USER_ID_2, false),
+				{ ...makeReviewer(USER_ID_2, false), previouslyApproved: true },
 			])
 		})
 

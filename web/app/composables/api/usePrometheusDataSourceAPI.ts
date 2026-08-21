@@ -14,7 +14,7 @@ const PROMETHEUS_QUERY_KEYS = {
 	labels: (dataSourceId: string, timeRange: string, matchers: string) =>
 		["prometheus", dataSourceId, "labels", timeRange, matchers] as const,
 	labelValues: (dataSourceId: string, label: string, timeRange: string) =>
-		["prometheus", dataSourceId, "labels", label, timeRange] as const,
+		["prometheus", dataSourceId, "label-values", label, timeRange] as const,
 	series: (dataSourceId: string, matchers: string, timeRange: string) =>
 		["prometheus", dataSourceId, "series", matchers, timeRange] as const,
 }
@@ -140,10 +140,9 @@ export default function () {
 			refetchOnReconnect: false,
 			autoRefetch: false,
 			placeholderData: (previousData) => previousData, // to avoid "no data" state when params change
-			// we don't want query data to be refreshed automatically when
-			// metric blocks are dragged around in the editor (when they are
-			// dropped they sometimes trigger a remount which causes the data
-			// to be refreshed which ), so we set
+			// metric blocks dragged around the editor sometimes remount when
+			// dropped, which would refresh their data; the long stale time
+			// keeps that from happening
 			staleTime: 60 * 60 * 24 * 1000, // 24 hours (longest refresh interval allowed)
 		})
 	}

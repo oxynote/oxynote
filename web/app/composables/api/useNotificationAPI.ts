@@ -80,7 +80,9 @@ export default function () {
 			const entries = queryCache.getEntries({
 				key: NOTIFICATION_QUERY_KEYS.listRoot,
 			})
-			const oldNotifs: (NotificationsResponse & { key: EntryKey })[] = []
+			// the key travels next to the page rather than inside it, so the
+			// bookkeeping never ends up in the cached data
+			const oldNotifs: { key: EntryKey; page: NotificationsResponse }[] = []
 
 			entries.forEach((entry) => {
 				const oldNotifPage = clone(
@@ -95,21 +97,19 @@ export default function () {
 					return
 				}
 
-				oldNotifs.push({ ...oldNotifPage, key: clone(entry.key) })
+				oldNotifs.push({ key: clone(entry.key), page: oldNotifPage })
 			})
 
 			const newNotifs = clone(oldNotifs)
-			newNotifs.forEach((notifPage) => {
-				notifPage.notifications.forEach((notif) => {
+			newNotifs.forEach(({ key, page }) => {
+				page.notifications.forEach((notif) => {
 					if (req.ids.length === 0 || req.ids.includes(notif.id)) {
 						notif.read = true
 					}
 				})
 
-				queryCache.setQueryData(notifPage.key, notifPage)
-				queryCache.cancelQueries({
-					key: notifPage.key,
-				})
+				queryCache.setQueryData(key, page)
+				queryCache.cancelQueries({ key })
 			})
 
 			return { newNotifs, oldNotifs }
@@ -132,7 +132,7 @@ export default function () {
 			const entries = queryCache.getEntries({
 				key: NOTIFICATION_QUERY_KEYS.listRoot,
 			})
-			const cachedNotifs: (NotificationsResponse & { key: EntryKey })[] = []
+			const cachedNotifs: { key: EntryKey; page: NotificationsResponse }[] = []
 
 			entries.forEach((entry) => {
 				const cachedNotifPage = clone(
@@ -145,7 +145,7 @@ export default function () {
 					return
 				}
 
-				cachedNotifs.push({ ...cachedNotifPage, key: clone(entry.key) })
+				cachedNotifs.push({ key: clone(entry.key), page: cachedNotifPage })
 			})
 
 			if (!isDeepEqual(newNotifs, cachedNotifs)) {
@@ -153,8 +153,8 @@ export default function () {
 			}
 
 			// rollback
-			oldNotifs?.forEach((notifPage) => {
-				queryCache.setQueryData(notifPage.key, notifPage)
+			oldNotifs?.forEach(({ key, page }) => {
+				queryCache.setQueryData(key, page)
 			})
 		},
 	})

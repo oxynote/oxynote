@@ -335,7 +335,7 @@ describe("useDocumentCommentAPI", { concurrent: false }, () => {
 			expect(readComments()).toEqual(serverComments)
 		})
 
-		it("sends the create without an optimistic insert when session data is missing", async ({
+		it("sends the create without an optimistic insert when session data is missing and refreshes the comments", async ({
 			expect,
 		}) => {
 			const existing = makeComment(COMMENT_ID)
@@ -361,10 +361,10 @@ describe("useDocumentCommentAPI", { concurrent: false }, () => {
 
 			expect(postCalls).toHaveLength(1)
 			expect(commentsAtRequest).toEqual([existing])
-			// onMutate bailed out, so onSuccess has no mutation context and
-			// skips the invalidation refetch
-			expect(getCalls).toHaveLength(0)
-			expect(readComments()).toEqual([existing])
+			// the request went out, so the active comments query is refetched
+			// even though the optimistic insert was skipped
+			expect(getCalls).toHaveLength(1)
+			expect(readComments()).toEqual([])
 		})
 
 		it("rolls back the optimistic comment when the create fails", async ({
@@ -867,7 +867,7 @@ describe("useDocumentCommentAPI", { concurrent: false }, () => {
 			expect(readComments()).toEqual(serverComments)
 		})
 
-		it("sends the create without an optimistic insert when session data is missing", async ({
+		it("sends the create without an optimistic insert when session data is missing and refreshes the comments", async ({
 			expect,
 		}) => {
 			const target = makeComment(COMMENT_ID, { replies: [] })
@@ -891,13 +891,13 @@ describe("useDocumentCommentAPI", { concurrent: false }, () => {
 
 			expect(postCalls).toHaveLength(1)
 			expect(commentsAtRequest).toEqual([target])
-			// onMutate bailed out, so onSuccess has no mutation context and
-			// skips the invalidation refetch
-			expect(getCalls).toHaveLength(0)
-			expect(readComments()).toEqual([target])
+			// the request went out, so the active comments query is refetched
+			// even though the optimistic insert was skipped
+			expect(getCalls).toHaveLength(1)
+			expect(readComments()).toEqual([])
 		})
 
-		it("skips the optimistic insert and the invalidation when the comment is not cached", async ({
+		it("skips the optimistic insert but still refreshes the comments when the comment is not cached", async ({
 			expect,
 		}) => {
 			seedAuth()
@@ -922,11 +922,10 @@ describe("useDocumentCommentAPI", { concurrent: false }, () => {
 
 			expect(postCalls).toHaveLength(1)
 			expect(commentsAtRequest).toEqual([other])
-			// onMutate returns before writing when the target comment is
-			// missing, so onSuccess has no mutation context and skips the
-			// invalidation refetch
-			expect(getCalls).toHaveLength(0)
-			expect(readComments()).toEqual([other])
+			// the request went out, so the active comments query is refetched
+			// even though the target comment was not cached
+			expect(getCalls).toHaveLength(1)
+			expect(readComments()).toEqual([])
 		})
 
 		it("rolls back the optimistic reply when the create fails", async ({

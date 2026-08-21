@@ -216,16 +216,12 @@ describe("useNotificationAPI", { concurrent: false }, () => {
 				api.markNotificationsRead.mutateAsync({ ids: [] }),
 			).rejects.toThrow()
 
-			// the rollback writes back the snapshot taken in onMutate, which
-			// carries the entry key the composable injects for bookkeeping
-			expect(getPage(LIST_KEY_A)).toEqual({
-				...makePage([makeNotification("n1", false)]),
-				key: [...LIST_KEY_A],
-			})
-			expect(getPage(LIST_KEY_B)).toEqual({
-				...makePage([makeNotification("n2", false)]),
-				key: [...LIST_KEY_B],
-			})
+			expect(getPage(LIST_KEY_A)).toEqual(
+				makePage([makeNotification("n1", false)]),
+			)
+			expect(getPage(LIST_KEY_B)).toEqual(
+				makePage([makeNotification("n2", false)]),
+			)
 			expect(putCalls).toHaveLength(1)
 			expect(listCalls).toHaveLength(0)
 			expect(countCalls).toHaveLength(0)
@@ -341,12 +337,10 @@ describe("useNotificationAPI", { concurrent: false }, () => {
 
 			await expect(pending).rejects.toThrow()
 			// the data-less entry is filtered from the rollback comparison
-			// too, so the rollback still restores the seeded page — with the
-			// bookkeeping key the composable injects into its snapshot
-			expect(getPage(LIST_KEY_B)).toEqual({
-				...makePage([makeNotification("n1", false)]),
-				key: [...LIST_KEY_B],
-			})
+			// too, so the rollback still restores the seeded page
+			expect(getPage(LIST_KEY_B)).toEqual(
+				makePage([makeNotification("n1", false)]),
+			)
 			expect(putCalls).toHaveLength(1)
 			expect(listCalls).toHaveLength(1)
 			expect(countCalls).toHaveLength(0)

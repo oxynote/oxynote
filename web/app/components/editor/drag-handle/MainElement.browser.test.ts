@@ -5,6 +5,7 @@ import Text from "@tiptap/extension-text"
 import { PluginKey } from "@tiptap/pm/state"
 import { mount, type VueWrapper } from "@vue/test-utils"
 import { afterEach, describe, it, vi } from "vitest"
+import { h } from "vue"
 import { DragHandle } from "./MainElement"
 
 const cleanups: (() => void)[] = []
@@ -30,13 +31,14 @@ function makeEditor(): Editor {
 
 type HandleProps = InstanceType<typeof DragHandle>["$props"]
 
-function mountHandle(
-	props: HandleProps,
-	slot = "<span>drag</span>",
-): VueWrapper {
+function mountHandle(props: HandleProps): VueWrapper {
 	const wrapper = mount(DragHandle, {
 		props,
-		slots: { default: slot },
+		// a render function, not a template string: vue-test-utils compiles
+		// string slots at runtime through its own bundled compiler, which
+		// warns about decodeEntities whenever vite serves that compiler
+		// unoptimized
+		slots: { default: () => h("span", "drag") },
 		attachTo: document.body,
 	})
 

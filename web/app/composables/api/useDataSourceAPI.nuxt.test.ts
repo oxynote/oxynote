@@ -17,7 +17,7 @@ const DS_ID = makeXid("ds1")
 const OTHER_DS_ID = makeXid("ds2")
 const OPTIMISTIC_ID = "local-1"
 
-const LIST_KEY = ["data-sources"] as const
+const LIST_KEY = ["data-sources", "list"] as const
 const LIST_URL = "/api/data-sources"
 const DETAIL_URL = `${LIST_URL}/${DS_ID}`
 const CONNECTION_URL = `${DETAIL_URL}/connection`
@@ -303,7 +303,7 @@ describe("useDataSourceAPI", { concurrent: false }, () => {
 	})
 
 	describe("updateDataSource", () => {
-		it("sends the update without touching the caches for an optimistic-insert id", async ({
+		it("bails out for an optimistic-insert id without a request", async ({
 			expect,
 		}) => {
 			const optimistic = makeDataSource({
@@ -324,11 +324,7 @@ describe("useDataSourceAPI", { concurrent: false }, () => {
 				req: { name: "Renamed", url: "https://renamed.test" },
 			})
 
-			expect(updateCalls).toHaveLength(1)
-			expect(updateCalls[0]?.body).toEqual({
-				name: "Renamed",
-				url: "https://renamed.test",
-			})
+			expect(updateCalls).toHaveLength(0)
 			expect(listCalls).toHaveLength(0)
 			expect(api.fetchDataSources.data.value).toEqual([optimistic])
 		})
@@ -393,11 +389,10 @@ describe("useDataSourceAPI", { concurrent: false }, () => {
 				name: "Renamed",
 				url: "https://renamed.test",
 			})
-			// key filters prefix-match, so invalidating the list key also
-			// refetches the active detail query once, and the explicit detail
-			// invalidation refetches it a second time
+			// the list key is not a prefix of the detail key, so the detail
+			// query is only refetched by its own invalidation
 			expect(listCalls).toHaveLength(1)
-			expect(detailCalls).toHaveLength(2)
+			expect(detailCalls).toHaveLength(1)
 			expect(api.fetchDataSources.data.value).toEqual([updated, other])
 			expect(dataSource.data.value).toEqual(updated)
 		})
@@ -510,7 +505,7 @@ describe("useDataSourceAPI", { concurrent: false }, () => {
 	})
 
 	describe("deleteDataSource", () => {
-		it("sends the delete without touching the caches for an optimistic-insert id", async ({
+		it("bails out for an optimistic-insert id without a request", async ({
 			expect,
 		}) => {
 			const optimistic = makeDataSource({
@@ -528,7 +523,7 @@ describe("useDataSourceAPI", { concurrent: false }, () => {
 
 			await api.deleteDataSource.mutateAsync(OPTIMISTIC_ID)
 
-			expect(deleteCalls).toHaveLength(1)
+			expect(deleteCalls).toHaveLength(0)
 			expect(listCalls).toHaveLength(0)
 			expect(api.fetchDataSources.data.value).toEqual([optimistic])
 		})
@@ -568,11 +563,10 @@ describe("useDataSourceAPI", { concurrent: false }, () => {
 			await pending
 
 			expect(deleteCalls).toHaveLength(1)
-			// key filters prefix-match, so invalidating the list key also
-			// refetches the active detail query once, and the explicit detail
-			// invalidation refetches it a second time
+			// the list key is not a prefix of the detail key, so the detail
+			// query is only refetched by its own invalidation
 			expect(listCalls).toHaveLength(1)
-			expect(detailCalls).toHaveLength(2)
+			expect(detailCalls).toHaveLength(1)
 			expect(api.fetchDataSources.data.value).toEqual([other])
 			expect(dataSource.data.value).toEqual(target)
 		})

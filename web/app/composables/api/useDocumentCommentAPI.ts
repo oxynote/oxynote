@@ -114,15 +114,17 @@ export default function () {
 				},
 			)
 		},
-		async onSuccess(_data, { docId, req }, ctx) {
-			// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- onMutate returns no context when it bails out, so key is missing at runtime
-			if (!isXid(docId) || !isXid(req.branchId) || !ctx.key) {
+		async onSuccess(_data, { docId, req }) {
+			if (!isXid(docId) || !isXid(req.branchId)) {
 				// optimisticInserts use nanoid
 				return
 			}
 
+			// the key is rebuilt from the variables rather than read off the
+			// context: onMutate skips the optimistic insert (and its context)
+			// without a user or organization, but the request still went out
 			await queryCache.invalidateQueries({
-				key: ctx.key,
+				key: DOCUMENT_COMMENT_QUERY_KEYS.documentComments(docId, req.branchId),
 			})
 		},
 		onError(_err, { docId, req }, ctx) {
@@ -200,15 +202,14 @@ export default function () {
 				body: req,
 			})
 		},
-		async onSuccess(_data, { docId, branchId, commentId }, ctx) {
-			// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- onMutate returns no context when it bails out, so key is missing at runtime
-			if (!isXid(docId) || !isXid(branchId) || !isXid(commentId) || !ctx.key) {
+		async onSuccess(_data, { docId, branchId, commentId }) {
+			if (!isXid(docId) || !isXid(branchId) || !isXid(commentId)) {
 				// optimisticInserts use nanoid
 				return
 			}
 
 			await queryCache.invalidateQueries({
-				key: ctx.key,
+				key: DOCUMENT_COMMENT_QUERY_KEYS.documentComments(docId, branchId),
 			})
 		},
 		onError(_err, { docId, branchId, commentId }, ctx) {
@@ -278,15 +279,14 @@ export default function () {
 				},
 			)
 		},
-		async onSuccess(_data, { docId, branchId, commentId }, ctx) {
-			// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- onMutate returns no context when it bails out, so key is missing at runtime
-			if (!isXid(docId) || !isXid(branchId) || !isXid(commentId) || !ctx.key) {
+		async onSuccess(_data, { docId, branchId, commentId }) {
+			if (!isXid(docId) || !isXid(branchId) || !isXid(commentId)) {
 				// optimisticInserts use nanoid
 				return
 			}
 
 			await queryCache.invalidateQueries({
-				key: ctx.key,
+				key: DOCUMENT_COMMENT_QUERY_KEYS.documentComments(docId, branchId),
 			})
 		},
 		onError(_err, { docId, branchId, commentId }, ctx) {
@@ -361,15 +361,14 @@ export default function () {
 				method: "DELETE",
 			})
 		},
-		async onSuccess(_data, { docId, branchId, commentId }, ctx) {
-			// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- onMutate returns no context when it bails out, so key is missing at runtime
-			if (!isXid(docId) || !isXid(branchId) || !isXid(commentId) || !ctx.key) {
+		async onSuccess(_data, { docId, branchId, commentId }) {
+			if (!isXid(docId) || !isXid(branchId) || !isXid(commentId)) {
 				// optimisticInserts use nanoid
 				return
 			}
 
 			await queryCache.invalidateQueries({
-				key: ctx.key,
+				key: DOCUMENT_COMMENT_QUERY_KEYS.documentComments(docId, branchId),
 			})
 		},
 		onError(_err, { docId, branchId, commentId }, ctx) {
@@ -465,15 +464,14 @@ export default function () {
 				},
 			)
 		},
-		async onSuccess(_data, { docId, branchId, commentId }, ctx) {
-			// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- onMutate returns no context when it bails out, so key is missing at runtime
-			if (!isXid(docId) || !isXid(branchId) || !isXid(commentId) || !ctx.key) {
+		async onSuccess(_data, { docId, branchId, commentId }) {
+			if (!isXid(docId) || !isXid(branchId) || !isXid(commentId)) {
 				// optimisticInserts use nanoid
 				return
 			}
 
 			await queryCache.invalidateQueries({
-				key: ctx.key,
+				key: DOCUMENT_COMMENT_QUERY_KEYS.documentComments(docId, branchId),
 			})
 		},
 		onError(_err, { docId, branchId, commentId }, ctx) {
@@ -572,21 +570,19 @@ export default function () {
 				},
 			)
 		},
-		async onSuccess(_data, { docId, branchId, commentId, replyId }, ctx) {
+		async onSuccess(_data, { docId, branchId, commentId, replyId }) {
 			if (
 				!isXid(docId) ||
 				!isXid(branchId) ||
 				!isXid(commentId) ||
-				!isXid(replyId) ||
-				// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- onMutate returns no context when it bails out, so key is missing at runtime
-				!ctx.key
+				!isXid(replyId)
 			) {
 				// optimisticInserts use nanoid
 				return
 			}
 
 			await queryCache.invalidateQueries({
-				key: ctx.key,
+				key: DOCUMENT_COMMENT_QUERY_KEYS.documentComments(docId, branchId),
 			})
 		},
 		onError(_err, { docId, branchId, commentId, replyId }, ctx) {
@@ -681,21 +677,19 @@ export default function () {
 				},
 			)
 		},
-		async onSuccess(_data, { docId, branchId, commentId, replyId }, ctx) {
+		async onSuccess(_data, { docId, branchId, commentId, replyId }) {
 			if (
 				!isXid(docId) ||
 				!isXid(branchId) ||
 				!isXid(commentId) ||
-				!isXid(replyId) ||
-				// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- onMutate returns no context when it bails out, so key is missing at runtime
-				!ctx.key
+				!isXid(replyId)
 			) {
 				// optimisticInserts use nanoid
 				return
 			}
 
 			await queryCache.invalidateQueries({
-				key: ctx.key,
+				key: DOCUMENT_COMMENT_QUERY_KEYS.documentComments(docId, branchId),
 			})
 		},
 		onError(_err, { docId, branchId, commentId, replyId }, ctx) {
