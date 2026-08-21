@@ -96,6 +96,7 @@ export default withNuxt([
 			"knip.ts",
 			"vite.electron.config.ts",
 			"vitest.config.ts",
+			"vitest.nuxt-setup.ts",
 			"electron/preload.d.ts",
 		],
 		languageOptions: {
