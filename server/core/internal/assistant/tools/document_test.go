@@ -577,7 +577,8 @@ func Test_setDocumentIcon_Title(t *testing.T) {
 	t.Parallel()
 
 	got, err := setDocumentIcon{}.Title(
-		testInput(testDeps(nil, nil, nil), NameSetDocumentIcon, `{}`))
+		testInput(testDeps(nil, nil, nil), NameSetDocumentIcon, `{}`),
+	)
 	require.NoError(t, err)
 	assert.Empty(t, got)
 }

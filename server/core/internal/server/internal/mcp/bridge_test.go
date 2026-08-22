@@ -29,21 +29,6 @@ func (s *stubRunner) Run(context.Context, json.RawMessage) (tools.Result, error)
 	return tools.Result{Output: s.out, Documents: s.docs}, s.runErr
 }
 
-// entryFor finds the named tool's entry in a fresh stubbed set.
-func entryFor(t *testing.T, name tools.Name) tools.Entry {
-	t.Helper()
-
-	for _, e := range stubSet(stubToolsDB()).Entries() {
-		if e.Name == name {
-			return e
-		}
-	}
-
-	t.Fatalf("tool %s not found", name)
-
-	return tools.Entry{}
-}
-
 func Test_annotations(t *testing.T) {
 	t.Parallel()
 

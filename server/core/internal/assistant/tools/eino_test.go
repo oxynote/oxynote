@@ -95,7 +95,8 @@ func Test_einoTool_Run(t *testing.T) {
 	// actually applied rather than from its arguments
 	res, err = newEinoTool(updateBlockText{}, testDeps(stubDocumentDB(), stubApplier(), nil)).
 		Run(context.Background(), json.RawMessage(
-			`{"document_id":"`+_testDocID+`","block_uid":"a","text":"hi"}`))
+			`{"document_id":"`+_testDocID+`","block_uid":"a","text":"hi"}`,
+		))
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"applied":1,"errors":[]}`, res.Output)
 	assert.Equal(t, []string{_testDocID}, res.Documents)
