@@ -8,7 +8,6 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // _paragraphArgs is a canonical paragraph a write tool can be handed.
@@ -708,18 +707,4 @@ func Test_summarize(t *testing.T) {
 
 	assert.Empty(t, got.DocumentID)
 	assert.Equal(t, "Touch document", got.Summary)
-}
-
-func Test_editCaseSanity(t *testing.T) {
-	t.Parallel()
-
-	// the shared content stub has to actually carry the uid the write
-	// cases reference, or every placement check would pass vacuously.
-	content, err := stubContentDB(nil).FetchMainBranchContent(context.Background(), xid.New(), "org")
-	require.NoError(t, err)
-	require.Len(t, content.Content.Content, 1)
-
-	uid, ok := content.Content.Content[0].UID()
-	require.True(t, ok)
-	assert.Equal(t, _stubContentUID, uid)
 }

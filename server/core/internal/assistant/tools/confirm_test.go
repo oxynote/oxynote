@@ -25,63 +25,6 @@ func gatedTool(t *testing.T, s *Set, name Name) tool.InvokableTool {
 	return it
 }
 
-func Test_confirming_gatesEveryWrite(t *testing.T) {
-	t.Parallel()
-
-	s := New(testDeps(stubDocumentDB(), stubApplier(), nil))
-
-	for _, name := range allToolNames() {
-		_, gated := s.tools[name].(*confirming)
-
-		// the gate follows the tool's own trait, so a tool cannot
-		// declare itself a write and quietly skip the prompt.
-		assert.Equal(t, unwrap(s.tools[name]).tl.Traits().Write, gated, "%s", name)
-	}
-}
-
-// Test_ReadTool_traitsMatchImplementation is the guard that keeps a
-// declared trait and the interface it promises in step. Traits are
-// stated rather than derived, so nothing but this stops a tool from
-// claiming a write it cannot describe — or describing one it never
-// declared, and so never being gated.
-func Test_ReadTool_traitsMatchImplementation(t *testing.T) {
-	t.Parallel()
-
-	s := New(testDeps(stubDocumentDB(), stubApplier(), nil))
-
-	for _, name := range allToolNames() {
-		tl := unwrap(s.tools[name]).tl
-
-		_, describes := tl.(WriteTool)
-		assert.Equal(t, tl.Traits().Write, describes,
-			"%s declares Write=%v but WriteTool=%v", name, tl.Traits().Write, describes)
-
-		// a destructive tool is a write first; nothing else can be
-		// destructive.
-		if tl.Traits().Destructive {
-			assert.True(t, tl.Traits().Write, "%s is destructive without being a write", name)
-		}
-	}
-}
-
-func Test_confirming_destructiveIgnoresAutoApprove(t *testing.T) {
-	t.Parallel()
-
-	s := New(testDeps(stubDocumentDB(), stubApplier(), nil))
-
-	destructive := map[Name]bool{NameDeleteDocument: true, NameDeleteBlock: true}
-
-	for _, name := range allToolNames() {
-		c, ok := s.tools[name].(*confirming)
-		if !ok {
-			continue
-		}
-
-		// approving a batch of text edits is not consent to delete.
-		assert.Equal(t, destructive[name], c.destructive, "%s", name)
-	}
-}
-
 // gateCase is one Test_confirming_InvokableRun scenario.
 type gateCase struct {
 	// Name selects the gated tool under test.

@@ -9,7 +9,6 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
-	"github.com/oxynote/oxynote/server/core/internal/document"
 )
 
 // _documentMIMEType is the media type of a document resource body: the
@@ -50,7 +49,7 @@ func (h *Handler) addResources(
 		return
 	}
 
-	for _, s := range flatten(tree) {
+	for _, s := range tree.Descendants() {
 		srv.AddResource(&mcp.Resource{
 			URI:      _resourceURIPrefix + s.ID.String(),
 			Name:     s.DocumentName,
@@ -88,17 +87,4 @@ func (h *Handler) readDocument(set *tools.Set) mcp.ResourceHandler {
 			}},
 		}, nil
 	}
-}
-
-// flatten walks the document summary tree depth-first into a flat,
-// order-preserving list.
-func flatten(tree document.Summaries) []document.Summary {
-	out := make([]document.Summary, 0, len(tree))
-
-	for _, s := range tree {
-		out = append(out, s)
-		out = append(out, flatten(s.Children)...)
-	}
-
-	return out
 }

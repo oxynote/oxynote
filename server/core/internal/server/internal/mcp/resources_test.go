@@ -179,29 +179,3 @@ func Test_Handler_readDocument(t *testing.T) {
 		})
 	}
 }
-
-func Test_flatten(t *testing.T) {
-	t.Parallel()
-
-	a, b, c, d := xid.New(), xid.New(), xid.New(), xid.New()
-
-	tree := document.Summaries{
-		{
-			ID: a,
-			Children: document.Summaries{
-				{ID: b, Children: document.Summaries{{ID: c}}},
-			},
-		},
-		{ID: d},
-	}
-
-	got := flatten(tree)
-	require.Len(t, got, 4)
-
-	ids := make([]xid.ID, 0, len(got))
-	for _, s := range got {
-		ids = append(ids, s.ID)
-	}
-
-	assert.Equal(t, []xid.ID{a, b, c, d}, ids)
-}

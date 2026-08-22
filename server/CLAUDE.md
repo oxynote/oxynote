@@ -153,7 +153,7 @@ across marker interfaces and schema fields:
   being cleared by the context middlewares — the model has to keep knowing what
   it changed, while a stale read can always be taken again. A tool declaring it
   must implement `WriteTool`, so it can describe the change it proposes;
-  `Test_ReadTool_traitsMatchImplementation` is what holds the two in step.
+  `Test_New` is what holds the two in step.
 - `Destructive` keeps it outside an "approve all" answer. Only
   `delete_document` and `delete_block`.
 - `Internal` keeps it off surfaces outside this process. Only

@@ -11,7 +11,6 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func Test_searchDocuments_Info(t *testing.T) {
@@ -180,22 +179,4 @@ func Test_searchDocuments_Execute(t *testing.T) {
 			assert.Contains(t, buf.String(), c.Logged)
 		})
 	}
-}
-
-func Test_collectDocumentNames(t *testing.T) {
-	t.Parallel()
-
-	parent := xid.New()
-	child := xid.New()
-
-	out := map[string]string{}
-	collectDocumentNames(document.Summaries{{
-		ID:           parent,
-		DocumentName: "Parent",
-		Children:     document.Summaries{{ID: child, DocumentName: "Child"}},
-	}}, out)
-
-	require.Len(t, out, 2)
-	assert.Equal(t, "Parent", out[parent.String()])
-	assert.Equal(t, "Child", out[child.String()])
 }

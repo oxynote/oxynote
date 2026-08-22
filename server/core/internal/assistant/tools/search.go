@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-
-	"github.com/oxynote/oxynote/server/core/internal/document"
 )
 
 const (
@@ -104,7 +102,9 @@ func (searchDocuments) Execute(inp Input) (string, error) {
 				slog.String("error", terr.Error()),
 			)
 		} else {
-			collectDocumentNames(tree, names)
+			for _, d := range tree.Descendants() {
+				names[d.ID.String()] = d.DocumentName
+			}
 		}
 	}
 
@@ -142,13 +142,4 @@ type searchHit struct {
 
 	// Text is the block's indexed text.
 	Text string `json:"text"`
-}
-
-// collectDocumentNames flattens the summary tree into an id → name map.
-func collectDocumentNames(ss document.Summaries, out map[string]string) {
-	for _, s := range ss {
-		out[s.ID.String()] = s.DocumentName
-
-		collectDocumentNames(s.Children, out)
-	}
 }

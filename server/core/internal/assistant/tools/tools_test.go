@@ -35,6 +35,21 @@ func allToolNames() []Name {
 	}
 }
 
+// adapter returns the eino adapter underneath a registry entry, gated
+// or not, so a test can reach the tool the registry wrapped.
+func adapter(t *testing.T, it registryTool) *einoTool {
+	t.Helper()
+
+	if c, ok := it.(*confirming); ok {
+		return c.einoTool
+	}
+
+	et, ok := it.(*einoTool)
+	require.True(t, ok, "the registry holds an unexpected %T", it)
+
+	return et
+}
+
 func Test_New(t *testing.T) {
 	t.Parallel()
 
@@ -52,6 +67,34 @@ func Test_New(t *testing.T) {
 		info, err := it.Info(context.Background())
 		require.NoError(t, err)
 		assert.Equal(t, string(name), info.Name)
+
+		tl := adapter(t, it).tl
+		tr := tl.Traits()
+
+		// traits are stated rather than derived, so nothing but this
+		// stops a tool from claiming a write it cannot describe — or
+		// describing one it never declared, and so never being gated.
+		_, describes := tl.(WriteTool)
+		assert.Equal(t, tr.Write, describes, "%s declares Write=%v but WriteTool=%v", name, tr.Write, describes)
+
+		// a destructive tool is a write first; nothing else can be
+		// destructive.
+		if tr.Destructive {
+			assert.True(t, tr.Write, "%s is destructive without being a write", name)
+		}
+
+		// the gate is applied here rather than by each tool, so a write
+		// cannot declare itself one and quietly skip the prompt.
+		c, gated := it.(*confirming)
+		require.Equal(t, tr.Write, gated, "%s is gated=%v but declares Write=%v", name, gated, tr.Write)
+
+		if !gated {
+			continue
+		}
+
+		// the gate carries the tool's own destructive trait: approving
+		// a batch of text edits is not consent to delete.
+		assert.Equal(t, tr.Destructive, c.destructive, "%s gate destructive flag", name)
 	}
 }
 
@@ -233,19 +276,4 @@ func Test_Set_Label(t *testing.T) {
 			assert.Equal(t, c.Result, got)
 		})
 	}
-}
-
-func Test_unwrap(t *testing.T) {
-	t.Parallel()
-
-	s := New(testDeps(nil, nil, nil))
-
-	// a gated write unwraps to the adapter underneath.
-	gated := s.tools[NameDeleteDocument]
-	_, isGate := gated.(*confirming)
-	require.True(t, isGate)
-	assert.Equal(t, NameDeleteDocument, unwrap(gated).info.Name)
-
-	// an ungated read is already the adapter.
-	assert.Equal(t, NameGetDocument, unwrap(s.tools[NameGetDocument]).info.Name)
 }

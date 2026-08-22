@@ -57,12 +57,12 @@ const (
 type Set struct {
 	// tools maps each tool's name to the value that serves it, already
 	// wrapped in its confirmation gate where one applies.
-	tools map[Name]tool.InvokableTool
+	tools map[Name]registryTool
 
 	// ordered lists the tools in registration order. Tools returns it so
 	// every session presents the model the same tool order, which keeps
 	// provider prompt caching effective.
-	ordered []tool.InvokableTool
+	ordered []registryTool
 
 	// entries lists the tools in registration order without their
 	// confirmation gates, for surfaces that own their own approval
@@ -100,7 +100,7 @@ func New(deps *Deps) *Set {
 		readToolOutput{},
 	}
 
-	s := &Set{tools: make(map[Name]tool.InvokableTool, len(all))}
+	s := &Set{tools: make(map[Name]registryTool, len(all))}
 
 	for _, tl := range all {
 		et := newEinoTool(tl, deps)
@@ -112,7 +112,7 @@ func New(deps *Deps) *Set {
 			Tool:   et,
 		})
 
-		var it tool.InvokableTool = et
+		var it registryTool = et
 
 		// the gate goes on here rather than being something every write
 		// has to remember to ask for, so a write cannot slip through by
@@ -187,7 +187,7 @@ func (s *Set) Label(ctx context.Context, name Name, args json.RawMessage) string
 		return ""
 	}
 
-	return unwrap(t).Title(ctx, args)
+	return t.Title(ctx, args)
 }
 
 // WriteNames returns every tool that mutates a document.
@@ -200,15 +200,15 @@ func (s *Set) WriteNames() []string {
 	return slices.Clone(s.writes)
 }
 
-// unwrap returns the adapter underneath a confirmation gate, or the
-// adapter itself when it is not gated.
-func unwrap(t tool.InvokableTool) *einoTool {
-	if c, ok := t.(*confirming); ok {
-		return c.einoTool
-	}
+// registryTool is what the registry stores: a tool the agent can invoke
+// that can also describe what it is about to do. The adapter and the
+// confirmation gate wrapping it both satisfy it — the gate embeds the
+// adapter — so Label reaches Title without asking which one it holds.
+type registryTool interface {
+	tool.InvokableTool
 
-	// NOCOV: the registry only ever holds adapters, gated or not.
-	et, _ := t.(*einoTool)
-
-	return et
+	// Title should return a short line describing what the tool is
+	// about to do, or an empty string for tools too noisy or too
+	// generic to announce.
+	Title(ctx context.Context, args json.RawMessage) string
 }

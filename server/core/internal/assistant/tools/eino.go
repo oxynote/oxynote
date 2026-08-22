@@ -102,7 +102,7 @@ func newEinoTool(tl ReadTool, deps *Deps) *einoTool {
 // Info describes the tool to the model, converting this package's
 // description into the framework's shape.
 func (et *einoTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return toolInfo(et.info)
+	return et.info.toEino()
 }
 
 // InvokableRun performs the call, handing the tool an Input built from
@@ -137,12 +137,14 @@ func (et *einoTool) input(ctx context.Context, args string) *input {
 	return et.deps.newInput(ctx, et.info.Name, json.RawMessage(args))
 }
 
-// toolInfo converts a tool's description into the framework's shape.
+// toEino converts the description into the framework's shape. It is a
+// method on Info but lives here, so the framework's vocabulary stays in
+// this file rather than spreading to tool.go.
 //
 // The property map is transported through JSON because it is already a
 // JSON-schema fragment, which keeps each tool's schema the single
 // source of truth rather than restating it in a second vocabulary.
-func toolInfo(info Info) (*schema.ToolInfo, error) {
+func (info Info) toEino() (*schema.ToolInfo, error) {
 	// an empty slice would emit "required": [] where the schema should
 	// simply not say anything.
 	required := info.Required

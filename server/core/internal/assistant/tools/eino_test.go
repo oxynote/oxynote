@@ -12,14 +12,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Test_toolInfo asserts every tool still presents the model the
+// Test_Info_toEino asserts every tool still presents the model the
 // exact description it did before the tools were split into their own
 // files. The golden file was captured from the previous implementation.
 //
 // This is the load-bearing test of the restructure: the schemas were
 // retyped by hand, and a dropped required field or a truncated
 // description degrades the assistant in a way no compile error catches.
-func Test_toolInfo(t *testing.T) {
+func Test_Info_toEino(t *testing.T) {
 	t.Parallel()
 
 	want, err := os.ReadFile("testdata/tool_schemas.golden")
