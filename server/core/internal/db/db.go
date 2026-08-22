@@ -126,7 +126,8 @@ func New(
 			sqlutil.WithHookErrorHandler(DetectError),
 			sqlutil.WithHookDatabaseName("oxynote"),
 			sqlutil.WithHookDurationThreshold(_slowQueryThreshold),
-		)),
+		),
+	),
 	)
 
 	sqlDB, err := sqlx.Connect(driverName, opts.DSN)

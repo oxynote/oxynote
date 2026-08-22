@@ -133,19 +133,22 @@ func Test_Detect(t *testing.T) {
 		"Internal server status error": {
 			Err: wrap(errors.New("error"), http.StatusInternalServerError, "test", "error"),
 			Message: strings.ToLower(
-				http.StatusText(http.StatusInternalServerError)),
+				http.StatusText(http.StatusInternalServerError),
+			),
 			Code: http.StatusInternalServerError,
 		},
 		"Undefined error": {
 			Err: errors.New("error"),
 			Message: strings.ToLower(
-				http.StatusText(http.StatusInternalServerError)),
+				http.StatusText(http.StatusInternalServerError),
+			),
 			Code: http.StatusInternalServerError,
 		},
 		"Passthru": {
 			Err: NewPlain(http.StatusConflict),
 			Message: strings.ToLower(
-				http.StatusText(http.StatusConflict)),
+				http.StatusText(http.StatusConflict),
+			),
 			Code:     http.StatusConflict,
 			Passthru: true,
 		},

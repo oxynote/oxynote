@@ -99,6 +99,7 @@ async function decide(accept: boolean) {
 		>
 			<div class="flex flex-col gap-1.5">
 				<i18n-t
+					scope="global"
 					keypath="oauth.consent.title"
 					tag="h1"
 					class="text-lg font-semibold"
@@ -108,6 +109,7 @@ async function decide(accept: boolean) {
 					</template>
 				</i18n-t>
 				<i18n-t
+					scope="global"
 					keypath="oauth.consent.description"
 					tag="p"
 					class="text-2sm text-muted-foreground"

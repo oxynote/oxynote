@@ -106,7 +106,12 @@ async function revoke(id: string) {
 		</div>
 		<div class="my-3.5 h-px w-full bg-border" />
 		<div class="flex w-full flex-col gap-0.75">
-			<i18n-t keypath="settings.mcp.clients-label" tag="div" class="text-2base">
+			<i18n-t
+				keypath="settings.mcp.clients-label"
+				scope="global"
+				tag="div"
+				class="text-2base"
+			>
 				<template #count>{{ consents.length }}</template>
 			</i18n-t>
 			<div v-if="consents.length === 0" class="text-2sm text-muted-foreground">

@@ -7,7 +7,7 @@ import {
 	seedQueryData,
 } from "~/composables/api/test-helpers"
 import McpSection from "./McpSection.vue"
-import { findButtonByText, settleMutations } from "../test-helpers"
+import { findButtonByText, settleMutations, t } from "../test-helpers"
 
 // $authRealtimeAPIClient carries an absolute base url, so its requests
 // match the absolute registration — not the bare path a better-auth call
@@ -54,7 +54,7 @@ describe("<McpSection>", { concurrent: false }, () => {
 
 		const wrapper = await mountSuspended(McpSection)
 
-		expect(wrapper.text()).toContain("Server URL")
+		expect(wrapper.text()).toContain(t("settings.mcp.endpoint-label"))
 		expect(wrapper.find("code").text()).toContain("/api/mcp")
 	})
 
@@ -65,8 +65,10 @@ describe("<McpSection>", { concurrent: false }, () => {
 
 		const wrapper = await mountSuspended(McpSection)
 
-		expect(wrapper.text()).toContain("Authorized clients (0)")
-		expect(wrapper.text()).toContain("No clients authorized yet")
+		expect(wrapper.text()).toContain(
+			t("settings.mcp.clients-label", { count: 0 }),
+		)
+		expect(wrapper.text()).toContain(t("settings.mcp.no-clients"))
 		expect(wrapper.find("table").exists()).toBe(false)
 	})
 
@@ -76,7 +78,9 @@ describe("<McpSection>", { concurrent: false }, () => {
 
 		const wrapper = await mountSuspended(McpSection)
 
-		expect(wrapper.text()).toContain("Authorized clients (2)")
+		expect(wrapper.text()).toContain(
+			t("settings.mcp.clients-label", { count: 2 }),
+		)
 		expect(wrapper.findAll("tbody tr")).toHaveLength(2)
 	})
 
@@ -88,21 +92,24 @@ describe("<McpSection>", { concurrent: false }, () => {
 		await settleMutations()
 
 		expect(wrapper.text()).toContain("Claude Code")
-		expect(wrapper.text()).toContain("Read, Write")
+		expect(wrapper.text()).toContain(
+			`${t("settings.mcp.scopes.documents-read")}, ${t("settings.mcp.scopes.documents-write")}`,
+		)
 	})
 
 	it("falls back to a placeholder when the client name cannot be read", async ({
 		expect,
 	}) => {
+		// an h3 error fails the request without dumping a stack to stderr
 		mockEndpoint("GET", `${AUTH_REALTIME_BASE}/oauth2/public-client`, () => {
-			throw new Error("gone")
+			throw createError({ statusCode: 500 })
 		})
 		seedConsents([makeConsent()])
 
 		const wrapper = await mountSuspended(McpSection)
 		await settleMutations()
 
-		expect(wrapper.text()).toContain("Unknown client")
+		expect(wrapper.text()).toContain(t("settings.mcp.unknown-client"))
 	})
 
 	it("shows an unrecognised scope verbatim rather than dropping it", async ({
@@ -113,7 +120,9 @@ describe("<McpSection>", { concurrent: false }, () => {
 
 		const wrapper = await mountSuspended(McpSection)
 
-		expect(wrapper.text()).toContain("Read, wibble")
+		expect(wrapper.text()).toContain(
+			`${t("settings.mcp.scopes.documents-read")}, wibble`,
+		)
 	})
 
 	it("revokes the client whose row was acted on", async ({ expect }) => {
@@ -129,7 +138,7 @@ describe("<McpSection>", { concurrent: false }, () => {
 		mockEndpoint("GET", `${AUTH_REALTIME_BASE}/oauth2/get-consents`, () => [])
 
 		const wrapper = await mountSuspended(McpSection)
-		await findButtonByText(wrapper, "Revoke").trigger("click")
+		await findButtonByText(wrapper, t("settings.mcp.revoke")).trigger("click")
 		await settleMutations()
 
 		expect(revocations).toHaveLength(1)
