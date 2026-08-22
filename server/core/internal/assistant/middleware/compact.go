@@ -11,8 +11,22 @@ import (
 	"github.com/cloudwego/eino/adk/middlewares/summarization"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
-	"github.com/oxynote/oxynote/server/core/internal/assistant/offload"
+	"github.com/oxynote/oxynote/server/core/internal/assistant/persist"
+	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
 )
+
+// _maxToolResultChars is the largest single tool result kept in the
+// conversation whole. Past it the result is offloaded and replaced with
+// a head/tail preview plus a handle the model can read back.
+//
+// It sits where a document has to be genuinely large before the model
+// stops seeing it in full — around five hundred blocks of summary — so
+// truncation stays the exception rather than something ordinary reads
+// hit. Lower, and routine reads would cost an extra turn to page back
+// in; higher, and one result could take a quarter of the context
+// window. This is eino's own default, restated as a decision rather
+// than inherited silently.
+const _maxToolResultChars = 50_000
 
 // NewCompaction builds the two middlewares that keep a long conversation
 // affordable without losing it.
@@ -29,7 +43,7 @@ import (
 func NewCompaction(
 	ctx context.Context,
 	summaryModel model.ToolCallingChatModel,
-	backend *offload.Backend,
+	backend *persist.Offload,
 	writeNames []string,
 ) ([]adk.ChatModelAgentMiddleware, error) {
 	// a typed nil would satisfy reduction's interface field and defeat
@@ -41,7 +55,8 @@ func NewCompaction(
 
 	red, err := reduction.New(ctx, &reduction.Config{
 		Backend:              backend,
-		ReadFileToolName:     offload.ReadToolName,
+		ReadFileToolName:     string(tools.NameReadToolOutput),
+		MaxLengthForTrunc:    _maxToolResultChars,
 		ClearExcludeTools:    writeNames,
 		ClearMessageRewriter: newClearRewriter(writeNames),
 	})
@@ -54,7 +69,10 @@ func NewCompaction(
 		return nil, fmt.Errorf("building context summarization: %w", err)
 	}
 
-	return []adk.ChatModelAgentMiddleware{red, sum}, nil
+	return []adk.ChatModelAgentMiddleware{
+		red,
+		sum,
+	}, nil
 }
 
 // newClearRewriter builds the rewriter that replaces a cleared read

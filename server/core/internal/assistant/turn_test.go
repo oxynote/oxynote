@@ -102,7 +102,7 @@ func Test_turn_run(t *testing.T) {
 					Interrupted: &adk.InterruptInfo{
 						InterruptContexts: []*adk.InterruptCtx{{
 							ID: "i1",
-							Info: tools.ConfirmActionSummary{
+							Info: tools.ActionSummary{
 								Tool:    string(tools.NameCreateDocument),
 								Summary: "Create Runbook",
 							},
@@ -144,17 +144,17 @@ func Test_turn_run(t *testing.T) {
 func Test_turn_finish(t *testing.T) {
 	t.Parallel()
 
-	m := testManager()
+	m, st := testManagerStores()
 	tn, rec := prepTurn(t, m)
 
 	tn.finish(context.Background())
 
 	assert.Contains(t, rec.types(), string(protocol.ServerTypeDone))
-	assert.Len(t, m.history.(*HistoryStoreMock).SetCalls(), 1)
+	assert.Len(t, st.history.SetCalls(), 1)
 
 	// a completed turn is not resumable, so its checkpoint would
 	// otherwise hold a whole conversation until the key expired.
-	assert.Len(t, m.blobs.(*BlobStoreMock).DeleteCalls(), 1)
+	assert.Len(t, st.blobs.DeleteCalls(), 1)
 }
 
 func Test_turn_relayOutput(t *testing.T) {
@@ -376,7 +376,7 @@ func Test_turn_confirmation(t *testing.T) {
 			Info: &adk.InterruptInfo{
 				InterruptContexts: []*adk.InterruptCtx{{
 					ID: "i1",
-					Info: tools.ConfirmActionSummary{
+					Info: tools.ActionSummary{
 						Tool:         string(tools.NameUpdateBlockText),
 						DocumentID:   "d1",
 						DocumentName: "Runbook",

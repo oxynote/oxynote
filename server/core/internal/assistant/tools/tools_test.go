@@ -6,8 +6,6 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/oxynote/oxynote/server/core/internal/document"
-	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -33,13 +31,29 @@ func allToolNames() []Name {
 		NameUpdateBlockText,
 		NameUpdateBlockAttrs,
 		NameDeleteBlock,
+		NameReadToolOutput,
 	}
+}
+
+// adapter returns the eino adapter underneath a registry entry, gated
+// or not, so a test can reach the tool the registry wrapped.
+func adapter(t *testing.T, it registryTool) *einoTool {
+	t.Helper()
+
+	if c, ok := it.(*confirming); ok {
+		return c.einoTool
+	}
+
+	et, ok := it.(*einoTool)
+	require.True(t, ok, "the registry holds an unexpected %T", it)
+
+	return et
 }
 
 func Test_New(t *testing.T) {
 	t.Parallel()
 
-	s := New(testInput())
+	s := New(testDeps(nil, nil, nil))
 	require.NotNil(t, s)
 
 	// every tool the model is told about has to be reachable by the
@@ -53,13 +67,44 @@ func Test_New(t *testing.T) {
 		info, err := it.Info(context.Background())
 		require.NoError(t, err)
 		assert.Equal(t, string(name), info.Name)
+
+		tl := adapter(t, it).tl
+		tr := tl.Traits()
+
+		// a write has to describe what it proposes, and nothing else
+		// has anything to propose. Every tool satisfies the interface,
+		// so this asks what a compiler cannot: that the summary is
+		// actually there.
+		sum, serr := tl.Summary(testInput(testDeps(nil, nil, nil), name, `{}`))
+		require.NoError(t, serr)
+		assert.Equal(t, tr.Write, sum.Summary != "",
+			"%s declares Write=%v but Summary=%q", name, tr.Write, sum.Summary)
+
+		// a destructive tool is a write first; nothing else can be
+		// destructive.
+		if tr.Destructive {
+			assert.True(t, tr.Write, "%s is destructive without being a write", name)
+		}
+
+		// the gate is applied here rather than by each tool, so a write
+		// cannot declare itself one and quietly skip the prompt.
+		c, gated := it.(*confirming)
+		require.Equal(t, tr.Write, gated, "%s is gated=%v but declares Write=%v", name, gated, tr.Write)
+
+		if !gated {
+			continue
+		}
+
+		// the gate carries the tool's own destructive trait: approving
+		// a batch of text edits is not consent to delete.
+		assert.Equal(t, tr.Destructive, c.destructive, "%s gate destructive flag", name)
 	}
 }
 
 func Test_Set_Tools(t *testing.T) {
 	t.Parallel()
 
-	ts := New(testInput()).Tools()
+	ts := New(testDeps(nil, nil, nil)).Tools()
 	require.Len(t, ts, len(allToolNames()))
 
 	got := make([]Name, 0, len(ts))
@@ -76,12 +121,101 @@ func Test_Set_Tools(t *testing.T) {
 	assert.Equal(t, allToolNames(), got)
 }
 
+func Test_Set_Entries(t *testing.T) {
+	t.Parallel()
+
+	s := New(testDeps(nil, nil, nil))
+
+	entries := s.Entries()
+	require.Len(t, entries, len(allToolNames()))
+
+	destructive := []Name{NameDeleteDocument, NameDeleteBlock}
+
+	for i, e := range entries {
+		assert.Equal(t, allToolNames()[i], e.Name)
+
+		// the entry carries the tool's own description, so a surface
+		// outside this package never has to ask the tool for it.
+		assert.Equal(t, e.Name, e.Info.Name)
+		assert.NotEmpty(t, e.Info.Description)
+
+		// the entry carries the tool without its confirmation gate,
+		// while the registry keeps the gated one for the chat loop.
+		_, gated := e.Tool.(*confirming)
+		assert.False(t, gated, "%s entry must be ungated", e.Name)
+
+		assert.Equal(t, slices.Contains(s.WriteNames(), string(e.Name)), e.Write, "%s write flag", e.Name)
+		assert.Equal(t, slices.Contains(destructive, e.Name), e.Destructive, "%s destructive flag", e.Name)
+		assert.Equal(t, e.Name == NameReadToolOutput, e.Internal, "%s internal flag", e.Name)
+	}
+
+	// mutating the returned slice must not affect the registry.
+	entries[0].Name = "clobbered"
+	assert.Equal(t, allToolNames()[0], s.Entries()[0].Name)
+}
+
+func Test_Set_Entry(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Set    *Set
+		Name   Name
+		Result Name
+		Found  bool
+	}{
+		"Empty registry": {
+			Set:  &Set{},
+			Name: NameReadDocumentSummary,
+		},
+		"Unknown name": {
+			Set:  New(testDeps(nil, nil, nil)),
+			Name: "not_a_tool",
+		},
+		"Registered read tool": {
+			Set:    New(testDeps(nil, nil, nil)),
+			Name:   NameReadDocumentSummary,
+			Result: NameReadDocumentSummary,
+			Found:  true,
+		},
+		"Registered write tool comes back ungated": {
+			Set:    New(testDeps(nil, nil, nil)),
+			Name:   NameDeleteDocument,
+			Result: NameDeleteDocument,
+			Found:  true,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			e, ok := c.Set.Entry(c.Name)
+			assert.Equal(t, c.Found, ok)
+
+			if !c.Found {
+				assert.Equal(t, Entry{}, e)
+
+				return
+			}
+
+			assert.Equal(t, c.Result, e.Name)
+
+			_, gated := e.Tool.(*confirming)
+			assert.False(t, gated, "%s entry must be ungated", e.Name)
+		})
+	}
+}
+
 func Test_Set_WriteNames(t *testing.T) {
 	t.Parallel()
 
-	got := New(testInput()).WriteNames()
+	s := New(testDeps(nil, nil, nil))
 
-	want := []string{
+	got := s.WriteNames()
+
+	// exactly the tools gated behind confirmation, so the context
+	// middlewares and the gate cannot drift apart.
+	assert.ElementsMatch(t, []string{
 		string(NameCreateDocument),
 		string(NameDeleteDocument),
 		string(NameRenameDocument),
@@ -94,69 +228,15 @@ func Test_Set_WriteNames(t *testing.T) {
 		string(NameUpdateBlockText),
 		string(NameUpdateBlockAttrs),
 		string(NameDeleteBlock),
-	}
+	}, got)
 
-	slices.Sort(got)
-	slices.Sort(want)
-
-	// the reads are absent: a stale read can always be taken again,
-	// while what the model changed has to stay in its context.
-	assert.Equal(t, want, got)
-}
-
-func Test_Set_WriteNames_isACopy(t *testing.T) {
-	t.Parallel()
-
-	s := New(testInput())
-
-	got := s.WriteNames()
+	// mutating the returned slice must not affect the registry.
 	got[0] = "clobbered"
 
-	assert.NotEqual(t, "clobbered", s.WriteNames()[0])
+	assert.NotContains(t, s.WriteNames(), "clobbered")
 }
 
 func Test_Set_Label(t *testing.T) {
-	t.Parallel()
-
-	// every tool decides for itself what the user is told while it
-	// runs, so every tool is asked here.
-	cc := map[Name]struct {
-		Args   string
-		Result string
-	}{
-		NameListDocuments:       {Args: `{}`},
-		NameGetDocument:         {Args: `{"document_id":"d"}`},
-		NameSetDocumentIcon:     {Args: `{"document_id":"d","icon":"lucide:cat"}`},
-		NameReadDocumentSummary: {Args: `{"document_id":"d"}`, Result: "Reading document"},
-		NameReadBlock:           {Args: `{"document_id":"d","block_uid":"b"}`, Result: "Reading a block in document"},
-		NameSearchDocuments:     {Args: `{"query":"rate limit"}`, Result: `Searching for "rate limit"`},
-		NameCreateDocument:      {Args: `{"name":"Runbook"}`, Result: `Creating "Runbook"`},
-		NameDeleteDocument:      {Args: `{"document_id":"d"}`, Result: "Deleting document"},
-		NameRenameDocument:      {Args: `{"document_id":"d","name":"n"}`, Result: "Renaming document"},
-		NameMoveDocument:        {Args: `{"document_id":"d"}`, Result: "Moving document"},
-		NameInsertBlock:         {Args: `{"document_id":"d"}`, Result: "Updating document"},
-		NameAppendBlock:         {Args: `{"document_id":"d"}`, Result: "Updating document"},
-		NamePrependBlock:        {Args: `{"document_id":"d"}`, Result: "Updating document"},
-		NameReplaceBlock:        {Args: `{"document_id":"d"}`, Result: "Updating document"},
-		NameUpdateBlockText:     {Args: `{"document_id":"d"}`, Result: "Updating document"},
-		NameUpdateBlockAttrs:    {Args: `{"document_id":"d"}`, Result: "Updating document"},
-		NameDeleteBlock:         {Args: `{"document_id":"d"}`, Result: "Updating document"},
-	}
-
-	require.Len(t, cc, len(allToolNames()), "every tool must state its label")
-
-	for name, c := range cc {
-		t.Run(string(name), func(t *testing.T) {
-			t.Parallel()
-
-			s := New(testInput())
-
-			assert.Equal(t, c.Result, s.Label(context.Background(), name, json.RawMessage(c.Args)))
-		})
-	}
-}
-
-func Test_Set_Label_edgeCases(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
@@ -164,17 +244,34 @@ func Test_Set_Label_edgeCases(t *testing.T) {
 		Args   string
 		Result string
 	}{
-		"Search without a query": {
-			Name: NameSearchDocuments, Args: `{}`, Result: "Searching documents",
+		"Unknown name is not an error": {
+			Name: "not_a_tool",
+			Args: `{}`,
 		},
-		"Create without a name": {
-			Name: NameCreateDocument, Args: `{}`, Result: "Creating a document",
+		"Tool that declines to announce itself": {
+			Name: NameListDocuments,
+			Args: `{}`,
 		},
-		"Malformed args degrade the label rather than failing": {
-			Name: NameSearchDocuments, Args: `{broken`, Result: "Searching documents",
+		"Read names the document": {
+			Name:   NameReadDocumentSummary,
+			Args:   `{"document_id":"` + _testDocID + `"}`,
+			Result: "Reading Runbook",
 		},
-		"A tool the set does not own is silent": {
-			Name: Name("read_tool_output"), Args: `{}`,
+		"Write names the document": {
+			Name:   NameUpdateBlockText,
+			Args:   `{"document_id":"` + _testDocID + `"}`,
+			Result: "Updating Runbook",
+		},
+		"Unresolvable document falls back": {
+			Name:   NameReadDocumentSummary,
+			Args:   `{}`,
+			Result: "Reading document",
+		},
+		"Malformed arguments are not announced": {
+			// the call is about to fail on these same arguments, and
+			// that failure is the tool's to report.
+			Name: NameReadDocumentSummary,
+			Args: `{`,
 		},
 	}
 
@@ -182,49 +279,10 @@ func Test_Set_Label_edgeCases(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			s := New(testInput())
+			s := New(testDeps(stubDocumentDB(), nil, nil))
 
-			assert.Equal(t, c.Result, s.Label(context.Background(), c.Name, json.RawMessage(c.Args)))
+			got := s.Label(context.Background(), c.Name, json.RawMessage(c.Args))
+			assert.Equal(t, c.Result, got)
 		})
 	}
-}
-
-func Test_Set_Label_namesTheDocument(t *testing.T) {
-	t.Parallel()
-
-	inp := testInput()
-	inp.db = &DBMock{
-		FetchDocumentFunc: func(_ context.Context, id xid.ID, orgID, _ string) (*document.Document, error) {
-			return &document.Document{
-				Branch:         document.Branch{DocumentName: "Runbook"},
-				ID:             id,
-				OrganizationID: orgID,
-			}, nil
-		},
-	}
-
-	got := New(inp).Label(
-		context.Background(),
-		NameReadDocumentSummary,
-		json.RawMessage(`{"document_id":"`+xid.New().String()+`"}`),
-	)
-
-	// a resolvable document is named, so the pill says what is being
-	// read rather than "document".
-	assert.Equal(t, "Reading Runbook", got)
-}
-
-func Test_unwrap(t *testing.T) {
-	t.Parallel()
-
-	s := New(testInput())
-
-	// a read is stored bare, so unwrapping it changes nothing.
-	read := s.tools[NameReadBlock]
-	assert.Equal(t, read, unwrap(read))
-
-	// a write is stored gated, and unwrapping reaches the tool itself.
-	write := s.tools[NameInsertBlock]
-	assert.NotEqual(t, write, unwrap(write))
-	assert.IsType(t, &insertBlock{}, unwrap(write))
 }

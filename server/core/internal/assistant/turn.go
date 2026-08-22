@@ -8,6 +8,7 @@ import (
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/schema"
+	"github.com/oxynote/oxynote/server/core/internal/assistant/persist"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/protocol"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
 	"github.com/rs/xid"
@@ -53,7 +54,7 @@ func (t *turn) fail(ctx context.Context, msg string, err error) {
 func (t *turn) run(
 	ctx context.Context,
 	iter *adk.AsyncIterator[*adk.AgentEvent],
-) *pendingConfirm {
+) *persist.PendingConfirm {
 	for {
 		event, ok := iter.Next()
 		if !ok {
@@ -87,8 +88,8 @@ func (t *turn) finish(ctx context.Context) {
 	msgs := t.sess.messages
 	t.sess.mu.Unlock()
 
-	t.sess.man.saveMessages(ctx, t.sess.key, msgs)
-	t.sess.man.clearCheckpoint(ctx, t.sess.key)
+	t.sess.man.history.Save(ctx, t.sess.key, msgs)
+	t.sess.man.checkpoints.Clear(ctx, t.sess.key)
 	t.sess.writer.WriteJSON(ctx, protocol.NewDoneMessage())
 }
 
@@ -207,7 +208,7 @@ func (t *turn) recordUsage(msg *schema.Message) {
 func (t *turn) confirmation(
 	ctx context.Context,
 	info *adk.InterruptInfo,
-) *pendingConfirm {
+) *persist.PendingConfirm {
 	actions := make([]protocol.ConfirmAction, 0, len(info.InterruptContexts))
 	ids := make([]string, 0, len(info.InterruptContexts))
 
@@ -216,7 +217,7 @@ func (t *turn) confirmation(
 			continue
 		}
 
-		summary, ok := ic.Info.(tools.ConfirmActionSummary)
+		summary, ok := ic.Info.(tools.ActionSummary)
 		if !ok {
 			// an interrupt this package did not raise has no user-facing
 			// description, but it still has to be resumed or the turn
@@ -247,7 +248,7 @@ func (t *turn) confirmation(
 		slog.Int("action_count", len(actions)),
 	)
 
-	return &pendingConfirm{
+	return &persist.PendingConfirm{
 		TurnID:       t.id,
 		InterruptIDs: ids,
 		Actions:      actions,

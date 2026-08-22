@@ -55,7 +55,7 @@ func expandMacros(q string, expand func(name string, args []string) (string, boo
 func scanMacro(q string, i int) (name string, args []string, end int, ok bool) {
 	j := i + len(_macroPrefix)
 
-	for j < len(q) && (isWordByte(q[j])) {
+	for j < len(q) && isWordByte(q[j]) {
 		j++
 	}
 

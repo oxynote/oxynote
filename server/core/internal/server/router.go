@@ -100,6 +100,11 @@ func (s *Server) httpRouter() chi.Router {
 	r.Route("/api", func(sr chi.Router) {
 		sr.Mount("/", s.router())
 
+		// The MCP surface authenticates with OAuth bearer tokens
+		// through its own middleware, so it mounts outside the
+		// cookie-session subtree.
+		sr.Mount("/mcp", s.handlers.mcp)
+
 		// Third parties deliver here, so this subtree has to stay
 		// reachable through the front door — unlike /x below.
 		sr.Mount("/apps", s.appsRouter())

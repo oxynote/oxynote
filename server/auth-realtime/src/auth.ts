@@ -1,8 +1,9 @@
 import * as Sentry from "@sentry/node"
 import { betterAuth } from "better-auth"
 import { createAuthMiddleware } from "better-auth/api"
-import { organization } from "better-auth/plugins"
+import { jwt, organization } from "better-auth/plugins"
 import { electron } from "@better-auth/electron"
+import { mcp } from "@better-auth/mcp"
 import { createClient } from "redis"
 import { db, dialect } from "./database.js"
 import axios from "axios"
@@ -21,6 +22,16 @@ const PUBLIC_AUTH_BASE_URL = process.env
 	.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_BASE_URL as string
 
 const AUTH_ORIGIN = new URL(PUBLIC_AUTH_BASE_URL).origin
+
+// the canonical MCP protected-resource URL (RFC 8707/9728) — core's MCP
+// endpoint as clients reach it through the front door. Issued access tokens
+// are audience-bound to it.
+export const MCP_RESOURCE = process.env
+	.OXYNOTE_AUTH_REALTIME_MCP_RESOURCE as string
+
+// MCP access tokens carry better-auth's resolved base URL (origin + basePath)
+// as their issuer. The internal MCP session endpoint verifies against it.
+export const MCP_TOKEN_ISSUER = `${AUTH_ORIGIN}/api/auth`
 
 const GOOGLE_CONFIGURED = Boolean(
 	process.env.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_GOOGLE_CLIENT_ID &&
@@ -172,6 +183,29 @@ export const auth = betterAuth({
 				throw err
 			}
 		},
+		getAndDelete: async (key) => {
+			try {
+				return await redisClient.getDel(key)
+			} catch (err) {
+				Sentry.captureException(err)
+				throw err
+			}
+		},
+		increment: async (key, ttl) => {
+			try {
+				const count = await redisClient.incr(key)
+
+				// NX applies the TTL only when the key has none yet, so
+				// the counter expires a fixed window after creation and
+				// later increments never extend it.
+				await redisClient.expire(key, ttl, "NX")
+
+				return count
+			} catch (err) {
+				Sentry.captureException(err)
+				throw err
+			}
+		},
 		set: async (key, value, ttl) => {
 			try {
 				if (ttl) {
@@ -249,7 +283,18 @@ export const auth = betterAuth({
 	},
 	session: {
 		modelName: "user_sessions",
-		storeSessionInDatabase: false,
+		// the OAuth provider (mcp plugin) refuses to run on
+		// secondary-storage-only sessions, so sessions are persisted to
+		// the database as well; Valkey stays the hot path for lookups.
+		storeSessionInDatabase: true,
+		fields: {
+			expiresAt: "expires_at",
+			createdAt: "created_at",
+			updatedAt: "updated_at",
+			ipAddress: "ip_address",
+			userAgent: "user_agent",
+			userId: "fk_user_id",
+		},
 	},
 	verification: {
 		modelName: "user_verifications",
@@ -276,6 +321,12 @@ export const auth = betterAuth({
 			organizationLimit: 1,
 			membershipLimit: MAX_ORGANIZATION_MEMBERS,
 			schema: {
+				session: {
+					fields: {
+						activeOrganizationId:
+							"active_organization_id",
+					},
+				},
 				organization: {
 					modelName: "organizations",
 					fields: {
@@ -332,6 +383,176 @@ export const auth = betterAuth({
 					organization: data.organization.name,
 					link: inviteLink,
 				})
+			},
+		}),
+		// the mcp plugin requires jwt: MCP access tokens are JWTs signed
+		// with a key from the jwks table.
+		jwt({
+			schema: {
+				jwks: {
+					fields: {
+						publicKey: "public_key",
+						privateKey: "private_key",
+						createdAt: "created_at",
+						expiresAt: "expires_at",
+					},
+				},
+			},
+		}),
+		mcp({
+			loginPage: `${FRONTEND_URL}/login`,
+			consentPage: `${FRONTEND_URL}/oauth-consent`,
+			resource: MCP_RESOURCE,
+			scopes: ["documents:read", "documents:write"],
+			// MCP clients self-register per RFC 7591 before the user has
+			// any session, so registration must be open. What a client
+			// can actually do is still gated by the user's consent and
+			// the token scopes.
+			allowDynamicClientRegistration: true,
+			allowUnauthenticatedClientRegistration: true,
+			// bind the token to the user's organization at issuance the
+			// same way session creation resolves activeOrganizationId, so
+			// core can scope every MCP call without a per-request lookup.
+			customAccessTokenClaims: async ({ user }) => {
+				if (!user) {
+					return {}
+				}
+
+				try {
+					const orgId = await userOrganizationId(
+						user.id,
+					)
+
+					return orgId ? { org_id: orgId } : {}
+				} catch (err) {
+					Sentry.captureException(err)
+					throw err
+				}
+			},
+			schema: {
+				oauthClient: {
+					modelName: "oauth_clients",
+					fields: {
+						clientId: "client_id",
+						clientSecret: "client_secret",
+						clientDiscoveryId:
+							"client_discovery_id",
+						skipConsent: "skip_consent",
+						enableEndSession:
+							"enable_end_session",
+						subjectType: "subject_type",
+						clientCredentialsScopes:
+							"client_credentials_scopes",
+						userId: "fk_user_id",
+						createdAt: "created_at",
+						updatedAt: "updated_at",
+						softwareId: "software_id",
+						softwareVersion:
+							"software_version",
+						softwareStatement:
+							"software_statement",
+						redirectUris: "redirect_uris",
+						postLogoutRedirectUris:
+							"post_logout_redirect_uris",
+						backchannelLogoutUri:
+							"backchannel_logout_uri",
+						backchannelLogoutSessionRequired:
+							"backchannel_logout_session_required",
+						tokenEndpointAuthMethod:
+							"token_endpoint_auth_method",
+						applicationType:
+							"application_type",
+						jwksUri: "jwks_uri",
+						grantTypes: "grant_types",
+						responseTypes: "response_types",
+						requirePKCE: "require_pkce",
+						dpopBoundAccessTokens:
+							"dpop_bound_access_tokens",
+						referenceId: "reference_id",
+					},
+				},
+				oauthResource: {
+					modelName: "oauth_resources",
+					fields: {
+						accessTokenTtl:
+							"access_token_ttl",
+						refreshTokenTtl:
+							"refresh_token_ttl",
+						signingAlgorithm:
+							"signing_algorithm",
+						signingKeyId: "signing_key_id",
+						allowedScopes: "allowed_scopes",
+						customClaims: "custom_claims",
+						dpopBoundAccessTokensRequired:
+							"dpop_bound_access_tokens_required",
+						createdAt: "created_at",
+						updatedAt: "updated_at",
+						policyVersion: "policy_version",
+					},
+				},
+				oauthClientResource: {
+					modelName: "oauth_client_resources",
+					fields: {
+						clientId: "client_id",
+						resourceId: "resource_id",
+						createdAt: "created_at",
+					},
+				},
+				oauthRefreshToken: {
+					modelName: "oauth_refresh_tokens",
+					fields: {
+						clientId: "client_id",
+						sessionId: "session_id",
+						userId: "fk_user_id",
+						referenceId: "reference_id",
+						authorizationCodeId:
+							"authorization_code_id",
+						requestedUserInfoClaims:
+							"requested_user_info_claims",
+						expiresAt: "expires_at",
+						createdAt: "created_at",
+						rotatedAt: "rotated_at",
+						rotationReplayResponse:
+							"rotation_replay_response",
+						rotationReplayExpiresAt:
+							"rotation_replay_expires_at",
+						authTime: "auth_time",
+					},
+				},
+				oauthAccessToken: {
+					modelName: "oauth_access_tokens",
+					fields: {
+						clientId: "client_id",
+						sessionId: "session_id",
+						userId: "fk_user_id",
+						referenceId: "reference_id",
+						authorizationCodeId:
+							"authorization_code_id",
+						requestedUserInfoClaims:
+							"requested_user_info_claims",
+						refreshId: "fk_refresh_token_id",
+						expiresAt: "expires_at",
+						createdAt: "created_at",
+					},
+				},
+				oauthConsent: {
+					modelName: "oauth_consents",
+					fields: {
+						clientId: "client_id",
+						userId: "fk_user_id",
+						referenceId: "reference_id",
+						requestedUserInfoClaims:
+							"requested_user_info_claims",
+						createdAt: "created_at",
+						updatedAt: "updated_at",
+					},
+				},
+				oauthClientAssertion: {
+					modelName: "oauth_client_assertions",
+					fields: {
+						expiresAt: "expires_at",
+					},
+				},
 			},
 		}),
 	],

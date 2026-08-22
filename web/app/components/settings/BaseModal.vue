@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import AppsSection from "./AppsSection.vue"
+import McpSection from "./McpSection.vue"
 import ProfileSection from "./ProfileSection.vue"
 import type { OrganizationMember } from "./workspace"
 import WorkspaceSection from "./WorkspaceSection.vue"
@@ -51,6 +52,11 @@ const sections = [
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
 		component: AppsSection,
 		id: APP_SECTION_ID, // for scrolling into view when opened
+	},
+	{
+		title: t("settings.mcp.title"),
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
+		component: McpSection,
 	},
 	{
 		title: t("settings.data-sources.title"),

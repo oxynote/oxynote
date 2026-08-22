@@ -8,8 +8,8 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	mock "github.com/oxynote/oxynote/server/core/internal/_mock"
-	"github.com/oxynote/oxynote/server/core/internal/assistant/offload"
-	offloadMock "github.com/oxynote/oxynote/server/core/internal/assistant/offload/_mock"
+	"github.com/oxynote/oxynote/server/core/internal/assistant/persist"
+	persistMock "github.com/oxynote/oxynote/server/core/internal/assistant/persist/_mock"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -20,17 +20,17 @@ func Test_NewCompaction(t *testing.T) {
 
 	cc := map[string]struct {
 		Model   model.ToolCallingChatModel
-		Backend *offload.Backend
+		Backend *persist.Offload
 		Writes  []string
 		Err     error
 	}{
 		"Both middlewares are built": {
 			Model:   &mock.ChatModel{},
-			Backend: offload.New(&offloadMock.Store{}),
+			Backend: persist.NewOffload(&persistMock.BlobStore{}),
 			Writes:  []string{"insert_block"},
 		},
 		"Summarization needs a model": {
-			Backend: offload.New(&offloadMock.Store{}),
+			Backend: persist.NewOffload(&persistMock.BlobStore{}),
 			Err:     assert.AnError,
 		},
 		"Reduction needs a backend": {

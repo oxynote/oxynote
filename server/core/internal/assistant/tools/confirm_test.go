@@ -9,7 +9,6 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
-	"github.com/guregu/null/v5"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,39 +23,6 @@ func gatedTool(t *testing.T, s *Set, name Name) tool.InvokableTool {
 	require.True(t, ok, "%s is not in the registry", name)
 
 	return it
-}
-
-func Test_confirming_gatesEveryWrite(t *testing.T) {
-	t.Parallel()
-
-	s := New(testInput())
-
-	for _, name := range allToolNames() {
-		_, gated := s.tools[name].(*confirming)
-		_, writes := unwrap(s.tools[name]).(Confirmer)
-
-		// the gate and the write classification are the same fact, so
-		// neither can be true without the other.
-		assert.Equal(t, writes, gated, "%s", name)
-	}
-}
-
-func Test_confirming_destructiveIgnoresAutoApprove(t *testing.T) {
-	t.Parallel()
-
-	s := New(testInput())
-
-	destructive := map[Name]bool{NameDeleteDocument: true, NameDeleteBlock: true}
-
-	for _, name := range allToolNames() {
-		c, ok := s.tools[name].(*confirming)
-		if !ok {
-			continue
-		}
-
-		// approving a batch of text edits is not consent to delete.
-		assert.Equal(t, destructive[name], c.destructive, "%s", name)
-	}
 }
 
 // gateCase is one Test_confirming_InvokableRun scenario.
@@ -82,6 +48,10 @@ type gateCase struct {
 	// Interrupted expects the final outcome to be a pending
 	// confirmation.
 	Interrupted bool
+
+	// Rejected expects the gate to refuse the call outright instead of
+	// parking it, because the arguments cannot be read.
+	Rejected bool
 
 	// RespJSON is the final tool result when the run completes.
 	RespJSON string
@@ -140,15 +110,33 @@ func Test_confirming_InvokableRun(t *testing.T) {
 			ResumeOther: true,
 			Interrupted: true,
 		},
+		"Unreadable arguments are refused, never confirmed": {
+			Name:     NameUpdateBlockText,
+			Args:     `{`,
+			Rejected: true,
+		},
 	}
 
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			applier := stubOKApplier()
-			inp := stubEditInput(stubResolvingDB(xid.New(), null.Value[xid.ID]{}, nil), applier, nil)
-			ct := gatedTool(t, New(inp), c.Name)
+			applier := stubApplier()
+			ct := gatedTool(t, New(testDeps(stubDocumentDB(), applier, nil)), c.Name)
+
+			if c.Rejected {
+				// the same payload would be rejected by the tool on
+				// resume, so the run must not spend a confirmation on
+				// it.
+				_, rerr := ct.InvokableRun(context.Background(), c.Args)
+				require.Error(t, rerr)
+
+				_, parked := compose.IsInterruptRerunError(rerr)
+				assert.False(t, parked, "unreadable arguments must not park the run")
+				assert.Empty(t, applier.ApplyCalls())
+
+				return
+			}
 
 			var (
 				res string
@@ -275,7 +263,7 @@ func requireConfirmInterrupt(t *testing.T, err error, name Name) string {
 		info = ri
 	}
 
-	summary, ok := info.(ConfirmActionSummary)
+	summary, ok := info.(ActionSummary)
 	require.True(t, ok, "the interrupt must carry a confirm summary, got %T", info)
 	assert.Equal(t, string(name), summary.Tool)
 
@@ -359,24 +347,4 @@ func Test_autoApproved(t *testing.T) {
 	// outside an agent run there is no session, so nothing is
 	// auto-approved and the gate always prompts.
 	assert.False(t, autoApproved(context.Background()))
-}
-
-func Test_Destructive(t *testing.T) {
-	t.Parallel()
-
-	s := New(testInput())
-
-	// the marker is a method, so calling it is what proves the tool
-	// carries it rather than merely satisfying the interface by name.
-	d, ok := unwrap(s.tools[NameDeleteDocument]).(Destructive)
-	require.True(t, ok)
-	d.Destructive()
-
-	d, ok = unwrap(s.tools[NameDeleteBlock]).(Destructive)
-	require.True(t, ok)
-	d.Destructive()
-
-	// an ordinary write is not destructive, so approve-all covers it.
-	_, ok = unwrap(s.tools[NameUpdateBlockText]).(Destructive)
-	assert.False(t, ok)
 }

@@ -3,90 +3,25 @@ package assistant
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
 
 	"github.com/cloudwego/eino/adk"
-	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 	"github.com/jellydator/xync"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/middleware"
-	"github.com/oxynote/oxynote/server/core/internal/assistant/offload"
+	"github.com/oxynote/oxynote/server/core/internal/assistant/persist"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/protocol"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
 	"github.com/oxynote/oxynote/server/core/pkg/logutil"
 	"github.com/tidwall/gjson"
 )
 
-const (
-	// _agentName identifies the assistant in agent events and logs.
-	_agentName = "rubber-duck"
-
-	// _agentDescription describes the assistant to the framework. It is
-	// only surfaced when an agent is used as a tool by another agent,
-	// which Oxynote does not do, but the framework asks for it.
-	_agentDescription = "Reads and edits documents in the user's organisation."
-)
-
-// _maxAgentTurns caps the model/tool cycles in a single turn so a
-// runaway model cannot burn budget indefinitely.
-const _maxAgentTurns = 50
-
-// newAgent builds the chat agent for one session. Tools are bound to
-// the session's organisation and user, so an agent can never reach
-// another organisation's documents.
-func (m *Manager) newAgent(
-	ctx context.Context,
-	toolSet *tools.Set,
-	obs *middleware.Observer,
-) (adk.Agent, error) {
-	backend := offload.New(m.blobs)
-	ts := append(toolSet.Tools(), backend.ReadTool())
-
-	compaction, err := middleware.NewCompaction(ctx, m.summary, backend, toolSet.WriteNames())
-	if err != nil {
-		return nil, err
-	}
-
-	// the observer runs outermost so it sees the conversation as the
-	// compaction middlewares left it.
-	handlers := append([]adk.ChatModelAgentMiddleware{obs}, compaction...)
-
-	agent, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
-		Name:          _agentName,
-		Description:   _agentDescription,
-		Model:         m.model,
-		MaxIterations: _maxAgentTurns,
-		GenModelInput: genModelInput,
-		ToolsConfig: adk.ToolsConfig{
-			ToolsNodeConfig: compose.ToolsNodeConfig{
-				Tools: ts,
-
-				// tools run one at a time, in the order the model asked
-				// for them. Reads are order-independent, but an edit may
-				// reference a block an earlier edit in the same batch
-				// created, and two edits to one document must not race.
-				ExecuteSequentially: true,
-			},
-		},
-		Handlers: handlers,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("building assistant agent: %w", err)
-	}
-
-	return agent, nil
-}
-
 // session holds per-connection state for an AI assistant session.
 type session struct {
 	man    *Manager
-	orgID  string
-	userID string
 	writer protocol.SessionWriter
-	tools  *tools.Set
 	runner *adk.Runner
 
 	// key addresses this conversation's history and checkpoint.
@@ -115,16 +50,12 @@ func (m *Manager) newSession(
 	orgID, userID string,
 	writer protocol.SessionWriter,
 ) (*session, error) {
-	key := createSessionKey(orgID, userID)
-
-	toolSet := tools.New(tools.NewInput(m.log, m.db, m.search, m.applier, m.tree, orgID, userID))
+	key := persist.SessionKey(orgID, userID)
+	toolSet := m.ToolSet(orgID, userID)
 
 	s := &session{
 		man:    m,
-		orgID:  orgID,
-		userID: userID,
 		writer: writer,
-		tools:  toolSet,
 		key:    key,
 		supv:   xync.NewSupervisor(),
 	}
@@ -139,10 +70,10 @@ func (m *Manager) newSession(
 	s.runner = adk.NewRunner(ctx, adk.RunnerConfig{
 		Agent:           agent,
 		EnableStreaming: true,
-		CheckPointStore: &checkpointStore{store: m.blobs},
+		CheckPointStore: m.checkpoints,
 	})
 
-	s.messages = m.loadMessages(ctx, key)
+	s.messages = m.history.Load(ctx, key)
 	s.sendHistory(ctx)
 	s.resendPendingConfirmation(ctx)
 
@@ -181,7 +112,7 @@ func (s *session) rememberMessages(msgs []*schema.Message) {
 // question ended when the run parked, and the one that will answer it
 // does not exist until the user replies.
 func (s *session) resendPendingConfirmation(ctx context.Context) {
-	pending := s.man.loadPending(ctx, s.key)
+	pending := s.man.pendings.Load(ctx, s.key)
 	if pending == nil {
 		return
 	}
@@ -198,6 +129,46 @@ func (s *session) sendHistory(ctx context.Context) {
 	}
 
 	s.writer.WriteJSON(ctx, protocol.NewHistoryMessage(entries))
+}
+
+// buildHistory converts the stored conversation into the entries the
+// client restores into its chat pane.
+//
+// Only what a person said or was told is shown. Tool calls and their
+// results stay in the model's context, where they let it remember what
+// it already read and changed, but they are machinery rather than
+// conversation. An assistant message accompanying a tool call is
+// intermediate narration ("Let me look at that document…") and is
+// skipped for the same reason.
+func buildHistory(messages []*schema.Message) []protocol.HistoryEntry {
+	entries := make([]protocol.HistoryEntry, 0, len(messages))
+
+	for _, msg := range messages {
+		if msg == nil || msg.Content == "" {
+			continue
+		}
+
+		switch msg.Role {
+		case schema.User:
+			entries = append(entries, protocol.HistoryEntry{
+				Role:    string(schema.User),
+				Content: msg.Content,
+			})
+		case schema.Assistant:
+			if len(msg.ToolCalls) > 0 {
+				continue
+			}
+
+			entries = append(entries, protocol.HistoryEntry{
+				Role:    string(schema.Assistant),
+				Content: msg.Content,
+			})
+		case schema.System, schema.Tool:
+			// not part of the visible conversation.
+		}
+	}
+
+	return entries
 }
 
 // Process handles incoming messages from the client, dispatching by
@@ -250,14 +221,14 @@ func (s *session) handleMessage(ctx context.Context, content string) {
 	// resume from, so treat the confirmation as declined and clear
 	// both records rather than leaving a pending entry whose
 	// checkpoint is about to be deleted.
-	if s.man.loadPending(ctx, s.key) != nil {
-		s.man.clearPending(ctx, s.key)
-		s.man.clearCheckpoint(ctx, s.key)
+	if s.man.pendings.Load(ctx, s.key) != nil {
+		s.man.pendings.Clear(ctx, s.key)
+		s.man.checkpoints.Clear(ctx, s.key)
 	}
 
 	tn := s.newTurn()
 
-	s.goTurn(ctx, func(turnCtx context.Context) *pendingConfirm {
+	s.goTurn(ctx, func(turnCtx context.Context) *persist.PendingConfirm {
 		s.mu.Lock()
 		msgs := append(cloneMessages(s.messages), schema.UserMessage(content))
 		s.messages = msgs
@@ -282,22 +253,16 @@ func (s *session) handleReset(ctx context.Context) {
 	s.messages = nil
 	s.mu.Unlock()
 
-	s.man.clearPending(ctx, s.key)
-	s.man.clearCheckpoint(ctx, s.key)
-
-	if err := s.man.history.Delete(ctx, s.key); err != nil {
-		s.man.log.Error("failed to delete conversation",
-			slog.String("error", err.Error()),
-			slog.String("key", s.key),
-		)
-	}
+	s.man.pendings.Clear(ctx, s.key)
+	s.man.checkpoints.Clear(ctx, s.key)
+	s.man.history.Clear(ctx, s.key)
 }
 
 // handleConfirmResponse resumes a turn parked on a confirmation. A
 // mismatched turn id is dropped: only the outstanding confirmation can
 // be answered, and a stale reply from a previous turn must not fire.
 func (s *session) handleConfirmResponse(ctx context.Context, turnID string, approved, all bool) {
-	pending := s.man.loadPending(ctx, s.key)
+	pending := s.man.pendings.Load(ctx, s.key)
 	if pending == nil || pending.TurnID != turnID {
 		return
 	}
@@ -306,7 +271,7 @@ func (s *session) handleConfirmResponse(ctx context.Context, turnID string, appr
 		return
 	}
 
-	s.man.clearPending(ctx, s.key)
+	s.man.pendings.Clear(ctx, s.key)
 
 	s.man.log.Info("assistant confirm answered",
 		slog.String("turn_id", turnID),
@@ -318,7 +283,7 @@ func (s *session) handleConfirmResponse(ctx context.Context, turnID string, appr
 	// user was asked under.
 	tn := &turn{sess: s, id: turnID}
 
-	s.goTurn(ctx, func(turnCtx context.Context) *pendingConfirm {
+	s.goTurn(ctx, func(turnCtx context.Context) *persist.PendingConfirm {
 		targets := make(map[string]any, len(pending.InterruptIDs))
 		for _, id := range pending.InterruptIDs {
 			targets[id] = tools.Decision{Approved: approved}
@@ -338,6 +303,11 @@ func (s *session) handleConfirmResponse(ctx context.Context, turnID string, appr
 			opts...,
 		)
 		if err != nil {
+			// the pending record was the only route back to this
+			// checkpoint and is already gone, so a resume that cannot
+			// run leaves it unreachable. Reclaim it rather than let a
+			// whole conversation sit in Redis until it expires.
+			s.man.checkpoints.Clear(turnCtx, s.key)
 			tn.fail(turnCtx, "failed to resume the assistant turn", err)
 
 			return nil
@@ -371,22 +341,32 @@ func (s *session) beginTurn(ctx context.Context) bool {
 // itself, so the session is already free by the time the client is asked.
 // Otherwise a fast answer would arrive while the finished turn still held
 // the session and be rejected as "already processing".
-func (s *session) goTurn(ctx context.Context, fn func(context.Context) *pendingConfirm) {
+func (s *session) goTurn(ctx context.Context, fn func(context.Context) *persist.PendingConfirm) {
 	s.supv.Go(func(sctx context.Context) {
 		defer logutil.Recover(s.man.log, nil)
 
-		var pending *pendingConfirm
+		var pending *persist.PendingConfirm
 
 		defer func() {
+			// the pending record must survive the connection: its
+			// checkpoint is already in Redis, and losing the record
+			// would make the parked turn unreachable on reconnect.
+			//
+			// It is written before the session is released, because the
+			// read loop is a separate goroutine: a message arriving on a
+			// free session looks up the pending record to decide whether
+			// to abandon a parked turn, and would find nothing while this
+			// write was still in flight — then delete the checkpoint this
+			// record points at.
+			if pending != nil {
+				s.man.pendings.Save(context.WithoutCancel(ctx), s.key, *pending)
+			}
+
 			s.mu.Lock()
 			s.processing = false
 			s.mu.Unlock()
 
 			if pending != nil {
-				// the pending record must survive the connection: its
-				// checkpoint is already in Redis, and losing the record
-				// would make the parked turn unreachable on reconnect.
-				s.man.savePending(context.WithoutCancel(ctx), s.key, *pending)
 				s.writer.WriteJSON(ctx, protocol.NewConfirmRequest(pending.TurnID, pending.Actions))
 			}
 

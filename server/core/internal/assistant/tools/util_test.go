@@ -3,6 +3,7 @@ package tools
 import (
 	"testing"
 
+	"github.com/oxynote/oxynote/server/core/internal/assistant/block"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -29,7 +30,7 @@ func Test_subjectFor(t *testing.T) {
 
 func Test_blockKindLabel(t *testing.T) {
 	cc := map[string]struct {
-		Kind   string
+		Kind   block.Type
 		Result string
 	}{
 		"Paragraph":       {Kind: "paragraph", Result: "a paragraph"},

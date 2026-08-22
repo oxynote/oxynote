@@ -48,7 +48,7 @@ func withTx(db *DBMock, tx *TxMock, err error) *DBMock {
 			return err
 		}
 
-		*(dest.(*Tx)) = tx
+		*dest.(*Tx) = tx
 
 		return nil
 	}

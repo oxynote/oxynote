@@ -277,10 +277,11 @@ linters:
         text: G115
       # snake_case wire contracts: the assistant's Anthropic tool schemas, WS
       # chat protocol, liveedit operations payload, and canonical AI block
-      # JSON, plus the changedetection.io API.
+      # JSON (which the MCP bridge also speaks), plus the
+      # changedetection.io API.
       - linters:
           - tagliatelle
-        path: internal/assistant|internal/apps/webchange
+        path: internal/assistant|internal/apps/webchange|internal/server/internal/mcp
       - linters:
           - musttag
         text: should be annotated with the `db`

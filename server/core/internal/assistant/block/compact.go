@@ -39,7 +39,10 @@ func Compact(b document.Block) (Block, error) {
 	case document.BlockNodeMermaidBlock:
 		return compactMermaid(b, uid), nil
 	case document.BlockNodeHorizontalRule:
-		return Block{Type: BlockHorizontalRule, UID: uid}, nil
+		return Block{
+			Type: BlockHorizontalRule,
+			UID:  uid,
+		}, nil
 	case document.BlockNodeImageBlock:
 		return compactImage(b, uid), nil
 	case document.BlockNodeFigmaBlock:

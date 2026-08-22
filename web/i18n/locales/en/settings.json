@@ -445,6 +445,28 @@
 				}
 			}
 		},
+		"mcp": {
+			"title": "MCP connections",
+			"endpoint-label": "Server URL",
+			"endpoint-description": "Add this server in your AI client, then authorize it in the browser",
+			"copy-button-screen-reader-hint": "Copy the server URL",
+			"copied": "Copied to clipboard",
+			"clients-label": "Authorized clients ({count})",
+			"no-clients": "No clients authorized yet",
+			"unknown-client": "Unknown client",
+			"authorized-label": "Authorized",
+			"scopes": {
+				"documents-read": "Read",
+				"documents-write": "Write"
+			},
+			"revoke": "Revoke",
+			"errors": {
+				"revoke": {
+					"title": "Client couldn't be revoked",
+					"description": "An error occurred while revoking the client's access. Please try again"
+				}
+			}
+		},
 		"data-sources": {
 			"title": "External Data Sources",
 			"prometheus": {

@@ -8,11 +8,21 @@ import (
 )
 
 const (
+	// _subsystemAssistant namespaces every assistant metric.
 	_subsystemAssistant = "assistant"
-	_toolLabel          = "tool"
-	_statusLabel        = "status"
-	_tokenTypeLabel     = "type"
-	_providerLabel      = "provider"
+
+	// _toolLabel labels a metric with the tool it describes.
+	_toolLabel = "tool"
+
+	// _statusLabel labels a tool call with its outcome.
+	_statusLabel = "status"
+
+	// _tokenTypeLabel labels token usage with the kind of token counted.
+	_tokenTypeLabel = "type"
+
+	// _providerLabel labels token usage with the configured model
+	// provider.
+	_providerLabel = "provider"
 )
 
 // metrics holds Prometheus metrics for AI assistant operations.
@@ -35,7 +45,10 @@ func newMetrics(fc metricutil.Factory, provider string) *metrics {
 				Name:      "tool_calls_total",
 				Help:      "Tracks the number of AI assistant tool calls.",
 			},
-			[]string{_toolLabel, _statusLabel},
+			[]string{
+				_toolLabel,
+				_statusLabel,
+			},
 		),
 		toolDuration: fc.NewHistogramVec(
 			metricutil.Options{
@@ -51,7 +64,10 @@ func newMetrics(fc metricutil.Factory, provider string) *metrics {
 				Name:      "token_usage_total",
 				Help:      "Tracks the number of tokens used by AI assistant.",
 			},
-			[]string{_tokenTypeLabel, _providerLabel},
+			[]string{
+				_tokenTypeLabel,
+				_providerLabel,
+			},
 		),
 		provider: provider,
 	}

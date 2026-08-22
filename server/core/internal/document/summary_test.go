@@ -93,3 +93,31 @@ func Test_Summaries_Remove(t *testing.T) {
 		assert.ErrorIs(t, err, errutil.ErrNotFound)
 	})
 }
+
+func Test_Summaries_Descendants(t *testing.T) {
+	t.Parallel()
+
+	// empty
+	assert.Empty(t, Summaries{}.Descendants())
+
+	// nested: every summary is followed by its own descendants, so the
+	// flat list reads in document order.
+	ss, ids := stubSummaries()
+	ss[0].Children = Summaries{{ID: ids[1], DocumentName: "a1", Children: Summaries{
+		{ID: ids[2], DocumentName: "a1a"},
+	}}}
+
+	got := ss.Descendants()
+
+	require.Len(t, got, 5)
+	assert.Equal(t, []string{"a", "a1", "a1a", "b", "c"}, []string{
+		got[0].DocumentName,
+		got[1].DocumentName,
+		got[2].DocumentName,
+		got[3].DocumentName,
+		got[4].DocumentName,
+	})
+
+	// the receiver is left untouched.
+	require.Len(t, ss, 3)
+}

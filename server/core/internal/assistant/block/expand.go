@@ -299,9 +299,12 @@ func expandTitledCode(b Block) document.Block {
 	}
 
 	return document.Block{
-		Type:    document.BlockNodeTitledCodeBlock,
-		Attrs:   uidAttrs(resolveUID(b.UID)),
-		Content: []document.Block{titleNode, codeNode},
+		Type:  document.BlockNodeTitledCodeBlock,
+		Attrs: uidAttrs(resolveUID(b.UID)),
+		Content: []document.Block{
+			titleNode,
+			codeNode,
+		},
 	}
 }
 
@@ -411,9 +414,12 @@ func expandSplitDoc(b Block) (document.Block, error) {
 	}
 
 	return document.Block{
-		Type:    document.BlockNodeSplitDoc,
-		Attrs:   attrs,
-		Content: []document.Block{leftNode, rightNode},
+		Type:  document.BlockNodeSplitDoc,
+		Attrs: attrs,
+		Content: []document.Block{
+			leftNode,
+			rightNode,
+		},
 	}, nil
 }
 
@@ -444,9 +450,12 @@ func expandParamList(b Block) (document.Block, error) {
 		}
 
 		headerNode := document.Block{
-			Type:    document.BlockNodeParamListItemHeader,
-			Attrs:   uidAttrs(strutil.NanoID()),
-			Content: []document.Block{titleNode, typeNode},
+			Type:  document.BlockNodeParamListItemHeader,
+			Attrs: uidAttrs(strutil.NanoID()),
+			Content: []document.Block{
+				titleNode,
+				typeNode,
+			},
 		}
 
 		descNode := document.Block{
@@ -456,9 +465,12 @@ func expandParamList(b Block) (document.Block, error) {
 		}
 
 		children = append(children, document.Block{
-			Type:    document.BlockNodeParamListItem,
-			Attrs:   uidAttrs(resolveUID(p.UID)),
-			Content: []document.Block{headerNode, descNode},
+			Type:  document.BlockNodeParamListItem,
+			Attrs: uidAttrs(resolveUID(p.UID)),
+			Content: []document.Block{
+				headerNode,
+				descNode,
+			},
 		})
 	}
 

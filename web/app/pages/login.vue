@@ -70,6 +70,24 @@ const primaryMethod = computed(() => {
 	)
 })
 
+// an OAuth authorization request interrupted by login lands here with
+// the provider's signed query (client_id + redirect_uri + sig). After
+// sign-in the browser has to return to the authorize endpoint with that
+// query intact so the flow can continue to the consent step.
+const oauthContinueUrl = computed(() => {
+	if (!route.query.client_id || !route.query.redirect_uri) {
+		return null
+	}
+
+	const params = new URLSearchParams()
+
+	for (const [key, value] of Object.entries(route.query)) {
+		if (typeof value === "string") params.set(key, value)
+	}
+
+	return `${config.public.authRealtimeAPIBaseHttpURL}/api/auth/oauth2/authorize?${params.toString()}`
+})
+
 let redirectTimeout: ReturnType<typeof setTimeout> | undefined
 
 onMounted(() => {
@@ -93,10 +111,12 @@ async function logInWithProvider(provider: "github" | "google" | "slack") {
 
 	const res = (await signInSocial({
 		provider,
-		callbackURL: postAuthDocumentUrl(
-			config.public.appBaseURL,
-			route.query.next as string | undefined,
-		),
+		callbackURL:
+			oauthContinueUrl.value ??
+			postAuthDocumentUrl(
+				config.public.appBaseURL,
+				route.query.next as string | undefined,
+			),
 		newUserCallbackURL: postAuthDocumentUrl(
 			config.public.appBaseURL,
 			route.query.next as string | undefined,
@@ -160,6 +180,14 @@ const onEmailPasswordSubmit = emailPasswordForm.handleSubmit(async (values) => {
 	// staleTime — refetch before navigating or the middleware bounces
 	// straight back to /login
 	await fetchAuthSession.refetch()
+
+	// a full navigation, not a router push: the authorize endpoint
+	// answers with OAuth redirects the SPA router cannot follow.
+	if (oauthContinueUrl.value) {
+		window.location.href = oauthContinueUrl.value
+
+		return
+	}
 
 	const nextUrl = route.query.next as string | undefined
 	void navigateTo(nextUrl ? decodeURIComponent(nextUrl) : "/", {

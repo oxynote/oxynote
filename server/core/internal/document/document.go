@@ -401,6 +401,7 @@ func applyMetrics(rb RootBlock, metricGrids []Block, dataSourceID null.Value[xid
 
 	shuffled := make([]Block, len(metricGrids))
 	copy(shuffled, metricGrids)
+	//nolint:gosec // cosmetic variety in a new document's sample metrics, not a security choice
 	rand.Shuffle(len(shuffled), func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
 
 	idx := 0

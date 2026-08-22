@@ -1,6 +1,7 @@
 import { serve } from "@hono/node-server"
 import { Hono } from "hono"
 import { createNodeWebSocket } from "@hono/node-ws"
+import { auth } from "./auth.js"
 import { hocuspocus } from "./hocuspocus.js"
 import routes from "./routes.js"
 
@@ -8,6 +9,19 @@ const app = new Hono()
 const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app })
 
 app.route("/api", routes)
+
+// the RFC 9728 protected-resource metadata for the MCP surface is served
+// by the mcp plugin's request hook, which matches root-anchored
+// well-known paths — the request must reach better-auth with its
+// original path, unlike the basePath'd /api/auth endpoints.
+app.on(
+	["GET", "HEAD"],
+	[
+		"/.well-known/oauth-protected-resource",
+		"/.well-known/oauth-protected-resource/*",
+	],
+	(c) => auth.handler(c.req.raw),
+)
 app.get(
 	"/hocuspocus",
 	upgradeWebSocket((c) => ({

@@ -117,7 +117,11 @@ func UpdateText(blockUID, text string) Operation {
 // cannot be changed and is silently ignored on the Node side.
 func UpdateAttrs(blockUID string, attrs map[string]any) Operation {
 	return func() (wireOp, error) {
-		return wireOp{Kind: "update_attrs", BlockUID: blockUID, Attrs: attrs}, nil
+		return wireOp{
+			Kind:     "update_attrs",
+			BlockUID: blockUID,
+			Attrs:    attrs,
+		}, nil
 	}
 }
 
@@ -125,7 +129,10 @@ func UpdateAttrs(blockUID string, attrs map[string]any) Operation {
 // blockUID from the document.
 func Delete(blockUID string) Operation {
 	return func() (wireOp, error) {
-		return wireOp{Kind: "delete", BlockUID: blockUID}, nil
+		return wireOp{
+			Kind:     "delete",
+			BlockUID: blockUID,
+		}, nil
 	}
 }
 
@@ -135,7 +142,10 @@ func Delete(blockUID string) Operation {
 // falsy and clears the title.
 func SetName(name string) Operation {
 	return func() (wireOp, error) {
-		return wireOp{Kind: "set_name", Name: name}, nil
+		return wireOp{
+			Kind: "set_name",
+			Name: name,
+		}, nil
 	}
 }
 
@@ -143,7 +153,10 @@ func SetName(name string) Operation {
 // identifier (e.g. "lucide:rocket").
 func SetIcon(icon string) Operation {
 	return func() (wireOp, error) {
-		return wireOp{Kind: "set_icon", Icon: icon}, nil
+		return wireOp{
+			Kind: "set_icon",
+			Icon: icon,
+		}, nil
 	}
 }
 

@@ -215,6 +215,7 @@ export default defineNuxtConfig({
 					"en/shortcuts.json",
 					"en/notification.json",
 					"en/apps.json",
+					"en/oauth.json",
 				],
 			},
 		],

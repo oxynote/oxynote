@@ -107,6 +107,7 @@ describe("<BaseModal>", { concurrent: false }, () => {
 			t("settings.profile.title"),
 			t("settings.workspace.title"),
 			t("settings.apps.title"),
+			t("settings.mcp.title"),
 			t("settings.data-sources.title"),
 		])
 	})

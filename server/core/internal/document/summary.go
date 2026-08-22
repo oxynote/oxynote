@@ -51,6 +51,20 @@ func (ss Summaries) Remove(id xid.ID) (Summaries, error) {
 	return slices.Delete(slices.Clone(ss), index, index+1), nil
 }
 
+// Descendants returns every summary in the tree, depth-first, in
+// document order: each summary is followed by its own descendants. The
+// receiver is left untouched.
+func (ss Summaries) Descendants() []Summary {
+	out := make([]Summary, 0, len(ss))
+
+	for _, s := range ss {
+		out = append(out, s)
+		out = append(out, s.Children.Descendants()...)
+	}
+
+	return out
+}
+
 // Summary represents summary of the document.
 type Summary struct {
 	// ID is the unique identifier for the document.

@@ -1,6 +1,7 @@
 // Re-exporting allows the content of these files to be auto-imported
 // elsewhere.
 export * from "./api/useAuthAPI"
+export * from "./api/useMCPAPI"
 export * from "./api/useDocumentAPI"
 export * from "./api/useDocumentHookAPI"
 export * from "./api/useDocumentCommentAPI"
