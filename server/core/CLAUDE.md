@@ -39,10 +39,11 @@ of the convention.
 ## Commands & QA gates
 
 ```sh
-make build       # goreleaser snapshot build -> bin/ + ghcr.io/oxynote/core:dev image
-make test        # go test -race ./...
-make lint        # golangci-lint run --fix (applies automatic fixes)
-make check-lint  # golangci-lint run (verification only)
+make build          # goreleaser snapshot build -> bin/ + ghcr.io/oxynote/core:dev image
+make test           # go test -race ./...
+make check-coverage # go test -race with coverage; fails below COVERAGE_MIN
+make lint           # golangci-lint run --fix (applies automatic fixes)
+make check-lint     # golangci-lint run (verification only)
 ```
 
 ## Repository layout
