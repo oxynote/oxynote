@@ -34,11 +34,9 @@ func prepNotifications(t *testing.T, db *DB, count int, fn func(int, *notificati
 
 	for i := range count {
 		nt := &notification.Notification{
-			Core: notification.Core{
-				Code: "test.notification",
-				Metadata: notification.Metadata{
-					"index": strconv.Itoa(i),
-				},
+			Code: "test.notification",
+			Metadata: notification.Metadata{
+				"index": strconv.Itoa(i),
 			},
 			ID: xid.New(),
 			// distinct ascending timestamps keep the fetch order
@@ -83,11 +81,9 @@ func prepNotifications(t *testing.T, db *DB, count int, fn func(int, *notificati
 func Test_agent_CreateNotification(t *testing.T) {
 	stubNotification := func(organizationID, userID string) *notification.Notification {
 		return &notification.Notification{
-			Core: notification.Core{
-				Code: "test.notification",
-				Metadata: notification.Metadata{
-					"key": "value",
-				},
+			Code: "test.notification",
+			Metadata: notification.Metadata{
+				"key": "value",
 			},
 			ID:             xid.New(),
 			UserID:         userID,

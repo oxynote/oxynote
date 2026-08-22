@@ -29,26 +29,24 @@ func prepDocuments(t *testing.T, db *DB, count int, fn func(int, *document.Docum
 
 	for i := range count {
 		doc := &document.Document{
-			ID: xid.New(),
-			Branch: document.Branch{
-				BranchID:     xid.New(),
-				BranchName:   document.DefaultBranch,
-				Default:      true,
-				DocumentName: "Test Document " + strconv.Itoa(i),
-				Icon:         "icon-test",
-				Content: document.RootBlock{
-					Type: document.BlockNodeDoc,
-					Content: []document.Block{
-						{
-							Type: "paragraph",
-							Text: "This is a test document content.",
-						},
+			ID:           xid.New(),
+			BranchID:     xid.New(),
+			BranchName:   document.DefaultBranch,
+			Default:      true,
+			DocumentName: "Test Document " + strconv.Itoa(i),
+			Icon:         "icon-test",
+			Content: document.RootBlock{
+				Type: document.BlockNodeDoc,
+				Content: []document.Block{
+					{
+						Type: "paragraph",
+						Text: "This is a test document content.",
 					},
 				},
-				RawContent: []byte("This is a test document content."),
-				CreatedAt:  now,
-				UpdatedAt:  now,
 			},
+			RawContent: []byte("This is a test document content."),
+			CreatedAt:  now,
+			UpdatedAt:  now,
 		}
 
 		if fn != nil {
@@ -110,24 +108,22 @@ func Test_agent_InsertDocument(t *testing.T) {
 		return document.Document{
 			ID:             xid.New(),
 			OrganizationID: organizationID,
-			Branch: document.Branch{
-				BranchID:     xid.New(),
-				BranchName:   document.DefaultBranch,
-				DocumentName: "Test Document 1",
-				Icon:         "icon-test2",
-				Content: document.RootBlock{
-					Type: document.BlockNodeDoc,
-					Content: []document.Block{
-						{
-							Type: "paragraph",
-							Text: "This is a test document content.",
-						},
+			BranchID:       xid.New(),
+			BranchName:     document.DefaultBranch,
+			DocumentName:   "Test Document 1",
+			Icon:           "icon-test2",
+			Content: document.RootBlock{
+				Type: document.BlockNodeDoc,
+				Content: []document.Block{
+					{
+						Type: "paragraph",
+						Text: "This is a test document content.",
 					},
 				},
-				RawContent: []byte("This is a test document content."),
-				CreatedAt:  now,
-				UpdatedAt:  now,
 			},
+			RawContent: []byte("This is a test document content."),
+			CreatedAt:  now,
+			UpdatedAt:  now,
 		}
 	}
 
@@ -265,12 +261,10 @@ func Test_agent_InsertDocument(t *testing.T) {
 			doc := document.Document{
 				ID:             xid.New(),
 				OrganizationID: org,
-				Branch: document.Branch{
-					BranchID:   xid.New(),
-					BranchName: document.DefaultBranch,
-					CreatedAt:  now,
-					UpdatedAt:  now,
-				},
+				BranchID:       xid.New(),
+				BranchName:     document.DefaultBranch,
+				CreatedAt:      now,
+				UpdatedAt:      now,
 			}
 
 			require.NoError(t, db.InsertDocument(context.Background(), doc))

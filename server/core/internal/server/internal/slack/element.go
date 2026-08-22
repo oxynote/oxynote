@@ -1,7 +1,6 @@
 package slack
 
 import (
-	"github.com/oxynote/oxynote/server/core/pkg/ptrutil"
 	"github.com/slack-go/slack"
 )
 
@@ -98,7 +97,7 @@ func initialMessageSavingModal(text string) slack.ModalViewRequest {
 		Title: &slack.TextBlockObject{
 			Type:  slack.PlainTextType,
 			Text:  "Create a new message",
-			Emoji: ptrutil.New(false),
+			Emoji: new(false),
 		},
 		Blocks: slack.Blocks{
 			BlockSet: []slack.Block{
@@ -125,7 +124,7 @@ func initialMessageSavingModal(text string) slack.ModalViewRequest {
 		Submit: &slack.TextBlockObject{
 			Type:  slack.PlainTextType,
 			Text:  "Submit",
-			Emoji: ptrutil.New(false),
+			Emoji: new(false),
 		},
 	}
 }

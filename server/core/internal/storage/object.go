@@ -97,12 +97,10 @@ func (c *Client) Retrieve(ctx context.Context, folder, id string) (*ObjectInfo, 
 
 	info, err := obj.Stat()
 
-	var merr minio.ErrorResponse
-
-	switch {
+	switch merr, ok := errors.AsType[minio.ErrorResponse](err); {
 	case err == nil:
 		// OK.
-	case errors.As(err, &merr) && merr.Code == minio.NoSuchKey:
+	case ok && merr.Code == minio.NoSuchKey:
 		// the object is serviced by a background goroutine, so it has to be
 		// closed on every path that does not hand it to the caller.
 		obj.Close() //nolint:errcheck,gosec // error provides no meaningful info

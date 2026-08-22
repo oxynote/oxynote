@@ -6,7 +6,6 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
-	"github.com/oxynote/oxynote/server/core/pkg/ptrutil"
 )
 
 // _resourceURIPrefix addresses a document in the oxynote resource
@@ -20,11 +19,11 @@ const _resourceURIPrefix = "oxynote://documents/"
 func annotations(e tools.Entry) *mcp.ToolAnnotations {
 	out := &mcp.ToolAnnotations{
 		ReadOnlyHint:  !e.Write,
-		OpenWorldHint: ptrutil.New(false),
+		OpenWorldHint: new(false),
 	}
 
 	if e.Write {
-		out.DestructiveHint = ptrutil.New(e.Destructive)
+		out.DestructiveHint = new(e.Destructive)
 	}
 
 	return out

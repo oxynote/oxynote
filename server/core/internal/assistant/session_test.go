@@ -150,10 +150,8 @@ func stubDocumentDB() *toolsMock.DB {
 	return &toolsMock.DB{
 		FetchDocumentFunc: func(_ context.Context, id xid.ID, orgID, _ string) (*document.Document, error) {
 			return &document.Document{
-				Branch: document.Branch{
-					BranchID:     branchID,
-					DocumentName: "Runbook",
-				},
+				BranchID:       branchID,
+				DocumentName:   "Runbook",
 				ID:             id,
 				OrganizationID: orgID,
 			}, nil

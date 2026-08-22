@@ -63,12 +63,10 @@ func stubDocument() *document.Document {
 	return &document.Document{
 		ID:             xid.New(),
 		OrganizationID: "org-1",
-		Branch: document.Branch{
-			Content: document.RootBlock{
-				Type: document.BlockNodeDoc,
-				Content: []document.Block{
-					{Type: document.BlockNodeParagraph, Attrs: document.Attributes{"uid": "b1"}},
-				},
+		Content: document.RootBlock{
+			Type: document.BlockNodeDoc,
+			Content: []document.Block{
+				{Type: document.BlockNodeParagraph, Attrs: document.Attributes{"uid": "b1"}},
 			},
 		},
 	}

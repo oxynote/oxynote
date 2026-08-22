@@ -198,7 +198,7 @@ func Test_Handler_CreateDocumentComment(t *testing.T) {
 		"Comment insertion error": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
-					return &documentCore.Document{ID: _documentID, Branch: documentCore.Branch{BranchID: _branchID}}, nil
+					return &documentCore.Document{ID: _documentID, BranchID: _branchID}, nil
 				},
 				InsertDocumentCommentFunc: func(context.Context, commentCore.Comment) error {
 					return errors.New("boom")
@@ -214,7 +214,7 @@ func Test_Handler_CreateDocumentComment(t *testing.T) {
 		"Maintainer fetch error": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
-					return &documentCore.Document{ID: _documentID, Branch: documentCore.Branch{BranchID: _branchID}}, nil
+					return &documentCore.Document{ID: _documentID, BranchID: _branchID}, nil
 				},
 				FetchDocumentMaintainersFunc: func(context.Context, xid.ID, string) ([]string, error) {
 					return nil, errors.New("boom")
@@ -228,7 +228,7 @@ func Test_Handler_CreateDocumentComment(t *testing.T) {
 		"Branch belongs to another document": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
-					return &documentCore.Document{ID: xid.New(), Branch: documentCore.Branch{BranchID: _branchID}}, nil
+					return &documentCore.Document{ID: xid.New(), BranchID: _branchID}, nil
 				},
 			},
 			Body:     validBody,
@@ -237,7 +237,7 @@ func Test_Handler_CreateDocumentComment(t *testing.T) {
 		"Successful creation notifies other maintainers": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
-					return &documentCore.Document{ID: _documentID, Branch: documentCore.Branch{BranchID: _branchID}}, nil
+					return &documentCore.Document{ID: _documentID, BranchID: _branchID}, nil
 				},
 				FetchDocumentMaintainersFunc: func(context.Context, xid.ID, string) ([]string, error) {
 					return []string{"u1", "u2", "u2", "u3"}, nil

@@ -74,9 +74,7 @@ func Digest(
 
 	desc, err := remote.Head(ref, remoteOpts...)
 	if err != nil {
-		var terr *transport.Error
-
-		if ok := errors.As(err, &terr); ok {
+		if terr, ok := errors.AsType[*transport.Error](err); ok {
 			if terr.StatusCode == http.StatusUnauthorized ||
 				terr.StatusCode == http.StatusForbidden ||
 				slices.ContainsFunc(terr.Errors, func(diag transport.Diagnostic) bool {

@@ -100,12 +100,9 @@ func Detect(err error, passthru bool) error {
 		return err
 	}
 
-	var (
-		serr       *statusError
-		statusCode = http.StatusInternalServerError
-	)
+	statusCode := http.StatusInternalServerError
 
-	if errors.As(err, &serr) {
+	if serr, ok := errors.AsType[*statusError](err); ok {
 		// ensure that we aren't leaking any critical information
 		if serr.statusCode < http.StatusInternalServerError {
 			return serr
@@ -123,8 +120,8 @@ func StatusCode(err error, detect bool) int {
 		err = Detect(err, true)
 	}
 
-	var serr *statusError
-	if !errors.As(err, &serr) {
+	serr, ok := errors.AsType[*statusError](err)
+	if !ok {
 		return http.StatusInternalServerError
 	}
 

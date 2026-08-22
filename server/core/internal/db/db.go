@@ -211,8 +211,8 @@ func DetectError(err error) error {
 		return errutil.ErrNotFound
 	}
 
-	var perr *pgconn.PgError
-	if !errors.As(err, &perr) {
+	perr, ok := errors.AsType[*pgconn.PgError](err)
+	if !ok {
 		return err
 	}
 

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/cloudwego/eino-ext/components/model/ollama"
-	"github.com/oxynote/oxynote/server/core/pkg/ptrutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/require"
 )
@@ -37,7 +36,7 @@ func Test_newOllama(t *testing.T) {
 				Provider:    ProviderOllama,
 				Model:       "llama3.3",
 				BaseURL:     "http://localhost:11434",
-				Temperature: ptrutil.New(float32(0.3)),
+				Temperature: new(float32(0.3)),
 			},
 			Config: &ollama.ChatModelConfig{
 				BaseURL: "http://localhost:11434",
@@ -66,7 +65,7 @@ func Test_newOllama(t *testing.T) {
 				Model:          "llama3.3",
 				BaseURL:        "http://localhost:11434",
 				MaxTokens:      1024,
-				Temperature:    ptrutil.New(float32(0.3)),
+				Temperature:    new(float32(0.3)),
 				RequestTimeout: time.Minute,
 			},
 			Config: &ollama.ChatModelConfig{

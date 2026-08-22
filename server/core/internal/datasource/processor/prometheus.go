@@ -94,9 +94,7 @@ func (p *Prometheus) QueryRange(ctx context.Context, q string, tr TimeRange) (*P
 		Step:  ntr.QueryStep(),
 	}, v1.WithLimit(_queryLimit))
 	if err != nil {
-		var perr *v1.Error
-
-		if ok := errors.As(err, &perr); ok {
+		if perr, ok := errors.AsType[*v1.Error](err); ok {
 			return nil, NewInvalidQueryError(perr.Msg)
 		}
 

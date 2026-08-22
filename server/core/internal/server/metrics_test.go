@@ -100,7 +100,7 @@ func Test_wsMetricsBinder(t *testing.T) {
 	// the middleware only fires while publishing to a live
 	// subscriber, so run the real transport once.
 	pool := wsserver.New(discardLog(), r, wsserver.Options{
-		AcceptOptions: websocket.AcceptOptions{InsecureSkipVerify: true},
+		InsecureSkipVerify: true,
 	})
 
 	hs := httptest.NewServer(pool)

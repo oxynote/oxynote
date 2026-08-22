@@ -77,10 +77,8 @@ func (p *PostgreSQL) TestConnection(ctx context.Context) (ConnectionStatus, erro
 // indistinguishable to the user otherwise, and a typo in the password is the
 // far more common of them.
 func pgConnectionStatus(err error) ConnectionStatus {
-	var pgErr *pgconn.PgError
-
 	// class 28 is "invalid authorization specification".
-	if errors.As(err, &pgErr) && strings.HasPrefix(pgErr.Code, "28") {
+	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && strings.HasPrefix(pgErr.Code, "28") {
 		return ConnectionStatusUnauthorized
 	}
 
@@ -142,9 +140,7 @@ func (p *PostgreSQL) QueryLabels(ctx context.Context, q string, tr TimeRange) (m
 
 	rows, err := conn.Query(ctx, q)
 	if err != nil {
-		var pgErr *pgconn.PgError
-
-		if errors.As(err, &pgErr) && pgErr.Code[0:2] == "42" {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code[0:2] == "42" {
 			return nil, NewInvalidQueryError(pgErr.Message)
 		}
 
@@ -210,9 +206,7 @@ func (p *PostgreSQL) Query(ctx context.Context, q string, tr TimeRange) (*Postgr
 
 	rows, err := conn.Query(ctx, q)
 	if err != nil {
-		var pgErr *pgconn.PgError
-
-		if errors.As(err, &pgErr) && pgErr.Code[0:2] == "42" {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code[0:2] == "42" {
 			return nil, NewInvalidQueryError(pgErr.Message)
 		}
 
@@ -408,9 +402,7 @@ func pgParseNumericValue(v any) (float64, bool) {
 // pgQueryError maps a syntax or semantic failure reported by PostgreSQL to a
 // user-facing invalid-query error, leaving everything else as an internal one.
 func pgQueryError(err error) error {
-	var pgErr *pgconn.PgError
-
-	if errors.As(err, &pgErr) && pgErr.Code[0:2] == "42" {
+	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code[0:2] == "42" {
 		return NewInvalidQueryError(pgErr.Message)
 	}
 

@@ -33,24 +33,22 @@ func prepDocumentBranches(t *testing.T, db *DB, count int, fn func(int, *documen
 
 	for i := range count {
 		doc := &document.Document{
-			Branch: document.Branch{
-				BranchID:     xid.New(),
-				BranchName:   "branch-" + strconv.Itoa(i),
-				DocumentName: "Branch Document " + strconv.Itoa(i),
-				Icon:         "icon-branch",
-				Content: document.RootBlock{
-					Type: document.BlockNodeDoc,
-					Content: []document.Block{
-						{
-							Type: "paragraph",
-							Text: "Branch content " + strconv.Itoa(i),
-						},
+			BranchID:     xid.New(),
+			BranchName:   "branch-" + strconv.Itoa(i),
+			DocumentName: "Branch Document " + strconv.Itoa(i),
+			Icon:         "icon-branch",
+			Content: document.RootBlock{
+				Type: document.BlockNodeDoc,
+				Content: []document.Block{
+					{
+						Type: "paragraph",
+						Text: "Branch content " + strconv.Itoa(i),
 					},
 				},
-				RawContent: []byte("Branch content " + strconv.Itoa(i)),
-				CreatedAt:  now,
-				UpdatedAt:  now,
 			},
+			RawContent: []byte("Branch content " + strconv.Itoa(i)),
+			CreatedAt:  now,
+			UpdatedAt:  now,
 		}
 
 		if fn != nil {

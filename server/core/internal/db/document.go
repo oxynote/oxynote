@@ -51,8 +51,7 @@ func (a *agent) InsertDocument(ctx context.Context, doc document.Document) error
 			return nil
 		}
 
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) &&
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok &&
 			pgErr.Code == "23505" &&
 			pgErr.ConstraintName == _insertDocumentSortIndexConstraint {
 			continue

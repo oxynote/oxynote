@@ -6,7 +6,6 @@ import (
 
 	"github.com/cloudwego/eino-ext/components/model/gemini"
 	"github.com/cloudwego/eino/components/model"
-	"github.com/oxynote/oxynote/server/core/pkg/ptrutil"
 	"google.golang.org/genai"
 )
 
@@ -18,7 +17,7 @@ func newGemini(ctx context.Context, opts Options) (model.ToolCallingChatModel, e
 		APIKey:  opts.APIKey,
 		Backend: genai.BackendGeminiAPI,
 		HTTPOptions: genai.HTTPOptions{
-			Timeout: ptrutil.New(opts.timeout()),
+			Timeout: new(opts.timeout()),
 		},
 	}
 

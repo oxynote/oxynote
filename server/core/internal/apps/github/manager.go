@@ -299,7 +299,7 @@ func (ic *InstallationClient) FetchRepositoryBranches(ctx context.Context, repos
 	var (
 		res  []string
 		opts = &gogithub.BranchListOptions{
-			ListOptions: gogithub.ListOptions{PerPage: _listPageSize},
+			PerPage: _listPageSize,
 		}
 	)
 
@@ -487,7 +487,6 @@ func parseGithubError(err error) error {
 	var (
 		rateErr  *gogithub.RateLimitError
 		abuseErr *gogithub.AbuseRateLimitError
-		respErr  *gogithub.ErrorResponse
 	)
 
 	switch {
@@ -495,10 +494,11 @@ func parseGithubError(err error) error {
 		return errutil.New(http.StatusTooManyRequests, "github.rate_limit", "rate limit exceeded")
 	case errors.As(err, &abuseErr):
 		return errutil.New(http.StatusTooManyRequests, "github.abuse_rate_limit", "abuse rate limit exceeded")
-	case errors.As(err, &respErr):
-		if respErr.Response.StatusCode == http.StatusNotFound {
-			return ErrResourceNotFound
-		}
+	}
+
+	if respErr, ok := errors.AsType[*gogithub.ErrorResponse](err); ok &&
+		respErr.Response.StatusCode == http.StatusNotFound {
+		return ErrResourceNotFound
 	}
 
 	return err

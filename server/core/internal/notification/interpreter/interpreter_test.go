@@ -32,11 +32,9 @@ func TestMain(m *testing.M) {
 // stubDoc creates a stub document for tests.
 func stubDoc() *document.Document {
 	return &document.Document{
-		Branch: document.Branch{
-			BranchName:   "main",
-			DocumentName: "My Doc",
-		},
-		ID: _testDocID,
+		BranchName:   "main",
+		DocumentName: "My Doc",
+		ID:           _testDocID,
 	}
 }
 
@@ -583,7 +581,7 @@ func Test_metaBranchID(t *testing.T) {
 			t.Parallel()
 
 			id, ok := metaBranchID(notification.Notification{
-				Core: notification.Core{Metadata: c.Metadata},
+				Metadata: c.Metadata,
 			})
 
 			assert.Equal(t, c.OK, ok)

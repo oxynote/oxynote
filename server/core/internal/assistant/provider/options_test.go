@@ -4,7 +4,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/oxynote/oxynote/server/core/pkg/ptrutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 )
@@ -145,7 +144,7 @@ func Test_Options_maxTokens(t *testing.T) {
 	}{
 		"Configured cap is returned": {
 			Opts:   Options{MaxTokens: 1024},
-			Result: ptrutil.New(1024),
+			Result: new(1024),
 		},
 		"Zero leaves the provider default":     {Opts: Options{}},
 		"Negative leaves the provider default": {Opts: Options{MaxTokens: -1}},

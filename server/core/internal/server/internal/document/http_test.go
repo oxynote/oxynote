@@ -125,12 +125,10 @@ func storedDoc() *documentCore.Document {
 	return &documentCore.Document{
 		ID:             _documentID,
 		OrganizationID: "org1",
-		Branch: documentCore.Branch{
-			BranchID:     _branchID,
-			BranchName:   documentCore.DefaultBranch,
-			DocumentName: "Doc",
-			Default:      true,
-		},
+		BranchID:       _branchID,
+		BranchName:     documentCore.DefaultBranch,
+		DocumentName:   "Doc",
+		Default:        true,
 	}
 }
 
@@ -139,11 +137,9 @@ func branchDoc(branchID xid.ID) *documentCore.Document {
 	return &documentCore.Document{
 		ID:             _documentID,
 		OrganizationID: "org1",
-		Branch: documentCore.Branch{
-			BranchID:     branchID,
-			BranchName:   "feature",
-			DocumentName: "Doc",
-		},
+		BranchID:       branchID,
+		BranchName:     "feature",
+		DocumentName:   "Doc",
 	}
 }
 

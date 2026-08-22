@@ -168,14 +168,14 @@ func ParseTreeItems(items []*gogithub.TreeEntry) []TreeItem {
 			folders[path] = node
 		}
 
-		idx := strings.LastIndex(path, "/")
-		if idx == -1 {
+		dir, _, ok := strings.CutLast(path, "/")
+		if !ok {
 			roots = append(roots, node)
 
 			continue
 		}
 
-		parent := folders[path[:idx]]
+		parent := folders[dir]
 		if parent == nil {
 			continue
 		}

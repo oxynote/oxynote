@@ -84,9 +84,7 @@ var _mysqlAuthErrors = map[uint16]bool{
 // indistinguishable to the user otherwise, and a typo in the password is the
 // far more common of them.
 func mysqlConnectionStatus(err error) ConnectionStatus {
-	var mysqlErr *mysql.MySQLError
-
-	if errors.As(err, &mysqlErr) && _mysqlAuthErrors[mysqlErr.Number] {
+	if mysqlErr, ok := errors.AsType[*mysql.MySQLError](err); ok && _mysqlAuthErrors[mysqlErr.Number] {
 		return ConnectionStatusUnauthorized
 	}
 
@@ -147,9 +145,7 @@ func (m *MySQL) QueryLabels(ctx context.Context, q string, tr TimeRange) (map[st
 
 	rows, err := db.QueryContext(ctx, q)
 	if err != nil {
-		var mysqlErr *mysql.MySQLError
-
-		if errors.As(err, &mysqlErr) && mysqlErr.Number >= 1064 && mysqlErr.Number <= 1149 {
+		if mysqlErr, ok := errors.AsType[*mysql.MySQLError](err); ok && mysqlErr.Number >= 1064 && mysqlErr.Number <= 1149 {
 			return nil, NewInvalidQueryError(mysqlErr.Message)
 		}
 
@@ -211,9 +207,7 @@ func (m *MySQL) Query(ctx context.Context, q string, tr TimeRange) (*MySQLQueryR
 
 	rows, err := db.QueryContext(ctx, q)
 	if err != nil {
-		var mysqlErr *mysql.MySQLError
-
-		if errors.As(err, &mysqlErr) && mysqlErr.Number >= 1064 && mysqlErr.Number <= 1149 {
+		if mysqlErr, ok := errors.AsType[*mysql.MySQLError](err); ok && mysqlErr.Number >= 1064 && mysqlErr.Number <= 1149 {
 			return nil, NewInvalidQueryError(mysqlErr.Message)
 		}
 

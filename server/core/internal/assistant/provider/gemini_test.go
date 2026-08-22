@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/cloudwego/eino-ext/components/model/gemini"
-	"github.com/oxynote/oxynote/server/core/pkg/ptrutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genai"
@@ -33,7 +32,7 @@ func Test_newGemini(t *testing.T) {
 				APIKey:  "k",
 				Backend: genai.BackendGeminiAPI,
 				HTTPOptions: genai.HTTPOptions{
-					Timeout: ptrutil.New(_defaultRequestTimeout),
+					Timeout: new(_defaultRequestTimeout),
 				},
 			},
 			Config: &gemini.Config{Model: "gemini-2.5-pro"},
@@ -45,13 +44,13 @@ func Test_newGemini(t *testing.T) {
 				Backend: genai.BackendGeminiAPI,
 				HTTPOptions: genai.HTTPOptions{
 					BaseURL: "https://example.invalid/v1",
-					Timeout: ptrutil.New(time.Minute),
+					Timeout: new(time.Minute),
 				},
 			},
 			Config: &gemini.Config{
 				Model:       "gemini-2.5-pro",
-				MaxTokens:   ptrutil.New(1024),
-				Temperature: ptrutil.New(float32(0.3)),
+				MaxTokens:   new(1024),
+				Temperature: new(float32(0.3)),
 			},
 		},
 	}

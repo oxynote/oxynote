@@ -11,9 +11,9 @@ import (
 // entry builds a go-github tree entry for tests.
 func entry(path, tp, sha string) *gogithub.TreeEntry {
 	return &gogithub.TreeEntry{
-		Path: gogithub.Ptr(path),
-		Type: gogithub.Ptr(tp),
-		SHA:  gogithub.Ptr(sha),
+		Path: new(path),
+		Type: new(tp),
+		SHA:  new(sha),
 	}
 }
 

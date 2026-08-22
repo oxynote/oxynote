@@ -80,8 +80,8 @@ func registerOrExisting[T prometheus.Collector](rg prometheus.Registerer, c T) T
 		return c
 	}
 
-	are := &prometheus.AlreadyRegisteredError{}
-	if !errors.As(err, are) {
+	are, ok := errors.AsType[prometheus.AlreadyRegisteredError](err)
+	if !ok {
 		// NOCOV: this should never happen
 		panic(err)
 	}

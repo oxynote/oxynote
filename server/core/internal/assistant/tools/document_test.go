@@ -196,14 +196,12 @@ func Test_getDocument_Execute(t *testing.T) {
 			DB: &DBMock{
 				FetchDocumentFunc: func(_ context.Context, id xid.ID, _, _ string) (*document.Document, error) {
 					return &document.Document{
-						Branch: document.Branch{
-							BranchID:     branchID,
-							BranchName:   "main",
-							DocumentName: "Runbook",
-							Icon:         "lucide:rocket",
-						},
-						ID:       id,
-						ParentID: null.ValueFrom(parentID),
+						BranchID:     branchID,
+						BranchName:   "main",
+						DocumentName: "Runbook",
+						Icon:         "lucide:rocket",
+						ID:           id,
+						ParentID:     null.ValueFrom(parentID),
 					}, nil
 				},
 			},

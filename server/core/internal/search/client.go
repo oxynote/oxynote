@@ -62,12 +62,10 @@ func NewClient(
 func (c *Client) ensureIndex(ctx context.Context) error {
 	_, err := c.meiliMan.GetIndexWithContext(ctx, _documentsIndex)
 
-	var merr *meilisearch.Error
-
-	switch {
+	switch merr, ok := errors.AsType[*meilisearch.Error](err); {
 	case err == nil:
 		// the index is already there.
-	case errors.As(err, &merr) && merr.MeilisearchApiError.Code == "index_not_found":
+	case ok && merr.MeilisearchApiError.Code == "index_not_found":
 		task, cerr := c.meiliMan.CreateIndexWithContext(ctx, &meilisearch.IndexConfig{
 			Uid:        _documentsIndex,
 			PrimaryKey: "id",

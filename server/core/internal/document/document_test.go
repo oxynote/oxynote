@@ -18,17 +18,15 @@ func stubDocument() Document {
 	return Document{
 		ID:             xid.New(),
 		OrganizationID: "org-1",
-		Branch: Branch{
-			BranchID:     xid.New(),
-			BranchName:   DefaultBranch,
-			DocumentName: "Runbook",
-			Icon:         "📘",
-			Content:      stubMarkedTree(),
-			RawContent:   []byte("raw"),
-			Default:      true,
-			CreatedAt:    time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
-			CreatedBy:    null.StringFrom("user-1"),
-		},
+		BranchID:       xid.New(),
+		BranchName:     DefaultBranch,
+		DocumentName:   "Runbook",
+		Icon:           "📘",
+		Content:        stubMarkedTree(),
+		RawContent:     []byte("raw"),
+		Default:        true,
+		CreatedAt:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		CreatedBy:      null.StringFrom("user-1"),
 	}
 }
 
