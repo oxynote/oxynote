@@ -1,5 +1,6 @@
 import { mountSuspended } from "@nuxt/test-utils/runtime"
-import { afterEach, beforeEach, describe, it } from "vitest"
+import { afterEach, beforeEach, describe, it, vi } from "vitest"
+import { toast } from "vue-sonner"
 import {
 	clearQueryCache,
 	disposeMockEndpoints,
@@ -13,6 +14,10 @@ import { findButtonByText, settleMutations, t } from "../test-helpers"
 // match the absolute registration — not the bare path a better-auth call
 // would be matched on.
 const AUTH_REALTIME_BASE = "http://test.local/auth-realtime/api/auth"
+
+vi.mock("vue-sonner", () => ({
+	toast: { custom: vi.fn(), dismiss: vi.fn() },
+}))
 
 function makeConsent(overrides: Partial<OAuthConsent> = {}): OAuthConsent {
 	return {
@@ -41,9 +46,13 @@ function mockClientName(clientName: string | undefined) {
 	)
 }
 
-// the query cache is app-wide
+// the query cache and the vue-sonner module mock are app-wide singletons
+// every mount in the file shares
 describe("<McpSection>", { concurrent: false }, () => {
-	beforeEach(clearQueryCache)
+	beforeEach(() => {
+		clearQueryCache()
+		vi.mocked(toast.custom).mockReset()
+	})
 
 	afterEach(disposeMockEndpoints)
 
@@ -112,6 +121,22 @@ describe("<McpSection>", { concurrent: false }, () => {
 		expect(wrapper.text()).toContain(t("settings.mcp.unknown-client"))
 	})
 
+	it("falls back to a placeholder when the client has no name", async ({
+		expect,
+	}) => {
+		// the lookup succeeds but the client registered without a name, so
+		// there is nothing to show but the fallback
+		mockEndpoint("GET", `${AUTH_REALTIME_BASE}/oauth2/public-client`, () => ({
+			client_id: "client1",
+		}))
+		seedConsents([makeConsent()])
+
+		const wrapper = await mountSuspended(McpSection)
+		await settleMutations()
+
+		expect(wrapper.text()).toContain(t("settings.mcp.unknown-client"))
+	})
+
 	it("shows an unrecognised scope verbatim rather than dropping it", async ({
 		expect,
 	}) => {
@@ -123,6 +148,25 @@ describe("<McpSection>", { concurrent: false }, () => {
 		expect(wrapper.text()).toContain(
 			`${t("settings.mcp.scopes.documents-read")}, wibble`,
 		)
+	})
+
+	it("puts the server url on the clipboard", async ({ expect }) => {
+		const writeText = vi
+			.spyOn(navigator.clipboard, "writeText")
+			.mockResolvedValue(undefined)
+
+		seedConsents([])
+
+		const wrapper = await mountSuspended(McpSection)
+		await findButtonByText(
+			wrapper,
+			t("settings.mcp.copy-button-screen-reader-hint"),
+		).trigger("click")
+		await settleMutations()
+
+		expect(writeText).toHaveBeenCalledTimes(1)
+		expect(writeText).toHaveBeenCalledWith(expect.stringContaining("/api/mcp"))
+		expect(toast.custom).toHaveBeenCalledTimes(1)
 	})
 
 	it("revokes the client whose row was acted on", async ({ expect }) => {
@@ -143,5 +187,37 @@ describe("<McpSection>", { concurrent: false }, () => {
 
 		expect(revocations).toHaveLength(1)
 		expect(revocations[0]?.body).toEqual({ id: "consent1" })
+		expect(toast.custom).toHaveBeenCalledTimes(0)
+	})
+
+	it("reports a revoke the server refused", async ({ expect }) => {
+		mockClientName("Claude Code")
+
+		const revocations = mockEndpoint(
+			"POST",
+			`${AUTH_REALTIME_BASE}/oauth2/delete-consent`,
+			() => {
+				throw createError({ statusCode: 500 })
+			},
+		)
+
+		seedConsents([makeConsent()])
+
+		// the mutation invalidates the list whether it succeeded or not, so
+		// the refetch needs an answer either way
+		mockEndpoint("GET", `${AUTH_REALTIME_BASE}/oauth2/get-consents`, () => [
+			makeConsent(),
+		])
+
+		const wrapper = await mountSuspended(McpSection)
+		await findButtonByText(wrapper, t("settings.mcp.revoke")).trigger("click")
+		await settleMutations()
+		await settleMutations()
+
+		expect(revocations).toHaveLength(1)
+
+		// the row stays: nothing was revoked, so nothing should look like it
+		expect(wrapper.findAll("tbody tr")).toHaveLength(1)
+		expect(toast.custom).toHaveBeenCalledTimes(1)
 	})
 })
