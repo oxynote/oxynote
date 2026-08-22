@@ -170,7 +170,11 @@ function activateBranch(branch: "default" | "draft") {
 						</ShadcnUiTooltipTrigger>
 						<ShadcnUiTooltipContent side="bottom" align="end">
 							<div class="flex flex-col gap-1">
-								<i18n-t keypath="editor.navbar.timestamp.full-edited" tag="div">
+								<i18n-t
+									scope="global"
+									keypath="editor.navbar.timestamp.full-edited"
+									tag="div"
+								>
 									<template #user>
 										<span class="font-bold">
 											{{
@@ -190,6 +194,7 @@ function activateBranch(branch: "default" | "draft") {
 									</template>
 								</i18n-t>
 								<i18n-t
+									scope="global"
 									keypath="editor.navbar.timestamp.full-created"
 									tag="div"
 								>

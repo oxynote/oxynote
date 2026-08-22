@@ -494,6 +494,7 @@ function methodVariant(method: AuthMethod) {
 			</form>
 			<div v-else class="flex w-full flex-col gap-3">
 				<i18n-t
+					scope="global"
 					keypath="onboarding.login.password-reset-sent"
 					tag="div"
 					class="text-center text-xs text-accent-foreground"
@@ -512,6 +513,7 @@ function methodVariant(method: AuthMethod) {
 			</div>
 			<i18n-t
 				v-if="view === 'email-password'"
+				scope="global"
 				keypath="onboarding.login.forgot-password.main"
 				tag="div"
 				class="text-xs text-accent-foreground"
@@ -529,6 +531,7 @@ function methodVariant(method: AuthMethod) {
 				</template>
 			</i18n-t>
 			<i18n-t
+				scope="global"
 				keypath="onboarding.login.no-account.main"
 				tag="div"
 				class="text-xs text-accent-foreground"

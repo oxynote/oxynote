@@ -121,6 +121,7 @@ function handleDataSourceSelection(dataSourceId: string) {
 		>
 			<template v-if="!fetchDataSources.state.value.data?.length">
 				<i18n-t
+					scope="global"
 					keypath="editor.metrics.config.data-source-no-options.main"
 					class="px-1 pt-0.75 pb-1 text-2sm text-popover-foreground"
 					tag="div"

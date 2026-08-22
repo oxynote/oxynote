@@ -13,6 +13,7 @@ import {
 	mountWithFrozenClock,
 	seedAuthSession,
 	settleActionSubmit,
+	t,
 } from "../test-helpers"
 
 vi.mock("vue-sonner", () => ({
@@ -159,7 +160,12 @@ describe("<WorkspaceInvitationAction>", { concurrent: false }, () => {
 		const wrapper = await mountAction()
 
 		expect(wrapper.find("input").exists()).toBe(false)
-		expect(findButtonByText(wrapper, "Close").exists()).toBe(true)
+		expect(
+			findButtonByText(
+				wrapper,
+				t("settings.action-modals.workspace-invitation.close-button"),
+			).exists(),
+		).toBe(true)
 	})
 
 	it("keeps inviting available while there is room left", async ({
@@ -188,7 +194,10 @@ describe("<WorkspaceInvitationAction>", { concurrent: false }, () => {
 		}))
 		const wrapper = await mountAction()
 
-		await findButtonByText(wrapper, "Cancel").trigger("click")
+		await findButtonByText(
+			wrapper,
+			t("settings.action-modals.workspace-invitation.cancel-button"),
+		).trigger("click")
 
 		expect(calls).toHaveLength(0)
 		expect(wrapper.emitted("close")).toHaveLength(1)

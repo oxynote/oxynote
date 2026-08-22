@@ -48,6 +48,7 @@ async function removeDataSource() {
 <template>
 	<div class="flex flex-col gap-5">
 		<i18n-t
+			scope="global"
 			keypath="settings.action-modals.data-source-removal.description"
 			class="text-2sm text-muted-foreground"
 			tag="p"

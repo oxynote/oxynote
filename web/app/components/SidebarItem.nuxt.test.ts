@@ -11,6 +11,7 @@ import {
 	menuItem,
 	mountUnderSidebarProvider,
 	renderedIconNames,
+	t,
 } from "./test-helpers"
 
 interface CapturedDragOptions {
@@ -242,16 +243,25 @@ describe("<SidebarItem>", { concurrent: false }, () => {
 	})
 
 	it.for([
-		{ label: "Duplicate Page", event: "duplicate" },
-		{ label: "Add Sub Page", event: "create" },
-		{ label: "Delete Page", event: "delete" },
+		{
+			label: "sidebar.item-dropdown-menu-buttons.duplicate-page",
+			event: "duplicate",
+		},
+		{
+			label: "sidebar.item-dropdown-menu-buttons.add-sub-page",
+			event: "create",
+		},
+		{
+			label: "sidebar.item-dropdown-menu-buttons.delete-page",
+			event: "delete",
+		},
 	] as const)(
 		"asks to $event the page from the options menu",
 		async ({ label, event }, { expect }) => {
 			const { wrapper, item } = await mountItem(makeItem())
 			await wrapper.get("[data-slot='dropdown-menu-trigger']").trigger("click")
 
-			menuItem(label).click()
+			menuItem(t(label)).click()
 			await nextTick()
 
 			expect(item.emitted(event)).toHaveLength(1)

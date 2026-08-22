@@ -1,7 +1,7 @@
 import { mountSuspended } from "@nuxt/test-utils/runtime"
 import { beforeEach, describe, it, vi } from "vitest"
 import DocumentDeletionModal from "./DocumentDeletionModal.vue"
-import { clearTeleportedOverlays, teleportedButton } from "./test-helpers"
+import { clearTeleportedOverlays, t, teleportedButton } from "./test-helpers"
 
 function mountModal(
 	target: { deleteDocument: () => Promise<void>; name: string } | null,
@@ -19,6 +19,12 @@ function dialog() {
 
 // the dialog body is teleported into the shared <body> and the delete flow
 // is driven by the global fake timers, so these tests cannot interleave
+// t() reaches for the nuxt app context, so the label can only be
+// resolved inside a test — not once at module scope
+function confirmButton() {
+	return teleportedButton(t("editor.document-deletion-modal.confirm-button"))
+}
+
 describe("<DocumentDeletionModal>", { concurrent: false }, () => {
 	beforeEach(clearTeleportedOverlays)
 
@@ -41,7 +47,7 @@ describe("<DocumentDeletionModal>", { concurrent: false }, () => {
 		const deleteDocument = vi.fn().mockResolvedValue(undefined)
 		const wrapper = await mountModal({ name: "Runbook", deleteDocument })
 
-		teleportedButton("Delete").click()
+		confirmButton().click()
 		await vi.advanceTimersByTimeAsync(300)
 
 		expect(deleteDocument).toHaveBeenCalledTimes(1)
@@ -55,14 +61,17 @@ describe("<DocumentDeletionModal>", { concurrent: false }, () => {
 		const deleteDocument = vi.fn().mockResolvedValue(undefined)
 		await mountModal({ name: "Runbook", deleteDocument })
 
-		teleportedButton("Delete").click()
+		confirmButton().click()
 		await nextTick()
 
 		expect(
 			dialog()?.querySelector(".i-svg-spinners\\:blocks-shuffle-3"),
 		).not.toBeNull()
-		expect(teleportedButton("Delete").disabled).toBe(true)
-		expect(teleportedButton("Cancel").disabled).toBe(true)
+		expect(confirmButton().disabled).toBe(true)
+		expect(
+			teleportedButton(t("editor.document-deletion-modal.cancel-button"))
+				.disabled,
+		).toBe(true)
 	})
 
 	it("closes without deleting when the cancel button is pressed", async ({
@@ -71,7 +80,7 @@ describe("<DocumentDeletionModal>", { concurrent: false }, () => {
 		const deleteDocument = vi.fn()
 		const wrapper = await mountModal({ name: "Runbook", deleteDocument })
 
-		teleportedButton("Cancel").click()
+		teleportedButton(t("editor.document-deletion-modal.cancel-button")).click()
 		await nextTick()
 
 		expect(deleteDocument).toHaveBeenCalledTimes(0)
@@ -84,7 +93,7 @@ describe("<DocumentDeletionModal>", { concurrent: false }, () => {
 		const deleteDocument = vi.fn()
 		const wrapper = await mountModal({ name: "Runbook", deleteDocument })
 
-		teleportedButton("Close").click()
+		teleportedButton(t("general.modal-close-screen-reader-hint")).click()
 		await nextTick()
 
 		expect(deleteDocument).toHaveBeenCalledTimes(0)

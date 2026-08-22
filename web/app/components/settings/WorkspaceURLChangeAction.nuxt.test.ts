@@ -12,6 +12,7 @@ import {
 	mockAuthOrganization,
 	mountWithFrozenClock,
 	settleActionSubmit,
+	t,
 } from "../test-helpers"
 
 vi.mock("vue-sonner", () => ({
@@ -197,7 +198,10 @@ describe("<WorkspaceURLChangeAction>", { concurrent: false }, () => {
 		}))
 		const wrapper = await mountAction()
 
-		await findButtonByText(wrapper, "Cancel").trigger("click")
+		await findButtonByText(
+			wrapper,
+			t("settings.action-modals.workspace-url-change.cancel-button"),
+		).trigger("click")
 
 		expect(checks).toHaveLength(0)
 		expect(wrapper.emitted("close")).toHaveLength(1)

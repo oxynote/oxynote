@@ -7,6 +7,7 @@ import { vi } from "vitest"
 import type { H3Event } from "h3"
 import {
 	mockEndpoint,
+	runInApp,
 	seedQueryData,
 	type RecordedCall,
 } from "~/composables/api/test-helpers"
@@ -284,4 +285,20 @@ export function mockAuthOrganization(organization: Record<string, unknown>) {
 		() => organization,
 		"GET",
 	)
+}
+
+// resolves a message through the same i18n instance the components
+// render with, so an assertion never carries a second copy of the
+// english text. Named placeholders take their values here, exactly as
+// the component passes them: t("sidebar.search.no-results", { query })
+export function t(key: string, params: Record<string, unknown> = {}): string {
+	const message = runInApp(() => useNuxtApp().$i18n.t(key, params))
+
+	// vue-i18n answers a miss with the key itself, which would leave an
+	// assertion comparing two identical key strings and passing
+	if (message === key) {
+		throw new Error(`no translation for "${key}"`)
+	}
+
+	return message
 }

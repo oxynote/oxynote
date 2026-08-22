@@ -15,6 +15,7 @@ import {
 	mountUnderTooltipProvider,
 	seedAuthSession,
 	settleMutations,
+	t,
 	WAIT_FOR_OPTIONS,
 } from "../test-helpers"
 
@@ -83,7 +84,7 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 
 		const { wrapper } = await mountSection()
 
-		expect(wrapper.text()).toContain("oxynote.io/")
+		expect(wrapper.text()).toContain(t("settings.workspace.url-prefix"))
 		expect(wrapper.text()).toContain("acme-corp")
 	})
 
@@ -93,7 +94,10 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 		seedWorkspace()
 		const { wrapper, section } = await mountSection()
 
-		await findButtonByText(wrapper, "Change Workspace URL").trigger("click")
+		await findButtonByText(
+			wrapper,
+			t("settings.workspace.url-change-button-screen-reader-hint"),
+		).trigger("click")
 
 		expect(section.emitted("url-change")).toHaveLength(1)
 	})
@@ -104,7 +108,10 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 		seedWorkspace()
 		const { wrapper, section } = await mountSection()
 
-		await findButtonByText(wrapper, "Invite").trigger("click")
+		await findButtonByText(
+			wrapper,
+			t("settings.workspace.invitation-button"),
+		).trigger("click")
 
 		expect(section.emitted("invitation")).toHaveLength(1)
 	})
@@ -164,7 +171,7 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 	it("warns when the name cannot be saved", async ({ expect }) => {
 		seedWorkspace()
 		mockAuthEndpoint("organization/update", () => {
-			throw new Error("boom")
+			throw createError({ statusCode: 500 })
 		})
 		const { wrapper } = await mountSection()
 
@@ -208,7 +215,7 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 	it("warns when the logo upload fails", async ({ expect }) => {
 		seedWorkspace()
 		mockEndpoint("PUT", "/api/organizations/logo", () => {
-			throw new Error("boom")
+			throw createError({ statusCode: 500 })
 		})
 		const { wrapper } = await mountSection()
 
@@ -246,7 +253,7 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 
 			const { wrapper } = await mountSection()
 
-			expect(wrapper.text()).toContain("Joined")
+			expect(wrapper.text()).toContain(t("settings.workspace.joined-label"))
 			expect(wrapper.text()).toContain("Jan 1, 2026")
 		})
 
@@ -268,7 +275,7 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 			const { wrapper } = await mountSection()
 
 			expect(wrapper.text()).toContain("grace@oxynote.test")
-			expect(wrapper.text()).toContain("Invited")
+			expect(wrapper.text()).toContain(t("settings.workspace.invited-label"))
 			expect(wrapper.text()).toContain("Members (2/5)")
 		})
 
@@ -309,7 +316,7 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 			const { wrapper, section } = await mountSection()
 			await wrapper.get("[data-slot='dropdown-menu-trigger']").trigger("click")
 
-			menuItem("Remove").click()
+			menuItem(t("settings.workspace.member-options.delete.title")).click()
 			await nextTick()
 
 			expect(section.emitted("member-removal")?.[0]?.[0]).toMatchObject({

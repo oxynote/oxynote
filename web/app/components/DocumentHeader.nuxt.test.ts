@@ -14,6 +14,7 @@ import {
 	mountUnderSidebarProvider,
 	seedAuthOrganization,
 	settleMutations,
+	t,
 } from "./test-helpers"
 
 vi.mock("vue-sonner", () => ({
@@ -146,16 +147,19 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 
 		const wrapper = await mountHeader()
 
-		expect(wrapper.text()).toContain("Toggle Edit Mode")
+		expect(wrapper.text()).toContain(t("editor.navbar.toggle-edit-mode"))
 	})
 
 	it("switches from edit mode to read mode", async ({ expect }) => {
 		mainOnly()
 		const wrapper = await mountHeader()
 
-		await findButtonByText(wrapper, "Toggle Edit Mode").trigger("click")
+		await findButtonByText(
+			wrapper,
+			t("editor.navbar.toggle-edit-mode"),
+		).trigger("click")
 
-		expect(wrapper.text()).toContain("Toggle Read Mode")
+		expect(wrapper.text()).toContain(t("editor.navbar.toggle-read-mode"))
 	})
 
 	it("switches from read mode back to edit mode", async ({ expect }) => {
@@ -163,9 +167,12 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 		useEditorMeta().setEditable(false)
 		const wrapper = await mountHeader()
 
-		await findButtonByText(wrapper, "Toggle Read Mode").trigger("click")
+		await findButtonByText(
+			wrapper,
+			t("editor.navbar.toggle-read-mode"),
+		).trigger("click")
 
-		expect(wrapper.text()).toContain("Toggle Edit Mode")
+		expect(wrapper.text()).toContain(t("editor.navbar.toggle-edit-mode"))
 	})
 
 	it("offers a version picker once the document is reviewable", async ({
@@ -175,7 +182,9 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 
 		const wrapper = await mountHeader()
 
-		expect(wrapper.text()).toContain("Main Version")
+		expect(wrapper.text()).toContain(
+			t("editor.navbar.document-modes.main.title"),
+		)
 	})
 
 	it("names the draft version when the draft branch is active", async ({
@@ -186,7 +195,9 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 
 		const wrapper = await mountHeader()
 
-		expect(wrapper.text()).toContain("Draft Version")
+		expect(wrapper.text()).toContain(
+			t("editor.navbar.document-modes.draft.title"),
+		)
 	})
 
 	it("falls back to the main version when the active branch is unknown", async ({
@@ -197,7 +208,9 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 
 		const wrapper = await mountHeader()
 
-		expect(wrapper.text()).toContain("Main Version")
+		expect(wrapper.text()).toContain(
+			t("editor.navbar.document-modes.main.title"),
+		)
 	})
 
 	it("switches to the draft branch from the version picker", async ({
@@ -208,7 +221,7 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 		const wrapper = await mountHeader()
 		await wrapper.get("[data-slot='dropdown-menu-trigger']").trigger("click")
 
-		menuItem("Draft Version").click()
+		menuItem(t("editor.navbar.document-modes.draft.title")).click()
 		await nextTick()
 
 		expect(editorStore.activeBranchId).toBe(DRAFT_BRANCH)
@@ -224,7 +237,7 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 		const wrapper = await mountHeader()
 		await wrapper.get("[data-slot='dropdown-menu-trigger']").trigger("click")
 
-		menuItem("Main Version").click()
+		menuItem(t("editor.navbar.document-modes.main.title")).click()
 		await nextTick()
 
 		expect(editorStore.activeBranchId).toBe(MAIN_BRANCH)
@@ -238,7 +251,7 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 		const wrapper = await mountHeader()
 		await openOptionsMenu(wrapper)
 
-		menuItem("Duplicate").click()
+		menuItem(t("editor.navbar.document-options.duplicate.title")).click()
 		await nextTick()
 
 		expect(
@@ -253,7 +266,7 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 		const wrapper = await mountHeader()
 		await openOptionsMenu(wrapper)
 
-		menuItem("Delete").click()
+		menuItem(t("editor.navbar.document-options.delete.title")).click()
 		await nextTick()
 
 		expect(
@@ -278,7 +291,9 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 		const wrapper = await mountHeader()
 		await openOptionsMenu(wrapper)
 
-		menuItem("Make Reviewable").click()
+		menuItem(
+			t("editor.navbar.document-options.review-workflow.enable-title"),
+		).click()
 		await settleMutations()
 
 		expect(created).toHaveLength(1)
@@ -306,7 +321,9 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 		const wrapper = await mountHeader()
 		await openOptionsMenu(wrapper)
 
-		menuItem("Make Non Reviewable").click()
+		menuItem(
+			t("editor.navbar.document-options.review-workflow.disable-title"),
+		).click()
 		await settleMutations()
 
 		expect(deleted).toHaveLength(1)
@@ -316,12 +333,14 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 	it("warns when the reviewability change fails", async ({ expect }) => {
 		mainOnly()
 		mockEndpoint("POST", `/api/documents/${DOC_ID}/branches`, () => {
-			throw new Error("boom")
+			throw createError({ statusCode: 500 })
 		})
 		const wrapper = await mountHeader()
 		await openOptionsMenu(wrapper)
 
-		menuItem("Make Reviewable").click()
+		menuItem(
+			t("editor.navbar.document-options.review-workflow.enable-title"),
+		).click()
 		await settleMutations()
 
 		expect(toast.custom).toHaveBeenCalledTimes(1)
@@ -340,7 +359,9 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 		await openOptionsMenu(wrapper)
 		useEditorStore().activeDocumentId = null
 
-		menuItem("Make Reviewable").click()
+		menuItem(
+			t("editor.navbar.document-options.review-workflow.enable-title"),
+		).click()
 		await settleMutations()
 
 		expect(created).toHaveLength(0)
@@ -354,7 +375,7 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 
 		const wrapper = await mountHeader()
 
-		expect(wrapper.text()).not.toContain("Rubber Duck")
+		expect(wrapper.text()).not.toContain(t("editor.ai-chat.title"))
 	})
 
 	it("publishes the header height so the page can offset content", async ({

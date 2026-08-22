@@ -206,6 +206,7 @@ async function resetHook() {
 			</span>
 			<i18n-t
 				v-else-if="Number(hookData.score) !== 0"
+				scope="global"
 				keypath="editor.hooks.github-tracking.existing-item"
 				tag="span"
 				class="truncate"
@@ -216,6 +217,7 @@ async function resetHook() {
 			</i18n-t>
 			<i18n-t
 				v-else
+				scope="global"
 				keypath="editor.hooks.github-tracking.triggered-item"
 				tag="span"
 				class="truncate"
@@ -241,6 +243,7 @@ async function resetHook() {
 					"
 				>
 					<i18n-t
+						scope="global"
 						keypath="editor.hooks.github-tracking.not-connected.main"
 						tag="div"
 						class="px-0.75 pb-0.75 text-center text-2sm"
@@ -269,6 +272,7 @@ async function resetHook() {
 				</template>
 				<template v-else-if="!fetchGitHubRepositories.state.value.data?.length">
 					<i18n-t
+						scope="global"
 						keypath="editor.hooks.github-tracking.no-repositories"
 						tag="div"
 						class="px-0.75 pb-0.75 text-center text-2sm"
@@ -284,6 +288,7 @@ async function resetHook() {
 				</template>
 				<template v-else-if="hookData?.state.status === 'missing_repository'">
 					<i18n-t
+						scope="global"
 						keypath="editor.hooks.github-tracking.missing-target-repository"
 						tag="div"
 						class="px-0.75 pb-0.75 text-center text-2sm"
@@ -299,6 +304,7 @@ async function resetHook() {
 				</template>
 				<template v-else-if="hookData?.state.status === 'missing_branch'">
 					<i18n-t
+						scope="global"
 						keypath="editor.hooks.github-tracking.missing-target-branch"
 						tag="div"
 						class="px-0.75 pb-0.75 text-center text-2sm"
@@ -331,6 +337,7 @@ async function resetHook() {
 					>
 						<div class="flex flex-col gap-1 px-0.75 pb-0.75 text-2sm">
 							<i18n-t
+								scope="global"
 								:keypath="
 									props.nodeId
 										? 'editor.hooks.github-tracking.existing-item-block-explanation'
@@ -483,6 +490,7 @@ async function resetHook() {
 							<template #selection-text="{ count }">
 								<i18n-t
 									v-if="count > 1"
+									scope="global"
 									keypath="editor.hooks.github-tracking.selection-text.other"
 									tag="span"
 								>
@@ -490,6 +498,7 @@ async function resetHook() {
 								</i18n-t>
 								<i18n-t
 									v-if="count === 1"
+									scope="global"
 									keypath="editor.hooks.github-tracking.selection-text.one"
 									tag="span"
 								/>

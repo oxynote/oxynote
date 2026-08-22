@@ -158,6 +158,7 @@ const action = computed(() => {
 <template>
 	<ShadcnUiDialog v-model:open="open">
 		<ShadcnUiDialogContent
+			v-if="openType && action"
 			class="max-h-[90dvh] w-[85dvw] overflow-y-auto p-0 text-foreground sm:w-110 md:max-h-[80dvh]"
 			@interact-outside="
 				(event) => {
@@ -170,29 +171,27 @@ const action = computed(() => {
 		>
 			<div class="flex flex-col gap-8 p-6">
 				<div class="flex min-h-0 flex-col gap-3">
-					<template v-if="openType && action">
-						<ShadcnUiDialogHeader>
-							<ShadcnUiDialogTitle class="text-base">
-								{{ action.title }}
-							</ShadcnUiDialogTitle>
-							<ShadcnUiButton
-								variant="ghost-plain"
-								class="absolute top-1/2 right-0 shrink-0 -translate-y-1/2 p-0"
-								@click="open = false"
-							>
-								<Icon name="lucide:x" size="1rem" />
-								<span class="sr-only">
-									{{ $t("general.modal-close-screen-reader-hint") }}
-								</span>
-							</ShadcnUiButton>
-						</ShadcnUiDialogHeader>
-						<component
-							:is="action.component"
-							v-bind="action.opts"
-							@close="open = false"
-							@refresh-organization-slug="emit('refresh-organization-slug')"
-						/>
-					</template>
+					<ShadcnUiDialogHeader>
+						<ShadcnUiDialogTitle class="text-base">
+							{{ action.title }}
+						</ShadcnUiDialogTitle>
+						<ShadcnUiButton
+							variant="ghost-plain"
+							class="absolute top-1/2 right-0 shrink-0 -translate-y-1/2 p-0"
+							@click="open = false"
+						>
+							<Icon name="lucide:x" size="1rem" />
+							<span class="sr-only">
+								{{ $t("general.modal-close-screen-reader-hint") }}
+							</span>
+						</ShadcnUiButton>
+					</ShadcnUiDialogHeader>
+					<component
+						:is="action.component"
+						v-bind="action.opts"
+						@close="open = false"
+						@refresh-organization-slug="emit('refresh-organization-slug')"
+					/>
 				</div>
 			</div>
 		</ShadcnUiDialogContent>

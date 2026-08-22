@@ -296,7 +296,8 @@ function showSettings(target: "github") {
 					v-if="
 						editorStore.reviewableDiffActive &&
 						targetBranchProvider &&
-						activeBranchProvider !== targetBranchProvider
+						activeBranchProvider !== targetBranchProvider &&
+						contentEditor
 					"
 					:target-branch-ydoc="targetBranchProvider.ydoc"
 					:active-branch-ydoc="activeBranchProvider.ydoc"

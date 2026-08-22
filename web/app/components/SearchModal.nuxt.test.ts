@@ -231,7 +231,7 @@ describe("<SearchModal>", { concurrent: false }, () => {
 		expect,
 	}) => {
 		mockEndpoint("GET", "/api/documents/search", () => {
-			throw new Error("boom")
+			throw createError({ statusCode: 500 })
 		})
 		await mountModal()
 

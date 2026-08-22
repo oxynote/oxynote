@@ -2,7 +2,7 @@ import { mountSuspended } from "@nuxt/test-utils/runtime"
 import { CalendarDate } from "@internationalized/date"
 import { beforeEach, describe, it, vi } from "vitest"
 import CalendarInput from "./CalendarInput.vue"
-import { clearTeleportedOverlays } from "./test-helpers"
+import { clearTeleportedOverlays, t } from "./test-helpers"
 
 function mountInput(props: {
 	placeholder: string
@@ -24,23 +24,31 @@ describe("<CalendarInput>", { concurrent: false }, () => {
 	beforeEach(clearTeleportedOverlays)
 
 	it("shows the placeholder while nothing is picked", async ({ expect }) => {
-		const wrapper = await mountInput({ placeholder: "Pick a date" })
+		const wrapper = await mountInput({
+			placeholder: t("editor.hooks.time-expiration.calendar-placeholder"),
+		})
 
-		expect(wrapper.text()).toContain("Pick a date")
+		expect(wrapper.text()).toContain(
+			t("editor.hooks.time-expiration.calendar-placeholder"),
+		)
 	})
 
 	it("shows the picked date instead of the placeholder", async ({ expect }) => {
 		const wrapper = await mountInput({
-			placeholder: "Pick a date",
+			placeholder: t("editor.hooks.time-expiration.calendar-placeholder"),
 			modelValue: new CalendarDate(2026, 3, 14),
 		})
 
 		expect(wrapper.text()).toContain("March 14, 2026")
-		expect(wrapper.text()).not.toContain("Pick a date")
+		expect(wrapper.text()).not.toContain(
+			t("editor.hooks.time-expiration.calendar-placeholder"),
+		)
 	})
 
 	it("greys out the trigger while nothing is picked", async ({ expect }) => {
-		const wrapper = await mountInput({ placeholder: "Pick a date" })
+		const wrapper = await mountInput({
+			placeholder: t("editor.hooks.time-expiration.calendar-placeholder"),
+		})
 
 		expect(wrapper.get("button").classes()).toContain("text-muted-foreground")
 	})
@@ -49,7 +57,7 @@ describe("<CalendarInput>", { concurrent: false }, () => {
 		expect,
 	}) => {
 		const wrapper = await mountInput({
-			placeholder: "Pick a date",
+			placeholder: t("editor.hooks.time-expiration.calendar-placeholder"),
 			modelValue: new CalendarDate(2026, 3, 14),
 		})
 
@@ -61,14 +69,16 @@ describe("<CalendarInput>", { concurrent: false }, () => {
 	it("keeps the calendar closed until the trigger is pressed", async ({
 		expect,
 	}) => {
-		await mountInput({ placeholder: "Pick a date" })
+		await mountInput({
+			placeholder: t("editor.hooks.time-expiration.calendar-placeholder"),
+		})
 
 		expect(popoverText()).not.toContain("March")
 	})
 
 	it("opens the calendar when the trigger is pressed", async ({ expect }) => {
 		const wrapper = await mountInput({
-			placeholder: "Pick a date",
+			placeholder: t("editor.hooks.time-expiration.calendar-placeholder"),
 			modelValue: new CalendarDate(2026, 3, 14),
 		})
 
@@ -81,7 +91,7 @@ describe("<CalendarInput>", { concurrent: false }, () => {
 
 	it("closes the calendar once a date is picked", async ({ expect }) => {
 		const wrapper = await mountInput({
-			placeholder: "Pick a date",
+			placeholder: t("editor.hooks.time-expiration.calendar-placeholder"),
 			modelValue: new CalendarDate(2026, 3, 14),
 		})
 		await wrapper.get("button").trigger("click")
@@ -95,7 +105,7 @@ describe("<CalendarInput>", { concurrent: false }, () => {
 
 	it("reports the day the user clicks in the calendar", async ({ expect }) => {
 		const wrapper = await mountInput({
-			placeholder: "Pick a date",
+			placeholder: t("editor.hooks.time-expiration.calendar-placeholder"),
 			modelValue: new CalendarDate(2026, 3, 14),
 		})
 		await wrapper.get("button").trigger("click")
@@ -115,7 +125,7 @@ describe("<CalendarInput>", { concurrent: false }, () => {
 	it("leaves every day selectable by default", async ({ expect }) => {
 		vi.setSystemTime(new Date("2026-03-14T12:00:00Z"))
 		const wrapper = await mountInput({
-			placeholder: "Pick a date",
+			placeholder: t("editor.hooks.time-expiration.calendar-placeholder"),
 			modelValue: new CalendarDate(2026, 3, 14),
 		})
 
@@ -132,7 +142,7 @@ describe("<CalendarInput>", { concurrent: false }, () => {
 	}) => {
 		vi.setSystemTime(new Date("2026-03-14T12:00:00Z"))
 		const wrapper = await mountInput({
-			placeholder: "Pick a date",
+			placeholder: t("editor.hooks.time-expiration.calendar-placeholder"),
 			modelValue: new CalendarDate(2026, 3, 20),
 			availableFromTomorrow: true,
 		})

@@ -15,6 +15,7 @@ import {
 	mockAuthOrganization,
 	renderedIconNames,
 	seedAuthOrganization,
+	t,
 } from "./test-helpers"
 
 vi.mock("vue-sonner", () => ({
@@ -100,7 +101,7 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 
 		const wrapper = await mountBox()
 
-		expect(wrapper.text()).toContain("All caught up")
+		expect(wrapper.text()).toContain(t("notification.empty-title"))
 	})
 
 	it("lists one row per notification", async ({ expect }) => {
@@ -127,7 +128,7 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 
 		const wrapper = await mountBox()
 
-		expect(wrapper.text()).toContain("Deleted Page")
+		expect(wrapper.text()).toContain(t("notification.document-fallback"))
 	})
 
 	it("labels a notification from the last minute as new", async ({
@@ -137,7 +138,7 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 
 		const wrapper = await mountBox()
 
-		expect(wrapper.text()).toContain("now")
+		expect(wrapper.text()).toContain(t("notification.now-time-label"))
 	})
 
 	it("shows how long ago an older notification arrived", async ({ expect }) => {
@@ -175,7 +176,9 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 
 			const wrapper = await mountBox()
 
-			expect(wrapper.text()).toContain("Review requested for the draft version")
+			expect(wrapper.text()).toContain(
+				t("notification.messages.document-review-request-description"),
+			)
 		})
 
 		it("names the hook that fired", async ({ expect }) => {
@@ -268,7 +271,9 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 
 			const wrapper = await mountBox()
 
-			expect(wrapper.text()).toContain("You have a new notification")
+			expect(wrapper.text()).toContain(
+				t("notification.messages.default-description"),
+			)
 		})
 	})
 
@@ -367,7 +372,10 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 			seedNotifications([makeNotification()])
 			const wrapper = await mountBox()
 
-			await findButtonByText(wrapper, "Mark as read").trigger("click")
+			await findButtonByText(
+				wrapper,
+				t("notification.actions.mark-read"),
+			).trigger("click")
 			await flushPromises()
 
 			expect(calls).toHaveLength(1)
@@ -378,12 +386,15 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 			expect,
 		}) => {
 			mockEndpoint("PUT", "/api/notifications/read-status", () => {
-				throw new Error("boom")
+				throw createError({ statusCode: 500 })
 			})
 			seedNotifications([makeNotification()])
 			const wrapper = await mountBox()
 
-			await findButtonByText(wrapper, "Mark as read").trigger("click")
+			await findButtonByText(
+				wrapper,
+				t("notification.actions.mark-read"),
+			).trigger("click")
 			await flushPromises()
 
 			expect(toast.custom).toHaveBeenCalledTimes(1)
@@ -400,7 +411,10 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 			seedNotifications([makeNotification()])
 			const wrapper = await mountBox()
 
-			await findButtonByText(wrapper, "Read all").trigger("click")
+			await findButtonByText(
+				wrapper,
+				t("notification.read-all-button"),
+			).trigger("click")
 			await flushPromises()
 
 			expect(calls).toHaveLength(1)
@@ -418,7 +432,10 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 			seedNotifications([makeNotification({ read: true })])
 			const wrapper = await mountBox()
 
-			await findButtonByText(wrapper, "Read all").trigger("click")
+			await findButtonByText(
+				wrapper,
+				t("notification.read-all-button"),
+			).trigger("click")
 			await flushPromises()
 
 			expect(calls).toHaveLength(0)
@@ -426,12 +443,15 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 
 		it("warns when marking everything read fails", async ({ expect }) => {
 			mockEndpoint("PUT", "/api/notifications/read-status", () => {
-				throw new Error("boom")
+				throw createError({ statusCode: 500 })
 			})
 			seedNotifications([makeNotification()])
 			const wrapper = await mountBox()
 
-			await findButtonByText(wrapper, "Read all").trigger("click")
+			await findButtonByText(
+				wrapper,
+				t("notification.read-all-button"),
+			).trigger("click")
 			await flushPromises()
 
 			expect(toast.custom).toHaveBeenCalledTimes(1)
@@ -594,7 +614,9 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 
 			const wrapper = await mountBox()
 
-			expect(wrapper.text()).not.toContain("Close notifications")
+			expect(wrapper.text()).not.toContain(
+				t("notification.actions.close-notification-box"),
+			)
 		})
 
 		it("closes the box when its close button is pressed", async ({
@@ -603,7 +625,10 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 			seedNotifications([])
 			const wrapper = await mountBox({ mobile: true })
 
-			await findButtonByText(wrapper, "Close notifications").trigger("click")
+			await findButtonByText(
+				wrapper,
+				t("notification.actions.close-notification-box"),
+			).trigger("click")
 
 			expect(wrapper.emitted("close-notification-box")).toHaveLength(1)
 		})

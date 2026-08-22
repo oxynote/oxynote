@@ -7,7 +7,7 @@ import {
 	mockEndpoint,
 } from "~/composables/api/test-helpers"
 import DataSourceRemovalAction from "./DataSourceRemovalAction.vue"
-import { findButtonByText, settleMutations } from "../test-helpers"
+import { findButtonByText, settleMutations, t } from "../test-helpers"
 
 vi.mock("vue-sonner", () => ({
 	toast: { custom: vi.fn(), dismiss: vi.fn() },
@@ -58,7 +58,10 @@ describe("<DataSourceRemovalAction>", { concurrent: false }, () => {
 		)
 		const wrapper = await mountAction()
 
-		await findButtonByText(wrapper, "Remove Data Source").trigger("click")
+		await findButtonByText(
+			wrapper,
+			t("settings.action-modals.data-source-removal.submit-button"),
+		).trigger("click")
 		await vi.advanceTimersByTimeAsync(300)
 		await settleMutations()
 
@@ -70,7 +73,10 @@ describe("<DataSourceRemovalAction>", { concurrent: false }, () => {
 		mockEndpoint("DELETE", `/api/data-sources/${DATA_SOURCE.id}`, () => ({}))
 		const wrapper = await mountAction()
 
-		await findButtonByText(wrapper, "Remove Data Source").trigger("click")
+		await findButtonByText(
+			wrapper,
+			t("settings.action-modals.data-source-removal.submit-button"),
+		).trigger("click")
 		await vi.advanceTimersByTimeAsync(300)
 		await settleMutations()
 
@@ -83,25 +89,37 @@ describe("<DataSourceRemovalAction>", { concurrent: false }, () => {
 		mockEndpoint("DELETE", `/api/data-sources/${DATA_SOURCE.id}`, () => ({}))
 		const wrapper = await mountAction()
 
-		await findButtonByText(wrapper, "Remove Data Source").trigger("click")
+		await findButtonByText(
+			wrapper,
+			t("settings.action-modals.data-source-removal.submit-button"),
+		).trigger("click")
 		await nextTick()
 
 		expect(wrapper.find(".iconify").exists()).toBe(true)
 		expect(
-			findButtonByText(wrapper, "Remove Data Source").attributes("disabled"),
+			findButtonByText(
+				wrapper,
+				t("settings.action-modals.data-source-removal.submit-button"),
+			).attributes("disabled"),
 		).toBeDefined()
 		expect(
-			findButtonByText(wrapper, "Cancel").attributes("disabled"),
+			findButtonByText(
+				wrapper,
+				t("settings.action-modals.data-source-removal.cancel-button"),
+			).attributes("disabled"),
 		).toBeDefined()
 	})
 
 	it("warns and stays open when the removal fails", async ({ expect }) => {
 		mockEndpoint("DELETE", `/api/data-sources/${DATA_SOURCE.id}`, () => {
-			throw new Error("boom")
+			throw createError({ statusCode: 500 })
 		})
 		const wrapper = await mountAction()
 
-		await findButtonByText(wrapper, "Remove Data Source").trigger("click")
+		await findButtonByText(
+			wrapper,
+			t("settings.action-modals.data-source-removal.submit-button"),
+		).trigger("click")
 		await vi.advanceTimersByTimeAsync(300)
 		await settleMutations()
 
@@ -117,7 +135,10 @@ describe("<DataSourceRemovalAction>", { concurrent: false }, () => {
 		)
 		const wrapper = await mountAction()
 
-		await findButtonByText(wrapper, "Cancel").trigger("click")
+		await findButtonByText(
+			wrapper,
+			t("settings.action-modals.data-source-removal.cancel-button"),
+		).trigger("click")
 
 		expect(calls).toHaveLength(0)
 		expect(wrapper.emitted("close")).toHaveLength(1)

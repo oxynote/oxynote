@@ -155,6 +155,7 @@ async function resetHook() {
 			</span>
 			<i18n-t
 				v-else-if="Number(hookData.score) !== 0"
+				scope="global"
 				keypath="editor.hooks.url-watcher.existing-item"
 				tag="span"
 				class="truncate"
@@ -165,6 +166,7 @@ async function resetHook() {
 			</i18n-t>
 			<i18n-t
 				v-else
+				scope="global"
 				keypath="editor.hooks.url-watcher.triggered-item"
 				tag="span"
 				class="truncate"
@@ -185,6 +187,7 @@ async function resetHook() {
 			<div class="flex w-[14rem] flex-col">
 				<template v-if="hookData?.state.status === 'unreachable_url'">
 					<i18n-t
+						scope="global"
 						keypath="editor.hooks.url-watcher.unreachable-url"
 						tag="div"
 						class="px-0.75 pb-0.75 text-center text-2sm"
@@ -207,6 +210,7 @@ async function resetHook() {
 				>
 					<div class="flex flex-col gap-1 px-0.75 pb-0.75 text-2sm">
 						<i18n-t
+							scope="global"
 							:keypath="
 								props.nodeId
 									? 'editor.hooks.url-watcher.existing-item-block-explanation'

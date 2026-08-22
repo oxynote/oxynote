@@ -12,6 +12,7 @@ import {
 	findButtonByText,
 	mountWithFrozenClock,
 	settleActionSubmit,
+	t,
 } from "../test-helpers"
 
 vi.mock("vue-sonner", () => ({
@@ -184,25 +185,13 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 		})
 
 		it.for([
-			{
-				status: DataSourceStatus.Unauthorized,
-				expected: "Authentication credentials are incorrect",
-			},
-			{
-				status: DataSourceStatus.Unreachable,
-				expected: "server is unreachable",
-			},
-			{
-				status: DataSourceStatus.VersionNotSupported,
-				expected: "is not supported",
-			},
-			{
-				status: DataSourceStatus.NotReadOnly,
-				expected: "only needs read permissions",
-			},
+			DataSourceStatus.Unauthorized,
+			DataSourceStatus.Unreachable,
+			DataSourceStatus.VersionNotSupported,
+			DataSourceStatus.NotReadOnly,
 		])(
-			"explains a $status rejection from the server",
-			async ({ status, expected }, { expect }) => {
+			"explains a %s rejection from the server",
+			async (status, { expect }) => {
 				mockEndpoint("POST", "/api/data-sources", statusError(status))
 				const wrapper = await mountAction({
 					creationType: DataSourceType.Prometheus,
@@ -216,7 +205,11 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 					.mocked(toast.custom)
 					.mock.calls.map((call) => renderToastProps(call[0]))
 
-				expect(rendered[0]?.description).toContain(expected)
+				expect(rendered[0]?.description).toBe(
+					t(
+						`settings.action-modals.data-source-upsert.error-message.status.${status}.description`,
+					),
+				)
 				expect(wrapper.emitted("close")).toBeUndefined()
 			},
 		)
@@ -225,7 +218,7 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 			expect,
 		}) => {
 			mockEndpoint("POST", "/api/data-sources", () => {
-				throw new Error("boom")
+				throw createError({ statusCode: 500 })
 			})
 			const wrapper = await mountAction({
 				creationType: DataSourceType.Prometheus,
@@ -249,7 +242,10 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 				creationType: DataSourceType.Prometheus,
 			})
 
-			await findButtonByText(wrapper, "Cancel").trigger("click")
+			await findButtonByText(
+				wrapper,
+				t("settings.action-modals.data-source-upsert.cancel-button"),
+			).trigger("click")
 
 			expect(calls).toHaveLength(0)
 			expect(wrapper.emitted("close")).toHaveLength(1)
@@ -276,7 +272,7 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 			const wrapper = await mountAction({ updateTarget: EXISTING })
 
 			expect(fields(wrapper).username.attributes("placeholder")).toBe(
-				"[protected]",
+				t("settings.action-modals.data-source-upsert.hidden-placeholder"),
 			)
 		})
 
@@ -359,7 +355,7 @@ describe("<DataSourceUpsertAction>", { concurrent: false }, () => {
 			expect,
 		}) => {
 			mockEndpoint("PUT", `/api/data-sources/${EXISTING.id}`, () => {
-				throw new Error("boom")
+				throw createError({ statusCode: 500 })
 			})
 			const wrapper = await mountAction({ updateTarget: EXISTING })
 			await fields(wrapper).name.setValue("Staging metrics")

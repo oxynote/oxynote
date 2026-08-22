@@ -1750,6 +1750,7 @@ function updateNodeCommentIdInEditor(
 										<div class="text-2sm opacity-60">
 											<i18n-t
 												v-if="!item.edited"
+												scope="global"
 												keypath="editor.comment-thread.comment-header"
 												tag="span"
 											>
@@ -1772,6 +1773,7 @@ function updateNodeCommentIdInEditor(
 											</i18n-t>
 											<i18n-t
 												v-else
+												scope="global"
 												keypath="editor.comment-thread.edited-comment-header"
 												tag="span"
 											>
@@ -1886,18 +1888,21 @@ function updateNodeCommentIdInEditor(
 			>
 				<i18n-t
 					v-if="editTarget"
+					scope="global"
 					keypath="editor.comment-thread.title-edit-existing-thread"
 					class="text-xs font-semibold"
 					tag="div"
 				/>
 				<i18n-t
 					v-else-if="loadedCommentThread.length"
+					scope="global"
 					keypath="editor.comment-thread.title-reply-existing-thread"
 					class="text-xs font-semibold"
 					tag="div"
 				/>
 				<i18n-t
 					v-else
+					scope="global"
 					keypath="editor.comment-thread.title-new-thread"
 					class="text-xs font-semibold"
 					tag="div"

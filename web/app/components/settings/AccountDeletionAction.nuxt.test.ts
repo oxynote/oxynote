@@ -11,6 +11,7 @@ import {
 	mockAuthEndpoint,
 	seedAuthOrganization,
 	settleMutations,
+	t,
 } from "../test-helpers"
 
 vi.mock("vue-sonner", () => ({
@@ -24,7 +25,10 @@ function mountAction() {
 async function confirmDeletion(
 	wrapper: Awaited<ReturnType<typeof mountAction>>,
 ) {
-	await findButtonByText(wrapper, "Delete Account").trigger("click")
+	await findButtonByText(
+		wrapper,
+		t("settings.action-modals.account-deletion.confirm-button"),
+	).trigger("click")
 	await vi.advanceTimersByTimeAsync(300)
 	await settleMutations()
 }
@@ -109,14 +113,23 @@ describe("<AccountDeletionAction>", { concurrent: false }, () => {
 		mockAuthEndpoint("delete-user", () => ({ success: true }))
 		const wrapper = await mountAction()
 
-		await findButtonByText(wrapper, "Delete Account").trigger("click")
+		await findButtonByText(
+			wrapper,
+			t("settings.action-modals.account-deletion.confirm-button"),
+		).trigger("click")
 		await nextTick()
 
 		expect(
-			findButtonByText(wrapper, "Delete Account").attributes("disabled"),
+			findButtonByText(
+				wrapper,
+				t("settings.action-modals.account-deletion.confirm-button"),
+			).attributes("disabled"),
 		).toBeDefined()
 		expect(
-			findButtonByText(wrapper, "Cancel").attributes("disabled"),
+			findButtonByText(
+				wrapper,
+				t("settings.action-modals.account-deletion.cancel-button"),
+			).attributes("disabled"),
 		).toBeDefined()
 	})
 
@@ -124,7 +137,7 @@ describe("<AccountDeletionAction>", { concurrent: false }, () => {
 		expect,
 	}) => {
 		mockAuthEndpoint("delete-user", () => {
-			throw new Error("boom")
+			throw createError({ statusCode: 500 })
 		})
 		const wrapper = await mountAction()
 
@@ -140,7 +153,10 @@ describe("<AccountDeletionAction>", { concurrent: false }, () => {
 		}))
 		const wrapper = await mountAction()
 
-		await findButtonByText(wrapper, "Cancel").trigger("click")
+		await findButtonByText(
+			wrapper,
+			t("settings.action-modals.account-deletion.cancel-button"),
+		).trigger("click")
 
 		expect(calls).toHaveLength(0)
 		expect(wrapper.emitted("close")).toHaveLength(1)

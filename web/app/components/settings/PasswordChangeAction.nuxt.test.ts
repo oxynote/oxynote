@@ -14,6 +14,7 @@ import {
 	seedAuthAccounts,
 	seedAuthSession,
 	settleActionSubmit,
+	t,
 } from "../test-helpers"
 
 vi.mock("vue-sonner", () => ({
@@ -59,7 +60,9 @@ describe("<PasswordChangeAction>", { concurrent: false }, () => {
 			const wrapper = await mountAction()
 
 			expect(wrapper.findAll("input")).toHaveLength(3)
-			expect(wrapper.text()).toContain("Choose a new password")
+			expect(wrapper.text()).toContain(
+				t("settings.action-modals.password-change.description"),
+			)
 		})
 
 		it("changes the password and revokes the other sessions", async ({
@@ -135,7 +138,9 @@ describe("<PasswordChangeAction>", { concurrent: false }, () => {
 			})
 
 			expect(calls).toHaveLength(0)
-			expect(wrapper.text()).toContain("Passwords do not match")
+			expect(wrapper.text()).toContain(
+				t("settings.action-modals.password-change.errors.password-mismatch"),
+			)
 		})
 
 		it("rejects an empty current password", async ({ expect }) => {
@@ -163,7 +168,11 @@ describe("<PasswordChangeAction>", { concurrent: false }, () => {
 				next: VALID_PASSWORD,
 			})
 
-			expect(wrapper.text()).toContain("Incorrect password")
+			expect(wrapper.text()).toContain(
+				t(
+					"settings.action-modals.password-change.errors.invalid-current-password",
+				),
+			)
 			expect(toast.custom).toHaveBeenCalledTimes(0)
 		})
 
@@ -192,7 +201,10 @@ describe("<PasswordChangeAction>", { concurrent: false }, () => {
 			const calls = mockAuthEndpoint("change-password", () => ({ token: "t" }))
 			const wrapper = await mountAction()
 
-			await findButtonByText(wrapper, "Cancel").trigger("click")
+			await findButtonByText(
+				wrapper,
+				t("settings.action-modals.password-change.cancel-button"),
+			).trigger("click")
 
 			expect(calls).toHaveLength(0)
 			expect(wrapper.emitted("close")).toHaveLength(1)
@@ -225,7 +237,10 @@ describe("<PasswordChangeAction>", { concurrent: false }, () => {
 			}))
 			const wrapper = await mountAction()
 
-			await findButtonByText(wrapper, "Send Link").trigger("click")
+			await findButtonByText(
+				wrapper,
+				t("settings.action-modals.password-change.send-link-button"),
+			).trigger("click")
 			await settleActionSubmit()
 
 			expect(calls).toHaveLength(1)
@@ -241,7 +256,10 @@ describe("<PasswordChangeAction>", { concurrent: false }, () => {
 			mockAuthEndpoint("request-password-reset", () => ({ status: true }))
 			const wrapper = await mountAction()
 
-			await findButtonByText(wrapper, "Send Link").trigger("click")
+			await findButtonByText(
+				wrapper,
+				t("settings.action-modals.password-change.send-link-button"),
+			).trigger("click")
 			await settleActionSubmit()
 
 			expect(toast.custom).toHaveBeenCalledTimes(1)
@@ -252,11 +270,14 @@ describe("<PasswordChangeAction>", { concurrent: false }, () => {
 			expect,
 		}) => {
 			mockAuthEndpoint("request-password-reset", () => {
-				throw new Error("boom")
+				throw createError({ statusCode: 500 })
 			})
 			const wrapper = await mountAction()
 
-			await findButtonByText(wrapper, "Send Link").trigger("click")
+			await findButtonByText(
+				wrapper,
+				t("settings.action-modals.password-change.send-link-button"),
+			).trigger("click")
 			await settleActionSubmit()
 
 			expect(toast.custom).toHaveBeenCalledTimes(1)
@@ -272,7 +293,10 @@ describe("<PasswordChangeAction>", { concurrent: false }, () => {
 			}))
 			const wrapper = await mountAction()
 
-			await findButtonByText(wrapper, "Send Link").trigger("click")
+			await findButtonByText(
+				wrapper,
+				t("settings.action-modals.password-change.send-link-button"),
+			).trigger("click")
 			await settleActionSubmit()
 
 			expect(calls).toHaveLength(0)

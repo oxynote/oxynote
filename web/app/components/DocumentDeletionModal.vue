@@ -58,6 +58,7 @@ async function deleteDocument() {
 					</ShadcnUiDialogHeader>
 					<div class="flex flex-col gap-2 self-stretch">
 						<i18n-t
+							scope="global"
 							keypath="editor.document-deletion-modal.description"
 							tag="p"
 							class="text-2sm text-muted-foreground"

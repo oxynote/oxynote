@@ -106,6 +106,8 @@ Pages with `definePageMeta({ skipAuth: true })` are reachable when signed-out (l
 
 All user-facing text **must** live under [i18n/locales/en/](i18n/locales/en/) — never inline. The setup combines multiple JSON files into one big i18n object, so each file must have a **root namespace key** (e.g. `{ "sidebar": { ... } }`). To add a new namespace, also register the filename in `nuxt.config.ts` under `i18n.locales[0].files`.
 
+`<i18n-t>` carries **`scope="global"`** on every use. Its default scope is `parent`, which looks for an ancestor that opened its own i18n scope; nothing in this app does, so without the prop vue-i18n warns once per render and falls back to the global scope anyway.
+
 Form validation (vee-validate) uses its own internal messages — see [README.md](README.md).
 
 ## UI
@@ -113,6 +115,7 @@ Form validation (vee-validate) uses its own internal messages — see [README.md
 - **shadcn-vue** components live in [app/components/shadcn/ui/](app/components/shadcn/ui/) with prefix `ShadcnUi`. Configured in [components.json](components.json).
 - **Tailwind v4** via `@tailwindcss/vite`, theme in [app/assets/css/main.css](app/assets/css/main.css).
 - Icons via `@nuxt/icon` (CSS mode) — only icons listed by `selectableIconList()` in [app/utils/icon.ts](app/utils/icon.ts) are bundled client-side. Custom SVGs live in [app/assets/custom-icons/](app/assets/custom-icons/) and are reachable under the `custom-icons:` prefix.
+- **Open a11y bug: dialogs have no `DialogDescription`.** Every modal renders its description as a plain `<p>`, so the `aria-describedby` reka-ui puts on `DialogContent` points at nothing — screen readers get no description, and reka-ui warns once per mount. **This is scheduled to be fixed, not accepted.** The warning is suppressed in [vitest.config.ts](vitest.config.ts)'s `onConsoleLog` purely to keep test output readable in the meantime; that branch comes out with the fix, and the warning is still visible in `nuxt dev`. Note that routing the text through `ShadcnUiDialogDescription` is *not* a drop-in fix: the wrapper runs its class through `cn()`, and default tailwind-merge reads the custom `text-2sm` as a colour utility and drops it in favour of the wrapper's `text-sm`. Closing this needs either reka-ui's `DialogDescription` imported directly (no `cn()`) or `extendTailwindMerge` teaching `cn()` the custom text scale.
 
 ## Formatting & TS
 
@@ -370,6 +373,32 @@ Component tests mount the real component inside the nuxt runtime with
 [app/components/test-helpers.ts](app/components/test-helpers.ts) — the
 things that come up in nearly every suite:
 
+- **Never hardcode a translation.** User-facing text is asserted through
+  `t()` from
+  [app/components/test-helpers.ts](app/components/test-helpers.ts), which
+  resolves the key against the same i18n instance the component renders
+  with — `expect(wrapper.text()).toContain(t("sidebar.sections.top.inbox"))`,
+  never `toContain("Inbox")`. A copied english string is a second,
+  unmaintained definition of the message: it keeps passing when the copy
+  changes and, in the other direction, a message edit silently breaks a
+  suite that has nothing to do with it. This covers every place the text
+  appears — assertions, the text a lookup helper searches for
+  (`findButtonByText(wrapper, t("..."))`), and props the test feeds in.
+  Rules that follow from it:
+  - **Interpolated messages take their values through `t()` too**, the
+    same ones the component passes:
+    `t("sidebar.search.no-results", { query: "run" })` — never a hand-spliced
+    `"No results found for " + query`, and never a bare prefix like
+    `toContain("No results found for")` that skips the interpolation
+    entirely.
+  - **Pick the key the component actually renders.** Many messages share
+    an english value (six different `cancel-button` keys all read
+    "Cancel"), so the wrong key still passes today and only diverges when
+    one of them is reworded. Follow the component to its key rather than
+    grepping the locale file for the text.
+  - **`t()` needs the nuxt app context**, so it only runs inside a test
+    body or a hook — never at module scope. Text shared across a suite
+    goes in a helper function, not a top-level `const`.
 - **Context providers.** `useSidebar`, `useSidebarWidth` and reka-ui's
   tooltip context are installed once at page level in the app, so a
   component that reads one cannot mount on its own. Mount it through
@@ -398,6 +427,11 @@ things that come up in nearly every suite:
   url. better-auth needs *both* spellings — the absolute one keeps the
   request off the real network, the path one is what the test-time h3 app
   matches a handler on — so it goes through `mockAuthEndpoint()`.
+- **A failing endpoint answers with an h3 error**, never a bare `throw
+  new Error(...)`. h3 treats anything that is not an `H3Error` as
+  unhandled and dumps it with its full stack to stderr — for an outcome
+  the test is asserting on. `throw createError({ statusCode: 500 })`
+  fails the request the same way and stays quiet.
 - **Viewport-dependent layouts.** happy-dom has no `matchMedia`, so
   `useMediaQuery` reports "not matching" for every query — pick a side
   deliberately with `stubViewportMatches()`.
@@ -423,6 +457,42 @@ things that come up in nearly every suite:
   the teleport target — all of them are shared by every mount in a file.
   Mark **each** describe that touches them, nested ones included: the
   option only covers the suite it is on.
+- **A component that keeps watching after its test** — one holding a
+  colour-mode watcher, a branch sync, or a teleported overlay vue still
+  patches — is taken down with `enableAutoUnmount(afterEach)` rather than
+  left mounted. A leftover instance answers the next test too, and
+  `clearTeleportedOverlays()` cannot be used on it: ripping out a node
+  vue still has mounted breaks its next patch.
+
+### Editor component tests
+
+The editor suites reuse a few things the rest of the components do not:
+
+- **Node views** ([app/components/editor/test-helpers/node-view.ts](app/components/editor/test-helpers/node-view.ts))
+  mount on their own through `mountNodeView()`, which supplies every
+  `nodeViewProps` entry plus the `onDragStart` / `decorationClasses`
+  injections tiptap's renderer would provide. `makeNode()` and
+  `makeEditor()` stand in for the node and the editor; the command chain
+  a node view builds is recorded, so a suite asserts *which* commands ran
+  and with what rather than reaching into prosemirror.
+- **Theme colours** are resolved by painting CSS variables onto a canvas,
+  which happy-dom has no 2d context for — anything rendering a chart, a
+  metric block or a caret needs `stubThemeColorContext()` from
+  [app/components/editor/test-helpers/theme.ts](app/components/editor/test-helpers/theme.ts)
+  first.
+- **Charts** are asserted through the option object handed to echarts
+  (`chartOption()`), with `vue-echarts` replaced by a stub — echarts
+  itself needs a canvas.
+- **Virtualized lists** (`vue-virtual-scroller`) measure row heights,
+  which happy-dom reports as zero, so nothing is ever drawn: suites that
+  need the rows mock the module with a pass-through component.
+- **`editor.commands` is rebuilt on every access**, so a spy on one of
+  them is never the object the component calls. Shadow the getter with a
+  recording proxy when a suite needs to see which commands ran.
+- **A live editor** is built with the real extensions when the behaviour
+  under test reads the document (link marks, comment marks, the merged
+  diff). A collaboration-backed component also needs a provider
+  stand-in carrying `document`, `awareness` and `on`/`off`.
 
 ### Snapshots
 

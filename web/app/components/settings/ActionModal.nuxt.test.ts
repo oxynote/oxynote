@@ -14,6 +14,7 @@ import {
 	mockAuthOrganization,
 	seedAuthAccounts,
 	seedAuthSession,
+	t,
 	teleportedButton,
 } from "../test-helpers"
 
@@ -79,22 +80,39 @@ describe("<ActionModal>", { concurrent: false }, () => {
 	})
 
 	it.for([
-		{ action: "email-change", expected: "Change Email" },
-		{ action: "account-deletion", expected: "Delete Account" },
-		{ action: "url-change", expected: "Change Workspace URL" },
-		{ action: "workspace-invitation", expected: "Invite to Your Workspace" },
-	])("titles the $action modal", async ({ action, expected }, { expect }) => {
-		await mountModal({ modelValue: action })
+		{
+			action: "email-change",
+			expectedKey: "settings.action-modals.email-change.title",
+		},
+		{
+			action: "account-deletion",
+			expectedKey: "settings.action-modals.account-deletion.title",
+		},
+		{
+			action: "url-change",
+			expectedKey: "settings.action-modals.workspace-url-change.title",
+		},
+		{
+			action: "workspace-invitation",
+			expectedKey: "settings.action-modals.workspace-invitation.title",
+		},
+	])(
+		"titles the $action modal",
+		async ({ action, expectedKey }, { expect }) => {
+			await mountModal({ modelValue: action })
 
-		expect(dialogText()).toContain(expected)
-	})
+			expect(dialogText()).toContain(t(expectedKey))
+		},
+	)
 
 	it("titles the password modal as a change when a password is set", async ({
 		expect,
 	}) => {
 		await mountModal({ modelValue: "password-change" })
 
-		expect(dialogText()).toContain("Change Password")
+		expect(dialogText()).toContain(
+			t("settings.action-modals.password-change.title"),
+		)
 	})
 
 	it("titles the password modal as a first-time setup when none is set", async ({
@@ -104,7 +122,9 @@ describe("<ActionModal>", { concurrent: false }, () => {
 
 		await mountModal({ modelValue: "password-change" })
 
-		expect(dialogText()).toContain("Set Password")
+		expect(dialogText()).toContain(
+			t("settings.action-modals.password-change.title-set"),
+		)
 	})
 
 	it("titles the invitation modal differently once the workspace is full", async ({
@@ -118,13 +138,19 @@ describe("<ActionModal>", { concurrent: false }, () => {
 
 		await mountModal({ modelValue: "workspace-invitation" })
 
-		expect(dialogText()).toContain("Max Members Reached")
+		expect(dialogText()).toContain(
+			t(
+				"settings.action-modals.workspace-invitation.title-max-members-reached",
+			),
+		)
 	})
 
 	it("names the member in the removal modal", async ({ expect }) => {
 		await mountModal({ modelValue: "workspace-member-removal", opts: MEMBER })
 
-		expect(dialogText()).toContain("Remove from Your Workspace")
+		expect(dialogText()).toContain(
+			t("settings.action-modals.workspace-member-removal.title"),
+		)
 		expect(dialogText()).toContain("Linus")
 	})
 
@@ -155,7 +181,9 @@ describe("<ActionModal>", { concurrent: false }, () => {
 			opts: DataSourceType.PostgreSQL,
 		})
 
-		expect(dialogText()).toContain("Connect PostgreSQL")
+		expect(dialogText()).toContain(
+			t("settings.action-modals.data-source-upsert.title.creation.postgresql"),
+		)
 	})
 
 	it("titles the data source update modal after the target's type", async ({
@@ -163,7 +191,9 @@ describe("<ActionModal>", { concurrent: false }, () => {
 	}) => {
 		await mountModal({ modelValue: "data-source-update", opts: DATA_SOURCE })
 
-		expect(dialogText()).toContain("Update Prometheus")
+		expect(dialogText()).toContain(
+			t("settings.action-modals.data-source-upsert.title.update.prometheus"),
+		)
 	})
 
 	it("titles the data source removal modal after the target's type", async ({
@@ -171,7 +201,9 @@ describe("<ActionModal>", { concurrent: false }, () => {
 	}) => {
 		await mountModal({ modelValue: "data-source-removal", opts: DATA_SOURCE })
 
-		expect(dialogText()).toContain("Remove Prometheus Data Source")
+		expect(dialogText()).toContain(
+			t("settings.action-modals.data-source-removal.title.prometheus"),
+		)
 		expect(dialogText()).toContain("Prod metrics")
 	})
 
@@ -195,7 +227,7 @@ describe("<ActionModal>", { concurrent: false }, () => {
 	}) => {
 		const wrapper = await mountModal({ modelValue: "email-change" })
 
-		teleportedButton("Close").click()
+		teleportedButton(t("general.modal-close-screen-reader-hint")).click()
 		await nextTick()
 
 		expect(wrapper.emitted("update:modelValue")?.at(-1)).toEqual([null])
@@ -206,7 +238,9 @@ describe("<ActionModal>", { concurrent: false }, () => {
 	}) => {
 		const wrapper = await mountModal({ modelValue: "email-change" })
 
-		teleportedButton("Cancel").click()
+		teleportedButton(
+			t("settings.action-modals.email-change.cancel-button"),
+		).click()
 		await nextTick()
 
 		expect(wrapper.emitted("update:modelValue")?.at(-1)).toEqual([null])

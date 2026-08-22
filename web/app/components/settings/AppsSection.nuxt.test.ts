@@ -8,7 +8,7 @@ import {
 	seedQueryData,
 } from "~/composables/api/test-helpers"
 import AppsSection from "./AppsSection.vue"
-import { findButtonByText, settleMutations } from "../test-helpers"
+import { findButtonByText, settleMutations, t } from "../test-helpers"
 
 vi.mock("vue-sonner", () => ({
 	toast: { custom: vi.fn(), dismiss: vi.fn() },
@@ -69,8 +69,8 @@ describe("<AppsSection>", { concurrent: false }, () => {
 
 		const wrapper = await mountSection()
 
-		expect(wrapper.text()).toContain("GitHub")
-		expect(wrapper.text()).toContain("Slack")
+		expect(wrapper.text()).toContain(t("settings.apps.github.title"))
+		expect(wrapper.text()).toContain(t("settings.apps.slack.title"))
 	})
 
 	it("hides github on a deployment without it", async ({ expect }) => {
@@ -78,7 +78,7 @@ describe("<AppsSection>", { concurrent: false }, () => {
 
 		const wrapper = await mountSection()
 
-		expect(wrapper.text()).not.toContain("GitHub")
+		expect(wrapper.text()).not.toContain(t("settings.apps.github.title"))
 	})
 
 	it("hides slack on a deployment without it", async ({ expect }) => {
@@ -86,7 +86,7 @@ describe("<AppsSection>", { concurrent: false }, () => {
 
 		const wrapper = await mountSection()
 
-		expect(wrapper.text()).not.toContain("Slack")
+		expect(wrapper.text()).not.toContain(t("settings.apps.slack.title"))
 	})
 
 	it("offers to connect an unconnected integration", async ({ expect }) => {
@@ -94,7 +94,9 @@ describe("<AppsSection>", { concurrent: false }, () => {
 
 		const wrapper = await mountSection()
 
-		expect(row(wrapper, "GitHub").text()).toContain("Connect")
+		expect(row(wrapper, t("settings.apps.github.title")).text()).toContain(
+			t("settings.apps.github.connect"),
+		)
 	})
 
 	it("reports a connected integration and offers to disconnect it", async ({
@@ -104,8 +106,12 @@ describe("<AppsSection>", { concurrent: false }, () => {
 
 		const wrapper = await mountSection()
 
-		expect(row(wrapper, "GitHub").text()).toContain("Connected")
-		expect(row(wrapper, "GitHub").text()).toContain("Disconnect")
+		expect(row(wrapper, t("settings.apps.github.title")).text()).toContain(
+			t("settings.apps.github.connected"),
+		)
+		expect(row(wrapper, t("settings.apps.github.title")).text()).toContain(
+			t("settings.apps.github.disconnect"),
+		)
 	})
 
 	it("opens the github install page in the browser", async ({ expect }) => {
@@ -117,7 +123,9 @@ describe("<AppsSection>", { concurrent: false }, () => {
 		vi.stubGlobal("open", open)
 		const wrapper = await mountSection()
 
-		await row(wrapper, "GitHub").get("button").trigger("click")
+		await row(wrapper, t("settings.apps.github.title"))
+			.get("button")
+			.trigger("click")
 		await settleMutations()
 
 		expect(open).toHaveBeenCalledExactlyOnceWith(
@@ -132,11 +140,13 @@ describe("<AppsSection>", { concurrent: false }, () => {
 	}) => {
 		seedApps({})
 		mockEndpoint("GET", "/api/github/install", () => {
-			throw new Error("boom")
+			throw createError({ statusCode: 500 })
 		})
 		const wrapper = await mountSection()
 
-		await row(wrapper, "GitHub").get("button").trigger("click")
+		await row(wrapper, t("settings.apps.github.title"))
+			.get("button")
+			.trigger("click")
 		await settleMutations()
 
 		expect(toast.custom).toHaveBeenCalledTimes(1)
@@ -151,7 +161,9 @@ describe("<AppsSection>", { concurrent: false }, () => {
 		vi.stubGlobal("open", open)
 		const wrapper = await mountSection()
 
-		await row(wrapper, "Slack").get("button").trigger("click")
+		await row(wrapper, t("settings.apps.slack.title"))
+			.get("button")
+			.trigger("click")
 		await settleMutations()
 
 		expect(open).toHaveBeenCalledExactlyOnceWith(
@@ -166,11 +178,13 @@ describe("<AppsSection>", { concurrent: false }, () => {
 	}) => {
 		seedApps({})
 		mockEndpoint("GET", "/api/slack/install", () => {
-			throw new Error("boom")
+			throw createError({ statusCode: 500 })
 		})
 		const wrapper = await mountSection()
 
-		await row(wrapper, "Slack").get("button").trigger("click")
+		await row(wrapper, t("settings.apps.slack.title"))
+			.get("button")
+			.trigger("click")
 		await settleMutations()
 
 		expect(toast.custom).toHaveBeenCalledTimes(1)
@@ -181,7 +195,10 @@ describe("<AppsSection>", { concurrent: false }, () => {
 		const calls = mockEndpoint("DELETE", "/api/github", () => ({}))
 		const wrapper = await mountSection()
 
-		await findButtonByText(wrapper, "Disconnect").trigger("click")
+		await findButtonByText(
+			wrapper,
+			t("settings.apps.github.disconnect"),
+		).trigger("click")
 		await settleMutations()
 
 		expect(calls).toHaveLength(1)
@@ -191,11 +208,14 @@ describe("<AppsSection>", { concurrent: false }, () => {
 	it("warns when github cannot be disconnected", async ({ expect }) => {
 		seedApps({ gitHub: { connected: true, configured: true } })
 		mockEndpoint("DELETE", "/api/github", () => {
-			throw new Error("boom")
+			throw createError({ statusCode: 500 })
 		})
 		const wrapper = await mountSection()
 
-		await findButtonByText(wrapper, "Disconnect").trigger("click")
+		await findButtonByText(
+			wrapper,
+			t("settings.apps.github.disconnect"),
+		).trigger("click")
 		await settleMutations()
 
 		expect(toast.custom).toHaveBeenCalledTimes(1)
@@ -206,7 +226,9 @@ describe("<AppsSection>", { concurrent: false }, () => {
 		const calls = mockEndpoint("DELETE", "/api/slack", () => ({}))
 		const wrapper = await mountSection()
 
-		await row(wrapper, "Slack").get("button").trigger("click")
+		await row(wrapper, t("settings.apps.slack.title"))
+			.get("button")
+			.trigger("click")
 		await settleMutations()
 
 		expect(calls).toHaveLength(1)
@@ -216,11 +238,13 @@ describe("<AppsSection>", { concurrent: false }, () => {
 	it("warns when slack cannot be disconnected", async ({ expect }) => {
 		seedApps({ slack: { connected: true, configured: true } })
 		mockEndpoint("DELETE", "/api/slack", () => {
-			throw new Error("boom")
+			throw createError({ statusCode: 500 })
 		})
 		const wrapper = await mountSection()
 
-		await row(wrapper, "Slack").get("button").trigger("click")
+		await row(wrapper, t("settings.apps.slack.title"))
+			.get("button")
+			.trigger("click")
 		await settleMutations()
 
 		expect(toast.custom).toHaveBeenCalledTimes(1)

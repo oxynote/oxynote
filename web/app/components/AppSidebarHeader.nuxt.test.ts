@@ -4,6 +4,7 @@ import {
 	clearTeleportedOverlays,
 	menuItem,
 	mountUnderSidebarProvider,
+	t,
 } from "./test-helpers"
 
 const AVATAR = { src: "", alt: "Logo", initials: "AC" }
@@ -33,7 +34,7 @@ describe("<AppSidebarHeader>", { concurrent: false }, () => {
 	}) => {
 		const wrapper = await mountHeader(null)
 
-		expect(wrapper.text()).toContain("Unknown")
+		expect(wrapper.text()).toContain(t("sidebar.default-workspace-name"))
 	})
 
 	it("shows the workspace initials while the logo has no source", async ({
@@ -82,7 +83,7 @@ describe("<AppSidebarHeader>", { concurrent: false }, () => {
 		const header = wrapper.findComponent(AppSidebarHeader)
 		await wrapper.get("[data-slot='dropdown-menu-trigger']").trigger("click")
 
-		menuItem("Settings").click()
+		menuItem(t("sidebar.header.settings")).click()
 		await nextTick()
 
 		expect(header.emitted("open-settings")).toHaveLength(1)
@@ -93,15 +94,15 @@ describe("<AppSidebarHeader>", { concurrent: false }, () => {
 		const header = wrapper.findComponent(AppSidebarHeader)
 		await wrapper.get("[data-slot='dropdown-menu-trigger']").trigger("click")
 
-		menuItem("Log Out").click()
+		menuItem(t("sidebar.header.log-out")).click()
 		await nextTick()
 
 		expect(header.emitted("log-out")).toHaveLength(1)
 	})
 
 	it.for([
-		{ label: "Light Theme", expected: "light" },
-		{ label: "Dark Theme", expected: "dark" },
+		{ label: "sidebar.header.appearance.light", expected: "light" },
+		{ label: "sidebar.header.appearance.dark", expected: "dark" },
 	] as const)(
 		"switches the colour theme to $expected from the menu",
 		async ({ label, expected }, { expect }) => {
@@ -109,7 +110,7 @@ describe("<AppSidebarHeader>", { concurrent: false }, () => {
 			await wrapper.get("[data-slot='dropdown-menu-trigger']").trigger("click")
 			await openAppearanceSubMenu()
 
-			menuItem(label).click()
+			menuItem(t(label)).click()
 			await nextTick()
 
 			expect(useAppearance().color.value.system).toBe(false)
@@ -125,7 +126,7 @@ describe("<AppSidebarHeader>", { concurrent: false }, () => {
 		await wrapper.get("[data-slot='dropdown-menu-trigger']").trigger("click")
 		await openAppearanceSubMenu()
 
-		menuItem("System Theme").click()
+		menuItem(t("sidebar.header.appearance.auto")).click()
 		await nextTick()
 
 		expect(useAppearance().color.value.system).toBe(true)
@@ -133,7 +134,7 @@ describe("<AppSidebarHeader>", { concurrent: false }, () => {
 })
 
 async function openAppearanceSubMenu() {
-	menuItem("Appearance").click()
+	menuItem(t("sidebar.header.appearance.title")).click()
 	await nextTick()
 	await nextTick()
 }

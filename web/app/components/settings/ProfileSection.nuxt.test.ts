@@ -16,6 +16,7 @@ import {
 	seedAuthAccounts,
 	seedAuthSession,
 	settleMutations,
+	t,
 	WAIT_FOR_OPTIONS,
 } from "../test-helpers"
 
@@ -98,7 +99,10 @@ describe("<ProfileSection>", { concurrent: false }, () => {
 	}) => {
 		const wrapper = await mountSection()
 
-		await findButtonByText(wrapper, "Change Email").trigger("click")
+		await findButtonByText(
+			wrapper,
+			t("settings.profile.email-change-button-screen-reader-hint"),
+		).trigger("click")
 
 		expect(wrapper.emitted("email-change")).toHaveLength(1)
 	})
@@ -108,7 +112,10 @@ describe("<ProfileSection>", { concurrent: false }, () => {
 	}) => {
 		const wrapper = await mountSection()
 
-		await findButtonByText(wrapper, "Change password").trigger("click")
+		await findButtonByText(
+			wrapper,
+			t("settings.profile.password-change-button"),
+		).trigger("click")
 
 		expect(wrapper.emitted("password-change")).toHaveLength(1)
 	})
@@ -120,8 +127,10 @@ describe("<ProfileSection>", { concurrent: false }, () => {
 
 		const wrapper = await mountSection()
 
-		expect(wrapper.text()).toContain("Set password")
-		expect(wrapper.text()).toContain("No password set")
+		expect(wrapper.text()).toContain(t("settings.profile.password-set-button"))
+		expect(wrapper.text()).toContain(
+			t("settings.profile.password-description.status-not-set"),
+		)
 	})
 
 	it("asks to delete the account when its button is pressed", async ({
@@ -129,7 +138,10 @@ describe("<ProfileSection>", { concurrent: false }, () => {
 	}) => {
 		const wrapper = await mountSection()
 
-		await findButtonByText(wrapper, "Delete Account").trigger("click")
+		await findButtonByText(
+			wrapper,
+			t("settings.profile.account-deletion-button"),
+		).trigger("click")
 
 		expect(wrapper.emitted("account-deletion")).toHaveLength(1)
 	})
@@ -186,7 +198,7 @@ describe("<ProfileSection>", { concurrent: false }, () => {
 
 	it("warns when the username cannot be saved", async ({ expect }) => {
 		mockAuthEndpoint("update-user", () => {
-			throw new Error("boom")
+			throw createError({ statusCode: 500 })
 		})
 		const wrapper = await mountSection()
 
@@ -228,7 +240,7 @@ describe("<ProfileSection>", { concurrent: false }, () => {
 
 	it("warns when the avatar upload fails", async ({ expect }) => {
 		mockEndpoint("PUT", "/api/users/image", () => {
-			throw new Error("boom")
+			throw createError({ statusCode: 500 })
 		})
 		const wrapper = await mountSection()
 
@@ -257,7 +269,9 @@ describe("<ProfileSection>", { concurrent: false }, () => {
 
 			const wrapper = await mountSection()
 
-			expect(wrapper.text()).not.toContain("Slack Notifications")
+			expect(wrapper.text()).not.toContain(
+				t("settings.profile.slack-notification-label"),
+			)
 		})
 
 		it("appears once slack is connected", async ({ expect }) => {
@@ -265,7 +279,9 @@ describe("<ProfileSection>", { concurrent: false }, () => {
 
 			const wrapper = await mountSection()
 
-			expect(wrapper.text()).toContain("Slack Notifications")
+			expect(wrapper.text()).toContain(
+				t("settings.profile.slack-notification-label"),
+			)
 		})
 
 		it("explains how to link an unlinked slack account", async ({ expect }) => {
@@ -299,7 +315,7 @@ describe("<ProfileSection>", { concurrent: false }, () => {
 		}) => {
 			seedSlack({ connected: true, linkSettings: { notifications: false } })
 			mockEndpoint("PUT", "/api/slack/users/settings", () => {
-				throw new Error("boom")
+				throw createError({ statusCode: 500 })
 			})
 			const wrapper = await mountSection()
 
