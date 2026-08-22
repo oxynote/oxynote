@@ -28,9 +28,9 @@ const clientId = computed(() => route.query.client_id as string)
 const clientName = ref<string | null>(null)
 const deciding = ref<"approve" | "deny" | null>(null)
 
-const displayName = computed(
-	() => clientName.value ?? clientId.value ?? t("oauth.consent.unknown-client"),
-)
+// the middleware redirects a request carrying no client_id, so the id is
+// always there to fall back on when the name cannot be resolved.
+const displayName = computed(() => clientName.value ?? clientId.value)
 
 const requestedScopes = computed(() => {
 	const scope = route.query.scope
@@ -42,13 +42,17 @@ const requestedScopes = computed(() => {
 	return scope.split(" ").filter(Boolean)
 })
 
-// scope identifiers use a colon, which i18n keypaths reserve, so the
-// lookup key swaps it for a dash.
 function scopeLabel(scope: string) {
-	const key = `oauth.consent.scopes.${scope.replace(":", "-")}`
-	const label = t(key)
+	switch (scope) {
+		case "documents:read":
+			return t("oauth.consent.scopes.documents-read")
+		case "documents:write":
+			return t("oauth.consent.scopes.documents-write")
+	}
 
-	return label === key ? scope : label
+	// a scope this build has no name for is shown verbatim rather than
+	// dropped: the user is still being asked to grant it.
+	return scope
 }
 
 onMounted(async () => {

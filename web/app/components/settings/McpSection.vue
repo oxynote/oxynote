@@ -43,10 +43,16 @@ function clientLabel(clientId: string) {
 }
 
 function scopeLabel(scope: string) {
-	const key = `settings.mcp.scopes.${scope.replace(":", "-")}`
-	const label = t(key)
+	switch (scope) {
+		case "documents:read":
+			return t("settings.mcp.scopes.documents-read")
+		case "documents:write":
+			return t("settings.mcp.scopes.documents-write")
+	}
 
-	return label === key ? scope : label
+	// a scope this build has no name for is shown verbatim rather than
+	// dropped: the client was granted it either way.
+	return scope
 }
 
 async function copyEndpoint() {

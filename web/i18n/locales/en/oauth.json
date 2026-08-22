@@ -4,7 +4,6 @@
 			"page-title": "Authorize access",
 			"title": "Authorize {client}",
 			"description": "{client} is requesting access to your Oxynote documents.",
-			"unknown-client": "Unknown application",
 			"scopes-title": "This application will be able to:",
 			"scopes": {
 				"documents-read": "Read and search your documents",

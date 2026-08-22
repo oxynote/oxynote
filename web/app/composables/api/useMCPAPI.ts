@@ -31,7 +31,9 @@ export default function () {
 
 	const revokeConsent = useMutation({
 		mutation: async (id: string) => {
-			return await $authRealtimeAPIClient(`/api/auth/oauth2/delete-consent`, {
+			// the endpoint answers with an empty body; the refetch below is
+			// what the caller actually waits on.
+			await $authRealtimeAPIClient(`/api/auth/oauth2/delete-consent`, {
 				method: "POST",
 				body: { id },
 			})

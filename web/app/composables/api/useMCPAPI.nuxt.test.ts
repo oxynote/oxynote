@@ -82,9 +82,7 @@ describe("useMCPAPI", { concurrent: false }, () => {
 	})
 
 	describe("decideConsent", () => {
-		it("posts the decision with the page's oauth query", async ({
-			expect,
-		}) => {
+		it("posts the decision with the page's oauth query", async ({ expect }) => {
 			const consentCalls = mockEndpoint(
 				"POST",
 				"http://test.local/auth-realtime/api/auth/oauth2/consent",
