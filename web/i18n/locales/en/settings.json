@@ -447,14 +447,14 @@
 		},
 		"mcp": {
 			"title": "MCP connections",
-			"description": "AI clients like Claude Code can read and edit your documents over the Model Context Protocol. Add the server in your client and authorize it in the browser",
 			"endpoint-label": "Server URL",
-			"copy": "Copy",
+			"endpoint-description": "Add this server in your AI client, then authorize it in the browser",
+			"copy-button-screen-reader-hint": "Copy the server URL",
 			"copied": "Copied to clipboard",
-			"connected-clients": "Authorized clients",
+			"clients-label": "Authorized clients ({count})",
 			"no-clients": "No clients authorized yet",
 			"unknown-client": "Unknown client",
-			"authorized-on": "Authorized {date}",
+			"authorized-label": "Authorized",
 			"scopes": {
 				"documents-read": "Read",
 				"documents-write": "Write"

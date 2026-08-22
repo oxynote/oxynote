@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+import { cn } from "~/lib/utils"
 import { showToastMessage } from "../toast"
 
 const { fetchConsents, fetchPublicClient, revokeConsent } = useMCPAPI()
@@ -48,12 +49,6 @@ function scopeLabel(scope: string) {
 	return label === key ? scope : label
 }
 
-function authorizedOn(createdAt: string) {
-	return t("settings.mcp.authorized-on", {
-		date: new Date(createdAt).toLocaleDateString(),
-	})
-}
-
 async function copyEndpoint() {
 	await navigator.clipboard.writeText(endpointURL.value)
 	showToastMessage("success", t("settings.mcp.copied"))
@@ -72,65 +67,90 @@ async function revoke(id: string) {
 }
 </script>
 <template>
-	<div class="flex flex-col gap-3.5">
-		<div class="flex flex-col gap-2">
-			<div class="text-2base text-muted-foreground md:text-2sm">
-				{{ $t("settings.mcp.description") }}
+	<div class="flex flex-col">
+		<div
+			class="flex w-full flex-col justify-between gap-2 sm:flex-row sm:items-center"
+		>
+			<div class="flex flex-col gap-0.5">
+				<div class="text-2base">
+					{{ $t("settings.mcp.endpoint-label") }}
+				</div>
+				<div class="text-xs text-muted-foreground">
+					{{ $t("settings.mcp.endpoint-description") }}
+				</div>
 			</div>
-			<div class="flex items-center gap-2">
-				<div class="text-sm">{{ $t("settings.mcp.endpoint-label") }}</div>
-				<code
-					class="rounded-sm bg-muted px-1.5 py-0.5 font-mono text-2sm text-muted-foreground"
-				>
+			<div
+				class="flex w-full items-center justify-between gap-1.5 sm:max-w-44 sm:min-w-44 sm:justify-end md:max-w-52 md:min-w-0 lg:max-w-70"
+			>
+				<code class="min-w-0 truncate font-mono text-2sm">
 					{{ endpointURL }}
 				</code>
 				<ShadcnUiButton
 					type="button"
-					variant="ghost-plain"
-					size="custom"
-					class="h-fit gap-1 p-0 text-xs text-muted-foreground hover:text-muted-foreground/70!"
+					class="size-6 shrink-0 bg-transparent p-0"
+					variant="outline"
 					@click="copyEndpoint"
 				>
-					<Icon name="lucide:copy" />
-					{{ $t("settings.mcp.copy") }}
+					<Icon name="lucide:copy" size="0.75rem" />
+					<span class="sr-only">
+						{{ $t("settings.mcp.copy-button-screen-reader-hint") }}
+					</span>
 				</ShadcnUiButton>
 			</div>
 		</div>
-
-		<div class="h-px w-full bg-border" />
-
-		<div class="flex flex-col gap-2">
-			<div class="text-sm">{{ $t("settings.mcp.connected-clients") }}</div>
-			<div
-				v-if="consents.length === 0"
-				class="text-2base text-muted-foreground md:text-2sm"
-			>
+		<div class="my-3.5 h-px w-full bg-border" />
+		<div class="flex w-full flex-col gap-0.75">
+			<i18n-t keypath="settings.mcp.clients-label" tag="div" class="text-2base">
+				<template #count>{{ consents.length }}</template>
+			</i18n-t>
+			<div v-if="consents.length === 0" class="text-2sm text-muted-foreground">
 				{{ $t("settings.mcp.no-clients") }}
 			</div>
-			<div v-else class="flex flex-col">
-				<template v-for="(consent, index) in consents" :key="consent.id">
-					<div v-if="index > 0" class="my-2.5 h-px w-full bg-border" />
-					<div class="flex w-full items-center justify-between gap-4">
-						<div class="flex flex-col">
-							<div class="text-sm">{{ clientLabel(consent.clientId) }}</div>
-							<div class="text-2base text-muted-foreground md:text-2sm">
-								{{ authorizedOn(consent.createdAt) }}
-								·
-								{{ consent.scopes.map(scopeLabel).join(", ") }}
+			<table v-else class="w-full table-fixed">
+				<colgroup>
+					<col class="w-auto md:w-25 lg:w-30" />
+					<col class="hidden md:table-column md:w-9 lg:w-14" />
+					<col class="w-12 lg:w-16" />
+				</colgroup>
+				<tbody class="divide-y divide-border/70 dark:divide-border/50">
+					<tr v-for="consent in consents" :key="consent.id">
+						<td class="py-2">
+							<div class="flex min-w-0 flex-col">
+								<div class="truncate text-sm">
+									{{ clientLabel(consent.clientId) }}
+								</div>
+								<div class="truncate text-2sm text-muted-foreground">
+									{{ consent.scopes.map(scopeLabel).join(", ") }}
+								</div>
 							</div>
-						</div>
-						<ShadcnUiButton
-							type="button"
-							variant="ghost-plain"
-							size="custom"
-							class="h-fit p-0 text-xs text-muted-foreground hover:text-muted-foreground/70! focus:text-muted-foreground/90!"
-							@click="revoke(consent.id)"
-						>
-							{{ $t("settings.mcp.revoke") }}
-						</ShadcnUiButton>
-					</div>
-				</template>
-			</div>
+						</td>
+						<td class="hidden md:table-cell">
+							<div class="flex min-w-0 flex-col">
+								<div class="text-2sm text-muted-foreground">
+									{{ $t("settings.mcp.authorized-label") }}
+								</div>
+								<div class="text-2sm text-muted-foreground">
+									{{ $d(new Date(consent.createdAt), "short") }}
+								</div>
+							</div>
+						</td>
+						<td>
+							<div
+								class="flex h-full items-center justify-end whitespace-nowrap"
+							>
+								<ShadcnUiButton
+									type="button"
+									variant="ghost-plain-destructive"
+									:class="cn('p-0 text-sm')"
+									@click="revoke(consent.id)"
+								>
+									{{ $t("settings.mcp.revoke") }}
+								</ShadcnUiButton>
+							</div>
+						</td>
+					</tr>
+				</tbody>
+			</table>
 		</div>
 	</div>
 </template>
