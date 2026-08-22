@@ -5,7 +5,7 @@ import {
 	seedQueryData,
 } from "~/composables/api/test-helpers"
 import DataSourceSection from "./DataSourceSection.vue"
-import { at, menuItem, mountUnderTooltipProvider } from "../test-helpers"
+import { at, menuItem, mountUnderTooltipProvider, t } from "../test-helpers"
 
 function makeDataSource(overrides: Partial<DataSource> = {}): DataSource {
 	return {
@@ -42,10 +42,14 @@ describe("<DataSourceSection>", { concurrent: false }, () => {
 
 		const { wrapper } = await mountSection()
 
-		expect(wrapper.text()).toContain("Prometheus")
-		expect(wrapper.text()).toContain("PostgreSQL")
-		expect(wrapper.text()).toContain("MySQL")
-		expect(wrapper.text()).toContain("MariaDB")
+		expect(wrapper.text()).toContain(
+			t("settings.data-sources.prometheus.title"),
+		)
+		expect(wrapper.text()).toContain(
+			t("settings.data-sources.postgresql.title"),
+		)
+		expect(wrapper.text()).toContain(t("settings.data-sources.mysql.title"))
+		expect(wrapper.text()).toContain(t("settings.data-sources.mariadb.title"))
 	})
 
 	it("describes a type that has nothing connected yet", async ({ expect }) => {
@@ -118,7 +122,7 @@ describe("<DataSourceSection>", { concurrent: false }, () => {
 			const { wrapper, section } = await mountSection()
 			await wrapper.get("[data-slot='dropdown-menu-trigger']").trigger("click")
 
-			menuItem("Update").click()
+			menuItem(t(`settings.data-sources.${type}.options.update.title`)).click()
 			await nextTick()
 
 			expect(section.emitted("data-source-update")).toEqual([[dataSource]])
@@ -137,7 +141,7 @@ describe("<DataSourceSection>", { concurrent: false }, () => {
 			const { wrapper, section } = await mountSection()
 			await wrapper.get("[data-slot='dropdown-menu-trigger']").trigger("click")
 
-			menuItem("Remove").click()
+			menuItem(t(`settings.data-sources.${type}.options.delete.title`)).click()
 			await nextTick()
 
 			expect(section.emitted("data-source-removal")).toEqual([[dataSource]])
@@ -152,7 +156,11 @@ describe("<DataSourceSection>", { concurrent: false }, () => {
 		const { wrapper, section } = await mountSection()
 		await wrapper.get("[data-slot='dropdown-menu-trigger']").trigger("click")
 
-		menuItem("Update").click()
+		menuItem(
+			t(
+				`settings.data-sources.${DataSourceType.Prometheus}.options.update.title`,
+			),
+		).click()
 		await nextTick()
 
 		expect(section.emitted("data-source-update")).toEqual([[dataSource]])
@@ -166,7 +174,11 @@ describe("<DataSourceSection>", { concurrent: false }, () => {
 		const { wrapper, section } = await mountSection()
 		await wrapper.get("[data-slot='dropdown-menu-trigger']").trigger("click")
 
-		menuItem("Remove").click()
+		menuItem(
+			t(
+				`settings.data-sources.${DataSourceType.Prometheus}.options.delete.title`,
+			),
+		).click()
 		await nextTick()
 
 		expect(section.emitted("data-source-removal")).toEqual([[dataSource]])

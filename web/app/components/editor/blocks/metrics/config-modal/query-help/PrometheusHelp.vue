@@ -3,6 +3,7 @@ const config = useRuntimeConfig()
 </script>
 <template>
 	<i18n-t
+		scope="global"
 		keypath="editor.metrics.config.query-explanations.prometheus.main"
 		tag="div"
 	>
@@ -64,6 +65,7 @@ const config = useRuntimeConfig()
 	</div>
 	<ul class="mt-1 flex list-disc flex-col gap-1 pl-4">
 		<i18n-t
+			scope="global"
 			keypath="editor.metrics.config.query-explanations.prometheus.examples.example-1.description"
 			tag="li"
 		>
@@ -96,6 +98,7 @@ const config = useRuntimeConfig()
 			</template>
 		</i18n-t>
 		<i18n-t
+			scope="global"
 			keypath="editor.metrics.config.query-explanations.prometheus.examples.example-2.description"
 			tag="li"
 		>

@@ -186,6 +186,7 @@ async function logOut(silent = false) {
 			<div class="flex flex-col items-center gap-4">
 				<Icon name="custom-icons:main-logo" class="size-12" />
 				<i18n-t
+					scope="global"
 					keypath="onboarding.accept-invite.title"
 					tag="div"
 					class="text-center text-lg font-normal"
@@ -198,6 +199,7 @@ async function logOut(silent = false) {
 					</template>
 				</i18n-t>
 				<i18n-t
+					scope="global"
 					keypath="onboarding.accept-invite.description"
 					tag="div"
 					class="text-center text-2sm font-normal text-muted-foreground"

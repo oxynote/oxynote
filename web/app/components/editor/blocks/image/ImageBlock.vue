@@ -12,6 +12,7 @@ const props = defineProps(nodeViewProps)
 const { t } = useI18n({ useScope: "global" })
 const { isEditable } = useEditorMeta()
 const editorStore = useEditorStore()
+const { uploadDocumentFile } = useDocumentFileAPI()
 
 const imgRef = ref<HTMLImageElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
@@ -175,7 +176,6 @@ async function handleFileChange(event: Event) {
 		return
 	}
 
-	const { uploadDocumentFile } = useDocumentFileAPI()
 	const blockId = (props.node.attrs.uid as string) || nanoid()
 
 	props.updateAttributes({ uploading: true })

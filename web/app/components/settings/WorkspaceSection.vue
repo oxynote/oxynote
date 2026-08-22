@@ -290,6 +290,7 @@ function handleMemberDelete(member: OrganizationMember) {
 		<div class="flex w-full flex-col gap-0.75">
 			<div class="flex items-center justify-between">
 				<i18n-t
+					scope="global"
 					keypath="settings.workspace.members-label"
 					tag="div"
 					class="text-2base"

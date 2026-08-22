@@ -106,6 +106,7 @@ Component build/test/qa commands are listed in the nested CLAUDE.md files.
 
 - Only comment **complex implementations, edge cases, and locations that would confuse a future reader**. Do not add comments that restate what the code does, and do not add comments just to acknowledge a prompt or show that you understood the task.
 - Always use `//` single-line comments. Never use `/* */` — not even for multi-line blocks.
+- **Never reference CLAUDE.md or any other agent-instruction file from a comment.** Comments stand alone for any reader, and CLAUDE.md is agent-facing documentation, not part of the codebase's own narrative. Where a comment would say "see CLAUDE.md", inline the actual rule or rationale instead. Links to real project docs (READMEs, upstream issues, specs) stay fine.
 - Wrap comments at 80 characters. Continuation lines also start with `// `.
 - Within a single comment, the **first sentence starts with a lowercase letter**; every following sentence starts with an uppercase letter. Sentences are still separated with proper punctuation. However, if the first word is the name of a class/function, use the casing of that class/function and don't override it.
 

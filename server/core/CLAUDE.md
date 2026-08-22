@@ -95,7 +95,9 @@ make check-lint  # golangci-lint run (verification only)
 - Never write comments that narrate the next line or justify a diff; comments state
   constraints and reasons the code cannot express.
 - Comments stand alone: don't reference design docs by section number ("§5.4",
-  "M1") or assume the reader has another file open.
+  "M1"), never point at CLAUDE.md or any other agent-instruction file, and
+  don't assume the reader has another file open. Inline the actual rule or
+  reason instead.
 
 ### Globals
 

@@ -30,6 +30,7 @@ const pageRoute = useRoute()
 			</div>
 			<div class="flex w-full flex-col gap-3">
 				<i18n-t
+					scope="global"
 					:keypath="
 						pageRoute.query.sent
 							? 'onboarding.verify-email.sent-title'

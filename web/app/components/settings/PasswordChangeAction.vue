@@ -285,6 +285,7 @@ async function onSetSubmit() {
 		</template>
 		<template v-else>
 			<i18n-t
+				scope="global"
 				keypath="settings.action-modals.password-change.description-set"
 				tag="p"
 				class="text-2sm text-muted-foreground"

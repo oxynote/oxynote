@@ -28,6 +28,23 @@ const sharedTestOptions = {
 		if (log.includes("<Suspense> is an experimental feature")) {
 			return false
 		}
+
+		// the nuxt overrides below point @nuxt/icon at no provider, so
+		// every icon that is not already in the client bundle fails its
+		// load and warns once per render. That is the intended trade for
+		// keeping the iconify api off the network, not a test failure
+		if (log.startsWith("[Icon] failed to load icon")) {
+			return false
+		}
+
+		// temporary suppression. reka-ui warns once per dialog mount that
+		// no DialogDescription answers the aria-describedby it points at,
+		// and every modal in the app has that gap, so no individual suite
+		// can act on it. Delete this branch once the dialogs describe
+		// themselves
+		if (log.startsWith("Warning: Missing `Description`")) {
+			return false
+		}
 	},
 } satisfies TestUserConfig
 
@@ -126,10 +143,10 @@ export default defineConfig({
 			// untestable branches stay visible in the report, marked with
 			// NOCOV comments in place
 			thresholds: {
-				statements: 64,
-				branches: 49.6,
-				functions: 52.5,
-				lines: 65.4,
+				statements: 86.1,
+				branches: 75.2,
+				functions: 84,
+				lines: 88.6,
 			},
 		},
 

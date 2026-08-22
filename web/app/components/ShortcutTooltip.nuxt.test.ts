@@ -4,6 +4,7 @@ import {
 	clearTeleportedOverlays,
 	mountUnderTooltipProvider,
 	openTooltipText,
+	t,
 } from "./test-helpers"
 
 const HOVER_DELAY_MS = 800
@@ -74,7 +75,9 @@ describe("<ShortcutTooltip>", { concurrent: false }, () => {
 		await wrapper.get("button").trigger("pointerenter")
 		await vi.advanceTimersByTimeAsync(HOVER_DELAY_MS)
 
-		expect(openTooltipText(wrapper)).toContain("Search for pages")
+		expect(openTooltipText(wrapper)).toContain(
+			t("shortcuts.keys.search-for-documents"),
+		)
 	})
 
 	it("shows only the keys for a shortcut with no i18n key", async ({

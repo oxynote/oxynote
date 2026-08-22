@@ -7,8 +7,13 @@ const open = defineModel<boolean>({ required: true })
 const { t } = useI18n({ useScope: "global" })
 const { searchDocuments, fetchDocumentTree } = useDocumentAPI()
 const { fetchOrganization } = useAuthSession()
-const resetLinkHighlightClearState = inject<() => void>(
+// only the document page provides this, so every other mount — the
+// component tests included — has no ancestor to inject from. The call
+// site already guards for that; the explicit default is what keeps vue
+// from warning its way to the same undefined
+const resetLinkHighlightClearState = inject<(() => void) | undefined>(
 	"resetLinkHighlightClearState",
+	undefined,
 )
 
 const searchQuery = ref("")
@@ -153,6 +158,7 @@ function resultTypeText(type: string) {
 				>
 					<Icon name="lucide:search-x" class="size-8 opacity-50" />
 					<i18n-t
+						scope="global"
 						keypath="sidebar.search.no-results"
 						class="text-2base"
 						tag="span"

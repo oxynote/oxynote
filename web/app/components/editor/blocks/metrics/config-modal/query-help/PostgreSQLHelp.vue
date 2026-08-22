@@ -3,6 +3,7 @@ const config = useRuntimeConfig()
 </script>
 <template>
 	<i18n-t
+		scope="global"
 		keypath="editor.metrics.config.query-explanations.postgresql.main"
 		tag="div"
 	>
@@ -134,6 +135,7 @@ const config = useRuntimeConfig()
 					}}
 				</code>
 				<i18n-t
+					scope="global"
 					keypath="editor.metrics.config.query-explanations.postgresql.examples.example-1.description"
 					tag="div"
 				>
@@ -166,6 +168,7 @@ const config = useRuntimeConfig()
 					}}
 				</code>
 				<i18n-t
+					scope="global"
 					keypath="editor.metrics.config.query-explanations.postgresql.examples.example-2.description"
 					tag="div"
 				>

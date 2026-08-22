@@ -116,6 +116,7 @@ const extra = computed(() => Math.max(0, props.icons.length - 3))
 				<ShadcnUiAvatar class="size-6 border">
 					<ShadcnUiAvatarFallback>
 						<i18n-t
+							scope="global"
 							keypath="editor.icon-stack.more-indicator"
 							tag="div"
 							class="items-center justify-center text-xs font-normal"

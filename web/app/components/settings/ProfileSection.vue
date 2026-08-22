@@ -302,6 +302,7 @@ function handleAvatarClick() {
 					{{ $t("settings.profile.password-label") }}
 				</div>
 				<i18n-t
+					scope="global"
 					keypath="settings.profile.password-description.main"
 					tag="div"
 					class="text-xs text-muted-foreground"
@@ -381,6 +382,7 @@ function handleAvatarClick() {
 					</div>
 					<i18n-t
 						v-else
+						scope="global"
 						keypath="settings.profile.slack-notification-unlinked-description.main"
 						tag="div"
 						class="text-xs text-muted-foreground"

@@ -9,9 +9,10 @@ import type { OrganizationMember } from "./workspace"
 import {
 	findButtonByText,
 	mockAuthEndpoint,
-	mountWithFrozenClock,
 	mockAuthOrganization,
+	mountWithFrozenClock,
 	settleActionSubmit,
+	t,
 } from "../test-helpers"
 
 vi.mock("vue-sonner", () => ({
@@ -38,7 +39,10 @@ function mountAction(member: OrganizationMember) {
 async function confirmRemoval(
 	wrapper: Awaited<ReturnType<typeof mountAction>>,
 ) {
-	await findButtonByText(wrapper, "Remove Member").trigger("click")
+	await findButtonByText(
+		wrapper,
+		t("settings.action-modals.workspace-member-removal.submit-button"),
+	).trigger("click")
 	await settleActionSubmit()
 }
 
@@ -100,7 +104,7 @@ describe("<WorkspaceMemberRemovalAction>", { concurrent: false }, () => {
 
 	it("warns and closes when removing the member fails", async ({ expect }) => {
 		mockAuthEndpoint("organization/remove-member", () => {
-			throw new Error("boom")
+			throw createError({ statusCode: 500 })
 		})
 		const wrapper = await mountAction(makeMember())
 
@@ -114,7 +118,7 @@ describe("<WorkspaceMemberRemovalAction>", { concurrent: false }, () => {
 		expect,
 	}) => {
 		mockAuthEndpoint("organization/cancel-invitation", () => {
-			throw new Error("boom")
+			throw createError({ statusCode: 500 })
 		})
 		const wrapper = await mountAction(makeMember({ invitationPending: true }))
 
@@ -132,14 +136,23 @@ describe("<WorkspaceMemberRemovalAction>", { concurrent: false }, () => {
 		}))
 		const wrapper = await mountAction(makeMember())
 
-		await findButtonByText(wrapper, "Remove Member").trigger("click")
+		await findButtonByText(
+			wrapper,
+			t("settings.action-modals.workspace-member-removal.submit-button"),
+		).trigger("click")
 		await nextTick()
 
 		expect(
-			findButtonByText(wrapper, "Remove Member").attributes("disabled"),
+			findButtonByText(
+				wrapper,
+				t("settings.action-modals.workspace-member-removal.submit-button"),
+			).attributes("disabled"),
 		).toBeDefined()
 		expect(
-			findButtonByText(wrapper, "Cancel").attributes("disabled"),
+			findButtonByText(
+				wrapper,
+				t("settings.action-modals.workspace-member-removal.cancel-button"),
+			).attributes("disabled"),
 		).toBeDefined()
 	})
 
@@ -149,7 +162,10 @@ describe("<WorkspaceMemberRemovalAction>", { concurrent: false }, () => {
 		}))
 		const wrapper = await mountAction(makeMember())
 
-		await findButtonByText(wrapper, "Cancel").trigger("click")
+		await findButtonByText(
+			wrapper,
+			t("settings.action-modals.workspace-member-removal.cancel-button"),
+		).trigger("click")
 
 		expect(calls).toHaveLength(0)
 		expect(wrapper.emitted("close")).toHaveLength(1)

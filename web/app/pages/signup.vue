@@ -370,6 +370,7 @@ function methodVariant(method: AuthMethod) {
 				</ShadcnUiButton>
 			</form>
 			<i18n-t
+				scope="global"
 				keypath="onboarding.signup.conditions.main"
 				tag="div"
 				class="text-center text-xs text-accent-foreground"
@@ -396,6 +397,7 @@ function methodVariant(method: AuthMethod) {
 				</template>
 			</i18n-t>
 			<i18n-t
+				scope="global"
 				keypath="onboarding.signup.have-account.main"
 				tag="div"
 				class="text-xs text-accent-foreground"

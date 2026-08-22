@@ -3,6 +3,7 @@ const config = useRuntimeConfig()
 </script>
 <template>
 	<i18n-t
+		scope="global"
 		keypath="editor.metrics.config.query-explanations.mysql.main"
 		tag="div"
 	>
@@ -123,6 +124,7 @@ const config = useRuntimeConfig()
 					}}
 				</code>
 				<i18n-t
+					scope="global"
 					keypath="editor.metrics.config.query-explanations.mysql.examples.example-1.description"
 					tag="div"
 				>
@@ -155,6 +157,7 @@ const config = useRuntimeConfig()
 					}}
 				</code>
 				<i18n-t
+					scope="global"
 					keypath="editor.metrics.config.query-explanations.mysql.examples.example-2.description"
 					tag="div"
 				>

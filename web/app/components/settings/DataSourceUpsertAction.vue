@@ -441,6 +441,7 @@ const onSubmit = form.handleSubmit(async (values) => {
 				class="w-full rounded-md border border-status-warning/30 bg-status-warning/5 px-3 pt-1 pb-1.5"
 			>
 				<i18n-t
+					scope="global"
 					:keypath="`settings.action-modals.data-source-upsert.read-only-warning.${dataSourceType}`"
 					tag="div"
 					class="text-2sm leading-4"

@@ -16,6 +16,7 @@ import {
 	mockAuthOrganization,
 	seedAuthAccounts,
 	seedAuthSession,
+	t,
 	teleportedButton,
 } from "../test-helpers"
 
@@ -102,7 +103,12 @@ describe("<BaseModal>", { concurrent: false }, () => {
 			Array.from(document.body.querySelectorAll<HTMLElement>("h3")).map(
 				(h) => h.textContent,
 			),
-		).toEqual(["Profile", "Workspace", "Apps", "External Data Sources"])
+		).toEqual([
+			t("settings.profile.title"),
+			t("settings.workspace.title"),
+			t("settings.apps.title"),
+			t("settings.data-sources.title"),
+		])
 	})
 
 	it("gives the deep-linkable sections their anchors", async ({ expect }) => {
@@ -156,40 +162,55 @@ describe("<BaseModal>", { concurrent: false }, () => {
 	it("closes when the close button is pressed", async ({ expect }) => {
 		const wrapper = await mountModal()
 
-		teleportedButton("Close").click()
+		teleportedButton(t("general.modal-close-screen-reader-hint")).click()
 		await nextTick()
 
 		expect(wrapper.emitted("update:modelValue")?.at(-1)).toEqual([false])
 	})
 
 	it.for([
-		{ event: "email-change", expected: "Change Email" },
-		{ event: "password-change", expected: "Change Password" },
-		{ event: "account-deletion", expected: "Delete Account" },
+		{
+			event: "email-change",
+			expectedKey: "settings.action-modals.email-change.title",
+		},
+		{
+			event: "password-change",
+			expectedKey: "settings.action-modals.password-change.title",
+		},
+		{
+			event: "account-deletion",
+			expectedKey: "settings.action-modals.account-deletion.title",
+		},
 	])(
 		"opens the $event action from the profile section",
-		async ({ event, expected }, { expect }) => {
+		async ({ event, expectedKey }, { expect }) => {
 			const wrapper = await mountModal()
 
 			emitFrom(wrapper, ProfileSection, event)
 			await nextTick()
 
-			expect(dialogText()).toContain(expected)
+			expect(dialogText()).toContain(t(expectedKey))
 		},
 	)
 
 	it.for([
-		{ event: "url-change", expected: "Change Workspace URL" },
-		{ event: "invitation", expected: "Invite to Your Workspace" },
+		{
+			event: "url-change",
+			expectedKey: "settings.action-modals.workspace-url-change.title",
+		},
+		{
+			event: "invitation",
+			expectedKey: "settings.action-modals.workspace-invitation.title",
+		},
 	])(
 		"opens the $event action from the workspace section",
-		async ({ event, expected }, { expect }) => {
+		async ({ event, expectedKey }, { expect }) => {
 			const wrapper = await mountModal()
 
 			emitFrom(wrapper, WorkspaceSection, event)
 			await nextTick()
 
-			expect(dialogText()).toContain(expected)
+			expect(dialogText()).toContain(t(expectedKey))
 		},
 	)
 
@@ -207,7 +228,9 @@ describe("<BaseModal>", { concurrent: false }, () => {
 		})
 		await nextTick()
 
-		expect(dialogText()).toContain("Remove from Your Workspace")
+		expect(dialogText()).toContain(
+			t("settings.action-modals.workspace-member-removal.title"),
+		)
 		expect(dialogText()).toContain("Linus")
 	})
 
@@ -224,7 +247,9 @@ describe("<BaseModal>", { concurrent: false }, () => {
 		)
 		await nextTick()
 
-		expect(dialogText()).toContain("Connect MySQL")
+		expect(dialogText()).toContain(
+			t("settings.action-modals.data-source-upsert.title.creation.mysql"),
+		)
 	})
 
 	it("opens the data source update action for the picked data source", async ({
@@ -235,7 +260,9 @@ describe("<BaseModal>", { concurrent: false }, () => {
 		emitFrom(wrapper, DataSourceSection, "data-source-update", DATA_SOURCE)
 		await nextTick()
 
-		expect(dialogText()).toContain("Update Prometheus")
+		expect(dialogText()).toContain(
+			t("settings.action-modals.data-source-upsert.title.update.prometheus"),
+		)
 	})
 
 	it("opens the data source removal action for the picked data source", async ({
@@ -246,7 +273,9 @@ describe("<BaseModal>", { concurrent: false }, () => {
 		emitFrom(wrapper, DataSourceSection, "data-source-removal", DATA_SOURCE)
 		await nextTick()
 
-		expect(dialogText()).toContain("Remove Prometheus Data Source")
+		expect(dialogText()).toContain(
+			t("settings.action-modals.data-source-removal.title.prometheus"),
+		)
 	})
 
 	it("passes a slug refresh from an action on to its parent", async ({

@@ -15,6 +15,7 @@ import {
 	seedAuthOrganization,
 	settleMutations,
 	stubViewportMatches,
+	t,
 } from "./test-helpers"
 
 vi.mock("vue-sonner", () => ({
@@ -134,8 +135,8 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 
 		const wrapper = await mountSidebar()
 
-		expect(wrapper.text()).toContain("Search")
-		expect(wrapper.text()).toContain("Inbox")
+		expect(wrapper.text()).toContain(t("sidebar.sections.top.search-button"))
+		expect(wrapper.text()).toContain(t("sidebar.sections.top.inbox"))
 	})
 
 	it("shows the unread notification count on the inbox row", async ({
@@ -146,7 +147,9 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 		const wrapper = await mountSidebar()
 		await settleMutations()
 
-		expect(itemNamed(wrapper, "Inbox").text()).toContain("4")
+		expect(
+			itemNamed(wrapper, t("sidebar.sections.top.inbox")).text(),
+		).toContain("4")
 	})
 
 	it("marks the inbox row active while the notification sidebar is open", async ({
@@ -156,7 +159,11 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 
 		const wrapper = await mountSidebar({ notificationSidebarOpen: true })
 
-		expect(itemNamed(wrapper, "Inbox").attributes("data-active")).toBe("true")
+		expect(
+			itemNamed(wrapper, t("sidebar.sections.top.inbox")).attributes(
+				"data-active",
+			),
+		).toBe("true")
 	})
 
 	it("lists the workspace pages under their own heading", async ({
@@ -167,7 +174,9 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 		const wrapper = await mountSidebar()
 		await settleMutations()
 
-		expect(wrapper.text()).toContain("Workspace")
+		expect(wrapper.text()).toContain(
+			t("sidebar.sections.main-workspace.heading"),
+		)
 		expect(wrapper.text()).toContain("Runbook")
 	})
 
@@ -179,7 +188,9 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 		const wrapper = await mountSidebar()
 		await settleMutations()
 
-		expect(wrapper.text()).toContain("Add Page")
+		expect(wrapper.text()).toContain(
+			t("sidebar.sections.main-workspace.heading-action-title"),
+		)
 	})
 
 	it("asks to open the search modal from the search row", async ({
@@ -188,7 +199,9 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 		stubQueries()
 		const wrapper = await mountSidebar()
 
-		await itemNamed(wrapper, "Search").trigger("click")
+		await itemNamed(wrapper, t("sidebar.sections.top.search-button")).trigger(
+			"click",
+		)
 
 		expect(
 			document.body.querySelector("[data-slot='dialog-content']"),
@@ -201,7 +214,7 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 		stubQueries()
 		const wrapper = await mountSidebar()
 
-		await itemNamed(wrapper, "Inbox").trigger("click")
+		await itemNamed(wrapper, t("sidebar.sections.top.inbox")).trigger("click")
 
 		expect(sidebar(wrapper).emitted("toggle-notifications")).toHaveLength(1)
 	})
@@ -256,7 +269,7 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 	it("warns and stays put when signing out fails", async ({ expect }) => {
 		stubQueries()
 		mockAuthEndpoint("sign-out", () => {
-			throw new Error("boom")
+			throw createError({ statusCode: 500 })
 		})
 		const wrapper = await mountSidebar()
 
@@ -285,7 +298,9 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 			const wrapper = await mountSidebar()
 			await settleMutations()
 
-			expect(wrapper.text()).toContain("Invite Team Members")
+			expect(wrapper.text()).toContain(
+				t("sidebar.sections.next-steps.items.invite-team-members"),
+			)
 		})
 
 		it("drops the invite row once the workspace has more members", async ({
@@ -305,7 +320,9 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 			const wrapper = await mountSidebar()
 			await settleMutations()
 
-			expect(wrapper.text()).not.toContain("Invite Team Members")
+			expect(wrapper.text()).not.toContain(
+				t("sidebar.sections.next-steps.items.invite-team-members"),
+			)
 		})
 
 		it("opens the member settings from the invite row", async ({ expect }) => {
@@ -313,7 +330,10 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 			const wrapper = await mountSidebar()
 			await settleMutations()
 
-			await itemNamed(wrapper, "Invite Team Members").trigger("click")
+			await itemNamed(
+				wrapper,
+				t("sidebar.sections.next-steps.items.invite-team-members"),
+			).trigger("click")
 
 			expect(sidebar(wrapper).emitted("open-settings")).toEqual([
 				["org-members"],
@@ -328,7 +348,9 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 			const wrapper = await mountSidebar()
 			await settleMutations()
 
-			expect(wrapper.text()).toContain("Activate GitHub Integration")
+			expect(wrapper.text()).toContain(
+				t("sidebar.sections.next-steps.items.connect-github"),
+			)
 		})
 
 		it("hides the github integration on a deployment without it", async ({
@@ -339,7 +361,9 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 			const wrapper = await mountSidebar()
 			await settleMutations()
 
-			expect(wrapper.text()).not.toContain("Activate GitHub Integration")
+			expect(wrapper.text()).not.toContain(
+				t("sidebar.sections.next-steps.items.connect-github"),
+			)
 		})
 
 		it("offers the slack integration while it is unconnected", async ({
@@ -350,7 +374,9 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 			const wrapper = await mountSidebar()
 			await settleMutations()
 
-			expect(wrapper.text()).toContain("Activate Slack Integration")
+			expect(wrapper.text()).toContain(
+				t("sidebar.sections.next-steps.items.connect-slack"),
+			)
 		})
 
 		it("hides the slack integration on a deployment without it", async ({
@@ -361,7 +387,9 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 			const wrapper = await mountSidebar()
 			await settleMutations()
 
-			expect(wrapper.text()).not.toContain("Activate Slack Integration")
+			expect(wrapper.text()).not.toContain(
+				t("sidebar.sections.next-steps.items.connect-slack"),
+			)
 		})
 
 		it("hides the whole section once there is nothing left to do", async ({
@@ -381,7 +409,9 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 			const wrapper = await mountSidebar()
 			await settleMutations()
 
-			expect(wrapper.text()).not.toContain("Next Steps")
+			expect(wrapper.text()).not.toContain(
+				t("sidebar.sections.next-steps.heading"),
+			)
 		})
 
 		it("opens the github install page in the browser", async ({ expect }) => {
@@ -394,7 +424,10 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 			const wrapper = await mountSidebar()
 			await settleMutations()
 
-			await itemNamed(wrapper, "Activate GitHub Integration").trigger("click")
+			await itemNamed(
+				wrapper,
+				t("sidebar.sections.next-steps.items.connect-github"),
+			).trigger("click")
 			await settleMutations()
 
 			expect(open).toHaveBeenCalledExactlyOnceWith(
@@ -409,12 +442,15 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 		}) => {
 			stubQueries({ gitHub: { connected: false, configured: true } })
 			mockEndpoint("GET", "/api/github/install", () => {
-				throw new Error("boom")
+				throw createError({ statusCode: 500 })
 			})
 			const wrapper = await mountSidebar()
 			await settleMutations()
 
-			await itemNamed(wrapper, "Activate GitHub Integration").trigger("click")
+			await itemNamed(
+				wrapper,
+				t("sidebar.sections.next-steps.items.connect-github"),
+			).trigger("click")
 			await settleMutations()
 
 			expect(toast.custom).toHaveBeenCalledTimes(1)
@@ -430,7 +466,10 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 			const wrapper = await mountSidebar()
 			await settleMutations()
 
-			await itemNamed(wrapper, "Activate Slack Integration").trigger("click")
+			await itemNamed(
+				wrapper,
+				t("sidebar.sections.next-steps.items.connect-slack"),
+			).trigger("click")
 			await settleMutations()
 
 			expect(open).toHaveBeenCalledExactlyOnceWith(
@@ -445,12 +484,15 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 		}) => {
 			stubQueries({ slack: { connected: false, configured: true } })
 			mockEndpoint("GET", "/api/slack/install", () => {
-				throw new Error("boom")
+				throw createError({ statusCode: 500 })
 			})
 			const wrapper = await mountSidebar()
 			await settleMutations()
 
-			await itemNamed(wrapper, "Activate Slack Integration").trigger("click")
+			await itemNamed(
+				wrapper,
+				t("sidebar.sections.next-steps.items.connect-slack"),
+			).trigger("click")
 			await settleMutations()
 
 			expect(toast.custom).toHaveBeenCalledTimes(1)
@@ -478,7 +520,7 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 		it("warns when the move cannot be persisted", async ({ expect }) => {
 			stubQueries({ tree: [treeElement()] })
 			mockEndpoint("PUT", "/api/documents/tree", () => {
-				throw new Error("boom")
+				throw createError({ statusCode: 500 })
 			})
 			const wrapper = await mountSidebar()
 			await settleMutations()

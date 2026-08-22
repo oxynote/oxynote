@@ -415,6 +415,7 @@ function openModal() {
 					<ShadcnUiEmptyDescription>
 						<i18n-t
 							v-if="data.multipleQueries"
+							scope="global"
 							keypath="editor.metrics.status.query-error.multi-query-description"
 							tag="div"
 						>

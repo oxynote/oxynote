@@ -147,6 +147,7 @@ async function deleteHook() {
 			</span>
 			<i18n-t
 				v-else-if="Number(hookData.score) !== 0"
+				scope="global"
 				keypath="editor.hooks.time-expiration.existing-item"
 				tag="span"
 				class="truncate"
@@ -157,6 +158,7 @@ async function deleteHook() {
 			</i18n-t>
 			<i18n-t
 				v-else
+				scope="global"
 				keypath="editor.hooks.time-expiration.triggered-item"
 				tag="span"
 				class="truncate"
@@ -228,6 +230,7 @@ async function deleteHook() {
 					</template>
 					<template v-else>
 						<i18n-t
+							scope="global"
 							:keypath="
 								props.nodeId
 									? 'editor.hooks.time-expiration.existing-item-block-explanation'

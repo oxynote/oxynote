@@ -12,6 +12,7 @@ import {
 	mountWithFrozenClock,
 	seedAuthSession,
 	settleActionSubmit,
+	t,
 } from "../test-helpers"
 
 vi.mock("vue-sonner", () => ({
@@ -116,7 +117,10 @@ describe("<EmailChangeAction>", { concurrent: false }, () => {
 		const calls = mockAuthEndpoint("change-email", () => ({ status: true }))
 		const wrapper = await mountAction()
 
-		await findButtonByText(wrapper, "Cancel").trigger("click")
+		await findButtonByText(
+			wrapper,
+			t("settings.action-modals.email-change.cancel-button"),
+		).trigger("click")
 
 		expect(calls).toHaveLength(0)
 		expect(wrapper.emitted("close")).toHaveLength(1)
