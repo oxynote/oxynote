@@ -102,7 +102,7 @@ func Test_turn_run(t *testing.T) {
 					Interrupted: &adk.InterruptInfo{
 						InterruptContexts: []*adk.InterruptCtx{{
 							ID: "i1",
-							Info: tools.ConfirmActionSummary{
+							Info: tools.ActionSummary{
 								Tool:    string(tools.NameCreateDocument),
 								Summary: "Create Runbook",
 							},
@@ -376,7 +376,7 @@ func Test_turn_confirmation(t *testing.T) {
 			Info: &adk.InterruptInfo{
 				InterruptContexts: []*adk.InterruptCtx{{
 					ID: "i1",
-					Info: tools.ConfirmActionSummary{
+					Info: tools.ActionSummary{
 						Tool:         string(tools.NameUpdateBlockText),
 						DocumentID:   "d1",
 						DocumentName: "Runbook",

@@ -17,8 +17,19 @@ const (
 	_searchLimitMax = 50
 )
 
+// searchDocumentsArgs is what search_documents is called with.
+type searchDocumentsArgs struct {
+	// Query is the text being searched for. Required.
+	Query string `json:"query"`
+
+	// Limit caps the number of hits. Zero takes the default.
+	Limit int `json:"limit"`
+}
+
 // searchDocuments runs a full-text search across the organisation.
-type searchDocuments struct{}
+type searchDocuments struct {
+	plainSummary
+}
 
 // Info returns the tool's model-facing description.
 func (searchDocuments) Info() Info {
@@ -42,26 +53,23 @@ func (searchDocuments) Traits() Traits {
 }
 
 // Title announces the query being run.
-func (searchDocuments) Title(inp DescribeInput) string {
-	var in struct {
-		Query string `json:"query"`
-	}
+func (searchDocuments) Title(inp DescribeInput) (string, error) {
+	var in searchDocumentsArgs
 
-	inp.Probe(&in)
+	if err := inp.Decode(&in); err != nil {
+		return "", err
+	}
 
 	if in.Query == "" {
-		return "Searching documents"
+		return "Searching documents", nil
 	}
 
-	return fmt.Sprintf("Searching for %q", in.Query)
+	return fmt.Sprintf("Searching for %q", in.Query), nil
 }
 
 // Execute searches the index and decorates hits with document names.
 func (searchDocuments) Execute(inp Input) (string, error) {
-	var in struct {
-		Query string `json:"query"`
-		Limit int    `json:"limit"`
-	}
+	var in searchDocumentsArgs
 
 	if err := inp.Decode(&in); err != nil {
 		return "", err

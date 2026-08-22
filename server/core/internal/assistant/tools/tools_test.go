@@ -71,11 +71,14 @@ func Test_New(t *testing.T) {
 		tl := adapter(t, it).tl
 		tr := tl.Traits()
 
-		// traits are stated rather than derived, so nothing but this
-		// stops a tool from claiming a write it cannot describe — or
-		// describing one it never declared, and so never being gated.
-		_, describes := tl.(WriteTool)
-		assert.Equal(t, tr.Write, describes, "%s declares Write=%v but WriteTool=%v", name, tr.Write, describes)
+		// a write has to describe what it proposes, and nothing else
+		// has anything to propose. Every tool satisfies the interface,
+		// so this asks what a compiler cannot: that the summary is
+		// actually there.
+		sum, serr := tl.Summary(testInput(testDeps(nil, nil, nil), name, `{}`))
+		require.NoError(t, serr)
+		assert.Equal(t, tr.Write, sum.Summary != "",
+			"%s declares Write=%v but Summary=%q", name, tr.Write, sum.Summary)
 
 		// a destructive tool is a write first; nothing else can be
 		// destructive.
@@ -130,6 +133,11 @@ func Test_Set_Entries(t *testing.T) {
 
 	for i, e := range entries {
 		assert.Equal(t, allToolNames()[i], e.Name)
+
+		// the entry carries the tool's own description, so a surface
+		// outside this package never has to ask the tool for it.
+		assert.Equal(t, e.Name, e.Info.Name)
+		assert.NotEmpty(t, e.Info.Description)
 
 		// the entry carries the tool without its confirmation gate,
 		// while the registry keeps the gated one for the chat loop.
@@ -259,10 +267,11 @@ func Test_Set_Label(t *testing.T) {
 			Args:   `{}`,
 			Result: "Reading document",
 		},
-		"Malformed arguments still label": {
-			Name:   NameReadDocumentSummary,
-			Args:   `{`,
-			Result: "Reading document",
+		"Malformed arguments are not announced": {
+			// the call is about to fail on these same arguments, and
+			// that failure is the tool's to report.
+			Name: NameReadDocumentSummary,
+			Args: `{`,
 		},
 	}
 

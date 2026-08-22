@@ -75,6 +75,32 @@ func Test_einoTool_Info(t *testing.T) {
 	require.NotNil(t, info.ParamsOneOf)
 }
 
+func Test_einoTool_Run(t *testing.T) {
+	t.Parallel()
+
+	// error: the arguments never reach a tool that cannot read them
+	res, err := newEinoTool(getDocument{}, testDeps(nil, nil, nil)).
+		Run(context.Background(), json.RawMessage(`{`))
+	require.Error(t, err)
+	assert.Empty(t, res.Documents)
+
+	// a read changes nothing, so it has nothing to report changing
+	res, err = newEinoTool(listDocuments{}, testDeps(nil, nil, nil)).
+		Run(context.Background(), json.RawMessage(`{}`))
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"documents":null}`, res.Output)
+	assert.Empty(t, res.Documents)
+
+	// a write reports the document it changed, taken from the edit it
+	// actually applied rather than from its arguments
+	res, err = newEinoTool(updateBlockText{}, testDeps(stubDocumentDB(), stubApplier(), nil)).
+		Run(context.Background(), json.RawMessage(
+			`{"document_id":"`+_testDocID+`","block_uid":"a","text":"hi"}`))
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"applied":1,"errors":[]}`, res.Output)
+	assert.Equal(t, []string{_testDocID}, res.Documents)
+}
+
 func Test_einoTool_InvokableRun(t *testing.T) {
 	t.Parallel()
 
@@ -95,25 +121,34 @@ func Test_einoTool_Title(t *testing.T) {
 
 	et := newEinoTool(readDocumentSummary{}, testDeps(stubDocumentDB(), nil, nil))
 
-	got := et.Title(context.Background(), json.RawMessage(`{"document_id":"`+_testDocID+`"}`))
+	got, err := et.Title(context.Background(), json.RawMessage(`{"document_id":"`+_testDocID+`"}`))
+	require.NoError(t, err)
 	assert.Equal(t, "Reading Runbook", got)
 }
 
-func Test_einoTool_Confirm(t *testing.T) {
+func Test_einoTool_Summary(t *testing.T) {
 	t.Parallel()
 
 	// a write describes its pending change
 	et := newEinoTool(deleteDocument{}, testDeps(stubDocumentDB(), nil, nil))
 
-	got := et.Confirm(context.Background(), json.RawMessage(`{"document_id":"`+_testDocID+`"}`))
+	got, err := et.Summary(context.Background(), json.RawMessage(`{"document_id":"`+_testDocID+`"}`))
+	require.NoError(t, err)
 	assert.Equal(t, string(NameDeleteDocument), got.Tool)
 	assert.Equal(t, "Delete Runbook", got.Summary)
 
-	// a read has nothing to confirm, and the gate is never applied to
-	// one, so it degrades to a bare summary rather than panicking.
+	// arguments the tool cannot read are refused rather than described:
+	// the same payload would fail on resume anyway.
+	_, err = et.Summary(context.Background(), json.RawMessage(`{`))
+	require.Error(t, err)
+
+	// a read proposes nothing and is never gated, so the adapter reaches
+	// its plainSummary and comes back with nothing to show.
 	read := newEinoTool(getDocument{}, testDeps(nil, nil, nil))
-	assert.Equal(t, ConfirmActionSummary{Tool: string(NameGetDocument)},
-		read.Confirm(context.Background(), json.RawMessage(`{}`)))
+
+	got, err = read.Summary(context.Background(), json.RawMessage(`{}`))
+	require.NoError(t, err)
+	assert.Equal(t, ActionSummary{}, got)
 }
 
 func Test_readToolOutput_Info(t *testing.T) {
@@ -140,7 +175,9 @@ func Test_readToolOutput_Traits(t *testing.T) {
 func Test_readToolOutput_Title(t *testing.T) {
 	t.Parallel()
 
-	assert.Empty(t, readToolOutput{}.Title(testInput(testDeps(nil, nil, nil), NameReadToolOutput, `{}`)))
+	got, err := readToolOutput{}.Title(testInput(testDeps(nil, nil, nil), NameReadToolOutput, `{}`))
+	require.NoError(t, err)
+	assert.Empty(t, got)
 }
 
 func Test_readToolOutput_Execute(t *testing.T) {

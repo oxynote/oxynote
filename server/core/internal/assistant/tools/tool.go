@@ -36,6 +36,26 @@ type Info struct {
 	Required []string
 }
 
+// Schema returns the tool's arguments as a JSON-schema object.
+// Properties are already a schema fragment, so this only wraps them —
+// which keeps each tool's own schema the single source of truth for
+// every surface that has to describe it, rather than restating it in a
+// second vocabulary per surface.
+func (info Info) Schema() map[string]any {
+	out := map[string]any{
+		_keyType:     _typeObject,
+		"properties": info.Properties,
+	}
+
+	// a tool with no required arguments says nothing about them: an
+	// empty array is noise, and a null is not a valid "required".
+	if len(info.Required) > 0 {
+		out["required"] = info.Required
+	}
+
+	return out
+}
+
 // Traits are the facts about a tool that decide how the assistant
 // treats it. A tool states them in one place in its own file rather
 // than being interrogated for them from several.
@@ -44,8 +64,8 @@ type Traits struct {
 	// behind user confirmation and protects its result from being
 	// cleared by the context middlewares — the model has to keep
 	// knowing what it changed, while a stale read can always be taken
-	// again. A tool declaring it must implement WriteTool, so it can
-	// describe the change it is proposing.
+	// again. It is also the only thing asked: a tool declaring it is
+	// what Summary is called on.
 	Write bool
 
 	// Destructive indicates the tool removes content. These are
@@ -62,9 +82,12 @@ type Traits struct {
 	Internal bool
 }
 
-// ReadTool is a tool the model can call that only ever reads. The
-// assistant runs one the moment the model asks for it.
-type ReadTool interface {
+// Tool is a tool the model can call. What a tool is — whether it
+// mutates, whether it survives an approve-all, whether it belongs
+// outside this process — it states in Traits rather than in the set of
+// interfaces it satisfies, so there is one answer to ask and nothing to
+// hold in step.
+type Tool interface {
 	// Info should return the tool's model-facing description.
 	Info() Info
 
@@ -74,23 +97,31 @@ type ReadTool interface {
 
 	// Title should return a short line describing what the tool is
 	// about to do, or an empty string for tools too noisy or too
-	// generic to announce.
-	Title(inp DescribeInput) string
+	// generic to announce, and reject arguments it cannot read.
+	Title(inp DescribeInput) (string, error)
+
+	// Summary should describe the change the tool is proposing, for
+	// the card asking the user to approve it, without performing it. It
+	// should reject arguments it cannot read: a payload Execute would
+	// refuse is not worth asking the user to approve.
+	//
+	// Only a tool whose Traits report a write is ever asked; the rest
+	// embed plainSummary.
+	Summary(inp DescribeInput) (ActionSummary, error)
 
 	// Execute should perform the tool's work and return the result
 	// serialised for the model.
 	Execute(inp Input) (string, error)
 }
 
-// WriteTool is a tool that mutates a document, and so has a pending
-// change it can describe. Every tool whose Traits report a write
-// implements it; the registry's tests hold the two in step.
-type WriteTool interface {
-	ReadTool
+// plainSummary implements the Tool interface to avoid Summary
+// re-implementation in tools that propose nothing.
+type plainSummary struct{}
 
-	// Confirm should describe the pending write for the user, without
-	// performing it.
-	Confirm(inp DescribeInput) ConfirmActionSummary
+// Summary describes nothing: a tool that does not write is never gated,
+// so it is never asked what it is about to change.
+func (plainSummary) Summary(_ DescribeInput) (ActionSummary, error) {
+	return ActionSummary{}, nil
 }
 
 // DescribeInput is what a tool is handed when it is asked to describe
@@ -105,24 +136,20 @@ type DescribeInput interface {
 	// Context should return the context of the call being described.
 	Context() context.Context
 
-	// Probe should decode the call's arguments into dst on a
-	// best-effort basis, leaving dst zero-valued and logging a warning
-	// when they cannot be read. A malformed payload should degrade a
-	// description, never abort the call it describes.
-	Probe(dst any)
-
-	// DocumentID should return the document the arguments target, or an
-	// empty string when they name none.
-	DocumentID() string
+	// Decode should decode the call's arguments into dst, reporting a
+	// malformed payload as an error naming the tool. It is the only way
+	// into a call's arguments: a description that cannot read them says
+	// so rather than describing a call from zero values.
+	Decode(dst any) error
 
 	// DocumentName should return the document's display name, or an
 	// empty string when it cannot be resolved.
 	DocumentName(documentID string) string
 
 	// Subject should return the display subject for a description: the
-	// named document when the arguments name a resolvable one, a
-	// generic fallback otherwise.
-	Subject() string
+	// named document when documentID resolves, a generic fallback
+	// otherwise. The caller passes the id its own arguments named.
+	Subject(documentID string) string
 }
 
 // Documents is the organisation's document tree as a tool reads it.
@@ -195,10 +222,6 @@ type Input interface {
 	Documents
 	DocumentWriter
 	Editor
-
-	// Decode should decode the call's arguments into dst, reporting a
-	// malformed payload as an error naming the tool.
-	Decode(dst any) error
 
 	// OrganizationID should return the organisation every call is
 	// scoped to, for the tools that stamp it onto a new row.

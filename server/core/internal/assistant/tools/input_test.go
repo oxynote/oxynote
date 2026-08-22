@@ -178,48 +178,6 @@ func Test_input_Decode(t *testing.T) {
 	assert.Contains(t, err.Error(), "create_document: invalid input")
 }
 
-func Test_input_Probe(t *testing.T) {
-	t.Parallel()
-
-	var out struct {
-		Name string `json:"name"`
-	}
-
-	// success
-	testInput(testDeps(nil, nil, nil), NameCreateDocument, `{"name":"Runbook"}`).Probe(&out)
-	assert.Equal(t, "Runbook", out.Name)
-
-	// a malformed payload degrades the description rather than aborting
-	// it, so the target keeps its zero value and nothing is returned.
-	out.Name = ""
-
-	testInput(testDeps(nil, nil, nil), NameCreateDocument, `{`).Probe(&out)
-	assert.Empty(t, out.Name)
-}
-
-func Test_input_DocumentID(t *testing.T) {
-	t.Parallel()
-
-	docID := xid.New().String()
-
-	cc := map[string]struct {
-		Args   string
-		Result string
-	}{
-		"Arguments name a document": {Args: `{"document_id":"` + docID + `"}`, Result: docID},
-		"Arguments name none":       {Args: `{}`},
-		"Malformed arguments":       {Args: `{`},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			assert.Equal(t, c.Result, testInput(testDeps(nil, nil, nil), NameGetDocument, c.Args).DocumentID())
-		})
-	}
-}
-
 func Test_input_Subject(t *testing.T) {
 	t.Parallel()
 
@@ -227,17 +185,16 @@ func Test_input_Subject(t *testing.T) {
 
 	cc := map[string]struct {
 		DB     *DBMock
-		Args   string
+		ID     string
 		Result string
 	}{
 		"Named document": {
 			DB:     stubDocumentDB(),
-			Args:   `{"document_id":"` + docID + `"}`,
+			ID:     docID,
 			Result: "Runbook",
 		},
-		"Arguments name no document": {
+		"Caller names no document": {
 			DB:     stubDocumentDB(),
-			Args:   `{}`,
 			Result: "document",
 		},
 		"Unresolvable document falls back": {
@@ -246,7 +203,7 @@ func Test_input_Subject(t *testing.T) {
 					return nil, assert.AnError
 				},
 			},
-			Args:   `{"document_id":"` + docID + `"}`,
+			ID:     docID,
 			Result: "document",
 		},
 	}
@@ -255,7 +212,8 @@ func Test_input_Subject(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, c.Result, testInput(testDeps(c.DB, nil, nil), NameGetDocument, c.Args).Subject())
+			got := testInput(testDeps(c.DB, nil, nil), NameGetDocument, `{}`).Subject(c.ID)
+			assert.Equal(t, c.Result, got)
 		})
 	}
 }
@@ -389,8 +347,17 @@ func Test_input_CreateDocument(t *testing.T) {
 
 			inp := testInput(testDeps(c.DB, nil, nil), NameCreateDocument, `{}`)
 
-			err := inp.CreateDocument(document.Document{ParentID: c.Parent})
+			doc := document.Document{ID: xid.New(), ParentID: c.Parent}
+
+			err := inp.CreateDocument(doc)
 			testutil.AssertEqualError(t, c.Err, err)
+
+			// only a committed document exists to be pointed at.
+			if err == nil {
+				assert.Equal(t, []string{doc.ID.String()}, inp.touched)
+			} else {
+				assert.Empty(t, inp.touched)
+			}
 
 			if c.Tx == nil {
 				return
@@ -403,6 +370,57 @@ func Test_input_CreateDocument(t *testing.T) {
 			assert.Len(t, c.Tx.RollbackCalls(), 1)
 		})
 	}
+}
+
+func Test_input_DeleteDocument(t *testing.T) {
+	t.Parallel()
+
+	docID := xid.New()
+
+	// error
+	inp := testInput(testDeps(&DBMock{
+		DeleteDocumentFunc: func(context.Context, xid.ID, string) error {
+			return assert.AnError
+		},
+	}, nil, nil), NameDeleteDocument, `{}`)
+
+	testutil.AssertEqualError(t, assert.AnError, inp.DeleteDocument(docID))
+
+	// success: the document is gone, so nothing is recorded as touched
+	// — a link to it would only point at something that no longer
+	// exists.
+	db := &DBMock{
+		DeleteDocumentFunc: func(context.Context, xid.ID, string) error {
+			return nil
+		},
+	}
+
+	inp = testInput(testDeps(db, nil, nil), NameDeleteDocument, `{}`)
+
+	require.NoError(t, inp.DeleteDocument(docID))
+	assert.Len(t, db.DeleteDocumentCalls(), 1)
+	assert.Empty(t, inp.touched)
+}
+
+func Test_input_recordTouched(t *testing.T) {
+	t.Parallel()
+
+	inp := testInput(testDeps(nil, nil, nil), NameAppendBlock, `{}`)
+
+	// a call that changed nothing reports nothing.
+	assert.Empty(t, inp.touched)
+
+	inp.recordTouched("a")
+	inp.recordTouched("b")
+
+	// a document changed twice in one call is still one document, and
+	// the order the call touched them is preserved.
+	inp.recordTouched("a")
+
+	// nothing to record is not something to record.
+	inp.recordTouched("")
+
+	assert.Equal(t, []string{"a", "b"}, inp.touched)
 }
 
 func Test_input_MoveDocument(t *testing.T) {
@@ -479,6 +497,14 @@ func Test_input_MoveDocument(t *testing.T) {
 			// nothing is written until the destination is known good.
 			assert.Len(t, c.DB.CheckDocumentExistsCalls(), c.Checks)
 			assert.Len(t, c.DB.UpdateDocumentParentIDCalls(), c.Updates)
+
+			// the parents' own content is unchanged by a re-parent, so
+			// the moved document is the only one recorded.
+			if err == nil {
+				assert.Equal(t, []string{docID.String()}, inp.touched)
+			} else {
+				assert.Empty(t, inp.touched)
+			}
 		})
 	}
 }
@@ -493,6 +519,7 @@ func Test_input_ApplyEdit(t *testing.T) {
 		Applier *EditApplierMock
 		DocID   string
 		Result  string
+		Touched []string
 		Err     error
 	}{
 		"Document cannot be resolved": {
@@ -531,14 +558,16 @@ func Test_input_ApplyEdit(t *testing.T) {
 					}, nil
 				},
 			},
-			DocID:  docID,
-			Result: `{"applied":1,"errors":[{"index":1,"message":"uid not found"}]}`,
+			DocID:   docID,
+			Result:  `{"applied":1,"errors":[{"index":1,"message":"uid not found"}]}`,
+			Touched: []string{docID},
 		},
 		"Applied": {
 			DB:      stubDocumentDB(),
 			Applier: stubApplier(),
 			DocID:   docID,
 			Result:  `{"applied":1,"errors":[]}`,
+			Touched: []string{docID},
 		},
 	}
 
@@ -550,6 +579,9 @@ func Test_input_ApplyEdit(t *testing.T) {
 
 			res, err := inp.ApplyEdit(c.DocID, []edit.Operation{edit.Delete("a")})
 			testutil.AssertEqualError(t, c.Err, err)
+
+			// an edit that never landed has changed nothing to report.
+			assert.Equal(t, c.Touched, inp.touched)
 
 			if err != nil {
 				return

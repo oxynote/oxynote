@@ -15,8 +15,16 @@ import (
 // _maxPreviewLen caps the quoted text preview shown in the confirm UI.
 const _maxPreviewLen = 60
 
+// readDocumentSummaryArgs is what read_document_summary is called with.
+type readDocumentSummaryArgs struct {
+	// DocumentID names the document being summarised.
+	DocumentID string `json:"document_id"`
+}
+
 // readDocumentSummary returns a compact, ordered view of a document.
-type readDocumentSummary struct{}
+type readDocumentSummary struct {
+	plainSummary
+}
 
 // Info returns the tool's model-facing description.
 func (readDocumentSummary) Info() Info {
@@ -34,15 +42,19 @@ func (readDocumentSummary) Traits() Traits {
 }
 
 // Title announces which document is being read.
-func (readDocumentSummary) Title(inp DescribeInput) string {
-	return "Reading " + inp.Subject()
+func (readDocumentSummary) Title(inp DescribeInput) (string, error) {
+	var in readDocumentSummaryArgs
+
+	if err := inp.Decode(&in); err != nil {
+		return "", err
+	}
+
+	return "Reading " + inp.Subject(in.DocumentID), nil
 }
 
 // Execute summarises the document's default branch.
 func (readDocumentSummary) Execute(inp Input) (string, error) {
-	var in struct {
-		DocumentID string `json:"document_id"`
-	}
+	var in readDocumentSummaryArgs
 
 	if err := inp.Decode(&in); err != nil {
 		return "", err
@@ -69,8 +81,19 @@ func (readDocumentSummary) Execute(inp Input) (string, error) {
 	})
 }
 
+// readBlockArgs is what read_block is called with.
+type readBlockArgs struct {
+	// DocumentID names the document holding the block.
+	DocumentID string `json:"document_id"`
+
+	// BlockUID is the block being read. Required.
+	BlockUID string `json:"block_uid"`
+}
+
 // readBlock returns the full canonical content of one block.
-type readBlock struct{}
+type readBlock struct {
+	plainSummary
+}
 
 // Info returns the tool's model-facing description.
 func (readBlock) Info() Info {
@@ -81,7 +104,10 @@ func (readBlock) Info() Info {
 			_keyDocumentID: stringProp(_descDocumentID),
 			_keyBlockUID:   stringProp("The block uid to fetch."),
 		},
-		Required: []string{_keyDocumentID, _keyBlockUID},
+		Required: []string{
+			_keyDocumentID,
+			_keyBlockUID,
+		},
 	}
 }
 
@@ -91,16 +117,19 @@ func (readBlock) Traits() Traits {
 }
 
 // Title announces which document the block is being read from.
-func (readBlock) Title(inp DescribeInput) string {
-	return "Reading a block in " + inp.Subject()
+func (readBlock) Title(inp DescribeInput) (string, error) {
+	var in readBlockArgs
+
+	if err := inp.Decode(&in); err != nil {
+		return "", err
+	}
+
+	return "Reading a block in " + inp.Subject(in.DocumentID), nil
 }
 
 // Execute fetches and compacts the named block.
 func (readBlock) Execute(inp Input) (string, error) {
-	var in struct {
-		DocumentID string `json:"document_id"`
-		BlockUID   string `json:"block_uid"`
-	}
+	var in readBlockArgs
 
 	if err := inp.Decode(&in); err != nil {
 		return "", err
@@ -145,14 +174,39 @@ func (insertBlock) Info() Info {
 			_keyDocumentID:        stringProp(_descTargetDocumentID),
 			"reference_block_uid": stringProp("The uid of the block to insert relative to."),
 			"position": map[string]any{
-				_keyType:        _typeString,
-				"enum":          []string{"before", "after"},
+				_keyType: _typeString,
+				"enum": []string{
+					"before",
+					"after",
+				},
 				_keyDescription: "Insert side relative to the reference block.",
 			},
 			_keyBlock: _blockSchema,
 		},
-		Required: []string{_keyDocumentID, "reference_block_uid", "position", _keyBlock},
+		Required: []string{
+			_keyDocumentID,
+			"reference_block_uid",
+			"position",
+			_keyBlock,
+		},
 	}
+}
+
+// insertBlockArgs is what insert_block is called with.
+type insertBlockArgs struct {
+	// DocumentID names the document to insert into.
+	DocumentID string `json:"document_id"`
+
+	// ReferenceBlockUID is the block the insertion is positioned
+	// against. Required.
+	ReferenceBlockUID string `json:"reference_block_uid"`
+
+	// Position is the side of the reference block to insert on,
+	// "before" or "after".
+	Position string `json:"position"`
+
+	// Block is the block being inserted.
+	Block block.Block `json:"block"`
 }
 
 // Traits reports a write.
@@ -161,22 +215,25 @@ func (insertBlock) Traits() Traits {
 }
 
 // Title announces which document is being updated.
-func (insertBlock) Title(inp DescribeInput) string {
-	return "Updating " + inp.Subject()
-}
+func (insertBlock) Title(inp DescribeInput) (string, error) {
+	var in insertBlockArgs
 
-// Confirm describes the insertion the model wants to make.
-func (insertBlock) Confirm(inp DescribeInput) ConfirmActionSummary {
-	var in struct {
-		Position string `json:"position"`
-		Block    struct {
-			Type string `json:"type"`
-		} `json:"block"`
+	if err := inp.Decode(&in); err != nil {
+		return "", err
 	}
 
-	inp.Probe(&in)
+	return "Updating " + inp.Subject(in.DocumentID), nil
+}
 
-	return summarize(inp, NameInsertBlock, func(subject string) string {
+// Summary describes the insertion the model wants to make.
+func (insertBlock) Summary(inp DescribeInput) (ActionSummary, error) {
+	var in insertBlockArgs
+
+	if err := inp.Decode(&in); err != nil {
+		return ActionSummary{}, err
+	}
+
+	out := summarize(inp, NameInsertBlock, in.DocumentID, func(subject string) string {
 		// echoing a missing or garbage position onto the confirm card
 		// would garble it, so fall back to an un-positioned phrase.
 		if in.Position != "before" && in.Position != "after" {
@@ -187,16 +244,13 @@ func (insertBlock) Confirm(inp DescribeInput) ConfirmActionSummary {
 		return fmt.Sprintf("Insert %s %s a block in %s",
 			blockKindLabel(in.Block.Type), in.Position, subject)
 	})
+
+	return out, nil
 }
 
 // Execute validates the placement and applies the insertion.
 func (insertBlock) Execute(inp Input) (string, error) {
-	var in struct {
-		DocumentID        string      `json:"document_id"`
-		ReferenceBlockUID string      `json:"reference_block_uid"`
-		Position          string      `json:"position"`
-		Block             block.Block `json:"block"`
-	}
+	var in insertBlockArgs
 
 	if err := inp.Decode(&in); err != nil {
 		return "", err
@@ -226,6 +280,17 @@ func (insertBlock) Execute(inp Input) (string, error) {
 	return inp.ApplyEdit(in.DocumentID, []edit.Operation{op})
 }
 
+// rootBlockArgs is what append_block and prepend_block are called
+// with. The two differ only in which end of the document they write to,
+// so they take the same arguments.
+type rootBlockArgs struct {
+	// DocumentID names the document to write to.
+	DocumentID string `json:"document_id"`
+
+	// Block is the block being added.
+	Block block.Block `json:"block"`
+}
+
 // appendBlock adds a canonical block at the end of a document.
 type appendBlock struct{}
 
@@ -238,7 +303,10 @@ func (appendBlock) Info() Info {
 			_keyDocumentID: stringProp(_descTargetDocumentID),
 			_keyBlock:      _blockSchema,
 		},
-		Required: []string{_keyDocumentID, _keyBlock},
+		Required: []string{
+			_keyDocumentID,
+			_keyBlock,
+		},
 	}
 }
 
@@ -248,25 +316,34 @@ func (appendBlock) Traits() Traits {
 }
 
 // Title announces which document is being updated.
-func (appendBlock) Title(inp DescribeInput) string {
-	return "Updating " + inp.Subject()
+func (appendBlock) Title(inp DescribeInput) (string, error) {
+	var in rootBlockArgs
+
+	if err := inp.Decode(&in); err != nil {
+		return "", err
+	}
+
+	return "Updating " + inp.Subject(in.DocumentID), nil
 }
 
-// Confirm describes the block the model wants to append.
-func (appendBlock) Confirm(inp DescribeInput) ConfirmActionSummary {
-	kind := blockKindLabel(blockType(inp))
+// Summary describes the block the model wants to append.
+func (appendBlock) Summary(inp DescribeInput) (ActionSummary, error) {
+	var in rootBlockArgs
 
-	return summarize(inp, NameAppendBlock, func(subject string) string {
-		return fmt.Sprintf("Append %s to %s", kind, subject)
+	if err := inp.Decode(&in); err != nil {
+		return ActionSummary{}, err
+	}
+
+	out := summarize(inp, NameAppendBlock, in.DocumentID, func(subject string) string {
+		return fmt.Sprintf("Append %s to %s", blockKindLabel(in.Block.Type), subject)
 	})
+
+	return out, nil
 }
 
 // Execute validates the block and appends it.
 func (appendBlock) Execute(inp Input) (string, error) {
-	var in struct {
-		DocumentID string      `json:"document_id"`
-		Block      block.Block `json:"block"`
-	}
+	var in rootBlockArgs
 
 	if err := inp.Decode(&in); err != nil {
 		return "", err
@@ -291,7 +368,10 @@ func (prependBlock) Info() Info {
 			_keyDocumentID: stringProp(_descTargetDocumentID),
 			_keyBlock:      _blockSchema,
 		},
-		Required: []string{_keyDocumentID, _keyBlock},
+		Required: []string{
+			_keyDocumentID,
+			_keyBlock,
+		},
 	}
 }
 
@@ -301,25 +381,34 @@ func (prependBlock) Traits() Traits {
 }
 
 // Title announces which document is being updated.
-func (prependBlock) Title(inp DescribeInput) string {
-	return "Updating " + inp.Subject()
+func (prependBlock) Title(inp DescribeInput) (string, error) {
+	var in rootBlockArgs
+
+	if err := inp.Decode(&in); err != nil {
+		return "", err
+	}
+
+	return "Updating " + inp.Subject(in.DocumentID), nil
 }
 
-// Confirm describes the block the model wants to prepend.
-func (prependBlock) Confirm(inp DescribeInput) ConfirmActionSummary {
-	kind := blockKindLabel(blockType(inp))
+// Summary describes the block the model wants to prepend.
+func (prependBlock) Summary(inp DescribeInput) (ActionSummary, error) {
+	var in rootBlockArgs
 
-	return summarize(inp, NamePrependBlock, func(subject string) string {
-		return fmt.Sprintf("Prepend %s to %s", kind, subject)
+	if err := inp.Decode(&in); err != nil {
+		return ActionSummary{}, err
+	}
+
+	out := summarize(inp, NamePrependBlock, in.DocumentID, func(subject string) string {
+		return fmt.Sprintf("Prepend %s to %s", blockKindLabel(in.Block.Type), subject)
 	})
+
+	return out, nil
 }
 
 // Execute validates the block and prepends it.
 func (prependBlock) Execute(inp Input) (string, error) {
-	var in struct {
-		DocumentID string      `json:"document_id"`
-		Block      block.Block `json:"block"`
-	}
+	var in rootBlockArgs
 
 	if err := inp.Decode(&in); err != nil {
 		return "", err
@@ -330,6 +419,18 @@ func (prependBlock) Execute(inp Input) (string, error) {
 	}
 
 	return inp.ApplyEdit(in.DocumentID, []edit.Operation{edit.Prepend(in.Block)})
+}
+
+// replaceBlockArgs is what replace_block is called with.
+type replaceBlockArgs struct {
+	// DocumentID names the document holding the block.
+	DocumentID string `json:"document_id"`
+
+	// BlockUID is the block being replaced. Required.
+	BlockUID string `json:"block_uid"`
+
+	// Block is what takes its place.
+	Block block.Block `json:"block"`
 }
 
 // replaceBlock swaps an existing block for a new one.
@@ -345,7 +446,11 @@ func (replaceBlock) Info() Info {
 			_keyBlockUID:   stringProp("The uid of the block being replaced."),
 			_keyBlock:      _blockSchema,
 		},
-		Required: []string{_keyDocumentID, _keyBlockUID, _keyBlock},
+		Required: []string{
+			_keyDocumentID,
+			_keyBlockUID,
+			_keyBlock,
+		},
 	}
 }
 
@@ -355,26 +460,34 @@ func (replaceBlock) Traits() Traits {
 }
 
 // Title announces which document is being updated.
-func (replaceBlock) Title(inp DescribeInput) string {
-	return "Updating " + inp.Subject()
+func (replaceBlock) Title(inp DescribeInput) (string, error) {
+	var in replaceBlockArgs
+
+	if err := inp.Decode(&in); err != nil {
+		return "", err
+	}
+
+	return "Updating " + inp.Subject(in.DocumentID), nil
 }
 
-// Confirm describes the replacement the model wants to make.
-func (replaceBlock) Confirm(inp DescribeInput) ConfirmActionSummary {
-	kind := blockKindLabel(blockType(inp))
+// Summary describes the replacement the model wants to make.
+func (replaceBlock) Summary(inp DescribeInput) (ActionSummary, error) {
+	var in replaceBlockArgs
 
-	return summarize(inp, NameReplaceBlock, func(subject string) string {
-		return fmt.Sprintf("Replace a block in %s with %s", subject, kind)
+	if err := inp.Decode(&in); err != nil {
+		return ActionSummary{}, err
+	}
+
+	out := summarize(inp, NameReplaceBlock, in.DocumentID, func(subject string) string {
+		return fmt.Sprintf("Replace a block in %s with %s", subject, blockKindLabel(in.Block.Type))
 	})
+
+	return out, nil
 }
 
 // Execute validates the replacement and applies it.
 func (replaceBlock) Execute(inp Input) (string, error) {
-	var in struct {
-		DocumentID string      `json:"document_id"`
-		BlockUID   string      `json:"block_uid"`
-		Block      block.Block `json:"block"`
-	}
+	var in replaceBlockArgs
 
 	if err := inp.Decode(&in); err != nil {
 		return "", err
@@ -393,6 +506,18 @@ func (replaceBlock) Execute(inp Input) (string, error) {
 	return inp.ApplyEdit(in.DocumentID, []edit.Operation{edit.Replace(in.BlockUID, in.Block)})
 }
 
+// updateBlockTextArgs is what update_block_text is called with.
+type updateBlockTextArgs struct {
+	// DocumentID names the document holding the block.
+	DocumentID string `json:"document_id"`
+
+	// BlockUID is the block whose text is being written. Required.
+	BlockUID string `json:"block_uid"`
+
+	// Text is the new inline content.
+	Text string `json:"text"`
+}
+
 // updateBlockText replaces the inline text of a text-bearing block.
 type updateBlockText struct{}
 
@@ -406,7 +531,11 @@ func (updateBlockText) Info() Info {
 			_keyBlockUID:   stringProp("The uid of the block whose text should be replaced."),
 			"text":         stringProp("New inline text in canonical markdown."),
 		},
-		Required: []string{_keyDocumentID, _keyBlockUID, "text"},
+		Required: []string{
+			_keyDocumentID,
+			_keyBlockUID,
+			"text",
+		},
 	}
 }
 
@@ -416,36 +545,40 @@ func (updateBlockText) Traits() Traits {
 }
 
 // Title announces which document is being updated.
-func (updateBlockText) Title(inp DescribeInput) string {
-	return "Updating " + inp.Subject()
-}
+func (updateBlockText) Title(inp DescribeInput) (string, error) {
+	var in updateBlockTextArgs
 
-// Confirm previews the text the model wants to write.
-func (updateBlockText) Confirm(inp DescribeInput) ConfirmActionSummary {
-	var in struct {
-		Text string `json:"text"`
+	if err := inp.Decode(&in); err != nil {
+		return "", err
 	}
 
-	inp.Probe(&in)
+	return "Updating " + inp.Subject(in.DocumentID), nil
+}
+
+// Summary previews the text the model wants to write.
+func (updateBlockText) Summary(inp DescribeInput) (ActionSummary, error) {
+	var in updateBlockTextArgs
+
+	if err := inp.Decode(&in); err != nil {
+		return ActionSummary{}, err
+	}
 
 	preview := textPreview(in.Text, _maxPreviewLen)
 
-	return summarize(inp, NameUpdateBlockText, func(subject string) string {
+	out := summarize(inp, NameUpdateBlockText, in.DocumentID, func(subject string) string {
 		if preview == "" {
 			return "Update text of a block in " + subject
 		}
 
 		return fmt.Sprintf("Update a block in %s: %q", subject, preview)
 	})
+
+	return out, nil
 }
 
 // Execute writes the new text.
 func (updateBlockText) Execute(inp Input) (string, error) {
-	var in struct {
-		DocumentID string `json:"document_id"`
-		BlockUID   string `json:"block_uid"`
-		Text       string `json:"text"`
-	}
+	var in updateBlockTextArgs
 
 	if err := inp.Decode(&in); err != nil {
 		return "", err
@@ -456,6 +589,18 @@ func (updateBlockText) Execute(inp Input) (string, error) {
 	}
 
 	return inp.ApplyEdit(in.DocumentID, []edit.Operation{edit.UpdateText(in.BlockUID, in.Text)})
+}
+
+// updateBlockAttrsArgs is what update_block_attrs is called with.
+type updateBlockAttrsArgs struct {
+	// DocumentID names the document holding the block.
+	DocumentID string `json:"document_id"`
+
+	// BlockUID is the block whose attributes are being set. Required.
+	BlockUID string `json:"block_uid"`
+
+	// Attrs are the attributes to set. Must not be empty.
+	Attrs map[string]any `json:"attrs"`
 }
 
 // updateBlockAttrs sets named attributes on an existing block.
@@ -474,7 +619,11 @@ func (updateBlockAttrs) Info() Info {
 				_keyDescription: "Attribute keys and values to set (e.g. {\"level\": 2}, {\"icon\": \"lucide:warning\"}).",
 			},
 		},
-		Required: []string{_keyDocumentID, _keyBlockUID, "attrs"},
+		Required: []string{
+			_keyDocumentID,
+			_keyBlockUID,
+			"attrs",
+		},
 	}
 }
 
@@ -484,17 +633,23 @@ func (updateBlockAttrs) Traits() Traits {
 }
 
 // Title announces which document is being updated.
-func (updateBlockAttrs) Title(inp DescribeInput) string {
-	return "Updating " + inp.Subject()
-}
+func (updateBlockAttrs) Title(inp DescribeInput) (string, error) {
+	var in updateBlockAttrsArgs
 
-// Confirm names the attributes the model wants to set.
-func (updateBlockAttrs) Confirm(inp DescribeInput) ConfirmActionSummary {
-	var in struct {
-		Attrs map[string]any `json:"attrs"`
+	if err := inp.Decode(&in); err != nil {
+		return "", err
 	}
 
-	inp.Probe(&in)
+	return "Updating " + inp.Subject(in.DocumentID), nil
+}
+
+// Summary names the attributes the model wants to set.
+func (updateBlockAttrs) Summary(inp DescribeInput) (ActionSummary, error) {
+	var in updateBlockAttrsArgs
+
+	if err := inp.Decode(&in); err != nil {
+		return ActionSummary{}, err
+	}
 
 	keys := make([]string, 0, len(in.Attrs))
 	for k := range in.Attrs {
@@ -505,22 +660,20 @@ func (updateBlockAttrs) Confirm(inp DescribeInput) ConfirmActionSummary {
 	// the same every time the same write is proposed.
 	slices.Sort(keys)
 
-	return summarize(inp, NameUpdateBlockAttrs, func(subject string) string {
+	out := summarize(inp, NameUpdateBlockAttrs, in.DocumentID, func(subject string) string {
 		if len(keys) == 0 {
 			return "Update block attributes in " + subject
 		}
 
 		return fmt.Sprintf("Update block %s in %s", strings.Join(keys, ", "), subject)
 	})
+
+	return out, nil
 }
 
 // Execute applies the attribute changes.
 func (updateBlockAttrs) Execute(inp Input) (string, error) {
-	var in struct {
-		DocumentID string         `json:"document_id"`
-		BlockUID   string         `json:"block_uid"`
-		Attrs      map[string]any `json:"attrs"`
-	}
+	var in updateBlockAttrsArgs
 
 	if err := inp.Decode(&in); err != nil {
 		return "", err
@@ -537,6 +690,15 @@ func (updateBlockAttrs) Execute(inp Input) (string, error) {
 	return inp.ApplyEdit(in.DocumentID, []edit.Operation{edit.UpdateAttrs(in.BlockUID, in.Attrs)})
 }
 
+// deleteBlockArgs is what delete_block is called with.
+type deleteBlockArgs struct {
+	// DocumentID names the document holding the block.
+	DocumentID string `json:"document_id"`
+
+	// BlockUID is the block being removed. Required.
+	BlockUID string `json:"block_uid"`
+}
+
 // deleteBlock removes a block from a document.
 type deleteBlock struct{}
 
@@ -549,7 +711,10 @@ func (deleteBlock) Info() Info {
 			_keyDocumentID: stringProp(_descTargetDocumentID),
 			_keyBlockUID:   stringProp("The uid of the block to delete."),
 		},
-		Required: []string{_keyDocumentID, _keyBlockUID},
+		Required: []string{
+			_keyDocumentID,
+			_keyBlockUID,
+		},
 	}
 }
 
@@ -560,23 +725,34 @@ func (deleteBlock) Traits() Traits {
 }
 
 // Title announces which document is being updated.
-func (deleteBlock) Title(inp DescribeInput) string {
-	return "Updating " + inp.Subject()
+func (deleteBlock) Title(inp DescribeInput) (string, error) {
+	var in deleteBlockArgs
+
+	if err := inp.Decode(&in); err != nil {
+		return "", err
+	}
+
+	return "Updating " + inp.Subject(in.DocumentID), nil
 }
 
-// Confirm describes the deletion the model wants to make.
-func (deleteBlock) Confirm(inp DescribeInput) ConfirmActionSummary {
-	return summarize(inp, NameDeleteBlock, func(subject string) string {
+// Summary describes the deletion the model wants to make.
+func (deleteBlock) Summary(inp DescribeInput) (ActionSummary, error) {
+	var in deleteBlockArgs
+
+	if err := inp.Decode(&in); err != nil {
+		return ActionSummary{}, err
+	}
+
+	out := summarize(inp, NameDeleteBlock, in.DocumentID, func(subject string) string {
 		return "Delete a block in " + subject
 	})
+
+	return out, nil
 }
 
 // Execute removes the block.
 func (deleteBlock) Execute(inp Input) (string, error) {
-	var in struct {
-		DocumentID string `json:"document_id"`
-		BlockUID   string `json:"block_uid"`
-	}
+	var in deleteBlockArgs
 
 	if err := inp.Decode(&in); err != nil {
 		return "", err

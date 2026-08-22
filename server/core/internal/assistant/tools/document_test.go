@@ -59,7 +59,9 @@ func Test_listDocuments_Traits(t *testing.T) {
 func Test_listDocuments_Title(t *testing.T) {
 	t.Parallel()
 
-	assert.Empty(t, listDocuments{}.Title(testInput(testDeps(nil, nil, nil), NameListDocuments, `{}`)))
+	got, err := listDocuments{}.Title(testInput(testDeps(nil, nil, nil), NameListDocuments, `{}`))
+	require.NoError(t, err)
+	assert.Empty(t, got)
 }
 
 func Test_listDocuments_Execute(t *testing.T) {
@@ -157,7 +159,9 @@ func Test_getDocument_Traits(t *testing.T) {
 func Test_getDocument_Title(t *testing.T) {
 	t.Parallel()
 
-	assert.Empty(t, getDocument{}.Title(testInput(testDeps(nil, nil, nil), NameGetDocument, `{}`)))
+	got, err := getDocument{}.Title(testInput(testDeps(nil, nil, nil), NameGetDocument, `{}`))
+	require.NoError(t, err)
+	assert.Empty(t, got)
 }
 
 func Test_getDocument_Execute(t *testing.T) {
@@ -261,24 +265,28 @@ func Test_createDocument_Title(t *testing.T) {
 
 	d := testDeps(nil, nil, nil)
 
-	assert.Equal(t, `Creating "Runbook"`,
-		createDocument{}.Title(testInput(d, NameCreateDocument, `{"name":"Runbook"}`)))
-	assert.Equal(t, "Creating a document",
-		createDocument{}.Title(testInput(d, NameCreateDocument, `{}`)))
+	got, err := createDocument{}.Title(testInput(d, NameCreateDocument, `{"name":"Runbook"}`))
+	require.NoError(t, err)
+	assert.Equal(t, `Creating "Runbook"`, got)
+	got, err = createDocument{}.Title(testInput(d, NameCreateDocument, `{}`))
+	require.NoError(t, err)
+	assert.Equal(t, "Creating a document", got)
 }
 
-func Test_createDocument_Confirm(t *testing.T) {
+func Test_createDocument_Summary(t *testing.T) {
 	t.Parallel()
 
 	d := testDeps(nil, nil, nil)
 
 	// a document that does not exist yet has no id to name.
-	got := createDocument{}.Confirm(testInput(d, NameCreateDocument, `{"name":"Runbook"}`))
+	got, err := createDocument{}.Summary(testInput(d, NameCreateDocument, `{"name":"Runbook"}`))
+	require.NoError(t, err)
 	assert.Equal(t, string(NameCreateDocument), got.Tool)
 	assert.Equal(t, `Create document "Runbook"`, got.Summary)
 	assert.Empty(t, got.DocumentID)
 
-	got = createDocument{}.Confirm(testInput(d, NameCreateDocument, `{}`))
+	got, err = createDocument{}.Summary(testInput(d, NameCreateDocument, `{}`))
+	require.NoError(t, err)
 	assert.Equal(t, "Create a new document", got.Summary)
 }
 
@@ -367,20 +375,22 @@ func Test_deleteDocument_Traits(t *testing.T) {
 func Test_deleteDocument_Title(t *testing.T) {
 	t.Parallel()
 
-	got := deleteDocument{}.Title(testInput(
+	got, err := deleteDocument{}.Title(testInput(
 		testDeps(stubDocumentDB(), nil, nil), NameDeleteDocument,
 		`{"document_id":"`+_testDocID+`"}`,
 	))
+	require.NoError(t, err)
 	assert.Equal(t, "Deleting Runbook", got)
 }
 
-func Test_deleteDocument_Confirm(t *testing.T) {
+func Test_deleteDocument_Summary(t *testing.T) {
 	t.Parallel()
 
-	got := deleteDocument{}.Confirm(testInput(
+	got, err := deleteDocument{}.Summary(testInput(
 		testDeps(stubDocumentDB(), nil, nil), NameDeleteDocument,
 		`{"document_id":"`+_testDocID+`"}`,
 	))
+	require.NoError(t, err)
 
 	assert.Equal(t, string(NameDeleteDocument), got.Tool)
 	assert.Equal(t, _testDocID, got.DocumentID)
@@ -470,25 +480,28 @@ func Test_renameDocument_Traits(t *testing.T) {
 func Test_renameDocument_Title(t *testing.T) {
 	t.Parallel()
 
-	got := renameDocument{}.Title(testInput(
+	got, err := renameDocument{}.Title(testInput(
 		testDeps(stubDocumentDB(), nil, nil), NameRenameDocument,
 		`{"document_id":"`+_testDocID+`"}`,
 	))
+	require.NoError(t, err)
 	assert.Equal(t, "Renaming Runbook", got)
 }
 
-func Test_renameDocument_Confirm(t *testing.T) {
+func Test_renameDocument_Summary(t *testing.T) {
 	t.Parallel()
 
 	d := testDeps(stubDocumentDB(), nil, nil)
 
-	got := renameDocument{}.Confirm(testInput(d, NameRenameDocument,
+	got, err := renameDocument{}.Summary(testInput(d, NameRenameDocument,
 		`{"document_id":"`+_testDocID+`","name":"Playbook"}`))
+	require.NoError(t, err)
 	assert.Equal(t, `Rename Runbook to "Playbook"`, got.Summary)
 
 	// a missing name still produces a readable card.
-	got = renameDocument{}.Confirm(testInput(d, NameRenameDocument,
+	got, err = renameDocument{}.Summary(testInput(d, NameRenameDocument,
 		`{"document_id":"`+_testDocID+`"}`))
+	require.NoError(t, err)
 	assert.Equal(t, "Rename Runbook", got.Summary)
 }
 
@@ -563,21 +576,25 @@ func Test_setDocumentIcon_Traits(t *testing.T) {
 func Test_setDocumentIcon_Title(t *testing.T) {
 	t.Parallel()
 
-	assert.Empty(t, setDocumentIcon{}.Title(
-		testInput(testDeps(nil, nil, nil), NameSetDocumentIcon, `{}`)))
+	got, err := setDocumentIcon{}.Title(
+		testInput(testDeps(nil, nil, nil), NameSetDocumentIcon, `{}`))
+	require.NoError(t, err)
+	assert.Empty(t, got)
 }
 
-func Test_setDocumentIcon_Confirm(t *testing.T) {
+func Test_setDocumentIcon_Summary(t *testing.T) {
 	t.Parallel()
 
 	d := testDeps(stubDocumentDB(), nil, nil)
 
-	got := setDocumentIcon{}.Confirm(testInput(d, NameSetDocumentIcon,
+	got, err := setDocumentIcon{}.Summary(testInput(d, NameSetDocumentIcon,
 		`{"document_id":"`+_testDocID+`","icon":"lucide:rocket"}`))
+	require.NoError(t, err)
 	assert.Equal(t, "Change icon of Runbook to lucide:rocket", got.Summary)
 
-	got = setDocumentIcon{}.Confirm(testInput(d, NameSetDocumentIcon,
+	got, err = setDocumentIcon{}.Summary(testInput(d, NameSetDocumentIcon,
 		`{"document_id":"`+_testDocID+`"}`))
+	require.NoError(t, err)
 	assert.Equal(t, "Change icon of Runbook", got.Summary)
 }
 
@@ -653,24 +670,27 @@ func Test_moveDocument_Traits(t *testing.T) {
 func Test_moveDocument_Title(t *testing.T) {
 	t.Parallel()
 
-	got := moveDocument{}.Title(testInput(
+	got, err := moveDocument{}.Title(testInput(
 		testDeps(stubDocumentDB(), nil, nil), NameMoveDocument,
 		`{"document_id":"`+_testDocID+`"}`,
 	))
+	require.NoError(t, err)
 	assert.Equal(t, "Moving Runbook", got)
 }
 
-func Test_moveDocument_Confirm(t *testing.T) {
+func Test_moveDocument_Summary(t *testing.T) {
 	t.Parallel()
 
 	d := testDeps(stubDocumentDB(), nil, nil)
 
-	got := moveDocument{}.Confirm(testInput(d, NameMoveDocument,
+	got, err := moveDocument{}.Summary(testInput(d, NameMoveDocument,
 		`{"document_id":"`+_testDocID+`"}`))
+	require.NoError(t, err)
 	assert.Equal(t, "Move Runbook to the org root", got.Summary)
 
-	got = moveDocument{}.Confirm(testInput(d, NameMoveDocument,
+	got, err = moveDocument{}.Summary(testInput(d, NameMoveDocument,
 		`{"document_id":"`+_testDocID+`","new_parent_id":"`+xid.New().String()+`"}`))
+	require.NoError(t, err)
 	assert.Equal(t, "Move Runbook under another document", got.Summary)
 }
 

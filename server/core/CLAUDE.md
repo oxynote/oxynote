@@ -248,6 +248,12 @@ type Manager struct {
 }
 ```
 
+**Composite literals break across lines.** A struct type with any field, and a
+slice/map literal with more than one element, is written one element per line
+with a trailing comma — including in a `return`. Keep a literal on one line only
+when it holds a single element, or when it is a row in a test table, where the
+compact form is what makes the table readable.
+
 **Data/DTO structs** (exported fields): blank line between fields, doc comment on
 every field (`// X specifies ...`; `// X indicates ...` for booleans), tags
 `json:"camelCase" db:"snake_case"`, foreign keys `db:"fk_<table>_id"`.

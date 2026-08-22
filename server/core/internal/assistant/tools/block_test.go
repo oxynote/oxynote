@@ -8,6 +8,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // _paragraphArgs is a canonical paragraph a write tool can be handed.
@@ -50,7 +51,7 @@ type editCase struct {
 }
 
 // runEdit executes a block tool and asserts the shared outcome.
-func runEdit(t *testing.T, tl ReadTool, name Name, c editCase) {
+func runEdit(t *testing.T, tl Tool, name Name, c editCase) {
 	t.Helper()
 
 	res, err := tl.Execute(testInput(testDeps(c.DB, stubApplier(), nil), name, c.Args))
@@ -81,10 +82,11 @@ func Test_readDocumentSummary_Traits(t *testing.T) {
 func Test_readDocumentSummary_Title(t *testing.T) {
 	t.Parallel()
 
-	got := readDocumentSummary{}.Title(testInput(
+	got, err := readDocumentSummary{}.Title(testInput(
 		testDeps(stubDocumentDB(), nil, nil), NameReadDocumentSummary,
 		`{"document_id":"`+_testDocID+`"}`,
 	))
+	require.NoError(t, err)
 	assert.Equal(t, "Reading Runbook", got)
 }
 
@@ -151,10 +153,11 @@ func Test_readBlock_Traits(t *testing.T) {
 func Test_readBlock_Title(t *testing.T) {
 	t.Parallel()
 
-	got := readBlock{}.Title(testInput(
+	got, err := readBlock{}.Title(testInput(
 		testDeps(stubDocumentDB(), nil, nil), NameReadBlock,
 		`{"document_id":"`+_testDocID+`"}`,
 	))
+	require.NoError(t, err)
 	assert.Equal(t, "Reading a block in Runbook", got)
 }
 
@@ -229,25 +232,28 @@ func Test_insertBlock_Traits(t *testing.T) {
 func Test_insertBlock_Title(t *testing.T) {
 	t.Parallel()
 
-	got := insertBlock{}.Title(testInput(
+	got, err := insertBlock{}.Title(testInput(
 		testDeps(stubDocumentDB(), nil, nil), NameInsertBlock,
 		`{"document_id":"`+_testDocID+`"}`,
 	))
+	require.NoError(t, err)
 	assert.Equal(t, "Updating Runbook", got)
 }
 
-func Test_insertBlock_Confirm(t *testing.T) {
+func Test_insertBlock_Summary(t *testing.T) {
 	t.Parallel()
 
 	d := testDeps(stubDocumentDB(), nil, nil)
 	args := `{"document_id":"` + _testDocID + `","block":` + _paragraphArgs
 
-	got := insertBlock{}.Confirm(testInput(d, NameInsertBlock, args+`,"position":"after"}`))
+	got, err := insertBlock{}.Summary(testInput(d, NameInsertBlock, args+`,"position":"after"}`))
+	require.NoError(t, err)
 	assert.Equal(t, "Insert a paragraph after a block in Runbook", got.Summary)
 
 	// a missing or garbage position would garble the card, so it falls
 	// back to an un-positioned phrase.
-	got = insertBlock{}.Confirm(testInput(d, NameInsertBlock, args+`,"position":"sideways"}`))
+	got, err = insertBlock{}.Summary(testInput(d, NameInsertBlock, args+`,"position":"sideways"}`))
+	require.NoError(t, err)
 	assert.Equal(t, "Insert a paragraph in Runbook", got.Summary)
 }
 
@@ -305,20 +311,22 @@ func Test_appendBlock_Traits(t *testing.T) {
 func Test_appendBlock_Title(t *testing.T) {
 	t.Parallel()
 
-	got := appendBlock{}.Title(testInput(
+	got, err := appendBlock{}.Title(testInput(
 		testDeps(stubDocumentDB(), nil, nil), NameAppendBlock,
 		`{"document_id":"`+_testDocID+`"}`,
 	))
+	require.NoError(t, err)
 	assert.Equal(t, "Updating Runbook", got)
 }
 
-func Test_appendBlock_Confirm(t *testing.T) {
+func Test_appendBlock_Summary(t *testing.T) {
 	t.Parallel()
 
-	got := appendBlock{}.Confirm(testInput(
+	got, err := appendBlock{}.Summary(testInput(
 		testDeps(stubDocumentDB(), nil, nil), NameAppendBlock,
 		`{"document_id":"`+_testDocID+`","block":`+_paragraphArgs+`}`,
 	))
+	require.NoError(t, err)
 	assert.Equal(t, "Append a paragraph to Runbook", got.Summary)
 }
 
@@ -365,20 +373,22 @@ func Test_prependBlock_Traits(t *testing.T) {
 func Test_prependBlock_Title(t *testing.T) {
 	t.Parallel()
 
-	got := prependBlock{}.Title(testInput(
+	got, err := prependBlock{}.Title(testInput(
 		testDeps(stubDocumentDB(), nil, nil), NamePrependBlock,
 		`{"document_id":"`+_testDocID+`"}`,
 	))
+	require.NoError(t, err)
 	assert.Equal(t, "Updating Runbook", got)
 }
 
-func Test_prependBlock_Confirm(t *testing.T) {
+func Test_prependBlock_Summary(t *testing.T) {
 	t.Parallel()
 
-	got := prependBlock{}.Confirm(testInput(
+	got, err := prependBlock{}.Summary(testInput(
 		testDeps(stubDocumentDB(), nil, nil), NamePrependBlock,
 		`{"document_id":"`+_testDocID+`","block":`+_paragraphArgs+`}`,
 	))
+	require.NoError(t, err)
 	assert.Equal(t, "Prepend a paragraph to Runbook", got.Summary)
 }
 
@@ -425,20 +435,22 @@ func Test_replaceBlock_Traits(t *testing.T) {
 func Test_replaceBlock_Title(t *testing.T) {
 	t.Parallel()
 
-	got := replaceBlock{}.Title(testInput(
+	got, err := replaceBlock{}.Title(testInput(
 		testDeps(stubDocumentDB(), nil, nil), NameReplaceBlock,
 		`{"document_id":"`+_testDocID+`"}`,
 	))
+	require.NoError(t, err)
 	assert.Equal(t, "Updating Runbook", got)
 }
 
-func Test_replaceBlock_Confirm(t *testing.T) {
+func Test_replaceBlock_Summary(t *testing.T) {
 	t.Parallel()
 
-	got := replaceBlock{}.Confirm(testInput(
+	got, err := replaceBlock{}.Summary(testInput(
 		testDeps(stubDocumentDB(), nil, nil), NameReplaceBlock,
 		`{"document_id":"`+_testDocID+`","block":`+_paragraphArgs+`}`,
 	))
+	require.NoError(t, err)
 	assert.Equal(t, "Replace a block in Runbook with a paragraph", got.Summary)
 }
 
@@ -491,25 +503,28 @@ func Test_updateBlockText_Traits(t *testing.T) {
 func Test_updateBlockText_Title(t *testing.T) {
 	t.Parallel()
 
-	got := updateBlockText{}.Title(testInput(
+	got, err := updateBlockText{}.Title(testInput(
 		testDeps(stubDocumentDB(), nil, nil), NameUpdateBlockText,
 		`{"document_id":"`+_testDocID+`"}`,
 	))
+	require.NoError(t, err)
 	assert.Equal(t, "Updating Runbook", got)
 }
 
-func Test_updateBlockText_Confirm(t *testing.T) {
+func Test_updateBlockText_Summary(t *testing.T) {
 	t.Parallel()
 
 	d := testDeps(stubDocumentDB(), nil, nil)
 
-	got := updateBlockText{}.Confirm(testInput(d, NameUpdateBlockText,
+	got, err := updateBlockText{}.Summary(testInput(d, NameUpdateBlockText,
 		`{"document_id":"`+_testDocID+`","text":"a new intro"}`))
+	require.NoError(t, err)
 	assert.Equal(t, `Update a block in Runbook: "a new intro"`, got.Summary)
 
 	// an empty preview leaves a card that still reads.
-	got = updateBlockText{}.Confirm(testInput(d, NameUpdateBlockText,
+	got, err = updateBlockText{}.Summary(testInput(d, NameUpdateBlockText,
 		`{"document_id":"`+_testDocID+`","text":"  "}`))
+	require.NoError(t, err)
 	assert.Equal(t, "Update text of a block in Runbook", got.Summary)
 }
 
@@ -556,26 +571,29 @@ func Test_updateBlockAttrs_Traits(t *testing.T) {
 func Test_updateBlockAttrs_Title(t *testing.T) {
 	t.Parallel()
 
-	got := updateBlockAttrs{}.Title(testInput(
+	got, err := updateBlockAttrs{}.Title(testInput(
 		testDeps(stubDocumentDB(), nil, nil), NameUpdateBlockAttrs,
 		`{"document_id":"`+_testDocID+`"}`,
 	))
+	require.NoError(t, err)
 	assert.Equal(t, "Updating Runbook", got)
 }
 
-func Test_updateBlockAttrs_Confirm(t *testing.T) {
+func Test_updateBlockAttrs_Summary(t *testing.T) {
 	t.Parallel()
 
 	d := testDeps(stubDocumentDB(), nil, nil)
 
 	// keys are sorted, because the card must read the same every time
 	// the same write is proposed.
-	got := updateBlockAttrs{}.Confirm(testInput(d, NameUpdateBlockAttrs,
+	got, err := updateBlockAttrs{}.Summary(testInput(d, NameUpdateBlockAttrs,
 		`{"document_id":"`+_testDocID+`","attrs":{"level":2,"icon":"lucide:warning"}}`))
+	require.NoError(t, err)
 	assert.Equal(t, "Update block icon, level in Runbook", got.Summary)
 
-	got = updateBlockAttrs{}.Confirm(testInput(d, NameUpdateBlockAttrs,
+	got, err = updateBlockAttrs{}.Summary(testInput(d, NameUpdateBlockAttrs,
 		`{"document_id":"`+_testDocID+`"}`))
+	require.NoError(t, err)
 	assert.Equal(t, "Update block attributes in Runbook", got.Summary)
 }
 
@@ -629,20 +647,22 @@ func Test_deleteBlock_Traits(t *testing.T) {
 func Test_deleteBlock_Title(t *testing.T) {
 	t.Parallel()
 
-	got := deleteBlock{}.Title(testInput(
+	got, err := deleteBlock{}.Title(testInput(
 		testDeps(stubDocumentDB(), nil, nil), NameDeleteBlock,
 		`{"document_id":"`+_testDocID+`"}`,
 	))
+	require.NoError(t, err)
 	assert.Equal(t, "Updating Runbook", got)
 }
 
-func Test_deleteBlock_Confirm(t *testing.T) {
+func Test_deleteBlock_Summary(t *testing.T) {
 	t.Parallel()
 
-	got := deleteBlock{}.Confirm(testInput(
+	got, err := deleteBlock{}.Summary(testInput(
 		testDeps(stubDocumentDB(), nil, nil), NameDeleteBlock,
 		`{"document_id":"`+_testDocID+`","block_uid":"a"}`,
 	))
+	require.NoError(t, err)
 	assert.Equal(t, "Delete a block in Runbook", got.Summary)
 }
 
@@ -671,25 +691,14 @@ func Test_deleteBlock_Execute(t *testing.T) {
 	}
 }
 
-func Test_blockType(t *testing.T) {
-	t.Parallel()
-
-	d := testDeps(nil, nil, nil)
-
-	assert.Equal(t, "paragraph", blockType(testInput(d, NameAppendBlock,
-		`{"block":`+_paragraphArgs+`}`)))
-	assert.Empty(t, blockType(testInput(d, NameAppendBlock, `{}`)))
-	assert.Empty(t, blockType(testInput(d, NameAppendBlock, `{`)))
-}
-
 func Test_summarize(t *testing.T) {
 	t.Parallel()
 
 	// a resolvable document is named on the card.
 	got := summarize(
-		testInput(testDeps(stubDocumentDB(), nil, nil), NameDeleteBlock,
-			`{"document_id":"`+_testDocID+`"}`),
+		testInput(testDeps(stubDocumentDB(), nil, nil), NameDeleteBlock, `{}`),
 		NameDeleteBlock,
+		_testDocID,
 		func(subject string) string { return "Touch " + subject },
 	)
 
@@ -698,10 +707,11 @@ func Test_summarize(t *testing.T) {
 	assert.Equal(t, "Runbook", got.DocumentName)
 	assert.Equal(t, "Touch Runbook", got.Summary)
 
-	// arguments naming no document still produce a readable card.
+	// a write that names no document still produces a readable card.
 	got = summarize(
 		testInput(testDeps(nil, nil, nil), NameDeleteBlock, `{}`),
 		NameDeleteBlock,
+		"",
 		func(subject string) string { return "Touch " + subject },
 	)
 

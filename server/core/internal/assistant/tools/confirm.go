@@ -24,17 +24,24 @@ var _registerOnce sync.Once
 // values a paused write carries. A turn parked on a confirmation is
 // written to Redis, and an unregistered type fails that write, which
 // would surface as a failed turn rather than a prompt.
+//
+// The names are the identities those checkpoints are written under.
+// Renaming one strands every turn already parked in Redis, so a rename
+// is only free while nothing is deployed.
 func registerConfirmTypes() {
 	_registerOnce.Do(func() {
 		schema.RegisterName[confirmState]("oxynote_assistant_confirm_state")
-		schema.RegisterName[ConfirmActionSummary]("oxynote_assistant_confirm_action")
+		schema.RegisterName[ActionSummary]("oxynote_assistant_action_summary")
 	})
 }
 
-// ConfirmActionSummary is the human-readable description of a pending
-// write op surfaced to the confirm UI. Built from the same JSON args
-// the tool was about to receive: describing a write never executes it.
-type ConfirmActionSummary struct {
+// ActionSummary is the human-readable description of a pending write op
+// surfaced to the confirm UI. Built from the same JSON args the tool was
+// about to receive: describing a write never executes it.
+//
+// It is this package's own shape; turn.go converts it into the
+// protocol.ConfirmAction the client is sent.
+type ActionSummary struct {
 	// Tool is the name of the tool being proposed.
 	Tool string
 
@@ -131,8 +138,18 @@ func (c *confirming) InvokableRun(
 
 // interrupt suspends the run and hands the client a human-readable
 // description of the write awaiting approval.
+//
+// Arguments the tool cannot read fail here rather than parking the run:
+// the same payload would be rejected by the tool on resume, so asking
+// the user to approve it spends a confirmation on a call that was never
+// going to happen.
 func (c *confirming) interrupt(ctx context.Context, args json.RawMessage) error {
-	return compose.StatefulInterrupt(ctx, c.Confirm(ctx, args), confirmState{})
+	summary, err := c.Summary(ctx, args)
+	if err != nil {
+		return err
+	}
+
+	return compose.StatefulInterrupt(ctx, summary, confirmState{})
 }
 
 // declinedResult is the tool result reported to the model when the user

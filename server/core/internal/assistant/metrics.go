@@ -45,7 +45,10 @@ func newMetrics(fc metricutil.Factory, provider string) *metrics {
 				Name:      "tool_calls_total",
 				Help:      "Tracks the number of AI assistant tool calls.",
 			},
-			[]string{_toolLabel, _statusLabel},
+			[]string{
+				_toolLabel,
+				_statusLabel,
+			},
 		),
 		toolDuration: fc.NewHistogramVec(
 			metricutil.Options{
@@ -61,7 +64,10 @@ func newMetrics(fc metricutil.Factory, provider string) *metrics {
 				Name:      "token_usage_total",
 				Help:      "Tracks the number of tokens used by AI assistant.",
 			},
-			[]string{_tokenTypeLabel, _providerLabel},
+			[]string{
+				_tokenTypeLabel,
+				_providerLabel,
+			},
 		),
 		provider: provider,
 	}

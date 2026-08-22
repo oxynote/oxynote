@@ -77,7 +77,7 @@ type Set struct {
 func New(deps *Deps) *Set {
 	registerConfirmTypes()
 
-	all := []ReadTool{
+	all := []Tool{
 		listDocuments{},
 		getDocument{},
 		readDocumentSummary{},
@@ -109,6 +109,7 @@ func New(deps *Deps) *Set {
 		s.entries = append(s.entries, Entry{
 			Traits: tr,
 			Name:   et.info.Name,
+			Info:   et.info,
 			Tool:   et,
 		})
 
@@ -131,18 +132,24 @@ func New(deps *Deps) *Set {
 }
 
 // Entry describes one registered tool: what kind of tool it is, its
-// name, and its implementation with no confirmation gate applied.
+// name, how it describes itself, and its implementation with no
+// confirmation gate applied.
 type Entry struct {
 	Traits
 
 	// Name is the tool's canonical identifier.
 	Name Name
 
+	// Info is the tool's own description. A surface that has to
+	// announce the tool builds its description from this, so no surface
+	// has to restate a schema the tool already owns.
+	Info Info
+
 	// Tool is the tool without its confirmation gate. Running it
 	// performs the write immediately, so it belongs only to surfaces
 	// whose client owns the approval story (the MCP server); the
 	// assistant's chat loop must use Tools.
-	Tool tool.InvokableTool
+	Tool Runner
 }
 
 // Entries returns every tool in registration order, ungated. The MCP
@@ -181,13 +188,24 @@ func (s *Set) Tools() []tool.BaseTool {
 // do, or an empty string for tools too noisy or too generic to
 // announce. An unknown name is not an error: the agent may run tools
 // this set does not own.
+//
+// Arguments the tool cannot read are an empty label too. The caller
+// announces a call it is about to make, and that call is about to fail
+// on the same arguments — the failure is the tool's to report, and
+// announcing a status line derived from nothing would only precede it
+// with a lie.
 func (s *Set) Label(ctx context.Context, name Name, args json.RawMessage) string {
 	t, ok := s.tools[name]
 	if !ok {
 		return ""
 	}
 
-	return t.Title(ctx, args)
+	label, err := t.Title(ctx, args)
+	if err != nil {
+		return ""
+	}
+
+	return label
 }
 
 // WriteNames returns every tool that mutates a document.
@@ -200,6 +218,33 @@ func (s *Set) WriteNames() []string {
 	return slices.Clone(s.writes)
 }
 
+// Result is one tool call's outcome: the payload the model reads, and
+// the documents the call changed.
+type Result struct {
+	// Output is the tool's result, serialised for the caller.
+	Output string
+
+	// Documents lists the documents this call created or changed, in
+	// the order it touched them.
+	//
+	// It is recorded by the Input as the call mutates rather than read
+	// back out of the arguments, so it is right for a call that changes
+	// several documents and empty for one that changes none — neither
+	// of which an argument can be asked about. A delete records
+	// nothing: the document it names no longer exists to point at.
+	Documents []string
+}
+
+// Runner runs one tool call in this package's own vocabulary: the raw
+// JSON arguments in, the outcome out. Surfaces outside this package
+// reach a tool through it, so none of them has to speak the agent
+// framework's interface to run one.
+type Runner interface {
+	// Run should perform the call and report what it produced and what
+	// it changed.
+	Run(ctx context.Context, args json.RawMessage) (Result, error)
+}
+
 // registryTool is what the registry stores: a tool the agent can invoke
 // that can also describe what it is about to do. The adapter and the
 // confirmation gate wrapping it both satisfy it — the gate embeds the
@@ -210,5 +255,5 @@ type registryTool interface {
 	// Title should return a short line describing what the tool is
 	// about to do, or an empty string for tools too noisy or too
 	// generic to announce.
-	Title(ctx context.Context, args json.RawMessage) string
+	Title(ctx context.Context, args json.RawMessage) (string, error)
 }

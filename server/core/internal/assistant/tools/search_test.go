@@ -11,6 +11,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func Test_searchDocuments_Info(t *testing.T) {
@@ -34,10 +35,12 @@ func Test_searchDocuments_Title(t *testing.T) {
 
 	d := testDeps(nil, nil, nil)
 
-	assert.Equal(t, `Searching for "rate limit"`,
-		searchDocuments{}.Title(testInput(d, NameSearchDocuments, `{"query":"rate limit"}`)))
-	assert.Equal(t, "Searching documents",
-		searchDocuments{}.Title(testInput(d, NameSearchDocuments, `{}`)))
+	got, err := searchDocuments{}.Title(testInput(d, NameSearchDocuments, `{"query":"rate limit"}`))
+	require.NoError(t, err)
+	assert.Equal(t, `Searching for "rate limit"`, got)
+	got, err = searchDocuments{}.Title(testInput(d, NameSearchDocuments, `{}`))
+	require.NoError(t, err)
+	assert.Equal(t, "Searching documents", got)
 }
 
 func Test_searchDocuments_Execute(t *testing.T) {

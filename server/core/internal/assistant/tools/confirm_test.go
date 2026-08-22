@@ -49,6 +49,10 @@ type gateCase struct {
 	// confirmation.
 	Interrupted bool
 
+	// Rejected expects the gate to refuse the call outright instead of
+	// parking it, because the arguments cannot be read.
+	Rejected bool
+
 	// RespJSON is the final tool result when the run completes.
 	RespJSON string
 
@@ -106,6 +110,11 @@ func Test_confirming_InvokableRun(t *testing.T) {
 			ResumeOther: true,
 			Interrupted: true,
 		},
+		"Unreadable arguments are refused, never confirmed": {
+			Name:     NameUpdateBlockText,
+			Args:     `{`,
+			Rejected: true,
+		},
 	}
 
 	for cn, c := range cc {
@@ -114,6 +123,20 @@ func Test_confirming_InvokableRun(t *testing.T) {
 
 			applier := stubApplier()
 			ct := gatedTool(t, New(testDeps(stubDocumentDB(), applier, nil)), c.Name)
+
+			if c.Rejected {
+				// the same payload would be rejected by the tool on
+				// resume, so the run must not spend a confirmation on
+				// it.
+				_, rerr := ct.InvokableRun(context.Background(), c.Args)
+				require.Error(t, rerr)
+
+				_, parked := compose.IsInterruptRerunError(rerr)
+				assert.False(t, parked, "unreadable arguments must not park the run")
+				assert.Empty(t, applier.ApplyCalls())
+
+				return
+			}
 
 			var (
 				res string
@@ -240,7 +263,7 @@ func requireConfirmInterrupt(t *testing.T, err error, name Name) string {
 		info = ri
 	}
 
-	summary, ok := info.(ConfirmActionSummary)
+	summary, ok := info.(ActionSummary)
 	require.True(t, ok, "the interrupt must carry a confirm summary, got %T", info)
 	assert.Equal(t, string(name), summary.Tool)
 

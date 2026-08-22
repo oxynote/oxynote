@@ -217,7 +217,7 @@ func (t *turn) confirmation(
 			continue
 		}
 
-		summary, ok := ic.Info.(tools.ConfirmActionSummary)
+		summary, ok := ic.Info.(tools.ActionSummary)
 		if !ok {
 			// an interrupt this package did not raise has no user-facing
 			// description, but it still has to be resumed or the turn

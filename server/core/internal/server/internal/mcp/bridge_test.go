@@ -5,39 +5,28 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// stubEinoTool is a minimal eino tool for exercising the bridge without
-// the real registry: fixed info, fixed output, optional errors.
-type stubEinoTool struct {
-	// infoErr fails Info when set.
-	infoErr error
-
-	// out is what InvokableRun returns.
+// stubRunner is a minimal registry tool for exercising the bridge
+// without the real registry: fixed outcome, optional error.
+type stubRunner struct {
+	// out is what Run reports as its output.
 	out string
 
-	// runErr fails InvokableRun when set.
+	// docs is what Run reports as the documents it changed.
+	docs []string
+
+	// runErr fails Run when set.
 	runErr error
 }
 
-// Info returns a fixed minimal description.
-func (s *stubEinoTool) Info(context.Context) (*schema.ToolInfo, error) {
-	if s.infoErr != nil {
-		return nil, s.infoErr
-	}
-
-	return &schema.ToolInfo{Name: "stub", Desc: "stub tool"}, nil
-}
-
-// InvokableRun returns the configured output.
-func (s *stubEinoTool) InvokableRun(context.Context, string, ...tool.Option) (string, error) {
-	return s.out, s.runErr
+// Run returns the configured outcome.
+func (s *stubRunner) Run(context.Context, json.RawMessage) (tools.Result, error) {
+	return tools.Result{Output: s.out, Documents: s.docs}, s.runErr
 }
 
 // entryFor finds the named tool's entry in a fresh stubbed set.
@@ -53,32 +42,6 @@ func entryFor(t *testing.T, name tools.Name) tools.Entry {
 	t.Fatalf("tool %s not found", name)
 
 	return tools.Entry{}
-}
-
-func Test_toolDef(t *testing.T) {
-	t.Parallel()
-
-	// error
-	def, err := toolDef(context.Background(), tools.Entry{Tool: &stubEinoTool{infoErr: assert.AnError}})
-	require.ErrorContains(t, err, "describing tool")
-	assert.Nil(t, def)
-
-	// success
-	e := entryFor(t, tools.NameGetDocument)
-
-	def, err = toolDef(context.Background(), e)
-	require.NoError(t, err)
-	require.NotNil(t, def)
-
-	assert.Equal(t, "get_document", def.Name)
-	assert.NotEmpty(t, def.Description)
-	require.NotNil(t, def.Annotations)
-	assert.True(t, def.Annotations.ReadOnlyHint)
-
-	// the input schema survives the eino → MCP conversion intact.
-	raw, ok := def.InputSchema.(json.RawMessage)
-	require.True(t, ok)
-	assert.Contains(t, string(raw), `"document_id"`)
 }
 
 func Test_annotations(t *testing.T) {
@@ -135,37 +98,37 @@ func Test_Handler_toolHandler(t *testing.T) {
 	}
 
 	cc := map[string]struct {
-		Entry   tools.Entry
-		Args    string
-		IsError bool
-		Text    string
-		LinkURI string
+		Entry    tools.Entry
+		Args     string
+		IsError  bool
+		Text     string
+		LinkURIs []string
 	}{
 		"Tool failure becomes an isError result": {
-			Entry:   tools.Entry{Tool: &stubEinoTool{runErr: assert.AnError}},
+			Entry:   tools.Entry{Tool: &stubRunner{runErr: assert.AnError}},
 			Args:    `{}`,
 			IsError: true,
 			Text:    assert.AnError.Error(),
 		},
-		"Read result carries no resource link": {
-			Entry: tools.Entry{Tool: &stubEinoTool{out: `{"ok":true}`}},
+		"A call that changed nothing carries no link": {
+			Entry: tools.Entry{Tool: &stubRunner{out: `{"ok":true}`}},
 			Args:  `{"document_id":"doc1"}`,
 			Text:  `{"ok":true}`,
 		},
-		"Write result links the document from its arguments": {
-			Entry:   tools.Entry{Tool: &stubEinoTool{out: `{"ok":true}`}, Traits: tools.Traits{Write: true}},
-			Args:    `{"document_id":"doc1"}`,
-			Text:    `{"ok":true}`,
-			LinkURI: _resourceURIPrefix + "doc1",
+		"A call links the document it changed": {
+			Entry:    tools.Entry{Tool: &stubRunner{out: `{"ok":true}`, docs: []string{"doc1"}}, Traits: tools.Traits{Write: true}},
+			Args:     `{"document_id":"doc1"}`,
+			Text:     `{"ok":true}`,
+			LinkURIs: []string{_resourceURIPrefix + "doc1"},
 		},
-		"Write result links the document from its output": {
-			Entry:   tools.Entry{Tool: &stubEinoTool{out: `{"document_id":"doc2"}`}, Traits: tools.Traits{Write: true}},
-			Args:    ``,
-			Text:    `{"document_id":"doc2"}`,
-			LinkURI: _resourceURIPrefix + "doc2",
+		"A call links every document it changed": {
+			Entry:    tools.Entry{Tool: &stubRunner{out: `{"ok":true}`, docs: []string{"doc1", "doc2"}}, Traits: tools.Traits{Write: true}},
+			Args:     `{}`,
+			Text:     `{"ok":true}`,
+			LinkURIs: []string{_resourceURIPrefix + "doc1", _resourceURIPrefix + "doc2"},
 		},
-		"Write result without a document id has no link": {
-			Entry: tools.Entry{Tool: &stubEinoTool{out: `{"ok":true}`}, Traits: tools.Traits{Write: true}},
+		"A write that changed nothing has no link to offer": {
+			Entry: tools.Entry{Tool: &stubRunner{out: `{"ok":true}`}, Traits: tools.Traits{Write: true}},
 			Args:  `{}`,
 			Text:  `{"ok":true}`,
 		},
@@ -187,53 +150,13 @@ func Test_Handler_toolHandler(t *testing.T) {
 			require.True(t, ok)
 			assert.Equal(t, c.Text, text.Text)
 
-			if c.LinkURI == "" {
-				assert.Len(t, res.Content, 1)
-				return
+			require.Len(t, res.Content, 1+len(c.LinkURIs))
+
+			for n, want := range c.LinkURIs {
+				link, lok := res.Content[1+n].(*mcp.ResourceLink)
+				require.True(t, lok)
+				assert.Equal(t, want, link.URI)
 			}
-
-			require.Len(t, res.Content, 2)
-
-			link, ok := res.Content[1].(*mcp.ResourceLink)
-			require.True(t, ok)
-			assert.Equal(t, c.LinkURI, link.URI)
-		})
-	}
-}
-
-func Test_documentID(t *testing.T) {
-	t.Parallel()
-
-	cc := map[string]struct {
-		Args   string
-		Out    string
-		Result string
-	}{
-		"ID in the arguments": {
-			Args:   `{"document_id":"doc1"}`,
-			Out:    `{}`,
-			Result: "doc1",
-		},
-		"ID in the output only": {
-			Args:   `{}`,
-			Out:    `{"document_id":"doc2"}`,
-			Result: "doc2",
-		},
-		"No id anywhere": {
-			Args: `{}`,
-			Out:  `{}`,
-		},
-		"Malformed arguments and output": {
-			Args: `{`,
-			Out:  `{`,
-		},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			assert.Equal(t, c.Result, documentID(json.RawMessage(c.Args), json.RawMessage(c.Out)))
 		})
 	}
 }

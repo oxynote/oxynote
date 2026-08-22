@@ -16,7 +16,9 @@ import (
 const _defaultDocumentIcon = "lucide:file"
 
 // listDocuments returns the organisation's document tree.
-type listDocuments struct{}
+type listDocuments struct {
+	plainSummary
+}
 
 // Info returns the tool's model-facing description.
 func (listDocuments) Info() Info {
@@ -35,8 +37,8 @@ func (listDocuments) Traits() Traits {
 }
 
 // Title returns no status line: listing is too generic to announce.
-func (listDocuments) Title(_ DescribeInput) string {
-	return ""
+func (listDocuments) Title(_ DescribeInput) (string, error) {
+	return "", nil
 }
 
 // Execute lists the documents the model asked for.
@@ -77,7 +79,9 @@ func (listDocuments) Execute(inp Input) (string, error) {
 }
 
 // getDocument returns one document's metadata.
-type getDocument struct{}
+type getDocument struct {
+	plainSummary
+}
 
 // Info returns the tool's model-facing description.
 func (getDocument) Info() Info {
@@ -95,8 +99,8 @@ func (getDocument) Traits() Traits {
 }
 
 // Title returns no status line: a metadata read is too noisy to announce.
-func (getDocument) Title(_ DescribeInput) string {
-	return ""
+func (getDocument) Title(_ DescribeInput) (string, error) {
+	return "", nil
 }
 
 // Execute fetches the document's metadata.
@@ -148,6 +152,20 @@ func (getDocument) Execute(inp Input) (string, error) {
 // createDocument creates a new document in the organisation.
 type createDocument struct{}
 
+// createDocumentArgs is what create_document is called with.
+type createDocumentArgs struct {
+	// Name is the new document's display name. Required.
+	Name string `json:"name"`
+
+	// Icon is the lucide icon identifier. Empty falls back to the
+	// default icon.
+	Icon string `json:"icon"`
+
+	// ParentID names the parent document. Empty creates at the org
+	// root.
+	ParentID string `json:"parent_id"`
+}
+
 // Info returns the tool's model-facing description.
 func (createDocument) Info() Info {
 	return Info{
@@ -168,46 +186,42 @@ func (createDocument) Traits() Traits {
 }
 
 // Title announces the document being created.
-func (createDocument) Title(inp DescribeInput) string {
-	if name := createDocumentName(inp); name != "" {
-		return fmt.Sprintf("Creating %q", name)
+func (createDocument) Title(inp DescribeInput) (string, error) {
+	var in createDocumentArgs
+
+	if err := inp.Decode(&in); err != nil {
+		return "", err
 	}
 
-	return "Creating a document"
+	if in.Name != "" {
+		return fmt.Sprintf("Creating %q", in.Name), nil
+	}
+
+	return "Creating a document", nil
 }
 
-// Confirm describes the document the model wants to create.
-func (createDocument) Confirm(inp DescribeInput) ConfirmActionSummary {
+// Summary describes the document the model wants to create.
+func (createDocument) Summary(inp DescribeInput) (ActionSummary, error) {
+	var in createDocumentArgs
+
+	if err := inp.Decode(&in); err != nil {
+		return ActionSummary{}, err
+	}
+
 	// a document that does not exist yet has no id to resolve, so this
 	// is the one write whose summary names no target.
-	out := ConfirmActionSummary{Tool: string(NameCreateDocument), Summary: "Create a new document"}
+	out := ActionSummary{Tool: string(NameCreateDocument), Summary: "Create a new document"}
 
-	if name := createDocumentName(inp); name != "" {
-		out.Summary = fmt.Sprintf("Create document %q", name)
+	if in.Name != "" {
+		out.Summary = fmt.Sprintf("Create document %q", in.Name)
 	}
 
-	return out
-}
-
-// createDocumentName reads the requested display name from the call's
-// arguments.
-func createDocumentName(inp DescribeInput) string {
-	var in struct {
-		Name string `json:"name"`
-	}
-
-	inp.Probe(&in)
-
-	return in.Name
+	return out, nil
 }
 
 // Execute creates the document, its maintainer row and its search job.
 func (createDocument) Execute(inp Input) (string, error) {
-	var in struct {
-		Name     string `json:"name"`
-		Icon     string `json:"icon"`
-		ParentID string `json:"parent_id"`
-	}
+	var in createDocumentArgs
 
 	if err := inp.Decode(&in); err != nil {
 		return "", err
@@ -254,6 +268,12 @@ func (createDocument) Execute(inp Input) (string, error) {
 	})
 }
 
+// deleteDocumentArgs is what delete_document is called with.
+type deleteDocumentArgs struct {
+	// DocumentID names the document being deleted.
+	DocumentID string `json:"document_id"`
+}
+
 // deleteDocument removes a document from the organisation.
 type deleteDocument struct{}
 
@@ -274,22 +294,34 @@ func (deleteDocument) Traits() Traits {
 }
 
 // Title announces which document is being deleted.
-func (deleteDocument) Title(inp DescribeInput) string {
-	return "Deleting " + inp.Subject()
+func (deleteDocument) Title(inp DescribeInput) (string, error) {
+	var in deleteDocumentArgs
+
+	if err := inp.Decode(&in); err != nil {
+		return "", err
+	}
+
+	return "Deleting " + inp.Subject(in.DocumentID), nil
 }
 
-// Confirm describes the document the model wants to delete.
-func (deleteDocument) Confirm(inp DescribeInput) ConfirmActionSummary {
-	return summarize(inp, NameDeleteDocument, func(subject string) string {
+// Summary describes the document the model wants to delete.
+func (deleteDocument) Summary(inp DescribeInput) (ActionSummary, error) {
+	var in deleteDocumentArgs
+
+	if err := inp.Decode(&in); err != nil {
+		return ActionSummary{}, err
+	}
+
+	out := summarize(inp, NameDeleteDocument, in.DocumentID, func(subject string) string {
 		return "Delete " + subject
 	})
+
+	return out, nil
 }
 
 // Execute deletes the document and refreshes the tree.
 func (deleteDocument) Execute(inp Input) (string, error) {
-	var in struct {
-		DocumentID string `json:"document_id"`
-	}
+	var in deleteDocumentArgs
 
 	if err := inp.Decode(&in); err != nil {
 		return "", err
@@ -323,6 +355,15 @@ func (deleteDocument) Execute(inp Input) (string, error) {
 	})
 }
 
+// renameDocumentArgs is what rename_document is called with.
+type renameDocumentArgs struct {
+	// DocumentID names the document being renamed.
+	DocumentID string `json:"document_id"`
+
+	// Name is the new display name. Required.
+	Name string `json:"name"`
+}
+
 // renameDocument changes a document's display name.
 type renameDocument struct{}
 
@@ -335,7 +376,10 @@ func (renameDocument) Info() Info {
 			_keyDocumentID: stringProp(_descDocumentID),
 			_keyName:       stringProp("The new display name."),
 		},
-		Required: []string{_keyDocumentID, _keyName},
+		Required: []string{
+			_keyDocumentID,
+			_keyName,
+		},
 	}
 }
 
@@ -345,33 +389,38 @@ func (renameDocument) Traits() Traits {
 }
 
 // Title announces which document is being renamed.
-func (renameDocument) Title(inp DescribeInput) string {
-	return "Renaming " + inp.Subject()
-}
+func (renameDocument) Title(inp DescribeInput) (string, error) {
+	var in renameDocumentArgs
 
-// Confirm describes the rename the model wants to make.
-func (renameDocument) Confirm(inp DescribeInput) ConfirmActionSummary {
-	var in struct {
-		Name string `json:"name"`
+	if err := inp.Decode(&in); err != nil {
+		return "", err
 	}
 
-	inp.Probe(&in)
+	return "Renaming " + inp.Subject(in.DocumentID), nil
+}
 
-	return summarize(inp, NameRenameDocument, func(subject string) string {
+// Summary describes the rename the model wants to make.
+func (renameDocument) Summary(inp DescribeInput) (ActionSummary, error) {
+	var in renameDocumentArgs
+
+	if err := inp.Decode(&in); err != nil {
+		return ActionSummary{}, err
+	}
+
+	out := summarize(inp, NameRenameDocument, in.DocumentID, func(subject string) string {
 		if in.Name == "" {
 			return "Rename " + subject
 		}
 
 		return fmt.Sprintf("Rename %s to %q", subject, in.Name)
 	})
+
+	return out, nil
 }
 
 // Execute renames the document and refreshes the tree.
 func (renameDocument) Execute(inp Input) (string, error) {
-	var in struct {
-		DocumentID string `json:"document_id"`
-		Name       string `json:"name"`
-	}
+	var in renameDocumentArgs
 
 	if err := inp.Decode(&in); err != nil {
 		return "", err
@@ -391,6 +440,15 @@ func (renameDocument) Execute(inp Input) (string, error) {
 	return out, nil
 }
 
+// setDocumentIconArgs is what set_document_icon is called with.
+type setDocumentIconArgs struct {
+	// DocumentID names the document whose icon is being set.
+	DocumentID string `json:"document_id"`
+
+	// Icon is the new lucide icon identifier. Required.
+	Icon string `json:"icon"`
+}
+
 // setDocumentIcon changes a document's icon identifier.
 type setDocumentIcon struct{}
 
@@ -403,7 +461,10 @@ func (setDocumentIcon) Info() Info {
 			_keyDocumentID:    stringProp(_descDocumentID),
 			document.AttrIcon: stringProp("The new icon identifier."),
 		},
-		Required: []string{_keyDocumentID, document.AttrIcon},
+		Required: []string{
+			_keyDocumentID,
+			document.AttrIcon,
+		},
 	}
 }
 
@@ -413,33 +474,32 @@ func (setDocumentIcon) Traits() Traits {
 }
 
 // Title returns no status line: an icon change is too minor to announce.
-func (setDocumentIcon) Title(_ DescribeInput) string {
-	return ""
+func (setDocumentIcon) Title(_ DescribeInput) (string, error) {
+	return "", nil
 }
 
-// Confirm describes the icon change the model wants to make.
-func (setDocumentIcon) Confirm(inp DescribeInput) ConfirmActionSummary {
-	var in struct {
-		Icon string `json:"icon"`
+// Summary describes the icon change the model wants to make.
+func (setDocumentIcon) Summary(inp DescribeInput) (ActionSummary, error) {
+	var in setDocumentIconArgs
+
+	if err := inp.Decode(&in); err != nil {
+		return ActionSummary{}, err
 	}
 
-	inp.Probe(&in)
-
-	return summarize(inp, NameSetDocumentIcon, func(subject string) string {
+	out := summarize(inp, NameSetDocumentIcon, in.DocumentID, func(subject string) string {
 		if in.Icon == "" {
 			return "Change icon of " + subject
 		}
 
 		return fmt.Sprintf("Change icon of %s to %s", subject, in.Icon)
 	})
+
+	return out, nil
 }
 
 // Execute sets the icon and refreshes the tree.
 func (setDocumentIcon) Execute(inp Input) (string, error) {
-	var in struct {
-		DocumentID string `json:"document_id"`
-		Icon       string `json:"icon"`
-	}
+	var in setDocumentIconArgs
 
 	if err := inp.Decode(&in); err != nil {
 		return "", err
@@ -457,6 +517,16 @@ func (setDocumentIcon) Execute(inp Input) (string, error) {
 	inp.NotifyTreeChangeForDocument(in.DocumentID)
 
 	return out, nil
+}
+
+// moveDocumentArgs is what move_document is called with.
+type moveDocumentArgs struct {
+	// DocumentID names the document being moved.
+	DocumentID string `json:"document_id"`
+
+	// NewParentID names the destination parent. Empty moves the
+	// document to the org root.
+	NewParentID string `json:"new_parent_id"`
 }
 
 // moveDocument re-parents a document within the organisation.
@@ -481,33 +551,38 @@ func (moveDocument) Traits() Traits {
 }
 
 // Title announces which document is being moved.
-func (moveDocument) Title(inp DescribeInput) string {
-	return "Moving " + inp.Subject()
-}
+func (moveDocument) Title(inp DescribeInput) (string, error) {
+	var in moveDocumentArgs
 
-// Confirm describes the move the model wants to make.
-func (moveDocument) Confirm(inp DescribeInput) ConfirmActionSummary {
-	var in struct {
-		NewParentID string `json:"new_parent_id"`
+	if err := inp.Decode(&in); err != nil {
+		return "", err
 	}
 
-	inp.Probe(&in)
+	return "Moving " + inp.Subject(in.DocumentID), nil
+}
 
-	return summarize(inp, NameMoveDocument, func(subject string) string {
+// Summary describes the move the model wants to make.
+func (moveDocument) Summary(inp DescribeInput) (ActionSummary, error) {
+	var in moveDocumentArgs
+
+	if err := inp.Decode(&in); err != nil {
+		return ActionSummary{}, err
+	}
+
+	out := summarize(inp, NameMoveDocument, in.DocumentID, func(subject string) string {
 		if in.NewParentID == "" {
 			return fmt.Sprintf("Move %s to the org root", subject)
 		}
 
 		return fmt.Sprintf("Move %s under another document", subject)
 	})
+
+	return out, nil
 }
 
 // Execute re-parents the document, refusing to create a cycle.
 func (moveDocument) Execute(inp Input) (string, error) {
-	var in struct {
-		DocumentID  string `json:"document_id"`
-		NewParentID string `json:"new_parent_id"`
-	}
+	var in moveDocumentArgs
 
 	if err := inp.Decode(&in); err != nil {
 		return "", err

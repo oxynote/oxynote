@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/block"
@@ -103,6 +104,22 @@ type input struct {
 
 	// args is the raw JSON the model supplied.
 	args json.RawMessage
+
+	// touched lists the documents this call changed, in the order the
+	// writes below recorded them.
+	touched []string
+}
+
+// recordTouched notes a document this call changed. Every write in this
+// package goes through one of the four methods below, so recording it
+// here is what makes Result.Documents right by construction rather than
+// by a convention about argument names.
+func (i *input) recordTouched(documentID string) {
+	if documentID == "" || slices.Contains(i.touched, documentID) {
+		return
+	}
+
+	i.touched = append(i.touched, documentID)
 }
 
 // newInput creates a fresh instance of input for one tool call.
@@ -125,22 +142,6 @@ func (i *input) Decode(dst any) error {
 	return nil
 }
 
-// Probe decodes the call's arguments into dst on a best-effort basis.
-//
-// A malformed args payload should degrade the label or the confirm
-// card, not abort the surrounding flow, so we log a warning and let dst
-// keep its zero value rather than propagating the error. The provider
-// enforces the input schema at the tool-call boundary, so a failure
-// here is unusual and worth knowing about.
-func (i *input) Probe(dst any) {
-	if err := json.Unmarshal(i.args, dst); err != nil {
-		i.log.Warn("tool args unmarshal failed",
-			slog.String("tool", string(i.name)),
-			slog.String("error", err.Error()),
-		)
-	}
-}
-
 // OrganizationID returns the organisation every call is scoped to.
 func (i *input) OrganizationID() string {
 	return i.orgID
@@ -151,28 +152,15 @@ func (i *input) UserID() string {
 	return i.userID
 }
 
-// DocumentID returns the document the call's arguments target, or an
-// empty string when they name none.
-func (i *input) DocumentID() string {
-	var probe struct {
-		DocumentID string `json:"document_id"`
-	}
-
-	i.Probe(&probe)
-
-	return probe.DocumentID
-}
-
 // Subject returns the display subject for this call's label and
-// summary: the named document when it can be resolved, a generic
-// fallback otherwise.
-func (i *input) Subject() string {
-	docID := i.DocumentID()
-	if docID == "" {
+// summary: the named document when it resolves, a generic fallback
+// otherwise.
+func (i *input) Subject(documentID string) string {
+	if documentID == "" {
 		return subjectFor("")
 	}
 
-	return subjectFor(i.DocumentName(docID))
+	return subjectFor(i.DocumentName(documentID))
 }
 
 // DocumentName fetches the document's display name. Failures (bad id,
@@ -255,10 +243,13 @@ func (i *input) CreateDocument(doc document.Document) error {
 		return fmt.Errorf("commit: %w", err)
 	}
 
+	i.recordTouched(doc.ID.String())
+
 	return nil
 }
 
-// DeleteDocument removes the document.
+// DeleteDocument removes the document. It records nothing as touched:
+// the document is gone, so there is nothing left to point a caller at.
 func (i *input) DeleteDocument(id xid.ID) error {
 	return i.db.DeleteDocument(i.ctx, id, i.orgID)
 }
@@ -288,6 +279,10 @@ func (i *input) MoveDocument(id xid.ID, parentID null.Value[xid.ID]) error {
 	if err := i.db.UpdateDocumentParentID(i.ctx, id, parentID, i.orgID); err != nil {
 		return fmt.Errorf("update: %w", err)
 	}
+
+	// the parents' own content is unchanged — only the tree shape
+	// around them — so the moved document is the one to record.
+	i.recordTouched(id.String())
 
 	return nil
 }
@@ -376,6 +371,10 @@ func (i *input) ApplyEdit(documentID string, ops []edit.Operation) (string, erro
 			slog.Int("applied", res.Applied),
 		)
 	}
+
+	// the resolved id, not the argument: the caller may have named the
+	// document any way resolveDoc accepts.
+	i.recordTouched(ref.DocumentID)
 
 	return result(res)
 }

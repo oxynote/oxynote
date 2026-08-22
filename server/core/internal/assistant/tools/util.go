@@ -21,33 +21,25 @@ func result(v any) (string, error) {
 }
 
 // summarize builds a confirmation for a write that targets an existing
-// document: the document is resolved once, and the tool supplies only
-// the phrasing for its own change.
-func summarize(inp DescribeInput, name Name, phrase func(subject string) string) ConfirmActionSummary {
-	out := ConfirmActionSummary{Tool: string(name)}
+// document: the caller passes the document its own arguments named, the
+// document is resolved once, and the tool supplies only the phrasing for
+// its own change. A tool that targets no document passes an empty id.
+func summarize(
+	inp DescribeInput,
+	name Name,
+	documentID string,
+	phrase func(subject string) string,
+) ActionSummary {
+	out := ActionSummary{Tool: string(name)}
 
-	if docID := inp.DocumentID(); docID != "" {
-		out.DocumentID = docID
-		out.DocumentName = inp.DocumentName(docID)
+	if documentID != "" {
+		out.DocumentID = documentID
+		out.DocumentName = inp.DocumentName(documentID)
 	}
 
 	out.Summary = phrase(subjectFor(out.DocumentName))
 
 	return out
-}
-
-// blockType reads the canonical type of the block a write tool was
-// handed, for the confirm summary.
-func blockType(inp DescribeInput) string {
-	var in struct {
-		Block struct {
-			Type string `json:"type"`
-		} `json:"block"`
-	}
-
-	inp.Probe(&in)
-
-	return in.Block.Type
 }
 
 // subjectFor returns the display subject for label and summary strings:
@@ -60,10 +52,10 @@ func subjectFor(docName string) string {
 	return docName
 }
 
-// blockKindLabel turns a canonical type string into a friendlier label
+// blockKindLabel turns a canonical block type into a friendlier label
 // for the confirm UI. Unknown types fall through verbatim.
-func blockKindLabel(kind string) string {
-	switch block.Type(kind) {
+func blockKindLabel(kind block.Type) string {
+	switch kind {
 	case block.BlockParagraph:
 		return "a paragraph"
 	case block.BlockHeading:
@@ -104,7 +96,7 @@ func blockKindLabel(kind string) string {
 		return "a block"
 	}
 
-	return "a " + kind + " block"
+	return "a " + string(kind) + " block"
 }
 
 // textPreview returns at most maxLen runes of s, collapsed to a single

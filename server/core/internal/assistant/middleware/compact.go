@@ -69,7 +69,10 @@ func NewCompaction(
 		return nil, fmt.Errorf("building context summarization: %w", err)
 	}
 
-	return []adk.ChatModelAgentMiddleware{red, sum}, nil
+	return []adk.ChatModelAgentMiddleware{
+		red,
+		sum,
+	}, nil
 }
 
 // newClearRewriter builds the rewriter that replaces a cleared read

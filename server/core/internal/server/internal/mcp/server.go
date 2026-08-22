@@ -1,7 +1,6 @@
 package mcp
 
 import (
-	"log/slog"
 	"net/http"
 	"slices"
 
@@ -62,20 +61,14 @@ func (h *Handler) server(r *http.Request) *mcp.Server {
 			continue
 		}
 
-		def, err := toolDef(r.Context(), e)
-		if err != nil {
-			// NOCOV: every registered tool describes itself from
-			// constant schema definitions.
-			h.log.Error(
-				"cannot describe tool",
-				slog.String("tool", string(e.Name)),
-				slog.String("error", err.Error()),
-			)
-
-			continue
-		}
-
-		srv.AddTool(def, h.toolHandler(e))
+		// the wire shape is the tool's own description: same name, same
+		// prose, same argument schema the assistant's model sees.
+		srv.AddTool(&mcp.Tool{
+			Name:        string(e.Name),
+			Description: e.Info.Description,
+			InputSchema: e.Info.Schema(),
+			Annotations: annotations(e),
+		}, h.toolHandler(e))
 	}
 
 	if read {

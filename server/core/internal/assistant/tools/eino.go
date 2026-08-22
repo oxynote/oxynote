@@ -35,7 +35,9 @@ const _offloadPathKey = "file_path"
 
 // readToolOutput hands the model back a result the reduction middleware
 // moved out of the conversation.
-type readToolOutput struct{}
+type readToolOutput struct {
+	plainSummary
+}
 
 // Info returns the tool's model-facing description.
 func (readToolOutput) Info() Info {
@@ -59,8 +61,8 @@ func (readToolOutput) Traits() Traits {
 
 // Title returns no status line: fetching back an offloaded result is
 // bookkeeping, not something the user asked for.
-func (readToolOutput) Title(_ DescribeInput) string {
-	return ""
+func (readToolOutput) Title(_ DescribeInput) (string, error) {
+	return "", nil
 }
 
 // Execute returns the stored output.
@@ -84,7 +86,7 @@ func (readToolOutput) Execute(inp Input) (string, error) {
 // agent framework invokes.
 type einoTool struct {
 	// tl is the tool being adapted.
-	tl ReadTool
+	tl Tool
 
 	// deps is the session wiring each call's Input is built from.
 	deps *Deps
@@ -95,7 +97,7 @@ type einoTool struct {
 }
 
 // newEinoTool creates a fresh instance of einoTool.
-func newEinoTool(tl ReadTool, deps *Deps) *einoTool {
+func newEinoTool(tl Tool, deps *Deps) *einoTool {
 	return &einoTool{tl: tl, deps: deps, info: tl.Info()}
 }
 
@@ -105,31 +107,46 @@ func (et *einoTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return et.info.toEino()
 }
 
-// InvokableRun performs the call, handing the tool an Input built from
-// this call's context and arguments.
+// Run performs the call, handing the tool an Input built from this
+// call's context and arguments, and reports what the call changed
+// alongside what it produced.
+//
+// The documents come back even on failure: a tool that errors partway
+// may already have changed something, and a caller is better told than
+// left to assume otherwise.
+func (et *einoTool) Run(ctx context.Context, args json.RawMessage) (Result, error) {
+	inp := et.input(ctx, string(args))
+
+	out, err := et.tl.Execute(inp)
+
+	return Result{
+		Output:    out,
+		Documents: inp.touched,
+	}, err
+}
+
+// InvokableRun performs the call for the agent framework, which hands
+// its arguments over as a string and may pass options this adapter has
+// no use for.
 func (et *einoTool) InvokableRun(
 	ctx context.Context,
 	argumentsInJSON string,
 	_ ...tool.Option,
 ) (string, error) {
-	return et.tl.Execute(et.input(ctx, argumentsInJSON))
+	res, err := et.Run(ctx, json.RawMessage(argumentsInJSON))
+
+	return res.Output, err
 }
 
 // Title returns the status line shown while the tool runs.
-func (et *einoTool) Title(ctx context.Context, args json.RawMessage) string {
+func (et *einoTool) Title(ctx context.Context, args json.RawMessage) (string, error) {
 	return et.tl.Title(et.input(ctx, string(args)))
 }
 
-// Confirm describes the pending write for the user. It is only reached
-// for a tool the registry gated, which is only ever a WriteTool.
-func (et *einoTool) Confirm(ctx context.Context, args json.RawMessage) ConfirmActionSummary {
-	w, ok := et.tl.(WriteTool)
-	if !ok {
-		// NOCOV: the gate is only applied to tools implementing WriteTool.
-		return ConfirmActionSummary{Tool: string(et.info.Name)}
-	}
-
-	return w.Confirm(et.input(ctx, string(args)))
+// Summary describes the pending write for the user. It is only reached
+// for a tool the registry gated, which is only ever a write.
+func (et *einoTool) Summary(ctx context.Context, args json.RawMessage) (ActionSummary, error) {
+	return et.tl.Summary(et.input(ctx, string(args)))
 }
 
 // input assembles the per-call input the tool is handed.
@@ -137,26 +154,12 @@ func (et *einoTool) input(ctx context.Context, args string) *input {
 	return et.deps.newInput(ctx, et.info.Name, json.RawMessage(args))
 }
 
-// toEino converts the description into the framework's shape. It is a
-// method on Info but lives here, so the framework's vocabulary stays in
-// this file rather than spreading to tool.go.
-//
-// The property map is transported through JSON because it is already a
-// JSON-schema fragment, which keeps each tool's schema the single
-// source of truth rather than restating it in a second vocabulary.
+// toEino converts the description into the framework's shape, wrapping
+// the schema Info already knows how to state. It is a method on Info
+// but lives here, so the framework's vocabulary stays in this file
+// rather than spreading to tool.go.
 func (info Info) toEino() (*schema.ToolInfo, error) {
-	// an empty slice would emit "required": [] where the schema should
-	// simply not say anything.
-	required := info.Required
-	if len(required) == 0 {
-		required = nil
-	}
-
-	raw, err := json.Marshal(map[string]any{
-		_keyType:     _typeObject,
-		"properties": info.Properties,
-		"required":   required,
-	})
+	raw, err := json.Marshal(info.Schema())
 	if err != nil {
 		// NOCOV: the property maps are literals of JSON-encodable types.
 		return nil, fmt.Errorf("marshalling schema: %w", err)

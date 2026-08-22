@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -74,7 +75,7 @@ func (h *Handler) readDocument(set *tools.Set) mcp.ResourceHandler {
 			return nil, errors.New("read_document_summary tool not registered")
 		}
 
-		out, err := summary.Tool.InvokableRun(ctx, fmt.Sprintf(`{"document_id":%q}`, id))
+		res, err := summary.Tool.Run(ctx, json.RawMessage(fmt.Sprintf(`{"document_id":%q}`, id)))
 		if err != nil {
 			return nil, mcp.ResourceNotFoundError(req.Params.URI)
 		}
@@ -83,7 +84,7 @@ func (h *Handler) readDocument(set *tools.Set) mcp.ResourceHandler {
 			Contents: []*mcp.ResourceContents{{
 				URI:      req.Params.URI,
 				MIMEType: _documentMIMEType,
-				Text:     out,
+				Text:     res.Output,
 			}},
 		}, nil
 	}

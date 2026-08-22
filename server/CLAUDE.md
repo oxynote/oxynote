@@ -132,10 +132,53 @@ rather than because of the domain. `tools.Set` is the only place that names
 every tool; adding one means writing its type and adding a line to that list.
 
 **Tools do not implement eino's interfaces.** A tool implements this package's
-own `ReadTool` — `Info() Info`, `Title(DescribeInput) string`,
-`Execute(Input) (string, error)` — and `eino.go` translates that into what the
-framework calls. Nothing else in the package imports eino, so the tool files
+own `Tool` — `Info`, `Traits`, `Title`, `Summary`, `Execute` — and `eino.go`
+translates that into what the framework calls. Nothing else in the package imports eino, so the tool files
 stay free of `argumentsInJSON`, `...tool.Option` and `*schema.ToolInfo`.
+
+The framework stops at this package's edge. A surface outside it reaches a
+tool through `Entry`: `Entry.Info` to describe it (`Info.Schema()` states the
+arguments once, for every surface that has to publish them) and
+`Entry.Tool`, a `Runner`, to run it. `Info.toEino` and `einoTool.InvokableRun`
+are the framework's own costume over the same two things, worn only inside
+`eino.go`.
+
+**A call reports what it changed; it is never asked.** `Runner.Run` returns a
+`Result` carrying the output and `Documents`, the documents the call created or
+changed. Every write in the package goes through one of four `Input` methods —
+`ApplyEdit`, `CreateDocument`, `MoveDocument`, `DeleteDocument` — and the first
+three record the document there, as the mutation happens. So the list is right
+for a call that changes several documents and empty for one that changes none,
+neither of which reading the arguments could establish. A delete records
+nothing: the document it names is gone, so there is nothing left to point at.
+
+**A tool states its arguments once.** Every write declares a named `<tool>Args`
+type and decodes into it, so one payload has one Go shape instead of a partial
+struct per method, and `Confirm` hands the document id it read to `summarize`
+rather than having it sniffed back out of the JSON. Read tools, whose arguments
+are used in one place, keep a local anonymous struct. Describing a call still
+parses its arguments — `Title` and `Confirm` run *before* the call does, so
+there is nothing to derive them from — but each describe now parses once.
+
+**There is one tool interface, not two.** Every tool satisfies `Tool`; the ones
+that propose nothing embed `plainSummary` for the no-op. Whether a tool writes
+is asked of `Traits.Write` alone, so there is no second fact — a marker
+interface — to keep in step with it, and the adapter reaches `Summary` directly
+instead of type-asserting its way to it.
+
+**`Decode` is the only way into a call's arguments.** There is no lenient
+variant: `Title`, `Summary` and `Execute` all decode and all return an error, so
+no description is ever built from the zero values a failed unmarshal left
+behind. `Title` also takes the document id it read to `Subject`, and `Summary`
+takes it to `summarize`, so nothing re-derives a target the caller already has.
+
+Each caller then decides what an unreadable payload means. The gate propagates
+it rather than parking the run — a payload `Execute` would reject is not worth
+spending a user's confirmation on, and the same payload comes back unchanged on
+resume. `Set.Label` turns it into an empty label: the observer announces a call
+it is about to make, and that call is about to fail on the same arguments, so
+the failure is the tool's to report and a status line derived from nothing would
+only precede it with a lie.
 
 `Input` is built per call and carries the call itself: its context, its raw
 arguments, and every resource a tool reaches through, already scoped to the
@@ -152,8 +195,10 @@ across marker interfaces and schema fields:
 - `Write` gates it behind user confirmation **and** protects its result from
   being cleared by the context middlewares — the model has to keep knowing what
   it changed, while a stale read can always be taken again. A tool declaring it
-  must implement `WriteTool`, so it can describe the change it proposes;
-  `Test_New` is what holds the two in step.
+  must describe the change it proposes in `Summary`, and is the only kind of
+  tool ever asked for one. `Test_New` checks that a write actually produces a
+  summary and that nothing else does — a compiler cannot, since every tool
+  satisfies the same interface.
 - `Destructive` keeps it outside an "approve all" answer. Only
   `delete_document` and `delete_block`.
 - `Internal` keeps it off surfaces outside this process. Only
@@ -173,7 +218,10 @@ parses its arguments and hands them over; it does not re-derive the rules.
 The MCP surface (`internal/server/internal/mcp`) serves the same registry
 **ungated** via `Set.Entries`, minus the internal ones — MCP clients own the
 approval story, and the write/destructive facts become MCP tool annotations
-instead. Adding a tool to `tools.Set` therefore extends the MCP server for free.
+instead. It builds each `mcp.Tool` inline from `Entry.Info` and calls
+`Entry.Tool.Run`, so it never touches eino; every document in the call's
+`Result.Documents` comes back as a resource link. Adding a tool to `tools.Set` therefore extends the
+MCP server for free.
 
 `testdata/tool_schemas.golden` pins every tool's model-facing description. Any
 change to a schema or a tool description has to be deliberate enough to update

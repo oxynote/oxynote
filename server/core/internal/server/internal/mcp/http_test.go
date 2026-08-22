@@ -119,9 +119,9 @@ func rpc(t *testing.T, hdl http.Handler, body string) (int, map[string]any) {
 	return rec.Code, nil
 }
 
-// listedToolNames runs tools/list through the handler and returns the
-// names in listing order.
-func listedToolNames(t *testing.T, hdl http.Handler) []string {
+// listedTools runs tools/list through the handler and returns each
+// definition exactly as it went over the wire, keyed by tool name.
+func listedTools(t *testing.T, hdl http.Handler) map[string]map[string]any {
 	t.Helper()
 
 	code, payload := rpc(t, hdl, `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`)
@@ -134,19 +134,19 @@ func listedToolNames(t *testing.T, hdl http.Handler) []string {
 	rawTools, ok := result["tools"].([]any)
 	require.True(t, ok)
 
-	names := make([]string, 0, len(rawTools))
+	defs := make(map[string]map[string]any, len(rawTools))
 
 	for _, rt := range rawTools {
 		tm, tok := rt.(map[string]any)
 		require.True(t, tok)
 
-		name, ok := tm["name"].(string)
-		require.True(t, ok)
+		name, nok := tm["name"].(string)
+		require.True(t, nok)
 
-		names = append(names, name)
+		defs[name] = tm
 	}
 
-	return names
+	return defs
 }
 
 func Test_Options_Validate(t *testing.T) {
