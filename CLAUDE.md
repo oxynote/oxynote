@@ -93,6 +93,9 @@ make start     # build images + run the dev stack in the background
 make dev       # backend containers + web dev server on the host (hot reload, :3000)
 make stop      # stop the dev stack
 
+make lint      # fix lint/format/type issues in web, auth-realtime, core, e2e
+make check-lint # the same gates, verification only
+
 make e2e             # one-shot: build, run playwright, tear the e2e stack down
 make e2e-stack-build # build the e2e stack's images, then iterate with `pnpm test`
 make e2e-stack-stop  # stop the e2e stack and drop its data
