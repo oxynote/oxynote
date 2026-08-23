@@ -6,6 +6,7 @@ import (
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
+	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 	"github.com/rs/xid"
 )
 
@@ -57,6 +58,34 @@ func (a *agent) UpdateDataSource(ctx context.Context, ds *datasource.DataSource)
 		MustSql()
 
 	_, err = a.sql.ExecContext(ctx, q, args...)
+
+	return err
+}
+
+// UpdateDataSourceStatus records what a data source's connection last
+// reported.
+//
+// It writes the status alone rather than going through UpdateDataSource:
+// the observation says nothing about the name, the URL or the
+// credentials, and re-encrypting credentials to store it would risk the
+// one field nobody asked to change.
+func (a *agent) UpdateDataSourceStatus(
+	ctx context.Context,
+	id xid.ID,
+	organizationID string,
+	status processor.ConnectionStatus,
+) error {
+	q, args := a.builder.Update("data_sources").
+		SetMap(map[string]any{
+			"status": status,
+		}).
+		Where(sq.Eq{
+			"id":                 id,
+			"fk_organization_id": organizationID,
+		}).
+		MustSql()
+
+	_, err := a.sql.ExecContext(ctx, q, args...)
 
 	return err
 }

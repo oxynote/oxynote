@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	datasourceCore "github.com/oxynote/oxynote/server/core/internal/datasource"
+	datasourceMock "github.com/oxynote/oxynote/server/core/internal/datasource/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
@@ -17,48 +18,59 @@ import (
 // type, and a complete time range.
 const _testGenericQueryTarget = "http://test.com/?q=up&chartType=line_chart&from=2024-01-01T00:00:00Z&to=2024-01-02T00:00:00Z"
 
-// stubPrometheusQueryExec returns an executor mock whose PrometheusQuery
-// yields the provided values.
-func stubPrometheusQueryExec(cs processor.ConnectionStatus, result *processor.PrometheusQueryResult, err error) *ExecutorMock {
-	return &ExecutorMock{
-		PrometheusQueryFunc: func(_ context.Context, _ datasourceCore.DataSource, _ string, _ processor.TimeRange) (processor.ConnectionStatus, *processor.PrometheusQueryResult, error) {
-			return cs, result, err
+// stubPrometheusQueryClients returns the clients a runner hands out,
+// whose Prometheus query yields the provided values. A status the
+// connection refused is how the accessor fails rather than something the
+// query returns.
+func stubPrometheusQueryClients(cs processor.ConnectionStatus, result *processor.PrometheusQueryResult, err error) *clientMocks {
+	return &clientMocks{
+		err: cs.Error(),
+		prometheus: &datasourceMock.Prometheus{
+			QueryRangeFunc: func(_ context.Context, _ string, _ processor.TimeRange) (*processor.PrometheusQueryResult, error) {
+				return result, err
+			},
 		},
 	}
 }
 
-// stubMySQLQueryExec returns an executor mock whose MySQLQuery yields the
-// provided values.
-func stubMySQLQueryExec(cs processor.ConnectionStatus, result *processor.MySQLQueryResult, err error) *ExecutorMock {
-	return &ExecutorMock{
-		MySQLQueryFunc: func(_ context.Context, _ datasourceCore.DataSource, _ string, _ processor.TimeRange) (processor.ConnectionStatus, *processor.MySQLQueryResult, error) {
-			return cs, result, err
+// stubMySQLQueryClients returns the clients a runner hands out, whose
+// MySQL query yields the provided values.
+func stubMySQLQueryClients(cs processor.ConnectionStatus, result *processor.MySQLQueryResult, err error) *clientMocks {
+	return &clientMocks{
+		err: cs.Error(),
+		mySQL: &datasourceMock.MySQL{
+			QueryFunc: func(_ context.Context, _ string, _ processor.TimeRange) (*processor.MySQLQueryResult, error) {
+				return result, err
+			},
 		},
 	}
 }
 
-// stubPostgreSQLQueryExec returns an executor mock whose PostgreSQLQuery
-// yields the provided values.
-func stubPostgreSQLQueryExec(cs processor.ConnectionStatus, result *processor.PostgreSQLQueryResult, err error) *ExecutorMock {
-	return &ExecutorMock{
-		PostgreSQLQueryFunc: func(_ context.Context, _ datasourceCore.DataSource, _ string, _ processor.TimeRange) (processor.ConnectionStatus, *processor.PostgreSQLQueryResult, error) {
-			return cs, result, err
+// stubPostgreSQLQueryClients returns the clients a runner hands out,
+// whose PostgreSQL query yields the provided values.
+func stubPostgreSQLQueryClients(cs processor.ConnectionStatus, result *processor.PostgreSQLQueryResult, err error) *clientMocks {
+	return &clientMocks{
+		err: cs.Error(),
+		postgreSQL: &datasourceMock.PostgreSQL{
+			QueryFunc: func(_ context.Context, _ string, _ processor.TimeRange) (*processor.PostgreSQLQueryResult, error) {
+				return result, err
+			},
 		},
 	}
 }
 
 func Test_Handler_QueryDataSource(t *testing.T) {
 	wasExecutorQueryCalled := func(prometheus, mysql, postgresql int) check {
-		return func(t *testing.T, _ *DBMock, exec *ExecutorMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
-			assert.Len(t, exec.PrometheusQueryCalls(), prometheus)
-			assert.Len(t, exec.MySQLQueryCalls(), mysql)
-			assert.Len(t, exec.PostgreSQLQueryCalls(), postgresql)
+		return func(t *testing.T, _ *DBMock, exec *runnerMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
+			assert.Len(t, exec.prometheus.QueryRangeCalls(), prometheus)
+			assert.Len(t, exec.mySQL.QueryCalls(), mysql)
+			assert.Len(t, exec.postgreSQL.QueryCalls(), postgresql)
 		}
 	}
 
 	cc := map[string]struct {
 		DB          *DBMock
-		Exec        *ExecutorMock
+		Clients     *clientMocks
 		Target      string
 		OmitSession bool
 		ID          string
@@ -117,40 +129,40 @@ func Test_Handler_QueryDataSource(t *testing.T) {
 			),
 		},
 		"Prometheus dispatch": {
-			DB:     stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
-			Exec:   stubPrometheusQueryExec(processor.ConnectionStatusSuccess, nil, nil),
-			Target: _testGenericQueryTarget,
-			ID:     _testID.String(),
+			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
+			Clients: stubPrometheusQueryClients(processor.ConnectionStatusSuccess, nil, nil),
+			Target:  _testGenericQueryTarget,
+			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusOK, `{"status":"no-data"}`),
 				wasExecutorQueryCalled(1, 0, 0),
 			),
 		},
 		"PostgreSQL dispatch": {
-			DB:     stubDB(stubDataSource(datasourceCore.TypePostgreSQL), nil),
-			Exec:   stubPostgreSQLQueryExec(processor.ConnectionStatusSuccess, nil, nil),
-			Target: _testGenericQueryTarget,
-			ID:     _testID.String(),
+			DB:      stubDB(stubDataSource(datasourceCore.TypePostgreSQL), nil),
+			Clients: stubPostgreSQLQueryClients(processor.ConnectionStatusSuccess, nil, nil),
+			Target:  _testGenericQueryTarget,
+			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusOK, `{"status":"no-data"}`),
 				wasExecutorQueryCalled(0, 0, 1),
 			),
 		},
 		"MariaDB dispatch": {
-			DB:     stubDB(stubDataSource(datasourceCore.TypeMariaDB), nil),
-			Exec:   stubMySQLQueryExec(processor.ConnectionStatusSuccess, nil, nil),
-			Target: _testGenericQueryTarget,
-			ID:     _testID.String(),
+			DB:      stubDB(stubDataSource(datasourceCore.TypeMariaDB), nil),
+			Clients: stubMySQLQueryClients(processor.ConnectionStatusSuccess, nil, nil),
+			Target:  _testGenericQueryTarget,
+			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusOK, `{"status":"no-data"}`),
 				wasExecutorQueryCalled(0, 1, 0),
 			),
 		},
 		"MySQL dispatch": {
-			DB:     stubDB(stubDataSource(datasourceCore.TypeMySQL), nil),
-			Exec:   stubMySQLQueryExec(processor.ConnectionStatusSuccess, nil, nil),
-			Target: _testGenericQueryTarget,
-			ID:     _testID.String(),
+			DB:      stubDB(stubDataSource(datasourceCore.TypeMySQL), nil),
+			Clients: stubMySQLQueryClients(processor.ConnectionStatusSuccess, nil, nil),
+			Target:  _testGenericQueryTarget,
+			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusOK, `{"status":"no-data"}`),
 				wasExecutorQueryCalled(0, 1, 0),
@@ -162,7 +174,7 @@ func Test_Handler_QueryDataSource(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			hdl, db, exec, logs := prepHandler(c.DB, c.Exec)
+			hdl, db, exec, logs := prepHandler(c.DB, c.Clients)
 
 			req := prepRequest("GET", c.Target, "", !c.OmitSession, c.ID)
 			rec := httptest.NewRecorder()
@@ -178,10 +190,10 @@ func Test_Handler_QueryDataSource(t *testing.T) {
 
 func Test_Handler_queryPrometheusGeneric(t *testing.T) {
 	cc := map[string]struct {
-		DB     *DBMock
-		Exec   *ExecutorMock
-		Target string
-		Checks []check
+		DB      *DBMock
+		Clients *clientMocks
+		Target  string
+		Checks  []check
 	}{
 		"Invalid time range": {
 			Target: "http://test.com/?from=bogus",
@@ -190,45 +202,31 @@ func Test_Handler_queryPrometheusGeneric(t *testing.T) {
 			),
 		},
 		"Error returned by executor.PrometheusQuery": {
-			Exec:   stubPrometheusQueryExec("", nil, assert.AnError),
-			Target: _testQueryTarget,
+			Clients: stubPrometheusQueryClients("", nil, assert.AnError),
+			Target:  _testQueryTarget,
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasDBUpdateDataSourceCalled(0),
 			),
 		},
-		"Changed status updates the data source": {
-			Exec:   stubPrometheusQueryExec(processor.ConnectionStatusUnreachable, nil, nil),
-			Target: _testQueryTarget,
+		"A connection the data source refused": {
+			Clients: stubPrometheusQueryClients(processor.ConnectionStatusUnreachable, nil, nil),
+			Target:  _testQueryTarget,
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"data_source.unreachable","message":"The data source is unreachable."}`),
-				wasDBUpdateDataSourceCalled(1),
-			),
-		},
-		"Error returned by db.UpdateDataSource": {
-			DB: &DBMock{
-				UpdateDataSourceFunc: func(_ context.Context, _ *datasourceCore.DataSource) error {
-					return assert.AnError
-				},
-			},
-			Exec:   stubPrometheusQueryExec(processor.ConnectionStatusUnreachable, nil, nil),
-			Target: _testQueryTarget,
-			Checks: checks(
-				hasResp(http.StatusBadRequest, `{"code":"data_source.unreachable","message":"The data source is unreachable."}`),
-				wasDBUpdateDataSourceCalled(1),
-				hasUpdateFailedLog(),
+				wasDBUpdateDataSourceCalled(0),
 			),
 		},
 		"Nil result returns no-data": {
-			Exec:   stubPrometheusQueryExec(processor.ConnectionStatusSuccess, nil, nil),
-			Target: _testQueryTarget,
+			Clients: stubPrometheusQueryClients(processor.ConnectionStatusSuccess, nil, nil),
+			Target:  _testQueryTarget,
 			Checks: checks(
 				hasResp(http.StatusOK, `{"status":"no-data"}`),
 				wasDBUpdateDataSourceCalled(0),
 			),
 		},
 		"Successful query": {
-			Exec: stubPrometheusQueryExec(processor.ConnectionStatusSuccess, &processor.PrometheusQueryResult{
+			Clients: stubPrometheusQueryClients(processor.ConnectionStatusSuccess, &processor.PrometheusQueryResult{
 				Type: model.ValMatrix,
 				Result: model.Matrix{
 					&model.SampleStream{
@@ -251,7 +249,7 @@ func Test_Handler_queryPrometheusGeneric(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			hdl, db, exec, logs := prepHandler(c.DB, c.Exec)
+			hdl, db, exec, logs := prepHandler(c.DB, c.Clients)
 
 			req := prepRequest("GET", c.Target, "", true, "")
 			rec := httptest.NewRecorder()
@@ -267,10 +265,10 @@ func Test_Handler_queryPrometheusGeneric(t *testing.T) {
 
 func Test_Handler_queryMySQLGeneric(t *testing.T) {
 	cc := map[string]struct {
-		DB     *DBMock
-		Exec   *ExecutorMock
-		Target string
-		Checks []check
+		DB      *DBMock
+		Clients *clientMocks
+		Target  string
+		Checks  []check
 	}{
 		"Invalid time range": {
 			Target: "http://test.com/?from=bogus",
@@ -279,45 +277,31 @@ func Test_Handler_queryMySQLGeneric(t *testing.T) {
 			),
 		},
 		"Error returned by executor.MySQLQuery": {
-			Exec:   stubMySQLQueryExec("", nil, assert.AnError),
-			Target: _testQueryTarget,
+			Clients: stubMySQLQueryClients("", nil, assert.AnError),
+			Target:  _testQueryTarget,
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasDBUpdateDataSourceCalled(0),
 			),
 		},
-		"Changed status updates the data source": {
-			Exec:   stubMySQLQueryExec(processor.ConnectionStatusUnreachable, nil, nil),
-			Target: _testQueryTarget,
+		"A connection the data source refused": {
+			Clients: stubMySQLQueryClients(processor.ConnectionStatusUnreachable, nil, nil),
+			Target:  _testQueryTarget,
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"data_source.unreachable","message":"The data source is unreachable."}`),
-				wasDBUpdateDataSourceCalled(1),
-			),
-		},
-		"Error returned by db.UpdateDataSource": {
-			DB: &DBMock{
-				UpdateDataSourceFunc: func(_ context.Context, _ *datasourceCore.DataSource) error {
-					return assert.AnError
-				},
-			},
-			Exec:   stubMySQLQueryExec(processor.ConnectionStatusUnreachable, nil, nil),
-			Target: _testQueryTarget,
-			Checks: checks(
-				hasResp(http.StatusBadRequest, `{"code":"data_source.unreachable","message":"The data source is unreachable."}`),
-				wasDBUpdateDataSourceCalled(1),
-				hasUpdateFailedLog(),
+				wasDBUpdateDataSourceCalled(0),
 			),
 		},
 		"Nil result returns no-data": {
-			Exec:   stubMySQLQueryExec(processor.ConnectionStatusSuccess, nil, nil),
-			Target: _testQueryTarget,
+			Clients: stubMySQLQueryClients(processor.ConnectionStatusSuccess, nil, nil),
+			Target:  _testQueryTarget,
 			Checks: checks(
 				hasResp(http.StatusOK, `{"status":"no-data"}`),
 				wasDBUpdateDataSourceCalled(0),
 			),
 		},
 		"Successful query": {
-			Exec: stubMySQLQueryExec(processor.ConnectionStatusSuccess, &processor.MySQLQueryResult{
+			Clients: stubMySQLQueryClients(processor.ConnectionStatusSuccess, &processor.MySQLQueryResult{
 				Columns: []string{"time", "value"},
 				Rows:    [][]any{{int64(1700000000), float64(10)}},
 			}, nil),
@@ -333,7 +317,7 @@ func Test_Handler_queryMySQLGeneric(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			hdl, db, exec, logs := prepHandler(c.DB, c.Exec)
+			hdl, db, exec, logs := prepHandler(c.DB, c.Clients)
 
 			req := prepRequest("GET", c.Target, "", true, "")
 			rec := httptest.NewRecorder()
@@ -349,10 +333,10 @@ func Test_Handler_queryMySQLGeneric(t *testing.T) {
 
 func Test_Handler_queryPostgreSQLGeneric(t *testing.T) {
 	cc := map[string]struct {
-		DB     *DBMock
-		Exec   *ExecutorMock
-		Target string
-		Checks []check
+		DB      *DBMock
+		Clients *clientMocks
+		Target  string
+		Checks  []check
 	}{
 		"Invalid time range": {
 			Target: "http://test.com/?from=bogus",
@@ -361,45 +345,31 @@ func Test_Handler_queryPostgreSQLGeneric(t *testing.T) {
 			),
 		},
 		"Error returned by executor.PostgreSQLQuery": {
-			Exec:   stubPostgreSQLQueryExec("", nil, assert.AnError),
-			Target: _testQueryTarget,
+			Clients: stubPostgreSQLQueryClients("", nil, assert.AnError),
+			Target:  _testQueryTarget,
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasDBUpdateDataSourceCalled(0),
 			),
 		},
-		"Changed status updates the data source": {
-			Exec:   stubPostgreSQLQueryExec(processor.ConnectionStatusUnreachable, nil, nil),
-			Target: _testQueryTarget,
+		"A connection the data source refused": {
+			Clients: stubPostgreSQLQueryClients(processor.ConnectionStatusUnreachable, nil, nil),
+			Target:  _testQueryTarget,
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"data_source.unreachable","message":"The data source is unreachable."}`),
-				wasDBUpdateDataSourceCalled(1),
-			),
-		},
-		"Error returned by db.UpdateDataSource": {
-			DB: &DBMock{
-				UpdateDataSourceFunc: func(_ context.Context, _ *datasourceCore.DataSource) error {
-					return assert.AnError
-				},
-			},
-			Exec:   stubPostgreSQLQueryExec(processor.ConnectionStatusUnreachable, nil, nil),
-			Target: _testQueryTarget,
-			Checks: checks(
-				hasResp(http.StatusBadRequest, `{"code":"data_source.unreachable","message":"The data source is unreachable."}`),
-				wasDBUpdateDataSourceCalled(1),
-				hasUpdateFailedLog(),
+				wasDBUpdateDataSourceCalled(0),
 			),
 		},
 		"Nil result returns no-data": {
-			Exec:   stubPostgreSQLQueryExec(processor.ConnectionStatusSuccess, nil, nil),
-			Target: _testQueryTarget,
+			Clients: stubPostgreSQLQueryClients(processor.ConnectionStatusSuccess, nil, nil),
+			Target:  _testQueryTarget,
 			Checks: checks(
 				hasResp(http.StatusOK, `{"status":"no-data"}`),
 				wasDBUpdateDataSourceCalled(0),
 			),
 		},
 		"Successful query": {
-			Exec: stubPostgreSQLQueryExec(processor.ConnectionStatusSuccess, &processor.PostgreSQLQueryResult{
+			Clients: stubPostgreSQLQueryClients(processor.ConnectionStatusSuccess, &processor.PostgreSQLQueryResult{
 				Columns: []string{"time", "value"},
 				Rows:    [][]any{{1700000000.0, 10.0}},
 			}, nil),
@@ -415,7 +385,7 @@ func Test_Handler_queryPostgreSQLGeneric(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			hdl, db, exec, logs := prepHandler(c.DB, c.Exec)
+			hdl, db, exec, logs := prepHandler(c.DB, c.Clients)
 
 			req := prepRequest("GET", c.Target, "", true, "")
 			rec := httptest.NewRecorder()

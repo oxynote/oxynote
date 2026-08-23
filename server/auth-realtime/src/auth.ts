@@ -403,7 +403,11 @@ export const auth = betterAuth({
 			loginPage: `${FRONTEND_URL}/login`,
 			consentPage: `${FRONTEND_URL}/oauth-consent`,
 			resource: MCP_RESOURCE,
-			scopes: ["documents:read", "documents:write"],
+			scopes: [
+				"documents:read",
+				"documents:write",
+				"data-sources:read",
+			],
 			// MCP clients self-register per RFC 7591 before the user has
 			// any session, so registration must be open. What a client
 			// can actually do is still gated by the user's consent and

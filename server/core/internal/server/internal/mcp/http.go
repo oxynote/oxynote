@@ -19,13 +19,20 @@ import (
 )
 
 // OAuth scopes the MCP surface understands. auth-realtime advertises
-// the same two values in its authorization-server metadata.
+// the same three values in its authorization-server metadata.
 const (
-	// ScopeRead grants the read tools and all resource reads.
-	ScopeRead = "documents:read"
+	// ScopeDocumentRead grants the document read tools and all resource
+	// reads.
+	ScopeDocumentRead = "documents:read"
 
-	// ScopeWrite grants the write tools.
-	ScopeWrite = "documents:write"
+	// ScopeDocumentWrite grants the document write tools.
+	ScopeDocumentWrite = "documents:write"
+
+	// ScopeDataSourceRead grants the data-source tools. Reading an
+	// organisation's documents and querying the databases and metric
+	// stores it connects to are different permissions, so they are
+	// different grants.
+	ScopeDataSourceRead = "data-sources:read"
 )
 
 // Options configures the MCP surface.

@@ -13,13 +13,14 @@ import (
 const _resourceURIPrefix = "oxynote://documents/"
 
 // annotations declares a tool's intent so MCP clients can gate calls:
-// reads are read-only, writes say whether they can destroy content.
-// Every tool works on the organization's own documents, so the world
-// is closed for all of them.
+// reads are read-only, writes say whether they can destroy content. A
+// document tool works on the organization's own documents, so its world
+// is closed; a data-source tool reaches whatever the connection points
+// at, which is not.
 func annotations(e tools.Entry) *mcp.ToolAnnotations {
 	out := &mcp.ToolAnnotations{
 		ReadOnlyHint:  !e.Write,
-		OpenWorldHint: new(false),
+		OpenWorldHint: new(e.DataSource),
 	}
 
 	if e.Write {

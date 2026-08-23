@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/guregu/null/v5"
+	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/rs/xid"
 )
@@ -82,6 +83,12 @@ type DBMock struct {
 
 	// UpdateDocumentParentIDFunc mocks the UpdateDocumentParentID method.
 	UpdateDocumentParentIDFunc func(ctx context.Context, id xid.ID, parentID null.Value[xid.ID], organizationID string) error
+
+	// FetchDataSourceFunc mocks the FetchDataSource method.
+	FetchDataSourceFunc func(ctx context.Context, id xid.ID, organizationID string) (*datasource.DataSource, error)
+
+	// FetchDataSourcesFunc mocks the FetchDataSources method.
+	FetchDataSourcesFunc func(ctx context.Context, organizationID string) ([]datasource.DataSource, error)
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -168,6 +175,22 @@ type DBMock struct {
 			// OrganizationID is the organizationID argument value.
 			OrganizationID string
 		}
+		// FetchDataSource holds details about calls to the FetchDataSource method.
+		FetchDataSource []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Id is the id argument value.
+			Id xid.ID
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+		}
+		// FetchDataSources holds details about calls to the FetchDataSources method.
+		FetchDataSources []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+		}
 	}
 	lockBeginTx                             sync.RWMutex
 	lockCheckDocumentCycle                  sync.RWMutex
@@ -178,6 +201,8 @@ type DBMock struct {
 	lockFetchDocumentTreeByDocumentParentID sync.RWMutex
 	lockFetchMainBranchContent              sync.RWMutex
 	lockUpdateDocumentParentID              sync.RWMutex
+	lockFetchDataSource                     sync.RWMutex
+	lockFetchDataSources                    sync.RWMutex
 }
 
 // BeginTx calls BeginTxFunc.
@@ -573,5 +598,89 @@ func (mock *DBMock) UpdateDocumentParentIDCalls() []struct {
 	mock.lockUpdateDocumentParentID.RLock()
 	calls = mock.calls.UpdateDocumentParentID
 	mock.lockUpdateDocumentParentID.RUnlock()
+	return calls
+}
+
+// FetchDataSource calls FetchDataSourceFunc.
+func (mock *DBMock) FetchDataSource(ctx context.Context, id xid.ID, organizationID string) (*datasource.DataSource, error) {
+	callInfo := struct {
+		Ctx            context.Context
+		Id             xid.ID
+		OrganizationID string
+	}{
+		Ctx:            ctx,
+		Id:             id,
+		OrganizationID: organizationID,
+	}
+	mock.lockFetchDataSource.Lock()
+	mock.calls.FetchDataSource = append(mock.calls.FetchDataSource, callInfo)
+	mock.lockFetchDataSource.Unlock()
+	if mock.FetchDataSourceFunc == nil {
+		var (
+			dataSourceOut *datasource.DataSource
+			errOut        error
+		)
+		return dataSourceOut, errOut
+	}
+	return mock.FetchDataSourceFunc(ctx, id, organizationID)
+}
+
+// FetchDataSourceCalls gets all the calls that were made to FetchDataSource.
+// Check the length with:
+//
+//	len(mockedDB.FetchDataSourceCalls())
+func (mock *DBMock) FetchDataSourceCalls() []struct {
+	Ctx            context.Context
+	Id             xid.ID
+	OrganizationID string
+} {
+	var calls []struct {
+		Ctx            context.Context
+		Id             xid.ID
+		OrganizationID string
+	}
+	mock.lockFetchDataSource.RLock()
+	calls = mock.calls.FetchDataSource
+	mock.lockFetchDataSource.RUnlock()
+	return calls
+}
+
+// FetchDataSources calls FetchDataSourcesFunc.
+func (mock *DBMock) FetchDataSources(ctx context.Context, organizationID string) ([]datasource.DataSource, error) {
+	callInfo := struct {
+		Ctx            context.Context
+		OrganizationID string
+	}{
+		Ctx:            ctx,
+		OrganizationID: organizationID,
+	}
+	mock.lockFetchDataSources.Lock()
+	mock.calls.FetchDataSources = append(mock.calls.FetchDataSources, callInfo)
+	mock.lockFetchDataSources.Unlock()
+	if mock.FetchDataSourcesFunc == nil {
+		var (
+			dataSourcesOut []datasource.DataSource
+			errOut         error
+		)
+		return dataSourcesOut, errOut
+	}
+	return mock.FetchDataSourcesFunc(ctx, organizationID)
+}
+
+// FetchDataSourcesCalls gets all the calls that were made to FetchDataSources.
+// Check the length with:
+//
+//	len(mockedDB.FetchDataSourcesCalls())
+func (mock *DBMock) FetchDataSourcesCalls() []struct {
+	Ctx            context.Context
+	OrganizationID string
+} {
+	var calls []struct {
+		Ctx            context.Context
+		OrganizationID string
+	}
+	mock.lockFetchDataSources.RLock()
+	calls = mock.calls.FetchDataSources
+	mock.lockFetchDataSources.RUnlock()
 	return calls
 }

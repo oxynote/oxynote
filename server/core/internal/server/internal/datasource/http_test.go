@@ -13,6 +13,7 @@ import (
 	"time"
 
 	datasourceCore "github.com/oxynote/oxynote/server/core/internal/datasource"
+	datasourceMock "github.com/oxynote/oxynote/server/core/internal/datasource/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
@@ -38,7 +39,7 @@ func TestMain(m *testing.M) {
 }
 
 // check inspects the collaborators' state after a handler call.
-type check func(t *testing.T, db *DBMock, exec *ExecutorMock, rec *httptest.ResponseRecorder, logs *bytes.Buffer)
+type check func(t *testing.T, db *DBMock, exec *runnerMock, rec *httptest.ResponseRecorder, logs *bytes.Buffer)
 
 // checks combines the provided checks into a slice.
 func checks(cc ...check) []check { return cc }
@@ -46,7 +47,7 @@ func checks(cc ...check) []check { return cc }
 // hasResp returns a check asserting the response code and JSON body; an
 // empty body asserts an empty response.
 func hasResp(code int, body string) check {
-	return func(t *testing.T, _ *DBMock, _ *ExecutorMock, rec *httptest.ResponseRecorder, _ *bytes.Buffer) {
+	return func(t *testing.T, _ *DBMock, _ *runnerMock, rec *httptest.ResponseRecorder, _ *bytes.Buffer) {
 		assert.Equal(t, code, rec.Code)
 
 		if body == "" {
@@ -61,7 +62,7 @@ func hasResp(code int, body string) check {
 // hasJSONResp returns a check asserting that the response matches the
 // JSON representation of the provided value.
 func hasJSONResp(code int, v any) check {
-	return func(t *testing.T, _ *DBMock, _ *ExecutorMock, rec *httptest.ResponseRecorder, _ *bytes.Buffer) {
+	return func(t *testing.T, _ *DBMock, _ *runnerMock, rec *httptest.ResponseRecorder, _ *bytes.Buffer) {
 		assert.Equal(t, code, rec.Code)
 
 		exp, err := json.Marshal(v)
@@ -73,7 +74,7 @@ func hasJSONResp(code int, v any) check {
 // hasUpdateFailedLog returns a check asserting that the handler logged
 // the data source status update failure.
 func hasUpdateFailedLog() check {
-	return func(t *testing.T, _ *DBMock, _ *ExecutorMock, _ *httptest.ResponseRecorder, logs *bytes.Buffer) {
+	return func(t *testing.T, _ *DBMock, _ *runnerMock, _ *httptest.ResponseRecorder, logs *bytes.Buffer) {
 		assert.Contains(t, logs.String(), "cannot update data source status")
 	}
 }
@@ -81,7 +82,7 @@ func hasUpdateFailedLog() check {
 // wasDBFetchDataSourceCalled returns a check asserting the number of
 // FetchDataSource calls and their parameters.
 func wasDBFetchDataSourceCalled(count int) check {
-	return func(t *testing.T, db *DBMock, _ *ExecutorMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
+	return func(t *testing.T, db *DBMock, _ *runnerMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
 		ff := db.FetchDataSourceCalls()
 		require.Len(t, ff, count)
 
@@ -98,7 +99,7 @@ func wasDBFetchDataSourceCalled(count int) check {
 // wasDBInsertDataSourceCalled returns a check asserting the number of
 // InsertDataSource calls.
 func wasDBInsertDataSourceCalled(count int) check {
-	return func(t *testing.T, db *DBMock, _ *ExecutorMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
+	return func(t *testing.T, db *DBMock, _ *runnerMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
 		require.Len(t, db.InsertDataSourceCalls(), count)
 	}
 }
@@ -106,7 +107,7 @@ func wasDBInsertDataSourceCalled(count int) check {
 // wasDBUpdateDataSourceCalled returns a check asserting the number of
 // UpdateDataSource calls.
 func wasDBUpdateDataSourceCalled(count int) check {
-	return func(t *testing.T, db *DBMock, _ *ExecutorMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
+	return func(t *testing.T, db *DBMock, _ *runnerMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
 		require.Len(t, db.UpdateDataSourceCalls(), count)
 	}
 }
@@ -114,7 +115,7 @@ func wasDBUpdateDataSourceCalled(count int) check {
 // wasDBDeleteDataSourceCalled returns a check asserting the number of
 // DeleteDataSource calls and their parameters.
 func wasDBDeleteDataSourceCalled(count int) check {
-	return func(t *testing.T, db *DBMock, _ *ExecutorMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
+	return func(t *testing.T, db *DBMock, _ *runnerMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
 		ff := db.DeleteDataSourceCalls()
 		require.Len(t, ff, count)
 
@@ -130,8 +131,8 @@ func wasDBDeleteDataSourceCalled(count int) check {
 // wasExecutorTestConnectionCalled returns a check asserting the number of
 // TestConnection calls.
 func wasExecutorTestConnectionCalled(count int) check {
-	return func(t *testing.T, _ *DBMock, exec *ExecutorMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
-		require.Len(t, exec.TestConnectionCalls(), count)
+	return func(t *testing.T, _ *DBMock, exec *runnerMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
+		require.Len(t, exec.runner.TestConnectionCalls(), count)
 	}
 }
 
@@ -183,26 +184,129 @@ func prepRequest(method, target, body string, session bool, id string) *http.Req
 	return req
 }
 
+// clientMocks are what a case's runner hands out: the typed clients the
+// handler operates through, what its connection test reports, and the
+// refusal that stands in for a data source that cannot serve any of
+// them.
+type clientMocks struct {
+	// prometheus, sql, postgreSQL and mySQL are the clients the
+	// accessors return. A check reads back what the handler asked them.
+	prometheus *datasourceMock.Prometheus
+	sql        *datasourceMock.SQL
+	postgreSQL *datasourceMock.PostgreSQL
+	mySQL      *datasourceMock.MySQL
+
+	// status and statusErr are what TestConnection reports.
+	status    processor.ConnectionStatus
+	statusErr error
+
+	// err, when set, is how every accessor refuses — a data source of
+	// the wrong type, or a connection it would not open.
+	err error
+}
+
+// runnerMock is what the handler is wired with: one runner over those
+// clients, plus the data sources it was asked to operate. That list is
+// where "the handler ran against the data source it fetched" is
+// asserted, the runner no longer being told which one it serves on
+// every call.
+type runnerMock struct {
+	*clientMocks
+
+	// runner is the runner every call is handed, so what the handler
+	// asked it accumulates in one place.
+	runner *datasourceMock.Runner
+
+	// dataSources are the data sources a runner was asked for, in call
+	// order.
+	dataSources []datasourceCore.DataSource
+}
+
+// newRunnerMock wires one runner over the given clients.
+func newRunnerMock(clients *clientMocks) *runnerMock {
+	if clients == nil {
+		clients = &clientMocks{}
+	}
+
+	if clients.prometheus == nil {
+		clients.prometheus = &datasourceMock.Prometheus{}
+	}
+
+	if clients.sql == nil {
+		clients.sql = &datasourceMock.SQL{}
+	}
+
+	if clients.postgreSQL == nil {
+		clients.postgreSQL = &datasourceMock.PostgreSQL{}
+	}
+
+	if clients.mySQL == nil {
+		clients.mySQL = &datasourceMock.MySQL{}
+	}
+
+	m := &runnerMock{clientMocks: clients}
+
+	m.runner = &datasourceMock.Runner{
+		TestConnectionFunc: func(context.Context) (processor.ConnectionStatus, error) {
+			return clients.status, clients.statusErr
+		},
+		PrometheusFunc: func(context.Context) (datasourceCore.Prometheus, error) {
+			if clients.err != nil {
+				return nil, clients.err
+			}
+
+			return clients.prometheus, nil
+		},
+		SQLFunc: func(context.Context) (datasourceCore.SQL, error) {
+			if clients.err != nil {
+				return nil, clients.err
+			}
+
+			return clients.sql, nil
+		},
+		PostgreSQLFunc: func(context.Context) (datasourceCore.PostgreSQL, error) {
+			if clients.err != nil {
+				return nil, clients.err
+			}
+
+			return clients.postgreSQL, nil
+		},
+		MySQLFunc: func(context.Context) (datasourceCore.MySQL, error) {
+			if clients.err != nil {
+				return nil, clients.err
+			}
+
+			return clients.mySQL, nil
+		},
+	}
+
+	return m
+}
+
+// Runner records the data source and hands back the one runner.
+func (m *runnerMock) Runner(ds datasourceCore.DataSource) datasourceCore.Runner {
+	m.dataSources = append(m.dataSources, ds)
+
+	return m.runner
+}
+
 // prepHandler builds a handler around the provided mocks, defaulting nil
 // mocks to empty stubs, and returns the buffer its log writes to.
-func prepHandler(db *DBMock, exec *ExecutorMock) (*Handler, *DBMock, *ExecutorMock, *bytes.Buffer) {
+func prepHandler(db *DBMock, clients *clientMocks) (*Handler, *DBMock, *runnerMock, *bytes.Buffer) {
 	if db == nil {
 		db = &DBMock{}
 	}
 
-	if exec == nil {
-		exec = &ExecutorMock{}
-	}
-
+	runner := newRunnerMock(clients)
 	logs := &bytes.Buffer{}
 
 	hdl := &Handler{
-		log:      slog.New(slog.NewTextHandler(logs, nil)),
-		db:       db,
-		executor: exec,
+		log:     slog.New(slog.NewTextHandler(logs, nil)),
+		db:      db,
+		runners: runner,
 	}
 
-	return hdl, db, exec, logs
+	return hdl, db, runner, logs
 }
 
 func Test_NewHandler(t *testing.T) {
@@ -211,16 +315,18 @@ func Test_NewHandler(t *testing.T) {
 	log := slog.New(slog.DiscardHandler)
 	db := &DBMock{}
 
-	hdl := NewHandler(log, db)
+	runners := datasourceCore.NewManager(log, &datasourceMock.StatusStore{})
+
+	hdl := NewHandler(log, db, runners)
 	require.NotNil(t, hdl)
 	assert.Equal(t, log, hdl.log)
 	assert.Same(t, db, hdl.db)
-	assert.Equal(t, datasourceCore.NewExecutor(), hdl.executor)
+	assert.Same(t, runners, hdl.runners)
 }
 
 func Test_Handler_CreateDataSource(t *testing.T) {
 	hasCreatedDataSourceResp := func() check {
-		return func(t *testing.T, db *DBMock, exec *ExecutorMock, rec *httptest.ResponseRecorder, _ *bytes.Buffer) {
+		return func(t *testing.T, db *DBMock, exec *runnerMock, rec *httptest.ResponseRecorder, _ *bytes.Buffer) {
 			ff := db.InsertDataSourceCalls()
 			require.Len(t, ff, 1)
 
@@ -233,8 +339,9 @@ func Test_Handler_CreateDataSource(t *testing.T) {
 			assert.Equal(t, "http://source.test", ds.URL)
 			assert.Equal(t, processor.ConnectionStatusSuccess, ds.Status)
 
-			require.Len(t, exec.TestConnectionCalls(), 1)
-			assert.Equal(t, ds.Name, exec.TestConnectionCalls()[0].Ds.Name)
+			require.Len(t, exec.runner.TestConnectionCalls(), 1)
+			require.Len(t, exec.dataSources, 1)
+			assert.Equal(t, ds.Name, exec.dataSources[0].Name)
 
 			assert.Equal(t, http.StatusCreated, rec.Code)
 
@@ -248,7 +355,7 @@ func Test_Handler_CreateDataSource(t *testing.T) {
 
 	cc := map[string]struct {
 		DB          *DBMock
-		Exec        *ExecutorMock
+		Clients     *clientMocks
 		Body        string
 		OmitSession bool
 		Checks      []check
@@ -271,24 +378,16 @@ func Test_Handler_CreateDataSource(t *testing.T) {
 			),
 		},
 		"Error returned by executor.TestConnection": {
-			Exec: &ExecutorMock{
-				TestConnectionFunc: func(_ context.Context, _ datasourceCore.DataSource) (processor.ConnectionStatus, error) {
-					return "", assert.AnError
-				},
-			},
-			Body: body,
+			Clients: &clientMocks{status: "", statusErr: assert.AnError},
+			Body:    body,
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasDBInsertDataSourceCalled(0),
 			),
 		},
 		"Unsuccessful connection status": {
-			Exec: &ExecutorMock{
-				TestConnectionFunc: func(_ context.Context, _ datasourceCore.DataSource) (processor.ConnectionStatus, error) {
-					return processor.ConnectionStatusUnauthorized, nil
-				},
-			},
-			Body: body,
+			Clients: &clientMocks{status: processor.ConnectionStatusUnauthorized, statusErr: nil},
+			Body:    body,
 			Checks: checks(
 				hasResp(http.StatusUnauthorized, `{"code":"data_source.unauthorized","message":"Unauthorized access to the data source."}`),
 				wasExecutorTestConnectionCalled(1),
@@ -301,24 +400,16 @@ func Test_Handler_CreateDataSource(t *testing.T) {
 					return assert.AnError
 				},
 			},
-			Exec: &ExecutorMock{
-				TestConnectionFunc: func(_ context.Context, _ datasourceCore.DataSource) (processor.ConnectionStatus, error) {
-					return processor.ConnectionStatusSuccess, nil
-				},
-			},
-			Body: body,
+			Clients: &clientMocks{status: processor.ConnectionStatusSuccess, statusErr: nil},
+			Body:    body,
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasDBInsertDataSourceCalled(1),
 			),
 		},
 		"Successful creation": {
-			Exec: &ExecutorMock{
-				TestConnectionFunc: func(_ context.Context, _ datasourceCore.DataSource) (processor.ConnectionStatus, error) {
-					return processor.ConnectionStatusSuccess, nil
-				},
-			},
-			Body: body,
+			Clients: &clientMocks{status: processor.ConnectionStatusSuccess, statusErr: nil},
+			Body:    body,
 			Checks: checks(
 				hasCreatedDataSourceResp(),
 			),
@@ -329,7 +420,7 @@ func Test_Handler_CreateDataSource(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			hdl, db, exec, logs := prepHandler(c.DB, c.Exec)
+			hdl, db, exec, logs := prepHandler(c.DB, c.Clients)
 
 			req := prepRequest("POST", "http://test.com/", c.Body, !c.OmitSession, "")
 			rec := httptest.NewRecorder()
@@ -410,7 +501,7 @@ func Test_Handler_FetchDataSource(t *testing.T) {
 func Test_Handler_TestDataSourceConnection(t *testing.T) {
 	cc := map[string]struct {
 		DB          *DBMock
-		Exec        *ExecutorMock
+		Clients     *clientMocks
 		OmitSession bool
 		ID          string
 		Checks      []check
@@ -438,39 +529,27 @@ func Test_Handler_TestDataSourceConnection(t *testing.T) {
 			),
 		},
 		"Error returned by executor.TestConnection": {
-			DB: stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
-			Exec: &ExecutorMock{
-				TestConnectionFunc: func(_ context.Context, _ datasourceCore.DataSource) (processor.ConnectionStatus, error) {
-					return "", assert.AnError
-				},
-			},
-			ID: _testID.String(),
+			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
+			Clients: &clientMocks{status: "", statusErr: assert.AnError},
+			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasDBUpdateDataSourceCalled(0),
 			),
 		},
 		"Unchanged status skips the update": {
-			DB: stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
-			Exec: &ExecutorMock{
-				TestConnectionFunc: func(_ context.Context, _ datasourceCore.DataSource) (processor.ConnectionStatus, error) {
-					return processor.ConnectionStatusSuccess, nil
-				},
-			},
-			ID: _testID.String(),
+			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
+			Clients: &clientMocks{status: processor.ConnectionStatusSuccess, statusErr: nil},
+			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusOK, `{"status":"success"}`),
 				wasDBUpdateDataSourceCalled(0),
 			),
 		},
 		"Changed status updates the data source": {
-			DB: stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
-			Exec: &ExecutorMock{
-				TestConnectionFunc: func(_ context.Context, _ datasourceCore.DataSource) (processor.ConnectionStatus, error) {
-					return processor.ConnectionStatusUnreachable, nil
-				},
-			},
-			ID: _testID.String(),
+			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
+			Clients: &clientMocks{status: processor.ConnectionStatusUnreachable, statusErr: nil},
+			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusOK, `{"status":"unreachable"}`),
 				wasDBUpdateDataSourceCalled(1),
@@ -485,12 +564,8 @@ func Test_Handler_TestDataSourceConnection(t *testing.T) {
 
 				return db
 			}(),
-			Exec: &ExecutorMock{
-				TestConnectionFunc: func(_ context.Context, _ datasourceCore.DataSource) (processor.ConnectionStatus, error) {
-					return processor.ConnectionStatusUnreachable, nil
-				},
-			},
-			ID: _testID.String(),
+			Clients: &clientMocks{status: processor.ConnectionStatusUnreachable, statusErr: nil},
+			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusOK, `{"status":"unreachable"}`),
 				wasDBUpdateDataSourceCalled(1),
@@ -503,7 +578,7 @@ func Test_Handler_TestDataSourceConnection(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			hdl, db, exec, logs := prepHandler(c.DB, c.Exec)
+			hdl, db, exec, logs := prepHandler(c.DB, c.Clients)
 
 			req := prepRequest("POST", "http://test.com/", "", !c.OmitSession, c.ID)
 			rec := httptest.NewRecorder()
@@ -519,7 +594,7 @@ func Test_Handler_TestDataSourceConnection(t *testing.T) {
 
 func Test_Handler_FetchDataSources(t *testing.T) {
 	wasDBFetchDataSourcesCalled := func(count int) check {
-		return func(t *testing.T, db *DBMock, _ *ExecutorMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
+		return func(t *testing.T, db *DBMock, _ *runnerMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
 			ff := db.FetchDataSourcesCalls()
 			require.Len(t, ff, count)
 
@@ -587,7 +662,7 @@ func Test_Handler_FetchDataSources(t *testing.T) {
 
 func Test_Handler_UpdateDataSource(t *testing.T) {
 	hasUpdatedDataSourceResp := func() check {
-		return func(t *testing.T, db *DBMock, _ *ExecutorMock, rec *httptest.ResponseRecorder, _ *bytes.Buffer) {
+		return func(t *testing.T, db *DBMock, _ *runnerMock, rec *httptest.ResponseRecorder, _ *bytes.Buffer) {
 			ff := db.UpdateDataSourceCalls()
 			require.Len(t, ff, 1)
 
@@ -608,7 +683,7 @@ func Test_Handler_UpdateDataSource(t *testing.T) {
 
 	cc := map[string]struct {
 		DB          *DBMock
-		Exec        *ExecutorMock
+		Clients     *clientMocks
 		Body        string
 		OmitSession bool
 		ID          string
@@ -657,28 +732,20 @@ func Test_Handler_UpdateDataSource(t *testing.T) {
 			),
 		},
 		"Error returned by executor.TestConnection": {
-			DB: stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
-			Exec: &ExecutorMock{
-				TestConnectionFunc: func(_ context.Context, _ datasourceCore.DataSource) (processor.ConnectionStatus, error) {
-					return "", assert.AnError
-				},
-			},
-			Body: body,
-			ID:   _testID.String(),
+			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
+			Clients: &clientMocks{status: "", statusErr: assert.AnError},
+			Body:    body,
+			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasDBUpdateDataSourceCalled(0),
 			),
 		},
 		"Unsuccessful connection status": {
-			DB: stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
-			Exec: &ExecutorMock{
-				TestConnectionFunc: func(_ context.Context, _ datasourceCore.DataSource) (processor.ConnectionStatus, error) {
-					return processor.ConnectionStatusUnreachable, nil
-				},
-			},
-			Body: body,
-			ID:   _testID.String(),
+			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
+			Clients: &clientMocks{status: processor.ConnectionStatusUnreachable, statusErr: nil},
+			Body:    body,
+			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"data_source.unreachable","message":"The data source is unreachable."}`),
 				wasDBUpdateDataSourceCalled(0),
@@ -693,27 +760,19 @@ func Test_Handler_UpdateDataSource(t *testing.T) {
 
 				return db
 			}(),
-			Exec: &ExecutorMock{
-				TestConnectionFunc: func(_ context.Context, _ datasourceCore.DataSource) (processor.ConnectionStatus, error) {
-					return processor.ConnectionStatusSuccess, nil
-				},
-			},
-			Body: body,
-			ID:   _testID.String(),
+			Clients: &clientMocks{status: processor.ConnectionStatusSuccess, statusErr: nil},
+			Body:    body,
+			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasDBUpdateDataSourceCalled(1),
 			),
 		},
 		"Successful update": {
-			DB: stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
-			Exec: &ExecutorMock{
-				TestConnectionFunc: func(_ context.Context, _ datasourceCore.DataSource) (processor.ConnectionStatus, error) {
-					return processor.ConnectionStatusSuccess, nil
-				},
-			},
-			Body: body,
-			ID:   _testID.String(),
+			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
+			Clients: &clientMocks{status: processor.ConnectionStatusSuccess, statusErr: nil},
+			Body:    body,
+			ID:      _testID.String(),
 			Checks: checks(
 				hasUpdatedDataSourceResp(),
 			),
@@ -724,7 +783,7 @@ func Test_Handler_UpdateDataSource(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			hdl, db, exec, logs := prepHandler(c.DB, c.Exec)
+			hdl, db, exec, logs := prepHandler(c.DB, c.Clients)
 
 			req := prepRequest("PUT", "http://test.com/", c.Body, !c.OmitSession, c.ID)
 			rec := httptest.NewRecorder()
@@ -843,53 +902,6 @@ func Test_Handler_persistDataSourceStatus(t *testing.T) {
 
 			for _, ch := range c.Checks {
 				ch(t, db, exec, httptest.NewRecorder(), logs)
-			}
-		})
-	}
-}
-
-func Test_Handler_syncDataSourceStatus(t *testing.T) {
-	cc := map[string]struct {
-		Status processor.ConnectionStatus
-		Result bool
-		Checks []check
-	}{
-		"Unusable data source": {
-			Status: processor.ConnectionStatusUnreachable,
-			Checks: checks(
-				hasResp(http.StatusBadRequest, `{"code":"data_source.unreachable","message":"The data source is unreachable."}`),
-				wasDBUpdateDataSourceCalled(1),
-			),
-		},
-		"Usable data source": {
-			Status: processor.ConnectionStatusSuccess,
-			Result: true,
-			Checks: checks(
-				hasResp(http.StatusOK, ""),
-				wasDBUpdateDataSourceCalled(0),
-			),
-		},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			hdl, db, exec, logs := prepHandler(nil, nil)
-			ds := stubDataSource(datasourceCore.TypePrometheus)
-			rec := httptest.NewRecorder()
-
-			res := hdl.syncDataSourceStatus(
-				rec,
-				prepRequest("GET", "http://test.com/", "", true, ""),
-				ds,
-				c.Status,
-			)
-
-			assert.Equal(t, c.Result, res)
-
-			for _, ch := range c.Checks {
-				ch(t, db, exec, rec, logs)
 			}
 		})
 	}

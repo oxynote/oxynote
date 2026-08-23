@@ -47,6 +47,7 @@ func stubSet(db *toolsMock.DB) *tools.Set {
 		discardLog(),
 		db,
 		&toolsMock.Searcher{},
+		nil,
 		&toolsMock.EditApplier{},
 		nil,
 		nil,
@@ -196,7 +197,7 @@ func Test_Handler_ServeHTTP(t *testing.T) {
 	t.Run("Missing bearer token", func(t *testing.T) {
 		t.Parallel()
 
-		hdl := prepHandler(t, []string{ScopeRead}, stubToolsDB(), &DBMock{})
+		hdl := prepHandler(t, []string{ScopeDocumentRead}, stubToolsDB(), &DBMock{})
 
 		req := httptest.NewRequest(http.MethodPost, "http://test.com/", strings.NewReader("{}"))
 		rec := httptest.NewRecorder()
@@ -236,7 +237,7 @@ func Test_Handler_ServeHTTP(t *testing.T) {
 	t.Run("Successful initialize", func(t *testing.T) {
 		t.Parallel()
 
-		hdl := prepHandler(t, []string{ScopeRead}, stubToolsDB(), &DBMock{})
+		hdl := prepHandler(t, []string{ScopeDocumentRead}, stubToolsDB(), &DBMock{})
 
 		code, payload := rpc(
 			t,

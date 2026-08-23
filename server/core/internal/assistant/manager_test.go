@@ -198,7 +198,7 @@ func Test_NewManager(t *testing.T) {
 	t.Parallel()
 
 	fc := metricutil.NewFactory("test", prometheus.NewRegistry())
-	m := NewManager(discardLog(), nil, &redis.Pool{}, nil, nil, fc, nil, nil, "claude")
+	m := NewManager(discardLog(), nil, &redis.Pool{}, nil, nil, fc, nil, nil, nil, "claude")
 
 	require.NotNil(t, m)
 	assert.NotNil(t, m.log)
@@ -232,10 +232,11 @@ func Test_Manager_ToolSet(t *testing.T) {
 	s := m.ToolSet("org1", "user1")
 	require.NotNil(t, s)
 
-	// the set carries the full registry — the seventeen document tools
-	// plus the offloaded-result reader — wired from the manager's
-	// shared dependencies and scoped to the requested pair.
-	assert.Len(t, s.Tools(), 18)
+	// the set carries the full registry — the seventeen document tools,
+	// the nine data-source tools and the offloaded-result reader —
+	// wired from the manager's shared dependencies and scoped to the
+	// requested pair.
+	assert.Len(t, s.Tools(), 27)
 }
 
 func Test_Manager_Chat(t *testing.T) {

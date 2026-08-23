@@ -37,6 +37,7 @@ type Manager struct {
 	log     *slog.Logger
 	db      tools.DB
 	search  tools.Searcher
+	runners tools.DataSourceRunners
 	model   model.ToolCallingChatModel
 	summary model.ToolCallingChatModel
 	applier tools.EditApplier
@@ -68,6 +69,7 @@ func NewManager(
 	fc metricutil.Factory,
 	editClient tools.EditApplier,
 	search tools.Searcher,
+	runners tools.DataSourceRunners,
 	providerName string,
 ) *Manager {
 	if summaryModel == nil {
@@ -85,6 +87,7 @@ func NewManager(
 		log:     log,
 		db:      db,
 		search:  search,
+		runners: runners,
 		model:   chatModel,
 		summary: summaryModel,
 		applier: editClient,
@@ -121,6 +124,7 @@ func (m *Manager) ToolSet(orgID, userID string) *tools.Set {
 		m.log,
 		m.db,
 		m.search,
+		m.runners,
 		m.applier,
 		m.tree,
 		m.offload,

@@ -43,13 +43,15 @@ func (h *Handler) QueryPrometheusDataSource(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	status, result, err := h.executor.PrometheusQuery(r.Context(), *ds, query, *tr)
+	client, err := h.runners.Runner(*ds).Prometheus(r.Context())
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	if !h.syncDataSourceStatus(w, r, ds, status) {
+	result, err := client.QueryRange(r.Context(), query, *tr)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
@@ -76,13 +78,15 @@ func (h *Handler) FetchPrometheusDataSourceMetadata(w http.ResponseWriter, r *ht
 		return
 	}
 
-	status, result, err := h.executor.PrometheusMetadata(r.Context(), *ds)
+	client, err := h.runners.Runner(*ds).Prometheus(r.Context())
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	if !h.syncDataSourceStatus(w, r, ds, status) {
+	result, err := client.Metadata(r.Context())
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
@@ -115,13 +119,15 @@ func (h *Handler) FetchPrometheusDataSourceLabelNames(w http.ResponseWriter, r *
 		return
 	}
 
-	status, result, err := h.executor.PrometheusLabelNames(r.Context(), *ds, r.URL.Query()[_prometheusMatchersQuery], *tr)
+	client, err := h.runners.Runner(*ds).Prometheus(r.Context())
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	if !h.syncDataSourceStatus(w, r, ds, status) {
+	result, err := client.LabelNames(r.Context(), r.URL.Query()[_prometheusMatchersQuery], *tr)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
@@ -160,13 +166,15 @@ func (h *Handler) FetchPrometheusDataSourceLabelValues(w http.ResponseWriter, r 
 		return
 	}
 
-	status, result, err := h.executor.PrometheusLabelValues(r.Context(), *ds, label, r.URL.Query()[_prometheusMatchersQuery], *tr)
+	client, err := h.runners.Runner(*ds).Prometheus(r.Context())
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	if !h.syncDataSourceStatus(w, r, ds, status) {
+	result, err := client.LabelValues(r.Context(), label, r.URL.Query()[_prometheusMatchersQuery], *tr)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
@@ -199,13 +207,15 @@ func (h *Handler) FetchPrometheusDataSourceSeries(w http.ResponseWriter, r *http
 		return
 	}
 
-	status, result, err := h.executor.PrometheusSeries(r.Context(), *ds, r.URL.Query()[_prometheusMatchersQuery], *tr)
+	client, err := h.runners.Runner(*ds).Prometheus(r.Context())
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	if !h.syncDataSourceStatus(w, r, ds, status) {
+	result, err := client.Series(r.Context(), r.URL.Query()[_prometheusMatchersQuery], *tr)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
 		return
 	}
 

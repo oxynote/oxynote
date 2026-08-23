@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	datasourceCore "github.com/oxynote/oxynote/server/core/internal/datasource"
+	datasourceMock "github.com/oxynote/oxynote/server/core/internal/datasource/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -15,33 +16,36 @@ import (
 
 func Test_Handler_FetchSQLQueryLabels(t *testing.T) {
 	wasExecutorSQLQueryLabelsCalled := func(count int) check {
-		return func(t *testing.T, _ *DBMock, exec *ExecutorMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
-			ff := exec.SQLQueryLabelsCalls()
+		return func(t *testing.T, _ *DBMock, exec *runnerMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
+			ff := exec.sql.QueryLabelsCalls()
 			require.Len(t, ff, count)
 
 			if count == 0 {
 				return
 			}
 
-			assert.Equal(t, _testID, ff[0].Ds.ID)
-			assert.Equal(t, "up", ff[0].Query)
+			assert.Equal(t, _testID, exec.dataSources[0].ID)
+			assert.Equal(t, "up", ff[0].Q)
 			assert.Equal(t, _testParsedTimeRange, ff[0].Tr)
 		}
 	}
 
 	// stubExec returns an executor mock whose SQLQueryLabels yields the
 	// provided values.
-	stubExec := func(cs processor.ConnectionStatus, labels map[string]string, err error) *ExecutorMock {
-		return &ExecutorMock{
-			SQLQueryLabelsFunc: func(_ context.Context, _ datasourceCore.DataSource, _ string, _ processor.TimeRange) (processor.ConnectionStatus, map[string]string, error) {
-				return cs, labels, err
+	stubClients := func(cs processor.ConnectionStatus, labels map[string]string, err error) *clientMocks {
+		return &clientMocks{
+			err: cs.Error(),
+			sql: &datasourceMock.SQL{
+				QueryLabelsFunc: func(_ context.Context, _ string, _ processor.TimeRange) (map[string]string, error) {
+					return labels, err
+				},
 			},
 		}
 	}
 
 	cc := map[string]struct {
 		DB          *DBMock
-		Exec        *ExecutorMock
+		Clients     *clientMocks
 		Target      string
 		OmitSession bool
 		ID          string
@@ -91,58 +95,40 @@ func Test_Handler_FetchSQLQueryLabels(t *testing.T) {
 			),
 		},
 		"Error returned by executor.SQLQueryLabels": {
-			DB:     stubDB(stubDataSource(datasourceCore.TypePostgreSQL), nil),
-			Exec:   stubExec("", nil, assert.AnError),
-			Target: _testQueryTarget,
-			ID:     _testID.String(),
+			DB:      stubDB(stubDataSource(datasourceCore.TypePostgreSQL), nil),
+			Clients: stubClients("", nil, assert.AnError),
+			Target:  _testQueryTarget,
+			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasDBUpdateDataSourceCalled(0),
 			),
 		},
-		"Changed status updates the data source": {
-			DB:     stubDB(stubDataSource(datasourceCore.TypePostgreSQL), nil),
-			Exec:   stubExec(processor.ConnectionStatusUnreachable, nil, nil),
-			Target: _testQueryTarget,
-			ID:     _testID.String(),
+		"A connection the data source refused": {
+			DB:      stubDB(stubDataSource(datasourceCore.TypePostgreSQL), nil),
+			Clients: stubClients(processor.ConnectionStatusUnreachable, nil, nil),
+			Target:  _testQueryTarget,
+			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"data_source.unreachable","message":"The data source is unreachable."}`),
-				wasDBUpdateDataSourceCalled(1),
-			),
-		},
-		"Error returned by db.UpdateDataSource": {
-			DB: func() *DBMock {
-				db := stubDB(stubDataSource(datasourceCore.TypePostgreSQL), nil)
-				db.UpdateDataSourceFunc = func(_ context.Context, _ *datasourceCore.DataSource) error {
-					return assert.AnError
-				}
-
-				return db
-			}(),
-			Exec:   stubExec(processor.ConnectionStatusUnreachable, nil, nil),
-			Target: _testQueryTarget,
-			ID:     _testID.String(),
-			Checks: checks(
-				hasResp(http.StatusBadRequest, `{"code":"data_source.unreachable","message":"The data source is unreachable."}`),
-				wasDBUpdateDataSourceCalled(1),
-				hasUpdateFailedLog(),
+				wasDBUpdateDataSourceCalled(0),
 			),
 		},
 		"Nil labels return an empty map": {
-			DB:     stubDB(stubDataSource(datasourceCore.TypePostgreSQL), nil),
-			Exec:   stubExec(processor.ConnectionStatusSuccess, nil, nil),
-			Target: _testQueryTarget,
-			ID:     _testID.String(),
+			DB:      stubDB(stubDataSource(datasourceCore.TypePostgreSQL), nil),
+			Clients: stubClients(processor.ConnectionStatusSuccess, nil, nil),
+			Target:  _testQueryTarget,
+			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusOK, `{"labels":{}}`),
 				wasDBUpdateDataSourceCalled(0),
 			),
 		},
 		"Successful retrieval": {
-			DB:     stubDB(stubDataSource(datasourceCore.TypePostgreSQL), nil),
-			Exec:   stubExec(processor.ConnectionStatusSuccess, map[string]string{"host": "a"}, nil),
-			Target: _testQueryTarget,
-			ID:     _testID.String(),
+			DB:      stubDB(stubDataSource(datasourceCore.TypePostgreSQL), nil),
+			Clients: stubClients(processor.ConnectionStatusSuccess, map[string]string{"host": "a"}, nil),
+			Target:  _testQueryTarget,
+			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusOK, `{"labels":{"host":"a"}}`),
 				wasDBUpdateDataSourceCalled(0),
@@ -155,7 +141,7 @@ func Test_Handler_FetchSQLQueryLabels(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			hdl, db, exec, logs := prepHandler(c.DB, c.Exec)
+			hdl, db, exec, logs := prepHandler(c.DB, c.Clients)
 
 			req := prepRequest("GET", c.Target, "", !c.OmitSession, c.ID)
 			rec := httptest.NewRecorder()
@@ -171,31 +157,34 @@ func Test_Handler_FetchSQLQueryLabels(t *testing.T) {
 
 func Test_Handler_FetchSQLMetadata(t *testing.T) {
 	wasExecutorSQLMetadataCalled := func(count int) check {
-		return func(t *testing.T, _ *DBMock, exec *ExecutorMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
-			ff := exec.SQLMetadataCalls()
+		return func(t *testing.T, _ *DBMock, exec *runnerMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
+			ff := exec.sql.MetadataCalls()
 			require.Len(t, ff, count)
 
 			if count == 0 {
 				return
 			}
 
-			assert.Equal(t, _testID, ff[0].Ds.ID)
+			assert.Equal(t, _testID, exec.dataSources[0].ID)
 		}
 	}
 
 	// stubExec returns an executor mock whose SQLMetadata yields the
 	// provided values.
-	stubExec := func(cs processor.ConnectionStatus, result *processor.SQLMetadataResult, err error) *ExecutorMock {
-		return &ExecutorMock{
-			SQLMetadataFunc: func(_ context.Context, _ datasourceCore.DataSource) (processor.ConnectionStatus, *processor.SQLMetadataResult, error) {
-				return cs, result, err
+	stubClients := func(cs processor.ConnectionStatus, result *processor.SQLMetadataResult, err error) *clientMocks {
+		return &clientMocks{
+			err: cs.Error(),
+			sql: &datasourceMock.SQL{
+				MetadataFunc: func(_ context.Context) (*processor.SQLMetadataResult, error) {
+					return result, err
+				},
 			},
 		}
 	}
 
 	cc := map[string]struct {
 		DB          *DBMock
-		Exec        *ExecutorMock
+		Clients     *clientMocks
 		OmitSession bool
 		ID          string
 		Checks      []check
@@ -223,43 +212,26 @@ func Test_Handler_FetchSQLMetadata(t *testing.T) {
 			),
 		},
 		"Error returned by executor.SQLMetadata": {
-			DB:   stubDB(stubDataSource(datasourceCore.TypePostgreSQL), nil),
-			Exec: stubExec("", nil, assert.AnError),
-			ID:   _testID.String(),
+			DB:      stubDB(stubDataSource(datasourceCore.TypePostgreSQL), nil),
+			Clients: stubClients("", nil, assert.AnError),
+			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasDBUpdateDataSourceCalled(0),
 			),
 		},
-		"Changed status updates the data source": {
-			DB:   stubDB(stubDataSource(datasourceCore.TypePostgreSQL), nil),
-			Exec: stubExec(processor.ConnectionStatusUnreachable, nil, nil),
-			ID:   _testID.String(),
+		"A connection the data source refused": {
+			DB:      stubDB(stubDataSource(datasourceCore.TypePostgreSQL), nil),
+			Clients: stubClients(processor.ConnectionStatusUnreachable, nil, nil),
+			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"data_source.unreachable","message":"The data source is unreachable."}`),
-				wasDBUpdateDataSourceCalled(1),
-			),
-		},
-		"Error returned by db.UpdateDataSource": {
-			DB: func() *DBMock {
-				db := stubDB(stubDataSource(datasourceCore.TypePostgreSQL), nil)
-				db.UpdateDataSourceFunc = func(_ context.Context, _ *datasourceCore.DataSource) error {
-					return assert.AnError
-				}
-
-				return db
-			}(),
-			Exec: stubExec(processor.ConnectionStatusUnreachable, nil, nil),
-			ID:   _testID.String(),
-			Checks: checks(
-				hasResp(http.StatusBadRequest, `{"code":"data_source.unreachable","message":"The data source is unreachable."}`),
-				wasDBUpdateDataSourceCalled(1),
-				hasUpdateFailedLog(),
+				wasDBUpdateDataSourceCalled(0),
 			),
 		},
 		"Successful metadata retrieval": {
 			DB: stubDB(stubDataSource(datasourceCore.TypePostgreSQL), nil),
-			Exec: stubExec(processor.ConnectionStatusSuccess, &processor.SQLMetadataResult{
+			Clients: stubClients(processor.ConnectionStatusSuccess, &processor.SQLMetadataResult{
 				Tables: map[string]processor.SQLTable{
 					"public.users": {Columns: []processor.SQLColumn{{Name: "id"}}},
 				},
@@ -278,7 +250,7 @@ func Test_Handler_FetchSQLMetadata(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			hdl, db, exec, logs := prepHandler(c.DB, c.Exec)
+			hdl, db, exec, logs := prepHandler(c.DB, c.Clients)
 
 			req := prepRequest("GET", "http://test.com/", "", !c.OmitSession, c.ID)
 			rec := httptest.NewRecorder()

@@ -29,6 +29,26 @@ func Test_Attributes_Copy(t *testing.T) {
 	assert.Equal(t, 2, src["level"])
 }
 
+func Test_Attributes_Value(t *testing.T) {
+	t.Parallel()
+
+	attrs := Attributes{"set": 1, "null": nil}
+
+	v, ok := attrs.Value("set")
+	assert.True(t, ok)
+	assert.Equal(t, 1, v)
+
+	// the editor writes null for a field nobody filled in, so a key
+	// present with a null value is as unset as one that is absent.
+	v, ok = attrs.Value("null")
+	assert.False(t, ok)
+	assert.Nil(t, v)
+
+	v, ok = attrs.Value("missing")
+	assert.False(t, ok)
+	assert.Nil(t, v)
+}
+
 func Test_Attributes_Has(t *testing.T) {
 	a := Attributes{"src": "x", "empty": ""}
 

@@ -11,6 +11,7 @@ import (
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/block"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
+	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
@@ -36,6 +37,9 @@ type Deps struct {
 
 	// search is the full-text index behind search_documents.
 	search Searcher
+
+	// runners hands out the runner a data-source tool reads through.
+	runners DataSourceRunners
 
 	// applier is the edit client for content mutations and the
 	// rename/set-icon ops that must propagate to connected editors.
@@ -65,6 +69,7 @@ func NewDeps(
 	log *slog.Logger,
 	db DB,
 	searcher Searcher,
+	runners DataSourceRunners,
 	applier EditApplier,
 	tree TreeNotifier,
 	offload OffloadReader,
@@ -78,6 +83,7 @@ func NewDeps(
 		),
 		db:      db,
 		search:  searcher,
+		runners: runners,
 		applier: applier,
 		tree:    tree,
 		offload: offload,
@@ -178,6 +184,63 @@ func (i *input) DocumentName(documentID string) string {
 	}
 
 	return doc.DocumentName
+}
+
+// DataSource returns the data source the id names.
+//
+// The lookup is the cross-org safety check: FetchDataSource scopes by
+// organisation, so an id belonging to another one is as absent as an id
+// belonging to nobody, and the model is told the same thing either way.
+func (i *input) DataSource(dataSourceID string) (*datasource.DataSource, error) {
+	id, err := xid.FromString(dataSourceID)
+	if err != nil {
+		return nil, fmt.Errorf("data_source_id is not a valid xid: %w", err)
+	}
+
+	ds, err := i.db.FetchDataSource(i.ctx, id, i.orgID)
+	if err != nil {
+		return nil, errUnknownDataSource
+	}
+
+	return ds, nil
+}
+
+// DataSources returns every data source the organisation owns.
+func (i *input) DataSources() ([]datasource.DataSource, error) {
+	return i.db.FetchDataSources(i.ctx, i.orgID)
+}
+
+// CheckDataSources refuses a write naming a data source the
+// organisation does not own.
+//
+// It sits with the write rather than with the schema because it is the
+// only check that needs the database: block.Validate can say the id is
+// a string, but only a lookup can say it addresses something, and a
+// metric block pointing at nothing renders as a broken chart the user
+// then has to fix by hand.
+func (i *input) CheckDataSources(ids []string) error {
+	for _, id := range ids {
+		if _, err := i.DataSource(id); err != nil {
+			return fmt.Errorf("metric %s %q: %w", document.AttrDataSourceID, id, err)
+		}
+	}
+
+	return nil
+}
+
+// DataSourceRunner returns the runner that reads the data source the id
+// names.
+//
+// The lookup is the cross-org safety check: FetchDataSource scopes by
+// organisation, so an id belonging to another one is as absent as an id
+// belonging to nobody, and the model is told the same thing either way.
+func (i *input) DataSourceRunner(id xid.ID) (datasource.Runner, error) {
+	ds, err := i.db.FetchDataSource(i.ctx, id, i.orgID)
+	if err != nil {
+		return nil, errUnknownDataSource
+	}
+
+	return i.runners.Runner(*ds), nil
 }
 
 // Document returns the document's default branch.
@@ -453,10 +516,21 @@ type docRef struct {
 	BranchID string
 }
 
+// DataSourceRunners hands out the runner for a data source. The
+// datasource package's Manager satisfies it.
+//
+//go:generate ../../../scripts/codegen/mock -t internal DataSourceRunners data_source_runners
+type DataSourceRunners interface {
+	// Runner should return the runner that operates the given data
+	// source.
+	Runner(ds datasource.DataSource) datasource.Runner
+}
+
 // DB is the persistence surface the tools require. The db package's
 // agent satisfies it.
 //
 //go:generate ../../../scripts/codegen/mock -t both DB db
+//nolint:interfacebloat // one persistence surface per package; splitting it by domain would only restate the same list under two names
 type DB interface {
 	sqlutil.DB
 
@@ -496,10 +570,18 @@ type DB interface {
 	// of id would create a cycle in the document tree. Used by
 	// move_document to reject self and descendant parents.
 	CheckDocumentCycle(ctx context.Context, id, parentID xid.ID, organizationID string) (bool, error)
+
+	// FetchDataSource should return a data source by id within the org.
+	// Used by every data-source tool to resolve what it was asked about.
+	FetchDataSource(ctx context.Context, id xid.ID, organizationID string) (*datasource.DataSource, error)
+
+	// FetchDataSources should return every data source the org owns.
+	// Used by list_data_sources.
+	FetchDataSources(ctx context.Context, organizationID string) ([]datasource.DataSource, error)
 }
 
-// Tx is the transactional half of DB, so a tool whose write spans tables can
-// commit or abandon all of it at once.
+// Tx is the transactional half of DB, so a tool whose write spans
+// tables can commit or abandon all of it at once.
 //
 //go:generate ../../../scripts/codegen/mock -t internal Tx tx
 type Tx interface {

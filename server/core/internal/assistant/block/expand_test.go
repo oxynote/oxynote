@@ -542,6 +542,30 @@ func Test_Expand(t *testing.T) {
 				Attrs: map[string]any{"query": "up"},
 			},
 		},
+		// the other half of the legacy round trip: what Compact read
+		// back out has to expand into exactly what it came from.
+		"Metric keeps a legacy config blob, nulls and unknown attrs": {
+			Input: Block{
+				Type: BlockMetric,
+				UID:  "m1",
+				Attrs: map[string]any{
+					"config":            map[string]any{"type": "line_chart"},
+					"visualizationType": nil,
+					"wibble":            42,
+				},
+			},
+			// the harness strips uids, so what is asserted here is that
+			// every other attribute survived untouched; the uid's own
+			// preservation is covered by the cases that check it.
+			Expected: document.Block{
+				Type: document.BlockNodeMetricBlock,
+				Attrs: map[string]any{
+					"config":            map[string]any{"type": "line_chart"},
+					"visualizationType": nil,
+					"wibble":            42,
+				},
+			},
+		},
 		"Metric grid wraps metric items": {
 			Input: Block{
 				Type:  BlockMetricGrid,

@@ -30,6 +30,22 @@ const (
 	NameSearchDocuments     Name = "search_documents"
 )
 
+// Data-source tools — reads against the organisation's outbound
+// connections. They reach systems outside Oxynote, so a surface that
+// gates by scope asks Traits.DataSource rather than lumping them in
+// with the document reads.
+const (
+	NameListDataSources           Name = "list_data_sources"
+	NameGetPrometheusMetadata     Name = "get_prometheus_metadata"
+	NameListPrometheusLabelNames  Name = "list_prometheus_label_names"
+	NameListPrometheusLabelValues Name = "list_prometheus_label_values"
+	NameListPrometheusSeries      Name = "list_prometheus_series"
+	NameQueryPrometheus           Name = "query_prometheus"
+	NameGetSQLMetadata            Name = "get_sql_metadata"
+	NameGetSQLQueryLabels         Name = "get_sql_query_labels"
+	NameQuerySQL                  Name = "query_sql"
+)
+
 // Write tools — always confirmed. Deletes are the most
 // destructive but the same confirm gate covers all of them.
 const (
@@ -83,6 +99,16 @@ func New(deps *Deps) *Set {
 		readDocumentSummary{},
 		readBlock{},
 		searchDocuments{},
+
+		listDataSources{},
+		getPrometheusMetadata{},
+		listPrometheusLabelNames{},
+		listPrometheusLabelValues{},
+		listPrometheusSeries{},
+		queryPrometheus{},
+		getSQLMetadata{},
+		getSQLQueryLabels{},
+		querySQL{},
 
 		createDocument{},
 		deleteDocument{},

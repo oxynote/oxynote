@@ -98,9 +98,9 @@ HTTP at `/core/api/mcp` behind the front door and is protected by OAuth
 2.1 — auth-realtime is the authorization server, clients register
 dynamically, and the user approves each client on a consent page. Tokens
 are bound to the user's organization and carry `documents:read` /
-`documents:write` scopes; write tools run without a server-side
-confirmation step, so approval is the client's job (destructive tools are
-annotated as such).
+`documents:write` / `data-sources:read` scopes; write tools run without a
+server-side confirmation step, so approval is the client's job
+(destructive tools are annotated as such).
 
 ```sh
 claude mcp add --transport http oxynote http://localhost:8080/core/api/mcp

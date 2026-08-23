@@ -457,7 +457,8 @@
 			"authorized-label": "Authorized",
 			"scopes": {
 				"documents-read": "Read",
-				"documents-write": "Write"
+				"documents-write": "Write",
+				"data-sources-read": "Data sources"
 			},
 			"revoke": "Revoke",
 			"errors": {

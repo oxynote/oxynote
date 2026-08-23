@@ -48,6 +48,8 @@ function scopeLabel(scope: string) {
 			return t("oauth.consent.scopes.documents-read")
 		case "documents:write":
 			return t("oauth.consent.scopes.documents-write")
+		case "data-sources:read":
+			return t("oauth.consent.scopes.data-sources-read")
 	}
 
 	// a scope this build has no name for is shown verbatim rather than

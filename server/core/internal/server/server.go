@@ -18,6 +18,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	assistantCore "github.com/oxynote/oxynote/server/core/internal/assistant"
 	"github.com/oxynote/oxynote/server/core/internal/buildinfo"
+	datasourceCore "github.com/oxynote/oxynote/server/core/internal/datasource"
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
 	notificationCore "github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/assistant"
@@ -123,6 +124,7 @@ func NewServer(
 	fc metricutil.Factory,
 	storageClient Storer,
 	assistantMan *assistantCore.Manager,
+	datasourceMan *datasourceCore.Manager,
 	githubMan *githubCore.Manager,
 	slackMan *slackCore.Manager,
 	webchangeClient *webchange.Client,
@@ -176,7 +178,7 @@ func NewServer(
 	srv.handlers.github = github.NewHandler(log, db, client, githubMan)
 	srv.handlers.slack = slack.NewHandler(log, db, client, slackMan)
 	srv.handlers.notification = notification.NewHandler(log, db, notifier)
-	srv.handlers.datasource = datasource.NewHandler(log, db)
+	srv.handlers.datasource = datasource.NewHandler(log, db, datasourceMan)
 	srv.handlers.email = email.NewHandler(log, emailSender)
 
 	wsAcceptOpts := websocket.AcceptOptions{

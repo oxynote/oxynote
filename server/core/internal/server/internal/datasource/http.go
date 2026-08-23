@@ -21,17 +21,18 @@ var ErrQueryRequired = errutil.New(http.StatusBadRequest, errcode.DataSourceQuer
 
 // Handler holds dependencies required for data source operations.
 type Handler struct {
-	log      *slog.Logger
-	db       DB
-	executor Executor
+	log     *slog.Logger
+	db      DB
+	runners Runners
 }
 
-// NewHandler creates a new handler instance with the provided logger and database.
-func NewHandler(log *slog.Logger, db DB) *Handler {
+// NewHandler creates a new handler instance with the provided logger,
+// database and runner manager.
+func NewHandler(log *slog.Logger, db DB, runners Runners) *Handler {
 	return &Handler{
-		log:      log,
-		db:       db,
-		executor: datasourceCore.NewExecutor(),
+		log:     log,
+		db:      db,
+		runners: runners,
 	}
 }
 
@@ -52,7 +53,7 @@ func (h *Handler) CreateDataSource(w http.ResponseWriter, r *http.Request) {
 
 	ds := datasourceCore.NewDataSource(input, session.ActiveOrganizationID)
 
-	status, err := h.executor.TestConnection(r.Context(), *ds)
+	status, err := h.runners.Runner(*ds).TestConnection(r.Context())
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -116,7 +117,7 @@ func (h *Handler) TestDataSourceConnection(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	status, err := h.executor.TestConnection(r.Context(), *ds)
+	status, err := h.runners.Runner(*ds).TestConnection(r.Context())
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -185,7 +186,7 @@ func (h *Handler) UpdateDataSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	status, err := h.executor.TestConnection(r.Context(), *ds)
+	status, err := h.runners.Runner(*ds).TestConnection(r.Context())
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -248,25 +249,6 @@ func (h *Handler) persistDataSourceStatus(
 	}
 }
 
-// syncDataSourceStatus persists the connection status observed by the last
-// executor call and reports whether the data source is usable. When it is
-// not, the client has already been responded to with the status error.
-func (h *Handler) syncDataSourceStatus(
-	w http.ResponseWriter,
-	r *http.Request,
-	ds *datasourceCore.DataSource,
-	status processor.ConnectionStatus,
-) bool {
-	h.persistDataSourceStatus(r, ds, status)
-
-	if ds.Status != processor.ConnectionStatusSuccess {
-		httpserver.RespondError(h.log, w, status.Error())
-		return false
-	}
-
-	return true
-}
-
 // DB is an interface that handles communication with the data source database.
 //
 //go:generate ../../../../scripts/codegen/mock -t internal DB db
@@ -287,44 +269,12 @@ type DB interface {
 	DeleteDataSource(ctx context.Context, id xid.ID, organizationID string) error
 }
 
-// Executor is an interface that runs data source operations.
+// Runners hands out the runner for a data source. The
+// datasource package's Manager satisfies it.
 //
-//go:generate ../../../../scripts/codegen/mock -t internal Executor
-type Executor interface {
-	// TestConnection should test the connection to a data source.
-	TestConnection(ctx context.Context, ds datasourceCore.DataSource) (processor.ConnectionStatus, error)
-
-	// PrometheusQuery should execute a Prometheus query against a data source.
-	PrometheusQuery(ctx context.Context, ds datasourceCore.DataSource, query string, tr processor.TimeRange) (processor.ConnectionStatus, *processor.PrometheusQueryResult, error)
-
-	// PrometheusMetadata should retrieve metadata from a Prometheus data
+//go:generate ../../../../scripts/codegen/mock -t internal Runners runners
+type Runners interface {
+	// Runner should return the runner that operates the given data
 	// source.
-	PrometheusMetadata(ctx context.Context, ds datasourceCore.DataSource) (processor.ConnectionStatus, *processor.PrometheusMetadataResult, error)
-
-	// PrometheusLabelNames should retrieve label names from a Prometheus
-	// data source.
-	PrometheusLabelNames(ctx context.Context, ds datasourceCore.DataSource, matchers []string, tr processor.TimeRange) (processor.ConnectionStatus, *processor.PrometheusLabelNamesResult, error)
-
-	// PrometheusLabelValues should retrieve label values for a specific
-	// label from a Prometheus data source.
-	PrometheusLabelValues(ctx context.Context, ds datasourceCore.DataSource, label string, matchers []string, tr processor.TimeRange) (processor.ConnectionStatus, *processor.PrometheusLabelValuesResult, error)
-
-	// PrometheusSeries should retrieve series matching the given selectors
-	// from a Prometheus data source.
-	PrometheusSeries(ctx context.Context, ds datasourceCore.DataSource, matchers []string, tr processor.TimeRange) (processor.ConnectionStatus, *processor.PrometheusSeriesResult, error)
-
-	// MySQLQuery should execute a SQL query against a MySQL data source.
-	MySQLQuery(ctx context.Context, ds datasourceCore.DataSource, query string, tr processor.TimeRange) (processor.ConnectionStatus, *processor.MySQLQueryResult, error)
-
-	// PostgreSQLQuery should execute a SQL query against a PostgreSQL data
-	// source.
-	PostgreSQLQuery(ctx context.Context, ds datasourceCore.DataSource, query string, tr processor.TimeRange) (processor.ConnectionStatus, *processor.PostgreSQLQueryResult, error)
-
-	// SQLQueryLabels should execute a query with LIMIT 1 and return string
-	// column names with example values.
-	SQLQueryLabels(ctx context.Context, ds datasourceCore.DataSource, query string, tr processor.TimeRange) (processor.ConnectionStatus, map[string]string, error)
-
-	// SQLMetadata should retrieve all tables and their columns from a SQL
-	// data source.
-	SQLMetadata(ctx context.Context, ds datasourceCore.DataSource) (processor.ConnectionStatus, *processor.SQLMetadataResult, error)
+	Runner(ds datasourceCore.DataSource) datasourceCore.Runner
 }

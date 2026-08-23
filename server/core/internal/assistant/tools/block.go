@@ -8,6 +8,7 @@ import (
 
 	"github.com/oxynote/oxynote/server/core/internal/assistant/block"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
+	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/rs/xid"
 )
@@ -70,15 +71,23 @@ func (readDocumentSummary) Execute(inp Input) (string, error) {
 		return "", fmt.Errorf("read_document_summary: fetch content: %w", err)
 	}
 
-	return result(struct {
-		DocumentID   string            `json:"document_id"`
-		DocumentName string            `json:"document_name"`
-		Blocks       []docSummaryEntry `json:"blocks"`
-	}{
+	return result(documentSummaryResult{
 		DocumentID:   docID.String(),
 		DocumentName: content.DocumentName,
 		Blocks:       walkDocForAssistant(content.Content.Content),
 	})
+}
+
+// documentSummaryResult is what read_document_summary returns.
+type documentSummaryResult struct {
+	// DocumentID is the document the summary describes.
+	DocumentID string `json:"document_id"`
+
+	// DocumentName is the document's display name.
+	DocumentName string `json:"document_name"`
+
+	// Blocks is the document's content, one entry per block.
+	Blocks []docSummaryEntry `json:"blocks"`
 }
 
 // readBlockArgs is what read_block is called with.
@@ -277,6 +286,10 @@ func (insertBlock) Execute(inp Input) (string, error) {
 		return "", fmt.Errorf("insert_block: %w", err)
 	}
 
+	if err := inp.CheckDataSources(in.Block.CollectAttributeValues(document.AttrDataSourceID)); err != nil {
+		return "", fmt.Errorf("insert_block: %w", err)
+	}
+
 	return inp.ApplyEdit(in.DocumentID, []edit.Operation{op})
 }
 
@@ -353,6 +366,10 @@ func (appendBlock) Execute(inp Input) (string, error) {
 		return "", fmt.Errorf("append_block: %w", err)
 	}
 
+	if err := inp.CheckDataSources(in.Block.CollectAttributeValues(document.AttrDataSourceID)); err != nil {
+		return "", fmt.Errorf("append_block: %w", err)
+	}
+
 	return inp.ApplyEdit(in.DocumentID, []edit.Operation{edit.Append(in.Block)})
 }
 
@@ -415,6 +432,10 @@ func (prependBlock) Execute(inp Input) (string, error) {
 	}
 
 	if err := block.ValidateAsRoot(in.Block); err != nil {
+		return "", fmt.Errorf("prepend_block: %w", err)
+	}
+
+	if err := inp.CheckDataSources(in.Block.CollectAttributeValues(document.AttrDataSourceID)); err != nil {
 		return "", fmt.Errorf("prepend_block: %w", err)
 	}
 
@@ -500,6 +521,10 @@ func (replaceBlock) Execute(inp Input) (string, error) {
 	// the replacement lands where the target sits, so the target is what
 	// decides whether this is a root placement.
 	if err := inp.ValidatePlacement(in.DocumentID, in.BlockUID, in.Block); err != nil {
+		return "", fmt.Errorf("replace_block: %w", err)
+	}
+
+	if err := inp.CheckDataSources(in.Block.CollectAttributeValues(document.AttrDataSourceID)); err != nil {
 		return "", fmt.Errorf("replace_block: %w", err)
 	}
 
@@ -685,6 +710,15 @@ func (updateBlockAttrs) Execute(inp Input) (string, error) {
 
 	if len(in.Attrs) == 0 {
 		return "", errors.New("update_block_attrs: attrs must not be empty")
+	}
+
+	// the payload names attributes, not a block type, so a metric's
+	// data source arrives here on its own rather than inside a block
+	// the walk could find it in.
+	if id, ok := in.Attrs[document.AttrDataSourceID].(string); ok && id != "" {
+		if err := inp.CheckDataSources([]string{id}); err != nil {
+			return "", fmt.Errorf("update_block_attrs: %w", err)
+		}
 	}
 
 	return inp.ApplyEdit(in.DocumentID, []edit.Operation{edit.UpdateAttrs(in.BlockUID, in.Attrs)})

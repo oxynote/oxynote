@@ -137,6 +137,15 @@ describe("<McpSection>", { concurrent: false }, () => {
 		expect(wrapper.text()).toContain(t("settings.mcp.unknown-client"))
 	})
 
+	it("names the data-sources scope", async ({ expect }) => {
+		mockClientName("Claude Code")
+		seedConsents([makeConsent({ scopes: ["data-sources:read"] })])
+
+		const wrapper = await mountSuspended(McpSection)
+
+		expect(wrapper.text()).toContain(t("settings.mcp.scopes.data-sources-read"))
+	})
+
 	it("shows an unrecognised scope verbatim rather than dropping it", async ({
 		expect,
 	}) => {

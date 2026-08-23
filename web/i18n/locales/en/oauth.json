@@ -7,7 +7,8 @@
 			"scopes-title": "This application will be able to:",
 			"scopes": {
 				"documents-read": "Read and search your documents",
-				"documents-write": "Create, edit and delete your documents"
+				"documents-write": "Create, edit and delete your documents",
+				"data-sources-read": "Read and query your data sources"
 			},
 			"approve": "Authorize",
 			"deny": "Deny",

@@ -97,6 +97,16 @@ describe("<oauth-consent>", { concurrent: false }, () => {
 		expect(wrapper.text()).toContain(t("oauth.consent.scopes.documents-write"))
 	})
 
+	it("names the data-sources scope", async ({ expect }) => {
+		const wrapper = await mountConsent(
+			"?client_id=client1&scope=data-sources%3Aread",
+		)
+
+		expect(wrapper.text()).toContain(
+			t("oauth.consent.scopes.data-sources-read"),
+		)
+	})
+
 	it("shows an unrecognised scope verbatim rather than dropping it", async ({
 		expect,
 	}) => {

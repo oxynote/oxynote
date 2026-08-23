@@ -7,6 +7,9 @@ import (
 	"os"
 	"testing"
 
+	"github.com/oxynote/oxynote/server/core/internal/datasource"
+	datasourceMock "github.com/oxynote/oxynote/server/core/internal/datasource/_mock"
+	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -105,16 +108,32 @@ func Test_einoTool_Run(t *testing.T) {
 func Test_einoTool_InvokableRun(t *testing.T) {
 	t.Parallel()
 
-	// error: the arguments never reach a tool that cannot read them
-	_, err := newEinoTool(getDocument{}, testDeps(nil, nil, nil)).
-		InvokableRun(context.Background(), `{`)
-	require.Error(t, err)
-
-	// success: the tool is handed an input carrying this call's args
+	// the tool is handed an input carrying this call's args
 	res, err := newEinoTool(listDocuments{}, testDeps(nil, nil, nil)).
 		InvokableRun(context.Background(), `{}`)
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"documents":null}`, res)
+
+	// a failure comes back as the call's result rather than as an
+	// error: the framework would end the whole turn on an error, and
+	// arguments the tool cannot read are the model's to fix.
+	res, err = newEinoTool(getDocument{}, testDeps(nil, nil, nil)).
+		InvokableRun(context.Background(), `{`)
+	require.NoError(t, err)
+	assert.Contains(t, res, "invalid input")
+
+	// the same holds for a data source that rejected the model's query
+	failing := dataSourceDeps(t, datasource.TypePrometheus, prometheusRunner(&datasourceMock.Prometheus{
+		QueryRangeFunc: func(context.Context, string, processor.TimeRange) (*processor.PrometheusQueryResult, error) {
+			return nil, errors.New("parse error: unexpected character")
+		},
+	}))
+
+	args := `{"data_source_id":"` + _testDataSourceID.String() + `","query":"up)"}`
+
+	res, err = newEinoTool(queryPrometheus{}, failing).InvokableRun(context.Background(), args)
+	require.NoError(t, err)
+	assert.Contains(t, res, "parse error")
 }
 
 func Test_einoTool_Title(t *testing.T) {

@@ -61,7 +61,7 @@ func Test_Handler_addResources(t *testing.T) {
 			},
 		}
 
-		hdl := prepHandler(t, []string{ScopeRead}, stubToolsDB(), db)
+		hdl := prepHandler(t, []string{ScopeDocumentRead}, stubToolsDB(), db)
 
 		// the listing failure degrades to an empty resource list, not
 		// a failed request.
@@ -86,7 +86,7 @@ func Test_Handler_addResources(t *testing.T) {
 			},
 		}
 
-		hdl := prepHandler(t, []string{ScopeRead}, stubToolsDB(), db)
+		hdl := prepHandler(t, []string{ScopeDocumentRead}, stubToolsDB(), db)
 
 		assert.Equal(t, map[string]string{
 			_resourceURIPrefix + parentID.String(): "Parent",
@@ -99,7 +99,7 @@ func Test_Handler_addResources(t *testing.T) {
 
 		db := &DBMock{}
 
-		hdl := prepHandler(t, []string{ScopeWrite}, stubToolsDB(), db)
+		hdl := prepHandler(t, []string{ScopeDocumentWrite}, stubToolsDB(), db)
 
 		// without the read scope no resources are registered and the
 		// document tree is never even fetched.

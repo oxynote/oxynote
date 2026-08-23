@@ -34,6 +34,23 @@ func (a Attributes) Get(name string) (Attribute, bool) {
 	return Attribute{value: v}, ok
 }
 
+// Value returns the named attribute's raw value and whether it is set
+// to anything.
+//
+// It differs from Get in what it calls set: the editor writes null for
+// a field nobody has filled in, and a caller reading one back gets the
+// null with it, so a key present with a null value is as unset here as
+// a key that is absent. Get answers the narrower question of whether
+// the key is there at all.
+func (a Attributes) Value(name string) (any, bool) {
+	v, ok := a[name]
+	if !ok || v == nil {
+		return nil, false
+	}
+
+	return v, true
+}
+
 // Attribute is a single attribute value with typed coercions. The
 // accessors return the type's zero value when the underlying value
 // does not match.

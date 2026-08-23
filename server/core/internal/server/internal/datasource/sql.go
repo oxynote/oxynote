@@ -40,13 +40,15 @@ func (h *Handler) FetchSQLQueryLabels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	status, labels, err := h.executor.SQLQueryLabels(r.Context(), *ds, query, *tr)
+	client, err := h.runners.Runner(*ds).SQL(r.Context())
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	if !h.syncDataSourceStatus(w, r, ds, status) {
+	labels, err := client.QueryLabels(r.Context(), query, *tr)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
@@ -81,13 +83,15 @@ func (h *Handler) FetchSQLMetadata(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	status, result, err := h.executor.SQLMetadata(r.Context(), *ds)
+	client, err := h.runners.Runner(*ds).SQL(r.Context())
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	if !h.syncDataSourceStatus(w, r, ds, status) {
+	result, err := client.Metadata(r.Context())
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
 		return
 	}
 

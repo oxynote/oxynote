@@ -48,6 +48,8 @@ function scopeLabel(scope: string) {
 			return t("settings.mcp.scopes.documents-read")
 		case "documents:write":
 			return t("settings.mcp.scopes.documents-write")
+		case "data-sources:read":
+			return t("settings.mcp.scopes.data-sources-read")
 	}
 
 	// a scope this build has no name for is shown verbatim rather than

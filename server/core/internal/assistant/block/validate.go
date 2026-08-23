@@ -175,8 +175,10 @@ func validateBlock(b Block, path string) error {
 		return validateCallout(b, path)
 	case BlockTitledCode:
 		return validateTitledCode(b, path)
-	case BlockHorizontalRule, BlockMetric:
+	case BlockHorizontalRule:
 		return validateContentless(b, path)
+	case BlockMetric:
+		return validateMetric(b, path)
 	case BlockImage, BlockFigma:
 		return validateAtomWithSrc(b, path)
 	case BlockMetricGrid:

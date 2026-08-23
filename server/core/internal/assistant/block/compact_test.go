@@ -371,6 +371,31 @@ func Test_Compact(t *testing.T) {
 				Attrs: map[string]any{"query": "up", "unit": "%"},
 			},
 		},
+		// a metric written before this layer knew the configuration: a
+		// legacy config blob, explicit nulls for unset fields, and an
+		// attribute it still does not name. Reading it must leave all
+		// of them alone, or typing the schema would break documents
+		// already in the system.
+		"Metric keeps a legacy config blob, nulls and unknown attrs": {
+			Input: document.Block{
+				Type: document.BlockNodeMetricBlock,
+				Attrs: map[string]any{
+					"uid":               "m1",
+					"config":            map[string]any{"type": "line_chart"},
+					"visualizationType": nil,
+					"wibble":            42,
+				},
+			},
+			Expected: Block{
+				Type: BlockMetric,
+				UID:  "m1",
+				Attrs: map[string]any{
+					"config":            map[string]any{"type": "line_chart"},
+					"visualizationType": nil,
+					"wibble":            42,
+				},
+			},
+		},
 		"Metric grid wraps metric items": {
 			Input: document.Block{
 				Type: document.BlockNodeMetricGrid,

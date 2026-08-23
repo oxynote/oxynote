@@ -71,11 +71,35 @@ func (listDocuments) Execute(inp Input) (string, error) {
 		return "", fmt.Errorf("list_documents: fetch tree: %w", err)
 	}
 
-	return result(struct {
-		Documents []docTreeNode `json:"documents"`
-	}{
+	return result(documentTreeResult{
 		Documents: summariesToTree(tree),
 	})
+}
+
+// documentTreeResult is what list_documents returns.
+type documentTreeResult struct {
+	// Documents is the organisation's document tree, or the children
+	// of the parent the call named.
+	Documents []docTreeNode `json:"documents"`
+}
+
+// createdDocumentResult is what create_document returns.
+type createdDocumentResult struct {
+	// DocumentID addresses the new document in every later call.
+	DocumentID string `json:"document_id"`
+
+	// BranchID is the new document's default branch.
+	BranchID string `json:"branch_id"`
+}
+
+// deletedDocumentResult is what delete_document returns.
+type deletedDocumentResult struct {
+	// DocumentID is the document that was removed.
+	DocumentID string `json:"document_id"`
+
+	// Deleted confirms the removal happened, so the model reads an
+	// outcome rather than an empty result.
+	Deleted bool `json:"deleted"`
 }
 
 // getDocument returns one document's metadata.
@@ -259,10 +283,7 @@ func (createDocument) Execute(inp Input) (string, error) {
 
 	inp.NotifyTreeChange(doc.ParentID)
 
-	return result(struct {
-		DocumentID string `json:"document_id"`
-		BranchID   string `json:"branch_id"`
-	}{
+	return result(createdDocumentResult{
 		DocumentID: doc.ID.String(),
 		BranchID:   doc.BranchID.String(),
 	})
@@ -346,10 +367,7 @@ func (deleteDocument) Execute(inp Input) (string, error) {
 
 	inp.NotifyTreeChange(parentID)
 
-	return result(struct {
-		DocumentID string `json:"document_id"`
-		Deleted    bool   `json:"deleted"`
-	}{
+	return result(deletedDocumentResult{
 		DocumentID: docID.String(),
 		Deleted:    true,
 	})

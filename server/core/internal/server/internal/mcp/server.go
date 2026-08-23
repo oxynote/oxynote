@@ -42,8 +42,9 @@ func (h *Handler) server(r *http.Request) *mcp.Server {
 
 	set := h.man.ToolSet(session.OrganizationID, session.UserID)
 
-	read := slices.Contains(session.Scopes, ScopeRead)
-	write := slices.Contains(session.Scopes, ScopeWrite)
+	read := slices.Contains(session.Scopes, ScopeDocumentRead)
+	write := slices.Contains(session.Scopes, ScopeDocumentWrite)
+	dataSources := slices.Contains(session.Scopes, ScopeDataSourceRead)
 
 	for _, e := range set.Entries() {
 		// an internal tool addresses conversation state this surface has
@@ -53,11 +54,13 @@ func (h *Handler) server(r *http.Request) *mcp.Server {
 			continue
 		}
 
-		if e.Write && !write {
-			continue
-		}
-
-		if !e.Write && !read {
+		// a data-source tool reaches outside Oxynote entirely, so it
+		// answers to its own scope rather than to the document ones.
+		if e.DataSource {
+			if !dataSources {
+				continue
+			}
+		} else if e.Write && !write || !e.Write && !read {
 			continue
 		}
 

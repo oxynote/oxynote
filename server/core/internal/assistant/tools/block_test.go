@@ -4,7 +4,10 @@ import (
 	"context"
 	"testing"
 
+	"github.com/oxynote/oxynote/server/core/internal/datasource"
+	datasourceMock "github.com/oxynote/oxynote/server/core/internal/datasource/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
@@ -42,9 +45,39 @@ func stubContentDB(err error) *DBMock {
 	return db
 }
 
+// _unknownDataSourceID names no data source in any organisation.
+var _unknownDataSourceID = xid.New().String()
+
+// metricBlockArgs is a metric_grid holding one metric that names the
+// given data source, as the model would send it.
+func metricBlockArgs(dataSourceID string) string {
+	return `{"type":"metric_grid","items":[{"type":"metric","attrs":{"dataSourceId":"` + dataSourceID +
+		`","visualizationType":"line_chart","queries":[{"name":"Query 1","query":"up","legendFormat":""}]}}]}`
+}
+
+// stubMetricDB answers content reads and resolves exactly one data
+// source, so only the id under test decides a metric write's outcome.
+func stubMetricDB() *DBMock {
+	db := stubContentDB(nil)
+	db.FetchDataSourceFunc = func(_ context.Context, id xid.ID, orgID string) (*datasource.DataSource, error) {
+		if id != _testDataSourceID || orgID != "org" {
+			return nil, errutil.ErrNotFound
+		}
+
+		return &datasource.DataSource{
+			ID:   _testDataSourceID,
+			Name: "prod",
+			Type: datasource.TypePrometheus,
+		}, nil
+	}
+
+	return db
+}
+
 // editCases are the argument-validation cases every block write shares.
 type editCase struct {
 	DB     *DBMock
+	Runner *datasourceMock.Runner
 	Args   string
 	Result string
 	Err    error
@@ -54,10 +87,24 @@ type editCase struct {
 func runEdit(t *testing.T, tl Tool, name Name, c editCase) {
 	t.Helper()
 
-	res, err := tl.Execute(testInput(testDeps(c.DB, stubApplier(), nil), name, c.Args))
+	applier := stubApplier()
+
+	d := testDeps(c.DB, applier, nil)
+	if c.Runner != nil {
+		d.runners = &DataSourceRunnersMock{
+			RunnerFunc: func(datasource.DataSource) datasource.Runner { return c.Runner },
+		}
+	}
+
+	res, err := tl.Execute(testInput(d, name, c.Args))
 	testutil.AssertEqualError(t, c.Err, err)
 
 	if err != nil {
+		// a write that was refused never reached the document: every
+		// check runs before the edit is shipped, so a rejected call
+		// leaves nothing half-applied.
+		assert.Empty(t, applier.ApplyCalls(), "a refused write must not reach the document")
+
 		return
 	}
 
@@ -282,6 +329,17 @@ func Test_insertBlock_Execute(t *testing.T) {
 		},
 		"Inserted before": {DB: stubContentDB(nil), Args: base + `,"position":"before"}`},
 		"Inserted after":  {DB: stubContentDB(nil), Args: base + `,"position":"after"}`},
+		"A metric naming a data source the organisation owns": {
+			DB: stubMetricDB(),
+			Args: `{"document_id":"` + _testDocID + `","reference_block_uid":"` + _stubContentUID +
+				`","position":"after","block":` + metricBlockArgs(_testDataSourceID.String()) + `}`,
+		},
+		"A metric naming a data source it does not": {
+			DB: stubMetricDB(),
+			Args: `{"document_id":"` + _testDocID + `","reference_block_uid":"` + _stubContentUID +
+				`","position":"after","block":` + metricBlockArgs(_unknownDataSourceID) + `}`,
+			Err: assert.AnError,
+		},
 	}
 
 	for cn, c := range cc {
@@ -344,6 +402,15 @@ func Test_appendBlock_Execute(t *testing.T) {
 			DB:   stubDocumentDB(),
 			Args: `{"document_id":"` + _testDocID + `","block":` + _paragraphArgs + `}`,
 		},
+		"A metric grid naming a data source the organisation owns": {
+			DB:   stubMetricDB(),
+			Args: `{"document_id":"` + _testDocID + `","block":` + metricBlockArgs(_testDataSourceID.String()) + `}`,
+		},
+		"A metric grid naming a data source it does not": {
+			DB:   stubMetricDB(),
+			Args: `{"document_id":"` + _testDocID + `","block":` + metricBlockArgs(_unknownDataSourceID) + `}`,
+			Err:  assert.AnError,
+		},
 	}
 
 	for cn, c := range cc {
@@ -405,6 +472,15 @@ func Test_prependBlock_Execute(t *testing.T) {
 		"Prepended": {
 			DB:   stubDocumentDB(),
 			Args: `{"document_id":"` + _testDocID + `","block":` + _paragraphArgs + `}`,
+		},
+		"A metric grid naming a data source the organisation owns": {
+			DB:   stubMetricDB(),
+			Args: `{"document_id":"` + _testDocID + `","block":` + metricBlockArgs(_testDataSourceID.String()) + `}`,
+		},
+		"A metric grid naming a data source it does not": {
+			DB:   stubMetricDB(),
+			Args: `{"document_id":"` + _testDocID + `","block":` + metricBlockArgs(_unknownDataSourceID) + `}`,
+			Err:  assert.AnError,
 		},
 	}
 
@@ -473,6 +549,17 @@ func Test_replaceBlock_Execute(t *testing.T) {
 		"Replaced": {
 			DB:   stubContentDB(nil),
 			Args: `{"document_id":"` + _testDocID + `","block_uid":"a","block":` + _paragraphArgs + `}`,
+		},
+		"A metric grid naming a data source the organisation owns": {
+			DB: stubMetricDB(),
+			Args: `{"document_id":"` + _testDocID + `","block_uid":"` + _stubContentUID +
+				`","block":` + metricBlockArgs(_testDataSourceID.String()) + `}`,
+		},
+		"A metric grid naming a data source it does not": {
+			DB: stubMetricDB(),
+			Args: `{"document_id":"` + _testDocID + `","block_uid":"` + _stubContentUID +
+				`","block":` + metricBlockArgs(_unknownDataSourceID) + `}`,
+			Err: assert.AnError,
 		},
 	}
 
@@ -615,6 +702,25 @@ func Test_updateBlockAttrs_Execute(t *testing.T) {
 		"Attrs applied": {
 			DB:   stubDocumentDB(),
 			Args: `{"document_id":"` + _testDocID + `","block_uid":"a","attrs":{"level":2}}`,
+		},
+		// the payload names attributes, not a block type, so a metric's
+		// data source arrives on its own rather than inside a block.
+		"A data source the organisation owns": {
+			DB: stubMetricDB(),
+			Args: `{"document_id":"` + _testDocID + `","block_uid":"a","attrs":{"dataSourceId":"` +
+				_testDataSourceID.String() + `"}}`,
+		},
+		"A data source it does not": {
+			DB: stubMetricDB(),
+			Args: `{"document_id":"` + _testDocID + `","block_uid":"a","attrs":{"dataSourceId":"` +
+				_unknownDataSourceID + `"}}`,
+			Err: assert.AnError,
+		},
+		// an empty data source is the editor's "unset", not a reference
+		// to check, and no other attribute names one at all.
+		"An empty data source is not looked up": {
+			DB:   stubMetricDB(),
+			Args: `{"document_id":"` + _testDocID + `","block_uid":"a","attrs":{"dataSourceId":""}}`,
 		},
 	}
 

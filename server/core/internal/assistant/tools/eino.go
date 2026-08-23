@@ -128,12 +128,29 @@ func (et *einoTool) Run(ctx context.Context, args json.RawMessage) (Result, erro
 // InvokableRun performs the call for the agent framework, which hands
 // its arguments over as a string and may pass options this adapter has
 // no use for.
+//
+// A failed call comes back as the call's result rather than as an
+// error. The framework ends the whole turn on a tool error, and most of
+// what fails here is the model's own doing — a query the data source
+// rejected, a block the schema refuses, an id that names nothing — which
+// it can fix if it is told. Handing the text back lets it try again,
+// which is what a person watching the chat expects; ending the turn
+// leaves them with nothing.
+//
+// Only this surface is affected. The confirmation gate wraps this method
+// and raises its interrupt before reaching it, so a pending write still
+// pauses the turn, and a caller that runs a tool directly — the MCP
+// server does — still sees the error itself.
 func (et *einoTool) InvokableRun(
 	ctx context.Context,
 	argumentsInJSON string,
 	_ ...tool.Option,
 ) (string, error) {
 	res, err := et.Run(ctx, json.RawMessage(argumentsInJSON))
+	if err != nil {
+		//nolint:nilerr // the failure is the call's result here, not the turn's
+		return err.Error(), nil
+	}
 
 	return res.Output, err
 }

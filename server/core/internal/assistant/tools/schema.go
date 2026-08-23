@@ -29,6 +29,28 @@ const (
 	// _keyBlock is the shared canonical-block property name.
 	_keyBlock = "block"
 
+	// _keyQuery is the shared query property name.
+	_keyQuery = "query"
+
+	// _keyFrom is the shared range-start property name.
+	_keyFrom = "from"
+
+	// _keyTo is the shared range-end property name.
+	_keyTo = "to"
+
+	// _keyChartType is the shared chart-type property name.
+	_keyChartType = "chart_type"
+
+	// _keyMatchers is the shared Prometheus series-selector property
+	// name.
+	_keyMatchers = "matchers"
+
+	// _keyLabel is the shared Prometheus label property name.
+	_keyLabel = "label"
+
+	// _keyItems is the JSON-schema array-element key.
+	_keyItems = "items"
+
 	// _descDocumentID describes the document-id property.
 	_descDocumentID = "The document id."
 

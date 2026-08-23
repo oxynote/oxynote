@@ -12,6 +12,8 @@ import (
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/block"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
+	"github.com/oxynote/oxynote/server/core/internal/datasource"
+	datasourceMock "github.com/oxynote/oxynote/server/core/internal/datasource/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
@@ -45,9 +47,14 @@ func testDeps(db *DBMock, applier *EditApplierMock, tree *TreeNotifierMock) *Dep
 	}
 
 	d := &Deps{
-		log:     discardLog(),
-		db:      db,
-		search:  &SearcherMock{},
+		log:    discardLog(),
+		db:     db,
+		search: &SearcherMock{},
+		runners: &DataSourceRunnersMock{
+			RunnerFunc: func(datasource.DataSource) datasource.Runner {
+				return &datasourceMock.Runner{}
+			},
+		},
 		applier: applier,
 		offload: &offloadReaderMock{},
 		orgID:   "org",
@@ -124,17 +131,23 @@ func Test_NewDeps(t *testing.T) {
 	var (
 		db       = &DBMock{}
 		searcher = &SearcherMock{}
+		runner   = &datasourceMock.Runner{}
 		applier  = &EditApplierMock{}
 		tree     = &TreeNotifierMock{}
 		offload  = &offloadReaderMock{}
 	)
 
-	d := NewDeps(discardLog(), db, searcher, applier, tree, offload, "org", "user")
+	runners := &DataSourceRunnersMock{
+		RunnerFunc: func(datasource.DataSource) datasource.Runner { return runner },
+	}
+
+	d := NewDeps(discardLog(), db, searcher, runners, applier, tree, offload, "org", "user")
 	require.NotNil(t, d)
 
 	assert.NotNil(t, d.log)
 	assert.Same(t, db, d.db)
 	assert.Same(t, searcher, d.search)
+	assert.Same(t, runners, d.runners)
 	assert.Same(t, applier, d.applier)
 	assert.Same(t, tree, d.tree)
 	assert.Same(t, offload, d.offload)
@@ -741,4 +754,65 @@ func Test_input_Warn(t *testing.T) {
 	assert.Contains(t, buf.String(), "something degraded")
 	assert.Contains(t, buf.String(), "search_documents")
 	assert.Contains(t, buf.String(), "value")
+}
+
+func Test_input_CheckDataSources(t *testing.T) {
+	t.Parallel()
+
+	d := dataSourceDeps(t, datasource.TypePrometheus, nil)
+	inp := testInput(d, NameInsertBlock, "")
+
+	require.NoError(t, inp.CheckDataSources(nil))
+	require.NoError(t, inp.CheckDataSources([]string{_testDataSourceID.String()}))
+
+	err := inp.CheckDataSources([]string{_testDataSourceID.String(), xid.New().String()})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "dataSourceId")
+}
+
+func Test_input_DataSource(t *testing.T) {
+	t.Parallel()
+
+	d := dataSourceDeps(t, datasource.TypePrometheus, nil)
+	inp := testInput(d, NameQueryPrometheus, "")
+
+	ds, err := inp.DataSource(_testDataSourceID.String())
+	require.NoError(t, err)
+	require.NotNil(t, ds)
+	assert.Equal(t, "prod", ds.Name)
+
+	// an id that is not an xid and one the organisation owns nothing for
+	// both come back as failures rather than as a zero data source.
+	for _, id := range []string{"wibble", xid.New().String()} {
+		_, err = inp.DataSource(id)
+		require.Error(t, err, "id %q should not resolve", id)
+	}
+}
+
+func Test_input_DataSources(t *testing.T) {
+	t.Parallel()
+
+	d := dataSourceDeps(t, datasource.TypePrometheus, nil)
+
+	got, err := testInput(d, NameListDataSources, "").DataSources()
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, "prod", got[0].Name)
+}
+
+func Test_input_DataSourceRunner(t *testing.T) {
+	t.Parallel()
+
+	runner := &datasourceMock.Runner{}
+	inp := testInput(dataSourceDeps(t, datasource.TypePrometheus, runner), NameQueryPrometheus, "")
+
+	got, err := inp.DataSourceRunner(_testDataSourceID)
+	require.NoError(t, err)
+	assert.Same(t, runner, got)
+
+	// an id the organisation owns nothing for is as absent as one that
+	// names nothing at all, and says so in terms the model can act on.
+	_, err = inp.DataSourceRunner(xid.New())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "list_data_sources")
 }

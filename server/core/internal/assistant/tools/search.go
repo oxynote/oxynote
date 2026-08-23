@@ -37,13 +37,13 @@ func (searchDocuments) Info() Info {
 		Name:        NameSearchDocuments,
 		Description: "Full-text search across all documents in the organisation for blocks whose text matches the query. Returns hits with document_id, document_name, block_uid, text. Use this to find relevant context before editing or to surface candidate documents the user might be asking about.",
 		Properties: map[string]any{
-			"query": stringProp("The full-text search query (typo-tolerant, matches block text)."),
+			_keyQuery: stringProp("The full-text search query (typo-tolerant, matches block text)."),
 			"limit": map[string]any{
 				_keyType:        "integer",
 				_keyDescription: "Maximum number of hits to return. Defaults to 20; cap is 50.",
 			},
 		},
-		Required: []string{"query"},
+		Required: []string{_keyQuery},
 	}
 }
 
@@ -127,11 +127,15 @@ func (searchDocuments) Execute(inp Input) (string, error) {
 		})
 	}
 
-	return result(struct {
-		Hits []searchHit `json:"hits"`
-	}{
+	return result(searchResult{
 		Hits: hits,
 	})
+}
+
+// searchResult is what search_documents returns.
+type searchResult struct {
+	// Hits are the matching blocks, in relevance order.
+	Hits []searchHit `json:"hits"`
 }
 
 // searchHit is one search_documents result row.

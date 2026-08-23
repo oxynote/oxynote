@@ -14,7 +14,11 @@
 // configuration like a heading's level or a callout's icon.
 package block
 
-import "github.com/oxynote/oxynote/server/core/internal/document"
+import (
+	"slices"
+
+	"github.com/oxynote/oxynote/server/core/internal/document"
+)
 
 // Type is the canonical name of a block as the AI sees it.
 // Canonical names use snake_case to match the rest of the AI tool
@@ -79,9 +83,10 @@ const (
 	// optional "width", "height".
 	BlockFigma Type = "figma"
 
-	// BlockMetric is a metric visualization. Attrs are opaque
-	// configuration; AI rarely authors new metric blocks but reads
-	// preserve the attrs verbatim.
+	// BlockMetric is a metric visualization. Attrs carry the chart's
+	// configuration — the data source, the queries, the window, the
+	// display settings — validated by metric.go; attrs that layer does
+	// not name are preserved verbatim.
 	BlockMetric Type = "metric"
 
 	// BlockMetricGrid wraps one or more metric blocks at the top
@@ -173,6 +178,42 @@ type Block struct {
 
 	// Params is the ordered list of parameter rows in a param_list.
 	Params []ParamItem `json:"params,omitempty"`
+}
+
+// CollectAttributeValues returns every distinct string value the named
+// attribute takes in this block and everything under it, in the order
+// they were found.
+//
+// A block's children hang off whichever typed field its kind uses, so a
+// caller that has to see all of them — checking what a whole subtree
+// refers to before it is written, say — would otherwise walk five
+// fields itself.
+func (b Block) CollectAttributeValues(name string) []string {
+	var out []string
+
+	b.collectAttributeValues(name, &out)
+
+	return out
+}
+
+// collectAttributeValues appends this block's value, then those of
+// everything it contains, skipping values already collected.
+func (b Block) collectAttributeValues(name string, out *[]string) {
+	if a, ok := b.Attrs.Value(name); ok {
+		if v, isString := a.(string); isString && v != "" && !slices.Contains(*out, v) {
+			*out = append(*out, v)
+		}
+	}
+
+	for _, group := range [][]Block{b.Items, b.Children, b.Left, b.Right} {
+		for _, child := range group {
+			child.collectAttributeValues(name, out)
+		}
+	}
+
+	for _, item := range b.TaskItems {
+		item.Block.collectAttributeValues(name, out)
+	}
 }
 
 // TaskItem is one row of a task_list, carrying an explicit checked

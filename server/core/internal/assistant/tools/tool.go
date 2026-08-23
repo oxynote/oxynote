@@ -7,6 +7,7 @@ import (
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/block"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
+	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/rs/xid"
@@ -73,6 +74,13 @@ type Traits struct {
 	// their tool descriptions promise as much, and an approve-all meant
 	// for text edits is not consent to delete a document.
 	Destructive bool
+
+	// DataSource indicates the tool reads one of the organisation's
+	// outbound data-source connections rather than its documents. A
+	// surface that gates access by scope asks it: over MCP these tools
+	// need their own grant, since querying an organisation's databases
+	// is not the same permission as reading its documents.
+	DataSource bool
 
 	// Internal keeps a tool off surfaces that serve the registry to
 	// clients outside this process. It marks a tool that only makes
@@ -150,6 +158,28 @@ type DescribeInput interface {
 	// named document when documentID resolves, a generic fallback
 	// otherwise. The caller passes the id its own arguments named.
 	Subject(documentID string) string
+
+	// DataSource should return the data source the id names, for a
+	// description that has to name its subject.
+	DataSource(dataSourceID string) (*datasource.DataSource, error)
+}
+
+// DataSources is the organisation's outbound data-source connections as
+// a tool reads them. Every method is already scoped to the session's
+// organisation, so a tool can never reach another one's connections.
+type DataSources interface {
+	// DataSources should return every data source the organisation
+	// owns.
+	DataSources() ([]datasource.DataSource, error)
+
+	// DataSourceRunner should return the runner that operates the data
+	// source the id names, or an error when the organisation owns no
+	// data source with that id.
+	DataSourceRunner(id xid.ID) (datasource.Runner, error)
+
+	// CheckDataSources should refuse a write naming a data source the
+	// organisation does not own.
+	CheckDataSources(ids []string) error
 }
 
 // Documents is the organisation's document tree as a tool reads it.
@@ -221,6 +251,7 @@ type Input interface {
 	DescribeInput
 	Documents
 	DocumentWriter
+	DataSources
 	Editor
 
 	// OrganizationID should return the organisation every call is

@@ -14,6 +14,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/apps/slack"
 	assistantCore "github.com/oxynote/oxynote/server/core/internal/assistant"
 	"github.com/oxynote/oxynote/server/core/internal/buildinfo"
+	datasourceCore "github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	wsMock "github.com/oxynote/wetsocks/wsserver/_mock"
@@ -59,7 +60,7 @@ func Test_NewServer(t *testing.T) {
 	log := discardLog()
 	fc := metricutil.NewFactory("test", prometheus.NewRegistry())
 
-	assistantMan := assistantCore.NewManager(log, nil, &redis.Pool{}, nil, nil, fc, nil, nil, "claude")
+	assistantMan := assistantCore.NewManager(log, nil, &redis.Pool{}, nil, nil, fc, nil, nil, nil, "claude")
 
 	githubMan, err := github.NewManager(nil, github.Options{})
 	require.NoError(t, err)
@@ -81,6 +82,7 @@ func Test_NewServer(t *testing.T) {
 			fc,
 			storer,
 			assistantMan,
+			datasourceCore.NewManager(log, nil),
 			githubMan,
 			slackMan,
 			nil,
@@ -111,7 +113,8 @@ func Test_NewServer(t *testing.T) {
 			// a manager of this subtest's own: NewServer calls
 			// SetTreeNotifier, which must not race the parallel
 			// success case's identical call on a shared manager.
-			assistantCore.NewManager(log, nil, &redis.Pool{}, nil, nil, fc, nil, nil, "claude"),
+			assistantCore.NewManager(log, nil, &redis.Pool{}, nil, nil, fc, nil, nil, nil, "claude"),
+			datasourceCore.NewManager(log, nil),
 			githubMan,
 			slackMan,
 			nil,
@@ -144,6 +147,7 @@ func Test_NewServer(t *testing.T) {
 			fc,
 			storer,
 			assistantMan,
+			datasourceCore.NewManager(log, nil),
 			githubMan,
 			slackMan,
 			nil,

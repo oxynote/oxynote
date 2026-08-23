@@ -64,7 +64,7 @@ So from a frontend's point of view: auth + realtime is `:8080/auth-realtime/...`
 - `/api/...` (public): auth middleware (`internal/server/internal/auth`) validates sessions by calling auth-realtime's `/api/auth/get-session` (configured via `SERVER_AUTH_BETTER_AUTH_URL`). Routes for documents, branches, comments, reviewers, hooks, files, GitHub, Slack, notifications, data-sources, AI chat.
 - `/api/x/...` (internal): no auth at all — reverse proxy must firewall. Used by auth-realtime to fetch/store branch content (`/x/documents/{id}/branches`, `/x/documents/{id}/branch/{branchId}`), trigger emails, and initialize or tear down orgs.
 - `/api/apps/...` (public, sessionless): where GitHub and Slack deliver. `POST /apps/github/events` and `POST /apps/slack/{events,commands,slash}` are gated by the provider's request signature; `GET /apps/slack/install` completes the direct-install OAuth exchange. These must stay outside `/api/x` — third parties reach core through the same front door as browsers, and the proxy 403s the internal subtree.
-- `/api/mcp` (public, bearer-authed): the MCP surface (`internal/server/internal/mcp`), a streamable HTTP MCP server bridging the assistant's ungated tool registry (`tools.Set.Entries`) plus documents-as-resources. Bearer tokens are JWTs issued by auth-realtime's `@better-auth/mcp` OAuth provider; core validates each request against auth-realtime's internal `GET /api/internal/mcp/session` (JWKS verify + consent-row check, so revoking a client 401s immediately) and scopes the tool list by the token's `documents:read` / `documents:write` scopes. Tokens are org-bound via an `org_id` claim minted at issuance. `SERVER_MCP_SESSION_URL` and `SERVER_MCP_RESOURCE_URL` are required env; the Caddyfile routes `/.well-known/oauth-*` and `/api/auth/*` at the front door to auth-realtime for OAuth discovery.
+- `/api/mcp` (public, bearer-authed): the MCP surface (`internal/server/internal/mcp`), a streamable HTTP MCP server bridging the assistant's ungated tool registry (`tools.Set.Entries`) plus documents-as-resources. Bearer tokens are JWTs issued by auth-realtime's `@better-auth/mcp` OAuth provider; core validates each request against auth-realtime's internal `GET /api/internal/mcp/session` (JWKS verify + consent-row check, so revoking a client 401s immediately) and scopes the tool list by the token's `documents:read` / `documents:write` / `data-sources:read` scopes. Tokens are org-bound via an `org_id` claim minted at issuance. `SERVER_MCP_SESSION_URL` and `SERVER_MCP_RESOURCE_URL` are required env; the Caddyfile routes `/.well-known/oauth-*` and `/api/auth/*` at the front door to auth-realtime for OAuth discovery.
 - WebSocket topics under `/api/ws` (routed by `wetsocks/wsserver` from the first-party `github.com/oxynote/wetsocks` library): `change@document-tree`, `change@documents.{documentId}.comments|metadata|reviewers|maintainers`, `post@slack.messages`, `creation@notifications`, `ping@version`. Topic binders live on the per-domain handler types under `internal/server/internal/...` (`Handler.BindXxx`).
 
 Most public routes in the README (`/api/documents`, `/api/documents/tree`, etc.) are served by core; the README is the closest thing to a contract spec — when changing handlers, update it.
@@ -126,7 +126,8 @@ The system prompt at `server/core/internal/assistant/prompt.go` codifies behavio
 
 Tools are grouped by what they act on, a few per file: `document.go` (the tree
 and one document's metadata), `block.go` (reading and editing content),
-`search.go`. `eino.go` is the odd one out — it holds the agent-framework
+`search.go`, `datasource.go` (reads against the organisation's outbound
+connections). `eino.go` is the odd one out — it holds the agent-framework
 adapter and `read_tool_output`, the one tool that exists *because* of eino
 rather than because of the domain. `tools.Set` is the only place that names
 every tool; adding one means writing its type and adding a line to that list.
@@ -201,6 +202,11 @@ across marker interfaces and schema fields:
   satisfies the same interface.
 - `Destructive` keeps it outside an "approve all" answer. Only
   `delete_document` and `delete_block`.
+- `DataSource` says the tool reads an outbound data-source connection rather
+  than the organisation's documents. Over MCP those tools answer to their own
+  `data-sources:read` scope — querying an organisation's databases is not the
+  same permission as reading its documents — and are annotated open-world,
+  since what a connection points at is not Oxynote's.
 - `Internal` keeps it off surfaces outside this process. Only
   `read_tool_output`: the paths it takes are minted by the reduction middleware
   during a chat turn, so a client holding none of that state would be offered a

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	datasourceCore "github.com/oxynote/oxynote/server/core/internal/datasource"
+	datasourceMock "github.com/oxynote/oxynote/server/core/internal/datasource/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/prometheus/common/model"
@@ -28,33 +29,36 @@ var _testParsedTimeRange = processor.TimeRange{
 
 func Test_Handler_QueryPrometheusDataSource(t *testing.T) {
 	wasExecutorPrometheusQueryCalled := func(count int) check {
-		return func(t *testing.T, _ *DBMock, exec *ExecutorMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
-			ff := exec.PrometheusQueryCalls()
+		return func(t *testing.T, _ *DBMock, exec *runnerMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
+			ff := exec.prometheus.QueryRangeCalls()
 			require.Len(t, ff, count)
 
 			if count == 0 {
 				return
 			}
 
-			assert.Equal(t, _testID, ff[0].Ds.ID)
-			assert.Equal(t, "up", ff[0].Query)
+			assert.Equal(t, _testID, exec.dataSources[0].ID)
+			assert.Equal(t, "up", ff[0].Q)
 			assert.Equal(t, _testParsedTimeRange, ff[0].Tr)
 		}
 	}
 
 	// stubExec returns an executor mock whose PrometheusQuery yields the
 	// provided values.
-	stubExec := func(cs processor.ConnectionStatus, result *processor.PrometheusQueryResult, err error) *ExecutorMock {
-		return &ExecutorMock{
-			PrometheusQueryFunc: func(_ context.Context, _ datasourceCore.DataSource, _ string, _ processor.TimeRange) (processor.ConnectionStatus, *processor.PrometheusQueryResult, error) {
-				return cs, result, err
+	stubClients := func(cs processor.ConnectionStatus, result *processor.PrometheusQueryResult, err error) *clientMocks {
+		return &clientMocks{
+			err: cs.Error(),
+			prometheus: &datasourceMock.Prometheus{
+				QueryRangeFunc: func(_ context.Context, _ string, _ processor.TimeRange) (*processor.PrometheusQueryResult, error) {
+					return result, err
+				},
 			},
 		}
 	}
 
 	cc := map[string]struct {
 		DB          *DBMock
-		Exec        *ExecutorMock
+		Clients     *clientMocks
 		Target      string
 		OmitSession bool
 		ID          string
@@ -104,48 +108,30 @@ func Test_Handler_QueryPrometheusDataSource(t *testing.T) {
 			),
 		},
 		"Error returned by executor.PrometheusQuery": {
-			DB:     stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
-			Exec:   stubExec("", nil, assert.AnError),
-			Target: _testQueryTarget,
-			ID:     _testID.String(),
+			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
+			Clients: stubClients("", nil, assert.AnError),
+			Target:  _testQueryTarget,
+			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasDBUpdateDataSourceCalled(0),
 			),
 		},
-		"Changed status updates the data source": {
-			DB:     stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
-			Exec:   stubExec(processor.ConnectionStatusUnreachable, nil, nil),
-			Target: _testQueryTarget,
-			ID:     _testID.String(),
+		"A connection the data source refused": {
+			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
+			Clients: stubClients(processor.ConnectionStatusUnreachable, nil, nil),
+			Target:  _testQueryTarget,
+			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"data_source.unreachable","message":"The data source is unreachable."}`),
-				wasDBUpdateDataSourceCalled(1),
-			),
-		},
-		"Error returned by db.UpdateDataSource": {
-			DB: func() *DBMock {
-				db := stubDB(stubDataSource(datasourceCore.TypePrometheus), nil)
-				db.UpdateDataSourceFunc = func(_ context.Context, _ *datasourceCore.DataSource) error {
-					return assert.AnError
-				}
-
-				return db
-			}(),
-			Exec:   stubExec(processor.ConnectionStatusUnreachable, nil, nil),
-			Target: _testQueryTarget,
-			ID:     _testID.String(),
-			Checks: checks(
-				hasResp(http.StatusBadRequest, `{"code":"data_source.unreachable","message":"The data source is unreachable."}`),
-				wasDBUpdateDataSourceCalled(1),
-				hasUpdateFailedLog(),
+				wasDBUpdateDataSourceCalled(0),
 			),
 		},
 		"Successful query": {
-			DB:     stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
-			Exec:   stubExec(processor.ConnectionStatusSuccess, &processor.PrometheusQueryResult{Type: model.ValMatrix}, nil),
-			Target: _testQueryTarget,
-			ID:     _testID.String(),
+			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
+			Clients: stubClients(processor.ConnectionStatusSuccess, &processor.PrometheusQueryResult{Type: model.ValMatrix}, nil),
+			Target:  _testQueryTarget,
+			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusOK, `{"type":"matrix"}`),
 				wasDBUpdateDataSourceCalled(0),
@@ -158,7 +144,7 @@ func Test_Handler_QueryPrometheusDataSource(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			hdl, db, exec, logs := prepHandler(c.DB, c.Exec)
+			hdl, db, exec, logs := prepHandler(c.DB, c.Clients)
 
 			req := prepRequest("GET", c.Target, "", !c.OmitSession, c.ID)
 			rec := httptest.NewRecorder()
@@ -175,17 +161,20 @@ func Test_Handler_QueryPrometheusDataSource(t *testing.T) {
 func Test_Handler_FetchPrometheusDataSourceMetadata(t *testing.T) {
 	// stubExec returns an executor mock whose PrometheusMetadata yields
 	// the provided values.
-	stubExec := func(cs processor.ConnectionStatus, result *processor.PrometheusMetadataResult, err error) *ExecutorMock {
-		return &ExecutorMock{
-			PrometheusMetadataFunc: func(_ context.Context, _ datasourceCore.DataSource) (processor.ConnectionStatus, *processor.PrometheusMetadataResult, error) {
-				return cs, result, err
+	stubClients := func(cs processor.ConnectionStatus, result *processor.PrometheusMetadataResult, err error) *clientMocks {
+		return &clientMocks{
+			err: cs.Error(),
+			prometheus: &datasourceMock.Prometheus{
+				MetadataFunc: func(_ context.Context) (*processor.PrometheusMetadataResult, error) {
+					return result, err
+				},
 			},
 		}
 	}
 
 	cc := map[string]struct {
 		DB          *DBMock
-		Exec        *ExecutorMock
+		Clients     *clientMocks
 		OmitSession bool
 		ID          string
 		Checks      []check
@@ -210,44 +199,27 @@ func Test_Handler_FetchPrometheusDataSourceMetadata(t *testing.T) {
 			),
 		},
 		"Error returned by executor.PrometheusMetadata": {
-			DB:   stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
-			Exec: stubExec("", nil, assert.AnError),
-			ID:   _testID.String(),
+			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
+			Clients: stubClients("", nil, assert.AnError),
+			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasDBUpdateDataSourceCalled(0),
 			),
 		},
-		"Changed status updates the data source": {
-			DB:   stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
-			Exec: stubExec(processor.ConnectionStatusUnreachable, nil, nil),
-			ID:   _testID.String(),
+		"A connection the data source refused": {
+			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
+			Clients: stubClients(processor.ConnectionStatusUnreachable, nil, nil),
+			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"data_source.unreachable","message":"The data source is unreachable."}`),
-				wasDBUpdateDataSourceCalled(1),
-			),
-		},
-		"Error returned by db.UpdateDataSource": {
-			DB: func() *DBMock {
-				db := stubDB(stubDataSource(datasourceCore.TypePrometheus), nil)
-				db.UpdateDataSourceFunc = func(_ context.Context, _ *datasourceCore.DataSource) error {
-					return assert.AnError
-				}
-
-				return db
-			}(),
-			Exec: stubExec(processor.ConnectionStatusUnreachable, nil, nil),
-			ID:   _testID.String(),
-			Checks: checks(
-				hasResp(http.StatusBadRequest, `{"code":"data_source.unreachable","message":"The data source is unreachable."}`),
-				wasDBUpdateDataSourceCalled(1),
-				hasUpdateFailedLog(),
+				wasDBUpdateDataSourceCalled(0),
 			),
 		},
 		"Successful metadata retrieval": {
-			DB:   stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
-			Exec: stubExec(processor.ConnectionStatusSuccess, &processor.PrometheusMetadataResult{Result: map[string]string{"metric": "info"}}, nil),
-			ID:   _testID.String(),
+			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
+			Clients: stubClients(processor.ConnectionStatusSuccess, &processor.PrometheusMetadataResult{Result: map[string]string{"metric": "info"}}, nil),
+			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusOK, `{"result":{"metric":"info"}}`),
 				wasDBUpdateDataSourceCalled(0),
@@ -259,7 +231,7 @@ func Test_Handler_FetchPrometheusDataSourceMetadata(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			hdl, db, exec, logs := prepHandler(c.DB, c.Exec)
+			hdl, db, exec, logs := prepHandler(c.DB, c.Clients)
 
 			req := prepRequest("GET", "http://test.com/", "", !c.OmitSession, c.ID)
 			rec := httptest.NewRecorder()
@@ -275,32 +247,35 @@ func Test_Handler_FetchPrometheusDataSourceMetadata(t *testing.T) {
 
 func Test_Handler_FetchPrometheusDataSourceLabelNames(t *testing.T) {
 	wasExecutorPrometheusLabelNamesCalled := func(count int) check {
-		return func(t *testing.T, _ *DBMock, exec *ExecutorMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
-			ff := exec.PrometheusLabelNamesCalls()
+		return func(t *testing.T, _ *DBMock, exec *runnerMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
+			ff := exec.prometheus.LabelNamesCalls()
 			require.Len(t, ff, count)
 
 			if count == 0 {
 				return
 			}
 
-			assert.Equal(t, _testID, ff[0].Ds.ID)
+			assert.Equal(t, _testID, exec.dataSources[0].ID)
 			assert.Equal(t, []string{"up"}, ff[0].Matchers)
 		}
 	}
 
 	// stubExec returns an executor mock whose PrometheusLabelNames yields
 	// the provided values.
-	stubExec := func(cs processor.ConnectionStatus, result *processor.PrometheusLabelNamesResult, err error) *ExecutorMock {
-		return &ExecutorMock{
-			PrometheusLabelNamesFunc: func(_ context.Context, _ datasourceCore.DataSource, _ []string, _ processor.TimeRange) (processor.ConnectionStatus, *processor.PrometheusLabelNamesResult, error) {
-				return cs, result, err
+	stubClients := func(cs processor.ConnectionStatus, result *processor.PrometheusLabelNamesResult, err error) *clientMocks {
+		return &clientMocks{
+			err: cs.Error(),
+			prometheus: &datasourceMock.Prometheus{
+				LabelNamesFunc: func(_ context.Context, _ []string, _ processor.TimeRange) (*processor.PrometheusLabelNamesResult, error) {
+					return result, err
+				},
 			},
 		}
 	}
 
 	cc := map[string]struct {
 		DB          *DBMock
-		Exec        *ExecutorMock
+		Clients     *clientMocks
 		Target      string
 		OmitSession bool
 		ID          string
@@ -341,48 +316,30 @@ func Test_Handler_FetchPrometheusDataSourceLabelNames(t *testing.T) {
 			),
 		},
 		"Error returned by executor.PrometheusLabelNames": {
-			DB:     stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
-			Exec:   stubExec("", nil, assert.AnError),
-			Target: "http://test.com/?matchers=up",
-			ID:     _testID.String(),
+			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
+			Clients: stubClients("", nil, assert.AnError),
+			Target:  "http://test.com/?matchers=up",
+			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasDBUpdateDataSourceCalled(0),
 			),
 		},
-		"Changed status updates the data source": {
-			DB:     stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
-			Exec:   stubExec(processor.ConnectionStatusUnreachable, nil, nil),
-			Target: "http://test.com/?matchers=up",
-			ID:     _testID.String(),
+		"A connection the data source refused": {
+			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
+			Clients: stubClients(processor.ConnectionStatusUnreachable, nil, nil),
+			Target:  "http://test.com/?matchers=up",
+			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"data_source.unreachable","message":"The data source is unreachable."}`),
-				wasDBUpdateDataSourceCalled(1),
-			),
-		},
-		"Error returned by db.UpdateDataSource": {
-			DB: func() *DBMock {
-				db := stubDB(stubDataSource(datasourceCore.TypePrometheus), nil)
-				db.UpdateDataSourceFunc = func(_ context.Context, _ *datasourceCore.DataSource) error {
-					return assert.AnError
-				}
-
-				return db
-			}(),
-			Exec:   stubExec(processor.ConnectionStatusUnreachable, nil, nil),
-			Target: "http://test.com/?matchers=up",
-			ID:     _testID.String(),
-			Checks: checks(
-				hasResp(http.StatusBadRequest, `{"code":"data_source.unreachable","message":"The data source is unreachable."}`),
-				wasDBUpdateDataSourceCalled(1),
-				hasUpdateFailedLog(),
+				wasDBUpdateDataSourceCalled(0),
 			),
 		},
 		"Successful label names retrieval": {
-			DB:     stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
-			Exec:   stubExec(processor.ConnectionStatusSuccess, &processor.PrometheusLabelNamesResult{Result: []string{"__name__"}}, nil),
-			Target: "http://test.com/?matchers=up",
-			ID:     _testID.String(),
+			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
+			Clients: stubClients(processor.ConnectionStatusSuccess, &processor.PrometheusLabelNamesResult{Result: []string{"__name__"}}, nil),
+			Target:  "http://test.com/?matchers=up",
+			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusOK, `{"result":["__name__"]}`),
 				wasDBUpdateDataSourceCalled(0),
@@ -395,7 +352,7 @@ func Test_Handler_FetchPrometheusDataSourceLabelNames(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			hdl, db, exec, logs := prepHandler(c.DB, c.Exec)
+			hdl, db, exec, logs := prepHandler(c.DB, c.Clients)
 
 			req := prepRequest("GET", c.Target, "", !c.OmitSession, c.ID)
 			rec := httptest.NewRecorder()
@@ -411,15 +368,15 @@ func Test_Handler_FetchPrometheusDataSourceLabelNames(t *testing.T) {
 
 func Test_Handler_FetchPrometheusDataSourceLabelValues(t *testing.T) {
 	wasExecutorPrometheusLabelValuesCalled := func(count int) check {
-		return func(t *testing.T, _ *DBMock, exec *ExecutorMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
-			ff := exec.PrometheusLabelValuesCalls()
+		return func(t *testing.T, _ *DBMock, exec *runnerMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
+			ff := exec.prometheus.LabelValuesCalls()
 			require.Len(t, ff, count)
 
 			if count == 0 {
 				return
 			}
 
-			assert.Equal(t, _testID, ff[0].Ds.ID)
+			assert.Equal(t, _testID, exec.dataSources[0].ID)
 			assert.Equal(t, "instance", ff[0].Label)
 			assert.Equal(t, []string{"up"}, ff[0].Matchers)
 		}
@@ -427,17 +384,20 @@ func Test_Handler_FetchPrometheusDataSourceLabelValues(t *testing.T) {
 
 	// stubExec returns an executor mock whose PrometheusLabelValues
 	// yields the provided values.
-	stubExec := func(cs processor.ConnectionStatus, result *processor.PrometheusLabelValuesResult, err error) *ExecutorMock {
-		return &ExecutorMock{
-			PrometheusLabelValuesFunc: func(_ context.Context, _ datasourceCore.DataSource, _ string, _ []string, _ processor.TimeRange) (processor.ConnectionStatus, *processor.PrometheusLabelValuesResult, error) {
-				return cs, result, err
+	stubClients := func(cs processor.ConnectionStatus, result *processor.PrometheusLabelValuesResult, err error) *clientMocks {
+		return &clientMocks{
+			err: cs.Error(),
+			prometheus: &datasourceMock.Prometheus{
+				LabelValuesFunc: func(_ context.Context, _ string, _ []string, _ processor.TimeRange) (*processor.PrometheusLabelValuesResult, error) {
+					return result, err
+				},
 			},
 		}
 	}
 
 	cc := map[string]struct {
 		DB          *DBMock
-		Exec        *ExecutorMock
+		Clients     *clientMocks
 		Target      string
 		OmitSession bool
 		ID          string
@@ -488,48 +448,30 @@ func Test_Handler_FetchPrometheusDataSourceLabelValues(t *testing.T) {
 			),
 		},
 		"Error returned by executor.PrometheusLabelValues": {
-			DB:     stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
-			Exec:   stubExec("", nil, assert.AnError),
-			Target: "http://test.com/?matchers=up",
-			ID:     _testID.String(),
+			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
+			Clients: stubClients("", nil, assert.AnError),
+			Target:  "http://test.com/?matchers=up",
+			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasDBUpdateDataSourceCalled(0),
 			),
 		},
-		"Changed status updates the data source": {
-			DB:     stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
-			Exec:   stubExec(processor.ConnectionStatusUnreachable, nil, nil),
-			Target: "http://test.com/?matchers=up",
-			ID:     _testID.String(),
+		"A connection the data source refused": {
+			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
+			Clients: stubClients(processor.ConnectionStatusUnreachable, nil, nil),
+			Target:  "http://test.com/?matchers=up",
+			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"data_source.unreachable","message":"The data source is unreachable."}`),
-				wasDBUpdateDataSourceCalled(1),
-			),
-		},
-		"Error returned by db.UpdateDataSource": {
-			DB: func() *DBMock {
-				db := stubDB(stubDataSource(datasourceCore.TypePrometheus), nil)
-				db.UpdateDataSourceFunc = func(_ context.Context, _ *datasourceCore.DataSource) error {
-					return assert.AnError
-				}
-
-				return db
-			}(),
-			Exec:   stubExec(processor.ConnectionStatusUnreachable, nil, nil),
-			Target: "http://test.com/?matchers=up",
-			ID:     _testID.String(),
-			Checks: checks(
-				hasResp(http.StatusBadRequest, `{"code":"data_source.unreachable","message":"The data source is unreachable."}`),
-				wasDBUpdateDataSourceCalled(1),
-				hasUpdateFailedLog(),
+				wasDBUpdateDataSourceCalled(0),
 			),
 		},
 		"Successful label values retrieval": {
-			DB:     stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
-			Exec:   stubExec(processor.ConnectionStatusSuccess, &processor.PrometheusLabelValuesResult{Result: []string{"a", "b"}}, nil),
-			Target: "http://test.com/?matchers=up",
-			ID:     _testID.String(),
+			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
+			Clients: stubClients(processor.ConnectionStatusSuccess, &processor.PrometheusLabelValuesResult{Result: []string{"a", "b"}}, nil),
+			Target:  "http://test.com/?matchers=up",
+			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusOK, `{"result":["a","b"]}`),
 				wasDBUpdateDataSourceCalled(0),
@@ -542,7 +484,7 @@ func Test_Handler_FetchPrometheusDataSourceLabelValues(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			hdl, db, exec, logs := prepHandler(c.DB, c.Exec)
+			hdl, db, exec, logs := prepHandler(c.DB, c.Clients)
 
 			req := prepRequest("GET", c.Target, "", !c.OmitSession, c.ID)
 
@@ -563,32 +505,35 @@ func Test_Handler_FetchPrometheusDataSourceLabelValues(t *testing.T) {
 
 func Test_Handler_FetchPrometheusDataSourceSeries(t *testing.T) {
 	wasExecutorPrometheusSeriesCalled := func(count int) check {
-		return func(t *testing.T, _ *DBMock, exec *ExecutorMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
-			ff := exec.PrometheusSeriesCalls()
+		return func(t *testing.T, _ *DBMock, exec *runnerMock, _ *httptest.ResponseRecorder, _ *bytes.Buffer) {
+			ff := exec.prometheus.SeriesCalls()
 			require.Len(t, ff, count)
 
 			if count == 0 {
 				return
 			}
 
-			assert.Equal(t, _testID, ff[0].Ds.ID)
+			assert.Equal(t, _testID, exec.dataSources[0].ID)
 			assert.Equal(t, []string{"up"}, ff[0].Matchers)
 		}
 	}
 
 	// stubExec returns an executor mock whose PrometheusSeries yields the
 	// provided values.
-	stubExec := func(cs processor.ConnectionStatus, result *processor.PrometheusSeriesResult, err error) *ExecutorMock {
-		return &ExecutorMock{
-			PrometheusSeriesFunc: func(_ context.Context, _ datasourceCore.DataSource, _ []string, _ processor.TimeRange) (processor.ConnectionStatus, *processor.PrometheusSeriesResult, error) {
-				return cs, result, err
+	stubClients := func(cs processor.ConnectionStatus, result *processor.PrometheusSeriesResult, err error) *clientMocks {
+		return &clientMocks{
+			err: cs.Error(),
+			prometheus: &datasourceMock.Prometheus{
+				SeriesFunc: func(_ context.Context, _ []string, _ processor.TimeRange) (*processor.PrometheusSeriesResult, error) {
+					return result, err
+				},
 			},
 		}
 	}
 
 	cc := map[string]struct {
 		DB          *DBMock
-		Exec        *ExecutorMock
+		Clients     *clientMocks
 		Target      string
 		OmitSession bool
 		ID          string
@@ -629,48 +574,30 @@ func Test_Handler_FetchPrometheusDataSourceSeries(t *testing.T) {
 			),
 		},
 		"Error returned by executor.PrometheusSeries": {
-			DB:     stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
-			Exec:   stubExec("", nil, assert.AnError),
-			Target: "http://test.com/?matchers=up",
-			ID:     _testID.String(),
+			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
+			Clients: stubClients("", nil, assert.AnError),
+			Target:  "http://test.com/?matchers=up",
+			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasDBUpdateDataSourceCalled(0),
 			),
 		},
-		"Changed status updates the data source": {
-			DB:     stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
-			Exec:   stubExec(processor.ConnectionStatusUnreachable, nil, nil),
-			Target: "http://test.com/?matchers=up",
-			ID:     _testID.String(),
+		"A connection the data source refused": {
+			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
+			Clients: stubClients(processor.ConnectionStatusUnreachable, nil, nil),
+			Target:  "http://test.com/?matchers=up",
+			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"data_source.unreachable","message":"The data source is unreachable."}`),
-				wasDBUpdateDataSourceCalled(1),
-			),
-		},
-		"Error returned by db.UpdateDataSource": {
-			DB: func() *DBMock {
-				db := stubDB(stubDataSource(datasourceCore.TypePrometheus), nil)
-				db.UpdateDataSourceFunc = func(_ context.Context, _ *datasourceCore.DataSource) error {
-					return assert.AnError
-				}
-
-				return db
-			}(),
-			Exec:   stubExec(processor.ConnectionStatusUnreachable, nil, nil),
-			Target: "http://test.com/?matchers=up",
-			ID:     _testID.String(),
-			Checks: checks(
-				hasResp(http.StatusBadRequest, `{"code":"data_source.unreachable","message":"The data source is unreachable."}`),
-				wasDBUpdateDataSourceCalled(1),
-				hasUpdateFailedLog(),
+				wasDBUpdateDataSourceCalled(0),
 			),
 		},
 		"Successful series retrieval": {
-			DB:     stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
-			Exec:   stubExec(processor.ConnectionStatusSuccess, &processor.PrometheusSeriesResult{Result: []model.LabelSet{{"job": "prometheus"}}}, nil),
-			Target: "http://test.com/?matchers=up",
-			ID:     _testID.String(),
+			DB:      stubDB(stubDataSource(datasourceCore.TypePrometheus), nil),
+			Clients: stubClients(processor.ConnectionStatusSuccess, &processor.PrometheusSeriesResult{Result: []model.LabelSet{{"job": "prometheus"}}}, nil),
+			Target:  "http://test.com/?matchers=up",
+			ID:      _testID.String(),
 			Checks: checks(
 				hasResp(http.StatusOK, `{"result":[{"job":"prometheus"}]}`),
 				wasDBUpdateDataSourceCalled(0),
@@ -683,7 +610,7 @@ func Test_Handler_FetchPrometheusDataSourceSeries(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			hdl, db, exec, logs := prepHandler(c.DB, c.Exec)
+			hdl, db, exec, logs := prepHandler(c.DB, c.Clients)
 
 			req := prepRequest("GET", c.Target, "", !c.OmitSession, c.ID)
 			rec := httptest.NewRecorder()

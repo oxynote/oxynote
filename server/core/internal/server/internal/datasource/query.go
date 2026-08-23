@@ -63,13 +63,15 @@ func (h *Handler) queryPrometheusGeneric(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	status, result, err := h.executor.PrometheusQuery(r.Context(), *ds, query, *tr)
+	client, err := h.runners.Runner(*ds).Prometheus(r.Context())
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	if !h.syncDataSourceStatus(w, r, ds, status) {
+	result, err := client.QueryRange(r.Context(), query, *tr)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
@@ -89,13 +91,15 @@ func (h *Handler) queryMySQLGeneric(w http.ResponseWriter, r *http.Request, ds *
 		return
 	}
 
-	status, result, err := h.executor.MySQLQuery(r.Context(), *ds, query, *tr)
+	client, err := h.runners.Runner(*ds).MySQL(r.Context())
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	if !h.syncDataSourceStatus(w, r, ds, status) {
+	result, err := client.Query(r.Context(), query, *tr)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
@@ -115,13 +119,15 @@ func (h *Handler) queryPostgreSQLGeneric(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	status, result, err := h.executor.PostgreSQLQuery(r.Context(), *ds, query, *tr)
+	client, err := h.runners.Runner(*ds).PostgreSQL(r.Context())
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	if !h.syncDataSourceStatus(w, r, ds, status) {
+	result, err := client.Query(r.Context(), query, *tr)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
 		return
 	}
 

@@ -25,6 +25,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/provider"
 	"github.com/oxynote/oxynote/server/core/internal/buildinfo"
+	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/db"
 	fileMan "github.com/oxynote/oxynote/server/core/internal/document/file/manager"
 	hookMan "github.com/oxynote/oxynote/server/core/internal/document/hook/manager"
@@ -263,6 +264,8 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 		return
 	}
 
+	datasourceMan := datasource.NewManager(log, dbc)
+
 	assistantMan := assistant.NewManager(
 		log,
 		dbc,
@@ -272,6 +275,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 		metrics,
 		editClient,
 		searchClient,
+		datasourceMan,
 		string(assistantOpts.Provider),
 	)
 
@@ -294,6 +298,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 		metrics,
 		storageClient,
 		assistantMan,
+		datasourceMan,
 		githubMan,
 		slackMan,
 		webchangeClient,
