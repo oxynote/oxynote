@@ -45,6 +45,7 @@ type Handler struct {
 	githubMan       *github.Manager
 	webchangeClient *webchange.Client
 	searchGateway   SearchGateway
+	searchJobs      *search.Jobs
 	notifPub        notification.Publisher
 	storer          Storer
 
@@ -72,6 +73,7 @@ func NewHandler(
 	githubMan *github.Manager,
 	webchangeClient *webchange.Client,
 	searchGateway SearchGateway,
+	searchJobs *search.Jobs,
 	notifPub notification.Publisher,
 	storer Storer,
 ) *Handler {
@@ -81,6 +83,7 @@ func NewHandler(
 		githubMan:       githubMan,
 		webchangeClient: webchangeClient,
 		searchGateway:   searchGateway,
+		searchJobs:      searchJobs,
 		notifPub:        notifPub,
 		storer:          storer,
 	}
@@ -664,8 +667,9 @@ func (h *Handler) UpdateDocumentBranchByIDUnsafe(w http.ResponseWriter, r *http.
 	}
 
 	if ndoc.BranchName == documentCore.DefaultBranch {
-		if err = tx.InsertDocumentSearchJob(
+		if err = h.searchJobs.Enqueue(
 			r.Context(),
+			tx,
 			search.BlocksDiff(doc.Search(), ndoc.Search()),
 		); err != nil {
 			httpserver.RespondError(h.log, w, err)
@@ -817,7 +821,7 @@ func (h *Handler) MergeBranches(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := tx.InsertDocumentSearchJob(r.Context(), search.BlocksDiff(toDoc.Search(), ndoc.Search())); err != nil {
+	if err := h.searchJobs.Enqueue(r.Context(), tx, search.BlocksDiff(toDoc.Search(), ndoc.Search())); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -911,11 +915,23 @@ func (h *Handler) DeleteDocument(w http.ResponseWriter, r *http.Request) {
 
 	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
 
-	// the search index entries of the document and its cascade-deleted
-	// descendants are queued for removal by DeleteDocument itself.
-	if err = tx.DeleteDocument(r.Context(), doc.ID, session.ActiveOrganizationID); err != nil {
+	// the delete reports the ids of the document and its cascade-deleted
+	// descendants; queuing their index removal from them in the same
+	// transaction is this handler's job, since after the commit nothing
+	// else knows what went away.
+	ids, err := tx.DeleteDocument(r.Context(), doc.ID, session.ActiveOrganizationID)
+	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
+	}
+
+	if len(ids) != 0 {
+		if err = h.searchJobs.Enqueue(r.Context(), tx, search.BlocksDifference{
+			RemovedDocuments: ids,
+		}); err != nil {
+			httpserver.RespondError(h.log, w, err)
+			return
+		}
 	}
 
 	err = tx.Commit()
@@ -1216,6 +1232,16 @@ func (h *Handler) copyHooksToBranch(ctx context.Context, fromBranchID, toBranchI
 	inp := hook.NewInput(organizationID, h.githubMan, h.webchangeClient)
 
 	for _, hk := range hooks {
+		// a url-watcher cannot get its changedetection.io watcher without
+		// the integration configured; dropping it from the copy beats
+		// failing the whole fork or merge over it.
+		if hk.Type == hook.TypeURLWatcher && !h.webchangeClient.Configured() {
+			h.log.With("hook_id", hk.ID).
+				Warn("skipping url-watcher hook copy: changedetection is not configured")
+
+			continue
+		}
+
 		newHk, err := hook.NewHook(ctx, hook.CreateInput{
 			Type:     hk.Type,
 			BranchID: toBranchID,
@@ -1303,7 +1329,7 @@ func (h *Handler) insertDocumentTx(ctx context.Context, doc documentCore.Documen
 		return err
 	}
 
-	if err := tx.InsertDocumentSearchJob(ctx, search.BlocksDiff(nil, doc.Search())); err != nil {
+	if err := h.searchJobs.Enqueue(ctx, tx, search.BlocksDiff(nil, doc.Search())); err != nil {
 		return err
 	}
 
@@ -1404,8 +1430,9 @@ type DocumentsDBAgent interface {
 	// UpdateDocument should update the document.
 	UpdateDocument(ctx context.Context, doc documentCore.Document) error
 
-	// DeleteDocument should delete the document.
-	DeleteDocument(ctx context.Context, id xid.ID, organizationID string) error
+	// DeleteDocument should delete the document and report the ids of
+	// the document and of every cascade-deleted descendant.
+	DeleteDocument(ctx context.Context, id xid.ID, organizationID string) ([]xid.ID, error)
 }
 
 // BranchesDBAgent is an interface that handles communication with the
@@ -1507,6 +1534,10 @@ type Storer interface {
 //
 //go:generate ../../../../scripts/codegen/mock -t internal SearchGateway
 type SearchGateway interface {
+	// Configured should report whether search is configured on this
+	// deployment.
+	Configured() bool
+
 	// SearchDocuments should find the documents matching the query.
 	SearchDocuments(ctx context.Context, organizationID, query string) ([]byte, error)
 }

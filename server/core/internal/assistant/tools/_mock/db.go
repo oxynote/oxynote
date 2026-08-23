@@ -33,9 +33,6 @@ var _ tools.DB = &DB{}
 //			CheckDocumentExistsFunc: func(ctx context.Context, id xid.ID, organizationID string) error {
 //				panic("mock out the CheckDocumentExists method")
 //			},
-//			DeleteDocumentFunc: func(ctx context.Context, id xid.ID, organizationID string) error {
-//				panic("mock out the DeleteDocument method")
-//			},
 //			FetchDocumentFunc: func(ctx context.Context, id xid.ID, organizationID string, branchName string) (*document.Document, error) {
 //				panic("mock out the FetchDocument method")
 //			},
@@ -66,9 +63,6 @@ type DB struct {
 
 	// CheckDocumentExistsFunc mocks the CheckDocumentExists method.
 	CheckDocumentExistsFunc func(ctx context.Context, id xid.ID, organizationID string) error
-
-	// DeleteDocumentFunc mocks the DeleteDocument method.
-	DeleteDocumentFunc func(ctx context.Context, id xid.ID, organizationID string) error
 
 	// FetchDocumentFunc mocks the FetchDocument method.
 	FetchDocumentFunc func(ctx context.Context, id xid.ID, organizationID string, branchName string) (*document.Document, error)
@@ -113,15 +107,6 @@ type DB struct {
 		}
 		// CheckDocumentExists holds details about calls to the CheckDocumentExists method.
 		CheckDocumentExists []struct {
-			// Ctx is the ctx argument value.
-			Ctx context.Context
-			// ID is the id argument value.
-			ID xid.ID
-			// OrganizationID is the organizationID argument value.
-			OrganizationID string
-		}
-		// DeleteDocument holds details about calls to the DeleteDocument method.
-		DeleteDocument []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
 			// ID is the id argument value.
@@ -196,7 +181,6 @@ type DB struct {
 	lockBeginTx                             sync.RWMutex
 	lockCheckDocumentCycle                  sync.RWMutex
 	lockCheckDocumentExists                 sync.RWMutex
-	lockDeleteDocument                      sync.RWMutex
 	lockFetchDocument                       sync.RWMutex
 	lockFetchDocumentTree                   sync.RWMutex
 	lockFetchDocumentTreeByDocumentParentID sync.RWMutex
@@ -333,49 +317,6 @@ func (mock *DB) CheckDocumentExistsCalls() []struct {
 	mock.lockCheckDocumentExists.RLock()
 	calls = mock.calls.CheckDocumentExists
 	mock.lockCheckDocumentExists.RUnlock()
-	return calls
-}
-
-// DeleteDocument calls DeleteDocumentFunc.
-func (mock *DB) DeleteDocument(ctx context.Context, id xid.ID, organizationID string) error {
-	callInfo := struct {
-		Ctx            context.Context
-		ID             xid.ID
-		OrganizationID string
-	}{
-		Ctx:            ctx,
-		ID:             id,
-		OrganizationID: organizationID,
-	}
-	mock.lockDeleteDocument.Lock()
-	mock.calls.DeleteDocument = append(mock.calls.DeleteDocument, callInfo)
-	mock.lockDeleteDocument.Unlock()
-	if mock.DeleteDocumentFunc == nil {
-		var (
-			errOut error
-		)
-		return errOut
-	}
-	return mock.DeleteDocumentFunc(ctx, id, organizationID)
-}
-
-// DeleteDocumentCalls gets all the calls that were made to DeleteDocument.
-// Check the length with:
-//
-//	len(mockedDB.DeleteDocumentCalls())
-func (mock *DB) DeleteDocumentCalls() []struct {
-	Ctx            context.Context
-	ID             xid.ID
-	OrganizationID string
-} {
-	var calls []struct {
-		Ctx            context.Context
-		ID             xid.ID
-		OrganizationID string
-	}
-	mock.lockDeleteDocument.RLock()
-	calls = mock.calls.DeleteDocument
-	mock.lockDeleteDocument.RUnlock()
 	return calls
 }
 

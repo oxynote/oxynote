@@ -92,3 +92,19 @@ func Test_fail(t *testing.T) {
 		})
 	}
 }
+
+func Test_warnDisabled(t *testing.T) {
+	t.Parallel()
+
+	// a configured integration announces nothing.
+	var buf bytes.Buffer
+
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+
+	warnDisabled(log, true, "search is disabled")
+	assert.Empty(t, buf.String())
+
+	// a disabled one warns.
+	warnDisabled(log, false, "search is disabled")
+	assert.Contains(t, buf.String(), "search is disabled")
+}

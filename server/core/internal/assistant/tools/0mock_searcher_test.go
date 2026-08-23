@@ -30,11 +30,17 @@ var _ Searcher = &SearcherMock{}
 //
 //	}
 type SearcherMock struct {
+	// ConfiguredFunc mocks the Configured method.
+	ConfiguredFunc func() bool
+
 	// SearchDocumentBlocksFunc mocks the SearchDocumentBlocks method.
 	SearchDocumentBlocksFunc func(ctx context.Context, organizationID string, query string, limit int) ([]search.Block, error)
 
 	// calls tracks calls to the methods.
 	calls struct {
+		// Configured holds details about calls to the Configured method.
+		Configured []struct {
+		}
 		// SearchDocumentBlocks holds details about calls to the SearchDocumentBlocks method.
 		SearchDocumentBlocks []struct {
 			// Ctx is the ctx argument value.
@@ -47,6 +53,7 @@ type SearcherMock struct {
 			Limit int
 		}
 	}
+	lockConfigured           sync.RWMutex
 	lockSearchDocumentBlocks sync.RWMutex
 }
 
@@ -95,5 +102,35 @@ func (mock *SearcherMock) SearchDocumentBlocksCalls() []struct {
 	mock.lockSearchDocumentBlocks.RLock()
 	calls = mock.calls.SearchDocumentBlocks
 	mock.lockSearchDocumentBlocks.RUnlock()
+	return calls
+}
+
+// Configured calls ConfiguredFunc.
+func (mock *SearcherMock) Configured() bool {
+	callInfo := struct {
+	}{}
+	mock.lockConfigured.Lock()
+	mock.calls.Configured = append(mock.calls.Configured, callInfo)
+	mock.lockConfigured.Unlock()
+	if mock.ConfiguredFunc == nil {
+		var (
+			bOut bool
+		)
+		return bOut
+	}
+	return mock.ConfiguredFunc()
+}
+
+// ConfiguredCalls gets all the calls that were made to Configured.
+// Check the length with:
+//
+//	len(mockedSearcher.ConfiguredCalls())
+func (mock *SearcherMock) ConfiguredCalls() []struct {
+} {
+	var calls []struct {
+	}
+	mock.lockConfigured.RLock()
+	calls = mock.calls.Configured
+	mock.lockConfigured.RUnlock()
 	return calls
 }

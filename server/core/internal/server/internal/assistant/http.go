@@ -12,6 +12,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
+	assistantCore "github.com/oxynote/oxynote/server/core/internal/assistant"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/protocol"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
@@ -43,6 +44,13 @@ func NewHandler(
 // HandleChat upgrades the connection to WebSocket and hands it to the
 // assistant, which owns the chat loop until the client disconnects.
 func (h *Handler) HandleChat(w http.ResponseWriter, r *http.Request) {
+	// refused before the upgrade so the client gets a readable status
+	// and code instead of a failed websocket handshake.
+	if !h.assistant.Configured() {
+		httpserver.RespondError(h.log, w, assistantCore.ErrNotConfigured)
+		return
+	}
+
 	sess, err := auth.ExtractSessionFromContext(r.Context())
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
@@ -130,6 +138,10 @@ func (w *wsConn) WriteJSON(ctx context.Context, msg any) {
 //
 //go:generate ../../../../scripts/codegen/mock -t internal Manager
 type Manager interface {
+	// Configured should report whether the assistant is configured on
+	// this deployment.
+	Configured() bool
+
 	// Chat should run the chat loop over the connection until the
 	// client disconnects, returning nil on a clean close.
 	Chat(ctx context.Context, orgID, userID string, conn protocol.SessionConn) error

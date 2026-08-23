@@ -90,6 +90,15 @@ func Test_Handler_HandleChat(t *testing.T) {
 	}
 
 	cc := map[string]tcase{
+		"Assistant not configured": {
+			Man: &ManagerMock{
+				ConfiguredFunc: func() bool { return false },
+			},
+			Resp: func(t *testing.T, rec *httptest.ResponseRecorder) {
+				assert.Equal(t, http.StatusConflict, rec.Code)
+				assert.JSONEq(t, `{"code":"assistant.not_configured","message":"assistant is not configured"}`, rec.Body.String())
+			},
+		},
 		"Unauthenticated request": {
 			Man:       &ManagerMock{},
 			NoSession: true,
@@ -209,6 +218,12 @@ func Test_Handler_HandleChat(t *testing.T) {
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
+
+			// the gate runs before everything else, so every case that
+			// exercises what follows needs a configured assistant.
+			if c.Man.ConfiguredFunc == nil {
+				c.Man.ConfiguredFunc = func() bool { return true }
+			}
 
 			hdl := &Handler{
 				log:        slog.New(slog.DiscardHandler),

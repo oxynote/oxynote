@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/guregu/null/v5"
+	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	hookCore "github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
@@ -38,6 +39,19 @@ func addSession(ctx context.Context) context.Context {
 		UserID:               "u1",
 		ActiveOrganizationID: "org1",
 	})
+}
+
+// urlWatcherHook builds a stored url-watcher hook that already holds a
+// changedetection.io watcher in its state.
+func urlWatcherHook() *hookCore.Hook {
+	return &hookCore.Hook{
+		ID:             _hookID,
+		Type:           hookCore.TypeURLWatcher,
+		DocumentID:     null.ValueFrom(_documentID),
+		OrganizationID: null.StringFrom("org1"),
+		Settings:       processor.Settings(`{"url":"https://example.com"}`),
+		State:          processor.State(`{"watcherId":"w1"}`),
+	}
 }
 
 // scheduledHook builds a stored hook whose processor needs no external
@@ -154,8 +168,9 @@ func Test_Handler_FetchDocumentHooks(t *testing.T) {
 			t.Parallel()
 
 			hdl := Handler{
-				log: slog.New(slog.DiscardHandler),
-				db:  c.DB,
+				log:             slog.New(slog.DiscardHandler),
+				db:              c.DB,
+				webchangeClient: webchange.NewClient("", ""),
 			}
 
 			req := httptest.NewRequest(http.MethodGet, "http://test.com/"+c.Query, http.NoBody)
@@ -288,6 +303,14 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 				wasInsertCalled(0),
 			),
 		},
+		"URL watcher without changedetection": {
+			DB:   &DBMock{},
+			Body: `{"type":"url-watcher","branchId":"` + _branchID.String() + `","settings":{"url":"https://example.com"}}`,
+			Checks: checks(
+				hasResp(http.StatusConflict, `{"code":"changedetection.not_configured","message":"changedetection is not configured"}`),
+				wasInsertCalled(0),
+			),
+		},
 		"Successful creation": {
 			DB:   &DBMock{},
 			Body: validBody,
@@ -312,8 +335,9 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 			}
 
 			hdl := Handler{
-				log: slog.New(slog.DiscardHandler),
-				db:  c.DB,
+				log:             slog.New(slog.DiscardHandler),
+				db:              c.DB,
+				webchangeClient: webchange.NewClient("", ""),
 			}
 
 			req := httptest.NewRequest(http.MethodPost, "http://test.com/", strings.NewReader(c.Body))
@@ -450,6 +474,18 @@ func Test_Handler_UpdateDocumentHook(t *testing.T) {
 				wasUpdateCalled(1),
 			),
 		},
+		"URL watcher without changedetection": {
+			DB: &DBMock{
+				FetchDocumentHookFunc: func(context.Context, xid.ID, string) (*hookCore.Hook, error) {
+					return urlWatcherHook(), nil
+				},
+			},
+			Body: `{"settings":{"url":"https://example.com"}}`,
+			Checks: checks(
+				hasResp(http.StatusConflict, `{"code":"changedetection.not_configured","message":"changedetection is not configured"}`),
+				wasUpdateCalled(0),
+			),
+		},
 		"Successful update": {
 			DB: &DBMock{
 				FetchDocumentHookFunc: func(context.Context, xid.ID, string) (*hookCore.Hook, error) {
@@ -472,8 +508,9 @@ func Test_Handler_UpdateDocumentHook(t *testing.T) {
 			t.Parallel()
 
 			hdl := Handler{
-				log: slog.New(slog.DiscardHandler),
-				db:  c.DB,
+				log:             slog.New(slog.DiscardHandler),
+				db:              c.DB,
+				webchangeClient: webchange.NewClient("", ""),
 			}
 
 			req := httptest.NewRequest(http.MethodPut, "http://test.com/", strings.NewReader(c.Body))
@@ -567,6 +604,15 @@ func Test_Handler_ResetDocumentHook(t *testing.T) {
 			RespCode: http.StatusInternalServerError,
 			Checks:   checks(wasUpdateCalled(1)),
 		},
+		"URL watcher without changedetection": {
+			DB: &DBMock{
+				FetchDocumentHookFunc: func(context.Context, xid.ID, string) (*hookCore.Hook, error) {
+					return urlWatcherHook(), nil
+				},
+			},
+			RespCode: http.StatusConflict,
+			Checks:   checks(wasUpdateCalled(0)),
+		},
 		"Successful reset": {
 			DB: &DBMock{
 				FetchDocumentHookFunc: func(context.Context, xid.ID, string) (*hookCore.Hook, error) {
@@ -583,8 +629,9 @@ func Test_Handler_ResetDocumentHook(t *testing.T) {
 			t.Parallel()
 
 			hdl := Handler{
-				log: slog.New(slog.DiscardHandler),
-				db:  c.DB,
+				log:             slog.New(slog.DiscardHandler),
+				db:              c.DB,
+				webchangeClient: webchange.NewClient("", ""),
 			}
 
 			req := httptest.NewRequest(http.MethodPost, "http://test.com/", http.NoBody)
@@ -688,6 +735,18 @@ func Test_Handler_DeleteDocumentHook(t *testing.T) {
 			RespCode: http.StatusNoContent,
 			Checks:   checks(wasDeleteCalled(1)),
 		},
+
+		// an unconfigured changedetection must not trap the row: the
+		// teardown is skipped and the deletion proceeds.
+		"URL watcher deletion without changedetection": {
+			DB: &DBMock{
+				FetchDocumentHookFunc: func(context.Context, xid.ID, string) (*hookCore.Hook, error) {
+					return urlWatcherHook(), nil
+				},
+			},
+			RespCode: http.StatusNoContent,
+			Checks:   checks(wasDeleteCalled(1)),
+		},
 	}
 
 	for cn, c := range cc {
@@ -695,8 +754,9 @@ func Test_Handler_DeleteDocumentHook(t *testing.T) {
 			t.Parallel()
 
 			hdl := Handler{
-				log: slog.New(slog.DiscardHandler),
-				db:  c.DB,
+				log:             slog.New(slog.DiscardHandler),
+				db:              c.DB,
+				webchangeClient: webchange.NewClient("", ""),
 			}
 
 			req := httptest.NewRequest(http.MethodDelete, "http://test.com/", http.NoBody)

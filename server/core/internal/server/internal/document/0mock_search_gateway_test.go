@@ -28,11 +28,17 @@ var _ SearchGateway = &SearchGatewayMock{}
 //
 //	}
 type SearchGatewayMock struct {
+	// ConfiguredFunc mocks the Configured method.
+	ConfiguredFunc func() bool
+
 	// SearchDocumentsFunc mocks the SearchDocuments method.
 	SearchDocumentsFunc func(ctx context.Context, organizationID string, query string) ([]byte, error)
 
 	// calls tracks calls to the methods.
 	calls struct {
+		// Configured holds details about calls to the Configured method.
+		Configured []struct {
+		}
 		// SearchDocuments holds details about calls to the SearchDocuments method.
 		SearchDocuments []struct {
 			// Ctx is the ctx argument value.
@@ -43,6 +49,7 @@ type SearchGatewayMock struct {
 			Query string
 		}
 	}
+	lockConfigured      sync.RWMutex
 	lockSearchDocuments sync.RWMutex
 }
 
@@ -87,5 +94,35 @@ func (mock *SearchGatewayMock) SearchDocumentsCalls() []struct {
 	mock.lockSearchDocuments.RLock()
 	calls = mock.calls.SearchDocuments
 	mock.lockSearchDocuments.RUnlock()
+	return calls
+}
+
+// Configured calls ConfiguredFunc.
+func (mock *SearchGatewayMock) Configured() bool {
+	callInfo := struct {
+	}{}
+	mock.lockConfigured.Lock()
+	mock.calls.Configured = append(mock.calls.Configured, callInfo)
+	mock.lockConfigured.Unlock()
+	if mock.ConfiguredFunc == nil {
+		var (
+			bOut bool
+		)
+		return bOut
+	}
+	return mock.ConfiguredFunc()
+}
+
+// ConfiguredCalls gets all the calls that were made to Configured.
+// Check the length with:
+//
+//	len(mockedSearchGateway.ConfiguredCalls())
+func (mock *SearchGatewayMock) ConfiguredCalls() []struct {
+} {
+	var calls []struct {
+	}
+	mock.lockConfigured.RLock()
+	calls = mock.calls.Configured
+	mock.lockConfigured.RUnlock()
 	return calls
 }

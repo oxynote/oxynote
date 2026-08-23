@@ -15,6 +15,7 @@ import (
 	persistMock "github.com/oxynote/oxynote/server/core/internal/assistant/persist/_mock"
 	protocolMock "github.com/oxynote/oxynote/server/core/internal/assistant/protocol/_mock"
 	toolsMock "github.com/oxynote/oxynote/server/core/internal/assistant/tools/_mock"
+	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
@@ -180,9 +181,12 @@ func testManagerStores() (*Manager, *stores) {
 	log := discardLog()
 
 	return &Manager{
-		log:         log,
-		db:          &toolsMock.DB{},
-		search:      &toolsMock.Searcher{},
+		log: log,
+		db:  &toolsMock.DB{},
+		search: &toolsMock.Searcher{
+			ConfiguredFunc: func() bool { return true },
+		},
+		jobs:        search.NewJobs(true),
 		applier:     &toolsMock.EditApplier{},
 		history:     persist.NewHistory(log, st.history),
 		checkpoints: persist.NewCheckpoints(log, st.blobs),
@@ -194,11 +198,18 @@ func testManagerStores() (*Manager, *stores) {
 	}, st
 }
 
+func Test_Manager_Configured(t *testing.T) {
+	t.Parallel()
+
+	assert.True(t, testManager().Configured())
+	assert.False(t, (&Manager{}).Configured())
+}
+
 func Test_NewManager(t *testing.T) {
 	t.Parallel()
 
 	fc := metricutil.NewFactory("test", prometheus.NewRegistry())
-	m := NewManager(discardLog(), nil, &redis.Pool{}, nil, nil, fc, nil, nil, nil, "claude")
+	m := NewManager(discardLog(), nil, &redis.Pool{}, nil, nil, fc, nil, nil, search.NewJobs(false), nil, "claude")
 
 	require.NotNil(t, m)
 	assert.NotNil(t, m.log)

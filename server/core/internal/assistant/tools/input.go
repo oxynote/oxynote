@@ -39,6 +39,11 @@ type Deps struct {
 	// search is the full-text index behind search_documents.
 	search Searcher
 
+	// jobs is the way into the search-job queue: it decides whether a
+	// deployment indexes at all, so writes queue through it instead of
+	// hitting the database directly.
+	jobs *search.Jobs
+
 	// runners hands out the runner a data-source tool reads through.
 	runners DataSourceRunners
 
@@ -70,6 +75,7 @@ func NewDeps(
 	log *slog.Logger,
 	db DB,
 	searcher Searcher,
+	jobs *search.Jobs,
 	runners DataSourceRunners,
 	applier EditApplier,
 	tree TreeNotifier,
@@ -84,6 +90,7 @@ func NewDeps(
 		),
 		db:      db,
 		search:  searcher,
+		jobs:    jobs,
 		runners: runners,
 		applier: applier,
 		tree:    tree,
@@ -281,7 +288,7 @@ func (i *input) CreateDocument(doc document.Document) error {
 
 	// without this the document is invisible to search until someone
 	// edits it, since only the persist path queues a job.
-	if err := tx.InsertDocumentSearchJob(i.ctx, search.BlocksDiff(nil, doc.Search())); err != nil {
+	if err := i.jobs.Enqueue(i.ctx, tx, search.BlocksDiff(nil, doc.Search())); err != nil {
 		return fmt.Errorf("insert search job: %w", err)
 	}
 
@@ -296,8 +303,32 @@ func (i *input) CreateDocument(doc document.Document) error {
 
 // DeleteDocument removes the document. It records nothing as touched:
 // the document is gone, so there is nothing left to point a caller at.
+// The delete reports the ids of the destroyed subtree, and their
+// search-index removal is queued in the same transaction: after the
+// commit nothing else knows what went away.
 func (i *input) DeleteDocument(id xid.ID) error {
-	return i.db.DeleteDocument(i.ctx, id, i.orgID)
+	var tx Tx
+
+	if err := i.db.BeginTx(i.ctx, &tx); err != nil {
+		return err
+	}
+
+	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
+
+	ids, err := tx.DeleteDocument(i.ctx, id, i.orgID)
+	if err != nil {
+		return err
+	}
+
+	if len(ids) != 0 {
+		if err := i.jobs.Enqueue(i.ctx, tx, search.BlocksDifference{
+			RemovedDocuments: ids,
+		}); err != nil {
+			return fmt.Errorf("insert search job: %w", err)
+		}
+	}
+
+	return tx.Commit()
 }
 
 // MoveDocument re-parents the document.
@@ -495,7 +526,6 @@ type DataSourceRunners interface {
 // agent satisfies it.
 //
 //go:generate ../../../scripts/codegen/mock -t both DB db
-//nolint:interfacebloat // one persistence surface per package; splitting it by domain would only restate the same list under two names
 type DB interface {
 	sqlutil.DB
 
@@ -518,9 +548,6 @@ type DB interface {
 	// content of the document. Used when an op only needs the
 	// content tree (no branch metadata).
 	FetchMainBranchContent(ctx context.Context, docID xid.ID, organizationID string) (document.Content, error)
-
-	// DeleteDocument should remove a document. Used by delete_document.
-	DeleteDocument(ctx context.Context, id xid.ID, organizationID string) error
 
 	// UpdateDocumentParentID should re-parent a document. Used by
 	// move_document.
@@ -560,8 +587,13 @@ type Tx interface {
 	UpsertDocumentMaintainers(ctx context.Context, documentID xid.ID, organizationID string, maintainerIDs []string) error
 
 	// InsertDocumentSearchJob should queue the search index update for a
-	// document. Used by create_document.
+	// document. Used by create_document and delete_document.
 	InsertDocumentSearchJob(ctx context.Context, diff search.BlocksDifference) error
+
+	// DeleteDocument should remove a document and report the ids of the
+	// document and of every cascade-deleted descendant. Used by
+	// delete_document.
+	DeleteDocument(ctx context.Context, id xid.ID, organizationID string) ([]xid.ID, error)
 }
 
 // Searcher is the full-text search surface search_documents uses.
@@ -569,6 +601,10 @@ type Tx interface {
 //
 //go:generate ../../../scripts/codegen/mock -t both Searcher searcher
 type Searcher interface {
+	// Configured should report whether search is configured on this
+	// deployment.
+	Configured() bool
+
 	// SearchDocumentBlocks should return blocks whose text matches the
 	// query, scoped to the organization and capped at limit hits.
 	SearchDocumentBlocks(ctx context.Context, organizationID, query string, limit int) ([]search.Block, error)

@@ -51,7 +51,7 @@ var _ DB = &DBMock{}
 //			DeleteDataSourceFunc: func(ctx context.Context, id xid.ID, organizationID string) error {
 //				panic("mock out the DeleteDataSource method")
 //			},
-//			DeleteDocumentFunc: func(ctx context.Context, id xid.ID, organizationID string) error {
+//			DeleteDocumentFunc: func(ctx context.Context, id xid.ID, organizationID string) ([]xid.ID, error) {
 //				panic("mock out the DeleteDocument method")
 //			},
 //			DeleteDocumentBranchByIDFunc: func(ctx context.Context, branchID xid.ID, organizationID string) error {
@@ -308,7 +308,7 @@ type DBMock struct {
 	DeleteDataSourceFunc func(ctx context.Context, id xid.ID, organizationID string) error
 
 	// DeleteDocumentFunc mocks the DeleteDocument method.
-	DeleteDocumentFunc func(ctx context.Context, id xid.ID, organizationID string) error
+	DeleteDocumentFunc func(ctx context.Context, id xid.ID, organizationID string) ([]xid.ID, error)
 
 	// DeleteDocumentBranchByIDFunc mocks the DeleteDocumentBranchByID method.
 	DeleteDocumentBranchByIDFunc func(ctx context.Context, branchID xid.ID, organizationID string) error
@@ -1631,7 +1631,7 @@ func (mock *DBMock) DeleteDataSourceCalls() []struct {
 }
 
 // DeleteDocument calls DeleteDocumentFunc.
-func (mock *DBMock) DeleteDocument(ctx context.Context, id xid.ID, organizationID string) error {
+func (mock *DBMock) DeleteDocument(ctx context.Context, id xid.ID, organizationID string) ([]xid.ID, error) {
 	callInfo := struct {
 		Ctx            context.Context
 		ID             xid.ID
@@ -1646,9 +1646,10 @@ func (mock *DBMock) DeleteDocument(ctx context.Context, id xid.ID, organizationI
 	mock.lockDeleteDocument.Unlock()
 	if mock.DeleteDocumentFunc == nil {
 		var (
+			iDsOut []xid.ID
 			errOut error
 		)
-		return errOut
+		return iDsOut, errOut
 	}
 	return mock.DeleteDocumentFunc(ctx, id, organizationID)
 }

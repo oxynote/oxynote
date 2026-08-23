@@ -7,15 +7,21 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/meilisearch/meilisearch-go"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 )
 
 //go:embed static/synonyms.json
 var synonymsFile []byte
+
+// ErrNotConfigured is returned when search is not configured on this
+// deployment.
+var ErrNotConfigured = errutil.New(http.StatusConflict, "search.not_configured", "search is not configured")
 
 // _documentsIndex is the name of the documents index.
 const _documentsIndex = "documents"
@@ -42,7 +48,10 @@ type Client struct {
 	meiliMan meilisearch.ServiceManager
 }
 
-// NewClient creates a new Meilisearch client wrapper.
+// NewClient creates a new Meilisearch client wrapper. A nil meiliMan means
+// search is not configured on this deployment: the client is returned
+// without touching Meilisearch and every call on it reports
+// ErrNotConfigured.
 func NewClient(
 	ctx context.Context,
 	meiliMan meilisearch.ServiceManager,
@@ -51,11 +60,20 @@ func NewClient(
 		meiliMan: meiliMan,
 	}
 
+	if !c.Configured() {
+		return c, nil
+	}
+
 	if err := c.ensureIndex(ctx); err != nil {
 		return nil, fmt.Errorf("ensuring documents index: %w", err)
 	}
 
 	return c, nil
+}
+
+// Configured reports whether search is configured on this deployment.
+func (c *Client) Configured() bool {
+	return c.meiliMan != nil
 }
 
 // ensureIndex ensures the documents index exists.
@@ -143,6 +161,10 @@ func (c *Client) setupSynonyms(ctx context.Context, index string) error {
 
 // SearchDocuments searches documents in the index.
 func (c *Client) SearchDocuments(ctx context.Context, organizationID, query string) ([]byte, error) {
+	if !c.Configured() {
+		return nil, ErrNotConfigured
+	}
+
 	res, err := c.meiliMan.Index(_documentsIndex).SearchWithContext(ctx, query, &meilisearch.SearchRequest{
 		AttributesToSearchOn:  []string{_textAttribute},
 		AttributesToCrop:      []string{_textAttribute},
@@ -180,6 +202,10 @@ func (c *Client) SearchDocuments(ctx context.Context, organizationID, query stri
 // callers — the AI assistant's search tool — can consume the text
 // directly.
 func (c *Client) SearchDocumentBlocks(ctx context.Context, organizationID, query string, limit int) ([]Block, error) {
+	if !c.Configured() {
+		return nil, ErrNotConfigured
+	}
+
 	res, err := c.meiliMan.Index(_documentsIndex).SearchWithContext(ctx, query, &meilisearch.SearchRequest{
 		AttributesToSearchOn: []string{_textAttribute},
 		Filter:               fmt.Sprintf("organizationId = %q", organizationID),
@@ -207,6 +233,10 @@ func (c *Client) SearchDocumentBlocks(ctx context.Context, organizationID, query
 // ReplaceDocumentBlocks replaces document blocks in the index based on the
 // provided differences.
 func (c *Client) ReplaceDocumentBlocks(ctx context.Context, bd BlocksDifference) error {
+	if !c.Configured() {
+		return ErrNotConfigured
+	}
+
 	if len(bd.Added) != 0 {
 		_, err := c.meiliMan.Index(_documentsIndex).AddDocumentsWithContext(ctx, bd.Added, nil)
 		if err != nil {

@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"time"
 
 	"github.com/cloudwego/eino/components/model"
@@ -23,9 +24,15 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/assistant/persist"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/protocol"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
+	"github.com/oxynote/oxynote/server/core/internal/search"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
 	"github.com/oxynote/oxynote/server/core/pkg/redkit"
 )
+
+// ErrNotConfigured is returned when the assistant is not configured on this
+// deployment.
+var ErrNotConfigured = errutil.New(http.StatusConflict, "assistant.not_configured", "assistant is not configured")
 
 // _sessionExpiration is how long Redis retains an idle conversation.
 // Conversations resume from this history, and a turn paused on a
@@ -37,6 +44,7 @@ type Manager struct {
 	log     *slog.Logger
 	db      tools.DB
 	search  tools.Searcher
+	jobs    *search.Jobs
 	runners tools.DataSourceRunners
 	model   model.ToolCallingChatModel
 	summary model.ToolCallingChatModel
@@ -55,7 +63,8 @@ type Manager struct {
 // the provider package from the operator's configuration; summaryModel
 // backs context summarisation and may be the same model. The editClient
 // is the edit pipe to the Node hocuspocus service; the search client
-// backs the search_documents tool; providerName labels token metrics so
+// backs the search_documents tool and searchJobs is the queue document
+// writes announce themselves to; providerName labels token metrics so
 // usage stays readable across a provider change; the tree notifier
 // broadcasts sidebar refresh events after document tree mutations and is
 // wired post-construction via SetTreeNotifier because the document
@@ -68,7 +77,8 @@ func NewManager(
 	summaryModel model.ToolCallingChatModel,
 	fc metricutil.Factory,
 	editClient tools.EditApplier,
-	search tools.Searcher,
+	searcher tools.Searcher,
+	searchJobs *search.Jobs,
 	runners tools.DataSourceRunners,
 	providerName string,
 ) *Manager {
@@ -86,7 +96,8 @@ func NewManager(
 	return &Manager{
 		log:     log,
 		db:      db,
-		search:  search,
+		search:  searcher,
+		jobs:    searchJobs,
 		runners: runners,
 		model:   chatModel,
 		summary: summaryModel,
@@ -107,6 +118,13 @@ func NewManager(
 	}
 }
 
+// Configured reports whether the assistant is configured on this
+// deployment: a manager built without a chat model has nothing to run a
+// conversation on.
+func (m *Manager) Configured() bool {
+	return m.model != nil
+}
+
 // SetTreeNotifier wires the tree-change notifier the assistant uses to
 // broadcast sidebar refresh events after document tree mutations. Call
 // this once during startup, after the document handler that satisfies
@@ -124,6 +142,7 @@ func (m *Manager) ToolSet(orgID, userID string) *tools.Set {
 		m.log,
 		m.db,
 		m.search,
+		m.jobs,
 		m.runners,
 		m.applier,
 		m.tree,

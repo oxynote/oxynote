@@ -47,9 +47,12 @@ func testDeps(db *DBMock, applier *EditApplierMock, tree *TreeNotifierMock) *Dep
 	}
 
 	d := &Deps{
-		log:    discardLog(),
-		db:     db,
-		search: &SearcherMock{},
+		log: discardLog(),
+		db:  db,
+		search: &SearcherMock{
+			ConfiguredFunc: func() bool { return true },
+		},
+		jobs: search.NewJobs(true),
 		runners: &DataSourceRunnersMock{
 			RunnerFunc: func(datasource.DataSource) datasource.Runner {
 				return &datasourceMock.Runner{}
@@ -205,12 +208,15 @@ func Test_NewDeps(t *testing.T) {
 		RunnerFunc: func(datasource.DataSource) datasource.Runner { return runner },
 	}
 
-	d := NewDeps(discardLog(), db, searcher, runners, applier, tree, offload, "org", "user")
+	jobs := search.NewJobs(true)
+
+	d := NewDeps(discardLog(), db, searcher, jobs, runners, applier, tree, offload, "org", "user")
 	require.NotNil(t, d)
 
 	assert.NotNil(t, d.log)
 	assert.Same(t, db, d.db)
 	assert.Same(t, searcher, d.search)
+	assert.Same(t, jobs, d.jobs)
 	assert.Same(t, runners, d.runners)
 	assert.Same(t, applier, d.applier)
 	assert.Same(t, tree, d.tree)
@@ -404,29 +410,102 @@ func Test_input_DeleteDocument(t *testing.T) {
 
 	docID := xid.New()
 
-	// error
-	inp := testInput(testDeps(&DBMock{
-		DeleteDocumentFunc: func(context.Context, xid.ID, string) error {
-			return assert.AnError
-		},
-	}, nil, nil), NameDeleteDocument, `{}`)
-
-	testutil.AssertEqualError(t, assert.AnError, inp.DeleteDocument(docID))
-
-	// success: the document is gone, so nothing is recorded as touched
-	// — a link to it would only point at something that no longer
-	// exists.
-	db := &DBMock{
-		DeleteDocumentFunc: func(context.Context, xid.ID, string) error {
-			return nil
-		},
+	type tcase struct {
+		DB      *DBMock
+		Tx      *TxMock
+		Commits int
+		Jobs    int
+		Err     error
 	}
 
-	inp = testInput(testDeps(db, nil, nil), NameDeleteDocument, `{}`)
+	stubTx := func(ids []xid.ID, deleteErr, jobErr, commitErr error) *TxMock {
+		return &TxMock{
+			DeleteDocumentFunc: func(context.Context, xid.ID, string) ([]xid.ID, error) {
+				return ids, deleteErr
+			},
+			InsertDocumentSearchJobFunc: func(context.Context, search.BlocksDifference) error {
+				return jobErr
+			},
+			CommitFunc: func() error { return commitErr },
+		}
+	}
 
-	require.NoError(t, inp.DeleteDocument(docID))
-	assert.Len(t, db.DeleteDocumentCalls(), 1)
-	assert.Empty(t, inp.touched)
+	stubDB := func(tx *TxMock, beginErr error) *DBMock {
+		return &DBMock{
+			BeginTxFunc: func(_ context.Context, dest any) error {
+				if beginErr != nil {
+					return beginErr
+				}
+
+				reflect.ValueOf(dest).Elem().Set(reflect.ValueOf(tx))
+
+				return nil
+			},
+		}
+	}
+
+	cc := map[string]tcase{
+		"Error returned by db.BeginTx": func() tcase {
+			return tcase{DB: stubDB(nil, assert.AnError), Err: assert.AnError}
+		}(),
+		"Error returned by Tx.DeleteDocument": func() tcase {
+			tx := stubTx(nil, assert.AnError, nil, nil)
+
+			return tcase{DB: stubDB(tx, nil), Tx: tx, Err: assert.AnError}
+		}(),
+		"Error returned by Tx.InsertDocumentSearchJob": func() tcase {
+			tx := stubTx([]xid.ID{docID}, nil, assert.AnError, nil)
+
+			return tcase{DB: stubDB(tx, nil), Tx: tx, Jobs: 1, Err: assert.AnError}
+		}(),
+		"Error returned by Tx.Commit": func() tcase {
+			tx := stubTx([]xid.ID{docID}, nil, nil, assert.AnError)
+
+			return tcase{DB: stubDB(tx, nil), Tx: tx, Commits: 1, Jobs: 1, Err: assert.AnError}
+		}(),
+		// a document unknown to the delete reports no subtree, so there
+		// is no removal to queue.
+		"Empty subtree queues nothing": func() tcase {
+			tx := stubTx(nil, nil, nil, nil)
+
+			return tcase{DB: stubDB(tx, nil), Tx: tx, Commits: 1}
+		}(),
+		"Delete and search removal land together": func() tcase {
+			tx := stubTx([]xid.ID{docID, xid.New()}, nil, nil, nil)
+
+			return tcase{DB: stubDB(tx, nil), Tx: tx, Commits: 1, Jobs: 1}
+		}(),
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			inp := testInput(testDeps(c.DB, nil, nil), NameDeleteDocument, `{}`)
+
+			err := inp.DeleteDocument(docID)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			// the document is gone, so nothing is recorded as touched —
+			// a link to it would only point at something that no longer
+			// exists.
+			assert.Empty(t, inp.touched)
+
+			if c.Tx == nil {
+				return
+			}
+
+			assert.Len(t, c.Tx.CommitCalls(), c.Commits)
+			assert.Len(t, c.Tx.RollbackCalls(), 1)
+
+			ff := c.Tx.InsertDocumentSearchJobCalls()
+			require.Len(t, ff, c.Jobs)
+
+			if c.Jobs != 0 {
+				assert.NotEmpty(t, ff[0].Diff.RemovedDocuments)
+			}
+		})
+	}
 }
 
 func Test_input_recordTouched(t *testing.T) {

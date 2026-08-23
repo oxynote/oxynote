@@ -851,7 +851,7 @@ func Test_agent_DeleteDocument(t *testing.T) {
 		OrganizationID string
 		FileID         string
 		HookID         xid.ID
-		SearchRemoved  []xid.ID
+		SubtreeIDs     []xid.ID
 		Err            error
 	}
 
@@ -862,12 +862,13 @@ func Test_agent_DeleteDocument(t *testing.T) {
 			return tcase{
 				ID:             doc.ID,
 				OrganizationID: doc.OrganizationID,
-				SearchRemoved:  []xid.ID{doc.ID},
+				SubtreeIDs:     []xid.ID{doc.ID},
 			}
 		},
-		// the descendants go away with the cascade, so their index entries
-		// have to be queued for removal by the delete that destroys them.
-		"Descendants are queued for search removal": func(t *testing.T, db *DB) tcase {
+		// the descendants go away with the cascade, so the delete has to
+		// report them: the caller queues the search-index removal from
+		// the returned ids, and nothing else knows what was destroyed.
+		"Descendants are reported for search removal": func(t *testing.T, db *DB) tcase {
 			organizationID := prepOrganizations(t, db, 1)[0]
 
 			docs := prepDocuments(t, db, 4, func(_ int, doc *document.Document) {
@@ -881,10 +882,10 @@ func Test_agent_DeleteDocument(t *testing.T) {
 			return tcase{
 				ID:             docs[0].ID,
 				OrganizationID: organizationID,
-				SearchRemoved:  []xid.ID{docs[0].ID, docs[1].ID, docs[2].ID},
+				SubtreeIDs:     []xid.ID{docs[0].ID, docs[1].ID, docs[2].ID},
 			}
 		},
-		"Unknown document queues nothing": func(t *testing.T, db *DB) tcase {
+		"Unknown document reports nothing": func(t *testing.T, db *DB) tcase {
 			doc := prepDocuments(t, db, 1, nil)[0]
 
 			return tcase{
@@ -914,7 +915,7 @@ func Test_agent_DeleteDocument(t *testing.T) {
 				OrganizationID: doc.OrganizationID,
 				FileID:         f.ID,
 				HookID:         hk.ID,
-				SearchRemoved:  []xid.ID{doc.ID},
+				SubtreeIDs:     []xid.ID{doc.ID},
 			}
 		},
 	}
@@ -926,12 +927,14 @@ func Test_agent_DeleteDocument(t *testing.T) {
 			db := prepTempDB(t)
 			c := cfn(t, db)
 
-			err := db.DeleteDocument(context.Background(), c.ID, c.OrganizationID)
+			ids, err := db.DeleteDocument(context.Background(), c.ID, c.OrganizationID)
 			testutil.RequireEqualError(t, c.Err, err)
 
 			if err != nil {
 				return
 			}
+
+			assert.ElementsMatch(t, c.SubtreeIDs, ids)
 
 			var doc document.Document
 
@@ -944,15 +947,11 @@ func Test_agent_DeleteDocument(t *testing.T) {
 			err = db.sql.Get(&doc, q, args...)
 			require.Equal(t, sql.ErrNoRows, err)
 
+			// the delete itself queues nothing: the caller owns the
+			// search-index removal.
 			jobs, err := db.FetchDocumentSearchJobs(context.Background(), 0, 10)
 			require.NoError(t, err)
-
-			if len(c.SearchRemoved) == 0 {
-				assert.Empty(t, jobs)
-			} else {
-				require.Len(t, jobs, 1)
-				assert.ElementsMatch(t, c.SearchRemoved, jobs[0].BlockDiff.RemovedDocuments)
-			}
+			assert.Empty(t, jobs)
 
 			if c.FileID == "" {
 				return

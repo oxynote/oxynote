@@ -59,6 +59,36 @@ func Test_NewClient(t *testing.T) {
 	assert.Equal(t, _requestTimeout, c.client.Timeout)
 }
 
+func Test_Client_Configured(t *testing.T) {
+	t.Parallel()
+
+	assert.True(t, NewClient("http://test.com", "key").Configured())
+	assert.False(t, NewClient("", "key").Configured())
+}
+
+// Test_Client_unconfigured covers every method refusing to act without a
+// base URL, so no case below has to repeat the guard.
+func Test_Client_unconfigured(t *testing.T) {
+	t.Parallel()
+
+	c := NewClient("", "")
+	ctx := context.Background()
+
+	watch, err := c.FetchWatcher(ctx, "uuid-1")
+	assert.ErrorIs(t, err, ErrNotConfigured)
+	assert.Nil(t, watch)
+
+	id, err := c.CreateWatcher(ctx, "https://example.com")
+	assert.ErrorIs(t, err, ErrNotConfigured)
+	assert.Empty(t, id)
+
+	assert.ErrorIs(t, c.UpdateWatcher(ctx, "uuid-1", "https://example.com"), ErrNotConfigured)
+
+	// deleting is the exception: there is nothing to tear down, so the
+	// caller's removal proceeds instead of failing.
+	assert.NoError(t, c.DeleteWatcher(ctx, "uuid-1"))
+}
+
 func Test_Client_FetchWatcher(t *testing.T) {
 	t.Parallel()
 

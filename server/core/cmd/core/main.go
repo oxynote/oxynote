@@ -194,17 +194,25 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 	termCtx, termCancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer termCancel()
 
-	searchClient, err := search.NewClient(
-		termCtx,
-		meilisearch.New(
-			buildinfo.Getenv("MEILISEARCH_DSN"),
+	// an empty MEILISEARCH_DSN means search is disabled: nothing is
+	// indexed and the search surfaces refuse. A set DSN that cannot be
+	// reached stays a boot error inside NewClient.
+	var meiliMan meilisearch.ServiceManager
+
+	if dsn := buildinfo.Getenv("MEILISEARCH_DSN"); dsn != "" {
+		meiliMan = meilisearch.New(
+			dsn,
 			meilisearch.WithAPIKey(buildinfo.Getenv("MEILISEARCH_MASTER_KEY")),
-		),
-	)
+		)
+	}
+
+	searchClient, err := search.NewClient(termCtx, meiliMan)
 	if err != nil {
 		fail(log, closers, "cannot create search gateway client", err)
 		return
 	}
+
+	searchJobs := search.NewJobs(searchClient.Configured())
 
 	storageClient, err := storage.NewClient(
 		termCtx,
@@ -246,22 +254,34 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 		buildinfo.Getenv("AUTH_REALTIME_URL"),
 	)
 
-	assistantOpts, err := assistantProviderOptions()
-	if err != nil {
-		fail(log, closers, "cannot read the assistant configuration", err)
-		return
-	}
+	// an empty ASSISTANT_PROVIDER means the assistant is disabled: no
+	// model is built and the chat surface refuses. The remaining
+	// ASSISTANT_* values are ignored, matching the other integrations. A
+	// set provider still validates everything it needs and fails boot.
+	var (
+		chatModel     model.ToolCallingChatModel
+		summaryModel  model.ToolCallingChatModel
+		assistantOpts provider.Options
+	)
 
-	chatModel, err := provider.New(termCtx, assistantOpts)
-	if err != nil {
-		fail(log, closers, "cannot create the assistant chat model", err)
-		return
-	}
+	if buildinfo.Getenv("ASSISTANT_PROVIDER") != "" {
+		assistantOpts, err = assistantProviderOptions()
+		if err != nil {
+			fail(log, closers, "cannot read the assistant configuration", err)
+			return
+		}
 
-	summaryModel, err := assistantSummaryModel(termCtx, assistantOpts, chatModel)
-	if err != nil {
-		fail(log, closers, "cannot create the assistant summarization model", err)
-		return
+		chatModel, err = provider.New(termCtx, assistantOpts)
+		if err != nil {
+			fail(log, closers, "cannot create the assistant chat model", err)
+			return
+		}
+
+		summaryModel, err = assistantSummaryModel(termCtx, assistantOpts, chatModel)
+		if err != nil {
+			fail(log, closers, "cannot create the assistant summarization model", err)
+			return
+		}
 	}
 
 	datasourceMan := datasource.NewManager(log, dbc)
@@ -275,9 +295,19 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 		metrics,
 		editClient,
 		searchClient,
+		searchJobs,
 		datasourceMan,
 		string(assistantOpts.Provider),
 	)
+
+	// a disabled integration is a deliberate state, but it is also the
+	// first thing an operator looks for when a feature is missing from
+	// the product, so each one announces itself at boot.
+	warnDisabled(log, githubMan.Configured(), "github app integration is disabled")
+	warnDisabled(log, slackMan.Configured(), "slack app integration is disabled")
+	warnDisabled(log, assistantMan.Configured(), "assistant is disabled")
+	warnDisabled(log, searchClient.Configured(), "search is disabled")
+	warnDisabled(log, webchangeClient.Configured(), "changedetection integration is disabled")
 
 	srv, err := server.NewServer(
 		log,
@@ -303,6 +333,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 		slackMan,
 		webchangeClient,
 		searchClient,
+		searchJobs,
 		notifMan,
 		emailSender,
 		http.DefaultClient,
@@ -313,7 +344,6 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 	}
 
 	hooksMan := hookMan.NewManager(log, dbc, githubMan, webchangeClient, notifMan)
-	searchManager := searchMan.NewManager(log, dbc, searchClient)
 	filesMan := fileMan.NewManager(log, dbc, storageClient, fileMan.Options{
 		ChangelogRetention: documentChangelogRetention,
 	})
@@ -343,8 +373,13 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 	})
 
 	backgroundSupv.Go(hooksMan.Start)
-	backgroundSupv.Go(searchManager.Start)
 	backgroundSupv.Go(filesMan.Start)
+
+	// without search there are no queued jobs to drain, so the manager
+	// is not started at all.
+	if searchClient.Configured() {
+		backgroundSupv.Go(searchMan.NewManager(log, dbc, searchClient).Start)
+	}
 
 	<-termCtx.Done()
 
@@ -469,6 +504,15 @@ func parseDurationEnv(name string, def time.Duration) (time.Duration, error) {
 	}
 
 	return res, nil
+}
+
+// warnDisabled announces a disabled integration at boot.
+func warnDisabled(log *slog.Logger, configured bool, msg string) {
+	if configured {
+		return
+	}
+
+	log.Warn(msg)
 }
 
 // parseOrigins splits the configured allowed-origin list. An empty value

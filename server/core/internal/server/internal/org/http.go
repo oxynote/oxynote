@@ -37,6 +37,7 @@ type Handler struct {
 	storer            Storer
 	githubMan         *github.Manager
 	webchangeClient   *webchange.Client
+	searchJobs        *search.Jobs
 	logoLocation      string
 	demoPrometheusURL string
 }
@@ -48,6 +49,7 @@ func NewHandler(
 	storer Storer,
 	githubMan *github.Manager,
 	webchangeClient *webchange.Client,
+	searchJobs *search.Jobs,
 	logoLocationFormat string,
 	demoPrometheusURL string,
 ) *Handler {
@@ -57,6 +59,7 @@ func NewHandler(
 		storer:            storer,
 		githubMan:         githubMan,
 		webchangeClient:   webchangeClient,
+		searchJobs:        searchJobs,
 		logoLocation:      logoLocationFormat,
 		demoPrometheusURL: demoPrometheusURL,
 	}
@@ -134,7 +137,7 @@ func (h *Handler) InitializeOrganization(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err = tx.InsertDocumentSearchJob(r.Context(), search.BlocksDiff(nil, doc.Search())); err != nil {
+	if err = h.searchJobs.Enqueue(r.Context(), tx, search.BlocksDiff(nil, doc.Search())); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -270,7 +273,7 @@ func (h *Handler) TeardownOrganization(w http.ResponseWriter, r *http.Request) {
 
 	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
 
-	if err = tx.InsertDocumentSearchJob(r.Context(), search.BlocksDifference{
+	if err = h.searchJobs.Enqueue(r.Context(), tx, search.BlocksDifference{
 		RemovedOrganizations: []string{id},
 	}); err != nil {
 		httpserver.RespondError(h.log, w, err)

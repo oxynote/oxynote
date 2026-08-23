@@ -30,11 +30,17 @@ var _ Manager = &ManagerMock{}
 //
 //	}
 type ManagerMock struct {
+	// ConfiguredFunc mocks the Configured method.
+	ConfiguredFunc func() bool
+
 	// ChatFunc mocks the Chat method.
 	ChatFunc func(ctx context.Context, orgID string, userID string, conn protocol.SessionConn) error
 
 	// calls tracks calls to the methods.
 	calls struct {
+		// Configured holds details about calls to the Configured method.
+		Configured []struct {
+		}
 		// Chat holds details about calls to the Chat method.
 		Chat []struct {
 			// Ctx is the ctx argument value.
@@ -47,7 +53,8 @@ type ManagerMock struct {
 			Conn protocol.SessionConn
 		}
 	}
-	lockChat sync.RWMutex
+	lockConfigured sync.RWMutex
+	lockChat       sync.RWMutex
 }
 
 // Chat calls ChatFunc.
@@ -94,5 +101,35 @@ func (mock *ManagerMock) ChatCalls() []struct {
 	mock.lockChat.RLock()
 	calls = mock.calls.Chat
 	mock.lockChat.RUnlock()
+	return calls
+}
+
+// Configured calls ConfiguredFunc.
+func (mock *ManagerMock) Configured() bool {
+	callInfo := struct {
+	}{}
+	mock.lockConfigured.Lock()
+	mock.calls.Configured = append(mock.calls.Configured, callInfo)
+	mock.lockConfigured.Unlock()
+	if mock.ConfiguredFunc == nil {
+		var (
+			bOut bool
+		)
+		return bOut
+	}
+	return mock.ConfiguredFunc()
+}
+
+// ConfiguredCalls gets all the calls that were made to Configured.
+// Check the length with:
+//
+//	len(mockedManager.ConfiguredCalls())
+func (mock *ManagerMock) ConfiguredCalls() []struct {
+} {
+	var calls []struct {
+	}
+	mock.lockConfigured.RLock()
+	calls = mock.calls.Configured
+	mock.lockConfigured.RUnlock()
 	return calls
 }

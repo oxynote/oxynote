@@ -47,6 +47,9 @@ type TxMock struct {
 	// CommitFunc mocks the Commit method.
 	CommitFunc func() error
 
+	// DeleteDocumentFunc mocks the DeleteDocument method.
+	DeleteDocumentFunc func(ctx context.Context, id xid.ID, organizationID string) ([]xid.ID, error)
+
 	// InsertDocumentFunc mocks the InsertDocument method.
 	InsertDocumentFunc func(ctx context.Context, doc document.Document) error
 
@@ -63,6 +66,15 @@ type TxMock struct {
 	calls struct {
 		// Commit holds details about calls to the Commit method.
 		Commit []struct {
+		}
+		// DeleteDocument holds details about calls to the DeleteDocument method.
+		DeleteDocument []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// ID is the id argument value.
+			ID xid.ID
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
 		}
 		// InsertDocument holds details about calls to the InsertDocument method.
 		InsertDocument []struct {
@@ -94,6 +106,7 @@ type TxMock struct {
 		}
 	}
 	lockCommit                    sync.RWMutex
+	lockDeleteDocument            sync.RWMutex
 	lockInsertDocument            sync.RWMutex
 	lockInsertDocumentSearchJob   sync.RWMutex
 	lockRollback                  sync.RWMutex
@@ -282,5 +295,49 @@ func (mock *TxMock) UpsertDocumentMaintainersCalls() []struct {
 	mock.lockUpsertDocumentMaintainers.RLock()
 	calls = mock.calls.UpsertDocumentMaintainers
 	mock.lockUpsertDocumentMaintainers.RUnlock()
+	return calls
+}
+
+// DeleteDocument calls DeleteDocumentFunc.
+func (mock *TxMock) DeleteDocument(ctx context.Context, id xid.ID, organizationID string) ([]xid.ID, error) {
+	callInfo := struct {
+		Ctx            context.Context
+		ID             xid.ID
+		OrganizationID string
+	}{
+		Ctx:            ctx,
+		ID:             id,
+		OrganizationID: organizationID,
+	}
+	mock.lockDeleteDocument.Lock()
+	mock.calls.DeleteDocument = append(mock.calls.DeleteDocument, callInfo)
+	mock.lockDeleteDocument.Unlock()
+	if mock.DeleteDocumentFunc == nil {
+		var (
+			iDsOut []xid.ID
+			errOut error
+		)
+		return iDsOut, errOut
+	}
+	return mock.DeleteDocumentFunc(ctx, id, organizationID)
+}
+
+// DeleteDocumentCalls gets all the calls that were made to DeleteDocument.
+// Check the length with:
+//
+//	len(mockedTx.DeleteDocumentCalls())
+func (mock *TxMock) DeleteDocumentCalls() []struct {
+	Ctx            context.Context
+	ID             xid.ID
+	OrganizationID string
+} {
+	var calls []struct {
+		Ctx            context.Context
+		ID             xid.ID
+		OrganizationID string
+	}
+	mock.lockDeleteDocument.RLock()
+	calls = mock.calls.DeleteDocument
+	mock.lockDeleteDocument.RUnlock()
 	return calls
 }

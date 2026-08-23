@@ -21,6 +21,7 @@ import (
 	datasourceCore "github.com/oxynote/oxynote/server/core/internal/datasource"
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
 	notificationCore "github.com/oxynote/oxynote/server/core/internal/notification"
+	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/assistant"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/datasource"
@@ -96,6 +97,11 @@ type Server struct {
 
 	ws wsserver.Pool
 
+	// capabilities is the deployment's optional-service availability,
+	// snapshotted at construction since configuration cannot change at
+	// runtime.
+	capabilities Capabilities
+
 	handlers struct {
 		user         *user.Handler
 		organization *org.Handler
@@ -129,6 +135,7 @@ func NewServer(
 	slackMan *slackCore.Manager,
 	webchangeClient *webchange.Client,
 	searchGateway document.SearchGateway,
+	searchJobs *search.Jobs,
 	notifier Notifier,
 	emailSender email.Sender,
 	client *http.Client,
@@ -142,6 +149,13 @@ func NewServer(
 		opts:   opts,
 		fc:     fc,
 		client: client,
+		capabilities: Capabilities{
+			GitHub:          githubMan.Configured(),
+			Slack:           slackMan.Configured(),
+			Assistant:       assistantMan.Configured(),
+			Changedetection: webchangeClient.Configured(),
+			Search:          searchGateway.Configured(),
+		},
 	}
 
 	srv.handlers.user = user.NewHandler(log, db, storageClient, opts.PublicURL+_userImageLocationFormat)
@@ -151,10 +165,11 @@ func NewServer(
 		storageClient,
 		githubMan,
 		webchangeClient,
+		searchJobs,
 		opts.PublicURL+_organizationLogoLocation,
 		opts.DemoPrometheusURL,
 	)
-	srv.handlers.document = document.NewHandler(log, db, githubMan, webchangeClient, searchGateway, notifier, storageClient)
+	srv.handlers.document = document.NewHandler(log, db, githubMan, webchangeClient, searchGateway, searchJobs, notifier, storageClient)
 	srv.handlers.comment = comment.NewHandler(log, db, notifier)
 	srv.handlers.files = files.NewHandler(log, db, storageClient, opts.PublicURL+documentCore.FilePathFormat)
 	srv.handlers.hook = hook.NewHandler(log, db, githubMan, webchangeClient)

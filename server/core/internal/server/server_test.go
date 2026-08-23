@@ -12,9 +12,11 @@ import (
 	"github.com/gomodule/redigo/redis"
 	"github.com/oxynote/oxynote/server/core/internal/apps/github"
 	"github.com/oxynote/oxynote/server/core/internal/apps/slack"
+	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	assistantCore "github.com/oxynote/oxynote/server/core/internal/assistant"
 	"github.com/oxynote/oxynote/server/core/internal/buildinfo"
 	datasourceCore "github.com/oxynote/oxynote/server/core/internal/datasource"
+	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	wsMock "github.com/oxynote/wetsocks/wsserver/_mock"
@@ -54,13 +56,27 @@ func Test_Options_validate(t *testing.T) {
 	assert.EqualError(t, Options{}.validate(), "missing mcp session url")
 }
 
+// stubSearchGateway satisfies the document handler's SearchGateway with a
+// fixed configured flag.
+type stubSearchGateway struct {
+	configured bool
+}
+
+func (g stubSearchGateway) Configured() bool {
+	return g.configured
+}
+
+func (stubSearchGateway) SearchDocuments(context.Context, string, string) ([]byte, error) {
+	return nil, nil
+}
+
 func Test_NewServer(t *testing.T) {
 	t.Parallel()
 
 	log := discardLog()
 	fc := metricutil.NewFactory("test", prometheus.NewRegistry())
 
-	assistantMan := assistantCore.NewManager(log, nil, &redis.Pool{}, nil, nil, fc, nil, nil, nil, "claude")
+	assistantMan := assistantCore.NewManager(log, nil, &redis.Pool{}, nil, nil, fc, nil, nil, search.NewJobs(false), nil, "claude")
 
 	githubMan, err := github.NewManager(nil, github.Options{})
 	require.NoError(t, err)
@@ -85,8 +101,9 @@ func Test_NewServer(t *testing.T) {
 			datasourceCore.NewManager(log, nil),
 			githubMan,
 			slackMan,
-			nil,
-			nil,
+			webchange.NewClient("", ""),
+			stubSearchGateway{},
+			search.NewJobs(false),
 			notifier,
 			nil,
 			http.DefaultClient,
@@ -113,12 +130,13 @@ func Test_NewServer(t *testing.T) {
 			// a manager of this subtest's own: NewServer calls
 			// SetTreeNotifier, which must not race the parallel
 			// success case's identical call on a shared manager.
-			assistantCore.NewManager(log, nil, &redis.Pool{}, nil, nil, fc, nil, nil, nil, "claude"),
+			assistantCore.NewManager(log, nil, &redis.Pool{}, nil, nil, fc, nil, nil, search.NewJobs(false), nil, "claude"),
 			datasourceCore.NewManager(log, nil),
 			githubMan,
 			slackMan,
-			nil,
-			nil,
+			webchange.NewClient("", ""),
+			stubSearchGateway{},
+			search.NewJobs(false),
 			notifier,
 			nil,
 			http.DefaultClient,
@@ -150,8 +168,9 @@ func Test_NewServer(t *testing.T) {
 			datasourceCore.NewManager(log, nil),
 			githubMan,
 			slackMan,
-			nil,
-			nil,
+			webchange.NewClient("", ""),
+			stubSearchGateway{},
+			search.NewJobs(false),
 			notifier,
 			nil,
 			http.DefaultClient,
@@ -184,6 +203,50 @@ func Test_NewServer(t *testing.T) {
 		assert.NotNil(t, srv.handlers.email)
 		assert.NotNil(t, srv.handlers.ai)
 		assert.NotNil(t, srv.handlers.mcp)
+
+		// nothing above is configured, so every capability reports false;
+		// the search gateway mock is the one switched on.
+		assert.Equal(t, Capabilities{}, srv.capabilities)
+	})
+
+	t.Run("Capabilities reflect the configured services", func(t *testing.T) {
+		t.Parallel()
+
+		srv, err := NewServer(
+			log,
+			Options{
+				Port: 8080,
+				MCP: MCPOptions{
+					SessionURL:  "http://auth.test/api/internal/mcp/session",
+					ResourceURL: "http://test.com/core/api/mcp",
+				},
+			},
+			db,
+			fc,
+			storer,
+			assistantCore.NewManager(log, nil, &redis.Pool{}, nil, nil, fc, nil, nil, search.NewJobs(false), nil, "claude"),
+			datasourceCore.NewManager(log, nil),
+			githubMan,
+			slackMan,
+			webchange.NewClient("http://changedetection.test", ""),
+			stubSearchGateway{configured: true},
+			search.NewJobs(true),
+			notifier,
+			nil,
+			http.DefaultClient,
+		)
+		require.NoError(t, err)
+		require.NotNil(t, srv)
+
+		t.Cleanup(func() {
+			srv.ws.Close()
+			assert.NoError(t, srv.Close())
+		})
+
+		assert.Equal(t, Capabilities{
+			Changedetection: true,
+			Search:          true,
+		}, srv.capabilities)
 	})
 }
 

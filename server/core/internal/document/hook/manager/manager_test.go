@@ -10,6 +10,7 @@ import (
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/apps/github"
+	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
@@ -72,15 +73,30 @@ func stubDocument() *document.Document {
 	}
 }
 
-// newTestManager creates a Manager with an unconfigured GitHub manager and
-// the given mocks.
+// newTestManager creates a Manager with unconfigured GitHub and
+// changedetection clients and the given mocks.
 func newTestManager(t *testing.T, db *DBMock, pub *fakePublisher) *Manager {
 	t.Helper()
 
 	githubMan, err := github.NewManager(nil, github.Options{})
 	require.NoError(t, err)
 
-	return NewManager(slog.New(slog.DiscardHandler), db, githubMan, nil, pub)
+	return NewManager(slog.New(slog.DiscardHandler), db, githubMan, webchange.NewClient("", ""), pub)
+}
+
+// urlWatcherHook builds a url-watcher hook that already holds a
+// changedetection.io watcher in its state.
+func urlWatcherHook(branchID xid.ID) hook.Hook {
+	return hook.Hook{
+		ID:             xid.New(),
+		Type:           hook.TypeURLWatcher,
+		DocumentID:     null.ValueFrom(xid.New()),
+		OrganizationID: null.StringFrom("org-1"),
+		BranchID:       null.ValueFrom(branchID),
+		Settings:       processor.Settings(`{"url":"https://example.com"}`),
+		State:          processor.State(`{"watcherId":"w1"}`),
+		Score:          mathutil.Hundred,
+	}
 }
 
 func Test_Manager_Start(t *testing.T) {
@@ -263,6 +279,33 @@ func Test_Manager_processHooks(t *testing.T) {
 			},
 			Checks: checks(
 				hasError(false),
+				wasFetchDocumentCalled(0),
+				wasUpdateCalled(0),
+			),
+		},
+		"URL watcher hook is skipped when unconfigured": {
+			Hooks: func(_ *testing.T) []hook.Hook {
+				return []hook.Hook{urlWatcherHook(branchID)}
+			},
+			Checks: checks(
+				hasError(false),
+				wasFetchDocumentCalled(0),
+				wasUpdateCalled(0),
+			),
+		},
+
+		// an unconfigured changedetection must not trap the orphaned row:
+		// the teardown is skipped and the row is still deleted.
+		"Orphaned URL watcher is deleted when unconfigured": {
+			Hooks: func(_ *testing.T) []hook.Hook {
+				h := urlWatcherHook(branchID)
+				h.BranchID = null.Value[xid.ID]{}
+
+				return []hook.Hook{h}
+			},
+			Checks: checks(
+				hasError(false),
+				wasDeleteCalled(1),
 				wasFetchDocumentCalled(0),
 				wasUpdateCalled(0),
 			),

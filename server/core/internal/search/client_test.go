@@ -36,6 +36,27 @@ func stubManagers(idx *mock.MeiliIndexManager) *mock.MeiliServiceManager {
 func Test_NewClient(t *testing.T) {
 	t.Parallel()
 
+	// a nil service manager is the disabled mode: nothing is set up and
+	// every call refuses with the sentinel.
+	t.Run("Unconfigured client", func(t *testing.T) {
+		t.Parallel()
+
+		c, err := NewClient(context.Background(), nil)
+		require.NoError(t, err)
+		require.NotNil(t, c)
+		assert.False(t, c.Configured())
+
+		data, serr := c.SearchDocuments(context.Background(), "org1", "query")
+		assert.ErrorIs(t, serr, ErrNotConfigured)
+		assert.Nil(t, data)
+
+		blocks, serr := c.SearchDocumentBlocks(context.Background(), "org1", "query", 5)
+		assert.ErrorIs(t, serr, ErrNotConfigured)
+		assert.Nil(t, blocks)
+
+		assert.ErrorIs(t, c.ReplaceDocumentBlocks(context.Background(), BlocksDifference{}), ErrNotConfigured)
+	})
+
 	type check func(*testing.T, *mock.MeiliServiceManager, *mock.MeiliIndexManager, error)
 
 	checks := func(cc ...check) []check { return cc }

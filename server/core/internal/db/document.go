@@ -10,7 +10,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jmoiron/sqlx"
 	"github.com/oxynote/oxynote/server/core/internal/document"
-	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 	"github.com/rs/xid"
 )
@@ -293,13 +292,19 @@ func (a *agent) UpdateDocumentParentID(ctx context.Context, id xid.ID, parentID 
 	})
 }
 
-// DeleteDocument deletes a document from the database and queues the removal
-// of its search index entries. Deleting the row cascades to the descendants,
-// so the removal is queued here rather than at the call sites: after the
-// delete there is nothing left to tell the index which documents went away.
-func (a *agent) DeleteDocument(ctx context.Context, id xid.ID, organizationID string) error {
-	return sqlutil.WrapTx(ctx, a.sql, func(tx *sqlx.Tx) error {
-		ids, err := a.fetchDocumentSubtreeIDs(ctx, tx, id, organizationID)
+// DeleteDocument deletes a document from the database, returning the ids
+// of the document and of every descendant the delete cascaded to.
+// Deleting the row destroys the subtree, so the ids are collected here
+// rather than by the caller: after the delete there is nothing left to
+// tell the search index which documents went away. The caller queues the
+// index removal from them, in the same transaction when it runs in one.
+func (a *agent) DeleteDocument(ctx context.Context, id xid.ID, organizationID string) ([]xid.ID, error) {
+	var ids []xid.ID
+
+	err := sqlutil.WrapTx(ctx, a.sql, func(tx *sqlx.Tx) error {
+		var err error
+
+		ids, err = a.fetchDocumentSubtreeIDs(ctx, tx, id, organizationID)
 		if err != nil {
 			return err
 		}
@@ -310,18 +315,15 @@ func (a *agent) DeleteDocument(ctx context.Context, id xid.ID, organizationID st
 				"fk_organization_id": organizationID,
 			}).MustSql()
 
-		if _, err = tx.ExecContext(ctx, q, args...); err != nil {
-			return err
-		}
+		_, err = tx.ExecContext(ctx, q, args...)
 
-		if len(ids) == 0 {
-			return nil
-		}
-
-		return a.insertDocumentSearchJob(ctx, tx, search.BlocksDifference{
-			RemovedDocuments: ids,
-		})
+		return err
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	return ids, nil
 }
 
 // fetchDocumentSubtreeIDs retrieves the IDs of the document and of every

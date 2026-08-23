@@ -110,13 +110,7 @@ func (m *Manager) processHooks(ctx context.Context) error {
 				continue
 			}
 
-			// github-tracking hooks cannot make progress without a
-			// configured GitHub App; skip them and leave their state
-			// untouched.
-			if h.Type == hook.TypeGithubTracking && !m.githubMan.Configured() {
-				m.log.With("hook_id", h.ID).
-					Warn("skipping github-tracking hook: github app is not configured")
-
+			if m.skipsUnconfigured(&h) {
 				continue
 			}
 
@@ -246,6 +240,26 @@ func (m *Manager) ensureHook(
 // row describing it. The external teardown goes first: the row is the only
 // record of the resource, so dropping it first would strand the watcher
 // with nothing left to find it by.
+// skipsUnconfigured reports whether the hook depends on an integration
+// this deployment does not have. Such a hook cannot make progress, so
+// the processing pass skips it and leaves its state untouched.
+func (m *Manager) skipsUnconfigured(h *hook.Hook) bool {
+	switch {
+	case h.Type == hook.TypeGithubTracking && !m.githubMan.Configured():
+		m.log.With("hook_id", h.ID).
+			Warn("skipping github-tracking hook: github app is not configured")
+
+		return true
+	case h.Type == hook.TypeURLWatcher && !m.webchangeClient.Configured():
+		m.log.With("hook_id", h.ID).
+			Warn("skipping url-watcher hook: changedetection is not configured")
+
+		return true
+	default:
+		return false
+	}
+}
+
 func (m *Manager) deleteHook(ctx context.Context, h *hook.Hook) {
 	err := h.Delete(ctx, hook.NewInput(
 		h.OrganizationID.String,

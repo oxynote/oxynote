@@ -99,8 +99,16 @@ func New(deps *Deps) *Set {
 		getDocument{},
 		readDocumentSummary{},
 		readBlock{},
-		searchDocuments{},
+	}
 
+	// a deployment without search has no index behind search_documents,
+	// so the tool is left out of the registry entirely — neither the
+	// model nor the MCP surface is offered a tool that cannot work.
+	if deps.search.Configured() {
+		all = append(all, searchDocuments{})
+	}
+
+	all = append(all,
 		listDataSources{},
 		getPrometheusMetadata{},
 		listPrometheusLabelNames{},
@@ -125,7 +133,7 @@ func New(deps *Deps) *Set {
 		deleteBlock{},
 
 		readToolOutput{},
-	}
+	)
 
 	s := &Set{tools: make(map[Name]registryTool, len(all))}
 

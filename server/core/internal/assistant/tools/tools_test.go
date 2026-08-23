@@ -112,6 +112,26 @@ func Test_New(t *testing.T) {
 	}
 }
 
+func Test_New_withoutSearch(t *testing.T) {
+	t.Parallel()
+
+	d := testDeps(nil, nil, nil)
+	d.search = &SearcherMock{}
+
+	s := New(d)
+
+	// without search there is no index behind search_documents, so the
+	// registry offers it to no surface at all; everything else stays.
+	require.Len(t, s.tools, len(allToolNames())-1)
+
+	_, ok := s.tools[NameSearchDocuments]
+	assert.False(t, ok)
+
+	for _, e := range s.Entries() {
+		assert.NotEqual(t, string(NameSearchDocuments), e.Name)
+	}
+}
+
 func Test_Set_Tools(t *testing.T) {
 	t.Parallel()
 

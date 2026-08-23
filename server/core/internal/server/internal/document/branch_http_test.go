@@ -602,7 +602,19 @@ func Test_Handler_DeleteDocument(t *testing.T) {
 		"Document deletion error": {
 			DB: &DBMock{FetchDocumentFunc: fetchStored},
 			Tx: &TxMock{
-				DeleteDocumentFunc: func(context.Context, xid.ID, string) error {
+				DeleteDocumentFunc: func(context.Context, xid.ID, string) ([]xid.ID, error) {
+					return nil, errors.New("boom")
+				},
+			},
+			RespCode: http.StatusInternalServerError,
+		},
+		"Search removal enqueue error": {
+			DB: &DBMock{FetchDocumentFunc: fetchStored},
+			Tx: &TxMock{
+				DeleteDocumentFunc: func(context.Context, xid.ID, string) ([]xid.ID, error) {
+					return []xid.ID{_documentID}, nil
+				},
+				InsertDocumentSearchJobFunc: func(context.Context, search.BlocksDifference) error {
 					return errors.New("boom")
 				},
 			},
@@ -625,7 +637,11 @@ func Test_Handler_DeleteDocument(t *testing.T) {
 					return []hookCore.Hook{storedHook(hookCore.TypeScheduledReminder)}, nil
 				},
 			},
-			Tx:        &TxMock{},
+			Tx: &TxMock{
+				DeleteDocumentFunc: func(_ context.Context, id xid.ID, _ string) ([]xid.ID, error) {
+					return []xid.ID{id}, nil
+				},
+			},
 			RespCode:  http.StatusOK,
 			Committed: 1,
 			TreeCbs:   1,
@@ -650,9 +666,11 @@ func Test_Handler_DeleteDocument(t *testing.T) {
 				require.Len(t, c.Tx.DeleteDocumentCalls(), 1)
 				assert.Equal(t, _documentID, c.Tx.DeleteDocumentCalls()[0].ID)
 
-				// the search removal is queued by DeleteDocument itself,
-				// which is what makes it cover the cascaded descendants.
-				assert.Empty(t, c.Tx.InsertDocumentSearchJobCalls())
+				// the removal of the returned subtree ids rides the same
+				// transaction as the delete.
+				ff := c.Tx.InsertDocumentSearchJobCalls()
+				require.Len(t, ff, 1)
+				assert.Equal(t, []xid.ID{_documentID}, ff[0].Diff.RemovedDocuments)
 			}
 		})
 	}
@@ -1277,6 +1295,33 @@ func Test_Handler_DeleteDocumentBranch(t *testing.T) {
 
 func Test_Handler_copyHooksToBranch(t *testing.T) {
 	t.Parallel()
+
+	// a url-watcher cannot get its watcher without changedetection
+	// configured, so the copy drops it and still copies the rest.
+	t.Run("URL watcher skipped without changedetection", func(t *testing.T) {
+		t.Parallel()
+
+		urlHook := storedHook(hookCore.TypeURLWatcher)
+		urlHook.Settings = processor.Settings(`{"url":"https://example.com"}`)
+
+		db := &DBMock{
+			FetchDocumentHooksByBranchIDFunc: func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
+				return []hookCore.Hook{urlHook, storedHook(hookCore.TypeScheduledReminder)}, nil
+			},
+			InsertDocumentHookFunc: func(context.Context, hookCore.Hook) error {
+				return nil
+			},
+		}
+
+		hdl, _ := newTestHandler(db, &fakePublisher{})
+
+		err := hdl.copyHooksToBranch(context.Background(), _branchID2, _branchID, _documentID, "org1")
+		require.NoError(t, err)
+
+		ff := db.InsertDocumentHookCalls()
+		require.Len(t, ff, 1)
+		assert.Equal(t, hookCore.TypeScheduledReminder, ff[0].Hk.Type)
+	})
 
 	// creating a hook creates its external resource, so a failed insert has
 	// to hand it back rather than leave it running with no row pointing at

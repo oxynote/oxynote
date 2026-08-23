@@ -83,12 +83,15 @@ func Test_NewHandler(t *testing.T) {
 	githubMan := &github.Manager{}
 	webchangeClient := &webchange.Client{}
 
+	searchJobs := search.NewJobs(true)
+
 	hdl := NewHandler(
 		slog.New(slog.DiscardHandler),
 		db,
 		storer,
 		githubMan,
 		webchangeClient,
+		searchJobs,
 		"loc",
 		"http://prom.test",
 	)
@@ -98,6 +101,7 @@ func Test_NewHandler(t *testing.T) {
 	assert.Same(t, storer, hdl.storer)
 	assert.Same(t, githubMan, hdl.githubMan)
 	assert.Same(t, webchangeClient, hdl.webchangeClient)
+	assert.Same(t, searchJobs, hdl.searchJobs)
 	assert.Equal(t, "loc", hdl.logoLocation)
 	assert.Equal(t, "http://prom.test", hdl.demoPrometheusURL)
 }
@@ -355,6 +359,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 			hdl := Handler{
 				log:               slog.New(slog.DiscardHandler),
 				db:                withTx(db, c.Tx, c.BeginErr),
+				searchJobs:        search.NewJobs(true),
 				demoPrometheusURL: promURL,
 			}
 
@@ -915,9 +920,10 @@ func Test_Handler_TeardownOrganization(t *testing.T) {
 			}
 
 			hdl := Handler{
-				log:    slog.New(slog.DiscardHandler),
-				db:     withTx(c.DB, c.Tx, c.BeginErr),
-				storer: storer,
+				log:        slog.New(slog.DiscardHandler),
+				db:         withTx(c.DB, c.Tx, c.BeginErr),
+				storer:     storer,
+				searchJobs: search.NewJobs(true),
 			}
 
 			req := httptest.NewRequest(http.MethodPost, "http://test.com/", http.NoBody)

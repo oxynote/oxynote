@@ -49,13 +49,19 @@ background stack.
 
 All configuration lives in `docker/env/*.local.env` (created by `make setup`,
 gitignored). The defaults work out of the box; integrations (GitHub app,
-Slack app, AI assistant, email) are optional and stay disabled until their
-variables are set.
+Slack app, AI assistant, email, changedetection.io, Meilisearch) are
+optional and stay disabled until their variables are set. The frontend
+learns what a deployment offers from `GET /core/api/capabilities`, which
+reports a boolean per service (`github`, `slack`, `assistant`,
+`changedetection`, `search`) so unavailable features are not rendered at
+all.
 
 ## AI assistant
 
-The assistant is not tied to any one vendor. Pick a provider and a model
-in `docker/env/core.local.env`:
+The assistant is disabled by default: with `ASSISTANT_PROVIDER` empty the
+server boots without a model and the in-app chat is unavailable (the MCP
+server below keeps working). It is not tied to any one vendor — enable it
+by picking a provider and a model in `docker/env/core.local.env`:
 
 ```sh
 OXYNOTE_CORE_ASSISTANT_PROVIDER=claude

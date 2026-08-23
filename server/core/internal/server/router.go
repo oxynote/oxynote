@@ -183,6 +183,8 @@ func (s *Server) router() chi.Router {
 		s.ws.ServeHTTP(w, r)
 	}))
 
+	r.Get("/capabilities", s.fetchCapabilities)
+
 	r.Route("/github", func(sr chi.Router) {
 		// the status endpoint stays available when the GitHub App is not
 		// configured: it is the capability signal for the frontend.

@@ -12,6 +12,7 @@ import (
 	"github.com/jarcoal/httpmock"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
 	toolsMock "github.com/oxynote/oxynote/server/core/internal/assistant/tools/_mock"
+	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -46,7 +47,10 @@ func stubSet(db *toolsMock.DB) *tools.Set {
 	return tools.New(tools.NewDeps(
 		discardLog(),
 		db,
-		&toolsMock.Searcher{},
+		&toolsMock.Searcher{
+			ConfiguredFunc: func() bool { return true },
+		},
+		search.NewJobs(true),
 		nil,
 		&toolsMock.EditApplier{},
 		nil,

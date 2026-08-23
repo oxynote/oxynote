@@ -10,12 +10,18 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 )
 
 // ErrWatcherNotFound is returned when the watcher no longer exists on the
 // changedetection.io side, which a caller can recover from by creating it
 // again rather than failing forever.
 var ErrWatcherNotFound = errors.New("watcher not found")
+
+// ErrNotConfigured is returned when the changedetection.io integration is not
+// configured on this deployment.
+var ErrNotConfigured = errutil.New(http.StatusConflict, "changedetection.not_configured", "changedetection is not configured")
 
 // _requestTimeout bounds a single changedetection.io request. The callers
 // are hook processors running under the periodic executor's long-lived
@@ -39,8 +45,18 @@ func NewClient(baseURL, apiKey string) *Client {
 	}
 }
 
+// Configured reports whether the changedetection.io integration is
+// configured on this deployment. An empty base URL disables it.
+func (c *Client) Configured() bool {
+	return c.baseURL != ""
+}
+
 // FetchWatcher fetches the watch with the given UUID.
 func (c *Client) FetchWatcher(ctx context.Context, uuid string) (*Watch, error) {
+	if !c.Configured() {
+		return nil, ErrNotConfigured
+	}
+
 	url := c.baseURL + "/api/v1/watch/" + uuid
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
@@ -91,6 +107,10 @@ func (c *Client) FetchWatcher(ctx context.Context, uuid string) (*Watch, error) 
 
 // CreateWatcher creates a new watch and returns its uuid.
 func (c *Client) CreateWatcher(ctx context.Context, url string) (string, error) {
+	if !c.Configured() {
+		return "", ErrNotConfigured
+	}
+
 	body, err := json.Marshal(watchRequest{
 		URL:          url,
 		FetchBackend: _fetchBackendWebDriver,
@@ -133,6 +153,10 @@ func (c *Client) CreateWatcher(ctx context.Context, url string) (string, error) 
 
 // UpdateWatcher updates an existing watch.
 func (c *Client) UpdateWatcher(ctx context.Context, uuid, url string) error {
+	if !c.Configured() {
+		return ErrNotConfigured
+	}
+
 	body, err := json.Marshal(watchRequest{
 		URL:          url,
 		FetchBackend: _fetchBackendWebDriver,
@@ -165,8 +189,14 @@ func (c *Client) UpdateWatcher(ctx context.Context, uuid, url string) error {
 	return nil
 }
 
-// DeleteWatcher deletes the watch with the given UUID.
+// DeleteWatcher deletes the watch with the given UUID. On an
+// unconfigured deployment there is nothing to tear down, so the delete
+// succeeds as a no-op rather than blocking whatever removal asked for it.
 func (c *Client) DeleteWatcher(ctx context.Context, uuid string) error {
+	if !c.Configured() {
+		return nil
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.baseURL+"/api/v1/watch/"+uuid, http.NoBody)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)

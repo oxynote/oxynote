@@ -464,6 +464,30 @@ func Test_deleteDocument_Execute(t *testing.T) {
 
 	docID := xid.New()
 
+	// stubDeleteDB wires the given DB (nil for a bare one) with a
+	// transaction whose delete reports one destroyed document, or fails
+	// with deleteErr.
+	stubDeleteDB := func(db *DBMock, deleteErr error) *DBMock {
+		if db == nil {
+			db = &DBMock{}
+		}
+
+		db.BeginTxFunc = func(_ context.Context, dest any) error {
+			reflect.ValueOf(dest).Elem().Set(reflect.ValueOf(&TxMock{
+				DeleteDocumentFunc: func(_ context.Context, id xid.ID, _ string) ([]xid.ID, error) {
+					return []xid.ID{id}, deleteErr
+				},
+				InsertDocumentSearchJobFunc: func(context.Context, search.BlocksDifference) error {
+					return nil
+				},
+			}))
+
+			return nil
+		}
+
+		return db
+	}
+
 	cc := map[string]struct {
 		DB     *DBMock
 		Args   string
@@ -476,26 +500,22 @@ func Test_deleteDocument_Execute(t *testing.T) {
 			Args: `{"document_id":"nope"}`,
 			Err:  assert.AnError,
 		},
-		"Error returned by db.DeleteDocument": {
-			DB: &DBMock{
-				DeleteDocumentFunc: func(context.Context, xid.ID, string) error {
-					return assert.AnError
-				},
-			},
+		"Error returned by Tx.DeleteDocument": {
+			DB:   stubDeleteDB(nil, assert.AnError),
 			Args: `{"document_id":"` + docID.String() + `"}`,
 			Err:  assert.AnError,
 		},
 		"Deleted": {
-			DB:     stubDocumentDB(),
+			DB:     stubDeleteDB(stubDocumentDB(), nil),
 			Args:   `{"document_id":"` + docID.String() + `"}`,
 			Notify: 1,
 		},
 		"Deleted even when the parent cannot be captured": {
-			DB: &DBMock{
+			DB: stubDeleteDB(&DBMock{
 				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*document.Document, error) {
 					return nil, assert.AnError
 				},
-			},
+			}, nil),
 			Args:   `{"document_id":"` + docID.String() + `"}`,
 			Notify: 1,
 		},

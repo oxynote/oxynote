@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/guregu/null/v5"
+	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/internal/search"
@@ -62,10 +63,12 @@ func newTestHandler(db DB, pub *fakePublisher) (*Handler, *callbackCounts) {
 	cnt := &callbackCounts{}
 
 	hdl := &Handler{
-		log:      slog.New(slog.DiscardHandler),
-		db:       db,
-		notifPub: pub,
-		storer:   &StorerMock{},
+		log:             slog.New(slog.DiscardHandler),
+		db:              db,
+		notifPub:        pub,
+		storer:          &StorerMock{},
+		webchangeClient: webchange.NewClient("", ""),
+		searchJobs:      search.NewJobs(true),
 	}
 
 	hdl.tree.changeCallback = func(string, null.Value[xid.ID]) { cnt.tree++ }
@@ -148,14 +151,16 @@ func Test_NewHandler(t *testing.T) {
 
 	db := &DBMock{}
 	gw := &SearchGatewayMock{}
+	jobs := search.NewJobs(true)
 	pub := &fakePublisher{}
 	st := &StorerMock{}
 
-	hdl := NewHandler(slog.New(slog.DiscardHandler), db, nil, nil, gw, pub, st)
+	hdl := NewHandler(slog.New(slog.DiscardHandler), db, nil, nil, gw, jobs, pub, st)
 	require.NotNil(t, hdl)
 	assert.NotNil(t, hdl.log)
 	assert.Same(t, db, hdl.db)
 	assert.Same(t, gw, hdl.searchGateway)
+	assert.Same(t, jobs, hdl.searchJobs)
 	assert.Same(t, pub, hdl.notifPub)
 	assert.Same(t, st, hdl.storer)
 	assert.Nil(t, hdl.githubMan)
@@ -971,6 +976,16 @@ func Test_Handler_SearchDocuments(t *testing.T) {
 			},
 			Query:    "?q=test",
 			RespCode: http.StatusInternalServerError,
+		},
+		"Search not configured": {
+			Gateway: &SearchGatewayMock{
+				SearchDocumentsFunc: func(context.Context, string, string) ([]byte, error) {
+					return nil, search.ErrNotConfigured
+				},
+			},
+			Query:    "?q=test",
+			RespCode: http.StatusConflict,
+			RespBody: `{"code":"search.not_configured","message":"search is not configured"}`,
 		},
 		"Successful search": {
 			Gateway: &SearchGatewayMock{

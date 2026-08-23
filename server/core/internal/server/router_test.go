@@ -74,6 +74,10 @@ func Test_Server_httpRouter(t *testing.T) {
 		assert.False(t, routes[route], "%s sits behind the front door's 403", route)
 	}
 
+	// the capability signal lives on the session-authed surface (the "/"
+	// mount walks as "*").
+	assert.True(t, routes["GET /api/*/capabilities"])
+
 	// the service-to-service surface stays where it is.
 	assert.True(t, routes["POST /api/x/organizations/{organizationId}/teardown"])
 	assert.True(t, routes["PUT /api/x/documents/{documentId}/branch/{branchId}/"])
