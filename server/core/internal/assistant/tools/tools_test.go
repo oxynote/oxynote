@@ -6,6 +6,8 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -84,7 +86,7 @@ func Test_New(t *testing.T) {
 		// has anything to propose. Every tool satisfies the interface,
 		// so this asks what a compiler cannot: that the summary is
 		// actually there.
-		sum, serr := tl.Summary(testInput(testDeps(nil, nil, nil), name, `{}`))
+		sum, serr := tl.Summary(testInput(testDeps(stubDocumentDB(), nil, nil), name, requiredArgs(t, name)))
 		require.NoError(t, serr)
 		assert.Equal(t, tr.Write, sum.Summary != "",
 			"%s declares Write=%v but Summary=%q", name, tr.Write, sum.Summary)
@@ -249,6 +251,7 @@ func Test_Set_Label(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
+		DB     *DBMock
 		Name   Name
 		Args   string
 		Result string
@@ -263,18 +266,22 @@ func Test_Set_Label(t *testing.T) {
 		},
 		"Read names the document": {
 			Name:   NameReadDocumentSummary,
-			Args:   `{"document_id":"` + _testDocID + `"}`,
+			Args:   `{"document_id":"` + _testDocID.String() + `"}`,
 			Result: "Reading Runbook",
 		},
 		"Write names the document": {
 			Name:   NameUpdateBlockText,
-			Args:   `{"document_id":"` + _testDocID + `"}`,
+			Args:   `{"document_id":"` + _testDocID.String() + `","block_uid":"b","text":"t"}`,
 			Result: "Updating Runbook",
 		},
-		"Unresolvable document falls back": {
-			Name:   NameReadDocumentSummary,
-			Args:   `{}`,
-			Result: "Reading document",
+		"Unresolvable document is not announced": {
+			DB: &DBMock{
+				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*document.Document, error) {
+					return nil, assert.AnError
+				},
+			},
+			Name: NameReadDocumentSummary,
+			Args: `{"document_id":"` + _testDocID.String() + `"}`,
 		},
 		"Malformed arguments are not announced": {
 			// the call is about to fail on these same arguments, and
@@ -282,13 +289,22 @@ func Test_Set_Label(t *testing.T) {
 			Name: NameReadDocumentSummary,
 			Args: `{`,
 		},
+		"Missing arguments are not announced": {
+			Name: NameReadDocumentSummary,
+			Args: `{}`,
+		},
 	}
 
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			s := New(testDeps(stubDocumentDB(), nil, nil))
+			db := c.DB
+			if db == nil {
+				db = stubDocumentDB()
+			}
+
+			s := New(testDeps(db, nil, nil))
 
 			got := s.Label(context.Background(), c.Name, json.RawMessage(c.Args))
 			assert.Equal(t, c.Result, got)

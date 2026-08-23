@@ -9,6 +9,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
+	"github.com/rs/xid"
 )
 
 // SessionKeyAutoApprove marks a turn in which the user answered a
@@ -43,10 +44,11 @@ func registerConfirmTypes() {
 // protocol.ConfirmAction the client is sent.
 type ActionSummary struct {
 	// Tool is the name of the tool being proposed.
-	Tool string
+	Tool Name
 
-	// DocumentID is the document the op targets, when known.
-	DocumentID string
+	// DocumentID is the document the op targets, when known; nil when
+	// the write names no existing document.
+	DocumentID xid.ID
 
 	// DocumentName is the document's display name, when the summary
 	// helper could look it up.
@@ -119,14 +121,14 @@ func (c *confirming) InvokableRun(
 			return c.einoTool.InvokableRun(ctx, argumentsInJSON, opts...)
 		}
 
-		return "", c.interrupt(ctx, args)
+		return c.interrupt(ctx, args)
 	}
 
 	isResumeTarget, hasDecision, decision := compose.GetResumeContext[Decision](ctx)
 	if !isResumeTarget {
 		// another interrupt point is being resumed. Re-interrupt so this
 		// confirmation stays pending instead of being silently dropped.
-		return "", c.interrupt(ctx, args)
+		return c.interrupt(ctx, args)
 	}
 
 	if !hasDecision || !decision.Approved {
@@ -142,14 +144,18 @@ func (c *confirming) InvokableRun(
 // Arguments the tool cannot read fail here rather than parking the run:
 // the same payload would be rejected by the tool on resume, so asking
 // the user to approve it spends a confirmation on a call that was never
-// going to happen.
-func (c *confirming) interrupt(ctx context.Context, args json.RawMessage) error {
+// going to happen. The rejection comes back as the call's result rather
+// than as an error, for the same reason einoTool.InvokableRun does it: a
+// bad payload is the model's to fix, and it can only fix what it is told
+// about, while an error ends the turn and leaves the user with nothing.
+func (c *confirming) interrupt(ctx context.Context, args json.RawMessage) (string, error) {
 	summary, err := c.Summary(ctx, args)
 	if err != nil {
-		return err
+		//nolint:nilerr // the failure is the call's result here, not the turn's
+		return err.Error(), nil
 	}
 
-	return compose.StatefulInterrupt(ctx, summary, confirmState{})
+	return "", compose.StatefulInterrupt(ctx, summary, confirmState{})
 }
 
 // declinedResult is the tool result reported to the model when the user

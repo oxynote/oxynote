@@ -1,9 +1,10 @@
 package tools
 
 import (
-	"errors"
 	"fmt"
 	"log/slog"
+
+	"github.com/rs/xid"
 )
 
 const (
@@ -24,6 +25,15 @@ type searchDocumentsArgs struct {
 
 	// Limit caps the number of hits. Zero takes the default.
 	Limit int `json:"limit"`
+}
+
+// Validate checks the arguments are complete.
+func (a searchDocumentsArgs) Validate() error {
+	if a.Query == "" {
+		return errRequired(_keyQuery)
+	}
+
+	return nil
 }
 
 // searchDocuments runs a full-text search across the organisation.
@@ -60,10 +70,6 @@ func (searchDocuments) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	if in.Query == "" {
-		return "Searching documents", nil
-	}
-
 	return fmt.Sprintf("Searching for %q", in.Query), nil
 }
 
@@ -73,10 +79,6 @@ func (searchDocuments) Execute(inp Input) (string, error) {
 
 	if err := inp.Decode(&in); err != nil {
 		return "", err
-	}
-
-	if in.Query == "" {
-		return "", errors.New("search_documents: query is required")
 	}
 
 	limit := in.Limit
@@ -97,7 +99,7 @@ func (searchDocuments) Execute(inp Input) (string, error) {
 	// display names; join names in from the document tree so the AI can
 	// talk about hits without a follow-up lookup per document. Zero hits
 	// have nothing to decorate, so the fetch is skipped.
-	names := map[string]string{}
+	names := map[xid.ID]string{}
 
 	if len(blocks) > 0 {
 		tree, terr := inp.DocumentTree()
@@ -111,7 +113,7 @@ func (searchDocuments) Execute(inp Input) (string, error) {
 			)
 		} else {
 			for _, d := range tree.Descendants() {
-				names[d.ID.String()] = d.DocumentName
+				names[d.ID] = d.DocumentName
 			}
 		}
 	}
@@ -120,8 +122,8 @@ func (searchDocuments) Execute(inp Input) (string, error) {
 
 	for _, b := range blocks {
 		hits = append(hits, searchHit{
-			DocumentID:   b.DocumentID.String(),
-			DocumentName: names[b.DocumentID.String()],
+			DocumentID:   b.DocumentID,
+			DocumentName: names[b.DocumentID],
 			BlockUID:     b.ID,
 			Text:         b.Text,
 		})
@@ -141,7 +143,7 @@ type searchResult struct {
 // searchHit is one search_documents result row.
 type searchHit struct {
 	// DocumentID is the document containing the matching block.
-	DocumentID string `json:"document_id"`
+	DocumentID xid.ID `json:"document_id"`
 
 	// DocumentName is the document's display name, when resolvable from
 	// the tree. Empty if the document vanished between the index update

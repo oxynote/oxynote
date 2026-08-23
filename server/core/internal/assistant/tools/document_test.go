@@ -37,6 +37,12 @@ func stubCreateDB(checkErr error) *DBMock {
 	}
 }
 
+func Test_listDocumentsArgs_Validate(t *testing.T) {
+	t.Parallel()
+
+	assertValidate(t, listDocumentsArgs{}, nil)
+}
+
 func Test_listDocuments_Info(t *testing.T) {
 	t.Parallel()
 
@@ -102,6 +108,17 @@ func Test_listDocuments_Execute(t *testing.T) {
 			Args: `{"parent_id":"nope"}`,
 			Err:  assert.AnError,
 		},
+		"Empty parent id is refused": {
+			DB:   treeDB,
+			Args: `{"parent_id":""}`,
+			Err:  assert.AnError,
+		},
+		"Null parent id lists the whole tree": {
+			DB:   treeDB,
+			Args: `{"parent_id":null}`,
+			Result: `{"documents":[{"id":"` + parentID.String() + `","name":"Parent","icon":"lucide:file",` +
+				`"children":[{"id":"` + childID.String() + `","name":"Child","icon":""}]}]}`,
+		},
 		"Error returned by db.FetchDocumentTree": {
 			DB: &DBMock{
 				FetchDocumentTreeFunc: func(context.Context, string) (document.Summaries, error) {
@@ -138,6 +155,14 @@ func Test_listDocuments_Execute(t *testing.T) {
 			assert.JSONEq(t, c.Result, res)
 		})
 	}
+}
+
+func Test_getDocumentArgs_Validate(t *testing.T) {
+	t.Parallel()
+
+	assertValidate(t, getDocumentArgs{DocumentID: _testDocID}, map[string]Args{
+		"document_id": getDocumentArgs{},
+	})
 }
 
 func Test_getDocument_Info(t *testing.T) {
@@ -242,6 +267,14 @@ func Test_getDocument_Execute(t *testing.T) {
 	}
 }
 
+func Test_createDocumentArgs_Validate(t *testing.T) {
+	t.Parallel()
+
+	assertValidate(t, createDocumentArgs{Name: "n"}, map[string]Args{
+		"name": createDocumentArgs{},
+	})
+}
+
 func Test_createDocument_Info(t *testing.T) {
 	t.Parallel()
 
@@ -266,9 +299,9 @@ func Test_createDocument_Title(t *testing.T) {
 	got, err := createDocument{}.Title(testInput(d, NameCreateDocument, `{"name":"Runbook"}`))
 	require.NoError(t, err)
 	assert.Equal(t, `Creating "Runbook"`, got)
-	got, err = createDocument{}.Title(testInput(d, NameCreateDocument, `{}`))
-	require.NoError(t, err)
-	assert.Equal(t, "Creating a document", got)
+
+	_, err = createDocument{}.Title(testInput(d, NameCreateDocument, `{}`))
+	require.Error(t, err)
 }
 
 func Test_createDocument_Summary(t *testing.T) {
@@ -279,13 +312,12 @@ func Test_createDocument_Summary(t *testing.T) {
 	// a document that does not exist yet has no id to name.
 	got, err := createDocument{}.Summary(testInput(d, NameCreateDocument, `{"name":"Runbook"}`))
 	require.NoError(t, err)
-	assert.Equal(t, string(NameCreateDocument), got.Tool)
+	assert.Equal(t, NameCreateDocument, got.Tool)
 	assert.Equal(t, `Create document "Runbook"`, got.Summary)
 	assert.Empty(t, got.DocumentID)
 
-	got, err = createDocument{}.Summary(testInput(d, NameCreateDocument, `{}`))
-	require.NoError(t, err)
-	assert.Equal(t, "Create a new document", got.Summary)
+	_, err = createDocument{}.Summary(testInput(d, NameCreateDocument, `{}`))
+	require.Error(t, err)
 }
 
 func Test_createDocument_Execute(t *testing.T) {
@@ -304,6 +336,11 @@ func Test_createDocument_Execute(t *testing.T) {
 		"Parent id is not a valid xid": {
 			DB:   stubCreateDB(nil),
 			Args: `{"name":"Runbook","parent_id":"nope"}`,
+			Err:  assert.AnError,
+		},
+		"Empty parent id is refused": {
+			DB:   stubCreateDB(nil),
+			Args: `{"name":"Runbook","parent_id":""}`,
 			Err:  assert.AnError,
 		},
 		"Error returned by db.CheckDocumentExists": {
@@ -353,6 +390,14 @@ func Test_createDocument_Execute(t *testing.T) {
 	}
 }
 
+func Test_deleteDocumentArgs_Validate(t *testing.T) {
+	t.Parallel()
+
+	assertValidate(t, deleteDocumentArgs{DocumentID: _testDocID}, map[string]Args{
+		"document_id": deleteDocumentArgs{},
+	})
+}
+
 func Test_deleteDocument_Info(t *testing.T) {
 	t.Parallel()
 
@@ -375,10 +420,19 @@ func Test_deleteDocument_Title(t *testing.T) {
 
 	got, err := deleteDocument{}.Title(testInput(
 		testDeps(stubDocumentDB(), nil, nil), NameDeleteDocument,
-		`{"document_id":"`+_testDocID+`"}`,
+		`{"document_id":"`+_testDocID.String()+`"}`,
 	))
 	require.NoError(t, err)
 	assert.Equal(t, "Deleting Runbook", got)
+
+	// the document it names has to resolve; the failure is passed on
+	// rather than described around.
+	_, err = deleteDocument{}.Title(testInput(testDeps(failingDocumentDB(), nil, nil), NameDeleteDocument, requiredArgs(t, NameDeleteDocument)))
+	require.Error(t, err)
+
+	// unreadable arguments are refused before anything is looked up.
+	_, err = deleteDocument{}.Title(testInput(testDeps(stubDocumentDB(), nil, nil), NameDeleteDocument, `{`))
+	require.Error(t, err)
 }
 
 func Test_deleteDocument_Summary(t *testing.T) {
@@ -386,14 +440,23 @@ func Test_deleteDocument_Summary(t *testing.T) {
 
 	got, err := deleteDocument{}.Summary(testInput(
 		testDeps(stubDocumentDB(), nil, nil), NameDeleteDocument,
-		`{"document_id":"`+_testDocID+`"}`,
+		`{"document_id":"`+_testDocID.String()+`"}`,
 	))
 	require.NoError(t, err)
 
-	assert.Equal(t, string(NameDeleteDocument), got.Tool)
+	assert.Equal(t, NameDeleteDocument, got.Tool)
 	assert.Equal(t, _testDocID, got.DocumentID)
 	assert.Equal(t, "Runbook", got.DocumentName)
 	assert.Equal(t, "Delete Runbook", got.Summary)
+
+	// the document it names has to resolve; the failure is passed on
+	// rather than described around.
+	_, err = deleteDocument{}.Summary(testInput(testDeps(failingDocumentDB(), nil, nil), NameDeleteDocument, requiredArgs(t, NameDeleteDocument)))
+	require.Error(t, err)
+
+	// unreadable arguments are refused before anything is looked up.
+	_, err = deleteDocument{}.Summary(testInput(testDeps(stubDocumentDB(), nil, nil), NameDeleteDocument, `{`))
+	require.Error(t, err)
 }
 
 func Test_deleteDocument_Execute(t *testing.T) {
@@ -460,6 +523,15 @@ func Test_deleteDocument_Execute(t *testing.T) {
 	}
 }
 
+func Test_renameDocumentArgs_Validate(t *testing.T) {
+	t.Parallel()
+
+	assertValidate(t, renameDocumentArgs{DocumentID: _testDocID, Name: "n"}, map[string]Args{
+		"document_id": renameDocumentArgs{Name: "n"},
+		"name":        renameDocumentArgs{DocumentID: _testDocID},
+	})
+}
+
 func Test_renameDocument_Info(t *testing.T) {
 	t.Parallel()
 
@@ -480,10 +552,19 @@ func Test_renameDocument_Title(t *testing.T) {
 
 	got, err := renameDocument{}.Title(testInput(
 		testDeps(stubDocumentDB(), nil, nil), NameRenameDocument,
-		`{"document_id":"`+_testDocID+`"}`,
+		`{"document_id":"`+_testDocID.String()+`","name":"Playbook"}`,
 	))
 	require.NoError(t, err)
 	assert.Equal(t, "Renaming Runbook", got)
+
+	// the document it names has to resolve; the failure is passed on
+	// rather than described around.
+	_, err = renameDocument{}.Title(testInput(testDeps(failingDocumentDB(), nil, nil), NameRenameDocument, requiredArgs(t, NameRenameDocument)))
+	require.Error(t, err)
+
+	// unreadable arguments are refused before anything is looked up.
+	_, err = renameDocument{}.Title(testInput(testDeps(stubDocumentDB(), nil, nil), NameRenameDocument, `{`))
+	require.Error(t, err)
 }
 
 func Test_renameDocument_Summary(t *testing.T) {
@@ -492,15 +573,23 @@ func Test_renameDocument_Summary(t *testing.T) {
 	d := testDeps(stubDocumentDB(), nil, nil)
 
 	got, err := renameDocument{}.Summary(testInput(d, NameRenameDocument,
-		`{"document_id":"`+_testDocID+`","name":"Playbook"}`))
+		`{"document_id":"`+_testDocID.String()+`","name":"Playbook"}`))
 	require.NoError(t, err)
 	assert.Equal(t, `Rename Runbook to "Playbook"`, got.Summary)
 
-	// a missing name still produces a readable card.
-	got, err = renameDocument{}.Summary(testInput(d, NameRenameDocument,
-		`{"document_id":"`+_testDocID+`"}`))
-	require.NoError(t, err)
-	assert.Equal(t, "Rename Runbook", got.Summary)
+	// a missing name is refused before a card is built
+	_, err = renameDocument{}.Summary(testInput(d, NameRenameDocument,
+		`{"document_id":"`+_testDocID.String()+`"}`))
+	require.Error(t, err)
+
+	// the document it names has to resolve; the failure is passed on
+	// rather than described around.
+	_, err = renameDocument{}.Summary(testInput(testDeps(failingDocumentDB(), nil, nil), NameRenameDocument, requiredArgs(t, NameRenameDocument)))
+	require.Error(t, err)
+
+	// unreadable arguments are refused before anything is looked up.
+	_, err = renameDocument{}.Summary(testInput(testDeps(stubDocumentDB(), nil, nil), NameRenameDocument, `{`))
+	require.Error(t, err)
 }
 
 func Test_renameDocument_Execute(t *testing.T) {
@@ -515,7 +604,7 @@ func Test_renameDocument_Execute(t *testing.T) {
 		"Malformed arguments": {DB: stubDocumentDB(), Args: `{`, Err: assert.AnError},
 		"Name is required": {
 			DB:   stubDocumentDB(),
-			Args: `{"document_id":"` + _testDocID + `"}`,
+			Args: `{"document_id":"` + _testDocID.String() + `"}`,
 			Err:  assert.AnError,
 		},
 		"Error returned by the edit": {
@@ -524,12 +613,12 @@ func Test_renameDocument_Execute(t *testing.T) {
 					return nil, assert.AnError
 				},
 			},
-			Args: `{"document_id":"` + _testDocID + `","name":"Playbook"}`,
+			Args: `{"document_id":"` + _testDocID.String() + `","name":"Playbook"}`,
 			Err:  assert.AnError,
 		},
 		"Renamed": {
 			DB:     stubDocumentDB(),
-			Args:   `{"document_id":"` + _testDocID + `","name":"Playbook"}`,
+			Args:   `{"document_id":"` + _testDocID.String() + `","name":"Playbook"}`,
 			Notify: 1,
 		},
 	}
@@ -554,6 +643,15 @@ func Test_renameDocument_Execute(t *testing.T) {
 			assert.JSONEq(t, `{"applied":1,"errors":[]}`, res)
 		})
 	}
+}
+
+func Test_setDocumentIconArgs_Validate(t *testing.T) {
+	t.Parallel()
+
+	assertValidate(t, setDocumentIconArgs{DocumentID: _testDocID, Icon: "i"}, map[string]Args{
+		"document_id": setDocumentIconArgs{Icon: "i"},
+		"icon":        setDocumentIconArgs{DocumentID: _testDocID},
+	})
 }
 
 func Test_setDocumentIcon_Info(t *testing.T) {
@@ -587,14 +685,23 @@ func Test_setDocumentIcon_Summary(t *testing.T) {
 	d := testDeps(stubDocumentDB(), nil, nil)
 
 	got, err := setDocumentIcon{}.Summary(testInput(d, NameSetDocumentIcon,
-		`{"document_id":"`+_testDocID+`","icon":"lucide:rocket"}`))
+		`{"document_id":"`+_testDocID.String()+`","icon":"lucide:rocket"}`))
 	require.NoError(t, err)
 	assert.Equal(t, "Change icon of Runbook to lucide:rocket", got.Summary)
 
-	got, err = setDocumentIcon{}.Summary(testInput(d, NameSetDocumentIcon,
-		`{"document_id":"`+_testDocID+`"}`))
-	require.NoError(t, err)
-	assert.Equal(t, "Change icon of Runbook", got.Summary)
+	// a missing icon is refused before a card is built
+	_, err = setDocumentIcon{}.Summary(testInput(d, NameSetDocumentIcon,
+		`{"document_id":"`+_testDocID.String()+`"}`))
+	require.Error(t, err)
+
+	// the document it names has to resolve; the failure is passed on
+	// rather than described around.
+	_, err = setDocumentIcon{}.Summary(testInput(testDeps(failingDocumentDB(), nil, nil), NameSetDocumentIcon, requiredArgs(t, NameSetDocumentIcon)))
+	require.Error(t, err)
+
+	// unreadable arguments are refused before anything is looked up.
+	_, err = setDocumentIcon{}.Summary(testInput(testDeps(stubDocumentDB(), nil, nil), NameSetDocumentIcon, `{`))
+	require.Error(t, err)
 }
 
 func Test_setDocumentIcon_Execute(t *testing.T) {
@@ -609,7 +716,7 @@ func Test_setDocumentIcon_Execute(t *testing.T) {
 		"Malformed arguments": {DB: stubDocumentDB(), Args: `{`, Err: assert.AnError},
 		"Icon is required": {
 			DB:   stubDocumentDB(),
-			Args: `{"document_id":"` + _testDocID + `"}`,
+			Args: `{"document_id":"` + _testDocID.String() + `"}`,
 			Err:  assert.AnError,
 		},
 		"Error returned by the edit": {
@@ -618,12 +725,12 @@ func Test_setDocumentIcon_Execute(t *testing.T) {
 					return nil, assert.AnError
 				},
 			},
-			Args: `{"document_id":"` + _testDocID + `","icon":"lucide:rocket"}`,
+			Args: `{"document_id":"` + _testDocID.String() + `","icon":"lucide:rocket"}`,
 			Err:  assert.AnError,
 		},
 		"Icon set": {
 			DB:     stubDocumentDB(),
-			Args:   `{"document_id":"` + _testDocID + `","icon":"lucide:rocket"}`,
+			Args:   `{"document_id":"` + _testDocID.String() + `","icon":"lucide:rocket"}`,
 			Notify: 1,
 		},
 	}
@@ -650,6 +757,14 @@ func Test_setDocumentIcon_Execute(t *testing.T) {
 	}
 }
 
+func Test_moveDocumentArgs_Validate(t *testing.T) {
+	t.Parallel()
+
+	assertValidate(t, moveDocumentArgs{DocumentID: _testDocID}, map[string]Args{
+		"document_id": moveDocumentArgs{},
+	})
+}
+
 func Test_moveDocument_Info(t *testing.T) {
 	t.Parallel()
 
@@ -671,10 +786,19 @@ func Test_moveDocument_Title(t *testing.T) {
 
 	got, err := moveDocument{}.Title(testInput(
 		testDeps(stubDocumentDB(), nil, nil), NameMoveDocument,
-		`{"document_id":"`+_testDocID+`"}`,
+		`{"document_id":"`+_testDocID.String()+`"}`,
 	))
 	require.NoError(t, err)
 	assert.Equal(t, "Moving Runbook", got)
+
+	// the document it names has to resolve; the failure is passed on
+	// rather than described around.
+	_, err = moveDocument{}.Title(testInput(testDeps(failingDocumentDB(), nil, nil), NameMoveDocument, requiredArgs(t, NameMoveDocument)))
+	require.Error(t, err)
+
+	// unreadable arguments are refused before anything is looked up.
+	_, err = moveDocument{}.Title(testInput(testDeps(stubDocumentDB(), nil, nil), NameMoveDocument, `{`))
+	require.Error(t, err)
 }
 
 func Test_moveDocument_Summary(t *testing.T) {
@@ -683,14 +807,23 @@ func Test_moveDocument_Summary(t *testing.T) {
 	d := testDeps(stubDocumentDB(), nil, nil)
 
 	got, err := moveDocument{}.Summary(testInput(d, NameMoveDocument,
-		`{"document_id":"`+_testDocID+`"}`))
+		`{"document_id":"`+_testDocID.String()+`"}`))
 	require.NoError(t, err)
 	assert.Equal(t, "Move Runbook to the org root", got.Summary)
 
 	got, err = moveDocument{}.Summary(testInput(d, NameMoveDocument,
-		`{"document_id":"`+_testDocID+`","new_parent_id":"`+xid.New().String()+`"}`))
+		`{"document_id":"`+_testDocID.String()+`","new_parent_id":"`+xid.New().String()+`"}`))
 	require.NoError(t, err)
 	assert.Equal(t, "Move Runbook under another document", got.Summary)
+
+	// the document it names has to resolve; the failure is passed on
+	// rather than described around.
+	_, err = moveDocument{}.Summary(testInput(testDeps(failingDocumentDB(), nil, nil), NameMoveDocument, requiredArgs(t, NameMoveDocument)))
+	require.Error(t, err)
+
+	// unreadable arguments are refused before anything is looked up.
+	_, err = moveDocument{}.Summary(testInput(testDeps(stubDocumentDB(), nil, nil), NameMoveDocument, `{`))
+	require.Error(t, err)
 }
 
 func Test_moveDocument_Execute(t *testing.T) {
@@ -810,8 +943,8 @@ func Test_summariesToTree(t *testing.T) {
 	}})
 
 	require.Len(t, got, 1)
-	assert.Equal(t, id.String(), got[0].ID)
+	assert.Equal(t, id, got[0].ID)
 	assert.Equal(t, "Parent", got[0].Name)
 	require.Len(t, got[0].Children, 1)
-	assert.Equal(t, child.String(), got[0].Children[0].ID)
+	assert.Equal(t, child, got[0].Children[0].ID)
 }

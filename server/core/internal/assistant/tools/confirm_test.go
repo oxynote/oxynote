@@ -49,9 +49,10 @@ type gateCase struct {
 	// confirmation.
 	Interrupted bool
 
-	// Rejected expects the gate to refuse the call outright instead of
-	// parking it, because the arguments cannot be read.
-	Rejected bool
+	// Rejected, when set, expects the gate to refuse the call outright
+	// instead of parking it, because the arguments cannot be read, and
+	// is the text the refusal must carry.
+	Rejected string
 
 	// RespJSON is the final tool result when the run completes.
 	RespJSON string
@@ -72,12 +73,16 @@ func Test_confirming_InvokableRun(t *testing.T) {
 	// turn reruns the tool from the top, so a tool that applied its
 	// edit before interrupting would apply it a second time.
 	cc := map[string]gateCase{
-		"Insert block asks first":      {Name: NameInsertBlock, Args: `{"document_id":"d","block_uid":"b"}`, Interrupted: true},
-		"Delete block asks first":      {Name: NameDeleteBlock, Args: `{"document_id":"d","block_uid":"b"}`, Interrupted: true},
-		"Delete document asks first":   {Name: NameDeleteDocument, Args: `{"document_id":"d"}`, Interrupted: true},
-		"Rename document asks first":   {Name: NameRenameDocument, Args: `{"document_id":"d","name":"n"}`, Interrupted: true},
+		"Insert block asks first": {
+			Name:        NameInsertBlock,
+			Args:        `{"document_id":"` + docID.String() + `","reference_block_uid":"b","position":"after","block":{"type":"paragraph"}}`,
+			Interrupted: true,
+		},
+		"Delete block asks first":      {Name: NameDeleteBlock, Args: deleteArgs, Interrupted: true},
+		"Delete document asks first":   {Name: NameDeleteDocument, Args: `{"document_id":"` + docID.String() + `"}`, Interrupted: true},
+		"Rename document asks first":   {Name: NameRenameDocument, Args: `{"document_id":"` + docID.String() + `","name":"n"}`, Interrupted: true},
 		"Create document asks first":   {Name: NameCreateDocument, Args: `{"name":"n"}`, Interrupted: true},
-		"Update block text asks first": {Name: NameUpdateBlockText, Args: `{"document_id":"d","block_uid":"b"}`, Interrupted: true},
+		"Update block text asks first": {Name: NameUpdateBlockText, Args: writeArgs, Interrupted: true},
 		"Approve-all covers a later non-destructive write": {
 			Name:        NameUpdateBlockText,
 			Args:        writeArgs,
@@ -113,7 +118,12 @@ func Test_confirming_InvokableRun(t *testing.T) {
 		"Unreadable arguments are refused, never confirmed": {
 			Name:     NameUpdateBlockText,
 			Args:     `{`,
-			Rejected: true,
+			Rejected: "update_block_text: invalid input",
+		},
+		"Missing arguments are refused, never confirmed": {
+			Name:     NameUpdateBlockText,
+			Args:     `{"document_id":"` + docID.String() + `","block_uid":"b"}`,
+			Rejected: "update_block_text: text is required",
 		},
 	}
 
@@ -124,15 +134,15 @@ func Test_confirming_InvokableRun(t *testing.T) {
 			applier := stubApplier()
 			ct := gatedTool(t, New(testDeps(stubDocumentDB(), applier, nil)), c.Name)
 
-			if c.Rejected {
+			if c.Rejected != "" {
 				// the same payload would be rejected by the tool on
 				// resume, so the run must not spend a confirmation on
-				// it.
-				_, rerr := ct.InvokableRun(context.Background(), c.Args)
-				require.Error(t, rerr)
-
-				_, parked := compose.IsInterruptRerunError(rerr)
-				assert.False(t, parked, "unreadable arguments must not park the run")
+				// it. The rejection is the call's result, not an
+				// error: an error would end the turn, and the payload
+				// is the model's to fix.
+				res, rerr := ct.InvokableRun(context.Background(), c.Args)
+				require.NoError(t, rerr, "bad arguments must not end the turn")
+				assert.Contains(t, res, c.Rejected)
 				assert.Empty(t, applier.ApplyCalls())
 
 				return
@@ -265,7 +275,7 @@ func requireConfirmInterrupt(t *testing.T, err error, name Name) string {
 
 	summary, ok := info.(ActionSummary)
 	require.True(t, ok, "the interrupt must carry a confirm summary, got %T", info)
-	assert.Equal(t, string(name), summary.Tool)
+	assert.Equal(t, name, summary.Tool)
 
 	return id
 }

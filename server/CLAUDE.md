@@ -170,15 +170,34 @@ instead of type-asserting its way to it.
 **`Decode` is the only way into a call's arguments.** There is no lenient
 variant: `Title`, `Summary` and `Execute` all decode and all return an error, so
 no description is ever built from the zero values a failed unmarshal left
-behind. `Title` also takes the document id it read to `Subject`, and `Summary`
-takes it to `summarize`, so nothing re-derives a target the caller already has.
+behind. A `Title` or `Summary` that names its target fetches it — `inp.Document`,
+`inp.DataSource` — and uses the name on the row; a target that does not resolve
+is an error passed on, never a placeholder, so the model is told what it named
+does not exist (`Set.Label` announces nothing, the gate returns the text as the
+call's result).
 
-Each caller then decides what an unreadable payload means. The gate propagates
-it rather than parking the run — a payload `Execute` would reject is not worth
-spending a user's confirmation on, and the same payload comes back unchanged on
-resume. `Set.Label` turns it into an empty label: the observer announces a call
-it is about to make, and that call is about to fail on the same arguments, so
-the failure is the tool's to report and a status line derived from nothing would
+`Decode` takes an `Args` — a type with `Validate() error` — and runs it once
+the payload is read, so a tool states what it requires next to the fields that
+carry it (`errRequired(key)` → `<tool>: <key> is required`) and `Title`,
+`Summary` and `Execute` never see a payload the tool cannot act on. Every tool
+therefore has a named `<tool>Args` type, read tools included. Arguments are
+typed, not parsed: ids are `xid.ID` (optional ones `null.Value[xid.ID]`),
+timestamps `time.Time`, enums their own self-validating type
+(`processor.ChartType`, `position`), and `Decode` runs on `encoding/json/v2` so
+a value one of those types rejects is reported with the argument's JSON path
+(`within "/document_id"`). An empty string is never "absent" for such an
+argument — it is an invalid value, and the model is told so. Ids stay `xid.ID`
+all the way to the wire: result structs, `ActionSummary`, `Result.Documents`
+and the edit client take ids, and only the protocol/MCP edges render strings.
+
+Each caller then decides what an unreadable payload means. Neither ends the
+turn: a bad payload is the model's to fix, and it can only fix what it is told
+about. The gate hands the rejection back as the call's result rather than
+parking the run — a payload `Execute` would reject is not worth spending a
+user's confirmation on, and the same payload comes back unchanged on resume.
+`Set.Label` turns it into an empty label: the observer announces a call it is
+about to make, and that call is about to fail on the same arguments, so the
+failure is the tool's to report and a status line derived from nothing would
 only precede it with a lie.
 
 `Input` is built per call and carries the call itself: its context, its raw

@@ -1,8 +1,8 @@
 package tools
 
 import (
-	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -19,7 +19,16 @@ const _maxPreviewLen = 60
 // readDocumentSummaryArgs is what read_document_summary is called with.
 type readDocumentSummaryArgs struct {
 	// DocumentID names the document being summarised.
-	DocumentID string `json:"document_id"`
+	DocumentID xid.ID `json:"document_id"`
+}
+
+// Validate checks the arguments are complete.
+func (a readDocumentSummaryArgs) Validate() error {
+	if a.DocumentID.IsNil() {
+		return errRequired(_keyDocumentID)
+	}
+
+	return nil
 }
 
 // readDocumentSummary returns a compact, ordered view of a document.
@@ -50,7 +59,12 @@ func (readDocumentSummary) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	return "Reading " + inp.Subject(in.DocumentID), nil
+	doc, err := inp.Document(in.DocumentID)
+	if err != nil {
+		return "", fmt.Errorf("%s: fetch document: %w", NameReadDocumentSummary, err)
+	}
+
+	return "Reading " + doc.DocumentName, nil
 }
 
 // Execute summarises the document's default branch.
@@ -61,18 +75,13 @@ func (readDocumentSummary) Execute(inp Input) (string, error) {
 		return "", err
 	}
 
-	docID, err := xid.FromString(in.DocumentID)
-	if err != nil {
-		return "", fmt.Errorf("read_document_summary: document_id is not a valid xid: %w", err)
-	}
-
-	content, err := inp.DocumentContent(docID)
+	content, err := inp.DocumentContent(in.DocumentID)
 	if err != nil {
 		return "", fmt.Errorf("read_document_summary: fetch content: %w", err)
 	}
 
 	return result(documentSummaryResult{
-		DocumentID:   docID.String(),
+		DocumentID:   in.DocumentID,
 		DocumentName: content.DocumentName,
 		Blocks:       walkDocForAssistant(content.Content.Content),
 	})
@@ -81,7 +90,7 @@ func (readDocumentSummary) Execute(inp Input) (string, error) {
 // documentSummaryResult is what read_document_summary returns.
 type documentSummaryResult struct {
 	// DocumentID is the document the summary describes.
-	DocumentID string `json:"document_id"`
+	DocumentID xid.ID `json:"document_id"`
 
 	// DocumentName is the document's display name.
 	DocumentName string `json:"document_name"`
@@ -93,10 +102,23 @@ type documentSummaryResult struct {
 // readBlockArgs is what read_block is called with.
 type readBlockArgs struct {
 	// DocumentID names the document holding the block.
-	DocumentID string `json:"document_id"`
+	DocumentID xid.ID `json:"document_id"`
 
 	// BlockUID is the block being read. Required.
 	BlockUID string `json:"block_uid"`
+}
+
+// Validate checks the arguments are complete.
+func (a readBlockArgs) Validate() error {
+	if a.DocumentID.IsNil() {
+		return errRequired(_keyDocumentID)
+	}
+
+	if a.BlockUID == "" {
+		return errRequired(_keyBlockUID)
+	}
+
+	return nil
 }
 
 // readBlock returns the full canonical content of one block.
@@ -133,7 +155,12 @@ func (readBlock) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	return "Reading a block in " + inp.Subject(in.DocumentID), nil
+	doc, err := inp.Document(in.DocumentID)
+	if err != nil {
+		return "", fmt.Errorf("%s: fetch document: %w", NameReadBlock, err)
+	}
+
+	return "Reading a block in " + doc.DocumentName, nil
 }
 
 // Execute fetches and compacts the named block.
@@ -144,16 +171,7 @@ func (readBlock) Execute(inp Input) (string, error) {
 		return "", err
 	}
 
-	docID, err := xid.FromString(in.DocumentID)
-	if err != nil {
-		return "", fmt.Errorf("read_block: document_id is not a valid xid: %w", err)
-	}
-
-	if in.BlockUID == "" {
-		return "", errors.New("read_block: block_uid is required")
-	}
-
-	content, err := inp.DocumentContent(docID)
+	content, err := inp.DocumentContent(in.DocumentID)
 	if err != nil {
 		return "", fmt.Errorf("read_block: fetch content: %w", err)
 	}
@@ -185,8 +203,8 @@ func (insertBlock) Info() Info {
 			"position": map[string]any{
 				_keyType: _typeString,
 				"enum": []string{
-					"before",
-					"after",
+					string(positionBefore),
+					string(positionAfter),
 				},
 				_keyDescription: "Insert side relative to the reference block.",
 			},
@@ -201,21 +219,66 @@ func (insertBlock) Info() Info {
 	}
 }
 
+const (
+	// positionBefore inserts ahead of the reference block.
+	positionBefore position = "before"
+
+	// positionAfter inserts behind the reference block.
+	positionAfter position = "after"
+)
+
+// position is the side of a reference block an insertion lands on.
+type position string
+
+// UnmarshalText parses the position, refusing anything but the two
+// sides. The schema enum is what the model was shown; the decoder is
+// where a value outside it gets reported, named by argument.
+func (p *position) UnmarshalText(text []byte) error {
+	switch v := position(text); v {
+	case positionBefore, positionAfter:
+		*p = v
+
+		return nil
+	default:
+		return fmt.Errorf("position must be %q or %q, got %q", positionBefore, positionAfter, text)
+	}
+}
+
 // insertBlockArgs is what insert_block is called with.
 type insertBlockArgs struct {
 	// DocumentID names the document to insert into.
-	DocumentID string `json:"document_id"`
+	DocumentID xid.ID `json:"document_id"`
 
 	// ReferenceBlockUID is the block the insertion is positioned
 	// against. Required.
 	ReferenceBlockUID string `json:"reference_block_uid"`
 
-	// Position is the side of the reference block to insert on,
-	// "before" or "after".
-	Position string `json:"position"`
+	// Position is the side of the reference block to insert on.
+	Position position `json:"position"`
 
 	// Block is the block being inserted.
 	Block block.Block `json:"block"`
+}
+
+// Validate checks the arguments are complete.
+func (a insertBlockArgs) Validate() error {
+	if a.DocumentID.IsNil() {
+		return errRequired(_keyDocumentID)
+	}
+
+	if a.ReferenceBlockUID == "" {
+		return errRequired("reference_block_uid")
+	}
+
+	if a.Position == "" {
+		return errRequired("position")
+	}
+
+	if a.Block.Type == "" {
+		return errRequired(_keyBlock)
+	}
+
+	return nil
 }
 
 // Traits reports a write.
@@ -231,7 +294,12 @@ func (insertBlock) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	return "Updating " + inp.Subject(in.DocumentID), nil
+	doc, err := inp.Document(in.DocumentID)
+	if err != nil {
+		return "", fmt.Errorf("%s: fetch document: %w", NameInsertBlock, err)
+	}
+
+	return "Updating " + doc.DocumentName, nil
 }
 
 // Summary describes the insertion the model wants to make.
@@ -242,19 +310,17 @@ func (insertBlock) Summary(inp DescribeInput) (ActionSummary, error) {
 		return ActionSummary{}, err
 	}
 
-	out := summarize(inp, NameInsertBlock, in.DocumentID, func(subject string) string {
-		// echoing a missing or garbage position onto the confirm card
-		// would garble it, so fall back to an un-positioned phrase.
-		if in.Position != "before" && in.Position != "after" {
-			return fmt.Sprintf("Insert %s in %s",
-				blockKindLabel(in.Block.Type), subject)
-		}
+	doc, err := inp.Document(in.DocumentID)
+	if err != nil {
+		return ActionSummary{}, fmt.Errorf("%s: fetch document: %w", NameInsertBlock, err)
+	}
 
-		return fmt.Sprintf("Insert %s %s a block in %s",
-			blockKindLabel(in.Block.Type), in.Position, subject)
-	})
-
-	return out, nil
+	return ActionSummary{
+		Tool:         NameInsertBlock,
+		DocumentID:   doc.ID,
+		DocumentName: doc.DocumentName,
+		Summary:      fmt.Sprintf("Insert %s %s a block in %s", blockKindLabel(in.Block.Type), in.Position, doc.DocumentName),
+	}, nil
 }
 
 // Execute validates the placement and applies the insertion.
@@ -265,21 +331,9 @@ func (insertBlock) Execute(inp Input) (string, error) {
 		return "", err
 	}
 
-	if in.ReferenceBlockUID == "" {
-		return "", errors.New("insert_block: reference_block_uid is required")
-	}
-
-	// the enum check is free while ValidatePlacement may hit the
-	// database, so a bad position fails before any I/O happens.
-	var op edit.Operation
-
-	switch in.Position {
-	case "before":
+	op := edit.InsertAfter(in.ReferenceBlockUID, in.Block)
+	if in.Position == positionBefore {
 		op = edit.InsertBefore(in.ReferenceBlockUID, in.Block)
-	case "after":
-		op = edit.InsertAfter(in.ReferenceBlockUID, in.Block)
-	default:
-		return "", fmt.Errorf("insert_block: position must be \"before\" or \"after\", got %q", in.Position)
 	}
 
 	if err := inp.ValidatePlacement(in.DocumentID, in.ReferenceBlockUID, in.Block); err != nil {
@@ -298,10 +352,23 @@ func (insertBlock) Execute(inp Input) (string, error) {
 // so they take the same arguments.
 type rootBlockArgs struct {
 	// DocumentID names the document to write to.
-	DocumentID string `json:"document_id"`
+	DocumentID xid.ID `json:"document_id"`
 
 	// Block is the block being added.
 	Block block.Block `json:"block"`
+}
+
+// Validate checks the arguments are complete.
+func (a rootBlockArgs) Validate() error {
+	if a.DocumentID.IsNil() {
+		return errRequired(_keyDocumentID)
+	}
+
+	if a.Block.Type == "" {
+		return errRequired(_keyBlock)
+	}
+
+	return nil
 }
 
 // appendBlock adds a canonical block at the end of a document.
@@ -336,7 +403,12 @@ func (appendBlock) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	return "Updating " + inp.Subject(in.DocumentID), nil
+	doc, err := inp.Document(in.DocumentID)
+	if err != nil {
+		return "", fmt.Errorf("%s: fetch document: %w", NameAppendBlock, err)
+	}
+
+	return "Updating " + doc.DocumentName, nil
 }
 
 // Summary describes the block the model wants to append.
@@ -347,11 +419,17 @@ func (appendBlock) Summary(inp DescribeInput) (ActionSummary, error) {
 		return ActionSummary{}, err
 	}
 
-	out := summarize(inp, NameAppendBlock, in.DocumentID, func(subject string) string {
-		return fmt.Sprintf("Append %s to %s", blockKindLabel(in.Block.Type), subject)
-	})
+	doc, err := inp.Document(in.DocumentID)
+	if err != nil {
+		return ActionSummary{}, fmt.Errorf("%s: fetch document: %w", NameAppendBlock, err)
+	}
 
-	return out, nil
+	return ActionSummary{
+		Tool:         NameAppendBlock,
+		DocumentID:   doc.ID,
+		DocumentName: doc.DocumentName,
+		Summary:      fmt.Sprintf("Append %s to %s", blockKindLabel(in.Block.Type), doc.DocumentName),
+	}, nil
 }
 
 // Execute validates the block and appends it.
@@ -405,7 +483,12 @@ func (prependBlock) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	return "Updating " + inp.Subject(in.DocumentID), nil
+	doc, err := inp.Document(in.DocumentID)
+	if err != nil {
+		return "", fmt.Errorf("%s: fetch document: %w", NamePrependBlock, err)
+	}
+
+	return "Updating " + doc.DocumentName, nil
 }
 
 // Summary describes the block the model wants to prepend.
@@ -416,11 +499,17 @@ func (prependBlock) Summary(inp DescribeInput) (ActionSummary, error) {
 		return ActionSummary{}, err
 	}
 
-	out := summarize(inp, NamePrependBlock, in.DocumentID, func(subject string) string {
-		return fmt.Sprintf("Prepend %s to %s", blockKindLabel(in.Block.Type), subject)
-	})
+	doc, err := inp.Document(in.DocumentID)
+	if err != nil {
+		return ActionSummary{}, fmt.Errorf("%s: fetch document: %w", NamePrependBlock, err)
+	}
 
-	return out, nil
+	return ActionSummary{
+		Tool:         NamePrependBlock,
+		DocumentID:   doc.ID,
+		DocumentName: doc.DocumentName,
+		Summary:      fmt.Sprintf("Prepend %s to %s", blockKindLabel(in.Block.Type), doc.DocumentName),
+	}, nil
 }
 
 // Execute validates the block and prepends it.
@@ -445,13 +534,30 @@ func (prependBlock) Execute(inp Input) (string, error) {
 // replaceBlockArgs is what replace_block is called with.
 type replaceBlockArgs struct {
 	// DocumentID names the document holding the block.
-	DocumentID string `json:"document_id"`
+	DocumentID xid.ID `json:"document_id"`
 
 	// BlockUID is the block being replaced. Required.
 	BlockUID string `json:"block_uid"`
 
 	// Block is what takes its place.
 	Block block.Block `json:"block"`
+}
+
+// Validate checks the arguments are complete.
+func (a replaceBlockArgs) Validate() error {
+	if a.DocumentID.IsNil() {
+		return errRequired(_keyDocumentID)
+	}
+
+	if a.BlockUID == "" {
+		return errRequired(_keyBlockUID)
+	}
+
+	if a.Block.Type == "" {
+		return errRequired(_keyBlock)
+	}
+
+	return nil
 }
 
 // replaceBlock swaps an existing block for a new one.
@@ -488,7 +594,12 @@ func (replaceBlock) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	return "Updating " + inp.Subject(in.DocumentID), nil
+	doc, err := inp.Document(in.DocumentID)
+	if err != nil {
+		return "", fmt.Errorf("%s: fetch document: %w", NameReplaceBlock, err)
+	}
+
+	return "Updating " + doc.DocumentName, nil
 }
 
 // Summary describes the replacement the model wants to make.
@@ -499,11 +610,17 @@ func (replaceBlock) Summary(inp DescribeInput) (ActionSummary, error) {
 		return ActionSummary{}, err
 	}
 
-	out := summarize(inp, NameReplaceBlock, in.DocumentID, func(subject string) string {
-		return fmt.Sprintf("Replace a block in %s with %s", subject, blockKindLabel(in.Block.Type))
-	})
+	doc, err := inp.Document(in.DocumentID)
+	if err != nil {
+		return ActionSummary{}, fmt.Errorf("%s: fetch document: %w", NameReplaceBlock, err)
+	}
 
-	return out, nil
+	return ActionSummary{
+		Tool:         NameReplaceBlock,
+		DocumentID:   doc.ID,
+		DocumentName: doc.DocumentName,
+		Summary:      fmt.Sprintf("Replace a block in %s with %s", doc.DocumentName, blockKindLabel(in.Block.Type)),
+	}, nil
 }
 
 // Execute validates the replacement and applies it.
@@ -512,10 +629,6 @@ func (replaceBlock) Execute(inp Input) (string, error) {
 
 	if err := inp.Decode(&in); err != nil {
 		return "", err
-	}
-
-	if in.BlockUID == "" {
-		return "", errors.New("replace_block: block_uid is required")
 	}
 
 	// the replacement lands where the target sits, so the target is what
@@ -534,13 +647,30 @@ func (replaceBlock) Execute(inp Input) (string, error) {
 // updateBlockTextArgs is what update_block_text is called with.
 type updateBlockTextArgs struct {
 	// DocumentID names the document holding the block.
-	DocumentID string `json:"document_id"`
+	DocumentID xid.ID `json:"document_id"`
 
 	// BlockUID is the block whose text is being written. Required.
 	BlockUID string `json:"block_uid"`
 
 	// Text is the new inline content.
 	Text string `json:"text"`
+}
+
+// Validate checks the arguments are complete.
+func (a updateBlockTextArgs) Validate() error {
+	if a.DocumentID.IsNil() {
+		return errRequired(_keyDocumentID)
+	}
+
+	if a.BlockUID == "" {
+		return errRequired(_keyBlockUID)
+	}
+
+	if a.Text == "" {
+		return errRequired("text")
+	}
+
+	return nil
 }
 
 // updateBlockText replaces the inline text of a text-bearing block.
@@ -577,7 +707,12 @@ func (updateBlockText) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	return "Updating " + inp.Subject(in.DocumentID), nil
+	doc, err := inp.Document(in.DocumentID)
+	if err != nil {
+		return "", fmt.Errorf("%s: fetch document: %w", NameUpdateBlockText, err)
+	}
+
+	return "Updating " + doc.DocumentName, nil
 }
 
 // Summary previews the text the model wants to write.
@@ -590,15 +725,22 @@ func (updateBlockText) Summary(inp DescribeInput) (ActionSummary, error) {
 
 	preview := textPreview(in.Text, _maxPreviewLen)
 
-	out := summarize(inp, NameUpdateBlockText, in.DocumentID, func(subject string) string {
-		if preview == "" {
-			return "Update text of a block in " + subject
-		}
+	doc, err := inp.Document(in.DocumentID)
+	if err != nil {
+		return ActionSummary{}, fmt.Errorf("%s: fetch document: %w", NameUpdateBlockText, err)
+	}
 
-		return fmt.Sprintf("Update a block in %s: %q", subject, preview)
-	})
+	summary := fmt.Sprintf("Update a block in %s: %q", doc.DocumentName, preview)
+	if preview == "" {
+		summary = "Update text of a block in " + doc.DocumentName
+	}
 
-	return out, nil
+	return ActionSummary{
+		Tool:         NameUpdateBlockText,
+		DocumentID:   doc.ID,
+		DocumentName: doc.DocumentName,
+		Summary:      summary,
+	}, nil
 }
 
 // Execute writes the new text.
@@ -609,23 +751,36 @@ func (updateBlockText) Execute(inp Input) (string, error) {
 		return "", err
 	}
 
-	if in.BlockUID == "" {
-		return "", errors.New("update_block_text: block_uid is required")
-	}
-
 	return inp.ApplyEdit(in.DocumentID, []edit.Operation{edit.UpdateText(in.BlockUID, in.Text)})
 }
 
 // updateBlockAttrsArgs is what update_block_attrs is called with.
 type updateBlockAttrsArgs struct {
 	// DocumentID names the document holding the block.
-	DocumentID string `json:"document_id"`
+	DocumentID xid.ID `json:"document_id"`
 
 	// BlockUID is the block whose attributes are being set. Required.
 	BlockUID string `json:"block_uid"`
 
 	// Attrs are the attributes to set. Must not be empty.
 	Attrs map[string]any `json:"attrs"`
+}
+
+// Validate checks the arguments are complete.
+func (a updateBlockAttrsArgs) Validate() error {
+	if a.DocumentID.IsNil() {
+		return errRequired(_keyDocumentID)
+	}
+
+	if a.BlockUID == "" {
+		return errRequired(_keyBlockUID)
+	}
+
+	if len(a.Attrs) == 0 {
+		return errRequired("attrs")
+	}
+
+	return nil
 }
 
 // updateBlockAttrs sets named attributes on an existing block.
@@ -665,7 +820,12 @@ func (updateBlockAttrs) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	return "Updating " + inp.Subject(in.DocumentID), nil
+	doc, err := inp.Document(in.DocumentID)
+	if err != nil {
+		return "", fmt.Errorf("%s: fetch document: %w", NameUpdateBlockAttrs, err)
+	}
+
+	return "Updating " + doc.DocumentName, nil
 }
 
 // Summary names the attributes the model wants to set.
@@ -676,24 +836,21 @@ func (updateBlockAttrs) Summary(inp DescribeInput) (ActionSummary, error) {
 		return ActionSummary{}, err
 	}
 
-	keys := make([]string, 0, len(in.Attrs))
-	for k := range in.Attrs {
-		keys = append(keys, k)
-	}
-
 	// map iteration order is random, and the confirm card must read
 	// the same every time the same write is proposed.
-	slices.Sort(keys)
+	keys := slices.Sorted(maps.Keys(in.Attrs))
 
-	out := summarize(inp, NameUpdateBlockAttrs, in.DocumentID, func(subject string) string {
-		if len(keys) == 0 {
-			return "Update block attributes in " + subject
-		}
+	doc, err := inp.Document(in.DocumentID)
+	if err != nil {
+		return ActionSummary{}, fmt.Errorf("%s: fetch document: %w", NameUpdateBlockAttrs, err)
+	}
 
-		return fmt.Sprintf("Update block %s in %s", strings.Join(keys, ", "), subject)
-	})
-
-	return out, nil
+	return ActionSummary{
+		Tool:         NameUpdateBlockAttrs,
+		DocumentID:   doc.ID,
+		DocumentName: doc.DocumentName,
+		Summary:      fmt.Sprintf("Update block %s in %s", strings.Join(keys, ", "), doc.DocumentName),
+	}, nil
 }
 
 // Execute applies the attribute changes.
@@ -702,14 +859,6 @@ func (updateBlockAttrs) Execute(inp Input) (string, error) {
 
 	if err := inp.Decode(&in); err != nil {
 		return "", err
-	}
-
-	if in.BlockUID == "" {
-		return "", errors.New("update_block_attrs: block_uid is required")
-	}
-
-	if len(in.Attrs) == 0 {
-		return "", errors.New("update_block_attrs: attrs must not be empty")
 	}
 
 	// the payload names attributes, not a block type, so a metric's
@@ -727,10 +876,23 @@ func (updateBlockAttrs) Execute(inp Input) (string, error) {
 // deleteBlockArgs is what delete_block is called with.
 type deleteBlockArgs struct {
 	// DocumentID names the document holding the block.
-	DocumentID string `json:"document_id"`
+	DocumentID xid.ID `json:"document_id"`
 
 	// BlockUID is the block being removed. Required.
 	BlockUID string `json:"block_uid"`
+}
+
+// Validate checks the arguments are complete.
+func (a deleteBlockArgs) Validate() error {
+	if a.DocumentID.IsNil() {
+		return errRequired(_keyDocumentID)
+	}
+
+	if a.BlockUID == "" {
+		return errRequired(_keyBlockUID)
+	}
+
+	return nil
 }
 
 // deleteBlock removes a block from a document.
@@ -766,7 +928,12 @@ func (deleteBlock) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	return "Updating " + inp.Subject(in.DocumentID), nil
+	doc, err := inp.Document(in.DocumentID)
+	if err != nil {
+		return "", fmt.Errorf("%s: fetch document: %w", NameDeleteBlock, err)
+	}
+
+	return "Updating " + doc.DocumentName, nil
 }
 
 // Summary describes the deletion the model wants to make.
@@ -777,11 +944,17 @@ func (deleteBlock) Summary(inp DescribeInput) (ActionSummary, error) {
 		return ActionSummary{}, err
 	}
 
-	out := summarize(inp, NameDeleteBlock, in.DocumentID, func(subject string) string {
-		return "Delete a block in " + subject
-	})
+	doc, err := inp.Document(in.DocumentID)
+	if err != nil {
+		return ActionSummary{}, fmt.Errorf("%s: fetch document: %w", NameDeleteBlock, err)
+	}
 
-	return out, nil
+	return ActionSummary{
+		Tool:         NameDeleteBlock,
+		DocumentID:   doc.ID,
+		DocumentName: doc.DocumentName,
+		Summary:      "Delete a block in " + doc.DocumentName,
+	}, nil
 }
 
 // Execute removes the block.
@@ -790,10 +963,6 @@ func (deleteBlock) Execute(inp Input) (string, error) {
 
 	if err := inp.Decode(&in); err != nil {
 		return "", err
-	}
-
-	if in.BlockUID == "" {
-		return "", errors.New("delete_block: block_uid is required")
 	}
 
 	return inp.ApplyEdit(in.DocumentID, []edit.Operation{edit.Delete(in.BlockUID)})

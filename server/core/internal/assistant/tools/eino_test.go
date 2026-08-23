@@ -11,6 +11,7 @@ import (
 	datasourceMock "github.com/oxynote/oxynote/server/core/internal/datasource/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
+	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -98,11 +99,11 @@ func Test_einoTool_Run(t *testing.T) {
 	// actually applied rather than from its arguments
 	res, err = newEinoTool(updateBlockText{}, testDeps(stubDocumentDB(), stubApplier(), nil)).
 		Run(context.Background(), json.RawMessage(
-			`{"document_id":"`+_testDocID+`","block_uid":"a","text":"hi"}`,
+			`{"document_id":"`+_testDocID.String()+`","block_uid":"a","text":"hi"}`,
 		))
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"applied":1,"errors":[]}`, res.Output)
-	assert.Equal(t, []string{_testDocID}, res.Documents)
+	assert.Equal(t, []xid.ID{_testDocID}, res.Documents)
 }
 
 func Test_einoTool_InvokableRun(t *testing.T) {
@@ -141,7 +142,7 @@ func Test_einoTool_Title(t *testing.T) {
 
 	et := newEinoTool(readDocumentSummary{}, testDeps(stubDocumentDB(), nil, nil))
 
-	got, err := et.Title(context.Background(), json.RawMessage(`{"document_id":"`+_testDocID+`"}`))
+	got, err := et.Title(context.Background(), json.RawMessage(`{"document_id":"`+_testDocID.String()+`"}`))
 	require.NoError(t, err)
 	assert.Equal(t, "Reading Runbook", got)
 }
@@ -152,9 +153,9 @@ func Test_einoTool_Summary(t *testing.T) {
 	// a write describes its pending change
 	et := newEinoTool(deleteDocument{}, testDeps(stubDocumentDB(), nil, nil))
 
-	got, err := et.Summary(context.Background(), json.RawMessage(`{"document_id":"`+_testDocID+`"}`))
+	got, err := et.Summary(context.Background(), json.RawMessage(`{"document_id":"`+_testDocID.String()+`"}`))
 	require.NoError(t, err)
-	assert.Equal(t, string(NameDeleteDocument), got.Tool)
+	assert.Equal(t, NameDeleteDocument, got.Tool)
 	assert.Equal(t, "Delete Runbook", got.Summary)
 
 	// arguments the tool cannot read are refused rather than described:
@@ -169,6 +170,14 @@ func Test_einoTool_Summary(t *testing.T) {
 	got, err = read.Summary(context.Background(), json.RawMessage(`{}`))
 	require.NoError(t, err)
 	assert.Equal(t, ActionSummary{}, got)
+}
+
+func Test_readToolOutputArgs_Validate(t *testing.T) {
+	t.Parallel()
+
+	assertValidate(t, readToolOutputArgs{FilePath: "p"}, map[string]Args{
+		"file_path": readToolOutputArgs{},
+	})
 }
 
 func Test_readToolOutput_Info(t *testing.T) {
@@ -215,7 +224,7 @@ func Test_readToolOutput_Execute(t *testing.T) {
 		},
 		"Missing path": {
 			Args: `{}`,
-			Err:  errors.New("read_tool_output: file_path is required"),
+			Err:  assert.AnError,
 		},
 		"Expired output tells the model to re-run the tool": {
 			Read: func(string) (string, error) {

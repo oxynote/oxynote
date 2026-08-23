@@ -261,6 +261,14 @@ func Test_listDataSources_Execute(t *testing.T) {
 	assert.NotContains(t, got, "credentials")
 }
 
+func Test_getPrometheusMetadataArgs_Validate(t *testing.T) {
+	t.Parallel()
+
+	assertValidate(t, getPrometheusMetadataArgs{DataSourceID: _testDataSourceID}, map[string]Args{
+		"data_source_id": getPrometheusMetadataArgs{},
+	})
+}
+
 func Test_getPrometheusMetadata_Info(t *testing.T) {
 	t.Parallel()
 
@@ -291,14 +299,13 @@ func Test_getPrometheusMetadata_Title(t *testing.T) {
 			Args:     `{"data_source_id":"` + _testDataSourceID.String() + `"}`,
 			Expected: `Reading metric metadata of "prod"`,
 		},
-		// an id that resolves to nothing is announced by id: the call is
-		// about to fail on it, and naming it makes the failure legible.
-		"One that does not is announced by id": {
-			Args:     `{"data_source_id":"` + other + `"}`,
-			Expected: `Reading metric metadata of "` + other + `"`,
+		"One that does not is an error": {
+			Args: `{"data_source_id":"` + other + `"}`,
+			Err:  assert.AnError,
 		},
-		"No id at all announces nothing": {
+		"No id at all": {
 			Args: `{}`,
+			Err:  assert.AnError,
 		},
 		"Unreadable arguments": {
 			Args: `{`,
@@ -372,6 +379,14 @@ func Test_getPrometheusMetadata_Execute(t *testing.T) {
 	}
 }
 
+func Test_prometheusLabelNamesArgs_Validate(t *testing.T) {
+	t.Parallel()
+
+	assertValidate(t, prometheusLabelNamesArgs{DataSourceID: _testDataSourceID}, map[string]Args{
+		"data_source_id": prometheusLabelNamesArgs{},
+	})
+}
+
 func Test_listPrometheusLabelNames_Info(t *testing.T) {
 	t.Parallel()
 
@@ -403,6 +418,11 @@ func Test_listPrometheusLabelNames_Title(t *testing.T) {
 	assert.Equal(t, `Listing label names of "prod"`, got)
 
 	_, err = listPrometheusLabelNames{}.Title(testInput(d, NameListPrometheusLabelNames, `{`))
+	require.Error(t, err)
+
+	// a data source the organisation does not own is an error, not a
+	// label: the model is told what it named does not exist.
+	_, err = listPrometheusLabelNames{}.Title(testInput(d, NameListPrometheusLabelNames, `{"data_source_id":"`+xid.New().String()+`"}`))
 	require.Error(t, err)
 }
 
@@ -467,6 +487,15 @@ func Test_listPrometheusLabelNames_Execute(t *testing.T) {
 	}
 }
 
+func Test_prometheusLabelValuesArgs_Validate(t *testing.T) {
+	t.Parallel()
+
+	assertValidate(t, prometheusLabelValuesArgs{DataSourceID: _testDataSourceID, Label: "job"}, map[string]Args{
+		"data_source_id": prometheusLabelValuesArgs{Label: "job"},
+		"label":          prometheusLabelValuesArgs{DataSourceID: _testDataSourceID},
+	})
+}
+
 func Test_listPrometheusLabelValues_Info(t *testing.T) {
 	t.Parallel()
 
@@ -498,8 +527,8 @@ func Test_listPrometheusLabelValues_Title(t *testing.T) {
 			Expected: `Listing values of label "job" in "prod"`,
 		},
 		"No label yet": {
-			Args:     `{"data_source_id":"` + id + `"}`,
-			Expected: `Listing label values of "prod"`,
+			Args: `{"data_source_id":"` + id + `"}`,
+			Err:  assert.AnError,
 		},
 		"Unreadable arguments": {
 			Args: `{`,
@@ -517,6 +546,11 @@ func Test_listPrometheusLabelValues_Title(t *testing.T) {
 			assert.Equal(t, c.Expected, got)
 		})
 	}
+
+	// a data source the organisation does not own is an error, not a
+	// label: the model is told what it named does not exist.
+	_, err := listPrometheusLabelValues{}.Title(testInput(d, NameListPrometheusLabelValues, `{"data_source_id":"`+xid.New().String()+`","label":"job"}`))
+	require.Error(t, err)
 }
 
 func Test_listPrometheusLabelValues_Execute(t *testing.T) {
@@ -584,6 +618,15 @@ func Test_listPrometheusLabelValues_Execute(t *testing.T) {
 	}
 }
 
+func Test_prometheusSeriesArgs_Validate(t *testing.T) {
+	t.Parallel()
+
+	assertValidate(t, prometheusSeriesArgs{DataSourceID: _testDataSourceID, Matchers: []string{"up"}}, map[string]Args{
+		"data_source_id": prometheusSeriesArgs{Matchers: []string{"up"}},
+		"matchers":       prometheusSeriesArgs{DataSourceID: _testDataSourceID},
+	})
+}
+
 func Test_listPrometheusSeries_Info(t *testing.T) {
 	t.Parallel()
 
@@ -607,12 +650,17 @@ func Test_listPrometheusSeries_Title(t *testing.T) {
 	got, err := listPrometheusSeries{}.Title(testInput(
 		d,
 		NameListPrometheusSeries,
-		`{"data_source_id":"`+_testDataSourceID.String()+`"}`,
+		`{"data_source_id":"`+_testDataSourceID.String()+`","matchers":["up"]}`,
 	))
 	require.NoError(t, err)
 	assert.Equal(t, `Listing series of "prod"`, got)
 
 	_, err = listPrometheusSeries{}.Title(testInput(d, NameListPrometheusSeries, `{`))
+	require.Error(t, err)
+
+	// a data source the organisation does not own is an error, not a
+	// label: the model is told what it named does not exist.
+	_, err = listPrometheusSeries{}.Title(testInput(d, NameListPrometheusSeries, `{"data_source_id":"`+xid.New().String()+`","matchers":["up"]}`))
 	require.Error(t, err)
 }
 
@@ -693,6 +741,15 @@ func Test_listPrometheusSeries_Execute(t *testing.T) {
 	}
 }
 
+func Test_queryPrometheusArgs_Validate(t *testing.T) {
+	t.Parallel()
+
+	assertValidate(t, queryPrometheusArgs{DataSourceID: _testDataSourceID, Query: "up"}, map[string]Args{
+		"data_source_id": queryPrometheusArgs{Query: "up"},
+		"query":          queryPrometheusArgs{DataSourceID: _testDataSourceID},
+	})
+}
+
 func Test_queryPrometheus_Info(t *testing.T) {
 	t.Parallel()
 
@@ -701,6 +758,23 @@ func Test_queryPrometheus_Info(t *testing.T) {
 	assert.Equal(t, NameQueryPrometheus, info.Name)
 	assert.Equal(t, []string{_keyDataSourceID, _keyQuery}, info.Required)
 	assert.Contains(t, info.Properties, _keyChartType)
+
+	// the chart types the metric block schema declares are exactly the
+	// ones chart_type accepts. The block package cannot import the
+	// processor — that would drag the Prometheus client and pgx into a
+	// leaf package — so the two lists are only kept equal by this check.
+	for _, v := range block.MetricEnums()[document.AttrVisualizationType] {
+		assert.True(t, processor.ChartType(v).IsValid(), "%q is in the block schema but not a chart type", v)
+		assert.Contains(t, _descChartType, v)
+	}
+
+	for _, ct := range []processor.ChartType{
+		processor.ChartTypeLine,
+		processor.ChartTypeBar,
+		processor.ChartTypeGauge,
+	} {
+		assert.Contains(t, block.MetricEnums()[document.AttrVisualizationType], string(ct))
+	}
 }
 
 func Test_queryPrometheus_Traits(t *testing.T) {
@@ -723,6 +797,11 @@ func Test_queryPrometheus_Title(t *testing.T) {
 	assert.Equal(t, `Querying "prod"`, got)
 
 	_, err = queryPrometheus{}.Title(testInput(d, NameQueryPrometheus, `{`))
+	require.Error(t, err)
+
+	// a data source the organisation does not own is an error, not a
+	// label: the model is told what it named does not exist.
+	_, err = queryPrometheus{}.Title(testInput(d, NameQueryPrometheus, `{"data_source_id":"`+xid.New().String()+`","query":"up"}`))
 	require.Error(t, err)
 }
 
@@ -819,6 +898,14 @@ func Test_queryPrometheus_Execute(t *testing.T) {
 	}
 }
 
+func Test_getSQLMetadataArgs_Validate(t *testing.T) {
+	t.Parallel()
+
+	assertValidate(t, getSQLMetadataArgs{DataSourceID: _testDataSourceID}, map[string]Args{
+		"data_source_id": getSQLMetadataArgs{},
+	})
+}
+
 func Test_getSQLMetadata_Info(t *testing.T) {
 	t.Parallel()
 
@@ -848,6 +935,11 @@ func Test_getSQLMetadata_Title(t *testing.T) {
 	assert.Equal(t, `Reading tables of "prod"`, got)
 
 	_, err = getSQLMetadata{}.Title(testInput(d, NameGetSQLMetadata, `{`))
+	require.Error(t, err)
+
+	// a data source the organisation does not own is an error, not a
+	// label: the model is told what it named does not exist.
+	_, err = getSQLMetadata{}.Title(testInput(d, NameGetSQLMetadata, `{"data_source_id":"`+xid.New().String()+`"}`))
 	require.Error(t, err)
 }
 
@@ -913,6 +1005,15 @@ func Test_getSQLMetadata_Execute(t *testing.T) {
 	}
 }
 
+func Test_sqlQueryLabelsArgs_Validate(t *testing.T) {
+	t.Parallel()
+
+	assertValidate(t, sqlQueryLabelsArgs{DataSourceID: _testDataSourceID, Query: "select 1"}, map[string]Args{
+		"data_source_id": sqlQueryLabelsArgs{Query: "select 1"},
+		"query":          sqlQueryLabelsArgs{DataSourceID: _testDataSourceID},
+	})
+}
+
 func Test_getSQLQueryLabels_Info(t *testing.T) {
 	t.Parallel()
 
@@ -942,6 +1043,11 @@ func Test_getSQLQueryLabels_Title(t *testing.T) {
 	assert.Equal(t, `Probing query labels of "prod"`, got)
 
 	_, err = getSQLQueryLabels{}.Title(testInput(d, NameGetSQLQueryLabels, `{`))
+	require.Error(t, err)
+
+	// a data source the organisation does not own is an error, not a
+	// label: the model is told what it named does not exist.
+	_, err = getSQLQueryLabels{}.Title(testInput(d, NameGetSQLQueryLabels, `{"data_source_id":"`+xid.New().String()+`","query":"select 1"}`))
 	require.Error(t, err)
 }
 
@@ -1010,6 +1116,15 @@ func Test_getSQLQueryLabels_Execute(t *testing.T) {
 	}
 }
 
+func Test_querySQLArgs_Validate(t *testing.T) {
+	t.Parallel()
+
+	assertValidate(t, querySQLArgs{DataSourceID: _testDataSourceID, Query: "select 1"}, map[string]Args{
+		"data_source_id": querySQLArgs{Query: "select 1"},
+		"query":          querySQLArgs{DataSourceID: _testDataSourceID},
+	})
+}
+
 func Test_querySQL_Info(t *testing.T) {
 	t.Parallel()
 
@@ -1040,6 +1155,11 @@ func Test_querySQL_Title(t *testing.T) {
 	assert.Equal(t, `Querying "prod"`, got)
 
 	_, err = querySQL{}.Title(testInput(d, NameQuerySQL, `{`))
+	require.Error(t, err)
+
+	// a data source the organisation does not own is an error, not a
+	// label: the model is told what it named does not exist.
+	_, err = querySQL{}.Title(testInput(d, NameQuerySQL, `{"data_source_id":"`+xid.New().String()+`","query":"select 1"}`))
 	require.Error(t, err)
 }
 
@@ -1185,21 +1305,20 @@ func Test_querySQL_Execute(t *testing.T) {
 func Test_timeRangeArgs_resolve(t *testing.T) {
 	t.Parallel()
 
-	from := "2026-08-01T10:00:00Z"
-	to := "2026-08-01T12:00:00Z"
+	from := time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)
+	to := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
 
 	cc := map[string]struct {
 		Args  timeRangeArgs
 		Check func(t *testing.T, tr processor.TimeRange)
-		Err   error
 	}{
 		"Both ends given": {
 			Args: timeRangeArgs{From: from, To: to},
 			Check: func(t *testing.T, tr processor.TimeRange) {
 				t.Helper()
 
-				assert.Equal(t, from, tr.From.Format(time.RFC3339))
-				assert.Equal(t, to, tr.To.Format(time.RFC3339))
+				assert.Equal(t, from, tr.From)
+				assert.Equal(t, to, tr.To)
 			},
 		},
 		"Neither end given defaults to the last hour": {
@@ -1215,7 +1334,7 @@ func Test_timeRangeArgs_resolve(t *testing.T) {
 			Check: func(t *testing.T, tr processor.TimeRange) {
 				t.Helper()
 
-				assert.Equal(t, "2026-08-01T11:00:00Z", tr.From.Format(time.RFC3339))
+				assert.Equal(t, to.Add(-time.Hour), tr.From)
 			},
 		},
 		"Only the start given ends at now": {
@@ -1223,17 +1342,9 @@ func Test_timeRangeArgs_resolve(t *testing.T) {
 			Check: func(t *testing.T, tr processor.TimeRange) {
 				t.Helper()
 
-				assert.Equal(t, from, tr.From.Format(time.RFC3339))
+				assert.Equal(t, from, tr.From)
 				assert.WithinDuration(t, timeutil.Now(), tr.To, time.Minute)
 			},
-		},
-		"An unparseable start": {
-			Args: timeRangeArgs{From: "yesterday"},
-			Err:  assert.AnError,
-		},
-		"An unparseable end": {
-			Args: timeRangeArgs{To: "tomorrow"},
-			Err:  assert.AnError,
 		},
 	}
 
@@ -1241,15 +1352,7 @@ func Test_timeRangeArgs_resolve(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			tr, err := c.Args.resolve()
-
-			testutil.AssertEqualError(t, c.Err, err)
-
-			if c.Err != nil {
-				return
-			}
-
-			c.Check(t, tr)
+			c.Check(t, c.Args.resolve())
 		})
 	}
 }
@@ -1273,105 +1376,4 @@ func Test_dataSourceProps(t *testing.T) {
 	})
 	assert.Contains(t, props, _keyDataSourceID)
 	assert.Contains(t, props, _keyQuery)
-}
-
-func Test_chartType(t *testing.T) {
-	t.Parallel()
-
-	got, err := chartType("")
-	require.NoError(t, err)
-	assert.Empty(t, got)
-
-	got, err = chartType("bar_chart")
-	require.NoError(t, err)
-	assert.Equal(t, processor.ChartTypeBar, got)
-
-	_, err = chartType("pie_chart")
-	require.Error(t, err)
-
-	// the chart types the metric block schema declares are exactly the
-	// ones this accepts. The block package cannot import the processor —
-	// that would drag the Prometheus client and pgx into a leaf package —
-	// so the two lists are only kept equal by this check.
-	for _, v := range block.MetricEnums()[document.AttrVisualizationType] {
-		_, verr := chartType(v)
-		assert.NoError(t, verr, "%q is in the block schema but not a chart type", v)
-	}
-
-	for _, ct := range []processor.ChartType{
-		processor.ChartTypeLine,
-		processor.ChartTypeBar,
-		processor.ChartTypeGauge,
-	} {
-		assert.Contains(t, block.MetricEnums()[document.AttrVisualizationType], string(ct))
-	}
-}
-
-func Test_dataSourceTitle(t *testing.T) {
-	t.Parallel()
-
-	d := dataSourceDeps(t, datasource.TypePrometheus, nil)
-	inp := testInput(d, NameQueryPrometheus, "")
-
-	assert.Empty(t, dataSourceTitle(inp, "Querying", ""))
-	assert.Equal(t, `Querying "prod"`, dataSourceTitle(inp, "Querying", _testDataSourceID.String()))
-	assert.Equal(t, `Querying "nope"`, dataSourceTitle(inp, "Querying", "nope"))
-}
-
-func Test_runnerFor(t *testing.T) {
-	t.Parallel()
-
-	runner := prometheusRunner(&datasourceMock.Prometheus{})
-	d := dataSourceDeps(t, datasource.TypePrometheus, runner)
-	inp := testInput(d, NameQueryPrometheus, "")
-
-	got, err := runnerFor(inp, NameQueryPrometheus, _testDataSourceID.String())
-	require.NoError(t, err)
-	assert.Same(t, runner, got)
-
-	for _, id := range []string{"", "wibble", xid.New().String()} {
-		_, err = runnerFor(inp, NameQueryPrometheus, id)
-		require.Error(t, err, "id %q should not resolve", id)
-	}
-}
-
-func Test_prometheusClient(t *testing.T) {
-	t.Parallel()
-
-	client := &datasourceMock.Prometheus{}
-	inp := testInput(dataSourceDeps(t, datasource.TypePrometheus, prometheusRunner(client)), NameQueryPrometheus, "")
-
-	got, err := prometheusClient(inp, NameQueryPrometheus, _testDataSourceID.String())
-	require.NoError(t, err)
-	assert.Same(t, client, got)
-
-	// an id that resolves to nothing never reaches the runner
-	_, err = prometheusClient(inp, NameQueryPrometheus, xid.New().String())
-	require.Error(t, err)
-
-	// a data source that hands out no Prometheus client is the tool's
-	// failure to report, not something it can work around
-	refusing := testInput(dataSourceDeps(t, datasource.TypePostgreSQL, prometheusRunner(nil)), NameQueryPrometheus, "")
-
-	_, err = prometheusClient(refusing, NameQueryPrometheus, _testDataSourceID.String())
-	require.Error(t, err)
-}
-
-func Test_sqlClient(t *testing.T) {
-	t.Parallel()
-
-	client := &datasourceMock.SQL{}
-	inp := testInput(dataSourceDeps(t, datasource.TypePostgreSQL, sqlRunner(client)), NameQuerySQL, "")
-
-	got, err := sqlClient(inp, NameQuerySQL, _testDataSourceID.String())
-	require.NoError(t, err)
-	assert.Same(t, client, got)
-
-	_, err = sqlClient(inp, NameQuerySQL, xid.New().String())
-	require.Error(t, err)
-
-	refusing := testInput(dataSourceDeps(t, datasource.TypePrometheus, sqlRunner(nil)), NameQuerySQL, "")
-
-	_, err = sqlClient(refusing, NameQuerySQL, _testDataSourceID.String())
-	require.Error(t, err)
 }

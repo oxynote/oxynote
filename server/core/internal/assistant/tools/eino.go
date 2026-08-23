@@ -33,6 +33,21 @@ const NameReadToolOutput Name = "read_tool_output"
 // in the conversation.
 const _offloadPathKey = "file_path"
 
+// readToolOutputArgs is what read_tool_output is called with.
+type readToolOutputArgs struct {
+	// FilePath is the stored output to retrieve.
+	FilePath string `json:"file_path"`
+}
+
+// Validate checks the arguments are complete.
+func (a readToolOutputArgs) Validate() error {
+	if a.FilePath == "" {
+		return errRequired(_offloadPathKey)
+	}
+
+	return nil
+}
+
 // readToolOutput hands the model back a result the reduction middleware
 // moved out of the conversation.
 type readToolOutput struct {
@@ -67,16 +82,10 @@ func (readToolOutput) Title(_ DescribeInput) (string, error) {
 
 // Execute returns the stored output.
 func (readToolOutput) Execute(inp Input) (string, error) {
-	var in struct {
-		FilePath string `json:"file_path"`
-	}
+	var in readToolOutputArgs
 
 	if err := inp.Decode(&in); err != nil {
 		return "", err
-	}
-
-	if in.FilePath == "" {
-		return "", fmt.Errorf("%s: %s is required", NameReadToolOutput, _offloadPathKey)
 	}
 
 	return inp.ReadOffloaded(in.FilePath)

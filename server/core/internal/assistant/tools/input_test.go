@@ -28,7 +28,7 @@ func TestMain(m *testing.M) {
 }
 
 // _testDocID is the document id the tool tests address.
-var _testDocID = xid.New().String()
+var _testDocID = xid.New()
 
 // discardLog returns a logger that writes nowhere.
 func discardLog() *slog.Logger {
@@ -79,6 +79,61 @@ func testInput(d *Deps, name Name, args string) *input {
 	return d.newInput(context.Background(), name, json.RawMessage(args))
 }
 
+// infoOf returns the named tool's description, or a bare one for a name
+// the registry does not know.
+func infoOf(name Name) Info {
+	if e, ok := New(testDeps(nil, nil, nil)).Entry(name); ok {
+		return e.Info
+	}
+
+	return Info{Name: name}
+}
+
+// assertValidate checks that ok passes Validate and that every entry of
+// missing — ok with one required argument blanked — is refused naming
+// that argument.
+func assertValidate(t *testing.T, ok Args, missing map[string]Args) {
+	t.Helper()
+
+	require.NoError(t, ok.Validate())
+
+	for key, a := range missing {
+		err := a.Validate()
+		require.Error(t, err, "%s should be required", key)
+		assert.Contains(t, err.Error(), key+" is required")
+	}
+}
+
+// requiredArgs builds the smallest payload the named tool's Decode
+// accepts: every required argument, each with a value its type takes.
+func requiredArgs(t *testing.T, name Name) string {
+	t.Helper()
+
+	vals := map[string]any{}
+
+	for _, key := range infoOf(name).Required {
+		switch key {
+		case _keyDocumentID, _keyDataSourceID:
+			vals[key] = _testDocID.String()
+		case _keyBlock:
+			vals[key] = map[string]any{_keyType: string(block.BlockParagraph)}
+		case "position":
+			vals[key] = string(positionAfter)
+		case _keyMatchers:
+			vals[key] = []string{"up"}
+		case "attrs":
+			vals[key] = map[string]any{"level": 2}
+		default:
+			vals[key] = "x"
+		}
+	}
+
+	raw, err := json.Marshal(vals)
+	require.NoError(t, err)
+
+	return string(raw)
+}
+
 // offloadReaderMock is a stub offload reader; the offload tool's own
 // test replaces it.
 type offloadReaderMock struct {
@@ -116,10 +171,19 @@ func stubDocumentDB() *DBMock {
 	}
 }
 
+// failingDocumentDB refuses every document lookup.
+func failingDocumentDB() *DBMock {
+	return &DBMock{
+		FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*document.Document, error) {
+			return nil, assert.AnError
+		},
+	}
+}
+
 // stubApplier accepts every edit it is handed.
 func stubApplier() *EditApplierMock {
 	return &EditApplierMock{
-		ApplyFunc: func(_ context.Context, _, _ string, _ []edit.Operation) (edit.Result, error) {
+		ApplyFunc: func(_ context.Context, _, _ xid.ID, _ []edit.Operation) (edit.Result, error) {
 			return edit.Result{Applied: 1, Errors: []edit.OpError{}}, nil
 		},
 	}
@@ -175,47 +239,31 @@ func Test_Deps_newInput(t *testing.T) {
 func Test_input_Decode(t *testing.T) {
 	t.Parallel()
 
-	var out struct {
-		Name string `json:"name"`
-	}
-
-	// success
-	require.NoError(t, testInput(testDeps(nil, nil, nil), NameCreateDocument, `{"name":"Runbook"}`).Decode(&out))
-	assert.Equal(t, "Runbook", out.Name)
-
-	// error: the message names the tool that rejected the arguments
-	err := testInput(testDeps(nil, nil, nil), NameCreateDocument, `{`).Decode(&out)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "create_document: invalid input")
-}
-
-func Test_input_Subject(t *testing.T) {
-	t.Parallel()
-
-	docID := xid.New().String()
-
 	cc := map[string]struct {
-		DB     *DBMock
-		ID     string
-		Result string
+		Args string
+		Err  string
+		Want readBlockArgs
 	}{
-		"Named document": {
-			DB:     stubDocumentDB(),
-			ID:     docID,
-			Result: "Runbook",
+		"Malformed JSON": {Args: `{`, Err: "read_block: invalid input:"},
+		"Invalid id names the argument": {
+			Args: `{"document_id":"nope","block_uid":"b"}`,
+			Err:  `read_block: invalid input: json: cannot unmarshal JSON string into Go xid.ID within "/document_id": xid: invalid ID`,
 		},
-		"Caller names no document": {
-			DB:     stubDocumentDB(),
-			Result: "document",
+		"Null id is not an argument": {
+			Args: `{"document_id":null,"block_uid":"b"}`,
+			Err:  "read_block: document_id is required",
 		},
-		"Unresolvable document falls back": {
-			DB: &DBMock{
-				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*document.Document, error) {
-					return nil, assert.AnError
-				},
-			},
-			ID:     docID,
-			Result: "document",
+		"Incomplete arguments are rejected by Validate": {
+			Args: `{"document_id":"` + _testDocID.String() + `"}`,
+			Err:  "read_block: block_uid is required",
+		},
+		"Unknown keys are ignored": {
+			Args: `{"document_id":"` + _testDocID.String() + `","block_uid":"b","extra":true}`,
+			Want: readBlockArgs{DocumentID: _testDocID, BlockUID: "b"},
+		},
+		"Decoded": {
+			Args: `{"document_id":"` + _testDocID.String() + `","block_uid":"b"}`,
+			Want: readBlockArgs{DocumentID: _testDocID, BlockUID: "b"},
 		},
 	}
 
@@ -223,50 +271,18 @@ func Test_input_Subject(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			got := testInput(testDeps(c.DB, nil, nil), NameGetDocument, `{}`).Subject(c.ID)
-			assert.Equal(t, c.Result, got)
-		})
-	}
-}
+			var out readBlockArgs
 
-func Test_input_DocumentName(t *testing.T) {
-	t.Parallel()
+			err := testInput(testDeps(nil, nil, nil), NameReadBlock, c.Args).Decode(&out)
+			if c.Err != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), c.Err)
 
-	cc := map[string]struct {
-		DB     *DBMock
-		ID     string
-		Result string
-	}{
-		"Resolved": {DB: stubDocumentDB(), ID: xid.New().String(), Result: "Runbook"},
-		"Not a valid xid": {
-			DB: stubDocumentDB(),
-			ID: "nope",
-		},
-		"Error returned by db.FetchDocument": {
-			DB: &DBMock{
-				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*document.Document, error) {
-					return nil, assert.AnError
-				},
-			},
-			ID: xid.New().String(),
-		},
-		"Document is absent": {
-			DB: &DBMock{
-				//nolint:nilnil // the case under test is a store with no value and no error
-				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*document.Document, error) {
-					return nil, nil
-				},
-			},
-			ID: xid.New().String(),
-		},
-	}
+				return
+			}
 
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			got := testInput(testDeps(c.DB, nil, nil), NameGetDocument, `{}`).DocumentName(c.ID)
-			assert.Equal(t, c.Result, got)
+			require.NoError(t, err)
+			assert.Equal(t, c.Want, out)
 		})
 	}
 }
@@ -365,7 +381,7 @@ func Test_input_CreateDocument(t *testing.T) {
 
 			// only a committed document exists to be pointed at.
 			if err == nil {
-				assert.Equal(t, []string{doc.ID.String()}, inp.touched)
+				assert.Equal(t, []xid.ID{doc.ID}, inp.touched)
 			} else {
 				assert.Empty(t, inp.touched)
 			}
@@ -421,17 +437,19 @@ func Test_input_recordTouched(t *testing.T) {
 	// a call that changed nothing reports nothing.
 	assert.Empty(t, inp.touched)
 
-	inp.recordTouched("a")
-	inp.recordTouched("b")
+	a, b := xid.New(), xid.New()
+
+	inp.recordTouched(a)
+	inp.recordTouched(b)
 
 	// a document changed twice in one call is still one document, and
 	// the order the call touched them is preserved.
-	inp.recordTouched("a")
+	inp.recordTouched(a)
 
 	// nothing to record is not something to record.
-	inp.recordTouched("")
+	inp.recordTouched(xid.NilID())
 
-	assert.Equal(t, []string{"a", "b"}, inp.touched)
+	assert.Equal(t, []xid.ID{a, b}, inp.touched)
 }
 
 func Test_input_MoveDocument(t *testing.T) {
@@ -512,7 +530,7 @@ func Test_input_MoveDocument(t *testing.T) {
 			// the parents' own content is unchanged by a re-parent, so
 			// the moved document is the only one recorded.
 			if err == nil {
-				assert.Equal(t, []string{docID.String()}, inp.touched)
+				assert.Equal(t, []xid.ID{docID}, inp.touched)
 			} else {
 				assert.Empty(t, inp.touched)
 			}
@@ -523,22 +541,15 @@ func Test_input_MoveDocument(t *testing.T) {
 func Test_input_ApplyEdit(t *testing.T) {
 	t.Parallel()
 
-	docID := xid.New().String()
+	docID := xid.New()
 
 	cc := map[string]struct {
 		DB      *DBMock
 		Applier *EditApplierMock
-		DocID   string
 		Result  string
-		Touched []string
+		Touched []xid.ID
 		Err     error
 	}{
-		"Document cannot be resolved": {
-			DB:      &DBMock{},
-			Applier: stubApplier(),
-			DocID:   "not-an-xid",
-			Err:     assert.AnError,
-		},
 		"Error returned by db.FetchDocument": {
 			DB: &DBMock{
 				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*document.Document, error) {
@@ -546,39 +557,35 @@ func Test_input_ApplyEdit(t *testing.T) {
 				},
 			},
 			Applier: stubApplier(),
-			DocID:   docID,
 			Err:     assert.AnError,
 		},
 		"Error returned by applier.Apply": {
 			DB: stubDocumentDB(),
 			Applier: &EditApplierMock{
-				ApplyFunc: func(context.Context, string, string, []edit.Operation) (edit.Result, error) {
+				ApplyFunc: func(context.Context, xid.ID, xid.ID, []edit.Operation) (edit.Result, error) {
 					return edit.Result{}, assert.AnError
 				},
 			},
-			DocID: docID,
-			Err:   assert.AnError,
+			Err: assert.AnError,
 		},
 		"Partial failure still reports the outcome": {
 			DB: stubDocumentDB(),
 			Applier: &EditApplierMock{
-				ApplyFunc: func(context.Context, string, string, []edit.Operation) (edit.Result, error) {
+				ApplyFunc: func(context.Context, xid.ID, xid.ID, []edit.Operation) (edit.Result, error) {
 					return edit.Result{
 						Applied: 1,
 						Errors:  []edit.OpError{{Index: 1, Message: "uid not found"}},
 					}, nil
 				},
 			},
-			DocID:   docID,
 			Result:  `{"applied":1,"errors":[{"index":1,"message":"uid not found"}]}`,
-			Touched: []string{docID},
+			Touched: []xid.ID{docID},
 		},
 		"Applied": {
 			DB:      stubDocumentDB(),
 			Applier: stubApplier(),
-			DocID:   docID,
 			Result:  `{"applied":1,"errors":[]}`,
-			Touched: []string{docID},
+			Touched: []xid.ID{docID},
 		},
 	}
 
@@ -588,7 +595,7 @@ func Test_input_ApplyEdit(t *testing.T) {
 
 			inp := testInput(testDeps(c.DB, c.Applier, nil), NameAppendBlock, `{}`)
 
-			res, err := inp.ApplyEdit(c.DocID, []edit.Operation{edit.Delete("a")})
+			res, err := inp.ApplyEdit(docID, []edit.Operation{edit.Delete("a")})
 			testutil.AssertEqualError(t, c.Err, err)
 
 			// an edit that never landed has changed nothing to report.
@@ -605,8 +612,6 @@ func Test_input_ApplyEdit(t *testing.T) {
 
 func Test_input_ValidatePlacement(t *testing.T) {
 	t.Parallel()
-
-	docID := xid.New().String()
 
 	rootBlock := block.Block{Type: block.BlockParagraph, Text: "hi"}
 	macroBlock := block.Block{
@@ -632,26 +637,17 @@ func Test_input_ValidatePlacement(t *testing.T) {
 
 	cc := map[string]struct {
 		DB    *DBMock
-		DocID string
 		Block block.Block
 		Err   error
 	}{
 		"Invalid block": {
 			DB:    &DBMock{},
-			DocID: docID,
 			Block: block.Block{Type: "nonsense"},
 			Err:   assert.AnError,
 		},
 		"Root-legal block needs no lookup": {
 			DB:    &DBMock{},
-			DocID: docID,
 			Block: rootBlock,
-		},
-		"Macro internal with an unparseable document id": {
-			DB:    &DBMock{},
-			DocID: "not-an-xid",
-			Block: macroBlock,
-			Err:   assert.AnError,
 		},
 		"Error returned by db.FetchMainBranchContent": {
 			DB: &DBMock{
@@ -659,13 +655,11 @@ func Test_input_ValidatePlacement(t *testing.T) {
 					return document.Content{}, assert.AnError
 				},
 			},
-			DocID: docID,
 			Block: macroBlock,
 			Err:   assert.AnError,
 		},
 		"Macro internal beside a root block is refused": {
 			DB:    contentDB("ref"),
-			DocID: docID,
 			Block: macroBlock,
 			Err:   assert.AnError,
 		},
@@ -673,7 +667,6 @@ func Test_input_ValidatePlacement(t *testing.T) {
 			// the reference uid is not a root child, so the block is
 			// landing inside a container that accepts it.
 			DB:    contentDB("other"),
-			DocID: docID,
 			Block: macroBlock,
 		},
 	}
@@ -684,7 +677,7 @@ func Test_input_ValidatePlacement(t *testing.T) {
 
 			inp := testInput(testDeps(c.DB, nil, nil), NameInsertBlock, `{}`)
 
-			err := inp.ValidatePlacement(c.DocID, "ref", c.Block)
+			err := inp.ValidatePlacement(_testDocID, "ref", c.Block)
 			testutil.AssertEqualError(t, c.Err, err)
 		})
 	}
@@ -712,19 +705,16 @@ func Test_input_NotifyTreeChangeForDocument(t *testing.T) {
 
 	cc := map[string]struct {
 		DB     *DBMock
-		DocID  string
 		Notify int
 	}{
-		"Not a valid xid": {DB: stubDocumentDB(), DocID: "nope"},
 		"Error returned by db.FetchDocument": {
 			DB: &DBMock{
 				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*document.Document, error) {
 					return nil, assert.AnError
 				},
 			},
-			DocID: xid.New().String(),
 		},
-		"Parent is announced": {DB: stubDocumentDB(), DocID: xid.New().String(), Notify: 1},
+		"Parent is announced": {DB: stubDocumentDB(), Notify: 1},
 	}
 
 	for cn, c := range cc {
@@ -734,7 +724,7 @@ func Test_input_NotifyTreeChangeForDocument(t *testing.T) {
 			tree := &TreeNotifierMock{}
 
 			testInput(testDeps(c.DB, nil, tree), NameRenameDocument, `{}`).
-				NotifyTreeChangeForDocument(c.DocID)
+				NotifyTreeChangeForDocument(_testDocID)
 
 			assert.Len(t, tree.NotifyTreeChangeCalls(), c.Notify)
 		})
@@ -765,9 +755,13 @@ func Test_input_CheckDataSources(t *testing.T) {
 	require.NoError(t, inp.CheckDataSources(nil))
 	require.NoError(t, inp.CheckDataSources([]string{_testDataSourceID.String()}))
 
-	err := inp.CheckDataSources([]string{_testDataSourceID.String(), xid.New().String()})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "dataSourceId")
+	// an id that is not an xid and one the organisation owns nothing for
+	// are both refused, named by the attribute they arrived in.
+	for _, id := range []string{"wibble", xid.New().String()} {
+		err := inp.CheckDataSources([]string{_testDataSourceID.String(), id})
+		require.Error(t, err, "id %q should be refused", id)
+		assert.Contains(t, err.Error(), "dataSourceId")
+	}
 }
 
 func Test_input_DataSource(t *testing.T) {
@@ -776,17 +770,15 @@ func Test_input_DataSource(t *testing.T) {
 	d := dataSourceDeps(t, datasource.TypePrometheus, nil)
 	inp := testInput(d, NameQueryPrometheus, "")
 
-	ds, err := inp.DataSource(_testDataSourceID.String())
+	ds, err := inp.DataSource(_testDataSourceID)
 	require.NoError(t, err)
 	require.NotNil(t, ds)
 	assert.Equal(t, "prod", ds.Name)
 
-	// an id that is not an xid and one the organisation owns nothing for
-	// both come back as failures rather than as a zero data source.
-	for _, id := range []string{"wibble", xid.New().String()} {
-		_, err = inp.DataSource(id)
-		require.Error(t, err, "id %q should not resolve", id)
-	}
+	// an id the organisation owns nothing for comes back as a failure
+	// rather than as a zero data source.
+	_, err = inp.DataSource(xid.New())
+	require.Error(t, err)
 }
 
 func Test_input_DataSources(t *testing.T) {

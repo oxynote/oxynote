@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"errors"
 	"fmt"
 	"time"
 
@@ -14,6 +13,18 @@ import (
 // _defaultDocumentIcon is the icon assigned to assistant-created
 // documents when the model doesn't pick one.
 const _defaultDocumentIcon = "lucide:file"
+
+// listDocumentsArgs is what list_documents is called with.
+type listDocumentsArgs struct {
+	// ParentID narrows the listing to one parent's children. Null
+	// lists the whole tree.
+	ParentID null.Value[xid.ID] `json:"parent_id"`
+}
+
+// Validate accepts every payload: nothing is required.
+func (listDocumentsArgs) Validate() error {
+	return nil
+}
 
 // listDocuments returns the organisation's document tree.
 type listDocuments struct {
@@ -43,9 +54,7 @@ func (listDocuments) Title(_ DescribeInput) (string, error) {
 
 // Execute lists the documents the model asked for.
 func (listDocuments) Execute(inp Input) (string, error) {
-	var in struct {
-		ParentID string `json:"parent_id"`
-	}
+	var in listDocumentsArgs
 
 	if err := inp.Decode(&in); err != nil {
 		return "", err
@@ -56,15 +65,10 @@ func (listDocuments) Execute(inp Input) (string, error) {
 		err  error
 	)
 
-	if in.ParentID == "" {
-		tree, err = inp.DocumentTree()
+	if in.ParentID.Valid {
+		tree, err = inp.DocumentChildren(in.ParentID)
 	} else {
-		parentID, perr := xid.FromString(in.ParentID)
-		if perr != nil {
-			return "", fmt.Errorf("list_documents: parent_id is not a valid xid: %w", perr)
-		}
-
-		tree, err = inp.DocumentChildren(null.ValueFrom(parentID))
+		tree, err = inp.DocumentTree()
 	}
 
 	if err != nil {
@@ -86,20 +90,35 @@ type documentTreeResult struct {
 // createdDocumentResult is what create_document returns.
 type createdDocumentResult struct {
 	// DocumentID addresses the new document in every later call.
-	DocumentID string `json:"document_id"`
+	DocumentID xid.ID `json:"document_id"`
 
 	// BranchID is the new document's default branch.
-	BranchID string `json:"branch_id"`
+	BranchID xid.ID `json:"branch_id"`
 }
 
 // deletedDocumentResult is what delete_document returns.
 type deletedDocumentResult struct {
 	// DocumentID is the document that was removed.
-	DocumentID string `json:"document_id"`
+	DocumentID xid.ID `json:"document_id"`
 
 	// Deleted confirms the removal happened, so the model reads an
 	// outcome rather than an empty result.
 	Deleted bool `json:"deleted"`
+}
+
+// getDocumentArgs is what get_document is called with.
+type getDocumentArgs struct {
+	// DocumentID names the document being described.
+	DocumentID xid.ID `json:"document_id"`
+}
+
+// Validate checks the arguments are complete.
+func (a getDocumentArgs) Validate() error {
+	if a.DocumentID.IsNil() {
+		return errRequired(_keyDocumentID)
+	}
+
+	return nil
 }
 
 // getDocument returns one document's metadata.
@@ -129,48 +148,36 @@ func (getDocument) Title(_ DescribeInput) (string, error) {
 
 // Execute fetches the document's metadata.
 func (getDocument) Execute(inp Input) (string, error) {
-	var in struct {
-		DocumentID string `json:"document_id"`
-	}
+	var in getDocumentArgs
 
 	if err := inp.Decode(&in); err != nil {
 		return "", err
 	}
 
-	docID, err := xid.FromString(in.DocumentID)
-	if err != nil {
-		return "", fmt.Errorf("get_document: document_id is not a valid xid: %w", err)
-	}
-
-	doc, err := inp.Document(docID)
+	doc, err := inp.Document(in.DocumentID)
 	if err != nil {
 		return "", fmt.Errorf("get_document: fetch: %w", err)
 	}
 
-	out := struct {
-		ID         string `json:"id"`
-		Name       string `json:"name"`
-		Icon       string `json:"icon"`
-		ParentID   string `json:"parent_id,omitempty"`
-		BranchID   string `json:"branch_id"`
-		BranchName string `json:"branch_name"`
-		Protected  bool   `json:"protected"`
-		UpdatedAt  string `json:"updated_at"`
+	return result(struct {
+		ID         xid.ID             `json:"id"`
+		Name       string             `json:"name"`
+		Icon       string             `json:"icon"`
+		ParentID   null.Value[xid.ID] `json:"parent_id,omitzero"`
+		BranchID   xid.ID             `json:"branch_id"`
+		BranchName string             `json:"branch_name"`
+		Protected  bool               `json:"protected"`
+		UpdatedAt  string             `json:"updated_at"`
 	}{
-		ID:         doc.ID.String(),
+		ID:         doc.ID,
 		Name:       doc.DocumentName,
 		Icon:       doc.Icon,
-		BranchID:   doc.BranchID.String(),
+		ParentID:   doc.ParentID,
+		BranchID:   doc.BranchID,
 		BranchName: doc.BranchName,
 		Protected:  doc.Protected,
 		UpdatedAt:  doc.UpdatedAt.UTC().Format(time.RFC3339),
-	}
-
-	if doc.ParentID.Valid {
-		out.ParentID = doc.ParentID.V.String()
-	}
-
-	return result(out)
+	})
 }
 
 // createDocument creates a new document in the organisation.
@@ -185,9 +192,18 @@ type createDocumentArgs struct {
 	// default icon.
 	Icon string `json:"icon"`
 
-	// ParentID names the parent document. Empty creates at the org
+	// ParentID names the parent document. Null creates at the org
 	// root.
-	ParentID string `json:"parent_id"`
+	ParentID null.Value[xid.ID] `json:"parent_id"`
+}
+
+// Validate checks the arguments are complete.
+func (a createDocumentArgs) Validate() error {
+	if a.Name == "" {
+		return errRequired(_keyName)
+	}
+
+	return nil
 }
 
 // Info returns the tool's model-facing description.
@@ -217,11 +233,7 @@ func (createDocument) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	if in.Name != "" {
-		return fmt.Sprintf("Creating %q", in.Name), nil
-	}
-
-	return "Creating a document", nil
+	return fmt.Sprintf("Creating %q", in.Name), nil
 }
 
 // Summary describes the document the model wants to create.
@@ -234,13 +246,10 @@ func (createDocument) Summary(inp DescribeInput) (ActionSummary, error) {
 
 	// a document that does not exist yet has no id to resolve, so this
 	// is the one write whose summary names no target.
-	out := ActionSummary{Tool: string(NameCreateDocument), Summary: "Create a new document"}
-
-	if in.Name != "" {
-		out.Summary = fmt.Sprintf("Create document %q", in.Name)
-	}
-
-	return out, nil
+	return ActionSummary{
+		Tool:    NameCreateDocument,
+		Summary: fmt.Sprintf("Create document %q", in.Name),
+	}, nil
 }
 
 // Execute creates the document, its maintainer row and its search job.
@@ -251,30 +260,15 @@ func (createDocument) Execute(inp Input) (string, error) {
 		return "", err
 	}
 
-	if in.Name == "" {
-		return "", errors.New("create_document: name is required")
-	}
-
 	icon := in.Icon
 	if icon == "" {
 		icon = _defaultDocumentIcon
 	}
 
-	var parentID null.Value[xid.ID]
-
-	if in.ParentID != "" {
-		pid, err := xid.FromString(in.ParentID)
-		if err != nil {
-			return "", fmt.Errorf("create_document: parent_id is not a valid xid: %w", err)
-		}
-
-		parentID = null.ValueFrom(pid)
-	}
-
 	doc := document.NewDocument(document.CreateInput{
 		Name:     in.Name,
 		Icon:     icon,
-		ParentID: parentID,
+		ParentID: in.ParentID,
 	}, inp.OrganizationID(), inp.UserID())
 
 	if err := inp.CreateDocument(doc); err != nil {
@@ -284,15 +278,24 @@ func (createDocument) Execute(inp Input) (string, error) {
 	inp.NotifyTreeChange(doc.ParentID)
 
 	return result(createdDocumentResult{
-		DocumentID: doc.ID.String(),
-		BranchID:   doc.BranchID.String(),
+		DocumentID: doc.ID,
+		BranchID:   doc.BranchID,
 	})
 }
 
 // deleteDocumentArgs is what delete_document is called with.
 type deleteDocumentArgs struct {
 	// DocumentID names the document being deleted.
-	DocumentID string `json:"document_id"`
+	DocumentID xid.ID `json:"document_id"`
+}
+
+// Validate checks the arguments are complete.
+func (a deleteDocumentArgs) Validate() error {
+	if a.DocumentID.IsNil() {
+		return errRequired(_keyDocumentID)
+	}
+
+	return nil
 }
 
 // deleteDocument removes a document from the organisation.
@@ -322,7 +325,12 @@ func (deleteDocument) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	return "Deleting " + inp.Subject(in.DocumentID), nil
+	doc, err := inp.Document(in.DocumentID)
+	if err != nil {
+		return "", fmt.Errorf("%s: fetch document: %w", NameDeleteDocument, err)
+	}
+
+	return "Deleting " + doc.DocumentName, nil
 }
 
 // Summary describes the document the model wants to delete.
@@ -333,11 +341,17 @@ func (deleteDocument) Summary(inp DescribeInput) (ActionSummary, error) {
 		return ActionSummary{}, err
 	}
 
-	out := summarize(inp, NameDeleteDocument, in.DocumentID, func(subject string) string {
-		return "Delete " + subject
-	})
+	doc, err := inp.Document(in.DocumentID)
+	if err != nil {
+		return ActionSummary{}, fmt.Errorf("%s: fetch document: %w", NameDeleteDocument, err)
+	}
 
-	return out, nil
+	return ActionSummary{
+		Tool:         NameDeleteDocument,
+		DocumentID:   doc.ID,
+		DocumentName: doc.DocumentName,
+		Summary:      "Delete " + doc.DocumentName,
+	}, nil
 }
 
 // Execute deletes the document and refreshes the tree.
@@ -348,27 +362,22 @@ func (deleteDocument) Execute(inp Input) (string, error) {
 		return "", err
 	}
 
-	docID, err := xid.FromString(in.DocumentID)
-	if err != nil {
-		return "", fmt.Errorf("delete_document: document_id is not a valid xid: %w", err)
-	}
-
 	// capture the parent before the row goes away so we can scope the
 	// tree-change notification to the affected subtree.
 	var parentID null.Value[xid.ID]
 
-	if doc, ferr := inp.Document(docID); ferr == nil && doc != nil {
+	if doc, ferr := inp.Document(in.DocumentID); ferr == nil && doc != nil {
 		parentID = doc.ParentID
 	}
 
-	if err := inp.DeleteDocument(docID); err != nil {
+	if err := inp.DeleteDocument(in.DocumentID); err != nil {
 		return "", fmt.Errorf("delete_document: delete: %w", err)
 	}
 
 	inp.NotifyTreeChange(parentID)
 
 	return result(deletedDocumentResult{
-		DocumentID: docID.String(),
+		DocumentID: in.DocumentID,
 		Deleted:    true,
 	})
 }
@@ -376,10 +385,23 @@ func (deleteDocument) Execute(inp Input) (string, error) {
 // renameDocumentArgs is what rename_document is called with.
 type renameDocumentArgs struct {
 	// DocumentID names the document being renamed.
-	DocumentID string `json:"document_id"`
+	DocumentID xid.ID `json:"document_id"`
 
 	// Name is the new display name. Required.
 	Name string `json:"name"`
+}
+
+// Validate checks the arguments are complete.
+func (a renameDocumentArgs) Validate() error {
+	if a.DocumentID.IsNil() {
+		return errRequired(_keyDocumentID)
+	}
+
+	if a.Name == "" {
+		return errRequired(_keyName)
+	}
+
+	return nil
 }
 
 // renameDocument changes a document's display name.
@@ -414,7 +436,12 @@ func (renameDocument) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	return "Renaming " + inp.Subject(in.DocumentID), nil
+	doc, err := inp.Document(in.DocumentID)
+	if err != nil {
+		return "", fmt.Errorf("%s: fetch document: %w", NameRenameDocument, err)
+	}
+
+	return "Renaming " + doc.DocumentName, nil
 }
 
 // Summary describes the rename the model wants to make.
@@ -425,15 +452,17 @@ func (renameDocument) Summary(inp DescribeInput) (ActionSummary, error) {
 		return ActionSummary{}, err
 	}
 
-	out := summarize(inp, NameRenameDocument, in.DocumentID, func(subject string) string {
-		if in.Name == "" {
-			return "Rename " + subject
-		}
+	doc, err := inp.Document(in.DocumentID)
+	if err != nil {
+		return ActionSummary{}, fmt.Errorf("%s: fetch document: %w", NameRenameDocument, err)
+	}
 
-		return fmt.Sprintf("Rename %s to %q", subject, in.Name)
-	})
-
-	return out, nil
+	return ActionSummary{
+		Tool:         NameRenameDocument,
+		DocumentID:   doc.ID,
+		DocumentName: doc.DocumentName,
+		Summary:      fmt.Sprintf("Rename %s to %q", doc.DocumentName, in.Name),
+	}, nil
 }
 
 // Execute renames the document and refreshes the tree.
@@ -442,10 +471,6 @@ func (renameDocument) Execute(inp Input) (string, error) {
 
 	if err := inp.Decode(&in); err != nil {
 		return "", err
-	}
-
-	if in.Name == "" {
-		return "", errors.New("rename_document: name is required")
 	}
 
 	out, err := inp.ApplyEdit(in.DocumentID, []edit.Operation{edit.SetName(in.Name)})
@@ -461,10 +486,23 @@ func (renameDocument) Execute(inp Input) (string, error) {
 // setDocumentIconArgs is what set_document_icon is called with.
 type setDocumentIconArgs struct {
 	// DocumentID names the document whose icon is being set.
-	DocumentID string `json:"document_id"`
+	DocumentID xid.ID `json:"document_id"`
 
 	// Icon is the new lucide icon identifier. Required.
 	Icon string `json:"icon"`
+}
+
+// Validate checks the arguments are complete.
+func (a setDocumentIconArgs) Validate() error {
+	if a.DocumentID.IsNil() {
+		return errRequired(_keyDocumentID)
+	}
+
+	if a.Icon == "" {
+		return errRequired(document.AttrIcon)
+	}
+
+	return nil
 }
 
 // setDocumentIcon changes a document's icon identifier.
@@ -504,15 +542,17 @@ func (setDocumentIcon) Summary(inp DescribeInput) (ActionSummary, error) {
 		return ActionSummary{}, err
 	}
 
-	out := summarize(inp, NameSetDocumentIcon, in.DocumentID, func(subject string) string {
-		if in.Icon == "" {
-			return "Change icon of " + subject
-		}
+	doc, err := inp.Document(in.DocumentID)
+	if err != nil {
+		return ActionSummary{}, fmt.Errorf("%s: fetch document: %w", NameSetDocumentIcon, err)
+	}
 
-		return fmt.Sprintf("Change icon of %s to %s", subject, in.Icon)
-	})
-
-	return out, nil
+	return ActionSummary{
+		Tool:         NameSetDocumentIcon,
+		DocumentID:   doc.ID,
+		DocumentName: doc.DocumentName,
+		Summary:      fmt.Sprintf("Change icon of %s to %s", doc.DocumentName, in.Icon),
+	}, nil
 }
 
 // Execute sets the icon and refreshes the tree.
@@ -521,10 +561,6 @@ func (setDocumentIcon) Execute(inp Input) (string, error) {
 
 	if err := inp.Decode(&in); err != nil {
 		return "", err
-	}
-
-	if in.Icon == "" {
-		return "", errors.New("set_document_icon: icon is required")
 	}
 
 	out, err := inp.ApplyEdit(in.DocumentID, []edit.Operation{edit.SetIcon(in.Icon)})
@@ -540,11 +576,20 @@ func (setDocumentIcon) Execute(inp Input) (string, error) {
 // moveDocumentArgs is what move_document is called with.
 type moveDocumentArgs struct {
 	// DocumentID names the document being moved.
-	DocumentID string `json:"document_id"`
+	DocumentID xid.ID `json:"document_id"`
 
-	// NewParentID names the destination parent. Empty moves the
+	// NewParentID names the destination parent. Null moves the
 	// document to the org root.
-	NewParentID string `json:"new_parent_id"`
+	NewParentID null.Value[xid.ID] `json:"new_parent_id"`
+}
+
+// Validate checks the arguments are complete.
+func (a moveDocumentArgs) Validate() error {
+	if a.DocumentID.IsNil() {
+		return errRequired(_keyDocumentID)
+	}
+
+	return nil
 }
 
 // moveDocument re-parents a document within the organisation.
@@ -576,7 +621,12 @@ func (moveDocument) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	return "Moving " + inp.Subject(in.DocumentID), nil
+	doc, err := inp.Document(in.DocumentID)
+	if err != nil {
+		return "", fmt.Errorf("%s: fetch document: %w", NameMoveDocument, err)
+	}
+
+	return "Moving " + doc.DocumentName, nil
 }
 
 // Summary describes the move the model wants to make.
@@ -587,15 +637,22 @@ func (moveDocument) Summary(inp DescribeInput) (ActionSummary, error) {
 		return ActionSummary{}, err
 	}
 
-	out := summarize(inp, NameMoveDocument, in.DocumentID, func(subject string) string {
-		if in.NewParentID == "" {
-			return fmt.Sprintf("Move %s to the org root", subject)
-		}
+	doc, err := inp.Document(in.DocumentID)
+	if err != nil {
+		return ActionSummary{}, fmt.Errorf("%s: fetch document: %w", NameMoveDocument, err)
+	}
 
-		return fmt.Sprintf("Move %s under another document", subject)
-	})
+	summary := fmt.Sprintf("Move %s under another document", doc.DocumentName)
+	if !in.NewParentID.Valid {
+		summary = fmt.Sprintf("Move %s to the org root", doc.DocumentName)
+	}
 
-	return out, nil
+	return ActionSummary{
+		Tool:         NameMoveDocument,
+		DocumentID:   doc.ID,
+		DocumentName: doc.DocumentName,
+		Summary:      summary,
+	}, nil
 }
 
 // Execute re-parents the document, refusing to create a cycle.
@@ -606,30 +663,14 @@ func (moveDocument) Execute(inp Input) (string, error) {
 		return "", err
 	}
 
-	docID, err := xid.FromString(in.DocumentID)
-	if err != nil {
-		return "", fmt.Errorf("move_document: document_id is not a valid xid: %w", err)
-	}
-
-	doc, err := inp.Document(docID)
+	doc, err := inp.Document(in.DocumentID)
 	if err != nil {
 		return "", fmt.Errorf("move_document: document not found: %w", err)
 	}
 
 	oldParent := doc.ParentID
 
-	var newParent null.Value[xid.ID]
-
-	if in.NewParentID != "" {
-		pid, perr := xid.FromString(in.NewParentID)
-		if perr != nil {
-			return "", fmt.Errorf("move_document: new_parent_id is not a valid xid: %w", perr)
-		}
-
-		newParent = null.ValueFrom(pid)
-	}
-
-	if err := inp.MoveDocument(docID, newParent); err != nil {
+	if err := inp.MoveDocument(in.DocumentID, in.NewParentID); err != nil {
 		return "", fmt.Errorf("move_document: %w", err)
 	}
 
@@ -638,29 +679,24 @@ func (moveDocument) Execute(inp Input) (string, error) {
 	// the second notification would be a duplicate, so it is skipped.
 	inp.NotifyTreeChange(oldParent)
 
-	if oldParent != newParent {
-		inp.NotifyTreeChange(newParent)
+	if oldParent != in.NewParentID {
+		inp.NotifyTreeChange(in.NewParentID)
 	}
 
-	out := struct {
-		DocumentID  string `json:"document_id"`
-		NewParentID string `json:"new_parent_id,omitempty"`
+	return result(struct {
+		DocumentID  xid.ID             `json:"document_id"`
+		NewParentID null.Value[xid.ID] `json:"new_parent_id,omitzero"`
 	}{
-		DocumentID: docID.String(),
-	}
-
-	if newParent.Valid {
-		out.NewParentID = newParent.V.String()
-	}
-
-	return result(out)
+		DocumentID:  in.DocumentID,
+		NewParentID: in.NewParentID,
+	})
 }
 
 // docTreeNode is the shape returned by list_documents. It mirrors
 // document.Summary but uses snake_case keys so the AI consumes a
 // consistent vocabulary with the rest of the tool surface.
 type docTreeNode struct {
-	ID       string        `json:"id"`
+	ID       xid.ID        `json:"id"`
 	Name     string        `json:"name"`
 	Icon     string        `json:"icon"`
 	Children []docTreeNode `json:"children,omitempty"`
@@ -677,7 +713,7 @@ func summariesToTree(ss document.Summaries) []docTreeNode {
 
 	for _, s := range ss {
 		out = append(out, docTreeNode{
-			ID:       s.ID.String(),
+			ID:       s.ID,
 			Name:     s.DocumentName,
 			Icon:     s.Icon,
 			Children: summariesToTree(s.Children),

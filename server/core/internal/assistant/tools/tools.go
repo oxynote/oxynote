@@ -12,6 +12,7 @@ import (
 	"slices"
 
 	"github.com/cloudwego/eino/components/tool"
+	"github.com/rs/xid"
 )
 
 // Name is the canonical identifier of one tool the assistant
@@ -258,7 +259,7 @@ type Result struct {
 	// several documents and empty for one that changes none — neither
 	// of which an argument can be asked about. A delete records
 	// nothing: the document it names no longer exists to point at.
-	Documents []string
+	Documents []xid.ID
 }
 
 // Runner runs one tool call in this package's own vocabulary: the raw

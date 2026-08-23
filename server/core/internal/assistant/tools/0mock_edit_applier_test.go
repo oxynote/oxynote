@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
+	"github.com/rs/xid"
 )
 
 // Ensure, that EditApplierMock does implement EditApplier.
@@ -20,7 +21,7 @@ var _ EditApplier = &EditApplierMock{}
 //
 //		// make and configure a mocked EditApplier
 //		mockedEditApplier := &EditApplierMock{
-//			ApplyFunc: func(ctx context.Context, documentID string, branchID string, ops []edit.Operation) (edit.Result, error) {
+//			ApplyFunc: func(ctx context.Context, documentID xid.ID, branchID xid.ID, ops []edit.Operation) (edit.Result, error) {
 //				panic("mock out the Apply method")
 //			},
 //		}
@@ -31,7 +32,7 @@ var _ EditApplier = &EditApplierMock{}
 //	}
 type EditApplierMock struct {
 	// ApplyFunc mocks the Apply method.
-	ApplyFunc func(ctx context.Context, documentID string, branchID string, ops []edit.Operation) (edit.Result, error)
+	ApplyFunc func(ctx context.Context, documentID xid.ID, branchID xid.ID, ops []edit.Operation) (edit.Result, error)
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -40,9 +41,9 @@ type EditApplierMock struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
 			// DocumentID is the documentID argument value.
-			DocumentID string
+			DocumentID xid.ID
 			// BranchID is the branchID argument value.
-			BranchID string
+			BranchID xid.ID
 			// Ops is the ops argument value.
 			Ops []edit.Operation
 		}
@@ -51,11 +52,11 @@ type EditApplierMock struct {
 }
 
 // Apply calls ApplyFunc.
-func (mock *EditApplierMock) Apply(ctx context.Context, documentID string, branchID string, ops []edit.Operation) (edit.Result, error) {
+func (mock *EditApplierMock) Apply(ctx context.Context, documentID xid.ID, branchID xid.ID, ops []edit.Operation) (edit.Result, error) {
 	callInfo := struct {
 		Ctx        context.Context
-		DocumentID string
-		BranchID   string
+		DocumentID xid.ID
+		BranchID   xid.ID
 		Ops        []edit.Operation
 	}{
 		Ctx:        ctx,
@@ -82,14 +83,14 @@ func (mock *EditApplierMock) Apply(ctx context.Context, documentID string, branc
 //	len(mockedEditApplier.ApplyCalls())
 func (mock *EditApplierMock) ApplyCalls() []struct {
 	Ctx        context.Context
-	DocumentID string
-	BranchID   string
+	DocumentID xid.ID
+	BranchID   xid.ID
 	Ops        []edit.Operation
 } {
 	var calls []struct {
 		Ctx        context.Context
-		DocumentID string
-		BranchID   string
+		DocumentID xid.ID
+		BranchID   xid.ID
 		Ops        []edit.Operation
 	}
 	mock.lockApply.RLock()

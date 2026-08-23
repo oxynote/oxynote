@@ -55,8 +55,8 @@ func (h *Handler) toolHandler(e tools.Entry) mcp.ToolHandler {
 		// can follow the edit straight to its target.
 		for _, id := range res.Documents {
 			content = append(content, &mcp.ResourceLink{
-				URI:      _resourceURIPrefix + id,
-				Name:     id,
+				URI:      _resourceURIPrefix + id.String(),
+				Name:     id.String(),
 				MIMEType: _documentMIMEType,
 			})
 		}

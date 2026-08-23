@@ -7,6 +7,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
+	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -18,7 +19,7 @@ type stubRunner struct {
 	out string
 
 	// docs is what Run reports as the documents it changed.
-	docs []string
+	docs []xid.ID
 
 	// runErr fails Run when set.
 	runErr error
@@ -71,6 +72,8 @@ func Test_annotations(t *testing.T) {
 func Test_Handler_toolHandler(t *testing.T) {
 	t.Parallel()
 
+	doc1, doc2 := xid.New(), xid.New()
+
 	hdl := &Handler{log: discardLog()}
 
 	req := func(args string) *mcp.CallToolRequest {
@@ -101,16 +104,16 @@ func Test_Handler_toolHandler(t *testing.T) {
 			Text:  `{"ok":true}`,
 		},
 		"A call links the document it changed": {
-			Entry:    tools.Entry{Tool: &stubRunner{out: `{"ok":true}`, docs: []string{"doc1"}}, Traits: tools.Traits{Write: true}},
-			Args:     `{"document_id":"doc1"}`,
+			Entry:    tools.Entry{Tool: &stubRunner{out: `{"ok":true}`, docs: []xid.ID{doc1}}, Traits: tools.Traits{Write: true}},
+			Args:     `{"document_id":"` + doc1.String() + `"}`,
 			Text:     `{"ok":true}`,
-			LinkURIs: []string{_resourceURIPrefix + "doc1"},
+			LinkURIs: []string{_resourceURIPrefix + doc1.String()},
 		},
 		"A call links every document it changed": {
-			Entry:    tools.Entry{Tool: &stubRunner{out: `{"ok":true}`, docs: []string{"doc1", "doc2"}}, Traits: tools.Traits{Write: true}},
+			Entry:    tools.Entry{Tool: &stubRunner{out: `{"ok":true}`, docs: []xid.ID{doc1, doc2}}, Traits: tools.Traits{Write: true}},
 			Args:     `{}`,
 			Text:     `{"ok":true}`,
-			LinkURIs: []string{_resourceURIPrefix + "doc1", _resourceURIPrefix + "doc2"},
+			LinkURIs: []string{_resourceURIPrefix + doc1.String(), _resourceURIPrefix + doc2.String()},
 		},
 		"A write that changed nothing has no link to offer": {
 			Entry: tools.Entry{Tool: &stubRunner{out: `{"ok":true}`}, Traits: tools.Traits{Write: true}},

@@ -21,11 +21,10 @@ func Test_result(t *testing.T) {
 	assert.JSONEq(t, `{"ok":true}`, res)
 }
 
-func Test_subjectFor(t *testing.T) {
+func Test_errRequired(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, "document", subjectFor(""))
-	assert.Equal(t, "'Cat Facts'", subjectFor("'Cat Facts'"))
+	assert.EqualError(t, errRequired("document_id"), "document_id is required")
 }
 
 func Test_blockKindLabel(t *testing.T) {

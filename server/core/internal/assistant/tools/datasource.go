@@ -49,39 +49,27 @@ var errUnknownDataSource = errors.New("no data source with that id in this organ
 // with. Both ends are optional: the tools serve a model that usually
 // means "recently" and should not have to compute timestamps to say so.
 type timeRangeArgs struct {
-	// From is the range start as an RFC3339 timestamp.
-	From string `json:"from"`
+	// From is the range start. Zero means an hour before the end.
+	From time.Time `json:"from"`
 
-	// To is the range end as an RFC3339 timestamp.
-	To string `json:"to"`
+	// To is the range end. Zero means now.
+	To time.Time `json:"to"`
 }
 
 // resolve turns the pair into a time range, defaulting the end to now
 // and the start to an hour before it.
-func (a timeRangeArgs) resolve() (processor.TimeRange, error) {
-	out := processor.TimeRange{To: timeutil.Now()}
+func (a timeRangeArgs) resolve() processor.TimeRange {
+	out := processor.TimeRange{From: a.From, To: a.To}
 
-	if a.To != "" {
-		to, err := time.Parse(time.RFC3339, a.To)
-		if err != nil {
-			return processor.TimeRange{}, fmt.Errorf("to must be an RFC3339 timestamp: %w", err)
-		}
-
-		out.To = to
+	if out.To.IsZero() {
+		out.To = timeutil.Now()
 	}
 
-	out.From = out.To.Add(-_defaultQueryWindow)
-
-	if a.From != "" {
-		from, err := time.Parse(time.RFC3339, a.From)
-		if err != nil {
-			return processor.TimeRange{}, fmt.Errorf("from must be an RFC3339 timestamp: %w", err)
-		}
-
-		out.From = from
+	if out.From.IsZero() {
+		out.From = out.To.Add(-_defaultQueryWindow)
 	}
 
-	return out, nil
+	return out
 }
 
 // timeRangeProps returns the shared from/to schema properties.
@@ -102,103 +90,12 @@ func dataSourceProps(extra map[string]any) map[string]any {
 	return out
 }
 
-// chartType parses the optional chart_type argument. An empty value
-// means the caller wants the raw result.
-func chartType(raw string) (processor.ChartType, error) {
-	if raw == "" {
-		return "", nil
-	}
-
-	ct := processor.ChartType(raw)
-	if !ct.IsValid() {
-		return "", fmt.Errorf("chart_type must be one of line_chart, bar_chart, gauge_chart, got %q", raw)
-	}
-
-	return ct, nil
-}
-
-// dataSourceTitle names the data source a call is about to read, for
-// the status line.
-//
-// An id that resolves to nothing is announced by id rather than
-// abandoned: the call is about to fail on that id, and naming it is
-// what makes the failure legible. That is why the lookup's error is
-// answered here instead of being passed on — the label is not the place
-// the failure gets reported.
-func dataSourceTitle(inp DescribeInput, verb, id string) string {
-	if id == "" {
-		return ""
-	}
-
-	name := id
-
-	if ds, err := inp.DataSource(id); err == nil && ds != nil {
-		name = ds.Name
-	}
-
-	return fmt.Sprintf("%s %q", verb, name)
-}
-
-// runnerFor resolves the data source the call names to the runner that
-// reads it. The id arrives as text from the model, so parsing it is
-// part of resolving it, and every failure is phrased for the caller
-// that can act on it.
-func runnerFor(inp Input, name Name, rawID string) (datasource.Runner, error) {
-	if rawID == "" {
-		return nil, fmt.Errorf("%s: %s is required", name, _keyDataSourceID)
-	}
-
-	id, err := xid.FromString(rawID)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %s is not a valid data source id: %w", name, _keyDataSourceID, err)
-	}
-
-	runner, err := inp.DataSourceRunner(id)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", name, err)
-	}
-
-	return runner, nil
-}
-
-// prometheusClient resolves the call's data source and takes its
-// Prometheus client, which is what every Prometheus tool starts with.
-func prometheusClient(inp Input, name Name, rawID string) (datasource.Prometheus, error) {
-	runner, err := runnerFor(inp, name, rawID)
-	if err != nil {
-		return nil, err
-	}
-
-	prom, err := runner.Prometheus(inp.Context())
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", name, err)
-	}
-
-	return prom, nil
-}
-
-// sqlClient resolves the call's data source and takes its SQL client,
-// whichever dialect it speaks.
-func sqlClient(inp Input, name Name, rawID string) (datasource.SQL, error) {
-	runner, err := runnerFor(inp, name, rawID)
-	if err != nil {
-		return nil, err
-	}
-
-	sql, err := runner.SQL(inp.Context())
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", name, err)
-	}
-
-	return sql, nil
-}
-
 // dataSourceInfo is one row of list_data_sources. It is deliberately
 // narrower than the stored data source: the URL and the credentials
 // never reach the model.
 type dataSourceInfo struct {
 	// ID addresses the data source in every other data-source tool.
-	ID string `json:"id"`
+	ID xid.ID `json:"id"`
 
 	// Name is the data source's display name.
 	Name string `json:"name"`
@@ -259,7 +156,7 @@ func (listDataSources) Execute(inp Input) (string, error) {
 
 	for _, ds := range sources {
 		out = append(out, dataSourceInfo{
-			ID:     ds.ID.String(),
+			ID:     ds.ID,
 			Name:   ds.Name,
 			Type:   ds.Type,
 			Status: ds.Status,
@@ -275,7 +172,16 @@ func (listDataSources) Execute(inp Input) (string, error) {
 // with.
 type getPrometheusMetadataArgs struct {
 	// DataSourceID names the Prometheus data source.
-	DataSourceID string `json:"data_source_id"`
+	DataSourceID xid.ID `json:"data_source_id"`
+}
+
+// Validate checks the arguments are complete.
+func (a getPrometheusMetadataArgs) Validate() error {
+	if a.DataSourceID.IsNil() {
+		return errRequired(_keyDataSourceID)
+	}
+
+	return nil
 }
 
 // getPrometheusMetadata lists the metrics a Prometheus data source
@@ -307,7 +213,12 @@ func (getPrometheusMetadata) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	return dataSourceTitle(inp, "Reading metric metadata of", in.DataSourceID), nil
+	ds, err := inp.DataSource(in.DataSourceID)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", NameGetPrometheusMetadata, err)
+	}
+
+	return fmt.Sprintf("Reading metric metadata of %q", ds.Name), nil
 }
 
 // Execute fetches the data source's metric metadata.
@@ -318,9 +229,14 @@ func (getPrometheusMetadata) Execute(inp Input) (string, error) {
 		return "", err
 	}
 
-	prom, err := prometheusClient(inp, NameGetPrometheusMetadata, in.DataSourceID)
+	runner, err := inp.DataSourceRunner(in.DataSourceID)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%s: %w", NameGetPrometheusMetadata, err)
+	}
+
+	prom, err := runner.Prometheus(inp.Context())
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", NameGetPrometheusMetadata, err)
 	}
 
 	res, err := prom.Metadata(inp.Context())
@@ -337,10 +253,19 @@ type prometheusLabelNamesArgs struct {
 	timeRangeArgs
 
 	// DataSourceID names the Prometheus data source.
-	DataSourceID string `json:"data_source_id"`
+	DataSourceID xid.ID `json:"data_source_id"`
 
 	// Matchers narrows the label names to the series they select.
 	Matchers []string `json:"matchers"`
+}
+
+// Validate checks the arguments are complete.
+func (a prometheusLabelNamesArgs) Validate() error {
+	if a.DataSourceID.IsNil() {
+		return errRequired(_keyDataSourceID)
+	}
+
+	return nil
 }
 
 // listPrometheusLabelNames lists the label names present in a
@@ -382,7 +307,12 @@ func (listPrometheusLabelNames) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	return dataSourceTitle(inp, "Listing label names of", in.DataSourceID), nil
+	ds, err := inp.DataSource(in.DataSourceID)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", NameListPrometheusLabelNames, err)
+	}
+
+	return fmt.Sprintf("Listing label names of %q", ds.Name), nil
 }
 
 // Execute fetches the data source's label names.
@@ -393,14 +323,16 @@ func (listPrometheusLabelNames) Execute(inp Input) (string, error) {
 		return "", err
 	}
 
-	tr, err := in.resolve()
+	tr := in.resolve()
+
+	runner, err := inp.DataSourceRunner(in.DataSourceID)
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", NameListPrometheusLabelNames, err)
 	}
 
-	prom, err := prometheusClient(inp, NameListPrometheusLabelNames, in.DataSourceID)
+	prom, err := runner.Prometheus(inp.Context())
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%s: %w", NameListPrometheusLabelNames, err)
 	}
 
 	res, err := prom.LabelNames(inp.Context(), in.Matchers, tr)
@@ -417,13 +349,26 @@ type prometheusLabelValuesArgs struct {
 	timeRangeArgs
 
 	// DataSourceID names the Prometheus data source.
-	DataSourceID string `json:"data_source_id"`
+	DataSourceID xid.ID `json:"data_source_id"`
 
 	// Label is the label whose values are being listed. Required.
 	Label string `json:"label"`
 
 	// Matchers narrows the values to the series they select.
 	Matchers []string `json:"matchers"`
+}
+
+// Validate checks the arguments are complete.
+func (a prometheusLabelValuesArgs) Validate() error {
+	if a.DataSourceID.IsNil() {
+		return errRequired(_keyDataSourceID)
+	}
+
+	if a.Label == "" {
+		return errRequired(_keyLabel)
+	}
+
+	return nil
 }
 
 // listPrometheusLabelValues lists the values one label takes in a
@@ -466,11 +411,12 @@ func (listPrometheusLabelValues) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	if in.Label == "" {
-		return dataSourceTitle(inp, "Listing label values of", in.DataSourceID), nil
+	ds, err := inp.DataSource(in.DataSourceID)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", NameListPrometheusLabelValues, err)
 	}
 
-	return dataSourceTitle(inp, fmt.Sprintf("Listing values of label %q in", in.Label), in.DataSourceID), nil
+	return fmt.Sprintf("Listing values of label %q in %q", in.Label, ds.Name), nil
 }
 
 // Execute fetches the label's values.
@@ -481,18 +427,16 @@ func (listPrometheusLabelValues) Execute(inp Input) (string, error) {
 		return "", err
 	}
 
-	if in.Label == "" {
-		return "", fmt.Errorf("%s: label is required", NameListPrometheusLabelValues)
-	}
+	tr := in.resolve()
 
-	tr, err := in.resolve()
+	runner, err := inp.DataSourceRunner(in.DataSourceID)
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", NameListPrometheusLabelValues, err)
 	}
 
-	prom, err := prometheusClient(inp, NameListPrometheusLabelValues, in.DataSourceID)
+	prom, err := runner.Prometheus(inp.Context())
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%s: %w", NameListPrometheusLabelValues, err)
 	}
 
 	res, err := prom.LabelValues(inp.Context(), in.Label, in.Matchers, tr)
@@ -508,10 +452,23 @@ type prometheusSeriesArgs struct {
 	timeRangeArgs
 
 	// DataSourceID names the Prometheus data source.
-	DataSourceID string `json:"data_source_id"`
+	DataSourceID xid.ID `json:"data_source_id"`
 
 	// Matchers select the series to return. Required.
 	Matchers []string `json:"matchers"`
+}
+
+// Validate checks the arguments are complete.
+func (a prometheusSeriesArgs) Validate() error {
+	if a.DataSourceID.IsNil() {
+		return errRequired(_keyDataSourceID)
+	}
+
+	if len(a.Matchers) == 0 {
+		return errRequired(_keyMatchers)
+	}
+
+	return nil
 }
 
 // listPrometheusSeries lists the series matching a set of selectors.
@@ -552,7 +509,12 @@ func (listPrometheusSeries) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	return dataSourceTitle(inp, "Listing series of", in.DataSourceID), nil
+	ds, err := inp.DataSource(in.DataSourceID)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", NameListPrometheusSeries, err)
+	}
+
+	return fmt.Sprintf("Listing series of %q", ds.Name), nil
 }
 
 // Execute fetches the matching series.
@@ -563,20 +525,16 @@ func (listPrometheusSeries) Execute(inp Input) (string, error) {
 		return "", err
 	}
 
-	// Prometheus rejects a series query with no selector, so the model
-	// is told what is missing rather than handed the upstream error.
-	if len(in.Matchers) == 0 {
-		return "", fmt.Errorf("%s: at least one matcher is required", NameListPrometheusSeries)
-	}
+	tr := in.resolve()
 
-	tr, err := in.resolve()
+	runner, err := inp.DataSourceRunner(in.DataSourceID)
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", NameListPrometheusSeries, err)
 	}
 
-	prom, err := prometheusClient(inp, NameListPrometheusSeries, in.DataSourceID)
+	prom, err := runner.Prometheus(inp.Context())
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%s: %w", NameListPrometheusSeries, err)
 	}
 
 	res, err := prom.Series(inp.Context(), in.Matchers, tr)
@@ -592,14 +550,27 @@ type queryPrometheusArgs struct {
 	timeRangeArgs
 
 	// DataSourceID names the Prometheus data source.
-	DataSourceID string `json:"data_source_id"`
+	DataSourceID xid.ID `json:"data_source_id"`
 
 	// Query is the PromQL expression to run. Required.
 	Query string `json:"query"`
 
 	// ChartType, when set, asks for the transformed series a metric
 	// block of that chart type would render instead of the raw result.
-	ChartType string `json:"chart_type"`
+	ChartType processor.ChartType `json:"chart_type"`
+}
+
+// Validate checks the arguments are complete.
+func (a queryPrometheusArgs) Validate() error {
+	if a.DataSourceID.IsNil() {
+		return errRequired(_keyDataSourceID)
+	}
+
+	if a.Query == "" {
+		return errRequired(_keyQuery)
+	}
+
+	return nil
 }
 
 // queryPrometheus runs a PromQL range query.
@@ -635,7 +606,12 @@ func (queryPrometheus) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	return dataSourceTitle(inp, "Querying", in.DataSourceID), nil
+	ds, err := inp.DataSource(in.DataSourceID)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", NameQueryPrometheus, err)
+	}
+
+	return fmt.Sprintf("Querying %q", ds.Name), nil
 }
 
 // Execute runs the query, transforming the result when a chart type
@@ -647,23 +623,16 @@ func (queryPrometheus) Execute(inp Input) (string, error) {
 		return "", err
 	}
 
-	if in.Query == "" {
-		return "", fmt.Errorf("%s: query is required", NameQueryPrometheus)
-	}
+	tr := in.resolve()
 
-	ct, err := chartType(in.ChartType)
+	runner, err := inp.DataSourceRunner(in.DataSourceID)
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", NameQueryPrometheus, err)
 	}
 
-	tr, err := in.resolve()
+	prom, err := runner.Prometheus(inp.Context())
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", NameQueryPrometheus, err)
-	}
-
-	prom, err := prometheusClient(inp, NameQueryPrometheus, in.DataSourceID)
-	if err != nil {
-		return "", err
 	}
 
 	res, err := prom.QueryRange(inp.Context(), in.Query, tr)
@@ -671,7 +640,7 @@ func (queryPrometheus) Execute(inp Input) (string, error) {
 		return "", fmt.Errorf("%s: %w", NameQueryPrometheus, err)
 	}
 
-	if ct == "" {
+	if in.ChartType == "" {
 		return result(res)
 	}
 
@@ -682,13 +651,22 @@ func (queryPrometheus) Execute(inp Input) (string, error) {
 		return result(&processor.QueryResult{Status: processor.QueryStatusNoData})
 	}
 
-	return result(res.Transform(ct))
+	return result(res.Transform(in.ChartType))
 }
 
 // getSQLMetadataArgs is what get_sql_metadata is called with.
 type getSQLMetadataArgs struct {
 	// DataSourceID names the SQL data source.
-	DataSourceID string `json:"data_source_id"`
+	DataSourceID xid.ID `json:"data_source_id"`
+}
+
+// Validate checks the arguments are complete.
+func (a getSQLMetadataArgs) Validate() error {
+	if a.DataSourceID.IsNil() {
+		return errRequired(_keyDataSourceID)
+	}
+
+	return nil
 }
 
 // getSQLMetadata lists the tables and columns of a SQL data source.
@@ -719,7 +697,12 @@ func (getSQLMetadata) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	return dataSourceTitle(inp, "Reading tables of", in.DataSourceID), nil
+	ds, err := inp.DataSource(in.DataSourceID)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", NameGetSQLMetadata, err)
+	}
+
+	return fmt.Sprintf("Reading tables of %q", ds.Name), nil
 }
 
 // Execute fetches the data source's tables and columns.
@@ -730,9 +713,14 @@ func (getSQLMetadata) Execute(inp Input) (string, error) {
 		return "", err
 	}
 
-	sql, err := sqlClient(inp, NameGetSQLMetadata, in.DataSourceID)
+	runner, err := inp.DataSourceRunner(in.DataSourceID)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%s: %w", NameGetSQLMetadata, err)
+	}
+
+	sql, err := runner.SQL(inp.Context())
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", NameGetSQLMetadata, err)
 	}
 
 	res, err := sql.Metadata(inp.Context())
@@ -748,10 +736,23 @@ type sqlQueryLabelsArgs struct {
 	timeRangeArgs
 
 	// DataSourceID names the SQL data source.
-	DataSourceID string `json:"data_source_id"`
+	DataSourceID xid.ID `json:"data_source_id"`
 
 	// Query is the SQL to probe. Required.
 	Query string `json:"query"`
+}
+
+// Validate checks the arguments are complete.
+func (a sqlQueryLabelsArgs) Validate() error {
+	if a.DataSourceID.IsNil() {
+		return errRequired(_keyDataSourceID)
+	}
+
+	if a.Query == "" {
+		return errRequired(_keyQuery)
+	}
+
+	return nil
 }
 
 // getSQLQueryLabels probes a query for its string columns.
@@ -786,7 +787,12 @@ func (getSQLQueryLabels) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	return dataSourceTitle(inp, "Probing query labels of", in.DataSourceID), nil
+	ds, err := inp.DataSource(in.DataSourceID)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", NameGetSQLQueryLabels, err)
+	}
+
+	return fmt.Sprintf("Probing query labels of %q", ds.Name), nil
 }
 
 // Execute probes the query for its string columns.
@@ -797,18 +803,16 @@ func (getSQLQueryLabels) Execute(inp Input) (string, error) {
 		return "", err
 	}
 
-	if in.Query == "" {
-		return "", fmt.Errorf("%s: query is required", NameGetSQLQueryLabels)
-	}
+	tr := in.resolve()
 
-	tr, err := in.resolve()
+	runner, err := inp.DataSourceRunner(in.DataSourceID)
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", NameGetSQLQueryLabels, err)
 	}
 
-	sql, err := sqlClient(inp, NameGetSQLQueryLabels, in.DataSourceID)
+	sql, err := runner.SQL(inp.Context())
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%s: %w", NameGetSQLQueryLabels, err)
 	}
 
 	res, err := sql.QueryLabels(inp.Context(), in.Query, tr)
@@ -826,14 +830,27 @@ type querySQLArgs struct {
 	timeRangeArgs
 
 	// DataSourceID names the SQL data source.
-	DataSourceID string `json:"data_source_id"`
+	DataSourceID xid.ID `json:"data_source_id"`
 
 	// Query is the SQL to run. Required.
 	Query string `json:"query"`
 
 	// ChartType, when set, asks for the transformed series a metric
 	// block of that chart type would render instead of the raw rows.
-	ChartType string `json:"chart_type"`
+	ChartType processor.ChartType `json:"chart_type"`
+}
+
+// Validate checks the arguments are complete.
+func (a querySQLArgs) Validate() error {
+	if a.DataSourceID.IsNil() {
+		return errRequired(_keyDataSourceID)
+	}
+
+	if a.Query == "" {
+		return errRequired(_keyQuery)
+	}
+
+	return nil
 }
 
 // querySQL runs a query against a SQL data source.
@@ -869,7 +886,12 @@ func (querySQL) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	return dataSourceTitle(inp, "Querying", in.DataSourceID), nil
+	ds, err := inp.DataSource(in.DataSourceID)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", NameQuerySQL, err)
+	}
+
+	return fmt.Sprintf("Querying %q", ds.Name), nil
 }
 
 // Execute runs the query against whichever SQL dialect the data source
@@ -881,32 +903,20 @@ func (querySQL) Execute(inp Input) (string, error) {
 		return "", err
 	}
 
-	if in.Query == "" {
-		return "", fmt.Errorf("%s: query is required", NameQuerySQL)
-	}
+	tr := in.resolve()
 
-	ct, err := chartType(in.ChartType)
+	runner, err := inp.DataSourceRunner(in.DataSourceID)
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", NameQuerySQL, err)
-	}
-
-	tr, err := in.resolve()
-	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameQuerySQL, err)
-	}
-
-	runner, err := runnerFor(inp, NameQuerySQL, in.DataSourceID)
-	if err != nil {
-		return "", err
 	}
 
 	// the two dialects return different result shapes, so this is the
 	// one place a tool has to know which one it is talking to.
 	if runner.Type() == datasource.TypePostgreSQL {
-		return runPostgreSQLQuery(inp, runner, in.Query, tr, ct)
+		return runPostgreSQLQuery(inp, runner, in.Query, tr, in.ChartType)
 	}
 
-	return runMySQLQuery(inp, runner, in.Query, tr, ct)
+	return runMySQLQuery(inp, runner, in.Query, tr, in.ChartType)
 }
 
 // runPostgreSQLQuery serves query_sql for a PostgreSQL data source.

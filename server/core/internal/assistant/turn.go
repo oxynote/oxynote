@@ -228,12 +228,20 @@ func (t *turn) confirmation(
 		}
 
 		ids = append(ids, ic.ID)
-		actions = append(actions, protocol.ConfirmAction{
-			Tool:         summary.Tool,
-			DocumentID:   summary.DocumentID,
+
+		action := protocol.ConfirmAction{
+			Tool:         string(summary.Tool),
 			DocumentName: summary.DocumentName,
 			Summary:      summary.Summary,
-		})
+		}
+
+		// a write that names no existing document carries no id, and
+		// the client is told nothing rather than a nil id.
+		if !summary.DocumentID.IsNil() {
+			action.DocumentID = summary.DocumentID.String()
+		}
+
+		actions = append(actions, action)
 	}
 
 	if len(ids) == 0 {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/oxynote/oxynote/server/core/internal/assistant/block"
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	datasourceMock "github.com/oxynote/oxynote/server/core/internal/datasource/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/document"
@@ -111,6 +112,14 @@ func runEdit(t *testing.T, tl Tool, name Name, c editCase) {
 	assert.JSONEq(t, `{"applied":1,"errors":[]}`, res)
 }
 
+func Test_readDocumentSummaryArgs_Validate(t *testing.T) {
+	t.Parallel()
+
+	assertValidate(t, readDocumentSummaryArgs{DocumentID: _testDocID}, map[string]Args{
+		"document_id": readDocumentSummaryArgs{},
+	})
+}
+
 func Test_readDocumentSummary_Info(t *testing.T) {
 	t.Parallel()
 
@@ -131,10 +140,19 @@ func Test_readDocumentSummary_Title(t *testing.T) {
 
 	got, err := readDocumentSummary{}.Title(testInput(
 		testDeps(stubDocumentDB(), nil, nil), NameReadDocumentSummary,
-		`{"document_id":"`+_testDocID+`"}`,
+		`{"document_id":"`+_testDocID.String()+`"}`,
 	))
 	require.NoError(t, err)
 	assert.Equal(t, "Reading Runbook", got)
+
+	// the document it names has to resolve; the failure is passed on
+	// rather than described around.
+	_, err = readDocumentSummary{}.Title(testInput(testDeps(failingDocumentDB(), nil, nil), NameReadDocumentSummary, requiredArgs(t, NameReadDocumentSummary)))
+	require.Error(t, err)
+
+	// unreadable arguments are refused before anything is looked up.
+	_, err = readDocumentSummary{}.Title(testInput(testDeps(stubDocumentDB(), nil, nil), NameReadDocumentSummary, `{`))
+	require.Error(t, err)
 }
 
 func Test_readDocumentSummary_Execute(t *testing.T) {
@@ -154,12 +172,12 @@ func Test_readDocumentSummary_Execute(t *testing.T) {
 		},
 		"Error returned by db.FetchMainBranchContent": {
 			DB:   stubContentDB(assert.AnError),
-			Args: `{"document_id":"` + _testDocID + `"}`,
+			Args: `{"document_id":"` + _testDocID.String() + `"}`,
 			Err:  assert.AnError,
 		},
 		"Summary is returned": {
 			DB:       stubContentDB(nil),
-			Args:     `{"document_id":"` + _testDocID + `"}`,
+			Args:     `{"document_id":"` + _testDocID.String() + `"}`,
 			Contains: `"document_name":"Runbook"`,
 		},
 	}
@@ -182,6 +200,15 @@ func Test_readDocumentSummary_Execute(t *testing.T) {
 	}
 }
 
+func Test_readBlockArgs_Validate(t *testing.T) {
+	t.Parallel()
+
+	assertValidate(t, readBlockArgs{DocumentID: _testDocID, BlockUID: "b"}, map[string]Args{
+		"document_id": readBlockArgs{BlockUID: "b"},
+		"block_uid":   readBlockArgs{DocumentID: _testDocID},
+	})
+}
+
 func Test_readBlock_Info(t *testing.T) {
 	t.Parallel()
 
@@ -200,12 +227,18 @@ func Test_readBlock_Traits(t *testing.T) {
 func Test_readBlock_Title(t *testing.T) {
 	t.Parallel()
 
-	got, err := readBlock{}.Title(testInput(
-		testDeps(stubDocumentDB(), nil, nil), NameReadBlock,
-		`{"document_id":"`+_testDocID+`"}`,
-	))
+	got, err := readBlock{}.Title(testInput(testDeps(stubDocumentDB(), nil, nil), NameReadBlock, requiredArgs(t, NameReadBlock)))
 	require.NoError(t, err)
 	assert.Equal(t, "Reading a block in Runbook", got)
+
+	// the document it names has to resolve; the failure is passed on
+	// rather than described around.
+	_, err = readBlock{}.Title(testInput(testDeps(failingDocumentDB(), nil, nil), NameReadBlock, requiredArgs(t, NameReadBlock)))
+	require.Error(t, err)
+
+	// unreadable arguments are refused before anything is looked up.
+	_, err = readBlock{}.Title(testInput(testDeps(stubDocumentDB(), nil, nil), NameReadBlock, `{`))
+	require.Error(t, err)
 }
 
 func Test_readBlock_Execute(t *testing.T) {
@@ -225,22 +258,22 @@ func Test_readBlock_Execute(t *testing.T) {
 		},
 		"Block uid is required": {
 			DB:   stubContentDB(nil),
-			Args: `{"document_id":"` + _testDocID + `"}`,
+			Args: `{"document_id":"` + _testDocID.String() + `"}`,
 			Err:  assert.AnError,
 		},
 		"Error returned by db.FetchMainBranchContent": {
 			DB:   stubContentDB(assert.AnError),
-			Args: `{"document_id":"` + _testDocID + `","block_uid":"a"}`,
+			Args: `{"document_id":"` + _testDocID.String() + `","block_uid":"a"}`,
 			Err:  assert.AnError,
 		},
 		"Block is absent": {
 			DB:   stubContentDB(nil),
-			Args: `{"document_id":"` + _testDocID + `","block_uid":"missing"}`,
+			Args: `{"document_id":"` + _testDocID.String() + `","block_uid":"missing"}`,
 			Err:  assert.AnError,
 		},
 		"Block is returned": {
 			DB:       stubContentDB(nil),
-			Args:     `{"document_id":"` + _testDocID + `","block_uid":"a"}`,
+			Args:     `{"document_id":"` + _testDocID.String() + `","block_uid":"a"}`,
 			Contains: `"paragraph"`,
 		},
 	}
@@ -261,6 +294,17 @@ func Test_readBlock_Execute(t *testing.T) {
 	}
 }
 
+func Test_insertBlockArgs_Validate(t *testing.T) {
+	t.Parallel()
+
+	assertValidate(t, insertBlockArgs{DocumentID: _testDocID, ReferenceBlockUID: "r", Position: positionAfter, Block: block.Block{Type: block.BlockParagraph}}, map[string]Args{
+		"document_id":         insertBlockArgs{ReferenceBlockUID: "r", Position: positionAfter, Block: block.Block{Type: block.BlockParagraph}},
+		"reference_block_uid": insertBlockArgs{DocumentID: _testDocID, Position: positionAfter, Block: block.Block{Type: block.BlockParagraph}},
+		"position":            insertBlockArgs{DocumentID: _testDocID, ReferenceBlockUID: "r", Block: block.Block{Type: block.BlockParagraph}},
+		"block":               insertBlockArgs{DocumentID: _testDocID, ReferenceBlockUID: "r", Position: positionAfter},
+	})
+}
+
 func Test_insertBlock_Info(t *testing.T) {
 	t.Parallel()
 
@@ -279,41 +323,56 @@ func Test_insertBlock_Traits(t *testing.T) {
 func Test_insertBlock_Title(t *testing.T) {
 	t.Parallel()
 
-	got, err := insertBlock{}.Title(testInput(
-		testDeps(stubDocumentDB(), nil, nil), NameInsertBlock,
-		`{"document_id":"`+_testDocID+`"}`,
-	))
+	got, err := insertBlock{}.Title(testInput(testDeps(stubDocumentDB(), nil, nil), NameInsertBlock, requiredArgs(t, NameInsertBlock)))
 	require.NoError(t, err)
 	assert.Equal(t, "Updating Runbook", got)
+
+	// the document it names has to resolve; the failure is passed on
+	// rather than described around.
+	_, err = insertBlock{}.Title(testInput(testDeps(failingDocumentDB(), nil, nil), NameInsertBlock, requiredArgs(t, NameInsertBlock)))
+	require.Error(t, err)
+
+	// unreadable arguments are refused before anything is looked up.
+	_, err = insertBlock{}.Title(testInput(testDeps(stubDocumentDB(), nil, nil), NameInsertBlock, `{`))
+	require.Error(t, err)
 }
 
 func Test_insertBlock_Summary(t *testing.T) {
 	t.Parallel()
 
 	d := testDeps(stubDocumentDB(), nil, nil)
-	args := `{"document_id":"` + _testDocID + `","block":` + _paragraphArgs
+	args := `{"document_id":"` + _testDocID.String() + `","reference_block_uid":"a","block":` + _paragraphArgs
 
 	got, err := insertBlock{}.Summary(testInput(d, NameInsertBlock, args+`,"position":"after"}`))
 	require.NoError(t, err)
 	assert.Equal(t, "Insert a paragraph after a block in Runbook", got.Summary)
 
-	// a missing or garbage position would garble the card, so it falls
-	// back to an un-positioned phrase.
-	got, err = insertBlock{}.Summary(testInput(d, NameInsertBlock, args+`,"position":"sideways"}`))
-	require.NoError(t, err)
-	assert.Equal(t, "Insert a paragraph in Runbook", got.Summary)
+	// a garbage position is refused at decode, named by argument, so
+	// it never reaches the card.
+	_, err = insertBlock{}.Summary(testInput(d, NameInsertBlock, args+`,"position":"sideways"}`))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `"/position"`)
+
+	// the document it names has to resolve; the failure is passed on
+	// rather than described around.
+	_, err = insertBlock{}.Summary(testInput(testDeps(failingDocumentDB(), nil, nil), NameInsertBlock, requiredArgs(t, NameInsertBlock)))
+	require.Error(t, err)
+
+	// unreadable arguments are refused before anything is looked up.
+	_, err = insertBlock{}.Summary(testInput(testDeps(stubDocumentDB(), nil, nil), NameInsertBlock, `{`))
+	require.Error(t, err)
 }
 
 func Test_insertBlock_Execute(t *testing.T) {
 	t.Parallel()
 
-	base := `{"document_id":"` + _testDocID + `","reference_block_uid":"a","block":` + _paragraphArgs
+	base := `{"document_id":"` + _testDocID.String() + `","reference_block_uid":"a","block":` + _paragraphArgs
 
 	cc := map[string]editCase{
 		"Malformed arguments": {DB: stubContentDB(nil), Args: `{`, Err: assert.AnError},
 		"Reference uid is required": {
 			DB:   stubContentDB(nil),
-			Args: `{"document_id":"` + _testDocID + `","position":"after","block":` + _paragraphArgs + `}`,
+			Args: `{"document_id":"` + _testDocID.String() + `","position":"after","block":` + _paragraphArgs + `}`,
 			Err:  assert.AnError,
 		},
 		"Position must be before or after": {
@@ -323,7 +382,7 @@ func Test_insertBlock_Execute(t *testing.T) {
 		},
 		"Error returned by the placement check": {
 			DB: stubContentDB(assert.AnError),
-			Args: `{"document_id":"` + _testDocID + `","reference_block_uid":"a","position":"after",` +
+			Args: `{"document_id":"` + _testDocID.String() + `","reference_block_uid":"a","position":"after",` +
 				`"block":{"type":"titled_code","text":"x","attrs":{"title":"T"}}}`,
 			Err: assert.AnError,
 		},
@@ -331,12 +390,12 @@ func Test_insertBlock_Execute(t *testing.T) {
 		"Inserted after":  {DB: stubContentDB(nil), Args: base + `,"position":"after"}`},
 		"A metric naming a data source the organisation owns": {
 			DB: stubMetricDB(),
-			Args: `{"document_id":"` + _testDocID + `","reference_block_uid":"` + _stubContentUID +
+			Args: `{"document_id":"` + _testDocID.String() + `","reference_block_uid":"` + _stubContentUID +
 				`","position":"after","block":` + metricBlockArgs(_testDataSourceID.String()) + `}`,
 		},
 		"A metric naming a data source it does not": {
 			DB: stubMetricDB(),
-			Args: `{"document_id":"` + _testDocID + `","reference_block_uid":"` + _stubContentUID +
+			Args: `{"document_id":"` + _testDocID.String() + `","reference_block_uid":"` + _stubContentUID +
 				`","position":"after","block":` + metricBlockArgs(_unknownDataSourceID) + `}`,
 			Err: assert.AnError,
 		},
@@ -349,6 +408,15 @@ func Test_insertBlock_Execute(t *testing.T) {
 			runEdit(t, insertBlock{}, NameInsertBlock, c)
 		})
 	}
+}
+
+func Test_rootBlockArgs_Validate(t *testing.T) {
+	t.Parallel()
+
+	assertValidate(t, rootBlockArgs{DocumentID: _testDocID, Block: block.Block{Type: block.BlockParagraph}}, map[string]Args{
+		"document_id": rootBlockArgs{Block: block.Block{Type: block.BlockParagraph}},
+		"block":       rootBlockArgs{DocumentID: _testDocID},
+	})
 }
 
 func Test_appendBlock_Info(t *testing.T) {
@@ -369,12 +437,18 @@ func Test_appendBlock_Traits(t *testing.T) {
 func Test_appendBlock_Title(t *testing.T) {
 	t.Parallel()
 
-	got, err := appendBlock{}.Title(testInput(
-		testDeps(stubDocumentDB(), nil, nil), NameAppendBlock,
-		`{"document_id":"`+_testDocID+`"}`,
-	))
+	got, err := appendBlock{}.Title(testInput(testDeps(stubDocumentDB(), nil, nil), NameAppendBlock, requiredArgs(t, NameAppendBlock)))
 	require.NoError(t, err)
 	assert.Equal(t, "Updating Runbook", got)
+
+	// the document it names has to resolve; the failure is passed on
+	// rather than described around.
+	_, err = appendBlock{}.Title(testInput(testDeps(failingDocumentDB(), nil, nil), NameAppendBlock, requiredArgs(t, NameAppendBlock)))
+	require.Error(t, err)
+
+	// unreadable arguments are refused before anything is looked up.
+	_, err = appendBlock{}.Title(testInput(testDeps(stubDocumentDB(), nil, nil), NameAppendBlock, `{`))
+	require.Error(t, err)
 }
 
 func Test_appendBlock_Summary(t *testing.T) {
@@ -382,10 +456,19 @@ func Test_appendBlock_Summary(t *testing.T) {
 
 	got, err := appendBlock{}.Summary(testInput(
 		testDeps(stubDocumentDB(), nil, nil), NameAppendBlock,
-		`{"document_id":"`+_testDocID+`","block":`+_paragraphArgs+`}`,
+		`{"document_id":"`+_testDocID.String()+`","block":`+_paragraphArgs+`}`,
 	))
 	require.NoError(t, err)
 	assert.Equal(t, "Append a paragraph to Runbook", got.Summary)
+
+	// the document it names has to resolve; the failure is passed on
+	// rather than described around.
+	_, err = appendBlock{}.Summary(testInput(testDeps(failingDocumentDB(), nil, nil), NameAppendBlock, requiredArgs(t, NameAppendBlock)))
+	require.Error(t, err)
+
+	// unreadable arguments are refused before anything is looked up.
+	_, err = appendBlock{}.Summary(testInput(testDeps(stubDocumentDB(), nil, nil), NameAppendBlock, `{`))
+	require.Error(t, err)
 }
 
 func Test_appendBlock_Execute(t *testing.T) {
@@ -395,20 +478,20 @@ func Test_appendBlock_Execute(t *testing.T) {
 		"Malformed arguments": {DB: stubDocumentDB(), Args: `{`, Err: assert.AnError},
 		"Block is not legal at the root": {
 			DB:   stubDocumentDB(),
-			Args: `{"document_id":"` + _testDocID + `","block":{"type":"titled_code","text":"x","attrs":{"title":"T"}}}`,
+			Args: `{"document_id":"` + _testDocID.String() + `","block":{"type":"titled_code","text":"x","attrs":{"title":"T"}}}`,
 			Err:  assert.AnError,
 		},
 		"Appended": {
 			DB:   stubDocumentDB(),
-			Args: `{"document_id":"` + _testDocID + `","block":` + _paragraphArgs + `}`,
+			Args: `{"document_id":"` + _testDocID.String() + `","block":` + _paragraphArgs + `}`,
 		},
 		"A metric grid naming a data source the organisation owns": {
 			DB:   stubMetricDB(),
-			Args: `{"document_id":"` + _testDocID + `","block":` + metricBlockArgs(_testDataSourceID.String()) + `}`,
+			Args: `{"document_id":"` + _testDocID.String() + `","block":` + metricBlockArgs(_testDataSourceID.String()) + `}`,
 		},
 		"A metric grid naming a data source it does not": {
 			DB:   stubMetricDB(),
-			Args: `{"document_id":"` + _testDocID + `","block":` + metricBlockArgs(_unknownDataSourceID) + `}`,
+			Args: `{"document_id":"` + _testDocID.String() + `","block":` + metricBlockArgs(_unknownDataSourceID) + `}`,
 			Err:  assert.AnError,
 		},
 	}
@@ -440,12 +523,18 @@ func Test_prependBlock_Traits(t *testing.T) {
 func Test_prependBlock_Title(t *testing.T) {
 	t.Parallel()
 
-	got, err := prependBlock{}.Title(testInput(
-		testDeps(stubDocumentDB(), nil, nil), NamePrependBlock,
-		`{"document_id":"`+_testDocID+`"}`,
-	))
+	got, err := prependBlock{}.Title(testInput(testDeps(stubDocumentDB(), nil, nil), NamePrependBlock, requiredArgs(t, NamePrependBlock)))
 	require.NoError(t, err)
 	assert.Equal(t, "Updating Runbook", got)
+
+	// the document it names has to resolve; the failure is passed on
+	// rather than described around.
+	_, err = prependBlock{}.Title(testInput(testDeps(failingDocumentDB(), nil, nil), NamePrependBlock, requiredArgs(t, NamePrependBlock)))
+	require.Error(t, err)
+
+	// unreadable arguments are refused before anything is looked up.
+	_, err = prependBlock{}.Title(testInput(testDeps(stubDocumentDB(), nil, nil), NamePrependBlock, `{`))
+	require.Error(t, err)
 }
 
 func Test_prependBlock_Summary(t *testing.T) {
@@ -453,10 +542,19 @@ func Test_prependBlock_Summary(t *testing.T) {
 
 	got, err := prependBlock{}.Summary(testInput(
 		testDeps(stubDocumentDB(), nil, nil), NamePrependBlock,
-		`{"document_id":"`+_testDocID+`","block":`+_paragraphArgs+`}`,
+		`{"document_id":"`+_testDocID.String()+`","block":`+_paragraphArgs+`}`,
 	))
 	require.NoError(t, err)
 	assert.Equal(t, "Prepend a paragraph to Runbook", got.Summary)
+
+	// the document it names has to resolve; the failure is passed on
+	// rather than described around.
+	_, err = prependBlock{}.Summary(testInput(testDeps(failingDocumentDB(), nil, nil), NamePrependBlock, requiredArgs(t, NamePrependBlock)))
+	require.Error(t, err)
+
+	// unreadable arguments are refused before anything is looked up.
+	_, err = prependBlock{}.Summary(testInput(testDeps(stubDocumentDB(), nil, nil), NamePrependBlock, `{`))
+	require.Error(t, err)
 }
 
 func Test_prependBlock_Execute(t *testing.T) {
@@ -466,20 +564,20 @@ func Test_prependBlock_Execute(t *testing.T) {
 		"Malformed arguments": {DB: stubDocumentDB(), Args: `{`, Err: assert.AnError},
 		"Block is not legal at the root": {
 			DB:   stubDocumentDB(),
-			Args: `{"document_id":"` + _testDocID + `","block":{"type":"titled_code","text":"x","attrs":{"title":"T"}}}`,
+			Args: `{"document_id":"` + _testDocID.String() + `","block":{"type":"titled_code","text":"x","attrs":{"title":"T"}}}`,
 			Err:  assert.AnError,
 		},
 		"Prepended": {
 			DB:   stubDocumentDB(),
-			Args: `{"document_id":"` + _testDocID + `","block":` + _paragraphArgs + `}`,
+			Args: `{"document_id":"` + _testDocID.String() + `","block":` + _paragraphArgs + `}`,
 		},
 		"A metric grid naming a data source the organisation owns": {
 			DB:   stubMetricDB(),
-			Args: `{"document_id":"` + _testDocID + `","block":` + metricBlockArgs(_testDataSourceID.String()) + `}`,
+			Args: `{"document_id":"` + _testDocID.String() + `","block":` + metricBlockArgs(_testDataSourceID.String()) + `}`,
 		},
 		"A metric grid naming a data source it does not": {
 			DB:   stubMetricDB(),
-			Args: `{"document_id":"` + _testDocID + `","block":` + metricBlockArgs(_unknownDataSourceID) + `}`,
+			Args: `{"document_id":"` + _testDocID.String() + `","block":` + metricBlockArgs(_unknownDataSourceID) + `}`,
 			Err:  assert.AnError,
 		},
 	}
@@ -491,6 +589,16 @@ func Test_prependBlock_Execute(t *testing.T) {
 			runEdit(t, prependBlock{}, NamePrependBlock, c)
 		})
 	}
+}
+
+func Test_replaceBlockArgs_Validate(t *testing.T) {
+	t.Parallel()
+
+	assertValidate(t, replaceBlockArgs{DocumentID: _testDocID, BlockUID: "b", Block: block.Block{Type: block.BlockParagraph}}, map[string]Args{
+		"document_id": replaceBlockArgs{BlockUID: "b", Block: block.Block{Type: block.BlockParagraph}},
+		"block_uid":   replaceBlockArgs{DocumentID: _testDocID, Block: block.Block{Type: block.BlockParagraph}},
+		"block":       replaceBlockArgs{DocumentID: _testDocID, BlockUID: "b"},
+	})
 }
 
 func Test_replaceBlock_Info(t *testing.T) {
@@ -511,12 +619,18 @@ func Test_replaceBlock_Traits(t *testing.T) {
 func Test_replaceBlock_Title(t *testing.T) {
 	t.Parallel()
 
-	got, err := replaceBlock{}.Title(testInput(
-		testDeps(stubDocumentDB(), nil, nil), NameReplaceBlock,
-		`{"document_id":"`+_testDocID+`"}`,
-	))
+	got, err := replaceBlock{}.Title(testInput(testDeps(stubDocumentDB(), nil, nil), NameReplaceBlock, requiredArgs(t, NameReplaceBlock)))
 	require.NoError(t, err)
 	assert.Equal(t, "Updating Runbook", got)
+
+	// the document it names has to resolve; the failure is passed on
+	// rather than described around.
+	_, err = replaceBlock{}.Title(testInput(testDeps(failingDocumentDB(), nil, nil), NameReplaceBlock, requiredArgs(t, NameReplaceBlock)))
+	require.Error(t, err)
+
+	// unreadable arguments are refused before anything is looked up.
+	_, err = replaceBlock{}.Title(testInput(testDeps(stubDocumentDB(), nil, nil), NameReplaceBlock, `{`))
+	require.Error(t, err)
 }
 
 func Test_replaceBlock_Summary(t *testing.T) {
@@ -524,10 +638,19 @@ func Test_replaceBlock_Summary(t *testing.T) {
 
 	got, err := replaceBlock{}.Summary(testInput(
 		testDeps(stubDocumentDB(), nil, nil), NameReplaceBlock,
-		`{"document_id":"`+_testDocID+`","block":`+_paragraphArgs+`}`,
+		`{"document_id":"`+_testDocID.String()+`","block_uid":"a","block":`+_paragraphArgs+`}`,
 	))
 	require.NoError(t, err)
 	assert.Equal(t, "Replace a block in Runbook with a paragraph", got.Summary)
+
+	// the document it names has to resolve; the failure is passed on
+	// rather than described around.
+	_, err = replaceBlock{}.Summary(testInput(testDeps(failingDocumentDB(), nil, nil), NameReplaceBlock, requiredArgs(t, NameReplaceBlock)))
+	require.Error(t, err)
+
+	// unreadable arguments are refused before anything is looked up.
+	_, err = replaceBlock{}.Summary(testInput(testDeps(stubDocumentDB(), nil, nil), NameReplaceBlock, `{`))
+	require.Error(t, err)
 }
 
 func Test_replaceBlock_Execute(t *testing.T) {
@@ -537,27 +660,27 @@ func Test_replaceBlock_Execute(t *testing.T) {
 		"Malformed arguments": {DB: stubContentDB(nil), Args: `{`, Err: assert.AnError},
 		"Block uid is required": {
 			DB:   stubContentDB(nil),
-			Args: `{"document_id":"` + _testDocID + `","block":` + _paragraphArgs + `}`,
+			Args: `{"document_id":"` + _testDocID.String() + `","block":` + _paragraphArgs + `}`,
 			Err:  assert.AnError,
 		},
 		"Error returned by the placement check": {
 			DB: stubContentDB(assert.AnError),
-			Args: `{"document_id":"` + _testDocID + `","block_uid":"a",` +
+			Args: `{"document_id":"` + _testDocID.String() + `","block_uid":"a",` +
 				`"block":{"type":"titled_code","text":"x","attrs":{"title":"T"}}}`,
 			Err: assert.AnError,
 		},
 		"Replaced": {
 			DB:   stubContentDB(nil),
-			Args: `{"document_id":"` + _testDocID + `","block_uid":"a","block":` + _paragraphArgs + `}`,
+			Args: `{"document_id":"` + _testDocID.String() + `","block_uid":"a","block":` + _paragraphArgs + `}`,
 		},
 		"A metric grid naming a data source the organisation owns": {
 			DB: stubMetricDB(),
-			Args: `{"document_id":"` + _testDocID + `","block_uid":"` + _stubContentUID +
+			Args: `{"document_id":"` + _testDocID.String() + `","block_uid":"` + _stubContentUID +
 				`","block":` + metricBlockArgs(_testDataSourceID.String()) + `}`,
 		},
 		"A metric grid naming a data source it does not": {
 			DB: stubMetricDB(),
-			Args: `{"document_id":"` + _testDocID + `","block_uid":"` + _stubContentUID +
+			Args: `{"document_id":"` + _testDocID.String() + `","block_uid":"` + _stubContentUID +
 				`","block":` + metricBlockArgs(_unknownDataSourceID) + `}`,
 			Err: assert.AnError,
 		},
@@ -570,6 +693,16 @@ func Test_replaceBlock_Execute(t *testing.T) {
 			runEdit(t, replaceBlock{}, NameReplaceBlock, c)
 		})
 	}
+}
+
+func Test_updateBlockTextArgs_Validate(t *testing.T) {
+	t.Parallel()
+
+	assertValidate(t, updateBlockTextArgs{DocumentID: _testDocID, BlockUID: "b", Text: "t"}, map[string]Args{
+		"document_id": updateBlockTextArgs{BlockUID: "b", Text: "t"},
+		"block_uid":   updateBlockTextArgs{DocumentID: _testDocID, Text: "t"},
+		"text":        updateBlockTextArgs{DocumentID: _testDocID, BlockUID: "b"},
+	})
 }
 
 func Test_updateBlockText_Info(t *testing.T) {
@@ -590,12 +723,18 @@ func Test_updateBlockText_Traits(t *testing.T) {
 func Test_updateBlockText_Title(t *testing.T) {
 	t.Parallel()
 
-	got, err := updateBlockText{}.Title(testInput(
-		testDeps(stubDocumentDB(), nil, nil), NameUpdateBlockText,
-		`{"document_id":"`+_testDocID+`"}`,
-	))
+	got, err := updateBlockText{}.Title(testInput(testDeps(stubDocumentDB(), nil, nil), NameUpdateBlockText, requiredArgs(t, NameUpdateBlockText)))
 	require.NoError(t, err)
 	assert.Equal(t, "Updating Runbook", got)
+
+	// the document it names has to resolve; the failure is passed on
+	// rather than described around.
+	_, err = updateBlockText{}.Title(testInput(testDeps(failingDocumentDB(), nil, nil), NameUpdateBlockText, requiredArgs(t, NameUpdateBlockText)))
+	require.Error(t, err)
+
+	// unreadable arguments are refused before anything is looked up.
+	_, err = updateBlockText{}.Title(testInput(testDeps(stubDocumentDB(), nil, nil), NameUpdateBlockText, `{`))
+	require.Error(t, err)
 }
 
 func Test_updateBlockText_Summary(t *testing.T) {
@@ -604,15 +743,24 @@ func Test_updateBlockText_Summary(t *testing.T) {
 	d := testDeps(stubDocumentDB(), nil, nil)
 
 	got, err := updateBlockText{}.Summary(testInput(d, NameUpdateBlockText,
-		`{"document_id":"`+_testDocID+`","text":"a new intro"}`))
+		`{"document_id":"`+_testDocID.String()+`","block_uid":"a","text":"a new intro"}`))
 	require.NoError(t, err)
 	assert.Equal(t, `Update a block in Runbook: "a new intro"`, got.Summary)
 
 	// an empty preview leaves a card that still reads.
 	got, err = updateBlockText{}.Summary(testInput(d, NameUpdateBlockText,
-		`{"document_id":"`+_testDocID+`","text":"  "}`))
+		`{"document_id":"`+_testDocID.String()+`","block_uid":"a","text":"  "}`))
 	require.NoError(t, err)
 	assert.Equal(t, "Update text of a block in Runbook", got.Summary)
+
+	// the document it names has to resolve; the failure is passed on
+	// rather than described around.
+	_, err = updateBlockText{}.Summary(testInput(testDeps(failingDocumentDB(), nil, nil), NameUpdateBlockText, requiredArgs(t, NameUpdateBlockText)))
+	require.Error(t, err)
+
+	// unreadable arguments are refused before anything is looked up.
+	_, err = updateBlockText{}.Summary(testInput(testDeps(stubDocumentDB(), nil, nil), NameUpdateBlockText, `{`))
+	require.Error(t, err)
 }
 
 func Test_updateBlockText_Execute(t *testing.T) {
@@ -622,12 +770,12 @@ func Test_updateBlockText_Execute(t *testing.T) {
 		"Malformed arguments": {DB: stubDocumentDB(), Args: `{`, Err: assert.AnError},
 		"Block uid is required": {
 			DB:   stubDocumentDB(),
-			Args: `{"document_id":"` + _testDocID + `","text":"hi"}`,
+			Args: `{"document_id":"` + _testDocID.String() + `","text":"hi"}`,
 			Err:  assert.AnError,
 		},
 		"Text written": {
 			DB:   stubDocumentDB(),
-			Args: `{"document_id":"` + _testDocID + `","block_uid":"a","text":"hi"}`,
+			Args: `{"document_id":"` + _testDocID.String() + `","block_uid":"a","text":"hi"}`,
 		},
 	}
 
@@ -638,6 +786,16 @@ func Test_updateBlockText_Execute(t *testing.T) {
 			runEdit(t, updateBlockText{}, NameUpdateBlockText, c)
 		})
 	}
+}
+
+func Test_updateBlockAttrsArgs_Validate(t *testing.T) {
+	t.Parallel()
+
+	assertValidate(t, updateBlockAttrsArgs{DocumentID: _testDocID, BlockUID: "b", Attrs: map[string]any{"level": 2}}, map[string]Args{
+		"document_id": updateBlockAttrsArgs{BlockUID: "b", Attrs: map[string]any{"level": 2}},
+		"block_uid":   updateBlockAttrsArgs{DocumentID: _testDocID, Attrs: map[string]any{"level": 2}},
+		"attrs":       updateBlockAttrsArgs{DocumentID: _testDocID, BlockUID: "b"},
+	})
 }
 
 func Test_updateBlockAttrs_Info(t *testing.T) {
@@ -658,12 +816,18 @@ func Test_updateBlockAttrs_Traits(t *testing.T) {
 func Test_updateBlockAttrs_Title(t *testing.T) {
 	t.Parallel()
 
-	got, err := updateBlockAttrs{}.Title(testInput(
-		testDeps(stubDocumentDB(), nil, nil), NameUpdateBlockAttrs,
-		`{"document_id":"`+_testDocID+`"}`,
-	))
+	got, err := updateBlockAttrs{}.Title(testInput(testDeps(stubDocumentDB(), nil, nil), NameUpdateBlockAttrs, requiredArgs(t, NameUpdateBlockAttrs)))
 	require.NoError(t, err)
 	assert.Equal(t, "Updating Runbook", got)
+
+	// the document it names has to resolve; the failure is passed on
+	// rather than described around.
+	_, err = updateBlockAttrs{}.Title(testInput(testDeps(failingDocumentDB(), nil, nil), NameUpdateBlockAttrs, requiredArgs(t, NameUpdateBlockAttrs)))
+	require.Error(t, err)
+
+	// unreadable arguments are refused before anything is looked up.
+	_, err = updateBlockAttrs{}.Title(testInput(testDeps(stubDocumentDB(), nil, nil), NameUpdateBlockAttrs, `{`))
+	require.Error(t, err)
 }
 
 func Test_updateBlockAttrs_Summary(t *testing.T) {
@@ -674,14 +838,18 @@ func Test_updateBlockAttrs_Summary(t *testing.T) {
 	// keys are sorted, because the card must read the same every time
 	// the same write is proposed.
 	got, err := updateBlockAttrs{}.Summary(testInput(d, NameUpdateBlockAttrs,
-		`{"document_id":"`+_testDocID+`","attrs":{"level":2,"icon":"lucide:warning"}}`))
+		`{"document_id":"`+_testDocID.String()+`","block_uid":"a","attrs":{"level":2,"icon":"lucide:warning"}}`))
 	require.NoError(t, err)
 	assert.Equal(t, "Update block icon, level in Runbook", got.Summary)
 
-	got, err = updateBlockAttrs{}.Summary(testInput(d, NameUpdateBlockAttrs,
-		`{"document_id":"`+_testDocID+`"}`))
-	require.NoError(t, err)
-	assert.Equal(t, "Update block attributes in Runbook", got.Summary)
+	// the document it names has to resolve; the failure is passed on
+	// rather than described around.
+	_, err = updateBlockAttrs{}.Summary(testInput(testDeps(failingDocumentDB(), nil, nil), NameUpdateBlockAttrs, requiredArgs(t, NameUpdateBlockAttrs)))
+	require.Error(t, err)
+
+	// unreadable arguments are refused before anything is looked up.
+	_, err = updateBlockAttrs{}.Summary(testInput(testDeps(stubDocumentDB(), nil, nil), NameUpdateBlockAttrs, `{`))
+	require.Error(t, err)
 }
 
 func Test_updateBlockAttrs_Execute(t *testing.T) {
@@ -691,28 +859,28 @@ func Test_updateBlockAttrs_Execute(t *testing.T) {
 		"Malformed arguments": {DB: stubDocumentDB(), Args: `{`, Err: assert.AnError},
 		"Block uid is required": {
 			DB:   stubDocumentDB(),
-			Args: `{"document_id":"` + _testDocID + `","attrs":{"level":2}}`,
+			Args: `{"document_id":"` + _testDocID.String() + `","attrs":{"level":2}}`,
 			Err:  assert.AnError,
 		},
 		"Attrs must not be empty": {
 			DB:   stubDocumentDB(),
-			Args: `{"document_id":"` + _testDocID + `","block_uid":"a","attrs":{}}`,
+			Args: `{"document_id":"` + _testDocID.String() + `","block_uid":"a","attrs":{}}`,
 			Err:  assert.AnError,
 		},
 		"Attrs applied": {
 			DB:   stubDocumentDB(),
-			Args: `{"document_id":"` + _testDocID + `","block_uid":"a","attrs":{"level":2}}`,
+			Args: `{"document_id":"` + _testDocID.String() + `","block_uid":"a","attrs":{"level":2}}`,
 		},
 		// the payload names attributes, not a block type, so a metric's
 		// data source arrives on its own rather than inside a block.
 		"A data source the organisation owns": {
 			DB: stubMetricDB(),
-			Args: `{"document_id":"` + _testDocID + `","block_uid":"a","attrs":{"dataSourceId":"` +
+			Args: `{"document_id":"` + _testDocID.String() + `","block_uid":"a","attrs":{"dataSourceId":"` +
 				_testDataSourceID.String() + `"}}`,
 		},
 		"A data source it does not": {
 			DB: stubMetricDB(),
-			Args: `{"document_id":"` + _testDocID + `","block_uid":"a","attrs":{"dataSourceId":"` +
+			Args: `{"document_id":"` + _testDocID.String() + `","block_uid":"a","attrs":{"dataSourceId":"` +
 				_unknownDataSourceID + `"}}`,
 			Err: assert.AnError,
 		},
@@ -720,7 +888,7 @@ func Test_updateBlockAttrs_Execute(t *testing.T) {
 		// to check, and no other attribute names one at all.
 		"An empty data source is not looked up": {
 			DB:   stubMetricDB(),
-			Args: `{"document_id":"` + _testDocID + `","block_uid":"a","attrs":{"dataSourceId":""}}`,
+			Args: `{"document_id":"` + _testDocID.String() + `","block_uid":"a","attrs":{"dataSourceId":""}}`,
 		},
 	}
 
@@ -731,6 +899,15 @@ func Test_updateBlockAttrs_Execute(t *testing.T) {
 			runEdit(t, updateBlockAttrs{}, NameUpdateBlockAttrs, c)
 		})
 	}
+}
+
+func Test_deleteBlockArgs_Validate(t *testing.T) {
+	t.Parallel()
+
+	assertValidate(t, deleteBlockArgs{DocumentID: _testDocID, BlockUID: "b"}, map[string]Args{
+		"document_id": deleteBlockArgs{BlockUID: "b"},
+		"block_uid":   deleteBlockArgs{DocumentID: _testDocID},
+	})
 }
 
 func Test_deleteBlock_Info(t *testing.T) {
@@ -753,12 +930,18 @@ func Test_deleteBlock_Traits(t *testing.T) {
 func Test_deleteBlock_Title(t *testing.T) {
 	t.Parallel()
 
-	got, err := deleteBlock{}.Title(testInput(
-		testDeps(stubDocumentDB(), nil, nil), NameDeleteBlock,
-		`{"document_id":"`+_testDocID+`"}`,
-	))
+	got, err := deleteBlock{}.Title(testInput(testDeps(stubDocumentDB(), nil, nil), NameDeleteBlock, requiredArgs(t, NameDeleteBlock)))
 	require.NoError(t, err)
 	assert.Equal(t, "Updating Runbook", got)
+
+	// the document it names has to resolve; the failure is passed on
+	// rather than described around.
+	_, err = deleteBlock{}.Title(testInput(testDeps(failingDocumentDB(), nil, nil), NameDeleteBlock, requiredArgs(t, NameDeleteBlock)))
+	require.Error(t, err)
+
+	// unreadable arguments are refused before anything is looked up.
+	_, err = deleteBlock{}.Title(testInput(testDeps(stubDocumentDB(), nil, nil), NameDeleteBlock, `{`))
+	require.Error(t, err)
 }
 
 func Test_deleteBlock_Summary(t *testing.T) {
@@ -766,10 +949,19 @@ func Test_deleteBlock_Summary(t *testing.T) {
 
 	got, err := deleteBlock{}.Summary(testInput(
 		testDeps(stubDocumentDB(), nil, nil), NameDeleteBlock,
-		`{"document_id":"`+_testDocID+`","block_uid":"a"}`,
+		`{"document_id":"`+_testDocID.String()+`","block_uid":"a"}`,
 	))
 	require.NoError(t, err)
 	assert.Equal(t, "Delete a block in Runbook", got.Summary)
+
+	// the document it names has to resolve; the failure is passed on
+	// rather than described around.
+	_, err = deleteBlock{}.Summary(testInput(testDeps(failingDocumentDB(), nil, nil), NameDeleteBlock, requiredArgs(t, NameDeleteBlock)))
+	require.Error(t, err)
+
+	// unreadable arguments are refused before anything is looked up.
+	_, err = deleteBlock{}.Summary(testInput(testDeps(stubDocumentDB(), nil, nil), NameDeleteBlock, `{`))
+	require.Error(t, err)
 }
 
 func Test_deleteBlock_Execute(t *testing.T) {
@@ -779,12 +971,12 @@ func Test_deleteBlock_Execute(t *testing.T) {
 		"Malformed arguments": {DB: stubDocumentDB(), Args: `{`, Err: assert.AnError},
 		"Block uid is required": {
 			DB:   stubDocumentDB(),
-			Args: `{"document_id":"` + _testDocID + `"}`,
+			Args: `{"document_id":"` + _testDocID.String() + `"}`,
 			Err:  assert.AnError,
 		},
 		"Deleted": {
 			DB:   stubDocumentDB(),
-			Args: `{"document_id":"` + _testDocID + `","block_uid":"a"}`,
+			Args: `{"document_id":"` + _testDocID.String() + `","block_uid":"a"}`,
 		},
 	}
 
@@ -795,32 +987,4 @@ func Test_deleteBlock_Execute(t *testing.T) {
 			runEdit(t, deleteBlock{}, NameDeleteBlock, c)
 		})
 	}
-}
-
-func Test_summarize(t *testing.T) {
-	t.Parallel()
-
-	// a resolvable document is named on the card.
-	got := summarize(
-		testInput(testDeps(stubDocumentDB(), nil, nil), NameDeleteBlock, `{}`),
-		NameDeleteBlock,
-		_testDocID,
-		func(subject string) string { return "Touch " + subject },
-	)
-
-	assert.Equal(t, string(NameDeleteBlock), got.Tool)
-	assert.Equal(t, _testDocID, got.DocumentID)
-	assert.Equal(t, "Runbook", got.DocumentName)
-	assert.Equal(t, "Touch Runbook", got.Summary)
-
-	// a write that names no document still produces a readable card.
-	got = summarize(
-		testInput(testDeps(nil, nil, nil), NameDeleteBlock, `{}`),
-		NameDeleteBlock,
-		"",
-		func(subject string) string { return "Touch " + subject },
-	)
-
-	assert.Empty(t, got.DocumentID)
-	assert.Equal(t, "Touch document", got.Summary)
 }

@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"fmt"
 	"math"
 	"net/http"
 
@@ -29,6 +30,19 @@ func (ct ChartType) IsValid() bool {
 	default:
 		return false
 	}
+}
+
+// UnmarshalText parses a chart type, refusing anything but the known
+// kinds so a bad value is reported where it is decoded.
+func (ct *ChartType) UnmarshalText(text []byte) error {
+	v := ChartType(text)
+	if !v.IsValid() {
+		return fmt.Errorf("chart type must be one of %s, %s, %s, got %q", ChartTypeLine, ChartTypeBar, ChartTypeGauge, text)
+	}
+
+	*ct = v
+
+	return nil
 }
 
 // QueryStatus represents the status of a query result.

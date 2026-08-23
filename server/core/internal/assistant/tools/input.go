@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -99,8 +100,8 @@ func NewDeps(
 type input struct {
 	*Deps
 
-	// name is the tool being called, so a malformed-argument error can
-	// say which tool rejected it.
+	// name is the tool being called, so a rejected argument can say
+	// which tool rejected it.
 	name Name
 
 	// ctx is the context of this call. It carries the agent session
@@ -113,15 +114,15 @@ type input struct {
 
 	// touched lists the documents this call changed, in the order the
 	// writes below recorded them.
-	touched []string
+	touched []xid.ID
 }
 
 // recordTouched notes a document this call changed. Every write in this
 // package goes through one of the four methods below, so recording it
 // here is what makes Result.Documents right by construction rather than
 // by a convention about argument names.
-func (i *input) recordTouched(documentID string) {
-	if documentID == "" || slices.Contains(i.touched, documentID) {
+func (i *input) recordTouched(documentID xid.ID) {
+	if documentID.IsNil() || slices.Contains(i.touched, documentID) {
 		return
 	}
 
@@ -138,11 +139,20 @@ func (i *input) Context() context.Context {
 	return i.ctx
 }
 
-// Decode decodes the call's arguments into dst, naming the tool that
-// rejected them.
-func (i *input) Decode(dst any) error {
-	if err := json.Unmarshal(i.args, dst); err != nil {
+// Decode decodes the call's arguments into dst and validates them,
+// naming the tool that rejected them.
+//
+// Decoding uses json/v2 because its errors name the argument they
+// failed on. A domain type that parses itself — an id, a timestamp, an
+// enum — reports only that the value is bad; the path json/v2 adds is
+// what makes the message actionable for the model.
+func (i *input) Decode(dst Args) error {
+	if err := jsonv2.Unmarshal(i.args, dst); err != nil {
 		return fmt.Errorf("%s: invalid input: %w", i.name, err)
+	}
+
+	if err := dst.Validate(); err != nil {
+		return fmt.Errorf("%s: %w", i.name, err)
 	}
 
 	return nil
@@ -158,46 +168,13 @@ func (i *input) UserID() string {
 	return i.userID
 }
 
-// Subject returns the display subject for this call's label and
-// summary: the named document when it resolves, a generic fallback
-// otherwise.
-func (i *input) Subject(documentID string) string {
-	if documentID == "" {
-		return subjectFor("")
-	}
-
-	return subjectFor(i.DocumentName(documentID))
-}
-
-// DocumentName fetches the document's display name. Failures (bad id,
-// not found, transient) return an empty string so the confirm UI
-// gracefully falls back to the id alone.
-func (i *input) DocumentName(documentID string) string {
-	id, err := xid.FromString(documentID)
-	if err != nil {
-		return ""
-	}
-
-	doc, err := i.Document(id)
-	if err != nil || doc == nil {
-		return ""
-	}
-
-	return doc.DocumentName
-}
-
 // DataSource returns the data source the id names.
 //
 // The lookup is the cross-org safety check: FetchDataSource scopes by
 // organisation, so an id belonging to another one is as absent as an id
 // belonging to nobody, and the model is told the same thing either way.
-func (i *input) DataSource(dataSourceID string) (*datasource.DataSource, error) {
-	id, err := xid.FromString(dataSourceID)
-	if err != nil {
-		return nil, fmt.Errorf("data_source_id is not a valid xid: %w", err)
-	}
-
-	ds, err := i.db.FetchDataSource(i.ctx, id, i.orgID)
+func (i *input) DataSource(dataSourceID xid.ID) (*datasource.DataSource, error) {
+	ds, err := i.db.FetchDataSource(i.ctx, dataSourceID, i.orgID)
 	if err != nil {
 		return nil, errUnknownDataSource
 	}
@@ -217,11 +194,17 @@ func (i *input) DataSources() ([]datasource.DataSource, error) {
 // only check that needs the database: block.Validate can say the id is
 // a string, but only a lookup can say it addresses something, and a
 // metric block pointing at nothing renders as a broken chart the user
-// then has to fix by hand.
+// then has to fix by hand. The ids are block content, not arguments, so
+// they arrive as the strings the document stores and are parsed here.
 func (i *input) CheckDataSources(ids []string) error {
-	for _, id := range ids {
+	for _, raw := range ids {
+		id, err := xid.FromString(raw)
+		if err != nil {
+			return fmt.Errorf("metric %s %q: %w", document.AttrDataSourceID, raw, err)
+		}
+
 		if _, err := i.DataSource(id); err != nil {
-			return fmt.Errorf("metric %s %q: %w", document.AttrDataSourceID, id, err)
+			return fmt.Errorf("metric %s %q: %w", document.AttrDataSourceID, raw, err)
 		}
 	}
 
@@ -306,7 +289,7 @@ func (i *input) CreateDocument(doc document.Document) error {
 		return fmt.Errorf("commit: %w", err)
 	}
 
-	i.recordTouched(doc.ID.String())
+	i.recordTouched(doc.ID)
 
 	return nil
 }
@@ -345,7 +328,7 @@ func (i *input) MoveDocument(id xid.ID, parentID null.Value[xid.ID]) error {
 
 	// the parents' own content is unchanged — only the tree shape
 	// around them — so the moved document is the one to record.
-	i.recordTouched(id.String())
+	i.recordTouched(id)
 
 	return nil
 }
@@ -371,21 +354,13 @@ func (i *input) ReadOffloaded(path string) (string, error) {
 // the ids the edit client needs. The lookup also acts as the cross-org
 // safety check — Document scopes by orgID so a docID from another
 // organisation surfaces as NotFound.
-func (i *input) resolveDoc(documentID string) (docRef, error) {
-	docID, err := xid.FromString(documentID)
-	if err != nil {
-		return docRef{}, fmt.Errorf("document_id is not a valid xid: %w", err)
-	}
-
-	doc, err := i.Document(docID)
+func (i *input) resolveDoc(documentID xid.ID) (docRef, error) {
+	doc, err := i.Document(documentID)
 	if err != nil {
 		return docRef{}, fmt.Errorf("fetching document: %w", err)
 	}
 
-	return docRef{
-		DocumentID: doc.ID.String(),
-		BranchID:   doc.BranchID.String(),
-	}, nil
+	return docRef{DocumentID: doc.ID, BranchID: doc.BranchID}, nil
 }
 
 // ApplyEdit is the shared tail of every content-mutating write tool: it
@@ -393,12 +368,12 @@ func (i *input) resolveDoc(documentID string) (docRef, error) {
 // operation batch to Node, and surfaces the per-op result. Outcomes are
 // logged so partial failures on the Node side (uid not found, malformed
 // block) are visible without re-running the conversation.
-func (i *input) ApplyEdit(documentID string, ops []edit.Operation) (string, error) {
+func (i *input) ApplyEdit(documentID xid.ID, ops []edit.Operation) (string, error) {
 	ref, err := i.resolveDoc(documentID)
 	if err != nil {
 		i.log.Warn(
 			"edit resolve failed",
-			slog.String("document_id", documentID),
+			slog.String("document_id", documentID.String()),
 			slog.String("error", err.Error()),
 		)
 
@@ -409,8 +384,8 @@ func (i *input) ApplyEdit(documentID string, ops []edit.Operation) (string, erro
 	if err != nil {
 		i.log.Error(
 			"edit apply failed",
-			slog.String("document_id", ref.DocumentID),
-			slog.String("branch_id", ref.BranchID),
+			slog.String("document_id", ref.DocumentID.String()),
+			slog.String("branch_id", ref.BranchID.String()),
 			slog.Int("op_count", len(ops)),
 			slog.String("error", err.Error()),
 		)
@@ -421,16 +396,16 @@ func (i *input) ApplyEdit(documentID string, ops []edit.Operation) (string, erro
 	if len(res.Errors) > 0 {
 		i.log.Warn(
 			"edit partial failure",
-			slog.String("document_id", ref.DocumentID),
-			slog.String("branch_id", ref.BranchID),
+			slog.String("document_id", ref.DocumentID.String()),
+			slog.String("branch_id", ref.BranchID.String()),
 			slog.Int("applied", res.Applied),
 			slog.Any("errors", res.Errors),
 		)
 	} else {
 		i.log.Debug(
 			"edit applied",
-			slog.String("document_id", ref.DocumentID),
-			slog.String("branch_id", ref.BranchID),
+			slog.String("document_id", ref.DocumentID.String()),
+			slog.String("branch_id", ref.BranchID.String()),
 			slog.Int("applied", res.Applied),
 		)
 	}
@@ -447,7 +422,7 @@ func (i *input) ApplyEdit(documentID string, ops []edit.Operation) (string, erro
 // accepts are legal wherever their parent takes them, so only a macro
 // internal — a titled_code, metric or param_list, which the editor's
 // schema binds to its container — has to look at where it is going.
-func (i *input) ValidatePlacement(documentID, referenceUID string, b block.Block) error {
+func (i *input) ValidatePlacement(documentID xid.ID, referenceUID string, b block.Block) error {
 	if err := block.Validate(b); err != nil {
 		return err
 	}
@@ -456,12 +431,7 @@ func (i *input) ValidatePlacement(documentID, referenceUID string, b block.Block
 		return nil
 	}
 
-	docID, err := xid.FromString(documentID)
-	if err != nil {
-		return fmt.Errorf("document_id is not a valid xid: %w", err)
-	}
-
-	content, err := i.DocumentContent(docID)
+	content, err := i.DocumentContent(documentID)
 	if err != nil {
 		return fmt.Errorf("fetching content: %w", err)
 	}
@@ -490,13 +460,8 @@ func (i *input) NotifyTreeChange(parentID null.Value[xid.ID]) {
 // and fires a tree-change for that parent. Used by rename/icon ops
 // which don't carry a parent in their args. Failures (e.g. doc fetched
 // after delete) silently skip the notification.
-func (i *input) NotifyTreeChangeForDocument(documentID string) {
-	docID, err := xid.FromString(documentID)
-	if err != nil {
-		return
-	}
-
-	doc, err := i.Document(docID)
+func (i *input) NotifyTreeChangeForDocument(documentID xid.ID) {
+	doc, err := i.Document(documentID)
 	if err != nil || doc == nil {
 		return
 	}
@@ -509,11 +474,11 @@ func (i *input) NotifyTreeChangeForDocument(documentID string) {
 // default branch — multi-branch editing is out of scope for the
 // assistant.
 type docRef struct {
-	// DocumentID is the document's id in string form.
-	DocumentID string
+	// DocumentID is the document's id.
+	DocumentID xid.ID
 
 	// BranchID is the id of the document's default branch.
-	BranchID string
+	BranchID xid.ID
 }
 
 // DataSourceRunners hands out the runner for a data source. The
@@ -632,5 +597,5 @@ type EditApplier interface {
 	// Apply should ship the operation batch to the realtime service
 	// for the (documentID, branchID) document and return the per-op
 	// outcome.
-	Apply(ctx context.Context, documentID, branchID string, ops []edit.Operation) (edit.Result, error)
+	Apply(ctx context.Context, documentID, branchID xid.ID, ops []edit.Operation) (edit.Result, error)
 }

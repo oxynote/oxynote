@@ -14,6 +14,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func Test_searchDocumentsArgs_Validate(t *testing.T) {
+	t.Parallel()
+
+	assertValidate(t, searchDocumentsArgs{Query: "q"}, map[string]Args{
+		"query": searchDocumentsArgs{},
+	})
+}
+
 func Test_searchDocuments_Info(t *testing.T) {
 	t.Parallel()
 
@@ -38,9 +46,9 @@ func Test_searchDocuments_Title(t *testing.T) {
 	got, err := searchDocuments{}.Title(testInput(d, NameSearchDocuments, `{"query":"rate limit"}`))
 	require.NoError(t, err)
 	assert.Equal(t, `Searching for "rate limit"`, got)
-	got, err = searchDocuments{}.Title(testInput(d, NameSearchDocuments, `{}`))
-	require.NoError(t, err)
-	assert.Equal(t, "Searching documents", got)
+
+	_, err = searchDocuments{}.Title(testInput(d, NameSearchDocuments, `{}`))
+	require.Error(t, err)
 }
 
 func Test_searchDocuments_Execute(t *testing.T) {

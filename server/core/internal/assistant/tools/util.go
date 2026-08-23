@@ -20,36 +20,9 @@ func result(v any) (string, error) {
 	return string(data), nil
 }
 
-// summarize builds a confirmation for a write that targets an existing
-// document: the caller passes the document its own arguments named, the
-// document is resolved once, and the tool supplies only the phrasing for
-// its own change. A tool that targets no document passes an empty id.
-func summarize(
-	inp DescribeInput,
-	name Name,
-	documentID string,
-	phrase func(subject string) string,
-) ActionSummary {
-	out := ActionSummary{Tool: string(name)}
-
-	if documentID != "" {
-		out.DocumentID = documentID
-		out.DocumentName = inp.DocumentName(documentID)
-	}
-
-	out.Summary = phrase(subjectFor(out.DocumentName))
-
-	return out
-}
-
-// subjectFor returns the display subject for label and summary strings:
-// the document's name when known, a generic fallback otherwise.
-func subjectFor(docName string) string {
-	if docName == "" {
-		return "document"
-	}
-
-	return docName
+// errRequired reports an argument the tool cannot act without.
+func errRequired(key string) error {
+	return fmt.Errorf("%s is required", key)
 }
 
 // blockKindLabel turns a canonical block type into a friendlier label

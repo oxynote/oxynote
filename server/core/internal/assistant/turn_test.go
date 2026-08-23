@@ -103,7 +103,7 @@ func Test_turn_run(t *testing.T) {
 						InterruptContexts: []*adk.InterruptCtx{{
 							ID: "i1",
 							Info: tools.ActionSummary{
-								Tool:    string(tools.NameCreateDocument),
+								Tool:    tools.NameCreateDocument,
 								Summary: "Create Runbook",
 							},
 						}},
@@ -366,6 +366,8 @@ func Test_turn_recordUsage(t *testing.T) {
 func Test_turn_confirmation(t *testing.T) {
 	t.Parallel()
 
+	docID := xid.New()
+
 	cc := map[string]struct {
 		Info    *adk.InterruptInfo
 		IDs     []string
@@ -377,8 +379,8 @@ func Test_turn_confirmation(t *testing.T) {
 				InterruptContexts: []*adk.InterruptCtx{{
 					ID: "i1",
 					Info: tools.ActionSummary{
-						Tool:         string(tools.NameUpdateBlockText),
-						DocumentID:   "d1",
+						Tool:         tools.NameUpdateBlockText,
+						DocumentID:   docID,
 						DocumentName: "Runbook",
 						Summary:      "Reword the intro",
 					},
@@ -387,9 +389,22 @@ func Test_turn_confirmation(t *testing.T) {
 			IDs: []string{"i1"},
 			Actions: []protocol.ConfirmAction{{
 				Tool:         string(tools.NameUpdateBlockText),
-				DocumentID:   "d1",
+				DocumentID:   docID.String(),
 				DocumentName: "Runbook",
 				Summary:      "Reword the intro",
+			}},
+		},
+		"A write naming no document carries no id": {
+			Info: &adk.InterruptInfo{
+				InterruptContexts: []*adk.InterruptCtx{{
+					ID:   "i1",
+					Info: tools.ActionSummary{Tool: tools.NameCreateDocument, Summary: "Create document \"Runbook\""},
+				}},
+			},
+			IDs: []string{"i1"},
+			Actions: []protocol.ConfirmAction{{
+				Tool:    string(tools.NameCreateDocument),
+				Summary: "Create document \"Runbook\"",
 			}},
 		},
 		"Foreign interrupt is still resumable": {

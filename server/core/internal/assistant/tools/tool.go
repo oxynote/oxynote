@@ -132,6 +132,16 @@ func (plainSummary) Summary(_ DescribeInput) (ActionSummary, error) {
 	return ActionSummary{}, nil
 }
 
+// Args is one tool call's decoded arguments. Validate is what Decode
+// runs once the payload is read, so a tool states what it requires next
+// to the fields that carry it, and nothing downstream of Decode sees a
+// payload the tool cannot act on.
+type Args interface {
+	// Validate should reject arguments the tool cannot act on: a
+	// required one that is missing, or a value outside its range.
+	Validate() error
+}
+
 // DescribeInput is what a tool is handed when it is asked to describe
 // itself — for the status line while it runs, or the card asking the
 // user to approve it. It carries the arguments the tool was about to
@@ -144,24 +154,20 @@ type DescribeInput interface {
 	// Context should return the context of the call being described.
 	Context() context.Context
 
-	// Decode should decode the call's arguments into dst, reporting a
-	// malformed payload as an error naming the tool. It is the only way
-	// into a call's arguments: a description that cannot read them says
-	// so rather than describing a call from zero values.
-	Decode(dst any) error
+	// Decode should decode the call's arguments into dst and validate
+	// them, reporting a payload that is malformed or incomplete as an
+	// error naming the tool. It is the only way into a call's
+	// arguments: a description that cannot read them says so rather
+	// than describing a call from zero values.
+	Decode(dst Args) error
 
-	// DocumentName should return the document's display name, or an
-	// empty string when it cannot be resolved.
-	DocumentName(documentID string) string
-
-	// Subject should return the display subject for a description: the
-	// named document when documentID resolves, a generic fallback
-	// otherwise. The caller passes the id its own arguments named.
-	Subject(documentID string) string
+	// Document should return the document the id names, for a
+	// description that has to name its subject.
+	Document(id xid.ID) (*document.Document, error)
 
 	// DataSource should return the data source the id names, for a
 	// description that has to name its subject.
-	DataSource(dataSourceID string) (*datasource.DataSource, error)
+	DataSource(dataSourceID xid.ID) (*datasource.DataSource, error)
 }
 
 // DataSources is the organisation's outbound data-source connections as
@@ -224,7 +230,7 @@ type DocumentWriter interface {
 	// NotifyTreeChangeForDocument should look up the document's current
 	// parent and fire a tree-change for it, for the ops whose arguments
 	// carry no parent.
-	NotifyTreeChangeForDocument(documentID string)
+	NotifyTreeChangeForDocument(documentID xid.ID)
 }
 
 // Editor applies content changes to a live document through the
@@ -233,11 +239,11 @@ type Editor interface {
 	// ApplyEdit should ship an operation batch to the realtime service
 	// for the named document's default branch and surface the per-op
 	// result.
-	ApplyEdit(documentID string, ops []edit.Operation) (string, error)
+	ApplyEdit(documentID xid.ID, ops []edit.Operation) (string, error)
 
 	// ValidatePlacement should check that a block is legal next to, or
 	// in place of, the block referenceUID names.
-	ValidatePlacement(documentID, referenceUID string, b block.Block) error
+	ValidatePlacement(documentID xid.ID, referenceUID string, b block.Block) error
 }
 
 // Input is everything a tool needs to do its work: the call's arguments

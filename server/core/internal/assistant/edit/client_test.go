@@ -10,6 +10,7 @@ import (
 
 	"github.com/oxynote/oxynote/server/core/internal/assistant/block"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
+	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -36,6 +37,9 @@ func Test_NewClient(t *testing.T) {
 
 func Test_Client_Apply(t *testing.T) {
 	t.Parallel()
+
+	docID, branchID := xid.New(), xid.New()
+	path := "/api/internal/documents/" + docID.String() + "/branches/" + branchID.String() + "/operations"
 
 	type capture struct {
 		path   string
@@ -74,7 +78,7 @@ func Test_Client_Apply(t *testing.T) {
 			ResponseBody:    `{"applied": 2, "errors": []}`,
 			ExpectedApplied: 2,
 			ExpectedErrors:  []OpError{},
-			ExpectedPath:    "/api/internal/documents/doc-1/branches/branch-1/operations",
+			ExpectedPath:    path,
 		},
 		"Partial failure surfaces per-op errors": {
 			Ops: []Operation{
@@ -87,7 +91,7 @@ func Test_Client_Apply(t *testing.T) {
 			ExpectedErrors: []OpError{
 				{Index: 0, Message: "block_uid not found: missing"},
 			},
-			ExpectedPath: "/api/internal/documents/doc-1/branches/branch-1/operations",
+			ExpectedPath: path,
 		},
 		"HTTP error becomes a Go error": {
 			Ops: []Operation{
@@ -173,7 +177,7 @@ func Test_Client_Apply(t *testing.T) {
 
 			client := NewClient(srv.Client(), baseURL)
 
-			res, err := client.Apply(context.Background(), "doc-1", "branch-1", c.Ops)
+			res, err := client.Apply(context.Background(), docID, branchID, c.Ops)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if c.NoRequest {
@@ -202,30 +206,20 @@ func Test_Client_Apply(t *testing.T) {
 func Test_Client_endpoint(t *testing.T) {
 	t.Parallel()
 
+	docID, branchID := xid.New(), xid.New()
+
 	cc := map[string]struct {
-		BaseURL    string
-		DocumentID string
-		BranchID   string
-		Expected   string
-		Err        error
+		BaseURL  string
+		Expected string
+		Err      error
 	}{
-		"Plain IDs pass through untouched": {
-			BaseURL:    "http://node:8081",
-			DocumentID: "doc-1",
-			BranchID:   "branch-1",
-			Expected:   "http://node:8081/api/internal/documents/doc-1/branches/branch-1/operations",
-		},
-		"IDs needing escaping are escaped exactly once": {
-			BaseURL:    "http://node:8081",
-			DocumentID: "doc 1",
-			BranchID:   "branch#1",
-			Expected:   "http://node:8081/api/internal/documents/doc%201/branches/branch%231/operations",
+		"IDs land in the path": {
+			BaseURL:  "http://node:8081",
+			Expected: "http://node:8081/api/internal/documents/" + docID.String() + "/branches/" + branchID.String() + "/operations",
 		},
 		"Invalid base URL fails parsing": {
-			BaseURL:    "://bad",
-			DocumentID: "doc-1",
-			BranchID:   "branch-1",
-			Err:        assert.AnError,
+			BaseURL: "://bad",
+			Err:     assert.AnError,
 		},
 	}
 
@@ -233,7 +227,7 @@ func Test_Client_endpoint(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := NewClient(nil, c.BaseURL).endpoint(c.DocumentID, c.BranchID)
+			got, err := NewClient(nil, c.BaseURL).endpoint(docID, branchID)
 			testutil.AssertEqualError(t, c.Err, err)
 			assert.Equal(t, c.Expected, got)
 		})

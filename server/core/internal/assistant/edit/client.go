@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+
+	"github.com/rs/xid"
 )
 
 // _maxErrorPreviewBytes caps how much of an error response body is
@@ -72,7 +74,7 @@ func NewClient(httpClient *http.Client, baseURL string) *Client {
 // operations are considered applied; failures of individual
 // operations within an otherwise successful HTTP response are
 // surfaced via Result.Errors.
-func (c *Client) Apply(ctx context.Context, documentID, branchID string, ops []Operation) (Result, error) {
+func (c *Client) Apply(ctx context.Context, documentID, branchID xid.ID, ops []Operation) (Result, error) {
 	if len(ops) == 0 {
 		return Result{}, nil
 	}
@@ -135,9 +137,8 @@ func (c *Client) Apply(ctx context.Context, documentID, branchID string, ops []O
 	return out, nil
 }
 
-// endpoint builds the per-document operations URL. The IDs are
-// assigned raw to the URL path so String escapes them exactly once.
-func (c *Client) endpoint(documentID, branchID string) (string, error) {
+// endpoint builds the per-document operations URL.
+func (c *Client) endpoint(documentID, branchID xid.ID) (string, error) {
 	base, err := url.Parse(c.baseURL)
 	if err != nil {
 		return "", fmt.Errorf("parsing base url: %w", err)
