@@ -27,8 +27,12 @@ on:
 # cancels it where it stands — on main exactly as anywhere else. A
 # superseded run is answering a question about a commit that is no longer
 # the branch, so letting it finish only spends minutes on a stale answer.
+# The group carries a hardcoded per-file prefix because every QA workflow
+# shares the display name "QA", so github.workflow would put them all in
+# one group and let a run of one workflow cancel an in-flight run of
+# another.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: qa-e2e-${{ github.ref }}
   cancel-in-progress: true
 
 defaults:

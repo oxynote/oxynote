@@ -13,6 +13,15 @@ on:
       - server/core/**
       - .github/workflows/qa-server-core.yml
 
+# a newer push supersedes the still-running workflow of the stale commit
+# and cancels it. The group carries a hardcoded per-file prefix because
+# every QA workflow shares the display name "QA", so github.workflow
+# would put them all in one group and let a run of one workflow cancel
+# an in-flight run of another.
+concurrency:
+  group: qa-server-core-${{ github.ref }}
+  cancel-in-progress: true
+
 defaults:
   run:
     shell: bash
