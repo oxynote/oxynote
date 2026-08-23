@@ -69,6 +69,8 @@ services:
       - OXYNOTE_AUTH_REALTIME_FRONTEND_URL=http://localhost:18080
       - OXYNOTE_AUTH_REALTIME_BETTER_AUTH_ORGANIZATION_INVITATION_URL=http://localhost:18080/accept-invite
       - OXYNOTE_AUTH_REALTIME_TRUSTED_ORIGINS=http://localhost:18080
+      # must match core's SERVER_MCP_RESOURCE_URL
+      - OXYNOTE_AUTH_REALTIME_MCP_RESOURCE=http://localhost:18080/core/api/mcp
       - OXYNOTE_AUTH_REALTIME_BETTER_AUTH_SECRET=e2esecret
       - OXYNOTE_AUTH_REALTIME_MAX_ORGANIZATION_MEMBERS=5
       - OXYNOTE_AUTH_REALTIME_MAX_ORGANIZATIONS=50
@@ -108,6 +110,12 @@ services:
       - OXYNOTE_CORE_STORAGE_SECRET_KEY=chad_warrior
       - OXYNOTE_CORE_STORAGE_BUCKET=e2e
       - OXYNOTE_CORE_SERVER_AUTH_BETTER_AUTH_URL=http://auth-realtime:8081/api/auth/get-session
+      # the MCP surface: core validates bearer tokens against auth-realtime
+      # over the compose network, and the resource URL is the public
+      # identity of that surface — it has to match auth-realtime's
+      # MCP_RESOURCE exactly or issued tokens fail their audience check.
+      - OXYNOTE_CORE_SERVER_MCP_SESSION_URL=http://auth-realtime:8081/api/internal/mcp/session
+      - OXYNOTE_CORE_SERVER_MCP_RESOURCE_URL=http://localhost:18080/core/api/mcp
       - OXYNOTE_CORE_AUTH_REALTIME_URL=http://auth-realtime:8081
       - OXYNOTE_CORE_SERVER_PUBLIC_URL=http://localhost:18080/core
       - OXYNOTE_CORE_BASE_APP_URL=http://localhost:18080

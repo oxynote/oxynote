@@ -23,7 +23,6 @@ const PUBLIC_AUTH_BASE_URL = process.env
 
 const AUTH_ORIGIN = new URL(PUBLIC_AUTH_BASE_URL).origin
 
-<<<<<<< HEAD
 // the canonical MCP protected-resource URL (RFC 8707/9728) — core's MCP
 // endpoint as clients reach it through the front door. Issued access tokens
 // are audience-bound to it.
@@ -33,7 +32,7 @@ export const MCP_RESOURCE = process.env
 // MCP access tokens carry better-auth's resolved base URL (origin + basePath)
 // as their issuer. The internal MCP session endpoint verifies against it.
 export const MCP_TOKEN_ISSUER = `${AUTH_ORIGIN}/api/auth`
-=======
+
 // better-auth's limiter buckets by client IP, and sign-in and sign-up
 // share one allowance of three requests per ten seconds. That is wrong
 // for any caller whose traffic arrives from a single address on behalf
@@ -42,7 +41,6 @@ export const MCP_TOKEN_ISSUER = `${AUTH_ORIGIN}/api/auth`
 // switched off and left to whatever sits in front.
 const RATE_LIMIT_DISABLED =
 	process.env.OXYNOTE_AUTH_REALTIME_RATE_LIMIT_DISABLED === "true"
->>>>>>> c8db990 (add e2e tests)
 
 const GOOGLE_CONFIGURED = Boolean(
 	process.env.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_GOOGLE_CLIENT_ID &&
