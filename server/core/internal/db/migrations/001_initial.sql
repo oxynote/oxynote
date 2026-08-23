@@ -83,6 +83,7 @@ CREATE TABLE organization_invitations (
 	role TEXT,
 	status TEXT NOT NULL,
 	expires_at TIMESTAMPTZ NOT NULL,
+	created_at TIMESTAMPTZ NOT NULL,
 	fk_inviter_id TEXT NOT NULL REFERENCES users ON DELETE CASCADE
 );
 CREATE INDEX organization_invitations_email_idx ON organization_invitations (email);

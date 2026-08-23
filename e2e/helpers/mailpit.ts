@@ -6,30 +6,47 @@ import { MAILPIT_URL } from "./config"
 const DELIVERY_TIMEOUT = 30_000
 
 const VERIFICATION_LINK = /href="([^"]*\/api\/auth\/verify-email[^"]*)"/
+const INVITE_LINK = /href="([^"]*\/accept-invite[^"]*)"/
 
 // fetchVerificationLink waits for the account-activation email and hands
 // back the link it carries.
-//
-// The inbox is searched for the message carrying an activation link
-// rather than the newest one being taken: an address can receive more
-// than one message and nothing guarantees the order they land in. Every
-// test signs up a freshly generated address, so a search only ever sees
-// that test's own mail.
-export async function fetchVerificationLink(
+export function fetchVerificationLink(
 	request: APIRequestContext,
 	address: string,
+): Promise<string> {
+	return fetchLink(request, address, VERIFICATION_LINK, "activation")
+}
+
+// fetchInviteLink waits for a workspace invitation email and hands back
+// its accept link.
+export function fetchInviteLink(
+	request: APIRequestContext,
+	address: string,
+): Promise<string> {
+	return fetchLink(request, address, INVITE_LINK, "invitation")
+}
+
+// the inbox is searched for the message carrying the wanted link rather
+// than the newest one being taken: an address can receive more than one
+// message and nothing guarantees the order they land in. Every test
+// mints fresh addresses, so a search only ever sees its own mail.
+async function fetchLink(
+	request: APIRequestContext,
+	address: string,
+	pattern: RegExp,
+	kind: string,
 ): Promise<string> {
 	const found = { link: "" }
 
 	await expect
 		.poll(
 			async () => {
-				found.link = await findVerificationLink(request, address)
+				found.link = await findLink(request, address, pattern)
 
 				return found.link
 			},
 			{
-				message: `no activation email was delivered to ${address}`,
+				message: `no ${kind} email was delivered to ${address}`,
 				timeout: DELIVERY_TIMEOUT,
 			},
 		)
@@ -38,9 +55,10 @@ export async function fetchVerificationLink(
 	return found.link
 }
 
-async function findVerificationLink(
+async function findLink(
 	request: APIRequestContext,
 	address: string,
+	pattern: RegExp,
 ): Promise<string> {
 	const search = await request.get(`${MAILPIT_URL}/api/v1/search`, {
 		params: { query: `to:${address}` },
@@ -56,13 +74,13 @@ async function findVerificationLink(
 		expect(response.ok()).toBe(true)
 
 		const { HTML } = (await response.json()) as { HTML: string }
-		const match = VERIFICATION_LINK.exec(HTML)
+		const match = pattern.exec(HTML)
 
 		if (match?.[1]) {
-			// an href holds HTML, where a literal "&" is written "&amp;".
-			// A mail client decodes it on the way to the address bar;
-			// pulling the attribute straight out of the source skips that
-			// parser, so the entity has to be resolved here instead.
+			// the template escapes the query separator, and following the
+			// link as written would hand the server a parameter called
+			// "amp;callbackURL" — leaving it with no redirect target, so
+			// it answers with raw JSON instead of returning to the app.
 			return match[1].replaceAll("&amp;", "&")
 		}
 	}

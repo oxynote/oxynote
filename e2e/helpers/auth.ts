@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto"
-import { expect, type APIRequestContext, type Page } from "@playwright/test"
+import {
+	expect,
+	type APIRequestContext,
+	type Locator,
+	type Page,
+} from "@playwright/test"
 import { BASE_URL } from "./config"
 import { fetchVerificationLink } from "./mailpit"
 import { t } from "./i18n"
@@ -21,6 +26,18 @@ export function newCredentials(): Credentials {
 	}
 }
 
+// revealForm clicks the method button until the form it reveals is on
+// the page. The button is server-rendered and visible before vue has
+// bound its handler; visit() waits for the app instance, but under load
+// the handler can still land a beat later, and a click in that window
+// does nothing at all — no request, no error, just the same page.
+async function revealForm(button: Locator, field: Locator): Promise<void> {
+	await expect(async () => {
+		await button.click()
+		await expect(field).toBeVisible({ timeout: 1_000 })
+	}).toPass()
+}
+
 // submitSignupForm walks the email-password branch of the signup page and
 // leaves the browser wherever the app sends it.
 export async function submitSignupForm(
@@ -29,17 +46,17 @@ export async function submitSignupForm(
 ): Promise<void> {
 	await visit(page, "/signup")
 
-	await page
-		.getByRole("button", {
+	const email = page.getByPlaceholder(
+		t("onboarding.signup.email-password-form.email-placeholder"),
+	)
+	await revealForm(
+		page.getByRole("button", {
 			name: t("onboarding.signup.signup-email-password"),
-		})
-		.click()
+		}),
+		email,
+	)
 
-	await page
-		.getByPlaceholder(
-			t("onboarding.signup.email-password-form.email-placeholder"),
-		)
-		.fill(credentials.email)
+	await email.fill(credentials.email)
 	await page
 		.getByPlaceholder(
 			t("onboarding.signup.email-password-form.password-placeholder"),
@@ -61,15 +78,17 @@ export async function submitLoginForm(
 ): Promise<void> {
 	await visit(page, "/login")
 
-	await page
-		.getByRole("button", { name: t("onboarding.login.login-email-password") })
-		.click()
+	const email = page.getByPlaceholder(
+		t("onboarding.login.email-password-form.email-placeholder"),
+	)
+	await revealForm(
+		page.getByRole("button", {
+			name: t("onboarding.login.login-email-password"),
+		}),
+		email,
+	)
 
-	await page
-		.getByPlaceholder(
-			t("onboarding.login.email-password-form.email-placeholder"),
-		)
-		.fill(credentials.email)
+	await email.fill(credentials.email)
 	await page
 		.getByPlaceholder(
 			t("onboarding.login.email-password-form.password-placeholder"),
@@ -89,11 +108,13 @@ export async function submitLoginForm(
 export async function signUpAndVerify(
 	page: Page,
 	request: APIRequestContext,
+	credentials: Credentials = newCredentials(),
 ): Promise<Credentials> {
-	const credentials = newCredentials()
-
 	await submitSignupForm(page, credentials)
-	await expect(page).toHaveURL(/\/verify-email\?/)
+	// a signup is a round trip through auth-realtime and core, which
+	// renders and queues two emails before answering; with several
+	// workers signing up at once that can exceed the default wait.
+	await expect(page).toHaveURL(/\/verify-email\?/, { timeout: 15_000 })
 
 	await page.goto(await fetchVerificationLink(request, credentials.email))
 

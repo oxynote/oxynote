@@ -122,16 +122,21 @@ nothing is stubbed or short-circuited.
 ### Layout
 
 - **Test files live in [tests/](tests/), one per user-facing flow**,
-  named after the flow as a user would name it — `signup.test.ts`,
-  `login.test.ts`. Never `.spec.ts`: the repo encodes meaning in the
-  suffix and `.spec` is not one of them.
+  named after the flow as a user would name it — `signup`, `login`,
+  `onboarding`, `editor`, `collaboration`. Never `.spec.ts`: the repo
+  encodes meaning in the suffix and `.spec` is not one of them.
 - There is no mirror of the app's source tree and nothing to pair 1:1
   with. `web/` co-locates because a test there has exactly one subject
   file; an e2e test has none — it crosses four services by design, so it
   is filed by flow instead.
 - **Shared code lives in [helpers/](helpers/), one module per concern**
-  (`auth`, `mailpit`, `i18n`, `page`, `config`). Helpers are setup and
-  plumbing; they do not carry the assertion a test exists to make.
+  (`auth`, `workspace`, `editor`, `collaboration`, `mailpit`, `i18n`,
+  `page`, `config`). Helpers are setup and plumbing; they do not carry
+  the assertion a test exists to make.
+- **`signUpWithWorkspace` is the starting point for almost everything.**
+  It signs up, verifies, logs in and creates a workspace, and hands back
+  a page with the welcome document open. Nearly every flow needs that
+  state and nothing cheaper gets there — there is no seeding.
 - The one exception: **a setup helper asserts its own success**, so a
   broken precondition is reported where it broke.
   `signUpAndVerify` checks the account actually activated rather than
@@ -245,6 +250,13 @@ something no cheaper tier can.
   belongs in the component tier.
 - Third-party edges (the OAuth providers) have no doubles here, which is
   why only email-password auth is covered.
+- **Collaboration runs as two real users.** `joinAsSecondUser` walks the
+  whole journey a teammate takes: the owner sends the invitation from
+  settings, and the invitee signs up, verifies, logs in and accepts the
+  emailed invite in a fresh browser context — nothing is granted behind
+  the product's back. Presence assertions key on the caret's name label
+  (each side sees the *other* user's name), never its colour, which is
+  random per client.
 
 ### Locators
 
@@ -270,15 +282,36 @@ something no cheaper tier can.
   They are reachable from `page`, but not from a locator scoped to the
   container the trigger lives in.
 - **Strict mode is a feature.** When a locator matches more than one
-  element, fix the locator — do not reach for `.first()`.
+  element, fix the locator — do not reach for `.first()`. A document
+  name is a link twice (sidebar row and breadcrumb) and every tree row
+  has an "Open Page Actions" button; `sidebarDocument()` and
+  `openDocumentActions()` scope those for you.
+- **Read editor text through `editorText()`**, never `toHaveText` or
+  `innerText` on the editor. A collaborator's caret is a decoration
+  widget rendered inside the paragraph it sits in, label and all, so a
+  plain text read of a shared document comes back with the other user's
+  name spliced into the content.
+- **The title and the body are two editors.** `titleEditor()` is its
+  own tiptap instance with a one-paragraph schema and its own yjs field;
+  it is not the first heading of `contentEditor()`. Enter in the title
+  moves the caret into the body rather than adding a line.
+- **Menus are appended to `<body>`.** The slash menu, dropdowns and
+  dialogs are all outside the editor and sidebar subtrees; `openSlashMenu()`
+  returns the menu, and dialogs come through `getByRole("dialog")`.
 
 ### Independence & concurrency
 
-- **Every test creates its own account** via `newCredentials()`, which
-  mints a unique address. Unique-per-test state is what makes
-  `fullyParallel` safe against a single shared stack — the same
-  independence rule `web/` states, enforced by construction rather than
-  by mock resetting.
+- **Every test creates its own account and its own workspace** via
+  `newCredentials()` and `newWorkspace()`, which mint a unique email and
+  a unique slug. Unique-per-test state is what makes `fullyParallel`
+  safe against a single shared stack — the same independence rule
+  `web/` states, enforced by construction rather than by mock resetting.
+  A workspace slug is unique server-side, so two tests sharing one would
+  fail on the second, exactly as two sharing an email would.
+- **Workers are capped at four.** Every test's setup is three
+  cross-service round trips against one core and one postgres; past a
+  few workers the setup starts timing out, which reads as flaky tests
+  when it is only load.
 - **No test depends on another's state or on execution order**, and no
   test cleans up after itself: the stack's database is thrown away
   wholesale, which is why it carries no volumes.
@@ -306,8 +339,18 @@ this tier has real network and real containers to be tempted by.
   `toHaveURL(".../login?verified=true")` distinguishes an activated
   account from a rejected token; a regex on the path alone would pass for
   both.
-- Any timeout raised above the default carries a comment saying what is
-  slow and why.
+- **`documentPersisted()` is the one deliberate wait on the clock.**
+  Hocuspocus stores a document two seconds after its last change and
+  nothing on the client reports when that happened, so a test that
+  reloads to prove persistence waits out the debounce. It is the single
+  permitted `waitForTimeout` in the suite and carries its disable reason.
+- **Three waits are raised above the default, all for the same
+  reason**: the post-signup redirect, the post-login redirect and a cold
+  document load. Each is a chain across auth-realtime, core and postgres
+  — and in the document's case the websocket sync and a fade-in too —
+  that several workers at once can stretch past five seconds while the
+  product is entirely healthy. Any other raised timeout carries a
+  comment saying what is slow and why.
 
 ### Failure artifacts
 

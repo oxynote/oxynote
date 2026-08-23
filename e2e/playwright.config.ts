@@ -4,6 +4,11 @@ import { BASE_URL } from "./helpers/config"
 export default defineConfig({
 	testDir: "./tests",
 	fullyParallel: true,
+	// nearly every test signs up, verifies, logs in and creates a
+	// workspace before it starts, and the stack answers all of them from
+	// one core and one postgres. Past a few workers the setup itself
+	// starts timing out, which reads as flaky tests when it is only load.
+	workers: 4,
 	forbidOnly: !!process.env.CI,
 	retries: process.env.CI ? 2 : 0,
 	// github gives inline annotations on the PR; html is what the

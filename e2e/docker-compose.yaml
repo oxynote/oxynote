@@ -73,7 +73,10 @@ services:
       - OXYNOTE_AUTH_REALTIME_MCP_RESOURCE=http://localhost:18080/core/api/mcp
       - OXYNOTE_AUTH_REALTIME_BETTER_AUTH_SECRET=e2esecret
       - OXYNOTE_AUTH_REALTIME_MAX_ORGANIZATION_MEMBERS=5
-      - OXYNOTE_AUTH_REALTIME_MAX_ORGANIZATIONS=50
+      # every test signs up and creates its own workspace, and a stack
+      # left up for a day of iteration would hit the dev default of 50
+      # and start failing signups with a full-house message.
+      - OXYNOTE_AUTH_REALTIME_MAX_ORGANIZATIONS=100000
       # every request in a run arrives from one address, and better-auth
       # gives sign-in and sign-up three per ten seconds between them, so
       # the limiter would fail the suite rather than the code under test.
@@ -127,6 +130,12 @@ services:
       - OXYNOTE_CORE_ASSISTANT_PROVIDER=ollama
       - OXYNOTE_CORE_ASSISTANT_MODEL=llama3
       - OXYNOTE_CORE_ASSISTANT_BASE_URL=http://ollama.invalid:11434
+      # core only seeds a new workspace's welcome document while a demo
+      # prometheus URL is set — with it empty, initialize returns early and
+      # the onboarding page polls for a first document that never comes.
+      # The URL is stored, not dialed, so there is no prometheus here; a
+      # block that queries it would simply get a connection error.
+      - OXYNOTE_CORE_SERVER_DEMO_PROMETHEUS_URL=http://prometheus.invalid:9090
       - OXYNOTE_CORE_EMAIL_SMTP_HOST=mailpit
       - OXYNOTE_CORE_EMAIL_SMTP_PORT=1025
       - OXYNOTE_CORE_EMAIL_SMTP_TLS=none

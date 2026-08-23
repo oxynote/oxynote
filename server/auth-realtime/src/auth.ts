@@ -93,7 +93,15 @@ export const auth = betterAuth({
 	baseURL: AUTH_ORIGIN,
 	basePath: "/api/auth",
 	secret: process.env.OXYNOTE_AUTH_REALTIME_BETTER_AUTH_SECRET,
-	database: dialect,
+	// the dialect instance alone leaves the CLI's schema generator unable
+	// to tell which database it is talking to (instanceof fails across
+	// the CLI's own kysely copy), and it silently falls back to sqlite
+	// typing; naming the type keeps runtime behaviour identical and the
+	// generated reference schema postgres-shaped.
+	database: {
+		dialect,
+		type: "postgres",
+	},
 	// providers with missing credentials are left out entirely so sign-in
 	// attempts fail with PROVIDER_NOT_FOUND instead of a broken OAuth
 	// redirect.
@@ -360,6 +368,7 @@ export const auth = betterAuth({
 						organizationId:
 							"fk_organization_id",
 						expiresAt: "expires_at",
+						createdAt: "created_at",
 						inviterId: "fk_inviter_id",
 					},
 				},
