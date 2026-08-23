@@ -73,6 +73,12 @@ type Observer interface {
 	Observe(value float64)
 }
 
+// GaugeVec is a gauge vector.
+type GaugeVec interface {
+	// With returns a gauge with the given labels.
+	With(labels prometheus.Labels) Gauge
+}
+
 // Gauge is a gauge data collector.
 type Gauge interface {
 	// Set should set the Gauge to an arbitrary value.

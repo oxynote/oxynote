@@ -17,6 +17,18 @@ func Test_NewFactory(t *testing.T) {
 	f := NewFactory("test", reg)
 	assert.Equal(t, reg, f.(*factory).RegistererGatherer)
 	assert.Equal(t, "test", f.(*factory).namespace)
+
+	f = NewFactory("test", reg, WithCustomHost("custom"))
+	assert.Equal(t, "custom", f.(*factory).host)
+}
+
+func Test_WithCustomHost(t *testing.T) {
+	t.Parallel()
+
+	f := &factory{}
+
+	WithCustomHost("custom")(f)
+	assert.Equal(t, "custom", f.host)
 }
 
 func Test_registerOrExisting(t *testing.T) {
@@ -134,6 +146,30 @@ func Test_factory_NewHistogramVec(t *testing.T) {
 	assert.Same(t, cv.(*histogramVec).histogram, ncv.(*histogramVec).histogram)
 }
 
+func Test_factory_NewGaugeVec(t *testing.T) {
+	var f factory
+
+	gv := f.NewGaugeVec(Options{}, []string{"foo"})
+	assert.Equal(t, &gaugeVec{}, gv.(*gaugeVec))
+
+	f.RegistererGatherer = prometheus.NewRegistry()
+
+	gv = f.NewGaugeVec(Options{
+		Name: "test_duration",
+		Help: "test help",
+	}, []string{"foo"})
+
+	assert.IsType(t, &prometheus.GaugeVec{}, gv.(*gaugeVec).gauge)
+
+	ngv := f.NewGaugeVec(Options{
+		Name: "test_duration",
+		Help: "test help",
+	}, []string{"foo"})
+
+	assert.IsType(t, &prometheus.GaugeVec{}, ngv.(*gaugeVec).gauge)
+	assert.Same(t, gv.(*gaugeVec).gauge, ngv.(*gaugeVec).gauge)
+}
+
 func Test_counterVec_With(t *testing.T) {
 	var cv counterVec
 
@@ -173,6 +209,27 @@ func Test_histogramVec_With(t *testing.T) {
 	labels := prometheus.Labels{"foo": "bar"}
 
 	hv.With(labels)
+	assert.Equal(t, prometheus.Labels{"foo": "bar"}, labels, "caller labels must not be mutated")
+}
+
+func Test_gaugeVec_With(t *testing.T) {
+	var gv gaugeVec
+
+	g := gv.With(prometheus.Labels{"foo": "bar"})
+	assert.IsType(t, discarder{}, g)
+
+	gv.gauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "test_duration",
+		Help: "test help",
+	}, []string{"foo", _hostLabel})
+
+	g = gv.With(prometheus.Labels{"foo": "bar"})
+	_, ok := g.(prometheus.Gauge)
+	assert.True(t, ok)
+
+	labels := prometheus.Labels{"foo": "bar"}
+
+	gv.With(labels)
 	assert.Equal(t, prometheus.Labels{"foo": "bar"}, labels, "caller labels must not be mutated")
 }
 

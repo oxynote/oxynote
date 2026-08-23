@@ -36,6 +36,9 @@ type Factory interface {
 
 	// NewHistogramVec creates a new histogram vector.
 	NewHistogramVec(opts Options, labels []string) HistogramVec
+
+	// NewGaugeVec creates a new gauge vector.
+	NewGaugeVec(opts Options, labels []string) GaugeVec
 }
 
 // RegistererGatherer is a registerer and gatherer.
@@ -57,17 +60,33 @@ type factory struct {
 
 // NewFactory creates a new metrics factory. If registerer is nil, collectors
 // are no-op.
-func NewFactory(namespace string, rg RegistererGatherer) Factory {
+func NewFactory(namespace string, rg RegistererGatherer, opts ...Option) Factory {
 	host, err := os.Hostname()
 	if err != nil {
 		// NOCOV: this should never happen
 		host = "unknown"
 	}
 
-	return &factory{
+	f := &factory{
 		RegistererGatherer: rg,
 		namespace:          namespace,
 		host:               host,
+	}
+
+	for _, opt := range opts {
+		opt(f)
+	}
+
+	return f
+}
+
+// Option modifies the factory during construction.
+type Option func(f *factory)
+
+// WithCustomHost sets a custom hostname for the metrics.
+func WithCustomHost(host string) Option {
+	return func(f *factory) {
+		f.host = host
 	}
 }
 
@@ -185,6 +204,28 @@ func (f *factory) NewHistogramVec(opts Options, labels []string) HistogramVec {
 	return hv
 }
 
+// NewGaugeVec creates a new gauge vector.
+func (f *factory) NewGaugeVec(opts Options, labels []string) GaugeVec {
+	gv := &gaugeVec{
+		host: f.host,
+	}
+
+	if f.RegistererGatherer == nil {
+		return gv
+	}
+
+	gv.gauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: f.namespace, //nolint:promlinter // cannot validate a variable
+		Subsystem: opts.Subsystem,
+		Name:      opts.Name,
+		Help:      opts.Help,
+	}, append(labels, _hostLabel))
+
+	gv.gauge = registerOrExisting(f, gv.gauge)
+
+	return gv
+}
+
 // counterVec is a counter vector.
 type counterVec struct {
 	counter *prometheus.CounterVec
@@ -213,6 +254,21 @@ func (hv histogramVec) With(labels prometheus.Labels) Observer {
 	}
 
 	return hv.histogram.With(withHost(labels, hv.host))
+}
+
+// gaugeVec is a gauge vector.
+type gaugeVec struct {
+	gauge *prometheus.GaugeVec
+	host  string
+}
+
+// With implements GaugeVec.
+func (gv gaugeVec) With(labels prometheus.Labels) Gauge {
+	if gv.gauge == nil {
+		return discarder{}
+	}
+
+	return gv.gauge.With(withHost(labels, gv.host))
 }
 
 // withHost returns a copy of the labels carrying the host label, leaving the

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/oxynote/oxynote/datagen/internal/mockmetrics"
-	"github.com/oxynote/purse/util/metricutil"
+	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
 	"github.com/prometheus/client_golang/prometheus"
 )
 

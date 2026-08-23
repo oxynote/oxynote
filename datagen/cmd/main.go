@@ -12,7 +12,7 @@ import (
 	"github.com/oxynote/oxynote/datagen/internal/mariademo"
 	"github.com/oxynote/oxynote/datagen/internal/pgdemo"
 	"github.com/oxynote/oxynote/datagen/internal/server"
-	"github.com/oxynote/purse/util/metricutil"
+	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
