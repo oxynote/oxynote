@@ -75,7 +75,11 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - `server/core/` — Go API server (`oxynote-core`). Go module `github.com/oxynote/oxynote/server/core`. Details: [server/CLAUDE.md](server/CLAUDE.md).
 - `server/auth-realtime/` — Node service (`@oxynote/auth-realtime`, **pnpm**) running Better Auth and a Hocuspocus (Yjs) server in one Hono process. Details: [server/CLAUDE.md](server/CLAUDE.md).
 - `datagen/` — demo-data generator; separate Go module `github.com/oxynote/oxynote/datagen`. Demo/testing only.
+- `e2e/` — Playwright end-to-end suite (`@oxynote/e2e`, **pnpm**) plus the docker-compose stack it drives. Not shipped; it exercises the composed product through a real backend built from this repo. Details: [e2e/CLAUDE.md](e2e/CLAUDE.md).
+- `scripts/` — helpers the root Makefile calls. `run-quietly.sh` runs a build step with its output held back, replaying the log only if the step fails.
 - `docker/` — dev docker-compose stack, Caddyfile, `env/` (committed `*.example.env` templates; `make setup` copies them to the gitignored `*.local.env` files the compose stack reads, and `web.example.env` also to `web/.env` for the host dev server and electron builds), `demo/` (demo-data configs for mariadb/postgres/prometheus).
+
+**One `.gitignore`, and it lives at the repository root.** Components do not carry their own — a rule for a nested directory is written with its path (`e2e/test-results/`, `web/coverage/`), so every exclusion in the repository is readable in one file. The exception is `web/packages/lezer-promql/`, which is a vendored upstream fork and keeps the ignore file it ships with.
 
 ## Common commands
 
@@ -88,7 +92,13 @@ make run       # build images + run the dev stack in the foreground (ctrl-c stop
 make start     # build images + run the dev stack in the background
 make dev       # backend containers + web dev server on the host (hot reload, :3000)
 make stop      # stop the dev stack
+
+make e2e             # one-shot: build, run playwright, tear the e2e stack down
+make e2e-stack-build # build the e2e stack's images, then iterate with `pnpm test`
+make e2e-stack-stop  # stop the e2e stack and drop its data
 ```
+
+The e2e stack listens on `:18080` (and mailpit on `:18025`), so it runs alongside the dev stack rather than fighting it for ports.
 
 Component build/test/qa commands are listed in the nested CLAUDE.md files.
 

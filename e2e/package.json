@@ -1,0 +1,34 @@
+{
+	"name": "@oxynote/e2e",
+	"private": true,
+	"type": "module",
+	"packageManager": "pnpm@11.1.3",
+	"scripts": {
+		"deps": "pnpm install",
+		"setup": "pnpm run deps && playwright install chromium",
+		"test": "playwright test",
+		"check-types": "tsc --noEmit",
+		"eslint": "eslint --fix --max-warnings 0 .",
+		"check-eslint": "eslint --max-warnings 0 .",
+		"fmt": "prettier --write .",
+		"check-fmt": "prettier --check .",
+		"knip": "knip --fix",
+		"check-knip": "knip",
+		"lint": "pnpm run check-types && pnpm run knip && pnpm run eslint && pnpm run fmt",
+		"check-lint": "pnpm run check-types && pnpm run check-eslint && pnpm run check-fmt && pnpm run check-knip",
+		"qa": "pnpm run check-lint && pnpm run test",
+		"qa-fix": "pnpm run lint && pnpm run test"
+	},
+	"devDependencies": {
+		"@eslint/js": "^9.33.0",
+		"@playwright/test": "^1.62.1",
+		"@types/node": "^20.11.17",
+		"eslint": "^9.33.0",
+		"eslint-config-prettier": "^10.1.8",
+		"eslint-plugin-playwright": "^2.11.0",
+		"knip": "^6.32.2",
+		"prettier": "3.6.2",
+		"typescript": "^5.9.2",
+		"typescript-eslint": "^8.40.0"
+	}
+}

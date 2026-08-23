@@ -10,11 +10,21 @@ WORKDIR /app
 # the vite client build exceeds node's default ~2GB heap
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 
+# dependencies come from the manifests alone, so this layer survives every
+# change that does not touch them — which is what makes a rebuild after an
+# ordinary source edit cheap. Scripts are skipped here because the root
+# `prepare` builds the promql grammar and runs `nuxt prepare`, and neither
+# has its sources at this point.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/lezer-promql/package.json ./packages/lezer-promql/
+RUN pnpm install --frozen-lockfile --ignore-scripts
+
 COPY . .
 
-# install runs `prepare` (lezer-promql build + nuxt prepare); the node-server
-# preset produces a self-contained SSR server in .output that reads
-# NUXT_PUBLIC_* / NUXT_* runtime config from env at startup.
+# the dependency tree is already in place, so this install only runs the
+# scripts skipped above (`prepare`, and the allowBuilds native packages).
+# The node-server preset produces a self-contained SSR server in .output
+# that reads NUXT_PUBLIC_* / NUXT_* runtime config from env at startup.
 RUN pnpm install --frozen-lockfile && \
     NITRO_PRESET=node-server pnpm run build:web
 

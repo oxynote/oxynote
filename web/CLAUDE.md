@@ -167,7 +167,10 @@ Note `noUncheckedIndexedAccess` makes every index access `T | undefined`, and Ty
   | `.bench.ts` | `vitest bench` | perf on hot paths (diff/lcs) — add only when a regression bites |
 
 - Only **e2e** (Playwright, incl. visual regression via `toHaveScreenshot`)
-  lives outside the source tree, in `tests/`.
+  lives outside this component altogether, in the repo-root
+  [e2e/](../e2e/) package. Those tests drive the whole composed product
+  against a real backend, so they belong to no single component and stay
+  out of `web/`'s toolchain — see [e2e/CLAUDE.md](../e2e/CLAUDE.md).
 - There is no separate "integration" tier: component tests are the
   integration layer (real children, mocked IO); e2e covers cross-system.
 - Co-location inside `app/` is safe by design: Nuxt's default `ignore`

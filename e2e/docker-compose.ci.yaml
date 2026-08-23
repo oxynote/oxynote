@@ -1,0 +1,23 @@
+# layer cache for CI only, applied on top of docker-compose.yaml.
+#
+# it is a separate file because `type=gha` is meaningless outside a
+# GitHub runner — putting it in the main compose file would break every
+# local build. The workflow supplies it through E2E_COMPOSE_EXTRA.
+#
+# without this, a runner starts from zero layers and rebuilds the whole
+# nuxt image on every run, which is the bulk of the job's wall clock.
+
+services:
+  web:
+    build:
+      cache_from:
+        - type=gha,scope=e2e-web
+      cache_to:
+        - type=gha,mode=max,scope=e2e-web
+
+  auth-realtime:
+    build:
+      cache_from:
+        - type=gha,scope=e2e-auth-realtime
+      cache_to:
+        - type=gha,mode=max,scope=e2e-auth-realtime

@@ -1,0 +1,123 @@
+name: QA
+
+# the suite guards the composed product, so a merge to main runs it for a
+# change anywhere that can break it. Pull requests only trigger it for
+# changes to the suite itself: a full run builds a nuxt image and costs
+# minutes, and paying that on every push of every frontend or backend PR
+# is not worth catching a regression a few minutes earlier than main does.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - e2e/**
+      - web/**
+      - server/**
+      - docker/**
+      - .github/workflows/qa-e2e.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - e2e/**
+      - .github/workflows/qa-e2e.yml
+
+# a burst of pushes would otherwise start a full run each, in parallel.
+# Grouping per branch means a newer push supersedes the older run and
+# cancels it where it stands — on main exactly as anywhere else. A
+# superseded run is answering a question about a commit that is no longer
+# the branch, so letting it finish only spends minutes on a stale answer.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lint:
+    name: Linting e2e
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v7
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: e2e/package.json
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: e2e/pnpm-lock.yaml
+
+      - name: Installing dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: e2e
+
+      - name: Run check-lint
+        run: pnpm run check-lint
+        working-directory: e2e
+
+  test:
+    name: Testing e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v7
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: e2e/package.json
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: e2e/pnpm-lock.yaml
+
+      # the suite drives the product built from this repo, so the go
+      # images have to be produced here: core's is made by goreleaser and
+      # compose cannot build it.
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: server/core/go.mod
+          cache-dependency-path: server/core/go.sum
+
+      - name: Set up goreleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          install-only: true
+
+      # a runner starts with no layers, so without this the nuxt image is
+      # rebuilt from scratch every run. The cache config itself lives in
+      # e2e/docker-compose.ci.yaml, applied below.
+      - name: Set up Docker buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Installing dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: e2e
+
+      - name: Install playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+        working-directory: e2e
+
+      - name: Run e2e tests
+        run: make e2e E2E_COMPOSE_EXTRA="-f e2e/docker-compose.ci.yaml"
+
+      - name: Upload playwright report
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: playwright-report
+          path: e2e/playwright-report
+          retention-days: 7
