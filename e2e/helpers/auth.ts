@@ -6,7 +6,7 @@ import {
 	type Page,
 } from "@playwright/test"
 import { BASE_URL } from "./config"
-import { fetchVerificationLink } from "./mailpit"
+import { fetchPasswordResetLink, fetchVerificationLink } from "./mailpit"
 import { t } from "./i18n"
 import { visit } from "./page"
 
@@ -100,6 +100,67 @@ export async function submitLoginForm(
 			name: t("onboarding.login.email-password-form.continue"),
 		})
 		.click()
+}
+
+// resetPassword walks the forgot-password flow end to end: it requests
+// a reset link from the login page, follows the emailed link and
+// chooses the new password. Asserted here rather than left to the
+// caller: an expired or rejected token also lands back on the login
+// page, and only the reset flag separates the two outcomes.
+export async function resetPassword(
+	page: Page,
+	request: APIRequestContext,
+	email: string,
+	newPassword: string,
+): Promise<void> {
+	await visit(page, "/login")
+
+	const emailField = page.getByPlaceholder(
+		t("onboarding.login.password-reset-form.email-placeholder"),
+	)
+	await revealForm(
+		page.getByRole("button", {
+			name: t("onboarding.login.login-email-password"),
+		}),
+		page.getByPlaceholder(
+			t("onboarding.login.email-password-form.email-placeholder"),
+		),
+	)
+	await page
+		.getByRole("button", {
+			name: t("onboarding.login.forgot-password.placeholders.reset"),
+		})
+		.click()
+
+	await emailField.fill(email)
+	await page
+		.getByRole("button", {
+			name: t("onboarding.login.password-reset-form.continue"),
+		})
+		.click()
+	await expect(
+		page.getByText(t("onboarding.login.password-reset-sent", { email })),
+	).toBeVisible()
+
+	await visit(page, await fetchPasswordResetLink(request, email))
+
+	// both placeholders contain the other's text, so they are matched
+	// exactly
+	await page
+		.getByPlaceholder(t("onboarding.reset-password.password-placeholder"), {
+			exact: true,
+		})
+		.fill(newPassword)
+	await page
+		.getByPlaceholder(t("onboarding.reset-password.confirm-placeholder"), {
+			exact: true,
+		})
+		.fill(newPassword)
+	await page
+		.getByRole("button", { name: t("onboarding.reset-password.continue") })
+		.click()
+
+	await expect(page).toHaveURL(`${BASE_URL}/login?reset=true`)
 }
 
 // signUpAndVerify creates an account that can log in. Verification is not

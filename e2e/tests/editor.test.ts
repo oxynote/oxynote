@@ -171,6 +171,101 @@ test.describe("editor", () => {
 		await expect(page).toHaveURL(/Welcome-to-Oxynote-[a-z0-9]{20}$/)
 	})
 
+	test("keeps the title across a reload", async ({ page, request }) => {
+		await signUpWithWorkspace(page, request)
+		await createDocument(page)
+
+		await titleEditor(page).click()
+		await page.keyboard.press("ControlOrMeta+A")
+		await page.keyboard.type("Sticky Title")
+		await expect(page).toHaveURL(/Sticky-Title-[a-z0-9]{20}$/)
+		const url = page.url()
+		await documentPersisted(page)
+
+		await visit(page, url)
+
+		await waitForEditor(page)
+		await expect.poll(() => editorText(titleEditor(page))).toBe("Sticky Title")
+	})
+
+	test("keeps a code block across a reload", async ({ page, request }) => {
+		await signUpWithWorkspace(page, request)
+		await createDocument(page)
+		const url = page.url()
+
+		await contentEditor(page).click()
+		const menu = await openSlashMenu(page)
+		await page.keyboard.type("Code")
+		await expect(menu.getByRole("button")).toHaveCount(1)
+		await page.keyboard.press("Enter")
+		await page.keyboard.type("const persisted = true")
+		await documentPersisted(page)
+
+		await visit(page, url)
+
+		await waitForEditor(page)
+		await expect(contentEditor(page).locator("pre code")).toContainText(
+			"const persisted = true",
+		)
+	})
+
+	test("duplicates a page with its content", async ({ page, request }) => {
+		await signUpWithWorkspace(page, request)
+		await createDocument(page)
+		const url = page.url()
+		await contentEditor(page).click()
+		await page.keyboard.type("Copy me over")
+		// the duplicate is built from the stored content, so the text has
+		// to reach the server first
+		await documentPersisted(page)
+
+		await page
+			.getByRole("button", { name: t("editor.navbar.open-document-options") })
+			.click()
+		await page
+			.getByRole("menuitem", {
+				name: t("editor.navbar.document-options.duplicate.title"),
+			})
+			.click()
+
+		// the copy's name is the original's plus a timestamp, and the app
+		// navigates straight to it
+		await expect(page).not.toHaveURL(url)
+		await waitForEditor(page)
+		await expect
+			.poll(() => editorText(titleEditor(page)))
+			.toMatch(/^New Page \(/)
+		await expect
+			.poll(() => editorText(contentEditor(page)))
+			.toBe("Copy me over")
+	})
+
+	test("navigates between pages from the sidebar", async ({
+		page,
+		request,
+	}) => {
+		await signUpWithWorkspace(page, request)
+		await createDocument(page)
+		await titleEditor(page).click()
+		await page.keyboard.press("ControlOrMeta+A")
+		await page.keyboard.type("Second Page")
+		await expect(page).toHaveURL(/Second-Page-[a-z0-9]{20}$/)
+
+		await sidebarDocument(page, "Welcome to Oxynote!").click()
+
+		await expect(page).toHaveURL(/Welcome-to-Oxynote-[a-z0-9]{20}$/)
+		await waitForEditor(page)
+		await expect
+			.poll(() => editorText(titleEditor(page)))
+			.toBe("Welcome to Oxynote!")
+
+		await sidebarDocument(page, "Second Page").click()
+
+		await expect(page).toHaveURL(/Second-Page-[a-z0-9]{20}$/)
+		await waitForEditor(page)
+		await expect.poll(() => editorText(titleEditor(page))).toBe("Second Page")
+	})
+
 	test("nests a sub page under its parent", async ({ page, request }) => {
 		await signUpWithWorkspace(page, request)
 		await createDocument(page)

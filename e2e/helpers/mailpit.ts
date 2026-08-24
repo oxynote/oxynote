@@ -7,6 +7,11 @@ const DELIVERY_TIMEOUT = 30_000
 
 const VERIFICATION_LINK = /href="([^"]*\/api\/auth\/verify-email[^"]*)"/
 const INVITE_LINK = /href="([^"]*\/accept-invite[^"]*)"/
+const PASSWORD_RESET_LINK = /href="([^"]*\/api\/auth\/reset-password[^"]*)"/
+// the account-exists notice links to the bare login page, which is what
+// separates it from the verification email in the same inbox — that
+// one's link only carries "/login" inside its callback parameter.
+const ACCOUNT_EXISTS_LINK = /href="([^"]*\/login)"/
 
 // fetchVerificationLink waits for the account-activation email and hands
 // back the link it carries.
@@ -24,6 +29,24 @@ export function fetchInviteLink(
 	address: string,
 ): Promise<string> {
 	return fetchLink(request, address, INVITE_LINK, "invitation")
+}
+
+// fetchPasswordResetLink waits for the password reset email and hands
+// back the link it carries.
+export function fetchPasswordResetLink(
+	request: APIRequestContext,
+	address: string,
+): Promise<string> {
+	return fetchLink(request, address, PASSWORD_RESET_LINK, "password reset")
+}
+
+// fetchAccountExistsLink waits for the notice a repeated signup sends to
+// the address's real owner and hands back its login link.
+export function fetchAccountExistsLink(
+	request: APIRequestContext,
+	address: string,
+): Promise<string> {
+	return fetchLink(request, address, ACCOUNT_EXISTS_LINK, "account exists")
 }
 
 // the inbox is searched for the message carrying the wanted link rather
