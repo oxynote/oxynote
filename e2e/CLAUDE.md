@@ -27,7 +27,7 @@ instead.
 Package manager is **pnpm**. From the repository root:
 
 ```sh
-make e2e             # one-shot: build images, start the stack, run the tests, tear down
+make e2e             # run the suite; the config builds, starts and tears down
 make e2e-stack-build # build the stack's images, for iterating
 make e2e-stack-stop  # stop the stack and drop its data
 ```
@@ -36,7 +36,7 @@ From `e2e/`:
 
 ```sh
 pnpm setup       # deps + the playwright chromium browser
-pnpm test        # playwright test (brings the stack up first, see below)
+pnpm test        # playwright test (full cycle, see below)
 
 pnpm check-lint  # check-types + check-eslint + check-fmt + check-knip
 pnpm lint        # the fixing counterpart of all four
@@ -48,34 +48,46 @@ pnpm check-fmt   #   fixing counterparts)
 pnpm check-knip  # dead exports, files and dependencies
 ```
 
-`pnpm test` runs [global-setup.ts](global-setup.ts), which brings the
-stack up itself, so it works whether or not the stack is already running.
-**What it never does is rebuild.** Compose builds `web` and
-`auth-realtime` when their images are missing outright, but a source
-change after that is invisible to it — refreshing them takes an
-explicit build.
-Core it cannot build at all: the service has no build section, so
-`make build-go` is the only thing that produces that image. Teaching the
-hook to build would drop goreleaser into the inner loop of every run.
+**The playwright config owns the whole cycle.**
+[global-setup.ts](global-setup.ts) builds the stack and brings it up;
+[global-teardown.ts](global-teardown.ts) stops it and drops its volumes.
+Nothing has to be running first, and nothing is left behind.
 
-That is the division of labour, and each verb has exactly one owner.
-**Make only builds** — goreleaser for core, `compose build` for the two
-images compose owns — and **the setup hook is the only thing that runs
-`compose up`.** So: after changing backend or frontend source,
-`make e2e-stack-build`; after changing only a test, `pnpm test`. Running
-`pnpm test` against source you just edited silently tests the previous
-build.
+That is deliberate, and the reason is that a test suite has several front
+doors — `make e2e`, `pnpm test`, and the play button in the Playwright VS
+Code extension — and only the config is common to all of them. Putting
+the build in the caller meant the extension tested whatever image was
+last left behind, which passes and lies. Now every entry point runs the
+same cycle, so `make e2e` is a one-line target that only starts the run.
+
+The build still lives in the Makefile, and the hook shells back out to
+`make e2e-stack-build` rather than reimplementing it. Two reasons: the
+hook cannot express it — goreleaser produces core's image, which compose
+cannot build at all, since the service has no build section — and going
+through make is what keeps `E2E_COMPOSE_EXTRA` working, which is how CI
+layers the buildx cache config in
+[docker-compose.ci.yaml](docker-compose.ci.yaml) over the base file.
+
+**The cost is that every run is a full build and teardown.** With warm
+caches and no source change that is tens of seconds, not minutes, and a
+dropped volume per run means each run starts from an empty database. To
+iterate without paying it, build once with `make e2e-stack-build` and
+drive playwright directly with `pnpm exec playwright test`, which is the
+same binary without the make wrapper — but understand that you are then
+responsible for rebuilding after a source change, and that a stale image
+fails silently.
 
 Both build steps run quietly, under a ticking line, and replay their
 whole log if they fail. Docker and goreleaser say a great deal that
 matters only when something breaks.
 
 **The stack has no pnpm scripts of its own**, and should not grow any.
-Starting it belongs to `global-setup.ts` and building to make; anything
-else — tearing it down by hand, reading logs — is plain `docker compose`
-run from this directory, which discovers `docker-compose.yaml` without
-being told where it is. A `pnpm stack:*` wrapper would only be a second
-name for a command that is already shorter than its alias.
+Its lifecycle belongs to the setup and teardown hooks, which reach the
+Makefile through [helpers/stack.ts](helpers/stack.ts); anything else —
+reading logs, poking at a container — is plain `docker compose` run from
+this directory, which discovers `docker-compose.yaml` without being told
+where it is. A `pnpm stack:*` wrapper would only be a second name for a
+command that is already shorter than its alias.
 
 ## The stack
 
@@ -407,8 +419,8 @@ unawaited assertion described above. It is scoped to
 
 **knip** guards dead exports, files and dependencies, and needs no config
 file: its Playwright plugin reads [playwright.config.ts](playwright.config.ts),
-resolves `globalSetup` from it, and treats the test files as entry
-points. Nothing here has `web/`'s auto-import or vendored-directory
+resolves `globalSetup` and `globalTeardown` from it, and treats the test
+files as entry points. Nothing here has `web/`'s auto-import or vendored-directory
 blind spots, so a `knip.ts` would only be a file to keep in sync.
 
 TypeScript is strict, with `noUnusedLocals`, `noUnusedParameters`,

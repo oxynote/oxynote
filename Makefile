@@ -30,17 +30,20 @@ stop:
 # the e2e stack runs on its own ports with throwaway state, so it can be
 # up at the same time as the dev stack.
 #
-# make only ever builds; starting the stack belongs to the suite's own
-# setup hook, so there is exactly one thing that runs `compose up`.
-# Building has to live here because the hook cannot do it: goreleaser
-# produces core's image, which compose cannot build at all, and the two
-# images compose does own are only refreshed by an explicit build.
-# Iterate with `make e2e-stack-build` once, then `cd e2e && pnpm test`.
+# the playwright config owns the whole cycle: globalSetup builds the stack
+# and brings it up, globalTeardown stops it and drops its volumes. That is
+# what makes the play button in the Playwright VS Code extension do exactly
+# what this target does, so this target only starts the run. The build
+# stays a make target because the hook cannot express it — goreleaser
+# produces core's image, which compose cannot build at all — and the hook
+# shells back out to e2e-stack-build, which is also what keeps
+# E2E_COMPOSE_EXTRA working from CI.
+#
+# Every run is therefore a full build and teardown. To iterate without
+# paying that, run e2e-stack-build once and drive the tests directly.
 .PHONY: e2e
-e2e: e2e-stack-build
-	@( cd e2e && pnpm run test ); status=$$?; \
-	$(MAKE) --no-print-directory e2e-stack-stop; \
-	exit $$status
+e2e:
+	@( cd e2e && pnpm run test )
 
 .PHONY: e2e-stack-build
 e2e-stack-build:

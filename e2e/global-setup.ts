@@ -1,19 +1,26 @@
-import { spawn } from "node:child_process"
-import { fileURLToPath } from "node:url"
 import { BASE_URL, MAILPIT_URL } from "./helpers/config"
+import { buildStack, startStack } from "./helpers/stack"
 
 const READY_TIMEOUT = 180_000
 const POLL_INTERVAL = 2_000
 const TICK_INTERVAL = 1_000
 
-const E2E_DIR = fileURLToPath(new URL(".", import.meta.url))
-
-// bring the stack up and wait until every service the tests touch answers
-// through the front door. `up --wait` only covers the containers that
-// declare a healthcheck, and core cannot declare one — its image is
-// distroless, with no shell or http client to probe itself with.
+// build the stack from this checkout, bring it up, and wait until every
+// service the tests touch answers through the front door. `up --wait` only
+// covers the containers that declare a healthcheck, and core cannot
+// declare one — its image is distroless, with no shell or http client to
+// probe itself with.
+//
+// The build runs here rather than in the caller so that every way of
+// starting the suite behaves the same: `make e2e`, `pnpm test`, and the
+// play button in the Playwright VS Code extension all test the code that
+// is in the tree right now, not whatever image was last left behind.
 export default async function globalSetup(): Promise<void> {
-	await progress("starting the stack", () => compose(["up", "-d", "--wait"]))
+	// make prints its own labelled step per image, so it is not wrapped
+	// in a progress line of this file's own.
+	await buildStack()
+
+	await progress("starting the stack", startStack)
 
 	await progress("waiting for services", () =>
 		Promise.all([
@@ -48,43 +55,6 @@ async function progress(
 	}
 
 	process.stdout.write(" ok\n")
-}
-
-// compose swallows docker's output and replays it only on failure: the
-// container-by-container churn says nothing while it is working, and
-// everything once it is not.
-function compose(args: string[]): Promise<void> {
-	const child = spawn("docker", ["compose", ...args], {
-		cwd: E2E_DIR,
-		stdio: ["ignore", "pipe", "pipe"],
-	})
-
-	// decoded as text rather than concatenated as buffers, so a multi-byte
-	// character split across two chunks survives the join.
-	child.stdout.setEncoding("utf8")
-	child.stderr.setEncoding("utf8")
-
-	let output = ""
-
-	const collect = (chunk: string) => {
-		output += chunk
-	}
-
-	child.stdout.on("data", collect)
-	child.stderr.on("data", collect)
-
-	return new Promise((resolve, reject) => {
-		child.on("error", reject)
-		child.on("close", (code) => {
-			if (code === 0) {
-				resolve()
-
-				return
-			}
-
-			reject(new Error(`docker compose ${args.join(" ")} failed\n\n${output}`))
-		})
-	})
 }
 
 async function waitForService(name: string, url: string): Promise<void> {

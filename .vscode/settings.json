@@ -11,6 +11,5 @@
 	"eslint.workingDirectories": [
 		"web",
 		"server/auth-realtime"
-	],
-	"vitest.rootConfig": "web/vitest.config.ts"
+	]
 }

@@ -24,6 +24,7 @@ export default defineConfig({
 		? [["github"], ["html", { open: "never" }]]
 		: [["list"]],
 	globalSetup: "./global-setup.ts",
+	globalTeardown: "./global-teardown.ts",
 	use: {
 		baseURL: BASE_URL,
 		trace: "on-first-retry",
