@@ -11,9 +11,10 @@ import (
 var _defaultRequestTimeout = 10 * time.Minute
 
 var (
-	// ErrMissingModel is returned when no model identifier is configured.
-	// There is deliberately no default: a hardcoded model would silently
-	// bind every deployment to one vendor's naming.
+	// ErrMissingModel is returned when no model identifier is
+	// configured. Wiring is expected to fall back to the provider's
+	// DefaultModel before validating; an empty model here means even
+	// that fallback had nothing to offer.
 	ErrMissingModel = errors.New("assistant model is required")
 
 	// ErrMissingAPIKey is returned when a provider that authenticates with

@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 
+	"github.com/oxynote/oxynote/server/core/internal/assistant/provider"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 )
 
@@ -17,15 +18,28 @@ type Capabilities struct {
 	// Slack reports whether the Slack App integration is configured.
 	Slack bool `json:"slack"`
 
-	// Assistant reports whether the AI assistant is configured.
-	Assistant bool `json:"assistant"`
+	// AIAssistant reports whether the AI assistant runs and how capable
+	// its model is.
+	AIAssistant AssistantCapability `json:"aiAssistant"`
 
-	// Changedetection reports whether the changedetection.io integration
+	// ChangeDetection reports whether the changedetection.io integration
 	// is configured.
-	Changedetection bool `json:"changedetection"`
+	ChangeDetection bool `json:"changeDetection"`
 
 	// Search reports whether document search is configured.
 	Search bool `json:"search"`
+}
+
+// AssistantCapability describes the AI assistant's availability,
+// decided at boot from the configured model's strength.
+type AssistantCapability struct {
+	// Status specifies whether the assistant runs at full strength,
+	// runs with limitations, or is disabled.
+	Status provider.Status `json:"status"`
+
+	// Model is the configured model identifier, empty when no provider
+	// is configured.
+	Model string `json:"model,omitempty"`
 }
 
 // fetchCapabilities responds with the deployment's capabilities. The

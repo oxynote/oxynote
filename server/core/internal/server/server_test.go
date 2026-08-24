@@ -14,6 +14,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/apps/slack"
 	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	assistantCore "github.com/oxynote/oxynote/server/core/internal/assistant"
+	"github.com/oxynote/oxynote/server/core/internal/assistant/provider"
 	"github.com/oxynote/oxynote/server/core/internal/buildinfo"
 	datasourceCore "github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/search"
@@ -27,7 +28,10 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	goleak.VerifyTestMain(m)
+	// the Google API transport behind the Gemini client, reached through
+	// the assistant provider package, starts an opencensus worker from a
+	// package init, so it is already running before any test does.
+	goleak.VerifyTestMain(m, goleak.IgnoreCurrent())
 }
 
 // discardLog returns a logger that swallows all output.
@@ -216,6 +220,10 @@ func Test_NewServer(t *testing.T) {
 			log,
 			Options{
 				Port: 8080,
+				Assistant: AssistantCapability{
+					Status: provider.StatusActive,
+					Model:  "claude-opus-5",
+				},
 				MCP: MCPOptions{
 					SessionURL:  "http://auth.test/api/internal/mcp/session",
 					ResourceURL: "http://test.com/core/api/mcp",
@@ -244,7 +252,11 @@ func Test_NewServer(t *testing.T) {
 		})
 
 		assert.Equal(t, Capabilities{
-			Changedetection: true,
+			AIAssistant: AssistantCapability{
+				Status: provider.StatusActive,
+				Model:  "claude-opus-5",
+			},
+			ChangeDetection: true,
 			Search:          true,
 		}, srv.capabilities)
 	})

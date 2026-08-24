@@ -254,34 +254,10 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 		buildinfo.Getenv("AUTH_REALTIME_URL"),
 	)
 
-	// an empty ASSISTANT_PROVIDER means the assistant is disabled: no
-	// model is built and the chat surface refuses. The remaining
-	// ASSISTANT_* values are ignored, matching the other integrations. A
-	// set provider still validates everything it needs and fails boot.
-	var (
-		chatModel     model.ToolCallingChatModel
-		summaryModel  model.ToolCallingChatModel
-		assistantOpts provider.Options
-	)
-
-	if buildinfo.Getenv("ASSISTANT_PROVIDER") != "" {
-		assistantOpts, err = assistantProviderOptions()
-		if err != nil {
-			fail(log, closers, "cannot read the assistant configuration", err)
-			return
-		}
-
-		chatModel, err = provider.New(termCtx, assistantOpts)
-		if err != nil {
-			fail(log, closers, "cannot create the assistant chat model", err)
-			return
-		}
-
-		summaryModel, err = assistantSummaryModel(termCtx, assistantOpts, chatModel)
-		if err != nil {
-			fail(log, closers, "cannot create the assistant summarization model", err)
-			return
-		}
+	chatModel, summaryModel, assistantOpts, assistantStatus, err := assistantModels(termCtx, log)
+	if err != nil {
+		fail(log, closers, "cannot set up the assistant", err)
+		return
 	}
 
 	datasourceMan := datasource.NewManager(log, dbc)
@@ -316,6 +292,10 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 			DemoPrometheusURL: buildinfo.Getenv("SERVER_DEMO_PROMETHEUS_URL"),
 			Port:              _serverPort,
 			Origins:           origins,
+			Assistant: server.AssistantCapability{
+				Status: assistantStatus,
+				Model:  assistantOpts.Model,
+			},
 			Auth: server.AuthOptions{
 				BetterAuthURL: buildinfo.Getenv("SERVER_AUTH_BETTER_AUTH_URL"),
 			},
@@ -528,15 +508,20 @@ func parseOrigins(val string) []string {
 }
 
 // assistantProviderOptions assembles the assistant's model configuration
-// from the environment. Provider-specific credentials are only read for
-// the provider actually selected, so an operator running Ollama is never
-// asked about AWS regions.
+// from the environment. An empty ASSISTANT_MODEL falls back to the
+// provider's default model, and provider-specific credentials are only
+// read for the provider actually selected, so an operator running
+// Ollama is never asked about AWS regions.
 func assistantProviderOptions() (provider.Options, error) {
 	opts := provider.Options{
 		Provider: provider.ParseProvider(buildinfo.Getenv("ASSISTANT_PROVIDER")),
 		Model:    buildinfo.Getenv("ASSISTANT_MODEL"),
 		APIKey:   buildinfo.Getenv("ASSISTANT_API_KEY"),
 		BaseURL:  buildinfo.Getenv("ASSISTANT_BASE_URL"),
+	}
+
+	if opts.Model == "" {
+		opts.Model = opts.Provider.DefaultModel()
 	}
 
 	maxTokens, err := parseUintEnv("ASSISTANT_MAX_TOKENS", _defaultAssistantMaxTokens)
@@ -578,6 +563,64 @@ func assistantProviderOptions() (provider.Options, error) {
 	}
 
 	return opts, nil
+}
+
+// assistantModels reads the assistant configuration, judges the
+// configured model, and builds the chat and summarization models when
+// the verdict lets the assistant run. An empty ASSISTANT_PROVIDER means
+// the assistant is disabled: nothing is built, the status stays
+// inactive, and the remaining ASSISTANT_* values are ignored, matching
+// the other integrations. A set provider still validates everything it
+// needs and fails boot, but the model itself is judged rather than
+// trusted: one too weak to run the assistant, or one outside the
+// provider's supported list, disables the assistant with a warning
+// instead of failing boot, and the capabilities endpoint reports why.
+func assistantModels(ctx context.Context, log *slog.Logger) (
+	model.ToolCallingChatModel,
+	model.ToolCallingChatModel,
+	provider.Options,
+	provider.Status,
+	error,
+) {
+	if buildinfo.Getenv("ASSISTANT_PROVIDER") == "" {
+		return nil, nil, provider.Options{}, provider.StatusInactive, nil
+	}
+
+	opts, err := assistantProviderOptions()
+	if err != nil {
+		return nil, nil, provider.Options{}, provider.StatusInactive, fmt.Errorf("reading the configuration: %w", err)
+	}
+
+	status, err := opts.ModelStatus()
+	if err != nil {
+		return nil, nil, provider.Options{}, provider.StatusInactive, fmt.Errorf("reading the configuration: %w", err)
+	}
+
+	switch status {
+	case provider.StatusActive:
+	case provider.StatusActiveButWeak:
+		log.Warn("assistant model is weaker than recommended", slog.String("model", opts.Model))
+	case provider.StatusInactiveTooWeak:
+		log.Warn("assistant model is too weak to run the assistant", slog.String("model", opts.Model))
+	case provider.StatusInactive:
+		log.Warn("assistant model is not supported", slog.String("model", opts.Model))
+	}
+
+	if !status.Active() {
+		return nil, nil, opts, status, nil
+	}
+
+	chatModel, err := provider.New(ctx, opts)
+	if err != nil {
+		return nil, nil, provider.Options{}, provider.StatusInactive, fmt.Errorf("creating the chat model: %w", err)
+	}
+
+	summaryModel, err := assistantSummaryModel(ctx, opts, chatModel)
+	if err != nil {
+		return nil, nil, provider.Options{}, provider.StatusInactive, fmt.Errorf("creating the summarization model: %w", err)
+	}
+
+	return chatModel, summaryModel, opts, status, nil
 }
 
 // assistantSummaryModel builds the model used to summarise long

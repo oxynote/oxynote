@@ -52,16 +52,17 @@ gitignored). The defaults work out of the box; integrations (GitHub app,
 Slack app, AI assistant, email, changedetection.io, Meilisearch) are
 optional and stay disabled until their variables are set. The frontend
 learns what a deployment offers from `GET /core/api/capabilities`, which
-reports a boolean per service (`github`, `slack`, `assistant`,
-`changedetection`, `search`) so unavailable features are not rendered at
-all.
+reports a boolean per service (`github`, `slack`, `changeDetection`,
+`search`) plus an `aiAssistant` object carrying the assistant's status
+and configured model, so unavailable features are not rendered at all.
 
 ## AI assistant
 
 The assistant is disabled by default: with `ASSISTANT_PROVIDER` empty the
 server boots without a model and the in-app chat is unavailable (the MCP
 server below keeps working). It is not tied to any one vendor — enable it
-by picking a provider and a model in `docker/env/core.local.env`:
+by picking a provider in `docker/env/core.local.env`; the model is
+optional and defaults to the provider's strongest supported one:
 
 ```sh
 OXYNOTE_CORE_ASSISTANT_PROVIDER=claude
@@ -71,13 +72,13 @@ OXYNOTE_CORE_ASSISTANT_API_KEY=sk-...
 
 Switching providers is an env change and a restart — no rebuild.
 
-| provider | credentials | known-good models |
+| provider | credentials | supported models |
 | --- | --- | --- |
-| `claude` | `ASSISTANT_API_KEY`, or `ASSISTANT_BEDROCK_*` / `ASSISTANT_VERTEX_*` | `claude-opus-4-6`, `claude-sonnet-4-6` |
-| `openai` | `ASSISTANT_API_KEY` (+ `ASSISTANT_AZURE_API_VERSION` for Azure) | `gpt-5`, `gpt-5-mini` |
-| `gemini` | `ASSISTANT_API_KEY` | `gemini-2.5-pro`, `gemini-2.5-flash` |
-| `ollama` | none; set `ASSISTANT_BASE_URL` to your server | `llama3.3:70b`, `qwen3:32b` |
-| `openrouter` | `ASSISTANT_API_KEY` | any tool-calling model OpenRouter offers |
+| `claude` | `ASSISTANT_API_KEY`, or `ASSISTANT_BEDROCK_*` / `ASSISTANT_VERTEX_*` | `claude-fable-5`, `claude-opus-5` (default), `claude-opus-4-6`, `claude-sonnet-5`, `claude-sonnet-4-6`, `claude-haiku-4-5` |
+| `openai` | `ASSISTANT_API_KEY` (+ `ASSISTANT_AZURE_API_VERSION` for Azure) | `gpt-5.1` (default), `gpt-5`, `gpt-5-mini`, `gpt-5-nano` |
+| `gemini` | `ASSISTANT_API_KEY` | `gemini-3-pro-preview`, `gemini-2.5-pro` (default), `gemini-2.5-flash`, `gemini-2.5-flash-lite` |
+| `ollama` | none; set `ASSISTANT_BASE_URL` to your server | `llama3.3:70b` (default), `qwen3:32b` |
+| `openrouter` | `ASSISTANT_API_KEY` | the models above behind their vendor prefix (`anthropic/claude-opus-5` (default), `openai/gpt-5`, `google/gemini-2.5-pro`, …) |
 
 `ASSISTANT_BASE_URL` also points the `openai` provider at anything that
 speaks the OpenAI chat-completions protocol — a local inference server, a
@@ -85,10 +86,15 @@ gateway, or a hosted compatibility layer.
 
 **The model must be good at tool calling.** The assistant does everything
 through tools, against a large document schema, so a model that calls them
-unreliably looks broken rather than merely weaker. That rules out most
-small local models; prefer the sizes listed above. There is no automatic
-check — an unsuitable model is a configuration mistake, not an error the
-server can detect for you.
+unreliably looks broken rather than merely weaker. The server therefore
+judges the configured model at boot against the supported list above: a
+frontier model runs the assistant at full strength; a mid-tier model (and
+everything on ollama) runs it with a logged warning about its
+limitations; a small model, or any model not on the list, disables the
+assistant with a warning instead of failing boot. The verdict is reported
+by `GET /core/api/capabilities` as `aiAssistant.status` — `active`,
+`active-but-weak`, `inactive-too-weak`, or `inactive` — alongside the
+configured model, so the frontend can explain a missing chat entry point.
 
 `ASSISTANT_SUMMARY_MODEL` optionally points conversation summarisation at
 a cheaper model; it defaults to the chat model. See

@@ -64,6 +64,11 @@ type Options struct {
 	// well.
 	Secure bool
 
+	// Assistant reports the AI assistant capability decided at boot:
+	// whether the configured model runs the assistant, and which model
+	// it is. It is snapshotted into the capabilities endpoint verbatim.
+	Assistant AssistantCapability
+
 	// Auth contains options for authentication.
 	Auth auth.Options
 
@@ -152,8 +157,8 @@ func NewServer(
 		capabilities: Capabilities{
 			GitHub:          githubMan.Configured(),
 			Slack:           slackMan.Configured(),
-			Assistant:       assistantMan.Configured(),
-			Changedetection: webchangeClient.Configured(),
+			AIAssistant:     opts.Assistant,
+			ChangeDetection: webchangeClient.Configured(),
 			Search:          searchGateway.Configured(),
 		},
 	}

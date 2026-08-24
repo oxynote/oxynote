@@ -113,11 +113,8 @@ dev stack uses, never a published release. It deliberately differs from
   including the `/api/x` and `/api/internal` blocks; a second copy would
   drift.
 
-Two knock-on constraints worth knowing:
+One knock-on constraint worth knowing:
 
-- **Core boots with `ASSISTANT_PROVIDER=ollama`.** Core refuses to start
-  without a valid provider and model, and ollama is the only one that
-  needs no API key. Nothing dials it.
 - **Core cannot have a compose healthcheck** — its image is distroless,
   with no shell or http client to probe itself with. `global-setup.ts`
   polls it through the front door instead, treating any response under

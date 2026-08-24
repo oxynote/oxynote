@@ -124,12 +124,6 @@ services:
       - OXYNOTE_CORE_BASE_APP_URL=http://localhost:18080
       - OXYNOTE_CORE_ORIGINS=http://localhost:18080,localhost:18080
       - OXYNOTE_CORE_DB_DATA_SOURCE_CREDENTIALS_SIGNING_SECRET=e2esigningsecret
-      # ollama is the one provider that boots without an API key. Nothing
-      # dials it — the tests never reach the assistant — but core refuses
-      # to start without a valid provider and model.
-      - OXYNOTE_CORE_ASSISTANT_PROVIDER=ollama
-      - OXYNOTE_CORE_ASSISTANT_MODEL=llama3
-      - OXYNOTE_CORE_ASSISTANT_BASE_URL=http://ollama.invalid:11434
       # core only seeds a new workspace's welcome document while a demo
       # prometheus URL is set — with it empty, initialize returns early and
       # the onboarding page polls for a first document that never comes.

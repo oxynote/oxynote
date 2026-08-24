@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/oxynote/oxynote/server/core/internal/assistant/provider"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -16,6 +17,10 @@ func Test_Server_fetchCapabilities(t *testing.T) {
 		capabilities: Capabilities{
 			Slack:  true,
 			Search: true,
+			AIAssistant: AssistantCapability{
+				Status: provider.StatusActiveButWeak,
+				Model:  "claude-sonnet-5",
+			},
 		},
 	}
 
@@ -27,7 +32,13 @@ func Test_Server_fetchCapabilities(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.JSONEq(
 		t,
-		`{"github":false,"slack":true,"assistant":false,"changedetection":false,"search":true}`,
+		`{
+			"github": false,
+			"slack": true,
+			"aiAssistant": {"status": "active-but-weak", "model": "claude-sonnet-5"},
+			"changeDetection": false,
+			"search": true
+		}`,
 		rec.Body.String(),
 	)
 }
