@@ -9,7 +9,8 @@ WORKDIR /server
 
 # pnpm-workspace.yaml carries the allowBuilds settings — without it the
 # install refuses to run the esbuild install script.
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json src ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json tsconfig.build.json ./
+COPY src ./src
 
 RUN pnpm install --frozen-lockfile && \
     pnpm run build && \
@@ -29,4 +30,4 @@ ENV NODE_ENV=production
 USER hono
 EXPOSE 8081
 
-CMD ["node", "--import", "/server/dist/instrument.js", "/server/dist/index.js"]
+CMD ["node", "--import", "/server/dist/sentry.js", "/server/dist/index.js"]

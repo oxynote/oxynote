@@ -5,7 +5,7 @@ export const MermaidBlock = Node.create({
 	name: "mermaidBlock",
 	group: "block",
 	content: "text*",
-	marks: `${CommentMark.name}`,
+	marks: CommentMark.name,
 	code: true,
 	defining: true,
 	isolating: true,

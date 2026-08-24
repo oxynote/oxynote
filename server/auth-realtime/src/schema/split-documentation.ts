@@ -7,7 +7,7 @@ import { CalloutBlock } from "./callout.js"
 import { TitledCodeBlock } from "./code-block.js"
 import { MetricBlock } from "./metric.js"
 
-export const allowedLeftSideContent = [
+const allowedLeftSideContent = [
 	Paragraph.name,
 	BulletList.name,
 	OrderedList.name,
@@ -15,7 +15,7 @@ export const allowedLeftSideContent = [
 	CalloutBlock.name,
 ]
 
-export const extraLeftSideContent = [ParameterList.name]
+const extraLeftSideContent = [ParameterList.name]
 
 export const SplitDocumentationLeftSide = Node.create({
 	name: "splitDocumentationLeftSide",

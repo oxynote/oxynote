@@ -14,7 +14,9 @@ export const FigmaBlock = Node.create({
 					element.getAttribute("data-src"),
 				renderHTML: (attrs) => {
 					if (!attrs.src) return {}
-					return { "data-src": attrs.src }
+					return {
+						"data-src": attrs.src as string,
+					}
 				},
 			},
 			width: {
@@ -28,7 +30,10 @@ export const FigmaBlock = Node.create({
 				},
 				renderHTML: (attrs) => {
 					if (!attrs.width) return {}
-					return { "data-width": attrs.width }
+					return {
+						"data-width":
+							attrs.width as number,
+					}
 				},
 			},
 			height: {
@@ -42,7 +47,10 @@ export const FigmaBlock = Node.create({
 				},
 				renderHTML: (attrs) => {
 					if (!attrs.height) return {}
-					return { "data-height": attrs.height }
+					return {
+						"data-height":
+							attrs.height as number,
+					}
 				},
 			},
 		}

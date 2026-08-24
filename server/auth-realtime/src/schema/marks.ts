@@ -40,10 +40,6 @@ export const DeletedMark = Mark.create({
 	},
 })
 
-export interface CommentAttrs {
-	commentId: string
-}
-
 export const CommentMark = Mark.create({
 	name: "comment",
 	inclusive: false,
@@ -58,7 +54,7 @@ export const CommentMark = Mark.create({
 				renderHTML: (attrs) => {
 					return {
 						"data-comment-id":
-							attrs.commentId,
+							attrs.commentId as string,
 					}
 				},
 			},

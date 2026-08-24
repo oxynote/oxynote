@@ -34,11 +34,13 @@ cd server/core && make build      # goreleaser release --snapshot --clean -> bin
 # datagen
 cd datagen && make build
 
-# auth-realtime
-cd server/auth-realtime && pnpm run dev          # local watch mode (tsx + instrument.ts)
-cd server/auth-realtime && pnpm run build        # tsc only
-cd server/auth-realtime && pnpm run qa           # check-types + check-lint + check-fmt
-cd server/auth-realtime && pnpm run qa-fix       # check-types + lint --fix + prettier --write
+# auth-realtime (full details in auth-realtime/CLAUDE.md)
+cd server/auth-realtime && pnpm run dev          # local watch mode (tsx + sentry.ts preloaded)
+cd server/auth-realtime && pnpm run build        # tsc -p tsconfig.build.json
+cd server/auth-realtime && pnpm run check-lint   # types + eslint + prettier + knip
+cd server/auth-realtime && pnpm run lint         # the fixing variant
+cd server/auth-realtime && pnpm run test         # vitest run --coverage
+cd server/auth-realtime && pnpm run qa           # check-lint + test; qa-fix = lint + test
 ```
 
 The Go test/lint workflow is documented in [core/CLAUDE.md](core/CLAUDE.md)
@@ -76,7 +78,7 @@ This is the model that's least obvious from a fresh read:
 - Documents are organized into **branches** (`document_branches` table). Every document has at least one branch; the oldest = the default/main branch.
 - The Hocuspocus `documentName` is encoded as `"<documentId>-<branchIdentifier>"`. `branchIdentifier` may be the literal string `"default"`, in which case `resolveBranchId` in `server/auth-realtime/src/hocuspocus.ts` looks up the default branch ID. Splitting on the **first** `-` (`indexOf("-")`) is intentional; XIDs do not contain dashes but the suffix path can.
 - Branch content is stored two ways in `document_branches`: structured ProseMirror JSON in `content` (JSONB) and the canonical Yjs binary state in `raw_content` (base64-encoded over the wire). `raw_content` is authoritative for CRDT continuity.
-- `onLoadDocument` / `onStoreDocument` round-trip through core's internal `/api/x/documents/{id}/branch/{branchId}` endpoints. **Do not** use `Y.applyUpdate` to seed a freshly-created doc with content from another doc — the differing `clientID`s CRDT-merge and silently duplicate content. The codebase's pattern is `replaceYdocContent` in `server/auth-realtime/src/ydocument.ts`, which deep-clones `Y.XmlElement`s (preserving non-string attrs that `XmlElement.clone()` drops). Read the comments at `server/auth-realtime/src/hocuspocus.ts:154` and `server/auth-realtime/src/routes.ts:73` before touching this area.
+- `onLoadDocument` / `onStoreDocument` round-trip through core's internal `/api/x/documents/{id}/branch/{branchId}` endpoints. **Do not** use `Y.applyUpdate` to seed a freshly-created doc with content from another doc — the differing `clientID`s CRDT-merge and silently duplicate content. The codebase's pattern is `replaceYdocContent` in `server/auth-realtime/src/ydocument.ts`, which deep-clones `Y.XmlElement`s (preserving non-string attrs that `XmlElement.clone()` drops). Read the comments on `onLoadDocument` in `server/auth-realtime/src/hocuspocus.ts` and on `applyMergeToOpenDocument` in `server/auth-realtime/src/routes.ts` before touching this area.
 - **The main branch is identified by its `"default"` flag, not by its name.** The tree join and `FetchMainBranchContent` key on the flag; `UpdateDocumentBranch` refuses to rename the default branch so the two never disagree. Anything that creates a document's first branch — `NewDocument`, `Duplicate` — must set `Default: true`, and forks must not.
 - **Maintainers accumulate; nothing removes them.** The `maintainers` field on a branch update is *who edited in that persist*, not the document's maintainer set — auth-realtime's store hook sends the current session's editors and system writes send none. `UpsertDocumentMaintainers` only ever adds, so a diff against the stored set would drop everyone not editing at that moment. Removing a maintainer needs a path of its own; there is none today.
 - Branch merging: `PUT /documents/:documentId/merge` is handled by auth-realtime, which proxies to core, then **directly mutates the in-memory target-branch Y.Doc** via `replaceYdocContent` (not `applyUpdate`) and immediately persists `rawContent` back through `/api/x/.../branch/:branchId` so a server restart can't reset the clientID and duplicate content on reconnect.
@@ -253,11 +255,19 @@ change to a schema or a tool description has to be deliberate enough to update
 that file — a silently altered description degrades the assistant in ways no
 other test catches.
 
-## Node formatting & TS
+## auth-realtime
 
-Prettier uses **tabs (width 8)**, no semicolons, trailing commas, double-quoted strings — see [auth-realtime/prettier.config.js](auth-realtime/prettier.config.js). ESLint extends `@eslint/js` recommended + `typescript-eslint` **strict** + **stylistic** + `eslint-config-prettier`; `@typescript-eslint/no-explicit-any` is **off**. See [auth-realtime/eslint.config.mjs](auth-realtime/eslint.config.mjs).
+The service has its own [CLAUDE.md](auth-realtime/CLAUDE.md) covering its
+composition-root structure, zod-parsed environment, type-aware lint setup, and
+testing conventions. Two things worth knowing from here:
 
-TypeScript is `module: NodeNext`, `target: ESNext`, fully strict — `strict`, `noImplicitAny`, `noUnusedLocals`, `noUnusedParameters`, `noUncheckedIndexedAccess`, `noImplicitOverride`, `verbatimModuleSyntax` all on. See [auth-realtime/tsconfig.json](auth-realtime/tsconfig.json). Path alias `@/*` points to `server/auth-realtime/src/*`.
-
-**ES module imports must include the explicit `.js` extension** (NodeNext + ESM requirement), even when importing TypeScript files — e.g. `import { foo } from "./bar.js"` for a `./bar.ts` source file.
+- **`src/index.ts` is the only module with side effects.** Everything else is
+  a factory taking its dependencies as an argument — which is what lets the
+  service be tested without a database, a redis, or a port. A change that
+  reads `process.env` or opens a connection outside `index.ts` breaks that.
+- Prettier uses **tabs at width 8** (matching gofmt's convention on this side
+  of the repo), no semicolons, trailing commas, double quotes. ESLint runs
+  type-aware, and **ES module imports must include the explicit `.js`
+  extension** (NodeNext + ESM), even when importing TypeScript files — e.g.
+  `import { foo } from "./bar.js"` for a `./bar.ts` source file.
 

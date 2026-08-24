@@ -52,21 +52,20 @@ e2e-stack-stop:
 	@$(QUIET) "stopping the stack" $(E2E_COMPOSE) down -v
 
 # lint gates of every component that has one, from one place. Fixing and
-# checking mirror each component's own vocabulary: web and e2e pair
-# lint/check-lint, auth-realtime folds its type/lint/format gates into
-# qa-fix/qa (it has no tests), and core wraps golangci-lint. Datagen has
-# no lint setup and is deliberately absent.
+# checking mirror each component's own vocabulary: web, auth-realtime and
+# e2e pair lint/check-lint, and core wraps golangci-lint. Datagen has no
+# lint setup and is deliberately absent.
 .PHONY: lint
 lint:
 	@$(QUIET) "linting web" sh -c 'cd web && pnpm run lint'
-	@$(QUIET) "linting auth-realtime" sh -c 'cd server/auth-realtime && pnpm run qa-fix'
+	@$(QUIET) "linting auth-realtime" sh -c 'cd server/auth-realtime && pnpm run lint'
 	@$(QUIET) "linting core" sh -c 'cd server/core && make lint'
 	@$(QUIET) "linting e2e" sh -c 'cd e2e && pnpm run lint'
 
 .PHONY: check-lint
 check-lint:
 	@$(QUIET) "checking web" sh -c 'cd web && pnpm run check-lint'
-	@$(QUIET) "checking auth-realtime" sh -c 'cd server/auth-realtime && pnpm run qa'
+	@$(QUIET) "checking auth-realtime" sh -c 'cd server/auth-realtime && pnpm run check-lint'
 	@$(QUIET) "checking core" sh -c 'cd server/core && make check-lint'
 	@$(QUIET) "checking e2e" sh -c 'cd e2e && pnpm run check-lint'
 

@@ -19,6 +19,9 @@ import { transformer, cloneXmlElement } from "./ydocument.js"
 /** Canonical attribute name carried on every editor block. */
 const UID_ATTR = "uid"
 
+/** The sides an insert may name, as a widened list for validation. */
+const INSERT_POSITIONS: string[] = ["before", "after"]
+
 /**
  * One batched operation against a document. Shapes mirror the Go
  * canonical/op definitions; the Node side only validates the
@@ -177,29 +180,59 @@ export function applyOperations(doc: Y.Doc, ops: Operation[]): ApplyResult {
 function applyOperation(doc: Y.Doc, op: Operation): void {
 	switch (op.kind) {
 		case "insert":
-			return opInsert(doc, op)
+			opInsert(doc, op)
+			return
 		case "append":
-			return opAppend(doc, op)
+			opAppend(doc, op)
+			return
 		case "prepend":
-			return opPrepend(doc, op)
+			opPrepend(doc, op)
+			return
 		case "replace":
-			return opReplace(doc, op)
+			opReplace(doc, op)
+			return
 		case "update_text":
-			return opUpdateText(doc, op)
+			opUpdateText(doc, op)
+			return
 		case "update_attrs":
-			return opUpdateAttrs(doc, op)
+			opUpdateAttrs(doc, op)
+			return
 		case "delete":
-			return opDelete(doc, op)
+			opDelete(doc, op)
+			return
 		case "set_name":
-			return opSetName(doc, op)
+			opSetName(doc, op)
+			return
 		case "set_icon":
-			return opSetIcon(doc, op)
+			opSetIcon(doc, op)
+			return
+		default: {
+			// operations arrive as unvalidated JSON, so the switch
+			// can be handed a kind this service does not implement
+			// — which means the two sides have drifted apart.
+			// Falling through would report the no-op as applied.
+			const { kind } = op as { kind?: unknown }
+
+			throw new Error(
+				`unknown operation kind: ${String(kind)}`,
+			)
+		}
 	}
 }
 
 /* ---------------- per-op handlers ---------------- */
 
 function opInsert(doc: Y.Doc, op: InsertOp): void {
+	// the position is whatever the JSON payload carried, so anything but
+	// the two sides is rejected rather than silently taken as "after".
+	// Checked against a list because comparing the declared union against
+	// its own members reads as dead code to the type checker.
+	if (!INSERT_POSITIONS.includes(op.position)) {
+		throw new Error(
+			`insert position must be "before" or "after", got: ${op.position}`,
+		)
+	}
+
 	const found = findByUid(doc.getXmlFragment("content"), op.reference_uid)
 	if (!found) {
 		throw new Error(`reference_uid not found: ${op.reference_uid}`)
@@ -415,6 +448,7 @@ export function pmBlockToY(block: PMNode): Y.XmlElement {
  * content is empty so callers can skip the insert.
  */
 function buildInlineText(content: PMInline[]): Y.XmlText | null {
+	// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- operations arrive as unvalidated JSON, so the declared type is a claim about the caller rather than a guarantee about the value
 	if (!content || content.length === 0) {
 		return null
 	}
@@ -423,6 +457,7 @@ function buildInlineText(content: PMInline[]): Y.XmlText | null {
 	let cursor = 0
 
 	for (const node of content) {
+		// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- same as above: the node kind is whatever the JSON payload carried, not what the type says
 		if (node.type !== "text" || !node.text) {
 			continue
 		}

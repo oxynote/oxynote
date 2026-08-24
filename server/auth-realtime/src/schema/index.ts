@@ -49,7 +49,7 @@ import { AddedMark, DeletedMark, CommentMark } from "./marks.js"
 const contentExtensionsWithIDs: Extensions = [
 	Paragraph,
 	Heading.configure({ levels: [1, 2, 3] }).extend({
-		marks: `${CommentMark.name}`,
+		marks: CommentMark.name,
 	}),
 	HorizontalRule,
 	Blockquote,
@@ -115,7 +115,9 @@ export function getEditorExtensions(): Extensions {
 		UniqueID.configure({
 			types: contentExtensionsWithIDs.map((v) => v.name),
 			attributeName: "uid",
-			generateID: () => nanoid(),
+			// annotated because tiptap declares generateID as
+			// returning any, which propagates to the arrow
+			generateID: (): string => nanoid(),
 		}),
 	]
 }

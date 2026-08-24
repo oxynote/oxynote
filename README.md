@@ -151,7 +151,7 @@ cd server/core && go test ./...     # needs Docker for the db package tests
 cd server/core && make build        # goreleaser snapshot: binaries + images
 
 # server/auth-realtime
-cd server/auth-realtime && pnpm run qa
+cd server/auth-realtime && pnpm run qa   # check-lint + test
 ```
 
 See `server/README.md` for backend details.

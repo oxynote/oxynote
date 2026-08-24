@@ -73,7 +73,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 - `web/` — Nuxt 4 + Vue 3 frontend; ships as both a web app (SSR) and an Electron desktop app. Own **pnpm** workspace (includes the forked `packages/lezer-promql`). Details: [web/CLAUDE.md](web/CLAUDE.md).
 - `server/core/` — Go API server (`oxynote-core`). Go module `github.com/oxynote/oxynote/server/core`. Details: [server/CLAUDE.md](server/CLAUDE.md).
-- `server/auth-realtime/` — Node service (`@oxynote/auth-realtime`, **pnpm**) running Better Auth and a Hocuspocus (Yjs) server in one Hono process. Details: [server/CLAUDE.md](server/CLAUDE.md).
+- `server/auth-realtime/` — Node service (`@oxynote/auth-realtime`, **pnpm**) running Better Auth and a Hocuspocus (Yjs) server in one Hono process. Details: [server/auth-realtime/CLAUDE.md](server/auth-realtime/CLAUDE.md).
 - `datagen/` — demo-data generator; separate Go module `github.com/oxynote/oxynote/datagen`. Demo/testing only.
 - `e2e/` — Playwright end-to-end suite (`@oxynote/e2e`, **pnpm**) plus the docker-compose stack it drives. Not shipped; it exercises the composed product through a real backend built from this repo. Details: [e2e/CLAUDE.md](e2e/CLAUDE.md).
 - `scripts/` — helpers the root Makefile calls. `run-quietly.sh` runs a build step with its output held back, replaying the log only if the step fails.

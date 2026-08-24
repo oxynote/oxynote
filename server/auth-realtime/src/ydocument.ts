@@ -33,6 +33,8 @@ export function cloneXmlElement(source: Y.XmlElement): Y.XmlElement {
 	const attrs = source.getAttributes()
 	for (const [key, value] of Object.entries(attrs)) {
 		if (value === undefined) {
+			// NOCOV: getAttributes never yields an undefined value for a
+			// key it reports, so this only guards a future yjs change.
 			continue
 		}
 
@@ -47,8 +49,10 @@ export function cloneXmlElement(source: Y.XmlElement): Y.XmlElement {
 					return cloneXmlElement(child)
 				}
 				const newText = new Y.XmlText()
+				// Y.XmlText.toDelta is declared as returning
+				// `any`, while applyDelta wants a delta list.
 				newText.applyDelta(
-					(child as Y.XmlText).toDelta(),
+					(child as Y.XmlText).toDelta() as any[],
 				)
 				return newText
 			}),
@@ -64,8 +68,11 @@ function cloneXmlFragment(source: Y.XmlFragment, target: Y.XmlFragment): void {
 		if (item instanceof Y.XmlElement) {
 			target.insert(i, [cloneXmlElement(item)])
 		} else if (item instanceof Y.XmlText) {
+			// NOCOV: both fragments this runs over come from the tiptap
+			// transformer, whose schema only ever puts block elements at
+			// the top level — bare text there is unreachable today.
 			const newText = new Y.XmlText()
-			newText.applyDelta(item.toDelta())
+			newText.applyDelta(item.toDelta() as any[])
 			target.insert(i, [newText])
 		}
 	}
