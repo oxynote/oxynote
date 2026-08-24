@@ -1,5 +1,12 @@
 package provider
 
+import (
+	_ "embed"
+	"encoding/json"
+	"fmt"
+	"slices"
+)
+
 const (
 	// StatusActive specifies that the configured model meets the
 	// assistant's recommended strength.
@@ -28,108 +35,73 @@ func (s Status) Active() bool {
 	return s == StatusActive || s == StatusActiveButWeak
 }
 
-// _claudeModels maps the supported Anthropic model ids to the status
-// running the assistant on them yields.
-var _claudeModels = map[string]Status{
-	"claude-fable-5":    StatusActive,
-	"claude-opus-5":     StatusActive,
-	"claude-opus-4-6":   StatusActive,
-	"claude-sonnet-5":   StatusActiveButWeak,
-	"claude-sonnet-4-6": StatusActiveButWeak,
-	"claude-haiku-4-5":  StatusInactiveTooWeak,
+// modelList describes one provider's entry in the embedded model list.
+type modelList struct {
+	// Default specifies the model used when the operator does not set
+	// one: the provider's strongest supported model.
+	Default string `json:"default"`
+
+	// Models groups the supported model ids by the status running the
+	// assistant on them yields. A model in no group is not supported
+	// and reports StatusInactive.
+	Models map[Status][]string `json:"models"`
 }
 
-// _openAIModels maps the supported OpenAI model ids to the status
-// running the assistant on them yields.
-var _openAIModels = map[string]Status{
-	"gpt-5.1":    StatusActive,
-	"gpt-5":      StatusActive,
-	"gpt-5-mini": StatusActiveButWeak,
-	"gpt-5-nano": StatusInactiveTooWeak,
+// status returns the status running the assistant on the given model
+// yields, or StatusInactive when the model is not on the list.
+func (ml modelList) status(model string) Status {
+	for status, ids := range ml.Models {
+		if slices.Contains(ids, model) {
+			return status
+		}
+	}
+
+	return StatusInactive
 }
 
-// _geminiModels maps the supported Gemini model ids to the status
-// running the assistant on them yields.
-var _geminiModels = map[string]Status{
-	"gemini-3-pro-preview":  StatusActive,
-	"gemini-2.5-pro":        StatusActive,
-	"gemini-2.5-flash":      StatusActiveButWeak,
-	"gemini-2.5-flash-lite": StatusInactiveTooWeak,
-}
+// _modelsJSON is the embedded per-provider model list: every supported
+// model id with its status, and the default model, per provider. The
+// OpenRouter entries mirror the vendors' own ids behind their vendor
+// prefix.
+//
+//go:embed models/models.json
+var _modelsJSON []byte
 
-// _ollamaModels maps the supported self-hosted model ids to the status
-// running the assistant on them yields. No local model reaches full
-// strength: the assistant is entirely tool-driven, and none of these
-// call tools against a large schema as reliably as the hosted models.
-var _ollamaModels = map[string]Status{
-	"llama3.3:70b": StatusActiveButWeak,
-	"qwen3:32b":    StatusActiveButWeak,
-}
-
-// _modelStatuses lists, per provider, every supported model id and the
-// status running the assistant on it yields. A model missing from its
-// provider's list is not supported and reports StatusInactive.
-var _modelStatuses = map[Provider]map[string]Status{
-	ProviderClaude:     _claudeModels,
-	ProviderOpenAI:     _openAIModels,
-	ProviderGemini:     _geminiModels,
-	ProviderOllama:     _ollamaModels,
-	ProviderOpenRouter: openRouterModels(),
-}
-
-// _defaultModels names the model each provider falls back on when the
-// operator does not set one: the strongest supported model, so an
-// unconfigured deployment starts at full strength rather than at the
-// cheapest tier.
-var _defaultModels = map[Provider]string{
-	ProviderClaude:     "claude-opus-5",
-	ProviderOpenAI:     "gpt-5.1",
-	ProviderGemini:     "gemini-2.5-pro",
-	ProviderOllama:     "llama3.3:70b",
-	ProviderOpenRouter: "anthropic/claude-opus-5",
-}
-
-// DefaultModel returns the model the provider defaults to when the
-// operator does not set one, or an empty string for a provider this
-// build does not support.
-func (p Provider) DefaultModel() string {
-	return _defaultModels[p]
-}
+// _models holds the parsed model list; _modelsErr holds the parse
+// failure, which ModelStatus reports instead of silently judging every
+// model against an empty list.
+var _models, _modelsErr = parseModels(_modelsJSON)
 
 // ModelStatus validates the options and classifies the configured
 // model against the provider's supported list: whether the assistant
 // runs at full strength, runs with limitations, or does not run at
 // all. A model outside the list reports StatusInactive.
 func (o Options) ModelStatus() (Status, error) {
+	if _modelsErr != nil {
+		// NOCOV: the embedded file is pinned valid by the parse test.
+		return StatusInactive, fmt.Errorf("parsing the embedded model list: %w", _modelsErr)
+	}
+
 	if err := o.validate(); err != nil {
 		return StatusInactive, err
 	}
 
-	status, ok := _modelStatuses[o.Provider][o.Model]
-	if !ok {
-		return StatusInactive, nil
-	}
-
-	return status, nil
+	return _models[o.Provider].status(o.Model), nil
 }
 
-// openRouterModels derives the OpenRouter list from the vendor lists:
-// OpenRouter serves the same models behind a vendor-prefixed id, so
-// the support decision stays stated once, on the vendor's own list.
-func openRouterModels() map[string]Status {
-	vendors := map[string]map[string]Status{
-		"anthropic/": _claudeModels,
-		"openai/":    _openAIModels,
-		"google/":    _geminiModels,
+// DefaultModel returns the model the provider defaults to when the
+// operator does not set one, or an empty string for a provider this
+// build does not support.
+func (p Provider) DefaultModel() string {
+	return _models[p].Default
+}
+
+// parseModels decodes a per-provider model list from raw JSON.
+func parseModels(data []byte) (map[Provider]modelList, error) {
+	models := make(map[Provider]modelList)
+	if err := json.Unmarshal(data, &models); err != nil {
+		return nil, err
 	}
 
-	models := make(map[string]Status)
-
-	for prefix, vendor := range vendors {
-		for id, status := range vendor {
-			models[prefix+id] = status
-		}
-	}
-
-	return models
+	return models, nil
 }

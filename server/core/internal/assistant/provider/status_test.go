@@ -5,6 +5,7 @@ import (
 
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func Test_Status_Active(t *testing.T) {
@@ -116,19 +117,81 @@ func Test_Provider_DefaultModel(t *testing.T) {
 
 			// a default that is not on its provider's supported list
 			// would disable the assistant instead of enabling it.
-			assert.Contains(t, _modelStatuses[c.Provider], result)
+			assert.NotEqual(t, StatusInactive, _models[c.Provider].status(result))
 		})
 	}
 }
 
-func Test_openRouterModels(t *testing.T) {
+func Test_parseModels(t *testing.T) {
 	t.Parallel()
 
-	models := openRouterModels()
+	// error
+	models, err := parseModels([]byte("{"))
+	require.Error(t, err)
+	assert.Nil(t, models)
 
-	assert.Len(t, models, len(_claudeModels)+len(_openAIModels)+len(_geminiModels))
-	assert.Equal(t, StatusActive, models["anthropic/claude-opus-5"])
-	assert.Equal(t, StatusActive, models["openai/gpt-5"])
-	assert.Equal(t, StatusActive, models["google/gemini-2.5-pro"])
-	assert.Equal(t, StatusInactiveTooWeak, models["anthropic/claude-haiku-4-5"])
+	// success: parse the embedded file itself, pinning that every
+	// supported provider has an entry, every entry belongs to a
+	// supported provider, each default is on its own list, every group
+	// carries a status a listed model can have, and no model id appears
+	// in two groups — map iteration would make such a duplicate resolve
+	// to a random status.
+	models, err = parseModels(_modelsJSON)
+	require.NoError(t, err)
+
+	for _, p := range _providers {
+		require.Contains(t, models, p)
+	}
+
+	for p, ml := range models {
+		require.NoError(t, p.Validate())
+		assert.NotEqual(t, StatusInactive, ml.status(ml.Default), p)
+
+		seen := make(map[string]bool)
+
+		for status, ids := range ml.Models {
+			assert.Contains(
+				t,
+				[]Status{StatusActive, StatusActiveButWeak, StatusInactiveTooWeak},
+				status,
+				string(p),
+			)
+
+			for _, id := range ids {
+				assert.False(t, seen[id], "%s/%s listed twice", string(p), id)
+
+				seen[id] = true
+			}
+		}
+	}
+}
+
+func Test_modelList_status(t *testing.T) {
+	t.Parallel()
+
+	ml := modelList{
+		Models: map[Status][]string{
+			StatusActive:          {"strong"},
+			StatusActiveButWeak:   {"medium"},
+			StatusInactiveTooWeak: {"small"},
+		},
+	}
+
+	cc := map[string]struct {
+		Model  string
+		Result Status
+	}{
+		"Full strength model": {Model: "strong", Result: StatusActive},
+		"Weaker model":        {Model: "medium", Result: StatusActiveButWeak},
+		"Too weak model":      {Model: "small", Result: StatusInactiveTooWeak},
+		"Unlisted model":      {Model: "unknown", Result: StatusInactive},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, ml.status(c.Model))
+		})
+	}
 }
