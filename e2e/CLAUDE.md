@@ -308,10 +308,15 @@ something no cheaper tier can.
   `web/` states, enforced by construction rather than by mock resetting.
   A workspace slug is unique server-side, so two tests sharing one would
   fail on the second, exactly as two sharing an email would.
-- **Workers are capped at four.** Every test's setup is three
-  cross-service round trips against one core and one postgres; past a
-  few workers the setup starts timing out, which reads as flaky tests
-  when it is only load.
+- **Workers are capped at four locally and two on CI.** Every test's
+  setup is several cross-service round trips against one core and one
+  postgres; past a few workers the setup starts timing out, which reads
+  as flaky tests when it is only load — and a private-repo CI runner has
+  two vCPUs for the stack and the browsers together. For the same
+  reason the test budget is 60s (a 7s local test is a 40s test on that
+  runner), and the collaboration tests are marked slow, tripling theirs:
+  each one runs two signups, two verifications, an invitation and its
+  acceptance before the first assertion.
 - **No test depends on another's state or on execution order**, and no
   test cleans up after itself: the stack's database is thrown away
   wholesale, which is why it carries no volumes.

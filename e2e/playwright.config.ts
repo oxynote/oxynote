@@ -8,7 +8,14 @@ export default defineConfig({
 	// workspace before it starts, and the stack answers all of them from
 	// one core and one postgres. Past a few workers the setup itself
 	// starts timing out, which reads as flaky tests when it is only load.
-	workers: 4,
+	// CI gets fewer still: a private-repo runner has two vCPUs for the
+	// whole stack and the browsers together.
+	workers: process.env.CI ? 2 : 4,
+	// the default 30s budget contradicts the suite's own waits — a login
+	// redirect is allowed 15s and an invite acceptance 30s, because they
+	// are cross-service chains that stretch under load. CI runs the whole
+	// stack on two cores, where a test that takes 7s locally takes 40.
+	timeout: 60_000,
 	forbidOnly: !!process.env.CI,
 	retries: process.env.CI ? 2 : 0,
 	// github gives inline annotations on the PR; html is what the

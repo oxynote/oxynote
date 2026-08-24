@@ -14,6 +14,13 @@ import { visit } from "../helpers/page"
 import { signUpWithWorkspace } from "../helpers/workspace"
 
 test.describe("collaboration", () => {
+	// the heaviest setup in the suite: every test runs two signups, two
+	// email verifications, an invitation and its acceptance before the
+	// first assertion. slow() triples the budget for exactly these tests.
+	test.beforeEach(() => {
+		test.slow()
+	})
+
 	test("shows text typed by one user to the other", async ({
 		page,
 		request,
