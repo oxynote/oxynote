@@ -64,11 +64,11 @@ type Options struct {
 	Azure AzureOptions
 
 	// Bedrock holds AWS Bedrock settings, read only when Provider is
-	// ProviderClaude.
+	// ProviderAnthropic.
 	Bedrock BedrockOptions
 
 	// Vertex holds Google Vertex settings, read only when Provider is
-	// ProviderClaude.
+	// ProviderAnthropic.
 	Vertex VertexOptions
 }
 
@@ -146,7 +146,7 @@ func (o Options) requiresAPIKey() bool {
 		return false
 	}
 
-	if o.Provider == ProviderClaude {
+	if o.Provider == ProviderAnthropic {
 		return !o.Bedrock.Enabled && !o.Vertex.Enabled
 	}
 

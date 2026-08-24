@@ -25,9 +25,9 @@ func Test_Provider_Validate(t *testing.T) {
 		Provider Provider
 		Err      error
 	}{
-		"Claude is supported":     {Provider: ProviderClaude},
+		"Anthropic is supported":  {Provider: ProviderAnthropic},
 		"OpenAI is supported":     {Provider: ProviderOpenAI},
-		"Gemini is supported":     {Provider: ProviderGemini},
+		"Google is supported":     {Provider: ProviderGoogle},
 		"Ollama is supported":     {Provider: ProviderOllama},
 		"OpenRouter is supported": {Provider: ProviderOpenRouter},
 		"Unknown provider": {
@@ -68,9 +68,9 @@ func Test_ParseProvider(t *testing.T) {
 		Inp    string
 		Result Provider
 	}{
-		"Exact match":         {Inp: "claude", Result: ProviderClaude},
+		"Exact match":         {Inp: "anthropic", Result: ProviderAnthropic},
 		"Mixed case":          {Inp: "OpenAI", Result: ProviderOpenAI},
-		"Surrounding spaces":  {Inp: "  gemini  ", Result: ProviderGemini},
+		"Surrounding spaces":  {Inp: "  google  ", Result: ProviderGoogle},
 		"Upper case and tabs": {Inp: "\tOLLAMA\n", Result: ProviderOllama},
 		"Unknown passes through": {
 			Inp:    "cohere",
@@ -91,7 +91,7 @@ func Test_ParseProvider(t *testing.T) {
 func Test_supported(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, "claude, openai, gemini, ollama, openrouter", supported())
+	assert.Equal(t, "anthropic, openai, google, ollama, openrouter", supported())
 }
 
 func Test_New(t *testing.T) {
@@ -108,7 +108,7 @@ func Test_New(t *testing.T) {
 			ErrContains: "not supported",
 		},
 		"Missing model": {
-			Opts: Options{Provider: ProviderClaude, APIKey: "k"},
+			Opts: Options{Provider: ProviderAnthropic, APIKey: "k"},
 			Err:  ErrMissingModel,
 		},
 		"Missing api key": {
@@ -117,7 +117,7 @@ func Test_New(t *testing.T) {
 		},
 		"Claude": {
 			Opts: Options{
-				Provider: ProviderClaude,
+				Provider: ProviderAnthropic,
 				Model:    "claude-opus-4-6",
 				APIKey:   "k",
 			},
@@ -131,7 +131,7 @@ func Test_New(t *testing.T) {
 		},
 		"Gemini": {
 			Opts: Options{
-				Provider: ProviderGemini,
+				Provider: ProviderGoogle,
 				Model:    "gemini-2.5-pro",
 				APIKey:   "k",
 			},

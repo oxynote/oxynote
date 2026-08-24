@@ -32,7 +32,7 @@ func Test_Options_validate(t *testing.T) {
 			Err:  ErrMissingAPIKey,
 		},
 		"Gemini without api key": {
-			Opts: Options{Provider: ProviderGemini, Model: "gemini-2.5-pro"},
+			Opts: Options{Provider: ProviderGoogle, Model: "gemini-2.5-pro"},
 			Err:  ErrMissingAPIKey,
 		},
 		"OpenRouter without api key": {
@@ -40,22 +40,22 @@ func Test_Options_validate(t *testing.T) {
 			Err:  ErrMissingAPIKey,
 		},
 		"Claude without api key or cloud credentials": {
-			Opts: Options{Provider: ProviderClaude, Model: "claude-opus-4-6"},
+			Opts: Options{Provider: ProviderAnthropic, Model: "claude-opus-4-6"},
 			Err:  ErrMissingAPIKey,
 		},
 		"Claude with api key": {
-			Opts: Options{Provider: ProviderClaude, Model: "claude-opus-4-6", APIKey: "k"},
+			Opts: Options{Provider: ProviderAnthropic, Model: "claude-opus-4-6", APIKey: "k"},
 		},
 		"Claude via bedrock": {
 			Opts: Options{
-				Provider: ProviderClaude,
+				Provider: ProviderAnthropic,
 				Model:    "claude-opus-4-6",
 				Bedrock:  BedrockOptions{Enabled: true},
 			},
 		},
 		"Claude via vertex": {
 			Opts: Options{
-				Provider: ProviderClaude,
+				Provider: ProviderAnthropic,
 				Model:    "claude-opus-4-6",
 				Vertex:   VertexOptions{Enabled: true},
 			},
@@ -89,11 +89,11 @@ func Test_Options_requiresAPIKey(t *testing.T) {
 	}{
 		"Ollama never does":            {Opts: Options{Provider: ProviderOllama}},
 		"OpenAI does":                  {Opts: Options{Provider: ProviderOpenAI}, Result: true},
-		"Gemini does":                  {Opts: Options{Provider: ProviderGemini}, Result: true},
+		"Gemini does":                  {Opts: Options{Provider: ProviderGoogle}, Result: true},
 		"OpenRouter does":              {Opts: Options{Provider: ProviderOpenRouter}, Result: true},
-		"Claude does when direct":      {Opts: Options{Provider: ProviderClaude}, Result: true},
-		"Claude does not with bedrock": {Opts: Options{Provider: ProviderClaude, Bedrock: BedrockOptions{Enabled: true}}},
-		"Claude does not with vertex":  {Opts: Options{Provider: ProviderClaude, Vertex: VertexOptions{Enabled: true}}},
+		"Claude does when direct":      {Opts: Options{Provider: ProviderAnthropic}, Result: true},
+		"Claude does not with bedrock": {Opts: Options{Provider: ProviderAnthropic, Bedrock: BedrockOptions{Enabled: true}}},
+		"Claude does not with vertex":  {Opts: Options{Provider: ProviderAnthropic, Vertex: VertexOptions{Enabled: true}}},
 	}
 
 	for cn, c := range cc {

@@ -544,7 +544,7 @@ func assistantProviderOptions() (provider.Options, error) {
 			Enabled:    buildinfo.Getenv("ASSISTANT_AZURE_API_VERSION") != "",
 			APIVersion: buildinfo.Getenv("ASSISTANT_AZURE_API_VERSION"),
 		}
-	case provider.ProviderClaude:
+	case provider.ProviderAnthropic:
 		opts.Bedrock = provider.BedrockOptions{
 			Enabled:         buildinfo.Getenv("ASSISTANT_BEDROCK_REGION") != "",
 			Region:          buildinfo.Getenv("ASSISTANT_BEDROCK_REGION"),
@@ -558,7 +558,7 @@ func assistantProviderOptions() (provider.Options, error) {
 			Region:             buildinfo.Getenv("ASSISTANT_VERTEX_REGION"),
 			ServiceAccountJSON: []byte(buildinfo.Getenv("ASSISTANT_VERTEX_SERVICE_ACCOUNT_JSON")),
 		}
-	case provider.ProviderGemini, provider.ProviderOllama, provider.ProviderOpenRouter:
+	case provider.ProviderGoogle, provider.ProviderOllama, provider.ProviderOpenRouter:
 		// no vendor-specific settings beyond the common ones.
 	}
 
@@ -597,13 +597,13 @@ func assistantModels(ctx context.Context, log *slog.Logger) (
 	}
 
 	switch status {
-	case provider.StatusActive:
+	case provider.StatusActive, provider.StatusInactive:
+		// nothing to warn about: full strength needs no caveat, and
+		// inactive only arrives alongside an error handled above.
 	case provider.StatusActiveButWeak:
 		log.Warn("assistant model is weaker than recommended", slog.String("model", opts.Model))
 	case provider.StatusInactiveTooWeak:
 		log.Warn("assistant model is too weak to run the assistant", slog.String("model", opts.Model))
-	case provider.StatusInactive:
-		log.Warn("assistant model is not supported", slog.String("model", opts.Model))
 	}
 
 	if !status.Active() {

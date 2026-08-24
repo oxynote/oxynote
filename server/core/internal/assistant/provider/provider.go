@@ -15,16 +15,16 @@ import (
 )
 
 const (
-	// ProviderClaude specifies Anthropic's Claude, reachable directly or
-	// through AWS Bedrock and Google Vertex.
-	ProviderClaude Provider = "claude"
+	// ProviderAnthropic specifies Anthropic's Claude models, reachable
+	// directly or through AWS Bedrock and Google Vertex.
+	ProviderAnthropic Provider = "anthropic"
 
 	// ProviderOpenAI specifies OpenAI, Azure OpenAI, and any endpoint
 	// speaking the OpenAI chat-completions protocol.
 	ProviderOpenAI Provider = "openai"
 
-	// ProviderGemini specifies Google's Gemini models.
-	ProviderGemini Provider = "gemini"
+	// ProviderGoogle specifies Google's Gemini models.
+	ProviderGoogle Provider = "google"
 
 	// ProviderOllama specifies a self-hosted Ollama server.
 	ProviderOllama Provider = "ollama"
@@ -44,9 +44,9 @@ var ErrInvalidProvider = errors.New("invalid assistant provider")
 // _providers lists every supported provider in the order they are
 // reported to the user, so the error message reads the same every time.
 var _providers = []Provider{
-	ProviderClaude,
+	ProviderAnthropic,
 	ProviderOpenAI,
-	ProviderGemini,
+	ProviderGoogle,
 	ProviderOllama,
 	ProviderOpenRouter,
 }
@@ -89,11 +89,11 @@ func New(ctx context.Context, opts Options) (model.ToolCallingChatModel, error) 
 	}
 
 	switch opts.Provider {
-	case ProviderClaude:
+	case ProviderAnthropic:
 		return newClaude(ctx, opts)
 	case ProviderOpenAI:
 		return newOpenAI(ctx, opts)
-	case ProviderGemini:
+	case ProviderGoogle:
 		return newGemini(ctx, opts)
 	case ProviderOllama:
 		return newOllama(ctx, opts)

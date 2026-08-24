@@ -65,7 +65,7 @@ by picking a provider in `docker/env/core.local.env`; the model is
 optional and defaults to the provider's strongest supported one:
 
 ```sh
-OXYNOTE_CORE_ASSISTANT_PROVIDER=claude
+OXYNOTE_CORE_ASSISTANT_PROVIDER=anthropic
 OXYNOTE_CORE_ASSISTANT_MODEL=claude-opus-4-6
 OXYNOTE_CORE_ASSISTANT_API_KEY=sk-...
 ```
@@ -74,9 +74,9 @@ Switching providers is an env change and a restart — no rebuild.
 
 | provider | credentials | supported models |
 | --- | --- | --- |
-| `claude` | `ASSISTANT_API_KEY`, or `ASSISTANT_BEDROCK_*` / `ASSISTANT_VERTEX_*` | `claude-fable-5`, `claude-opus-5` (default), `claude-opus-4-6`, `claude-sonnet-5`, `claude-sonnet-4-6`, `claude-haiku-4-5` |
-| `openai` | `ASSISTANT_API_KEY` (+ `ASSISTANT_AZURE_API_VERSION` for Azure) | `gpt-5.1` (default), `gpt-5`, `gpt-5-mini`, `gpt-5-nano` |
-| `gemini` | `ASSISTANT_API_KEY` | `gemini-3-pro-preview`, `gemini-2.5-pro` (default), `gemini-2.5-flash`, `gemini-2.5-flash-lite` |
+| `anthropic` | `ASSISTANT_API_KEY`, or `ASSISTANT_BEDROCK_*` / `ASSISTANT_VERTEX_*` | `claude-fable-5`, `claude-opus-5` (default), `claude-opus-4-6`, `claude-sonnet-5`, `claude-sonnet-4-6` |
+| `openai` | `ASSISTANT_API_KEY` (+ `ASSISTANT_AZURE_API_VERSION` for Azure) | `gpt-5.1` (default), `gpt-5`, `gpt-5-mini` |
+| `google` | `ASSISTANT_API_KEY` | `gemini-3-pro-preview`, `gemini-2.5-pro` (default), `gemini-2.5-flash` |
 | `ollama` | none; set `ASSISTANT_BASE_URL` to your server | `llama3.3:70b` (default), `qwen3:32b` |
 | `openrouter` | `ASSISTANT_API_KEY` | the models above behind their vendor prefix (`anthropic/claude-opus-5` (default), `openai/gpt-5`, `google/gemini-2.5-pro`, …) |
 

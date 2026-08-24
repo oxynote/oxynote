@@ -19,14 +19,14 @@ func Test_newClaude(t *testing.T) {
 	}{
 		"Direct with api key": {
 			Opts: Options{
-				Provider: ProviderClaude,
+				Provider: ProviderAnthropic,
 				Model:    "claude-opus-4-6",
 				APIKey:   "k",
 			},
 		},
 		"Bedrock needs no api key": {
 			Opts: Options{
-				Provider: ProviderClaude,
+				Provider: ProviderAnthropic,
 				Model:    "anthropic.claude-opus-4-6",
 				Bedrock: BedrockOptions{
 					Enabled:         true,
@@ -37,11 +37,11 @@ func Test_newClaude(t *testing.T) {
 			},
 		},
 		"Optional tuning": {
-			Opts: tunedOptions(ProviderClaude, "claude-opus-4-6"),
+			Opts: tunedOptions(ProviderAnthropic, "claude-opus-4-6"),
 		},
 		"Vertex without a project id": {
 			Opts: Options{
-				Provider: ProviderClaude,
+				Provider: ProviderAnthropic,
 				Model:    "claude-opus-4-6",
 				Vertex:   VertexOptions{Enabled: true, Region: "us-east5"},
 			},

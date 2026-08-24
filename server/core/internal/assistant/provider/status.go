@@ -16,13 +16,14 @@ const (
 	// assistant, but with limitations the operator should expect.
 	StatusActiveButWeak Status = "active-but-weak"
 
-	// StatusInactiveTooWeak specifies that the configured model is too
-	// weak to run the assistant, which is therefore disabled.
+	// StatusInactiveTooWeak specifies that the configured model is not
+	// known to be strong enough to run the assistant — it is either
+	// listed as too weak or not listed at all — so the assistant is
+	// disabled.
 	StatusInactiveTooWeak Status = "inactive-too-weak"
 
-	// StatusInactive specifies that the assistant is disabled: either
-	// no provider is configured or the configured model is not one this
-	// build supports.
+	// StatusInactive specifies that the assistant is disabled because
+	// no provider is configured.
 	StatusInactive Status = "inactive"
 )
 
@@ -42,13 +43,14 @@ type modelList struct {
 	Default string `json:"default"`
 
 	// Models groups the supported model ids by the status running the
-	// assistant on them yields. A model in no group is not supported
-	// and reports StatusInactive.
+	// assistant on them yields. Only the two active tiers are listed:
+	// a model in no group is StatusInactiveTooWeak.
 	Models map[Status][]string `json:"models"`
 }
 
 // status returns the status running the assistant on the given model
-// yields, or StatusInactive when the model is not on the list.
+// yields. A model outside the list is not known to be strong enough,
+// so it reports StatusInactiveTooWeak.
 func (ml modelList) status(model string) Status {
 	for status, ids := range ml.Models {
 		if slices.Contains(ids, model) {
@@ -56,7 +58,7 @@ func (ml modelList) status(model string) Status {
 		}
 	}
 
-	return StatusInactive
+	return StatusInactiveTooWeak
 }
 
 // _modelsJSON is the embedded per-provider model list: every supported
@@ -75,7 +77,7 @@ var _models, _modelsErr = parseModels(_modelsJSON)
 // ModelStatus validates the options and classifies the configured
 // model against the provider's supported list: whether the assistant
 // runs at full strength, runs with limitations, or does not run at
-// all. A model outside the list reports StatusInactive.
+// all. A model outside the list reports StatusInactiveTooWeak.
 func (o Options) ModelStatus() (Status, error) {
 	if _modelsErr != nil {
 		// NOCOV: the embedded file is pinned valid by the parse test.

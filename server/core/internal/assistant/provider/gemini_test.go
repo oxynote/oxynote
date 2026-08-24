@@ -24,7 +24,7 @@ func Test_newGemini(t *testing.T) {
 	}{
 		"Defaults": {
 			Opts: Options{
-				Provider: ProviderGemini,
+				Provider: ProviderGoogle,
 				Model:    "gemini-2.5-pro",
 				APIKey:   "k",
 			},
@@ -38,7 +38,7 @@ func Test_newGemini(t *testing.T) {
 			Config: &gemini.Config{Model: "gemini-2.5-pro"},
 		},
 		"Optional tuning": {
-			Opts: tunedOptions(ProviderGemini, "gemini-2.5-pro"),
+			Opts: tunedOptions(ProviderGoogle, "gemini-2.5-pro"),
 			Client: &genai.ClientConfig{
 				APIKey:  "k",
 				Backend: genai.BackendGeminiAPI,

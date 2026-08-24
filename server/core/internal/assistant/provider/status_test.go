@@ -40,23 +40,19 @@ func Test_Options_ModelStatus(t *testing.T) {
 		Err    error
 	}{
 		"Invalid options": {
-			Opts: Options{Provider: ProviderClaude, Model: "claude-opus-5"},
+			Opts: Options{Provider: ProviderAnthropic, Model: "claude-opus-5"},
 			Err:  ErrMissingAPIKey,
 		},
-		"Unsupported model": {
-			Opts:   Options{Provider: ProviderClaude, Model: "claude-2", APIKey: "k"},
-			Result: StatusInactive,
-		},
 		"Full strength model": {
-			Opts:   Options{Provider: ProviderClaude, Model: "claude-opus-5", APIKey: "k"},
+			Opts:   Options{Provider: ProviderAnthropic, Model: "claude-opus-5", APIKey: "k"},
 			Result: StatusActive,
 		},
 		"Weaker model": {
-			Opts:   Options{Provider: ProviderClaude, Model: "claude-sonnet-5", APIKey: "k"},
+			Opts:   Options{Provider: ProviderAnthropic, Model: "claude-sonnet-5", APIKey: "k"},
 			Result: StatusActiveButWeak,
 		},
-		"Too weak model": {
-			Opts:   Options{Provider: ProviderClaude, Model: "claude-haiku-4-5", APIKey: "k"},
+		"Unlisted model": {
+			Opts:   Options{Provider: ProviderAnthropic, Model: "claude-haiku-4-5", APIKey: "k"},
 			Result: StatusInactiveTooWeak,
 		},
 		"Supported ollama model": {
@@ -96,9 +92,9 @@ func Test_Provider_DefaultModel(t *testing.T) {
 		Provider Provider
 		Result   string
 	}{
-		"Claude":           {Provider: ProviderClaude, Result: "claude-opus-5"},
+		"Claude":           {Provider: ProviderAnthropic, Result: "claude-opus-5"},
 		"OpenAI":           {Provider: ProviderOpenAI, Result: "gpt-5.1"},
-		"Gemini":           {Provider: ProviderGemini, Result: "gemini-2.5-pro"},
+		"Gemini":           {Provider: ProviderGoogle, Result: "gemini-2.5-pro"},
 		"Ollama":           {Provider: ProviderOllama, Result: "llama3.3:70b"},
 		"OpenRouter":       {Provider: ProviderOpenRouter, Result: "anthropic/claude-opus-5"},
 		"Unknown provider": {Provider: "cohere"},
@@ -117,7 +113,7 @@ func Test_Provider_DefaultModel(t *testing.T) {
 
 			// a default that is not on its provider's supported list
 			// would disable the assistant instead of enabling it.
-			assert.NotEqual(t, StatusInactive, _models[c.Provider].status(result))
+			assert.True(t, _models[c.Provider].status(result).Active())
 		})
 	}
 }
@@ -145,14 +141,14 @@ func Test_parseModels(t *testing.T) {
 
 	for p, ml := range models {
 		require.NoError(t, p.Validate())
-		assert.NotEqual(t, StatusInactive, ml.status(ml.Default), p)
+		assert.True(t, ml.status(ml.Default).Active(), p)
 
 		seen := make(map[string]bool)
 
 		for status, ids := range ml.Models {
 			assert.Contains(
 				t,
-				[]Status{StatusActive, StatusActiveButWeak, StatusInactiveTooWeak},
+				[]Status{StatusActive, StatusActiveButWeak},
 				status,
 				string(p),
 			)
@@ -171,9 +167,8 @@ func Test_modelList_status(t *testing.T) {
 
 	ml := modelList{
 		Models: map[Status][]string{
-			StatusActive:          {"strong"},
-			StatusActiveButWeak:   {"medium"},
-			StatusInactiveTooWeak: {"small"},
+			StatusActive:        {"strong"},
+			StatusActiveButWeak: {"medium"},
 		},
 	}
 
@@ -183,8 +178,7 @@ func Test_modelList_status(t *testing.T) {
 	}{
 		"Full strength model": {Model: "strong", Result: StatusActive},
 		"Weaker model":        {Model: "medium", Result: StatusActiveButWeak},
-		"Too weak model":      {Model: "small", Result: StatusInactiveTooWeak},
-		"Unlisted model":      {Model: "unknown", Result: StatusInactive},
+		"Unlisted model":      {Model: "unknown", Result: StatusInactiveTooWeak},
 	}
 
 	for cn, c := range cc {
