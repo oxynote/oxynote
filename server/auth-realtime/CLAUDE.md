@@ -202,10 +202,27 @@ stale.
   [src/test-setup.ts](src/test-setup.ts) turns that warning into a failure so
   it cannot be missed: vitest prints intercepted stderr only under the
   verbose reporter, so in a piped or CI run the warning is invisible.
-- `src/schema/` is out of scope for the suite: it is a declarative mirror of
-  web's tiptap extension list, and the behaviour that depends on it is
-  covered through the transformer in `ydocument` and `operations`. It is
-  excluded from coverage.
+- `src/schema/` is the one place that departs from 1:1 pairing: the whole
+  directory is tested through [src/schema/index.test.ts](src/schema/index.test.ts)
+  rather than a test file per node. The files are one unit — a single
+  editor schema, re-exported through `index.ts` — and the tests that
+  matter run against the assembled whole: a node round-tripped through
+  the transformer proves it is registered, which no per-file test can.
+  The per-node HTML assertions are data tables in the same file for the
+  same reason.
+
+  What the suite pins there is the contract with the two services on
+  either side. **Round trips** (prosemirror JSON → Y.Doc → prosemirror
+  JSON) prove the schema knows each node, because a node it does not know
+  is silently dropped on the way through — including the non-string
+  attributes (`queries`, `thresholds`) that `cloneXmlElement` exists to
+  protect. **The uid list** on the `UniqueID` extension is checked to
+  contain every addressable block and to name only extensions that
+  exist, because `operations.ts` addresses blocks by uid and a block
+  missing from that list is one the assistant can never edit. **The
+  `data-type` strings** are pinned because this service never serializes
+  to HTML — those callbacks exist purely to stay identical to web's
+  definitions, so nothing else would notice them drifting apart.
 
 ### Naming
 

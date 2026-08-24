@@ -36,11 +36,6 @@ export default defineConfig({
 				// loaded through node's --import before the app
 				// graph exists, so it can hold no imports of ours
 				"src/sentry.ts",
-				// the editor schema mirrors web's tiptap
-				// extension list; it is configuration, and the
-				// behaviour that depends on it is covered through
-				// the transformer in ydocument and operations
-				"src/schema/**",
 				"src/**/test-helpers.ts",
 				"src/test-setup.ts",
 			],
@@ -49,10 +44,10 @@ export default defineConfig({
 			// genuinely untestable branches stay visible in the
 			// report, marked with NOCOV comments in place
 			thresholds: {
-				statements: 98.4,
-				branches: 96.3,
-				functions: 98.4,
-				lines: 98.4,
+				statements: 98.5,
+				branches: 96.6,
+				functions: 98.5,
+				lines: 98.5,
 			},
 		},
 	},

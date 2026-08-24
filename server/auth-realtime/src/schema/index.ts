@@ -115,8 +115,11 @@ export function getEditorExtensions(): Extensions {
 		UniqueID.configure({
 			types: contentExtensionsWithIDs.map((v) => v.name),
 			attributeName: "uid",
-			// annotated because tiptap declares generateID as
-			// returning any, which propagates to the arrow
+			// NOCOV: UniqueID calls this only while an editor is
+			// applying a transaction, which never happens in this
+			// service — it transforms documents, it does not edit
+			// them. Annotated because tiptap declares generateID as
+			// returning any, which propagates to the arrow.
 			generateID: (): string => nanoid(),
 		}),
 	]
