@@ -124,12 +124,10 @@ export async function organizationClaims(
 		return {}
 	}
 
-	return reported(async () => {
+	return reported(async (): Promise<Record<string, string>> => {
 		const orgId = await store.userOrganizationId(user.id)
 
-		return orgId
-			? { org_id: orgId }
-			: ({} as Record<string, string>)
+		return orgId ? { org_id: orgId } : {}
 	})
 }
 

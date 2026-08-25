@@ -681,7 +681,7 @@ describe("createAuth", () => {
 
 			const result =
 				await auth.options.databaseHooks.session.update.before(
-					{ token: "t" } as never,
+					{ token: "t" },
 					{
 						context: {
 							session: {
@@ -706,7 +706,7 @@ describe("createAuth", () => {
 
 			const result =
 				await auth.options.databaseHooks.session.update.before(
-					{ token: "t" } as never,
+					{ token: "t" },
 					undefined as never,
 				)
 

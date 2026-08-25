@@ -112,7 +112,7 @@ function blockByUid(doc: Y.Doc, uid: string): Y.XmlElement {
 // whatever value it was given — numbers and arrays included — so
 // assertions widen it once here.
 function attrsOf(el: Y.XmlElement): Record<string, unknown> {
-	return el.getAttributes() as Record<string, unknown>
+	return el.getAttributes()
 }
 
 // Y.XmlText.toDelta is declared as returning any; narrowing it in one

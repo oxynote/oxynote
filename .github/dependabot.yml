@@ -67,6 +67,19 @@ updates:
       day: "monday"
     commit-message:
       prefix: "deps(auth-realtime)"
+    ignore:
+      # typescript-eslint caps typescript at <6.1.0 and vue-tsc has not
+      # caught up with the 7.x native port, so 6.x is the ceiling until
+      # both support it.
+      - dependency-name: "typescript"
+        versions: [">=7.0.0"]
+      # the runtime is node 22 everywhere (both Dockerfiles and CI), and
+      # types ahead of it compile against apis that are not there.
+      - dependency-name: "@types/node"
+        versions: [">=23.0.0"]
+      # @hono/node-ws peers @hono/node-server ^1.19.11; no release supports 2.x.
+      - dependency-name: "@hono/node-server"
+        versions: [">=2.0.0"]
     groups:
       # same better-auth non-semver caveat as the web entry above: minor
       # releases are treated as breaking, patch releases fall through to the
@@ -97,6 +110,16 @@ updates:
       day: "monday"
     commit-message:
       prefix: "deps(e2e)"
+    ignore:
+      # typescript-eslint caps typescript at <6.1.0 and vue-tsc has not
+      # caught up with the 7.x native port, so 6.x is the ceiling until
+      # both support it.
+      - dependency-name: "typescript"
+        versions: [">=7.0.0"]
+      # the runtime is node 22 everywhere (both Dockerfiles and CI), and
+      # types ahead of it compile against apis that are not there.
+      - dependency-name: "@types/node"
+        versions: [">=23.0.0"]
     groups:
       breaking:
         patterns:
