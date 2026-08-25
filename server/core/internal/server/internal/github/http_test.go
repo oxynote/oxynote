@@ -76,7 +76,7 @@ func newTestHandler(t *testing.T, configured bool) *Handler {
 
 	log := slog.New(slog.DiscardHandler)
 
-	return NewHandler(log, nil, nil, newTestManager(t, configured, nil))
+	return NewHandler(log, nil, newTestManager(t, configured, nil))
 }
 
 // newMockedHandler builds a Handler whose DB (and the manager's DB) is
@@ -84,7 +84,7 @@ func newTestHandler(t *testing.T, configured bool) *Handler {
 func newMockedHandler(t *testing.T, configured bool, db *DBMock) *Handler {
 	t.Helper()
 
-	return NewHandler(slog.New(slog.DiscardHandler), db, nil, newTestManager(t, configured, db))
+	return NewHandler(slog.New(slog.DiscardHandler), db, newTestManager(t, configured, db))
 }
 
 // addSession stores a test session on the request context.

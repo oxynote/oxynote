@@ -66,7 +66,10 @@ func (sr *ScheduledReminder) Process(_ context.Context, inp Input) (decimal.Deci
 			break
 		}
 
-		elapsedPercent := decimal.NewFromFloat(elapsed.Seconds() / totalDuration.Seconds()).Mul(mathutil.Hundred)
+		elapsedPercent := mathutil.SafeDiv(
+			decimal.NewFromInt(elapsed.Nanoseconds()),
+			decimal.NewFromInt(totalDuration.Nanoseconds()),
+		).Mul(mathutil.Hundred)
 		score = score.Sub(elapsedPercent).Round(0)
 	default:
 		return decimal.Zero, nil, ErrInvalidScaleType

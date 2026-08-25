@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
 	gogithub "github.com/google/go-github/v72/github"
@@ -246,8 +247,8 @@ func (ic *InstallationClient) FetchIssues(ctx context.Context, q, repository str
 			UserID:    issue.GetUser().GetID(),
 			Draft:     issue.GetDraft(),
 			State:     issue.GetState(),
-			UpdatedAt: issue.GetUpdatedAt().Format("2006-01-02T15:04:05Z"),
-			CreatedAt: issue.GetCreatedAt().Format("2006-01-02T15:04:05Z"),
+			UpdatedAt: issue.GetUpdatedAt().UTC().Format(time.RFC3339),
+			CreatedAt: issue.GetCreatedAt().UTC().Format(time.RFC3339),
 		})
 	}
 

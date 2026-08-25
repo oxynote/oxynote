@@ -10,17 +10,12 @@ import (
 	"github.com/jellydator/xync"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/oxynote/oxynote/server/core/pkg/logutil"
+	"github.com/oxynote/oxynote/server/core/pkg/retryutil"
 	"github.com/rs/xid"
 )
 
 // _maxBackoffRetries is the maximum number of retries.
 const _maxBackoffRetries = 5
-
-// _newBackoff creates the retry backoff strategy. Variable so tests
-// can substitute a faster strategy.
-var _newBackoff = func() backoff.BackOff {
-	return backoff.NewExponentialBackOff()
-}
 
 // Unsubscribe is a function used to unsubscribe from notifications.
 type Unsubscribe func()
@@ -30,6 +25,10 @@ type Manager struct {
 	log  *slog.Logger
 	supv *xync.Supervisor
 	db   DB
+
+	// backoffStrategy creates the retry strategy for one persist. A field
+	// so tests can substitute a faster one.
+	backoffStrategy func() backoff.BackOff
 
 	mu     sync.RWMutex
 	nextID uint64
@@ -45,6 +44,9 @@ func NewManager(
 		db:   db,
 		log:  log.With("component", "notifications-manager"),
 		supv: xync.NewSupervisor(),
+		backoffStrategy: func() backoff.BackOff {
+			return backoff.NewExponentialBackOff()
+		},
 		subs: make(map[uint64]func(context.Context, Notification)),
 	}
 }
@@ -65,10 +67,6 @@ func (m *Manager) OnNotification(
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if m.subs == nil {
-		m.subs = make(map[uint64]func(context.Context, Notification))
-	}
-
 	id := m.nextID
 	m.subs[id] = fn
 	m.nextID++
@@ -87,18 +85,9 @@ func (m *Manager) PublishNotifications(organizationID string, nc Core, userIDs .
 		nt := newNotification(organizationID, userID, nc)
 
 		m.supv.Go(func(ctx context.Context) {
-			rerr := backoff.Retry(
-				func() error {
-					return m.db.CreateNotification(ctx, nt)
-				},
-				backoff.WithMaxRetries(
-					backoff.WithContext(
-						_newBackoff(),
-						ctx,
-					),
-					_maxBackoffRetries,
-				),
-			)
+			rerr := retryutil.Retry(ctx, m.backoffStrategy(), _maxBackoffRetries, func() error {
+				return m.db.CreateNotification(ctx, nt)
+			})
 			// a notification the subscribers deliver but the database never
 			// stored disappears on the next reload, so a failed persist has
 			// to stop the fan-out rather than fall through to it.

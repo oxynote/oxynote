@@ -130,12 +130,6 @@ type DB interface {
 	DBAgent
 }
 
-// Tx is an interface that combines sqlutil.Tx and DBAgent.
-type Tx interface {
-	sqlutil.Tx
-	DBAgent
-}
-
 // DBAgent is an interface that handles communication with the users database.
 type DBAgent interface {
 	// UpdateUserImage should update the user's image URL.

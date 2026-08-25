@@ -242,7 +242,15 @@ func (a *agent) FetchDocumentCommentsByBranchID(ctx context.Context, branchID xi
 	}
 
 	for i := range comments {
-		comments[i].Replies = byComment[comments[i].ID]
+		rr, ok := byComment[comments[i].ID]
+		if !ok {
+			// an empty slice rather than nil, so a comment with no
+			// replies serializes as [] here the same way it does
+			// from FetchDocumentComment.
+			rr = make([]comment.Reply, 0)
+		}
+
+		comments[i].Replies = rr
 	}
 
 	return comments, nil

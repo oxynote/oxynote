@@ -79,9 +79,8 @@ func Test_Validate(t *testing.T) {
 			Err:          assert.AnError,
 			ExpectedPath: "task_items[0]/block",
 		},
-		"Callout requires text or items": {
+		"Callout without content passes": {
 			Input: Block{Type: BlockCallout},
-			Err:   assert.AnError,
 		},
 		"Callout with both text and items is rejected": {
 			Input: Block{
@@ -197,9 +196,8 @@ func Test_Validate(t *testing.T) {
 			Input: Block{Type: BlockBlockquote, Text: "q", Items: []Block{{Type: BlockParagraph, Text: "x"}}},
 			Err:   assert.AnError,
 		},
-		"Blockquote without content is rejected": {
+		"Blockquote without content passes": {
 			Input: Block{Type: BlockBlockquote},
-			Err:   assert.AnError,
 		},
 		"Blockquote with task_items is rejected": {
 			Input: Block{Type: BlockBlockquote, TaskItems: []TaskItem{{Block: Block{Type: BlockParagraph}}}},
@@ -208,8 +206,14 @@ func Test_Validate(t *testing.T) {
 		"Blockquote with items passes": {
 			Input: Block{Type: BlockBlockquote, Items: []Block{{Type: BlockParagraph, Text: "x"}}},
 		},
-		"Blockquote with disallowed item is rejected": {
-			Input:        Block{Type: BlockBlockquote, Items: []Block{{Type: BlockCode, Text: "x"}}},
+		"Blockquote with a root-legal item passes": {
+			Input: Block{Type: BlockBlockquote, Items: []Block{
+				{Type: BlockHeading, Text: "T", Attrs: map[string]any{"level": 2}},
+				{Type: BlockCode, Text: "x"},
+			}},
+		},
+		"Blockquote with a macro-internal item is rejected": {
+			Input:        Block{Type: BlockBlockquote, Items: []Block{{Type: BlockMetric}}},
 			Err:          assert.AnError,
 			ExpectedPath: "items[0]",
 		},

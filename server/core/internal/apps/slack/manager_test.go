@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jarcoal/httpmock"
 	"github.com/oxynote/oxynote/server/core/internal/apps/state"
 	"github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/internal/notification/interpreter"
@@ -67,6 +68,7 @@ func newDisabledManager(t *testing.T) *Manager {
 		nil,
 		nil,
 		nil,
+		nil,
 		Options{},
 	)
 	require.NoError(t, err)
@@ -84,6 +86,7 @@ func newTestManager(t *testing.T, db DB, interp Interpreter) *Manager {
 		db,
 		interp,
 		fakeReceiver{},
+		nil,
 		Options{
 			ClientID:                  "id",
 			ClientSecret:              "secret",
@@ -224,6 +227,7 @@ func Test_NewManager(t *testing.T) {
 				nil,
 				nil,
 				fakeReceiver{},
+				nil,
 				tc.Opt,
 			)
 
@@ -247,7 +251,7 @@ func Test_Manager_Close(t *testing.T) {
 
 		rr := &recordingReceiver{}
 
-		man, err := NewManager(slog.New(slog.DiscardHandler), nil, nil, rr, Options{})
+		man, err := NewManager(slog.New(slog.DiscardHandler), nil, nil, rr, nil, Options{})
 		require.NoError(t, err)
 
 		assert.Nil(t, rr.fn)
@@ -265,6 +269,7 @@ func Test_Manager_Close(t *testing.T) {
 			nil,
 			nil,
 			rr,
+			nil,
 			Options{
 				ClientID:                  "id",
 				ClientSecret:              "secret",
@@ -284,8 +289,58 @@ func Test_Manager_Close(t *testing.T) {
 func Test_Manager_ExchangeCode(t *testing.T) {
 	t.Parallel()
 
-	_, err := newDisabledManager(t).ExchangeCode(context.Background(), "code")
-	assert.ErrorIs(t, err, ErrNotConfigured)
+	cc := map[string]struct {
+		Unconfigured bool
+		Resp         httpmock.Responder
+		Result       *AppAccess
+		Err          error
+	}{
+		"Unconfigured manager fails": {
+			Unconfigured: true,
+			Err:          ErrNotConfigured,
+		},
+		"Error returned by the exchange": {
+			Resp: httpmock.NewStringResponder(http.StatusOK, `{"ok":false,"error":"invalid_code"}`),
+			Err:  assert.AnError,
+		},
+		"Successful exchange": {
+			Resp: httpmock.NewStringResponder(
+				http.StatusOK,
+				`{"ok":true,"access_token":"token","app_id":"A1","team":{"id":"T1"}}`,
+			),
+			Result: &AppAccess{
+				TeamID:      "T1",
+				AccessToken: "token",
+				AppID:       "A1",
+			},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			man := newTestManager(t, nil, nil)
+
+			if c.Unconfigured {
+				man = newDisabledManager(t)
+			}
+
+			client, mt := testutil.MockHTTP()
+			mt.RegisterResponder(http.MethodPost, "https://slack.com/api/oauth.v2.access", c.Resp)
+
+			man.client = client
+
+			res, err := man.ExchangeCode(context.Background(), "code")
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, res)
+		})
+	}
 }
 
 func Test_Manager_GetClient(t *testing.T) {

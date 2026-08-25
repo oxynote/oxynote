@@ -51,7 +51,7 @@ func newTestHandler(t *testing.T, configured bool) *Handler {
 		}
 	}
 
-	man, err := slack.NewManager(log, nil, nil, fakeReceiver{}, opt)
+	man, err := slack.NewManager(log, nil, nil, fakeReceiver{}, nil, opt)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -94,7 +94,7 @@ func newMockedHandler(t *testing.T, configured bool, db *DBMock, client *http.Cl
 		}
 	}
 
-	man, err := slack.NewManager(log, notFoundManagerDB{}, nil, fakeReceiver{}, opt)
+	man, err := slack.NewManager(log, notFoundManagerDB{}, nil, fakeReceiver{}, nil, opt)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

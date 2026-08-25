@@ -25,7 +25,8 @@ type runtimeMetrics struct {
 
 // runtimeMemoryMetrics is a collection of memory metrics.
 type runtimeMemoryMetrics struct {
-	// Frees is the cumulative count of heap objects freed.
+	// Frees is the count of heap objects freed since the previous
+	// collection tick.
 	Frees Gauge
 
 	// HeapAlloc is bytes of allocated heap objects.
@@ -81,13 +82,13 @@ type runtimeMemoryMetrics struct {
 	LastGC Gauge
 
 	// Lookups is the number of pointer lookups performed by the
-	// runtime.
+	// runtime since the previous collection tick.
 	//
 	// This is primarily useful for debugging runtime internals.
 	Lookups Gauge
 
-	// Mallocs is the cumulative count of heap objects allocated.
-	// The number of live objects is Mallocs - Frees.
+	// Mallocs is the count of heap objects allocated since the
+	// previous collection tick.
 	Mallocs Gauge
 
 	// NextGC is the target heap size of the next GC cycle.
@@ -98,7 +99,8 @@ type runtimeMemoryMetrics struct {
 	// value of GOGC.
 	NextGC Gauge
 
-	// NumGC is the number of completed GC cycles.
+	// NumGC is the number of GC cycles completed since the previous
+	// collection tick.
 	NumGC Gauge
 
 	// Pause is a circular buffer of recent GC stop-the-world
@@ -139,7 +141,7 @@ func newRuntimeMetrics(f *factory) runtimeMetrics {
 		memory: runtimeMemoryMetrics{
 			Frees: f.NewGauge(Options{
 				Name: "go_memstats_frees",
-				Help: "Cumulative count of heap objects freed.",
+				Help: "Count of heap objects freed since the previous collection tick.",
 			}),
 			HeapAlloc: f.NewGauge(Options{
 				Name: "go_memstats_heap_alloc_bytes",
@@ -163,11 +165,11 @@ func newRuntimeMetrics(f *factory) runtimeMetrics {
 			}),
 			Lookups: f.NewGauge(Options{
 				Name: "go_memstats_lookups",
-				Help: "Cumulative count of pointer lookups performed by the runtime.",
+				Help: "Count of pointer lookups performed by the runtime since the previous collection tick.",
 			}),
 			Mallocs: f.NewGauge(Options{
 				Name: "go_memstats_mallocs",
-				Help: "Cumulative count of heap objects allocated.",
+				Help: "Count of heap objects allocated since the previous collection tick.",
 			}),
 			NextGC: f.NewGauge(Options{
 				Name: "go_memstats_next_gc_heap_alloc_bytes",
@@ -175,7 +177,7 @@ func newRuntimeMetrics(f *factory) runtimeMetrics {
 			}),
 			NumGC: f.NewGauge(Options{
 				Name: "go_memstats_num_gc",
-				Help: "Number of completed GC cycles.",
+				Help: "Number of GC cycles completed since the previous collection tick.",
 			}),
 			Pause: f.NewHistogram(Options{
 				Name: "go_memstats_gc_pause_seconds",

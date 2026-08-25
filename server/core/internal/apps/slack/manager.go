@@ -15,6 +15,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/cryptoutil"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
+	"github.com/oxynote/oxynote/server/core/pkg/retryutil"
 	goslack "github.com/slack-go/slack"
 )
 
@@ -85,19 +86,18 @@ func (o Options) Validate() error {
 // _maxNotificationRetries caps the retries of one Slack delivery.
 const _maxNotificationRetries = 3
 
-// _newBackoff creates the delivery retry strategy. Variable so tests can
-// substitute a faster one.
-var _newBackoff = func() backoff.BackOff {
-	return backoff.NewExponentialBackOff()
-}
-
 // Manager represents a Slack App manager for handling Slack integrations.
 type Manager struct {
 	log     *slog.Logger
 	db      DB
 	int     Interpreter
+	client  *http.Client
 	opt     Options
 	cleanup func()
+
+	// backoffStrategy creates the retry strategy for one delivery. A
+	// field so tests can substitute a faster one.
+	backoffStrategy func() backoff.BackOff
 }
 
 // NewManager creates a new Slack App manager with the given options. An empty
@@ -110,13 +110,18 @@ func NewManager(
 	db DB,
 	interp Interpreter,
 	notifs notification.Receiver,
+	client *http.Client,
 	opt Options,
 ) (*Manager, error) {
 	m := &Manager{
-		log: log.With("component", "slack-app-manager"),
-		db:  db,
-		int: interp,
-		opt: opt,
+		log:    log.With("component", "slack-app-manager"),
+		db:     db,
+		int:    interp,
+		client: client,
+		opt:    opt,
+		backoffStrategy: func() backoff.BackOff {
+			return backoff.NewExponentialBackOff()
+		},
 	}
 
 	if opt.ClientID == "" {
@@ -153,7 +158,7 @@ func (m *Manager) ProcessNotification(ctx context.Context, n notification.Notifi
 		if !errutil.IsNotFound(err) {
 			m.log.Error(
 				"failed to fetch slack user link",
-				slog.String("userID", n.UserID),
+				slog.String("user_id", n.UserID),
 				slog.String("error", err.Error()),
 			)
 		}
@@ -169,8 +174,8 @@ func (m *Manager) ProcessNotification(ctx context.Context, n notification.Notifi
 	if err != nil {
 		m.log.Error(
 			"failed to get slack client",
-			slog.String("userID", n.UserID),
-			slog.String("teamID", ul.TeamID),
+			slog.String("user_id", n.UserID),
+			slog.String("team_id", ul.TeamID),
 			slog.String("error", err.Error()),
 		)
 
@@ -181,7 +186,7 @@ func (m *Manager) ProcessNotification(ctx context.Context, n notification.Notifi
 	if err != nil {
 		m.log.Error(
 			"failed to interpret notification",
-			slog.String("userID", n.UserID),
+			slog.String("user_id", n.UserID),
 			slog.String("error", err.Error()),
 		)
 
@@ -192,26 +197,20 @@ func (m *Manager) ProcessNotification(ctx context.Context, n notification.Notifi
 	// transient Slack outage should not be the one hop that drops it. A
 	// final failure is still swallowed: the notification exists either way
 	// and the DM is the lesser copy of it.
-	err = backoff.Retry(
-		func() error {
-			_, _, perr := client.PostMessageContext(
-				ctx,
-				ul.SlackUserID,
-				goslack.MsgOptionText(msg.Text, false),
-			)
+	err = retryutil.Retry(ctx, m.backoffStrategy(), _maxNotificationRetries, func() error {
+		_, _, perr := client.PostMessageContext(
+			ctx,
+			ul.SlackUserID,
+			goslack.MsgOptionText(msg.Text, false),
+		)
 
-			return perr
-		},
-		backoff.WithMaxRetries(
-			backoff.WithContext(_newBackoff(), ctx),
-			_maxNotificationRetries,
-		),
-	)
+		return perr
+	})
 	if err != nil {
 		m.log.Error(
 			"failed to send slack notification",
-			slog.String("userID", n.UserID),
-			slog.String("teamID", ul.TeamID),
+			slog.String("user_id", n.UserID),
+			slog.String("team_id", ul.TeamID),
 			slog.String("error", err.Error()),
 		)
 	}
@@ -262,7 +261,7 @@ func (m *Manager) ExchangeCode(ctx context.Context, code string) (*AppAccess, er
 
 	resp, err := goslack.GetOAuthV2ResponseContext(
 		ctx,
-		http.DefaultClient,
+		m.client,
 		m.opt.ClientID,
 		m.opt.ClientSecret,
 		code,

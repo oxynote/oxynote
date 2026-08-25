@@ -171,6 +171,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 		dbc,
 		interpreter.NewInterpreter(dbc, interpreter.NewSlackFormatter(), buildinfo.Getenv("BASE_APP_URL")),
 		notifMan,
+		http.DefaultClient,
 		slack.Options{
 			RedirectURL:               buildinfo.Getenv("SLACK_REDIRECT_URL"),
 			ClientID:                  buildinfo.Getenv("SLACK_CLIENT_ID"),

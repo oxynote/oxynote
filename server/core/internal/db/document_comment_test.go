@@ -661,8 +661,10 @@ func Test_agent_FetchDocumentCommentsByBranchID(t *testing.T) {
 		assert.Empty(t, res)
 
 		// success - newest comment first, replies in creation order and
-		// attached to the comment they belong to rather than the first one
-		comments := prepDocumentComments(t, db, 2, nil)
+		// attached to the comment they belong to rather than the first
+		// one; a comment with no replies carries an empty slice, not
+		// nil, matching FetchDocumentComment
+		comments := prepDocumentComments(t, db, 3, nil)
 		comments[0].Replies = prepDocumentCommentReplies(t, db, 2, func(_ int, r *comment.Reply) {
 			r.CommentID = comments[0].ID
 			r.OrganizationID = comments[0].OrganizationID
@@ -671,6 +673,7 @@ func Test_agent_FetchDocumentCommentsByBranchID(t *testing.T) {
 			r.CommentID = comments[1].ID
 			r.OrganizationID = comments[1].OrganizationID
 		})
+		comments[2].Replies = make([]comment.Reply, 0)
 
 		res, err = db.FetchDocumentCommentsByBranchID(context.Background(), comments[0].BranchID, comments[0].OrganizationID)
 		assert.NoError(t, err)

@@ -271,7 +271,7 @@ every field (`// X specifies ...`; `// X indicates ...` for booleans), tags
 
 Two tiers, kept in the same `var (...)` block when convenient:
 
-- **User-facing** errors are built with `errutil.New(httpStatus, errcode.Constant,
+- **User-facing** errors are built with `errutil.New(httpStatus, "domain.reason",
   "lowercase message, no punctuation")`. The `errutil` contract: an error type
   carrying an HTTP status code, a machine-readable internal code, and a message;
   helpers `errutil.Wrap(err, status, code, msg)`, `errutil.NewWithData(status, code,
@@ -281,10 +281,9 @@ Two tiers, kept in the same `var (...)` block when convenient:
 
 Rules:
 
-- Machine-readable codes live in a central `pkg/errcode` package: untyped string
-  constants, dotted-namespace values (`"document_summary.invalid_sort_index"`,
-  `"document.branch_mismatch"`), grouped in per-domain `const` blocks,
-  each doc-commented.
+- Machine-readable codes are dotted-namespace string literals
+  (`"document.branch_mismatch"`, `"slack.missing_code"`) written inline at the
+  `errutil.New` call site, next to the message they accompany.
 - Sentinels are package-level `Err*` vars, doc-commented
   `// ErrX is returned when ...`.
 - Sentinel handling uses a **single outer `if err != nil`** with the sentinel

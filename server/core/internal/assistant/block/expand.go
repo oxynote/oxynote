@@ -126,8 +126,8 @@ func expandHeading(b Block) document.Block {
 }
 
 // expandBlockquote builds a blockquote node. Either Text (single-paragraph
-// shorthand) or Items (any combination of paragraphs and lists) supplies the
-// content, matching what Validate accepts and what Compact produces.
+// shorthand) or Items (any root-legal blocks) supplies the content,
+// matching what Validate accepts and what Compact produces.
 func expandBlockquote(b Block) (document.Block, error) {
 	children, err := textOrItemsContent(b)
 	if err != nil {

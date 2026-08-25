@@ -23,6 +23,12 @@ var ErrWatcherNotFound = errors.New("watcher not found")
 // configured on this deployment.
 var ErrNotConfigured = errutil.New(http.StatusConflict, "changedetection.not_configured", "changedetection is not configured")
 
+// _maxErrorBody caps how much of an error response is echoed into the
+// returned error. A misbehaving deployment or a proxy in front of it can
+// answer with an arbitrarily large HTML page, which no error message
+// needs in full.
+const _maxErrorBody = 4 << 10
+
 // _requestTimeout bounds a single changedetection.io request. The callers
 // are hook processors running under the periodic executor's long-lived
 // context, so without a deadline of its own a hung connection would stall
@@ -219,10 +225,10 @@ func (c *Client) DeleteWatcher(ctx context.Context, uuid string) error {
 
 // parseErrorResponse parses an error response from the API.
 func (c *Client) parseErrorResponse(resp *http.Response) error {
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, _maxErrorBody))
 	if err != nil {
 		return fmt.Errorf("failed to read error response: %w", err)
 	}
 
-	return fmt.Errorf("api error: %s", string(body))
+	return fmt.Errorf("api error (status %d): %s", resp.StatusCode, body)
 }

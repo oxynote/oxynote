@@ -41,31 +41,28 @@ var (
 )
 
 // _ctxKey is a type used for context keys to avoid collisions with other packages.
-type _ctxKey string
+type _ctxKey int
 
 // _ctxKeyPayload is the context key used to store the Github payload.
-const _ctxKeyPayload _ctxKey = "github_payload"
+const _ctxKeyPayload _ctxKey = iota
 
 // Handler holds dependencies required for Github related operations.
 type Handler struct {
-	log    *slog.Logger
-	client *http.Client
-	db     DB
-	man    *github.Manager
+	log *slog.Logger
+	db  DB
+	man *github.Manager
 }
 
 // NewHandler creates a new handler instance with the provided logger and database.
 func NewHandler(
 	log *slog.Logger,
 	db DB,
-	client *http.Client,
 	man *github.Manager,
 ) *Handler {
 	return &Handler{
-		log:    log,
-		client: client,
-		db:     db,
-		man:    man,
+		log: log,
+		db:  db,
+		man: man,
 	}
 }
 

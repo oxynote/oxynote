@@ -32,9 +32,6 @@ const (
 	// _timeColumn is the canonical name of the time column produced by
 	// the $__time-family macros and expected in SQL chart results.
 	_timeColumn = "time"
-
-	// _minQueryStep defines the default step duration for range queries.
-	_minQueryStep = time.Second * 15
 )
 
 // TimeRange represents a time range with a start and end time.
@@ -76,9 +73,11 @@ func ParseTimeRange(
 	}, nil
 }
 
-// QueryStep calculates the step duration for range queries based on the time range.
+// QueryStep calculates the step duration for range queries based on the
+// time range. calculateInterval already floors at _minInterval, so no
+// extra clamp is needed here.
 func (tr TimeRange) QueryStep() time.Duration {
-	return max(tr.calculateInterval(), _minQueryStep)
+	return tr.calculateInterval()
 }
 
 // Normalize adjusts the From and To times to align with the specified step duration.

@@ -85,7 +85,7 @@ func Test_NewServer(t *testing.T) {
 	githubMan, err := github.NewManager(nil, github.Options{})
 	require.NoError(t, err)
 
-	slackMan, err := slack.NewManager(log, nil, nil, nil, slack.Options{})
+	slackMan, err := slack.NewManager(log, nil, nil, nil, nil, slack.Options{})
 	require.NoError(t, err)
 
 	db := &DBMock{}

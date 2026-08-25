@@ -11,14 +11,10 @@ import (
 // Allowed child-type sets, mirroring the editor's schema rules.
 var (
 	// _allowedBlockquoteItems mirrors TipTap's default Blockquote
-	// content (block+); we accept the same set of simple blocks
-	// the AI is likely to nest there.
-	_allowedBlockquoteItems = map[Type]bool{
-		BlockParagraph:   true,
-		BlockBulletList:  true,
-		BlockOrderedList: true,
-		BlockTaskList:    true,
-	}
+	// content (block+) — the same content expression as the document
+	// root — so anything root-legal may sit inside, and Compact can
+	// emit any of it back out of a stored blockquote.
+	_allowedBlockquoteItems = _allowedAtRoot
 
 	// _allowedListItemContent is the set of block types that can sit
 	// inside a list/task-list item. Mirrors the web editor's
@@ -281,7 +277,9 @@ func validateHeading(b Block, path string) error {
 }
 
 // validateBlockquote checks the text-or-items exclusivity rule and
-// the allowed item types.
+// the allowed item types. Empty is legal: a blockquote holding one
+// empty paragraph compacts to neither text nor items, and Expand
+// turns the empty form back into that single paragraph.
 func validateBlockquote(b Block, path string) error {
 	if err := mustNotHaveCompoundFields(b, path); err != nil {
 		return err
@@ -289,10 +287,6 @@ func validateBlockquote(b Block, path string) error {
 
 	if b.Text != "" && len(b.Items) > 0 {
 		return verr(path, "blockquote accepts either text or items, not both")
-	}
-
-	if b.Text == "" && len(b.Items) == 0 {
-		return verr(path, "blockquote requires text or items")
 	}
 
 	if b.Text != "" {
@@ -364,7 +358,9 @@ func validateTaskList(b Block, path string) error {
 }
 
 // validateCallout checks the text-or-items exclusivity rule and
-// the allowed item types.
+// the allowed item types. Empty is legal: a callout holding one
+// empty paragraph compacts to neither text nor items, and Expand
+// turns the empty form back into that single paragraph.
 func validateCallout(b Block, path string) error {
 	if err := mustHaveNoCanonicalCompoundExcept(b, path, "items"); err != nil {
 		return err
@@ -372,10 +368,6 @@ func validateCallout(b Block, path string) error {
 
 	if b.Text != "" && len(b.Items) > 0 {
 		return verr(path, "callout accepts either text or items, not both")
-	}
-
-	if b.Text == "" && len(b.Items) == 0 {
-		return verr(path, "callout requires text or items")
 	}
 
 	if b.Text != "" {

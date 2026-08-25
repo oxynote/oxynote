@@ -121,6 +121,17 @@ func (m *Manager) processHooks(ctx context.Context) error {
 				continue
 			}
 
+			// a soft-deleted hook's block is gone from the document, so its
+			// score describes nothing and a zero-score notification would
+			// point at a block that no longer exists. The mark is still
+			// persisted — it starts the retention clock — and processing
+			// resumes when the block reappears and ensureHook clears it.
+			if h.SoftDeletedAt.Valid {
+				m.updateHook(ctx, h)
+
+				continue
+			}
+
 			err = h.Process(ctx, hook.NewInput(
 				h.OrganizationID.String,
 				m.githubMan,
@@ -131,10 +142,10 @@ func (m *Manager) processHooks(ctx context.Context) error {
 					With("error", err).
 					Error("processing document hook")
 
-				// the soft-deletion mark set by ensureHook is persisted even
-				// here: it starts the retention clock, and a hook that keeps
-				// failing to process is exactly the one that would otherwise
-				// never reach it.
+				// a soft-deletion mark ensureHook just cleared for a
+				// reappeared block is persisted even here: leaving it stored
+				// would keep the retention clock running toward deleting a
+				// hook whose block is back.
 				m.updateHook(ctx, h)
 
 				continue
@@ -158,8 +169,6 @@ func (m *Manager) processHooks(ctx context.Context) error {
 		if len(hooks) < _processingBatch {
 			break
 		}
-
-		ps.OffsetID = hooks[len(hooks)-1].ID
 	}
 
 	return nil
@@ -236,10 +245,6 @@ func (m *Manager) ensureHook(
 	return true
 }
 
-// deleteHook tears down the hook's external resource and then removes the
-// row describing it. The external teardown goes first: the row is the only
-// record of the resource, so dropping it first would strand the watcher
-// with nothing left to find it by.
 // skipsUnconfigured reports whether the hook depends on an integration
 // this deployment does not have. Such a hook cannot make progress, so
 // the processing pass skips it and leaves its state untouched.
@@ -260,6 +265,10 @@ func (m *Manager) skipsUnconfigured(h *hook.Hook) bool {
 	}
 }
 
+// deleteHook tears down the hook's external resource and then removes the
+// row describing it. The external teardown goes first: the row is the only
+// record of the resource, so dropping it first would strand the watcher
+// with nothing left to find it by.
 func (m *Manager) deleteHook(ctx context.Context, h *hook.Hook) {
 	err := h.Delete(ctx, hook.NewInput(
 		h.OrganizationID.String,

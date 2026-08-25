@@ -100,6 +100,7 @@ func Test_NewSender(t *testing.T) {
 
 			require.NotNil(t, sender)
 			assert.Equal(t, log, sender.log)
+			assert.NotNil(t, sender.backoffStrategy)
 			assert.Equal(t, c.Cfg.FromAddress, sender.fromEmail)
 
 			if c.NilClient {
@@ -174,22 +175,19 @@ func Test_Sender_send(t *testing.T) {
 		},
 	}
 
-	// no t.Parallel on the subtests: they share the backoff strategy.
-	orig := _newBackoff
-	_newBackoff = func() backoff.BackOff { return &backoff.ZeroBackOff{} }
-
-	defer func() { _newBackoff = orig }()
-
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
 			var buf bytes.Buffer
 
 			s := &Sender{
 				log: slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{
 					Level: slog.LevelDebug,
 				})),
-				supv:      xync.NewSupervisor(),
-				fromEmail: c.From,
+				backoffStrategy: func() backoff.BackOff { return &backoff.ZeroBackOff{} },
+				supv:            xync.NewSupervisor(),
+				fromEmail:       c.From,
 			}
 
 			// a nil *clientMock must stay a nil interface so the
@@ -365,10 +363,11 @@ func Test_Sender_Close(t *testing.T) {
 // stubSender creates a sender backed by the provided mocked client.
 func stubSender(client *clientMock) *Sender {
 	return &Sender{
-		log:       slog.New(slog.DiscardHandler),
-		client:    client,
-		supv:      xync.NewSupervisor(),
-		fromEmail: "Oxynote <team@oxynote.io>",
+		log:             slog.New(slog.DiscardHandler),
+		client:          client,
+		backoffStrategy: func() backoff.BackOff { return &backoff.ZeroBackOff{} },
+		supv:            xync.NewSupervisor(),
+		fromEmail:       "Oxynote <team@oxynote.io>",
 	}
 }
 

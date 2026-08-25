@@ -89,18 +89,23 @@ func (rb RootBlock) Value() (driver.Value, error) {
 
 // Scan transforms a database entry into a root block type.
 func (rb *RootBlock) Scan(src any) error {
-	val, ok := src.([]byte)
-	if !ok {
-		return errors.New("invalid tiptac document type")
+	var pv []byte
+
+	switch v := src.(type) {
+	case []byte:
+		pv = v
+	case string:
+		pv = []byte(v)
+	default:
+		return errors.New("invalid root block type")
 	}
 
-	var nrb RootBlock
-
-	if err := json.Unmarshal(val, &nrb); err != nil {
+	data := &RootBlock{}
+	if err := json.Unmarshal(pv, data); err != nil {
 		return err
 	}
 
-	*rb = nrb
+	*rb = *data
 
 	return nil
 }

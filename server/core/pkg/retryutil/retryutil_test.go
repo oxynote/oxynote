@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
@@ -67,6 +68,73 @@ func Test_UntilFound(t *testing.T) {
 			var calls int
 
 			err := UntilFound(ctx, func(_ context.Context) error {
+				calls++
+
+				if calls > len(c.Errs) {
+					return c.Errs[len(c.Errs)-1]
+				}
+
+				return c.Errs[calls-1]
+			})
+
+			testutil.AssertEqualError(t, c.Err, err)
+			assert.Equal(t, c.Calls, calls)
+		})
+	}
+}
+
+func Test_Retry(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Context    context.Context
+		MaxRetries uint64
+		Errs       []error
+		Calls      int
+		Err        error
+	}{
+		"Successful on the first attempt": {
+			MaxRetries: 3,
+			Errs:       []error{nil},
+			Calls:      1,
+		},
+		"Successful after a transient failure": {
+			MaxRetries: 3,
+			Errs:       []error{assert.AnError, nil},
+			Calls:      2,
+		},
+		"Retries run out": {
+			MaxRetries: 2,
+			Errs:       []error{assert.AnError},
+			Calls:      3,
+			Err:        assert.AnError,
+		},
+		"Context cancelled": {
+			Context: func() context.Context {
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+
+				return ctx
+			}(),
+			MaxRetries: 3,
+			Errs:       []error{assert.AnError},
+			Calls:      1,
+			Err:        context.Canceled,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := c.Context
+			if ctx == nil {
+				ctx = context.Background()
+			}
+
+			var calls int
+
+			err := Retry(ctx, &backoff.ZeroBackOff{}, c.MaxRetries, func() error {
 				calls++
 
 				if calls > len(c.Errs) {

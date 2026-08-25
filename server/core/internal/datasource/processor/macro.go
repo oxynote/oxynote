@@ -6,13 +6,14 @@ import "strings"
 const _macroPrefix = "$__"
 
 // expandMacros rewrites every $__name(args) invocation in q through expand,
-// which returns the replacement and whether it handled the macro; an
-// unhandled macro is left as it was.
+// which receives the invocation exactly as written and returns the
+// replacement and whether it handled the macro; an unhandled macro is left
+// as it was.
 //
 // The closing parenthesis is matched by depth rather than by the first ")",
 // so an argument that is itself a call — $__timeFilter(COALESCE(a, b)) —
 // survives instead of being cut in half.
-func expandMacros(q string, expand func(name string, args []string) (string, bool)) string {
+func expandMacros(q string, expand func(name string, args []string, raw string) (string, bool)) string {
 	var b strings.Builder
 
 	for i := 0; i < len(q); {
@@ -33,7 +34,7 @@ func expandMacros(q string, expand func(name string, args []string) (string, boo
 			continue
 		}
 
-		replacement, handled := expand(name, args)
+		replacement, handled := expand(name, args, q[i:end])
 		if !handled {
 			b.WriteString(q[i:end])
 
@@ -132,40 +133,36 @@ func trimMacroArg(arg string) string {
 func (tr TimeRange) processSQLQuery(q string, mm sqlMacros) string {
 	q = tr.ProcessQuery(q)
 
-	return expandMacros(q, func(name string, args []string) (string, bool) {
-		// the macro helpers fall back to the invocation itself when the
-		// arguments do not fit, so the raw form is rebuilt for them.
-		match := _macroPrefix + name + "(" + strings.Join(args, ",") + ")"
-
+	return expandMacros(q, func(name string, args []string, raw string) (string, bool) {
 		switch name {
-		case _timeColumn, "timeEpoch":
-			return mm.time(args, match), true
+		case "time", "timeEpoch":
+			return mm.time(args, raw), true
 		case "timeFilter":
-			return mm.timeFilter(tr, args, match), true
+			return mm.timeFilter(tr, args, raw), true
 		case "timeFrom":
 			return mm.timeFrom(tr), true
 		case "timeTo":
 			return mm.timeTo(tr), true
 		case "timeGroup":
-			return mm.timeGroup(args, match), true
+			return mm.timeGroup(args, raw), true
 		case "timeGroupAlias":
-			return mm.timeGroupAlias(args, match), true
+			return mm.timeGroupAlias(args, raw), true
 		case "unixEpochGroupAlias":
-			return mm.unixEpochGroupAlias(args, match), true
+			return mm.unixEpochGroupAlias(args, raw), true
 		case "unixEpochFilter":
-			return pgMacroUnixEpochFilter(tr, args, match), true
+			return pgMacroUnixEpochFilter(tr, args, raw), true
 		case "unixEpochFrom":
 			return pgMacroUnixEpochFrom(tr), true
 		case "unixEpochTo":
 			return pgMacroUnixEpochTo(tr), true
 		case "unixEpochNanoFilter":
-			return pgMacroUnixEpochNanoFilter(tr, args, match), true
+			return pgMacroUnixEpochNanoFilter(tr, args, raw), true
 		case "unixEpochNanoFrom":
 			return pgMacroUnixEpochNanoFrom(tr), true
 		case "unixEpochNanoTo":
 			return pgMacroUnixEpochNanoTo(tr), true
 		case "unixEpochGroup":
-			return pgMacroUnixEpochGroup(args, match), true
+			return pgMacroUnixEpochGroup(args, raw), true
 		default:
 			return "", false
 		}

@@ -13,3 +13,13 @@ const _hundred = 100
 //
 //nolint:gochecknoglobals // used as a constant
 var Hundred = decimal.NewFromInt(_hundred)
+
+// SafeDiv divides a by b, returning zero when b is zero instead of
+// panicking.
+func SafeDiv(a, b decimal.Decimal) decimal.Decimal {
+	if b.IsZero() {
+		return decimal.Zero
+	}
+
+	return a.Div(b)
+}

@@ -195,7 +195,7 @@ func NewServer(
 	}
 
 	srv.handlers.mcp = mcpHandler
-	srv.handlers.github = github.NewHandler(log, db, client, githubMan)
+	srv.handlers.github = github.NewHandler(log, db, githubMan)
 	srv.handlers.slack = slack.NewHandler(log, db, client, slackMan)
 	srv.handlers.notification = notification.NewHandler(log, db, notifier)
 	srv.handlers.datasource = datasource.NewHandler(log, db, datasourceMan)

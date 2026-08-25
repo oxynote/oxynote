@@ -249,12 +249,13 @@ func Test_Manager_processHooks(t *testing.T) {
 				wasUpdateCalled(0),
 			),
 		},
-		"Processing failure still persists the soft deletion": {
+		"Processing failure still persists the cleared soft deletion": {
 			Hooks: func(t *testing.T) []hook.Hook {
 				h := stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
-				h.BlockID = null.StringFrom("missing-block")
+				h.BlockID = null.StringFrom("b1")
+				h.SoftDeletedAt = null.TimeFrom(time.Now().Add(-time.Hour))
 				// unparsable settings make Process fail, which used to
-				// skip the update and leave the retention clock unstarted.
+				// skip the update and leave the retention clock running.
 				h.Settings = processor.Settings(`{"scale": "nonsense"}`)
 
 				return []hook.Hook{h}
@@ -266,7 +267,7 @@ func Test_Manager_processHooks(t *testing.T) {
 				func(t *testing.T, db *DBMock, _ *fakePublisher, _ error) {
 					ff := db.UpdateDocumentHookCalls()
 					require.NotEmpty(t, ff)
-					assert.True(t, ff[0].Hk.SoftDeletedAt.Valid)
+					assert.False(t, ff[0].Hk.SoftDeletedAt.Valid)
 				},
 			),
 		},
@@ -439,6 +440,29 @@ func Test_Manager_processHooks(t *testing.T) {
 			Checks: checks(
 				hasError(false),
 				wasUpdateCalled(1),
+				func(t *testing.T, db *DBMock, _ *fakePublisher, _ error) {
+					ff := db.UpdateDocumentHookCalls()
+					require.NotEmpty(t, ff)
+					assert.True(t, ff[0].Hk.SoftDeletedAt.Valid)
+				},
+			),
+		},
+		// the hook's block is gone, so its score would describe nothing: the
+		// elapsed schedule must not drop the score to zero, and no
+		// notification about the vanished block may go out.
+		"Soft-deleted hook is not processed or notified": {
+			Hooks: func(t *testing.T) []hook.Hook {
+				h := stubHook(t, branchID, time.Now().Add(-time.Hour), time.Now().Add(-2*time.Hour))
+				h.BlockID = null.StringFrom("missing-block")
+
+				return []hook.Hook{h}
+			},
+			Doc: stubDocument(),
+			Checks: checks(
+				hasError(false),
+				wasUpdateCalled(1),
+				hasUpdatedScore(decimal.NewFromInt(100)),
+				wasPublished(0),
 				func(t *testing.T, db *DBMock, _ *fakePublisher, _ error) {
 					ff := db.UpdateDocumentHookCalls()
 					require.NotEmpty(t, ff)

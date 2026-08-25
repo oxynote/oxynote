@@ -12,6 +12,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/jellydator/xync"
 	"github.com/oxynote/oxynote/server/core/pkg/logutil"
+	"github.com/oxynote/oxynote/server/core/pkg/retryutil"
 	"github.com/wneessen/go-mail"
 )
 
@@ -65,16 +66,14 @@ type Config struct {
 // _maxSendRetries caps the retries of one delivery.
 const _maxSendRetries = 3
 
-// _newBackoff creates the delivery retry strategy. Variable so tests can
-// substitute a faster one.
-var _newBackoff = func() backoff.BackOff {
-	return backoff.NewExponentialBackOff()
-}
-
 // Sender holds dependencies required for email sending.
 type Sender struct {
 	log    *slog.Logger
 	client client
+
+	// backoffStrategy creates the retry strategy for one delivery. A
+	// field so tests can substitute a faster one.
+	backoffStrategy func() backoff.BackOff
 
 	supv      *xync.Supervisor
 	fromEmail string
@@ -85,7 +84,10 @@ type Sender struct {
 // is logged instead of sent.
 func NewSender(log *slog.Logger, cfg Config) (*Sender, error) {
 	sender := &Sender{
-		log:       log,
+		log: log,
+		backoffStrategy: func() backoff.BackOff {
+			return backoff.NewExponentialBackOff()
+		},
 		supv:      xync.NewSupervisor(),
 		fromEmail: cfg.FromAddress,
 	}
@@ -213,15 +215,9 @@ func (s *Sender) deliver(ctx context.Context, msg *mail.Msg, toEmail, subject st
 	ctx, cancel := context.WithTimeout(ctx, _sendTimeout)
 	defer cancel()
 
-	err := backoff.Retry(
-		func() error {
-			return s.client.DialAndSendWithContext(ctx, msg)
-		},
-		backoff.WithMaxRetries(
-			backoff.WithContext(_newBackoff(), ctx),
-			_maxSendRetries,
-		),
-	)
+	err := retryutil.Retry(ctx, s.backoffStrategy(), _maxSendRetries, func() error {
+		return s.client.DialAndSendWithContext(ctx, msg)
+	})
 	if err != nil {
 		logutil.Critical(s.log, err).Error(
 			"cannot send an email",

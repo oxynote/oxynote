@@ -11,10 +11,15 @@ func Test_expandMacros(t *testing.T) {
 	t.Parallel()
 
 	// the expansion echoes what it was given, so a case can assert on the
-	// name and arguments the scanner produced.
-	expand := func(name string, args []string) (string, bool) {
+	// name and arguments the scanner produced. The raw name emits the
+	// invocation as the scanner saw it.
+	expand := func(name string, args []string, raw string) (string, bool) {
 		if name == "skip" {
 			return "", false
+		}
+
+		if name == "raw" {
+			return raw, true
 		}
 
 		var b strings.Builder
@@ -55,6 +60,10 @@ func Test_expandMacros(t *testing.T) {
 		"Commas inside a nested call do not split the arguments": {
 			Query:    "$__timeGroup(COALESCE(a, b), '5m')",
 			Expected: "<timeGroup|COALESCE(a, b)|5m>",
+		},
+		"Invocation reaches the expansion exactly as written": {
+			Query:    `SELECT $__raw( 'time' , COALESCE(a, b)) FROM t`,
+			Expected: `SELECT $__raw( 'time' , COALESCE(a, b)) FROM t`,
 		},
 		"Unhandled macro is left as it was": {
 			Query:    "SELECT $__skip(a) FROM t",

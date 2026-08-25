@@ -3,18 +3,13 @@ package datasource
 
 import (
 	"errors"
-	"net/http"
 	"time"
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
-	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
 )
-
-// ErrUnavailableDataSource is returned when the data source is unavailable.
-var ErrUnavailableDataSource = errutil.New(http.StatusBadRequest, "data_source.unavailable", "The data source is currently unavailable.")
 
 // Type represents the type of the data source.
 type Type string

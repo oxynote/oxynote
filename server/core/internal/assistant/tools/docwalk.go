@@ -92,7 +92,6 @@ func (w *docWalker) walkLevel(blocks []document.Block, depth int, parentUID stri
 		// they exist only inside split_doc.right.
 		case document.BlockNodeParagraph,
 			document.BlockNodeHeading,
-			document.BlockNodeBlockquote,
 			document.BlockNodeCodeBlock,
 			document.BlockNodeMermaidBlock,
 			document.BlockNodeHorizontalRule,
@@ -109,6 +108,7 @@ func (w *docWalker) walkLevel(blocks []document.Block, depth int, parentUID stri
 			document.BlockNodeOrderedList,
 			document.BlockNodeTaskList,
 			document.BlockNodeCalloutBlock,
+			document.BlockNodeBlockquote,
 			document.BlockNodeMetricGrid:
 			w.emit(b, uid, depth, parentUID)
 			w.walkLevel(b.Content, depth+1, uid)

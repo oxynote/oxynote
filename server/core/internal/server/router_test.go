@@ -33,10 +33,10 @@ func Test_Server_httpRouter(t *testing.T) {
 	githubMan, err := githubCore.NewManager(nil, githubCore.Options{})
 	require.NoError(t, err)
 
-	slackMan, err := slackCore.NewManager(s.log, nil, nil, nil, slackCore.Options{})
+	slackMan, err := slackCore.NewManager(s.log, nil, nil, nil, nil, slackCore.Options{})
 	require.NoError(t, err)
 
-	s.handlers.github = github.NewHandler(s.log, nil, nil, githubMan)
+	s.handlers.github = github.NewHandler(s.log, nil, githubMan)
 	s.handlers.slack = slack.NewHandler(s.log, nil, nil, slackMan)
 
 	routes := make(map[string]bool)

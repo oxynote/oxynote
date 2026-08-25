@@ -71,6 +71,17 @@ func Test_walkDocForAssistant(t *testing.T) {
 				{UID: "ti1", Kind: "task_item", Text: "done", Depth: 1, ParentUID: "t1", Attrs: map[string]any{"checked": true}},
 			},
 		},
+		"Blockquote descends into its children": {
+			Blocks: []document.Block{
+				pmBlock(document.BlockNodeBlockquote, "b1", nil,
+					pmBlock(document.BlockNodeParagraph, "p1", nil, pmText("quoted")),
+				),
+			},
+			Result: []docSummaryEntry{
+				{UID: "b1", Kind: "blockquote", Text: "quoted"},
+				{UID: "p1", Kind: "paragraph", Text: "quoted", Depth: 1, ParentUID: "b1"},
+			},
+		},
 		"Split doc emits a single entry without descending": {
 			Blocks: []document.Block{
 				pmBlock(document.BlockNodeSplitDoc, "s1", map[string]any{"inversed": true},

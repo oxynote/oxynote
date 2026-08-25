@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"maps"
 	"testing"
 	"time"
 
@@ -330,45 +331,47 @@ func Test_getPrometheusMetadata_Execute(t *testing.T) {
 
 	id := _testDataSourceID.String()
 
-	cc := badIDCases(func(id string) string {
-		return `{"data_source_id":"` + id + `"}`
-	})
+	cc := map[string]dataSourceCase{
+		"The data source's metric metadata": {
+			Type: datasource.TypePrometheus,
+			Args: `{"data_source_id":"` + id + `"}`,
+			Runner: prometheusRunner(&datasourceMock.Prometheus{
+				MetadataFunc: func(context.Context) (*processor.PrometheusMetadataResult, error) {
+					return &processor.PrometheusMetadataResult{
+						Result: map[string]any{
+							"up": "gauge",
+						},
+					}, nil
+				},
+			}),
+			Contains: "gauge",
+		},
+		"Unreadable arguments": {
+			Type: datasource.TypePrometheus,
+			Args: `{`,
+			Err:  assert.AnError,
+		},
+		"A data source that hands out no Prometheus client": {
+			Type:   datasource.TypePostgreSQL,
+			Args:   `{"data_source_id":"` + id + `"}`,
+			Runner: prometheusRunner(nil),
+			Err:    assert.AnError,
+		},
+		"A failing read": {
+			Type: datasource.TypePrometheus,
+			Args: `{"data_source_id":"` + id + `"}`,
+			Runner: prometheusRunner(&datasourceMock.Prometheus{
+				MetadataFunc: func(context.Context) (*processor.PrometheusMetadataResult, error) {
+					return nil, assert.AnError
+				},
+			}),
+			Err: assert.AnError,
+		},
+	}
 
-	cc["The data source's metric metadata"] = dataSourceCase{
-		Type: datasource.TypePrometheus,
-		Args: `{"data_source_id":"` + id + `"}`,
-		Runner: prometheusRunner(&datasourceMock.Prometheus{
-			MetadataFunc: func(context.Context) (*processor.PrometheusMetadataResult, error) {
-				return &processor.PrometheusMetadataResult{
-					Result: map[string]any{
-						"up": "gauge",
-					},
-				}, nil
-			},
-		}),
-		Contains: "gauge",
-	}
-	cc["Unreadable arguments"] = dataSourceCase{
-		Type: datasource.TypePrometheus,
-		Args: `{`,
-		Err:  assert.AnError,
-	}
-	cc["A data source that hands out no Prometheus client"] = dataSourceCase{
-		Type:   datasource.TypePostgreSQL,
-		Args:   `{"data_source_id":"` + id + `"}`,
-		Runner: prometheusRunner(nil),
-		Err:    assert.AnError,
-	}
-	cc["A failing read"] = dataSourceCase{
-		Type: datasource.TypePrometheus,
-		Args: `{"data_source_id":"` + id + `"}`,
-		Runner: prometheusRunner(&datasourceMock.Prometheus{
-			MetadataFunc: func(context.Context) (*processor.PrometheusMetadataResult, error) {
-				return nil, assert.AnError
-			},
-		}),
-		Err: assert.AnError,
-	}
+	maps.Copy(cc, badIDCases(func(id string) string {
+		return `{"data_source_id":"` + id + `"}`
+	}))
 
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
@@ -443,40 +446,48 @@ func Test_listPrometheusLabelNames_Execute(t *testing.T) {
 		},
 	}
 
-	cc := badIDCases(func(id string) string {
-		return `{"data_source_id":"` + id + `"}`
-	})
+	cc := map[string]dataSourceCase{
+		"The label names on the selected series": {
+			Type:     datasource.TypePrometheus,
+			Runner:   prometheusRunner(client),
+			Args:     `{"data_source_id":"` + id + `","matchers":["up"]}`,
+			Contains: "job",
+		},
+		"Unreadable arguments": {
+			Type:   datasource.TypePrometheus,
+			Runner: prometheusRunner(client),
+			Args:   `{`,
+			Err:    assert.AnError,
+		},
+		"An unparseable range start": {
+			Type:   datasource.TypePrometheus,
+			Runner: prometheusRunner(client),
+			Args:   `{"data_source_id":"` + id + `","from":"yesterday"}`,
+			Err:    assert.AnError,
+		},
+		"An inverted range": {
+			Type:   datasource.TypePrometheus,
+			Runner: prometheusRunner(client),
+			Args:   `{"data_source_id":"` + id + `","from":"2026-08-01T12:00:00Z","to":"2026-08-01T10:00:00Z"}`,
+			Err:    assert.AnError,
+		},
+		"A data source that hands out no Prometheus client": {
+			Type:   datasource.TypePostgreSQL,
+			Runner: prometheusRunner(nil),
+			Args:   `{"data_source_id":"` + id + `"}`,
+			Err:    assert.AnError,
+		},
+		"A failing read": {
+			Type:   datasource.TypePrometheus,
+			Runner: prometheusRunner(client),
+			Args:   `{"data_source_id":"` + id + `","matchers":["boom"]}`,
+			Err:    assert.AnError,
+		},
+	}
 
-	cc["The label names on the selected series"] = dataSourceCase{
-		Type:     datasource.TypePrometheus,
-		Runner:   prometheusRunner(client),
-		Args:     `{"data_source_id":"` + id + `","matchers":["up"]}`,
-		Contains: "job",
-	}
-	cc["Unreadable arguments"] = dataSourceCase{
-		Type:   datasource.TypePrometheus,
-		Runner: prometheusRunner(client),
-		Args:   `{`,
-		Err:    assert.AnError,
-	}
-	cc["An unparseable range start"] = dataSourceCase{
-		Type:   datasource.TypePrometheus,
-		Runner: prometheusRunner(client),
-		Args:   `{"data_source_id":"` + id + `","from":"yesterday"}`,
-		Err:    assert.AnError,
-	}
-	cc["A data source that hands out no Prometheus client"] = dataSourceCase{
-		Type:   datasource.TypePostgreSQL,
-		Runner: prometheusRunner(nil),
-		Args:   `{"data_source_id":"` + id + `"}`,
-		Err:    assert.AnError,
-	}
-	cc["A failing read"] = dataSourceCase{
-		Type:   datasource.TypePrometheus,
-		Runner: prometheusRunner(client),
-		Args:   `{"data_source_id":"` + id + `","matchers":["boom"]}`,
-		Err:    assert.AnError,
-	}
+	maps.Copy(cc, badIDCases(func(id string) string {
+		return `{"data_source_id":"` + id + `"}`
+	}))
 
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
@@ -568,46 +579,54 @@ func Test_listPrometheusLabelValues_Execute(t *testing.T) {
 		},
 	}
 
-	cc := badIDCases(func(id string) string {
-		return `{"data_source_id":"` + id + `","label":"job"}`
-	})
+	cc := map[string]dataSourceCase{
+		"The values the label takes": {
+			Type:     datasource.TypePrometheus,
+			Runner:   prometheusRunner(client),
+			Args:     `{"data_source_id":"` + id + `","label":"job"}`,
+			Contains: "api",
+		},
+		"Unreadable arguments": {
+			Type:   datasource.TypePrometheus,
+			Runner: prometheusRunner(client),
+			Args:   `{`,
+			Err:    assert.AnError,
+		},
+		"No label": {
+			Type:   datasource.TypePrometheus,
+			Runner: prometheusRunner(client),
+			Args:   `{"data_source_id":"` + id + `"}`,
+			Err:    assert.AnError,
+		},
+		"An unparseable range end": {
+			Type:   datasource.TypePrometheus,
+			Runner: prometheusRunner(client),
+			Args:   `{"data_source_id":"` + id + `","label":"job","to":"soon"}`,
+			Err:    assert.AnError,
+		},
+		"An inverted range": {
+			Type:   datasource.TypePrometheus,
+			Runner: prometheusRunner(client),
+			Args:   `{"data_source_id":"` + id + `","label":"job","from":"2026-08-01T12:00:00Z","to":"2026-08-01T10:00:00Z"}`,
+			Err:    assert.AnError,
+		},
+		"A data source that hands out no Prometheus client": {
+			Type:   datasource.TypePostgreSQL,
+			Runner: prometheusRunner(nil),
+			Args:   `{"data_source_id":"` + id + `","label":"job"}`,
+			Err:    assert.AnError,
+		},
+		"A failing read": {
+			Type:   datasource.TypePrometheus,
+			Runner: prometheusRunner(client),
+			Args:   `{"data_source_id":"` + id + `","label":"boom"}`,
+			Err:    assert.AnError,
+		},
+	}
 
-	cc["The values the label takes"] = dataSourceCase{
-		Type:     datasource.TypePrometheus,
-		Runner:   prometheusRunner(client),
-		Args:     `{"data_source_id":"` + id + `","label":"job"}`,
-		Contains: "api",
-	}
-	cc["Unreadable arguments"] = dataSourceCase{
-		Type:   datasource.TypePrometheus,
-		Runner: prometheusRunner(client),
-		Args:   `{`,
-		Err:    assert.AnError,
-	}
-	cc["No label"] = dataSourceCase{
-		Type:   datasource.TypePrometheus,
-		Runner: prometheusRunner(client),
-		Args:   `{"data_source_id":"` + id + `"}`,
-		Err:    assert.AnError,
-	}
-	cc["An unparseable range end"] = dataSourceCase{
-		Type:   datasource.TypePrometheus,
-		Runner: prometheusRunner(client),
-		Args:   `{"data_source_id":"` + id + `","label":"job","to":"soon"}`,
-		Err:    assert.AnError,
-	}
-	cc["A data source that hands out no Prometheus client"] = dataSourceCase{
-		Type:   datasource.TypePostgreSQL,
-		Runner: prometheusRunner(nil),
-		Args:   `{"data_source_id":"` + id + `","label":"job"}`,
-		Err:    assert.AnError,
-	}
-	cc["A failing read"] = dataSourceCase{
-		Type:   datasource.TypePrometheus,
-		Runner: prometheusRunner(client),
-		Args:   `{"data_source_id":"` + id + `","label":"boom"}`,
-		Err:    assert.AnError,
-	}
+	maps.Copy(cc, badIDCases(func(id string) string {
+		return `{"data_source_id":"` + id + `","label":"job"}`
+	}))
 
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
@@ -683,54 +702,62 @@ func Test_listPrometheusSeries_Execute(t *testing.T) {
 		},
 	}
 
-	cc := badIDCases(func(id string) string {
-		return `{"data_source_id":"` + id + `","matchers":["up"]}`
-	})
+	cc := map[string]dataSourceCase{
+		"The series the matchers select": {
+			Type:     datasource.TypePrometheus,
+			Runner:   prometheusRunner(client),
+			Args:     `{"data_source_id":"` + id + `","matchers":["{job=\"api\"}"]}`,
+			Contains: "api",
+		},
+		"Unreadable arguments": {
+			Type:   datasource.TypePrometheus,
+			Runner: prometheusRunner(client),
+			Args:   `{`,
+			Err:    assert.AnError,
+		},
+		// Prometheus rejects a series query with no selector, so the model
+		// is told what is missing rather than handed the upstream error.
+		"No matcher at all": {
+			Type:   datasource.TypePrometheus,
+			Runner: prometheusRunner(client),
+			Args:   `{"data_source_id":"` + id + `"}`,
+			Err:    assert.AnError,
+		},
+		"An empty matcher list": {
+			Type:   datasource.TypePrometheus,
+			Runner: prometheusRunner(client),
+			Args:   `{"data_source_id":"` + id + `","matchers":[]}`,
+			Err:    assert.AnError,
+		},
+		"An unparseable range": {
+			Type:   datasource.TypePrometheus,
+			Runner: prometheusRunner(client),
+			Args:   `{"data_source_id":"` + id + `","matchers":["up"],"from":"then"}`,
+			Err:    assert.AnError,
+		},
+		"An inverted range": {
+			Type:   datasource.TypePrometheus,
+			Runner: prometheusRunner(client),
+			Args:   `{"data_source_id":"` + id + `","matchers":["up"],"from":"2026-08-01T12:00:00Z","to":"2026-08-01T10:00:00Z"}`,
+			Err:    assert.AnError,
+		},
+		"A data source that hands out no Prometheus client": {
+			Type:   datasource.TypePostgreSQL,
+			Runner: prometheusRunner(nil),
+			Args:   `{"data_source_id":"` + id + `","matchers":["up"]}`,
+			Err:    assert.AnError,
+		},
+		"A failing read": {
+			Type:   datasource.TypePrometheus,
+			Runner: prometheusRunner(client),
+			Args:   `{"data_source_id":"` + id + `","matchers":["boom"]}`,
+			Err:    assert.AnError,
+		},
+	}
 
-	cc["The series the matchers select"] = dataSourceCase{
-		Type:     datasource.TypePrometheus,
-		Runner:   prometheusRunner(client),
-		Args:     `{"data_source_id":"` + id + `","matchers":["{job=\"api\"}"]}`,
-		Contains: "api",
-	}
-	cc["Unreadable arguments"] = dataSourceCase{
-		Type:   datasource.TypePrometheus,
-		Runner: prometheusRunner(client),
-		Args:   `{`,
-		Err:    assert.AnError,
-	}
-	// Prometheus rejects a series query with no selector, so the model
-	// is told what is missing rather than handed the upstream error.
-	cc["No matcher at all"] = dataSourceCase{
-		Type:   datasource.TypePrometheus,
-		Runner: prometheusRunner(client),
-		Args:   `{"data_source_id":"` + id + `"}`,
-		Err:    assert.AnError,
-	}
-	cc["An empty matcher list"] = dataSourceCase{
-		Type:   datasource.TypePrometheus,
-		Runner: prometheusRunner(client),
-		Args:   `{"data_source_id":"` + id + `","matchers":[]}`,
-		Err:    assert.AnError,
-	}
-	cc["An unparseable range"] = dataSourceCase{
-		Type:   datasource.TypePrometheus,
-		Runner: prometheusRunner(client),
-		Args:   `{"data_source_id":"` + id + `","matchers":["up"],"from":"then"}`,
-		Err:    assert.AnError,
-	}
-	cc["A data source that hands out no Prometheus client"] = dataSourceCase{
-		Type:   datasource.TypePostgreSQL,
-		Runner: prometheusRunner(nil),
-		Args:   `{"data_source_id":"` + id + `","matchers":["up"]}`,
-		Err:    assert.AnError,
-	}
-	cc["A failing read"] = dataSourceCase{
-		Type:   datasource.TypePrometheus,
-		Runner: prometheusRunner(client),
-		Args:   `{"data_source_id":"` + id + `","matchers":["boom"]}`,
-		Err:    assert.AnError,
-	}
+	maps.Copy(cc, badIDCases(func(id string) string {
+		return `{"data_source_id":"` + id + `","matchers":["up"]}`
+	}))
 
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
@@ -822,72 +849,80 @@ func Test_queryPrometheus_Execute(t *testing.T) {
 		}
 	}
 
-	cc := badIDCases(func(id string) string {
-		return `{"data_source_id":"` + id + `","query":"up"}`
-	})
+	cc := map[string]dataSourceCase{
+		"A raw query returns the raw result": {
+			Type: datasource.TypePrometheus,
+			Runner: prometheusRunner(client(&processor.PrometheusQueryResult{
+				Type:     model.ValMatrix,
+				Warnings: []string{"slow"},
+			})),
+			Args:     `{"data_source_id":"` + id + `","query":"up"}`,
+			Contains: `"warnings":["slow"]`,
+		},
+		"A chart query returns the transformed series": {
+			Type: datasource.TypePrometheus,
+			Runner: prometheusRunner(client(&processor.PrometheusQueryResult{
+				Type: model.ValMatrix,
+			})),
+			Args:     `{"data_source_id":"` + id + `","query":"up","chart_type":"line_chart"}`,
+			Contains: `"status"`,
+		},
+		// a query that returned nothing has no result to transform, and the
+		// metric block renders it as no-data — which is the answer the model
+		// asked for by naming a chart type.
+		"A chart query with no result at all is no-data": {
+			Type:     datasource.TypePrometheus,
+			Runner:   prometheusRunner(client(nil)),
+			Args:     `{"data_source_id":"` + id + `","query":"up","chart_type":"gauge_chart"}`,
+			Contains: `"status":"no-data"`,
+		},
+		"Unreadable arguments": {
+			Type:   datasource.TypePrometheus,
+			Runner: prometheusRunner(client(nil)),
+			Args:   `{`,
+			Err:    assert.AnError,
+		},
+		"No query": {
+			Type:   datasource.TypePrometheus,
+			Runner: prometheusRunner(client(nil)),
+			Args:   `{"data_source_id":"` + id + `"}`,
+			Err:    assert.AnError,
+		},
+		"An unknown chart type": {
+			Type:   datasource.TypePrometheus,
+			Runner: prometheusRunner(client(nil)),
+			Args:   `{"data_source_id":"` + id + `","query":"up","chart_type":"pie_chart"}`,
+			Err:    assert.AnError,
+		},
+		"An unparseable range": {
+			Type:   datasource.TypePrometheus,
+			Runner: prometheusRunner(client(nil)),
+			Args:   `{"data_source_id":"` + id + `","query":"up","from":"now"}`,
+			Err:    assert.AnError,
+		},
+		"An inverted range": {
+			Type:   datasource.TypePrometheus,
+			Runner: prometheusRunner(client(nil)),
+			Args:   `{"data_source_id":"` + id + `","query":"up","from":"2026-08-01T12:00:00Z","to":"2026-08-01T10:00:00Z"}`,
+			Err:    assert.AnError,
+		},
+		"A data source that hands out no Prometheus client": {
+			Type:   datasource.TypePostgreSQL,
+			Runner: prometheusRunner(nil),
+			Args:   `{"data_source_id":"` + id + `","query":"up"}`,
+			Err:    assert.AnError,
+		},
+		"A failing read": {
+			Type:   datasource.TypePrometheus,
+			Runner: prometheusRunner(client(nil)),
+			Args:   `{"data_source_id":"` + id + `","query":"boom"}`,
+			Err:    assert.AnError,
+		},
+	}
 
-	cc["A raw query returns the raw result"] = dataSourceCase{
-		Type: datasource.TypePrometheus,
-		Runner: prometheusRunner(client(&processor.PrometheusQueryResult{
-			Type:     model.ValMatrix,
-			Warnings: []string{"slow"},
-		})),
-		Args:     `{"data_source_id":"` + id + `","query":"up"}`,
-		Contains: `"warnings":["slow"]`,
-	}
-	cc["A chart query returns the transformed series"] = dataSourceCase{
-		Type: datasource.TypePrometheus,
-		Runner: prometheusRunner(client(&processor.PrometheusQueryResult{
-			Type: model.ValMatrix,
-		})),
-		Args:     `{"data_source_id":"` + id + `","query":"up","chart_type":"line_chart"}`,
-		Contains: `"status"`,
-	}
-	// a query that returned nothing has no result to transform, and the
-	// metric block renders it as no-data — which is the answer the model
-	// asked for by naming a chart type.
-	cc["A chart query with no result at all is no-data"] = dataSourceCase{
-		Type:     datasource.TypePrometheus,
-		Runner:   prometheusRunner(client(nil)),
-		Args:     `{"data_source_id":"` + id + `","query":"up","chart_type":"gauge_chart"}`,
-		Contains: `"status":"no-data"`,
-	}
-	cc["Unreadable arguments"] = dataSourceCase{
-		Type:   datasource.TypePrometheus,
-		Runner: prometheusRunner(client(nil)),
-		Args:   `{`,
-		Err:    assert.AnError,
-	}
-	cc["No query"] = dataSourceCase{
-		Type:   datasource.TypePrometheus,
-		Runner: prometheusRunner(client(nil)),
-		Args:   `{"data_source_id":"` + id + `"}`,
-		Err:    assert.AnError,
-	}
-	cc["An unknown chart type"] = dataSourceCase{
-		Type:   datasource.TypePrometheus,
-		Runner: prometheusRunner(client(nil)),
-		Args:   `{"data_source_id":"` + id + `","query":"up","chart_type":"pie_chart"}`,
-		Err:    assert.AnError,
-	}
-	cc["An unparseable range"] = dataSourceCase{
-		Type:   datasource.TypePrometheus,
-		Runner: prometheusRunner(client(nil)),
-		Args:   `{"data_source_id":"` + id + `","query":"up","from":"now"}`,
-		Err:    assert.AnError,
-	}
-	cc["A data source that hands out no Prometheus client"] = dataSourceCase{
-		Type:   datasource.TypePostgreSQL,
-		Runner: prometheusRunner(nil),
-		Args:   `{"data_source_id":"` + id + `","query":"up"}`,
-		Err:    assert.AnError,
-	}
-	cc["A failing read"] = dataSourceCase{
-		Type:   datasource.TypePrometheus,
-		Runner: prometheusRunner(client(nil)),
-		Args:   `{"data_source_id":"` + id + `","query":"boom"}`,
-		Err:    assert.AnError,
-	}
+	maps.Copy(cc, badIDCases(func(id string) string {
+		return `{"data_source_id":"` + id + `","query":"up"}`
+	}))
 
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
@@ -963,38 +998,40 @@ func Test_getSQLMetadata_Execute(t *testing.T) {
 		},
 	}
 
-	cc := badIDCases(func(id string) string {
-		return `{"data_source_id":"` + id + `"}`
-	})
+	cc := map[string]dataSourceCase{
+		"The data source's tables and columns": {
+			Type:     datasource.TypePostgreSQL,
+			Runner:   sqlRunner(client),
+			Args:     `{"data_source_id":"` + id + `"}`,
+			Contains: "public.orders",
+		},
+		"Unreadable arguments": {
+			Type:   datasource.TypePostgreSQL,
+			Runner: sqlRunner(client),
+			Args:   `{`,
+			Err:    assert.AnError,
+		},
+		"A data source that hands out no SQL client": {
+			Type:   datasource.TypePrometheus,
+			Runner: sqlRunner(nil),
+			Args:   `{"data_source_id":"` + id + `"}`,
+			Err:    assert.AnError,
+		},
+		"A failing read": {
+			Type: datasource.TypePostgreSQL,
+			Runner: sqlRunner(&datasourceMock.SQL{
+				MetadataFunc: func(context.Context) (*processor.SQLMetadataResult, error) {
+					return nil, assert.AnError
+				},
+			}),
+			Args: `{"data_source_id":"` + id + `"}`,
+			Err:  assert.AnError,
+		},
+	}
 
-	cc["The data source's tables and columns"] = dataSourceCase{
-		Type:     datasource.TypePostgreSQL,
-		Runner:   sqlRunner(client),
-		Args:     `{"data_source_id":"` + id + `"}`,
-		Contains: "public.orders",
-	}
-	cc["Unreadable arguments"] = dataSourceCase{
-		Type:   datasource.TypePostgreSQL,
-		Runner: sqlRunner(client),
-		Args:   `{`,
-		Err:    assert.AnError,
-	}
-	cc["A data source that hands out no SQL client"] = dataSourceCase{
-		Type:   datasource.TypePrometheus,
-		Runner: sqlRunner(nil),
-		Args:   `{"data_source_id":"` + id + `"}`,
-		Err:    assert.AnError,
-	}
-	cc["A failing read"] = dataSourceCase{
-		Type: datasource.TypePostgreSQL,
-		Runner: sqlRunner(&datasourceMock.SQL{
-			MetadataFunc: func(context.Context) (*processor.SQLMetadataResult, error) {
-				return nil, assert.AnError
-			},
-		}),
-		Args: `{"data_source_id":"` + id + `"}`,
-		Err:  assert.AnError,
-	}
+	maps.Copy(cc, badIDCases(func(id string) string {
+		return `{"data_source_id":"` + id + `"}`
+	}))
 
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
@@ -1066,46 +1103,54 @@ func Test_getSQLQueryLabels_Execute(t *testing.T) {
 		},
 	}
 
-	cc := badIDCases(func(id string) string {
-		return `{"data_source_id":"` + id + `","query":"select 1"}`
-	})
+	cc := map[string]dataSourceCase{
+		"The query's string columns": {
+			Type:     datasource.TypeMariaDB,
+			Runner:   sqlRunner(client),
+			Args:     `{"data_source_id":"` + id + `","query":"select id from orders"}`,
+			Contains: `"region":"eu"`,
+		},
+		"Unreadable arguments": {
+			Type:   datasource.TypePostgreSQL,
+			Runner: sqlRunner(client),
+			Args:   `{`,
+			Err:    assert.AnError,
+		},
+		"No query": {
+			Type:   datasource.TypePostgreSQL,
+			Runner: sqlRunner(client),
+			Args:   `{"data_source_id":"` + id + `"}`,
+			Err:    assert.AnError,
+		},
+		"An unparseable range": {
+			Type:   datasource.TypePostgreSQL,
+			Runner: sqlRunner(client),
+			Args:   `{"data_source_id":"` + id + `","query":"select 1","to":"later"}`,
+			Err:    assert.AnError,
+		},
+		"An inverted range": {
+			Type:   datasource.TypePostgreSQL,
+			Runner: sqlRunner(client),
+			Args:   `{"data_source_id":"` + id + `","query":"select 1","from":"2026-08-01T12:00:00Z","to":"2026-08-01T10:00:00Z"}`,
+			Err:    assert.AnError,
+		},
+		"A data source that hands out no SQL client": {
+			Type:   datasource.TypePrometheus,
+			Runner: sqlRunner(nil),
+			Args:   `{"data_source_id":"` + id + `","query":"select 1"}`,
+			Err:    assert.AnError,
+		},
+		"A failing read": {
+			Type:   datasource.TypePostgreSQL,
+			Runner: sqlRunner(client),
+			Args:   `{"data_source_id":"` + id + `","query":"boom"}`,
+			Err:    assert.AnError,
+		},
+	}
 
-	cc["The query's string columns"] = dataSourceCase{
-		Type:     datasource.TypeMariaDB,
-		Runner:   sqlRunner(client),
-		Args:     `{"data_source_id":"` + id + `","query":"select id from orders"}`,
-		Contains: `"region":"eu"`,
-	}
-	cc["Unreadable arguments"] = dataSourceCase{
-		Type:   datasource.TypePostgreSQL,
-		Runner: sqlRunner(client),
-		Args:   `{`,
-		Err:    assert.AnError,
-	}
-	cc["No query"] = dataSourceCase{
-		Type:   datasource.TypePostgreSQL,
-		Runner: sqlRunner(client),
-		Args:   `{"data_source_id":"` + id + `"}`,
-		Err:    assert.AnError,
-	}
-	cc["An unparseable range"] = dataSourceCase{
-		Type:   datasource.TypePostgreSQL,
-		Runner: sqlRunner(client),
-		Args:   `{"data_source_id":"` + id + `","query":"select 1","to":"later"}`,
-		Err:    assert.AnError,
-	}
-	cc["A data source that hands out no SQL client"] = dataSourceCase{
-		Type:   datasource.TypePrometheus,
-		Runner: sqlRunner(nil),
-		Args:   `{"data_source_id":"` + id + `","query":"select 1"}`,
-		Err:    assert.AnError,
-	}
-	cc["A failing read"] = dataSourceCase{
-		Type:   datasource.TypePostgreSQL,
-		Runner: sqlRunner(client),
-		Args:   `{"data_source_id":"` + id + `","query":"boom"}`,
-		Err:    assert.AnError,
-	}
+	maps.Copy(cc, badIDCases(func(id string) string {
+		return `{"data_source_id":"` + id + `","query":"select 1"}`
+	}))
 
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
@@ -1204,94 +1249,102 @@ func Test_querySQL_Execute(t *testing.T) {
 		},
 	}
 
-	cc := badIDCases(func(id string) string {
-		return `{"data_source_id":"` + id + `","query":"select 1"}`
-	})
+	cc := map[string]dataSourceCase{
+		"PostgreSQL raw": {
+			Type:     datasource.TypePostgreSQL,
+			Runner:   dialectRunner(datasource.TypePostgreSQL, pg, my),
+			Args:     `{"data_source_id":"` + id + `","query":"select 1"}`,
+			Contains: `"columns":["time","value"]`,
+		},
+		"PostgreSQL charted": {
+			Type:     datasource.TypePostgreSQL,
+			Runner:   dialectRunner(datasource.TypePostgreSQL, pg, my),
+			Args:     `{"data_source_id":"` + id + `","query":"select 1","chart_type":"line_chart"}`,
+			Contains: `"status"`,
+		},
+		"MySQL raw": {
+			Type:     datasource.TypeMySQL,
+			Runner:   dialectRunner(datasource.TypeMySQL, pg, my),
+			Args:     `{"data_source_id":"` + id + `","query":"select 1"}`,
+			Contains: `"columns":["time","value"]`,
+		},
+		"MariaDB charted": {
+			Type:     datasource.TypeMariaDB,
+			Runner:   dialectRunner(datasource.TypeMariaDB, pg, my),
+			Args:     `{"data_source_id":"` + id + `","query":"select 1","chart_type":"bar_chart"}`,
+			Contains: `"status"`,
+		},
+		"A PostgreSQL chart query with no rows at all is no-data": {
+			Type:     datasource.TypePostgreSQL,
+			Runner:   dialectRunner(datasource.TypePostgreSQL, pg, my),
+			Args:     `{"data_source_id":"` + id + `","query":"empty","chart_type":"line_chart"}`,
+			Contains: `"status":"no-data"`,
+		},
+		"A MySQL chart query with no rows at all is no-data": {
+			Type:     datasource.TypeMySQL,
+			Runner:   dialectRunner(datasource.TypeMySQL, pg, my),
+			Args:     `{"data_source_id":"` + id + `","query":"empty","chart_type":"line_chart"}`,
+			Contains: `"status":"no-data"`,
+		},
+		"Unreadable arguments": {
+			Type:   datasource.TypePostgreSQL,
+			Runner: dialectRunner(datasource.TypePostgreSQL, pg, my),
+			Args:   `{`,
+			Err:    assert.AnError,
+		},
+		"No query": {
+			Type:   datasource.TypePostgreSQL,
+			Runner: dialectRunner(datasource.TypePostgreSQL, pg, my),
+			Args:   `{"data_source_id":"` + id + `"}`,
+			Err:    assert.AnError,
+		},
+		"An unknown chart type": {
+			Type:   datasource.TypePostgreSQL,
+			Runner: dialectRunner(datasource.TypePostgreSQL, pg, my),
+			Args:   `{"data_source_id":"` + id + `","query":"select 1","chart_type":"donut"}`,
+			Err:    assert.AnError,
+		},
+		"An unparseable range": {
+			Type:   datasource.TypePostgreSQL,
+			Runner: dialectRunner(datasource.TypePostgreSQL, pg, my),
+			Args:   `{"data_source_id":"` + id + `","query":"select 1","from":"epoch"}`,
+			Err:    assert.AnError,
+		},
+		"An inverted range": {
+			Type:   datasource.TypePostgreSQL,
+			Runner: dialectRunner(datasource.TypePostgreSQL, pg, my),
+			Args:   `{"data_source_id":"` + id + `","query":"select 1","from":"2026-08-01T12:00:00Z","to":"2026-08-01T10:00:00Z"}`,
+			Err:    assert.AnError,
+		},
+		"A data source that hands out no PostgreSQL client": {
+			Type:   datasource.TypePostgreSQL,
+			Runner: dialectRunner(datasource.TypePostgreSQL, nil, my),
+			Args:   `{"data_source_id":"` + id + `","query":"select 1"}`,
+			Err:    assert.AnError,
+		},
+		"A data source that hands out no MySQL client": {
+			Type:   datasource.TypeMySQL,
+			Runner: dialectRunner(datasource.TypeMySQL, pg, nil),
+			Args:   `{"data_source_id":"` + id + `","query":"select 1"}`,
+			Err:    assert.AnError,
+		},
+		"A failing PostgreSQL read": {
+			Type:   datasource.TypePostgreSQL,
+			Runner: dialectRunner(datasource.TypePostgreSQL, pg, my),
+			Args:   `{"data_source_id":"` + id + `","query":"boom"}`,
+			Err:    assert.AnError,
+		},
+		"A failing MySQL read": {
+			Type:   datasource.TypeMySQL,
+			Runner: dialectRunner(datasource.TypeMySQL, pg, my),
+			Args:   `{"data_source_id":"` + id + `","query":"boom"}`,
+			Err:    assert.AnError,
+		},
+	}
 
-	cc["PostgreSQL raw"] = dataSourceCase{
-		Type:     datasource.TypePostgreSQL,
-		Runner:   dialectRunner(datasource.TypePostgreSQL, pg, my),
-		Args:     `{"data_source_id":"` + id + `","query":"select 1"}`,
-		Contains: `"columns":["time","value"]`,
-	}
-	cc["PostgreSQL charted"] = dataSourceCase{
-		Type:     datasource.TypePostgreSQL,
-		Runner:   dialectRunner(datasource.TypePostgreSQL, pg, my),
-		Args:     `{"data_source_id":"` + id + `","query":"select 1","chart_type":"line_chart"}`,
-		Contains: `"status"`,
-	}
-	cc["MySQL raw"] = dataSourceCase{
-		Type:     datasource.TypeMySQL,
-		Runner:   dialectRunner(datasource.TypeMySQL, pg, my),
-		Args:     `{"data_source_id":"` + id + `","query":"select 1"}`,
-		Contains: `"columns":["time","value"]`,
-	}
-	cc["MariaDB charted"] = dataSourceCase{
-		Type:     datasource.TypeMariaDB,
-		Runner:   dialectRunner(datasource.TypeMariaDB, pg, my),
-		Args:     `{"data_source_id":"` + id + `","query":"select 1","chart_type":"bar_chart"}`,
-		Contains: `"status"`,
-	}
-	cc["A PostgreSQL chart query with no rows at all is no-data"] = dataSourceCase{
-		Type:     datasource.TypePostgreSQL,
-		Runner:   dialectRunner(datasource.TypePostgreSQL, pg, my),
-		Args:     `{"data_source_id":"` + id + `","query":"empty","chart_type":"line_chart"}`,
-		Contains: `"status":"no-data"`,
-	}
-	cc["A MySQL chart query with no rows at all is no-data"] = dataSourceCase{
-		Type:     datasource.TypeMySQL,
-		Runner:   dialectRunner(datasource.TypeMySQL, pg, my),
-		Args:     `{"data_source_id":"` + id + `","query":"empty","chart_type":"line_chart"}`,
-		Contains: `"status":"no-data"`,
-	}
-	cc["Unreadable arguments"] = dataSourceCase{
-		Type:   datasource.TypePostgreSQL,
-		Runner: dialectRunner(datasource.TypePostgreSQL, pg, my),
-		Args:   `{`,
-		Err:    assert.AnError,
-	}
-	cc["No query"] = dataSourceCase{
-		Type:   datasource.TypePostgreSQL,
-		Runner: dialectRunner(datasource.TypePostgreSQL, pg, my),
-		Args:   `{"data_source_id":"` + id + `"}`,
-		Err:    assert.AnError,
-	}
-	cc["An unknown chart type"] = dataSourceCase{
-		Type:   datasource.TypePostgreSQL,
-		Runner: dialectRunner(datasource.TypePostgreSQL, pg, my),
-		Args:   `{"data_source_id":"` + id + `","query":"select 1","chart_type":"donut"}`,
-		Err:    assert.AnError,
-	}
-	cc["An unparseable range"] = dataSourceCase{
-		Type:   datasource.TypePostgreSQL,
-		Runner: dialectRunner(datasource.TypePostgreSQL, pg, my),
-		Args:   `{"data_source_id":"` + id + `","query":"select 1","from":"epoch"}`,
-		Err:    assert.AnError,
-	}
-	cc["A data source that hands out no PostgreSQL client"] = dataSourceCase{
-		Type:   datasource.TypePostgreSQL,
-		Runner: dialectRunner(datasource.TypePostgreSQL, nil, my),
-		Args:   `{"data_source_id":"` + id + `","query":"select 1"}`,
-		Err:    assert.AnError,
-	}
-	cc["A data source that hands out no MySQL client"] = dataSourceCase{
-		Type:   datasource.TypeMySQL,
-		Runner: dialectRunner(datasource.TypeMySQL, pg, nil),
-		Args:   `{"data_source_id":"` + id + `","query":"select 1"}`,
-		Err:    assert.AnError,
-	}
-	cc["A failing PostgreSQL read"] = dataSourceCase{
-		Type:   datasource.TypePostgreSQL,
-		Runner: dialectRunner(datasource.TypePostgreSQL, pg, my),
-		Args:   `{"data_source_id":"` + id + `","query":"boom"}`,
-		Err:    assert.AnError,
-	}
-	cc["A failing MySQL read"] = dataSourceCase{
-		Type:   datasource.TypeMySQL,
-		Runner: dialectRunner(datasource.TypeMySQL, pg, my),
-		Args:   `{"data_source_id":"` + id + `","query":"boom"}`,
-		Err:    assert.AnError,
-	}
+	maps.Copy(cc, badIDCases(func(id string) string {
+		return `{"data_source_id":"` + id + `","query":"select 1"}`
+	}))
 
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
@@ -1311,7 +1364,16 @@ func Test_timeRangeArgs_resolve(t *testing.T) {
 	cc := map[string]struct {
 		Args  timeRangeArgs
 		Check func(t *testing.T, tr processor.TimeRange)
+		Err   error
 	}{
+		"An inverted range": {
+			Args: timeRangeArgs{From: to, To: from},
+			Err:  errInvertedTimeRange,
+		},
+		"A future start with no end given": {
+			Args: timeRangeArgs{From: timeutil.Now().Add(time.Hour)},
+			Err:  errInvertedTimeRange,
+		},
 		"Both ends given": {
 			Args: timeRangeArgs{From: from, To: to},
 			Check: func(t *testing.T, tr processor.TimeRange) {
@@ -1352,18 +1414,16 @@ func Test_timeRangeArgs_resolve(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			c.Check(t, c.Args.resolve())
+			tr, err := c.Args.resolve()
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			c.Check(t, tr)
 		})
 	}
-}
-
-func Test_timeRangeProps(t *testing.T) {
-	t.Parallel()
-
-	props := timeRangeProps()
-
-	assert.Contains(t, props, _keyFrom)
-	assert.Contains(t, props, _keyTo)
 }
 
 func Test_dataSourceProps(t *testing.T) {

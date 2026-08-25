@@ -506,6 +506,14 @@ func Test_RootBlock_Scan(t *testing.T) {
 	require.NoError(t, decoded.Scan(val))
 	assert.Equal(t, orig, decoded)
 
+	data, ok := val.([]byte)
+	require.True(t, ok)
+
+	var fromString RootBlock
+
+	require.NoError(t, fromString.Scan(string(data)))
+	assert.Equal(t, orig, fromString)
+
 	assert.Error(t, decoded.Scan(42))
 	assert.Error(t, decoded.Scan([]byte(`{not json`)))
 }

@@ -30,6 +30,7 @@ func Test_NewManager(t *testing.T) {
 	assert.Equal(t, db, m.db)
 	assert.NotNil(t, m.log)
 	assert.NotNil(t, m.supv)
+	assert.NotNil(t, m.backoffStrategy)
 	assert.NotNil(t, m.subs)
 	assert.Empty(t, m.subs)
 	assert.Zero(t, m.nextID)
@@ -46,8 +47,7 @@ func Test_Manager_Close(t *testing.T) {
 func Test_Manager_OnNotification(t *testing.T) {
 	t.Parallel()
 
-	// nil subscriber map - the map is initialized lazily
-	m := &Manager{}
+	m := &Manager{subs: make(map[uint64]func(context.Context, Notification))}
 
 	unsub := m.OnNotification(func(_ context.Context, _ Notification) {})
 	require.NotNil(t, unsub)
@@ -68,6 +68,8 @@ func Test_Manager_OnNotification(t *testing.T) {
 }
 
 func Test_Manager_PublishNotifications(t *testing.T) {
+	t.Parallel()
+
 	cc := map[string]struct {
 		DB          *DBMock
 		Backoff     backoff.BackOff
@@ -106,22 +108,22 @@ func Test_Manager_PublishNotifications(t *testing.T) {
 
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
-			// no t.Parallel: cases mutate the shared _newBackoff variable.
-			if c.Backoff != nil {
-				orig := _newBackoff
-				_newBackoff = func() backoff.BackOff { return c.Backoff }
+			t.Parallel()
 
-				defer func() { _newBackoff = orig }()
+			strategy := c.Backoff
+			if strategy == nil {
+				strategy = &backoff.ZeroBackOff{}
 			}
 
 			out, b := testutil.NewBuffer()
 			log := slog.New(slog.NewTextHandler(out, nil))
 
 			m := &Manager{
-				log:  log,
-				db:   c.DB,
-				supv: xync.NewSupervisor(),
-				subs: make(map[uint64]func(context.Context, Notification)),
+				log:             log,
+				db:              c.DB,
+				supv:            xync.NewSupervisor(),
+				backoffStrategy: func() backoff.BackOff { return strategy },
+				subs:            make(map[uint64]func(context.Context, Notification)),
 			}
 
 			received := make(chan Notification, len(c.UserIDs))

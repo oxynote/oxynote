@@ -45,6 +45,10 @@ const (
 // discover that a data source exists elsewhere.
 var errUnknownDataSource = errors.New("no data source with that id in this organisation; call list_data_sources for the ids that exist")
 
+// errInvertedTimeRange reports a range whose start falls after its end,
+// once either absent end has been defaulted.
+var errInvertedTimeRange = errors.New("'from' is after 'to'; the range start must be the earlier timestamp")
+
 // timeRangeArgs is the range every data-source read can be narrowed
 // with. Both ends are optional: the tools serve a model that usually
 // means "recently" and should not have to compute timestamps to say so.
@@ -57,8 +61,10 @@ type timeRangeArgs struct {
 }
 
 // resolve turns the pair into a time range, defaulting the end to now
-// and the start to an hour before it.
-func (a timeRangeArgs) resolve() processor.TimeRange {
+// and the start to an hour before it. An inverted range is rejected
+// here rather than handed to a backend, so the model is told the
+// arguments are backwards instead of seeing a backend-shaped failure.
+func (a timeRangeArgs) resolve() (processor.TimeRange, error) {
 	out := processor.TimeRange{From: a.From, To: a.To}
 
 	if out.To.IsZero() {
@@ -69,15 +75,11 @@ func (a timeRangeArgs) resolve() processor.TimeRange {
 		out.From = out.To.Add(-_defaultQueryWindow)
 	}
 
-	return out
-}
-
-// timeRangeProps returns the shared from/to schema properties.
-func timeRangeProps() map[string]any {
-	return map[string]any{
-		_keyFrom: stringProp(_descFrom),
-		_keyTo:   stringProp(_descTo),
+	if out.From.After(out.To) {
+		return processor.TimeRange{}, errInvertedTimeRange
 	}
+
+	return out, nil
 }
 
 // dataSourceProps builds a data-source tool's schema from the shared
@@ -323,7 +325,10 @@ func (listPrometheusLabelNames) Execute(inp Input) (string, error) {
 		return "", err
 	}
 
-	tr := in.resolve()
+	tr, err := in.resolve()
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", NameListPrometheusLabelNames, err)
+	}
 
 	runner, err := inp.DataSourceRunner(in.DataSourceID)
 	if err != nil {
@@ -427,7 +432,10 @@ func (listPrometheusLabelValues) Execute(inp Input) (string, error) {
 		return "", err
 	}
 
-	tr := in.resolve()
+	tr, err := in.resolve()
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", NameListPrometheusLabelValues, err)
+	}
 
 	runner, err := inp.DataSourceRunner(in.DataSourceID)
 	if err != nil {
@@ -525,7 +533,10 @@ func (listPrometheusSeries) Execute(inp Input) (string, error) {
 		return "", err
 	}
 
-	tr := in.resolve()
+	tr, err := in.resolve()
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", NameListPrometheusSeries, err)
+	}
 
 	runner, err := inp.DataSourceRunner(in.DataSourceID)
 	if err != nil {
@@ -623,7 +634,10 @@ func (queryPrometheus) Execute(inp Input) (string, error) {
 		return "", err
 	}
 
-	tr := in.resolve()
+	tr, err := in.resolve()
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", NameQueryPrometheus, err)
+	}
 
 	runner, err := inp.DataSourceRunner(in.DataSourceID)
 	if err != nil {
@@ -803,7 +817,10 @@ func (getSQLQueryLabels) Execute(inp Input) (string, error) {
 		return "", err
 	}
 
-	tr := in.resolve()
+	tr, err := in.resolve()
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", NameGetSQLQueryLabels, err)
+	}
 
 	runner, err := inp.DataSourceRunner(in.DataSourceID)
 	if err != nil {
@@ -903,7 +920,10 @@ func (querySQL) Execute(inp Input) (string, error) {
 		return "", err
 	}
 
-	tr := in.resolve()
+	tr, err := in.resolve()
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", NameQuerySQL, err)
+	}
 
 	runner, err := inp.DataSourceRunner(in.DataSourceID)
 	if err != nil {
