@@ -119,8 +119,10 @@ func Test_ContainerImageWatcher_Process(t *testing.T) {
 
 		ciw := ContainerImageWatcher{Image: image}
 
+		// an empty baseline digest — a hook created or reset while
+		// unauthorized — must not match the empty digest of a failed fetch.
 		score, state, err := ciw.Process(context.Background(), stubInput{
-			state: imageWatcherState(t, "sha256:old"),
+			state: imageWatcherState(t, ""),
 		})
 		require.NoError(t, err)
 

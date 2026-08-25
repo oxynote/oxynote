@@ -173,14 +173,14 @@ func (b Block) HasBlock(blockID string) bool {
 func (b Block) Search(organizationID string, documentID xid.ID) map[string]search.Block {
 	res := make(map[string]search.Block)
 
-	var text string
+	var text strings.Builder
 
 	for _, cb := range b.Content {
 		// All parent nodes that contain text have a content element
 		// with the text type. This includes Headings, Paragraphs,
 		// CodeBlock, CodeBlockTitle, ListItem and so on.
 		if cb.Type == BlockNodeText {
-			text = cb.Text
+			text.WriteString(cb.Text)
 			continue
 		}
 
@@ -189,14 +189,14 @@ func (b Block) Search(organizationID string, documentID xid.ID) map[string]searc
 		maps.Insert(res, maps.All(content))
 	}
 
-	if text != "" {
+	if text.Len() != 0 {
 		if id, ok := b.UID(); ok && id != "" {
 			res[id] = search.Block{
 				ID:             id,
 				OrganizationID: organizationID,
 				DocumentID:     documentID,
 				Type:           string(b.Type),
-				Text:           text,
+				Text:           text.String(),
 			}
 		}
 	}

@@ -50,7 +50,17 @@ func (ciw *ContainerImageWatcher) Process(ctx context.Context, inp Input) (decim
 	case err == nil:
 		ciws.Status = ContainerImageWatcherStatusActive
 	case errors.Is(err, registry.ErrUnauthorized):
+		// an unauthorized fetch yields no digest to compare against, so the
+		// score drops regardless of the stored baseline — which may itself be
+		// empty when the hook was created while unauthorized.
 		ciws.Status = ContainerImageWatcherStatusUnauthorized
+
+		state, merr := json.Marshal(ciws)
+		if merr != nil {
+			return decimal.Zero, nil, fmt.Errorf("marshaling container image watcher state: %w", merr)
+		}
+
+		return decimal.Zero, state, nil
 	default:
 		return decimal.Zero, nil, fmt.Errorf("fetching container image digest: %w", err)
 	}

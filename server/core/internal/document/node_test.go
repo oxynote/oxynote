@@ -223,6 +223,17 @@ func Test_RootBlock_Search(t *testing.T) {
 					},
 				},
 			},
+			// marks split the text into multiple fragments; all of
+			// them must be indexed, not just the last one.
+			{
+				Type:  BlockNodeParagraph,
+				Attrs: Attributes{"uid": "p2"},
+				Content: []Block{
+					{Type: BlockNodeText, Text: "plain "},
+					{Type: BlockNodeText, Text: "bold", Marks: []Mark{{Type: "bold"}}},
+					{Type: BlockNodeText, Text: " tail"},
+				},
+			},
 			// no uid: the text is not indexable.
 			{
 				Type: BlockNodeParagraph,
@@ -251,6 +262,13 @@ func Test_RootBlock_Search(t *testing.T) {
 			DocumentID:     documentID,
 			Type:           "listItem",
 			Text:           "nested",
+		},
+		"p2": {
+			ID:             "p2",
+			OrganizationID: "org-1",
+			DocumentID:     documentID,
+			Type:           "paragraph",
+			Text:           "plain bold tail",
 		},
 	}, res)
 }
