@@ -8,6 +8,11 @@ import {
 import { inviteTeamMember } from "../helpers/collaboration"
 import { waitForEditor } from "../helpers/editor"
 import { t } from "../helpers/i18n"
+import {
+	authorizeMCPClient,
+	connectMCPClient,
+	documentResourceURI,
+} from "../helpers/mcp"
 import { visit } from "../helpers/page"
 import { documentAccepted } from "../helpers/realtime"
 import { openSettings } from "../helpers/settings"
@@ -199,6 +204,72 @@ test.describe("access", () => {
 		// bar of every page
 		expect(await documentAccepted(page, `${foreign}-default`)).toBe(false)
 
+		await other.context.close()
+	})
+
+	test("lists only the granting workspace's documents over mcp", async ({
+		page,
+		request,
+		browser,
+	}) => {
+		// two tenants, plus a registration, a consent and a token
+		// exchange on top of the usual setup
+		test.slow()
+
+		await signUpWithWorkspace(page, request)
+		const own = documentId(page)
+
+		const other = await signUpWithSeparateWorkspace(browser, request)
+		const foreign = documentId(other.page)
+
+		const client = await connectMCPClient(
+			await authorizeMCPClient(page, request),
+		)
+		const { resources } = await client.listResources()
+		const uris = resources.map((resource) => resource.uri)
+
+		// the token was granted by a user of the first workspace, so the
+		// organization it is bound to is the only one it can see
+		expect(uris).toContain(documentResourceURI(own))
+		expect(uris).not.toContain(documentResourceURI(foreign))
+
+		await client.close()
+		await other.context.close()
+	})
+
+	test("refuses to read another workspace's document over mcp", async ({
+		page,
+		request,
+		browser,
+	}) => {
+		test.slow()
+
+		await signUpWithWorkspace(page, request)
+		const own = documentId(page)
+
+		const other = await signUpWithSeparateWorkspace(browser, request)
+		const foreign = documentId(other.page)
+
+		const client = await connectMCPClient(
+			await authorizeMCPClient(page, request),
+		)
+
+		// the control: the same call on the token's own document has to
+		// come back, or the refusal below would say nothing about
+		// scoping and everything about a read that never works
+		const readable = await client.readResource({
+			uri: documentResourceURI(own),
+		})
+		expect(readable.contents).not.toHaveLength(0)
+
+		// named directly rather than picked off the listing: a scoped
+		// listing is no protection if the read behind it answers for
+		// any id it is handed
+		await expect(
+			client.readResource({ uri: documentResourceURI(foreign) }),
+		).rejects.toThrow()
+
+		await client.close()
 		await other.context.close()
 	})
 
