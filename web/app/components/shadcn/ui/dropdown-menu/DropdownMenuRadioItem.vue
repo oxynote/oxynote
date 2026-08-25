@@ -5,13 +5,18 @@ import type {
 } from "reka-ui"
 import type { HTMLAttributes } from "vue"
 import { reactiveOmit } from "@vueuse/core"
-import { Circle } from "lucide-vue-next"
 import {
 	DropdownMenuItemIndicator,
 	DropdownMenuRadioItem,
 	useForwardPropsEmits,
 } from "reka-ui"
 import { cn } from "@/lib/utils"
+
+// the css-mask icon has no svg to fill, so the disc is filled in the icon
+// body before the mask is built
+function fillDisc(body: string) {
+	return body.replace('fill="none"', 'fill="currentColor"')
+}
 
 const props = defineProps<
 	DropdownMenuRadioItemProps & { class?: HTMLAttributes["class"] }
@@ -39,7 +44,7 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
 			class="pointer-events-none absolute left-2 flex size-3.5 items-center justify-center"
 		>
 			<DropdownMenuItemIndicator>
-				<Circle class="size-2 fill-current" />
+				<Icon name="lucide:circle" :customize="fillDisc" class="size-2" />
 			</DropdownMenuItemIndicator>
 		</span>
 		<slot />
