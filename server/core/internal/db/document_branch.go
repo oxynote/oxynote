@@ -38,9 +38,9 @@ func (a *agent) insertDocumentBranch(ctx context.Context, tx *sqlx.Tx, doc docum
 	return err
 }
 
-// upsertDocumentBranch upserts the branch row for a document.
-// Called inside the same transaction as UpdateDocument.
-func (a *agent) upsertDocumentBranch(ctx context.Context, doc document.Document) error {
+// upsertDocumentBranch upserts the branch row for a document through the
+// given executor. Called inside the same transaction as UpdateDocument.
+func (a *agent) upsertDocumentBranch(ctx context.Context, ex sqlx.ExecerContext, doc document.Document) error {
 	q, args := a.builder.Insert("document_branches").
 		SetMap(map[string]any{
 			"id":                 doc.BranchID,
@@ -67,13 +67,15 @@ func (a *agent) upsertDocumentBranch(ctx context.Context, doc document.Document)
 			"fk_last_updated_by = excluded.fk_last_updated_by").
 		MustSql()
 
-	_, err := a.sql.ExecContext(ctx, q, args...)
+	_, err := ex.ExecContext(ctx, q, args...)
 
 	return err
 }
 
 // ForkDocumentBranch creates a new branch by copying the contents of an
-// existing source branch. Does nothing if the target branch already exists.
+// existing source branch. A taken target name surfaces as the duplicate-name
+// unique violation — swallowing it would hand the caller the pre-existing
+// branch as if it were freshly forked.
 func (a *agent) ForkDocumentBranch(
 	ctx context.Context,
 	docID xid.ID,
@@ -93,7 +95,6 @@ func (a *agent) ForkDocumentBranch(
 		SELECT $1, $2, $3, $4, document_name, icon, content, raw_content, protected, false, $5, $6, $5, $6
 		FROM document_branches
 		WHERE fk_document_id = $2 AND branch_name = $7
-		ON CONFLICT (fk_document_id, branch_name) DO NOTHING
 	`
 
 	_, err := a.sql.ExecContext(ctx, q, xid.New(), docID, orgID, targetBranch, now, createdBy, sourceBranch)
@@ -304,11 +305,12 @@ func (a *agent) selectBranchSummary(b sq.SelectBuilder) sq.SelectBuilder {
 	).From("document_branches")
 }
 
-// insertDocumentBranchChangelog inserts a changelog entry for a branch update.
-// The entry is keyed by branch id rather than branch name so that renaming a
-// branch cannot break the reference.
+// insertDocumentBranchChangelog inserts a changelog entry for a branch update
+// through the given executor. The entry is keyed by branch id rather than
+// branch name so that renaming a branch cannot break the reference.
 func (a *agent) insertDocumentBranchChangelog(
 	ctx context.Context,
+	ex sqlx.ExecerContext,
 	docID, branchID xid.ID,
 	clog document.Changelog,
 ) error {
@@ -325,17 +327,17 @@ func (a *agent) insertDocumentBranchChangelog(
 			"content = excluded.content, raw_content = excluded.raw_content, created_at = excluded.created_at").
 		MustSql()
 
-	if _, err := a.sql.ExecContext(ctx, q, args...); err != nil {
+	if _, err := ex.ExecContext(ctx, q, args...); err != nil {
 		return err
 	}
 
-	return a.trimDocumentBranchChangelogs(ctx, branchID)
+	return a.trimDocumentBranchChangelogs(ctx, ex, branchID)
 }
 
 // trimDocumentBranchChangelogs keeps only the newest snapshots of a branch.
 // Age trimming lives in the file manager instead, since it has to reach
 // branches that stopped inserting altogether.
-func (a *agent) trimDocumentBranchChangelogs(ctx context.Context, branchID xid.ID) error {
+func (a *agent) trimDocumentBranchChangelogs(ctx context.Context, ex sqlx.ExecerContext, branchID xid.ID) error {
 	// a zero limit means unlimited retention; without this guard the
 	// subquery below would emit LIMIT 0 and the delete would drop every
 	// snapshot of the branch.
@@ -356,7 +358,7 @@ func (a *agent) trimDocumentBranchChangelogs(ctx context.Context, branchID xid.I
 		sq.Eq{"fk_branch_id": branchID},
 	}).MustSql()
 
-	_, err := a.sql.ExecContext(ctx, q, args...)
+	_, err := ex.ExecContext(ctx, q, args...)
 
 	return err
 }

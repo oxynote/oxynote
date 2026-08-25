@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"net/http"
 	"strconv"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
@@ -213,7 +215,7 @@ func Test_agent_upsertDocumentBranch(t *testing.T) {
 			db := prepTempDB(t)
 			c := cfn(t, db)
 
-			err := db.upsertDocumentBranch(context.Background(), c.Document)
+			err := db.upsertDocumentBranch(context.Background(), db.sql, c.Document)
 			testutil.RequireEqualError(t, c.Err, err)
 
 			if err != nil {
@@ -283,9 +285,13 @@ func Test_agent_ForkDocumentBranch(t *testing.T) {
 	assert.Equal(t, null.StringFrom(users[0]), forked.CreatedBy)
 	assert.Equal(t, null.StringFrom(users[0]), forked.LastUpdatedBy)
 
-	// success - target branch already exists, nothing overwritten
+	// error - target branch already exists
 	err = db.ForkDocumentBranch(context.Background(), doc.ID, doc.OrganizationID, document.DefaultBranch, "feature-x", "someone-else")
-	require.NoError(t, err)
+	testutil.AssertEqualError(t, errutil.New(
+		http.StatusBadRequest,
+		"document_branch.duplicate_name",
+		"branch name is already in use",
+	), err)
 
 	var createdBy null.String
 
@@ -653,6 +659,7 @@ func prepChangelogs(t *testing.T, db *DB, doc *document.Document, count int) []d
 
 		require.NoError(t, db.insertDocumentBranchChangelog(
 			context.Background(),
+			db.sql,
 			doc.ID,
 			doc.BranchID,
 			clog,
@@ -710,7 +717,7 @@ func Test_agent_trimDocumentBranchChangelogs(t *testing.T) {
 
 			db.opts.MaxDocumentChangelogs = c.Max
 
-			require.NoError(t, db.trimDocumentBranchChangelogs(context.Background(), doc.BranchID))
+			require.NoError(t, db.trimDocumentBranchChangelogs(context.Background(), db.sql, doc.BranchID))
 			assert.Equal(t, c.Remaining, countChangelogs(t, db, doc.BranchID))
 
 			if c.Max == 0 || c.Remaining == len(clogs) {
@@ -805,6 +812,7 @@ func Test_agent_insertDocumentBranchChangelog(t *testing.T) {
 
 			require.NoError(t, db.insertDocumentBranchChangelog(
 				context.Background(),
+				db.sql,
 				doc.ID,
 				doc.BranchID,
 				doc.Changelog(),
@@ -827,7 +835,7 @@ func Test_agent_insertDocumentBranchChangelog(t *testing.T) {
 			db := prepTempDB(t)
 			c := cfn(t, db)
 
-			err := db.insertDocumentBranchChangelog(context.Background(), c.DocumentID, c.BranchID, c.Changelog)
+			err := db.insertDocumentBranchChangelog(context.Background(), db.sql, c.DocumentID, c.BranchID, c.Changelog)
 			testutil.RequireEqualError(t, c.Err, err)
 
 			if c.Trimmed != 0 {

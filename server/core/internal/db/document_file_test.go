@@ -214,6 +214,7 @@ func Test_agent_CheckDocumentFileReferenced(t *testing.T) {
 
 			require.NoError(t, db.insertDocumentBranchChangelog(
 				context.Background(),
+				db.sql,
 				doc.ID,
 				doc.BranchID,
 				doc.Changelog(),
