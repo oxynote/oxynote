@@ -23,6 +23,10 @@ updates:
       - dependency-name: "@lezer/*"
       - dependency-name: "@rollup/plugin-node-resolve"
       - dependency-name: "@types/jest"
+      # codemirror-promql pins lezer-promql exactly, and vite aliases that
+      # import to the fork — so any bump needs the fork re-synced to the
+      # matching upstream tag or the generated term ids drift apart.
+      - dependency-name: "@prometheus-io/codemirror-promql"
       # typescript-eslint caps typescript at <6.1.0 and vue-tsc has not
       # caught up with the 7.x native port, so 6.x is the ceiling until
       # both support it.
