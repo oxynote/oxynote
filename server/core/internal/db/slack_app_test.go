@@ -10,6 +10,7 @@ import (
 	sq "github.com/Masterminds/squirrel"
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/apps/slack"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
@@ -92,8 +93,9 @@ func prepSlackMessages(t *testing.T, db *DB, count int, fn func(int, *slack.Mess
 
 func Test_agent_InsertSlackApp(t *testing.T) {
 	type tcase struct {
-		App slack.App
-		Err error
+		App    slack.App
+		Result *slack.App
+		Err    error
 	}
 
 	cc := map[string]func(*testing.T, *DB) tcase{
@@ -126,6 +128,47 @@ func Test_agent_InsertSlackApp(t *testing.T) {
 				App: app,
 			}
 		},
+		"Reinstall keeps the existing organization": func(t *testing.T, db *DB) tcase {
+			org := prepOrganizations(t, db, 1)[0]
+			app := prepSlackApps(t, db, 1, func(_ int, app *slack.App) {
+				app.OrganizationID = null.StringFrom(org)
+			})[0]
+
+			// a reinstall carries no organization; it must refresh the
+			// token without disconnecting the workspace.
+			return tcase{
+				App: slack.App{
+					TeamID: app.TeamID,
+					Token:  "token-2",
+				},
+				Result: &slack.App{
+					TeamID:         app.TeamID,
+					Token:          "token-2",
+					OrganizationID: null.StringFrom(org),
+				},
+			}
+		},
+		"A claimed workspace is not rebound to another organization": func(t *testing.T, db *DB) tcase {
+			orgs := prepOrganizations(t, db, 2)
+			app := prepSlackApps(t, db, 1, func(_ int, app *slack.App) {
+				app.OrganizationID = null.StringFrom(orgs[0])
+			})[0]
+
+			// a raced connect for another organization must not silently
+			// take over the workspace and its token.
+			return tcase{
+				App: slack.App{
+					TeamID:         app.TeamID,
+					Token:          "token-2",
+					OrganizationID: null.StringFrom(orgs[1]),
+				},
+				Result: &slack.App{
+					TeamID:         app.TeamID,
+					Token:          "token-2",
+					OrganizationID: null.StringFrom(orgs[0]),
+				},
+			}
+		},
 	}
 
 	for cn, cfn := range cc {
@@ -142,6 +185,12 @@ func Test_agent_InsertSlackApp(t *testing.T) {
 				return
 			}
 
+			exp := c.App
+
+			if c.Result != nil {
+				exp = *c.Result
+			}
+
 			var app slack.App
 
 			q, args := db.selectSlackApp(db.builder.Select()).
@@ -151,36 +200,9 @@ func Test_agent_InsertSlackApp(t *testing.T) {
 
 			err = db.sql.Get(&app, q, args...)
 			require.NoError(t, err)
-			assert.Equal(t, c.App, app)
+			assert.Equal(t, exp, app)
 		})
 	}
-
-	t.Run("Reinstall keeps the existing organization", func(t *testing.T) {
-		t.Parallel()
-
-		db := prepTempDB(t)
-		org := prepOrganizations(t, db, 1)[0]
-
-		app := slack.App{
-			TeamID:         "team-reinstall",
-			Token:          "token-1",
-			OrganizationID: null.StringFrom(org),
-		}
-
-		require.NoError(t, db.InsertSlackApp(context.Background(), app))
-
-		// a reinstall carries no organization; it must refresh the token
-		// without disconnecting the workspace.
-		require.NoError(t, db.InsertSlackApp(context.Background(), slack.App{
-			TeamID: app.TeamID,
-			Token:  "token-2",
-		}))
-
-		res, err := db.FetchSlackAppByTeamID(context.Background(), app.TeamID)
-		require.NoError(t, err)
-		assert.Equal(t, "token-2", res.Token)
-		assert.Equal(t, org, res.OrganizationID.String)
-	})
 }
 
 func Test_agent_InsertSlackMessage(t *testing.T) {
@@ -313,6 +335,7 @@ func Test_agent_UpdateSlackAppOrganizationID(t *testing.T) {
 	type tcase struct {
 		TeamID         string
 		OrganizationID string
+		Result         null.String
 		Err            error
 	}
 
@@ -326,6 +349,21 @@ func Test_agent_UpdateSlackAppOrganizationID(t *testing.T) {
 				Err:            assert.AnError,
 			}
 		},
+		"An already claimed workspace is not reassigned": func(t *testing.T, db *DB) tcase {
+			orgs := prepOrganizations(t, db, 2)
+			app := prepSlackApps(t, db, 1, func(_ int, app *slack.App) {
+				app.OrganizationID = null.StringFrom(orgs[0])
+			})[0]
+
+			// a second connect must lose the race rather than take the
+			// workspace away from the organization that claimed it.
+			return tcase{
+				TeamID:         app.TeamID,
+				OrganizationID: orgs[1],
+				Result:         null.StringFrom(orgs[0]),
+				Err:            errutil.ErrNotFound,
+			}
+		},
 		"Successful update": func(t *testing.T, db *DB) tcase {
 			org := prepOrganizations(t, db, 1)[0]
 			app := prepSlackApps(t, db, 1, nil)[0]
@@ -333,6 +371,7 @@ func Test_agent_UpdateSlackAppOrganizationID(t *testing.T) {
 			return tcase{
 				TeamID:         app.TeamID,
 				OrganizationID: org,
+				Result:         null.StringFrom(org),
 			}
 		},
 	}
@@ -347,7 +386,7 @@ func Test_agent_UpdateSlackAppOrganizationID(t *testing.T) {
 			err := db.UpdateSlackAppOrganizationID(context.Background(), c.TeamID, c.OrganizationID)
 			testutil.RequireEqualError(t, c.Err, err)
 
-			if err != nil {
+			if !c.Result.Valid {
 				return
 			}
 
@@ -361,7 +400,7 @@ func Test_agent_UpdateSlackAppOrganizationID(t *testing.T) {
 
 			err = db.sql.Get(&organizationID, q, args...)
 			require.NoError(t, err)
-			assert.Equal(t, null.StringFrom(c.OrganizationID), organizationID)
+			assert.Equal(t, c.Result, organizationID)
 		})
 	}
 }

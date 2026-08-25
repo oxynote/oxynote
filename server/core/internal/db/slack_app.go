@@ -6,10 +6,14 @@ import (
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
 	"github.com/oxynote/oxynote/server/core/internal/apps/slack"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 )
 
 // InsertSlackApp inserts or updates a Slack app document in the database.
+// An existing organization binding is kept over the incoming one, so a
+// raced connect cannot silently rebind a workspace already claimed by
+// another organization.
 func (a *agent) InsertSlackApp(ctx context.Context, app slack.App) error {
 	q, args := a.builder.Insert("slack_apps").
 		SetMap(map[string]any{
@@ -21,7 +25,7 @@ func (a *agent) InsertSlackApp(ctx context.Context, app slack.App) error {
 			ON CONFLICT (team_id)
 			DO UPDATE SET
 				token = EXCLUDED.token,
-				fk_organization_id = COALESCE(EXCLUDED.fk_organization_id, slack_apps.fk_organization_id)
+				fk_organization_id = COALESCE(slack_apps.fk_organization_id, EXCLUDED.fk_organization_id)
 		`).
 		MustSql()
 
@@ -97,20 +101,36 @@ func (a *agent) FetchSlackMessages(ctx context.Context, organizationID string) (
 	return messages, nil
 }
 
-// UpdateSlackAppOrganizationID updates the Slack app organization id in the database.
+// UpdateSlackAppOrganizationID assigns an unclaimed Slack workspace to an
+// organization. It returns errutil.ErrNotFound when the workspace is
+// already claimed, so two concurrent connects cannot both succeed with the
+// second overwriting the first.
 func (a *agent) UpdateSlackAppOrganizationID(ctx context.Context, teamID, organizationID string) error {
 	q, args := a.builder.Update("slack_apps").
 		SetMap(map[string]any{
 			"fk_organization_id": organizationID,
 		}).
 		Where(sq.Eq{
-			"team_id": teamID,
+			"team_id":            teamID,
+			"fk_organization_id": nil,
 		}).
 		MustSql()
 
-	_, err := a.sql.ExecContext(ctx, q, args...)
+	res, err := a.sql.ExecContext(ctx, q, args...)
+	if err != nil {
+		return err
+	}
 
-	return err
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if n == 0 {
+		return errutil.ErrNotFound
+	}
+
+	return nil
 }
 
 // FetchSlackAppByTeamID retrieves the Slack app for a given team ID from the database.

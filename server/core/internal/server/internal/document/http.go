@@ -807,6 +807,14 @@ func (h *Handler) MergeBranches(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// a self-merge would soft-delete the branch's hooks and comments and
+	// then copy the hooks back from the same, now hook-less, branch —
+	// permanently destroying both.
+	if inp.FromBranchID == inp.ToBranchID {
+		httpserver.RespondError(h.log, w, errutil.New(http.StatusBadRequest, "document.branch_self_merge", "cannot merge a branch into itself"))
+		return
+	}
+
 	fromDoc, err := h.db.FetchDocumentByBranchID(r.Context(), inp.FromBranchID, session.ActiveOrganizationID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)

@@ -346,6 +346,13 @@ func Test_Handler_MergeBranches(t *testing.T) {
 			Body:     "{",
 			RespCode: http.StatusBadRequest,
 		},
+		"Merging a branch into itself": {
+			DB:       &DBMock{},
+			Tx:       &TxMock{},
+			Body:     `{"fromBranchId":"` + _branchID.String() + `","toBranchId":"` + _branchID.String() + `"}`,
+			RespCode: http.StatusBadRequest,
+			RespJSON: `{"code":"document.branch_self_merge","message":"cannot merge a branch into itself"}`,
+		},
 		"Source branch fetch error": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {

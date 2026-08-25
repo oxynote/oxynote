@@ -471,13 +471,16 @@ type DB interface {
 // AppDB is an interface that handles communication with the slack app and
 // message database.
 type AppDB interface {
-	// InsertSlackApp inserts a slack app into the database.
+	// InsertSlackApp inserts a slack app into the database, keeping an
+	// existing organization binding over the incoming one.
 	InsertSlackApp(ctx context.Context, app slack.App) error
 
 	// InsertSlackMessage inserts a slack message into the database.
 	InsertSlackMessage(ctx context.Context, msg slack.Message) error
 
-	// UpdateSlackAppOrganiziationID updates an existing slack app in the database.
+	// UpdateSlackAppOrganizationID assigns an unclaimed slack workspace to
+	// an organization, returning errutil.ErrNotFound when it is already
+	// claimed.
 	UpdateSlackAppOrganizationID(ctx context.Context, teamID, organizationID string) error
 
 	// FetchSlackAppByTeamID fetches the slack app for a given team id.
