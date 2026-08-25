@@ -1,4 +1,3 @@
-import type { IncomingMessage } from "node:http"
 import { serve } from "@hono/node-server"
 import { Hono } from "hono"
 import { createNodeWebSocket } from "@hono/node-ws"
@@ -50,17 +49,40 @@ app.on(
 )
 app.get(
 	"/hocuspocus",
-	nodeWs.upgradeWebSocket((c) => ({
-		onOpen(_evt, ws) {
-			// hocuspocus wants node's IncomingMessage; hono hands
-			// over a fetch Request. Only the headers are read from
-			// it, and toHeaders accepts either shape.
-			hocuspocus.handleConnection(
-				ws.raw,
-				c.req.raw as unknown as IncomingMessage,
-			)
-		},
-	})),
+	nodeWs.upgradeWebSocket((c) => {
+		// hocuspocus does not attach its own socket listeners here, so the
+		// frames hono receives have to be fed in. Without that the client's
+		// opening Sync message is dropped and the document never syncs.
+		let clientConnection:
+			| ReturnType<typeof hocuspocus.handleConnection>
+			| undefined
+
+		return {
+			onOpen(_evt, ws) {
+				if (!ws.raw) {
+					return
+				}
+
+				ws.raw.binaryType = "arraybuffer"
+				clientConnection = hocuspocus.handleConnection(
+					ws.raw,
+					c.req.raw,
+				)
+			},
+			onMessage(evt) {
+				if (!(evt.data instanceof ArrayBuffer)) {
+					return
+				}
+
+				clientConnection?.handleMessage(
+					new Uint8Array(evt.data),
+				)
+			},
+			onClose() {
+				clientConnection?.handleClose()
+			},
+		}
+	}),
 )
 
 const server = serve(

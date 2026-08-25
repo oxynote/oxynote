@@ -12,6 +12,11 @@ const config: KnipConfig = {
 		interface: true,
 		type: true,
 	},
+
+	// @hono/node-ws types its socket with `ws`, which ships no types of
+	// its own, so these are needed to type ws.raw even though nothing
+	// imports them directly
+	ignoreDependencies: ["@types/ws"],
 }
 
 export default config

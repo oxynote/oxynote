@@ -78,6 +78,7 @@ export const CodeBlock = CodeBlockLowlight.extend<CodeBlockOptions>({
 		return {
 			languageClassPrefix: "language-",
 			exitOnArrowDown: true,
+			exitOnArrowUp: true,
 			tabSize: 2,
 			HTMLAttributes: {},
 			...parent,

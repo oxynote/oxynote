@@ -23,6 +23,18 @@ updates:
       - dependency-name: "@lezer/*"
       - dependency-name: "@rollup/plugin-node-resolve"
       - dependency-name: "@types/jest"
+      # typescript-eslint caps typescript at <6.1.0 and vue-tsc has not
+      # caught up with the 7.x native port, so 6.x is the ceiling until
+      # both support it.
+      - dependency-name: "typescript"
+        versions: [">=7.0.0"]
+      # @electron-forge/plugin-fuses peers @electron/fuses ^1.0.0; no forge
+      # release supports 2.x yet.
+      - dependency-name: "@electron/fuses"
+        versions: [">=2.0.0"]
+      # @vee-validate/zod peers zod ^3.24.0 and has no v4 release.
+      - dependency-name: "zod"
+        versions: [">=4.0.0"]
     groups:
       # better-auth does not follow semver — 1.x minor releases can be
       # breaking, so its minor updates go into this breaking-changes group
