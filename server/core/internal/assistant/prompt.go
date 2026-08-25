@@ -198,7 +198,20 @@ func genModelInput(ctx context.Context, _ string, input *adk.AgentInput) ([]*sch
 	msgs := make([]*schema.Message, 0, len(input.Messages)+1)
 	msgs = append(msgs, schema.SystemMessage(buildSystemPrompt(activeDocumentID(ctx))))
 
-	return append(msgs, input.Messages...), nil
+	// the conversation a completed run leaves behind includes the system
+	// message this function prepended, so appending the input verbatim
+	// would stack one more prompt every turn — and keep stale ones whose
+	// current-context section names a document the user has left. Only
+	// the fresh prompt survives.
+	for _, msg := range input.Messages {
+		if msg != nil && msg.Role == schema.System {
+			continue
+		}
+
+		msgs = append(msgs, msg)
+	}
+
+	return msgs, nil
 }
 
 // activeDocumentID returns the document the user is viewing for this

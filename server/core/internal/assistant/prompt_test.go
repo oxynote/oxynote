@@ -91,6 +91,25 @@ func Test_genModelInput(t *testing.T) {
 	assert.Equal(t, schema.System, msgs[0].Role)
 	assert.NotEmpty(t, msgs[0].Content)
 	assert.Equal(t, "hello", msgs[1].Content)
+
+	// a restored conversation carries the system prompts previous runs
+	// prepended; only the fresh one may reach the model, or the prompt
+	// stacks up a copy per turn.
+	msgs, err = genModelInput(context.Background(), "", &adk.AgentInput{
+		Messages: []*schema.Message{
+			schema.SystemMessage("stale prompt"),
+			schema.UserMessage("hello"),
+			schema.AssistantMessage("hi", nil),
+			schema.SystemMessage("another stale prompt"),
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, msgs, 3)
+
+	assert.Equal(t, schema.System, msgs[0].Role)
+	assert.NotEqual(t, "stale prompt", msgs[0].Content)
+	assert.Equal(t, "hello", msgs[1].Content)
+	assert.Equal(t, "hi", msgs[2].Content)
 }
 
 func Test_activeDocumentID(t *testing.T) {
