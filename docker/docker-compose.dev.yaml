@@ -1,6 +1,6 @@
 services:
   caddy:
-    image: caddy:2.9-alpine
+    image: caddy:2.11-alpine
     container_name: caddy
     volumes:
       - caddy_data:/data
@@ -150,7 +150,7 @@ services:
         max-file: "3"
   meilisearch:
     container_name: meilisearch
-    image: getmeili/meilisearch:v1.23
+    image: getmeili/meilisearch:v1.53
     volumes:
       - meilisearch_data:/meili_data
     environment:
@@ -175,7 +175,7 @@ services:
         max-file: "3"
   valkey:
     container_name: valkey
-    image: valkey/valkey:9.0-alpine
+    image: valkey/valkey:9.1-alpine
     volumes:
       - valkey_data:/data
     restart: unless-stopped
