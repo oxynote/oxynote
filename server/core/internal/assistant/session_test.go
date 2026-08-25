@@ -589,13 +589,15 @@ func Test_session_handleConfirmResponse(t *testing.T) {
 			t.Parallel()
 
 			applier := stubEditApplier()
+			cm := stubChatModel(c.Responses...)
 
 			m := testManager()
-			m.model = stubChatModel(c.Responses...)
+			m.model = cm
 			m.db = stubDocumentDB()
 			m.applier = applier
 
 			s, rec := prepSession(t, m)
+			s.SetActiveDocument(docID)
 
 			s.handleMessage(context.Background(), "reword the intro")
 			rec.wait(t)
@@ -644,6 +646,14 @@ func Test_session_handleConfirmResponse(t *testing.T) {
 			_, found, err := m.checkpoints.Get(context.Background(), s.key)
 			require.NoError(t, err)
 			assert.False(t, found)
+
+			// every run stays anchored to the document the user is
+			// viewing — the auto-approve flag of an "approve all"
+			// answer must not displace it from the session values.
+			for _, call := range cm.StreamCalls() {
+				require.NotEmpty(t, call.Input)
+				assert.Contains(t, call.Input[0].Content, docID)
+			}
 		})
 	}
 }
@@ -780,7 +790,7 @@ func Test_session_runOptions(t *testing.T) {
 
 	// the checkpoint id and the active document snapshot, so a mid-turn
 	// navigation cannot shift the prompt under an in-flight turn.
-	assert.Len(t, s.runOptions(), 2)
+	assert.Len(t, s.runOptions(nil), 2)
 }
 
 func Test_session_resendPendingConfirmation(t *testing.T) {

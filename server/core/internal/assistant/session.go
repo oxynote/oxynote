@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"maps"
 	"strings"
 	"sync"
 
@@ -234,7 +235,7 @@ func (s *session) handleMessage(ctx context.Context, content string) {
 		s.messages = msgs
 		s.mu.Unlock()
 
-		iter := s.runner.Run(turnCtx, msgs, s.runOptions()...)
+		iter := s.runner.Run(turnCtx, msgs, s.runOptions(nil)...)
 
 		return tn.run(turnCtx, iter)
 	})
@@ -289,18 +290,19 @@ func (s *session) handleConfirmResponse(ctx context.Context, turnID string, appr
 			targets[id] = tools.Decision{Approved: approved}
 		}
 
-		opts := s.runOptions()
+		var extra map[string]any
+
 		if approved && all {
-			opts = append(opts, adk.WithSessionValues(map[string]any{
+			extra = map[string]any{
 				tools.SessionKeyAutoApprove: true,
-			}))
+			}
 		}
 
 		iter, err := s.runner.ResumeWithParams(
 			turnCtx,
 			s.key,
 			&adk.ResumeParams{Targets: targets},
-			opts...,
+			s.runOptions(extra)...,
 		)
 		if err != nil {
 			// the pending record was the only route back to this
@@ -393,19 +395,24 @@ func (s *session) goTurn(ctx context.Context, fn func(context.Context) *persist.
 	})
 }
 
-// runOptions are the per-run options shared by fresh and resumed turns.
-// The active document is snapshotted here so a mid-turn navigation
-// cannot shift the system prompt under an in-flight turn.
-func (s *session) runOptions() []adk.AgentRunOption {
+// runOptions are the per-run options shared by fresh and resumed turns,
+// with extra merged into the shared session values. The snapshot
+// exists so a mid-turn navigation cannot shift the system prompt under
+// an in-flight turn.
+func (s *session) runOptions(extra map[string]any) []adk.AgentRunOption {
 	s.mu.Lock()
 	activeDocumentID := s.activeDocumentID
 	s.mu.Unlock()
 
+	values := map[string]any{
+		_sessionKeyActiveDocument: activeDocumentID,
+	}
+
+	maps.Copy(values, extra)
+
 	return []adk.AgentRunOption{
 		adk.WithCheckPointID(s.key),
-		adk.WithSessionValues(map[string]any{
-			_sessionKeyActiveDocument: activeDocumentID,
-		}),
+		adk.WithSessionValues(values),
 	}
 }
 
