@@ -84,10 +84,7 @@ export interface CoreClient {
 	): Promise<void>
 	initializeOrganization(organizationId: string): Promise<void>
 	teardownOrganization(organizationId: string): Promise<void>
-	fetchBranches(
-		documentId: string,
-		options?: RequestOptions,
-	): Promise<BranchSummary[]>
+	fetchBranches(documentId: string): Promise<BranchSummary[]>
 	fetchBranchContent(
 		documentId: string,
 		branchId: string,
@@ -96,6 +93,10 @@ export interface CoreClient {
 		documentId: string,
 		branchId: string,
 		update: BranchUpdate,
+	): Promise<void>
+	verifyDocumentAccess(
+		documentId: string,
+		options: RequestOptions,
 	): Promise<void>
 	mergeBranches(
 		documentId: string,
@@ -131,10 +132,9 @@ export function createCoreClient(
 			)
 		},
 
-		async fetchBranches(documentId, options) {
+		async fetchBranches(documentId) {
 			const response = await http.get(
 				`${internal}/documents/${documentId}/branches`,
-				options,
 			)
 
 			return response.data as BranchSummary[]
@@ -152,6 +152,17 @@ export function createCoreClient(
 			await http.put(
 				`${internal}/documents/${documentId}/branch/${branchId}`,
 				update,
+			)
+		},
+
+		// the access check goes through core's session-authed surface,
+		// not /api/x: the caller's own headers are forwarded so core
+		// decides whether this user may see the document, and rejects
+		// with core's status when they may not.
+		async verifyDocumentAccess(documentId, options) {
+			await http.get(
+				`${baseUrl}/api/documents/${documentId}/access`,
+				options,
 			)
 		},
 

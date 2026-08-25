@@ -163,7 +163,7 @@ describe("createDocumentHooks", () => {
 			expect(auth.getSession).toHaveBeenCalledTimes(1)
 		})
 
-		it("confirms the document exists with the caller's own headers", async ({
+		it("verifies the user's document access with their own headers", async ({
 			expect,
 		}) => {
 			const core = stubCore()
@@ -176,13 +176,16 @@ describe("createDocumentHooks", () => {
 				token: "",
 			})
 
-			expect(core.fetchBranches).toHaveBeenCalledTimes(1)
+			expect(core.verifyDocumentAccess).toHaveBeenCalledTimes(
+				1,
+			)
 			const [documentId, options] =
-				core.fetchBranches.mock.calls[0] ?? []
+				core.verifyDocumentAccess.mock.calls[0] ?? []
 			expect(documentId).toBe("doc1")
 			expect(options?.headers?.get("cookie")).toBe(
 				"auth.session=abc",
 			)
+			expect.soft(core.fetchBranches).toHaveBeenCalledTimes(0)
 		})
 
 		it("rejects a connection with no session", async ({
@@ -199,7 +202,9 @@ describe("createDocumentHooks", () => {
 					token: "",
 				}),
 			).rejects.toThrow("not authenticated")
-			expect(core.fetchBranches).toHaveBeenCalledTimes(0)
+			expect(core.verifyDocumentAccess).toHaveBeenCalledTimes(
+				0,
+			)
 		})
 
 		// the e2e suite uses this token to drive the failure path
@@ -218,15 +223,15 @@ describe("createDocumentHooks", () => {
 					token: "force-error",
 				}),
 			).rejects.toThrow("not authenticated")
-			expect(core.fetchBranches).toHaveBeenCalledTimes(0)
+			expect(core.verifyDocumentAccess).toHaveBeenCalledTimes(
+				0,
+			)
 		})
 
-		it("propagates a failed document lookup", async ({
-			expect,
-		}) => {
-			const failure = new Error("document not found")
+		it("propagates a rejected access check", async ({ expect }) => {
+			const failure = new Error("document not accessible")
 			const core = stubCore()
-			core.fetchBranches.mockRejectedValue(failure)
+			core.verifyDocumentAccess.mockRejectedValue(failure)
 			const hooks = hooksWith(core)
 
 			await expect(

@@ -151,12 +151,12 @@ export function createDocumentHooks({ auth, core }: DocumentHookDeps) {
 				throw new Error("not authenticated")
 			}
 
-			// verify the user has access to this document by
-			// listing its branches. The call needs no org filter —
-			// the session check above confirms identity and this
-			// confirms the document exists.
+			// verify the user has access to this document through
+			// core's session-authed access endpoint. The caller's
+			// own headers are forwarded, so core rejects a document
+			// the user's organization does not own.
 			await reported(() =>
-				core.fetchBranches(documentId, {
+				core.verifyDocumentAccess(documentId, {
 					headers: toAxiosHeaders(requestHeaders),
 				}),
 			)

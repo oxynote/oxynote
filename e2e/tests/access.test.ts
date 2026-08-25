@@ -176,16 +176,6 @@ test.describe("access", () => {
 		browser,
 	}) => {
 		test.slow()
-		// this one does not hold yet, and the annotation is here to keep
-		// that visible rather than to excuse it: the realtime server
-		// authenticates a connection by asking core whether the document
-		// exists, over core's internal surface, which answers without
-		// filtering by organization. Any signed-in user therefore reaches
-		// any document whose id they know, over the socket that carries
-		// the content itself — the HTTP surface above is scoped and this
-		// one is not. Delete this line when the check learns about
-		// organizations; it will then fail for passing unexpectedly.
-		test.fail()
 
 		await signUpWithWorkspace(page, request)
 		const own = documentId(page)

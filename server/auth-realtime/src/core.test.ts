@@ -126,25 +126,6 @@ describe("createCoreClient", () => {
 			expect(http.get).toHaveBeenCalledTimes(1)
 			expect(http.get).toHaveBeenCalledWith(
 				"http://core:8080/api/x/documents/doc-1/branches",
-				undefined,
-			)
-		})
-
-		it("forwards the caller's headers when given them", async ({
-			expect,
-		}) => {
-			const http = stubHttp({ status: 200, data: [] })
-			const headers = new AxiosHeaders()
-			headers.set("cookie", "auth.session=abc")
-
-			await createCoreClient(BASE_URL, http).fetchBranches(
-				"doc-1",
-				{ headers },
-			)
-
-			expect(http.get).toHaveBeenCalledWith(
-				"http://core:8080/api/x/documents/doc-1/branches",
-				{ headers },
 			)
 		})
 	})
@@ -200,6 +181,51 @@ describe("createCoreClient", () => {
 			)
 			expect.soft(http.get).toHaveBeenCalledTimes(0)
 			expect.soft(http.post).toHaveBeenCalledTimes(0)
+		})
+	})
+
+	describe("verifyDocumentAccess", () => {
+		// the check goes through core's session-authed surface rather
+		// than /api/x, because core decides from the forwarded headers
+		// whether the caller may see the document
+		it("gets core's public access route with the caller's headers", async ({
+			expect,
+		}) => {
+			const http = stubHttp({ status: 204, data: null })
+			const headers = new AxiosHeaders()
+			headers.set("cookie", "auth.session=abc")
+
+			await createCoreClient(
+				BASE_URL,
+				http,
+			).verifyDocumentAccess("doc-1", { headers })
+
+			expect(http.get).toHaveBeenCalledTimes(1)
+			expect(http.get).toHaveBeenCalledWith(
+				"http://core:8080/api/documents/doc-1/access",
+				{ headers },
+			)
+			expect.soft(http.post).toHaveBeenCalledTimes(0)
+			expect.soft(http.put).toHaveBeenCalledTimes(0)
+		})
+
+		// the connection is refused with core's own verdict, which only
+		// works if the rejection reaches the onAuthenticate hook
+		it("propagates a denied access untouched", async ({
+			expect,
+		}) => {
+			const failure = new Error(
+				"Request failed with status code 403",
+			)
+			const http = stubHttp()
+			http.get.mockRejectedValue(failure)
+
+			await expect(
+				createCoreClient(
+					BASE_URL,
+					http,
+				).verifyDocumentAccess("doc-1", {}),
+			).rejects.toBe(failure)
 		})
 	})
 

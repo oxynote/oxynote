@@ -117,6 +117,35 @@ func (h *Handler) FetchDocumentMaintainers(w http.ResponseWriter, r *http.Reques
 	)
 }
 
+// VerifyDocumentAccess handles the access check for a document: it responds
+// with no content when the document is visible to the caller's organization
+// and with not found when it does not exist or belongs to another one.
+func (h *Handler) VerifyDocumentAccess(w http.ResponseWriter, r *http.Request) {
+	session, err := auth.ExtractSessionFromContext(r.Context())
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	id, err := httpserver.ExtractNamedID(r, "documentId")
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if _, err := h.db.FetchDocument(r.Context(), id, session.ActiveOrganizationID, documentCore.DefaultBranch); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	httpserver.Respond(
+		h.log,
+		w,
+		nil,
+		http.StatusNoContent,
+	)
+}
+
 // FetchBranchReviewers handles the retrieval of reviewers for a specific document branch.
 func (h *Handler) FetchBranchReviewers(w http.ResponseWriter, r *http.Request) {
 	session, err := auth.ExtractSessionFromContext(r.Context())

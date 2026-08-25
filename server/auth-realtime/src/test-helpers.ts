@@ -46,6 +46,7 @@ export function stubCore(): StubCore {
 			rawContent: null,
 		}),
 		storeBranchContent: vi.fn().mockResolvedValue(undefined),
+		verifyDocumentAccess: vi.fn().mockResolvedValue(undefined),
 		mergeBranches: vi.fn().mockResolvedValue({
 			status: 200,
 			data: {
