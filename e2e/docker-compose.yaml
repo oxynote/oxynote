@@ -19,7 +19,7 @@ name: oxynote-e2e
 
 services:
   caddy:
-    image: caddy:2.9-alpine
+    image: caddy:2.11-alpine
     volumes:
       - ../docker/Caddyfile:/etc/caddy/Caddyfile
     ports:
@@ -155,7 +155,7 @@ services:
       retries: 20
 
   valkey:
-    image: valkey/valkey:9.0-alpine
+    image: valkey/valkey:9.1-alpine
     healthcheck:
       test: ["CMD", "valkey-cli", "ping"]
       interval: 5s
@@ -163,7 +163,7 @@ services:
       retries: 20
 
   meilisearch:
-    image: getmeili/meilisearch:v1.23
+    image: getmeili/meilisearch:v1.53
     environment:
       - MEILI_MASTER_KEY=devmasterkey
       - MEILI_ENV=development
@@ -188,6 +188,6 @@ services:
   # the tests read verification links out of mailpit's REST API, so its
   # http port is published rather than proxied through caddy.
   mailpit:
-    image: axllent/mailpit:v1.30.6
+    image: axllent/mailpit:v1.31.0
     ports:
       - "18025:8025"
