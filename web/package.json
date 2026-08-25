@@ -51,7 +51,7 @@
 		"@pinia/colada-nuxt": "^1.0.2",
 		"@pinia/colada-plugin-auto-refetch": "^0.2.0",
 		"@pinia/nuxt": "^1.0.2",
-		"@prometheus-io/codemirror-promql": "^0.308.0",
+		"@prometheus-io/codemirror-promql": "^0.314.0",
 		"@sentry/nuxt": "^10.71.0",
 		"@tiptap/extension-code-block-lowlight": "^3.30.3",
 		"@tiptap/extension-collaboration": "^3.30.3",
