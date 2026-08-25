@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"strconv"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	sq "github.com/Masterminds/squirrel"
 	"github.com/guregu/null/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/document/file"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
@@ -128,8 +130,10 @@ func Test_agent_InsertDocument(t *testing.T) {
 	}
 
 	type tcase struct {
+		Agent            *agent
 		CancelledContext bool
 		Document         document.Document
+		SortIndex        int64
 		Err              error
 	}
 
@@ -143,37 +147,51 @@ func Test_agent_InsertDocument(t *testing.T) {
 				Err:              assert.AnError,
 			}
 		},
-		"Sort index race exhausts retries": func(t *testing.T, db *DB) tcase {
-			org := prepOrganizations(t, db, 1)[0]
-			parent := prepDocuments(t, db, 1, func(_ int, ndoc *document.Document) {
-				ndoc.OrganizationID = org
-			})[0]
+		"Sort index race exhausts retries": func(t *testing.T, _ *DB) tcase {
+			// a real database cannot hold the collision across attempts —
+			// each retry picks one past the current maximum, which resolves
+			// the race — so the persistent-violation path is driven through
+			// a mock that fails every insert on the sort constraint.
+			a, mock := prepMockDB(t)
 
-			// a single child whose sort_index is 1 leaves a gap at 0:
-			// every attempt counts one sibling, picks sort_index 1,
-			// and collides again, so the retry loop runs dry.
-			child := stubDocument(org)
-			child.ParentID = null.ValueFrom(parent.ID)
-
-			q, args := db.builder.Insert("documents").
-				SetMap(map[string]any{
-					"id":                 child.ID,
-					"sort_index":         1,
-					"fk_organization_id": org,
-					"fk_parent_id":       child.ParentID,
-					"created_at":         child.CreatedAt,
-					"updated_at":         child.UpdatedAt,
-				}).MustSql()
-
-			_, err := db.sql.Exec(q, args...)
-			require.NoError(t, err)
-
-			doc := stubDocument(org)
-			doc.ParentID = null.ValueFrom(parent.ID)
+			for range _insertDocumentMaxAttempts {
+				mock.ExpectBegin()
+				mock.ExpectExec("^SAVEPOINT").WillReturnResult(sqlmock.NewResult(0, 0))
+				mock.ExpectQuery("SELECT COALESCE").
+					WillReturnRows(sqlmock.NewRows([]string{"coalesce"}).AddRow(1))
+				mock.ExpectExec("INSERT INTO documents").WillReturnError(&pgconn.PgError{
+					Code:           "23505",
+					ConstraintName: _insertDocumentSortIndexConstraint,
+				})
+				mock.ExpectExec("^ROLLBACK TO SAVEPOINT").WillReturnResult(sqlmock.NewResult(0, 0))
+				mock.ExpectRollback()
+			}
 
 			return tcase{
-				Document: doc,
-				Err:      assert.AnError,
+				Agent:    a,
+				Document: document.Document{ID: xid.New()},
+				Err:      errors.New("InsertDocument: exhausted 5 retries on sort_index race"),
+			}
+		},
+		"Gap left by a deleted sibling is skipped over": func(t *testing.T, db *DB) tcase {
+			org := prepOrganizations(t, db, 1)[0]
+
+			siblings := make([]document.Document, 2)
+
+			for i := range siblings {
+				siblings[i] = stubDocument(org)
+				require.NoError(t, db.InsertDocument(context.Background(), siblings[i]))
+			}
+
+			_, err := db.DeleteDocument(context.Background(), siblings[0].ID, org)
+			require.NoError(t, err)
+
+			// the survivor keeps sort_index 1, so the insert has to land
+			// one past it — at the sibling count it would collide with it,
+			// and every retry would recompute the same position.
+			return tcase{
+				Document:  stubDocument(org),
+				SortIndex: 2,
 			}
 		},
 		"Duplicate key": func(t *testing.T, db *DB) tcase {
@@ -210,7 +228,13 @@ func Test_agent_InsertDocument(t *testing.T) {
 				cancel()
 			}
 
-			err := db.InsertDocument(ctx, c.Document)
+			ag := &db.agent
+
+			if c.Agent != nil {
+				ag = c.Agent
+			}
+
+			err := ag.InsertDocument(ctx, c.Document)
 			testutil.RequireEqualError(t, c.Err, err)
 
 			if err != nil {
@@ -228,6 +252,14 @@ func Test_agent_InsertDocument(t *testing.T) {
 			err = db.sql.Get(&doc, q, args...)
 			require.NoError(t, err)
 			assert.Equal(t, c.Document, doc)
+
+			var idx int64
+
+			q, args = db.builder.Select("sort_index").From("documents").
+				Where(sq.Eq{"id": c.Document.ID}).MustSql()
+
+			require.NoError(t, db.sql.Get(&idx, q, args...))
+			assert.Equal(t, c.SortIndex, idx)
 		})
 	}
 
@@ -766,6 +798,7 @@ func Test_agent_UpdateDocumentParentID(t *testing.T) {
 		ID               xid.ID
 		ParentID         null.Value[xid.ID]
 		OrganizationID   string
+		SortIndex        int64
 		Err              error
 	}
 
@@ -805,6 +838,38 @@ func Test_agent_UpdateDocumentParentID(t *testing.T) {
 			return tcase{
 				ID:             child.ID,
 				OrganizationID: org,
+				SortIndex:      1,
+			}
+		},
+		"Destination gap left by a deleted sibling is skipped over": func(t *testing.T, db *DB) tcase {
+			org := prepOrganizations(t, db, 1)[0]
+			docs := prepDocuments(t, db, 2, func(_ int, ndoc *document.Document) {
+				ndoc.OrganizationID = org
+			})
+
+			// a lone child at sort_index 1 mimics the gap a deleted
+			// sibling leaves behind: the sibling count would land on 1
+			// and collide with it, one past the highest index lands at 2.
+			now := timeutil.Now().Truncate(time.Second)
+
+			q, args := db.builder.Insert("documents").
+				SetMap(map[string]any{
+					"id":                 xid.New(),
+					"sort_index":         1,
+					"fk_organization_id": org,
+					"fk_parent_id":       docs[0].ID,
+					"created_at":         now,
+					"updated_at":         now,
+				}).MustSql()
+
+			_, err := db.sql.Exec(q, args...)
+			require.NoError(t, err)
+
+			return tcase{
+				ID:             docs[1].ID,
+				ParentID:       null.ValueFrom(docs[0].ID),
+				OrganizationID: org,
+				SortIndex:      2,
 			}
 		},
 	}
@@ -830,17 +895,21 @@ func Test_agent_UpdateDocumentParentID(t *testing.T) {
 				return
 			}
 
-			var parentID null.Value[xid.ID]
+			var res struct {
+				ParentID  null.Value[xid.ID] `db:"fk_parent_id"`
+				SortIndex int64              `db:"sort_index"`
+			}
 
-			q, args := db.builder.Select("fk_parent_id").
+			q, args := db.builder.Select("fk_parent_id", "sort_index").
 				From("documents").
 				Where(sq.Eq{
 					"id": c.ID,
 				}).MustSql()
 
-			err = db.sql.Get(&parentID, q, args...)
+			err = db.sql.Get(&res, q, args...)
 			require.NoError(t, err)
-			assert.Equal(t, c.ParentID, parentID)
+			assert.Equal(t, c.ParentID, res.ParentID)
+			assert.Equal(t, c.SortIndex, res.SortIndex)
 		})
 	}
 }

@@ -85,13 +85,15 @@ func withSavepoint(ctx context.Context, tx *sqlx.Tx, name string, fn func() erro
 	return err
 }
 
-// insertDocumentRow performs one attempt: count siblings within the
-// organization to pick the next sort_index, then insert. Caller is expected
+// insertDocumentRow performs one attempt: pick the next sort_index as one
+// past the highest sibling index within the organization, then insert.
+// MAX rather than COUNT, so the gaps deletions leave behind are skipped
+// over instead of colliding with a surviving sibling. Caller is expected
 // to retry on a unique-violation on the sort_index constraint.
 func (a *agent) insertDocumentRow(ctx context.Context, tx *sqlx.Tx, doc document.Document) error {
 	var pos int64
 
-	q, args := a.builder.Select("COUNT(*)").From("documents").
+	q, args := a.builder.Select("COALESCE(MAX(sort_index) + 1, 0)").From("documents").
 		Where(sq.Eq{
 			"fk_parent_id":       doc.ParentID,
 			"fk_organization_id": doc.OrganizationID,
@@ -261,12 +263,14 @@ func (a *agent) UpdateDocument(ctx context.Context, doc document.Document) error
 // UpdateDocumentParentID re-parents a document, placing it last among its new
 // siblings. The sort index is recomputed rather than carried over: it belongs
 // to the previous parent's sequence and would otherwise collide with an
-// existing sibling at the destination.
+// existing sibling at the destination. One past the highest sibling index,
+// not the sibling count — a destination whose sequence has gaps from
+// deletions would make the count collide with a surviving sibling.
 func (a *agent) UpdateDocumentParentID(ctx context.Context, id xid.ID, parentID null.Value[xid.ID], organizationID string) error {
 	return sqlutil.WrapTx(ctx, a.sql, func(tx *sqlx.Tx) error {
 		var pos int64
 
-		q, args := a.builder.Select("COUNT(*)").From("documents").
+		q, args := a.builder.Select("COALESCE(MAX(sort_index) + 1, 0)").From("documents").
 			Where(sq.Eq{
 				"fk_parent_id":       parentID,
 				"fk_organization_id": organizationID,
