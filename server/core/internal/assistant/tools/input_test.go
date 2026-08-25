@@ -706,54 +706,108 @@ func Test_input_ValidatePlacement(t *testing.T) {
 		Attrs: map[string]any{"title": "Request"},
 	}
 
-	contentDB := func(uid string) *DBMock {
-		return &DBMock{
-			FetchMainBranchContentFunc: func(context.Context, xid.ID, string) (document.Content, error) {
-				return document.Content{
-					Content: document.RootBlock{
-						Content: []document.Block{{
+	// a document with a reference at every container kind the tools can
+	// land a block next to: the root ("root-p"), a callout item
+	// ("callout-p") and a split_doc right side ("right-code").
+	contentDB := &DBMock{
+		FetchMainBranchContentFunc: func(context.Context, xid.ID, string) (document.Content, error) {
+			return document.Content{
+				Content: document.RootBlock{
+					Content: []document.Block{
+						{
 							Type:  document.BlockNodeParagraph,
-							Attrs: document.Attributes{document.AttrUID: uid},
-						}},
+							Attrs: document.Attributes{document.AttrUID: "root-p"},
+						},
+						{
+							Type:  document.BlockNodeCalloutBlock,
+							Attrs: document.Attributes{document.AttrUID: "callout"},
+							Content: []document.Block{{
+								Type:  document.BlockNodeParagraph,
+								Attrs: document.Attributes{document.AttrUID: "callout-p"},
+							}},
+						},
+						{
+							Type:  document.BlockNodeSplitDoc,
+							Attrs: document.Attributes{document.AttrUID: "split"},
+							Content: []document.Block{{
+								Type: document.BlockNodeSplitDocRight,
+								Content: []document.Block{{
+									Type:  document.BlockNodeTitledCodeBlock,
+									Attrs: document.Attributes{document.AttrUID: "right-code"},
+								}},
+							}},
+						},
 					},
-				}, nil
-			},
-		}
+				},
+			}, nil
+		},
 	}
 
 	cc := map[string]struct {
 		DB    *DBMock
+		Ref   string
 		Block block.Block
 		Err   error
 	}{
-		"Invalid block": {
-			DB:    &DBMock{},
-			Block: block.Block{Type: "nonsense"},
-			Err:   assert.AnError,
-		},
-		"Root-legal block needs no lookup": {
-			DB:    &DBMock{},
-			Block: rootBlock,
-		},
 		"Error returned by db.FetchMainBranchContent": {
 			DB: &DBMock{
 				FetchMainBranchContentFunc: func(context.Context, xid.ID, string) (document.Content, error) {
 					return document.Content{}, assert.AnError
 				},
 			},
+			Ref:   "root-p",
 			Block: macroBlock,
 			Err:   assert.AnError,
 		},
-		"Macro internal beside a root block is refused": {
-			DB:    contentDB("ref"),
+		"Invalid block with an unresolved reference": {
+			DB:    contentDB,
+			Ref:   "missing",
+			Block: block.Block{Type: "nonsense"},
+			Err:   assert.AnError,
+		},
+		"Valid block with an unresolved reference is left to the backend": {
+			DB:    contentDB,
+			Ref:   "missing",
+			Block: macroBlock,
+		},
+		"Invalid block beside a resolved reference": {
+			DB:    contentDB,
+			Ref:   "root-p",
+			Block: block.Block{Type: "nonsense"},
+			Err:   assert.AnError,
+		},
+		"Root block beside a root reference is allowed": {
+			DB:    contentDB,
+			Ref:   "root-p",
+			Block: rootBlock,
+		},
+		"Macro internal beside a root reference is refused": {
+			DB:    contentDB,
+			Ref:   "root-p",
 			Block: macroBlock,
 			Err:   assert.AnError,
 		},
-		"Macro internal nested inside a macro is allowed": {
-			// the reference uid is not a root child, so the block is
-			// landing inside a container that accepts it.
-			DB:    contentDB("other"),
+		"Root block inside a callout is allowed": {
+			DB:    contentDB,
+			Ref:   "callout-p",
+			Block: rootBlock,
+		},
+		"Macro internal inside a callout is refused": {
+			DB:    contentDB,
+			Ref:   "callout-p",
 			Block: macroBlock,
+			Err:   assert.AnError,
+		},
+		"Macro internal on a split_doc right side is allowed": {
+			DB:    contentDB,
+			Ref:   "right-code",
+			Block: macroBlock,
+		},
+		"Root block on a split_doc right side is refused": {
+			DB:    contentDB,
+			Ref:   "right-code",
+			Block: rootBlock,
+			Err:   assert.AnError,
 		},
 	}
 
@@ -763,7 +817,7 @@ func Test_input_ValidatePlacement(t *testing.T) {
 
 			inp := testInput(testDeps(c.DB, nil, nil), NameInsertBlock, `{}`)
 
-			err := inp.ValidatePlacement(_testDocID, "ref", c.Block)
+			err := inp.ValidatePlacement(_testDocID, c.Ref, c.Block)
 			testutil.AssertEqualError(t, c.Err, err)
 		})
 	}

@@ -41,6 +41,23 @@ func (rb RootBlock) FindByUID(uid string) (Block, bool) {
 	return Block{}, false
 }
 
+// FindParentTypeByUID recursively searches the root's subtree for the
+// block with the given uid and returns the node type of the block that
+// directly holds it. A top-level match reports BlockNodeDoc.
+func (rb RootBlock) FindParentTypeByUID(uid string) (BlockNodeType, bool) {
+	for _, b := range rb.Content {
+		if id, ok := b.UID(); ok && id == uid {
+			return BlockNodeDoc, true
+		}
+
+		if t, ok := b.FindParentTypeByUID(uid); ok {
+			return t, true
+		}
+	}
+
+	return "", false
+}
+
 // HasBlock searches for a block with the given ID in the root block.
 func (rb RootBlock) HasBlock(blockID string) bool {
 	for _, b := range rb.Content {
@@ -160,6 +177,24 @@ func (b Block) FindByUID(uid string) (Block, bool) {
 	}
 
 	return Block{}, false
+}
+
+// FindParentTypeByUID recursively searches the block's children for the
+// block with the given uid and returns the node type of the block that
+// directly holds it — b's own type for a direct child. A match on b
+// itself is not reported, since b's parent is not in view.
+func (b Block) FindParentTypeByUID(uid string) (BlockNodeType, bool) {
+	for _, cb := range b.Content {
+		if id, ok := cb.UID(); ok && id == uid {
+			return b.Type, true
+		}
+
+		if t, ok := cb.FindParentTypeByUID(uid); ok {
+			return t, true
+		}
+	}
+
+	return "", false
 }
 
 // HasBlock recursively searches for a block with the given ID.

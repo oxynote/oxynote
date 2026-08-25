@@ -12,7 +12,8 @@ import (
 )
 
 // stubTree builds a small nested document for the find tests: a
-// paragraph "p1" and a list "l1" wrapping an item "li1".
+// paragraph "p1" and a list "l1" wrapping an item "li1" holding a
+// paragraph "lp1".
 func stubTree() RootBlock {
 	return RootBlock{
 		Type: BlockNodeDoc,
@@ -22,7 +23,13 @@ func stubTree() RootBlock {
 				Type:  BlockNodeBulletList,
 				Attrs: Attributes{"uid": "l1"},
 				Content: []Block{
-					{Type: BlockNodeListItem, Attrs: Attributes{"uid": "li1"}},
+					{
+						Type:  BlockNodeListItem,
+						Attrs: Attributes{"uid": "li1"},
+						Content: []Block{
+							{Type: BlockNodeParagraph, Attrs: Attributes{"uid": "lp1"}},
+						},
+					},
 				},
 			},
 			{Type: BlockNodeText, Text: "no uid"},
@@ -77,6 +84,52 @@ func Test_Block_FindByUID(t *testing.T) {
 				uid, _ := found.UID()
 				assert.Equal(t, c.UID, uid)
 			}
+		})
+	}
+}
+
+func Test_RootBlock_FindParentTypeByUID(t *testing.T) {
+	cc := map[string]struct {
+		UID    string
+		Parent BlockNodeType
+		Found  bool
+	}{
+		"Top-level block":     {UID: "p1", Parent: BlockNodeDoc, Found: true},
+		"Nested block":        {UID: "li1", Parent: BlockNodeBulletList, Found: true},
+		"Deeply nested block": {UID: "lp1", Parent: BlockNodeListItem, Found: true},
+		"Missing uid":         {UID: "nope"},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			parent, ok := stubTree().FindParentTypeByUID(c.UID)
+			assert.Equal(t, c.Found, ok)
+			assert.Equal(t, c.Parent, parent)
+		})
+	}
+}
+
+func Test_Block_FindParentTypeByUID(t *testing.T) {
+	cc := map[string]struct {
+		UID    string
+		Parent BlockNodeType
+		Found  bool
+	}{
+		"Direct child":              {UID: "li1", Parent: BlockNodeBulletList, Found: true},
+		"Grandchild":                {UID: "lp1", Parent: BlockNodeListItem, Found: true},
+		"Self match is not a match": {UID: "l1"},
+		"Missing uid":               {UID: "nope"},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			parent, ok := stubTree().Content[1].FindParentTypeByUID(c.UID)
+			assert.Equal(t, c.Found, ok)
+			assert.Equal(t, c.Parent, parent)
 		})
 	}
 }

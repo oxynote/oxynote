@@ -3,6 +3,7 @@ package block
 import (
 	"testing"
 
+	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -640,6 +641,125 @@ func Test_ValidateAsRoot(t *testing.T) {
 			t.Parallel()
 
 			err := ValidateAsRoot(c.Input)
+
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if c.Err == nil {
+				return
+			}
+
+			var ve *validationError
+
+			assert.ErrorAs(t, err, &ve, "expected validationError, got %T", err)
+		})
+	}
+}
+
+func Test_ValidateInContainer(t *testing.T) {
+	titledCode := Block{
+		Type:  BlockTitledCode,
+		Text:  "x",
+		Attrs: map[string]any{"title": "ex"},
+	}
+	paragraph := Block{Type: BlockParagraph, Text: "hi"}
+
+	cc := map[string]struct {
+		Container document.BlockNodeType
+		Input     Block
+		Err       error
+	}{
+		"Root container delegates to the root check": {
+			Container: document.BlockNodeDoc,
+			Input:     titledCode,
+			Err:       assert.AnError,
+		},
+		"Root container passes a root block": {
+			Container: document.BlockNodeDoc,
+			Input:     paragraph,
+		},
+		"Invalid block fails before the container check": {
+			Container: document.BlockNodeCalloutBlock,
+			Input:     Block{Type: BlockHeading, Text: "x"},
+			Err:       assert.AnError,
+		},
+		"Callout passes a paragraph": {
+			Container: document.BlockNodeCalloutBlock,
+			Input:     paragraph,
+		},
+		"Callout rejects a titled code": {
+			Container: document.BlockNodeCalloutBlock,
+			Input:     titledCode,
+			Err:       assert.AnError,
+		},
+		"Callout rejects a nested callout": {
+			Container: document.BlockNodeCalloutBlock,
+			Input:     Block{Type: BlockCallout, Text: "note"},
+			Err:       assert.AnError,
+		},
+		"List item passes a paragraph": {
+			Container: document.BlockNodeListItem,
+			Input:     paragraph,
+		},
+		"Task item rejects a heading": {
+			Container: document.BlockNodeTaskItem,
+			Input:     Block{Type: BlockHeading, Text: "T", Attrs: map[string]any{"level": 1}},
+			Err:       assert.AnError,
+		},
+		"Blockquote passes a bullet list": {
+			Container: document.BlockNodeBlockquote,
+			Input: Block{
+				Type:  BlockBulletList,
+				Items: []Block{{Type: BlockParagraph, Text: "a"}},
+			},
+		},
+		"Split doc right passes a titled code": {
+			Container: document.BlockNodeSplitDocRight,
+			Input:     titledCode,
+		},
+		"Split doc right rejects a paragraph": {
+			Container: document.BlockNodeSplitDocRight,
+			Input:     paragraph,
+			Err:       assert.AnError,
+		},
+		"Split doc left passes a param list": {
+			Container: document.BlockNodeSplitDocLeft,
+			Input: Block{
+				Type:   BlockParamList,
+				Header: "Body",
+				Params: []ParamItem{{Name: "x"}},
+			},
+		},
+		"Split doc left rejects a heading": {
+			Container: document.BlockNodeSplitDocLeft,
+			Input:     Block{Type: BlockHeading, Text: "T", Attrs: map[string]any{"level": 1}},
+			Err:       assert.AnError,
+		},
+		"Metric grid passes a metric": {
+			Container: document.BlockNodeMetricGrid,
+			Input:     Block{Type: BlockMetric},
+		},
+		"Metric grid rejects a paragraph": {
+			Container: document.BlockNodeMetricGrid,
+			Input:     paragraph,
+			Err:       assert.AnError,
+		},
+		"Wrapper-only container rejects everything": {
+			Container: document.BlockNodeBulletList,
+			Input:     paragraph,
+			Err:       assert.AnError,
+		},
+		"Macro internal rejects everything": {
+			Container: document.BlockNodeTitledCodeBlock,
+			Input:     paragraph,
+			Err:       assert.AnError,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			err := ValidateInContainer(c.Container, c.Input)
 
 			testutil.AssertEqualError(t, c.Err, err)
 

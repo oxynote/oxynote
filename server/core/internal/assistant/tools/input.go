@@ -459,31 +459,26 @@ func (i *input) ApplyEdit(documentID xid.ID, ops []edit.Operation) (string, erro
 }
 
 // ValidatePlacement validates a block that is about to land next to, or
-// in place of, the block referenceUID names. Types the document root
-// accepts are legal wherever their parent takes them, so only a macro
-// internal — a titled_code, metric or param_list, which the editor's
-// schema binds to its container — has to look at where it is going.
+// in place of, the block referenceUID names. The reference's parent is
+// what decides legality — the document root takes the root set, a macro
+// container takes its own — so the check resolves the reference in the
+// fetched content and validates against that container. The edit
+// backend applies no schema of its own, so an illegal type let through
+// here would land in the Y.Doc unchallenged.
 func (i *input) ValidatePlacement(documentID xid.ID, referenceUID string, b block.Block) error {
-	if err := block.Validate(b); err != nil {
-		return err
-	}
-
-	if block.ValidateAsRoot(b) == nil {
-		return nil
-	}
-
 	content, err := i.DocumentContent(documentID)
 	if err != nil {
 		return fmt.Errorf("fetching content: %w", err)
 	}
 
-	for _, rb := range content.Content.Content {
-		if uid, ok := rb.UID(); ok && uid == referenceUID {
-			return block.ValidateAsRoot(b)
-		}
+	parent, ok := content.Content.FindParentTypeByUID(referenceUID)
+	if !ok {
+		// the reference does not resolve; the edit backend reports
+		// that as the call's result. Still reject a malformed block.
+		return block.Validate(b)
 	}
 
-	return nil
+	return block.ValidateInContainer(parent, b)
 }
 
 // NotifyTreeChange invokes the tree notifier when one is configured.

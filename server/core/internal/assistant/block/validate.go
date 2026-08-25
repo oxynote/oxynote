@@ -57,6 +57,34 @@ var (
 		BlockMetric:     true,
 	}
 
+	// _allowedSplitDocLeft is what a block landing on an existing
+	// split_doc left side may be: the body set plus param_list. The
+	// leading heading is excluded — it is created with the macro and
+	// edited in place, never placed next to another block.
+	_allowedSplitDocLeft = map[Type]bool{
+		BlockParagraph:   true,
+		BlockBulletList:  true,
+		BlockOrderedList: true,
+		BlockTaskList:    true,
+		BlockCallout:     true,
+		BlockParamList:   true,
+	}
+
+	// _allowedInContainer maps a ProseMirror container node to the
+	// canonical types it accepts as direct children. Containers absent
+	// from the map — lists, whose direct children are wrapper items,
+	// and macro internals — accept no canonical block at all. The
+	// document root is handled by ValidateAsRoot.
+	_allowedInContainer = map[document.BlockNodeType]map[Type]bool{
+		document.BlockNodeBlockquote:    _allowedBlockquoteItems,
+		document.BlockNodeListItem:      _allowedListItemContent,
+		document.BlockNodeTaskItem:      _allowedListItemContent,
+		document.BlockNodeCalloutBlock:  _allowedCalloutItems,
+		document.BlockNodeSplitDocLeft:  _allowedSplitDocLeft,
+		document.BlockNodeSplitDocRight: _allowedSplitDocRight,
+		document.BlockNodeMetricGrid:    {BlockMetric: true},
+	}
+
 	// _allowedAtRoot is the set of canonical block types that may
 	// sit directly under the document root. Types not in this set
 	// use custom TipTap groups
@@ -133,6 +161,36 @@ func ValidateAsRoot(b Block) error {
 		return verr("", fmt.Sprintf(
 			"%s is not allowed at the document root; it must appear inside %s",
 			b.Type, containerForType(b.Type),
+		))
+	}
+
+	return nil
+}
+
+// ValidateInContainer validates a block that is about to land among the
+// direct children of the given ProseMirror node. It runs Validate first
+// and then checks the container's child rules: the document root takes
+// the root set, macro containers take their own sets, and a node whose
+// direct children are wrapper items — a list, a macro internal —
+// accepts no canonical block at all.
+func ValidateInContainer(container document.BlockNodeType, b Block) error {
+	if container == document.BlockNodeDoc {
+		return ValidateAsRoot(b)
+	}
+
+	if err := validateBlock(b, ""); err != nil {
+		return err
+	}
+
+	allowed, ok := _allowedInContainer[container]
+	if !ok {
+		return verr("", fmt.Sprintf("blocks cannot be placed directly inside %s", container))
+	}
+
+	if !allowed[b.Type] {
+		return verr("", fmt.Sprintf(
+			"%s is not allowed inside %s, which holds only %s",
+			b.Type, container, listAllowed(allowed),
 		))
 	}
 
