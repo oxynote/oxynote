@@ -278,9 +278,7 @@ export function mergeVisualizationResults(
 	return {
 		status: GenericQueryResultStatus.Ok,
 		data: allData as
-			| MultipleLineChartData
-			| MultipleBarChartData
-			| MultipleGaugeChartData,
+			MultipleLineChartData | MultipleBarChartData | MultipleGaugeChartData,
 	}
 }
 

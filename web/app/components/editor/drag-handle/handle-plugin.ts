@@ -548,8 +548,7 @@ export const DragHandlePlugin = ({
 				) {
 					const isLocked = tr.getMeta("lockDragHandle") as boolean | undefined
 					const hideDragHandle = tr.getMeta("hideDragHandle") as
-						| boolean
-						| undefined
+						boolean | undefined
 
 					// track whether this transaction is a remote change for the view update
 					const isRemote = tr.docChanged && isChangeOrigin(tr)

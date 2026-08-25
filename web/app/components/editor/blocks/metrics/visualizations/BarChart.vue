@@ -309,7 +309,9 @@ const legendHandler = computed(() => {
 			class="size-full"
 			:option="option"
 			autoresize
-			@legendselectchanged="(p: LegendSelectChangedPayload) => legendHandler(p)"
+			@legendselectchanged="
+				(p: unknown) => legendHandler(p as LegendSelectChangedPayload)
+			"
 		>
 			<template #tooltip="params">
 				<div class="flex flex-col">

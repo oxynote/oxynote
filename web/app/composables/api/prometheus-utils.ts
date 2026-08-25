@@ -135,7 +135,7 @@ function labelMatchersToString(
 		if (matcher.name === labelName || matcher.value === "") {
 			continue
 		}
-		let type = ""
+		let type: string
 		switch (matcher.type) {
 			case EqlSingle:
 				type = "="

@@ -779,8 +779,7 @@ function updateNewSelectedCommentId(serverComment: DocumentComment) {
 // recompute the diff deletion context from the current editor state
 // and position map.
 function computeDiffDeletionContext():
-	| DocumentCommentDiffDeletionContext
-	| undefined {
+	DocumentCommentDiffDeletionContext | undefined {
 	if (!isDiffMode.value || !selectedComment.value || !props.diffContext) {
 		return undefined
 	}

@@ -324,8 +324,7 @@ describe("main", { concurrent: false }, () => {
 			requestHeaders: Record<string, string>,
 		) {
 			const call = mocks.onBeforeSendHeadersMock.mock.calls[0] as
-				| [unknown, unknown]
-				| undefined
+				[unknown, unknown] | undefined
 
 			if (!call) {
 				throw new Error("onBeforeSendHeaders listener was not registered")

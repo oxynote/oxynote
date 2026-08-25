@@ -167,9 +167,7 @@ export const SlashCommands = Extension.create<
 							}
 
 							const componentRef = component?.ref as
-								| CommandListRef
-								| null
-								| undefined
+								CommandListRef | null | undefined
 
 							// without a mounted list there is nothing to handle
 							// the key, so report it as unhandled

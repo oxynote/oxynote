@@ -31,8 +31,7 @@ function figmaType(): NodeType {
 // reads nothing off the extension instance
 function pasteHandler(): (view: EditorView, event: ClipboardEvent) => boolean {
 	const addPlugins = createFigmaLinkHandler().config.addProseMirrorPlugins as
-		| (() => Plugin[])
-		| undefined
+		(() => Plugin[]) | undefined
 
 	if (!addPlugins) {
 		throw new Error("the figma link handler registers no plugins")

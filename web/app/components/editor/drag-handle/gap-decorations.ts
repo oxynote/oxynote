@@ -325,7 +325,7 @@ function measureHorizontalGapZone(
 
 	let gapTop: number
 	let gapBottom: number
-	let siblingRect: DOMRect | null = null
+	let siblingRect: DOMRect | null
 
 	if (prevSibling && nextSibling) {
 		// Between two siblings: center in the gap

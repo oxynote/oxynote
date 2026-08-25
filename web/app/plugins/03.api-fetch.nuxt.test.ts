@@ -7,21 +7,26 @@ import plugin, {
 	redirectToOrgRoot,
 } from "./03.api-fetch"
 
-const { navigateToMock, useRouteMock } = vi.hoisted(() => {
+const { navigateToMock, useRouteMock, fetchMock } = vi.hoisted(() => {
 	return {
 		navigateToMock: vi.fn(),
 		useRouteMock: vi.fn(() => ({ fullPath: "/" })),
+		fetchMock: { create: vi.fn() },
 	}
 })
 
 mockNuxtImport("navigateTo", () => navigateToMock)
 mockNuxtImport("useRoute", () => useRouteMock)
+// the auto-imported $fetch binds globalThis.$fetch once, at module eval,
+// so stubbing the global from a test body is too late
+mockNuxtImport("$fetch", () => fetchMock)
 
 // restoreMocks does not touch hand-made vi.fn() singletons in vitest 4 —
 // every describe resets the module-level mocks explicitly
 function resetSharedMocks() {
 	navigateToMock.mockReset()
 	useRouteMock.mockReset()
+	fetchMock.create.mockReset()
 }
 
 const DOC_ID_A = "aaaaaaaaaaaaaaaaaaaa" // xid length
@@ -38,15 +43,13 @@ function arrangeFetch() {
 	const created: CreatedClientOptions[] = []
 	const clients: { id: number }[] = []
 
-	vi.stubGlobal("$fetch", {
-		create: vi.fn((options: CreatedClientOptions) => {
-			created.push(options)
+	fetchMock.create.mockImplementation((options: CreatedClientOptions) => {
+		created.push(options)
 
-			const client = { id: clients.length }
-			clients.push(client)
+		const client = { id: clients.length }
+		clients.push(client)
 
-			return client
-		}),
+		return client
 	})
 
 	return { created, clients }

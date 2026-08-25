@@ -64,9 +64,7 @@ const UniqueIDWithDomId = UniqueID.extend({
 							element.getAttribute("id"),
 						renderHTML: (attributes) => {
 							const value = attributes[this.options.attributeName] as
-								| string
-								| null
-								| undefined
+								string | null | undefined
 							if (!value) {
 								return {}
 							}

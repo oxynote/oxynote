@@ -122,10 +122,7 @@ const data = computed<{
 	queryIndex?: number
 	multipleQueries?: boolean
 	data?:
-		| MultipleLineChartData
-		| MultipleBarChartData
-		| MultipleGaugeChartData
-		| null
+		MultipleLineChartData | MultipleBarChartData | MultipleGaugeChartData | null
 }>(() => {
 	const results = fetchMetricData.state.value.data ?? []
 	const queryErrIndex = results.findIndex(

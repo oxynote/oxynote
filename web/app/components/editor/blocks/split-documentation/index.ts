@@ -263,8 +263,8 @@ export const SplitDocumentation = Node.create({
 							? state.doc.nodeAt(splitDocNodePos)
 							: null
 
-					let splitDocPos: number | null = null
-					let splitDocNode: PMNode | null = null
+					let splitDocPos: number | null
+					let splitDocNode: PMNode | null
 
 					if (splitDocNodeAtPos?.type.name === SplitDocumentation.name) {
 						splitDocPos = splitDocNodePos ?? null
@@ -318,7 +318,7 @@ export const SplitDocumentation = Node.create({
 						return false
 					}
 
-					let newBlock: PMNode | null | undefined = null
+					let newBlock: PMNode | null | undefined
 
 					if (blockType === "code") {
 						newBlock = schema.nodes[TITLED_CODE_BLOCK_NAME]?.createAndFill(
@@ -523,7 +523,7 @@ export const SplitDocumentation = Node.create({
 						return false
 					}
 
-					let newBlock: PMNode | null | undefined = null
+					let newBlock: PMNode | null | undefined
 
 					if (blockType === "code") {
 						newBlock = schema.nodes[TITLED_CODE_BLOCK_NAME]?.createAndFill(

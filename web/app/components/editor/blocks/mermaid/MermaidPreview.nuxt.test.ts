@@ -123,7 +123,8 @@ describe("<MermaidPreview>", { concurrent: false }, () => {
 		const wrapper = await mountPreview("graph TD; A-->B;")
 
 		await vi.waitFor(() => {
-			expect(previewHtml(wrapper)).toContain("<svg>")
+			// happy-dom unwraps the sanitized svg root; a real browser does not
+			expect(previewHtml(wrapper)).toContain("<g>")
 		}, WAIT_FOR_OPTIONS)
 		expect(mermaid.render).toHaveBeenCalledTimes(1)
 		expect(mermaid.render.mock.calls[0]?.[1]).toBe("graph TD; A-->B;")
@@ -219,7 +220,8 @@ describe("<MermaidPreview>", { concurrent: false }, () => {
 	it("clears the diagram when the code is deleted", async ({ expect }) => {
 		const wrapper = await mountPreview("graph TD; A-->B;")
 		await vi.waitFor(() => {
-			expect(previewHtml(wrapper)).toContain("<svg>")
+			// happy-dom unwraps the sanitized svg root; a real browser does not
+			expect(previewHtml(wrapper)).toContain("<g>")
 		}, WAIT_FOR_OPTIONS)
 		vi.useFakeTimers()
 

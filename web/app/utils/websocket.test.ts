@@ -101,7 +101,7 @@ describe("WsState", { concurrent: false }, () => {
 
 			state.subscribe(TOPIC, vi.fn())
 
-			expect(ws.send).toHaveBeenCalledTimes(0)
+			expect(sentMessages(ws)).toHaveLength(0)
 		})
 
 		it("delivers publish payloads to every subscriber once confirmed", ({
@@ -292,7 +292,7 @@ describe("WsState", { concurrent: false }, () => {
 				// confirmed topics are not retried on the next tick
 				confirm(state, 2)
 				vi.advanceTimersByTime(5000)
-				expect(ws.send).toHaveBeenCalledTimes(2)
+				expect(sentMessages(ws)).toHaveLength(2)
 			} finally {
 				vi.useRealTimers()
 			}

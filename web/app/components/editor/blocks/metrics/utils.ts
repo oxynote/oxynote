@@ -133,8 +133,7 @@ export function buildConfigFromNodeAttrs(
 	// legacy blobs may miss fields entirely and may still use the old "type"
 	// field name, so Partial reflects the actual runtime shape.
 	const legacy = attrs.config as
-		| (Partial<MetricConfig> & { type?: GenericQueryChartType | null })
-		| null
+		(Partial<MetricConfig> & { type?: GenericQueryChartType | null }) | null
 	if (legacy) {
 		return {
 			title: legacy.title ?? "",

@@ -59,9 +59,7 @@ const lastValidHovered = useLastValidRef(() => {
 		? {
 				hovered: props.hovered,
 				uid: props.editor.state.doc.nodeAt(props.hovered.nodePos)?.attrs.uid as
-					| string
-					| null
-					| undefined,
+					string | null | undefined,
 				insideSplitDocRightSide: isNodeInsideTiptapNode(
 					props.editor.state,
 					props.hovered.nodePos,
@@ -121,9 +119,7 @@ const hasNodeComment = computed(() => {
 const nodeUid = computed(() => {
 	return (
 		(lastValidHovered.value?.hovered.node.attrs.uid as
-			| string
-			| null
-			| undefined) ?? null
+			string | null | undefined) ?? null
 	)
 })
 

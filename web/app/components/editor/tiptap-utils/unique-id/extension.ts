@@ -230,8 +230,7 @@ export const UniqueID = Extension.create<UniqueIDOptions>({
 							// this helps to prevent adding new ids to the same node
 							// if the node changed multiple times within one transaction
 							const id = tr.doc.nodeAt(pos)?.attrs[attributeName] as
-								| string
-								| null
+								string | null
 
 							if (id === null) {
 								tr.setNodeMarkup(pos, undefined, {

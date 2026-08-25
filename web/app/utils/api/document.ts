@@ -98,10 +98,7 @@ export interface DocumentHookSettingsGitHubTracking {
 export interface DocumentHookStateGitHubTracking {
 	pathsChecksums: Record<string, string>
 	status:
-		| "active"
-		| "missing_installation"
-		| "missing_repository"
-		| "missing_branch"
+		"active" | "missing_installation" | "missing_repository" | "missing_branch"
 }
 
 export interface DocumentHookSettingsURLWatcher {

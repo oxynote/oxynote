@@ -282,8 +282,7 @@ type CommandFactory = (...args: any[]) => (props: CommandContext) => boolean
 // they can be pulled out and driven straight against a state
 function splitDocCommand(name: string): CommandFactory {
 	const addCommands = SplitDocumentation.config.addCommands as unknown as
-		| ((this: unknown) => Record<string, CommandFactory>)
-		| undefined
+		((this: unknown) => Record<string, CommandFactory>) | undefined
 
 	if (!addCommands) {
 		throw new Error("SplitDocumentation defines no commands")
@@ -592,8 +591,7 @@ describe("SplitDocumentationLeftSide", () => {
 
 	it("renders through a vue node view", ({ expect }) => {
 		const addNodeView = SplitDocumentationLeftSide.config.addNodeView as
-			| (() => unknown)
-			| undefined
+			(() => unknown) | undefined
 
 		expect(addNodeView?.()).toBeTypeOf("function")
 	})
@@ -801,8 +799,7 @@ describe("SplitDocumentationRightSide", () => {
 
 	it("renders through a vue node view", ({ expect }) => {
 		const addNodeView = SplitDocumentationRightSide.config.addNodeView as
-			| (() => unknown)
-			| undefined
+			(() => unknown) | undefined
 
 		expect(addNodeView?.()).toBeTypeOf("function")
 	})
@@ -993,8 +990,7 @@ describe("SplitDocumentation", () => {
 
 	it("renders through a vue node view", ({ expect }) => {
 		const addNodeView = SplitDocumentation.config.addNodeView as
-			| (() => unknown)
-			| undefined
+			(() => unknown) | undefined
 
 		expect(addNodeView?.()).toBeTypeOf("function")
 	})

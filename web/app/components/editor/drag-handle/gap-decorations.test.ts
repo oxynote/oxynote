@@ -206,8 +206,7 @@ function gapRows(plugin: Plugin, state: EditorState): [string, number][] {
 // whenever an update fails to re-place a moved decoration
 function decoRows(plugin: Plugin, state: EditorState): [string, number][] {
 	const decorations = plugin.props.decorations?.call(plugin, state) as
-		| DecorationSet
-		| undefined
+		DecorationSet | undefined
 
 	if (!decorations) {
 		return []

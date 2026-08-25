@@ -106,7 +106,9 @@ function makeWrappedCompleteStrategy(
 
 			//  show presets when empty, when typing "$", or when typing a number
 			const showPresets =
-				bc.token.length === 0 || /^\$/.test(bc.token) || /^\d/.test(bc.token)
+				bc.token.length === 0 ||
+				bc.token.startsWith("$") ||
+				/^\d/.test(bc.token)
 
 			const presets = showPresets ? promqlDurationPresets(t) : []
 

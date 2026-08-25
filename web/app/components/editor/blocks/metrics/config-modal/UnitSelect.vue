@@ -46,9 +46,7 @@ const processedSelectedUnit = computed(() => {
 		return {
 			category,
 			unit: unit as
-				| VisualizationTimeUnit
-				| VisualizationDataUnit
-				| VisualizationMiscUnit,
+				VisualizationTimeUnit | VisualizationDataUnit | VisualizationMiscUnit,
 		}
 	}
 

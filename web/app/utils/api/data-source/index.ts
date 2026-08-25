@@ -59,8 +59,7 @@ export interface DataSourceCredentialsSQL {
 }
 
 export type DataSourceCredentials =
-	| DataSourceCredentialsPrometheus
-	| DataSourceCredentialsSQL
+	DataSourceCredentialsPrometheus | DataSourceCredentialsSQL
 
 export interface DataSourceCreateRequest {
 	type: DataSourceType

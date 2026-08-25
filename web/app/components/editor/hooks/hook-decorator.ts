@@ -203,8 +203,7 @@ export const HookDecorator = Extension.create<Partial<Options>>({
 					},
 					apply(tr, old, _oldState, newState) {
 						const meta = tr.getMeta(key) as
-							| { hooksChanged?: boolean }
-							| undefined
+							{ hooksChanged?: boolean } | undefined
 
 						if (tr.docChanged || meta?.hooksChanged) {
 							const ids = toAvailableIDs(opt.getHooks())

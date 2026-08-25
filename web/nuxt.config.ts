@@ -17,9 +17,7 @@ const lezerPromQLPath = new URL(
 //   - "0"      : pure web build. __DESKTOP_BUILD__ is the literal `false`.
 //   - unset    : same as "0".
 const desktopBuildMode = (process.env.DESKTOP_BUILD ?? "0") as
-	| "0"
-	| "1"
-	| "hybrid"
+	"0" | "1" | "hybrid"
 const isDesktopBuild = desktopBuildMode === "1" || desktopBuildMode === "hybrid"
 const isHybridDesktopBuild = desktopBuildMode === "hybrid"
 
