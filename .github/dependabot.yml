@@ -1,0 +1,210 @@
+# dependabot covers every subproject: web, server/core, server/auth-realtime,
+# datagen and e2e — plus the GitHub Actions workflows, the subprojects'
+# Dockerfiles and the compose stacks. Each entry gets grouped update PRs
+# (never one PR per dependency): a "safe" group with minor and patch updates,
+# and a separate "breaking" group for major updates. The commit-message prefix
+# names the subproject, so it shows up in every dependabot PR title.
+#
+# When a dependency matches several groups, dependabot puts it in the first
+# matching group, so order matters within each entry's `groups` block.
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/web"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "deps(web)"
+    # web/packages/lezer-promql is a vendored upstream fork that should track
+    # upstream, not dependabot. These dependencies are only used there, so
+    # ignoring them keeps the fork untouched.
+    ignore:
+      - dependency-name: "@lezer/*"
+      - dependency-name: "@rollup/plugin-node-resolve"
+      - dependency-name: "@types/jest"
+    groups:
+      # better-auth does not follow semver — 1.x minor releases can be
+      # breaking, so its minor updates go into this breaking-changes group
+      # instead of the safe group. It must stay first so it wins the overlap
+      # with the catch-all groups below. Patch releases still fall through to
+      # the safe group.
+      better-auth-breaking:
+        patterns:
+          - "better-auth"
+          - "@better-auth/*"
+        update-types:
+          - "major"
+          - "minor"
+      breaking:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
+      safe:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "npm"
+    directory: "/server/auth-realtime"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "deps(auth-realtime)"
+    groups:
+      # same better-auth non-semver caveat as the web entry above: minor
+      # releases are treated as breaking, patch releases fall through to the
+      # safe group.
+      better-auth-breaking:
+        patterns:
+          - "better-auth"
+          - "@better-auth/*"
+        update-types:
+          - "major"
+          - "minor"
+      breaking:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
+      safe:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "npm"
+    directory: "/e2e"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "deps(e2e)"
+    groups:
+      breaking:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
+      safe:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "gomod"
+    directory: "/server/core"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "deps(core)"
+    groups:
+      breaking:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
+      safe:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "gomod"
+    directory: "/datagen"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "deps(datagen)"
+    groups:
+      breaking:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
+      safe:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "deps(actions)"
+    groups:
+      breaking:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
+      safe:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # base images in each subproject's Dockerfile.dev. Grouping is per
+  # directory, and the directory shows up in the PR title, so the subproject
+  # stays identifiable even with the shared prefix.
+  - package-ecosystem: "docker"
+    directories:
+      - "/web"
+      - "/server/core"
+      - "/server/auth-realtime"
+      - "/datagen"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "deps(docker)"
+    groups:
+      breaking:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
+      safe:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # images pinned in the dev stack (docker/docker-compose.dev.yaml) and the
+  # e2e stack (e2e/docker-compose*.yaml).
+  - package-ecosystem: "docker-compose"
+    directories:
+      - "/docker"
+      - "/e2e"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "deps(docker)"
+    groups:
+      breaking:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
+      safe:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
