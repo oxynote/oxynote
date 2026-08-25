@@ -51,9 +51,8 @@ func (h *Handler) HandleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sess, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	sess, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 

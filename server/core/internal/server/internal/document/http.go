@@ -91,9 +91,8 @@ func NewHandler(
 
 // FetchDocumentMaintainers handles the retrieval of document maintainers by document ID.
 func (h *Handler) FetchDocumentMaintainers(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -121,9 +120,8 @@ func (h *Handler) FetchDocumentMaintainers(w http.ResponseWriter, r *http.Reques
 // with no content when the document is visible to the caller's organization
 // and with not found when it does not exist or belongs to another one.
 func (h *Handler) VerifyDocumentAccess(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -148,9 +146,8 @@ func (h *Handler) VerifyDocumentAccess(w http.ResponseWriter, r *http.Request) {
 
 // FetchBranchReviewers handles the retrieval of reviewers for a specific document branch.
 func (h *Handler) FetchBranchReviewers(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -176,9 +173,8 @@ func (h *Handler) FetchBranchReviewers(w http.ResponseWriter, r *http.Request) {
 
 // RequestBranchReviewer handles requesting a reviewer for a specific document branch.
 func (h *Handler) RequestBranchReviewer(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -214,7 +210,7 @@ func (h *Handler) RequestBranchReviewer(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	ok, err := h.db.CheckOrganizationMember(r.Context(), session.ActiveOrganizationID, inp.UserID)
+	ok, err = h.db.CheckOrganizationMember(r.Context(), session.ActiveOrganizationID, inp.UserID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -260,9 +256,8 @@ func (h *Handler) RequestBranchReviewer(w http.ResponseWriter, r *http.Request) 
 
 // RemoveBranchReviewer handles removing a reviewer from a specific document branch.
 func (h *Handler) RemoveBranchReviewer(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -317,22 +312,21 @@ func (h *Handler) RemoveBranchReviewer(w http.ResponseWriter, r *http.Request) {
 
 // UpdateDocumentTree handles the update of the document tree.
 func (h *Handler) UpdateDocumentTree(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
 	var data documentCore.SwapInput
 
-	if err = httpserver.DecodeJSON(r, &data); err != nil {
+	if err := httpserver.DecodeJSON(r, &data); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
 	var tx Tx
 
-	err = h.db.BeginTx(r.Context(), &tx)
+	err := h.db.BeginTx(r.Context(), &tx)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -449,9 +443,8 @@ func (h *Handler) UpdateDocumentTree(w http.ResponseWriter, r *http.Request) {
 
 // FetchDocumentTree handles the retrieval of the document tree.
 func (h *Handler) FetchDocumentTree(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -471,9 +464,8 @@ func (h *Handler) FetchDocumentTree(w http.ResponseWriter, r *http.Request) {
 
 // SearchDocuments handles the search for documents matching a query.
 func (h *Handler) SearchDocuments(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -500,22 +492,21 @@ func (h *Handler) SearchDocuments(w http.ResponseWriter, r *http.Request) {
 
 // CreateDocument handles the creation of a new document.
 func (h *Handler) CreateDocument(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
 	var di documentCore.CreateInput
 
-	if err = httpserver.DecodeJSON(r, &di); err != nil {
+	if err := httpserver.DecodeJSON(r, &di); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
 	doc := documentCore.NewDocument(di, session.ActiveOrganizationID, session.UserID)
 
-	if err = h.insertDocumentTx(r.Context(), doc, session); err != nil {
+	if err := h.insertDocumentTx(r.Context(), doc, session); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -534,9 +525,8 @@ func (h *Handler) CreateDocument(w http.ResponseWriter, r *http.Request) {
 
 // UpdateDocumentBranch handles updating the name and protection status of a document branch.
 func (h *Handler) UpdateDocumentBranch(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -755,9 +745,8 @@ func (h *Handler) UpdateDocumentBranchByIDUnsafe(w http.ResponseWriter, r *http.
 
 // UpdateBranchReviewApproval handles setting the current user's approval state on a branch.
 func (h *Handler) UpdateBranchReviewApproval(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -824,9 +813,8 @@ func (h *Handler) UpdateBranchReviewApproval(w http.ResponseWriter, r *http.Requ
 // The target branch's hooks are soft-deleted and replaced with copies from the source.
 // Target branch comments are cleared. Source branch reviewer approvals are promoted.
 func (h *Handler) MergeBranches(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -950,9 +938,8 @@ func (h *Handler) MergeBranches(w http.ResponseWriter, r *http.Request) {
 
 // DeleteDocument handles the deletion of a document by its ID.
 func (h *Handler) DeleteDocument(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -1035,9 +1022,8 @@ func (h *Handler) DeleteDocument(w http.ResponseWriter, r *http.Request) {
 
 // DuplicateDocument handles the duplication of a document by its ID.
 func (h *Handler) DuplicateDocument(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -1135,9 +1121,8 @@ func (h *Handler) copyDocumentFiles(
 
 // FetchDocumentBranches handles the retrieval of all branches for a document.
 func (h *Handler) FetchDocumentBranches(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -1164,9 +1149,8 @@ func (h *Handler) FetchDocumentBranches(w http.ResponseWriter, r *http.Request) 
 // CreateDocumentBranch handles the creation of a new branch forked from an existing source branch.
 // Hooks from the source branch are copied to the new branch.
 func (h *Handler) CreateDocumentBranch(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -1175,7 +1159,7 @@ func (h *Handler) CreateDocumentBranch(w http.ResponseWriter, r *http.Request) {
 		SourceBranchID xid.ID `json:"sourceBranchId"`
 	}
 
-	if err = httpserver.DecodeJSON(r, &inp); err != nil {
+	if err := httpserver.DecodeJSON(r, &inp); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -1249,9 +1233,8 @@ func (h *Handler) CreateDocumentBranch(w http.ResponseWriter, r *http.Request) {
 // DeleteDocumentBranch handles the deletion of a specific document branch by ID.
 // Returns 409 if it is the last remaining branch for the document.
 func (h *Handler) DeleteDocumentBranch(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 

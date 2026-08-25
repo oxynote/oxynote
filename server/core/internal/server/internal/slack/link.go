@@ -168,9 +168,8 @@ func (h *Handler) handleUnlinkCommand(w http.ResponseWriter, r *http.Request, us
 
 // FetchUserLink retrieves the user's Slack link settings.
 func (h *Handler) FetchUserLink(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -185,15 +184,14 @@ func (h *Handler) FetchUserLink(w http.ResponseWriter, r *http.Request) {
 
 // UpdateUserLink updates the user's Slack link settings.
 func (h *Handler) UpdateUserLink(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
 	var settings slack.UserLinkSettings
 
-	if err = httpserver.DecodeJSON(r, &settings); err != nil {
+	if err := httpserver.DecodeJSON(r, &settings); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -216,9 +214,8 @@ func (h *Handler) UpdateUserLink(w http.ResponseWriter, r *http.Request) {
 
 // DeleteUserLink deletes the user's Slack link.
 func (h *Handler) DeleteUserLink(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -244,9 +241,8 @@ func (h *Handler) DeleteUserLink(w http.ResponseWriter, r *http.Request) {
 
 // LinkUser handles the completion of the user linking flow.
 func (h *Handler) LinkUser(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 

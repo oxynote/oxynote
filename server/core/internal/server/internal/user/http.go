@@ -45,8 +45,7 @@ func NewHandler(
 
 // RetrieveUserImage handles the retrieval of a user's image.
 func (h *Handler) RetrieveUserImage(w http.ResponseWriter, r *http.Request) {
-	if _, err := auth.ExtractSessionFromContext(r.Context()); err != nil {
-		httpserver.RespondError(h.log, w, err)
+	if _, ok := auth.RequireSession(h.log, w, r); !ok {
 		return
 	}
 
@@ -81,9 +80,8 @@ func (h *Handler) RetrieveUserImage(w http.ResponseWriter, r *http.Request) {
 
 // UploadUserImage handles the upload of a user's image.
 func (h *Handler) UploadUserImage(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 

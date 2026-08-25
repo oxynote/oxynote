@@ -774,8 +774,12 @@ Method naming: `<Verb><Entity>[By<Key>]` (`FetchDocumentByBranchID`,
   obvious CRUD verbs. The `Handle` prefix appears only where the route has no
   entity of its own (`HandleChat`, the `HandleEvent` webhooks).
 - Identity is resolved once in middleware into a private context key
-  (`type ctxKey int` + `_ctxKeyUserID`), then passed to handlers as a plain
-  argument — handlers never read the context for it.
+  (`type _contextKey int` + `_contextKeySession`). A session-scoped handler recovers it
+  as its first statement via the shared `auth.RequireSession(h.log, w, r)`
+  helper, which responds not-authenticated and returns `ok == false` when the
+  middleware did not run — handlers never call `ExtractSessionFromContext`
+  themselves (that stays for ws topic callbacks, which have no
+  `ResponseWriter`).
 - Decoding: shared helpers only — `DecodeJSON(r, &v)` (collapses failures into one
   invalid-JSON user error), `DecodeForm` (gorilla/schema tags) for query params,
   `ParseQuery(r)` for list endpoints, `ExtractTargetID(r)` for chi `{id}` params

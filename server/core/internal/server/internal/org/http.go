@@ -158,9 +158,8 @@ func (h *Handler) InitializeOrganization(w http.ResponseWriter, r *http.Request)
 
 // UploadOrganizationLogo handles the upload of an organization's logo.
 func (h *Handler) UploadOrganizationLogo(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -205,9 +204,8 @@ func (h *Handler) UploadOrganizationLogo(w http.ResponseWriter, r *http.Request)
 
 // RetrieveOrganizationLogo handles the retrieval of an organization's logo.
 func (h *Handler) RetrieveOrganizationLogo(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 

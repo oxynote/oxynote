@@ -48,9 +48,8 @@ func NewHandler(
 
 // CreateDocumentComment handles the creation of a new comment on a document.
 func (h *Handler) CreateDocumentComment(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -155,9 +154,8 @@ func (h *Handler) CreateDocumentComment(w http.ResponseWriter, r *http.Request) 
 
 // CreateDocumentCommentReply handles the creation of a new reply to a comment.
 func (h *Handler) CreateDocumentCommentReply(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -254,9 +252,8 @@ func (h *Handler) CreateDocumentCommentReply(w http.ResponseWriter, r *http.Requ
 
 // FetchDocumentComment handles the retrieval of a single comment with its replies.
 func (h *Handler) FetchDocumentComment(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -289,9 +286,8 @@ func (h *Handler) FetchDocumentComment(w http.ResponseWriter, r *http.Request) {
 // FetchDocumentComments handles the retrieval of all comments for a document branch.
 // Requires a "branchId" query parameter to identify which branch's comments to return.
 func (h *Handler) FetchDocumentComments(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -317,9 +313,8 @@ func (h *Handler) FetchDocumentComments(w http.ResponseWriter, r *http.Request) 
 
 // UpdateDocumentComment handles the update of a comment's content.
 func (h *Handler) UpdateDocumentComment(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -382,9 +377,8 @@ func (h *Handler) UpdateDocumentComment(w http.ResponseWriter, r *http.Request) 
 
 // UpdateDocumentCommentReply handles the update of a reply's content.
 func (h *Handler) UpdateDocumentCommentReply(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -467,9 +461,8 @@ func (h *Handler) UpdateDocumentCommentReply(w http.ResponseWriter, r *http.Requ
 
 // ResolveDocumentComment handles marking a comment as resolved.
 func (h *Handler) ResolveDocumentComment(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -575,9 +568,8 @@ func (h *Handler) ResolveDocumentComment(w http.ResponseWriter, r *http.Request)
 // If the comment has replies, the first reply is promoted to become the main comment.
 // If there are no replies, the comment is deleted.
 func (h *Handler) DeleteDocumentComment(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -660,9 +652,8 @@ func (h *Handler) DeleteDocumentComment(w http.ResponseWriter, r *http.Request) 
 
 // DeleteDocumentCommentReply handles the deletion of a reply.
 func (h *Handler) DeleteDocumentCommentReply(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 

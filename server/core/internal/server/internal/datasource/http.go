@@ -38,15 +38,14 @@ func NewHandler(log *slog.Logger, db DB, runners Runners) *Handler {
 
 // CreateDataSource handles the creation of a new data source.
 func (h *Handler) CreateDataSource(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
 	var input datasourceCore.CreateInput
 
-	if err = httpserver.DecodeJSON(r, &input); err != nil {
+	if err := httpserver.DecodeJSON(r, &input); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -76,9 +75,8 @@ func (h *Handler) CreateDataSource(w http.ResponseWriter, r *http.Request) {
 
 // FetchDataSource handles retrieving a single data source by ID.
 func (h *Handler) FetchDataSource(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -99,9 +97,8 @@ func (h *Handler) FetchDataSource(w http.ResponseWriter, r *http.Request) {
 
 // TestDataSourceConnection handles testing the connection of a data source.
 func (h *Handler) TestDataSourceConnection(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -139,9 +136,8 @@ func (h *Handler) TestDataSourceConnection(w http.ResponseWriter, r *http.Reques
 
 // FetchDataSources handles retrieving all data sources for an organization.
 func (h *Handler) FetchDataSources(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -156,9 +152,8 @@ func (h *Handler) FetchDataSources(w http.ResponseWriter, r *http.Request) {
 
 // UpdateDataSource handles updating an existing data source.
 func (h *Handler) UpdateDataSource(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -209,9 +204,8 @@ func (h *Handler) UpdateDataSource(w http.ResponseWriter, r *http.Request) {
 
 // DeleteDataSource handles deleting a data source.
 func (h *Handler) DeleteDataSource(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 

@@ -48,9 +48,8 @@ func NewHandler(
 
 // UploadDocumentFile handles the upload of a file to a document.
 func (h *Handler) UploadDocumentFile(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -130,9 +129,8 @@ func (h *Handler) UploadDocumentFile(w http.ResponseWriter, r *http.Request) {
 
 // RetrieveDocumentFile handles the retrieval of a file from a document.
 func (h *Handler) RetrieveDocumentFile(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 

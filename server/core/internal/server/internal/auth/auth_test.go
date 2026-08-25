@@ -327,6 +327,56 @@ func Test_AddSessionToContext(t *testing.T) {
 	assert.Equal(t, session, got)
 }
 
+func Test_RequireSession(t *testing.T) {
+	t.Parallel()
+
+	session := Session{
+		UserID:               "u1",
+		ActiveOrganizationID: "org1",
+	}
+
+	cc := map[string]struct {
+		Ctx      context.Context
+		Result   Session
+		OK       bool
+		RespCode int
+		RespJSON string
+	}{
+		"No session in context": {
+			Ctx:      context.Background(),
+			RespCode: http.StatusUnauthorized,
+			RespJSON: `{"code":"account.not_authenticated","message":"not authenticated"}`,
+		},
+		"Session present": {
+			Ctx:      AddSessionToContext(context.Background(), session),
+			Result:   session,
+			OK:       true,
+			RespCode: http.StatusOK,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			req := httptest.NewRequest(http.MethodGet, "http://test.com/", http.NoBody)
+			req = req.WithContext(c.Ctx)
+			rec := httptest.NewRecorder()
+
+			got, ok := RequireSession(slog.New(slog.DiscardHandler), rec, req)
+			assert.Equal(t, c.OK, ok)
+			assert.Equal(t, c.Result, got)
+			assert.Equal(t, c.RespCode, rec.Code)
+
+			if c.RespJSON == "" {
+				assert.Zero(t, rec.Body.Len(), rec.Body.String())
+			} else {
+				assert.JSONEq(t, c.RespJSON, rec.Body.String())
+			}
+		})
+	}
+}
+
 func Test_ExtractSessionFromContext(t *testing.T) {
 	t.Parallel()
 

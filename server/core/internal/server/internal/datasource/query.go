@@ -13,9 +13,8 @@ import (
 // QueryDataSource handles executing a query against a data source and returning
 // a unified response format regardless of data source type.
 func (h *Handler) QueryDataSource(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 

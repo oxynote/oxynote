@@ -10,9 +10,8 @@ import (
 
 // FetchSQLQueryLabels handles executing a query and returning string column labels with example values.
 func (h *Handler) FetchSQLQueryLabels(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -65,9 +64,8 @@ func (h *Handler) FetchSQLQueryLabels(w http.ResponseWriter, r *http.Request) {
 
 // FetchSQLMetadata handles retrieving all tables and columns from a SQL data source.
 func (h *Handler) FetchSQLMetadata(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 

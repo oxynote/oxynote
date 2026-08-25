@@ -113,6 +113,19 @@ func ExtractSessionFromContext(ctx context.Context) (Session, error) {
 	return session, nil
 }
 
+// RequireSession extracts the session the middleware stored on the request
+// context. When there is none, it responds not-authenticated and reports
+// false, so a handler only has to bail out.
+func RequireSession(log *slog.Logger, w http.ResponseWriter, r *http.Request) (Session, bool) {
+	session, err := ExtractSessionFromContext(r.Context())
+	if err != nil {
+		httpserver.RespondError(log, w, err)
+		return Session{}, false
+	}
+
+	return session, true
+}
+
 // getSession forwards the request to the Better Auth server to retrieve session information.
 func getSession(ctx context.Context, client *http.Client, url string, cookies []*http.Cookie) (Session, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)

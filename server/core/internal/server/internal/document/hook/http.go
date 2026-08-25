@@ -50,9 +50,8 @@ func NewHandler(
 // FetchDocumentHooks handles the retrieval of document hooks for a specific document branch.
 // Requires a "branchId" query parameter to identify which branch's hooks to return.
 func (h *Handler) FetchDocumentHooks(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -78,9 +77,8 @@ func (h *Handler) FetchDocumentHooks(w http.ResponseWriter, r *http.Request) {
 
 // CreateDocumentHook handles the creation of a new document hook.
 func (h *Handler) CreateDocumentHook(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -148,9 +146,8 @@ func (h *Handler) CreateDocumentHook(w http.ResponseWriter, r *http.Request) {
 
 // UpdateDocumentHook handles the update of a document hook.
 func (h *Handler) UpdateDocumentHook(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -215,9 +212,8 @@ func (h *Handler) UpdateDocumentHook(w http.ResponseWriter, r *http.Request) {
 
 // ResetDocumentHook handles the reset of a document hook's state.
 func (h *Handler) ResetDocumentHook(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -271,9 +267,8 @@ func (h *Handler) ResetDocumentHook(w http.ResponseWriter, r *http.Request) {
 
 // DeleteDocumentHook handles the deletion of a document hook by its ID.
 func (h *Handler) DeleteDocumentHook(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 

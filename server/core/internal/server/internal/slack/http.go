@@ -123,13 +123,12 @@ func (h *Handler) InstallApp(w http.ResponseWriter, r *http.Request) {
 
 // FetchInstall handles the fetching of the Slack installation URL.
 func (h *Handler) FetchInstall(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
-	_, err = h.db.FetchSlackAppByOrganizationID(r.Context(), session.ActiveOrganizationID)
+	_, err := h.db.FetchSlackAppByOrganizationID(r.Context(), session.ActiveOrganizationID)
 
 	switch {
 	case errutil.IsNotFound(err):
@@ -157,9 +156,8 @@ func (h *Handler) FetchInstall(w http.ResponseWriter, r *http.Request) {
 
 // CheckInstallation handles the check of the Slack installation URL.
 func (h *Handler) CheckInstallation(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -178,9 +176,8 @@ func (h *Handler) CheckInstallation(w http.ResponseWriter, r *http.Request) {
 
 // ConnectOrganization handles the connection of a Slack organization to the application.
 func (h *Handler) ConnectOrganization(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -233,9 +230,8 @@ func (h *Handler) ConnectOrganization(w http.ResponseWriter, r *http.Request) {
 
 // FetchMessages retrieves Slack messages.
 func (h *Handler) FetchMessages(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -250,13 +246,12 @@ func (h *Handler) FetchMessages(w http.ResponseWriter, r *http.Request) {
 
 // DisconnectOrganization handles the disconnection of a Slack organization from the application.
 func (h *Handler) DisconnectOrganization(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
-	_, err = h.db.FetchSlackAppByOrganizationID(r.Context(), session.ActiveOrganizationID)
+	_, err := h.db.FetchSlackAppByOrganizationID(r.Context(), session.ActiveOrganizationID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return

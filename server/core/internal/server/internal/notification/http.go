@@ -34,9 +34,8 @@ func NewHandler(
 
 // FetchManyNotifications fetches many notifications for the authenticated user.
 func (h *Handler) FetchManyNotifications(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -60,9 +59,8 @@ func (h *Handler) FetchManyNotifications(w http.ResponseWriter, r *http.Request)
 
 // FetchNotificationsCount fetches the count of notifications for the authenticated user.
 func (h *Handler) FetchNotificationsCount(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -70,7 +68,7 @@ func (h *Handler) FetchNotificationsCount(w http.ResponseWriter, r *http.Request
 		Read bool `schema:"read"`
 	}
 
-	if err = httpserver.DecodeForm(r, &opts); err != nil {
+	if err := httpserver.DecodeForm(r, &opts); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -90,9 +88,8 @@ func (h *Handler) FetchNotificationsCount(w http.ResponseWriter, r *http.Request
 
 // MarkReadManyNotifications marks many notifications as read for the authenticated user.
 func (h *Handler) MarkReadManyNotifications(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -100,12 +97,12 @@ func (h *Handler) MarkReadManyNotifications(w http.ResponseWriter, r *http.Reque
 		IDs []xid.ID `json:"ids"`
 	}
 
-	if err = httpserver.DecodeJSON(r, &data); err != nil {
+	if err := httpserver.DecodeJSON(r, &data); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	err = h.db.MarkReadByNotificationsIDs(r.Context(), session.ActiveOrganizationID, session.UserID, data.IDs)
+	err := h.db.MarkReadByNotificationsIDs(r.Context(), session.ActiveOrganizationID, session.UserID, data.IDs)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return

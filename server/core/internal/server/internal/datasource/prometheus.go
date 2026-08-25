@@ -13,9 +13,8 @@ const _prometheusMatchersQuery = "matchers"
 
 // QueryPrometheusDataSource handles executing a query against a data source.
 func (h *Handler) QueryPrometheusDataSource(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -60,9 +59,8 @@ func (h *Handler) QueryPrometheusDataSource(w http.ResponseWriter, r *http.Reque
 
 // FetchPrometheusDataSourceMetadata handles retrieving metadata from a data source.
 func (h *Handler) FetchPrometheusDataSourceMetadata(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -95,9 +93,8 @@ func (h *Handler) FetchPrometheusDataSourceMetadata(w http.ResponseWriter, r *ht
 
 // FetchPrometheusDataSourceLabelNames handles retrieving label names from a data source.
 func (h *Handler) FetchPrometheusDataSourceLabelNames(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -136,9 +133,8 @@ func (h *Handler) FetchPrometheusDataSourceLabelNames(w http.ResponseWriter, r *
 
 // FetchPrometheusDataSourceLabelValues handles retrieving label values from a data source.
 func (h *Handler) FetchPrometheusDataSourceLabelValues(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -183,9 +179,8 @@ func (h *Handler) FetchPrometheusDataSourceLabelValues(w http.ResponseWriter, r 
 
 // FetchPrometheusDataSourceSeries handles retrieving series from a data source.
 func (h *Handler) FetchPrometheusDataSourceSeries(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 

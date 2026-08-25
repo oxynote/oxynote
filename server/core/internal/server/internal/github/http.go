@@ -100,13 +100,12 @@ func (h *Handler) VerifySignature(next http.Handler) http.Handler {
 
 // FetchInstall handles the fetching of the Github installation URL.
 func (h *Handler) FetchInstall(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
-	_, err = h.db.FetchGithubInstallationByOrganizationID(r.Context(), session.ActiveOrganizationID)
+	_, err := h.db.FetchGithubInstallationByOrganizationID(r.Context(), session.ActiveOrganizationID)
 
 	switch {
 	case errutil.IsNotFound(err):
@@ -134,9 +133,8 @@ func (h *Handler) FetchInstall(w http.ResponseWriter, r *http.Request) {
 
 // CheckInstallation handles the check of the Github installation URL.
 func (h *Handler) CheckInstallation(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -155,9 +153,8 @@ func (h *Handler) CheckInstallation(w http.ResponseWriter, r *http.Request) {
 
 // ConnectOrganization handles the connection of a Github organization to the application.
 func (h *Handler) ConnectOrganization(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -258,9 +255,8 @@ func (h *Handler) HandleEvent(w http.ResponseWriter, r *http.Request) {
 
 // FetchRepositories retrieves Github repositories files.
 func (h *Handler) FetchRepositories(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -281,9 +277,8 @@ func (h *Handler) FetchRepositories(w http.ResponseWriter, r *http.Request) {
 
 // FetchRepositoryBranches retrieves Github repository branches.
 func (h *Handler) FetchRepositoryBranches(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -310,9 +305,8 @@ func (h *Handler) FetchRepositoryBranches(w http.ResponseWriter, r *http.Request
 
 // FetchIssues retrieves Github issues.
 func (h *Handler) FetchIssues(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
@@ -323,7 +317,7 @@ func (h *Handler) FetchIssues(w http.ResponseWriter, r *http.Request) {
 		Repository string `schema:"repository"`
 	}
 
-	err = httpserver.DecodeForm(r, &data)
+	err := httpserver.DecodeForm(r, &data)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -346,13 +340,12 @@ func (h *Handler) FetchIssues(w http.ResponseWriter, r *http.Request) {
 
 // DisconnectOrganization handles the disconnection of a Github organization from the application.
 func (h *Handler) DisconnectOrganization(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
-	_, err = h.db.FetchGithubInstallationByOrganizationID(r.Context(), session.ActiveOrganizationID)
+	_, err := h.db.FetchGithubInstallationByOrganizationID(r.Context(), session.ActiveOrganizationID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -369,9 +362,8 @@ func (h *Handler) DisconnectOrganization(w http.ResponseWriter, r *http.Request)
 
 // FetchRepositoryTree retrieves Github repository files.
 func (h *Handler) FetchRepositoryTree(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
 		return
 	}
 
