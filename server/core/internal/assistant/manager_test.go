@@ -180,7 +180,7 @@ func testManagerStores() (*Manager, *stores) {
 	st := stubStores()
 	log := discardLog()
 
-	return &Manager{
+	m := &Manager{
 		log: log,
 		db:  &toolsMock.DB{},
 		search: &toolsMock.Searcher{
@@ -195,7 +195,11 @@ func testManagerStores() (*Manager, *stores) {
 		metrics:     newMetrics(metricutil.NewFactory("test", prometheus.NewRegistry()), "claude"),
 		model:       stubChatModel(),
 		summary:     stubChatModel(),
-	}, st
+	}
+
+	m.turns.m = make(map[string]struct{})
+
+	return m, st
 }
 
 func Test_Manager_Configured(t *testing.T) {
@@ -218,6 +222,7 @@ func Test_NewManager(t *testing.T) {
 	assert.NotNil(t, m.pendings)
 	assert.NotNil(t, m.offload)
 	assert.NotNil(t, m.metrics)
+	assert.NotNil(t, m.turns.m)
 	assert.Nil(t, m.tree)
 
 	// an unset summarization model falls back to the chat model, so
@@ -248,6 +253,30 @@ func Test_Manager_ToolSet(t *testing.T) {
 	// wired from the manager's shared dependencies and scoped to the
 	// requested pair.
 	assert.Len(t, s.Tools(), 28)
+}
+
+func Test_Manager_claimTurn(t *testing.T) {
+	t.Parallel()
+
+	m := testManager()
+
+	require.True(t, m.claimTurn("k1"))
+
+	// held until released, and per key: another conversation's turns
+	// are not serialized with this one's.
+	assert.False(t, m.claimTurn("k1"))
+	assert.True(t, m.claimTurn("k2"))
+}
+
+func Test_Manager_releaseTurn(t *testing.T) {
+	t.Parallel()
+
+	m := testManager()
+
+	require.True(t, m.claimTurn("k1"))
+	m.releaseTurn("k1")
+
+	assert.True(t, m.claimTurn("k1"))
 }
 
 func Test_Manager_Chat(t *testing.T) {

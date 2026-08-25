@@ -301,11 +301,19 @@ func (i *input) CreateDocument(doc document.Document) error {
 	return nil
 }
 
+// errUnknownDocument is what DeleteDocument reports for an id that
+// names nothing in the session's organisation. Another organisation's
+// id lands here too, which is the point: the tools cannot be used to
+// discover that a document exists elsewhere.
+var errUnknownDocument = errors.New("no document with that id in this organisation; call list_documents for the ids that exist")
+
 // DeleteDocument removes the document. It records nothing as touched:
 // the document is gone, so there is nothing left to point a caller at.
 // The delete reports the ids of the destroyed subtree, and their
 // search-index removal is queued in the same transaction: after the
-// commit nothing else knows what went away.
+// commit nothing else knows what went away. An empty subtree means the
+// delete matched nothing, which is reported as an error rather than a
+// silent success.
 func (i *input) DeleteDocument(id xid.ID) error {
 	var tx Tx
 
@@ -320,12 +328,14 @@ func (i *input) DeleteDocument(id xid.ID) error {
 		return err
 	}
 
-	if len(ids) != 0 {
-		if err := i.jobs.Enqueue(i.ctx, tx, search.BlocksDifference{
-			RemovedDocuments: ids,
-		}); err != nil {
-			return fmt.Errorf("insert search job: %w", err)
-		}
+	if len(ids) == 0 {
+		return errUnknownDocument
+	}
+
+	if err := i.jobs.Enqueue(i.ctx, tx, search.BlocksDifference{
+		RemovedDocuments: ids,
+	}); err != nil {
+		return fmt.Errorf("insert search job: %w", err)
 	}
 
 	return tx.Commit()

@@ -30,8 +30,7 @@ type session struct {
 
 	supv *xync.Supervisor
 
-	mu         sync.Mutex
-	processing bool
+	mu sync.Mutex
 
 	// activeDocumentID is the document the user is currently viewing,
 	// surfaced into the system prompt so the model can resolve "this
@@ -230,8 +229,13 @@ func (s *session) handleMessage(ctx context.Context, content string) {
 	tn := s.newTurn()
 
 	s.goTurn(ctx, func(turnCtx context.Context) *persist.PendingConfirm {
+		// the turn builds on the stored conversation rather than this
+		// session's copy: another connection of the same user may have
+		// completed turns since this session loaded it, and a turn built
+		// on the stale copy would save a history discarding theirs.
+		msgs := append(s.man.history.Load(turnCtx, s.key), schema.UserMessage(content))
+
 		s.mu.Lock()
-		msgs := append(cloneMessages(s.messages), schema.UserMessage(content))
 		s.messages = msgs
 		s.mu.Unlock()
 
@@ -242,15 +246,18 @@ func (s *session) handleMessage(ctx context.Context, content string) {
 }
 
 // handleReset clears the conversation, provided a turn is not running.
+// It claims the conversation the way a turn does, so it cannot clear
+// the stores while another connection's turn is mid-run.
 func (s *session) handleReset(ctx context.Context) {
-	s.mu.Lock()
-	if s.processing {
-		s.mu.Unlock()
+	if !s.man.claimTurn(s.key) {
 		s.writer.WriteJSON(ctx, protocol.NewErrorMessage("cannot reset while processing"))
 
 		return
 	}
 
+	defer s.man.releaseTurn(s.key)
+
+	s.mu.Lock()
 	s.messages = nil
 	s.mu.Unlock()
 
@@ -263,12 +270,25 @@ func (s *session) handleReset(ctx context.Context) {
 // mismatched turn id is dropped: only the outstanding confirmation can
 // be answered, and a stale reply from a previous turn must not fire.
 func (s *session) handleConfirmResponse(ctx context.Context, turnID string, approved, all bool) {
+	// looked up before claiming so a duplicate answer to an already
+	// consumed confirmation is dropped silently instead of being told
+	// the session is busy.
 	pending := s.man.pendings.Load(ctx, s.key)
 	if pending == nil || pending.TurnID != turnID {
 		return
 	}
 
 	if !s.beginTurn(ctx) {
+		return
+	}
+
+	// re-read under the claim: between the first look and the claim,
+	// a new message on another connection of the same user may have
+	// abandoned this confirmation and deleted its checkpoint.
+	pending = s.man.pendings.Load(ctx, s.key)
+	if pending == nil || pending.TurnID != turnID {
+		s.man.releaseTurn(s.key)
+
 		return
 	}
 
@@ -319,30 +339,28 @@ func (s *session) handleConfirmResponse(ctx context.Context, turnID string, appr
 	})
 }
 
-// beginTurn claims the session for a turn, reporting to the client when
-// one is already running.
+// beginTurn claims the conversation for a turn, reporting to the client
+// when one is already running. The claim is held in the manager, keyed
+// like the conversation itself: every connection of the same (org,
+// user) shares one history and checkpoint, so two turns must not run at
+// once even when they arrive on different connections.
 func (s *session) beginTurn(ctx context.Context) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.processing {
+	if !s.man.claimTurn(s.key) {
 		s.writer.WriteJSON(ctx, protocol.NewErrorMessage("already processing a message"))
 
 		return false
 	}
 
-	s.processing = true
-
 	return true
 }
 
-// goTurn runs one turn on the supervisor, guaranteeing the session is
+// goTurn runs one turn on the supervisor, guaranteeing the claim is
 // released and the client hears about it even if the turn panics.
 //
 // A turn that parks on a confirmation returns it rather than sending it
-// itself, so the session is already free by the time the client is asked.
+// itself, so the claim is already free by the time the client is asked.
 // Otherwise a fast answer would arrive while the finished turn still held
-// the session and be rejected as "already processing".
+// the claim and be rejected as "already processing".
 func (s *session) goTurn(ctx context.Context, fn func(context.Context) *persist.PendingConfirm) {
 	s.supv.Go(func(sctx context.Context) {
 		defer logutil.Recover(s.man.log, nil)
@@ -354,19 +372,17 @@ func (s *session) goTurn(ctx context.Context, fn func(context.Context) *persist.
 			// checkpoint is already in Redis, and losing the record
 			// would make the parked turn unreachable on reconnect.
 			//
-			// It is written before the session is released, because the
-			// read loop is a separate goroutine: a message arriving on a
-			// free session looks up the pending record to decide whether
-			// to abandon a parked turn, and would find nothing while this
-			// write was still in flight — then delete the checkpoint this
-			// record points at.
+			// It is written before the claim is released, because a
+			// message arriving on any connection of the same user the
+			// moment the claim frees looks up the pending record to
+			// decide whether to abandon a parked turn, and would find
+			// nothing while this write was still in flight — then delete
+			// the checkpoint this record points at.
 			if pending != nil {
 				s.man.pendings.Save(context.WithoutCancel(ctx), s.key, *pending)
 			}
 
-			s.mu.Lock()
-			s.processing = false
-			s.mu.Unlock()
+			s.man.releaseTurn(s.key)
 
 			if pending != nil {
 				s.writer.WriteJSON(ctx, protocol.NewConfirmRequest(pending.TurnID, pending.Actions))
@@ -414,10 +430,4 @@ func (s *session) runOptions(extra map[string]any) []adk.AgentRunOption {
 		adk.WithCheckPointID(s.key),
 		adk.WithSessionValues(values),
 	}
-}
-
-// cloneMessages copies the conversation so an in-flight turn cannot be
-// mutated by the session underneath it.
-func cloneMessages(msgs []*schema.Message) []*schema.Message {
-	return append(make([]*schema.Message, 0, len(msgs)+1), msgs...)
 }

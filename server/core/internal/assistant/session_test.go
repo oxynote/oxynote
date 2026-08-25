@@ -17,6 +17,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
 	toolsMock "github.com/oxynote/oxynote/server/core/internal/assistant/tools/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -207,7 +208,6 @@ func Test_Manager_newSession(t *testing.T) {
 	assert.Same(t, writer, s.writer)
 	assert.NotNil(t, s.runner)
 	assert.NotNil(t, s.supv)
-	assert.False(t, s.processing)
 	assert.Empty(t, s.activeDocumentID)
 	require.Len(t, s.messages, 1)
 
@@ -353,10 +353,37 @@ func Test_session_handleMessage(t *testing.T) {
 	cc := map[string]struct {
 		Responses []*schema.Message
 		Content   string
+		Stored    []*schema.Message
 		Pending   bool
 		Settles   bool
 		Expect    func(t *testing.T, rec *recorder, cm *mock.ChatModel, st *stores)
 	}{
+		"Turn builds on the stored conversation": {
+			Content: "and what about this",
+			Stored: []*schema.Message{
+				schema.UserMessage("from another tab"),
+				schema.AssistantMessage("noted", nil),
+			},
+			Settles: true,
+			Expect: func(t *testing.T, _ *recorder, cm *mock.ChatModel, _ *stores) {
+				// the turn starts from what the store holds, not from this
+				// session's copy: another connection of the same user may
+				// have finished turns since this one loaded it, and a turn
+				// built on the stale copy would save a history discarding
+				// theirs.
+				require.NotEmpty(t, cm.StreamCalls())
+
+				var all strings.Builder
+
+				for _, msg := range cm.StreamCalls()[0].Input {
+					all.WriteString(msg.Content)
+					all.WriteString("\n")
+				}
+
+				assert.Contains(t, all.String(), "from another tab")
+				assert.NotContains(t, all.String(), "stale local copy")
+			},
+		},
 		"Outstanding confirmation is abandoned by a new message": {
 			Responses: []*schema.Message{
 				schema.AssistantMessage("fresh answer", nil),
@@ -445,6 +472,16 @@ func Test_session_handleMessage(t *testing.T) {
 				})
 			}
 
+			if c.Stored != nil {
+				st.history.GetFunc = func(_ context.Context, _ string) (*[]*schema.Message, error) {
+					return &c.Stored, nil
+				}
+
+				s.mu.Lock()
+				s.messages = []*schema.Message{schema.UserMessage("stale local copy")}
+				s.mu.Unlock()
+			}
+
 			s.handleMessage(context.Background(), c.Content)
 
 			if c.Settles {
@@ -494,8 +531,14 @@ func Test_session_handleReset(t *testing.T) {
 
 			s.mu.Lock()
 			s.messages = []*schema.Message{schema.UserMessage("hi")}
-			s.processing = c.Processing
 			s.mu.Unlock()
+
+			// a turn in flight holds the conversation's claim; it may be
+			// running on any connection of the same user, so it is held
+			// in the manager rather than on this session.
+			if c.Processing {
+				require.True(t, m.claimTurn(s.key))
+			}
 
 			s.handleReset(context.Background())
 
@@ -521,6 +564,10 @@ func Test_session_handleReset(t *testing.T) {
 			assert.Len(t, st.history.DeleteCalls(), 1)
 			assert.Len(t, st.pendings.DeleteCalls(), 1)
 			assert.Len(t, st.blobs.DeleteCalls(), 1)
+
+			// the reset's own claim is released, so the next turn can
+			// start.
+			assert.True(t, m.claimTurn(s.key))
 		})
 	}
 }
@@ -538,13 +585,25 @@ func Test_session_handleConfirmResponse(t *testing.T) {
 	}
 
 	cc := map[string]struct {
-		Responses         []*schema.Message
-		StaleTurn         bool
-		CorruptCheckpoint bool
-		Approved          bool
-		All               bool
-		Applied           int
+		Responses           []*schema.Message
+		StaleTurn           bool
+		AbandonedUnderClaim bool
+		CorruptCheckpoint   bool
+		Approved            bool
+		All                 bool
+		Applied             int
 	}{
+		"Answer abandoned between the look and the claim is dropped": {
+			// between the answer's first look at the pending record and
+			// its claim of the conversation, a new message on another
+			// connection of the same user can abandon the confirmation
+			// and delete its checkpoint; the re-read under the claim has
+			// to catch that and drop the answer instead of resuming into
+			// a checkpoint that no longer exists.
+			Responses:           oneWrite,
+			AbandonedUnderClaim: true,
+			Approved:            true,
+		},
 		"Approving resumes the parked write": {
 			Responses: oneWrite,
 			Approved:  true,
@@ -591,7 +650,7 @@ func Test_session_handleConfirmResponse(t *testing.T) {
 			applier := stubEditApplier()
 			cm := stubChatModel(c.Responses...)
 
-			m := testManager()
+			m, st := testManagerStores()
 			m.model = cm
 			m.db = stubDocumentDB()
 			m.applier = applier
@@ -619,7 +678,33 @@ func Test_session_handleConfirmResponse(t *testing.T) {
 				))
 			}
 
+			if c.AbandonedUnderClaim {
+				// the first look still sees the record; the re-read under
+				// the claim finds it gone, as it would after another
+				// connection's message abandoned the confirmation.
+				var loads atomic.Int32
+
+				orig := st.pendings.GetFunc
+				st.pendings.GetFunc = func(ctx context.Context, key string) (*persist.PendingConfirm, error) {
+					if loads.Add(1) > 1 {
+						return nil, errutil.ErrNotFound
+					}
+
+					return orig(ctx, key)
+				}
+			}
+
 			s.handleConfirmResponse(context.Background(), turnID, c.Approved, c.All)
+
+			if c.AbandonedUnderClaim {
+				// nothing resumed and nothing was applied — and the claim
+				// was handed back, so the abandoning turn's successor can
+				// start.
+				assert.Empty(t, applier.ApplyCalls())
+				assert.True(t, m.claimTurn(s.key))
+
+				return
+			}
 
 			if c.StaleTurn {
 				assert.Empty(t, applier.ApplyCalls())
@@ -661,7 +746,8 @@ func Test_session_handleConfirmResponse(t *testing.T) {
 func Test_session_beginTurn(t *testing.T) {
 	t.Parallel()
 
-	s, rec := prepSession(t, testManager())
+	m := testManager()
+	s, rec := prepSession(t, m)
 
 	require.True(t, s.beginTurn(context.Background()))
 
@@ -672,6 +758,21 @@ func Test_session_beginTurn(t *testing.T) {
 	msg, ok := find[protocol.ErrorMessage](rec)
 	require.True(t, ok)
 	assert.Equal(t, "already processing a message", msg.Message)
+
+	// the claim covers every connection of the same (org, user): a
+	// second session over the same conversation shares the one history
+	// and checkpoint, so its turn is refused just the same.
+	other, otherRec := prepSession(t, m)
+
+	assert.False(t, other.beginTurn(context.Background()))
+
+	msg, ok = find[protocol.ErrorMessage](otherRec)
+	require.True(t, ok)
+	assert.Equal(t, "already processing a message", msg.Message)
+
+	// once released, either connection may begin the next turn.
+	m.releaseTurn(s.key)
+	assert.True(t, other.beginTurn(context.Background()))
 }
 
 func Test_session_goTurn(t *testing.T) {
@@ -703,16 +804,18 @@ func Test_session_goTurn(t *testing.T) {
 			s, rec := prepSession(t, m)
 
 			// a parked turn's record has to be durable before anything
-			// else can claim the session: the read loop runs on its own
-			// goroutine, and a message arriving in that window would see
-			// no pending confirmation and orphan the checkpoint the
-			// parked turn is waiting on.
-			var processingAtSave atomic.Bool
+			// else can claim the conversation: a message arriving in that
+			// window — on this connection or another of the same user —
+			// would see no pending confirmation and orphan the checkpoint
+			// the parked turn is waiting on.
+			var claimedAtSave atomic.Bool
 
 			st.pendings.SetFunc = func(context.Context, string, persist.PendingConfirm) error {
-				s.mu.Lock()
-				processingAtSave.Store(s.processing)
-				s.mu.Unlock()
+				m.turns.mu.Lock()
+				_, held := m.turns.m[s.key]
+				m.turns.mu.Unlock()
+
+				claimedAtSave.Store(held)
 
 				return nil
 			}
@@ -753,11 +856,13 @@ func Test_session_goTurn(t *testing.T) {
 				s.supv.Wait()
 			}
 
-			// the session is released before the question is asked, so
-			// an immediate answer is not refused as a second turn.
-			s.mu.Lock()
-			assert.False(t, s.processing)
-			s.mu.Unlock()
+			// the claim is released before the question is asked, so an
+			// immediate answer is not refused as a second turn.
+			m.turns.mu.Lock()
+			_, held := m.turns.m[s.key]
+			m.turns.mu.Unlock()
+
+			assert.False(t, held)
 
 			if c.Pending == nil {
 				assert.Empty(t, rec.types())
@@ -776,8 +881,8 @@ func Test_session_goTurn(t *testing.T) {
 			require.Len(t, ff, 1)
 			assert.NoError(t, ff[0].Ctx.Err())
 
-			assert.True(t, processingAtSave.Load(),
-				"the confirmation must be stored before the session is released")
+			assert.True(t, claimedAtSave.Load(),
+				"the confirmation must be stored before the claim is released")
 		})
 	}
 }
@@ -821,18 +926,4 @@ func Test_session_resendPendingConfirmation(t *testing.T) {
 	// the writes the original turn parked on.
 	assert.Equal(t, first.TurnID, again.TurnID)
 	assert.Equal(t, first.Actions, again.Actions)
-}
-
-func Test_cloneMessages(t *testing.T) {
-	t.Parallel()
-
-	orig := []*schema.Message{schema.UserMessage("a")}
-	clone := cloneMessages(orig)
-
-	clone = append(clone, schema.UserMessage("b"))
-
-	// appending to the clone must not reach the original, or an
-	// in-flight turn could be mutated underneath itself.
-	assert.Len(t, orig, 1)
-	assert.Len(t, clone, 2)
 }

@@ -467,12 +467,12 @@ func Test_input_DeleteDocument(t *testing.T) {
 
 			return tcase{DB: stubDB(tx, nil), Tx: tx, Commits: 1, Jobs: 1, Err: assert.AnError}
 		}(),
-		// a document unknown to the delete reports no subtree, so there
-		// is no removal to queue.
-		"Empty subtree queues nothing": func() tcase {
+		// a delete that matched nothing means the id names no document
+		// in this organisation — a miss, not a success.
+		"Empty subtree reports an unknown document": func() tcase {
 			tx := stubTx(nil, nil, nil, nil)
 
-			return tcase{DB: stubDB(tx, nil), Tx: tx, Commits: 1}
+			return tcase{DB: stubDB(tx, nil), Tx: tx, Err: errUnknownDocument}
 		}(),
 		"Delete and search removal land together": func() tcase {
 			tx := stubTx([]xid.ID{docID, xid.New()}, nil, nil, nil)

@@ -16,6 +16,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/cloudwego/eino/components/model"
@@ -56,6 +57,16 @@ type Manager struct {
 	pendings    *persist.Pendings
 	offload     *persist.Offload
 
+	// turns tracks the conversation keys with a turn in flight. The
+	// claim lives here rather than on the session because every
+	// connection of the same (org, user) shares one history, pending
+	// record and checkpoint: two turns running at once — even from
+	// different connections — would overwrite each other's state.
+	turns struct {
+		mu sync.Mutex
+		m  map[string]struct{}
+	}
+
 	metrics *metrics
 }
 
@@ -93,7 +104,7 @@ func NewManager(
 	// belonging to the same conversation, expiring with it.
 	blobs := redkit.NewBytesStore(pool, _sessionExpiration)
 
-	return &Manager{
+	m := &Manager{
 		log:     log,
 		db:      db,
 		search:  searcher,
@@ -116,6 +127,10 @@ func NewManager(
 
 		metrics: newMetrics(fc, providerName),
 	}
+
+	m.turns.m = make(map[string]struct{})
+
+	return m
 }
 
 // Configured reports whether the assistant is configured on this
@@ -150,6 +165,30 @@ func (m *Manager) ToolSet(orgID, userID string) *tools.Set {
 		orgID,
 		userID,
 	))
+}
+
+// claimTurn claims the conversation key for one turn, reporting whether
+// the claim succeeded. It fails while any session of the same key — the
+// same (org, user) on any connection — is already running one.
+func (m *Manager) claimTurn(key string) bool {
+	m.turns.mu.Lock()
+	defer m.turns.mu.Unlock()
+
+	if _, ok := m.turns.m[key]; ok {
+		return false
+	}
+
+	m.turns.m[key] = struct{}{}
+
+	return true
+}
+
+// releaseTurn releases the conversation key a turn claimed.
+func (m *Manager) releaseTurn(key string) {
+	m.turns.mu.Lock()
+	defer m.turns.mu.Unlock()
+
+	delete(m.turns.m, key)
 }
 
 // Chat runs an assistant chat over the given connection for the given
