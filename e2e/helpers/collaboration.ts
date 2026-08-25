@@ -16,6 +16,43 @@ import { t } from "./i18n"
 import { fetchInviteLink } from "./mailpit"
 import { visit } from "./page"
 
+// inviteTeamMember sends a workspace invitation from settings and hands
+// back the accept link the invitee is emailed. The owner's page is left
+// with every dialog closed, on whatever it was showing before.
+export async function inviteTeamMember(
+	page: Page,
+	request: APIRequestContext,
+	email: string,
+): Promise<string> {
+	// the sidebar's next-steps entry is only offered while the owner is
+	// alone in the workspace, which every fresh workspace's owner is
+	await page
+		.getByText(t("sidebar.sections.next-steps.items.invite-team-members"))
+		.click()
+	await page
+		.getByRole("button", { name: t("settings.workspace.invitation-button") })
+		.click()
+	await page
+		.getByPlaceholder(
+			t("settings.action-modals.workspace-invitation.email-placeholder"),
+		)
+		.fill(email)
+	await page
+		.getByRole("button", {
+			name: t("settings.action-modals.workspace-invitation.submit-button"),
+		})
+		.click()
+
+	// the delivered email is the proof the invitation went through; the
+	// invite modal has closed itself by then, leaving only settings
+	const inviteLink = await fetchInviteLink(request, email)
+
+	await page.keyboard.press("Escape")
+	await expect(page.getByRole("dialog")).toHaveCount(0)
+
+	return inviteLink
+}
+
 // joinAsSecondUser brings a second, distinct user into the first user's
 // workspace and opens the same document in a fresh browser context: the
 // owner sends an invitation from settings, and the invitee signs up,
@@ -32,31 +69,7 @@ export async function joinAsSecondUser(
 	const credentials = newCredentials()
 	const documentUrl = page.url()
 
-	// the sidebar's next-steps entry is only offered while the owner is
-	// alone in the workspace, which every fresh workspace's owner is
-	await page
-		.getByText(t("sidebar.sections.next-steps.items.invite-team-members"))
-		.click()
-	await page
-		.getByRole("button", { name: t("settings.workspace.invitation-button") })
-		.click()
-	await page
-		.getByPlaceholder(
-			t("settings.action-modals.workspace-invitation.email-placeholder"),
-		)
-		.fill(credentials.email)
-	await page
-		.getByRole("button", {
-			name: t("settings.action-modals.workspace-invitation.submit-button"),
-		})
-		.click()
-
-	// the delivered email is the proof the invitation went through; the
-	// invite modal has closed itself by then, leaving only settings
-	const inviteLink = await fetchInviteLink(request, credentials.email)
-
-	await page.keyboard.press("Escape")
-	await expect(page.getByRole("dialog")).toHaveCount(0)
+	const inviteLink = await inviteTeamMember(page, request, credentials.email)
 
 	const context = await browser.newContext()
 	const invitee = await context.newPage()

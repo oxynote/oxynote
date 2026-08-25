@@ -140,8 +140,8 @@ nothing is stubbed or short-circuited.
   is filed by flow instead.
 - **Shared code lives in [helpers/](helpers/), one module per concern**
   (`auth`, `workspace`, `editor`, `collaboration`, `mailpit`, `i18n`,
-  `page`, `config`). Helpers are setup and plumbing; they do not carry
-  the assertion a test exists to make.
+  `page`, `config`, `api`, `realtime`). Helpers are setup and plumbing;
+  they do not carry the assertion a test exists to make.
 - **`signUpWithWorkspace` is the starting point for almost everything.**
   It signs up, verifies, logs in and creates a workspace, and hands back
   a page with the welcome document open. Nearly every flow needs that
@@ -238,8 +238,30 @@ something no cheaper tier can.
   mock?** If yes, it belongs one tier down.
 - **Coverage is by flow, not by branch.** `web/` owns "every exported
   function is covered" and "every path gets a test"; this tier owns "the
-  wiring holds". Reaching for one more error-path e2e is nearly always
-  the wrong instinct — add it as a component test instead.
+  wiring holds". Reaching for one more browser-decided error-path e2e is
+  nearly always the wrong instinct — add it as a component test instead.
+- **A negative case belongs here when the server is what decides it**,
+  and it is a first-class regression harness rather than a concession.
+  What the rule above excludes is the browser deciding — a validation
+  message, a disabled button. A refusal that crosses the process
+  boundary is the opposite: "user A cannot open user B's document" is
+  answered by core and nowhere else, so it meets the mock test as
+  squarely as the happy path beside it, and it guards a class of bug
+  that silently reappears the day someone drops an org filter.
+- **Access denials are grouped in
+  [tests/access.test.ts](tests/access.test.ts)** rather than filed under
+  the flow each one touches. A per-feature file never reaches them: a
+  feature test always runs as the user who is supposed to have access,
+  which is why a missing check survives a suite that covers every line.
+  Naming follows the same rule as everywhere else — the group names the
+  subject, each name completes "it …" with the denial it observes.
+- **A denial that does not hold yet is marked `test.fail()`**, with a
+  comment saying what is missing and what to delete when it is fixed.
+  That keeps the gap in the suite instead of in a backlog, and Playwright
+  turns the annotation red the day the case starts passing. Check how
+  long such a case takes when you add one: a test that hangs also
+  registers as an expected failure, so a broken probe and a real gap
+  look identical until you read the duration.
 
 ### A real backend, and no mocks
 

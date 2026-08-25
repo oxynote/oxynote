@@ -1,5 +1,11 @@
 import { randomUUID } from "node:crypto"
-import { expect, type APIRequestContext, type Page } from "@playwright/test"
+import {
+	expect,
+	type APIRequestContext,
+	type Browser,
+	type BrowserContext,
+	type Page,
+} from "@playwright/test"
 import { type Credentials, signUpAndVerify, submitLoginForm } from "./auth"
 import { waitForEditor } from "./editor"
 import { t } from "./i18n"
@@ -60,4 +66,24 @@ export async function signUpWithWorkspace(
 	await waitForEditor(page)
 
 	return { credentials, workspace }
+}
+
+// signUpWithSeparateWorkspace builds a second tenant: another verified
+// user with a workspace of their own, in a browser context of their own.
+// Nothing links it to the caller's workspace — no invitation, no shared
+// member — which is what makes it the far side of a cross-tenant test.
+export async function signUpWithSeparateWorkspace(
+	browser: Browser,
+	request: APIRequestContext,
+): Promise<{
+	context: BrowserContext
+	page: Page
+	credentials: Credentials
+	workspace: Workspace
+}> {
+	const context = await browser.newContext()
+	const page = await context.newPage()
+	const { credentials, workspace } = await signUpWithWorkspace(page, request)
+
+	return { context, page, credentials, workspace }
 }
