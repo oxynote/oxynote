@@ -122,6 +122,10 @@ func requiredArgs(t *testing.T, name Name) string {
 			vals[key] = map[string]any{_keyType: string(block.BlockParagraph)}
 		case "position":
 			vals[key] = string(positionAfter)
+		case "reference_block_uid":
+			// distinct from the "x" other uid keys take, so a payload
+			// naming both a block and a reference is not a self-move.
+			vals[key] = "r"
 		case _keyMatchers:
 			vals[key] = []string{"up"}
 		case "attrs":

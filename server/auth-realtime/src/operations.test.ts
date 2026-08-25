@@ -6,6 +6,7 @@ import {
 	findByUid,
 	pmBlockToY,
 	type InsertOp,
+	type MoveOp,
 	type Operation,
 	type PMInline,
 	type PMNode,
@@ -889,6 +890,302 @@ describe("applyOperations", () => {
 					{
 						index: 0,
 						message: "block_uid not found: ghost",
+					},
+				],
+			})
+			expect(topUids(doc)).toEqual([
+				"intro",
+				"callout",
+				"head",
+			])
+		})
+	})
+
+	describe("move", () => {
+		const positionCases: {
+			name: string
+			input: MoveOp["position"]
+			expected: string[]
+		}[] = [
+			{
+				name: "before",
+				input: "before",
+				expected: ["callout", "intro", "head"],
+			},
+			{
+				name: "after",
+				input: "after",
+				expected: ["callout", "head", "intro"],
+			},
+		]
+
+		it.for(positionCases)(
+			"lands the block $name the reference block",
+			({ input, expected }, { expect }) => {
+				const doc = docWith(sampleBlocks())
+
+				const result = applyOperations(doc, [
+					{
+						kind: "move",
+						block_uid: "intro",
+						position: input,
+						reference_uid: "head",
+					},
+				])
+
+				expect(result.applied).toBe(1)
+				expect(topUids(doc)).toEqual(expected)
+			},
+		)
+
+		it("moves a block up past its earlier siblings", ({
+			expect,
+		}) => {
+			const doc = docWith(sampleBlocks())
+
+			const result = applyOperations(doc, [
+				{
+					kind: "move",
+					block_uid: "head",
+					position: "before",
+					reference_uid: "intro",
+				},
+			])
+
+			expect(result.applied).toBe(1)
+			expect(topUids(doc)).toEqual([
+				"head",
+				"intro",
+				"callout",
+			])
+		})
+
+		it("keeps the block's uid, attrs and nested content across the move", ({
+			expect,
+		}) => {
+			const doc = docWith(sampleBlocks())
+
+			const result = applyOperations(doc, [
+				{
+					kind: "move",
+					block_uid: "callout",
+					position: "after",
+					reference_uid: "head",
+				},
+			])
+
+			expect(result.applied).toBe(1)
+			expect(topUids(doc)).toEqual([
+				"intro",
+				"head",
+				"callout",
+			])
+
+			const callout = blockByUid(doc, "callout")
+			expect(attrsOf(callout)).toEqual({
+				uid: "callout",
+				icon: "lucide:zap",
+			})
+
+			const nested = findByUid(
+				doc.getXmlFragment("content"),
+				"nested",
+			)
+			expect(nested?.parent).toBe(callout)
+		})
+
+		it("moves a block into a different parent next to a nested reference", ({
+			expect,
+		}) => {
+			const doc = docWith(sampleBlocks())
+
+			const result = applyOperations(doc, [
+				{
+					kind: "move",
+					block_uid: "head",
+					position: "after",
+					reference_uid: "nested",
+				},
+			])
+
+			expect(result.applied).toBe(1)
+			expect(topUids(doc)).toEqual(["intro", "callout"])
+
+			const head = findByUid(
+				doc.getXmlFragment("content"),
+				"head",
+			)
+			expect(head?.parent).toBe(blockByUid(doc, "callout"))
+			expect(attrsOf(blockByUid(doc, "head"))).toEqual({
+				uid: "head",
+				level: 2,
+			})
+		})
+
+		it("moves a nested block out to the document root", ({
+			expect,
+		}) => {
+			const doc = docWith(sampleBlocks())
+
+			const result = applyOperations(doc, [
+				{
+					kind: "move",
+					block_uid: "nested",
+					position: "before",
+					reference_uid: "intro",
+				},
+			])
+
+			expect(result.applied).toBe(1)
+			expect(topUids(doc)).toEqual([
+				"nested",
+				"intro",
+				"callout",
+				"head",
+			])
+			expect(blockByUid(doc, "callout").length).toBe(0)
+		})
+
+		it("reports an error for a position that is neither before nor after", ({
+			expect,
+		}) => {
+			const doc = docWith(sampleBlocks())
+
+			const result = applyOperations(doc, [
+				{
+					kind: "move",
+					block_uid: "intro",
+					position: "under" as MoveOp["position"],
+					reference_uid: "head",
+				},
+			])
+
+			expect(result).toEqual({
+				applied: 0,
+				errors: [
+					{
+						index: 0,
+						message: `move position must be "before" or "after", got: under`,
+					},
+				],
+			})
+			expect(topUids(doc)).toEqual([
+				"intro",
+				"callout",
+				"head",
+			])
+		})
+
+		it("reports an error for a block moved relative to itself", ({
+			expect,
+		}) => {
+			const doc = docWith(sampleBlocks())
+
+			const result = applyOperations(doc, [
+				{
+					kind: "move",
+					block_uid: "intro",
+					position: "after",
+					reference_uid: "intro",
+				},
+			])
+
+			expect(result).toEqual({
+				applied: 0,
+				errors: [
+					{
+						index: 0,
+						message: "cannot move a block relative to itself: intro",
+					},
+				],
+			})
+			expect(topUids(doc)).toEqual([
+				"intro",
+				"callout",
+				"head",
+			])
+		})
+
+		it("reports an error when the moved block is absent", ({
+			expect,
+		}) => {
+			const doc = docWith(sampleBlocks())
+
+			const result = applyOperations(doc, [
+				{
+					kind: "move",
+					block_uid: "ghost",
+					position: "after",
+					reference_uid: "head",
+				},
+			])
+
+			expect(result).toEqual({
+				applied: 0,
+				errors: [
+					{
+						index: 0,
+						message: "block_uid not found: ghost",
+					},
+				],
+			})
+			expect(topUids(doc)).toEqual([
+				"intro",
+				"callout",
+				"head",
+			])
+		})
+
+		it("reports an error when the reference block is absent", ({
+			expect,
+		}) => {
+			const doc = docWith(sampleBlocks())
+
+			const result = applyOperations(doc, [
+				{
+					kind: "move",
+					block_uid: "intro",
+					position: "after",
+					reference_uid: "ghost",
+				},
+			])
+
+			expect(result).toEqual({
+				applied: 0,
+				errors: [
+					{
+						index: 0,
+						message: "reference_uid not found: ghost",
+					},
+				],
+			})
+			expect(topUids(doc)).toEqual([
+				"intro",
+				"callout",
+				"head",
+			])
+		})
+
+		it("reports an error when the reference sits inside the moved block", ({
+			expect,
+		}) => {
+			const doc = docWith(sampleBlocks())
+
+			const result = applyOperations(doc, [
+				{
+					kind: "move",
+					block_uid: "callout",
+					position: "after",
+					reference_uid: "nested",
+				},
+			])
+
+			expect(result).toEqual({
+				applied: 0,
+				errors: [
+					{
+						index: 0,
+						message: "reference_uid is inside the moved block: nested",
 					},
 				],
 			})

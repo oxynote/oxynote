@@ -257,6 +257,14 @@ func Test_Handler_ServeHTTP(t *testing.T) {
 		info, ok := result["serverInfo"].(map[string]any)
 		require.True(t, ok)
 		assert.Equal(t, "oxynote", info["name"])
+
+		// the instructions are how a connecting agent learns what it is
+		// working with; an initialize without them leaves the client
+		// with bare tool descriptions.
+		instructions, ok := result["instructions"].(string)
+		require.True(t, ok, "instructions: %v", result["instructions"])
+		assert.Contains(t, instructions, "Oxynote")
+		assert.Contains(t, instructions, "## Canonical block model")
 	})
 }
 

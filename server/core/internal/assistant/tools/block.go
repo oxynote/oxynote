@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -966,4 +967,133 @@ func (deleteBlock) Execute(inp Input) (string, error) {
 	}
 
 	return inp.ApplyEdit(in.DocumentID, []edit.Operation{edit.Delete(in.BlockUID)})
+}
+
+// moveBlockArgs is what move_block is called with.
+type moveBlockArgs struct {
+	// DocumentID names the document holding the block.
+	DocumentID xid.ID `json:"document_id"`
+
+	// BlockUID is the block being moved. Required.
+	BlockUID string `json:"block_uid"`
+
+	// Position is the side of the reference block the move lands on.
+	Position position `json:"position"`
+
+	// ReferenceBlockUID is the block the move is positioned against.
+	// Required.
+	ReferenceBlockUID string `json:"reference_block_uid"`
+}
+
+// Validate checks the arguments are complete.
+func (a moveBlockArgs) Validate() error {
+	if a.DocumentID.IsNil() {
+		return errRequired(_keyDocumentID)
+	}
+
+	if a.BlockUID == "" {
+		return errRequired(_keyBlockUID)
+	}
+
+	if a.Position == "" {
+		return errRequired("position")
+	}
+
+	if a.ReferenceBlockUID == "" {
+		return errRequired("reference_block_uid")
+	}
+
+	if a.ReferenceBlockUID == a.BlockUID {
+		return errors.New("reference_block_uid must differ from block_uid")
+	}
+
+	return nil
+}
+
+// moveBlock repositions an existing block within a document.
+type moveBlock struct{}
+
+// Info returns the tool's model-facing description.
+func (moveBlock) Info() Info {
+	return Info{
+		Name:        NameMoveBlock,
+		Description: "Move an existing block before or after a referenced block in the document. The block keeps its uid, attrs, and nested content, so comments and hooks attached to it stay attached — always move a block this way rather than deleting it and inserting a copy.",
+		Properties: map[string]any{
+			_keyDocumentID: stringProp(_descTargetDocumentID),
+			_keyBlockUID:   stringProp("The uid of the block to move."),
+			"position": map[string]any{
+				_keyType: _typeString,
+				"enum": []string{
+					string(positionBefore),
+					string(positionAfter),
+				},
+				_keyDescription: "Landing side relative to the reference block.",
+			},
+			"reference_block_uid": stringProp("The uid of the block to move relative to."),
+		},
+		Required: []string{
+			_keyDocumentID,
+			_keyBlockUID,
+			"position",
+			"reference_block_uid",
+		},
+	}
+}
+
+// Traits reports a write.
+func (moveBlock) Traits() Traits {
+	return Traits{Write: true}
+}
+
+// Title announces which document is being updated.
+func (moveBlock) Title(inp DescribeInput) (string, error) {
+	var in moveBlockArgs
+
+	if err := inp.Decode(&in); err != nil {
+		return "", err
+	}
+
+	doc, err := inp.Document(in.DocumentID)
+	if err != nil {
+		return "", fmt.Errorf("%s: fetch document: %w", NameMoveBlock, err)
+	}
+
+	return "Updating " + doc.DocumentName, nil
+}
+
+// Summary describes the move the model wants to make.
+func (moveBlock) Summary(inp DescribeInput) (ActionSummary, error) {
+	var in moveBlockArgs
+
+	if err := inp.Decode(&in); err != nil {
+		return ActionSummary{}, err
+	}
+
+	doc, err := inp.Document(in.DocumentID)
+	if err != nil {
+		return ActionSummary{}, fmt.Errorf("%s: fetch document: %w", NameMoveBlock, err)
+	}
+
+	return ActionSummary{
+		Tool:         NameMoveBlock,
+		DocumentID:   doc.ID,
+		DocumentName: doc.DocumentName,
+		Summary:      fmt.Sprintf("Move a block %s another block in %s", in.Position, doc.DocumentName),
+	}, nil
+}
+
+// Execute applies the move.
+func (moveBlock) Execute(inp Input) (string, error) {
+	var in moveBlockArgs
+
+	if err := inp.Decode(&in); err != nil {
+		return "", err
+	}
+
+	op := edit.MoveAfter(in.BlockUID, in.ReferenceBlockUID)
+	if in.Position == positionBefore {
+		op = edit.MoveBefore(in.BlockUID, in.ReferenceBlockUID)
+	}
+
+	return inp.ApplyEdit(in.DocumentID, []edit.Operation{op})
 }

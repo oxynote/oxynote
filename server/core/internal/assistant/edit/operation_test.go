@@ -131,6 +131,41 @@ func Test_Delete(t *testing.T) {
 	assert.Nil(t, w.Block)
 }
 
+func Test_MoveAfter(t *testing.T) {
+	t.Parallel()
+
+	w := wire(t, MoveAfter("target", "ref-uid"))
+
+	assert.Equal(t, "move", w.Kind)
+	assert.Equal(t, "after", w.Position)
+	assert.Equal(t, "target", w.BlockUID)
+	assert.Equal(t, "ref-uid", w.ReferenceUID)
+	assert.Nil(t, w.Block)
+}
+
+func Test_MoveBefore(t *testing.T) {
+	t.Parallel()
+
+	w := wire(t, MoveBefore("target", "ref-uid"))
+
+	assert.Equal(t, "move", w.Kind)
+	assert.Equal(t, "before", w.Position)
+	assert.Equal(t, "target", w.BlockUID)
+	assert.Equal(t, "ref-uid", w.ReferenceUID)
+}
+
+func Test_move(t *testing.T) {
+	t.Parallel()
+
+	w := wire(t, move("before", "target", "ref-uid"))
+
+	assert.Equal(t, "move", w.Kind)
+	assert.Equal(t, "before", w.Position)
+	assert.Equal(t, "target", w.BlockUID)
+	assert.Equal(t, "ref-uid", w.ReferenceUID)
+	assert.Nil(t, w.Block)
+}
+
 func Test_SetName(t *testing.T) {
 	t.Parallel()
 

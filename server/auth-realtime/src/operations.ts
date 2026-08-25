@@ -19,7 +19,7 @@ import { transformer, cloneXmlElement } from "./ydocument.js"
 /** Canonical attribute name carried on every editor block. */
 const UID_ATTR = "uid"
 
-/** The sides an insert may name, as a widened list for validation. */
+/** The sides an insert or move may name, as a widened list for validation. */
 const INSERT_POSITIONS: string[] = ["before", "after"]
 
 /**
@@ -35,6 +35,7 @@ export type Operation =
 	| UpdateTextOp
 	| UpdateAttrsOp
 	| DeleteOp
+	| MoveOp
 	| SetNameOp
 	| SetIconOp
 
@@ -95,6 +96,20 @@ export interface UpdateAttrsOp {
 export interface DeleteOp {
 	kind: "delete"
 	block_uid: string
+}
+
+/**
+ * Moves an existing block immediately before/after a referenced
+ * block, keeping the block's uid, attrs, and nested content intact.
+ */
+export interface MoveOp {
+	kind: "move"
+	/** Moved block's uid in the document. */
+	block_uid: string
+	/** Landing side relative to the reference block. */
+	position: "before" | "after"
+	/** Reference block's uid in the document. */
+	reference_uid: string
 }
 
 /** Updates the document's display name. */
@@ -199,6 +214,9 @@ function applyOperation(doc: Y.Doc, op: Operation): void {
 			return
 		case "delete":
 			opDelete(doc, op)
+			return
+		case "move":
+			opMove(doc, op)
 			return
 		case "set_name":
 			opSetName(doc, op)
@@ -334,6 +352,62 @@ function opDelete(doc: Y.Doc, op: DeleteOp): void {
 	found.parent.delete(found.index, 1)
 }
 
+function opMove(doc: Y.Doc, op: MoveOp): void {
+	// the position is unvalidated JSON, same as opInsert's.
+	if (!INSERT_POSITIONS.includes(op.position)) {
+		throw new Error(
+			`move position must be "before" or "after", got: ${op.position}`,
+		)
+	}
+
+	if (op.block_uid === op.reference_uid) {
+		throw new Error(
+			`cannot move a block relative to itself: ${op.block_uid}`,
+		)
+	}
+
+	const frag = doc.getXmlFragment("content")
+
+	const found = findByUid(frag, op.block_uid)
+	if (!found) {
+		throw new Error(`block_uid not found: ${op.block_uid}`)
+	}
+
+	const reference = findByUid(frag, op.reference_uid)
+	if (!reference) {
+		throw new Error(`reference_uid not found: ${op.reference_uid}`)
+	}
+
+	// a reference nested inside the moved block is destroyed by the
+	// removal below, leaving the move nowhere to land.
+	if (isInside(reference.element, found.element)) {
+		throw new Error(
+			`reference_uid is inside the moved block: ${op.reference_uid}`,
+		)
+	}
+
+	// a removed Y.XmlElement cannot be reinserted, so the block is
+	// cloned first. CloneXmlElement keeps the uid and every non-string
+	// attribute, which is what keeps comments, hooks, and files
+	// attached across the move.
+	const clone = cloneXmlElement(found.element)
+
+	// removing the block shifts its later siblings down by one, so a
+	// reference behind it in the same parent is re-indexed before the
+	// removal invalidates the index findByUid reported.
+	let insertAt = reference.index
+	if (reference.parent === found.parent && found.index < insertAt) {
+		insertAt -= 1
+	}
+
+	if (op.position === "after") {
+		insertAt += 1
+	}
+
+	found.parent.delete(found.index, 1)
+	reference.parent.insert(insertAt, [clone])
+}
+
 function opSetName(doc: Y.Doc, op: SetNameOp): void {
 	const nameFrag = doc.getXmlFragment("name")
 	nameFrag.delete(0, nameFrag.length)
@@ -392,6 +466,25 @@ export function findByUid(
 	}
 
 	return null
+}
+
+/**
+ * Reports whether el sits anywhere inside ancestor's subtree. Used by
+ * opMove to refuse a reference the removal of the moved block would
+ * destroy.
+ */
+function isInside(el: Y.XmlElement, ancestor: Y.XmlElement): boolean {
+	let parent = el.parent
+
+	while (parent !== null) {
+		if (parent === ancestor) {
+			return true
+		}
+
+		parent = parent.parent
+	}
+
+	return false
 }
 
 /**

@@ -32,6 +32,7 @@ var _writeToolNames = []string{
 	"update_block_text",
 	"update_block_attrs",
 	"delete_block",
+	"move_block",
 }
 
 // _dataSourceToolNames is every data-source tool the MCP surface serves
@@ -125,7 +126,7 @@ func Test_Handler_server(t *testing.T) {
 			Scopes: []string{ScopeDocumentWrite},
 			Names:  _writeToolNames,
 		},
-		"Both document scopes list all seventeen and no data-source tool": {
+		"Both document scopes list all eighteen and no data-source tool": {
 			Scopes: []string{ScopeDocumentRead, ScopeDocumentWrite},
 			Names:  append(append([]string{}, _readToolNames...), _writeToolNames...),
 		},

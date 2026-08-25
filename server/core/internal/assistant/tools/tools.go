@@ -62,6 +62,7 @@ const (
 	NameUpdateBlockText  Name = "update_block_text"
 	NameUpdateBlockAttrs Name = "update_block_attrs"
 	NameDeleteBlock      Name = "delete_block"
+	NameMoveBlock        Name = "move_block"
 )
 
 // Set is the tools one session offers the model: an immutable registry
@@ -131,6 +132,7 @@ func New(deps *Deps) *Set {
 		updateBlockText{},
 		updateBlockAttrs{},
 		deleteBlock{},
+		moveBlock{},
 
 		readToolOutput{},
 	)

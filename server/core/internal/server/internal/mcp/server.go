@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/oxynote/oxynote/server/core/internal/assistant"
 	"github.com/oxynote/oxynote/server/core/internal/buildinfo"
 )
 
@@ -28,7 +29,8 @@ func (h *Handler) server(r *http.Request) *mcp.Server {
 		Title:   "Oxynote",
 		Version: buildinfo.Full().Version.String(),
 	}, &mcp.ServerOptions{
-		Logger: h.log,
+		Logger:       h.log,
+		Instructions: assistant.MCPInstructions(),
 	})
 
 	session, err := sessionFromContext(r.Context())

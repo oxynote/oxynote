@@ -42,6 +42,7 @@ func allToolNames() []Name {
 		NameUpdateBlockText,
 		NameUpdateBlockAttrs,
 		NameDeleteBlock,
+		NameMoveBlock,
 		NameReadToolOutput,
 	}
 }
@@ -259,6 +260,7 @@ func Test_Set_WriteNames(t *testing.T) {
 		string(NameUpdateBlockText),
 		string(NameUpdateBlockAttrs),
 		string(NameDeleteBlock),
+		string(NameMoveBlock),
 	}, got)
 
 	// mutating the returned slice must not affect the registry.

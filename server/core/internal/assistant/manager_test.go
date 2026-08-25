@@ -243,11 +243,11 @@ func Test_Manager_ToolSet(t *testing.T) {
 	s := m.ToolSet("org1", "user1")
 	require.NotNil(t, s)
 
-	// the set carries the full registry — the seventeen document tools,
+	// the set carries the full registry — the eighteen document tools,
 	// the nine data-source tools and the offloaded-result reader —
 	// wired from the manager's shared dependencies and scoped to the
 	// requested pair.
-	assert.Len(t, s.Tools(), 27)
+	assert.Len(t, s.Tools(), 28)
 }
 
 func Test_Manager_Chat(t *testing.T) {

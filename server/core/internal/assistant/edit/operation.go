@@ -136,6 +136,33 @@ func Delete(blockUID string) Operation {
 	}
 }
 
+// MoveAfter builds an operation that repositions the block identified
+// by blockUID to immediately after the block identified by
+// referenceUID, keeping the block's uid, attrs, and nested content.
+func MoveAfter(blockUID, referenceUID string) Operation {
+	return move("after", blockUID, referenceUID)
+}
+
+// MoveBefore builds an operation that repositions the block
+// identified by blockUID to immediately before the block identified
+// by referenceUID.
+func MoveBefore(blockUID, referenceUID string) Operation {
+	return move("before", blockUID, referenceUID)
+}
+
+// move builds the shared wire closure behind MoveAfter and
+// MoveBefore.
+func move(position, blockUID, referenceUID string) Operation {
+	return func() (wireOp, error) {
+		return wireOp{
+			Kind:         "move",
+			Position:     position,
+			BlockUID:     blockUID,
+			ReferenceUID: referenceUID,
+		}, nil
+	}
+}
+
 // SetName builds an operation that updates the document's display
 // name. The op is sent even when name is empty: omitempty drops the
 // name field from the wire form, and Node treats the missing name as
@@ -169,15 +196,15 @@ type wireOp struct {
 	Kind string `json:"kind"`
 
 	// Position is "after" or "before" relative to ReferenceUID;
-	// insert only.
+	// insert and move only.
 	Position string `json:"position,omitempty"`
 
-	// ReferenceUID identifies the block an insert is anchored to;
-	// insert only.
+	// ReferenceUID identifies the block an insert or move is anchored
+	// to; insert and move only.
 	ReferenceUID string `json:"reference_uid,omitempty"`
 
 	// BlockUID identifies the block the operation targets; replace,
-	// update_text, update_attrs, and delete.
+	// update_text, update_attrs, delete, and move.
 	BlockUID string `json:"block_uid,omitempty"`
 
 	// Block is the expanded ProseMirror payload; insert, append,

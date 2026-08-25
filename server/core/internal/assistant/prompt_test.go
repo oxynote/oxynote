@@ -57,6 +57,26 @@ func Test_buildSystemPrompt(t *testing.T) {
 	assert.NotContains(t, got, "do not author")
 }
 
+func Test_MCPInstructions(t *testing.T) {
+	t.Parallel()
+
+	got := MCPInstructions()
+
+	// the shared sections ship verbatim, so the two surfaces describe
+	// the same block model, etiquette, and aesthetics.
+	assert.Contains(t, got, _blockModelSection)
+	assert.Contains(t, got, _etiquetteSection)
+	assert.Contains(t, got, _aestheticsSection)
+
+	// reordering is the etiquette rule the surface exists to teach.
+	assert.Contains(t, got, "move_block")
+
+	// the persona and its confirmation flow are the chat surface's;
+	// telling an MCP client about either would be a lie.
+	assert.NotContains(t, got, "Rubber Duck")
+	assert.NotContains(t, got, "confirmation")
+}
+
 func Test_genModelInput(t *testing.T) {
 	t.Parallel()
 

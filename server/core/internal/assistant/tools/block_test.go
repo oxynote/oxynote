@@ -988,3 +988,112 @@ func Test_deleteBlock_Execute(t *testing.T) {
 		})
 	}
 }
+
+func Test_moveBlockArgs_Validate(t *testing.T) {
+	t.Parallel()
+
+	ok := moveBlockArgs{DocumentID: _testDocID, BlockUID: "b", Position: positionAfter, ReferenceBlockUID: "r"}
+
+	assertValidate(t, ok, map[string]Args{
+		"document_id":         moveBlockArgs{BlockUID: "b", Position: positionAfter, ReferenceBlockUID: "r"},
+		"block_uid":           moveBlockArgs{DocumentID: _testDocID, Position: positionAfter, ReferenceBlockUID: "r"},
+		"position":            moveBlockArgs{DocumentID: _testDocID, BlockUID: "b", ReferenceBlockUID: "r"},
+		"reference_block_uid": moveBlockArgs{DocumentID: _testDocID, BlockUID: "b", Position: positionAfter},
+	})
+
+	// a block cannot be moved relative to itself.
+	self := ok
+	self.ReferenceBlockUID = ok.BlockUID
+
+	err := self.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must differ")
+}
+
+func Test_moveBlock_Info(t *testing.T) {
+	t.Parallel()
+
+	info := moveBlock{}.Info()
+
+	assert.Equal(t, NameMoveBlock, info.Name)
+	assert.Contains(t, info.Description, "keeps its uid")
+	assert.Equal(t, []string{_keyDocumentID, _keyBlockUID, "position", "reference_block_uid"}, info.Required)
+}
+
+func Test_moveBlock_Traits(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, Traits{Write: true}, moveBlock{}.Traits())
+}
+
+func Test_moveBlock_Title(t *testing.T) {
+	t.Parallel()
+
+	got, err := moveBlock{}.Title(testInput(testDeps(stubDocumentDB(), nil, nil), NameMoveBlock, requiredArgs(t, NameMoveBlock)))
+	require.NoError(t, err)
+	assert.Equal(t, "Updating Runbook", got)
+
+	// the document it names has to resolve; the failure is passed on
+	// rather than described around.
+	_, err = moveBlock{}.Title(testInput(testDeps(failingDocumentDB(), nil, nil), NameMoveBlock, requiredArgs(t, NameMoveBlock)))
+	require.Error(t, err)
+
+	// unreadable arguments are refused before anything is looked up.
+	_, err = moveBlock{}.Title(testInput(testDeps(stubDocumentDB(), nil, nil), NameMoveBlock, `{`))
+	require.Error(t, err)
+}
+
+func Test_moveBlock_Summary(t *testing.T) {
+	t.Parallel()
+
+	got, err := moveBlock{}.Summary(testInput(
+		testDeps(stubDocumentDB(), nil, nil), NameMoveBlock,
+		`{"document_id":"`+_testDocID.String()+`","block_uid":"a","position":"after","reference_block_uid":"b"}`,
+	))
+	require.NoError(t, err)
+	assert.Equal(t, "Move a block after another block in Runbook", got.Summary)
+
+	// the document it names has to resolve; the failure is passed on
+	// rather than described around.
+	_, err = moveBlock{}.Summary(testInput(testDeps(failingDocumentDB(), nil, nil), NameMoveBlock, requiredArgs(t, NameMoveBlock)))
+	require.Error(t, err)
+
+	// unreadable arguments are refused before anything is looked up.
+	_, err = moveBlock{}.Summary(testInput(testDeps(stubDocumentDB(), nil, nil), NameMoveBlock, `{`))
+	require.Error(t, err)
+}
+
+func Test_moveBlock_Execute(t *testing.T) {
+	t.Parallel()
+
+	base := `{"document_id":"` + _testDocID.String() + `","block_uid":"a","reference_block_uid":"b"`
+
+	cc := map[string]editCase{
+		"Malformed arguments": {DB: stubDocumentDB(), Args: `{`, Err: assert.AnError},
+		"Reference uid is required": {
+			DB:   stubDocumentDB(),
+			Args: `{"document_id":"` + _testDocID.String() + `","block_uid":"a","position":"after"}`,
+			Err:  assert.AnError,
+		},
+		"Position must be before or after": {
+			DB:   stubDocumentDB(),
+			Args: base + `,"position":"sideways"}`,
+			Err:  assert.AnError,
+		},
+		"Reference must differ from the block": {
+			DB:   stubDocumentDB(),
+			Args: `{"document_id":"` + _testDocID.String() + `","block_uid":"a","position":"after","reference_block_uid":"a"}`,
+			Err:  assert.AnError,
+		},
+		"Moved before": {DB: stubDocumentDB(), Args: base + `,"position":"before"}`},
+		"Moved after":  {DB: stubDocumentDB(), Args: base + `,"position":"after"}`},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			runEdit(t, moveBlock{}, NameMoveBlock, c)
+		})
+	}
+}
