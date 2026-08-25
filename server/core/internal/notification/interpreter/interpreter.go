@@ -86,7 +86,7 @@ func (i *Interpreter) interpretDocumentHookTriggeredNotification(ctx context.Con
 		return nil, ErrInvalidNotificationMetadata
 	}
 
-	blockID, ok := metaNullString(n, "blockId")
+	blockID, ok := metaNullString(n, notification.MetaKeyBlockID)
 	if !ok {
 		return nil, ErrInvalidNotificationMetadata
 	}
@@ -118,12 +118,12 @@ func (i *Interpreter) interpretDocumentCommentNotification(
 	n notification.Notification,
 	verb string,
 ) (*Message, error) {
-	userID, ok := n.Metadata["userId"].(string)
+	userID, ok := n.Metadata[notification.MetaKeyUserID].(string)
 	if !ok {
 		return nil, ErrInvalidNotificationMetadata
 	}
 
-	anchorBlockID, ok := metaNullString(n, "anchorBlockId")
+	anchorBlockID, ok := metaNullString(n, notification.MetaKeyAnchorBlockID)
 	if !ok {
 		return nil, ErrInvalidNotificationMetadata
 	}
@@ -210,7 +210,7 @@ type Formatter interface {
 // metadata reader here it accepts both the typed value the in-memory fan-out
 // carries and the plain string a stored notification decodes into.
 func metaHookType(n notification.Notification) (hook.Type, bool) {
-	switch v := n.Metadata["type"].(type) {
+	switch v := n.Metadata[notification.MetaKeyType].(type) {
 	case hook.Type:
 		return v, true
 	case string:
@@ -248,7 +248,7 @@ func metaNullString(n notification.Notification, key string) (null.String, bool)
 // The value is a typed xid.ID when the notification comes from the
 // in-memory fan-out and a string after a JSON round-trip.
 func metaBranchID(n notification.Notification) (xid.ID, bool) {
-	switch v := n.Metadata["branchId"].(type) {
+	switch v := n.Metadata[notification.MetaKeyBranchID].(type) {
 	case xid.ID:
 		return v, true
 	case string:

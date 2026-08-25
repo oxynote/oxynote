@@ -29,6 +29,11 @@ var ErrInvalidInstallationState = errutil.New(http.StatusBadRequest, "slack.inva
 // _installationStateTTL is the time-to-live for the installation state.
 const _installationStateTTL = time.Minute * 15
 
+// _installationStatePurpose binds installation tokens to the installation
+// flow; link tokens are minted under the same signing secret and are handed
+// to arbitrary workspace members, so they must not pass here.
+const _installationStatePurpose = "slack-installation"
+
 // _botScopes are the OAuth scopes required for bot-level access.
 var _botScopes = []string{
 	"app_mentions:read",
@@ -78,7 +83,7 @@ func (m *Manager) CreateExternalInstallationURL(organizationID string) (string, 
 	token, err := state.Encode(InstallationState{
 		OrganizationID: null.StringFrom(organizationID),
 		CreatedAt:      timeutil.Now(),
-	}, m.opt.InstallationSigningSecret)
+	}, _installationStatePurpose, m.opt.InstallationSigningSecret)
 	if err != nil {
 		return "", err
 	}
@@ -109,7 +114,7 @@ func (m *Manager) CreateInternalInstallationURL(teamID string) (string, error) {
 	token, err := state.Encode(InstallationState{
 		TeamID:    null.StringFrom(teamID),
 		CreatedAt: timeutil.Now(),
-	}, m.opt.InstallationSigningSecret)
+	}, _installationStatePurpose, m.opt.InstallationSigningSecret)
 	if err != nil {
 		return "", err
 	}
@@ -128,7 +133,7 @@ func (m *Manager) VerifyInstallationState(token string) (*InstallationState, err
 		return nil, ErrNotConfigured
 	}
 
-	is, err := state.Decode[InstallationState](token, m.opt.InstallationSigningSecret, _installationStateTTL)
+	is, err := state.Decode[InstallationState](token, _installationStatePurpose, m.opt.InstallationSigningSecret, _installationStateTTL)
 	if err != nil {
 		if errors.Is(err, state.ErrExpired) {
 			return nil, ErrInstallationStateExpired

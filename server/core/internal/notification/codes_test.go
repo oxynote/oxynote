@@ -19,9 +19,9 @@ func Test_NewDocumentReviewRequestNotification(t *testing.T) {
 	assert.Equal(t, Core{
 		Code: NotificationDocumentReviewRequest,
 		Metadata: Metadata{
-			_metaKeyUserID:     "user1",
-			_metaKeyDocumentID: documentID,
-			_metaKeyBranchID:   branchID,
+			MetaKeyUserID:     "user1",
+			MetaKeyDocumentID: documentID,
+			MetaKeyBranchID:   branchID,
 		},
 	}, nc)
 }
@@ -41,10 +41,10 @@ func Test_NewDocumentHookTriggeredNotification(t *testing.T) {
 	assert.Equal(t, Core{
 		Code: NotificationDocumentHookTriggered,
 		Metadata: Metadata{
-			_metaKeyDocumentID: documentID,
-			_metaKeyBlockID:    null.StringFrom("blk1"),
-			_metaKeyType:       hook.TypeScheduledReminder,
-			_metaKeyBranchID:   branchID,
+			MetaKeyDocumentID: documentID,
+			MetaKeyBlockID:    null.StringFrom("blk1"),
+			MetaKeyType:       hook.TypeScheduledReminder,
+			MetaKeyBranchID:   branchID,
 		},
 	}, nc)
 }
@@ -65,11 +65,11 @@ func Test_NewDocumentNewCommentNotification(t *testing.T) {
 	assert.Equal(t, Core{
 		Code: NotificationDocumentNewComment,
 		Metadata: Metadata{
-			_metaKeyUserID:        "user1",
-			_metaKeyDocumentID:    documentID,
-			_metaKeyCommentID:     commentID,
-			_metaKeyAnchorBlockID: null.StringFrom("blk1"),
-			_metaKeyBranchID:      branchID,
+			MetaKeyUserID:        "user1",
+			MetaKeyDocumentID:    documentID,
+			MetaKeyCommentID:     commentID,
+			MetaKeyAnchorBlockID: null.StringFrom("blk1"),
+			MetaKeyBranchID:      branchID,
 		},
 	}, nc)
 }
@@ -91,12 +91,12 @@ func Test_NewDocumentNewCommentReplyNotification(t *testing.T) {
 	assert.Equal(t, Core{
 		Code: NotificationDocumentNewCommentReply,
 		Metadata: Metadata{
-			_metaKeyUserID:         "user1",
-			_metaKeyDocumentID:     documentID,
-			_metaKeyCommentID:      commentID,
-			_metaKeyCommentReplyID: commentReplyID,
-			_metaKeyAnchorBlockID:  null.StringFrom("blk1"),
-			_metaKeyBranchID:       branchID,
+			MetaKeyUserID:         "user1",
+			MetaKeyDocumentID:     documentID,
+			MetaKeyCommentID:      commentID,
+			MetaKeyCommentReplyID: commentReplyID,
+			MetaKeyAnchorBlockID:  null.StringFrom("blk1"),
+			MetaKeyBranchID:       branchID,
 		},
 	}, nc)
 }

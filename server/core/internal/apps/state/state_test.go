@@ -14,6 +14,9 @@ import (
 // _testSecret is the signing secret used across the state tests.
 const _testSecret = "01234567890123456789012345678912"
 
+// _testPurpose is the purpose tag used across the state tests.
+const _testPurpose = "test-flow"
+
 // testState is a state payload used to exercise the codec.
 type testState struct {
 	// OrganizationID is the organization the state belongs to.
@@ -47,15 +50,15 @@ func Test_Encode(t *testing.T) {
 	t.Parallel()
 
 	// marshaling error
-	_, err := Encode(unmarshalableState{Fn: func() {}}, _testSecret)
+	_, err := Encode(unmarshalableState{Fn: func() {}}, _testPurpose, _testSecret)
 	assert.Error(t, err)
 
 	// encryption error
-	_, err = Encode(testState{}, "short-secret")
+	_, err = Encode(testState{}, _testPurpose, "short-secret")
 	assert.Error(t, err)
 
 	// success
-	token, err := Encode(testState{OrganizationID: "org-1"}, _testSecret)
+	token, err := Encode(testState{OrganizationID: "org-1"}, _testPurpose, _testSecret)
 	require.NoError(t, err)
 	assert.NotEmpty(t, token)
 }
@@ -73,13 +76,13 @@ func Test_Decode(t *testing.T) {
 		Err    error
 	}
 
-	stub := func(createdAt time.Time) string {
+	stub := func(purpose string, createdAt time.Time) string {
 		t.Helper()
 
 		token, err := Encode(testState{
 			OrganizationID: "org-1",
 			CreatedAt:      createdAt,
-		}, _testSecret)
+		}, purpose, _testSecret)
 		require.NoError(t, err)
 
 		return token
@@ -93,7 +96,7 @@ func Test_Decode(t *testing.T) {
 			Err:    ErrInvalid,
 		},
 		"Token encrypted with another secret": {
-			Token:  stub(time.Now()),
+			Token:  stub(_testPurpose, time.Now()),
 			Secret: "99999999999999999999999999999999",
 			TTL:    time.Minute,
 			Err:    ErrInvalid,
@@ -109,14 +112,34 @@ func Test_Decode(t *testing.T) {
 				Err:    ErrInvalid,
 			}
 		}(),
+		"Token carrying an invalid payload": func() tcase {
+			wrapped, err := cryptoutil.EncryptText(
+				`{"purpose":"test-flow","state":"not an object"}`,
+				[]byte(_testSecret),
+			)
+			require.NoError(t, err)
+
+			return tcase{
+				Token:  wrapped,
+				Secret: _testSecret,
+				TTL:    time.Minute,
+				Err:    ErrInvalid,
+			}
+		}(),
+		"Token minted for another purpose": {
+			Token:  stub("other-flow", time.Now()),
+			Secret: _testSecret,
+			TTL:    time.Minute,
+			Err:    ErrInvalid,
+		},
 		"Expired token": {
-			Token:  stub(time.Now().Add(-time.Hour)),
+			Token:  stub(_testPurpose, time.Now().Add(-time.Hour)),
 			Secret: _testSecret,
 			TTL:    time.Minute,
 			Err:    ErrExpired,
 		},
 		"Valid token": {
-			Token:  stub(time.Now()),
+			Token:  stub(_testPurpose, time.Now()),
 			Secret: _testSecret,
 			TTL:    time.Minute,
 			Result: testState{OrganizationID: "org-1"},
@@ -127,7 +150,7 @@ func Test_Decode(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			res, err := Decode[testState](c.Token, c.Secret, c.TTL)
+			res, err := Decode[testState](c.Token, _testPurpose, c.Secret, c.TTL)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {

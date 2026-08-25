@@ -7,7 +7,6 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -18,9 +17,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/oxynote/oxynote/server/core/internal/apps/state"
 	"github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/internal/notification/interpreter"
-	"github.com/oxynote/oxynote/server/core/pkg/cryptoutil"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -97,18 +96,15 @@ func newTestManager(t *testing.T, db DB, interp Interpreter) *Manager {
 	return man
 }
 
-// encryptState encrypts the given payload as a state string using the test
-// signing secret.
-func encryptState(t *testing.T, payload any) string {
+// encryptState encrypts the given payload as a state string minted for the
+// given purpose using the test signing secret.
+func encryptState[T state.Stamped](t *testing.T, purpose string, payload T) string {
 	t.Helper()
 
-	data, err := json.Marshal(payload)
+	token, err := state.Encode(payload, purpose, _testSigningSecret)
 	require.NoError(t, err)
 
-	state, err := cryptoutil.EncryptText(string(data), []byte(_testSigningSecret))
-	require.NoError(t, err)
-
-	return state
+	return token
 }
 
 func Test_Options_Validate(t *testing.T) {

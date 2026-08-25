@@ -22,6 +22,10 @@ var ErrInvalidLinkState = errutil.New(http.StatusBadRequest, "slack.invalid_link
 // _linkStateTTL is the time-to-live for the link state.
 const _linkStateTTL = time.Minute * 15
 
+// _linkStatePurpose binds link tokens to the linking flow; installation
+// tokens are minted under the same signing secret and must not pass here.
+const _linkStatePurpose = "slack-link"
+
 // LinkState represents the state of a Slack user linking request.
 type LinkState struct {
 	// SlackUserID is the Slack user identifier.
@@ -54,7 +58,7 @@ func (m *Manager) CreateLinkURL(slackUserID, slackTeamID, organizationID string)
 		TeamID:         slackTeamID,
 		OrganizationID: organizationID,
 		CreatedAt:      timeutil.Now(),
-	}, m.opt.InstallationSigningSecret)
+	}, _linkStatePurpose, m.opt.InstallationSigningSecret)
 	if err != nil {
 		return "", err
 	}
@@ -78,7 +82,7 @@ func (m *Manager) VerifyLinkState(token string) (*LinkState, error) {
 		return nil, ErrNotConfigured
 	}
 
-	ls, err := state.Decode[LinkState](token, m.opt.InstallationSigningSecret, _linkStateTTL)
+	ls, err := state.Decode[LinkState](token, _linkStatePurpose, m.opt.InstallationSigningSecret, _linkStateTTL)
 	if err != nil {
 		if errors.Is(err, state.ErrExpired) {
 			return nil, ErrLinkStateExpired

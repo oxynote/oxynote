@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/guregu/null/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -60,7 +61,7 @@ func Test_Manager_VerifyLinkState(t *testing.T) {
 		"Fresh state returns the link state": {
 			Configured: true,
 			State: func(t *testing.T) string {
-				return encryptState(t, LinkState{
+				return encryptState(t, _linkStatePurpose, LinkState{
 					SlackUserID: "slack-user",
 					CreatedAt:   time.Now(),
 				})
@@ -69,12 +70,22 @@ func Test_Manager_VerifyLinkState(t *testing.T) {
 		"Expired state fails": {
 			Configured: true,
 			State: func(t *testing.T) string {
-				return encryptState(t, LinkState{
+				return encryptState(t, _linkStatePurpose, LinkState{
 					SlackUserID: "slack-user",
 					CreatedAt:   time.Now().Add(-_linkStateTTL - time.Minute),
 				})
 			},
 			ExpectedErr: ErrLinkStateExpired.Error(),
+		},
+		"Installation state minted under the same secret fails": {
+			Configured: true,
+			State: func(t *testing.T) string {
+				return encryptState(t, _installationStatePurpose, InstallationState{
+					OrganizationID: null.StringFrom("org-1"),
+					CreatedAt:      time.Now(),
+				})
+			},
+			ExpectedErr: "link state is invalid",
 		},
 		"Garbage state fails decryption": {
 			Configured: true,

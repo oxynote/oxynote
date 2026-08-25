@@ -1,13 +1,13 @@
 package slack
 
 import (
-	"encoding/json"
 	"net/url"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/guregu/null/v5"
+	"github.com/oxynote/oxynote/server/core/internal/apps/state"
 	"github.com/oxynote/oxynote/server/core/pkg/cryptoutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -95,7 +95,7 @@ func Test_Manager_VerifyInstallationState(t *testing.T) {
 		"Fresh state returns the installation state": {
 			Configured: true,
 			State: func(t *testing.T) string {
-				return encryptState(t, InstallationState{
+				return encryptState(t, _installationStatePurpose, InstallationState{
 					OrganizationID: null.StringFrom("org-1"),
 					CreatedAt:      time.Now(),
 				})
@@ -105,12 +105,24 @@ func Test_Manager_VerifyInstallationState(t *testing.T) {
 		"Expired state fails": {
 			Configured: true,
 			State: func(t *testing.T) string {
-				return encryptState(t, InstallationState{
+				return encryptState(t, _installationStatePurpose, InstallationState{
 					OrganizationID: null.StringFrom("org-1"),
 					CreatedAt:      time.Now().Add(-_installationStateTTL - time.Minute),
 				})
 			},
 			ExpectedErr: "installation state has expired",
+		},
+		"Link state minted under the same secret fails": {
+			Configured: true,
+			State: func(t *testing.T) string {
+				return encryptState(t, _linkStatePurpose, LinkState{
+					SlackUserID:    "slack-user",
+					TeamID:         "team-1",
+					OrganizationID: "org-1",
+					CreatedAt:      time.Now(),
+				})
+			},
+			ExpectedErr: "installation state is invalid",
 		},
 		"Garbage state fails decryption": {
 			Configured: true,
@@ -158,15 +170,16 @@ func Test_Manager_VerifyInstallationState(t *testing.T) {
 
 // decryptInstallationState decrypts and decodes an installation state
 // query parameter.
-func decryptInstallationState(t *testing.T, state string) InstallationState {
+func decryptInstallationState(t *testing.T, token string) InstallationState {
 	t.Helper()
 
-	decrypted, err := cryptoutil.DecryptText(state, []byte(_testSigningSecret))
+	is, err := state.Decode[InstallationState](
+		token,
+		_installationStatePurpose,
+		_testSigningSecret,
+		_installationStateTTL,
+	)
 	require.NoError(t, err)
-
-	var is InstallationState
-
-	require.NoError(t, json.Unmarshal([]byte(decrypted), &is))
 
 	return is
 }

@@ -26,6 +26,10 @@ var ErrInvalidInstallationState = errutil.New(http.StatusBadRequest, "github.inv
 // _installationStateTTL is the time-to-live for the installation state.
 const _installationStateTTL = time.Minute * 15
 
+// _installationStatePurpose binds installation tokens to this flow, so no
+// token minted for another purpose under the same secret passes here.
+const _installationStatePurpose = "github-installation"
+
 // InstallationState represents the state of a GitHub App installation.
 type InstallationState struct {
 	// OrganizationID is the ID of the organization
@@ -57,7 +61,7 @@ func (m *Manager) CreateInstallationURL(organizationID string) (string, error) {
 	token, err := state.Encode(InstallationState{
 		OrganizationID: organizationID,
 		CreatedAt:      timeutil.Now(),
-	}, m.opt.InstallationSigningSecret)
+	}, _installationStatePurpose, m.opt.InstallationSigningSecret)
 	if err != nil {
 		return "", err
 	}
@@ -76,7 +80,7 @@ func (m *Manager) VerifyInstallationState(token string) (*InstallationState, err
 		return nil, ErrNotConfigured
 	}
 
-	is, err := state.Decode[InstallationState](token, m.opt.InstallationSigningSecret, _installationStateTTL)
+	is, err := state.Decode[InstallationState](token, _installationStatePurpose, m.opt.InstallationSigningSecret, _installationStateTTL)
 	if err != nil {
 		if errors.Is(err, state.ErrExpired) {
 			return nil, ErrInstallationStateExpired

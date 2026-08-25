@@ -10,16 +10,18 @@ import (
 // Code represents a notification code.
 type Code string
 
-// Metadata keys used by the notification constructors.
+// Metadata keys used by the notification constructors. Readers interpreting
+// a stored notification must name keys through these constants too — a raw
+// literal would compile clean and silently drift on a rename.
 const (
-	_metaKeyUserID         = "userId"
-	_metaKeyDocumentID     = "documentId"
-	_metaKeyBranchID       = "branchId"
-	_metaKeyBlockID        = "blockId"
-	_metaKeyType           = "type"
-	_metaKeyCommentID      = "commentId"
-	_metaKeyCommentReplyID = "commentReplyId"
-	_metaKeyAnchorBlockID  = "anchorBlockId"
+	MetaKeyUserID         = "userId"
+	MetaKeyDocumentID     = "documentId"
+	MetaKeyBranchID       = "branchId"
+	MetaKeyBlockID        = "blockId"
+	MetaKeyType           = "type"
+	MetaKeyCommentID      = "commentId"
+	MetaKeyCommentReplyID = "commentReplyId"
+	MetaKeyAnchorBlockID  = "anchorBlockId"
 )
 
 const (
@@ -41,9 +43,9 @@ func NewDocumentReviewRequestNotification(userID string, documentID, branchID xi
 	return Core{
 		Code: NotificationDocumentReviewRequest,
 		Metadata: map[string]any{
-			_metaKeyUserID:     userID,
-			_metaKeyDocumentID: documentID,
-			_metaKeyBranchID:   branchID,
+			MetaKeyUserID:     userID,
+			MetaKeyDocumentID: documentID,
+			MetaKeyBranchID:   branchID,
 		},
 	}
 }
@@ -53,10 +55,10 @@ func NewDocumentHookTriggeredNotification(documentID xid.ID, tp hook.Type, block
 	return Core{
 		Code: NotificationDocumentHookTriggered,
 		Metadata: map[string]any{
-			_metaKeyDocumentID: documentID,
-			_metaKeyBlockID:    blockID,
-			_metaKeyType:       tp,
-			_metaKeyBranchID:   branchID,
+			MetaKeyDocumentID: documentID,
+			MetaKeyBlockID:    blockID,
+			MetaKeyType:       tp,
+			MetaKeyBranchID:   branchID,
 		},
 	}
 }
@@ -71,11 +73,11 @@ func NewDocumentNewCommentNotification(
 	return Core{
 		Code: NotificationDocumentNewComment,
 		Metadata: map[string]any{
-			_metaKeyUserID:        userID,
-			_metaKeyDocumentID:    documentID,
-			_metaKeyCommentID:     commentID,
-			_metaKeyAnchorBlockID: anchorBlockID,
-			_metaKeyBranchID:      branchID,
+			MetaKeyUserID:        userID,
+			MetaKeyDocumentID:    documentID,
+			MetaKeyCommentID:     commentID,
+			MetaKeyAnchorBlockID: anchorBlockID,
+			MetaKeyBranchID:      branchID,
 		},
 	}
 }
@@ -90,12 +92,12 @@ func NewDocumentNewCommentReplyNotification(
 	return Core{
 		Code: NotificationDocumentNewCommentReply,
 		Metadata: map[string]any{
-			_metaKeyUserID:         userID,
-			_metaKeyDocumentID:     documentID,
-			_metaKeyCommentID:      commentID,
-			_metaKeyCommentReplyID: commentReplyID,
-			_metaKeyAnchorBlockID:  anchorBlockID,
-			_metaKeyBranchID:       branchID,
+			MetaKeyUserID:         userID,
+			MetaKeyDocumentID:     documentID,
+			MetaKeyCommentID:      commentID,
+			MetaKeyCommentReplyID: commentReplyID,
+			MetaKeyAnchorBlockID:  anchorBlockID,
+			MetaKeyBranchID:       branchID,
 		},
 	}
 }

@@ -22,15 +22,27 @@ var (
 	ErrExpired = errors.New("state has expired")
 )
 
-// Encode marshals the state and encrypts it with the given secret, producing
-// the opaque token handed to the third party.
-func Encode[T Stamped](v T, secret string) (string, error) {
+// Encode marshals the state, binds it to the given purpose and encrypts it
+// with the given secret, producing the opaque token handed to the third
+// party. The purpose names the flow the token is minted for, so flows
+// sharing a signing secret cannot accept each other's tokens.
+func Encode[T Stamped](v T, purpose, secret string) (string, error) {
 	data, err := json.Marshal(v)
 	if err != nil {
 		return "", fmt.Errorf("marshaling state: %w", err)
 	}
 
-	token, err := cryptoutil.EncryptText(string(data), []byte(secret))
+	wrapped, err := json.Marshal(envelope{
+		Purpose: purpose,
+		State:   data,
+	})
+	if err != nil {
+		// NOCOV: error case cannot happen since the payload is
+		// already marshaled.
+		return "", fmt.Errorf("marshaling state envelope: %w", err)
+	}
+
+	token, err := cryptoutil.EncryptText(string(wrapped), []byte(secret))
 	if err != nil {
 		return "", fmt.Errorf("encrypting state: %w", err)
 	}
@@ -39,9 +51,11 @@ func Encode[T Stamped](v T, secret string) (string, error) {
 }
 
 // Decode decrypts the token the third party handed back, decodes it and
-// rejects anything issued more than ttl ago. Both failures are reported with
+// rejects anything issued more than ttl ago. A token minted for another
+// purpose is as invalid as a tampered one — decoding it as this type would
+// let one flow's token replay in another. All failures are reported with
 // this package's sentinels, since every app names them in its own namespace.
-func Decode[T Stamped](token, secret string, ttl time.Duration) (T, error) {
+func Decode[T Stamped](token, purpose, secret string, ttl time.Duration) (T, error) {
 	var v T
 
 	decrypted, err := cryptoutil.DecryptText(token, []byte(secret))
@@ -49,7 +63,17 @@ func Decode[T Stamped](token, secret string, ttl time.Duration) (T, error) {
 		return v, ErrInvalid
 	}
 
-	if err := json.Unmarshal([]byte(decrypted), &v); err != nil {
+	var env envelope
+
+	if err := json.Unmarshal([]byte(decrypted), &env); err != nil {
+		return v, ErrInvalid
+	}
+
+	if env.Purpose != purpose {
+		return v, ErrInvalid
+	}
+
+	if err := json.Unmarshal(env.State, &v); err != nil {
 		return v, ErrInvalid
 	}
 
@@ -58,6 +82,15 @@ func Decode[T Stamped](token, secret string, ttl time.Duration) (T, error) {
 	}
 
 	return v, nil
+}
+
+// envelope wraps a state payload with the purpose it was minted for.
+type envelope struct {
+	// Purpose names the flow the token was issued for.
+	Purpose string `json:"purpose"`
+
+	// State is the flow's own payload.
+	State json.RawMessage `json:"state"`
 }
 
 // Stamped is implemented by every state payload, so Decode can enforce the

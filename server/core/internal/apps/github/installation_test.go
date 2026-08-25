@@ -1,12 +1,12 @@
 package github
 
 import (
-	"encoding/json"
 	"net/url"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/oxynote/oxynote/server/core/internal/apps/state"
 	"github.com/oxynote/oxynote/server/core/pkg/cryptoutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -33,16 +33,13 @@ func newTestManager(t *testing.T, db DB) *Manager {
 }
 
 // encryptState encrypts the given payload as an installation state string.
-func encryptState(t *testing.T, secret string, payload any) string {
+func encryptState[T state.Stamped](t *testing.T, secret string, payload T) string {
 	t.Helper()
 
-	data, err := json.Marshal(payload)
+	token, err := state.Encode(payload, _installationStatePurpose, secret)
 	require.NoError(t, err)
 
-	state, err := cryptoutil.EncryptText(string(data), []byte(secret))
-	require.NoError(t, err)
-
-	return state
+	return token
 }
 
 func Test_Manager_CreateInstallationURL(t *testing.T) {
@@ -71,12 +68,14 @@ func Test_Manager_CreateInstallationURL(t *testing.T) {
 		assert.Equal(t, "github.com", u.Host)
 		assert.Equal(t, "/apps/test-app/installations/new", u.Path)
 
-		decrypted, err := cryptoutil.DecryptText(u.Query().Get("state"), []byte(_testSigningSecret))
+		is, err := state.Decode[InstallationState](
+			u.Query().Get("state"),
+			_installationStatePurpose,
+			_testSigningSecret,
+			_installationStateTTL,
+		)
 		require.NoError(t, err)
 
-		var is InstallationState
-
-		require.NoError(t, json.Unmarshal([]byte(decrypted), &is))
 		assert.Equal(t, "org-1", is.OrganizationID)
 		assert.WithinDuration(t, time.Now(), is.CreatedAt, time.Minute)
 	})

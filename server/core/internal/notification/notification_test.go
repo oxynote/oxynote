@@ -16,7 +16,7 @@ func Test_newNotification(t *testing.T) {
 
 	nc := Core{
 		Code:     NotificationDocumentReviewRequest,
-		Metadata: Metadata{_metaKeyUserID: "user1"},
+		Metadata: Metadata{MetaKeyUserID: "user1"},
 	}
 
 	nt := newNotification("org1", "user1", nc)
@@ -33,7 +33,7 @@ func Test_newNotification(t *testing.T) {
 func Test_Metadata_Value(t *testing.T) {
 	t.Parallel()
 
-	md := Metadata{_metaKeyUserID: "user1", "read": true}
+	md := Metadata{MetaKeyUserID: "user1", "read": true}
 
 	v, err := md.Value()
 	require.NoError(t, err)
@@ -57,11 +57,11 @@ func Test_Metadata_Scan(t *testing.T) {
 		},
 		"Successful scan from bytes": {
 			Src:    []byte(`{"userId":"user1"}`),
-			Result: Metadata{_metaKeyUserID: "user1"},
+			Result: Metadata{MetaKeyUserID: "user1"},
 		},
 		"Successful scan from string": {
 			Src:    `{"userId":"user1"}`,
-			Result: Metadata{_metaKeyUserID: "user1"},
+			Result: Metadata{MetaKeyUserID: "user1"},
 		},
 	}
 
