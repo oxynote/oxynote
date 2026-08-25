@@ -182,6 +182,19 @@ func Test_Handler_UploadDocumentFile(t *testing.T) {
 				wasUploadCalled(0),
 			),
 		},
+		// path.Join would clean the dot segments straight out of the
+		// storage folder, so the id shape check is what stands between
+		// a request and another organization's object keys.
+		"File ID with path traversal": {
+			DB:     &DBMock{},
+			Storer: &StorerMock{},
+			Query:  "?id=../../../org2/documents/d2/files/f9&location=document",
+			Checks: checks(
+				hasResp(http.StatusBadRequest, `{"code":"request.invalid_form","message":"invalid form data"}`),
+				wasInsertCalled(0),
+				wasUploadCalled(0),
+			),
+		},
 		"Invalid location query parameter": {
 			DB:     &DBMock{},
 			Storer: &StorerMock{},

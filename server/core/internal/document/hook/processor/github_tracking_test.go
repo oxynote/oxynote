@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/oxynote/oxynote/server/core/internal/apps/github"
+	"github.com/oxynote/oxynote/server/core/pkg/mathutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
@@ -33,41 +34,75 @@ func (i githubErrInput) ChangeDetection() ChangeDetection {
 func Test_GithubTracking_Process(t *testing.T) {
 	t.Parallel()
 
-	tests := map[string]struct {
-		Err        error
+	cc := map[string]struct {
+		Inp        Input
+		WantScore  decimal.Decimal
 		WantStatus GithubTrackingStatus
 	}{
 		"Installation not found degrades to missing installation": {
-			Err:        github.ErrInstallationNotFound,
+			Inp:        githubErrInput{state: State("{}"), err: github.ErrInstallationNotFound},
 			WantStatus: GithubTrackingStatusMissingInstallation,
 		},
 		"Github app not configured degrades to missing installation": {
-			Err:        github.ErrNotConfigured,
+			Inp:        githubErrInput{state: State("{}"), err: github.ErrNotConfigured},
 			WantStatus: GithubTrackingStatusMissingInstallation,
+		},
+		"Unchanged path scores full": {
+			Inp: githubTreeInput{
+				state:  State(`{"pathsChecksums":{"doc.md":"sum"}}`),
+				client: githubTreeClient{tree: github.Tree{{Name: "doc.md", Checksum: "sum"}}},
+			},
+			WantScore:  mathutil.Hundred,
+			WantStatus: GithubTrackingStatusActive,
+		},
+		"Changed checksum scores zero": {
+			Inp: githubTreeInput{
+				state:  State(`{"pathsChecksums":{"doc.md":"old"}}`),
+				client: githubTreeClient{tree: github.Tree{{Name: "doc.md", Checksum: "sum"}}},
+			},
+			WantStatus: GithubTrackingStatusActive,
+		},
+		"Path deleted since reset scores zero": {
+			Inp: githubTreeInput{
+				state:  State(`{"pathsChecksums":{"doc.md":"sum"}}`),
+				client: githubTreeClient{tree: github.Tree{}},
+			},
+			WantStatus: GithubTrackingStatusActive,
+		},
+		"Path absent since reset scores full": {
+			Inp: githubTreeInput{
+				state:  State(`{"pathsChecksums":{}}`),
+				client: githubTreeClient{tree: github.Tree{}},
+			},
+			WantScore:  mathutil.Hundred,
+			WantStatus: GithubTrackingStatusActive,
+		},
+		"Path appeared after reset scores zero": {
+			Inp: githubTreeInput{
+				state:  State(`{"pathsChecksums":{}}`),
+				client: githubTreeClient{tree: github.Tree{{Name: "doc.md", Checksum: "sum"}}},
+			},
+			WantStatus: GithubTrackingStatusActive,
 		},
 	}
 
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
 			gt := &GithubTracking{
 				Repository: "repo",
 				Branch:     "main",
+				Paths:      []string{"doc.md"},
 			}
 
-			inp := githubErrInput{
-				state: State("{}"),
-				err:   tc.Err,
-			}
-
-			score, state, err := gt.Process(context.Background(), inp)
+			score, state, err := gt.Process(context.Background(), c.Inp)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
-			if !score.Equal(decimal.Zero) {
-				t.Fatalf("score = %s, want 0", score)
+			if !score.Equal(c.WantScore) {
+				t.Fatalf("score = %s, want %s", score, c.WantScore)
 			}
 
 			var gts GithubTrackingState
@@ -76,8 +111,8 @@ func Test_GithubTracking_Process(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
-			if gts.Status != tc.WantStatus {
-				t.Fatalf("status = %q, want %q", gts.Status, tc.WantStatus)
+			if gts.Status != c.WantStatus {
+				t.Fatalf("status = %q, want %q", gts.Status, c.WantStatus)
 			}
 		})
 	}
@@ -130,11 +165,12 @@ func (c githubTreeClient) FetchRepositoryTree(_ context.Context, _, _ string) (g
 // githubTreeInput is a test Input handing out a Github client that returns
 // the configured tree or error.
 type githubTreeInput struct {
+	state  State
 	client githubTreeClient
 }
 
 func (i githubTreeInput) State() State {
-	return State("{}")
+	return i.state
 }
 
 func (i githubTreeInput) Github(_ context.Context) (Github, error) {

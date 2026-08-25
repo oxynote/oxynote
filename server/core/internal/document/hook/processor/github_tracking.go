@@ -74,7 +74,12 @@ func (gt *GithubTracking) Process(ctx context.Context, inp Input) (decimal.Decim
 
 	for _, path := range gt.Paths {
 		item, ok := tree.GetItem(path)
-		if !ok || item.Checksum != gts.PathsChecksums[path] {
+		checksum, tracked := gts.PathsChecksums[path]
+
+		// Reset records absence by leaving the path out of the checksum
+		// map, so a path missing both then and now is unchanged; only a
+		// presence flip or a differing checksum marks a modification.
+		if ok != tracked || (ok && item.Checksum != checksum) {
 			modified = true
 			break
 		}
@@ -107,6 +112,9 @@ func (gt *GithubTracking) Reset(ctx context.Context, inp Input) (decimal.Decimal
 	for _, path := range gt.Paths {
 		item, ok := tree.GetItem(path)
 		if !ok {
+			// a path absent at reset stays out of the checksum map;
+			// Process reads the omission as recorded absence and only
+			// scores the hook down when the path appears.
 			continue
 		}
 

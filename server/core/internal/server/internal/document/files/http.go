@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"regexp"
 
 	"github.com/oxynote/oxynote/server/core/internal/document/file"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
@@ -15,6 +16,12 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/rs/xid"
 )
+
+// _fileIDPattern matches the block-uid shapes clients mint for file ids
+// (21-char nanoids or hyphenated UUIDs). The charset shuts out the path
+// separators and dot segments that would otherwise let an id escape its
+// storage folder once joined into an object key.
+var _fileIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 // Handler holds dependencies required for document file operations.
 type Handler struct {
@@ -61,7 +68,7 @@ func (h *Handler) UploadDocumentFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fileID := r.URL.Query().Get("id")
-	if fileID == "" {
+	if !_fileIDPattern.MatchString(fileID) {
 		httpserver.RespondError(h.log, w, httpserver.ErrInvalidForm)
 		return
 	}
@@ -72,9 +79,9 @@ func (h *Handler) UploadDocumentFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, _, err := r.FormFile("file")
+	body, err := httpserver.FormFile(w, r, "file", storage.MaxUploadBytes, storage.ErrSizeLimitExceeded)
 	if err != nil {
-		httpserver.RespondError(h.log, w, httpserver.ErrInvalidForm)
+		httpserver.RespondError(h.log, w, err)
 		return
 	}
 	defer body.Close() //nolint:errcheck // error provides no meaningful info

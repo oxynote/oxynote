@@ -10,6 +10,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 )
 
 // _documentMIMEType is the media type of a document resource body: the
@@ -77,7 +78,13 @@ func (h *Handler) readDocument(set *tools.Set) mcp.ResourceHandler {
 
 		res, err := summary.Tool.Run(ctx, json.RawMessage(fmt.Sprintf(`{"document_id":%q}`, id)))
 		if err != nil {
-			return nil, mcp.ResourceNotFoundError(req.Params.URI)
+			if errutil.IsNotFound(err) {
+				return nil, mcp.ResourceNotFoundError(req.Params.URI)
+			}
+
+			// an internal failure must not read as "document does not
+			// exist" to the client.
+			return nil, err
 		}
 
 		return &mcp.ReadResourceResult{

@@ -8,6 +8,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	toolsMock "github.com/oxynote/oxynote/server/core/internal/assistant/tools/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -118,25 +120,39 @@ func Test_Handler_readDocument(t *testing.T) {
 		ToolsDB *toolsMock.DB
 		Text    string
 		Err     error
+
+		// Passthru asserts that the error is the tool's own rather
+		// than a resource-not-found translation.
+		Passthru bool
 	}{
 		"URI outside the document scheme": {
 			URI:     "file:///etc/passwd",
 			ToolsDB: stubToolsDB(),
-			Err:     assert.AnError,
+			Err:     mcp.ResourceNotFoundError("file:///etc/passwd"),
 		},
 		"URI without an id": {
 			URI:     _resourceURIPrefix,
 			ToolsDB: stubToolsDB(),
-			Err:     assert.AnError,
+			Err:     mcp.ResourceNotFoundError(_resourceURIPrefix),
 		},
-		"Error returned by the summary tool": {
+		"Missing document maps to resource not found": {
+			URI: _resourceURIPrefix + docID.String(),
+			ToolsDB: &toolsMock.DB{
+				FetchMainBranchContentFunc: func(context.Context, xid.ID, string) (document.Content, error) {
+					return document.Content{}, errutil.ErrNotFound
+				},
+			},
+			Err: mcp.ResourceNotFoundError(_resourceURIPrefix + docID.String()),
+		},
+		"Internal tool failure passes through": {
 			URI: _resourceURIPrefix + docID.String(),
 			ToolsDB: &toolsMock.DB{
 				FetchMainBranchContentFunc: func(context.Context, xid.ID, string) (document.Content, error) {
 					return document.Content{}, assert.AnError
 				},
 			},
-			Err: assert.AnError,
+			Err:      assert.AnError,
+			Passthru: true,
 		},
 		"Successful read": {
 			URI: _resourceURIPrefix + docID.String(),
@@ -163,7 +179,12 @@ func Test_Handler_readDocument(t *testing.T) {
 			})
 
 			if c.Err != nil {
-				require.Error(t, err)
+				testutil.AssertEqualError(t, c.Err, err)
+
+				if c.Passthru {
+					assert.NotEqual(t, mcp.ResourceNotFoundError(c.URI), err)
+				}
+
 				assert.Nil(t, res)
 
 				return

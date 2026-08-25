@@ -15,8 +15,10 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 )
 
-// _userImageFolderFormat is the folder where user images are stored.
-const _userImageFolderFormat = "organizations/%s/users/images"
+// _userImageFolder is the folder where user images are stored. It is keyed
+// by user only: the avatar lives on the global user row, so an org-scoped
+// object would 404 for viewers with a different active organization.
+const _userImageFolder = "users/images"
 
 // Handler holds dependencies required for user-related operations.
 type Handler struct {
@@ -43,8 +45,7 @@ func NewHandler(
 
 // RetrieveUserImage handles the retrieval of a user's image.
 func (h *Handler) RetrieveUserImage(w http.ResponseWriter, r *http.Request) {
-	session, err := auth.ExtractSessionFromContext(r.Context())
-	if err != nil {
+	if _, err := auth.ExtractSessionFromContext(r.Context()); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -55,9 +56,7 @@ func (h *Handler) RetrieveUserImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	imageFolder := fmt.Sprintf(_userImageFolderFormat, session.ActiveOrganizationID)
-
-	obj, found, err := h.storer.Retrieve(r.Context(), imageFolder, userID)
+	obj, found, err := h.storer.Retrieve(r.Context(), _userImageFolder, userID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -88,16 +87,14 @@ func (h *Handler) UploadUserImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	file, _, err := r.FormFile("image")
+	file, err := httpserver.FormFile(w, r, "image", storage.MaxUploadBytes, storage.ErrSizeLimitExceeded)
 	if err != nil {
-		httpserver.RespondError(h.log, w, httpserver.ErrInvalidForm)
+		httpserver.RespondError(h.log, w, err)
 		return
 	}
 	defer file.Close() //nolint:errcheck // error provides no meaningful info
 
-	imageFolder := fmt.Sprintf(_userImageFolderFormat, session.ActiveOrganizationID)
-
-	err = h.storer.Upload(r.Context(), imageFolder, session.UserID, file)
+	err = h.storer.Upload(r.Context(), _userImageFolder, session.UserID, file)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -108,7 +105,7 @@ func (h *Handler) UploadUserImage(w http.ResponseWriter, r *http.Request) {
 
 	err = h.db.UpdateUserImage(r.Context(), session.UserID, imageLocation)
 	if err != nil {
-		derr := h.storer.Delete(r.Context(), imageFolder, session.UserID)
+		derr := h.storer.Delete(r.Context(), _userImageFolder, session.UserID)
 		if derr != nil {
 			h.log.Error("deleting object after DB failure", slog.String("error", derr.Error()))
 		}

@@ -91,7 +91,7 @@ func Test_Handler_RetrieveUserImage(t *testing.T) {
 				return
 			}
 
-			assert.Equal(t, "organizations/org1/users/images", ff[0].Folder)
+			assert.Equal(t, "users/images", ff[0].Folder)
 			assert.Equal(t, "u2", ff[0].ID)
 		}
 	}
@@ -243,7 +243,7 @@ func Test_Handler_UploadUserImage(t *testing.T) {
 				return
 			}
 
-			assert.Equal(t, "organizations/org1/users/images", ff[0].Folder)
+			assert.Equal(t, "users/images", ff[0].Folder)
 			assert.Equal(t, "u1", ff[0].ID)
 		}
 	}
@@ -271,7 +271,7 @@ func Test_Handler_UploadUserImage(t *testing.T) {
 				return
 			}
 
-			assert.Equal(t, "organizations/org1/users/images", ff[0].Folder)
+			assert.Equal(t, "users/images", ff[0].Folder)
 			assert.Equal(t, "u1", ff[0].ID)
 		}
 	}

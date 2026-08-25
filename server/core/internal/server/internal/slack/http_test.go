@@ -117,7 +117,13 @@ func responseServer(t *testing.T) (*httptest.Server, *int) {
 
 	var hits int
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Content-Type") != "application/json" {
+			w.WriteHeader(http.StatusBadRequest)
+
+			return
+		}
+
 		hits++
 
 		w.WriteHeader(http.StatusOK)
@@ -372,6 +378,7 @@ func Test_Handler_ConnectOrganization(t *testing.T) {
 		StateFor  string
 		RawState  string
 		RespCode  int
+		RespJSON  string
 		Updated   int
 	}{
 		"No session in context": {
@@ -396,6 +403,7 @@ func Test_Handler_ConnectOrganization(t *testing.T) {
 			DB:       &DBMock{},
 			StateFor: "org2",
 			RespCode: http.StatusBadRequest,
+			RespJSON: `{"code":"slack.installation_state_mismatch","message":"installation state does not match the active organization"}`,
 		},
 		"External state with missing code": {
 			DB:       &DBMock{},
@@ -490,6 +498,11 @@ func Test_Handler_ConnectOrganization(t *testing.T) {
 			hdl.ConnectOrganization(rec, req)
 
 			assert.Equal(t, c.RespCode, rec.Code)
+
+			if c.RespJSON != "" {
+				assert.JSONEq(t, c.RespJSON, rec.Body.String())
+			}
+
 			assert.Len(t, c.DB.UpdateSlackAppOrganizationIDCalls(), c.Updated)
 
 			if c.Updated > 0 {

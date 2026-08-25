@@ -24,6 +24,10 @@ var (
 // _maxObjectSize is the maximum allowed size for an object (5 MB).
 const _maxObjectSize = 5 * 1024 * 1024 // 5 MB
 
+// MaxUploadBytes bounds an upload request's body: the object size limit
+// plus headroom for multipart boundaries and part headers.
+const MaxUploadBytes = _maxObjectSize + 64*1024
+
 // _sniffLen is the number of leading bytes http.DetectContentType
 // examines when detecting an object's content type.
 const _sniffLen = 512

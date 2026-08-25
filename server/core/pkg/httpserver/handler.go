@@ -5,8 +5,10 @@ package httpserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"reflect"
 	"time"
@@ -166,6 +168,31 @@ func respondError(
 	Respond(log, w, respErr, statusCode, headers...)
 
 	return statusCode
+}
+
+// FormFile returns the named multipart file, bounding the request body at
+// limit bytes first — without the bound the multipart parser spools an
+// arbitrarily large part before the caller ever sees it. An oversized body
+// is reported as tooLarge; any other parse failure as ErrInvalidForm.
+func FormFile(
+	w http.ResponseWriter,
+	r *http.Request,
+	field string,
+	limit int64,
+	tooLarge error,
+) (multipart.File, error) {
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
+
+	f, _, err := r.FormFile(field)
+	if err != nil {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok { //nolint:errcheck // only the match matters, not the value
+			return nil, tooLarge
+		}
+
+		return nil, ErrInvalidForm
+	}
+
+	return f, nil
 }
 
 // DecodeJSON decodes request's JSON body into destination object.

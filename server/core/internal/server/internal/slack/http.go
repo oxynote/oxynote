@@ -28,6 +28,9 @@ var (
 	// ErrMissingInstallationState is returned when the installation state is missing from the request.
 	ErrMissingInstallationState = errutil.New(http.StatusBadRequest, "slack.missing_installation_state", "installation state is required")
 
+	// ErrInstallationStateMismatch is returned when the installation state names a different organization.
+	ErrInstallationStateMismatch = errutil.New(http.StatusBadRequest, "slack.installation_state_mismatch", "installation state does not match the active organization")
+
 	// ErrOrganizationAlreadyConnected is returned when the Slack organization is already connected.
 	ErrOrganizationAlreadyConnected = errutil.New(http.StatusBadRequest, "slack.organization_already_connected", "organization already connected")
 
@@ -447,6 +450,8 @@ func (h *Handler) sendEphemeralResponse(ctx context.Context, responseURL, text s
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
+	req.Header.Set("Content-Type", "application/json")
+
 	resp, err := h.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send response: %w", err)
@@ -531,7 +536,7 @@ func (h *Handler) connectExternalOrganization(
 	is *slack.InstallationState,
 ) {
 	if is.OrganizationID.String != organizationID {
-		httpserver.RespondError(h.log, w, ErrMissingInstallationState)
+		httpserver.RespondError(h.log, w, ErrInstallationStateMismatch)
 		return
 	}
 
@@ -575,4 +580,6 @@ func (h *Handler) connectExternalOrganization(
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
+
+	httpserver.Respond(h.log, w, nil, http.StatusNoContent)
 }

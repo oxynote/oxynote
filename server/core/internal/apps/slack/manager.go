@@ -219,6 +219,13 @@ func (m *Manager) ProcessNotification(ctx context.Context, n notification.Notifi
 
 // VerifyMiddleware verifies the Slack request signature.
 func (m *Manager) VerifyMiddleware(r *http.Request) error {
+	// an empty SignatureSecret would make the verifier accept signatures
+	// computed over an empty key, so refuse outright rather than trusting
+	// the route middleware to be the only gate.
+	if !m.Configured() {
+		return ErrNotConfigured
+	}
+
 	verifier, err := goslack.NewSecretsVerifier(r.Header, m.opt.SignatureSecret)
 	if err != nil {
 		return err

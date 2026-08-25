@@ -21,6 +21,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/internal/notification/interpreter"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -377,47 +378,77 @@ func Test_Manager_VerifyMiddleware(t *testing.T) {
 		return r
 	}
 
-	man := newTestManager(t, nil, nil)
-
-	t.Run("Correctly signed request passes and keeps its body readable", func(t *testing.T) {
-		t.Parallel()
-
-		r := signRequest(t, `{"type": "event_callback"}`, _testSignatureSecret)
-
-		require.NoError(t, man.VerifyMiddleware(r))
-
-		body, err := io.ReadAll(r.Body)
-		require.NoError(t, err)
-		assert.JSONEq(t, `{"type": "event_callback"}`, string(body))
-	})
-
-	t.Run("Request signed with another secret fails", func(t *testing.T) {
-		t.Parallel()
-
-		r := signRequest(t, `{}`, "other-secret")
-
-		assert.Error(t, man.VerifyMiddleware(r))
-	})
-
-	t.Run("Request without signature headers fails", func(t *testing.T) {
-		t.Parallel()
-
-		r := httptest.NewRequest(http.MethodPost, "/slack/events", http.NoBody)
-
-		assert.Error(t, man.VerifyMiddleware(r))
-	})
-
-	t.Run("Body read failure is a form error", func(t *testing.T) {
-		t.Parallel()
-
-		r := httptest.NewRequest(http.MethodPost, "/slack/events", &failingReader{})
-		r.Header.Set("X-Slack-Request-Timestamp", strconv.FormatInt(time.Now().Unix(), 10))
-		r.Header.Set("X-Slack-Signature", "v0=deadbeef")
-
+	cc := map[string]struct {
+		Request      func(t *testing.T) *http.Request
+		Unconfigured bool
+		Body         string
+		Err          error
+	}{
+		"Correctly signed request passes and keeps its body readable": {
+			Request: func(t *testing.T) *http.Request {
+				return signRequest(t, `{"type": "event_callback"}`, _testSignatureSecret)
+			},
+			Body: `{"type": "event_callback"}`,
+		},
+		"Request signed with another secret fails": {
+			Request: func(t *testing.T) *http.Request {
+				return signRequest(t, `{}`, "other-secret")
+			},
+			Err: assert.AnError,
+		},
+		"Request without signature headers fails": {
+			Request: func(_ *testing.T) *http.Request {
+				return httptest.NewRequest(http.MethodPost, "/slack/events", http.NoBody)
+			},
+			Err: assert.AnError,
+		},
+		// a request signed with the empty secret is exactly what a forger
+		// could produce against an unconfigured deployment.
+		"Unconfigured manager refuses verification": {
+			Request: func(t *testing.T) *http.Request {
+				return signRequest(t, `{}`, "")
+			},
+			Unconfigured: true,
+			Err:          ErrNotConfigured,
+		},
 		// a transport failure is not malformed JSON, and these payloads are
 		// form-encoded in the first place.
-		assert.Equal(t, httpserver.ErrInvalidForm, man.VerifyMiddleware(r))
-	})
+		"Body read failure is a form error": {
+			Request: func(_ *testing.T) *http.Request {
+				r := httptest.NewRequest(http.MethodPost, "/slack/events", &failingReader{})
+				r.Header.Set("X-Slack-Request-Timestamp", strconv.FormatInt(time.Now().Unix(), 10))
+				r.Header.Set("X-Slack-Signature", "v0=deadbeef")
+
+				return r
+			},
+			Err: httpserver.ErrInvalidForm,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			man := newTestManager(t, nil, nil)
+
+			if c.Unconfigured {
+				man = newDisabledManager(t)
+			}
+
+			r := c.Request(t)
+
+			err := man.VerifyMiddleware(r)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			body, rerr := io.ReadAll(r.Body)
+			require.NoError(t, rerr)
+			assert.JSONEq(t, c.Body, string(body))
+		})
+	}
 }
 
 func Test_Manager_ProcessNotification(t *testing.T) {

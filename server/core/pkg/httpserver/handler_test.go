@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -205,6 +208,85 @@ func Test_RespondSuppressedError(t *testing.T) {
 
 	require.NoError(t, out.Flush())
 	require.Empty(t, b.String())
+}
+
+func Test_FormFile(t *testing.T) {
+	t.Parallel()
+
+	errTooLarge := errors.New("too large")
+
+	// buildForm builds a multipart body with one file part under the
+	// given field carrying content.
+	buildForm := func(t *testing.T, field, content string) (io.Reader, string) {
+		t.Helper()
+
+		var buf bytes.Buffer
+
+		mw := multipart.NewWriter(&buf)
+
+		fw, err := mw.CreateFormFile(field, "file.bin")
+		require.NoError(t, err)
+
+		_, err = io.WriteString(fw, content)
+		require.NoError(t, err)
+		require.NoError(t, mw.Close())
+
+		return &buf, mw.FormDataContentType()
+	}
+
+	cc := map[string]struct {
+		Field   string
+		Lookup  string
+		Content string
+		Limit   int64
+		Err     error
+	}{
+		"Missing multipart field": {
+			Field:  "other",
+			Lookup: "file",
+			Limit:  1 << 20,
+			Err:    ErrInvalidForm,
+		},
+		"Body exceeding the limit": {
+			Field:   "file",
+			Lookup:  "file",
+			Content: strings.Repeat("a", 1024),
+			Limit:   64,
+			Err:     errTooLarge,
+		},
+		"Successful parse": {
+			Field:   "file",
+			Lookup:  "file",
+			Content: "file-data",
+			Limit:   1 << 20,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			body, contentType := buildForm(t, c.Field, c.Content)
+
+			req := httptest.NewRequest(http.MethodPut, "http://test.com/", body)
+			req.Header.Set("Content-Type", contentType)
+
+			f, err := FormFile(httptest.NewRecorder(), req, c.Lookup, c.Limit, errTooLarge)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				assert.Nil(t, f)
+
+				return
+			}
+
+			defer f.Close() //nolint:errcheck // error provides no meaningful info
+
+			data, rerr := io.ReadAll(f)
+			require.NoError(t, rerr)
+			assert.Equal(t, c.Content, string(data))
+		})
+	}
 }
 
 func Test_DecodeJSON(t *testing.T) {
