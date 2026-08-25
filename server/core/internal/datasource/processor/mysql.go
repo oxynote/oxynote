@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -49,7 +50,7 @@ func NewMySQL(inp Input) *MySQL {
 
 // TestConnection tests the connection to the MySQL data source.
 func (m *MySQL) TestConnection(ctx context.Context) (ConnectionStatus, error) {
-	db, err := m.connect()
+	db, err := m.connect(ctx)
 	if err != nil {
 		return mysqlConnectionStatus(err), nil
 	}
@@ -96,7 +97,7 @@ func (m *MySQL) Metadata(ctx context.Context) (*SQLMetadataResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
 	defer cancel()
 
-	db, err := m.connect()
+	db, err := m.connect(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("error connecting to mysql: %w", err)
 	}
@@ -137,7 +138,7 @@ func (m *MySQL) QueryLabels(ctx context.Context, q string, tr TimeRange) (map[st
 	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
 	defer cancel()
 
-	db, err := m.connect()
+	db, err := m.connect(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("error connecting to mysql: %w", err)
 	}
@@ -145,11 +146,7 @@ func (m *MySQL) QueryLabels(ctx context.Context, q string, tr TimeRange) (map[st
 
 	rows, err := db.QueryContext(ctx, q)
 	if err != nil {
-		if mysqlErr, ok := errors.AsType[*mysql.MySQLError](err); ok && mysqlErr.Number >= 1064 && mysqlErr.Number <= 1149 {
-			return nil, NewInvalidQueryError(mysqlErr.Message)
-		}
-
-		return nil, fmt.Errorf("error executing query: %w", err)
+		return nil, mysqlQueryError(err)
 	}
 	defer rows.Close() //nolint:errcheck // error provides no meaningful info
 
@@ -162,7 +159,7 @@ func (m *MySQL) QueryLabels(ctx context.Context, q string, tr TimeRange) (map[st
 
 	if !rows.Next() {
 		if err := rows.Err(); err != nil {
-			return nil, fmt.Errorf("error iterating rows: %w", err)
+			return nil, mysqlQueryError(err)
 		}
 
 		return labels, nil
@@ -199,7 +196,7 @@ func (m *MySQL) Query(ctx context.Context, q string, tr TimeRange) (*MySQLQueryR
 	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
 	defer cancel()
 
-	db, err := m.connect()
+	db, err := m.connect(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("error connecting to mysql: %w", err)
 	}
@@ -207,11 +204,7 @@ func (m *MySQL) Query(ctx context.Context, q string, tr TimeRange) (*MySQLQueryR
 
 	rows, err := db.QueryContext(ctx, q)
 	if err != nil {
-		if mysqlErr, ok := errors.AsType[*mysql.MySQLError](err); ok && mysqlErr.Number >= 1064 && mysqlErr.Number <= 1149 {
-			return nil, NewInvalidQueryError(mysqlErr.Message)
-		}
-
-		return nil, fmt.Errorf("error executing query: %w", err)
+		return nil, mysqlQueryError(err)
 	}
 	defer rows.Close() //nolint:errcheck // error provides no meaningful info
 
@@ -265,7 +258,7 @@ func (m *MySQL) Query(ctx context.Context, q string, tr TimeRange) (*MySQLQueryR
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating rows: %w", err)
+		return nil, mysqlQueryError(err)
 	}
 
 	return &MySQLQueryResult{
@@ -275,8 +268,13 @@ func (m *MySQL) Query(ctx context.Context, q string, tr TimeRange) (*MySQLQueryR
 	}, nil
 }
 
-// connect creates a database/sql connection using the data source URL and credentials.
-func (m *MySQL) connect() (*sql.DB, error) {
+// connect creates a database/sql connection using the data source URL and
+// credentials. The session is put into read-only mode, so the server itself
+// rejects any write the query text attempts instead of the code trusting the
+// grants recorded earlier on a different connection. The pool is capped at a
+// single connection and lives for one call, so the setting lands on the
+// connection the queries then use.
+func (m *MySQL) connect(ctx context.Context) (*sql.DB, error) {
 	dsn, err := m.buildDSN()
 	if err != nil {
 		return nil, err
@@ -290,6 +288,12 @@ func (m *MySQL) connect() (*sql.DB, error) {
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 	db.SetConnMaxLifetime(_mysqlConnMaxLifetime)
+
+	if _, err = db.ExecContext(ctx, "SET SESSION TRANSACTION READ ONLY"); err != nil {
+		db.Close() //nolint:errcheck,gosec // error provides no meaningful info
+
+		return nil, fmt.Errorf("error enforcing a read-only session: %w", err)
+	}
 
 	return db, nil
 }
@@ -409,6 +413,10 @@ var _sqlNumericTypes = map[string]bool{
 	"BIT":                true,
 }
 
+// _mysqlColumnList matches the parenthesized column list of a column-level
+// grant.
+var _mysqlColumnList = regexp.MustCompile(`\([^()]*\)`)
+
 // mysqlCheckReadOnly checks whether the connected user has only read-only privileges
 // by parsing the output of SHOW GRANTS FOR CURRENT_USER().
 func mysqlCheckReadOnly(ctx context.Context, db *sql.DB) (bool, error) {
@@ -446,6 +454,11 @@ func mysqlCheckReadOnly(ctx context.Context, db *sql.DB) (bool, error) {
 		if strings.Contains(privs, "ALL PRIVILEGES") {
 			return false, nil
 		}
+
+		// column-level grants carry their columns in parentheses — "SELECT
+		// (a, b)" — and those inner commas would break the privilege list
+		// apart, so the column lists go before the split does.
+		privs = _mysqlColumnList.ReplaceAllString(privs, "")
 
 		for p := range strings.SplitSeq(privs, ",") {
 			p = strings.TrimSpace(p)
@@ -536,4 +549,15 @@ func mysqlParseNumericValue(v any) (float64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+// mysqlQueryError maps a failure the query text itself caused to a
+// user-facing invalid-query error, leaving everything else as an internal
+// one. Numbers 1064–1149 cover the parser and semantic errors.
+func mysqlQueryError(err error) error {
+	if mysqlErr, ok := errors.AsType[*mysql.MySQLError](err); ok && mysqlErr.Number >= 1064 && mysqlErr.Number <= 1149 {
+		return NewInvalidQueryError(mysqlErr.Message)
+	}
+
+	return fmt.Errorf("error executing query: %w", err)
 }

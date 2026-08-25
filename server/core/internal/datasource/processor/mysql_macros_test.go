@@ -25,22 +25,22 @@ func Test_TimeRange_ProcessMySQLQuery(t *testing.T) {
 		"$__timeFilter": {
 			TimeRange: _testTimeRange,
 			Query:     "SELECT * FROM metrics WHERE $__timeFilter(created_at)",
-			Result:    "SELECT * FROM metrics WHERE created_at BETWEEN '2024-01-15T10:00:00Z' AND '2024-01-15T11:00:00Z'",
+			Result:    "SELECT * FROM metrics WHERE created_at BETWEEN FROM_UNIXTIME(1705312800) AND FROM_UNIXTIME(1705316400)",
 		},
 		"$__timeFrom": {
 			TimeRange: _testTimeRange,
 			Query:     "SELECT * FROM metrics WHERE created_at >= $__timeFrom()",
-			Result:    "SELECT * FROM metrics WHERE created_at >= '2024-01-15T10:00:00Z'",
+			Result:    "SELECT * FROM metrics WHERE created_at >= FROM_UNIXTIME(1705312800)",
 		},
 		"$__timeTo": {
 			TimeRange: _testTimeRange,
 			Query:     "SELECT * FROM metrics WHERE created_at <= $__timeTo()",
-			Result:    "SELECT * FROM metrics WHERE created_at <= '2024-01-15T11:00:00Z'",
+			Result:    "SELECT * FROM metrics WHERE created_at <= FROM_UNIXTIME(1705316400)",
 		},
 		"$__timeFrom and $__timeTo together": {
 			TimeRange: _testTimeRange,
 			Query:     "SELECT * FROM metrics WHERE created_at >= $__timeFrom() AND created_at <= $__timeTo()",
-			Result:    "SELECT * FROM metrics WHERE created_at >= '2024-01-15T10:00:00Z' AND created_at <= '2024-01-15T11:00:00Z'",
+			Result:    "SELECT * FROM metrics WHERE created_at >= FROM_UNIXTIME(1705312800) AND created_at <= FROM_UNIXTIME(1705316400)",
 		},
 		"$__timeGroup with 5m": {
 			TimeRange: _testTimeRange,
@@ -130,7 +130,7 @@ func Test_TimeRange_ProcessMySQLQuery(t *testing.T) {
 		"Multiple macros in one query": {
 			TimeRange: _testTimeRange,
 			Query:     "SELECT $__timeGroupAlias(created_at,'5m'), avg(value) FROM metrics WHERE $__timeFilter(created_at) GROUP BY 1",
-			Result:    "SELECT FLOOR(UNIX_TIMESTAMP(created_at)/300)*300 AS `time`, avg(value) FROM metrics WHERE created_at BETWEEN '2024-01-15T10:00:00Z' AND '2024-01-15T11:00:00Z' GROUP BY 1",
+			Result:    "SELECT FLOOR(UNIX_TIMESTAMP(created_at)/300)*300 AS `time`, avg(value) FROM metrics WHERE created_at BETWEEN FROM_UNIXTIME(1705312800) AND FROM_UNIXTIME(1705316400) GROUP BY 1",
 		},
 		"$__timeGroupAlias with $__interval": {
 			TimeRange: _testTimeRange,
@@ -147,7 +147,7 @@ ORDER BY 1, 2`,
     service,
     COUNT(*) AS deployments
 FROM deployments
-WHERE time BETWEEN '2024-01-15T10:00:00Z' AND '2024-01-15T11:00:00Z'
+WHERE time BETWEEN FROM_UNIXTIME(1705312800) AND FROM_UNIXTIME(1705316400)
 GROUP BY 1, 2
 ORDER BY 1, 2`,
 		},

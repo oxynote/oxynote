@@ -255,9 +255,12 @@ func Test_input_Decode(t *testing.T) {
 		Want readBlockArgs
 	}{
 		"Malformed JSON": {Args: `{`, Err: "read_block: invalid input:"},
+		// NOTE: json/v2 randomizes the modal verb of its error messages per
+		// process ("cannot" / "unable to") to keep callers off the exact
+		// wording, so the expectation starts after it.
 		"Invalid id names the argument": {
 			Args: `{"document_id":"nope","block_uid":"b"}`,
-			Err:  `read_block: invalid input: json: cannot unmarshal JSON string into Go xid.ID within "/document_id": xid: invalid ID`,
+			Err:  `unmarshal JSON string into Go xid.ID within "/document_id": xid: invalid ID`,
 		},
 		"Null id is not an argument": {
 			Args: `{"document_id":null,"block_uid":"b"}`,

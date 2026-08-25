@@ -1,9 +1,6 @@
 package processor
 
-import (
-	"fmt"
-	"time"
-)
+import "fmt"
 
 // ProcessMySQLQuery processes the query string to replace MySQL-specific
 // macros with appropriate SQL expressions.
@@ -12,9 +9,9 @@ import (
 //
 //	$__time(dateColumn)                          → UNIX_TIMESTAMP(dateColumn) AS `time`
 //	$__timeEpoch(dateColumn)                     → UNIX_TIMESTAMP(dateColumn) AS `time`
-//	$__timeFilter(dateColumn)                    → dateColumn BETWEEN 'from' AND 'to'
-//	$__timeFrom()                                → 'from'
-//	$__timeTo()                                  → 'to'
+//	$__timeFilter(dateColumn)                    → dateColumn BETWEEN FROM_UNIXTIME(from) AND FROM_UNIXTIME(to)
+//	$__timeFrom()                                → FROM_UNIXTIME(from)
+//	$__timeTo()                                  → FROM_UNIXTIME(to)
 //	$__timeGroup(dateColumn,'5m'[, fill])        → FLOOR(UNIX_TIMESTAMP(dateColumn)/300)*300
 //	$__timeGroupAlias(dateColumn,'5m'[, fill])   → FLOOR(UNIX_TIMESTAMP(dateColumn)/300)*300 AS `time`
 //	$__unixEpochFilter(dateColumn)               → dateColumn >= unixFrom AND dateColumn <= unixTo
@@ -47,26 +44,31 @@ func mysqlMacroTime(args []string, original string) string {
 }
 
 // $__timeFilter(dateColumn).
+//
+// NOTE: time bounds are rendered as FROM_UNIXTIME(unix) rather than datetime
+// literals: MySQL/MariaDB truncate an RFC3339 'Z' suffix with a warning and
+// read the literal in the session time zone, silently shifting the window on
+// any non-UTC server.
 func mysqlMacroTimeFilter(tr TimeRange, args []string, original string) string {
 	if len(args) < 1 {
 		return original
 	}
 
-	return fmt.Sprintf("%s BETWEEN '%s' AND '%s'",
+	return fmt.Sprintf("%s BETWEEN FROM_UNIXTIME(%d) AND FROM_UNIXTIME(%d)",
 		args[0],
-		tr.From.UTC().Format(time.RFC3339),
-		tr.To.UTC().Format(time.RFC3339),
+		tr.From.Unix(),
+		tr.To.Unix(),
 	)
 }
 
 // $__timeFrom().
 func mysqlMacroTimeFrom(tr TimeRange) string {
-	return fmt.Sprintf("'%s'", tr.From.UTC().Format(time.RFC3339))
+	return fmt.Sprintf("FROM_UNIXTIME(%d)", tr.From.Unix())
 }
 
 // $__timeTo().
 func mysqlMacroTimeTo(tr TimeRange) string {
-	return fmt.Sprintf("'%s'", tr.To.UTC().Format(time.RFC3339))
+	return fmt.Sprintf("FROM_UNIXTIME(%d)", tr.To.Unix())
 }
 
 // $__timeGroup(dateColumn,'5m'[, fill]).

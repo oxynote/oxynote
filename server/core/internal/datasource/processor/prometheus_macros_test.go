@@ -62,7 +62,16 @@ func Test_TimeRange_ProcessPrometheusQuery(t *testing.T) {
 				To:   time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
 			},
 			Query:  "changes(metric[$__range])",
-			Result: "changes(metric[1d])",
+			Result: "changes(metric[86400s])",
+		},
+		"Replaces $__range without truncating to a unit": {
+			// 90 minutes must not shrink to "1h".
+			TimeRange: TimeRange{
+				From: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+				To:   time.Date(2024, 1, 1, 1, 30, 0, 0, time.UTC),
+			},
+			Query:  "max_over_time(metric[$__range])",
+			Result: "max_over_time(metric[5400s])",
 		},
 	}
 

@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	// _queryTimeout is the maximum duration for a PostgreSQL query.
+	// _queryTimeout is the maximum duration for a data-source call.
 	_queryTimeout = 10 * time.Second
 
 	// _connectTimeout bounds the initial dial. TestConnection runs on the
@@ -140,11 +140,7 @@ func (p *PostgreSQL) QueryLabels(ctx context.Context, q string, tr TimeRange) (m
 
 	rows, err := conn.Query(ctx, q)
 	if err != nil {
-		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code[0:2] == "42" {
-			return nil, NewInvalidQueryError(pgErr.Message)
-		}
-
-		return nil, fmt.Errorf("error executing query: %w", err)
+		return nil, pgQueryError(err)
 	}
 	defer rows.Close()
 
@@ -206,11 +202,7 @@ func (p *PostgreSQL) Query(ctx context.Context, q string, tr TimeRange) (*Postgr
 
 	rows, err := conn.Query(ctx, q)
 	if err != nil {
-		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code[0:2] == "42" {
-			return nil, NewInvalidQueryError(pgErr.Message)
-		}
-
-		return nil, fmt.Errorf("error executing query: %w", err)
+		return nil, pgQueryError(err)
 	}
 	defer rows.Close()
 
@@ -242,8 +234,10 @@ func (p *PostgreSQL) Query(ctx context.Context, q string, tr TimeRange) (*Postgr
 		resultRows = append(resultRows, values)
 	}
 
+	// pgx defers execution, so a runtime failure raised by the query text
+	// (a division by zero, a bad cast) surfaces here rather than at Query.
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating rows: %w", err)
+		return nil, pgQueryError(err)
 	}
 
 	return &PostgreSQLQueryResult{
@@ -399,10 +393,17 @@ func pgParseNumericValue(v any) (float64, bool) {
 	}
 }
 
-// pgQueryError maps a syntax or semantic failure reported by PostgreSQL to a
-// user-facing invalid-query error, leaving everything else as an internal one.
+// pgQueryError maps a failure the query text itself caused to a user-facing
+// invalid-query error, leaving everything else as an internal one. Class 42
+// is a syntax or semantic mistake, class 22 a data exception raised by the
+// query's own expressions (a division by zero, a bad cast), and 57014 the
+// server cancelling the query — none of them are the deployment's fault.
 func pgQueryError(err error) error {
-	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code[0:2] == "42" {
+	pgErr, ok := errors.AsType[*pgconn.PgError](err)
+	if ok &&
+		(strings.HasPrefix(pgErr.Code, "42") ||
+			strings.HasPrefix(pgErr.Code, "22") ||
+			pgErr.Code == "57014") {
 		return NewInvalidQueryError(pgErr.Message)
 	}
 

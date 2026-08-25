@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"fmt"
 	"strings"
 	"time"
 )
@@ -15,7 +16,7 @@ const _rateIntervalFactor = 4
 // Prometheus-specific macros:
 //
 //	$__rate_interval → 4x interval or 1m minimum, for rate()/increase() (e.g., "1h")
-//	$__range         → total time range duration (e.g., "1d")
+//	$__range         → total time range duration in whole seconds (e.g., "86400s")
 //
 // Generic macros (via ProcessQuery):
 //
@@ -31,7 +32,11 @@ func (tr TimeRange) ProcessPrometheusQuery(q string) string {
 	rangeDuration := tr.To.Sub(tr.From)
 
 	q = strings.ReplaceAll(q, "$__rate_interval", formatInterval(rateInterval))
-	q = strings.ReplaceAll(q, "$__range", formatInterval(rangeDuration))
+
+	// $__range is rendered as exact seconds: formatInterval truncates to one
+	// integer unit, and max_over_time(x[$__range]) over "1h" instead of the
+	// requested 90 minutes silently covers less than the window.
+	q = strings.ReplaceAll(q, "$__range", fmt.Sprintf("%ds", int64(rangeDuration.Seconds())))
 
 	return q
 }

@@ -40,6 +40,9 @@ func NewPrometheus(inp Input) *Prometheus {
 
 // TestConnection tests the connection to the Prometheus data source.
 func (p *Prometheus) TestConnection(ctx context.Context) (ConnectionStatus, error) {
+	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
+	defer cancel()
+
 	client, err := createPrometheusClient(p.inp.URL(), p.inp.Credentials())
 	if err != nil {
 		return "", fmt.Errorf("error creating prometheus client: %w", err)
@@ -64,6 +67,9 @@ func (p *Prometheus) TestConnection(ctx context.Context) (ConnectionStatus, erro
 
 // Metadata retrieves metadata from the Prometheus data source.
 func (p *Prometheus) Metadata(ctx context.Context) (*PrometheusMetadataResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
+	defer cancel()
+
 	client, err := createPrometheusClient(p.inp.URL(), p.inp.Credentials())
 	if err != nil {
 		return nil, fmt.Errorf("error creating prometheus client: %w", err)
@@ -81,6 +87,9 @@ func (p *Prometheus) Metadata(ctx context.Context) (*PrometheusMetadataResult, e
 
 // QueryRange performs a query against the Prometheus data source.
 func (p *Prometheus) QueryRange(ctx context.Context, q string, tr TimeRange) (*PrometheusQueryResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
+	defer cancel()
+
 	client, err := createPrometheusClient(p.inp.URL(), p.inp.Credentials())
 	if err != nil {
 		return nil, fmt.Errorf("error creating prometheus client: %w", err)
@@ -111,6 +120,9 @@ func (p *Prometheus) QueryRange(ctx context.Context, q string, tr TimeRange) (*P
 // LabelNames retrieves all label names from the Prometheus data source.
 // The matchers parameter can be used to filter label names by series selectors.
 func (p *Prometheus) LabelNames(ctx context.Context, matchers []string, tr TimeRange) (*PrometheusLabelNamesResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
+	defer cancel()
+
 	client, err := createPrometheusClient(p.inp.URL(), p.inp.Credentials())
 	if err != nil {
 		return nil, fmt.Errorf("error creating prometheus client: %w", err)
@@ -138,6 +150,9 @@ func (p *Prometheus) LabelNames(ctx context.Context, matchers []string, tr TimeR
 // LabelValues retrieves all values for a specific label from the Prometheus data source.
 // The matchers parameter can be used to filter label values by series selectors.
 func (p *Prometheus) LabelValues(ctx context.Context, label string, matchers []string, tr TimeRange) (*PrometheusLabelValuesResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
+	defer cancel()
+
 	client, err := createPrometheusClient(p.inp.URL(), p.inp.Credentials())
 	if err != nil {
 		return nil, fmt.Errorf("error creating prometheus client: %w", err)
@@ -171,6 +186,9 @@ func (p *Prometheus) LabelValues(ctx context.Context, label string, matchers []s
 // Series retrieves series from the Prometheus data source matching the given selectors.
 // The matchers parameter specifies series selectors to filter the results.
 func (p *Prometheus) Series(ctx context.Context, matchers []string, tr TimeRange) (*PrometheusSeriesResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, _queryTimeout)
+	defer cancel()
+
 	client, err := createPrometheusClient(p.inp.URL(), p.inp.Credentials())
 	if err != nil {
 		return nil, fmt.Errorf("error creating prometheus client: %w", err)

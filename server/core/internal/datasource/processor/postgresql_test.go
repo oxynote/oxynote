@@ -2,11 +2,14 @@ package processor
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
@@ -626,6 +629,14 @@ func Test_PostgreSQL_Query(t *testing.T) {
 			ErrStatus: http.StatusBadRequest,
 			Err:       assert.AnError,
 		},
+		// pgx defers execution, so this failure surfaces through rows.Err
+		// during iteration rather than at the Query call.
+		"Runtime failure raised by the query text": {
+			URL:       pgTestURL(_pgUser, _pgPass),
+			Query:     "SELECT value / 0 FROM metrics",
+			ErrStatus: http.StatusBadRequest,
+			Err:       assert.AnError,
+		},
 		"Successful query": {
 			URL:   pgTestURL(_pgUser, _pgPass),
 			Query: "SELECT time, host, value FROM metrics ORDER BY time",
@@ -839,6 +850,52 @@ func Test_pgParseNumericValue(t *testing.T) {
 			v, ok := pgParseNumericValue(c.Value)
 			assert.Equal(t, c.OK, ok)
 			assert.InDelta(t, c.Result, v, 0.0001)
+		})
+	}
+}
+
+func Test_pgQueryError(t *testing.T) {
+	type tcase struct {
+		Inp error
+		Err error
+	}
+
+	cc := map[string]tcase{
+		"Invalid-query PgError": {
+			Inp: &pgconn.PgError{Code: "42601", Message: "syntax error"},
+			Err: NewInvalidQueryError("syntax error"),
+		},
+		"Data-exception PgError": {
+			Inp: &pgconn.PgError{Code: "22012", Message: "division by zero"},
+			Err: NewInvalidQueryError("division by zero"),
+		},
+		"Query-cancelled PgError": {
+			Inp: &pgconn.PgError{Code: "57014", Message: "canceling statement"},
+			Err: NewInvalidQueryError("canceling statement"),
+		},
+		"PgError with a short code": func() tcase {
+			err := &pgconn.PgError{Code: "4", Message: "broken"}
+
+			return tcase{
+				Inp: err,
+				Err: fmt.Errorf("error executing query: %w", err),
+			}
+		}(),
+		"Non-postgres error": func() tcase {
+			err := errors.New("dial failure")
+
+			return tcase{
+				Inp: err,
+				Err: fmt.Errorf("error executing query: %w", err),
+			}
+		}(),
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			testutil.AssertEqualError(t, c.Err, pgQueryError(c.Inp))
 		})
 	}
 }

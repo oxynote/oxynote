@@ -2,6 +2,8 @@ package processor
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -370,7 +372,7 @@ func Test_MySQL_Metadata(t *testing.T) {
 			URL: "://",
 			Err: assert.AnError,
 		},
-		"Error returned by db.QueryContext": {
+		"Unreachable database": {
 			URL: "mysql://127.0.0.1:1/db",
 			Err: assert.AnError,
 		},
@@ -431,7 +433,7 @@ func Test_MySQL_QueryLabels(t *testing.T) {
 			Query: "SELECT 1",
 			Err:   assert.AnError,
 		},
-		"Error returned by db.QueryContext": {
+		"Unreachable database": {
 			URL:   "mysql://127.0.0.1:1/db",
 			Query: "SELECT 1",
 			Err:   assert.AnError,
@@ -488,7 +490,7 @@ func Test_MySQL_Query(t *testing.T) {
 			Query: "SELECT 1",
 			Err:   assert.AnError,
 		},
-		"Error returned by db.QueryContext": {
+		"Unreachable database": {
 			URL:   "mysql://127.0.0.1:1/db",
 			Query: "SELECT 1",
 			Err:   assert.AnError,
@@ -551,22 +553,34 @@ func Test_MySQL_Query(t *testing.T) {
 func Test_MySQL_connect(t *testing.T) {
 	t.Parallel()
 
-	// error
+	// buildDSN error
 	m := NewMySQL(&InputMock{
 		URLFunc: func() string { return "://" },
 	})
 
-	_, err := m.connect()
+	_, err := m.connect(context.Background())
 	assert.Error(t, err)
 
-	// success
+	// read-only session error
 	m = NewMySQL(&InputMock{
-		URLFunc: func() string { return "mysql://localhost:3306/db" },
+		URLFunc: func() string { return "mysql://127.0.0.1:1/db" },
 	})
 
-	db, err := m.connect()
+	_, err = m.connect(context.Background())
+	assert.Error(t, err)
+
+	// the session refuses writes even for a user whose grants allow them.
+	m = NewMySQL(&InputMock{
+		URLFunc: func() string { return mysqlTestURL(_mysqlRootUser, _mysqlRootPass) },
+	})
+
+	db, err := m.connect(context.Background())
 	require.NoError(t, err)
 	require.NotNil(t, db)
+
+	_, err = db.ExecContext(context.Background(), "DELETE FROM metrics")
+	assert.Error(t, err)
+
 	require.NoError(t, db.Close())
 }
 
@@ -699,6 +713,15 @@ func Test_mysqlCheckReadOnly(t *testing.T) {
 			Rows: sqlmock.NewRows([]string{"grants"}).
 				AddRow("GRANT SELECT,, USAGE ON *.* TO 'u'@'%'"),
 			Result: true,
+		},
+		"Column-level read-only grant": {
+			Rows: sqlmock.NewRows([]string{"grants"}).
+				AddRow("GRANT SELECT (a, b), SHOW VIEW ON `db`.`t` TO 'u'@'%'"),
+			Result: true,
+		},
+		"Column-level write grant": {
+			Rows: sqlmock.NewRows([]string{"grants"}).
+				AddRow("GRANT SELECT (a, b), UPDATE (c) ON `db`.`t` TO 'u'@'%'"),
 		},
 		"Malformed grant is skipped": {
 			Rows: sqlmock.NewRows([]string{"grants"}).
@@ -848,6 +871,44 @@ func Test_mysqlParseNumericValue(t *testing.T) {
 			v, ok := mysqlParseNumericValue(c.Value)
 			assert.Equal(t, c.OK, ok)
 			assert.InDelta(t, c.Result, v, 0.0001)
+		})
+	}
+}
+
+func Test_mysqlQueryError(t *testing.T) {
+	type tcase struct {
+		Inp error
+		Err error
+	}
+
+	cc := map[string]tcase{
+		"Invalid-query MySQLError": {
+			Inp: &mysql.MySQLError{Number: 1064, Message: "syntax error"},
+			Err: NewInvalidQueryError("syntax error"),
+		},
+		"MySQLError outside the invalid-query range": func() tcase {
+			err := &mysql.MySQLError{Number: 1045, Message: "access denied"}
+
+			return tcase{
+				Inp: err,
+				Err: fmt.Errorf("error executing query: %w", err),
+			}
+		}(),
+		"Non-mysql error": func() tcase {
+			err := errors.New("dial failure")
+
+			return tcase{
+				Inp: err,
+				Err: fmt.Errorf("error executing query: %w", err),
+			}
+		}(),
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			testutil.AssertEqualError(t, c.Err, mysqlQueryError(c.Inp))
 		})
 	}
 }
