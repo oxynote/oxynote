@@ -345,7 +345,11 @@ type client interface {
 
 // Close waits for the deliveries still in flight and releases the sender.
 func (s *Sender) Close() error {
-	s.supv.CloseAndWait()
+	// the deliveries must finish on a live context, so the wait precedes
+	// the cancellation Close brings. No new sends can arrive here — the
+	// HTTP server shuts down first — and _sendTimeout bounds the wait.
+	s.supv.Wait()
+	s.supv.Close()
 
 	return nil
 }

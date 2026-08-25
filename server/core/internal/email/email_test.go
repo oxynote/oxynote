@@ -338,6 +338,30 @@ func Test_Sender_SendAccountExists(t *testing.T) {
 	assert.Contains(t, msgBody(t, msg), "https://example.com/login")
 }
 
+func Test_Sender_Close(t *testing.T) {
+	t.Parallel()
+
+	var ctxErr error
+
+	client := &clientMock{
+		DialAndSendWithContextFunc: func(ctx context.Context, _ ...*mail.Msg) error {
+			ctxErr = ctx.Err()
+
+			return nil
+		},
+	}
+	s := stubSender(client)
+
+	s.SendPasswordReset("user@example.com", "https://example.com/reset")
+
+	require.NoError(t, s.Close())
+
+	// Close must drain the in-flight delivery before cancelling the
+	// supervisor context, so the send observed a live context.
+	require.Len(t, client.DialAndSendWithContextCalls(), 1)
+	assert.NoError(t, ctxErr)
+}
+
 // stubSender creates a sender backed by the provided mocked client.
 func stubSender(client *clientMock) *Sender {
 	return &Sender{
