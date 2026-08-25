@@ -186,6 +186,11 @@ func Test_Handler_CreateDocumentComment(t *testing.T) {
 			Body:     "{",
 			RespCode: http.StatusBadRequest,
 		},
+		"Empty comment content": {
+			DB:       &DBMock{},
+			Body:     `{"branchId":"` + _branchID.String() + `"}`,
+			RespCode: http.StatusBadRequest,
+		},
 		"Branch document fetch error": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
@@ -329,6 +334,15 @@ func Test_Handler_CreateDocumentCommentReply(t *testing.T) {
 				},
 			},
 			Body:     "{",
+			RespCode: http.StatusBadRequest,
+		},
+		"Empty reply content": {
+			DB: &DBMock{
+				FetchDocumentCommentFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Comment, error) {
+					return storedComment("u2"), nil
+				},
+			},
+			Body:     `{"content":{}}`,
 			RespCode: http.StatusBadRequest,
 		},
 		"Reply insertion error": {
@@ -655,6 +669,18 @@ func Test_Handler_UpdateDocumentCommentReply(t *testing.T) {
 			Body:      validBody,
 			RespCode:  http.StatusNotFound,
 		},
+		// the document-scoped comment fetch is what ties the reply to the
+		// path document, so its failure ends the request before the reply
+		// is ever read.
+		"Comment fetch error": {
+			DB: &DBMock{
+				FetchDocumentCommentFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Comment, error) {
+					return nil, errors.New("boom")
+				},
+			},
+			Body:     validBody,
+			RespCode: http.StatusInternalServerError,
+		},
 		"Reply fetch error": {
 			DB: &DBMock{
 				FetchDocumentCommentReplyFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Reply, error) {
@@ -973,6 +999,17 @@ func Test_Handler_DeleteDocumentCommentReply(t *testing.T) {
 			DB:        &DBMock{},
 			OmitReply: true,
 			RespCode:  http.StatusNotFound,
+		},
+		// the document-scoped comment fetch is what ties the reply to the
+		// path document, so its failure ends the request before the reply
+		// is ever read.
+		"Comment fetch error": {
+			DB: &DBMock{
+				FetchDocumentCommentFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Comment, error) {
+					return nil, errors.New("boom")
+				},
+			},
+			RespCode: http.StatusInternalServerError,
 		},
 		"Reply fetch error": {
 			DB: &DBMock{

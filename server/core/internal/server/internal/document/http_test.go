@@ -560,8 +560,32 @@ func Test_Handler_RemoveBranchReviewer(t *testing.T) {
 			DB:       &DBMock{},
 			RespCode: http.StatusBadRequest,
 		},
+		"Branch document fetch error": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return nil, errors.New("boom")
+				},
+			},
+			Query:    "?userId=u2",
+			RespCode: http.StatusInternalServerError,
+		},
+		"Branch of another document": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					doc := storedDoc()
+					doc.ID = xid.New()
+
+					return doc, nil
+				},
+			},
+			Query:    "?userId=u2",
+			RespCode: http.StatusNotFound,
+		},
 		"Reviewer deletion error": {
 			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
 				DeleteBranchReviewerFunc: func(context.Context, xid.ID, string, string) error {
 					return errors.New("boom")
 				},
@@ -571,7 +595,11 @@ func Test_Handler_RemoveBranchReviewer(t *testing.T) {
 			Deleted:  1,
 		},
 		"Successful removal": {
-			DB:        &DBMock{},
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
+			},
 			Query:     "?userId=u2",
 			RespCode:  http.StatusNoContent,
 			Deleted:   1,
@@ -639,6 +667,18 @@ func Test_Handler_UpdateBranchReviewApproval(t *testing.T) {
 			},
 			Body:     validBody,
 			RespCode: http.StatusInternalServerError,
+		},
+		"Branch of another document": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					doc := storedDoc()
+					doc.ID = xid.New()
+
+					return doc, nil
+				},
+			},
+			Body:     validBody,
+			RespCode: http.StatusNotFound,
 		},
 		"Invalid JSON body": {
 			DB: &DBMock{
@@ -1250,6 +1290,7 @@ func Test_Handler_UpdateDocumentBranch(t *testing.T) {
 	cc := map[string]struct {
 		DB        *DBMock
 		NoSession bool
+		OmitDoc   bool
 		Body      string
 		WantName  string
 		RespCode  int
@@ -1262,6 +1303,12 @@ func Test_Handler_UpdateDocumentBranch(t *testing.T) {
 			Body:      validBody,
 			RespCode:  http.StatusUnauthorized,
 		},
+		"Missing document ID parameter": {
+			DB:       &DBMock{},
+			OmitDoc:  true,
+			Body:     validBody,
+			RespCode: http.StatusNotFound,
+		},
 		"Branch document fetch error": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
@@ -1270,6 +1317,18 @@ func Test_Handler_UpdateDocumentBranch(t *testing.T) {
 			},
 			Body:     validBody,
 			RespCode: http.StatusInternalServerError,
+		},
+		"Branch of another document": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					doc := branchDoc(_branchID)
+					doc.ID = xid.New()
+
+					return doc, nil
+				},
+			},
+			Body:     validBody,
+			RespCode: http.StatusNotFound,
 		},
 		"Invalid JSON body": {
 			DB: &DBMock{
@@ -1339,7 +1398,7 @@ func Test_Handler_UpdateDocumentBranch(t *testing.T) {
 
 			rec := httptest.NewRecorder()
 
-			hdl.UpdateDocumentBranch(rec, newRequest(http.MethodPut, c.Body, c.NoSession, true, false))
+			hdl.UpdateDocumentBranch(rec, newRequest(http.MethodPut, c.Body, c.NoSession, c.OmitDoc, false))
 
 			assert.Equal(t, c.RespCode, rec.Code)
 			assert.Len(t, c.DB.UpdateDocumentBranchMetadataCalls(), c.Updated)

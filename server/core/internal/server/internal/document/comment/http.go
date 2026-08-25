@@ -67,6 +67,11 @@ func (h *Handler) CreateDocumentComment(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if err = ci.Validate(); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
 	branchDoc, err := h.db.FetchDocumentByBranchID(r.Context(), ci.BranchID, session.ActiveOrganizationID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
@@ -182,6 +187,11 @@ func (h *Handler) CreateDocumentCommentReply(w http.ResponseWriter, r *http.Requ
 	var ri commentCore.ReplyInput
 
 	if err := httpserver.DecodeJSON(r, &ri); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if err := ri.Validate(); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -392,6 +402,15 @@ func (h *Handler) UpdateDocumentCommentReply(w http.ResponseWriter, r *http.Requ
 
 	replyID, err := httpserver.ExtractNamedID(r, "replyId")
 	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	// the reply is scoped to its comment only, and the change event is
+	// published under the path document id; the document-scoped comment
+	// fetch rejects a comment anchored to another document with a
+	// not-found.
+	if _, err = h.db.FetchDocumentComment(r.Context(), commentID, documentID, session.ActiveOrganizationID); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -661,6 +680,15 @@ func (h *Handler) DeleteDocumentCommentReply(w http.ResponseWriter, r *http.Requ
 
 	replyID, err := httpserver.ExtractNamedID(r, "replyId")
 	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	// the reply is scoped to its comment only, and the change event is
+	// published under the path document id; the document-scoped comment
+	// fetch rejects a comment anchored to another document with a
+	// not-found.
+	if _, err = h.db.FetchDocumentComment(r.Context(), commentID, documentID, session.ActiveOrganizationID); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}

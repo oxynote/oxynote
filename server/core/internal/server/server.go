@@ -282,11 +282,14 @@ func (s *Server) fetchVersion(w http.ResponseWriter, _ *http.Request) {
 // bindVersionPing publishes version information every 5th second.
 func (s *Server) bindVersionPing(tpc wsserver.Topic) {
 	// the subscribe and unsubscribe callbacks are dispatched as independent
-	// goroutines, so they can overlap and even arrive out of order; the
-	// mutex guards the shared context and the nil check covers an
-	// unsubscribe that lands before the first subscribe.
+	// goroutines, so they can overlap and even arrive out of order; a stale
+	// unsubscribe must not cancel a newer subscription's cron. First-subs
+	// and last-unsubs alternate at the topic, so the cron follows the
+	// balance of observed transitions instead of the latest event.
 	var (
 		mu     sync.Mutex
+		starts uint64
+		stops  uint64
 		ctx    context.Context
 		cancel context.CancelFunc
 		cr     = timeutil.NewCron(s.log)
@@ -318,6 +321,12 @@ func (s *Server) bindVersionPing(tpc wsserver.Topic) {
 		mu.Lock()
 		defer mu.Unlock()
 
+		starts++
+
+		if starts <= stops || cancel != nil {
+			return
+		}
+
 		// this context deliberately outlives the closure; OnLastUnsub
 		// cancels it.
 		ctx, cancel = context.WithCancel(context.Background()) //nolint:gosec,fatcontext // cancel is invoked by the OnLastUnsub callback
@@ -329,11 +338,15 @@ func (s *Server) bindVersionPing(tpc wsserver.Topic) {
 		mu.Lock()
 		defer mu.Unlock()
 
-		if cancel != nil {
-			cancel()
+		stops++
 
-			ctx, cancel = nil, nil //nolint:fatcontext // cleared so the next subscription starts a fresh context
+		if starts > stops || cancel == nil {
+			return
 		}
+
+		cancel()
+
+		ctx, cancel = nil, nil //nolint:fatcontext // cleared so the next subscription starts a fresh context
 
 		cr.Stop()
 	})

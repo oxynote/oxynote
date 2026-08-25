@@ -321,11 +321,26 @@ func Test_Handler_MergeBranches(t *testing.T) {
 		return storedDoc(), nil
 	}
 
+	otherDocID := xid.New()
+
+	fetchOtherDocByBranch := func(_ context.Context, branchID xid.ID, _ string) (*documentCore.Document, error) {
+		doc := storedDoc()
+
+		if branchID == _branchID2 {
+			doc = branchDoc(_branchID2)
+		}
+
+		doc.ID = otherDocID
+
+		return doc, nil
+	}
+
 	cc := map[string]struct {
 		DB        *DBMock
 		Tx        *TxMock
 		BeginErr  error
 		NoSession bool
+		OmitDoc   bool
 		Body      string
 		RespCode  int
 		RespJSON  string
@@ -339,6 +354,13 @@ func Test_Handler_MergeBranches(t *testing.T) {
 			NoSession: true,
 			Body:      validBody,
 			RespCode:  http.StatusUnauthorized,
+		},
+		"Missing document ID parameter": {
+			DB:       &DBMock{},
+			Tx:       &TxMock{},
+			OmitDoc:  true,
+			Body:     validBody,
+			RespCode: http.StatusNotFound,
 		},
 		"Invalid JSON body": {
 			DB:       &DBMock{},
@@ -380,6 +402,13 @@ func Test_Handler_MergeBranches(t *testing.T) {
 			Body:     validBody,
 			RespCode: http.StatusBadRequest,
 			RespJSON: `{"code":"document.branch_mismatch","message":"branches must belong to the same document"}`,
+		},
+		"Branches of another document": {
+			DB:       &DBMock{FetchDocumentByBranchIDFunc: fetchOtherDocByBranch},
+			Tx:       &TxMock{},
+			Body:     validBody,
+			RespCode: http.StatusNotFound,
+			RespJSON: `{"code":"document.branch_mismatch","message":"branch does not belong to the document"}`,
 		},
 		"Transaction start error": {
 			DB:       &DBMock{FetchDocumentByBranchIDFunc: fetchByBranch},
@@ -510,7 +539,7 @@ func Test_Handler_MergeBranches(t *testing.T) {
 
 			rec := httptest.NewRecorder()
 
-			hdl.MergeBranches(rec, newRequest(http.MethodPut, c.Body, c.NoSession, true, true))
+			hdl.MergeBranches(rec, newRequest(http.MethodPut, c.Body, c.NoSession, c.OmitDoc, true))
 
 			assert.Equal(t, c.RespCode, rec.Code)
 
@@ -1195,6 +1224,7 @@ func Test_Handler_DeleteDocumentBranch(t *testing.T) {
 	cc := map[string]struct {
 		DB         *DBMock
 		NoSession  bool
+		OmitDoc    bool
 		OmitBranch bool
 		RespCode   int
 		RespJSON   string
@@ -1204,6 +1234,11 @@ func Test_Handler_DeleteDocumentBranch(t *testing.T) {
 			DB:        &DBMock{},
 			NoSession: true,
 			RespCode:  http.StatusUnauthorized,
+		},
+		"Missing document ID parameter": {
+			DB:       &DBMock{},
+			OmitDoc:  true,
+			RespCode: http.StatusNotFound,
 		},
 		"Missing branch ID parameter": {
 			DB:         &DBMock{},
@@ -1217,6 +1252,18 @@ func Test_Handler_DeleteDocumentBranch(t *testing.T) {
 				},
 			},
 			RespCode: http.StatusInternalServerError,
+		},
+		"Branch of another document": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					doc := branchDoc(_branchID)
+					doc.ID = xid.New()
+
+					return doc, nil
+				},
+			},
+			RespCode: http.StatusNotFound,
+			RespJSON: `{"code":"document.branch_mismatch","message":"branch does not belong to the document"}`,
 		},
 		"Default branch cannot be deleted": {
 			DB: &DBMock{
@@ -1287,7 +1334,7 @@ func Test_Handler_DeleteDocumentBranch(t *testing.T) {
 
 			rec := httptest.NewRecorder()
 
-			hdl.DeleteDocumentBranch(rec, newRequest(http.MethodDelete, "", c.NoSession, true, c.OmitBranch))
+			hdl.DeleteDocumentBranch(rec, newRequest(http.MethodDelete, "", c.NoSession, c.OmitDoc, c.OmitBranch))
 
 			assert.Equal(t, c.RespCode, rec.Code)
 

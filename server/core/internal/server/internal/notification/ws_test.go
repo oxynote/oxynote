@@ -144,22 +144,28 @@ func Test_Handler_BindNotifications(t *testing.T) {
 		require.NotNil(t, first)
 		require.NotNil(t, last)
 
+		// an unsubscribe overtaken by the subscribe it pairs with leaves the
+		// registration down: the topic is not subscribed once both land.
 		assert.NotPanics(t, func() {
 			last(context.Background())
+			first(context.Background())
 		})
 
-		first(context.Background())
-		first(context.Background())
+		assert.Nil(t, rcv.fn)
 
-		// the first registration is released rather than stranded.
+		// a stale unsubscribe arriving after a newer subscribe must not
+		// release the live registration.
+		first(context.Background())
+		require.NotNil(t, rcv.fn)
+
+		first(context.Background())
+		last(context.Background())
+
+		assert.Equal(t, 0, rcv.unsubbd)
+
+		// the balancing unsubscribe releases the registration exactly once.
+		last(context.Background())
 		assert.Equal(t, 1, rcv.unsubbd)
-
-		assert.NotPanics(t, func() {
-			last(context.Background())
-			last(context.Background())
-		})
-
-		assert.Equal(t, 2, rcv.unsubbd)
 	})
 }
 

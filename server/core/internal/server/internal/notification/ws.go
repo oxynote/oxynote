@@ -12,19 +12,26 @@ import (
 
 // BindNotifications publishes notifications.
 func (h *Handler) BindNotifications(tpc wsserver.Topic) {
+	// the callbacks are dispatched as independent goroutines, so a stale
+	// unsubscribe can arrive after a newer subscribe and must not tear its
+	// registration down. First-subs and last-unsubs alternate at the topic,
+	// so the registration follows the balance of observed transitions
+	// instead of the latest event.
 	var (
-		mu    sync.Mutex
-		unsub func()
+		mu     sync.Mutex
+		starts uint64
+		stops  uint64
+		unsub  func()
 	)
 
 	tpc.OnFirstSub(func(_ context.Context) {
 		mu.Lock()
 		defer mu.Unlock()
 
-		// a re-subscribe that overtakes the previous unsubscribe would
-		// otherwise strand the earlier registration forever.
-		if unsub != nil {
-			unsub()
+		starts++
+
+		if starts <= stops || unsub != nil {
+			return
 		}
 
 		unsub = h.notifier.OnNotification(func(ctx context.Context, nt notificationCore.Notification) {
@@ -50,9 +57,9 @@ func (h *Handler) BindNotifications(tpc wsserver.Topic) {
 		mu.Lock()
 		defer mu.Unlock()
 
-		// the callbacks are dispatched as independent goroutines, so an
-		// unsubscribe can arrive before any subscribe registered anything.
-		if unsub == nil {
+		stops++
+
+		if starts > stops || unsub == nil {
 			return
 		}
 

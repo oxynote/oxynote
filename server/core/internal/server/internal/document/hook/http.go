@@ -20,6 +20,10 @@ import (
 // the document identified by the request path.
 var ErrBranchMismatch = errutil.New(http.StatusNotFound, "document.branch_mismatch", "branch does not belong to the document")
 
+// ErrHookMismatch is returned when the requested hook does not belong to the
+// document identified by the request path.
+var ErrHookMismatch = errutil.New(http.StatusNotFound, "document.hook_mismatch", "hook does not belong to the document")
+
 // Handler holds dependencies required for document hook operations.
 type Handler struct {
 	log             *slog.Logger
@@ -150,6 +154,12 @@ func (h *Handler) UpdateDocumentHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	documentID, err := httpserver.ExtractNamedID(r, "documentId")
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
 	id, err := httpserver.ExtractNamedID(r, "hookId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
@@ -159,6 +169,13 @@ func (h *Handler) UpdateDocumentHook(w http.ResponseWriter, r *http.Request) {
 	hk, err := h.db.FetchDocumentHook(r.Context(), id, session.ActiveOrganizationID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	// a row whose document was deleted carries no document id at all and is
+	// not addressable through any document path.
+	if !hk.DocumentID.Valid || hk.DocumentID.V != documentID {
+		httpserver.RespondError(h.log, w, ErrHookMismatch)
 		return
 	}
 
@@ -204,6 +221,12 @@ func (h *Handler) ResetDocumentHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	documentID, err := httpserver.ExtractNamedID(r, "documentId")
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
 	id, err := httpserver.ExtractNamedID(r, "hookId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
@@ -213,6 +236,13 @@ func (h *Handler) ResetDocumentHook(w http.ResponseWriter, r *http.Request) {
 	hk, err := h.db.FetchDocumentHook(r.Context(), id, session.ActiveOrganizationID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	// a row whose document was deleted carries no document id at all and is
+	// not addressable through any document path.
+	if !hk.DocumentID.Valid || hk.DocumentID.V != documentID {
+		httpserver.RespondError(h.log, w, ErrHookMismatch)
 		return
 	}
 
@@ -247,6 +277,12 @@ func (h *Handler) DeleteDocumentHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	documentID, err := httpserver.ExtractNamedID(r, "documentId")
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
 	id, err := httpserver.ExtractNamedID(r, "hookId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
@@ -256,6 +292,13 @@ func (h *Handler) DeleteDocumentHook(w http.ResponseWriter, r *http.Request) {
 	hk, err := h.db.FetchDocumentHook(r.Context(), id, session.ActiveOrganizationID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	// a row whose document was deleted carries no document id at all and is
+	// not addressable through any document path.
+	if !hk.DocumentID.Valid || hk.DocumentID.V != documentID {
+		httpserver.RespondError(h.log, w, ErrHookMismatch)
 		return
 	}
 

@@ -284,6 +284,20 @@ func (h *Handler) RemoveBranchReviewer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	branchDoc, err := h.db.FetchDocumentByBranchID(r.Context(), branchID, session.ActiveOrganizationID)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	// the change event is published under the path document id, so a
+	// mismatched request would announce the removal to watchers of an
+	// unrelated document.
+	if branchDoc.ID != id {
+		httpserver.RespondError(h.log, w, ErrBranchMismatch)
+		return
+	}
+
 	if err := h.db.DeleteBranchReviewer(r.Context(), branchID, userID, session.ActiveOrganizationID); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -526,6 +540,12 @@ func (h *Handler) UpdateDocumentBranch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	id, err := httpserver.ExtractNamedID(r, "documentId")
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
 	branchID, err := httpserver.ExtractNamedID(r, "branchId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
@@ -535,6 +555,11 @@ func (h *Handler) UpdateDocumentBranch(w http.ResponseWriter, r *http.Request) {
 	doc, err := h.db.FetchDocumentByBranchID(r.Context(), branchID, session.ActiveOrganizationID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if doc.ID != id {
+		httpserver.RespondError(h.log, w, ErrBranchMismatch)
 		return
 	}
 
@@ -754,6 +779,14 @@ func (h *Handler) UpdateBranchReviewApproval(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	// the change event is published under the path document id, so a
+	// mismatched request would announce the approval to watchers of an
+	// unrelated document.
+	if branchDoc.ID != id {
+		httpserver.RespondError(h.log, w, ErrBranchMismatch)
+		return
+	}
+
 	var inp struct {
 		Approved bool `json:"approved"`
 	}
@@ -797,6 +830,12 @@ func (h *Handler) MergeBranches(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	id, err := httpserver.ExtractNamedID(r, "documentId")
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
 	var inp struct {
 		FromBranchID xid.ID `json:"fromBranchId"`
 		ToBranchID   xid.ID `json:"toBranchId"`
@@ -829,6 +868,11 @@ func (h *Handler) MergeBranches(w http.ResponseWriter, r *http.Request) {
 
 	if fromDoc.ID != toDoc.ID {
 		httpserver.RespondError(h.log, w, errutil.New(http.StatusBadRequest, "document.branch_mismatch", "branches must belong to the same document"))
+		return
+	}
+
+	if toDoc.ID != id {
+		httpserver.RespondError(h.log, w, ErrBranchMismatch)
 		return
 	}
 
@@ -1211,6 +1255,12 @@ func (h *Handler) DeleteDocumentBranch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	id, err := httpserver.ExtractNamedID(r, "documentId")
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
 	branchID, err := httpserver.ExtractNamedID(r, "branchId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
@@ -1220,6 +1270,11 @@ func (h *Handler) DeleteDocumentBranch(w http.ResponseWriter, r *http.Request) {
 	branchDoc, err := h.db.FetchDocumentByBranchID(r.Context(), branchID, session.ActiveOrganizationID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if branchDoc.ID != id {
+		httpserver.RespondError(h.log, w, ErrBranchMismatch)
 		return
 	}
 

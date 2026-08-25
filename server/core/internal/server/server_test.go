@@ -411,9 +411,62 @@ func Test_Server_bindVersionPing(t *testing.T) {
 		// the lifecycle callbacks are dispatched as independent goroutines, so
 		// an unsubscribe can land before the first subscribe ever ran.
 		require.Len(t, tpc.OnLastUnsubCalls(), 1)
+		require.Len(t, tpc.OnFirstSubCalls(), 1)
 
 		assert.NotPanics(t, func() {
 			tpc.OnLastUnsubCalls()[0].Fn(context.Background())
 		})
+
+		// the overtaken subscribe pairing with that unsubscribe must not
+		// start the cron; a cron erroneously left running here is caught
+		// by the package's goroutine-leak check.
+		assert.NotPanics(t, func() {
+			tpc.OnFirstSubCalls()[0].Fn(context.Background())
+		})
+	})
+
+	t.Run("Stale unsubscribe keeps the newer subscription's cron", func(t *testing.T) {
+		t.Parallel()
+
+		s := Server{
+			log: discardLog(),
+		}
+
+		tpc := &wsMock.Topic{}
+
+		published := make(chan struct{}, 16)
+		tpc.PublishManyFunc = func(context.Context, any, func(context.Context, string) bool) {
+			published <- struct{}{}
+		}
+
+		s.bindVersionPing(tpc)
+
+		require.Len(t, tpc.OnFirstSubCalls(), 1)
+		require.Len(t, tpc.OnLastUnsubCalls(), 1)
+
+		first := tpc.OnFirstSubCalls()[0].Fn
+		last := tpc.OnLastUnsubCalls()[0].Fn
+
+		// emitted sub/unsub/sub, delivered sub/sub/unsub: the stale
+		// unsubscribe pairs with the first subscribe and must leave the
+		// second subscribe's cron running.
+		first(context.Background())
+		first(context.Background())
+		last(context.Background())
+
+		// drain ticks that may have fired before the stale unsubscribe
+		// landed; a fresh one can only arrive if the cron survived it.
+		for len(published) > 0 {
+			<-published
+		}
+
+		select {
+		case <-published:
+		case <-time.After(7 * time.Second):
+			t.Fatal("version ping stopped after a stale unsubscribe")
+		}
+
+		// the balancing unsubscribe stops the cron.
+		last(context.Background())
 	})
 }

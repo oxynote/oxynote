@@ -68,6 +68,14 @@ func Test_Middleware(t *testing.T) {
 			RespCode: http.StatusUnauthorized,
 			RespJSON: `{"code":"account.not_authenticated","message":"not authenticated"}`,
 		},
+		// a session can lack an active organization before the user picks
+		// one; every handler scopes by it, so it must read as unauthenticated.
+		"Empty active organization ID": {
+			URL:      "http://test.com/get-session",
+			Resp:     httpmock.NewStringResponder(http.StatusOK, `{"session":{"userId":"u1","activeOrganizationId":""}}`),
+			RespCode: http.StatusUnauthorized,
+			RespJSON: `{"code":"account.not_authenticated","message":"not authenticated"}`,
+		},
 		"Successful authentication": {
 			URL:      "http://test.com/get-session",
 			Resp:     httpmock.NewStringResponder(http.StatusOK, `{"session":{"userId":"u1","activeOrganizationId":"org1"}}`),

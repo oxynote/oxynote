@@ -401,6 +401,7 @@ func Test_Handler_UpdateDocumentHook(t *testing.T) {
 	cc := map[string]struct {
 		DB        *DBMock
 		NoSession bool
+		OmitDoc   bool
 		OmitID    bool
 		Body      string
 		Checks    []check
@@ -414,12 +415,36 @@ func Test_Handler_UpdateDocumentHook(t *testing.T) {
 				wasUpdateCalled(0),
 			),
 		},
+		"Missing document ID parameter": {
+			DB:      &DBMock{},
+			OmitDoc: true,
+			Body:    validBody,
+			Checks: checks(
+				hasResp(http.StatusNotFound, `{"code":"general","message":"not found"}`),
+				wasUpdateCalled(0),
+			),
+		},
 		"Missing hook ID parameter": {
 			DB:     &DBMock{},
 			OmitID: true,
 			Body:   validBody,
 			Checks: checks(
 				hasResp(http.StatusNotFound, `{"code":"general","message":"not found"}`),
+				wasUpdateCalled(0),
+			),
+		},
+		"Hook of another document": {
+			DB: &DBMock{
+				FetchDocumentHookFunc: func(context.Context, xid.ID, string) (*hookCore.Hook, error) {
+					hk := scheduledHook(hookCore.TypeScheduledReminder)
+					hk.DocumentID = null.ValueFrom(xid.New())
+
+					return hk, nil
+				},
+			},
+			Body: validBody,
+			Checks: checks(
+				hasResp(http.StatusNotFound, `{"code":"document.hook_mismatch","message":"hook does not belong to the document"}`),
 				wasUpdateCalled(0),
 			),
 		},
@@ -521,6 +546,10 @@ func Test_Handler_UpdateDocumentHook(t *testing.T) {
 				ctx = addSession(ctx)
 			}
 
+			if !c.OmitDoc {
+				ctx = testutil.AddChiCtx(ctx, "documentId", _documentID.String())
+			}
+
 			if !c.OmitID {
 				ctx = testutil.AddChiCtx(ctx, "hookId", _hookID.String())
 			}
@@ -558,6 +587,7 @@ func Test_Handler_ResetDocumentHook(t *testing.T) {
 	cc := map[string]struct {
 		DB        *DBMock
 		NoSession bool
+		OmitDoc   bool
 		OmitID    bool
 		RespCode  int
 		Checks    []check
@@ -568,9 +598,27 @@ func Test_Handler_ResetDocumentHook(t *testing.T) {
 			RespCode:  http.StatusUnauthorized,
 			Checks:    checks(wasUpdateCalled(0)),
 		},
+		"Missing document ID parameter": {
+			DB:       &DBMock{},
+			OmitDoc:  true,
+			RespCode: http.StatusNotFound,
+			Checks:   checks(wasUpdateCalled(0)),
+		},
 		"Missing hook ID parameter": {
 			DB:       &DBMock{},
 			OmitID:   true,
+			RespCode: http.StatusNotFound,
+			Checks:   checks(wasUpdateCalled(0)),
+		},
+		"Hook of another document": {
+			DB: &DBMock{
+				FetchDocumentHookFunc: func(context.Context, xid.ID, string) (*hookCore.Hook, error) {
+					hk := scheduledHook(hookCore.TypeScheduledReminder)
+					hk.DocumentID = null.ValueFrom(xid.New())
+
+					return hk, nil
+				},
+			},
 			RespCode: http.StatusNotFound,
 			Checks:   checks(wasUpdateCalled(0)),
 		},
@@ -642,6 +690,10 @@ func Test_Handler_ResetDocumentHook(t *testing.T) {
 				ctx = addSession(ctx)
 			}
 
+			if !c.OmitDoc {
+				ctx = testutil.AddChiCtx(ctx, "documentId", _documentID.String())
+			}
+
 			if !c.OmitID {
 				ctx = testutil.AddChiCtx(ctx, "hookId", _hookID.String())
 			}
@@ -680,6 +732,7 @@ func Test_Handler_DeleteDocumentHook(t *testing.T) {
 	cc := map[string]struct {
 		DB        *DBMock
 		NoSession bool
+		OmitDoc   bool
 		OmitID    bool
 		RespCode  int
 		Checks    []check
@@ -690,9 +743,27 @@ func Test_Handler_DeleteDocumentHook(t *testing.T) {
 			RespCode:  http.StatusUnauthorized,
 			Checks:    checks(wasDeleteCalled(0)),
 		},
+		"Missing document ID parameter": {
+			DB:       &DBMock{},
+			OmitDoc:  true,
+			RespCode: http.StatusNotFound,
+			Checks:   checks(wasDeleteCalled(0)),
+		},
 		"Missing hook ID parameter": {
 			DB:       &DBMock{},
 			OmitID:   true,
+			RespCode: http.StatusNotFound,
+			Checks:   checks(wasDeleteCalled(0)),
+		},
+		"Hook of another document": {
+			DB: &DBMock{
+				FetchDocumentHookFunc: func(context.Context, xid.ID, string) (*hookCore.Hook, error) {
+					hk := scheduledHook(hookCore.TypeScheduledReminder)
+					hk.DocumentID = null.ValueFrom(xid.New())
+
+					return hk, nil
+				},
+			},
 			RespCode: http.StatusNotFound,
 			Checks:   checks(wasDeleteCalled(0)),
 		},
@@ -765,6 +836,10 @@ func Test_Handler_DeleteDocumentHook(t *testing.T) {
 
 			if !c.NoSession {
 				ctx = addSession(ctx)
+			}
+
+			if !c.OmitDoc {
+				ctx = testutil.AddChiCtx(ctx, "documentId", _documentID.String())
 			}
 
 			if !c.OmitID {

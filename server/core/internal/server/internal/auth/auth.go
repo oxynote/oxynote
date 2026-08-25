@@ -148,7 +148,11 @@ func getSession(ctx context.Context, client *http.Client, url string, cookies []
 		return Session{}, err
 	}
 
-	if payload.Session.UserID == "" {
+	// a session without an active organization (e.g. right after signup,
+	// before one is selected) must not reach the handlers: every query is
+	// scoped by the organization id, and a write would create rows under an
+	// empty one. The MCP bearer verifier applies the same rule.
+	if payload.Session.UserID == "" || payload.Session.ActiveOrganizationID == "" {
 		return Session{}, httpserver.ErrNotAuthenticated
 	}
 
