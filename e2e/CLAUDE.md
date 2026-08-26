@@ -463,9 +463,9 @@ suite for a change anywhere that can break it — `web/`, `server/`,
 A pull request only triggers it for changes to `e2e/` itself. A full run
 builds a nuxt image and costs real minutes on a private repository, and
 paying that on every push of every frontend PR buys only a few minutes'
-warning over the run on main. `concurrency` supersedes a pull request's
-earlier runs but never cancels one on `main`, whose result is the record
-for the branch.
+warning over the run on main. `concurrency` supersedes earlier runs on
+every branch, `main` included — only the latest push's result matters,
+so a superseded run shows as cancelled rather than finishing.
 
 **Layer caching is what keeps that affordable.** A runner starts with no
 layers, so the workflow sets up buildx and applies

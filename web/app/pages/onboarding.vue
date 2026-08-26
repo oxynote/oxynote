@@ -50,7 +50,7 @@ const {
 	createOrganization,
 	setActiveOrganization,
 } = useAuthSession()
-const { fetchDocumentTree } = useDocumentAPI()
+const nuxtApp = useNuxtApp()
 const userEmail = computed(() => {
 	return fetchAuthSession.state.value.data?.data?.user.email || ""
 })
@@ -122,6 +122,16 @@ const onSubmit = form.handleSubmit(async (values) => {
 	}
 
 	await Promise.all([fetchAuthSession.refetch(), fetchOrganization.refetch()])
+
+	// created here, not at the top of the setup: a freshly instantiated
+	// tree query fetches immediately, and before the workspace exists the
+	// session has no active organization, which core rejects with a 401 —
+	// one the API client turns into a redirect to /login, bouncing a
+	// signed-in visitor straight back here in an endless loop. By this
+	// point the organization exists and the refreshed session carries it.
+	const { fetchDocumentTree } = await nuxtApp.runWithContext(() =>
+		useDocumentAPI(),
+	)
 
 	let firstDoc: DocumentTreeElement | null = null
 
