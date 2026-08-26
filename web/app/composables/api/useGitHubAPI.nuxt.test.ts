@@ -1,3 +1,4 @@
+import { flushPromises } from "@vue/test-utils"
 import { afterEach, beforeEach, describe, it } from "vitest"
 import {
 	clearQueryCache,
@@ -37,23 +38,39 @@ describe("useGitHubAPI", { concurrent: false }, () => {
 			expect(result.data).toEqual({ connected: true, configured: true })
 			expect(statusCalls).toHaveLength(1)
 		})
+
+		// a component only ever reads this query; the explicit refresh()
+		// below is reserved for the repository queries, which are
+		// unreachable while GitHub is disabled
+		it("makes no request on a deployment without the GitHub App", async ({
+			expect,
+		}) => {
+			seedQueryData(["capabilities"], { github: false })
+			const statusCalls = mockEndpoint("GET", "/api/github", () => ({
+				connected: true,
+				configured: true,
+			}))
+			const api = makeGitHubAPI()
+
+			await flushPromises()
+
+			expect(statusCalls).toHaveLength(0)
+			expect(api.fetchGitHubConnectionStatus.data.value).toBeUndefined()
+		})
 	})
 
 	describe("gitHubConfigured", () => {
-		it("reports configured while the status is unknown", ({ expect }) => {
+		it("reports configured while the capabilities are unknown", ({
+			expect,
+		}) => {
 			const api = makeGitHubAPI()
 
 			expect(api.gitHubConfigured.value).toBe(true)
 		})
 
-		it("reports unconfigured once the status says so", async ({ expect }) => {
-			mockEndpoint("GET", "/api/github", () => ({
-				connected: false,
-				configured: false,
-			}))
+		it("reports unconfigured once the capabilities say so", ({ expect }) => {
+			seedQueryData(["capabilities"], { github: false })
 			const api = makeGitHubAPI()
-
-			await api.fetchGitHubConnectionStatus.refresh()
 
 			expect(api.gitHubConfigured.value).toBe(false)
 		})

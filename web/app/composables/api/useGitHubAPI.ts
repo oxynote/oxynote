@@ -18,6 +18,10 @@ const GITHUB_QUERY_KEYS = {
 export default function () {
 	const { $coreAPIClient } = useNuxtApp()
 	const queryCache = useQueryCache()
+	const { isGithubEnabled } = useCapabilitiesAPI()
+
+	// whether the server has the GitHub App integration configured at all.
+	const gitHubConfigured = isGithubEnabled
 
 	const fetchGitHubConnectionStatus = useQuery<GitHubConnectionStatus>({
 		key: GITHUB_QUERY_KEYS.connected,
@@ -26,19 +30,13 @@ export default function () {
 				method: "GET",
 			})
 		},
+		enabled: () => isGithubEnabled.value,
 		refetchOnMount: false,
 		refetchOnWindowFocus: false,
 		refetchOnReconnect: false,
 		staleTime: 3 * 60 * 1000, // 3mins
 		autoRefetch: true,
 	})
-
-	// whether the server has the GitHub App integration configured at all.
-	// Treats "unknown" (still loading) as configured so GitHub UI doesn't
-	// flicker away on deployments that do have it.
-	const gitHubConfigured = computed(
-		() => fetchGitHubConnectionStatus.data.value?.configured !== false,
-	)
 
 	async function fetchGitHubInstallURL(): Promise<GitHubInstallResponse> {
 		// we don't want to use useQuery here as installs are
@@ -110,6 +108,7 @@ export default function () {
 				},
 			)
 		},
+		enabled: () => isGithubEnabled.value,
 		refetchOnMount: false,
 		refetchOnWindowFocus: false,
 		refetchOnReconnect: false,
@@ -138,7 +137,9 @@ export default function () {
 				)
 			},
 			enabled: () =>
-				toValue(repoNameRef) !== null && toValue(repoNameRef) !== undefined,
+				isGithubEnabled.value &&
+				toValue(repoNameRef) !== null &&
+				toValue(repoNameRef) !== undefined,
 			refetchOnMount: false,
 			refetchOnWindowFocus: false,
 			refetchOnReconnect: false,
@@ -179,7 +180,9 @@ export default function () {
 				})
 			},
 			enabled: () =>
-				toValue(repoNameRef) !== null && toValue(repoNameRef) !== undefined,
+				isGithubEnabled.value &&
+				toValue(repoNameRef) !== null &&
+				toValue(repoNameRef) !== undefined,
 			refetchOnMount: false,
 			refetchOnWindowFocus: false,
 			refetchOnReconnect: false,

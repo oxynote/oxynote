@@ -13,6 +13,7 @@ import {
 	mockAuthEndpoint,
 	mountUnderSidebarProvider,
 	seedAuthOrganization,
+	seedCapabilities,
 	settleMutations,
 	stubViewportMatches,
 	t,
@@ -356,7 +357,8 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 		it("hides the github integration on a deployment without it", async ({
 			expect,
 		}) => {
-			stubQueries({ gitHub: { connected: false, configured: false } })
+			stubQueries({})
+			seedCapabilities({ github: false })
 
 			const wrapper = await mountSidebar()
 			await settleMutations()
@@ -382,7 +384,8 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 		it("hides the slack integration on a deployment without it", async ({
 			expect,
 		}) => {
-			stubQueries({ slack: { connected: false, configured: false } })
+			stubQueries({})
+			seedCapabilities({ slack: false })
 
 			const wrapper = await mountSidebar()
 			await settleMutations()

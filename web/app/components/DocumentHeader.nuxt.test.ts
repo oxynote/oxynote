@@ -12,7 +12,7 @@ import {
 	findButtonByText,
 	menuItem,
 	mountUnderSidebarProvider,
-	seedAuthOrganization,
+	seedCapabilities,
 	settleMutations,
 	t,
 } from "./test-helpers"
@@ -367,15 +367,28 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 		expect(created).toHaveLength(0)
 	})
 
-	it("hides the assistant button while the feature is off", async ({
+	it("hides the assistant button on a deployment without the assistant", async ({
 		expect,
 	}) => {
 		mainOnly()
-		seedAuthOrganization({ id: "org-without-the-feature" })
+		seedCapabilities({ aiAssistant: { status: AssistantStatus.Inactive } })
 
 		const wrapper = await mountHeader()
 
-		expect(wrapper.text()).not.toContain(t("editor.ai-chat.title"))
+		expect(wrapper.text()).not.toContain(t("editor.navbar.open-ai-assistant"))
+	})
+
+	it("offers the assistant button when the assistant runs", async ({
+		expect,
+	}) => {
+		mainOnly()
+		seedCapabilities({
+			aiAssistant: { status: AssistantStatus.ActiveButWeak, model: "small" },
+		})
+
+		const wrapper = await mountHeader()
+
+		expect(wrapper.text()).toContain(t("editor.navbar.open-ai-assistant"))
 	})
 
 	it("publishes the header height so the page can offset content", async ({

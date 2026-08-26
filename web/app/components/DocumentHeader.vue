@@ -1,7 +1,6 @@
 <script lang="ts" setup>
 import { cn } from "~/lib/utils"
 import type { DocumentBreadcrumb } from "./sidebar"
-import { ExperimentalFeature } from "~/composables/useExperimentalFeatures"
 import { showToastMessage } from "./toast"
 
 const props = defineProps<{
@@ -15,10 +14,7 @@ const emit = defineEmits<{
 
 const { isEditable, toggleIsEditable } = useEditorMeta()
 const editorStore = useEditorStore()
-const { isExperimentalFeatureEnabled } = useExperimentalFeatures()
-const aiAssistantEnabled = isExperimentalFeatureEnabled(
-	ExperimentalFeature.AIAssistant,
-)
+const { isAssistantEnabled } = useCapabilitiesAPI()
 const { useFetchDocumentBranchesByDocId } = useDocumentAPI()
 const fetchBranches = useFetchDocumentBranchesByDocId(
 	() => editorStore.activeDocumentId,
@@ -360,7 +356,7 @@ function activateBranch(branch: "default" | "draft") {
 							</ShadcnUiDropdownMenuContent>
 						</ShadcnUiDropdownMenu>
 						<div class="mx-2 h-5.5 w-px bg-border" />
-						<ShadcnUiTooltip v-if="aiAssistantEnabled" :delay-duration="600">
+						<ShadcnUiTooltip v-if="isAssistantEnabled" :delay-duration="600">
 							<ShadcnUiTooltipTrigger as-child>
 								<ShadcnUiButton
 									variant="ghost"

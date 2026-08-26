@@ -9,6 +9,10 @@ const SLACK_QUERY_KEYS = {
 export default function () {
 	const { $coreAPIClient } = useNuxtApp()
 	const queryCache = useQueryCache()
+	const { isSlackEnabled } = useCapabilitiesAPI()
+
+	// whether the server has the Slack App integration configured at all.
+	const slackConfigured = isSlackEnabled
 
 	const fetchSlackConnectionStatus = useQuery<SlackConnectionStatus>({
 		key: SLACK_QUERY_KEYS.connected,
@@ -17,19 +21,13 @@ export default function () {
 				method: "GET",
 			})
 		},
+		enabled: () => isSlackEnabled.value,
 		refetchOnMount: false,
 		refetchOnWindowFocus: false,
 		refetchOnReconnect: false,
 		staleTime: 3 * 60 * 1000, // 3mins
 		autoRefetch: true,
 	})
-
-	// whether the server has the Slack App integration configured at all.
-	// Treats "unknown" (still loading) as configured so Slack UI doesn't
-	// flicker away on deployments that do have it.
-	const slackConfigured = computed(
-		() => fetchSlackConnectionStatus.data.value?.configured !== false,
-	)
 
 	async function fetchSlackInstallURL(): Promise<SlackInstallResponse> {
 		// we don't want to use useQuery here as installs are
@@ -118,6 +116,7 @@ export default function () {
 				throw error
 			}
 		},
+		enabled: () => isSlackEnabled.value,
 		refetchOnMount: false,
 		refetchOnWindowFocus: false,
 		refetchOnReconnect: false,

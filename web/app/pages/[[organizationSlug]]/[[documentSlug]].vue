@@ -11,7 +11,6 @@ import {
 } from "~/plugins/03.api-fetch"
 import { showToastMessage } from "~/components/toast"
 import type { Editor } from "@tiptap/core"
-import { ExperimentalFeature } from "~/composables/useExperimentalFeatures"
 
 const DOC_CREATION_MIN_SPINNER_TIME_MS = 500
 
@@ -30,6 +29,11 @@ definePageMeta({
 		if (!orgRealName) {
 			return redirectToLogin(to.fullPath, true, nuxtApp)
 		}
+
+		// resolved before the page renders so capability-gated markup is
+		// already correct server-side and nothing appears then vanishes on
+		// hydration
+		await useCapabilitiesAPI().fetchCapabilities.refresh()
 
 		if (!to.params.documentSlug || typeof to.params.documentSlug !== "string") {
 			const docTree = await fetchDocumentTree.refresh()
@@ -108,7 +112,7 @@ const {
 const { fetchOrganization } = useAuthSession()
 const { t } = useI18n({ useScope: "global" })
 const { setEditable } = useEditorMeta()
-const { isExperimentalFeatureEnabled } = useExperimentalFeatures()
+const { isAssistantEnabled } = useCapabilitiesAPI()
 const wsState = useWebSocketStateStore()
 let unsubWsDocMetadataChange: (() => void) | null | undefined = null
 let lastClearedLinkNodeHighlight: string | null = null
@@ -139,9 +143,6 @@ const pendingDocDeletion = ref<{
 	name: string
 } | null>(null)
 const notificationSidebarOpen = ref(false)
-const experimentalFeatures = {
-	aiAssistant: isExperimentalFeatureEnabled(ExperimentalFeature.AIAssistant),
-}
 const contentEditorRef = shallowRef<Editor | null>(null)
 const nameEditorRef = shallowRef<Editor | null>(null)
 const editorStore = useEditorStore()
@@ -615,7 +616,7 @@ function clearLinkHighlightNodeOnce() {
 					</div>
 				</EditorIconPickerProvider>
 			</main>
-			<AIChatSidebar v-if="experimentalFeatures.aiAssistant.value" />
+			<AIChatSidebar v-if="isAssistantEnabled" />
 		</ShadcnUiTooltipProvider>
 	</ShadcnUiSidebarProvider>
 </template>

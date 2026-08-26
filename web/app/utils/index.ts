@@ -1,6 +1,7 @@
 // Re-exporting allows the content of these files to be auto-imported
 // elsewhere.
 export * from "./api/auth"
+export * from "./api/capabilities"
 export * from "./api/mcp"
 export * from "./api/document"
 export * from "./api/comment"

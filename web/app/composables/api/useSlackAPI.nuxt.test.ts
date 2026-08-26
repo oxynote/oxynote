@@ -1,3 +1,4 @@
+import { flushPromises } from "@vue/test-utils"
 import type { FetchError } from "ofetch"
 import { afterEach, beforeEach, describe, it } from "vitest"
 import {
@@ -41,23 +42,36 @@ describe("useSlackAPI", { concurrent: false }, () => {
 			expect(result.data).toEqual({ connected: true, configured: true })
 			expect(statusCalls).toHaveLength(1)
 		})
+
+		it("makes no request on a deployment without the Slack App", async ({
+			expect,
+		}) => {
+			seedQueryData(["capabilities"], { slack: false })
+			const statusCalls = mockEndpoint("GET", "/api/slack", () => ({
+				connected: true,
+				configured: true,
+			}))
+			const api = makeSlackAPI()
+
+			await flushPromises()
+
+			expect(statusCalls).toHaveLength(0)
+			expect(api.fetchSlackConnectionStatus.data.value).toBeUndefined()
+		})
 	})
 
 	describe("slackConfigured", () => {
-		it("reports configured while the status is unknown", ({ expect }) => {
+		it("reports configured while the capabilities are unknown", ({
+			expect,
+		}) => {
 			const api = makeSlackAPI()
 
 			expect(api.slackConfigured.value).toBe(true)
 		})
 
-		it("reports unconfigured once the status says so", async ({ expect }) => {
-			mockEndpoint("GET", "/api/slack", () => ({
-				connected: false,
-				configured: false,
-			}))
+		it("reports unconfigured once the capabilities say so", ({ expect }) => {
+			seedQueryData(["capabilities"], { slack: false })
 			const api = makeSlackAPI()
-
-			await api.fetchSlackConnectionStatus.refresh()
 
 			expect(api.slackConfigured.value).toBe(false)
 		})

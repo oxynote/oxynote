@@ -14,6 +14,7 @@ import {
 } from "~/composables/api/test-helpers"
 import {
 	clearTeleportedOverlays,
+	seedCapabilities,
 	t,
 	WAIT_FOR_OPTIONS,
 } from "~/components/test-helpers"
@@ -48,6 +49,7 @@ function urlWatcher(overrides: Partial<DocumentHook> = {}) {
 }
 
 function mockGitHub(configured: boolean) {
+	seedCapabilities({ github: configured })
 	mockEndpoint("GET", "/api/github", () => ({
 		connected: false,
 		configured: configured,

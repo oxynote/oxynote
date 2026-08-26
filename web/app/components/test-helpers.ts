@@ -68,6 +68,20 @@ export function seedAuthAccounts(providerIds: string[]) {
 	})
 }
 
+// every capability defaults to enabled here, matching what the composable
+// reports before its request resolves, so each test names only the
+// services it is actually gating on
+export function seedCapabilities(capabilities: Partial<Capabilities> = {}) {
+	seedQueryData(["capabilities"], {
+		github: true,
+		slack: true,
+		changeDetection: true,
+		search: true,
+		aiAssistant: { status: AssistantStatus.Active, model: "test-model" },
+		...capabilities,
+	})
+}
+
 // reka-ui tooltips inject a provider context that the app installs once,
 // at page level (app/pages/[[organizationSlug]]/[[documentSlug]].vue), so
 // a component rendering a tooltip needs one around it to mount at all

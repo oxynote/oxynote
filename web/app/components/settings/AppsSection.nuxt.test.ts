@@ -8,7 +8,12 @@ import {
 	seedQueryData,
 } from "~/composables/api/test-helpers"
 import AppsSection from "./AppsSection.vue"
-import { findButtonByText, settleMutations, t } from "../test-helpers"
+import {
+	findButtonByText,
+	seedCapabilities,
+	settleMutations,
+	t,
+} from "../test-helpers"
 
 vi.mock("vue-sonner", () => ({
 	toast: { custom: vi.fn(), dismiss: vi.fn() },
@@ -74,7 +79,8 @@ describe("<AppsSection>", { concurrent: false }, () => {
 	})
 
 	it("hides github on a deployment without it", async ({ expect }) => {
-		seedApps({ gitHub: { connected: false, configured: false } })
+		seedApps({})
+		seedCapabilities({ github: false })
 
 		const wrapper = await mountSection()
 
@@ -82,7 +88,8 @@ describe("<AppsSection>", { concurrent: false }, () => {
 	})
 
 	it("hides slack on a deployment without it", async ({ expect }) => {
-		seedApps({ slack: { connected: false, configured: false } })
+		seedApps({})
+		seedCapabilities({ slack: false })
 
 		const wrapper = await mountSection()
 
@@ -251,7 +258,8 @@ describe("<AppsSection>", { concurrent: false }, () => {
 	})
 
 	it("separates the two rows only when both are shown", async ({ expect }) => {
-		seedApps({ slack: { connected: false, configured: false } })
+		seedApps({})
+		seedCapabilities({ slack: false })
 
 		const wrapper = await mountSection()
 
