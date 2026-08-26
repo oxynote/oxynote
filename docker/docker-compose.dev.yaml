@@ -242,7 +242,7 @@ services:
       - MAX_CONCURRENT_CHROME_PROCESSES=10
       - LOG_LEVEL=WARNING
   grafana:
-    image: grafana/grafana:13.1.4
+    image: grafana/grafana:13.2.0
     container_name: grafana
     ports:
       - "8083:3000"
