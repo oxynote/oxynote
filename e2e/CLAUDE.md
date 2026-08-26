@@ -103,9 +103,9 @@ dev stack uses, never a published release. It deliberately differs from
 - **Env is inlined and committed.** There is nothing secret in it, so CI
   needs no setup step. Unlike `docker/env/*.example.env`, it lists only
   the variables that matter — it is a fixture, not an operator template.
-- **Every image is pinned**, including the two the dev stack floats
-  (`minio` and `mailpit`). A run has to fail because this repository
-  changed, not because an upstream `latest` moved overnight.
+- **Every image is pinned**, as in the dev stack. A run has to fail
+  because this repository changed, not because an upstream `latest`
+  moved overnight.
 - **Only the services the tests touch.** No changedetection,
   sockpuppet-chrome, mariadb, datagen, prometheus or grafana.
 - **The front door is `docker/Caddyfile` verbatim**, mounted from the dev

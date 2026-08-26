@@ -11,15 +11,15 @@
 # the front door is the dev Caddyfile verbatim: e2e must exercise the
 # same routing and the same /api/x and /api/internal blocks that ship.
 #
-# every image is pinned, including the two the dev stack floats. A run
-# has to fail because this repository changed, not because something
-# upstream published a new latest overnight.
+# every image is pinned, as in the dev stack. A run has to fail because
+# this repository changed, not because something upstream published a
+# new latest overnight.
 
 name: oxynote-e2e
 
 services:
   caddy:
-    image: caddy:2.11-alpine
+    image: caddy:2.11.4-alpine
     volumes:
       - ../docker/Caddyfile:/etc/caddy/Caddyfile
     ports:
@@ -137,7 +137,7 @@ services:
         condition: service_healthy
 
   postgres:
-    image: pgvector/pgvector:pg16
+    image: postgres:18.6-alpine
     environment:
       POSTGRES_USER: devuser
       POSTGRES_PASSWORD: devpass
@@ -149,7 +149,7 @@ services:
       retries: 20
 
   valkey:
-    image: valkey/valkey:9.1-alpine
+    image: valkey/valkey:9.1.1-alpine
     healthcheck:
       test: ["CMD", "valkey-cli", "ping"]
       interval: 5s
@@ -157,7 +157,7 @@ services:
       retries: 20
 
   meilisearch:
-    image: getmeili/meilisearch:v1.53
+    image: getmeili/meilisearch:v1.53.1
     environment:
       - MEILI_MASTER_KEY=devmasterkey
       - MEILI_ENV=development
