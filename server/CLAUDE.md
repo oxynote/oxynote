@@ -60,7 +60,7 @@ Go dependencies are fetched into the module cache at build time (`make deps` run
 `docker/Caddyfile` is the entrypoint for all client traffic:
 
 - `:8080` — front door. `/core/*` is path-stripped and reverse-proxied to `core:8080`; `/auth-realtime/*` is path-stripped and reverse-proxied to `auth-realtime:8081` (Better Auth, Hocuspocus, the merge proxy — the service itself still serves `/api/...` and `/hocuspocus`); everything else goes to the web SSR container (`web:3000`).
-- `:8081` — RustFS console
+- `:8081` — RustFS console (served at `/rustfs/console/`; the root is the S3 API)
 - `:8082` — changedetection.io
 - `:8083` — Grafana (direct, not via Caddy)
 

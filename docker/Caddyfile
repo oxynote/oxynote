@@ -74,11 +74,10 @@
 :8081 {
 	import common
 
-	# the console is served under its own prefix and references its assets
-	# by absolute path, so the bare root is redirected at it rather than
-	# rewritten away — stripping the prefix would break every asset URL.
-	redir / /rustfs/console/
-
+	# the console lives at /rustfs/console/, and the S3, STS and admin APIs
+	# it calls share this origin at "/" — so the root is left alone rather
+	# than redirected at the console, which would swallow ListBuckets and
+	# the console's own sign-in.
 	reverse_proxy rustfs:9001
 }
 
