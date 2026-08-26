@@ -11,6 +11,9 @@
 	"type": "module",
 	"main": ".vite/build/main.cjs",
 	"packageManager": "pnpm@11.1.3",
+	"engines": {
+		"node": ">=24"
+	},
 	"scripts": {
 		"setup": "pnpm run deps && pnpm run prepare && pnpm run deps:browsers",
 		"deps": "pnpm install",

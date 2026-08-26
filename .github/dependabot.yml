@@ -77,10 +77,10 @@ updates:
       # both support it.
       - dependency-name: "typescript"
         versions: [">=7.0.0"]
-      # the runtime is node 22 everywhere (both Dockerfiles and CI), and
+      # the runtime is node 24 everywhere (both Dockerfiles and CI), and
       # types ahead of it compile against apis that are not there.
       - dependency-name: "@types/node"
-        versions: [">=23.0.0"]
+        versions: [">=25.0.0"]
       # @hono/node-ws peers @hono/node-server ^1.19.11; no release supports 2.x.
       - dependency-name: "@hono/node-server"
         versions: [">=2.0.0"]
@@ -120,10 +120,10 @@ updates:
       # both support it.
       - dependency-name: "typescript"
         versions: [">=7.0.0"]
-      # the runtime is node 22 everywhere (both Dockerfiles and CI), and
+      # the runtime is node 24 everywhere (both Dockerfiles and CI), and
       # types ahead of it compile against apis that are not there.
       - dependency-name: "@types/node"
-        versions: [">=23.0.0"]
+        versions: [">=25.0.0"]
     groups:
       breaking:
         patterns:
@@ -211,6 +211,13 @@ updates:
       day: "monday"
     commit-message:
       prefix: "deps(docker)"
+    ignore:
+      # the runtime tracks the active node LTS line (24). Odd majors are
+      # never LTS and even ones only become LTS ~6 months after release, so
+      # majors are bumped by hand when the next LTS ships instead of every
+      # time a current release appears.
+      - dependency-name: "node"
+        versions: [">=25.0.0"]
     groups:
       breaking:
         patterns:

@@ -3,6 +3,9 @@
 	"private": true,
 	"type": "module",
 	"packageManager": "pnpm@11.1.3",
+	"engines": {
+		"node": ">=24"
+	},
 	"scripts": {
 		"deps": "pnpm install",
 		"setup": "pnpm run deps && playwright install chromium",
@@ -24,7 +27,7 @@
 		"@hocuspocus/provider": "^4.6.0",
 		"@modelcontextprotocol/sdk": "^1.30.0",
 		"@playwright/test": "^1.62.1",
-		"@types/node": "^22.20.1",
+		"@types/node": "^24.13.3",
 		"@types/ws": "^8.18.1",
 		"eslint": "^10.9.1",
 		"eslint-config-prettier": "^10.1.8",

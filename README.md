@@ -26,9 +26,12 @@ Requirements:
   the Go database-layer tests, which start throwaway containers.
 - [Go](https://go.dev) — builds the `server/core` API server and the
   `datagen` demo-data generator.
-- [Node.js](https://nodejs.org) (with corepack for [pnpm](https://pnpm.io)) —
-  builds and runs the `web` frontend and the `server/auth-realtime` service;
-  pnpm is the package manager for both.
+- [Node.js](https://nodejs.org) — builds and runs the `web` frontend and the
+  `server/auth-realtime` service.
+- [pnpm](https://github.com/pnpm/pnpm) — the package manager for the node
+  packages. Any recent install works: pnpm
+  switches to the version pinned in each package's `packageManager` field on
+  its own.
 - [goreleaser](https://goreleaser.com) — produces the Go binaries and dev
   docker images (`make build` in `server/core` and `datagen`).
 - [make](https://www.gnu.org/software/make/) — orchestrates all setup, build,
