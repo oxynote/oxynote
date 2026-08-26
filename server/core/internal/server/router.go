@@ -251,7 +251,6 @@ func (s *Server) router() chi.Router {
 			ssr.Get("/connection", s.handlers.datasource.TestDataSourceConnection)
 			ssr.Get("/query", s.handlers.datasource.QueryDataSource)
 			ssr.Route("/prometheus", func(sssr chi.Router) {
-				sssr.Get("/query", s.handlers.datasource.QueryPrometheusDataSource)
 				sssr.Get("/metadata", s.handlers.datasource.FetchPrometheusDataSourceMetadata)
 				sssr.Get("/series", s.handlers.datasource.FetchPrometheusDataSourceSeries)
 				sssr.Route("/labels", func(ssssr chi.Router) {

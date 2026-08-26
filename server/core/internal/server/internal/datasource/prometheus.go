@@ -11,52 +11,6 @@ import (
 // _prometheusMatchersQuery is the HTTP query param used to pass matchers for Prometheus label queries.
 const _prometheusMatchersQuery = "matchers"
 
-// QueryPrometheusDataSource handles executing a query against a data source.
-func (h *Handler) QueryPrometheusDataSource(w http.ResponseWriter, r *http.Request) {
-	session, ok := auth.RequireSession(h.log, w, r)
-	if !ok {
-		return
-	}
-
-	id, err := httpserver.ExtractNamedID(r, "dataSourceId")
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	ds, err := h.db.FetchDataSource(r.Context(), id, session.ActiveOrganizationID)
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	query := r.URL.Query().Get("q")
-	if query == "" {
-		httpserver.RespondError(h.log, w, ErrQueryRequired)
-		return
-	}
-
-	tr, err := processor.ParseTimeRange(false, r.URL.Query())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	client, err := h.runners.Runner(*ds).Prometheus(r.Context())
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	result, err := client.QueryRange(r.Context(), query, *tr)
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	httpserver.Respond(h.log, w, result, http.StatusOK)
-}
-
 // FetchPrometheusDataSourceMetadata handles retrieving metadata from a data source.
 func (h *Handler) FetchPrometheusDataSourceMetadata(w http.ResponseWriter, r *http.Request) {
 	session, ok := auth.RequireSession(h.log, w, r)

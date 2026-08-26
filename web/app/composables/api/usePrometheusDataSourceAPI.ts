@@ -1,14 +1,4 @@
 const PROMETHEUS_QUERY_KEYS = {
-	query: (dataSourceId: string, query: string, timeRange: string) =>
-		["prometheus", dataSourceId, "query", query, timeRange] as const,
-	queries: (dataSourceId: string, queryStrings: string[], timeRange: string) =>
-		[
-			"prometheus",
-			dataSourceId,
-			"queries",
-			...queryStrings,
-			timeRange,
-		] as const,
 	metadata: (dataSourceId: string) =>
 		["prometheus", dataSourceId, "metadata"] as const,
 	labels: (dataSourceId: string, timeRange: string, matchers: string) =>
@@ -21,131 +11,6 @@ const PROMETHEUS_QUERY_KEYS = {
 
 export default function () {
 	const { $coreAPIClient } = useNuxtApp()
-
-	function usePrometheusQuery(
-		dataSourceIdRef: MaybeRefOrGetter<string | null | undefined>,
-		paramsRef: MaybeRefOrGetter<PrometheusQueryParams | null | undefined>,
-		enableFetch: MaybeRefOrGetter<boolean>,
-	) {
-		return useQuery({
-			key: () => {
-				const dataSourceId = toValue(dataSourceIdRef)
-				const params = toValue(paramsRef)
-
-				return PROMETHEUS_QUERY_KEYS.query(
-					dataSourceId || "",
-					params?.q || "",
-					params?.timeRangeKey || "",
-				)
-			},
-			query: async () => {
-				const dataSourceId = toValue(dataSourceIdRef)
-				const params = toValue(paramsRef)
-
-				if (!dataSourceId || !params?.q) {
-					return null
-				}
-
-				const queryParams = new URLSearchParams({
-					q: params.q,
-					...formatQueryTimeRange(params),
-				})
-
-				return await $coreAPIClient<PrometheusQueryResult>(
-					`/api/data-sources/${dataSourceId}/prometheus/query?${queryParams.toString()}`,
-					{ method: "GET" },
-				)
-			},
-			enabled: () => {
-				const dataSourceId = toValue(dataSourceIdRef)
-				const params = toValue(paramsRef)
-				const enable = toValue(enableFetch)
-
-				return (
-					dataSourceId !== undefined &&
-					dataSourceId !== null &&
-					params?.q !== undefined &&
-					params.q.trim().length > 0 &&
-					enable
-				)
-			},
-			refetchOnMount: false,
-			refetchOnWindowFocus: false,
-			refetchOnReconnect: false,
-			staleTime: 4.5 * 1000, // 4.5 secs
-			autoRefetch: false,
-		})
-	}
-
-	function usePrometheusMultipleQueries(
-		dataSourceIdRef: MaybeRefOrGetter<string | null | undefined>,
-		paramsRef: MaybeRefOrGetter<
-			PrometheusMultipleQueriesParams | null | undefined
-		>,
-		enableFetch: MaybeRefOrGetter<boolean>,
-	) {
-		return useQuery({
-			key: () => {
-				const dataSourceId = toValue(dataSourceIdRef)
-				const params = toValue(paramsRef)
-				const queries = clone(params?.queries)
-
-				return PROMETHEUS_QUERY_KEYS.queries(
-					dataSourceId || "",
-					queries?.sort() ?? [],
-					params?.timeRangeKey || "",
-				)
-			},
-			query: async (): Promise<PrometheusQueryResult[]> => {
-				const dataSourceId = toValue(dataSourceIdRef)
-				const params = toValue(paramsRef)
-
-				if (!dataSourceId || !params?.queries.length) {
-					return []
-				}
-
-				const timeRangeParams = formatQueryTimeRange(params)
-				const results = await Promise.all(
-					params.queries.map(async (q) => {
-						const queryParams = new URLSearchParams({
-							q: q,
-							...timeRangeParams,
-						})
-
-						return await $coreAPIClient<PrometheusQueryResult>(
-							`/api/data-sources/${dataSourceId}/prometheus/query?${queryParams.toString()}`,
-							{ method: "GET" },
-						)
-					}),
-				)
-
-				return results
-			},
-			enabled: () => {
-				const dataSourceId = toValue(dataSourceIdRef)
-				const params = toValue(paramsRef)
-				const enable = toValue(enableFetch)
-
-				return (
-					dataSourceId !== undefined &&
-					dataSourceId !== null &&
-					params?.queries !== undefined &&
-					params.queries.length > 0 &&
-					params.queries.every((q) => q.trim().length > 0) &&
-					enable
-				)
-			},
-			refetchOnMount: false,
-			refetchOnWindowFocus: false,
-			refetchOnReconnect: false,
-			autoRefetch: false,
-			placeholderData: (previousData) => previousData, // to avoid "no data" state when params change
-			// metric blocks dragged around the editor sometimes remount when
-			// dropped, which would refresh their data; the long stale time
-			// keeps that from happening
-			staleTime: 60 * 60 * 24 * 1000, // 24 hours (longest refresh interval allowed)
-		})
-	}
 
 	function usePrometheusMetadata(
 		dataSourceIdRef: MaybeRefOrGetter<string | null | undefined>,
@@ -340,8 +205,6 @@ export default function () {
 	}
 
 	return {
-		usePrometheusQuery,
-		usePrometheusMultipleQueries,
 		usePrometheusMetadata,
 		usePrometheusLabels,
 		usePrometheusLabelValues,

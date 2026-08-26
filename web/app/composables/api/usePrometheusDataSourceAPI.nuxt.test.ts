@@ -20,11 +20,6 @@ const TIME_RANGE = {
 	timeRangeKey: "last-24h",
 }
 
-const QUERY_RESULT = {
-	type: "vector",
-	result: [{ metric: { job: "web" }, value: [1735689600, "1"] }],
-}
-
 // creating a query with a truthy enabled condition eagerly loads it once;
 // refresh() joins that in-flight load (or reuses its fresh result) instead
 // of forcing a second request, which keeps the call accounting deterministic
@@ -34,101 +29,6 @@ describe("usePrometheusDataSourceAPI", { concurrent: false }, () => {
 	beforeEach(clearQueryCache)
 
 	afterEach(disposeMockEndpoints)
-
-	describe("usePrometheusQuery", () => {
-		it("returns null without a query string", async ({ expect }) => {
-			const queryCalls = mockEndpoint(
-				"GET",
-				"/api/data-sources/ds1/prometheus/query",
-				() => QUERY_RESULT,
-			)
-			const api = makePrometheusDataSourceAPI()
-			const query = runInApp(() =>
-				api.usePrometheusQuery("ds1", { q: "", ...TIME_RANGE }, true),
-			)
-
-			const result = await query.refresh()
-
-			expect(result.data).toBeNull()
-			expect(queryCalls).toHaveLength(0)
-		})
-
-		it("fetches the query result with the time range", async ({ expect }) => {
-			const queryCalls = mockEndpoint(
-				"GET",
-				"/api/data-sources/ds1/prometheus/query",
-				() => QUERY_RESULT,
-			)
-			const api = makePrometheusDataSourceAPI()
-			const query = runInApp(() =>
-				api.usePrometheusQuery("ds1", { q: "up", ...TIME_RANGE }, true),
-			)
-
-			const result = await query.refresh()
-
-			expect(result.data).toEqual(QUERY_RESULT)
-			expect(queryCalls).toHaveLength(1)
-			expect(queryCalls[0]?.query).toEqual({ q: "up", from: FROM, to: TO })
-		})
-	})
-
-	describe("usePrometheusMultipleQueries", () => {
-		it("returns no results without query strings", async ({ expect }) => {
-			const queryCalls = mockEndpoint(
-				"GET",
-				"/api/data-sources/ds1/prometheus/query",
-				() => QUERY_RESULT,
-			)
-			const api = makePrometheusDataSourceAPI()
-			const queries = runInApp(() =>
-				api.usePrometheusMultipleQueries(
-					"ds1",
-					{ queries: [], ...TIME_RANGE },
-					true,
-				),
-			)
-
-			const result = await queries.refresh()
-
-			expect(result.data).toEqual([])
-			expect(queryCalls).toHaveLength(0)
-		})
-
-		it("fetches one result per query string in order", async ({ expect }) => {
-			// the response embeds the incoming query string so the resolved
-			// data proves which request produced which result
-			const queryCalls = mockEndpoint(
-				"GET",
-				"/api/data-sources/ds1/prometheus/query",
-				(call) => ({
-					type: "vector",
-					result: [{ metric: { q: call.query.q } }],
-				}),
-			)
-			const api = makePrometheusDataSourceAPI()
-			const queries = runInApp(() =>
-				api.usePrometheusMultipleQueries(
-					"ds1",
-					{ queries: ["up", "process_cpu"], ...TIME_RANGE },
-					true,
-				),
-			)
-
-			const result = await queries.refresh()
-
-			expect(result.data).toEqual([
-				{ type: "vector", result: [{ metric: { q: "up" } }] },
-				{ type: "vector", result: [{ metric: { q: "process_cpu" } }] },
-			])
-			expect(queryCalls).toHaveLength(2)
-			expect(queryCalls[0]?.query).toEqual({ q: "up", from: FROM, to: TO })
-			expect(queryCalls[1]?.query).toEqual({
-				q: "process_cpu",
-				from: FROM,
-				to: TO,
-			})
-		})
-	})
 
 	describe("usePrometheusMetadata", () => {
 		it("returns null without a data source id", async ({ expect }) => {
