@@ -7,10 +7,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"path"
 	"slices"
+	"strings"
 
-	"github.com/minio/minio-go/v7"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 )
 
@@ -84,12 +88,12 @@ func (c *Client) Upload(ctx context.Context, folder, id string, r io.Reader) err
 
 	_, err = c.client.PutObject(
 		ctx,
-		c.bucket,
-		key,
-		bytes.NewReader(data),
-		int64(len(data)),
-		minio.PutObjectOptions{
-			ContentType: ct,
+		&s3.PutObjectInput{
+			Bucket:        aws.String(c.bucket),
+			Key:           aws.String(key),
+			Body:          bytes.NewReader(data),
+			ContentLength: aws.Int64(int64(len(data))),
+			ContentType:   aws.String(ct),
 		},
 	)
 	if err != nil {
@@ -103,35 +107,29 @@ func (c *Client) Upload(ctx context.Context, folder, id string, r io.Reader) err
 func (c *Client) Retrieve(ctx context.Context, folder, id string) (*ObjectInfo, bool, error) {
 	obj, err := c.client.GetObject(
 		ctx,
-		c.bucket,
-		path.Join(folder, id),
-		minio.GetObjectOptions{},
+		&s3.GetObjectInput{
+			Bucket: aws.String(c.bucket),
+			Key:    aws.String(path.Join(folder, id)),
+		},
 	)
-	if err != nil {
+
+	var nsk *types.NoSuchKey
+
+	switch {
+	case err == nil:
+		// OK.
+	case errors.As(err, &nsk):
+		return nil, false, nil
+	default:
 		return nil, false, fmt.Errorf("getting object: %w", err)
 	}
 
-	info, err := obj.Stat()
-
-	switch merr, ok := errors.AsType[minio.ErrorResponse](err); {
-	case err == nil:
-		// OK.
-	case ok && merr.Code == minio.NoSuchKey:
-		// the object is serviced by a background goroutine, so it has to be
-		// closed on every path that does not hand it to the caller.
-		obj.Close() //nolint:errcheck,gosec // error provides no meaningful info
-
-		return nil, false, nil
-	default:
-		obj.Close() //nolint:errcheck,gosec // error provides no meaningful info
-
-		return nil, false, fmt.Errorf("describing object: %w", err)
-	}
-
 	return &ObjectInfo{
-		Body:        obj,
-		ETag:        info.ETag,
-		ContentType: info.ContentType,
+		Body: obj.Body,
+		// S3 quotes the entity tag; the value is served back as a bare
+		// ETag header and compared against If-None-Match as such.
+		ETag:        strings.Trim(aws.ToString(obj.ETag), `"`),
+		ContentType: aws.ToString(obj.ContentType),
 	}, true, nil
 }
 
@@ -141,13 +139,12 @@ func (c *Client) Retrieve(ctx context.Context, folder, id string) (*ObjectInfo, 
 func (c *Client) Copy(ctx context.Context, srcFolder, srcID, dstFolder, dstID string) error {
 	_, err := c.client.CopyObject(
 		ctx,
-		minio.CopyDestOptions{
-			Bucket: c.bucket,
-			Object: path.Join(dstFolder, dstID),
-		},
-		minio.CopySrcOptions{
-			Bucket: c.bucket,
-			Object: path.Join(srcFolder, srcID),
+		&s3.CopyObjectInput{
+			Bucket: aws.String(c.bucket),
+			Key:    aws.String(path.Join(dstFolder, dstID)),
+			// the source is named as a single "<bucket>/<key>" path and
+			// carries the key's own escaping.
+			CopySource: aws.String(url.PathEscape(path.Join(c.bucket, srcFolder, srcID))),
 		},
 	)
 	if err != nil {
@@ -161,11 +158,12 @@ func (c *Client) Copy(ctx context.Context, srcFolder, srcID, dstFolder, dstID st
 // is not an error, which is what lets a crashed upload heal: the row that
 // outlived it is removed on the next cleanup pass either way.
 func (c *Client) Delete(ctx context.Context, folder, id string) error {
-	err := c.client.RemoveObject(
+	_, err := c.client.DeleteObject(
 		ctx,
-		c.bucket,
-		path.Join(folder, id),
-		minio.RemoveObjectOptions{},
+		&s3.DeleteObjectInput{
+			Bucket: aws.String(c.bucket),
+			Key:    aws.String(path.Join(folder, id)),
+		},
 	)
 	if err != nil {
 		return fmt.Errorf("removing object: %w", err)

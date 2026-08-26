@@ -74,7 +74,12 @@
 :8081 {
 	import common
 
-	reverse_proxy minio:9001
+	# the console is served under its own prefix and references its assets
+	# by absolute path, so the bare root is redirected at it rather than
+	# rewritten away — stripping the prefix would break every asset URL.
+	redir / /rustfs/console/
+
+	reverse_proxy rustfs:9001
 }
 
 :8082 {

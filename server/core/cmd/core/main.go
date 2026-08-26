@@ -219,6 +219,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 		termCtx,
 		storage.Options{
 			URL:       buildinfo.Getenv("STORAGE_URL"),
+			Region:    buildinfo.Getenv("STORAGE_REGION"),
 			AccessKey: buildinfo.Getenv("STORAGE_ACCESS_KEY"),
 			SecretKey: buildinfo.Getenv("STORAGE_SECRET_KEY"),
 			Bucket:    buildinfo.Getenv("STORAGE_BUCKET"),

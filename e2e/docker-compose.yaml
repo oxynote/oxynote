@@ -108,7 +108,7 @@ services:
       - OXYNOTE_CORE_MEILISEARCH_MASTER_KEY=devmasterkey
       - OXYNOTE_CORE_VALKEY_NETWORK=tcp
       - OXYNOTE_CORE_VALKEY_ADDRESS=valkey:6379
-      - OXYNOTE_CORE_STORAGE_URL=http://minio:9000
+      - OXYNOTE_CORE_STORAGE_URL=http://rustfs:9000
       - OXYNOTE_CORE_STORAGE_ACCESS_KEY=sparta
       - OXYNOTE_CORE_STORAGE_SECRET_KEY=chad_warrior
       - OXYNOTE_CORE_STORAGE_BUCKET=e2e
@@ -133,7 +133,7 @@ services:
         condition: service_healthy
       meilisearch:
         condition: service_healthy
-      minio:
+      rustfs:
         condition: service_healthy
 
   postgres:
@@ -167,14 +167,15 @@ services:
       timeout: 5s
       retries: 20
 
-  minio:
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
-    command: server /data
+  rustfs:
+    image: rustfs/rustfs:1.0.0-rc.3
     environment:
-      - MINIO_ROOT_USER=sparta
-      - MINIO_ROOT_PASSWORD=chad_warrior
+      - RUSTFS_VOLUMES=/data
+      - RUSTFS_ADDRESS=0.0.0.0:9000
+      - RUSTFS_ACCESS_KEY=sparta
+      - RUSTFS_SECRET_KEY=chad_warrior
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/health"]
       interval: 5s
       timeout: 5s
       retries: 20

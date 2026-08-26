@@ -1,7 +1,6 @@
 package storage
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -69,33 +68,42 @@ func Test_NewClient(t *testing.T) {
 
 func Test_setupClient(t *testing.T) {
 	cc := map[string]struct {
-		Fake    *fakeS3
-		URL     string
-		Created bool
-		Err     error
+		Fake       *fakeS3
+		URL        string
+		Region     string
+		SignRegion string
+		Created    bool
+		Err        error
 	}{
 		"Invalid URL": {
 			URL: "://invalid",
 			Err: assert.AnError,
 		},
-		"Error returned by minio.New": {
+		"URL without a host": {
 			URL: "http://",
 			Err: assert.AnError,
 		},
-		"Error returned by BucketExists": {
+		"Error returned by HeadBucket": {
 			Fake: &fakeS3{bucketExists: true, failBucket: true},
 			Err:  assert.AnError,
 		},
-		"Error returned by MakeBucket": {
+		"Error returned by CreateBucket": {
 			Fake: &fakeS3{failMakeBucket: true},
 			Err:  assert.AnError,
 		},
 		"Bucket created when missing": {
-			Fake:    &fakeS3{},
-			Created: true,
+			Fake:       &fakeS3{},
+			Created:    true,
+			SignRegion: "us-east-1",
 		},
 		"Existing bucket": {
-			Fake: &fakeS3{bucketExists: true},
+			Fake:       &fakeS3{bucketExists: true},
+			SignRegion: "us-east-1",
+		},
+		"Configured region signs requests": {
+			Fake:       &fakeS3{bucketExists: true},
+			Region:     "eu-central-1",
+			SignRegion: "eu-central-1",
 		},
 	}
 
@@ -106,6 +114,7 @@ func Test_setupClient(t *testing.T) {
 			opts := Options{
 				Bucket:    "test-bucket",
 				URL:       c.URL,
+				Region:    c.Region,
 				AccessKey: "access-key",
 				SecretKey: "secret-key",
 			}
@@ -114,14 +123,15 @@ func Test_setupClient(t *testing.T) {
 				opts.URL = newFakeS3Server(t, c.Fake)
 			}
 
-			mc, err := setupClient(context.Background(), opts)
+			sc, err := setupClient(context.Background(), opts)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {
 				return
 			}
 
-			require.NotNil(t, mc)
+			require.NotNil(t, sc)
+			assert.Contains(t, c.Fake.authorization, "/"+c.SignRegion+"/s3/aws4_request")
 
 			if c.Created {
 				assert.True(t, c.Fake.bucketExists)
@@ -160,13 +170,13 @@ func newFakeS3Server(t *testing.T, f *fakeS3) string {
 }
 
 // fakeS3 is a minimal in-memory S3 implementation covering only the
-// requests the minio client performs for the storage package: bucket
-// location lookup, bucket creation, object upload, object stat,
-// object retrieval and object removal.
+// requests the storage package performs: bucket existence probing,
+// bucket creation, object upload, object retrieval, server-side copy
+// and object removal.
 type fakeS3 struct {
 	mu sync.Mutex
 
-	// bucketExists indicates whether the bucket location lookup
+	// bucketExists indicates whether the bucket existence probe
 	// should report the bucket as present.
 	bucketExists bool
 
@@ -175,6 +185,10 @@ type fakeS3 struct {
 
 	// contentTypes maps completed object keys to their content type.
 	contentTypes map[string]string
+
+	// authorization records the Authorization header of the last request,
+	// whose credential scope carries the region requests were signed for.
+	authorization string
 
 	// failBucket forces the bucket existence probe to fail.
 	failBucket bool
@@ -185,8 +199,8 @@ type fakeS3 struct {
 	// failUpload forces object uploads to fail.
 	failUpload bool
 
-	// failStat forces object stat requests to fail.
-	failStat bool
+	// failGet forces object retrieval to fail.
+	failGet bool
 
 	// failDelete forces object removal to fail.
 	failDelete bool
@@ -195,7 +209,7 @@ type fakeS3 struct {
 	failCopy bool
 }
 
-// ServeHTTP dispatches the S3 REST requests issued by the minio client.
+// ServeHTTP dispatches the S3 REST requests issued by the client.
 func (f *fakeS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -210,6 +224,8 @@ func (f *fakeS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.contentTypes = make(map[string]string)
 	}
 
+	f.authorization = r.Header.Get("Authorization")
+
 	segments := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/"), "/", 2)
 
 	var key string
@@ -218,11 +234,7 @@ func (f *fakeS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		key = segments[1]
 	}
 
-	query := r.URL.Query()
-
 	switch {
-	case key == "" && r.Method == http.MethodGet && query.Has("location"):
-		f.handleLocation(w)
 	case key == "" && r.Method == http.MethodHead:
 		f.handleHeadBucket(w)
 	case key == "" && r.Method == http.MethodPut:
@@ -231,8 +243,6 @@ func (f *fakeS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.handleCopy(w, r, key)
 	case r.Method == http.MethodPut:
 		f.handlePut(w, r, key)
-	case r.Method == http.MethodHead:
-		f.handleStat(w, key)
 	case r.Method == http.MethodGet:
 		f.handleGet(w, key)
 	case r.Method == http.MethodDelete:
@@ -240,18 +250,6 @@ func (f *fakeS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		w.WriteHeader(http.StatusNotImplemented)
 	}
-}
-
-// handleLocation serves the bucket location lookup that backs the
-// minio client's BucketExists call.
-func (f *fakeS3) handleLocation(w http.ResponseWriter) {
-	if !f.bucketExists {
-		writeS3Error(w, http.StatusNotFound, "NoSuchBucket")
-
-		return
-	}
-
-	fmt.Fprint(w, `<?xml version="1.0"?><LocationConstraint></LocationConstraint>`) //nolint:errcheck // test server response errors are irrelevant
 }
 
 // handleHeadBucket serves the bucket existence probe.
@@ -293,34 +291,28 @@ func (f *fakeS3) handlePut(w http.ResponseWriter, r *http.Request, key string) {
 		return
 	}
 
-	f.objects[key] = readS3Body(r)
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeS3Error(w, http.StatusBadRequest, "IncompleteBody")
+
+		return
+	}
+
+	f.objects[key] = data
 	f.contentTypes[key] = r.Header.Get("Content-Type")
 
 	w.Header().Set("ETag", `"test-etag"`)
 	w.WriteHeader(http.StatusOK)
 }
 
-// handleStat serves object metadata requests.
-func (f *fakeS3) handleStat(w http.ResponseWriter, key string) {
-	if f.failStat {
-		w.WriteHeader(http.StatusForbidden)
-
-		return
-	}
-
-	data, ok := f.objects[key]
-	if !ok {
-		w.WriteHeader(http.StatusNotFound)
-
-		return
-	}
-
-	writeS3ObjectHeaders(w, data, f.contentTypes[key])
-	w.WriteHeader(http.StatusOK)
-}
-
 // handleGet serves object data requests.
 func (f *fakeS3) handleGet(w http.ResponseWriter, key string) {
+	if f.failGet {
+		writeS3Error(w, http.StatusForbidden, "AccessDenied")
+
+		return
+	}
+
 	data, ok := f.objects[key]
 	if !ok {
 		writeS3Error(w, http.StatusNotFound, "NoSuchKey")
@@ -380,8 +372,8 @@ func (f *fakeS3) handleCopy(w http.ResponseWriter, r *http.Request, key string) 
 	)
 }
 
-// writeS3ObjectHeaders writes the object metadata headers the minio
-// client requires to build stat results.
+// writeS3ObjectHeaders writes the object metadata headers the client
+// reads back off a retrieval.
 func writeS3ObjectHeaders(w http.ResponseWriter, data []byte, contentType string) {
 	w.Header().Set("ETag", `"test-etag"`)
 	w.Header().Set("Content-Type", contentType)
@@ -398,53 +390,4 @@ func writeS3Error(w http.ResponseWriter, status int, code string) {
 		code,
 		code,
 	)
-}
-
-// readS3Body reads a request body, decoding the aws-chunked streaming
-// signature framing the minio client uses for unknown-size uploads.
-// Each frame is a "<hex size>;chunk-signature=<sig>" header line
-// followed by the payload, both CRLF-terminated; a zero-size frame
-// ends the stream.
-func readS3Body(r *http.Request) []byte {
-	raw, err := io.ReadAll(r.Body)
-	if err != nil {
-		return nil
-	}
-
-	if !strings.HasPrefix(r.Header.Get("X-Amz-Content-Sha256"), "STREAMING-") {
-		return raw
-	}
-
-	var out []byte
-
-	for {
-		idx := bytes.Index(raw, []byte("\r\n"))
-		if idx < 0 {
-			return out
-		}
-
-		header := string(raw[:idx])
-		raw = raw[idx+2:]
-
-		if semi := strings.Index(header, ";"); semi >= 0 {
-			header = header[:semi]
-		}
-
-		length, err := parseHexLength(header)
-		if err != nil || length == 0 {
-			return out
-		}
-
-		out = append(out, raw[:length]...)
-		raw = raw[length+2:]
-	}
-}
-
-// parseHexLength parses a hexadecimal chunk length.
-func parseHexLength(val string) (int, error) {
-	var length int
-
-	_, err := fmt.Sscanf(val, "%x", &length)
-
-	return length, err
 }

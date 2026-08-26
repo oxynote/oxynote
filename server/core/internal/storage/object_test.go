@@ -102,18 +102,12 @@ func Test_Client_Upload(t *testing.T) {
 
 func Test_Client_Retrieve(t *testing.T) {
 	cc := map[string]struct {
-		Fake   *fakeS3
-		Bucket string
-		Found  bool
-		Err    error
+		Fake  *fakeS3
+		Found bool
+		Err   error
 	}{
 		"Error returned by GetObject": {
-			Fake:   &fakeS3{},
-			Bucket: "..",
-			Err:    assert.AnError,
-		},
-		"Error returned by Stat": {
-			Fake: &fakeS3{failStat: true},
+			Fake: &fakeS3{failGet: true},
 			Err:  assert.AnError,
 		},
 		"Object not found": {
@@ -133,10 +127,6 @@ func Test_Client_Retrieve(t *testing.T) {
 			t.Parallel()
 
 			client := prepClient(t, c.Fake)
-
-			if c.Bucket != "" {
-				client.bucket = c.Bucket
-			}
 
 			info, found, err := client.Retrieve(context.Background(), "folder", "object-id")
 			testutil.AssertEqualError(t, c.Err, err)

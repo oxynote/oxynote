@@ -11,7 +11,7 @@ infrastructure, and the non-Go services.
 
 `server/` is the backend half of the Oxynote collaborative documentation product. Paths below are relative to the repository root; three buildable components, all orchestrated through `docker-compose`:
 
-- `server/core/` — Go module `github.com/oxynote/oxynote/server/core`. One binary: `cmd/core` (`oxynote-core`) — main API server. Listens on `:8080`. Exposes `/api/...` (auth-required), `/api/apps/...` (public, sessionless third-party callbacks), and `/api/x/...` (internal-only, no auth; the reverse proxy is expected to firewall this). Owns Postgres, Meilisearch, Valkey (Redis), MinIO, the GitHub/Slack apps, the assistant, and the outbound data-source connections (`internal/datasource`).
+- `server/core/` — Go module `github.com/oxynote/oxynote/server/core`. One binary: `cmd/core` (`oxynote-core`) — main API server. Listens on `:8080`. Exposes `/api/...` (auth-required), `/api/apps/...` (public, sessionless third-party callbacks), and `/api/x/...` (internal-only, no auth; the reverse proxy is expected to firewall this). Owns Postgres, Meilisearch, Valkey (Redis), RustFS, the GitHub/Slack apps, the assistant, and the outbound data-source connections (`internal/datasource`).
 - `server/auth-realtime/` — `@oxynote/auth-realtime` package. TypeScript ES-module service that runs Better Auth (organization plugin) and a Hocuspocus (Yjs CRDT) server in a single Hono process on port `8081`. Forwards non-auth `/api/...` traffic to core (`OXYNOTE_AUTH_REALTIME_BACKEND_URL`).
 - `datagen/` — separate Go module `github.com/oxynote/oxynote/datagen`. Synthesises demo Postgres/MariaDB content, and serves a fake metrics endpoint for a Prometheus to scrape. The demo Prometheus data source no longer uses that endpoint: core synthesises those metrics itself (`server/core/internal/datasource/demo`), so nothing in the dev stack scrapes it.
 
@@ -60,7 +60,7 @@ Go dependencies are fetched into the module cache at build time (`make deps` run
 `docker/Caddyfile` is the entrypoint for all client traffic:
 
 - `:8080` — front door. `/core/*` is path-stripped and reverse-proxied to `core:8080`; `/auth-realtime/*` is path-stripped and reverse-proxied to `auth-realtime:8081` (Better Auth, Hocuspocus, the merge proxy — the service itself still serves `/api/...` and `/hocuspocus`); everything else goes to the web SSR container (`web:3000`).
-- `:8081` — MinIO console
+- `:8081` — RustFS console
 - `:8082` — changedetection.io
 - `:8083` — Grafana (direct, not via Caddy)
 
@@ -102,7 +102,7 @@ This is the model that's least obvious from a fresh read:
 
 ## External resource lifecycle (files, hooks)
 
-Uploaded images live in MinIO under `organizations/{org}/documents/{doc}/files/{blockUID}` — the file id **is** the image block's `uid` — and are tracked in `document_files`. Hooks hold external resources too (changedetection.io watchers, GitHub tracking). Both are reclaimed by sweeps, not by request handlers:
+Uploaded images live in RustFS under `organizations/{org}/documents/{doc}/files/{blockUID}` — the file id **is** the image block's `uid` — and are tracked in `document_files`. Hooks hold external resources too (changedetection.io watchers, GitHub tracking). Both are reclaimed by sweeps, not by request handlers:
 
 - **The row outlives its owner.** `document_files` and `document_hooks` reference documents, branches and organizations with `ON DELETE SET NULL`, so a deleted document — or an org deleted by Better Auth — leaves rows behind rather than destroying the only record of the external resource. `document_files.storage_key` stores the object key outright so it stays reachable once the FKs are gone.
 - **`internal/document/file/manager`** ticks every 5 minutes: it trims expired changelog snapshots, then reclaims files. A file is referenced if its id appears in any branch content of its document, any retained `document_branch_changelogs` snapshot, or any comment/reply — checked in SQL (`CheckDocumentFileReferenced`), so a spurious match only ever retains. Unreferenced files are stamped `unreferenced_at` and deleted a day later; rows with NULL FKs skip the wait; files younger than a day are never touched, which covers the gap between an upload and the first content persist that mentions it.

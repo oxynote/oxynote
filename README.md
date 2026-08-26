@@ -142,7 +142,7 @@ revoked in the app's settings.
 The dev stack exposes:
 
 - `8080` — front door (the app; APIs under `/auth-realtime` and `/core`)
-- `8081` — MinIO console
+- `8081` — RustFS console
 - `8082` — changedetection.io
 - `8083` — Grafana
 - `8084` — Mailpit (dev email inbox)
