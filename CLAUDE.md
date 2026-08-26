@@ -77,7 +77,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - `datagen/` — demo-data generator; separate Go module `github.com/oxynote/oxynote/datagen`. Demo/testing only.
 - `e2e/` — Playwright end-to-end suite (`@oxynote/e2e`, **pnpm**) plus the docker-compose stack it drives. Not shipped; it exercises the composed product through a real backend built from this repo. Details: [e2e/CLAUDE.md](e2e/CLAUDE.md).
 - `scripts/` — helpers the root Makefile calls. `run-quietly.sh` runs a build step with its output held back, replaying the log only if the step fails.
-- `docker/` — dev docker-compose stack, Caddyfile, `env/` (committed `*.example.env` templates; `make setup` copies them to the gitignored `*.local.env` files the compose stack reads, and `web.example.env` also to `web/.env` for the host dev server and electron builds), `demo/` (demo-data configs for mariadb/postgres/prometheus).
+- `docker/` — dev docker-compose stack, Caddyfile, `env/` (committed `*.example.env` templates; `make setup` copies them to the gitignored `*.local.env` files the compose stack reads, and `web.example.env` also to `web/.env` for the host dev server and electron builds), `demo/` (demo-data configs for mariadb/postgres).
 
 **One `.gitignore`, and it lives at the repository root.** Components do not carry their own — a rule for a nested directory is written with its path (`e2e/test-results/`, `web/coverage/`), so every exclusion in the repository is readable in one file. The exception is `web/packages/lezer-promql/`, which is a vendored upstream fork and keeps the ignore file it ships with.
 
@@ -93,7 +93,7 @@ make start     # build images + run the dev stack in the background
 make dev       # backend containers + web dev server on the host (hot reload, :3000)
 make stop      # stop the dev stack
 
-make lint      # fix lint/format/type issues in web, auth-realtime, core, e2e
+make lint      # fix lint/format/type issues in web, auth-realtime, core, datagen, e2e
 make check-lint # the same gates, verification only
 
 make e2e             # one-shot: build, run playwright, tear the e2e stack down

@@ -7,11 +7,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strconv"
 	"testing"
 
-	gogithub "github.com/google/go-github/v72/github"
+	gogithub "github.com/google/go-github/v88/github"
 	"github.com/oxynote/oxynote/server/core/pkg/cryptoutil"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
@@ -37,10 +36,17 @@ func pointManagerAt(t *testing.T, man *Manager, handler http.Handler) {
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 
-	base, err := url.Parse(srv.URL + "/")
+	base := srv.URL + "/"
+
+	// the base URL is fixed at construction, so the client is rebuilt
+	// around the original one's transport instead of being re-pointed.
+	client, err := gogithub.NewClient(
+		gogithub.WithHTTPClient(man.appClient.Client()),
+		gogithub.WithURLs(&base, &base),
+	)
 	require.NoError(t, err)
 
-	man.appClient.BaseURL = base
+	man.appClient = client
 }
 
 // newTestInstallationClient creates an InstallationClient talking to a test
@@ -51,12 +57,13 @@ func newTestInstallationClient(t *testing.T, user bool, handler http.Handler) *I
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 
-	client := gogithub.NewClient(srv.Client())
+	base := srv.URL + "/"
 
-	base, err := url.Parse(srv.URL + "/")
+	client, err := gogithub.NewClient(
+		gogithub.WithHTTPClient(srv.Client()),
+		gogithub.WithURLs(&base, &base),
+	)
 	require.NoError(t, err)
-
-	client.BaseURL = base
 
 	return &InstallationClient{
 		user:               user,

@@ -161,7 +161,7 @@ func newFakeS3Server(t *testing.T, f *fakeS3) string {
 
 // fakeS3 is a minimal in-memory S3 implementation covering only the
 // requests the minio client performs for the storage package: bucket
-// location lookup, bucket creation, multipart upload, object stat,
+// location lookup, bucket creation, object upload, object stat,
 // object retrieval and object removal.
 type fakeS3 struct {
 	mu sync.Mutex
@@ -176,16 +176,13 @@ type fakeS3 struct {
 	// contentTypes maps completed object keys to their content type.
 	contentTypes map[string]string
 
-	// parts accumulates uploaded multipart data per object key.
-	parts map[string][]byte
-
 	// failBucket forces the bucket existence probe to fail.
 	failBucket bool
 
 	// failMakeBucket forces bucket creation to fail.
 	failMakeBucket bool
 
-	// failUpload forces multipart upload initiation to fail.
+	// failUpload forces object uploads to fail.
 	failUpload bool
 
 	// failStat forces object stat requests to fail.
@@ -204,17 +201,13 @@ func (f *fakeS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer f.mu.Unlock()
 
 	// the maps are initialized independently: a fixture that seeds only
-	// objects still needs the other two.
+	// objects still needs the other one.
 	if f.objects == nil {
 		f.objects = make(map[string][]byte)
 	}
 
 	if f.contentTypes == nil {
 		f.contentTypes = make(map[string]string)
-	}
-
-	if f.parts == nil {
-		f.parts = make(map[string][]byte)
 	}
 
 	segments := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/"), "/", 2)
@@ -234,14 +227,10 @@ func (f *fakeS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.handleHeadBucket(w)
 	case key == "" && r.Method == http.MethodPut:
 		f.handleMakeBucket(w)
-	case r.Method == http.MethodPost && query.Has("uploads"):
-		f.handleInitiateUpload(w, r, key)
 	case r.Method == http.MethodPut && r.Header.Get("X-Amz-Copy-Source") != "":
 		f.handleCopy(w, r, key)
-	case r.Method == http.MethodPut && query.Get("uploadId") != "":
-		f.handleUploadPart(w, r, key)
-	case r.Method == http.MethodPost && query.Get("uploadId") != "":
-		f.handleCompleteUpload(w, key)
+	case r.Method == http.MethodPut:
+		f.handlePut(w, r, key)
 	case r.Method == http.MethodHead:
 		f.handleStat(w, key)
 	case r.Method == http.MethodGet:
@@ -295,44 +284,20 @@ func (f *fakeS3) handleMakeBucket(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// handleInitiateUpload serves multipart upload initiation, recording
-// the object's content type provided by the client.
-func (f *fakeS3) handleInitiateUpload(w http.ResponseWriter, r *http.Request, key string) {
+// handlePut stores an object uploaded through a single PUT request,
+// recording the object's content type provided by the client.
+func (f *fakeS3) handlePut(w http.ResponseWriter, r *http.Request, key string) {
 	if f.failUpload {
 		writeS3Error(w, http.StatusForbidden, "AccessDenied")
 
 		return
 	}
 
+	f.objects[key] = readS3Body(r)
 	f.contentTypes[key] = r.Header.Get("Content-Type")
 
-	fmt.Fprintf( //nolint:errcheck,gosec // test server response errors and input taint are irrelevant
-		w,
-		`<?xml version="1.0"?><InitiateMultipartUploadResult><Key>%s</Key><UploadId>test-upload</UploadId></InitiateMultipartUploadResult>`,
-		key,
-	)
-}
-
-// handleUploadPart accumulates a single multipart upload part.
-func (f *fakeS3) handleUploadPart(w http.ResponseWriter, r *http.Request, key string) {
-	f.parts[key] = append(f.parts[key], readS3Body(r)...)
-
-	w.Header().Set("ETag", `"part-etag"`)
+	w.Header().Set("ETag", `"test-etag"`)
 	w.WriteHeader(http.StatusOK)
-}
-
-// handleCompleteUpload finalizes a multipart upload by promoting the
-// accumulated parts to a stored object.
-func (f *fakeS3) handleCompleteUpload(w http.ResponseWriter, key string) {
-	f.objects[key] = f.parts[key]
-
-	delete(f.parts, key)
-
-	fmt.Fprintf( //nolint:errcheck,gosec // test server response errors and input taint are irrelevant
-		w,
-		`<?xml version="1.0"?><CompleteMultipartUploadResult><Bucket>test-bucket</Bucket><Key>%s</Key><ETag>"test-etag"</ETag></CompleteMultipartUploadResult>`,
-		key,
-	)
 }
 
 // handleStat serves object metadata requests.

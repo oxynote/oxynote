@@ -289,10 +289,9 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 	srv, err := server.NewServer(
 		log,
 		server.Options{
-			PublicURL:         buildinfo.Getenv("SERVER_PUBLIC_URL"),
-			DemoPrometheusURL: buildinfo.Getenv("SERVER_DEMO_PROMETHEUS_URL"),
-			Port:              _serverPort,
-			Origins:           origins,
+			PublicURL: buildinfo.Getenv("SERVER_PUBLIC_URL"),
+			Port:      _serverPort,
+			Origins:   origins,
 			Assistant: server.AssistantCapability{
 				Status: assistantStatus,
 				Model:  assistantOpts.Model,

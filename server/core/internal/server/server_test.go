@@ -155,11 +155,10 @@ func Test_NewServer(t *testing.T) {
 		srv, err := NewServer(
 			log,
 			Options{
-				PublicURL:         "http://test.com",
-				DemoPrometheusURL: "http://prom.test",
-				Port:              8080,
-				Origins:           []string{"http://localhost:3000"},
-				Auth:              AuthOptions{BetterAuthURL: "http://auth.test"},
+				PublicURL: "http://test.com",
+				Port:      8080,
+				Origins:   []string{"http://localhost:3000"},
+				Auth:      AuthOptions{BetterAuthURL: "http://auth.test"},
 				MCP: MCPOptions{
 					SessionURL:  "http://auth.test/api/internal/mcp/session",
 					ResourceURL: "http://test.com/core/api/mcp",

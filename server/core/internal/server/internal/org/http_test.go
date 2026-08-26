@@ -16,6 +16,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/apps/github"
 	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
+	"github.com/oxynote/oxynote/server/core/internal/datasource/demo"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
@@ -93,7 +94,6 @@ func Test_NewHandler(t *testing.T) {
 		webchangeClient,
 		searchJobs,
 		"loc",
-		"http://prom.test",
 	)
 	require.NotNil(t, hdl)
 	assert.NotNil(t, hdl.log)
@@ -103,7 +103,6 @@ func Test_NewHandler(t *testing.T) {
 	assert.Same(t, webchangeClient, hdl.webchangeClient)
 	assert.Same(t, searchJobs, hdl.searchJobs)
 	assert.Equal(t, "loc", hdl.logoLocation)
-	assert.Equal(t, "http://prom.test", hdl.demoPrometheusURL)
 }
 
 func Test_Handler_InitializeOrganization(t *testing.T) {
@@ -135,7 +134,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 
 			assert.Equal(t, "Demo", ff[0].Ds.Name)
 			assert.Equal(t, datasource.TypePrometheus, ff[0].Ds.Type)
-			assert.Equal(t, "http://prom.test", ff[0].Ds.URL)
+			assert.Equal(t, demo.URL, ff[0].Ds.URL)
 			assert.Equal(t, "org2", ff[0].Ds.OrganizationID)
 		}
 	}
@@ -188,7 +187,6 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 		Members    []string
 		MembersErr error
 		BeginErr   error
-		NoProm     bool
 		OmitID     bool
 		Checks     []check
 	}{
@@ -197,14 +195,6 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 			OmitID: true,
 			Checks: checks(
 				hasResp(http.StatusNotFound, `{"code":"general","message":"not found"}`),
-				wasInsertDocumentCalled(0),
-			),
-		},
-		"No demo Prometheus URL configured": {
-			Tx:     &TxMock{},
-			NoProm: true,
-			Checks: checks(
-				hasResp(http.StatusOK, ""),
 				wasInsertDataSourceCalled(0),
 				wasInsertDocumentCalled(0),
 			),
@@ -341,12 +331,6 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			promURL := "http://prom.test"
-
-			if c.NoProm {
-				promURL = ""
-			}
-
 			db := c.DB
 			if db == nil {
 				db = &DBMock{}
@@ -357,10 +341,9 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 			}
 
 			hdl := Handler{
-				log:               slog.New(slog.DiscardHandler),
-				db:                withTx(db, c.Tx, c.BeginErr),
-				searchJobs:        search.NewJobs(true),
-				demoPrometheusURL: promURL,
+				log:        slog.New(slog.DiscardHandler),
+				db:         withTx(db, c.Tx, c.BeginErr),
+				searchJobs: search.NewJobs(true),
 			}
 
 			req := httptest.NewRequest(http.MethodPost, "http://test.com/", http.NoBody)

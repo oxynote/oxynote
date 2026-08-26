@@ -12,6 +12,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/apps/github"
 	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
+	"github.com/oxynote/oxynote/server/core/internal/datasource/demo"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/search"
@@ -32,14 +33,13 @@ var ErrNoOrganizationMembers = errutil.New(http.StatusBadRequest, "organization.
 
 // Handler holds dependencies required for organization-related operations.
 type Handler struct {
-	log               *slog.Logger
-	db                DB
-	storer            Storer
-	githubMan         *github.Manager
-	webchangeClient   *webchange.Client
-	searchJobs        *search.Jobs
-	logoLocation      string
-	demoPrometheusURL string
+	log             *slog.Logger
+	db              DB
+	storer          Storer
+	githubMan       *github.Manager
+	webchangeClient *webchange.Client
+	searchJobs      *search.Jobs
+	logoLocation    string
 }
 
 // NewHandler creates a new handler instance with the provided logger and database.
@@ -51,17 +51,15 @@ func NewHandler(
 	webchangeClient *webchange.Client,
 	searchJobs *search.Jobs,
 	logoLocationFormat string,
-	demoPrometheusURL string,
 ) *Handler {
 	return &Handler{
-		log:               log,
-		db:                db,
-		storer:            storer,
-		githubMan:         githubMan,
-		webchangeClient:   webchangeClient,
-		searchJobs:        searchJobs,
-		logoLocation:      logoLocationFormat,
-		demoPrometheusURL: demoPrometheusURL,
+		log:             log,
+		db:              db,
+		storer:          storer,
+		githubMan:       githubMan,
+		webchangeClient: webchangeClient,
+		searchJobs:      searchJobs,
+		logoLocation:    logoLocationFormat,
 	}
 }
 
@@ -70,19 +68,6 @@ func (h *Handler) InitializeOrganization(w http.ResponseWriter, r *http.Request)
 	id, err := h.extractOrganizationParameter(r)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	if h.demoPrometheusURL == "" {
-		h.log.Warn("skipping initial demo data source insertion since no URL is configured")
-
-		httpserver.Respond(
-			h.log,
-			w,
-			nil,
-			http.StatusOK,
-		)
-
 		return
 	}
 
@@ -318,7 +303,7 @@ func (h *Handler) insertDemoDataSource(ctx context.Context, organizationID strin
 	ds := datasource.NewDataSource(datasource.CreateInput{
 		Type:        datasource.TypePrometheus,
 		Name:        "Demo",
-		URL:         h.demoPrometheusURL,
+		URL:         demo.URL,
 		Credentials: []byte(`{}`),
 	}, organizationID)
 

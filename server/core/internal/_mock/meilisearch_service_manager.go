@@ -84,6 +84,12 @@ var _ meilisearch.ServiceManager = &MeiliServiceManager{}
 //			DeleteKeyWithContextFunc: func(ctx context.Context, keyOrUID string) (bool, error) {
 //				panic("mock out the DeleteKeyWithContext method")
 //			},
+//			DeleteSearchRuleFunc: func(uid string) error {
+//				panic("mock out the DeleteSearchRule method")
+//			},
+//			DeleteSearchRuleWithContextFunc: func(ctx context.Context, uid string) error {
+//				panic("mock out the DeleteSearchRuleWithContext method")
+//			},
 //			DeleteTasksFunc: func(param *meilisearch.DeleteTasksQuery) (*meilisearch.TaskInfo, error) {
 //				panic("mock out the DeleteTasks method")
 //			},
@@ -168,14 +174,26 @@ var _ meilisearch.ServiceManager = &MeiliServiceManager{}
 //			GetRawIndexesWithContextFunc: func(ctx context.Context, param *meilisearch.IndexesQuery) (map[string]interface{}, error) {
 //				panic("mock out the GetRawIndexesWithContext method")
 //			},
-//			GetStatsFunc: func() (*meilisearch.Stats, error) {
+//			GetSearchRuleFunc: func(uid string) (*meilisearch.SearchRule, error) {
+//				panic("mock out the GetSearchRule method")
+//			},
+//			GetSearchRuleWithContextFunc: func(ctx context.Context, uid string) (*meilisearch.SearchRule, error) {
+//				panic("mock out the GetSearchRuleWithContext method")
+//			},
+//			GetStatsFunc: func(param *meilisearch.StatsParams) (*meilisearch.Stats, error) {
 //				panic("mock out the GetStats method")
 //			},
-//			GetStatsWithContextFunc: func(ctx context.Context) (*meilisearch.Stats, error) {
+//			GetStatsWithContextFunc: func(ctx context.Context, param *meilisearch.StatsParams) (*meilisearch.Stats, error) {
 //				panic("mock out the GetStatsWithContext method")
 //			},
 //			GetTaskFunc: func(taskUID int64) (*meilisearch.Task, error) {
 //				panic("mock out the GetTask method")
+//			},
+//			GetTaskDocumentsFunc: func(taskUID int64, dst interface{}) error {
+//				panic("mock out the GetTaskDocuments method")
+//			},
+//			GetTaskDocumentsWithContextFunc: func(ctx context.Context, taskUID int64, dst interface{}) error {
+//				panic("mock out the GetTaskDocumentsWithContext method")
 //			},
 //			GetTaskWithContextFunc: func(ctx context.Context, taskUID int64) (*meilisearch.Task, error) {
 //				panic("mock out the GetTaskWithContext method")
@@ -222,6 +240,12 @@ var _ meilisearch.ServiceManager = &MeiliServiceManager{}
 //			ListIndexesWithContextFunc: func(ctx context.Context, param *meilisearch.IndexesQuery) (*meilisearch.IndexesResults, error) {
 //				panic("mock out the ListIndexesWithContext method")
 //			},
+//			ListSearchRulesFunc: func(params *meilisearch.SearchRulesParams) (*meilisearch.SearchRulesResults, error) {
+//				panic("mock out the ListSearchRules method")
+//			},
+//			ListSearchRulesWithContextFunc: func(ctx context.Context, params *meilisearch.SearchRulesParams) (*meilisearch.SearchRulesResults, error) {
+//				panic("mock out the ListSearchRulesWithContext method")
+//			},
 //			ListWebhooksFunc: func() (*meilisearch.WebhookResults, error) {
 //				panic("mock out the ListWebhooks method")
 //			},
@@ -239,6 +263,12 @@ var _ meilisearch.ServiceManager = &MeiliServiceManager{}
 //			},
 //			ResetChatWorkspaceWithContextFunc: func(ctx context.Context, uid string) (*meilisearch.ChatWorkspaceSettings, error) {
 //				panic("mock out the ResetChatWorkspaceWithContext method")
+//			},
+//			SearchRulesManagerFunc: func() meilisearch.SearchRulesManager {
+//				panic("mock out the SearchRulesManager method")
+//			},
+//			SearchRulesReaderFunc: func() meilisearch.SearchRulesReader {
+//				panic("mock out the SearchRulesReader method")
 //			},
 //			ServiceReaderFunc: func() meilisearch.ServiceReader {
 //				panic("mock out the ServiceReader method")
@@ -272,6 +302,12 @@ var _ meilisearch.ServiceManager = &MeiliServiceManager{}
 //			},
 //			UpdateNetworkWithContextFunc: func(ctx context.Context, params *meilisearch.UpdateNetworkRequest) (any, error) {
 //				panic("mock out the UpdateNetworkWithContext method")
+//			},
+//			UpdateSearchRuleFunc: func(uid string, params *meilisearch.SearchRulesRequest) (*meilisearch.SearchRule, error) {
+//				panic("mock out the UpdateSearchRule method")
+//			},
+//			UpdateSearchRuleWithContextFunc: func(ctx context.Context, uid string, params *meilisearch.SearchRulesRequest) (*meilisearch.SearchRule, error) {
+//				panic("mock out the UpdateSearchRuleWithContext method")
 //			},
 //			UpdateWebhookFunc: func(uuid string, params *meilisearch.UpdateWebhookRequest) (*meilisearch.Webhook, error) {
 //				panic("mock out the UpdateWebhook method")
@@ -367,6 +403,12 @@ type MeiliServiceManager struct {
 	// DeleteKeyWithContextFunc mocks the DeleteKeyWithContext method.
 	DeleteKeyWithContextFunc func(ctx context.Context, keyOrUID string) (bool, error)
 
+	// DeleteSearchRuleFunc mocks the DeleteSearchRule method.
+	DeleteSearchRuleFunc func(uid string) error
+
+	// DeleteSearchRuleWithContextFunc mocks the DeleteSearchRuleWithContext method.
+	DeleteSearchRuleWithContextFunc func(ctx context.Context, uid string) error
+
 	// DeleteTasksFunc mocks the DeleteTasks method.
 	DeleteTasksFunc func(param *meilisearch.DeleteTasksQuery) (*meilisearch.TaskInfo, error)
 
@@ -451,14 +493,26 @@ type MeiliServiceManager struct {
 	// GetRawIndexesWithContextFunc mocks the GetRawIndexesWithContext method.
 	GetRawIndexesWithContextFunc func(ctx context.Context, param *meilisearch.IndexesQuery) (map[string]interface{}, error)
 
+	// GetSearchRuleFunc mocks the GetSearchRule method.
+	GetSearchRuleFunc func(uid string) (*meilisearch.SearchRule, error)
+
+	// GetSearchRuleWithContextFunc mocks the GetSearchRuleWithContext method.
+	GetSearchRuleWithContextFunc func(ctx context.Context, uid string) (*meilisearch.SearchRule, error)
+
 	// GetStatsFunc mocks the GetStats method.
-	GetStatsFunc func() (*meilisearch.Stats, error)
+	GetStatsFunc func(param *meilisearch.StatsParams) (*meilisearch.Stats, error)
 
 	// GetStatsWithContextFunc mocks the GetStatsWithContext method.
-	GetStatsWithContextFunc func(ctx context.Context) (*meilisearch.Stats, error)
+	GetStatsWithContextFunc func(ctx context.Context, param *meilisearch.StatsParams) (*meilisearch.Stats, error)
 
 	// GetTaskFunc mocks the GetTask method.
 	GetTaskFunc func(taskUID int64) (*meilisearch.Task, error)
+
+	// GetTaskDocumentsFunc mocks the GetTaskDocuments method.
+	GetTaskDocumentsFunc func(taskUID int64, dst interface{}) error
+
+	// GetTaskDocumentsWithContextFunc mocks the GetTaskDocumentsWithContext method.
+	GetTaskDocumentsWithContextFunc func(ctx context.Context, taskUID int64, dst interface{}) error
 
 	// GetTaskWithContextFunc mocks the GetTaskWithContext method.
 	GetTaskWithContextFunc func(ctx context.Context, taskUID int64) (*meilisearch.Task, error)
@@ -505,6 +559,12 @@ type MeiliServiceManager struct {
 	// ListIndexesWithContextFunc mocks the ListIndexesWithContext method.
 	ListIndexesWithContextFunc func(ctx context.Context, param *meilisearch.IndexesQuery) (*meilisearch.IndexesResults, error)
 
+	// ListSearchRulesFunc mocks the ListSearchRules method.
+	ListSearchRulesFunc func(params *meilisearch.SearchRulesParams) (*meilisearch.SearchRulesResults, error)
+
+	// ListSearchRulesWithContextFunc mocks the ListSearchRulesWithContext method.
+	ListSearchRulesWithContextFunc func(ctx context.Context, params *meilisearch.SearchRulesParams) (*meilisearch.SearchRulesResults, error)
+
 	// ListWebhooksFunc mocks the ListWebhooks method.
 	ListWebhooksFunc func() (*meilisearch.WebhookResults, error)
 
@@ -522,6 +582,12 @@ type MeiliServiceManager struct {
 
 	// ResetChatWorkspaceWithContextFunc mocks the ResetChatWorkspaceWithContext method.
 	ResetChatWorkspaceWithContextFunc func(ctx context.Context, uid string) (*meilisearch.ChatWorkspaceSettings, error)
+
+	// SearchRulesManagerFunc mocks the SearchRulesManager method.
+	SearchRulesManagerFunc func() meilisearch.SearchRulesManager
+
+	// SearchRulesReaderFunc mocks the SearchRulesReader method.
+	SearchRulesReaderFunc func() meilisearch.SearchRulesReader
 
 	// ServiceReaderFunc mocks the ServiceReader method.
 	ServiceReaderFunc func() meilisearch.ServiceReader
@@ -555,6 +621,12 @@ type MeiliServiceManager struct {
 
 	// UpdateNetworkWithContextFunc mocks the UpdateNetworkWithContext method.
 	UpdateNetworkWithContextFunc func(ctx context.Context, params *meilisearch.UpdateNetworkRequest) (any, error)
+
+	// UpdateSearchRuleFunc mocks the UpdateSearchRule method.
+	UpdateSearchRuleFunc func(uid string, params *meilisearch.SearchRulesRequest) (*meilisearch.SearchRule, error)
+
+	// UpdateSearchRuleWithContextFunc mocks the UpdateSearchRuleWithContext method.
+	UpdateSearchRuleWithContextFunc func(ctx context.Context, uid string, params *meilisearch.SearchRulesRequest) (*meilisearch.SearchRule, error)
 
 	// UpdateWebhookFunc mocks the UpdateWebhook method.
 	UpdateWebhookFunc func(uuid string, params *meilisearch.UpdateWebhookRequest) (*meilisearch.Webhook, error)
@@ -694,6 +766,18 @@ type MeiliServiceManager struct {
 			Ctx context.Context
 			// KeyOrUID is the keyOrUID argument value.
 			KeyOrUID string
+		}
+		// DeleteSearchRule holds details about calls to the DeleteSearchRule method.
+		DeleteSearchRule []struct {
+			// UID is the uid argument value.
+			UID string
+		}
+		// DeleteSearchRuleWithContext holds details about calls to the DeleteSearchRuleWithContext method.
+		DeleteSearchRuleWithContext []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// UID is the uid argument value.
+			UID string
 		}
 		// DeleteTasks holds details about calls to the DeleteTasks method.
 		DeleteTasks []struct {
@@ -859,18 +943,50 @@ type MeiliServiceManager struct {
 			// Param is the param argument value.
 			Param *meilisearch.IndexesQuery
 		}
+		// GetSearchRule holds details about calls to the GetSearchRule method.
+		GetSearchRule []struct {
+			// UID is the uid argument value.
+			UID string
+		}
+		// GetSearchRuleWithContext holds details about calls to the GetSearchRuleWithContext method.
+		GetSearchRuleWithContext []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// UID is the uid argument value.
+			UID string
+		}
 		// GetStats holds details about calls to the GetStats method.
 		GetStats []struct {
+			// Param is the param argument value.
+			Param *meilisearch.StatsParams
 		}
 		// GetStatsWithContext holds details about calls to the GetStatsWithContext method.
 		GetStatsWithContext []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
+			// Param is the param argument value.
+			Param *meilisearch.StatsParams
 		}
 		// GetTask holds details about calls to the GetTask method.
 		GetTask []struct {
 			// TaskUID is the taskUID argument value.
 			TaskUID int64
+		}
+		// GetTaskDocuments holds details about calls to the GetTaskDocuments method.
+		GetTaskDocuments []struct {
+			// TaskUID is the taskUID argument value.
+			TaskUID int64
+			// Dst is the dst argument value.
+			Dst interface{}
+		}
+		// GetTaskDocumentsWithContext holds details about calls to the GetTaskDocumentsWithContext method.
+		GetTaskDocumentsWithContext []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// TaskUID is the taskUID argument value.
+			TaskUID int64
+			// Dst is the dst argument value.
+			Dst interface{}
 		}
 		// GetTaskWithContext holds details about calls to the GetTaskWithContext method.
 		GetTaskWithContext []struct {
@@ -949,6 +1065,18 @@ type MeiliServiceManager struct {
 			// Param is the param argument value.
 			Param *meilisearch.IndexesQuery
 		}
+		// ListSearchRules holds details about calls to the ListSearchRules method.
+		ListSearchRules []struct {
+			// Params is the params argument value.
+			Params *meilisearch.SearchRulesParams
+		}
+		// ListSearchRulesWithContext holds details about calls to the ListSearchRulesWithContext method.
+		ListSearchRulesWithContext []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Params is the params argument value.
+			Params *meilisearch.SearchRulesParams
+		}
 		// ListWebhooks holds details about calls to the ListWebhooks method.
 		ListWebhooks []struct {
 		}
@@ -980,6 +1108,12 @@ type MeiliServiceManager struct {
 			Ctx context.Context
 			// UID is the uid argument value.
 			UID string
+		}
+		// SearchRulesManager holds details about calls to the SearchRulesManager method.
+		SearchRulesManager []struct {
+		}
+		// SearchRulesReader holds details about calls to the SearchRulesReader method.
+		SearchRulesReader []struct {
 		}
 		// ServiceReader holds details about calls to the ServiceReader method.
 		ServiceReader []struct {
@@ -1045,6 +1179,22 @@ type MeiliServiceManager struct {
 			Ctx context.Context
 			// Params is the params argument value.
 			Params *meilisearch.UpdateNetworkRequest
+		}
+		// UpdateSearchRule holds details about calls to the UpdateSearchRule method.
+		UpdateSearchRule []struct {
+			// UID is the uid argument value.
+			UID string
+			// Params is the params argument value.
+			Params *meilisearch.SearchRulesRequest
+		}
+		// UpdateSearchRuleWithContext holds details about calls to the UpdateSearchRuleWithContext method.
+		UpdateSearchRuleWithContext []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// UID is the uid argument value.
+			UID string
+			// Params is the params argument value.
+			Params *meilisearch.SearchRulesRequest
 		}
 		// UpdateWebhook holds details about calls to the UpdateWebhook method.
 		UpdateWebhook []struct {
@@ -1114,6 +1264,8 @@ type MeiliServiceManager struct {
 	lockDeleteIndexWithContext              sync.RWMutex
 	lockDeleteKey                           sync.RWMutex
 	lockDeleteKeyWithContext                sync.RWMutex
+	lockDeleteSearchRule                    sync.RWMutex
+	lockDeleteSearchRuleWithContext         sync.RWMutex
 	lockDeleteTasks                         sync.RWMutex
 	lockDeleteTasksWithContext              sync.RWMutex
 	lockDeleteWebhook                       sync.RWMutex
@@ -1142,9 +1294,13 @@ type MeiliServiceManager struct {
 	lockGetRawIndexWithContext              sync.RWMutex
 	lockGetRawIndexes                       sync.RWMutex
 	lockGetRawIndexesWithContext            sync.RWMutex
+	lockGetSearchRule                       sync.RWMutex
+	lockGetSearchRuleWithContext            sync.RWMutex
 	lockGetStats                            sync.RWMutex
 	lockGetStatsWithContext                 sync.RWMutex
 	lockGetTask                             sync.RWMutex
+	lockGetTaskDocuments                    sync.RWMutex
+	lockGetTaskDocumentsWithContext         sync.RWMutex
 	lockGetTaskWithContext                  sync.RWMutex
 	lockGetTasks                            sync.RWMutex
 	lockGetTasksWithContext                 sync.RWMutex
@@ -1160,12 +1316,16 @@ type MeiliServiceManager struct {
 	lockListChatWorkspacesWithContext       sync.RWMutex
 	lockListIndexes                         sync.RWMutex
 	lockListIndexesWithContext              sync.RWMutex
+	lockListSearchRules                     sync.RWMutex
+	lockListSearchRulesWithContext          sync.RWMutex
 	lockListWebhooks                        sync.RWMutex
 	lockListWebhooksWithContext             sync.RWMutex
 	lockMultiSearch                         sync.RWMutex
 	lockMultiSearchWithContext              sync.RWMutex
 	lockResetChatWorkspace                  sync.RWMutex
 	lockResetChatWorkspaceWithContext       sync.RWMutex
+	lockSearchRulesManager                  sync.RWMutex
+	lockSearchRulesReader                   sync.RWMutex
 	lockServiceReader                       sync.RWMutex
 	lockSwapIndexes                         sync.RWMutex
 	lockSwapIndexesWithContext              sync.RWMutex
@@ -1177,6 +1337,8 @@ type MeiliServiceManager struct {
 	lockUpdateKeyWithContext                sync.RWMutex
 	lockUpdateNetwork                       sync.RWMutex
 	lockUpdateNetworkWithContext            sync.RWMutex
+	lockUpdateSearchRule                    sync.RWMutex
+	lockUpdateSearchRuleWithContext         sync.RWMutex
 	lockUpdateWebhook                       sync.RWMutex
 	lockUpdateWebhookWithContext            sync.RWMutex
 	lockVersion                             sync.RWMutex
@@ -1945,6 +2107,80 @@ func (mock *MeiliServiceManager) DeleteKeyWithContextCalls() []struct {
 	mock.lockDeleteKeyWithContext.RLock()
 	calls = mock.calls.DeleteKeyWithContext
 	mock.lockDeleteKeyWithContext.RUnlock()
+	return calls
+}
+
+// DeleteSearchRule calls DeleteSearchRuleFunc.
+func (mock *MeiliServiceManager) DeleteSearchRule(uid string) error {
+	callInfo := struct {
+		UID string
+	}{
+		UID: uid,
+	}
+	mock.lockDeleteSearchRule.Lock()
+	mock.calls.DeleteSearchRule = append(mock.calls.DeleteSearchRule, callInfo)
+	mock.lockDeleteSearchRule.Unlock()
+	if mock.DeleteSearchRuleFunc == nil {
+		var (
+			errOut error
+		)
+		return errOut
+	}
+	return mock.DeleteSearchRuleFunc(uid)
+}
+
+// DeleteSearchRuleCalls gets all the calls that were made to DeleteSearchRule.
+// Check the length with:
+//
+//	len(mockedServiceManager.DeleteSearchRuleCalls())
+func (mock *MeiliServiceManager) DeleteSearchRuleCalls() []struct {
+	UID string
+} {
+	var calls []struct {
+		UID string
+	}
+	mock.lockDeleteSearchRule.RLock()
+	calls = mock.calls.DeleteSearchRule
+	mock.lockDeleteSearchRule.RUnlock()
+	return calls
+}
+
+// DeleteSearchRuleWithContext calls DeleteSearchRuleWithContextFunc.
+func (mock *MeiliServiceManager) DeleteSearchRuleWithContext(ctx context.Context, uid string) error {
+	callInfo := struct {
+		Ctx context.Context
+		UID string
+	}{
+		Ctx: ctx,
+		UID: uid,
+	}
+	mock.lockDeleteSearchRuleWithContext.Lock()
+	mock.calls.DeleteSearchRuleWithContext = append(mock.calls.DeleteSearchRuleWithContext, callInfo)
+	mock.lockDeleteSearchRuleWithContext.Unlock()
+	if mock.DeleteSearchRuleWithContextFunc == nil {
+		var (
+			errOut error
+		)
+		return errOut
+	}
+	return mock.DeleteSearchRuleWithContextFunc(ctx, uid)
+}
+
+// DeleteSearchRuleWithContextCalls gets all the calls that were made to DeleteSearchRuleWithContext.
+// Check the length with:
+//
+//	len(mockedServiceManager.DeleteSearchRuleWithContextCalls())
+func (mock *MeiliServiceManager) DeleteSearchRuleWithContextCalls() []struct {
+	Ctx context.Context
+	UID string
+} {
+	var calls []struct {
+		Ctx context.Context
+		UID string
+	}
+	mock.lockDeleteSearchRuleWithContext.RLock()
+	calls = mock.calls.DeleteSearchRuleWithContext
+	mock.lockDeleteSearchRuleWithContext.RUnlock()
 	return calls
 }
 
@@ -2999,10 +3235,89 @@ func (mock *MeiliServiceManager) GetRawIndexesWithContextCalls() []struct {
 	return calls
 }
 
-// GetStats calls GetStatsFunc.
-func (mock *MeiliServiceManager) GetStats() (*meilisearch.Stats, error) {
+// GetSearchRule calls GetSearchRuleFunc.
+func (mock *MeiliServiceManager) GetSearchRule(uid string) (*meilisearch.SearchRule, error) {
 	callInfo := struct {
-	}{}
+		UID string
+	}{
+		UID: uid,
+	}
+	mock.lockGetSearchRule.Lock()
+	mock.calls.GetSearchRule = append(mock.calls.GetSearchRule, callInfo)
+	mock.lockGetSearchRule.Unlock()
+	if mock.GetSearchRuleFunc == nil {
+		var (
+			searchRuleOut *meilisearch.SearchRule
+			errOut        error
+		)
+		return searchRuleOut, errOut
+	}
+	return mock.GetSearchRuleFunc(uid)
+}
+
+// GetSearchRuleCalls gets all the calls that were made to GetSearchRule.
+// Check the length with:
+//
+//	len(mockedServiceManager.GetSearchRuleCalls())
+func (mock *MeiliServiceManager) GetSearchRuleCalls() []struct {
+	UID string
+} {
+	var calls []struct {
+		UID string
+	}
+	mock.lockGetSearchRule.RLock()
+	calls = mock.calls.GetSearchRule
+	mock.lockGetSearchRule.RUnlock()
+	return calls
+}
+
+// GetSearchRuleWithContext calls GetSearchRuleWithContextFunc.
+func (mock *MeiliServiceManager) GetSearchRuleWithContext(ctx context.Context, uid string) (*meilisearch.SearchRule, error) {
+	callInfo := struct {
+		Ctx context.Context
+		UID string
+	}{
+		Ctx: ctx,
+		UID: uid,
+	}
+	mock.lockGetSearchRuleWithContext.Lock()
+	mock.calls.GetSearchRuleWithContext = append(mock.calls.GetSearchRuleWithContext, callInfo)
+	mock.lockGetSearchRuleWithContext.Unlock()
+	if mock.GetSearchRuleWithContextFunc == nil {
+		var (
+			searchRuleOut *meilisearch.SearchRule
+			errOut        error
+		)
+		return searchRuleOut, errOut
+	}
+	return mock.GetSearchRuleWithContextFunc(ctx, uid)
+}
+
+// GetSearchRuleWithContextCalls gets all the calls that were made to GetSearchRuleWithContext.
+// Check the length with:
+//
+//	len(mockedServiceManager.GetSearchRuleWithContextCalls())
+func (mock *MeiliServiceManager) GetSearchRuleWithContextCalls() []struct {
+	Ctx context.Context
+	UID string
+} {
+	var calls []struct {
+		Ctx context.Context
+		UID string
+	}
+	mock.lockGetSearchRuleWithContext.RLock()
+	calls = mock.calls.GetSearchRuleWithContext
+	mock.lockGetSearchRuleWithContext.RUnlock()
+	return calls
+}
+
+// GetStats calls GetStatsFunc.
+func (mock *MeiliServiceManager) GetStats(param *meilisearch.StatsParams) (*meilisearch.Stats, error) {
+	callInfo := struct {
+		Param *meilisearch.StatsParams
+	}{
+		Param: param,
+	}
 	mock.lockGetStats.Lock()
 	mock.calls.GetStats = append(mock.calls.GetStats, callInfo)
 	mock.lockGetStats.Unlock()
@@ -3013,7 +3328,7 @@ func (mock *MeiliServiceManager) GetStats() (*meilisearch.Stats, error) {
 		)
 		return statsOut, errOut
 	}
-	return mock.GetStatsFunc()
+	return mock.GetStatsFunc(param)
 }
 
 // GetStatsCalls gets all the calls that were made to GetStats.
@@ -3021,8 +3336,10 @@ func (mock *MeiliServiceManager) GetStats() (*meilisearch.Stats, error) {
 //
 //	len(mockedServiceManager.GetStatsCalls())
 func (mock *MeiliServiceManager) GetStatsCalls() []struct {
+	Param *meilisearch.StatsParams
 } {
 	var calls []struct {
+		Param *meilisearch.StatsParams
 	}
 	mock.lockGetStats.RLock()
 	calls = mock.calls.GetStats
@@ -3031,11 +3348,13 @@ func (mock *MeiliServiceManager) GetStatsCalls() []struct {
 }
 
 // GetStatsWithContext calls GetStatsWithContextFunc.
-func (mock *MeiliServiceManager) GetStatsWithContext(ctx context.Context) (*meilisearch.Stats, error) {
+func (mock *MeiliServiceManager) GetStatsWithContext(ctx context.Context, param *meilisearch.StatsParams) (*meilisearch.Stats, error) {
 	callInfo := struct {
-		Ctx context.Context
+		Ctx   context.Context
+		Param *meilisearch.StatsParams
 	}{
-		Ctx: ctx,
+		Ctx:   ctx,
+		Param: param,
 	}
 	mock.lockGetStatsWithContext.Lock()
 	mock.calls.GetStatsWithContext = append(mock.calls.GetStatsWithContext, callInfo)
@@ -3047,7 +3366,7 @@ func (mock *MeiliServiceManager) GetStatsWithContext(ctx context.Context) (*meil
 		)
 		return statsOut, errOut
 	}
-	return mock.GetStatsWithContextFunc(ctx)
+	return mock.GetStatsWithContextFunc(ctx, param)
 }
 
 // GetStatsWithContextCalls gets all the calls that were made to GetStatsWithContext.
@@ -3055,10 +3374,12 @@ func (mock *MeiliServiceManager) GetStatsWithContext(ctx context.Context) (*meil
 //
 //	len(mockedServiceManager.GetStatsWithContextCalls())
 func (mock *MeiliServiceManager) GetStatsWithContextCalls() []struct {
-	Ctx context.Context
+	Ctx   context.Context
+	Param *meilisearch.StatsParams
 } {
 	var calls []struct {
-		Ctx context.Context
+		Ctx   context.Context
+		Param *meilisearch.StatsParams
 	}
 	mock.lockGetStatsWithContext.RLock()
 	calls = mock.calls.GetStatsWithContext
@@ -3099,6 +3420,88 @@ func (mock *MeiliServiceManager) GetTaskCalls() []struct {
 	mock.lockGetTask.RLock()
 	calls = mock.calls.GetTask
 	mock.lockGetTask.RUnlock()
+	return calls
+}
+
+// GetTaskDocuments calls GetTaskDocumentsFunc.
+func (mock *MeiliServiceManager) GetTaskDocuments(taskUID int64, dst interface{}) error {
+	callInfo := struct {
+		TaskUID int64
+		Dst     interface{}
+	}{
+		TaskUID: taskUID,
+		Dst:     dst,
+	}
+	mock.lockGetTaskDocuments.Lock()
+	mock.calls.GetTaskDocuments = append(mock.calls.GetTaskDocuments, callInfo)
+	mock.lockGetTaskDocuments.Unlock()
+	if mock.GetTaskDocumentsFunc == nil {
+		var (
+			errOut error
+		)
+		return errOut
+	}
+	return mock.GetTaskDocumentsFunc(taskUID, dst)
+}
+
+// GetTaskDocumentsCalls gets all the calls that were made to GetTaskDocuments.
+// Check the length with:
+//
+//	len(mockedServiceManager.GetTaskDocumentsCalls())
+func (mock *MeiliServiceManager) GetTaskDocumentsCalls() []struct {
+	TaskUID int64
+	Dst     interface{}
+} {
+	var calls []struct {
+		TaskUID int64
+		Dst     interface{}
+	}
+	mock.lockGetTaskDocuments.RLock()
+	calls = mock.calls.GetTaskDocuments
+	mock.lockGetTaskDocuments.RUnlock()
+	return calls
+}
+
+// GetTaskDocumentsWithContext calls GetTaskDocumentsWithContextFunc.
+func (mock *MeiliServiceManager) GetTaskDocumentsWithContext(ctx context.Context, taskUID int64, dst interface{}) error {
+	callInfo := struct {
+		Ctx     context.Context
+		TaskUID int64
+		Dst     interface{}
+	}{
+		Ctx:     ctx,
+		TaskUID: taskUID,
+		Dst:     dst,
+	}
+	mock.lockGetTaskDocumentsWithContext.Lock()
+	mock.calls.GetTaskDocumentsWithContext = append(mock.calls.GetTaskDocumentsWithContext, callInfo)
+	mock.lockGetTaskDocumentsWithContext.Unlock()
+	if mock.GetTaskDocumentsWithContextFunc == nil {
+		var (
+			errOut error
+		)
+		return errOut
+	}
+	return mock.GetTaskDocumentsWithContextFunc(ctx, taskUID, dst)
+}
+
+// GetTaskDocumentsWithContextCalls gets all the calls that were made to GetTaskDocumentsWithContext.
+// Check the length with:
+//
+//	len(mockedServiceManager.GetTaskDocumentsWithContextCalls())
+func (mock *MeiliServiceManager) GetTaskDocumentsWithContextCalls() []struct {
+	Ctx     context.Context
+	TaskUID int64
+	Dst     interface{}
+} {
+	var calls []struct {
+		Ctx     context.Context
+		TaskUID int64
+		Dst     interface{}
+	}
+	mock.lockGetTaskDocumentsWithContext.RLock()
+	calls = mock.calls.GetTaskDocumentsWithContext
+	mock.lockGetTaskDocumentsWithContext.RUnlock()
 	return calls
 }
 
@@ -3638,6 +4041,82 @@ func (mock *MeiliServiceManager) ListIndexesWithContextCalls() []struct {
 	return calls
 }
 
+// ListSearchRules calls ListSearchRulesFunc.
+func (mock *MeiliServiceManager) ListSearchRules(params *meilisearch.SearchRulesParams) (*meilisearch.SearchRulesResults, error) {
+	callInfo := struct {
+		Params *meilisearch.SearchRulesParams
+	}{
+		Params: params,
+	}
+	mock.lockListSearchRules.Lock()
+	mock.calls.ListSearchRules = append(mock.calls.ListSearchRules, callInfo)
+	mock.lockListSearchRules.Unlock()
+	if mock.ListSearchRulesFunc == nil {
+		var (
+			searchRulesResultsOut *meilisearch.SearchRulesResults
+			errOut                error
+		)
+		return searchRulesResultsOut, errOut
+	}
+	return mock.ListSearchRulesFunc(params)
+}
+
+// ListSearchRulesCalls gets all the calls that were made to ListSearchRules.
+// Check the length with:
+//
+//	len(mockedServiceManager.ListSearchRulesCalls())
+func (mock *MeiliServiceManager) ListSearchRulesCalls() []struct {
+	Params *meilisearch.SearchRulesParams
+} {
+	var calls []struct {
+		Params *meilisearch.SearchRulesParams
+	}
+	mock.lockListSearchRules.RLock()
+	calls = mock.calls.ListSearchRules
+	mock.lockListSearchRules.RUnlock()
+	return calls
+}
+
+// ListSearchRulesWithContext calls ListSearchRulesWithContextFunc.
+func (mock *MeiliServiceManager) ListSearchRulesWithContext(ctx context.Context, params *meilisearch.SearchRulesParams) (*meilisearch.SearchRulesResults, error) {
+	callInfo := struct {
+		Ctx    context.Context
+		Params *meilisearch.SearchRulesParams
+	}{
+		Ctx:    ctx,
+		Params: params,
+	}
+	mock.lockListSearchRulesWithContext.Lock()
+	mock.calls.ListSearchRulesWithContext = append(mock.calls.ListSearchRulesWithContext, callInfo)
+	mock.lockListSearchRulesWithContext.Unlock()
+	if mock.ListSearchRulesWithContextFunc == nil {
+		var (
+			searchRulesResultsOut *meilisearch.SearchRulesResults
+			errOut                error
+		)
+		return searchRulesResultsOut, errOut
+	}
+	return mock.ListSearchRulesWithContextFunc(ctx, params)
+}
+
+// ListSearchRulesWithContextCalls gets all the calls that were made to ListSearchRulesWithContext.
+// Check the length with:
+//
+//	len(mockedServiceManager.ListSearchRulesWithContextCalls())
+func (mock *MeiliServiceManager) ListSearchRulesWithContextCalls() []struct {
+	Ctx    context.Context
+	Params *meilisearch.SearchRulesParams
+} {
+	var calls []struct {
+		Ctx    context.Context
+		Params *meilisearch.SearchRulesParams
+	}
+	mock.lockListSearchRulesWithContext.RLock()
+	calls = mock.calls.ListSearchRulesWithContext
+	mock.lockListSearchRulesWithContext.RUnlock()
+	return calls
+}
+
 // ListWebhooks calls ListWebhooksFunc.
 func (mock *MeiliServiceManager) ListWebhooks() (*meilisearch.WebhookResults, error) {
 	callInfo := struct {
@@ -3854,6 +4333,66 @@ func (mock *MeiliServiceManager) ResetChatWorkspaceWithContextCalls() []struct {
 	mock.lockResetChatWorkspaceWithContext.RLock()
 	calls = mock.calls.ResetChatWorkspaceWithContext
 	mock.lockResetChatWorkspaceWithContext.RUnlock()
+	return calls
+}
+
+// SearchRulesManager calls SearchRulesManagerFunc.
+func (mock *MeiliServiceManager) SearchRulesManager() meilisearch.SearchRulesManager {
+	callInfo := struct {
+	}{}
+	mock.lockSearchRulesManager.Lock()
+	mock.calls.SearchRulesManager = append(mock.calls.SearchRulesManager, callInfo)
+	mock.lockSearchRulesManager.Unlock()
+	if mock.SearchRulesManagerFunc == nil {
+		var (
+			searchRulesManagerOut meilisearch.SearchRulesManager
+		)
+		return searchRulesManagerOut
+	}
+	return mock.SearchRulesManagerFunc()
+}
+
+// SearchRulesManagerCalls gets all the calls that were made to SearchRulesManager.
+// Check the length with:
+//
+//	len(mockedServiceManager.SearchRulesManagerCalls())
+func (mock *MeiliServiceManager) SearchRulesManagerCalls() []struct {
+} {
+	var calls []struct {
+	}
+	mock.lockSearchRulesManager.RLock()
+	calls = mock.calls.SearchRulesManager
+	mock.lockSearchRulesManager.RUnlock()
+	return calls
+}
+
+// SearchRulesReader calls SearchRulesReaderFunc.
+func (mock *MeiliServiceManager) SearchRulesReader() meilisearch.SearchRulesReader {
+	callInfo := struct {
+	}{}
+	mock.lockSearchRulesReader.Lock()
+	mock.calls.SearchRulesReader = append(mock.calls.SearchRulesReader, callInfo)
+	mock.lockSearchRulesReader.Unlock()
+	if mock.SearchRulesReaderFunc == nil {
+		var (
+			searchRulesReaderOut meilisearch.SearchRulesReader
+		)
+		return searchRulesReaderOut
+	}
+	return mock.SearchRulesReaderFunc()
+}
+
+// SearchRulesReaderCalls gets all the calls that were made to SearchRulesReader.
+// Check the length with:
+//
+//	len(mockedServiceManager.SearchRulesReaderCalls())
+func (mock *MeiliServiceManager) SearchRulesReaderCalls() []struct {
+} {
+	var calls []struct {
+	}
+	mock.lockSearchRulesReader.RLock()
+	calls = mock.calls.SearchRulesReader
+	mock.lockSearchRulesReader.RUnlock()
 	return calls
 }
 
@@ -4264,6 +4803,90 @@ func (mock *MeiliServiceManager) UpdateNetworkWithContextCalls() []struct {
 	mock.lockUpdateNetworkWithContext.RLock()
 	calls = mock.calls.UpdateNetworkWithContext
 	mock.lockUpdateNetworkWithContext.RUnlock()
+	return calls
+}
+
+// UpdateSearchRule calls UpdateSearchRuleFunc.
+func (mock *MeiliServiceManager) UpdateSearchRule(uid string, params *meilisearch.SearchRulesRequest) (*meilisearch.SearchRule, error) {
+	callInfo := struct {
+		UID    string
+		Params *meilisearch.SearchRulesRequest
+	}{
+		UID:    uid,
+		Params: params,
+	}
+	mock.lockUpdateSearchRule.Lock()
+	mock.calls.UpdateSearchRule = append(mock.calls.UpdateSearchRule, callInfo)
+	mock.lockUpdateSearchRule.Unlock()
+	if mock.UpdateSearchRuleFunc == nil {
+		var (
+			searchRuleOut *meilisearch.SearchRule
+			errOut        error
+		)
+		return searchRuleOut, errOut
+	}
+	return mock.UpdateSearchRuleFunc(uid, params)
+}
+
+// UpdateSearchRuleCalls gets all the calls that were made to UpdateSearchRule.
+// Check the length with:
+//
+//	len(mockedServiceManager.UpdateSearchRuleCalls())
+func (mock *MeiliServiceManager) UpdateSearchRuleCalls() []struct {
+	UID    string
+	Params *meilisearch.SearchRulesRequest
+} {
+	var calls []struct {
+		UID    string
+		Params *meilisearch.SearchRulesRequest
+	}
+	mock.lockUpdateSearchRule.RLock()
+	calls = mock.calls.UpdateSearchRule
+	mock.lockUpdateSearchRule.RUnlock()
+	return calls
+}
+
+// UpdateSearchRuleWithContext calls UpdateSearchRuleWithContextFunc.
+func (mock *MeiliServiceManager) UpdateSearchRuleWithContext(ctx context.Context, uid string, params *meilisearch.SearchRulesRequest) (*meilisearch.SearchRule, error) {
+	callInfo := struct {
+		Ctx    context.Context
+		UID    string
+		Params *meilisearch.SearchRulesRequest
+	}{
+		Ctx:    ctx,
+		UID:    uid,
+		Params: params,
+	}
+	mock.lockUpdateSearchRuleWithContext.Lock()
+	mock.calls.UpdateSearchRuleWithContext = append(mock.calls.UpdateSearchRuleWithContext, callInfo)
+	mock.lockUpdateSearchRuleWithContext.Unlock()
+	if mock.UpdateSearchRuleWithContextFunc == nil {
+		var (
+			searchRuleOut *meilisearch.SearchRule
+			errOut        error
+		)
+		return searchRuleOut, errOut
+	}
+	return mock.UpdateSearchRuleWithContextFunc(ctx, uid, params)
+}
+
+// UpdateSearchRuleWithContextCalls gets all the calls that were made to UpdateSearchRuleWithContext.
+// Check the length with:
+//
+//	len(mockedServiceManager.UpdateSearchRuleWithContextCalls())
+func (mock *MeiliServiceManager) UpdateSearchRuleWithContextCalls() []struct {
+	Ctx    context.Context
+	UID    string
+	Params *meilisearch.SearchRulesRequest
+} {
+	var calls []struct {
+		Ctx    context.Context
+		UID    string
+		Params *meilisearch.SearchRulesRequest
+	}
+	mock.lockUpdateSearchRuleWithContext.RLock()
+	calls = mock.calls.UpdateSearchRuleWithContext
+	mock.lockUpdateSearchRuleWithContext.RUnlock()
 	return calls
 }
 

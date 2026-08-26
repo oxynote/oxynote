@@ -6,7 +6,7 @@
 #   - no container_name, so this stack coexists with the dev one
 #   - env is inlined and committed; there is nothing secret to protect
 #   - only the services the tests exercise (no changedetection, mariadb,
-#     datagen, prometheus or grafana)
+#     datagen or grafana)
 #
 # the front door is the dev Caddyfile verbatim: e2e must exercise the
 # same routing and the same /api/x and /api/internal blocks that ship.
@@ -124,12 +124,6 @@ services:
       - OXYNOTE_CORE_BASE_APP_URL=http://localhost:18080
       - OXYNOTE_CORE_ORIGINS=http://localhost:18080,localhost:18080
       - OXYNOTE_CORE_DB_DATA_SOURCE_CREDENTIALS_SIGNING_SECRET=e2esigningsecret
-      # core only seeds a new workspace's welcome document while a demo
-      # prometheus URL is set — with it empty, initialize returns early and
-      # the onboarding page polls for a first document that never comes.
-      # The URL is stored, not dialed, so there is no prometheus here; a
-      # block that queries it would simply get a connection error.
-      - OXYNOTE_CORE_SERVER_DEMO_PROMETHEUS_URL=http://prometheus.invalid:9090
       - OXYNOTE_CORE_EMAIL_SMTP_HOST=mailpit
       - OXYNOTE_CORE_EMAIL_SMTP_PORT=1025
       - OXYNOTE_CORE_EMAIL_SMTP_TLS=none

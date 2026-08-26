@@ -17,6 +17,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/rs/xid"
+	goslack "github.com/slack-go/slack"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -119,6 +120,17 @@ func responseServer(t *testing.T) (*httptest.Server, *int) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Content-Type") != "application/json" {
+			w.WriteHeader(http.StatusBadRequest)
+
+			return
+		}
+
+		var body struct {
+			ResponseType string `json:"response_type"` //nolint:tagliatelle // slack wire format
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil ||
+			body.ResponseType != goslack.ResponseTypeEphemeral {
 			w.WriteHeader(http.StatusBadRequest)
 
 			return

@@ -125,7 +125,7 @@ func (s *Server) internalRouter() chi.Router {
 	r.Get("/version", s.fetchVersion)
 	r.Mount("/debug", middleware.Profiler())
 	r.Handle("/metrics", promhttp.InstrumentMetricHandler(
-		s.fc, promhttp.HandlerFor(s.fc, promhttp.HandlerOpts{}),
+		s.fc, promhttp.HandlerFor(s.fc, promhttp.HandlerOpts{CoalesceGather: true}),
 	))
 
 	r.Post("/organizations/{organizationId}/initialize", s.handlers.organization.InitializeOrganization)

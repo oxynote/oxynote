@@ -21,6 +21,7 @@ func Test_Setup(t *testing.T) {
 	closer, err = Setup(Config{})
 	require.NoError(t, err)
 	require.NotNil(t, closer)
+	assert.True(t, sentry.CurrentHub().Client().Options().DisableLogs)
 	assert.NotPanics(t, func() {
 		closer()
 	})

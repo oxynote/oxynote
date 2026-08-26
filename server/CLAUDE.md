@@ -13,7 +13,7 @@ infrastructure, and the non-Go services.
 
 - `server/core/` — Go module `github.com/oxynote/oxynote/server/core`. One binary: `cmd/core` (`oxynote-core`) — main API server. Listens on `:8080`. Exposes `/api/...` (auth-required), `/api/apps/...` (public, sessionless third-party callbacks), and `/api/x/...` (internal-only, no auth; the reverse proxy is expected to firewall this). Owns Postgres, Meilisearch, Valkey (Redis), MinIO, the GitHub/Slack apps, the assistant, and the outbound data-source connections (`internal/datasource`).
 - `server/auth-realtime/` — `@oxynote/auth-realtime` package. TypeScript ES-module service that runs Better Auth (organization plugin) and a Hocuspocus (Yjs CRDT) server in a single Hono process on port `8081`. Forwards non-auth `/api/...` traffic to core (`OXYNOTE_AUTH_REALTIME_BACKEND_URL`).
-- `datagen/` — separate Go module `github.com/oxynote/oxynote/datagen`. Synthesises demo Postgres/MariaDB content and a fake metrics endpoint scraped by Prometheus for the demo data sources.
+- `datagen/` — separate Go module `github.com/oxynote/oxynote/datagen`. Synthesises demo Postgres/MariaDB content, and serves a fake metrics endpoint for a Prometheus to scrape. The demo Prometheus data source no longer uses that endpoint: core synthesises those metrics itself (`server/core/internal/datasource/demo`), so nothing in the dev stack scrapes it.
 
 Go builds go through **goreleaser**: `make build` in `server/core` and `datagen` runs `goreleaser release --snapshot --clean`, producing binaries in `bin/` and the `ghcr.io/oxynote/{core,datagen}:dev` images via each module's `Dockerfile.dev`. The dev compose stack consumes those images; `auth-realtime` (and `web/`) are built from source by compose via their `Dockerfile.dev`. `make run` / `make start` from the repository root orchestrates both.
 
@@ -31,8 +31,11 @@ Per-component:
 # core
 cd server/core && make build      # goreleaser release --snapshot --clean -> bin/
 
-# datagen
+# datagen — same targets as core
 cd datagen && make build
+cd datagen && make test           # go test -race ./... (pgdemo/mariademo need docker)
+cd datagen && make check-coverage # fails below COVERAGE_MIN
+cd datagen && make check-lint     # golangci-lint; lint = the fixing variant
 
 # auth-realtime (full details in auth-realtime/CLAUDE.md)
 cd server/auth-realtime && pnpm run dev          # local watch mode (tsx + sentry.ts preloaded)
@@ -43,8 +46,12 @@ cd server/auth-realtime && pnpm run test         # vitest run --coverage
 cd server/auth-realtime && pnpm run qa           # check-lint + test; qa-fix = lint + test
 ```
 
-The Go test/lint workflow is documented in [core/CLAUDE.md](core/CLAUDE.md)
-("Commands & QA gates").
+Both Go modules share the same test/lint workflow, documented in
+[core/CLAUDE.md](core/CLAUDE.md) ("Commands & QA gates"); datagen carries its
+own copy of core's golangci-lint profile. Its `pgdemo` and `mariademo` suites
+start throwaway Postgres and MariaDB containers, so docker is a unit-test
+dependency for those two packages the same way it is for core's `internal/db`
+and `internal/datasource/processor`.
 
 Go dependencies are fetched into the module cache at build time (`make deps` runs `go mod download`) — there is no vendoring. All dependencies, including the first-party `github.com/oxynote/wetsocks`, are public; no GOPRIVATE or git auth setup is needed.
 
@@ -70,6 +77,16 @@ So from a frontend's point of view: auth + realtime is `:8080/auth-realtime/...`
 - WebSocket topics under `/api/ws` (routed by `wetsocks/wsserver` from the first-party `github.com/oxynote/wetsocks` library): `change@document-tree`, `change@documents.{documentId}.comments|metadata|reviewers|maintainers`, `post@slack.messages`, `creation@notifications`, `ping@version`. Topic binders live on the per-domain handler types under `internal/server/internal/...` (`Handler.BindXxx`).
 
 Most public routes in the README (`/api/documents`, `/api/documents/tree`, etc.) are served by core; the README is the closest thing to a contract spec — when changing handlers, update it.
+
+## The demo data source
+
+Every organization is seeded at initialization with a Prometheus data source named "Demo" whose URL is `demo://engineering`, plus the welcome document whose charts query it. This is unconditional — there is no env var and no way to opt out, so a fresh install shows populated charts with nothing else deployed.
+
+- `internal/datasource/demo` synthesises those metrics in-process. `runner.ensurePrepared` picks it over the real client when the URL is exactly `demo://engineering`; any other `demo://` URL is `demo.ErrUnknownSource` rather than a second demo. The data source's type stays `prometheus`, so the editor, autocomplete and charts cannot tell the difference.
+- **One `demo.Client` serves the whole process, and it lives on `datasource.Manager`.** The client owns its engine, parser and registry, and the registry's walks cache the history they replay. A runner is built per call, so building the client there instead would throw that cache away on every request and re-walk every tick since the epoch.
+- **The timeline is a pure function of the tick, not stored data.** A fixed epoch and a one-minute tick, values computed on demand from a per-series seed — so history never rewrites, a query over any window backfills for free, and the same window always answers identically. `walk.checkpoint` caches one value per day-long segment; without it a sample would replay every tick since the epoch.
+- Queries run through the official `promql` engine over `queryable`, a `storage.Queryable` that synthesises only the requested window. Samples are spaced at the query's own step and the lookback delta is widened to match, which is what lets a year-long range answer with ~100 points per series instead of half a million.
+- `registry.go` is the single declaration of what exists: ~15 gauge families driving both sample synthesis and the metadata/label/series endpoints. `Test_welcomeDocumentQueries` runs every query in `internal/document/files/available_metrics.json` against it, so a metric renamed in one place and not the other fails the build rather than emptying the welcome document silently.
 
 ## Document storage / Hocuspocus integration
 

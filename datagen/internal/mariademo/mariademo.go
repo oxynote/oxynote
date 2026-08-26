@@ -1,3 +1,5 @@
+// Package mariademo fills the demo MariaDB data source with generated
+// time-series rows.
 package mariademo
 
 import (
@@ -8,26 +10,45 @@ import (
 	"math/rand"
 	"time"
 
+	// the mysql driver registers itself with database/sql on import.
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/oxynote/oxynote/datagen/internal/demodata"
 	"github.com/oxynote/oxynote/datagen/internal/mockmetrics"
+	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 )
 
+// _backfillDays defines how much history an empty database is filled with.
 const _backfillDays = 30
+
+// _connMaxLifetime bounds how long the single pooled connection is reused.
+const _connMaxLifetime = 30 * time.Second
 
 // Generator inserts demo time-series data into MariaDB.
 type Generator struct {
-	dsn string
-	r   *rand.Rand
+	// log is the structured logger.
 	log *slog.Logger
+
+	// dsn addresses the database to fill.
+	dsn string
+
+	// r is the random source used for all row generation.
+	r *rand.Rand
+
+	// interval defines how often a new tick of rows is appended.
+	interval time.Duration
+
+	// backfillDays defines how much history an empty database is filled with.
+	backfillDays int
 }
 
-// NewGenerator creates a new demo data generator for MariaDB.
+// NewGenerator creates a fresh instance of Generator.
 func NewGenerator(dsn string, log *slog.Logger) *Generator {
 	return &Generator{
-		dsn: dsn,
-		r:   mockmetrics.NewRand(time.Now().UnixNano()),
-		log: log,
+		log:          log,
+		dsn:          dsn,
+		r:            mockmetrics.NewRand(timeutil.Now().UnixNano()),
+		interval:     demodata.TickInterval,
+		backfillDays: _backfillDays,
 	}
 }
 
@@ -38,13 +59,13 @@ func (g *Generator) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("mariademo: open: %w", err)
 	}
-	defer db.Close()
+	defer db.Close() //nolint:errcheck // error provides no meaningful info
 
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
-	db.SetConnMaxLifetime(30 * time.Second)
+	db.SetConnMaxLifetime(_connMaxLifetime)
 
-	if err := db.PingContext(ctx); err != nil {
+	if err = db.PingContext(ctx); err != nil {
 		return fmt.Errorf("mariademo: ping: %w", err)
 	}
 
@@ -54,7 +75,7 @@ func (g *Generator) Run(ctx context.Context) error {
 	}
 
 	if !backfilled {
-		g.log.Info("mariademo: backfilling historical data", slog.Int("days", _backfillDays))
+		g.log.Info("mariademo: backfilling historical data", slog.Int("days", g.backfillDays))
 
 		if err := g.backfill(ctx, db); err != nil {
 			return fmt.Errorf("mariademo: backfill: %w", err)
@@ -63,20 +84,22 @@ func (g *Generator) Run(ctx context.Context) error {
 		g.log.Info("mariademo: backfill complete")
 	}
 
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-time.After(demodata.TickInterval):
-			now := time.Now().UTC()
-
-			if err := g.insertTick(ctx, db, now); err != nil {
+	timeutil.NewPeriodicExec(
+		g.interval,
+		0,
+		func(ctx context.Context) {
+			if err := g.insertTick(ctx, db, timeutil.Now()); err != nil {
 				g.log.Error("mariademo: tick insert failed", slog.String("error", err.Error()))
 			}
-		}
-	}
+		},
+		nil,
+		false,
+	).Start(ctx)
+
+	return nil
 }
 
+// needsBackfill returns true if historical data already exists.
 func (g *Generator) needsBackfill(ctx context.Context, db *sql.DB) (bool, error) {
 	var count int
 
@@ -88,11 +111,12 @@ func (g *Generator) needsBackfill(ctx context.Context, db *sql.DB) (bool, error)
 	return count > 0, nil
 }
 
+// backfill generates backfillDays worth of historical data.
 func (g *Generator) backfill(ctx context.Context, db *sql.DB) error {
-	now := time.Now().UTC()
-	start := now.AddDate(0, 0, -_backfillDays)
+	now := timeutil.Now()
+	start := now.AddDate(0, 0, -g.backfillDays)
 
-	for t := start; t.Before(now); t = t.Add(demodata.TickInterval) {
+	for t := start; t.Before(now); t = t.Add(g.interval) {
 		if err := g.insertTick(ctx, db, t); err != nil {
 			return err
 		}
@@ -101,6 +125,7 @@ func (g *Generator) backfill(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
+// insertTick generates and inserts one tick's worth of data at the given time.
 func (g *Generator) insertTick(ctx context.Context, db *sql.DB, t time.Time) error {
 	tick := demodata.GenerateTick(g.r, t)
 
@@ -108,7 +133,7 @@ func (g *Generator) insertTick(ctx context.Context, db *sql.DB, t time.Time) err
 	if err != nil {
 		return fmt.Errorf("begin tx at %s: %w", t.Format(time.RFC3339), err)
 	}
-	defer tx.Rollback()
+	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
 
 	for _, d := range tick.Deployments {
 		if _, err := tx.ExecContext(ctx,

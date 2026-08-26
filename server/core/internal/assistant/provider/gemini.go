@@ -18,6 +18,11 @@ func newGemini(ctx context.Context, opts Options) (model.ToolCallingChatModel, e
 		Backend: genai.BackendGeminiAPI,
 		HTTPOptions: genai.HTTPOptions{
 			Timeout: new(opts.timeout()),
+			// the SDK does not retry at all when this is nil; the empty
+			// struct enables its defaults (5 attempts, exponential
+			// backoff on 408/429/5xx), matching the retry behavior the
+			// other providers' SDKs ship out of the box.
+			RetryOptions: &genai.HTTPRetryOptions{},
 		},
 	}
 
@@ -36,6 +41,13 @@ func newGemini(ctx context.Context, opts Options) (model.ToolCallingChatModel, e
 		Model:       opts.Model,
 		MaxTokens:   opts.maxTokens(),
 		Temperature: opts.Temperature,
+		// eino maps thought parts to ReasoningContent, which the chat
+		// protocol renders as the transient thinking stream; gemini-3
+		// models additionally require thought parts to be restored on
+		// the way back to the API.
+		ThinkingConfig: &genai.ThinkingConfig{
+			IncludeThoughts: true,
+		},
 	}
 
 	cm, err := gemini.NewChatModel(ctx, cfg)

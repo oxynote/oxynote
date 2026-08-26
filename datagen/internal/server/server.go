@@ -1,3 +1,4 @@
+// Package server exposes the generated demo metrics over HTTP.
 package server
 
 import (
@@ -14,6 +15,9 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
+
+// _requestTimeout bounds how long a single scrape may take.
+const _requestTimeout = 30 * time.Second
 
 // Server exposes metrics over HTTP.
 type Server struct {
@@ -71,6 +75,8 @@ func (s *Server) Address() string {
 // Close performs clean up operations.
 func (s *Server) Close() error {
 	if err := s.http.Shutdown(context.Background()); err != nil {
+		// NOCOV: shutting down against an unbounded context only fails if
+		// closing a listener does, which cannot be provoked in tests.
 		return err
 	}
 
@@ -83,11 +89,11 @@ func (s *Server) Close() error {
 func (s *Server) router() chi.Router {
 	r := chi.NewRouter()
 
-	r.Use(httpserver.Timeout(30 * time.Second))
+	r.Use(httpserver.Timeout(_requestTimeout))
 	r.Use(httpserver.Recoverer(s.log))
 
 	r.Handle("/api/metrics", promhttp.InstrumentMetricHandler(
-		s.fc, promhttp.HandlerFor(s.fc, promhttp.HandlerOpts{}),
+		s.fc, promhttp.HandlerFor(s.fc, promhttp.HandlerOpts{CoalesceGather: true}),
 	))
 
 	r.MethodNotAllowed(httpserver.MethodNotAllowed(s.log))

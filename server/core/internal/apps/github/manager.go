@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
-	gogithub "github.com/google/go-github/v72/github"
+	gogithub "github.com/google/go-github/v88/github"
 	"github.com/oxynote/oxynote/server/core/pkg/cryptoutil"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 )
@@ -193,11 +193,15 @@ func (m *Manager) createInstallationClient(installationID int64) (*gogithub.Clie
 		return nil, fmt.Errorf("failed to create installation transport: %w", err)
 	}
 
-	return gogithub.NewClient(
-		&http.Client{
-			Transport: rt,
-		},
-	), nil
+	client, err := gogithub.NewClient(gogithub.WithHTTPClient(&http.Client{
+		Transport: rt,
+	}))
+	if err != nil {
+		// NOCOV: WithHTTPClient only rejects a nil client.
+		return nil, fmt.Errorf("failed to create github client: %w", err)
+	}
+
+	return client, nil
 }
 
 // InstallationClient represents a GitHub App installation client.
@@ -476,11 +480,15 @@ func createAppClient(appID int64, privateKeyPath string) (*gogithub.Client, erro
 		return nil, fmt.Errorf("failed to create installation transport: %w", err)
 	}
 
-	return gogithub.NewClient(
-		&http.Client{
-			Transport: rt,
-		},
-	), nil
+	client, err := gogithub.NewClient(gogithub.WithHTTPClient(&http.Client{
+		Transport: rt,
+	}))
+	if err != nil {
+		// NOCOV: WithHTTPClient only rejects a nil client.
+		return nil, fmt.Errorf("failed to create github client: %w", err)
+	}
+
+	return client, nil
 }
 
 // parseGithubError parses errors returned by the Github API and maps them to appropriate HTTP status codes.

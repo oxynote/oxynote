@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"path"
+	"slices"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
@@ -70,12 +71,23 @@ func (c *Client) Upload(ctx context.Context, folder, id string, r io.Reader) err
 
 	key := path.Join(folder, id)
 
+	// the object is fully buffered rather than streamed: the read side is
+	// already capped at _maxObjectSize, and a seekable reader with an exact
+	// size keeps the client's transient-error retries (disabled for
+	// non-seekable streams) and a single-part upload.
+	rest, err := io.ReadAll(r)
+	if err != nil {
+		return fmt.Errorf("reading object: %w", err)
+	}
+
+	data := slices.Concat(buf[:n], rest)
+
 	_, err = c.client.PutObject(
 		ctx,
 		c.bucket,
 		key,
-		io.MultiReader(bytes.NewReader(buf[:n]), r), // Since we read some bytes for content detection, we need to prepend them back.
-		-1,
+		bytes.NewReader(data),
+		int64(len(data)),
 		minio.PutObjectOptions{
 			ContentType: ct,
 		},

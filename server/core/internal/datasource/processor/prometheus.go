@@ -141,9 +141,14 @@ func (p *Prometheus) LabelNames(ctx context.Context, matchers []string, tr TimeR
 		return nil, fmt.Errorf("error fetching label names: %w", err)
 	}
 
+	result := make([]string, len(names))
+	for i, n := range names {
+		result[i] = string(n)
+	}
+
 	return &PrometheusLabelNamesResult{
 		Warnings: warns,
-		Result:   names,
+		Result:   result,
 	}, nil
 }
 

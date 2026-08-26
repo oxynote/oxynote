@@ -27,6 +27,20 @@ const (
 	_queryPayloadLimit = 5 * 1024 * 1024 // 5 MB
 )
 
+// _pgAllowedConnKeys lists the connection-string keys a data-source URL may
+// carry. The URL is organisation-supplied, and keys outside this list can
+// reach the local filesystem (sslkey, passfile, servicefile, ...) or override
+// session behavior (options), so parsing fails closed on anything else.
+var _pgAllowedConnKeys = []string{
+	"host",
+	"port",
+	"dbname",
+	"user",
+	"password",
+	"sslmode",
+	"connect_timeout",
+}
+
 // PostgreSQL represents a PostgreSQL data source processor.
 type PostgreSQL struct {
 	inp Input
@@ -261,7 +275,9 @@ func (p *PostgreSQL) connect(ctx context.Context) (*pgx.Conn, error) {
 		return nil, err
 	}
 
-	cfg, err := pgx.ParseConfig(connStr)
+	cfg, err := pgx.ParseConfigWithOptions(connStr, pgx.ParseConfigOptions{
+		ConnStringAllowedKeys: _pgAllowedConnKeys,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("error parsing postgresql connection string: %w", err)
 	}

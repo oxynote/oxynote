@@ -1,3 +1,5 @@
+// Package gen generates the mock engineering-culture metrics the demo
+// Prometheus scrapes.
 package gen
 
 import (
@@ -8,11 +10,31 @@ import (
 
 	"github.com/oxynote/oxynote/datagen/internal/mockmetrics"
 	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
+	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
 // _genInterval defines how often metrics are refreshed.
 const _genInterval = 5 * time.Minute
+
+// _labelOutcome names the label both outcome-split gauges are broken down by.
+const _labelOutcome = "outcome"
+
+// Sampling parameters of the friday_deploys gauge, whose two buckets are
+// derived from one another instead of being sampled independently.
+const (
+	// _fridayDeployMean is the weekly number of Friday deploys attempted.
+	_fridayDeployMean = 30_000
+
+	// _fridayDeployRelStdDev spreads that count tick to tick.
+	_fridayDeployRelStdDev = 0.15
+
+	// _fridayDeploySuccessMean is the mean fraction of attempts that survive.
+	_fridayDeploySuccessMean = 0.68
+
+	// _fridayDeploySuccessStdDev spreads that fraction tick to tick.
+	_fridayDeploySuccessStdDev = 0.12
+)
 
 // continuousMetric holds the running state for a single drifting gauge.
 type continuousMetric struct {
@@ -51,6 +73,9 @@ type Manager struct {
 
 	// log is the structured logger.
 	log *slog.Logger
+
+	// interval defines how often metrics are refreshed.
+	interval time.Duration
 
 	// Continuous metric states — these drift smoothly between ticks.
 
@@ -137,15 +162,17 @@ type Manager struct {
 }
 
 // NewManager creates a ready-to-run Manager.
+//
+//nolint:maintidx // a flat table of tuned gauge parameters, not logic
 func NewManager(fc metricutil.Factory, log *slog.Logger) *Manager {
 	newGaugeVec := func(name, help string, labels ...string) metricutil.GaugeVec {
 		return fc.NewGaugeVec(metricutil.Options{Name: name, Help: help}, labels)
 	}
 
 	return &Manager{
-		r:   mockmetrics.NewRand(time.Now().UnixNano()),
-		log: log,
-
+		r:        mockmetrics.NewRand(timeutil.Now().UnixNano()),
+		log:      log,
+		interval: _genInterval,
 		// Temporary fix age by comment type — hacks accumulate and never leave.
 		tempFixAgeTemp: newContinuous(mockmetrics.GaugeParams{
 			Min:           365,
@@ -370,7 +397,6 @@ func NewManager(fc metricutil.Factory, log *slog.Logger) *Manager {
 			SpikeStdDev:   30_000,
 		}),
 
-		// Prometheus gauges.
 		meetingsCouldbDoc: newGaugeVec(
 			"meetings_could_be_doc_count",
 			"Weekly count of meetings that could've been a document.",
@@ -379,12 +405,12 @@ func NewManager(fc metricutil.Factory, log *slog.Logger) *Manager {
 		circleBackCount: newGaugeVec(
 			"circle_back_count",
 			`Weekly count of "let's circle back" mentions.`,
-			"outcome",
+			_labelOutcome,
 		),
 		fridayDeploys: newGaugeVec(
 			"friday_deploys_count",
 			"Weekly Friday deploy counts.",
-			"outcome",
+			_labelOutcome,
 		),
 		featureFlagGrave: newGaugeVec(
 			"feature_flag_graveyard_size",
@@ -449,16 +475,35 @@ func NewManager(fc metricutil.Factory, log *slog.Logger) *Manager {
 }
 
 // Run starts the generation loop. It blocks until ctx is cancelled.
-func (m *Manager) Run(ctx context.Context) error {
-	m.generateData()
+func (m *Manager) Run(ctx context.Context) {
+	timeutil.NewPeriodicExec(
+		m.interval,
+		0,
+		func(context.Context) { m.generateData() },
+		nil,
+		true,
+	).Start(ctx)
+}
 
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-time.After(_genInterval):
-			m.generateData()
-		}
+// countBucket specifies the sampling parameters of one labelled bucket of a
+// gauge that is resampled from scratch on every tick.
+type countBucket struct {
+	// label is the label value the bucket is published under.
+	label string
+
+	// mean is the average count sampled for the bucket each tick.
+	mean float64
+
+	// relStdDev is the bucket's standard deviation as a fraction of mean.
+	relStdDev float64
+}
+
+// setCounts resamples every bucket of a gauge and publishes the results
+// under the given label key.
+func (m *Manager) setCounts(vec metricutil.GaugeVec, key string, bb []countBucket) {
+	for _, b := range bb {
+		vec.With(prometheus.Labels{key: b.label}).
+			Set(float64(mockmetrics.RandCount(m.r, b.mean, b.relStdDev)))
 	}
 }
 
@@ -466,52 +511,72 @@ func (m *Manager) Run(ctx context.Context) error {
 func (m *Manager) generateData() {
 	r := m.r
 
-	// --- Poisson count metrics (fresh each tick) ---
+	// --- Count metrics (resampled from scratch each tick) ---
 
-	// Lambdas are aggregate weekly totals across ~10k organisations.
+	// Means are aggregate weekly totals across ~10k organisations.
 
 	// meetings_could_be_doc: split by the excuse used to justify the meeting.
-	m.meetingsCouldbDoc.With(prometheus.Labels{"excuse": "alignment"}).Set(float64(mockmetrics.RandCount(r, 42_000, 0.15)))
-	m.meetingsCouldbDoc.With(prometheus.Labels{"excuse": "bandwidth"}).Set(float64(mockmetrics.RandCount(r, 36_000, 0.15)))
-	m.meetingsCouldbDoc.With(prometheus.Labels{"excuse": "synergy"}).Set(float64(mockmetrics.RandCount(r, 30_000, 0.15)))
-	m.meetingsCouldbDoc.With(prometheus.Labels{"excuse": "optics"}).Set(float64(mockmetrics.RandCount(r, 12_000, 0.20)))
+	m.setCounts(m.meetingsCouldbDoc, "excuse", []countBucket{
+		{label: "alignment", mean: 42_000, relStdDev: 0.15},
+		{label: "bandwidth", mean: 36_000, relStdDev: 0.15},
+		{label: "synergy", mean: 30_000, relStdDev: 0.15},
+		{label: "optics", mean: 12_000, relStdDev: 0.20},
+	})
 
 	// circle_back_count: split by what actually happened afterward.
-	m.circleBackCount.With(prometheus.Labels{"outcome": "circled_back"}).Set(float64(mockmetrics.RandCount(r, 16_000, 0.20)))
-	m.circleBackCount.With(prometheus.Labels{"outcome": "forgotten"}).Set(float64(mockmetrics.RandCount(r, 48_000, 0.15)))
-	m.circleBackCount.With(prometheus.Labels{"outcome": "rescheduled_to_circle_back"}).Set(float64(mockmetrics.RandCount(r, 16_000, 0.20)))
+	m.setCounts(m.circleBackCount, _labelOutcome, []countBucket{
+		{label: "circled_back", mean: 16_000, relStdDev: 0.20},
+		{label: "forgotten", mean: 48_000, relStdDev: 0.15},
+		{label: "rescheduled_to_circle_back", mean: 16_000, relStdDev: 0.20},
+	})
 
-	// friday_deploys: outcome (attempted vs successful).
-	attempted := mockmetrics.RandCount(r, 30_000, 0.15)
-	successRate := mockmetrics.Clamp(mockmetrics.Normal(r, 0.68, 0.12), 0, 1)
+	// friday_deploys: the successful bucket is a fraction of the attempted
+	// one rather than an independent sample, so it cannot join a table.
+	attempted := mockmetrics.RandCount(r, _fridayDeployMean, _fridayDeployRelStdDev)
+	successRate := mockmetrics.Clamp(
+		mockmetrics.Normal(r, _fridayDeploySuccessMean, _fridayDeploySuccessStdDev),
+		0,
+		1,
+	)
 	successful := int(mockmetrics.Clamp(float64(attempted)*successRate, 0, float64(attempted)))
-	m.fridayDeploys.With(prometheus.Labels{"outcome": "attempted"}).Set(float64(attempted))
-	m.fridayDeploys.With(prometheus.Labels{"outcome": "successful"}).Set(float64(successful))
+
+	m.fridayDeploys.With(prometheus.Labels{_labelOutcome: "attempted"}).Set(float64(attempted))
+	m.fridayDeploys.With(prometheus.Labels{_labelOutcome: "successful"}).Set(float64(successful))
 
 	// pizza_fridays: split by how many pizzas were ordered.
-	m.pizzaFridays.With(prometheus.Labels{"pizza_count": "1_to_5"}).Set(float64(mockmetrics.RandCount(r, 10_000, 0.15)))
-	m.pizzaFridays.With(prometheus.Labels{"pizza_count": "5_to_10"}).Set(float64(mockmetrics.RandCount(r, 7_000, 0.20)))
-	m.pizzaFridays.With(prometheus.Labels{"pizza_count": "10_plus"}).Set(float64(mockmetrics.RandCount(r, 3_000, 0.25)))
+	m.setCounts(m.pizzaFridays, "pizza_count", []countBucket{
+		{label: "1_to_5", mean: 10_000, relStdDev: 0.15},
+		{label: "5_to_10", mean: 7_000, relStdDev: 0.20},
+		{label: "10_plus", mean: 3_000, relStdDev: 0.25},
+	})
 
 	// ship_it_approvals: split by reviewer's apparent state of mind.
-	m.shipItApprovals.With(prometheus.Labels{"reviewer_state": "sober"}).Set(float64(mockmetrics.RandCount(r, 20_000, 0.15)))
-	m.shipItApprovals.With(prometheus.Labels{"reviewer_state": "one_beer_in"}).Set(float64(mockmetrics.RandCount(r, 14_000, 0.20)))
-	m.shipItApprovals.With(prometheus.Labels{"reviewer_state": "heading_to_the_door"}).Set(float64(mockmetrics.RandCount(r, 6_000, 0.25)))
+	m.setCounts(m.shipItApprovals, "reviewer_state", []countBucket{
+		{label: "sober", mean: 20_000, relStdDev: 0.15},
+		{label: "one_beer_in", mean: 14_000, relStdDev: 0.20},
+		{label: "heading_to_the_door", mean: 6_000, relStdDev: 0.25},
+	})
 
 	// prs_merged_friday: split by the deployer's stated confidence level.
-	m.prsMergedFriday.With(prometheus.Labels{"confidence": "yolo"}).Set(float64(mockmetrics.RandCount(r, 20_000, 0.15)))
-	m.prsMergedFriday.With(prometheus.Labels{"confidence": "fingers_crossed"}).Set(float64(mockmetrics.RandCount(r, 22_500, 0.15)))
-	m.prsMergedFriday.With(prometheus.Labels{"confidence": "vacation_starts_monday"}).Set(float64(mockmetrics.RandCount(r, 7_500, 0.20)))
+	m.setCounts(m.prsMergedFriday, "confidence", []countBucket{
+		{label: "yolo", mean: 20_000, relStdDev: 0.15},
+		{label: "fingers_crossed", mean: 22_500, relStdDev: 0.15},
+		{label: "vacation_starts_monday", mean: 7_500, relStdDev: 0.20},
+	})
 
 	// secrets_detected: split by severity — nuclear is rare but very bad.
-	m.secretsDetected.With(prometheus.Labels{"severity": "normal"}).Set(float64(mockmetrics.RandCount(r, 2_100, 0.25)))
-	m.secretsDetected.With(prometheus.Labels{"severity": "critical"}).Set(float64(mockmetrics.RandCount(r, 750, 0.30)))
-	m.secretsDetected.With(prometheus.Labels{"severity": "nuclear"}).Set(float64(mockmetrics.RandCount(r, 150, 0.35)))
+	m.setCounts(m.secretsDetected, "severity", []countBucket{
+		{label: "normal", mean: 2_100, relStdDev: 0.25},
+		{label: "critical", mean: 750, relStdDev: 0.30},
+		{label: "nuclear", mean: 150, relStdDev: 0.35},
+	})
 
 	// quick_sync_meetings: split by how "quick" they actually were.
-	m.quickSyncMeetings.With(prometheus.Labels{"duration": "10m_to_30m"}).Set(float64(mockmetrics.RandCount(r, 33_000, 0.15)))
-	m.quickSyncMeetings.With(prometheus.Labels{"duration": "30m_to_1h"}).Set(float64(mockmetrics.RandCount(r, 21_000, 0.15)))
-	m.quickSyncMeetings.With(prometheus.Labels{"duration": "1h_plus"}).Set(float64(mockmetrics.RandCount(r, 6_000, 0.25)))
+	m.setCounts(m.quickSyncMeetings, "duration", []countBucket{
+		{label: "10m_to_30m", mean: 33_000, relStdDev: 0.15},
+		{label: "30m_to_1h", mean: 21_000, relStdDev: 0.15},
+		{label: "1h_plus", mean: 6_000, relStdDev: 0.25},
+	})
 
 	// --- Continuous drifting metrics ---
 

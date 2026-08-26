@@ -23,7 +23,7 @@ func (h *Handler) handleChannelOpenEvent(ctx context.Context, teamID, userID, ch
 		return fmt.Errorf("failed to get slack client: %w", err)
 	}
 
-	user, err := client.GetUserInfo(userID)
+	user, err := client.GetUserInfoContext(ctx, userID)
 	if err != nil {
 		return fmt.Errorf("failed to get user info: %w", err)
 	}

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/oxynote/oxynote/server/core/internal/datasource/demo"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/prometheus/client_golang/api"
@@ -394,20 +395,23 @@ func Test_runner_ensurePrepared(t *testing.T) {
 
 	cc := map[string]struct {
 		Type Type
+		URL  string
 		Err  error
 	}{
-		"Prometheus":   {Type: TypePrometheus},
-		"PostgreSQL":   {Type: TypePostgreSQL},
-		"MySQL":        {Type: TypeMySQL},
-		"MariaDB":      {Type: TypeMariaDB},
-		"Unknown type": {Type: Type("bogus"), Err: assert.AnError},
+		"Prometheus":          {Type: TypePrometheus},
+		"Demo Prometheus":     {Type: TypePrometheus, URL: demo.URL},
+		"Unknown demo source": {Type: TypePrometheus, URL: demo.Scheme + "nope", Err: demo.ErrUnknownSource},
+		"PostgreSQL":          {Type: TypePostgreSQL},
+		"MySQL":               {Type: TypeMySQL},
+		"MariaDB":             {Type: TypeMariaDB},
+		"Unknown type":        {Type: Type("bogus"), Err: assert.AnError},
 	}
 
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			r := prepRunner(c.Type, "", nil)
+			r := prepRunner(c.Type, c.URL, nil)
 
 			err := r.ensurePrepared()
 
@@ -425,6 +429,49 @@ func Test_runner_ensurePrepared(t *testing.T) {
 			client := r.client
 			require.NoError(t, r.ensurePrepared())
 			assert.Same(t, client, r.client)
+		})
+	}
+}
+
+func Test_runner_prometheusClient(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		URL    string
+		Client connectionTester
+		Err    error
+	}{
+		"Demo data source": {
+			URL:    demo.URL,
+			Client: &demo.Client{},
+		},
+		"Demo scheme naming a source that does not exist": {
+			URL: demo.Scheme + "marketing",
+			Err: demo.ErrUnknownSource,
+		},
+		"Demo scheme with no source at all": {
+			URL: demo.Scheme,
+			Err: demo.ErrUnknownSource,
+		},
+		"Real server": {
+			URL:    "http://prom.test:9090",
+			Client: &processor.Prometheus{},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			client, err := prepRunner(TypePrometheus, c.URL, nil).prometheusClient()
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				assert.Nil(t, client)
+				return
+			}
+
+			assert.IsType(t, c.Client, client)
 		})
 	}
 }

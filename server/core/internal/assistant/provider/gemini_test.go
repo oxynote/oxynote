@@ -32,10 +32,14 @@ func Test_newGemini(t *testing.T) {
 				APIKey:  "k",
 				Backend: genai.BackendGeminiAPI,
 				HTTPOptions: genai.HTTPOptions{
-					Timeout: new(_defaultRequestTimeout),
+					Timeout:      new(_defaultRequestTimeout),
+					RetryOptions: &genai.HTTPRetryOptions{},
 				},
 			},
-			Config: &gemini.Config{Model: "gemini-2.5-pro"},
+			Config: &gemini.Config{
+				Model:          "gemini-2.5-pro",
+				ThinkingConfig: &genai.ThinkingConfig{IncludeThoughts: true},
+			},
 		},
 		"Optional tuning": {
 			Opts: tunedOptions(ProviderGoogle, "gemini-2.5-pro"),
@@ -43,14 +47,16 @@ func Test_newGemini(t *testing.T) {
 				APIKey:  "k",
 				Backend: genai.BackendGeminiAPI,
 				HTTPOptions: genai.HTTPOptions{
-					BaseURL: "https://example.invalid/v1",
-					Timeout: new(time.Minute),
+					BaseURL:      "https://example.invalid/v1",
+					Timeout:      new(time.Minute),
+					RetryOptions: &genai.HTTPRetryOptions{},
 				},
 			},
 			Config: &gemini.Config{
-				Model:       "gemini-2.5-pro",
-				MaxTokens:   new(1024),
-				Temperature: new(float32(0.3)),
+				Model:          "gemini-2.5-pro",
+				MaxTokens:      new(1024),
+				Temperature:    new(float32(0.3)),
+				ThinkingConfig: &genai.ThinkingConfig{IncludeThoughts: true},
 			},
 		},
 	}

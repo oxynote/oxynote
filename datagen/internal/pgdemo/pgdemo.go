@@ -1,3 +1,5 @@
+// Package pgdemo fills the demo PostgreSQL data source with generated
+// time-series rows.
 package pgdemo
 
 import (
@@ -10,23 +12,38 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/oxynote/oxynote/datagen/internal/demodata"
 	"github.com/oxynote/oxynote/datagen/internal/mockmetrics"
+	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 )
 
+// _backfillDays defines how much history an empty database is filled with.
 const _backfillDays = 30
 
 // Generator inserts demo time-series data into PostgreSQL.
 type Generator struct {
-	dsn string
-	r   *rand.Rand
+	// log is the structured logger.
 	log *slog.Logger
+
+	// dsn addresses the database to fill.
+	dsn string
+
+	// r is the random source used for all row generation.
+	r *rand.Rand
+
+	// interval defines how often a new tick of rows is appended.
+	interval time.Duration
+
+	// backfillDays defines how much history an empty database is filled with.
+	backfillDays int
 }
 
-// NewGenerator creates a new demo data generator.
+// NewGenerator creates a fresh instance of Generator.
 func NewGenerator(dsn string, log *slog.Logger) *Generator {
 	return &Generator{
-		dsn: dsn,
-		r:   mockmetrics.NewRand(time.Now().UnixNano()),
-		log: log,
+		log:          log,
+		dsn:          dsn,
+		r:            mockmetrics.NewRand(timeutil.Now().UnixNano()),
+		interval:     demodata.TickInterval,
+		backfillDays: _backfillDays,
 	}
 }
 
@@ -37,7 +54,7 @@ func (g *Generator) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("pgdemo: connect: %w", err)
 	}
-	defer conn.Close(ctx)
+	defer conn.Close(ctx) //nolint:errcheck // error provides no meaningful info
 
 	backfilled, err := g.needsBackfill(ctx, conn)
 	if err != nil {
@@ -45,7 +62,7 @@ func (g *Generator) Run(ctx context.Context) error {
 	}
 
 	if !backfilled {
-		g.log.Info("pgdemo: backfilling historical data", slog.Int("days", _backfillDays))
+		g.log.Info("pgdemo: backfilling historical data", slog.Int("days", g.backfillDays))
 
 		if err := g.backfill(ctx, conn); err != nil {
 			return fmt.Errorf("pgdemo: backfill: %w", err)
@@ -54,18 +71,19 @@ func (g *Generator) Run(ctx context.Context) error {
 		g.log.Info("pgdemo: backfill complete")
 	}
 
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-time.After(demodata.TickInterval):
-			now := time.Now().UTC()
-
-			if err := g.insertTick(ctx, conn, now); err != nil {
+	timeutil.NewPeriodicExec(
+		g.interval,
+		0,
+		func(ctx context.Context) {
+			if err := g.insertTick(ctx, conn, timeutil.Now()); err != nil {
 				g.log.Error("pgdemo: tick insert failed", slog.String("error", err.Error()))
 			}
-		}
-	}
+		},
+		nil,
+		false,
+	).Start(ctx)
+
+	return nil
 }
 
 // needsBackfill returns true if historical data already exists.
@@ -80,12 +98,12 @@ func (g *Generator) needsBackfill(ctx context.Context, conn *pgx.Conn) (bool, er
 	return count > 0, nil
 }
 
-// backfill generates _backfillDays worth of historical data.
+// backfill generates backfillDays worth of historical data.
 func (g *Generator) backfill(ctx context.Context, conn *pgx.Conn) error {
-	now := time.Now().UTC()
-	start := now.AddDate(0, 0, -_backfillDays)
+	now := timeutil.Now()
+	start := now.AddDate(0, 0, -g.backfillDays)
 
-	for t := start; t.Before(now); t = t.Add(demodata.TickInterval) {
+	for t := start; t.Before(now); t = t.Add(g.interval) {
 		if err := g.insertTick(ctx, conn, t); err != nil {
 			return err
 		}
@@ -125,7 +143,7 @@ func (g *Generator) insertTick(ctx context.Context, conn *pgx.Conn, t time.Time)
 	}
 
 	br := conn.SendBatch(ctx, batch)
-	defer br.Close()
+	defer br.Close() //nolint:errcheck // the exec errors below already report what failed
 
 	for range batch.Len() {
 		if _, err := br.Exec(); err != nil {

@@ -238,21 +238,6 @@ services:
       - SCREEN_DEPTH=16
       - MAX_CONCURRENT_CHROME_PROCESSES=10
       - LOG_LEVEL=WARNING
-  prometheus:
-    container_name: prometheus
-    image: prom/prometheus:latest
-    restart: unless-stopped
-    volumes:
-      - prometheus_data:/prometheus
-      - ./demo/prometheus:/etc/prometheus/
-    command:
-      - "--config.file=/etc/prometheus/prometheus.yaml"
-    logging:
-      driver: local
-      options:
-        mode: non-blocking
-        max-size: 10m
-        max-file: "3"
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
@@ -273,5 +258,4 @@ volumes:
   caddy_data:
   caddy_config:
   changedetection_data:
-  prometheus_data:
   grafana_storage:

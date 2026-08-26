@@ -6,7 +6,9 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
+	"strings"
 
+	"github.com/oxynote/oxynote/server/core/internal/datasource/demo"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/rs/xid"
@@ -21,6 +23,7 @@ import (
 type Manager struct {
 	log   *slog.Logger
 	store StatusStore
+	demo  *demo.Client
 }
 
 // NewManager creates a fresh instance of Manager.
@@ -28,12 +31,13 @@ func NewManager(log *slog.Logger, store StatusStore) *Manager {
 	return &Manager{
 		log:   log.With("component", "datasource"),
 		store: store,
+		demo:  demo.NewClient(),
 	}
 }
 
 // Runner returns the runner that operates the given data source.
 func (m *Manager) Runner(ds DataSource) Runner {
-	return &runner{ds: ds, log: m.log, store: m.store}
+	return &runner{ds: ds, log: m.log, store: m.store, demo: m.demo}
 }
 
 // runner operates one data source.
@@ -54,6 +58,10 @@ type runner struct {
 
 	// client is the processor this runner's type resolves to.
 	client connectionTester
+
+	// demo answers the data source this process synthesizes, shared with
+	// every other runner the manager hands out.
+	demo *demo.Client
 }
 
 // Type reports what the data source speaks.
@@ -172,7 +180,12 @@ func (r *runner) ensurePrepared() error {
 
 	switch r.ds.Type {
 	case TypePrometheus:
-		r.client = processor.NewPrometheus(newStateInput(r.ds.URL, r.ds.Credentials))
+		client, err := r.prometheusClient()
+		if err != nil {
+			return err
+		}
+
+		r.client = client
 	case TypePostgreSQL:
 		r.client = processor.NewPostgreSQL(newStateInput(r.ds.URL, r.ds.Credentials))
 	case TypeMariaDB, TypeMySQL:
@@ -184,6 +197,22 @@ func (r *runner) ensurePrepared() error {
 	r.prepared = true
 
 	return nil
+}
+
+// prometheusClient resolves which Prometheus a data source speaks to. The
+// demo scheme names a source this process synthesizes rather than one it
+// dials, and only the one demo source exists — a URL that merely looks
+// like it is a mistake worth reporting, not a second demo.
+func (r *runner) prometheusClient() (connectionTester, error) {
+	if r.ds.URL == demo.URL {
+		return r.demo, nil
+	}
+
+	if strings.HasPrefix(r.ds.URL, demo.Scheme) {
+		return nil, demo.ErrUnknownSource
+	}
+
+	return processor.NewPrometheus(newStateInput(r.ds.URL, r.ds.Credentials)), nil
 }
 
 // Runner operates one data source: it hands out the typed client for

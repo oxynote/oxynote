@@ -275,10 +275,10 @@ var _ meilisearch.IndexManager = &MeiliIndexManager{}
 //			GetSortableAttributesWithContextFunc: func(ctx context.Context) (*[]string, error) {
 //				panic("mock out the GetSortableAttributesWithContext method")
 //			},
-//			GetStatsFunc: func() (*meilisearch.StatsIndex, error) {
+//			GetStatsFunc: func(param *meilisearch.StatsParams) (*meilisearch.StatsIndex, error) {
 //				panic("mock out the GetStats method")
 //			},
-//			GetStatsWithContextFunc: func(ctx context.Context) (*meilisearch.StatsIndex, error) {
+//			GetStatsWithContextFunc: func(ctx context.Context, param *meilisearch.StatsParams) (*meilisearch.StatsIndex, error) {
 //				panic("mock out the GetStatsWithContext method")
 //			},
 //			GetStopWordsFunc: func() (*[]string, error) {
@@ -898,10 +898,10 @@ type MeiliIndexManager struct {
 	GetSortableAttributesWithContextFunc func(ctx context.Context) (*[]string, error)
 
 	// GetStatsFunc mocks the GetStats method.
-	GetStatsFunc func() (*meilisearch.StatsIndex, error)
+	GetStatsFunc func(param *meilisearch.StatsParams) (*meilisearch.StatsIndex, error)
 
 	// GetStatsWithContextFunc mocks the GetStatsWithContext method.
-	GetStatsWithContextFunc func(ctx context.Context) (*meilisearch.StatsIndex, error)
+	GetStatsWithContextFunc func(ctx context.Context, param *meilisearch.StatsParams) (*meilisearch.StatsIndex, error)
 
 	// GetStopWordsFunc mocks the GetStopWords method.
 	GetStopWordsFunc func() (*[]string, error)
@@ -1750,11 +1750,15 @@ type MeiliIndexManager struct {
 		}
 		// GetStats holds details about calls to the GetStats method.
 		GetStats []struct {
+			// Param is the param argument value.
+			Param *meilisearch.StatsParams
 		}
 		// GetStatsWithContext holds details about calls to the GetStatsWithContext method.
 		GetStatsWithContext []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
+			// Param is the param argument value.
+			Param *meilisearch.StatsParams
 		}
 		// GetStopWords holds details about calls to the GetStopWords method.
 		GetStopWords []struct {
@@ -5751,9 +5755,12 @@ func (mock *MeiliIndexManager) GetSortableAttributesWithContextCalls() []struct 
 }
 
 // GetStats calls GetStatsFunc.
-func (mock *MeiliIndexManager) GetStats() (*meilisearch.StatsIndex, error) {
+func (mock *MeiliIndexManager) GetStats(param *meilisearch.StatsParams) (*meilisearch.StatsIndex, error) {
 	callInfo := struct {
-	}{}
+		Param *meilisearch.StatsParams
+	}{
+		Param: param,
+	}
 	mock.lockGetStats.Lock()
 	mock.calls.GetStats = append(mock.calls.GetStats, callInfo)
 	mock.lockGetStats.Unlock()
@@ -5764,7 +5771,7 @@ func (mock *MeiliIndexManager) GetStats() (*meilisearch.StatsIndex, error) {
 		)
 		return statsIndexOut, errOut
 	}
-	return mock.GetStatsFunc()
+	return mock.GetStatsFunc(param)
 }
 
 // GetStatsCalls gets all the calls that were made to GetStats.
@@ -5772,8 +5779,10 @@ func (mock *MeiliIndexManager) GetStats() (*meilisearch.StatsIndex, error) {
 //
 //	len(mockedIndexManager.GetStatsCalls())
 func (mock *MeiliIndexManager) GetStatsCalls() []struct {
+	Param *meilisearch.StatsParams
 } {
 	var calls []struct {
+		Param *meilisearch.StatsParams
 	}
 	mock.lockGetStats.RLock()
 	calls = mock.calls.GetStats
@@ -5782,11 +5791,13 @@ func (mock *MeiliIndexManager) GetStatsCalls() []struct {
 }
 
 // GetStatsWithContext calls GetStatsWithContextFunc.
-func (mock *MeiliIndexManager) GetStatsWithContext(ctx context.Context) (*meilisearch.StatsIndex, error) {
+func (mock *MeiliIndexManager) GetStatsWithContext(ctx context.Context, param *meilisearch.StatsParams) (*meilisearch.StatsIndex, error) {
 	callInfo := struct {
-		Ctx context.Context
+		Ctx   context.Context
+		Param *meilisearch.StatsParams
 	}{
-		Ctx: ctx,
+		Ctx:   ctx,
+		Param: param,
 	}
 	mock.lockGetStatsWithContext.Lock()
 	mock.calls.GetStatsWithContext = append(mock.calls.GetStatsWithContext, callInfo)
@@ -5798,7 +5809,7 @@ func (mock *MeiliIndexManager) GetStatsWithContext(ctx context.Context) (*meilis
 		)
 		return statsIndexOut, errOut
 	}
-	return mock.GetStatsWithContextFunc(ctx)
+	return mock.GetStatsWithContextFunc(ctx, param)
 }
 
 // GetStatsWithContextCalls gets all the calls that were made to GetStatsWithContext.
@@ -5806,10 +5817,12 @@ func (mock *MeiliIndexManager) GetStatsWithContext(ctx context.Context) (*meilis
 //
 //	len(mockedIndexManager.GetStatsWithContextCalls())
 func (mock *MeiliIndexManager) GetStatsWithContextCalls() []struct {
-	Ctx context.Context
+	Ctx   context.Context
+	Param *meilisearch.StatsParams
 } {
 	var calls []struct {
-		Ctx context.Context
+		Ctx   context.Context
+		Param *meilisearch.StatsParams
 	}
 	mock.lockGetStatsWithContext.RLock()
 	calls = mock.calls.GetStatsWithContext

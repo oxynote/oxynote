@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strings"
 
-	gogithub "github.com/google/go-github/v72/github"
+	gogithub "github.com/google/go-github/v88/github"
 )
 
 // TreeItemType represents the type of a tree item, either a file or a folder.

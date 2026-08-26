@@ -1,0 +1,74 @@
+name: QA
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - datagen/**
+      - .github/workflows/qa-datagen.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - datagen/**
+      - .github/workflows/qa-datagen.yml
+
+# a newer push supersedes the still-running workflow of the stale commit
+# and cancels it. The group carries a hardcoded per-file prefix because
+# every QA workflow shares the display name "QA", so github.workflow
+# would put them all in one group and let a run of one workflow cancel
+# an in-flight run of another.
+concurrency:
+  group: qa-datagen-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lint:
+    name: Linting datagen
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: datagen/go.mod
+          cache-dependency-path: datagen/go.sum
+
+      - name: Installing dependencies
+        run: go mod download
+        working-directory: datagen
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.13
+          working-directory: datagen
+
+  test:
+    name: Unit testing datagen
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: datagen/go.mod
+          cache-dependency-path: datagen/go.sum
+
+      - name: Installing dependencies
+        run: go mod download
+        working-directory: datagen
+
+      # the pgdemo and mariademo suites run against throwaway containers,
+      # which the ubuntu runners provide a docker daemon for out of the box.
+      - name: Run unit tests
+        run: make check-coverage
+        working-directory: datagen

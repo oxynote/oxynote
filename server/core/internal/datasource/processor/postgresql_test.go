@@ -693,9 +693,10 @@ func Test_PostgreSQL_connect(t *testing.T) {
 	_, err = p.connect(context.Background())
 	assert.Error(t, err)
 
-	// the session refuses writes, and the simple protocol cannot be
+	// the session refuses writes, and connection-string keys outside the
+	// allowlist are rejected at parse, so the simple protocol cannot be
 	// re-enabled through the data source URL to smuggle a second statement
-	// past the gate.
+	// past the gate, and the URL cannot reach the local filesystem.
 	cc := map[string]struct {
 		URL   string
 		Query string
@@ -707,6 +708,18 @@ func Test_PostgreSQL_connect(t *testing.T) {
 		"Write smuggled through the simple protocol": {
 			URL:   pgTestURL(_pgUser, _pgPass) + "&default_query_exec_mode=simple_protocol",
 			Query: "SET transaction_read_only = off; DELETE FROM metrics",
+		},
+		"Disallowed sslkey key": {
+			URL:   pgTestURL(_pgUser, _pgPass) + "&sslkey=/tmp/key",
+			Query: "SELECT time FROM metrics",
+		},
+		"Disallowed servicefile key": {
+			URL:   pgTestURL(_pgUser, _pgPass) + "&servicefile=/tmp/service",
+			Query: "SELECT time FROM metrics",
+		},
+		"Disallowed options key": {
+			URL:   pgTestURL(_pgUser, _pgPass) + "&options=-csearch_path%3Dpublic",
+			Query: "SELECT time FROM metrics",
 		},
 	}
 
@@ -721,7 +734,12 @@ func Test_PostgreSQL_connect(t *testing.T) {
 			_, err := p.Query(context.Background(), c.Query, _testTimeRange)
 			assert.Error(t, err)
 
-			// the rows are still there.
+			// the rows are still there, checked over a clean URL since the
+			// case's own URL may be the thing being rejected.
+			p = NewPostgreSQL(&InputMock{
+				URLFunc: func() string { return pgTestURL(_pgUser, _pgPass) },
+			})
+
 			res, err := p.Query(context.Background(), "SELECT time FROM metrics ORDER BY time", _testTimeRange)
 			require.NoError(t, err)
 			assert.Len(t, res.Rows, 2)

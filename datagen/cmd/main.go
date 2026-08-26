@@ -1,3 +1,5 @@
+// Package main runs the demo data generator: it serves mock engineering
+// metrics for Prometheus to scrape and fills the demo databases with rows.
 package main
 
 import (

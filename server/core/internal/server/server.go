@@ -48,9 +48,6 @@ type Options struct {
 	// PublicURL is the public URL of the server.
 	PublicURL string
 
-	// DemoPrometheusURL is the URL of the demo Prometheus instance.
-	DemoPrometheusURL string
-
 	// Port specifies which port should be used by the server.
 	Port uint
 
@@ -172,7 +169,6 @@ func NewServer(
 		webchangeClient,
 		searchJobs,
 		opts.PublicURL+_organizationLogoLocation,
-		opts.DemoPrometheusURL,
 	)
 	srv.handlers.document = document.NewHandler(log, db, githubMan, webchangeClient, searchGateway, searchJobs, notifier, storageClient)
 	srv.handlers.comment = comment.NewHandler(log, db, notifier)

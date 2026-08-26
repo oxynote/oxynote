@@ -130,6 +130,10 @@ linters:
     goconst:
       min-occurrences: 5
       numbers: true
+    gomoddirectives:
+      # datagen builds against the core module in this same repository, so
+      # the local replace is how the two are wired, not a leftover.
+      replace-local: true
     forbidigo:
       forbid:
         # timeutil.Now is mockable; time.Now is not, which makes every
@@ -246,30 +250,11 @@ linters:
         text: fmt.Print
       - linters:
           - forbidigo
-        path: pkg/timeutil
-        text: time.Now
-      - linters:
-          - forbidigo
         path: _test.go
         text: time.Now
       - linters:
           - gochecknoglobals
         text: ^_.+
-      # the demo registry is tuned sampling parameters read as a block: every
-      # bound, target and spike chance is one row of demo tuning, not a
-      # threshold logic branches on. Naming each would bury the table, and a
-      # shared constant would tie together gauges that only coincide today.
-      - linters:
-          - goconst
-          - mnd
-        path: internal/datasource/demo
-      # the demo timeline promises bit-identical replay, so its tests compare
-      # the floats it produces exactly. A tolerance would pass on precisely
-      # the drift the assertions exist to catch.
-      - linters:
-          - testifylint
-        path: internal/datasource/demo
-        text: float-compare
       - linters:
           - forcetypeassert
           - gochecknoinits
@@ -290,39 +275,26 @@ linters:
       - linters:
           - gosec
         text: G115
-      # snake_case wire contracts: the assistant's Anthropic tool schemas, WS
-      # chat protocol, liveedit operations payload, and canonical AI block
-      # JSON (which the MCP bridge also speaks), plus the
-      # changedetection.io API.
-      - linters:
-          - tagliatelle
-        path: internal/assistant|internal/apps/webchange|internal/server/internal/mcp
       - linters:
           - musttag
         text: should be annotated with the `db`
       - linters:
           - goconst
         text: string `(true|false)` has
-      # SQL column names in query builders mirror the schema and stay
-      # greppable against migrations; constants would obscure the queries.
+      # the gauge tables are tuned sampling parameters read as a block: every
+      # bound, target and spike chance is one row of demo tuning, not a
+      # threshold logic branches on. Naming each would bury the tables, and a
+      # shared constant would tie together gauges that only coincide today.
       - linters:
           - goconst
-        path: internal/db
+          - mnd
+        path: internal/gen
       - linters:
           - dupword
         source: '^//go:generate '
       - linters:
           - usetesting
         text: could be replaced by t.Context()
-      - linters:
-          - unqueryvet
-        # the processors forward user-written SQL and wrap it to bound the
-        # row count; there are no columns of their own to name.
-        path: internal/db|pkg/sqlutil|internal/datasource/processor
-      - linters:
-          - revive
-        path: pkg/ioutil
-        text: package-naming
       - linters:
           - revive
         text: Import alias "v1" is redundant

@@ -2,7 +2,6 @@
 package slack
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -355,7 +354,7 @@ func (h *Handler) HandleCommand(w http.ResponseWriter, r *http.Request) {
 	if !app.OrganizationID.Valid { //nolint:nestif // the branching is sequential and readable
 		var user *goslack.User
 
-		user, err = client.GetUserInfo(payload.User.ID)
+		user, err = client.GetUserInfoContext(r.Context(), payload.User.ID)
 		if err != nil {
 			httpserver.RespondError(h.log, w, err)
 			return
@@ -429,35 +428,15 @@ func (h *Handler) HandleCommand(w http.ResponseWriter, r *http.Request) {
 
 // sendEphemeralResponse sends an ephemeral response to a Slack interaction.
 func (h *Handler) sendEphemeralResponse(ctx context.Context, responseURL, text string) error {
-	body := struct {
-		Text string `json:"text"`
-	}{
-		Text: text,
-	}
-
-	data, err := json.Marshal(body)
-	if err != nil {
-		return fmt.Errorf("failed to marshal response body: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, responseURL, bytes.NewBuffer(data))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := h.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send response: %w", err)
-	}
-	defer resp.Body.Close() //nolint:errcheck // error provides no meaningful info
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("received non-OK response: %s", resp.Status)
-	}
-
-	return nil
+	return goslack.PostWebhookCustomHTTPContext(
+		ctx,
+		responseURL,
+		h.client,
+		&goslack.WebhookMessage{
+			Text:         text,
+			ResponseType: goslack.ResponseTypeEphemeral,
+		},
+	)
 }
 
 // DB is an interface that handles communication with the document database.
