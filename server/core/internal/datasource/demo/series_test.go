@@ -35,7 +35,7 @@ func Test_tickAt(t *testing.T) {
 		"Part way into a tick": {Time: _epoch.Add(30 * time.Second), Result: 0},
 		"The next tick":        {Time: _epoch.Add(time.Minute), Result: 1},
 		"An hour in":           {Time: _epoch.Add(time.Hour), Result: 60},
-		"A day in":             {Time: _epoch.Add(24 * time.Hour), Result: _segment},
+		"A day in":             {Time: _epoch.Add(24 * time.Hour), Result: 1440},
 		"Before the epoch": {
 			Time:   _epoch.Add(-time.Hour),
 			Result: -60,
@@ -61,7 +61,7 @@ func Test_tickAtMillis(t *testing.T) {
 		"The epoch itself":     {Millis: _epoch.UnixMilli(), Result: 0},
 		"Part way into a tick": {Millis: _epoch.UnixMilli() + 30_000, Result: 0},
 		"The next tick":        {Millis: _epoch.UnixMilli() + 60_000, Result: 1},
-		"A day in":             {Millis: _epoch.Add(24 * time.Hour).UnixMilli(), Result: _segment},
+		"A day in":             {Millis: _epoch.Add(24 * time.Hour).UnixMilli(), Result: 1440},
 	}
 
 	for cn, c := range cc {
@@ -81,7 +81,7 @@ func Test_timeAt(t *testing.T) {
 
 	// the two directions agree, which is what lets a sample timestamp be
 	// turned back into the tick that produced its value.
-	for _, tick := range []int64{0, 1, 59, _segment, 1_000_000} {
+	for _, tick := range []int64{0, 1, 59, 1440, 1_000_000} {
 		assert.Equal(t, tick, tickAt(timeAt(tick)))
 	}
 }
@@ -232,19 +232,21 @@ func Test_walk_at(t *testing.T) {
 	// within one process.
 	a, b := newWalk(5, _testWalk), newWalk(5, _testWalk)
 
-	for _, tick := range []int64{0, 1, 100, _segment - 1, _segment, _segment + 1, 3*_segment + 7} {
+	boundary := int64(_segment * _walkStride)
+
+	for _, tick := range []int64{0, 1, 100, boundary - 1, boundary, boundary + 1, 3*boundary + 7} {
 		assert.Equal(t, a.at(tick), b.at(tick), "tick %d", tick)
 	}
 
 	// reading out of order answers the same as reading in order: a value
 	// depends on its tick, not on what was read before it.
 	c := newWalk(5, _testWalk)
-	assert.Equal(t, a.at(2*_segment+3), c.at(2*_segment+3))
+	assert.Equal(t, a.at(2*boundary+3), c.at(2*boundary+3))
 
 	// the walk starts where it was told to and stays inside its bounds.
 	assert.Equal(t, _testWalk.Start, a.at(0))
 
-	for _, tick := range []int64{1, 500, _segment, 5_000} {
+	for _, tick := range []int64{1, 500, boundary, 5_000} {
 		assert.GreaterOrEqual(t, a.at(tick), _testWalk.Min)
 		assert.LessOrEqual(t, a.at(tick), _testWalk.Max)
 	}
@@ -255,7 +257,7 @@ func Test_walk_at(t *testing.T) {
 
 	// a segment boundary is continuous: the first tick of a segment is
 	// the value the previous segment ended on.
-	assert.Equal(t, a.checkpoint(1), a.at(_segment))
+	assert.Equal(t, a.checkpoint(1), a.at(boundary))
 }
 
 func Test_walk_checkpoint(t *testing.T) {

@@ -121,7 +121,9 @@ func Test_Manager_Runner(t *testing.T) {
 	store := &StatusStoreMock{}
 	ds := DataSource{Type: TypePrometheus, URL: "http://prometheus.test"}
 
-	r, ok := NewManager(discardLog(), store).Runner(ds).(*runner)
+	m := NewManager(discardLog(), store)
+
+	r, ok := m.Runner(ds).(*runner)
 	require.True(t, ok)
 
 	// the runner carries the data source it operates and shares the
@@ -130,6 +132,15 @@ func Test_Manager_Runner(t *testing.T) {
 	assert.Same(t, store, r.store)
 	assert.False(t, r.prepared)
 	assert.Nil(t, r.client)
+
+	// the demo client is one of those longer-lived things: it caches the
+	// history it replays, so every runner has to read the manager's
+	// rather than build one of its own.
+	require.NotNil(t, r.demo)
+
+	second, ok := m.Runner(ds).(*runner)
+	require.True(t, ok)
+	assert.Same(t, r.demo, second.demo)
 }
 
 func Test_runner_Type(t *testing.T) {

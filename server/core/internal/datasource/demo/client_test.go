@@ -71,7 +71,7 @@ func Test_Client_TestConnection(t *testing.T) {
 	t.Parallel()
 
 	// the demo is this process, so the connection cannot be down.
-	cs, err := NewClient().TestConnection(context.Background())
+	cs, err := _client.TestConnection(context.Background())
 
 	require.NoError(t, err)
 	assert.Equal(t, processor.ConnectionStatusSuccess, cs)
@@ -80,7 +80,7 @@ func Test_Client_TestConnection(t *testing.T) {
 func Test_Client_Metadata(t *testing.T) {
 	t.Parallel()
 
-	c := NewClient()
+	c := _client
 
 	res, err := c.Metadata(context.Background())
 	require.NoError(t, err)
@@ -106,7 +106,7 @@ func Test_Client_Metadata(t *testing.T) {
 func Test_Client_QueryRange(t *testing.T) {
 	t.Parallel()
 
-	c := NewClient()
+	c := _client
 	name := _namespace + "deploy_confidence_index"
 
 	cc := map[string]struct {
@@ -223,7 +223,7 @@ func Test_Client_QueryRange(t *testing.T) {
 func Test_Client_QueryRange_isFrozen(t *testing.T) {
 	t.Parallel()
 
-	c := NewClient()
+	c := _client
 	tr := lastThreeHours()
 	q := _namespace + "stale_branches_total"
 
@@ -258,7 +258,7 @@ func Test_Client_QueryRange_isFrozen(t *testing.T) {
 func Test_Client_LabelNames(t *testing.T) {
 	t.Parallel()
 
-	c := NewClient()
+	c := _client
 
 	res, err := c.LabelNames(context.Background(), nil, lastThreeHours())
 	require.NoError(t, err)
@@ -285,7 +285,7 @@ func Test_Client_LabelNames(t *testing.T) {
 func Test_Client_LabelValues(t *testing.T) {
 	t.Parallel()
 
-	c := NewClient()
+	c := _client
 
 	// the metric names are what the editor completes on.
 	res, err := c.LabelValues(context.Background(), model.MetricNameLabel, nil, lastThreeHours())
@@ -313,7 +313,7 @@ func Test_Client_LabelValues(t *testing.T) {
 func Test_Client_Series(t *testing.T) {
 	t.Parallel()
 
-	c := NewClient()
+	c := _client
 
 	res, err := c.Series(
 		context.Background(),
@@ -360,7 +360,7 @@ func Test_Client_Series(t *testing.T) {
 func Test_Client_parseMatchers(t *testing.T) {
 	t.Parallel()
 
-	c := NewClient()
+	c := _client
 
 	// no selector means one empty set, which selects everything.
 	sets, err := c.parseMatchers(nil)
@@ -434,7 +434,7 @@ func Test_welcomeDocumentQueries(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &blocks))
 	require.NotEmpty(t, blocks)
 
-	c := NewClient()
+	c := _client
 	tr := lastThreeHours()
 
 	var queries int

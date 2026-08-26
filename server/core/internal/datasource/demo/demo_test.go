@@ -7,7 +7,16 @@ import (
 	"go.uber.org/goleak"
 )
 
+// _client is the client every test that reads the timeline goes through.
+// One client is what a process has — the manager holds it — and building
+// one per test would pay the registry's cold replay over and over, which
+// on a small runner is the difference between a query answering and
+// timing out.
+var _client *Client
+
 func TestMain(m *testing.M) {
+	_client = NewClient()
+
 	goleak.VerifyTestMain(m)
 }
 

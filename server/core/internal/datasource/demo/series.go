@@ -16,10 +16,17 @@ const _tick = time.Minute
 // counts in.
 const _tickMillis = int64(_tick / time.Millisecond)
 
-// _segment is how many ticks one replay segment spans. A sample replays
-// at most this many steps from the checkpoint before it, which is what
-// keeps a query over a year from walking every tick since the epoch.
-const _segment = 1440
+// _walkStride is how many ticks pass between two steps of a walk, which
+// is the interval the generator these parameters come from advanced on.
+// Ticks in between are interpolated, so a walk costs a fifth of what
+// stepping it every tick would while reading the same at any tick.
+const _walkStride = 5
+
+// _segment is how many walk steps one replay segment spans — a day of
+// them. A sample replays at most this many steps from the checkpoint
+// before it, which is what keeps a query over a year from walking every
+// step since the epoch.
+const _segment = 288
 
 // _seedStride separates the random streams of two series whose segment
 // numbers differ by one, so no two streams overlap.
@@ -158,24 +165,41 @@ func newWalk(seed int64, params walkParams) *walk {
 	}
 }
 
-// at returns the walk's value at the given tick.
+// at returns the walk's value at the given tick, interpolating between
+// the two walk steps it falls between so a chart drawn at tick
+// resolution is a line rather than a staircase.
 func (w *walk) at(tick int64) float64 {
 	if tick < 0 {
 		tick = 0
 	}
 
-	segment := tick / _segment
+	step := tick / _walkStride
+
+	from := w.atStep(step)
+	if tick%_walkStride == 0 {
+		return from
+	}
+
+	to := w.atStep(step + 1)
+
+	return from + (to-from)*float64(tick%_walkStride)/_walkStride
+}
+
+// atStep returns the walk's value at the given step of its own clock.
+func (w *walk) atStep(step int64) float64 {
+	segment := step / _segment
 
 	return replay(
 		w.checkpoint(segment),
 		w.params,
 		newRand(w.seed, segment),
-		int(tick%_segment),
+		int(step%_segment),
 	)
 }
 
-// checkpoint returns the walk's value at the start of the given segment,
-// computing and caching every segment before it that is not cached yet.
+// checkpoint returns the walk's value at the first step of the given
+// segment, computing and caching every segment before it that is not
+// cached yet.
 func (w *walk) checkpoint(segment int64) float64 {
 	w.mu.Lock()
 	defer w.mu.Unlock()
