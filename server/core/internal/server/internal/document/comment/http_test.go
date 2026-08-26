@@ -472,6 +472,7 @@ func Test_Handler_FetchDocumentComments(t *testing.T) {
 	cc := map[string]struct {
 		DB        *DBMock
 		NoSession bool
+		OmitDoc   bool
 		Query     string
 		RespCode  int
 	}{
@@ -481,10 +482,34 @@ func Test_Handler_FetchDocumentComments(t *testing.T) {
 			Query:     "?branchId=" + _branchID.String(),
 			RespCode:  http.StatusUnauthorized,
 		},
+		"Missing document ID parameter": {
+			DB:       &DBMock{},
+			OmitDoc:  true,
+			Query:    "?branchId=" + _branchID.String(),
+			RespCode: http.StatusNotFound,
+		},
 		"Invalid branch ID query parameter": {
 			DB:       &DBMock{},
 			Query:    "?branchId=bogus",
 			RespCode: http.StatusBadRequest,
+		},
+		"Branch document fetch error": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return nil, errors.New("boom")
+				},
+			},
+			Query:    "?branchId=" + _branchID.String(),
+			RespCode: http.StatusInternalServerError,
+		},
+		"Branch of another document": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return &documentCore.Document{ID: xid.New()}, nil
+				},
+			},
+			Query:    "?branchId=" + _branchID.String(),
+			RespCode: http.StatusNotFound,
 		},
 		"Comments fetch error": {
 			DB: &DBMock{
@@ -510,20 +535,32 @@ func Test_Handler_FetchDocumentComments(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
+			if c.DB.FetchDocumentByBranchIDFunc == nil {
+				c.DB.FetchDocumentByBranchIDFunc = func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return &documentCore.Document{ID: _documentID}, nil
+				}
+			}
+
 			hdl := newTestHandler(c.DB, &fakePublisher{}, nil)
 
 			req := httptest.NewRequest(http.MethodGet, "http://test.com/"+c.Query, http.NoBody)
 
+			ctx := req.Context()
+
 			if !c.NoSession {
-				req = req.WithContext(auth.AddSessionToContext(req.Context(), auth.Session{
+				ctx = auth.AddSessionToContext(ctx, auth.Session{
 					UserID:               "u1",
 					ActiveOrganizationID: "org1",
-				}))
+				})
+			}
+
+			if !c.OmitDoc {
+				ctx = testutil.AddChiCtx(ctx, "documentId", _documentID.String())
 			}
 
 			rec := httptest.NewRecorder()
 
-			hdl.FetchDocumentComments(rec, req)
+			hdl.FetchDocumentComments(rec, req.WithContext(ctx))
 
 			assert.Equal(t, c.RespCode, rec.Code)
 

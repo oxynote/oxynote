@@ -1057,6 +1057,7 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 		Tx           *TxMock
 		BeginErr     error
 		NoSession    bool
+		OmitDoc      bool
 		Body         string
 		CopiedHooks  []hookCore.Hook
 		HookFetchErr error
@@ -1069,6 +1070,26 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 			NoSession: true,
 			Body:      validBody,
 			RespCode:  http.StatusUnauthorized,
+		},
+		"Missing document ID parameter": {
+			DB:       &DBMock{},
+			Tx:       &TxMock{},
+			OmitDoc:  true,
+			Body:     validBody,
+			RespCode: http.StatusNotFound,
+		},
+		"Source branch of another document": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					doc := storedDoc()
+					doc.ID = xid.New()
+
+					return doc, nil
+				},
+			},
+			Tx:       &TxMock{},
+			Body:     validBody,
+			RespCode: http.StatusNotFound,
 		},
 		"Invalid JSON body": {
 			DB:       &DBMock{},
@@ -1197,7 +1218,7 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 
 			rec := httptest.NewRecorder()
 
-			hdl.CreateDocumentBranch(rec, newRequest(http.MethodPost, c.Body, c.NoSession, true, true))
+			hdl.CreateDocumentBranch(rec, newRequest(http.MethodPost, c.Body, c.NoSession, c.OmitDoc, true))
 
 			assert.Equal(t, c.RespCode, rec.Code)
 			assert.Len(t, c.Tx.CommitCalls(), c.Committed)

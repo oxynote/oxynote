@@ -272,6 +272,7 @@ func (s *Server) router() chi.Router {
 		sr.Get("/search", s.handlers.document.SearchDocuments)
 		sr.Post("/", s.handlers.document.CreateDocument)
 		sr.Route("/{documentId}", func(ssr chi.Router) {
+			ssr.Use(s.handlers.document.RequireDocumentAccess)
 			ssr.Get("/access", s.handlers.document.VerifyDocumentAccess)
 			ssr.Get("/maintainers", s.handlers.document.FetchDocumentMaintainers)
 			ssr.Delete("/", s.handlers.document.DeleteDocument)

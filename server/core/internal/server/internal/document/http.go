@@ -89,6 +89,34 @@ func NewHandler(
 	}
 }
 
+// RequireDocumentAccess rejects a request whose path document does not exist
+// within the caller's organization. A handler that only filters its query by
+// organization answers such a request with an empty success, which tells a
+// caller enumerating ids that the document exists somewhere else; behind this
+// every route under a document answers not found instead, the same as one
+// naming an id that exists nowhere.
+func (h *Handler) RequireDocumentAccess(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		session, ok := auth.RequireSession(h.log, w, r)
+		if !ok {
+			return
+		}
+
+		id, err := httpserver.ExtractNamedID(r, "documentId")
+		if err != nil {
+			httpserver.RespondError(h.log, w, err)
+			return
+		}
+
+		if err := h.db.CheckDocumentExists(r.Context(), id, session.ActiveOrganizationID); err != nil {
+			httpserver.RespondError(h.log, w, err)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 // FetchDocumentMaintainers handles the retrieval of document maintainers by document ID.
 func (h *Handler) FetchDocumentMaintainers(w http.ResponseWriter, r *http.Request) {
 	session, ok := auth.RequireSession(h.log, w, r)
@@ -151,9 +179,26 @@ func (h *Handler) FetchBranchReviewers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	id, err := httpserver.ExtractNamedID(r, "documentId")
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
 	branchID, err := httpserver.ExtractNamedID(r, "branchId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	branchDoc, err := h.db.FetchDocumentByBranchID(r.Context(), branchID, session.ActiveOrganizationID)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if branchDoc.ID != id {
+		httpserver.RespondError(h.log, w, ErrBranchMismatch)
 		return
 	}
 
@@ -1154,12 +1199,18 @@ func (h *Handler) CreateDocumentBranch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	id, err := httpserver.ExtractNamedID(r, "documentId")
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
 	var inp struct {
 		Branch         string `json:"branch"`
 		SourceBranchID xid.ID `json:"sourceBranchId"`
 	}
 
-	if err := httpserver.DecodeJSON(r, &inp); err != nil {
+	if err = httpserver.DecodeJSON(r, &inp); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -1172,6 +1223,11 @@ func (h *Handler) CreateDocumentBranch(w http.ResponseWriter, r *http.Request) {
 	sourceDoc, err := h.db.FetchDocumentByBranchID(r.Context(), inp.SourceBranchID, session.ActiveOrganizationID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if sourceDoc.ID != id {
+		httpserver.RespondError(h.log, w, ErrBranchMismatch)
 		return
 	}
 

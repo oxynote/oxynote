@@ -42,18 +42,16 @@ test.describe("access", () => {
 		const branches = await page.request.get(
 			coreURL(`/api/documents/${foreign}/branches`),
 		)
-		// 200 is what these answer today, not what they should. Both are
-		// list queries whose organization filter simply matches nothing,
-		// so a denial arrives as an empty success — a document another
-		// workspace owns belongs behind a 404, as deleting one already is.
-		expect(branches.status()).toBe(200)
-		expect(await branches.json()).toEqual([])
+		// a document another workspace owns is answered exactly as one that
+		// does not exist. Both of these are list queries, so without the
+		// check the organization filter would simply match nothing and the
+		// denial would arrive as an empty success
+		expect(branches.status()).toBe(404)
 
 		const maintainers = await page.request.get(
 			coreURL(`/api/documents/${foreign}/maintainers`),
 		)
-		expect(maintainers.status()).toBe(200)
-		expect(await maintainers.json()).toEqual([])
+		expect(maintainers.status()).toBe(404)
 
 		await other.context.close()
 	})

@@ -114,6 +114,7 @@ func Test_Handler_FetchDocumentHooks(t *testing.T) {
 	cc := map[string]struct {
 		DB        *DBMock
 		NoSession bool
+		OmitID    bool
 		Query     string
 		Checks    []check
 	}{
@@ -126,11 +127,44 @@ func Test_Handler_FetchDocumentHooks(t *testing.T) {
 				wasFetchCalled(0),
 			),
 		},
+		"Missing document ID parameter": {
+			DB:     &DBMock{},
+			OmitID: true,
+			Query:  "?branchId=" + _branchID.String(),
+			Checks: checks(
+				hasResp(http.StatusNotFound, `{"code":"general","message":"not found"}`),
+				wasFetchCalled(0),
+			),
+		},
 		"Invalid branch ID query parameter": {
 			DB:    &DBMock{},
 			Query: "?branchId=bogus",
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"request.invalid_form","message":"invalid form data"}`),
+				wasFetchCalled(0),
+			),
+		},
+		"Branch document fetch error": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*document.Document, error) {
+					return nil, errors.New("boom")
+				},
+			},
+			Query: "?branchId=" + _branchID.String(),
+			Checks: checks(
+				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				wasFetchCalled(0),
+			),
+		},
+		"Branch belongs to another document": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*document.Document, error) {
+					return &document.Document{ID: xid.New()}, nil
+				},
+			},
+			Query: "?branchId=" + _branchID.String(),
+			Checks: checks(
+				hasResp(http.StatusNotFound, `{"code":"document.branch_mismatch","message":"branch does not belong to the document"}`),
 				wasFetchCalled(0),
 			),
 		},
@@ -167,6 +201,12 @@ func Test_Handler_FetchDocumentHooks(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
+			if c.DB.FetchDocumentByBranchIDFunc == nil {
+				c.DB.FetchDocumentByBranchIDFunc = func(context.Context, xid.ID, string) (*document.Document, error) {
+					return &document.Document{ID: _documentID}, nil
+				}
+			}
+
 			hdl := Handler{
 				log:             slog.New(slog.DiscardHandler),
 				db:              c.DB,
@@ -175,13 +215,19 @@ func Test_Handler_FetchDocumentHooks(t *testing.T) {
 
 			req := httptest.NewRequest(http.MethodGet, "http://test.com/"+c.Query, http.NoBody)
 
+			ctx := req.Context()
+
 			if !c.NoSession {
-				req = req.WithContext(addSession(req.Context()))
+				ctx = addSession(ctx)
+			}
+
+			if !c.OmitID {
+				ctx = testutil.AddChiCtx(ctx, "documentId", _documentID.String())
 			}
 
 			rec := httptest.NewRecorder()
 
-			hdl.FetchDocumentHooks(rec, req)
+			hdl.FetchDocumentHooks(rec, req.WithContext(ctx))
 
 			for _, ch := range c.Checks {
 				ch(t, c.DB, rec)

@@ -55,9 +55,26 @@ func (h *Handler) FetchDocumentHooks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	documentID, err := httpserver.ExtractNamedID(r, "documentId")
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
 	branchID, err := httpserver.ExtractQueryID(r, "branchId")
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	branchDoc, err := h.db.FetchDocumentByBranchID(r.Context(), branchID, session.ActiveOrganizationID)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if branchDoc.ID != documentID {
+		httpserver.RespondError(h.log, w, ErrBranchMismatch)
 		return
 	}
 

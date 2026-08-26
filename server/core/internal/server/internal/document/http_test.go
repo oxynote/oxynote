@@ -167,6 +167,81 @@ func Test_NewHandler(t *testing.T) {
 	assert.Nil(t, hdl.webchangeClient)
 }
 
+func Test_Handler_RequireDocumentAccess(t *testing.T) {
+	cc := map[string]struct {
+		DB        *DBMock
+		NoSession bool
+		OmitDoc   bool
+		RespCode  int
+		Passed    bool
+	}{
+		"No session in context": {
+			DB:        &DBMock{},
+			NoSession: true,
+			RespCode:  http.StatusUnauthorized,
+		},
+		"Missing document ID parameter": {
+			DB:       &DBMock{},
+			OmitDoc:  true,
+			RespCode: http.StatusNotFound,
+		},
+		"Document existence check error": {
+			DB: &DBMock{
+				CheckDocumentExistsFunc: func(context.Context, xid.ID, string) error {
+					return errors.New("boom")
+				},
+			},
+			RespCode: http.StatusInternalServerError,
+		},
+		"Document outside the caller's organization": {
+			DB: &DBMock{
+				CheckDocumentExistsFunc: func(context.Context, xid.ID, string) error {
+					return errutil.ErrNotFound
+				},
+			},
+			RespCode: http.StatusNotFound,
+		},
+		"Document within the caller's organization": {
+			DB:       &DBMock{},
+			RespCode: http.StatusTeapot,
+			Passed:   true,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			hdl, _ := newTestHandler(c.DB, &fakePublisher{})
+
+			var passed bool
+
+			next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				passed = true
+
+				w.WriteHeader(http.StatusTeapot)
+			})
+
+			rec := httptest.NewRecorder()
+
+			hdl.RequireDocumentAccess(next).
+				ServeHTTP(rec, newRequest(http.MethodGet, "", c.NoSession, c.OmitDoc, true))
+
+			assert.Equal(t, c.RespCode, rec.Code)
+			assert.Equal(t, c.Passed, passed)
+
+			if !c.Passed {
+				return
+			}
+
+			ff := c.DB.CheckDocumentExistsCalls()
+			require.Len(t, ff, 1)
+			assert.Equal(t, _documentID, ff[0].ID)
+			assert.Equal(t, "org1", ff[0].OrganizationID)
+		})
+	}
+}
+
 func Test_Handler_FetchDocumentMaintainers(t *testing.T) {
 	cc := map[string]struct {
 		DB        *DBMock
@@ -295,6 +370,7 @@ func Test_Handler_FetchBranchReviewers(t *testing.T) {
 	cc := map[string]struct {
 		DB         *DBMock
 		NoSession  bool
+		OmitDoc    bool
 		OmitBranch bool
 		RespCode   int
 	}{
@@ -303,10 +379,34 @@ func Test_Handler_FetchBranchReviewers(t *testing.T) {
 			NoSession: true,
 			RespCode:  http.StatusUnauthorized,
 		},
+		"Missing document ID parameter": {
+			DB:       &DBMock{},
+			OmitDoc:  true,
+			RespCode: http.StatusNotFound,
+		},
 		"Missing branch ID parameter": {
 			DB:         &DBMock{},
 			OmitBranch: true,
 			RespCode:   http.StatusNotFound,
+		},
+		"Branch document fetch error": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return nil, errors.New("boom")
+				},
+			},
+			RespCode: http.StatusInternalServerError,
+		},
+		"Branch of another document": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					doc := storedDoc()
+					doc.ID = xid.New()
+
+					return doc, nil
+				},
+			},
+			RespCode: http.StatusNotFound,
 		},
 		"Reviewer fetch error": {
 			DB: &DBMock{
@@ -330,11 +430,17 @@ func Test_Handler_FetchBranchReviewers(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
+			if c.DB.FetchDocumentByBranchIDFunc == nil {
+				c.DB.FetchDocumentByBranchIDFunc = func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				}
+			}
+
 			hdl, _ := newTestHandler(c.DB, &fakePublisher{})
 
 			rec := httptest.NewRecorder()
 
-			hdl.FetchBranchReviewers(rec, newRequest(http.MethodGet, "", c.NoSession, true, c.OmitBranch))
+			hdl.FetchBranchReviewers(rec, newRequest(http.MethodGet, "", c.NoSession, c.OmitDoc, c.OmitBranch))
 
 			assert.Equal(t, c.RespCode, rec.Code)
 
