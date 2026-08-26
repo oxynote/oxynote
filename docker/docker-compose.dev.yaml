@@ -127,7 +127,7 @@ services:
         max-size: 10m
         max-file: "3"
   mariadb:
-    image: mariadb:11.8.9-noble
+    image: mariadb:12.3.2-noble
     volumes:
       - mariadb_data:/var/lib/mysql
       - ./demo/mariadb/init-demo-db.sql:/docker-entrypoint-initdb.d/init-demo-db.sql
