@@ -1,0 +1,109 @@
+# the production all-in-one image under test, with the backing services a
+# real deployment gives it. This is docker/prod/docker-compose.example.yaml
+# — the deployment the README documents — retuned for a test run.
+#
+# it differs from docker-compose.dev.yaml (the dev stack) in what it is testing,
+# not in how: there, four containers built from this checkout; here, the one
+# image an operator actually pulls, with caddy, web, core and auth-realtime
+# supervised inside it. Everything the suite asserts about the product must
+# hold for both.
+#
+# the same fixture rules apply:
+#   - no named volumes, so every run starts from an empty database and an
+#     empty data volume (the generated secrets are regenerated per run)
+#   - no container_name, and its own ports (:19080 front door, :19025
+#     mailpit), so it coexists with the dev stack and the e2e dev stack alike
+#   - env is inlined and committed; there is nothing secret to protect
+#   - every image is pinned
+#   - no OXYNOTE_VALKEY_DSN and no OXYNOTE_OBJECT_STORAGE_DSN, which is the default
+#     single-node deployment: the assistant keeps its conversations in the
+#     core process, better-auth keeps no secondary storage, and uploaded
+#     images live on the data volume
+#
+# the image is built by `make prod-build`, not by compose: core's binary has
+# to come from goreleaser and be staged for the Dockerfile's COPY, so there
+# is no build section here to point at. `make e2e-prod-stack-build` tags it
+# :e2e-prod, so a run cannot replace the :prod image `make prod-run` uses.
+
+name: oxynote-e2e-prod
+
+services:
+  oxynote:
+    image: ghcr.io/oxynote/oxynote:e2e-prod
+    platform: linux/amd64
+    ports:
+      - "19080:8080"
+    environment:
+      - OXYNOTE_PUBLIC_URL=http://localhost:19080
+      - OXYNOTE_DB_DSN=postgresql://devuser:devpass@postgres/devdb?sslmode=disable
+      - OXYNOTE_MEILISEARCH_URL=http://meilisearch:7700
+      - OXYNOTE_MEILISEARCH_MASTER_KEY=devmasterkey
+      - OXYNOTE_SMTP_DSN=smtp://mailpit:1025?tls=none
+      - OXYNOTE_EMAIL_FROM_ADDRESS=Oxynote <team@oxynote.io>
+      - OXYNOTE_MAX_ORGANIZATION_MEMBERS=5
+      # every test signs up and creates its own workspace, and a stack left
+      # up for a day of iteration would hit a lower cap and start failing
+      # signups with a full-house message.
+      - OXYNOTE_MAX_ORGANIZATIONS=100000
+      # every request in a run arrives from one address, and better-auth
+      # gives sign-in and sign-up three per ten seconds between them, so the
+      # limiter would fail the suite rather than the code under test.
+      - OXYNOTE_RATE_LIMIT_DISABLED=true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
+    # the image ships its own layered probe (every internal service plus the
+    # front door), which is what the probe container and the tests wait on.
+    # Its start period is three minutes; compose inherits that.
+    #
+    # the image shuts its services down in order, flushing open documents
+    # last, and docker's default 10s grace would SIGKILL that mid-flush.
+    stop_grace_period: 60s
+
+  # a sibling on the private network, and the only honest way to ask the
+  # question the trust boundary answers: can a container that is not caddy
+  # reach core, auth-realtime or the web server directly? The prod tests
+  # drive it with `docker compose exec` — see helpers/prod.ts.
+  #
+  # probing published host ports instead would prove nothing: the internal
+  # ports are not published, so every such probe would pass whether the
+  # services bound loopback or the wildcard.
+  probe:
+    image: alpine:3.23.0
+    command: ["sleep", "infinity"]
+    depends_on:
+      oxynote:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:18.6-alpine
+    environment:
+      POSTGRES_USER: devuser
+      POSTGRES_PASSWORD: devpass
+      POSTGRES_DB: devdb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U devuser -d devdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.53.1
+    environment:
+      - MEILI_MASTER_KEY=devmasterkey
+      - MEILI_ENV=development
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:7700/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # the tests read verification links out of mailpit's REST API, so its http
+  # port is published rather than proxied through the image's front door —
+  # which routes nothing but the product.
+  mailpit:
+    image: axllent/mailpit:v1.31.0
+    ports:
+      - "19025:8025"

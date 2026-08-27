@@ -8,6 +8,7 @@
 	"scripts": {
 		"dev": "tsx watch --import ./src/sentry.ts src/index.ts",
 		"build": "tsc -p tsconfig.build.json",
+		"build:bundle": "esbuild src/bundle.ts --bundle --platform=node --format=esm --minify --external:pg-native --external:bufferutil --external:utf-8-validate \"--banner:js=import{createRequire as __cr}from'node:module';const require=__cr(import.meta.url);\" --outfile=dist/bundle.mjs",
 		"start": "node --import ./dist/sentry.js dist/index.js",
 		"check-types": "tsc --noEmit",
 		"eslint": "eslint --fix --max-warnings 0 --cache --cache-location node_modules/.cache/eslint --cache-strategy content .",
@@ -67,6 +68,7 @@
 		"@types/ws": "^8.18.1",
 		"@vitest/coverage-v8": "^4.1.11",
 		"@vitest/eslint-plugin": "^1.6.27",
+		"esbuild": "^0.27.0",
 		"eslint": "^10.9.1",
 		"eslint-config-prettier": "^10.1.8",
 		"knip": "^6.32.2",

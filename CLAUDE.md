@@ -38,6 +38,15 @@ When your changes create orphans:
 - Remove imports/variables/functions that YOUR changes made unused.
 - Don't remove pre-existing dead code unless asked.
 
+**Leave no containers running.** If you start a stack or a container while
+working — `make start`, `make dev`, `make prod-run`, a bare `docker compose
+up`, a one-off `docker run` — stop it before you finish, including when the
+task failed or you are interrupted. The `make e2e-*` targets tear their own
+stack down; anything you started by hand is yours to stop. A stack left up
+holds ports, burns battery and silently changes what the next command sees.
+The exception is a stack that was already running when you started, or one
+the user asked you to leave up.
+
 The test: Every changed line should trace directly to the user's request.
 
 ## 4. Goal-Driven Execution
@@ -75,9 +84,10 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - `server/core/` — Go API server (`oxynote-core`). Go module `github.com/oxynote/oxynote/server/core`. Details: [server/CLAUDE.md](server/CLAUDE.md).
 - `server/auth-realtime/` — Node service (`@oxynote/auth-realtime`, **pnpm**) running Better Auth and a Hocuspocus (Yjs) server in one Hono process. Details: [server/auth-realtime/CLAUDE.md](server/auth-realtime/CLAUDE.md).
 - `datagen/` — demo-data generator; separate Go module `github.com/oxynote/oxynote/datagen`. Demo/testing only.
-- `e2e/` — Playwright end-to-end suite (`@oxynote/e2e`, **pnpm**) plus the docker-compose stack it drives. Not shipped; it exercises the composed product through a real backend built from this repo. Details: [e2e/CLAUDE.md](e2e/CLAUDE.md).
+- `e2e/` — Playwright end-to-end suite (`@oxynote/e2e`, **pnpm**) plus the two docker-compose stacks it drives: the dev stack built from this repo, and the all-in-one image `docker/prod/` produces. Not shipped; it exercises the composed product through a real backend. Every file, script and make target belonging to one stack is named `dev` or `prod` — neither is the unnamed default. Details: [e2e/CLAUDE.md](e2e/CLAUDE.md).
 - `scripts/` — helpers the root Makefile calls. `run-quietly.sh` runs a build step with its output held back, replaying the log only if the step fails.
 - `docker/` — dev docker-compose stack, Caddyfile, `env/` (committed `*.example.env` templates; `make setup` copies them to the gitignored `*.local.env` files the compose stack reads, and `web.example.env` also to `web/.env` for the host dev server and electron builds), `demo/` (demo-data configs for mariadb/postgres).
+- `docker/prod/` — the production all-in-one image: alpine-based Dockerfile (built via `make prod-build`; core comes from goreleaser), the image's Caddyfile (sibling of `docker/Caddyfile`), the TS launcher (`@oxynote/launcher`, **pnpm**) that validates the flat public `OXYNOTE_*` env, generates internal secrets, and supervises caddy + web + core + auth-realtime, plus the example compose deployment. Details: [docker/prod/CLAUDE.md](docker/prod/CLAUDE.md).
 
 **One `.gitignore`, and it lives at the repository root.** Components do not carry their own — a rule for a nested directory is written with its path (`e2e/test-results/`, `web/coverage/`), so every exclusion in the repository is readable in one file. The exception is `web/packages/lezer-promql/`, which is a vendored upstream fork and keeps the ignore file it ships with.
 
@@ -93,15 +103,23 @@ make start     # build images + run the dev stack in the background
 make dev       # backend containers + web dev server on the host (hot reload, :3000)
 make stop      # stop the dev stack
 
-make lint      # fix lint/format/type issues in web, auth-realtime, core, datagen, e2e
+make lint      # fix lint/format/type issues in web, auth-realtime, core, datagen, e2e, launcher
 make check-lint # the same gates, verification only
 
-make e2e             # one-shot: build, run playwright, tear the e2e stack down
-make e2e-stack-build # build the e2e stack's images, then iterate with `pnpm test`
-make e2e-stack-stop  # stop the e2e stack and drop its data
+make prod-build # goreleaser core binary + the all-in-one prod image
+make prod-run   # run the example prod compose against the local image
+make prod-stop  # stop it
+
+make e2e-dev             # one-shot: build, run playwright, tear the dev stack down
+make e2e-dev-stack-build # build that stack's images, then iterate with `pnpm test:dev`
+make e2e-dev-stack-stop  # stop it and drop its data
+
+make e2e-prod             # the same suite against the all-in-one image
+make e2e-prod-stack-build # build that image, then iterate with `pnpm test:prod`
+make e2e-prod-stack-stop  # stop it and drop its data
 ```
 
-The e2e stack listens on `:18080` (and mailpit on `:18025`), so it runs alongside the dev stack rather than fighting it for ports.
+The e2e dev stack listens on `:18080` (and mailpit on `:18025`) and the prod one on `:19080` (`:19025`), so all three stacks run alongside each other rather than fighting for ports.
 
 Component build/test/qa commands are listed in the nested CLAUDE.md files.
 
@@ -112,6 +130,7 @@ Component build/test/qa commands are listed in the nested CLAUDE.md files.
 - **Session validation**: core's auth middleware validates sessions by calling auth-realtime's `/api/auth/get-session`; auth-realtime owns the Better Auth schema.
 - **Yjs invariant**: the Hocuspocus `documentName` is `"<documentId>-<branchIdentifier>"`, split on the first `-`. Never seed or merge one Y.Doc from another with `Y.applyUpdate` — use `replaceYdocContent` (`server/auth-realtime/src/ydocument.ts`). Read the document-storage section of [server/CLAUDE.md](server/CLAUDE.md) before touching branch content anywhere.
 - **Env naming**: core reads `OXYNOTE_CORE_*` (via `buildinfo.Getenv`), auth-realtime reads `OXYNOTE_AUTH_REALTIME_*`, the frontend reads `NUXT_PUBLIC_*`.
+- **`_DSN` vs `_URL`**: a variable holding a connection string with credentials in it ends in `_DSN` — `DB_DSN`, `VALKEY_DSN`, `SMTP_DSN`, `OBJECT_STORAGE_DSN` (public), `SENTRY_DSN`. A variable holding a plain address ends in `_URL`, and any credential it needs is its own variable — `MEILISEARCH_URL` + `_MASTER_KEY`, `CHANGE_DETECTION_URL`/`CHANGEDETECTION_API_URL` + its key, `OBJECT_STORAGE_URL` + key/secret on core's side, plus every address that is not a dependency at all (`PUBLIC_URL`, `BASE_APP_URL`, `TERMS_OF_SERVICE_URL`). The suffix is a claim about whether the value is a secret, so it holds across the trust boundary: the same dependency is never `_DSN` publicly and `_URL` internally.
 
 ## Code style (TS/JS — web and auth-realtime)
 

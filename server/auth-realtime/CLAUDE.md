@@ -21,6 +21,9 @@ Package manager is **pnpm** (own workspace).
 pnpm install                  # install dependencies
 pnpm dev                      # tsx watch, sentry preloaded via --import
 pnpm build                    # tsc -p tsconfig.build.json -> dist/
+pnpm build:bundle             # esbuild single-file bundle -> dist/bundle.mjs;
+                              # what both docker images run (sentry folded in,
+                              # optional native accelerators left external)
 pnpm start                    # run the built service
 
 pnpm check-lint               # check-types + check-eslint + check-fmt +
@@ -37,7 +40,7 @@ pnpm qa                       # check-lint + test; qa-fix = lint + test
 
 **`src/index.ts` is the only module with side effects.** It is the one place
 that reads the environment, opens a database pool, connects to Valkey (only
-when `OXYNOTE_AUTH_REALTIME_VALKEY_URL` is set — without it better-auth is
+when `OXYNOTE_AUTH_REALTIME_VALKEY_DSN` is set — without it better-auth is
 built with no secondary storage at all), or listens on a port. Everything
 else is a factory taking what it needs:
 
@@ -45,6 +48,9 @@ else is a factory taking what it needs:
 src/
   index.ts        composition root: env -> wiring -> listen
   sentry.ts       the sentry bootstrap, loaded before the app graph exists
+  bundle.ts       the docker entry: sentry + index folded into one esbuild
+                  artifact (build:bundle), so no --import preload and no
+                  node_modules ship in the images
   env.ts          zod-parsed, typed configuration
   core.ts         the client for every call this service makes into core
   db.ts           the Store: every query this service runs, behind one

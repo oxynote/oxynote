@@ -187,7 +187,7 @@ func (a *agent) DeleteDocumentBranchByID(ctx context.Context, branchID xid.ID, o
 }
 
 // UpdateDocumentBranchMetadata updates the name and protection status of a branch.
-// It does not modify content or insert a changelog entry.
+// It does not modify content or insert a history entry.
 func (a *agent) UpdateDocumentBranchMetadata(ctx context.Context, doc document.Document) error {
 	q, args := a.builder.Update("document_branches").
 		SetMap(map[string]any{
@@ -305,23 +305,23 @@ func (a *agent) selectBranchSummary(b sq.SelectBuilder) sq.SelectBuilder {
 	).From("document_branches")
 }
 
-// insertDocumentBranchChangelog inserts a changelog entry for a branch update
+// insertDocumentBranchHistoryEntry inserts a history entry for a branch update
 // through the given executor. The entry is keyed by branch id rather than
 // branch name so that renaming a branch cannot break the reference.
-func (a *agent) insertDocumentBranchChangelog(
+func (a *agent) insertDocumentBranchHistoryEntry(
 	ctx context.Context,
 	ex sqlx.ExecerContext,
 	docID, branchID xid.ID,
-	clog document.Changelog,
+	entry document.HistoryEntry,
 ) error {
-	q, args := a.builder.Insert("document_branch_changelogs").
+	q, args := a.builder.Insert("document_branch_history_entries").
 		SetMap(map[string]any{
-			"id":             clog.ID,
+			"id":             entry.ID,
 			"fk_document_id": docID,
 			"fk_branch_id":   branchID,
-			"content":        clog.Content,
-			"raw_content":    clog.RawContent,
-			"created_at":     clog.CreatedAt,
+			"content":        entry.Content,
+			"raw_content":    entry.RawContent,
+			"created_at":     entry.CreatedAt,
 		}).
 		Suffix("ON CONFLICT (id) DO UPDATE SET " +
 			"content = excluded.content, raw_content = excluded.raw_content, created_at = excluded.created_at").
@@ -331,29 +331,29 @@ func (a *agent) insertDocumentBranchChangelog(
 		return err
 	}
 
-	return a.trimDocumentBranchChangelogs(ctx, ex, branchID)
+	return a.trimDocumentBranchHistoryEntries(ctx, ex, branchID)
 }
 
-// trimDocumentBranchChangelogs keeps only the newest snapshots of a branch.
+// trimDocumentBranchHistoryEntries keeps only the newest entries of a branch.
 // Age trimming lives in the file manager instead, since it has to reach
 // branches that stopped inserting altogether.
-func (a *agent) trimDocumentBranchChangelogs(ctx context.Context, ex sqlx.ExecerContext, branchID xid.ID) error {
+func (a *agent) trimDocumentBranchHistoryEntries(ctx context.Context, ex sqlx.ExecerContext, branchID xid.ID) error {
 	// a zero limit means unlimited retention; without this guard the
 	// subquery below would emit LIMIT 0 and the delete would drop every
 	// snapshot of the branch.
-	if a.opts.MaxDocumentChangelogs == 0 {
+	if a.opts.MaxDocumentHistoryEntries == 0 {
 		return nil
 	}
 
 	b := a.builder.Select("id").
-		From("document_branch_changelogs").
+		From("document_branch_history_entries").
 		Where(sq.Eq{"fk_branch_id": branchID}).
 		OrderBy("created_at DESC").
-		Limit(a.opts.MaxDocumentChangelogs).
+		Limit(a.opts.MaxDocumentHistoryEntries).
 		Prefix("id NOT IN (").
 		Suffix(")")
 
-	q, args := a.builder.Delete("document_branch_changelogs").Where(sq.And{
+	q, args := a.builder.Delete("document_branch_history_entries").Where(sq.And{
 		b,
 		sq.Eq{"fk_branch_id": branchID},
 	}).MustSql()

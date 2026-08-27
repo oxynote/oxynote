@@ -64,7 +64,9 @@ export function testEnv(overrides: Partial<Env> = {}): Env {
 	return {
 		coreUrl: "http://core:8080",
 		databaseDSN: "postgresql://devuser:devpass@postgres/devdb",
-		valkeyUrl: "redis://valkey:6379",
+		valkeyDsn: "redis://valkey:6379",
+		listenHost: undefined,
+		listenPort: 8081,
 		publicAuthBaseUrl: "http://localhost:8080/auth-realtime",
 		authOrigin: "http://localhost:8080",
 		betterAuthSecret: "sup3rs3cr3t",

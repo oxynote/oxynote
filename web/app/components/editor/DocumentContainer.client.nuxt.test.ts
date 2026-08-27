@@ -105,6 +105,16 @@ function bodyShown(wrapper: VueWrapper): boolean {
 	return wrapper.findComponent({ name: "NameEditor" }).exists()
 }
 
+// the test environment builds a PageTransitionEvent without honouring the
+// persisted flag, so it is defined on the event directly.
+function pagehide(persisted: boolean): Event {
+	const event = new Event("pagehide")
+
+	Object.defineProperty(event, "persisted", { value: persisted })
+
+	return event
+}
+
 // the editor store, the auth and query caches and the recorded providers
 // are all shared, so these tests cannot interleave
 describe("<DocumentContainer>", { concurrent: false }, () => {
@@ -395,5 +405,33 @@ describe("<DocumentContainer>", { concurrent: false }, () => {
 			true,
 		])
 		expect(at(providers.created, 0).destroyed).toBe(true)
+	})
+
+	// closing a tab unmounts nothing, so without this everyone else keeps
+	// seeing this user's caret until the socket is noticed as gone
+	it("closes every branch sync when the tab goes away", async ({ expect }) => {
+		useEditorStore().updatePreloadedBranchIds([TARGET_BRANCH_ID])
+		await mountContainer()
+
+		window.dispatchEvent(pagehide(false))
+
+		expect(providers.created.map((entry) => entry.destroyed)).toEqual([
+			true,
+			true,
+		])
+	})
+
+	it("keeps the branch syncs when the page is only cached", async ({
+		expect,
+	}) => {
+		useEditorStore().updatePreloadedBranchIds([TARGET_BRANCH_ID])
+		await mountContainer()
+
+		window.dispatchEvent(pagehide(true))
+
+		expect(providers.created.map((entry) => entry.destroyed)).toEqual([
+			false,
+			false,
+		])
 	})
 })

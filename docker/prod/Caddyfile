@@ -1,0 +1,76 @@
+# the production image's front door. Sibling of docker/Caddyfile (the dev/
+# e2e stack): same routes, same blocks — only the upstreams differ, since
+# every service here lives on this container's loopback. Change the two
+# files together.
+{
+	admin off # disable the admin API
+}
+
+(common) {
+	request_body {
+		max_size 10MB # must be higher than file upload limit
+	}
+
+	header -Server
+}
+
+:8080 {
+	import common
+
+	# /api/x/* is core's internal, auth-less service-to-service surface —
+	# it must never be reachable through the front door. /api/apps/* is the
+	# opposite: GitHub and Slack deliver their webhooks and OAuth callbacks
+	# there, so it stays open and is guarded by request signatures instead.
+	handle /core/api/x/* {
+		respond 403
+	}
+
+	# /api/internal/* is auth-realtime's unauthenticated service-to-service
+	# surface (core calls it over loopback) — it must never be reachable
+	# through the front door either.
+	handle /auth-realtime/api/internal/* {
+		respond 403
+	}
+
+	# OAuth discovery for the MCP surface. Spec-compliant MCP clients
+	# resolve these documents at the front-door origin root (RFC 9728 /
+	# RFC 8414 well-known paths), so they are rewritten onto better-auth's
+	# basePath'd endpoints regardless of any issuer path suffix the client
+	# appends.
+	# served by the mcp plugin's request hook, which matches the original
+	# root-anchored path — no rewrite.
+	handle /.well-known/oauth-protected-resource* {
+		reverse_proxy 127.0.0.1:8181
+	}
+
+	handle /.well-known/oauth-authorization-server* {
+		rewrite * /api/auth/.well-known/oauth-authorization-server
+		reverse_proxy 127.0.0.1:8181
+	}
+
+	handle /.well-known/openid-configuration* {
+		rewrite * /api/auth/.well-known/openid-configuration
+		reverse_proxy 127.0.0.1:8181
+	}
+
+	# better-auth builds its OAuth endpoint URLs from the bare origin plus
+	# its /api/auth basePath, so the authorization-server metadata points
+	# MCP clients at /api/auth/... on the front door. Proxy that prefix to
+	# auth-realtime as-is (no path strip — the service serves /api/auth
+	# natively).
+	handle /api/auth/* {
+		reverse_proxy 127.0.0.1:8181
+	}
+
+	handle_path /core/* {
+		reverse_proxy 127.0.0.1:8180
+	}
+
+	handle_path /auth-realtime/* {
+		reverse_proxy 127.0.0.1:8181
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:3000
+	}
+}

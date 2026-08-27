@@ -10,18 +10,23 @@ import (
 )
 
 func Test_NewPool(t *testing.T) {
-	// Error, network is empty.
-	pool, err := NewPool("", "")
-	require.EqualError(t, err, "invalid redis network")
+	// Error, url is empty.
+	pool, err := NewPool("")
+	require.EqualError(t, err, "invalid redis url")
 	require.Nil(t, pool)
 
-	// Error, address is empty.
-	pool, err = NewPool("127.0.0.1", "")
-	require.EqualError(t, err, "invalid redis address")
+	// Error, url is malformed.
+	pool, err = NewPool("redis://[::1")
+	require.Error(t, err)
+	require.Nil(t, pool)
+
+	// Error, url scheme is not redis.
+	pool, err = NewPool("http://127.0.0.1:6379")
+	require.EqualError(t, err, "invalid redis url scheme")
 	require.Nil(t, pool)
 
 	// Success.
-	pool, err = NewPool("127.0.0.1", "8080")
+	pool, err = NewPool("redis://user:pass@127.0.0.1:1")
 	require.NoError(t, err)
 	require.NotNil(t, pool)
 

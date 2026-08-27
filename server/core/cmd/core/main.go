@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -63,13 +64,13 @@ const (
 	// one turn when the environment says nothing.
 	_defaultAssistantMaxTokens = 64000
 
-	// _defaultMaxDocumentChangelogs specifies how many changelog snapshots
+	// _defaultMaxDocumentHistoryEntries specifies how many history entries
 	// are retained per document branch when the environment says nothing.
-	_defaultMaxDocumentChangelogs = 100
+	_defaultMaxDocumentHistoryEntries = 100
 
-	// _defaultDocumentChangelogRetention specifies how long changelog
-	// snapshots are retained when the environment says nothing.
-	_defaultDocumentChangelogRetention = time.Hour * 24 * 90
+	// _defaultDocumentHistoryRetention specifies how long history entries
+	// are retained when the environment says nothing.
+	_defaultDocumentHistoryRetention = time.Hour * 24 * 90
 
 	// _editClientTimeout bounds one edit-operations request to the Node
 	// service.
@@ -100,15 +101,15 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 	metrics, cleanup := newMetrics(log)
 	defer cleanup()
 
-	maxDocumentChangelogs, err := parseUintEnv("DB_MAX_DOCUMENT_CHANGELOGS", _defaultMaxDocumentChangelogs)
+	maxDocumentHistoryEntries, err := parseUintEnv("DB_MAX_DOCUMENT_HISTORY_ENTRIES", _defaultMaxDocumentHistoryEntries)
 	if err != nil {
 		fail(log, closers, "cannot read the configuration", err)
 		return
 	}
 
-	documentChangelogRetention, err := parseDurationEnv(
-		"DB_DOCUMENT_CHANGELOG_RETENTION",
-		_defaultDocumentChangelogRetention,
+	documentHistoryRetention, err := parseDurationEnv(
+		"DB_DOCUMENT_HISTORY_RETENTION",
+		_defaultDocumentHistoryRetention,
 	)
 	if err != nil {
 		fail(log, closers, "cannot read the configuration", err)
@@ -119,8 +120,8 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 		DSN:                                buildinfo.Getenv("DB_DSN"),
 		MaxNotifications:                   _maxNotifications,
 		MaxSlackMessages:                   _maxSlackMessages,
-		MaxDocumentChangelogs:              maxDocumentChangelogs,
-		DocumentChangelogRetention:         documentChangelogRetention,
+		MaxDocumentHistoryEntries:          maxDocumentHistoryEntries,
+		DocumentHistoryRetention:           documentHistoryRetention,
 		DataSourceCredentialsSigningSecret: buildinfo.Getenv("DB_DATA_SOURCE_CREDENTIALS_SIGNING_SECRET"),
 	})
 	if err != nil {
@@ -130,16 +131,13 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 
 	closers = append([]io.Closer{dbc}, closers...)
 
-	// an empty VALKEY_ADDRESS is a deployment running without valkey at
+	// an empty VALKEY_DSN is a deployment running without valkey at
 	// all. The nil pool is what tells the assistant to keep its
 	// conversations in this process instead.
 	var rdb *redis.Pool
 
-	if address := buildinfo.Getenv("VALKEY_ADDRESS"); address != "" {
-		rdb, err = redisutil.NewPool(
-			buildinfo.Getenv("VALKEY_NETWORK"),
-			address,
-		)
+	if dsn := buildinfo.Getenv("VALKEY_DSN"); dsn != "" {
+		rdb, err = redisutil.NewPool(dsn)
 		if err != nil {
 			fail(log, closers, "cannot create a redis pool", err)
 			return
@@ -205,14 +203,14 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 	termCtx, termCancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer termCancel()
 
-	// an empty MEILISEARCH_DSN means search is disabled: nothing is
-	// indexed and the search surfaces refuse. A set DSN that cannot be
+	// an empty MEILISEARCH_URL means search is disabled: nothing is
+	// indexed and the search surfaces refuse. A set URL that cannot be
 	// reached stays a boot error inside NewClient.
 	var meiliMan meilisearch.ServiceManager
 
-	if dsn := buildinfo.Getenv("MEILISEARCH_DSN"); dsn != "" {
+	if url := buildinfo.Getenv("MEILISEARCH_URL"); url != "" {
 		meiliMan = meilisearch.New(
-			dsn,
+			url,
 			meilisearch.WithAPIKey(buildinfo.Getenv("MEILISEARCH_MASTER_KEY")),
 		)
 	}
@@ -225,23 +223,23 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 
 	searchJobs := search.NewJobs(searchClient.Configured())
 
-	storageURL := buildinfo.Getenv("STORAGE_URL")
+	objectStorageURL := buildinfo.Getenv("OBJECT_STORAGE_URL")
 
 	var storageClient storage.Store
 
-	if storageURL != "" {
+	if objectStorageURL != "" {
 		storageClient, err = storageS3.NewClient(
 			termCtx,
 			storageS3.Options{
-				URL:       storageURL,
-				Region:    buildinfo.Getenv("STORAGE_REGION"),
-				AccessKey: buildinfo.Getenv("STORAGE_ACCESS_KEY"),
-				SecretKey: buildinfo.Getenv("STORAGE_SECRET_KEY"),
-				Bucket:    buildinfo.Getenv("STORAGE_BUCKET"),
+				URL:       objectStorageURL,
+				Region:    buildinfo.Getenv("OBJECT_STORAGE_REGION"),
+				AccessKey: buildinfo.Getenv("OBJECT_STORAGE_ACCESS_KEY"),
+				SecretKey: buildinfo.Getenv("OBJECT_STORAGE_SECRET_KEY"),
+				Bucket:    buildinfo.Getenv("OBJECT_STORAGE_BUCKET"),
 			},
 		)
 	} else {
-		storageClient, err = storageFS.NewClient(buildinfo.Getenv("STORAGE_PATH"))
+		storageClient, err = storageFS.NewClient(buildinfo.Getenv("OBJECT_STORAGE_LOCAL_PATH"))
 	}
 
 	if err != nil {
@@ -306,11 +304,18 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 	warnDisabled(log, searchClient.Configured(), "search is disabled")
 	warnDisabled(log, webchangeClient.Configured(), "changedetection integration is disabled")
 
+	serverHost, serverPort, err := parseServerAddress(buildinfo.Getenv("SERVER_ADDRESS"))
+	if err != nil {
+		fail(log, closers, "cannot read the configuration", err)
+		return
+	}
+
 	srv, err := server.NewServer(
 		log,
 		server.Options{
 			PublicURL: buildinfo.Getenv("SERVER_PUBLIC_URL"),
-			Port:      _serverPort,
+			Host:      serverHost,
+			Port:      serverPort,
 			Origins:   origins,
 			Assistant: server.AssistantCapability{
 				Status: assistantStatus,
@@ -345,7 +350,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 
 	hooksMan := hookMan.NewManager(log, dbc, githubMan, webchangeClient, notifMan)
 	filesMan := fileMan.NewManager(log, dbc, storageClient, fileMan.Options{
-		ChangelogRetention: documentChangelogRetention,
+		HistoryRetention: documentHistoryRetention,
 	})
 
 	closers = append([]io.Closer{srv}, closers...)
@@ -425,11 +430,8 @@ func newLogger() (*slog.Logger, func(), bool) {
 		Level: level,
 	})).With("version", buildinfo.Full().Version)
 
+	// an empty DSN disables sentry; sentryutil.Setup tolerates it.
 	dsn := buildinfo.Getenv("SENTRY_DSN")
-	if dsn == "" && !buildinfo.IsDevEnv() {
-		log.Error("invalid sentry dsn")
-		return nil, nil, false
-	}
 
 	fn, err := sentryutil.Setup(sentryutil.Config{
 		DSN:              dsn,
@@ -505,6 +507,27 @@ func parseDurationEnv(name string, def time.Duration) (time.Duration, error) {
 	}
 
 	return res, nil
+}
+
+// parseServerAddress splits a listen address into its host and port parts,
+// falling back to all interfaces on the default port when the value is
+// empty. An empty host part binds all interfaces.
+func parseServerAddress(v string) (string, uint, error) {
+	if v == "" {
+		return "", _serverPort, nil
+	}
+
+	host, rawPort, err := net.SplitHostPort(v)
+	if err != nil {
+		return "", 0, fmt.Errorf("invalid SERVER_ADDRESS: %w", err)
+	}
+
+	port, err := strconv.ParseUint(rawPort, 10, 16)
+	if err != nil {
+		return "", 0, fmt.Errorf("invalid SERVER_ADDRESS: %w", err)
+	}
+
+	return host, uint(port), nil
 }
 
 // warnDisabled announces a disabled integration at boot.

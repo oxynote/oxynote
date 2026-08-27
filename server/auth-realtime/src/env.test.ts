@@ -10,7 +10,7 @@ function completeEnv(
 		OXYNOTE_AUTH_REALTIME_BACKEND_URL: "http://core:8080",
 		OXYNOTE_AUTH_REALTIME_DB_DSN:
 			"postgresql://devuser:devpass@postgres/devdb",
-		OXYNOTE_AUTH_REALTIME_VALKEY_URL: "redis://valkey:6379",
+		OXYNOTE_AUTH_REALTIME_VALKEY_DSN: "redis://valkey:6379",
 		OXYNOTE_AUTH_REALTIME_BETTER_AUTH_BASE_URL:
 			"http://localhost:8080/auth-realtime",
 		OXYNOTE_AUTH_REALTIME_BETTER_AUTH_SECRET: "sup3rs3cr3t",
@@ -36,7 +36,7 @@ describe("loadEnv", () => {
 		expect(env.databaseDSN).toBe(
 			"postgresql://devuser:devpass@postgres/devdb",
 		)
-		expect(env.valkeyUrl).toBe("redis://valkey:6379")
+		expect(env.valkeyDsn).toBe("redis://valkey:6379")
 		expect(env.betterAuthSecret).toBe("sup3rs3cr3t")
 		expect(env.cookieDomain).toBe("localhost")
 		expect(env.frontendUrl).toBe("http://localhost:8080")
@@ -108,11 +108,66 @@ describe("loadEnv", () => {
 	it("accepts an absent valkey URL", ({ expect }) => {
 		const env = loadEnv(
 			completeEnv({
-				OXYNOTE_AUTH_REALTIME_VALKEY_URL: undefined,
+				OXYNOTE_AUTH_REALTIME_VALKEY_DSN: undefined,
 			}),
 		)
 
-		expect(env.valkeyUrl).toBeUndefined()
+		expect(env.valkeyDsn).toBeUndefined()
+	})
+
+	describe("listen address", () => {
+		it("binds all interfaces on the default port when unset", ({
+			expect,
+		}) => {
+			const env = loadEnv(completeEnv())
+
+			expect(env.listenHost).toBeUndefined()
+			expect(env.listenPort).toBe(8081)
+		})
+
+		it("splits a configured address into host and port", ({
+			expect,
+		}) => {
+			const env = loadEnv(
+				completeEnv({
+					OXYNOTE_AUTH_REALTIME_ADDRESS:
+						"127.0.0.1:8181",
+				}),
+			)
+
+			expect(env.listenHost).toBe("127.0.0.1")
+			expect(env.listenPort).toBe(8181)
+		})
+
+		it("keeps binding all interfaces when the host part is empty", ({
+			expect,
+		}) => {
+			const env = loadEnv(
+				completeEnv({
+					OXYNOTE_AUTH_REALTIME_ADDRESS: ":9090",
+				}),
+			)
+
+			expect(env.listenHost).toBeUndefined()
+			expect(env.listenPort).toBe(9090)
+		})
+
+		it.for([
+			{
+				name: "an address without a port",
+				input: "127.0.0.1",
+			},
+			{ name: "a non-numeric port", input: "127.0.0.1:http" },
+		])("rejects $name", ({ input }, { expect }) => {
+			expect(() =>
+				loadEnv(
+					completeEnv({
+						OXYNOTE_AUTH_REALTIME_ADDRESS:
+							input,
+					}),
+				),
+			).toThrow("OXYNOTE_AUTH_REALTIME_ADDRESS")
+		})
 	})
 
 	describe("counters", () => {

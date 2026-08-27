@@ -177,6 +177,36 @@ updates:
           - "minor"
           - "patch"
 
+  - package-ecosystem: "npm"
+    directory: "/docker/prod/launcher"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "deps(launcher)"
+    ignore:
+      # typescript-eslint caps typescript at <6.1.0 and vue-tsc has not
+      # caught up with the 7.x native port, so 6.x is the ceiling until
+      # both support it.
+      - dependency-name: "typescript"
+        versions: [">=7.0.0"]
+      # the runtime is node 24 everywhere (both Dockerfiles and CI), and
+      # types ahead of it compile against apis that are not there.
+      - dependency-name: "@types/node"
+        versions: [">=25.0.0"]
+    groups:
+      breaking:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
+      safe:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -206,6 +236,7 @@ updates:
       - "/server/core"
       - "/server/auth-realtime"
       - "/datagen"
+      - "/docker/prod"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -236,6 +267,7 @@ updates:
   - package-ecosystem: "docker-compose"
     directories:
       - "/docker"
+      - "/docker/prod"
       - "/e2e"
     schedule:
       interval: "weekly"

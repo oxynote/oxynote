@@ -12,9 +12,11 @@ const TICK_INTERVAL = 1_000
 // probe itself with.
 //
 // The build runs here rather than in the caller so that every way of
-// starting the suite behaves the same: `make e2e`, `pnpm test`, and the
-// play button in the Playwright VS Code extension all test the code that
-// is in the tree right now, not whatever image was last left behind.
+// starting the suite behaves the same: the make targets, the pnpm scripts
+// and the play button in the Playwright VS Code extension all test the code
+// that is in the tree right now, not whatever image was last left behind.
+// Which stack gets built and started is the playwright config's choice, and
+// this hook is shared by both.
 export default async function globalSetup(): Promise<void> {
 	// make prints its own labelled step per image, so it is not wrapped
 	// in a progress line of this file's own.

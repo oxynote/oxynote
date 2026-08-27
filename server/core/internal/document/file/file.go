@@ -71,7 +71,7 @@ type File struct {
 	CreatedAt time.Time `json:"createdAt" db:"created_at"`
 
 	// UnreferencedAt is the timestamp when the file was first observed
-	// to be referenced by no document content, changelog snapshot or
+	// to be referenced by no document content, history entry or
 	// comment. Null while the file is still referenced.
 	UnreferencedAt null.Time `json:"unreferencedAt" db:"unreferenced_at"`
 }

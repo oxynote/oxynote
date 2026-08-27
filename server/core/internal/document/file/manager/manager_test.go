@@ -34,7 +34,7 @@ func Test_NewManager(t *testing.T) {
 
 	db := &DBMock{}
 	storer := &StorerMock{}
-	opts := Options{ChangelogRetention: time.Hour}
+	opts := Options{HistoryRetention: time.Hour}
 
 	m := NewManager(slog.New(slog.DiscardHandler), db, storer, opts)
 	require.NotNil(t, m)
@@ -100,7 +100,7 @@ func Test_Manager_processFiles(t *testing.T) {
 
 	wasTrimCalled := func(count int) check {
 		return func(t *testing.T, db *DBMock, _ *StorerMock, _ error) {
-			assert.Len(t, db.DeleteExpiredDocumentBranchChangelogsCalls(), count)
+			assert.Len(t, db.DeleteExpiredDocumentBranchHistoryEntriesCalls(), count)
 		}
 	}
 
@@ -124,14 +124,14 @@ func Test_Manager_processFiles(t *testing.T) {
 		Opts   Options
 		Checks []check
 	}{
-		"Error returned by db.DeleteExpiredDocumentBranchChangelogs": {
+		"Error returned by db.DeleteExpiredDocumentBranchHistoryEntries": {
 			DB: &DBMock{
-				DeleteExpiredDocumentBranchChangelogsFunc: func(context.Context, time.Time) error {
+				DeleteExpiredDocumentBranchHistoryEntriesFunc: func(context.Context, time.Time) error {
 					return assert.AnError
 				},
 			},
 			Storer: &StorerMock{},
-			Opts:   Options{ChangelogRetention: time.Hour},
+			Opts:   Options{HistoryRetention: time.Hour},
 			Checks: checks(
 				hasError(assert.AnError),
 				wasTrimCalled(1),
@@ -472,7 +472,7 @@ func Test_Manager_deleteFile(t *testing.T) {
 	}
 }
 
-func Test_Manager_trimChangelogs(t *testing.T) {
+func Test_Manager_trimHistoryEntries(t *testing.T) {
 	cc := map[string]struct {
 		DB    *DBMock
 		Opts  Options
@@ -484,19 +484,19 @@ func Test_Manager_trimChangelogs(t *testing.T) {
 			Opts:  Options{},
 			Calls: 0,
 		},
-		"Error returned by db.DeleteExpiredDocumentBranchChangelogs": {
+		"Error returned by db.DeleteExpiredDocumentBranchHistoryEntries": {
 			DB: &DBMock{
-				DeleteExpiredDocumentBranchChangelogsFunc: func(context.Context, time.Time) error {
+				DeleteExpiredDocumentBranchHistoryEntriesFunc: func(context.Context, time.Time) error {
 					return assert.AnError
 				},
 			},
-			Opts:  Options{ChangelogRetention: time.Hour},
+			Opts:  Options{HistoryRetention: time.Hour},
 			Calls: 1,
 			Err:   assert.AnError,
 		},
 		"Successful trim": {
 			DB:    &DBMock{},
-			Opts:  Options{ChangelogRetention: time.Hour},
+			Opts:  Options{HistoryRetention: time.Hour},
 			Calls: 1,
 		},
 	}
@@ -507,11 +507,11 @@ func Test_Manager_trimChangelogs(t *testing.T) {
 
 			m := NewManager(slog.New(slog.DiscardHandler), c.DB, &StorerMock{}, c.Opts)
 
-			err := m.trimChangelogs(context.Background())
+			err := m.trimHistoryEntries(context.Background())
 
 			testutil.AssertEqualError(t, c.Err, err)
 
-			ff := c.DB.DeleteExpiredDocumentBranchChangelogsCalls()
+			ff := c.DB.DeleteExpiredDocumentBranchHistoryEntriesCalls()
 			require.Len(t, ff, c.Calls)
 
 			if c.Calls == 0 {

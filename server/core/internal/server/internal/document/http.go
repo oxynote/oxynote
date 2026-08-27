@@ -1587,7 +1587,7 @@ type BranchesDBAgent interface {
 	DeleteDocumentBranchByID(ctx context.Context, branchID xid.ID, organizationID string) error
 
 	// UpdateDocumentBranchMetadata should update the name and protection status of a branch
-	// without modifying content or inserting a changelog entry.
+	// without modifying content or inserting a history entry.
 	UpdateDocumentBranchMetadata(ctx context.Context, doc documentCore.Document) error
 }
 

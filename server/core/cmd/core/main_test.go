@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/oxynote/oxynote/server/core/pkg/ioutil"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/goleak"
 )
@@ -43,6 +44,54 @@ func Test_parseOrigins(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, c.Result, parseOrigins(c.Val))
+		})
+	}
+}
+
+func Test_parseServerAddress(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Val  string
+		Host string
+		Port uint
+		Err  error
+	}{
+		"Unset value binds all interfaces on the default port": {
+			Port: 8080,
+		},
+		"Loopback address": {
+			Val:  "127.0.0.1:8180",
+			Host: "127.0.0.1",
+			Port: 8180,
+		},
+		"Port without a host": {
+			Val:  ":9090",
+			Port: 9090,
+		},
+		"Missing port": {
+			Val: "127.0.0.1",
+			Err: assert.AnError,
+		},
+		"Non-numeric port": {
+			Val: "127.0.0.1:http",
+			Err: assert.AnError,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			host, port, err := parseServerAddress(c.Val)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Host, host)
+			assert.Equal(t, c.Port, port)
 		})
 	}
 }

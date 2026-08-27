@@ -704,7 +704,7 @@ func Test_agent_UpdateDocument(t *testing.T) {
 		assert.Equal(t, assert.AnError, err)
 	})
 
-	t.Run("Changelogs are kept per branch", func(t *testing.T) {
+	t.Run("HistoryEntries are kept per branch", func(t *testing.T) {
 		t.Parallel()
 
 		db := prepTempDB(t)
@@ -722,7 +722,7 @@ func Test_agent_UpdateDocument(t *testing.T) {
 
 		var logs uint64
 
-		q, args := db.builder.Select("COUNT(*)").From("document_branch_changelogs").
+		q, args := db.builder.Select("COUNT(*)").From("document_branch_history_entries").
 			Where(sq.Eq{
 				"fk_document_id": branches[0].ID,
 			}).MustSql()
@@ -779,7 +779,7 @@ func Test_agent_UpdateDocument(t *testing.T) {
 
 			var logs uint64
 
-			q, args = db.builder.Select("COUNT(*)").From("document_branch_changelogs").
+			q, args = db.builder.Select("COUNT(*)").From("document_branch_history_entries").
 				Where(sq.Eq{
 					"fk_document_id": c.Document.ID,
 				}).MustSql()

@@ -73,6 +73,10 @@ export default defineNuxtConfig({
 		preset: isDesktopBuild
 			? "static"
 			: (process.env.NITRO_PRESET ?? "cloudflare_pages"),
+		// NITRO_MINIFY=true terser-minifies the server bundle; the
+		// production docker image sets it to halve the shipped output.
+		// Unset keeps each preset's own default.
+		minify: process.env.NITRO_MINIFY === "true" ? true : undefined,
 	},
 
 	modules: [

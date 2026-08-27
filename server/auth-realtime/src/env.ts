@@ -15,7 +15,10 @@ export interface Env {
 	databaseDSN: string
 	// absent on a deployment running without valkey, where better-auth
 	// keeps no secondary storage at all.
-	valkeyUrl: string | undefined
+	valkeyDsn: string | undefined
+	// the interface the server binds to; undefined binds all interfaces.
+	listenHost: string | undefined
+	listenPort: number
 	// the public base URL carries the reverse proxy's /auth-realtime
 	// prefix; authOrigin is the bare origin the proxy forwards to.
 	publicAuthBaseUrl: string
@@ -56,6 +59,34 @@ function counter(fallback: number) {
 			value === undefined ? fallback : Number(value),
 		)
 		.pipe(z.number().int().positive())
+}
+
+// an unset address falls back to all interfaces on the default port; a
+// present one must be host:port (the host part may be empty), so a typo is
+// a boot error instead of a server listening on the wrong interface.
+function listenAddress(fallbackPort: number) {
+	return z
+		.string()
+		.regex(/^[^:]*:\d+$/, "must be host:port")
+		.optional()
+		.transform((value): { host?: string; port: number } => {
+			if (value === undefined) {
+				return { host: undefined, port: fallbackPort }
+			}
+
+			const colon = value.lastIndexOf(":")
+
+			return {
+				host: value.slice(0, colon) || undefined,
+				port: Number(value.slice(colon + 1)),
+			}
+		})
+		.pipe(
+			z.object({
+				host: z.string().optional(),
+				port: z.number().int().positive(),
+			}),
+		)
 }
 
 // only the two literals are accepted: a flag spelled "1" or "yes" would
@@ -99,7 +130,8 @@ const schema = z
 	.object({
 		OXYNOTE_AUTH_REALTIME_BACKEND_URL: httpUrl(),
 		OXYNOTE_AUTH_REALTIME_DB_DSN: z.string().min(1),
-		OXYNOTE_AUTH_REALTIME_VALKEY_URL: z.string().min(1).optional(),
+		OXYNOTE_AUTH_REALTIME_VALKEY_DSN: z.string().min(1).optional(),
+		OXYNOTE_AUTH_REALTIME_ADDRESS: listenAddress(8081),
 		OXYNOTE_AUTH_REALTIME_BETTER_AUTH_BASE_URL: httpUrl(),
 		OXYNOTE_AUTH_REALTIME_BETTER_AUTH_SECRET: z.string().min(1),
 		OXYNOTE_AUTH_REALTIME_BETTER_AUTH_COOKIE_DOMAIN: z
@@ -214,7 +246,9 @@ export function loadEnv(source: Record<string, string | undefined>): Env {
 	return {
 		coreUrl: values.OXYNOTE_AUTH_REALTIME_BACKEND_URL,
 		databaseDSN: values.OXYNOTE_AUTH_REALTIME_DB_DSN,
-		valkeyUrl: values.OXYNOTE_AUTH_REALTIME_VALKEY_URL,
+		valkeyDsn: values.OXYNOTE_AUTH_REALTIME_VALKEY_DSN,
+		listenHost: values.OXYNOTE_AUTH_REALTIME_ADDRESS.host,
+		listenPort: values.OXYNOTE_AUTH_REALTIME_ADDRESS.port,
 		publicAuthBaseUrl,
 		authOrigin,
 		betterAuthSecret:

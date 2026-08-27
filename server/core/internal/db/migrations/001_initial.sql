@@ -295,7 +295,7 @@ CREATE INDEX document_branches_fk_organization_id_idx ON document_branches (fk_o
 CREATE INDEX document_branches_fk_created_by_idx ON document_branches (fk_created_by);
 CREATE INDEX document_branches_fk_last_updated_by_idx ON document_branches (fk_last_updated_by);
 
-CREATE TABLE document_branch_changelogs (
+CREATE TABLE document_branch_history_entries (
 	id TEXT PRIMARY KEY,
 	fk_document_id TEXT NOT NULL REFERENCES documents ON DELETE CASCADE,
 	fk_branch_id TEXT NOT NULL REFERENCES document_branches(id) ON DELETE CASCADE,
@@ -303,8 +303,8 @@ CREATE TABLE document_branch_changelogs (
 	raw_content BYTEA NULL,
 	created_at TIMESTAMP NOT NULL
 );
-CREATE INDEX document_branch_changelogs_fk_document_id_idx ON document_branch_changelogs (fk_document_id);
-CREATE INDEX document_branch_changelogs_fk_branch_id_idx ON document_branch_changelogs (fk_branch_id);
+CREATE INDEX document_branch_history_entries_fk_document_id_idx ON document_branch_history_entries (fk_document_id);
+CREATE INDEX document_branch_history_entries_fk_branch_id_idx ON document_branch_history_entries (fk_branch_id);
 
 CREATE TABLE document_hooks (
 	id TEXT PRIMARY KEY,
@@ -449,7 +449,7 @@ DROP TABLE document_maintainers;
 DROP TABLE document_comment_replies;
 DROP TABLE document_comments;
 DROP TABLE document_hooks;
-DROP TABLE document_branch_changelogs;
+DROP TABLE document_branch_history_entries;
 DROP TABLE document_branches;
 DROP TABLE documents;
 DROP TABLE data_sources;

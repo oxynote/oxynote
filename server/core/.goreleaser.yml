@@ -2,7 +2,10 @@ version: 2
 project_name: oxynote
 dist: bin
 snapshot:
-  version_template: dev
+  # the tag a snapshot image carries. Defaults to dev for the dev stack;
+  # the e2e stack overrides it so a run cannot clobber the image the dev
+  # stack is using. Set through core's Makefile IMAGE_TAG.
+  version_template: '{{ envOrDefault "CORE_SNAPSHOT_TAG" "dev" }}'
 builds:
   - id: core
     main: ./cmd/core

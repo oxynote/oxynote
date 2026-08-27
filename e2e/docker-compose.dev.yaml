@@ -7,6 +7,11 @@
 #   - env is inlined and committed; there is nothing secret to protect
 #   - only the services the tests exercise (no changedetection, mariadb,
 #     datagen or grafana)
+#   - no valkey and no object store, so core and auth-realtime fall back
+#     to their built-in equivalents (in-process conversations, no
+#     secondary session storage, images on the container filesystem) —
+#     which is what a production deployment does when those variables
+#     are unset, and therefore the configuration most installs run
 #
 # the front door is the dev Caddyfile verbatim: e2e must exercise the
 # same routing and the same /api/x and /api/internal blocks that ship.
@@ -15,7 +20,7 @@
 # this repository changed, not because something upstream published a
 # new latest overnight.
 
-name: oxynote-e2e
+name: oxynote-e2e-dev
 
 services:
   caddy:
@@ -33,7 +38,7 @@ services:
         condition: service_healthy
 
   web:
-    image: ghcr.io/oxynote/web:e2e
+    image: ghcr.io/oxynote/web:e2e-dev
     build:
       context: ../web
       dockerfile: Dockerfile.dev
@@ -56,14 +61,13 @@ services:
       start_period: 20s
 
   auth-realtime:
-    image: ghcr.io/oxynote/auth-realtime:e2e
+    image: ghcr.io/oxynote/auth-realtime:e2e-dev
     build:
       context: ../server/auth-realtime
       dockerfile: Dockerfile.dev
     environment:
       - OXYNOTE_AUTH_REALTIME_BACKEND_URL=http://core:8080
       - OXYNOTE_AUTH_REALTIME_DB_DSN=postgresql://devuser:devpass@postgres/devdb?sslmode=disable
-      - OXYNOTE_AUTH_REALTIME_VALKEY_URL=redis://valkey:6379
       - OXYNOTE_AUTH_REALTIME_BETTER_AUTH_BASE_URL=http://localhost:18080/auth-realtime
       - OXYNOTE_AUTH_REALTIME_BETTER_AUTH_COOKIE_DOMAIN=localhost
       - OXYNOTE_AUTH_REALTIME_FRONTEND_URL=http://localhost:18080
@@ -84,8 +88,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      valkey:
-        condition: service_healthy
     healthcheck:
       test:
         [
@@ -100,15 +102,13 @@ services:
       retries: 30
 
   core:
-    image: ghcr.io/oxynote/core:dev
+    image: ghcr.io/oxynote/core:e2e-dev
     platform: linux/amd64
     environment:
       - OXYNOTE_CORE_DB_DSN=postgresql://devuser:devpass@postgres/devdb?sslmode=disable
-      - OXYNOTE_CORE_MEILISEARCH_DSN=http://meilisearch:7700
+      - OXYNOTE_CORE_MEILISEARCH_URL=http://meilisearch:7700
       - OXYNOTE_CORE_MEILISEARCH_MASTER_KEY=devmasterkey
-      - OXYNOTE_CORE_VALKEY_NETWORK=tcp
-      - OXYNOTE_CORE_VALKEY_ADDRESS=valkey:6379
-      - OXYNOTE_CORE_STORAGE_PATH=/home/nonroot/storage
+      - OXYNOTE_CORE_OBJECT_STORAGE_LOCAL_PATH=/home/nonroot/storage
       - OXYNOTE_CORE_SERVER_AUTH_BETTER_AUTH_URL=http://auth-realtime:8081/api/auth/get-session
       # the MCP surface: core validates bearer tokens against auth-realtime
       # over the compose network, and the resource URL is the public
@@ -139,14 +139,6 @@ services:
       POSTGRES_DB: devdb
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U devuser -d devdb"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-
-  valkey:
-    image: valkey/valkey:9.1.1-alpine
-    healthcheck:
-      test: ["CMD", "valkey-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 20

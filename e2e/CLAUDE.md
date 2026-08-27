@@ -10,7 +10,26 @@ stated.
 ## Project
 
 `@oxynote/e2e` — Playwright tests that drive the composed product through
-a browser, plus the docker-compose stack they run against.
+a browser, plus the docker-compose stacks they run against.
+
+**There are two suites and they share every test.** The dev suite drives
+the four containers this repository builds; the prod suite drives the
+all-in-one image an operator actually installs
+([docker/prod/](../docker/prod/CLAUDE.md)), and adds the `prod-*.test.ts`
+files, which only mean anything there. Neither is a subset of the other:
+the flow tests are the same files, run twice, because the thing under test
+is a different assembly of the same product.
+
+**Everything that belongs to one stack says which, and `dev` is never the
+unnamed default.** `docker-compose.dev.yaml` and `docker-compose.prod.yaml`,
+`playwright.dev.config.ts` and `playwright.prod.config.ts`, `test:dev` and
+`test:prod`, `make e2e-dev` and `make e2e-prod`, `qa-e2e-dev.yml` and
+`qa-e2e-prod.yml`. A bare name for one half and a qualified name for the
+other reads as though the bare one were the whole suite, which is exactly
+the confusion worth spending a few characters to avoid — and it costs
+`-c`/`-f` on the direct commands, which is a fair price. Use `prod`, not
+`production`, in every name; `production` stays a word for the real-world
+thing a deployment is, as in `NODE_ENV=production`.
 
 **It lives at the repository root, not in `web/`, for two reasons.** The
 tests exercise the whole system — the web app through Caddy, real core,
@@ -27,20 +46,25 @@ instead.
 Package manager is **pnpm**. From the repository root:
 
 ```sh
-make e2e             # run the suite; the config builds, starts and tears down
-make e2e-stack-build # build the stack's images, for iterating
-make e2e-stack-stop  # stop the stack and drop its data
+make e2e-dev             # run the suite against the dev stack; builds and tears down
+make e2e-dev-stack-build # build that stack's images, for iterating
+make e2e-dev-stack-stop  # stop it and drop its data
+
+make e2e-prod             # the same suite against the all-in-one image
+make e2e-prod-stack-build # build that image
+make e2e-prod-stack-stop  # stop it and drop its data
 ```
 
 From `e2e/`:
 
 ```sh
 pnpm setup       # deps + the playwright chromium browser
-pnpm test        # playwright test (full cycle, see below)
+pnpm test:dev    # playwright against the dev stack (full cycle, see below)
+pnpm test:prod   # the same, against the all-in-one image
 
 pnpm check-lint  # check-types + check-eslint + check-fmt + check-knip
 pnpm lint        # the fixing counterpart of all four
-pnpm qa          # check-lint + test; qa-fix = lint + test
+pnpm qa          # check-lint + test:dev; qa-fix = lint + test:dev
 
 pnpm check-types # tsc --noEmit
 pnpm check-eslint # eslint --max-warnings 0 . (eslint / fmt are the
@@ -54,28 +78,47 @@ pnpm check-knip  # dead exports, files and dependencies
 Nothing has to be running first, and nothing is left behind.
 
 That is deliberate, and the reason is that a test suite has several front
-doors — `make e2e`, `pnpm test`, and the play button in the Playwright VS
-Code extension — and only the config is common to all of them. Putting
+doors — `make e2e-dev`, `pnpm test:dev`, and the play button in the Playwright
+VS Code extension — and only the config is common to all of them. Putting
 the build in the caller meant the extension tested whatever image was
 last left behind, which passes and lies. Now every entry point runs the
-same cycle, so `make e2e` is a one-line target that only starts the run.
+same cycle, so `make e2e-dev` is a one-line target that only starts the run.
 
 The build still lives in the Makefile, and the hook shells back out to
-`make e2e-stack-build` rather than reimplementing it. Two reasons: the
+`make e2e-dev-stack-build` rather than reimplementing it. Two reasons: the
 hook cannot express it — goreleaser produces core's image, which compose
 cannot build at all, since the service has no build section — and going
-through make is what keeps `E2E_COMPOSE_EXTRA` working, which is how CI
+through make is what keeps `E2E_DEV_COMPOSE_EXTRA` working, which is how CI
 layers the buildx cache config in
-[docker-compose.ci.yaml](docker-compose.ci.yaml) over the base file.
+[docker-compose.dev.ci.yaml](docker-compose.dev.ci.yaml) over the base file.
+
+**Both suites run through the same setup and teardown**, which is why
+they take the stack they drive from `E2E_STACK` rather than from a second
+copy of the hooks. Each playwright config sets it as its first statement,
+before playwright loads the global setup or forks a worker — both inherit
+the config process's environment — and
+[helpers/config.ts](helpers/config.ts) reads it to resolve the ports while
+[helpers/stack.ts](helpers/stack.ts) reads it to pick the compose file and
+the make targets. Nothing else in the suite knows which stack it is on.
+
+The knock-on is that **neither config sets `use.baseURL`**: a config is
+evaluated before it can influence a module it imports, so the origin has
+to come from the helpers instead. `visit()` splices it on, and every other
+navigation and request in the suite was already absolute.
 
 **The cost is that every run is a full build and teardown.** With warm
 caches and no source change that is tens of seconds, not minutes, and a
 dropped volume per run means each run starts from an empty database. To
-iterate without paying it, build once with `make e2e-stack-build` and
-drive playwright directly with `pnpm exec playwright test`, which is the
-same binary without the make wrapper — but understand that you are then
+iterate without paying it, build once with `make e2e-dev-stack-build` and
+drive playwright directly with
+`pnpm exec playwright test -c playwright.dev.config.ts`, which is the same
+binary without the make wrapper — but understand that you are then
 responsible for rebuilding after a source change, and that a stale image
-fails silently.
+fails silently. **`-c` is not optional**: neither config carries
+playwright's default filename, so a bare `playwright test` finds nothing.
+That is the price of naming both stacks rather than leaving the dev one
+implicit, and it is the right trade — an unnamed default is exactly what
+makes two-stack setups ambiguous.
 
 Both build steps run quietly, under a ticking line, and replay their
 whole log if they fail. Docker and goreleaser say a great deal that
@@ -85,14 +128,16 @@ matters only when something breaks.
 Its lifecycle belongs to the setup and teardown hooks, which reach the
 Makefile through [helpers/stack.ts](helpers/stack.ts); anything else —
 reading logs, poking at a container — is plain `docker compose` run from
-this directory, which discovers `docker-compose.yaml` without being told
-where it is. A `pnpm stack:*` wrapper would only be a second name for a
-command that is already shorter than its alias.
+this directory with `-f docker-compose.dev.yaml` or
+`-f docker-compose.prod.yaml`. Neither carries compose's default name, for
+the same reason neither playwright config does: which stack a command
+drives is never left to a default. A `pnpm stack:*` wrapper would only be a
+second name for a command that is already shorter than its alias.
 
 ## The stack
 
-[docker-compose.yaml](docker-compose.yaml) is the whole backend, built
-from this repository's own source — the same images and Dockerfiles the
+[docker-compose.dev.yaml](docker-compose.dev.yaml) is the whole backend,
+built from this repository's own source — the same images and Dockerfiles the
 dev stack uses, never a published release. It deliberately differs from
 `docker/docker-compose.dev.yaml`:
 
@@ -106,6 +151,15 @@ dev stack uses, never a published release. It deliberately differs from
 - **Every image is pinned**, as in the dev stack. A run has to fail
   because this repository changed, not because an upstream `latest`
   moved overnight.
+- **The images this repo builds are tagged `:e2e-dev` here and
+  `:e2e-prod` in the prod stack**, never the `:dev` the dev stack uses.
+  A tag names the stack an image belongs to, and the separation is load
+  bearing rather than cosmetic: sharing a tag would mean an e2e run
+  silently replaced the image `make start` is running. Core's comes from
+  goreleaser, so its tag is threaded through as
+  `make build-go CORE_IMAGE_TAG=e2e-dev` → core's `IMAGE_TAG` →
+  `CORE_SNAPSHOT_TAG`, which `.goreleaser.yml` reads as the snapshot
+  version. The prod image takes `PROD_IMAGE_TAG` the same way.
 - **Only the services the tests touch.** No changedetection,
   sockpuppet-chrome, mariadb, datagen, prometheus or grafana.
 - **The front door is `docker/Caddyfile` verbatim**, mounted from the dev
@@ -126,6 +180,39 @@ verification is mandatory (`requireEmailVerification`), so tests fetch
 the real message from mailpit's REST API and follow the real link —
 nothing is stubbed or short-circuited.
 
+**Neither stack runs valkey or an object store.** Both are optional
+everywhere in the product: without them the assistant keeps its
+conversations in the core process, better-auth keeps no secondary session
+storage, and uploaded images live on the filesystem. That is what a
+deployment does when those variables are unset, so it is the configuration
+most installs actually run — and testing it here is worth more than
+testing a shape that only larger deployments have. A test that needs
+either one back has to say why in the same breath.
+
+## The prod stack
+
+[docker-compose.prod.yaml](docker-compose.prod.yaml) is
+`docker/prod/docker-compose.example.yaml` — the deployment the
+image's README documents — retuned as a fixture: throwaway state, its own
+ports (`:19080` front door, `:19025` mailpit), inlined env, pinned images.
+It runs alongside both other stacks.
+
+Two things about it are not variations on the dev stack:
+
+- **Compose builds nothing.** The image comes from `make
+  prod-build`, because core's binary has to be produced by
+  goreleaser and staged where the Dockerfile's `COPY` expects it. There is
+  no build section to point compose at, which is also why the CI cache
+  reaches the build through `PROD_BUILD_EXTRA` on the `docker build`
+  rather than through a compose override. It is tagged `:e2e-prod`.
+- **There is a `probe` container**, an idle alpine on the same private
+  network. It exists for [tests/](tests/) and is the
+  only honest way to ask whether a container that is not caddy can reach
+  core, auth-realtime or the web server directly. Probing published host
+  ports would answer nothing: the internal ports are not published, so
+  every such probe passes whether the services bind loopback or the
+  wildcard.
+
 ## Testing standards
 
 ### Layout
@@ -138,6 +225,16 @@ nothing is stubbed or short-circuited.
   with. `web/` co-locates because a test there has exactly one subject
   file; an e2e test has none — it crosses four services by design, so it
   is filed by flow instead.
+- **A `prod-` prefix is the one exception to naming by flow**, and it is
+  filed by stack rather than by flow because that is what those cases have
+  in common: each observes something only true of the all-in-one image.
+  The dev config ignores `prod-*.test.ts` (`testIgnore`), so the prefix is
+  what decides a case runs once instead of twice. They stay in
+  [tests/](tests/) beside everything else — a subdirectory would suggest a
+  second tier, and there is only one. A test earns the prefix only if it
+  would be meaningless or misleading against the dev stack; a flow that
+  merely happens to work in both is a normal flow test, run by both suites
+  already.
 - **Shared code lives in [helpers/](helpers/), one module per concern**
   (`auth`, `workspace`, `editor`, `collaboration`, `mailpit`, `i18n`,
   `page`, `config`, `api`, `realtime`). Helpers are setup and plumbing;
@@ -255,6 +352,28 @@ something no cheaper tier can.
   which is why a missing check survives a suite that covers every line.
   Naming follows the same rule as everywhere else — the group names the
   subject, each name completes "it …" with the denial it observes.
+- **The trust boundary is tested from outside the image**, in
+  [tests/prod-trust-boundary.test.ts](tests/prod-trust-boundary.test.ts).
+  Two independent things keep core's `/api/x/*` and auth-realtime's
+  `/api/internal/*` unreachable — the services bind the container's
+  loopback, and caddy refuses the prefixes at the front door — and the
+  file asserts them separately, because either one alone is a single
+  point of failure and a suite that conflated them would go green with
+  one of them gone. The launcher runs its own bind check at boot; this
+  asks the same question from the network, so a regression that took the
+  boot gate with it is still caught.
+  - The bind cases go through the `probe` container, and the group carries
+    a **positive control** — the same probe reaching the front door — so a
+    broken network cannot pass as a loopback bind. Every table-driven
+    negative here needs one; without it the whole group is one typo away
+    from proving nothing.
+  - The front-door cases are sent with `rawRequest`, over `node:http`,
+    because the point is what caddy does with a path and `fetch` would
+    normalise `..`, duplicate slashes and encoding away before the request
+    ever left. Two tables: spellings caddy is expected to recognise as the
+    same request must be `403`, and traversal attempts must simply never
+    succeed — asserting a specific status for those would couple the suite
+    to caddy's normalisation rather than to the property that matters.
 - **A denial that does not hold yet is marked `test.fail()`**, with a
   comment saying what is missing and what to delete when it is fixed.
   That keeps the gap in the suite instead of in a backlog, and Playwright
@@ -342,12 +461,26 @@ something no cheaper tier can.
 - **Workers are capped at four locally and two on CI.** Every test's
   setup is several cross-service round trips against one core and one
   postgres; past a few workers the setup starts timing out, which reads
-  as flaky tests when it is only load — and a private-repo CI runner has
-  two vCPUs for the stack and the browsers together. For the same
-  reason the test budget is 60s (a 7s local test is a 40s test on that
-  runner), and the collaboration tests are marked slow, tripling theirs:
+  as flaky tests when it is only load. CI gets fewer as headroom rather
+  than because of any particular runner — it carries the stack and the
+  browsers on one machine, and a green suite there is worth more than a
+  slightly faster one. For the same reason the test budget is 60s, well
+  above what a test takes locally, and the collaboration tests are marked
+  slow, tripling theirs:
   each one runs two signups, two verifications, an invitation and its
   acceptance before the first assertion.
+- **Both suites run four workers, and turning that down is not how a
+  flake gets fixed.** The prod stack contends harder than the dev one —
+  caddy, web, core and auth-realtime share a single container there — and
+  that pressure is worth keeping, because it is what surfaces the real
+  defects. Every failure that only appeared at four turned out to be one:
+  a form that read its session once instead of following it, sync
+  connections that were never torn down when a tab closed, a dialog
+  dismissed with one keypress when two were open, a toast asserted after
+  it had auto-dismissed, and cross-service chains waited on with the
+  default five seconds. Each was fixed where it lived. If a case fails
+  only under load, that is the finding — chase it, do not widen the gap
+  it hides in.
 - **No test depends on another's state or on execution order**, and no
   test cleans up after itself: the stack's database is thrown away
   wholesale, which is why it carries no volumes.
@@ -437,8 +570,8 @@ unawaited assertion described above. It is scoped to
 [tests/](tests/) and [helpers/](helpers/).
 
 **knip** guards dead exports, files and dependencies, and needs no config
-file: its Playwright plugin reads [playwright.config.ts](playwright.config.ts),
-resolves `globalSetup` and `globalTeardown` from it, and treats the test
+file: its Playwright plugin picks up both `playwright.*.config.ts` files,
+resolves `globalSetup` and `globalTeardown` from them, and treats the test
 files as entry points. Nothing here has `web/`'s auto-import or vendored-directory
 blind spots, so a `knip.ts` would only be a file to keep in sync.
 
@@ -448,9 +581,9 @@ TypeScript is strict, with `noUnusedLocals`, `noUnusedParameters`,
 
 ## CI
 
-[.github/workflows/qa-e2e.yml](../.github/workflows/qa-e2e.yml) mirrors
+[.github/workflows/qa-e2e-dev.yml](../.github/workflows/qa-e2e-dev.yml) mirrors
 the other QA workflows: a `lint` job running `check-lint`, and a `test`
-job running `make e2e`. The test job needs more than a node toolchain —
+job running `make e2e-dev`. The test job needs more than a node toolchain —
 it sets up Go and goreleaser, because the suite runs against images built
 from this repository and core's is not something compose can build. On
 failure it uploads the html report, which is why the CI reporter is
@@ -461,19 +594,42 @@ report with traces to download.
 suite for a change anywhere that can break it — `web/`, `server/`,
 `docker/`, `e2e/` — because that is where regressions actually come from.
 A pull request only triggers it for changes to `e2e/` itself. A full run
-builds a nuxt image and costs real minutes on a private repository, and
-paying that on every push of every frontend PR buys only a few minutes'
-warning over the run on main. `concurrency` supersedes earlier runs on
+builds a nuxt image and costs real minutes, and paying that on every push
+of every frontend PR buys only a few minutes' warning over the run on
+main. `concurrency` supersedes earlier runs on
 every branch, `main` included — only the latest push's result matters,
 so a superseded run shows as cancelled rather than finishing.
 
 **Layer caching is what keeps that affordable.** A runner starts with no
 layers, so the workflow sets up buildx and applies
-[docker-compose.ci.yaml](docker-compose.ci.yaml) through
-`E2E_COMPOSE_EXTRA` — a separate file because `type=gha` is meaningless
+[docker-compose.dev.ci.yaml](docker-compose.dev.ci.yaml) through
+`E2E_DEV_COMPOSE_EXTRA` — a separate file because `type=gha` is meaningless
 outside a runner and would break every local build. Paired with the
 dependency layer in `web/Dockerfile.dev`, a push that leaves `web/`
 alone reuses the whole image instead of rebuilding it.
+
+**The prod suite is
+[.github/workflows/qa-e2e-prod.yml](../.github/workflows/qa-e2e-prod.yml),
+and it runs on tags, not on branches.** No push and no pull request
+triggers it; `workflow_dispatch` is there so the suite is reachable before
+the first tag exists and for re-verifying an image without cutting a
+release. The dev suite is what guards day-to-day work, and this one answers
+a different question — does the artifact about to be published serve the
+product, and is its trust boundary intact — which is only worth its minutes
+when something is being released, because building the image means building
+nuxt, auth-realtime and the launcher from scratch.
+`cancel-in-progress` is **off** here, the opposite of every branch
+workflow: a superseded branch run is answering about a commit that is no
+longer the branch, but a tag is verified once and its answer is wanted.
+
+The release workflow does not exist yet. When it does, this should become a
+gate it depends on rather than a second run triggered by the same tag.
+
+Its cache reaches the build through `PROD_BUILD_EXTRA` rather than a
+compose override, because compose builds nothing in the prod stack — the
+image comes from `docker build` in the Makefile. That is also why
+[docker-compose.dev.ci.yaml](docker-compose.dev.ci.yaml) carries the `dev`
+in its name with no prod counterpart to pair with.
 
 ## Not covered yet
 

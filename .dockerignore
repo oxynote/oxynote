@@ -1,0 +1,18 @@
+# context for docker/production/Dockerfile (built from the repository
+# root). Everything heavy or secret stays out; the builders re-install and
+# re-build from source.
+.git
+**/node_modules
+**/.output
+**/.nuxt
+**/.cache
+**/dist
+**/coverage
+e2e
+datagen
+server/core/bin
+# gitignored local configuration and credentials must never enter the
+# build context.
+docker/env/*.local.env
+docker/github
+web/.env

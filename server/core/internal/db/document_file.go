@@ -106,7 +106,7 @@ func (a *agent) DeleteDocumentFile(ctx context.Context, id string) error {
 }
 
 // CheckDocumentFileReferenced reports whether the file id still appears in
-// the document's live branch content, in a retained changelog snapshot, or
+// the document's live branch content, in a retained history entry, or
 // in a comment or comment reply.
 //
 // The id is matched as a substring of the serialized content rather than by
@@ -119,7 +119,7 @@ func (a *agent) CheckDocumentFileReferenced(ctx context.Context, id string, docu
 			SELECT 1 FROM document_branches
 			WHERE fk_document_id = $1 AND position($2 in content::text) > 0
 			UNION ALL
-			SELECT 1 FROM document_branch_changelogs
+			SELECT 1 FROM document_branch_history_entries
 			WHERE fk_document_id = $1 AND position($2 in content::text) > 0
 			UNION ALL
 			SELECT 1 FROM document_comments
@@ -139,12 +139,12 @@ func (a *agent) CheckDocumentFileReferenced(ctx context.Context, id string, docu
 	return referenced, nil
 }
 
-// DeleteExpiredDocumentBranchChangelogs removes changelog snapshots created
+// DeleteExpiredDocumentBranchHistoryEntries removes history entries created
 // before the given time. Age trimming happens here rather than on insert
-// because an idle branch never inserts again, and its snapshots would
+// because an idle branch never inserts again, and its entries would
 // otherwise pin the files they reference forever.
-func (a *agent) DeleteExpiredDocumentBranchChangelogs(ctx context.Context, before time.Time) error {
-	q, args := a.builder.Delete("document_branch_changelogs").
+func (a *agent) DeleteExpiredDocumentBranchHistoryEntries(ctx context.Context, before time.Time) error {
+	q, args := a.builder.Delete("document_branch_history_entries").
 		Where(sq.Lt{"created_at": before}).
 		MustSql()
 

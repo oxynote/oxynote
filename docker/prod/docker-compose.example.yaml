@@ -1,0 +1,85 @@
+# the canonical production deployment: the all-in-one image plus the
+# backing services it needs. Copy this file, replace every change-me value,
+# set OXYNOTE_PUBLIC_URL to the origin users will open in the browser, and
+# put a TLS-terminating proxy in front for a real domain (the image itself
+# speaks plain HTTP on 8080).
+#
+# `make prod-run` from the repository root uses this file as-is
+# against a locally built image (tag :dev). The full variable reference
+# lives in README.md next to this file.
+
+name: oxynote-prod
+
+services:
+  oxynote:
+    image: ghcr.io/oxynote/oxynote:${OXYNOTE_IMAGE_TAG:-latest}
+    ports:
+      - "8080:8080"
+    environment:
+      # the public origin; every URL, cookie domain and CORS rule the
+      # components need derives from this one value.
+      - OXYNOTE_PUBLIC_URL=http://localhost:8080
+      - OXYNOTE_DB_DSN=postgresql://oxynote:change-me-db@postgres/oxynote?sslmode=disable
+      # optional: full-text search.
+      - OXYNOTE_MEILISEARCH_URL=http://meilisearch:7700
+      - OXYNOTE_MEILISEARCH_MASTER_KEY=change-me-meili-key
+      # optional: outgoing email (signup verification, invites). Point it
+      # at a real relay, or uncomment the mailpit service below for a
+      # trial run and use these two lines:
+      # - OXYNOTE_SMTP_DSN=smtp://mailpit:1025
+      # - OXYNOTE_EMAIL_FROM_ADDRESS=Oxynote <team@example.com>
+    volumes:
+      # generated secrets and every uploaded image live here. Losing this
+      # volume signs everyone out, takes the images with it and
+      # permanently orphans stored data-source credentials.
+      - oxynote_data:/oxynote/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
+    # the image shuts its services down in order (flushing open documents
+    # last); docker's default 10s grace would SIGKILL that mid-flush.
+    stop_grace_period: 60s
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:18.6-alpine
+    environment:
+      - POSTGRES_USER=oxynote
+      - POSTGRES_PASSWORD=change-me-db
+      - POSTGRES_DB=oxynote
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oxynote -d oxynote"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.53.1
+    environment:
+      - MEILI_ENV=production
+      - MEILI_MASTER_KEY=change-me-meili-key
+    volumes:
+      - meilisearch_data:/meili_data
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:7700/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # a trial-run mail sink: uncomment it together with the two OXYNOTE_SMTP
+  # variables above and read the delivered mail at http://localhost:8025.
+  # mailpit:
+  #   image: axllent/mailpit:v1.31.0
+  #   ports:
+  #     - "8025:8025"
+
+volumes:
+  oxynote_data:
+  postgres_data:
+  meilisearch_data:

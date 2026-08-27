@@ -1,0 +1,83 @@
+name: QA
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - docker/prod/launcher/**
+      - .github/workflows/qa-prod-launcher.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - docker/prod/launcher/**
+      - .github/workflows/qa-prod-launcher.yml
+
+# a newer push supersedes the still-running workflow of the stale commit
+# and cancels it. The group carries a hardcoded per-file prefix because
+# every QA workflow shares the display name "QA", so github.workflow
+# would put them all in one group and let a run of one workflow cancel
+# an in-flight run of another.
+concurrency:
+  group: qa-prod-launcher-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lint:
+    name: Linting prod launcher
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v7
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: docker/prod/launcher/package.json
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: docker/prod/launcher/pnpm-lock.yaml
+
+      - name: Installing dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: docker/prod/launcher
+
+      - name: Run check-lint
+        run: pnpm run check-lint
+        working-directory: docker/prod/launcher
+
+  test:
+    name: Testing prod launcher
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v7
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: docker/prod/launcher/package.json
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: docker/prod/launcher/pnpm-lock.yaml
+
+      - name: Installing dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: docker/prod/launcher
+
+      - name: Run tests
+        run: pnpm run test
+        working-directory: docker/prod/launcher

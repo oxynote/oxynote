@@ -160,7 +160,12 @@ test.describe("access", () => {
 		await page
 			.getByRole("menuitem", { name: t("sidebar.header.log-out") })
 			.click()
-		await expect(page).toHaveURL(/\/login$/, { timeout: 15_000 })
+		// the query string is deliberately not pinned: logging out can
+		// land on /login or on /login?next=..., depending on whether the
+		// route guard or the sign-out redirect gets there first, and
+		// which one wins says nothing about the refusal this case is
+		// about. What follows is the assertion that matters.
+		await expect(page).toHaveURL(/\/login(\?|$)/, { timeout: 15_000 })
 
 		const after = await request.get(coreURL("/api/capabilities"), {
 			headers: { cookie },

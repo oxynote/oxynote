@@ -36,6 +36,9 @@ export default defineConfig({
 				// loaded through node's --import before the app
 				// graph exists, so it can hold no imports of ours
 				"src/sentry.ts",
+				// the bundle entry: evaluating its two ordered
+				// imports is starting the service, like index.ts
+				"src/bundle.ts",
 				"src/**/test-helpers.ts",
 				"src/test-setup.ts",
 			],
