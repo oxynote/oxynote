@@ -9,7 +9,6 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
-      - "8081:8081"
       - "8082:8082"
       - "8084:8084"
     logging:
@@ -79,6 +78,12 @@ services:
       # docker/github/ and set OXYNOTE_CORE_GITHUB_APP_ID to enable the
       # GitHub App integration.
       - ./github:/etc/oxynote/core/github:ro
+      # uploaded files, which core keeps under OXYNOTE_CORE_STORAGE_PATH
+      # when no object store is configured. The mount is the home directory
+      # rather than the storage path itself: core runs as a non-root uid
+      # that owns only /home/nonroot in its image, and an empty volume
+      # takes the ownership of the directory it is mounted over.
+      - core_storage:/home/nonroot
     restart: unless-stopped
     logging:
       driver: local
@@ -190,30 +195,6 @@ services:
         mode: non-blocking
         max-size: 10m
         max-file: "3"
-  rustfs:
-    container_name: rustfs
-    image: rustfs/rustfs:1.0.0-rc.3
-    volumes:
-      - rustfs_data:/data
-    environment:
-      - RUSTFS_VOLUMES=/data
-      - RUSTFS_ADDRESS=0.0.0.0:9000
-      - RUSTFS_CONSOLE_ENABLE=true
-      - RUSTFS_CONSOLE_ADDRESS=0.0.0.0:9001
-      - RUSTFS_ACCESS_KEY=sparta
-      - RUSTFS_SECRET_KEY=chad_warrior
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    logging:
-      driver: local
-      options:
-        mode: non-blocking
-        max-size: 10m
-        max-file: "3"
   changedetection:
     container_name: changedetection
     image: dgtlmoon/changedetection.io:0.55.8
@@ -261,7 +242,7 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=admin
 
 volumes:
-  rustfs_data:
+  core_storage:
   mariadb_data:
   postgres_data:
   meilisearch_data:

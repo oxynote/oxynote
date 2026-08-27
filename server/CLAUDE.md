@@ -54,7 +54,6 @@ Go dependencies are fetched into the module cache at build time (`make deps` run
 `docker/Caddyfile` is the entrypoint for all client traffic:
 
 - `:8080` — front door. `/core/*` is path-stripped and reverse-proxied to `core:8080`; `/auth-realtime/*` is path-stripped and reverse-proxied to `auth-realtime:8081` (Better Auth, Hocuspocus, the merge proxy — the service itself still serves `/api/...` and `/hocuspocus`); everything else goes to the web SSR container (`web:3000`).
-- `:8081` — RustFS console (served at `/rustfs/console/`; the root is the S3 API)
 - `:8082` — changedetection.io
 - `:8083` — Grafana (direct, not via Caddy)
 
@@ -94,7 +93,7 @@ Every organization is seeded at initialization with a Prometheus data source nam
 
 ## External resource lifecycle (files, hooks)
 
-Uploaded images live under `organizations/{org}/documents/{doc}/files/{blockUID}` — the file id **is** the image block's `uid` — and are tracked in `document_files`. That key is an object key in RustFS, or a path under the storage directory on a deployment running without an object store; `internal/storage` holds what the two backends share and `internal/storage/{s3,fs}` implement them. Hooks hold external resources too (changedetection.io watchers, GitHub tracking). Both are reclaimed by sweeps, not by request handlers:
+Uploaded images live under `organizations/{org}/documents/{doc}/files/{blockUID}` — the file id **is** the image block's `uid` — and are tracked in `document_files`. That key is an object key in the S3-compatible store, or a path under the storage directory on a deployment running without one; `internal/storage` holds what the two backends share and `internal/storage/{s3,fs}` implement them. Hooks hold external resources too (changedetection.io watchers, GitHub tracking). Both are reclaimed by sweeps, not by request handlers:
 
 - **The row outlives its owner.** `document_files` and `document_hooks` reference documents, branches and organizations with `ON DELETE SET NULL`, so a deleted document — or an org deleted by Better Auth — leaves rows behind rather than destroying the only record of the external resource. `document_files.storage_key` stores the object key outright so it stays reachable once the FKs are gone.
 - **`internal/document/file/manager`** ticks every 5 minutes: it trims expired changelog snapshots, then reclaims files. A file is referenced if its id appears in any branch content of its document, any retained `document_branch_changelogs` snapshot, or any comment/reply — checked in SQL (`CheckDocumentFileReferenced`), so a spurious match only ever retains. Unreferenced files are stamped `unreferenced_at` and deleted a day later; rows with NULL FKs skip the wait; files younger than a day are never touched, which covers the gap between an upload and the first content persist that mentions it.

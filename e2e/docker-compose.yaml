@@ -108,10 +108,7 @@ services:
       - OXYNOTE_CORE_MEILISEARCH_MASTER_KEY=devmasterkey
       - OXYNOTE_CORE_VALKEY_NETWORK=tcp
       - OXYNOTE_CORE_VALKEY_ADDRESS=valkey:6379
-      - OXYNOTE_CORE_STORAGE_URL=http://rustfs:9000
-      - OXYNOTE_CORE_STORAGE_ACCESS_KEY=sparta
-      - OXYNOTE_CORE_STORAGE_SECRET_KEY=chad_warrior
-      - OXYNOTE_CORE_STORAGE_BUCKET=e2e
+      - OXYNOTE_CORE_STORAGE_PATH=/home/nonroot/storage
       - OXYNOTE_CORE_SERVER_AUTH_BETTER_AUTH_URL=http://auth-realtime:8081/api/auth/get-session
       # the MCP surface: core validates bearer tokens against auth-realtime
       # over the compose network, and the resource URL is the public
@@ -132,8 +129,6 @@ services:
       postgres:
         condition: service_healthy
       meilisearch:
-        condition: service_healthy
-      rustfs:
         condition: service_healthy
 
   postgres:
@@ -163,19 +158,6 @@ services:
       - MEILI_ENV=development
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:7700/health"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-
-  rustfs:
-    image: rustfs/rustfs:1.0.0-rc.3
-    environment:
-      - RUSTFS_VOLUMES=/data
-      - RUSTFS_ADDRESS=0.0.0.0:9000
-      - RUSTFS_ACCESS_KEY=sparta
-      - RUSTFS_SECRET_KEY=chad_warrior
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/health"]
       interval: 5s
       timeout: 5s
       retries: 20

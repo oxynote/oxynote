@@ -71,16 +71,6 @@
 	}
 }
 
-:8081 {
-	import common
-
-	# the console lives at /rustfs/console/, and the S3, STS and admin APIs
-	# it calls share this origin at "/" — so the root is left alone rather
-	# than redirected at the console, which would swallow ListBuckets and
-	# the console's own sign-in.
-	reverse_proxy rustfs:9001
-}
-
 :8082 {
 	import common
 
