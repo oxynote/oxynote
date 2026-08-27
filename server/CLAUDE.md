@@ -9,11 +9,11 @@ infrastructure, and the non-Go services.
 
 ## Stack overview
 
-`server/` is the backend half of the Oxynote collaborative documentation product. Paths below are relative to the repository root; three buildable components, all orchestrated through `docker-compose`:
+Three buildable components, orchestrated through `docker-compose`. What each one *is* is in the root [CLAUDE.md](../CLAUDE.md) map; what follows is the backend-specific detail.
 
-- `server/core/` — Go module `github.com/oxynote/oxynote/server/core`. One binary: `cmd/core` (`oxynote-core`) — main API server. Listens on `:8080`. Exposes `/api/...` (auth-required), `/api/apps/...` (public, sessionless third-party callbacks), and `/api/x/...` (internal-only, no auth; the reverse proxy is expected to firewall this). Owns Postgres, Meilisearch, Valkey (Redis, optional), RustFS (optional), the GitHub/Slack apps, the assistant, and the outbound data-source connections (`internal/datasource`).
-- `server/auth-realtime/` — `@oxynote/auth-realtime` package. TypeScript ES-module service that runs Better Auth (organization plugin) and a Hocuspocus (Yjs CRDT) server in a single Hono process on port `8081`. Forwards non-auth `/api/...` traffic to core (`OXYNOTE_AUTH_REALTIME_BACKEND_URL`).
-- `datagen/` — separate Go module `github.com/oxynote/oxynote/datagen`. Synthesises demo Postgres/MariaDB content, and serves a fake metrics endpoint for a Prometheus to scrape. The demo Prometheus data source no longer uses that endpoint: core synthesises those metrics itself (`server/core/internal/datasource/demo`), so nothing in the dev stack scrapes it.
+- `server/core/` — one binary, `cmd/core` (`oxynote-core`), listening on `:8080`. Owns Postgres, Meilisearch, Valkey, object storage, the GitHub/Slack apps, the assistant, and the outbound data-source connections (`internal/datasource`). Its request surface is mapped below.
+- `server/auth-realtime/` — listens on `:8081`, runs the Better Auth organization plugin and Hocuspocus in one Hono process, and forwards non-auth `/api/...` traffic to core (`OXYNOTE_AUTH_REALTIME_BACKEND_URL`).
+- `datagen/` — separate Go module `github.com/oxynote/oxynote/datagen`. Synthesises demo Postgres/MariaDB content. Demo/testing only.
 
 Go builds go through **goreleaser**: `make build` in `server/core` and `datagen` runs `goreleaser release --snapshot --clean`, producing binaries in `bin/` and the `ghcr.io/oxynote/{core,datagen}:dev` images via each module's `Dockerfile.dev`. The dev compose stack consumes those images; `auth-realtime` (and `web/`) are built from source by compose via their `Dockerfile.dev`. `make run` / `make start` from the repository root orchestrates both.
 
@@ -37,13 +37,7 @@ cd datagen && make test           # go test -race ./... (pgdemo/mariademo need d
 cd datagen && make check-coverage # fails below COVERAGE_MIN
 cd datagen && make check-lint     # golangci-lint; lint = the fixing variant
 
-# auth-realtime (full details in auth-realtime/CLAUDE.md)
-cd server/auth-realtime && pnpm run dev          # local watch mode (tsx + sentry.ts preloaded)
-cd server/auth-realtime && pnpm run build        # tsc -p tsconfig.build.json
-cd server/auth-realtime && pnpm run check-lint   # types + eslint + prettier + knip
-cd server/auth-realtime && pnpm run lint         # the fixing variant
-cd server/auth-realtime && pnpm run test         # vitest run --coverage
-cd server/auth-realtime && pnpm run qa           # check-lint + test; qa-fix = lint + test
+# auth-realtime — commands are in auth-realtime/CLAUDE.md
 ```
 
 Both Go modules share the same test/lint workflow, documented in
@@ -90,8 +84,6 @@ Every organization is seeded at initialization with a Prometheus data source nam
 
 ## Document storage / Hocuspocus integration
 
-This is the model that's least obvious from a fresh read:
-
 - Documents are organized into **branches** (`document_branches` table). Every document has at least one branch; the oldest = the default/main branch.
 - The Hocuspocus `documentName` is encoded as `"<documentId>-<branchIdentifier>"`. `branchIdentifier` may be the literal string `"default"`, in which case `resolveBranchId` in `server/auth-realtime/src/hocuspocus.ts` looks up the default branch ID. Splitting on the **first** `-` (`indexOf("-")`) is intentional; XIDs do not contain dashes but the suffix path can.
 - Branch content is stored two ways in `document_branches`: structured ProseMirror JSON in `content` (JSONB) and the canonical Yjs binary state in `raw_content` (base64-encoded over the wire). `raw_content` is authoritative for CRDT continuity.
@@ -135,7 +127,22 @@ Env lives in `docker/env/`: committed `*.example.env` templates list **every** v
 
 - core vars are prefixed `OXYNOTE_CORE_`; `buildinfo.Getenv("FOO")` reads `OXYNOTE_CORE_FOO`.
 - auth-realtime vars are prefixed `OXYNOTE_AUTH_REALTIME_`.
-- All integrations are optional, each keyed on one variable; a set key with the rest of its group missing or invalid is a boot error, and `GET /api/capabilities` reports what ended up enabled. The GitHub App is enabled by setting `OXYNOTE_CORE_GITHUB_APP_ID` and dropping the app's private key into `docker/github/` (mounted into the core container); an empty `OXYNOTE_CORE_GITHUB_APP_ID` disables it — core boots, GitHub routes respond `github.not_configured` (the always-200 `GET /api/github` status endpoint also reports `configured: false`), and github-tracking hooks are skipped. A set app ID with a missing/unreadable key is a boot error. Slack works the same way keyed on `OXYNOTE_CORE_SLACK_CLIENT_ID` (`slack.not_configured`, `GET /api/slack` reports `configured`); a set client ID with other `SLACK_*` values missing is a boot error. The assistant is keyed on `ASSISTANT_PROVIDER`: empty disables it (`GET /api/ai/chat` responds `assistant.not_configured` before any websocket upgrade, no model objects are built, the MCP surface keeps working, and the other `ASSISTANT_*` values are ignored); a set provider needs an `ASSISTANT_API_KEY` for every provider except ollama, and missing or unsupported values are a boot error; an empty `ASSISTANT_MODEL` defaults to the provider's strongest supported model (`Provider.DefaultModel`). The model itself is judged at boot against the provider's supported list (`provider.Options.ModelStatus`, backed by the embedded `internal/assistant/provider/models/models.json` — defaults and status-grouped model ids per provider): a full-strength model runs the assistant, a mid-tier one runs it with a logged warning, and a too-weak or unlisted one disables the assistant with a warning instead of failing boot — `GET /api/capabilities` reports the verdict as `aiAssistant.status` (`active` / `active-but-weak` / `inactive-too-weak` / `inactive`) with the configured model id. Provider-specific credentials (`ASSISTANT_BEDROCK_*`, `ASSISTANT_VERTEX_*`, `ASSISTANT_AZURE_API_VERSION`) are only read when the selected provider uses them. Search is keyed on `MEILISEARCH_DSN`: empty disables it — `GET /api/documents/search` responds `search.not_configured`, every enqueue goes through `search.Jobs` (`internal/search/jobs.go`) which drops jobs on a disabled deployment, the search-job manager is not started, and the `search_documents` tool is left out of the assistant/MCP registry; a set DSN that cannot be reached is a boot error. Changedetection.io is keyed on `CHANGEDETECTION_API_URL`: empty disables it — creating, updating or resetting a url-watcher hook responds `changedetection.not_configured`, existing url-watcher hooks are skipped by the processor and by fork/merge hook copies, and deleting one still removes the row (`webchange.Client.DeleteWatcher` is a no-op when unconfigured); `CHANGEDETECTION_API_KEY` may stay empty either way. Valkey is keyed on `VALKEY_ADDRESS`: empty disables it — no pool is dialed and the assistant holds its conversation history, checkpoints, pending confirmations and offloaded tool results in the core process (`pkg/memkit`, the in-memory counterpart of `pkg/redkit`, swept by `assistant.Manager.Start` under the background supervisor), which loses every conversation on restart and confines the assistant to one instance; auth-realtime's `OXYNOTE_AUTH_REALTIME_VALKEY_URL` is independently optional and drops better-auth's secondary storage when empty, leaving sessions to the database and rate-limit counters to memory. Object storage is keyed on `STORAGE_URL`: empty disables the object store — no bucket is probed and objects are kept in a directory on the local filesystem (`internal/storage/fs`, the counterpart of `internal/storage/s3`), rooted at `STORAGE_PATH`. That path has no default: an empty `STORAGE_URL` with an empty `STORAGE_PATH` is a boot error, so objects never land somewhere the deployment did not choose. Core creates the directory at boot and refuses to start when it cannot be created or written to; the rest of the `STORAGE_*` values are then unread. Nothing above the storage package can tell which backend it got — the same keys, the same content types, the same bare `ETag` — but objects then live on one node's disk, so they are not shared between instances and are lost with the container unless the path is a volume. Email is keyed on `OXYNOTE_CORE_EMAIL_SMTP_HOST`: when empty, core boots and each would-be email is logged instead of sent; with a set host, an invalid `EMAIL_SMTP_PORT` or `EMAIL_SMTP_TLS` (`none` | `starttls` | `tls`) is a boot error. The dev stack presets the mailpit container as the SMTP target (`mailpit:1025`, plaintext, no auth; web UI on host `:8025`) — the four HTML templates are embedded in the core binary from `server/core/internal/email/templates/`.
+- Every integration is optional and keyed on one variable. Setting that key with the
+  rest of its group missing or invalid is a boot error; leaving it empty disables the
+  feature — core boots, the feature's routes answer `<domain>.not_configured`, and its
+  background work is skipped. `GET /api/capabilities` reports what ended up enabled.
+- Keys: `GITHUB_APP_ID` (private key in `docker/github/`), `SLACK_CLIENT_ID`,
+  `ASSISTANT_PROVIDER`, `MEILISEARCH_DSN`, `CHANGEDETECTION_API_URL`, `VALKEY_ADDRESS`,
+  `STORAGE_URL`, `EMAIL_SMTP_HOST`. `docker/env/*.example.env` lists every variable each
+  service reads.
+- Two of these degrade rather than switch off, and both silently confine the deployment
+  to one instance. An empty `STORAGE_URL` keeps objects in a directory on the local
+  filesystem (`internal/storage/fs`, the counterpart of `internal/storage/s3`) rooted at
+  `STORAGE_PATH` — that path has no default and an unset one is a boot error, so objects
+  never land somewhere the deployment did not choose. An empty `VALKEY_ADDRESS` holds
+  the assistant's conversation history, checkpoints and pending confirmations in the
+  core process (`pkg/memkit`), losing every conversation on restart. A model too weak
+  for the assistant likewise disables it with a warning instead of failing boot.
 
 ## Assistant prompt
 
@@ -143,140 +150,92 @@ The system prompt at `server/core/internal/assistant/prompt.go` codifies behavio
 
 ## Assistant tools
 
-Tools are grouped by what they act on, a few per file: `document.go` (the tree
-and one document's metadata), `block.go` (reading and editing content),
-`search.go`, `datasource.go` (reads against the organisation's outbound
-connections). `eino.go` is the odd one out — it holds the agent-framework
-adapter and `read_tool_output`, the one tool that exists *because* of eino
-rather than because of the domain. `tools.Set` is the only place that names
-every tool; adding one means writing its type and adding a line to that list.
+Tools are grouped by what they act on, a few per file: `document.go` (the tree and one
+document's metadata), `block.go` (reading and editing content), `search.go`,
+`datasource.go` (reads against the organisation's outbound connections). `eino.go` is
+the odd one out — it holds the agent-framework adapter and `read_tool_output`, the one
+tool that exists because of eino rather than because of the domain. `tools.Set` is the
+only place that names every tool; adding one means writing its type and adding a line to
+that list.
 
-**Tools do not implement eino's interfaces.** A tool implements this package's
-own `Tool` — `Info`, `Traits`, `Title`, `Summary`, `Execute` — and `eino.go`
-translates that into what the framework calls. Nothing else in the package imports eino, so the tool files
-stay free of `argumentsInJSON`, `...tool.Option` and `*schema.ToolInfo`.
+**Tools do not implement eino's interfaces.** A tool implements this package's own
+`Tool` — `Info`, `Traits`, `Title`, `Summary`, `Execute` — and `eino.go` translates that
+into what the framework calls. Nothing else in the package imports eino. A surface
+outside the package reaches a tool through `Entry`: `Entry.Info` to describe it
+(`Info.Schema()` states the arguments once, for every surface that has to publish them)
+and `Entry.Tool`, a `Runner`, to run it.
 
-The framework stops at this package's edge. A surface outside it reaches a
-tool through `Entry`: `Entry.Info` to describe it (`Info.Schema()` states the
-arguments once, for every surface that has to publish them) and
-`Entry.Tool`, a `Runner`, to run it. `Info.toEino` and `einoTool.InvokableRun`
-are the framework's own costume over the same two things, worn only inside
-`eino.go`.
+**A call reports what it changed; it is never asked.** `Runner.Run` returns a `Result`
+carrying the output and `Documents`. Every write goes through one of four `Input`
+methods — `ApplyEdit`, `CreateDocument`, `MoveDocument`, `DeleteDocument` — and the
+first three record the document as the mutation happens. A delete records nothing: the
+document it names is gone.
 
-**A call reports what it changed; it is never asked.** `Runner.Run` returns a
-`Result` carrying the output and `Documents`, the documents the call created or
-changed. Every write in the package goes through one of four `Input` methods —
-`ApplyEdit`, `CreateDocument`, `MoveDocument`, `DeleteDocument` — and the first
-three record the document there, as the mutation happens. So the list is right
-for a call that changes several documents and empty for one that changes none,
-neither of which reading the arguments could establish. A delete records
-nothing: the document it names is gone, so there is nothing left to point at.
+**`Decode` is the only way into a call's arguments.** There is no lenient variant:
+`Title`, `Summary` and `Execute` all decode and all return an error, so no description is
+built from the zero values a failed unmarshal left behind. `Decode` takes an `Args` — a
+type with `Validate() error` — so a tool states what it requires next to the fields that
+carry it (`errRequired(key)` → `<tool>: <key> is required`). Every tool has a named
+`<tool>Args` type, read tools included.
 
-**A tool states its arguments once.** Every write declares a named `<tool>Args`
-type and decodes into it, so one payload has one Go shape instead of a partial
-struct per method, and `Confirm` hands the document id it read to `summarize`
-rather than having it sniffed back out of the JSON. Read tools, whose arguments
-are used in one place, keep a local anonymous struct. Describing a call still
-parses its arguments — `Title` and `Confirm` run *before* the call does, so
-there is nothing to derive them from — but each describe now parses once.
+Arguments are typed, not parsed: ids are `xid.ID` (optional ones
+`null.Value[xid.ID]`), timestamps `time.Time`, enums their own self-validating type, and
+`Decode` runs on `encoding/json/v2` so a rejected value is reported with its JSON path
+(`within "/document_id"`). An empty string is an invalid value, never "absent". Ids stay
+`xid.ID` all the way to the wire; only the protocol and MCP edges render strings.
 
-**There is one tool interface, not two.** Every tool satisfies `Tool`; the ones
-that propose nothing embed `plainSummary` for the no-op. Whether a tool writes
-is asked of `Traits.Write` alone, so there is no second fact — a marker
-interface — to keep in step with it, and the adapter reaches `Summary` directly
-instead of type-asserting its way to it.
+A `Title` or `Summary` that names its target fetches it — `inp.Document`,
+`inp.DataSource` — and uses the name on the row; a target that does not resolve is an
+error passed on, never a placeholder. An unreadable payload ends no turn: the gate hands
+the rejection back as the call's result, and `Set.Label` turns it into an empty label.
 
-**`Decode` is the only way into a call's arguments.** There is no lenient
-variant: `Title`, `Summary` and `Execute` all decode and all return an error, so
-no description is ever built from the zero values a failed unmarshal left
-behind. A `Title` or `Summary` that names its target fetches it — `inp.Document`,
-`inp.DataSource` — and uses the name on the row; a target that does not resolve
-is an error passed on, never a placeholder, so the model is told what it named
-does not exist (`Set.Label` announces nothing, the gate returns the text as the
-call's result).
+`Input` is built per call and carries its context, raw arguments, and every resource a
+tool reaches through, already scoped to the session's (organisation, user) pair — so a
+tool cannot reach another organisation's documents. `DescribeInput` is its read-only
+half, handed to `Title` and `Confirm`. Shared work that needs dependencies goes on
+`Input`; dependency-free helpers live in `util.go`.
 
-`Decode` takes an `Args` — a type with `Validate() error` — and runs it once
-the payload is read, so a tool states what it requires next to the fields that
-carry it (`errRequired(key)` → `<tool>: <key> is required`) and `Title`,
-`Summary` and `Execute` never see a payload the tool cannot act on. Every tool
-therefore has a named `<tool>Args` type, read tools included. Arguments are
-typed, not parsed: ids are `xid.ID` (optional ones `null.Value[xid.ID]`),
-timestamps `time.Time`, enums their own self-validating type
-(`processor.ChartType`, `position`), and `Decode` runs on `encoding/json/v2` so
-a value one of those types rejects is reported with the argument's JSON path
-(`within "/document_id"`). An empty string is never "absent" for such an
-argument — it is an invalid value, and the model is told so. Ids stay `xid.ID`
-all the way to the wire: result structs, `ActionSummary`, `Result.Documents`
-and the edit client take ids, and only the protocol/MCP edges render strings.
+**A write owns its invariants.** Checks that decide whether a mutation is legal live on
+the `Input` method that performs it, not in the tool's `Execute` — `MoveDocument`
+refuses a missing parent or a move under the document's own subtree, `CreateDocument`
+refuses a missing parent. A tool parses its arguments and hands them over.
 
-Each caller then decides what an unreadable payload means. Neither ends the
-turn: a bad payload is the model's to fix, and it can only fix what it is told
-about. The gate hands the rejection back as the call's result rather than
-parking the run — a payload `Execute` would reject is not worth spending a
-user's confirmation on, and the same payload comes back unchanged on resume.
-`Set.Label` turns it into an empty label: the observer announces a call it is
-about to make, and that call is about to fail on the same arguments, so the
-failure is the tool's to report and a status line derived from nothing would
-only precede it with a lie.
+**One tool interface.** Every tool satisfies `Tool`; the ones that propose nothing embed
+`plainSummary`. Whether a tool writes is asked of `Traits.Write` alone — never a marker
+interface, which would be a second fact to keep in step. What a tool is, it states in one
+`Traits()`:
 
-`Input` is built per call and carries the call itself: its context, its raw
-arguments, and every resource a tool reaches through, already scoped to the
-session's (organisation, user) pair — so a tool names only what it wants and
-cannot reach another organisation's documents. `DescribeInput` is its read-only
-half, handed to `Title` and `Confirm`: it can probe the arguments and name the
-target document but reaches nothing that mutates, so describing a pending write
-cannot perform it. Shared work that needs dependencies goes on `Input`;
-dependency-free helpers live in `util.go`.
+- `Write` gates it behind user confirmation **and** protects its result from the context
+  middlewares. A tool declaring it must describe the change in `Summary`, and is the only
+  kind ever asked for one; `Test_New` checks that a write produces one and nothing else
+  does.
+- `Destructive` keeps it outside an "approve all" answer. Only `delete_document` and
+  `delete_block`.
+- `DataSource` says the tool reads an outbound connection rather than the organisation's
+  documents. Over MCP those answer to their own `data-sources:read` scope and are
+  annotated open-world.
+- `Internal` keeps it off surfaces outside this process. Only `read_tool_output`, whose
+  paths are minted by the reduction middleware during a chat turn.
 
-What a tool *is*, it states — in one `Traits()` on its own type, not spread
-across marker interfaces and schema fields:
+The confirmation gate is applied by the registry from those traits, not by each tool, so
+a write cannot skip it by forgetting to ask.
 
-- `Write` gates it behind user confirmation **and** protects its result from
-  being cleared by the context middlewares — the model has to keep knowing what
-  it changed, while a stale read can always be taken again. A tool declaring it
-  must describe the change it proposes in `Summary`, and is the only kind of
-  tool ever asked for one. `Test_New` checks that a write actually produces a
-  summary and that nothing else does — a compiler cannot, since every tool
-  satisfies the same interface.
-- `Destructive` keeps it outside an "approve all" answer. Only
-  `delete_document` and `delete_block`.
-- `DataSource` says the tool reads an outbound data-source connection rather
-  than the organisation's documents. Over MCP those tools answer to their own
-  `data-sources:read` scope — querying an organisation's databases is not the
-  same permission as reading its documents — and are annotated open-world,
-  since what a connection points at is not Oxynote's.
-- `Internal` keeps it off surfaces outside this process. Only
-  `read_tool_output`: the paths it takes are minted by the reduction middleware
-  during a chat turn, so a client holding none of that state would be offered a
-  tool it could never call.
+The MCP surface (`internal/server/internal/mcp`) serves the same registry **ungated** via
+`Set.Entries`, minus the internal ones — MCP clients own the approval story, and the
+write/destructive facts become MCP tool annotations. It builds each `mcp.Tool` inline
+from `Entry.Info` and calls `Entry.Tool.Run`, so it never touches eino; every document in
+`Result.Documents` comes back as a resource link. Adding a tool to `tools.Set` extends
+the MCP server for free.
 
-The confirmation gate is applied by the registry from those traits, not by each
-tool, so a write cannot skip it by forgetting to ask.
-
-**A write owns its invariants.** Checks that decide whether a mutation is legal
-live on the `Input` method that performs it, not in the tool's `Execute` — so
-`MoveDocument` is what refuses a missing parent or a move under the document's
-own subtree, and `CreateDocument` is what refuses a missing parent. A tool
-parses its arguments and hands them over; it does not re-derive the rules.
-
-The MCP surface (`internal/server/internal/mcp`) serves the same registry
-**ungated** via `Set.Entries`, minus the internal ones — MCP clients own the
-approval story, and the write/destructive facts become MCP tool annotations
-instead. It builds each `mcp.Tool` inline from `Entry.Info` and calls
-`Entry.Tool.Run`, so it never touches eino; every document in the call's
-`Result.Documents` comes back as a resource link. Adding a tool to `tools.Set` therefore extends the
-MCP server for free.
-
-`testdata/tool_schemas.golden` pins every tool's model-facing description. Any
-change to a schema or a tool description has to be deliberate enough to update
-that file — a silently altered description degrades the assistant in ways no
-other test catches.
+`testdata/tool_schemas.golden` pins every tool's model-facing description. Any change to
+a schema or a description has to be deliberate enough to update that file — a silently
+altered description degrades the assistant in ways no other test catches.
 
 ## auth-realtime
 
 The service has its own [CLAUDE.md](auth-realtime/CLAUDE.md) covering its
 composition-root structure, zod-parsed environment, type-aware lint setup, and
-testing conventions. Two things worth knowing from here:
+testing conventions. From here:
 
 - **`src/index.ts` is the only module with side effects.** Everything else is
   a factory taking its dependencies as an argument — which is what lets the

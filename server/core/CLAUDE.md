@@ -14,27 +14,22 @@ of the convention.
 
 ## Non-negotiables (summary)
 
-1. Every possible code path — success and failure — is unit tested. Untestable
-   branches carry a `// NOCOV: <reason>.` comment.
-2. Every external dependency of a unit is an interface **declared by the consumer**
-   and mocked (via `moq`) in tests. Only the database layer tests and the
-   data-source `processor` tests hit real databases (throwaway gnomock containers).
-3. One test function per production function/method, named `Test_<Type>_<Method>`.
-4. Table-driven tests use `map[string]struct{...}` tables named `cc`, run with
-   `t.Run(cn, ...)` + `t.Parallel()`.
-5. The database is accessed through the **agent pattern**: consumers own narrow
-   `DB`/`Tx`/`DBAgent` interfaces and run transactions without ever seeing
-   `*sql.Tx`/`*sqlx.Tx`.
-6. Doc comment on every declaration — exported *and* unexported — ending with a
-   period. Interface method docs say what the method *should* do.
-7. Package-level variables/constants that are unexported are prefixed with `_`.
-   Exported globals are allowed only for `Err*` sentinels.
-8. `timeutil.Now()` instead of `time.Now()`. `decimal.Decimal` for exact numeric
-   values (hook scores, watch thresholds). `any` instead of `interface{}`.
-9. Goroutines are owned by a supervisor and every package's tests run under
-   `goleak.VerifyTestMain`.
-10. Lint clean under a strict golangci-lint profile (gofumpt extra rules, wsl, godot,
-    revive all-rules, gocritic all tags). `//nolint` always carries a reason.
+Each is stated in full in its own section below.
+
+1. Every code path — success and failure — is unit tested; untestable branches carry
+   `// NOCOV: <reason>.`
+2. Every external dependency is a consumer-declared interface, mocked with `moq`.
+3. One test function per production function, named `Test_<Type>_<Method>`.
+4. Table tests are `map[string]struct{...}` named `cc`, run with `t.Run(cn, ...)` +
+   `t.Parallel()`.
+5. The database is reached through the agent pattern — consumers never see `*sql.Tx`.
+6. Doc comment on every declaration, exported and unexported, ending with a period.
+7. Unexported package-level vars/consts are `_`-prefixed; exported globals only for
+   `Err*` sentinels.
+8. `timeutil.Now()` over `time.Now()`, `decimal.Decimal` for exact numerics, `any` over
+   `interface{}`.
+9. Goroutines are supervisor-owned; every package's tests run `goleak.VerifyTestMain`.
+10. Lint clean under the strict golangci-lint profile; every `//nolint` carries a reason.
 
 ## Commands & QA gates
 
