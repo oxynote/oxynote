@@ -43,12 +43,20 @@ export async function inviteTeamMember(
 		})
 		.click()
 
-	// the delivered email is the proof the invitation went through; the
-	// invite modal has closed itself by then, leaving only settings
+	// the delivered email is the proof the invitation went through
 	const inviteLink = await fetchInviteLink(request, email)
 
-	await page.keyboard.press("Escape")
-	await expect(page.getByRole("dialog")).toHaveCount(0)
+	// one Escape closes whichever dialog is on top, and how many are open
+	// depends on whether the invite modal has finished closing itself yet
+	// — under load it has not, so a single press leaves settings behind
+	// and every assertion after this one runs against a covered page.
+	// Press until nothing is left rather than assuming one is enough.
+	await expect(async () => {
+		await page.keyboard.press("Escape")
+		await expect(page.getByRole("dialog")).toHaveCount(0, {
+			timeout: 1_000,
+		})
+	}).toPass()
 
 	return inviteLink
 }

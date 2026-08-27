@@ -86,12 +86,27 @@ import.meta.hot?.accept(() => {
 	refreshGapDecorationsInBackground(contentEditor as Ref<Editor | null>)
 })
 
-onBeforeUnmount(() => {
+function destroyBranchProviders(): void {
 	for (const [, entry] of branchProviders) {
 		entry.provider.destroy()
 	}
 
 	branchProviders.clear()
+}
+
+onBeforeUnmount(destroyBranchProviders)
+
+// closing the tab never unmounts anything, so without this the provider is
+// only noticed as gone when its socket drops — and until then everyone else
+// still sees this user's caret. pagehide is the event that survives a tab
+// close; a bfcache eviction (persisted) is skipped, since the page can be
+// restored and would come back with dead providers.
+useEventListener(window, "pagehide", (event: PageTransitionEvent) => {
+	if (event.persisted) {
+		return
+	}
+
+	destroyBranchProviders()
 })
 
 watchImmediate(

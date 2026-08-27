@@ -234,27 +234,27 @@ func Test_Document_ApplyBranchUpdate(t *testing.T) {
 	}
 }
 
-func Test_Document_Changelog(t *testing.T) {
+func Test_Document_HistoryEntry(t *testing.T) {
 	t.Parallel()
 
 	doc := stubDocument()
 	doc.UpdatedAt = time.Date(2026, 1, 1, 10, 44, 30, 0, time.UTC)
 
-	cl := doc.Changelog()
+	entry := doc.HistoryEntry()
 
 	// the timestamp is truncated to the 30-minute aggregation window.
-	assert.Equal(t, doc.ID.String()+"-"+doc.BranchID.String()+"-2026-01-01T10:30:00", cl.ID)
-	assert.Equal(t, doc.ID, cl.DocumentID)
-	assert.Equal(t, doc.Content, cl.Content)
-	assert.Equal(t, doc.RawContent, cl.RawContent)
-	assert.Equal(t, doc.UpdatedAt, cl.CreatedAt)
+	assert.Equal(t, doc.ID.String()+"-"+doc.BranchID.String()+"-2026-01-01T10:30:00", entry.ID)
+	assert.Equal(t, doc.ID, entry.DocumentID)
+	assert.Equal(t, doc.Content, entry.Content)
+	assert.Equal(t, doc.RawContent, entry.RawContent)
+	assert.Equal(t, doc.UpdatedAt, entry.CreatedAt)
 
 	// a second branch of the same document updated within the same window
 	// keeps an entry of its own.
 	other := doc
 	other.BranchID = xid.New()
 
-	assert.NotEqual(t, cl.ID, other.Changelog().ID)
+	assert.NotEqual(t, entry.ID, other.HistoryEntry().ID)
 }
 
 func Test_Document_Search(t *testing.T) {

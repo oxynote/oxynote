@@ -4,6 +4,8 @@ package redisutil
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/gomodule/redigo/redis"
@@ -19,24 +21,31 @@ const (
 	_dialTimeout = time.Second * 3
 )
 
-// NewPool prepares a new redis connection pool.
-func NewPool(network, address string) (*redis.Pool, error) {
-	if network == "" {
-		return nil, errors.New("invalid redis network")
+// NewPool prepares a new redis connection pool. The URL follows the
+// redis[s]://[username:password@]host:port[/db] form.
+func NewPool(rawURL string) (*redis.Pool, error) {
+	if rawURL == "" {
+		return nil, errors.New("invalid redis url")
 	}
 
-	if address == "" {
-		return nil, errors.New("invalid redis address")
+	// the URL is checked eagerly so a malformed value fails at boot
+	// instead of on the first dial.
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid redis url: %w", err)
+	}
+
+	if u.Scheme != "redis" && u.Scheme != "rediss" {
+		return nil, errors.New("invalid redis url scheme")
 	}
 
 	return &redis.Pool{
 		MaxIdle:     _maxIdleConns,
 		IdleTimeout: time.Minute,
 		DialContext: func(ctx context.Context) (redis.Conn, error) {
-			return redis.DialContext(
+			return redis.DialURLContext(
 				ctx,
-				network,
-				address,
+				rawURL,
 				redis.DialConnectTimeout(_dialTimeout),
 				redis.DialWriteTimeout(_dialTimeout),
 				redis.DialReadTimeout(_dialTimeout),

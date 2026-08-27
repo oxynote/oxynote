@@ -2,13 +2,18 @@
 # ratcheted up as suites grow — never lowered.
 COVERAGE_MIN = 93.1
 
+# the tag the snapshot image carries; goreleaser reads it as the snapshot
+# version. The e2e stack passes e2e-dev so its run cannot clobber the image
+# the dev stack is using.
+IMAGE_TAG ?= dev
+
 # Build the Docker image
 # dockers_v2 snapshot builds load into the local daemon with an arch suffix;
-# retag so the dev compose stack can reference a stable :dev tag.
+# retag so the compose stacks can reference a stable tag.
 .PHONY: build
 build:
-	goreleaser release --snapshot --clean
-	docker tag ghcr.io/oxynote/core:dev-amd64 ghcr.io/oxynote/core:dev
+	CORE_SNAPSHOT_TAG=$(IMAGE_TAG) goreleaser release --snapshot --clean
+	docker tag ghcr.io/oxynote/core:$(IMAGE_TAG)-amd64 ghcr.io/oxynote/core:$(IMAGE_TAG)
 
 # Run all tests with the race detector.
 .PHONY: test

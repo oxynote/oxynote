@@ -1,3 +1,6 @@
+# the dev/e2e stack's routing. Sibling of docker/prod/Caddyfile (the
+# production image's front door): same routes, same blocks — only the
+# upstreams differ. Change the two files together.
 {
 	admin off # disable the admin API
 }

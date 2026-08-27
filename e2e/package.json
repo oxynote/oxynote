@@ -9,7 +9,8 @@
 	"scripts": {
 		"deps": "pnpm install",
 		"setup": "pnpm run deps && playwright install chromium",
-		"test": "playwright test",
+		"test:dev": "playwright test -c playwright.dev.config.ts",
+		"test:prod": "playwright test -c playwright.prod.config.ts",
 		"check-types": "tsc --noEmit",
 		"eslint": "eslint --fix --max-warnings 0 .",
 		"check-eslint": "eslint --max-warnings 0 .",
@@ -19,8 +20,8 @@
 		"check-knip": "knip",
 		"lint": "pnpm run check-types && pnpm run knip && pnpm run eslint && pnpm run fmt",
 		"check-lint": "pnpm run check-types && pnpm run check-eslint && pnpm run check-fmt && pnpm run check-knip",
-		"qa": "pnpm run check-lint && pnpm run test",
-		"qa-fix": "pnpm run lint && pnpm run test"
+		"qa": "pnpm run check-lint && pnpm run test:dev",
+		"qa-fix": "pnpm run lint && pnpm run test:dev"
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",

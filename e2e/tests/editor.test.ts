@@ -160,12 +160,18 @@ test.describe("editor", () => {
 			})
 			.click()
 
-		await expect(sidebarDocument(page, name)).toHaveCount(0)
+		// the toast comes first, and not only because it is the server's
+		// own confirmation that the delete landed: it dismisses itself
+		// after a few seconds, so waiting on the sidebar ahead of it
+		// leaves this racing a message that may already be gone. The
+		// deletion is a request, an invalidation and a tree refetch, so
+		// it gets longer than the default to complete.
 		await expect(
 			page.getByText(
 				t("editor.document-deletion-modal.deletion-success", { name }),
 			),
-		).toBeVisible()
+		).toBeVisible({ timeout: 15_000 })
+		await expect(sidebarDocument(page, name)).toHaveCount(0)
 		// the welcome page is the only one left, so that is where the
 		// user lands
 		await expect(page).toHaveURL(/Welcome-to-Oxynote-[a-z0-9]{20}$/)

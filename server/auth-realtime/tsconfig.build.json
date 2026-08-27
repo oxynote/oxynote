@@ -5,6 +5,7 @@
 		"dist",
 		"src/**/*.test.ts",
 		"src/**/test-helpers.ts",
-		"src/test-setup.ts"
+		"src/test-setup.ts",
+		"src/bundle.ts"
 	]
 }

@@ -38,7 +38,12 @@ export async function makeReviewable(page: Page): Promise<void> {
 		})
 		.click()
 
-	await expect(branchSwitcher(page)).toContainText(branchLabel("main"))
+	// enabling the workflow forks the page server-side — the draft branch
+	// is created, the stored content copied into it and main protected —
+	// so the switcher only appears once that whole chain has come back.
+	await expect(branchSwitcher(page)).toContainText(branchLabel("main"), {
+		timeout: 15_000,
+	})
 }
 
 // switchToBranch opens the given branch of a reviewable page through the
@@ -53,7 +58,11 @@ export async function switchToBranch(
 	await branchSwitcher(page).click()
 	await page.getByRole("menuitem", { name: branchLabel(branch) }).click()
 
-	await expect(branchSwitcher(page)).toContainText(branchLabel(branch))
+	// the switch fetches the branch and re-syncs the document over the
+	// websocket before the switcher settles on the new name.
+	await expect(branchSwitcher(page)).toContainText(branchLabel(branch), {
+		timeout: 15_000,
+	})
 	await waitForEditor(page)
 
 	if (branch === "draft") {
@@ -84,8 +93,12 @@ export async function mergeDraftIntoMain(page: Page): Promise<void> {
 
 	await expect(
 		page.getByText(t("editor.name-editor.review-workflow.merge.success")),
-	).toBeVisible()
-	await expect(branchSwitcher(page)).toContainText(branchLabel("main"))
+	).toBeVisible({ timeout: 15_000 })
+	// merging writes the draft back into main and drops the draft, so the
+	// switcher settles only after that has been stored and reloaded.
+	await expect(branchSwitcher(page)).toContainText(branchLabel("main"), {
+		timeout: 15_000,
+	})
 	await waitForEditor(page)
 }
 

@@ -33,8 +33,9 @@ const (
 	// _aggregationDuration is the duration for which document changes are aggregated.
 	_aggregationDuration = 30 * time.Minute
 
-	// _changelogTimeLayout is the layout used for timestamps in changelogs.
-	_changelogTimeLayout = "2006-01-02T15:04:05"
+	// _historyEntryTimeLayout is the layout used for timestamps in history
+	// entry IDs.
+	_historyEntryTimeLayout = "2006-01-02T15:04:05"
 )
 
 // Branch holds branch-specific content and metadata for a document.
@@ -221,7 +222,7 @@ type BranchSummary struct {
 }
 
 // ApplyBranchUpdate returns a new Document with only the name and protection
-// status updated. It does not modify content or the changelog.
+// status updated. It does not modify content or the history.
 func (d Document) ApplyBranchUpdate(name null.String, protected null.Bool, updatedBy string) Document {
 	nd := d
 
@@ -239,20 +240,20 @@ func (d Document) ApplyBranchUpdate(name null.String, protected null.Bool, updat
 	return nd
 }
 
-// Changelog returns a changelog entry for the current state of the document.
+// HistoryEntry returns a history entry for the current state of the document.
 // Entries aggregate per branch and per time bucket: the branch is part of the
 // ID so that two branches of one document edited within the same bucket keep
 // separate entries instead of overwriting each other.
-func (d Document) Changelog() Changelog {
+func (d Document) HistoryEntry() HistoryEntry {
 	id := fmt.Sprintf(
 		"%s-%s-%s",
 		d.ID,
 		d.BranchID,
 		d.UpdatedAt.Truncate(_aggregationDuration).
-			Format(_changelogTimeLayout),
+			Format(_historyEntryTimeLayout),
 	)
 
-	return Changelog{
+	return HistoryEntry{
 		ID:         id,
 		DocumentID: d.ID,
 		Content:    d.Content,
@@ -279,23 +280,23 @@ func (d Document) Search() map[string]search.Block {
 	return res
 }
 
-// Changelog represents a changelog entry for a document.
-type Changelog struct {
-	// ID is the unique identifier for the changelog entry.
+// HistoryEntry represents one entry in a document's history.
+type HistoryEntry struct {
+	// ID is the unique identifier for the entry.
 	ID string `json:"id" db:"id"`
 
 	// DocumentID is the identifier for the document associated
-	// with this changelog entry.
+	// with this entry.
 	DocumentID xid.ID `json:"documentId" db:"fk_document_id"`
 
-	// Content is the content of the document at the time of the changelog entry.
+	// Content is the content of the document at the time of the entry.
 	Content RootBlock `json:"content" db:"content"`
 
 	// RawContent is the raw content of the document, typically in
 	// a text format.
 	RawContent []byte `json:"rawContent" db:"raw_content"`
 
-	// CreatedAt is the timestamp when the changelog entry was created.
+	// CreatedAt is the timestamp when the entry was created.
 	CreatedAt time.Time `json:"createdAt" db:"created_at"`
 }
 

@@ -1,11 +1,16 @@
-# layer cache for CI only, applied on top of docker-compose.yaml.
+# layer cache for CI only, applied on top of docker-compose.dev.yaml.
 #
 # it is a separate file because `type=gha` is meaningless outside a
 # GitHub runner — putting it in the main compose file would break every
-# local build. The workflow supplies it through E2E_COMPOSE_EXTRA.
+# local build. The workflow supplies it through E2E_DEV_COMPOSE_EXTRA.
 #
 # without this, a runner starts from zero layers and rebuilds the whole
 # nuxt image on every run, which is the bulk of the job's wall clock.
+#
+# there is no prod counterpart, which is why this one is named for the dev
+# stack: compose builds nothing in docker-compose.prod.yaml — the
+# all-in-one image comes from `docker build` in the Makefile — so its cache
+# flags go through PROD_BUILD_EXTRA instead of a compose override.
 
 services:
   web:

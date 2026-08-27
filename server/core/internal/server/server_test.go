@@ -314,6 +314,10 @@ func Test_Server_Address(t *testing.T) {
 			Addr:   ":1234",
 			Result: "http://localhost:1234",
 		},
+		"Host-qualified address is used verbatim": {
+			Addr:   "127.0.0.1:8180",
+			Result: "http://127.0.0.1:8180",
+		},
 	}
 
 	for cn, c := range cc {

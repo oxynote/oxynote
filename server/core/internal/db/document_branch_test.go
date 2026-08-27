@@ -524,7 +524,7 @@ func Test_agent_UpdateDocumentBranchMetadata(t *testing.T) {
 		"Successful update of an edited branch": func(t *testing.T, db *DB) tcase {
 			branch := prepDocumentBranches(t, db, 1, nil)[0]
 
-			// an edit leaves a changelog entry behind, which used to pin
+			// an edit leaves a history entry behind, which used to pin
 			// the branch name in place.
 			require.NoError(t, db.UpdateDocument(context.Background(), *branch))
 
@@ -645,38 +645,38 @@ func Test_agent_FetchDocumentUnsafeByBranchID(t *testing.T) {
 	testutil.AssertFilterEqual(t, branch, res)
 }
 
-// prepChangelogs writes count snapshots of the document's branch, one per
+// prepHistoryEntries writes count entries of the document's branch, one per
 // aggregation bucket so each lands as its own entry, oldest first.
-func prepChangelogs(t *testing.T, db *DB, doc *document.Document, count int) []document.Changelog {
+func prepHistoryEntries(t *testing.T, db *DB, doc *document.Document, count int) []document.HistoryEntry {
 	t.Helper()
 
-	res := make([]document.Changelog, count)
+	res := make([]document.HistoryEntry, count)
 	base := timeutil.Now().Truncate(time.Second)
 
 	for i := range count {
 		doc.UpdatedAt = base.Add(-time.Duration(count-i) * time.Hour)
-		clog := doc.Changelog()
+		entry := doc.HistoryEntry()
 
-		require.NoError(t, db.insertDocumentBranchChangelog(
+		require.NoError(t, db.insertDocumentBranchHistoryEntry(
 			context.Background(),
 			db.sql,
 			doc.ID,
 			doc.BranchID,
-			clog,
+			entry,
 		))
 
-		res[i] = clog
+		res[i] = entry
 	}
 
 	return res
 }
 
-// countChangelogs returns how many snapshots the branch currently has.
-func countChangelogs(t *testing.T, db *DB, branchID xid.ID) int {
+// countHistoryEntries returns how many entries the branch currently has.
+func countHistoryEntries(t *testing.T, db *DB, branchID xid.ID) int {
 	t.Helper()
 
 	q, args := db.builder.Select("COUNT(*)").
-		From("document_branch_changelogs").
+		From("document_branch_history_entries").
 		Where(sq.Eq{"fk_branch_id": branchID}).
 		MustSql()
 
@@ -687,16 +687,16 @@ func countChangelogs(t *testing.T, db *DB, branchID xid.ID) int {
 	return count
 }
 
-func Test_agent_trimDocumentBranchChangelogs(t *testing.T) {
+func Test_agent_trimDocumentBranchHistoryEntries(t *testing.T) {
 	cc := map[string]struct {
 		Max       uint64
 		Remaining int
 	}{
-		"Zero keeps every snapshot": {
+		"Zero keeps every entry": {
 			Max:       0,
 			Remaining: 4,
 		},
-		"Only the newest snapshots survive": {
+		"Only the newest entries survive": {
 			Max:       2,
 			Remaining: 2,
 		},
@@ -713,14 +713,14 @@ func Test_agent_trimDocumentBranchChangelogs(t *testing.T) {
 			db := prepTempDB(t)
 			doc := prepDocuments(t, db, 1, nil)[0]
 
-			clogs := prepChangelogs(t, db, doc, 4)
+			entries := prepHistoryEntries(t, db, doc, 4)
 
-			db.opts.MaxDocumentChangelogs = c.Max
+			db.opts.MaxDocumentHistoryEntries = c.Max
 
-			require.NoError(t, db.trimDocumentBranchChangelogs(context.Background(), db.sql, doc.BranchID))
-			assert.Equal(t, c.Remaining, countChangelogs(t, db, doc.BranchID))
+			require.NoError(t, db.trimDocumentBranchHistoryEntries(context.Background(), db.sql, doc.BranchID))
+			assert.Equal(t, c.Remaining, countHistoryEntries(t, db, doc.BranchID))
 
-			if c.Max == 0 || c.Remaining == len(clogs) {
+			if c.Max == 0 || c.Remaining == len(entries) {
 				return
 			}
 
@@ -728,102 +728,102 @@ func Test_agent_trimDocumentBranchChangelogs(t *testing.T) {
 			var ids []string
 
 			q, args := db.builder.Select("id").
-				From("document_branch_changelogs").
+				From("document_branch_history_entries").
 				Where(sq.Eq{"fk_branch_id": doc.BranchID}).
 				MustSql()
 
 			require.NoError(t, db.sql.Select(&ids, q, args...))
-			assert.ElementsMatch(t, []string{clogs[2].ID, clogs[3].ID}, ids)
+			assert.ElementsMatch(t, []string{entries[2].ID, entries[3].ID}, ids)
 		})
 	}
 }
 
-func Test_agent_DeleteExpiredDocumentBranchChangelogs(t *testing.T) {
+func Test_agent_DeleteExpiredDocumentBranchHistoryEntries(t *testing.T) {
 	t.Parallel()
 
 	db := prepTempDB(t)
 	doc := prepDocuments(t, db, 1, nil)[0]
 
-	clogs := prepChangelogs(t, db, doc, 4)
-	require.Equal(t, 4, countChangelogs(t, db, doc.BranchID))
+	entries := prepHistoryEntries(t, db, doc, 4)
+	require.Equal(t, 4, countHistoryEntries(t, db, doc.BranchID))
 
 	// nothing is old enough yet.
-	require.NoError(t, db.DeleteExpiredDocumentBranchChangelogs(
+	require.NoError(t, db.DeleteExpiredDocumentBranchHistoryEntries(
 		context.Background(),
-		clogs[0].CreatedAt.Add(-time.Second),
+		entries[0].CreatedAt.Add(-time.Second),
 	))
-	assert.Equal(t, 4, countChangelogs(t, db, doc.BranchID))
+	assert.Equal(t, 4, countHistoryEntries(t, db, doc.BranchID))
 
-	// everything created before the newest snapshot goes.
-	require.NoError(t, db.DeleteExpiredDocumentBranchChangelogs(
+	// everything created before the newest entry goes.
+	require.NoError(t, db.DeleteExpiredDocumentBranchHistoryEntries(
 		context.Background(),
-		clogs[3].CreatedAt,
+		entries[3].CreatedAt,
 	))
-	assert.Equal(t, 1, countChangelogs(t, db, doc.BranchID))
+	assert.Equal(t, 1, countHistoryEntries(t, db, doc.BranchID))
 }
 
-func Test_agent_insertDocumentBranchChangelog(t *testing.T) {
+func Test_agent_insertDocumentBranchHistoryEntry(t *testing.T) {
 	type tcase struct {
-		DocumentID xid.ID
-		BranchID   xid.ID
-		Changelog  document.Changelog
-		Trimmed    int
-		Err        error
+		DocumentID   xid.ID
+		BranchID     xid.ID
+		HistoryEntry document.HistoryEntry
+		Trimmed      int
+		Err          error
 	}
 
 	cc := map[string]func(*testing.T, *DB) tcase{
 		"Non-existent branch": func(t *testing.T, db *DB) tcase {
 			doc := prepDocuments(t, db, 1, nil)[0]
-			clog := doc.Changelog()
+			entry := doc.HistoryEntry()
 
 			return tcase{
-				DocumentID: doc.ID,
-				BranchID:   xid.New(),
-				Changelog:  clog,
-				Err:        assert.AnError,
+				DocumentID:   doc.ID,
+				BranchID:     xid.New(),
+				HistoryEntry: entry,
+				Err:          assert.AnError,
 			}
 		},
 		"Successful insert": func(t *testing.T, db *DB) tcase {
 			doc := prepDocuments(t, db, 1, nil)[0]
 
 			return tcase{
-				DocumentID: doc.ID,
-				BranchID:   doc.BranchID,
-				Changelog:  doc.Changelog(),
+				DocumentID:   doc.ID,
+				BranchID:     doc.BranchID,
+				HistoryEntry: doc.HistoryEntry(),
 			}
 		},
-		"Insert trims the branch down to the retained snapshots": func(t *testing.T, db *DB) tcase {
+		"Insert trims the branch down to the retained entries": func(t *testing.T, db *DB) tcase {
 			doc := prepDocuments(t, db, 1, nil)[0]
 
-			prepChangelogs(t, db, doc, 3)
+			prepHistoryEntries(t, db, doc, 3)
 
-			db.opts.MaxDocumentChangelogs = 2
+			db.opts.MaxDocumentHistoryEntries = 2
 			doc.UpdatedAt = timeutil.Now().Truncate(time.Second)
 
 			return tcase{
-				DocumentID: doc.ID,
-				BranchID:   doc.BranchID,
-				Changelog:  doc.Changelog(),
-				Trimmed:    2,
+				DocumentID:   doc.ID,
+				BranchID:     doc.BranchID,
+				HistoryEntry: doc.HistoryEntry(),
+				Trimmed:      2,
 			}
 		},
 		"Successful update of an existing entry": func(t *testing.T, db *DB) tcase {
 			doc := prepDocuments(t, db, 1, nil)[0]
 
-			require.NoError(t, db.insertDocumentBranchChangelog(
+			require.NoError(t, db.insertDocumentBranchHistoryEntry(
 				context.Background(),
 				db.sql,
 				doc.ID,
 				doc.BranchID,
-				doc.Changelog(),
+				doc.HistoryEntry(),
 			))
 
 			doc.RawContent = []byte("updated raw content")
 
 			return tcase{
-				DocumentID: doc.ID,
-				BranchID:   doc.BranchID,
-				Changelog:  doc.Changelog(),
+				DocumentID:   doc.ID,
+				BranchID:     doc.BranchID,
+				HistoryEntry: doc.HistoryEntry(),
 			}
 		},
 	}
@@ -835,18 +835,18 @@ func Test_agent_insertDocumentBranchChangelog(t *testing.T) {
 			db := prepTempDB(t)
 			c := cfn(t, db)
 
-			err := db.insertDocumentBranchChangelog(context.Background(), db.sql, c.DocumentID, c.BranchID, c.Changelog)
+			err := db.insertDocumentBranchHistoryEntry(context.Background(), db.sql, c.DocumentID, c.BranchID, c.HistoryEntry)
 			testutil.RequireEqualError(t, c.Err, err)
 
 			if c.Trimmed != 0 {
-				assert.Equal(t, c.Trimmed, countChangelogs(t, db, c.BranchID))
+				assert.Equal(t, c.Trimmed, countHistoryEntries(t, db, c.BranchID))
 			}
 
 			if err != nil {
 				return
 			}
 
-			var clog document.Changelog
+			var entry document.HistoryEntry
 
 			q, args := db.builder.Select(
 				`id AS "id"`,
@@ -854,14 +854,14 @@ func Test_agent_insertDocumentBranchChangelog(t *testing.T) {
 				`content AS "content"`,
 				`raw_content AS "raw_content"`,
 				`created_at AS "created_at"`,
-			).From("document_branch_changelogs").
+			).From("document_branch_history_entries").
 				Where(sq.Eq{
-					"id": c.Changelog.ID,
+					"id": c.HistoryEntry.ID,
 				}).MustSql()
 
-			err = db.sql.Get(&clog, q, args...)
+			err = db.sql.Get(&entry, q, args...)
 			require.NoError(t, err)
-			testutil.AssertFilterEqual(t, c.Changelog, clog)
+			testutil.AssertFilterEqual(t, c.HistoryEntry, entry)
 		})
 	}
 }

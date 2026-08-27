@@ -107,6 +107,14 @@ test.describe("collaboration", () => {
 		await other.page.keyboard.type("present")
 		await expect(remoteCarets(contentEditor(page))).toHaveCount(1)
 
+		// leaving is a navigation away from the document: it unmounts the
+		// editor, which tears the sync connection down and broadcasts the
+		// awareness removal straight away. Closing the page instead is a
+		// hard kill that skips the unload path entirely, so nothing is
+		// broadcast and the caret survives until yjs times the stale
+		// state out 30s later. The app also tears down on pagehide, for
+		// the real tab close this cannot reproduce.
+		await visit(other.page, "/")
 		await other.context.close()
 
 		await expect(remoteCarets(contentEditor(page))).toHaveCount(0, {

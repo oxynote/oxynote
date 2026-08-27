@@ -14,13 +14,13 @@ on:
       - web/**
       - server/**
       - docker/**
-      - .github/workflows/qa-e2e.yml
+      - .github/workflows/qa-e2e-dev.yml
   pull_request:
     branches:
       - main
     paths:
       - e2e/**
-      - .github/workflows/qa-e2e.yml
+      - .github/workflows/qa-e2e-dev.yml
 
 # a burst of pushes would otherwise start a full run each, in parallel.
 # Grouping per branch means a newer push supersedes the older run and
@@ -68,7 +68,7 @@ jobs:
         working-directory: e2e
 
   test:
-    name: Testing e2e
+    name: Testing e2e (dev stack)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -103,7 +103,7 @@ jobs:
 
       # a runner starts with no layers, so without this the nuxt image is
       # rebuilt from scratch every run. The cache config itself lives in
-      # e2e/docker-compose.ci.yaml, applied below.
+      # e2e/docker-compose.dev.ci.yaml, applied below.
       - name: Set up Docker buildx
         uses: docker/setup-buildx-action@v4
 
@@ -116,7 +116,7 @@ jobs:
         working-directory: e2e
 
       - name: Run e2e tests
-        run: make e2e E2E_COMPOSE_EXTRA="-f e2e/docker-compose.ci.yaml"
+        run: make e2e-dev E2E_DEV_COMPOSE_EXTRA="-f e2e/docker-compose.dev.ci.yaml"
 
       - name: Upload playwright report
         if: failure()

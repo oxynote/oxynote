@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -47,6 +48,10 @@ import (
 type Options struct {
 	// PublicURL is the public URL of the server.
 	PublicURL string
+
+	// Host specifies the interface the server binds to. Empty binds
+	// all interfaces.
+	Host string
 
 	// Port specifies which port should be used by the server.
 	Port uint
@@ -210,7 +215,7 @@ func NewServer(
 	srv.http = &http.Server{
 		ReadTimeout:       time.Minute,
 		ReadHeaderTimeout: time.Minute,
-		Addr:              fmt.Sprintf(":%d", opts.Port),
+		Addr:              fmt.Sprintf("%s:%d", opts.Host, opts.Port),
 		Handler:           srv.httpRouter(),
 		ErrorLog:          logutil.NewDebugWriter(log, "EOF").StdLogger(),
 	}
@@ -242,9 +247,15 @@ func (s *Server) Listen() {
 
 // Address returns the address of the server.
 func (s *Server) Address() string {
-	host := "localhost"
-	if s.http.Addr != ":80" {
-		host += s.http.Addr // port can be random
+	host := s.http.Addr
+
+	// a host-less address binds all interfaces; localhost stands in for
+	// log readability.
+	if strings.HasPrefix(s.http.Addr, ":") {
+		host = "localhost"
+		if s.http.Addr != ":80" {
+			host += s.http.Addr // port can be random
+		}
 	}
 
 	addr := &url.URL{

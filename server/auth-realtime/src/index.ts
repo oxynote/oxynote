@@ -8,6 +8,7 @@ import { createCoreClient } from "./core.js"
 import { createAuth } from "./auth.js"
 import { createHocuspocus } from "./hocuspocus.js"
 import { createRoutes } from "./routes.js"
+import { bestEffort } from "./reporting.js"
 
 // the composition root: the only module that reads the environment, opens
 // connections, or listens. Everything below it is a factory taking what it
@@ -15,7 +16,8 @@ import { createRoutes } from "./routes.js"
 // database, a redis, or a port.
 const env = loadEnv(process.env)
 
-const { store, dialect } = createDatabase(env.databaseDSN)
+const database = createDatabase(env.databaseDSN)
+const { store, dialect } = database
 const core = createCoreClient(env.coreUrl)
 
 // valkey is optional: without it better-auth keeps no secondary storage,
@@ -23,10 +25,12 @@ const core = createCoreClient(env.coreUrl)
 //
 // RESP2: node-redis 6 defaults to RESP3, whose reply shapes better-auth's
 // secondary storage does not read correctly
-let redis
+// the type is spelled out because the shutdown handler reads it from a
+// closure, where an inferred evolving any does not survive.
+let redis: ReturnType<typeof createClient> | undefined
 
-if (env.valkeyUrl) {
-	redis = createClient({ url: env.valkeyUrl, RESP: 2 })
+if (env.valkeyDsn) {
+	redis = createClient({ url: env.valkeyDsn, RESP: 2 })
 	await redis.connect()
 }
 
@@ -97,7 +101,8 @@ app.get(
 const server = serve(
 	{
 		fetch: app.fetch,
-		port: 8081,
+		hostname: env.listenHost,
+		port: env.listenPort,
 	},
 	(info) => {
 		void hocuspocus.hooks("onListen", {
@@ -113,19 +118,59 @@ const server = serve(
 )
 nodeWs.injectWebSocket(server)
 
-// graceful shutdown
-process.on("SIGINT", () => {
-	server.close()
-	process.exit(0)
-})
+// how long a graceful shutdown may take before the process force-exits.
+const shutdownDeadlineMs = 15_000
 
-process.on("SIGTERM", () => {
-	server.close((err) => {
-		if (err) {
-			console.error(err)
-			process.exit(1)
+// graceful shutdown: stop accepting HTTP, then drain hocuspocus before
+// exiting — its onStoreDocument persists are debounced for up to ten
+// seconds, so exiting on the signal alone would drop that window of edits.
+async function shutdown() {
+	const deadline = setTimeout(() => {
+		console.error("shutdown deadline exceeded")
+		process.exit(1)
+	}, shutdownDeadlineMs)
+	deadline.unref()
+
+	const httpClosed = new Promise<void>((resolve) => {
+		server.close(() => {
+			resolve()
+		})
+	})
+
+	// the drain hocuspocus's own standalone server performs in destroy():
+	// a document unloads only after its pending store completed, so once
+	// every document is gone the debounced persists have run. The
+	// extension is registered before connections close so no unload can
+	// slip past it.
+	await new Promise<void>((resolve) => {
+		if (hocuspocus.getDocumentsCount() === 0) {
+			resolve()
+			return
 		}
 
-		process.exit(0)
+		hocuspocus.configuration.extensions.push({
+			afterUnloadDocument({ instance }) {
+				if (instance.getDocumentsCount() === 0) {
+					resolve()
+				}
+
+				return Promise.resolve()
+			},
+		})
+
+		hocuspocus.closeConnections()
+		hocuspocus.flushPendingStores()
 	})
-})
+
+	await hocuspocus.hooks("onDestroy", { instance: hocuspocus })
+	await httpClosed
+
+	// redis is absent on a deployment running without valkey.
+	await bestEffort(() => redis?.close())
+	await bestEffort(() => database.close())
+
+	process.exit(0)
+}
+
+process.once("SIGINT", () => void shutdown())
+process.once("SIGTERM", () => void shutdown())

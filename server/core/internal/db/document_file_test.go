@@ -208,16 +208,16 @@ func Test_agent_CheckDocumentFileReferenced(t *testing.T) {
 
 			return "file-ref", doc.ID, true
 		},
-		"Referenced by a changelog snapshot": func(t *testing.T, db *DB) (string, xid.ID, bool) {
+		"Referenced by a history entry": func(t *testing.T, db *DB) (string, xid.ID, bool) {
 			doc := prepDocuments(t, db, 1, nil)[0]
 			doc.Content.Content[0].Attrs = document.Attributes{"uid": "file-ref"}
 
-			require.NoError(t, db.insertDocumentBranchChangelog(
+			require.NoError(t, db.insertDocumentBranchHistoryEntry(
 				context.Background(),
 				db.sql,
 				doc.ID,
 				doc.BranchID,
-				doc.Changelog(),
+				doc.HistoryEntry(),
 			))
 
 			return "file-ref", doc.ID, true

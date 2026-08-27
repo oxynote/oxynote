@@ -12,9 +12,11 @@ WORKDIR /server
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json tsconfig.build.json ./
 COPY src ./src
 
+# check-types gates (esbuild does not look at types); build:bundle emits
+# the single-file runtime artifact the production image ships too
 RUN pnpm install --frozen-lockfile && \
-    pnpm run build && \
-    pnpm prune --prod
+    pnpm run check-types && \
+    pnpm run build:bundle
 
 FROM base AS runner
 WORKDIR /server
@@ -22,12 +24,12 @@ WORKDIR /server
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 hono
 
-COPY --from=builder --chown=hono:nodejs /server/node_modules /server/node_modules
-COPY --from=builder --chown=hono:nodejs /server/dist /server/dist
-COPY --from=builder --chown=hono:nodejs /server/package.json /server/package.json
+# the bundle folds sentry in (no --import preload) and carries every
+# dependency, so no node_modules are shipped.
+COPY --from=builder --chown=hono:nodejs /server/dist/bundle.mjs /server/bundle.mjs
 
 ENV NODE_ENV=production
 USER hono
 EXPOSE 8081
 
-CMD ["node", "--import", "/server/dist/sentry.js", "/server/dist/index.js"]
+CMD ["node", "/server/bundle.mjs"]

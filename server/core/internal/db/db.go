@@ -86,10 +86,10 @@ type Options struct {
 	// Zero means no limit.
 	MaxNotifications uint64
 
-	// MaxDocumentChangelogs specifies the maximum number of changelog
-	// snapshots to keep per document branch.
+	// MaxDocumentHistoryEntries specifies the maximum number of history
+	// entries to keep per document branch.
 	// Zero means no limit.
-	MaxDocumentChangelogs uint64
+	MaxDocumentHistoryEntries uint64
 
 	// MaxSlackMessages specifies the maximum number of Slack messages to
 	// keep per organization. It bounds the listing as well, which can
@@ -97,10 +97,10 @@ type Options struct {
 	// Zero means no limit.
 	MaxSlackMessages uint64
 
-	// DocumentChangelogRetention specifies how long changelog snapshots
-	// are kept before the file manager trims them.
+	// DocumentHistoryRetention specifies how long history entries are
+	// kept before the file manager trims them.
 	// Zero means no age limit.
-	DocumentChangelogRetention time.Duration
+	DocumentHistoryRetention time.Duration
 
 	// DataSourceCredentialsSigningSecret is the secret used to sign
 	// data source credentials.

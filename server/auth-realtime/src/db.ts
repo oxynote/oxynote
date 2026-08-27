@@ -50,6 +50,7 @@ export interface Store {
 export interface DatabaseHandle {
 	store: Store
 	dialect: PostgresDialect
+	close(): Promise<void>
 }
 
 export function createStore(db: Kysely<Database>): Store {
@@ -109,8 +110,12 @@ export function createDatabase(dsn: string): DatabaseHandle {
 		pool: new Pool({ connectionString: dsn }),
 	})
 
+	const db = new Kysely<Database>({ dialect })
+
 	return {
-		store: createStore(new Kysely<Database>({ dialect })),
+		store: createStore(db),
 		dialect,
+		// destroy ends the underlying pg pool through the dialect.
+		close: () => db.destroy(),
 	}
 }

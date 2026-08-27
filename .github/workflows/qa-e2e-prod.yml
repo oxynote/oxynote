@@ -1,0 +1,101 @@
+name: QA
+
+# the same suite as qa-e2e-dev.yml, driven against the all-in-one image
+# instead of the dev stack's four containers, plus the trust-boundary tests
+# that only mean something there.
+#
+# **It runs on tags, not on branches.** The dev suite is the one that
+# guards day-to-day work; this one answers a different question — does the
+# artifact we are about to publish actually serve the product, and is its
+# trust boundary intact — and that question is only worth its minutes when
+# something is being released. Building the image means building nuxt,
+# auth-realtime and the launcher from scratch.
+#
+# The release workflow itself does not exist yet. When it does, this should
+# become a gate it depends on rather than a second run triggered by the same
+# tag.
+on:
+  push:
+    tags:
+      - "v*"
+  # until there is a tag to push, and for re-verifying an image without
+  # cutting a release, this is the only way to reach the suite from CI.
+  workflow_dispatch:
+
+# unlike the branch workflows, a superseded run here is not stale work: a
+# tag is verified once and the answer is wanted, so a later run must not
+# cancel it. The group carries a hardcoded per-file prefix because every QA
+# workflow shares the display name "QA", so github.workflow would put them
+# all in one group.
+concurrency:
+  group: qa-e2e-prod-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    name: Testing e2e (prod image)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v7
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: e2e/package.json
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: e2e/pnpm-lock.yaml
+
+      # the image bakes core's binary in, and that binary has to come from
+      # goreleaser — a plain `go build` is not supported, and the
+      # Dockerfile's COPY fails without the staged artifact.
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: server/core/go.mod
+          cache-dependency-path: server/core/go.sum
+
+      - name: Set up goreleaser
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          install-only: true
+
+      # a runner starts with no layers, and this image builds the nuxt app,
+      # the auth-realtime bundle and the launcher bundle from scratch. The
+      # cache flags go on the docker build itself, which compose has no part
+      # in, so they reach it through the Makefile rather than through a
+      # compose override as the dev suite's do.
+      - name: Set up Docker buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Installing dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: e2e
+
+      - name: Install playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+        working-directory: e2e
+
+      - name: Run e2e tests against the prod image
+        run: |
+          make e2e-dev-prod PROD_BUILD_EXTRA="--load \
+            --cache-from type=gha,scope=e2e-prod \
+            --cache-to type=gha,mode=max,scope=e2e-prod"
+
+      - name: Upload playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-prod
+          path: e2e/playwright-report
+          retention-days: 7

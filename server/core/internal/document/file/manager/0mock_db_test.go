@@ -29,8 +29,8 @@ var _ DB = &DBMock{}
 //			DeleteDocumentFileFunc: func(ctx context.Context, id string) error {
 //				panic("mock out the DeleteDocumentFile method")
 //			},
-//			DeleteExpiredDocumentBranchChangelogsFunc: func(ctx context.Context, before time.Time) error {
-//				panic("mock out the DeleteExpiredDocumentBranchChangelogs method")
+//			DeleteExpiredDocumentBranchHistoryEntriesFunc: func(ctx context.Context, before time.Time) error {
+//				panic("mock out the DeleteExpiredDocumentBranchHistoryEntries method")
 //			},
 //			FetchPaginatedDocumentFilesFunc: func(ctx context.Context, offsetID string, limit int64) ([]file.File, error) {
 //				panic("mock out the FetchPaginatedDocumentFiles method")
@@ -51,8 +51,8 @@ type DBMock struct {
 	// DeleteDocumentFileFunc mocks the DeleteDocumentFile method.
 	DeleteDocumentFileFunc func(ctx context.Context, id string) error
 
-	// DeleteExpiredDocumentBranchChangelogsFunc mocks the DeleteExpiredDocumentBranchChangelogs method.
-	DeleteExpiredDocumentBranchChangelogsFunc func(ctx context.Context, before time.Time) error
+	// DeleteExpiredDocumentBranchHistoryEntriesFunc mocks the DeleteExpiredDocumentBranchHistoryEntries method.
+	DeleteExpiredDocumentBranchHistoryEntriesFunc func(ctx context.Context, before time.Time) error
 
 	// FetchPaginatedDocumentFilesFunc mocks the FetchPaginatedDocumentFiles method.
 	FetchPaginatedDocumentFilesFunc func(ctx context.Context, offsetID string, limit int64) ([]file.File, error)
@@ -78,8 +78,8 @@ type DBMock struct {
 			// ID is the id argument value.
 			ID string
 		}
-		// DeleteExpiredDocumentBranchChangelogs holds details about calls to the DeleteExpiredDocumentBranchChangelogs method.
-		DeleteExpiredDocumentBranchChangelogs []struct {
+		// DeleteExpiredDocumentBranchHistoryEntries holds details about calls to the DeleteExpiredDocumentBranchHistoryEntries method.
+		DeleteExpiredDocumentBranchHistoryEntries []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
 			// Before is the before argument value.
@@ -106,7 +106,7 @@ type DBMock struct {
 	}
 	lockCheckDocumentFileReferenced           sync.RWMutex
 	lockDeleteDocumentFile                    sync.RWMutex
-	lockDeleteExpiredDocumentBranchChangelogs sync.RWMutex
+	lockDeleteExpiredDocumentBranchHistoryEntries sync.RWMutex
 	lockFetchPaginatedDocumentFiles           sync.RWMutex
 	lockUpdateDocumentFileUnreferencedAt      sync.RWMutex
 }
@@ -194,8 +194,8 @@ func (mock *DBMock) DeleteDocumentFileCalls() []struct {
 	return calls
 }
 
-// DeleteExpiredDocumentBranchChangelogs calls DeleteExpiredDocumentBranchChangelogsFunc.
-func (mock *DBMock) DeleteExpiredDocumentBranchChangelogs(ctx context.Context, before time.Time) error {
+// DeleteExpiredDocumentBranchHistoryEntries calls DeleteExpiredDocumentBranchHistoryEntriesFunc.
+func (mock *DBMock) DeleteExpiredDocumentBranchHistoryEntries(ctx context.Context, before time.Time) error {
 	callInfo := struct {
 		Ctx    context.Context
 		Before time.Time
@@ -203,23 +203,23 @@ func (mock *DBMock) DeleteExpiredDocumentBranchChangelogs(ctx context.Context, b
 		Ctx:    ctx,
 		Before: before,
 	}
-	mock.lockDeleteExpiredDocumentBranchChangelogs.Lock()
-	mock.calls.DeleteExpiredDocumentBranchChangelogs = append(mock.calls.DeleteExpiredDocumentBranchChangelogs, callInfo)
-	mock.lockDeleteExpiredDocumentBranchChangelogs.Unlock()
-	if mock.DeleteExpiredDocumentBranchChangelogsFunc == nil {
+	mock.lockDeleteExpiredDocumentBranchHistoryEntries.Lock()
+	mock.calls.DeleteExpiredDocumentBranchHistoryEntries = append(mock.calls.DeleteExpiredDocumentBranchHistoryEntries, callInfo)
+	mock.lockDeleteExpiredDocumentBranchHistoryEntries.Unlock()
+	if mock.DeleteExpiredDocumentBranchHistoryEntriesFunc == nil {
 		var (
 			errOut error
 		)
 		return errOut
 	}
-	return mock.DeleteExpiredDocumentBranchChangelogsFunc(ctx, before)
+	return mock.DeleteExpiredDocumentBranchHistoryEntriesFunc(ctx, before)
 }
 
-// DeleteExpiredDocumentBranchChangelogsCalls gets all the calls that were made to DeleteExpiredDocumentBranchChangelogs.
+// DeleteExpiredDocumentBranchHistoryEntriesCalls gets all the calls that were made to DeleteExpiredDocumentBranchHistoryEntries.
 // Check the length with:
 //
-//	len(mockedDB.DeleteExpiredDocumentBranchChangelogsCalls())
-func (mock *DBMock) DeleteExpiredDocumentBranchChangelogsCalls() []struct {
+//	len(mockedDB.DeleteExpiredDocumentBranchHistoryEntriesCalls())
+func (mock *DBMock) DeleteExpiredDocumentBranchHistoryEntriesCalls() []struct {
 	Ctx    context.Context
 	Before time.Time
 } {
@@ -227,9 +227,9 @@ func (mock *DBMock) DeleteExpiredDocumentBranchChangelogsCalls() []struct {
 		Ctx    context.Context
 		Before time.Time
 	}
-	mock.lockDeleteExpiredDocumentBranchChangelogs.RLock()
-	calls = mock.calls.DeleteExpiredDocumentBranchChangelogs
-	mock.lockDeleteExpiredDocumentBranchChangelogs.RUnlock()
+	mock.lockDeleteExpiredDocumentBranchHistoryEntries.RLock()
+	calls = mock.calls.DeleteExpiredDocumentBranchHistoryEntries
+	mock.lockDeleteExpiredDocumentBranchHistoryEntries.RUnlock()
 	return calls
 }
 

@@ -1,6 +1,6 @@
 import { describe, it, vi } from "vitest"
 import type { Kysely } from "kysely"
-import { createStore, type Database } from "./db.js"
+import { createDatabase, createStore, type Database } from "./db.js"
 
 // kysely builds a query by chaining, so the stub returns itself from every
 // builder call and answers at the terminal one. This is the only file that
@@ -197,5 +197,17 @@ describe("createStore", () => {
 				store.isOrganizationMember("user-1", "org-1"),
 			).rejects.toBe(failure)
 		})
+	})
+})
+
+describe("createDatabase", () => {
+	it("closes the underlying connection pool", async ({ expect }) => {
+		// the pg pool is lazy and never dialled, so closing it is safe
+		// without a database.
+		const handle = createDatabase(
+			"postgresql://devuser:devpass@localhost:5432/devdb",
+		)
+
+		await expect(handle.close()).resolves.toBeUndefined()
 	})
 })

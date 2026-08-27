@@ -40,11 +40,11 @@ type Manager struct {
 
 // Options holds all file manager options.
 type Options struct {
-	// ChangelogRetention specifies how long document changelog snapshots
-	// are kept. Snapshots pin the files they reference, so trimming them
-	// is what releases a file removed from live content.
+	// HistoryRetention specifies how long document history entries are
+	// kept. Entries pin the files they reference, so trimming them is
+	// what releases a file removed from live content.
 	// Zero disables age-based trimming.
-	ChangelogRetention time.Duration
+	HistoryRetention time.Duration
 }
 
 // NewManager creates a new Manager with the given database interface.
@@ -81,13 +81,13 @@ func (m *Manager) Start(ctx context.Context) {
 	).Start(ctx)
 }
 
-// processFiles trims expired changelog snapshots and then reclaims every
+// processFiles trims expired history entries and then reclaims every
 // file that no longer has anything referring to it.
 //
-// The snapshots go first: a file released by an expiring snapshot is then
+// The entries go first: a file released by an expiring entry is then
 // reclaimed in the same pass instead of waiting for the next one.
 func (m *Manager) processFiles(ctx context.Context) error {
-	if err := m.trimChangelogs(ctx); err != nil {
+	if err := m.trimHistoryEntries(ctx); err != nil {
 		return err
 	}
 
@@ -192,21 +192,21 @@ func (m *Manager) deleteFile(ctx context.Context, f file.File) {
 	}
 }
 
-// trimChangelogs removes changelog snapshots that outlived their retention.
-// Snapshot count is trimmed on insert instead; age has to be handled here,
+// trimHistoryEntries removes history entries that outlived their retention.
+// Entry count is trimmed on insert instead; age has to be handled here,
 // because a branch that stopped being edited never inserts again and its
-// snapshots would pin their files forever.
-func (m *Manager) trimChangelogs(ctx context.Context) error {
-	if m.opts.ChangelogRetention == 0 {
+// entries would pin their files forever.
+func (m *Manager) trimHistoryEntries(ctx context.Context) error {
+	if m.opts.HistoryRetention == 0 {
 		return nil
 	}
 
-	err := m.db.DeleteExpiredDocumentBranchChangelogs(
+	err := m.db.DeleteExpiredDocumentBranchHistoryEntries(
 		ctx,
-		timeutil.Now().Add(-m.opts.ChangelogRetention),
+		timeutil.Now().Add(-m.opts.HistoryRetention),
 	)
 	if err != nil {
-		return fmt.Errorf("deleting expired document branch changelogs: %w", err)
+		return fmt.Errorf("deleting expired document branch history entries: %w", err)
 	}
 
 	return nil
@@ -221,7 +221,7 @@ type DB interface {
 	FetchPaginatedDocumentFiles(ctx context.Context, offsetID string, limit int64) ([]file.File, error)
 
 	// CheckDocumentFileReferenced should report whether the file is still
-	// referenced by the document's content, changelogs or comments.
+	// referenced by the document's content, history entries or comments.
 	CheckDocumentFileReferenced(ctx context.Context, id string, documentID xid.ID) (bool, error)
 
 	// UpdateDocumentFileUnreferencedAt should set or clear the moment the
@@ -231,9 +231,9 @@ type DB interface {
 	// DeleteDocumentFile should remove the document file.
 	DeleteDocumentFile(ctx context.Context, id string) error
 
-	// DeleteExpiredDocumentBranchChangelogs should remove changelog
-	// snapshots created before the given time.
-	DeleteExpiredDocumentBranchChangelogs(ctx context.Context, before time.Time) error
+	// DeleteExpiredDocumentBranchHistoryEntries should remove history
+	// entries created before the given time.
+	DeleteExpiredDocumentBranchHistoryEntries(ctx context.Context, before time.Time) error
 }
 
 // Storer defines the object storage operations required by the Manager.

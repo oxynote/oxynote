@@ -94,6 +94,59 @@ describe("<ProfileSection>", { concurrent: false }, () => {
 		expect(usernameInput(wrapper).element.value).toBe("ada")
 	})
 
+	it("fills the username field once a late session arrives", async ({
+		expect,
+	}) => {
+		seedAuthSession(null)
+
+		const wrapper = await mountSection()
+		expect(usernameInput(wrapper).element.value).toBe("")
+
+		seedAuthSession({
+			id: "u1",
+			email: "ada@oxynote.test",
+			name: "ada",
+			image: "https://cdn.test/ada.png",
+		})
+		await nextTick()
+
+		expect(usernameInput(wrapper).element.value).toBe("ada")
+	})
+
+	it("follows a name that changed since the field was filled", async ({
+		expect,
+	}) => {
+		const wrapper = await mountSection()
+		expect(usernameInput(wrapper).element.value).toBe("ada")
+
+		seedAuthSession({
+			id: "u1",
+			email: "ada@oxynote.test",
+			name: "ada-renamed",
+			image: "https://cdn.test/ada.png",
+		})
+		await nextTick()
+
+		expect(usernameInput(wrapper).element.value).toBe("ada-renamed")
+	})
+
+	it("leaves a half-typed username alone when the session updates", async ({
+		expect,
+	}) => {
+		const wrapper = await mountSection()
+		await usernameInput(wrapper).setValue("half-typed")
+
+		seedAuthSession({
+			id: "u1",
+			email: "ada@oxynote.test",
+			name: "ada-renamed",
+			image: "https://cdn.test/ada.png",
+		})
+		await nextTick()
+
+		expect(usernameInput(wrapper).element.value).toBe("half-typed")
+	})
+
 	it("asks to change the email when its pencil is pressed", async ({
 		expect,
 	}) => {

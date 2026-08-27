@@ -27,10 +27,7 @@ const { t } = useI18n({ useScope: "global" })
 
 const formSchema = toTypedSchema(
 	z.object({
-		imageUrl: z
-			.string()
-			.trim()
-			.default(fetchAuthSession.state.value.data?.data?.user.image || ""),
+		imageUrl: z.string().trim().default(""),
 		username: z
 			.string()
 			.trim()
@@ -39,12 +36,21 @@ const formSchema = toTypedSchema(
 			.regex(/^[a-zA-Z0-9-_]+$/, {
 				message: t("settings.profile.errors.username-regex"),
 			})
-			.default(fetchAuthSession.state.value.data?.data?.user.name || ""),
+			.default(""),
 	}),
 )
 const form = useForm({
 	validationSchema: formSchema,
 })
+
+// the session arrives asynchronously, so the form follows it rather than
+// reading it once during setup. A dialog mounted before the query settles
+// would otherwise keep showing an empty username for as long as it stays
+// open, and one reopened after a save would show the value from before it.
+// Resetting only while the form is clean leaves a half-typed edit alone.
+const sessionUser = computed(
+	() => fetchAuthSession.state.value.data?.data?.user,
+)
 const { uploadUserImage } = useUserAPI()
 const loading = ref<"avatar" | null>(null)
 const avatarInput = useTemplateRef<HTMLInputElement>("avatarInput")
@@ -110,6 +116,19 @@ const onSubmit = form.handleSubmit(async (values) => {
 			t("settings.profile.success-messages.username.title"),
 		)
 	}
+})
+
+watchImmediate(sessionUser, (user) => {
+	if (!user || form.meta.value.dirty) {
+		return
+	}
+
+	form.resetForm({
+		values: {
+			imageUrl: user.image ?? "",
+			username: user.name,
+		},
+	})
 })
 
 const { ignoreUpdates } = watchIgnorable(
