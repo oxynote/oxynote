@@ -37,6 +37,8 @@ import (
 	searchMan "github.com/oxynote/oxynote/server/core/internal/search/manager"
 	"github.com/oxynote/oxynote/server/core/internal/server"
 	"github.com/oxynote/oxynote/server/core/internal/storage"
+	storageFS "github.com/oxynote/oxynote/server/core/internal/storage/fs"
+	storageS3 "github.com/oxynote/oxynote/server/core/internal/storage/s3"
 	"github.com/oxynote/oxynote/server/core/pkg/ioutil"
 	"github.com/oxynote/oxynote/server/core/pkg/logutil"
 	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
@@ -223,16 +225,25 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 
 	searchJobs := search.NewJobs(searchClient.Configured())
 
-	storageClient, err := storage.NewClient(
-		termCtx,
-		storage.Options{
-			URL:       buildinfo.Getenv("STORAGE_URL"),
-			Region:    buildinfo.Getenv("STORAGE_REGION"),
-			AccessKey: buildinfo.Getenv("STORAGE_ACCESS_KEY"),
-			SecretKey: buildinfo.Getenv("STORAGE_SECRET_KEY"),
-			Bucket:    buildinfo.Getenv("STORAGE_BUCKET"),
-		},
-	)
+	storageURL := buildinfo.Getenv("STORAGE_URL")
+
+	var storageClient storage.Store
+
+	if storageURL != "" {
+		storageClient, err = storageS3.NewClient(
+			termCtx,
+			storageS3.Options{
+				URL:       storageURL,
+				Region:    buildinfo.Getenv("STORAGE_REGION"),
+				AccessKey: buildinfo.Getenv("STORAGE_ACCESS_KEY"),
+				SecretKey: buildinfo.Getenv("STORAGE_SECRET_KEY"),
+				Bucket:    buildinfo.Getenv("STORAGE_BUCKET"),
+			},
+		)
+	} else {
+		storageClient, err = storageFS.NewClient(buildinfo.Getenv("STORAGE_PATH"))
+	}
+
 	if err != nil {
 		fail(log, closers, "cannot create storage client", err)
 		return
@@ -292,11 +303,6 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 	warnDisabled(log, githubMan.Configured(), "github app integration is disabled")
 	warnDisabled(log, slackMan.Configured(), "slack app integration is disabled")
 	warnDisabled(log, assistantMan.Configured(), "assistant is disabled")
-	warnDisabled(
-		log,
-		rdb != nil,
-		"valkey is not configured, assistant conversations are kept in memory: they are lost on restart and are not shared between instances",
-	)
 	warnDisabled(log, searchClient.Configured(), "search is disabled")
 	warnDisabled(log, webchangeClient.Configured(), "changedetection integration is disabled")
 

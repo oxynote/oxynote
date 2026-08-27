@@ -1,6 +1,6 @@
-// Package storage provides object storage access backed by an
-// S3-compatible object store.
-package storage
+// Package s3 provides object storage access backed by an S3-compatible
+// object store.
+package s3
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
+	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
@@ -40,7 +40,7 @@ type Options struct {
 
 // Client is a client to access buckets.
 type Client struct {
-	client *s3.Client
+	client *awss3.Client
 	bucket string
 }
 
@@ -58,7 +58,7 @@ func NewClient(ctx context.Context, opts Options) (*Client, error) {
 }
 
 // setupClient sets up an S3 client with the given config.
-func setupClient(ctx context.Context, opts Options) (*s3.Client, error) {
+func setupClient(ctx context.Context, opts Options) (*awss3.Client, error) {
 	u, err := url.Parse(opts.URL)
 	if err != nil {
 		return nil, fmt.Errorf("parsing node url: %w", err)
@@ -75,7 +75,7 @@ func setupClient(ctx context.Context, opts Options) (*s3.Client, error) {
 		region = _defaultRegion
 	}
 
-	sc := s3.New(s3.Options{
+	sc := awss3.New(awss3.Options{
 		BaseEndpoint: aws.String(opts.URL),
 		Region:       region,
 		UsePathStyle: true,
@@ -93,7 +93,7 @@ func setupClient(ctx context.Context, opts Options) (*s3.Client, error) {
 
 	_, err = sc.HeadBucket(
 		ctx,
-		&s3.HeadBucketInput{
+		&awss3.HeadBucketInput{
 			Bucket: aws.String(opts.Bucket),
 		},
 	)
@@ -106,7 +106,7 @@ func setupClient(ctx context.Context, opts Options) (*s3.Client, error) {
 	case errors.As(err, &nf):
 		_, err = sc.CreateBucket(
 			ctx,
-			&s3.CreateBucketInput{
+			&awss3.CreateBucketInput{
 				Bucket: aws.String(opts.Bucket),
 			},
 		)
