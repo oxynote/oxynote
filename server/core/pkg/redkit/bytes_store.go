@@ -29,6 +29,12 @@ func NewBytesStore(
 	}
 }
 
+// Start blocks until ctx is cancelled. Redis reclaims what it holds
+// on its own, so the store has no maintenance of its own to run.
+func (bs *BytesStore) Start(ctx context.Context) {
+	<-ctx.Done()
+}
+
 // Set stores the payload under the given key.
 func (bs *BytesStore) Set(ctx context.Context, key string, value []byte) error {
 	conn, err := bs.pool.GetContext(ctx)

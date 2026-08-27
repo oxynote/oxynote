@@ -72,6 +72,8 @@ func (h *History) Clear(ctx context.Context, key string) {
 //
 //go:generate ../../../scripts/codegen/mock -t both HistoryStore history_store
 type HistoryStore interface {
+	Starter
+
 	// Get should return the stored conversation for the key, or
 	// errutil.ErrNotFound when none exists yet.
 	Get(ctx context.Context, key string) (*[]*schema.Message, error)

@@ -24,6 +24,31 @@ func Test_NewBytesStore(t *testing.T) {
 	assert.Equal(t, _testExpiry, bs.expireAfter)
 }
 
+func Test_BytesStore_Start(t *testing.T) {
+	t.Parallel()
+
+	bs := &BytesStore{}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+
+		bs.Start(ctx)
+	}()
+
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("start did not stop")
+	}
+}
+
 func Test_BytesStore_Set(t *testing.T) {
 	cc := map[string]struct {
 		Cancelled   bool

@@ -18,10 +18,17 @@ const env = loadEnv(process.env)
 const { store, dialect } = createDatabase(env.databaseDSN)
 const core = createCoreClient(env.coreUrl)
 
+// valkey is optional: without it better-auth keeps no secondary storage,
+// so nothing is dialed here either.
+//
 // RESP2: node-redis 6 defaults to RESP3, whose reply shapes better-auth's
 // secondary storage does not read correctly
-const redis = createClient({ url: env.valkeyUrl, RESP: 2 })
-await redis.connect()
+let redis
+
+if (env.valkeyUrl) {
+	redis = createClient({ url: env.valkeyUrl, RESP: 2 })
+	await redis.connect()
+}
 
 const auth = createAuth({ env, store, dialect, redis, core })
 

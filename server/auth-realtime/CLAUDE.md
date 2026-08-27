@@ -36,8 +36,10 @@ pnpm qa                       # check-lint + test; qa-fix = lint + test
 ## Composition root
 
 **`src/index.ts` is the only module with side effects.** It is the one place
-that reads the environment, opens a database pool, connects to Valkey, or
-listens on a port. Everything else is a factory taking what it needs:
+that reads the environment, opens a database pool, connects to Valkey (only
+when `OXYNOTE_AUTH_REALTIME_VALKEY_URL` is set — without it better-auth is
+built with no secondary storage at all), or listens on a port. Everything
+else is a factory taking what it needs:
 
 ```
 src/

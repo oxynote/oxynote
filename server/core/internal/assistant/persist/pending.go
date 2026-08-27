@@ -92,6 +92,8 @@ func pendingKey(sessionKey string) string {
 //
 //go:generate ../../../scripts/codegen/mock -t both PendingStore pending_store
 type PendingStore interface {
+	Starter
+
 	// Get should return the stored confirmation for the key, or
 	// errutil.ErrNotFound when none is outstanding.
 	Get(ctx context.Context, key string) (*PendingConfirm, error)

@@ -13,7 +13,9 @@ export interface Env {
 	// file; only the field this side reads it through says "core".
 	coreUrl: string
 	databaseDSN: string
-	valkeyUrl: string
+	// absent on a deployment running without valkey, where better-auth
+	// keeps no secondary storage at all.
+	valkeyUrl: string | undefined
 	// the public base URL carries the reverse proxy's /auth-realtime
 	// prefix; authOrigin is the bare origin the proxy forwards to.
 	publicAuthBaseUrl: string
@@ -89,15 +91,15 @@ const SOCIAL_PROVIDERS = [
 	secretKey: string
 }[]
 
-// every variable the service reads, spelled out. Optional social
-// credentials are the only ones allowed to be absent — a provider with
-// neither half is left unregistered, and one with a single half is a boot
-// error rather than a broken OAuth redirect discovered by a user.
+// every variable the service reads, spelled out. Only the social
+// credentials and the valkey URL are allowed to be absent — a provider
+// with neither half is left unregistered, and one with a single half is a
+// boot error rather than a broken OAuth redirect discovered by a user.
 const schema = z
 	.object({
 		OXYNOTE_AUTH_REALTIME_BACKEND_URL: httpUrl(),
 		OXYNOTE_AUTH_REALTIME_DB_DSN: z.string().min(1),
-		OXYNOTE_AUTH_REALTIME_VALKEY_URL: z.string().min(1),
+		OXYNOTE_AUTH_REALTIME_VALKEY_URL: z.string().min(1).optional(),
 		OXYNOTE_AUTH_REALTIME_BETTER_AUTH_BASE_URL: httpUrl(),
 		OXYNOTE_AUTH_REALTIME_BETTER_AUTH_SECRET: z.string().min(1),
 		OXYNOTE_AUTH_REALTIME_BETTER_AUTH_COOKIE_DOMAIN: z

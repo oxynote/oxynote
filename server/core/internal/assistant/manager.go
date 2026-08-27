@@ -22,11 +22,13 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/gomodule/redigo/redis"
+	"github.com/jellydator/xync"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/persist"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/protocol"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/memkit"
 	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
 	"github.com/oxynote/oxynote/server/core/pkg/redkit"
 )
@@ -35,7 +37,7 @@ import (
 // deployment.
 var ErrNotConfigured = errutil.New(http.StatusConflict, "assistant.not_configured", "assistant is not configured")
 
-// _sessionExpiration is how long Redis retains an idle conversation.
+// _sessionExpiration is how long an idle conversation is retained.
 // Conversations resume from this history, and a turn paused on a
 // confirmation resumes from its checkpoint, for this long.
 const _sessionExpiration = time.Hour * 24 * 7
@@ -56,6 +58,11 @@ type Manager struct {
 	checkpoints *persist.Checkpoints
 	pendings    *persist.Pendings
 	offload     *persist.Offload
+
+	// stores holds the conversation stores themselves, which the
+	// persist types above wrap. Start runs the background maintenance
+	// of each; the shared byte store appears once, so it is swept once.
+	stores []persist.Starter
 
 	// turns tracks the conversation keys with a turn in flight. The
 	// claim lives here rather than on the session because every
@@ -102,7 +109,21 @@ func NewManager(
 	// the checkpoint of a paused turn and the results offloaded out of
 	// the conversation share one byte store: both are opaque payloads
 	// belonging to the same conversation, expiring with it.
-	blobs := redkit.NewBytesStore(pool, _sessionExpiration)
+	var (
+		blobs    persist.BlobStore
+		history  persist.HistoryStore
+		pendings persist.PendingStore
+	)
+
+	if pool != nil {
+		blobs = redkit.NewBytesStore(pool, _sessionExpiration)
+		history = redkit.NewValueStore[[]*schema.Message](pool, _sessionExpiration)
+		pendings = redkit.NewValueStore[persist.PendingConfirm](pool, _sessionExpiration)
+	} else {
+		blobs = memkit.NewBytesStore(_sessionExpiration)
+		history = memkit.NewValueStore[[]*schema.Message](_sessionExpiration)
+		pendings = memkit.NewValueStore[persist.PendingConfirm](_sessionExpiration)
+	}
 
 	m := &Manager{
 		log:     log,
@@ -114,16 +135,12 @@ func NewManager(
 		summary: summaryModel,
 		applier: editClient,
 
-		history: persist.NewHistory(
-			log,
-			redkit.NewValueStore[[]*schema.Message](pool, _sessionExpiration),
-		),
+		history:     persist.NewHistory(log, history),
 		checkpoints: persist.NewCheckpoints(log, blobs),
-		pendings: persist.NewPendings(
-			log,
-			redkit.NewValueStore[persist.PendingConfirm](pool, _sessionExpiration),
-		),
-		offload: persist.NewOffload(blobs),
+		pendings:    persist.NewPendings(log, pendings),
+		offload:     persist.NewOffload(blobs),
+
+		stores: []persist.Starter{blobs, history, pendings},
 
 		metrics: newMetrics(fc, providerName),
 	}
@@ -131,6 +148,20 @@ func NewManager(
 	m.turns.m = make(map[string]struct{})
 
 	return m
+}
+
+// Start runs the background maintenance of the conversation stores
+// until ctx is cancelled. It blocks, so the caller owns the goroutine it
+// runs on.
+func (m *Manager) Start(ctx context.Context) {
+	supv := xync.NewSupervisor(xync.WithSupervisorBaseContext(ctx))
+	defer supv.Close()
+
+	for _, s := range m.stores {
+		supv.Go(s.Start)
+	}
+
+	supv.Wait()
 }
 
 // Configured reports whether the assistant is configured on this

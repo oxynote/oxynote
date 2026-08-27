@@ -27,6 +27,9 @@ var _ BlobStore = &BlobStoreMock{}
 //			SetFunc: func(ctx context.Context, key string, value []byte) error {
 //				panic("mock out the Set method")
 //			},
+//			StartFunc: func(ctx context.Context) {
+//				panic("mock out the Start method")
+//			},
 //		}
 //
 //		// use mockedBlobStore in code that requires BlobStore
@@ -42,6 +45,9 @@ type BlobStoreMock struct {
 
 	// SetFunc mocks the Set method.
 	SetFunc func(ctx context.Context, key string, value []byte) error
+
+	// StartFunc mocks the Start method.
+	StartFunc func(ctx context.Context)
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -68,10 +74,16 @@ type BlobStoreMock struct {
 			// Value is the value argument value.
 			Value []byte
 		}
+		// Start holds details about calls to the Start method.
+		Start []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+		}
 	}
 	lockDelete sync.RWMutex
 	lockGet    sync.RWMutex
 	lockSet    sync.RWMutex
+	lockStart  sync.RWMutex
 }
 
 // Delete calls DeleteFunc.
@@ -193,5 +205,37 @@ func (mock *BlobStoreMock) SetCalls() []struct {
 	mock.lockSet.RLock()
 	calls = mock.calls.Set
 	mock.lockSet.RUnlock()
+	return calls
+}
+
+// Start calls StartFunc.
+func (mock *BlobStoreMock) Start(ctx context.Context) {
+	callInfo := struct {
+		Ctx context.Context
+	}{
+		Ctx: ctx,
+	}
+	mock.lockStart.Lock()
+	mock.calls.Start = append(mock.calls.Start, callInfo)
+	mock.lockStart.Unlock()
+	if mock.StartFunc == nil {
+		return
+	}
+	mock.StartFunc(ctx)
+}
+
+// StartCalls gets all the calls that were made to Start.
+// Check the length with:
+//
+//	len(mockedBlobStore.StartCalls())
+func (mock *BlobStoreMock) StartCalls() []struct {
+	Ctx context.Context
+} {
+	var calls []struct {
+		Ctx context.Context
+	}
+	mock.lockStart.RLock()
+	calls = mock.calls.Start
+	mock.lockStart.RUnlock()
 	return calls
 }

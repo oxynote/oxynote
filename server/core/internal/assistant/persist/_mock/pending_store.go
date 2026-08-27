@@ -29,6 +29,9 @@ var _ persist.PendingStore = &PendingStore{}
 //			SetFunc: func(ctx context.Context, key string, value persist.PendingConfirm) error {
 //				panic("mock out the Set method")
 //			},
+//			StartFunc: func(ctx context.Context) {
+//				panic("mock out the Start method")
+//			},
 //		}
 //
 //		// use mockedPendingStore in code that requires persist.PendingStore
@@ -44,6 +47,9 @@ type PendingStore struct {
 
 	// SetFunc mocks the Set method.
 	SetFunc func(ctx context.Context, key string, value persist.PendingConfirm) error
+
+	// StartFunc mocks the Start method.
+	StartFunc func(ctx context.Context)
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -70,10 +76,16 @@ type PendingStore struct {
 			// Value is the value argument value.
 			Value persist.PendingConfirm
 		}
+		// Start holds details about calls to the Start method.
+		Start []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+		}
 	}
 	lockDelete sync.RWMutex
 	lockGet    sync.RWMutex
 	lockSet    sync.RWMutex
+	lockStart  sync.RWMutex
 }
 
 // Delete calls DeleteFunc.
@@ -195,5 +207,37 @@ func (mock *PendingStore) SetCalls() []struct {
 	mock.lockSet.RLock()
 	calls = mock.calls.Set
 	mock.lockSet.RUnlock()
+	return calls
+}
+
+// Start calls StartFunc.
+func (mock *PendingStore) Start(ctx context.Context) {
+	callInfo := struct {
+		Ctx context.Context
+	}{
+		Ctx: ctx,
+	}
+	mock.lockStart.Lock()
+	mock.calls.Start = append(mock.calls.Start, callInfo)
+	mock.lockStart.Unlock()
+	if mock.StartFunc == nil {
+		return
+	}
+	mock.StartFunc(ctx)
+}
+
+// StartCalls gets all the calls that were made to Start.
+// Check the length with:
+//
+//	len(mockedPendingStore.StartCalls())
+func (mock *PendingStore) StartCalls() []struct {
+	Ctx context.Context
+} {
+	var calls []struct {
+		Ctx context.Context
+	}
+	mock.lockStart.RLock()
+	calls = mock.calls.Start
+	mock.lockStart.RUnlock()
 	return calls
 }

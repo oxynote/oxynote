@@ -29,6 +29,12 @@ func NewValueStore[V any](
 	}
 }
 
+// Start blocks until ctx is cancelled. Redis reclaims what it holds
+// on its own, so the store has no maintenance of its own to run.
+func (vs *ValueStore[V]) Start(ctx context.Context) {
+	<-ctx.Done()
+}
+
 // Set sets the value for the given key.
 func (vs *ValueStore[V]) Set(ctx context.Context, key string, value V) error {
 	data, err := json.Marshal(value)

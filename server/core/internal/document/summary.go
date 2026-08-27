@@ -5,7 +5,6 @@ import (
 	"slices"
 
 	"github.com/guregu/null/v5"
-	"github.com/oxynote/oxynote/server/core/pkg/errcode"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/sliceutil"
 	"github.com/rs/xid"
@@ -20,7 +19,7 @@ func (ss Summaries) Swap(id xid.ID, sortIndex int) (Summaries, error) {
 	if sortIndex < 0 || sortIndex >= len(ss) {
 		return nil, errutil.New(
 			http.StatusBadRequest,
-			errcode.DocumentSummaryInvalidSortIndex,
+			"document_summary.invalid_sort_index",
 			"sort index is out of range",
 		)
 	}

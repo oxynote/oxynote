@@ -21,6 +21,31 @@ func Test_NewValueStore(t *testing.T) {
 	assert.Equal(t, time.Hour*168, vs.expireAfter)
 }
 
+func Test_ValueStore_Start(t *testing.T) {
+	t.Parallel()
+
+	vs := &ValueStore[any]{}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+
+		vs.Start(ctx)
+	}()
+
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("start did not stop")
+	}
+}
+
 func Test_ValueStore_Set(t *testing.T) {
 	cc := map[string]struct {
 		Cancelled   bool

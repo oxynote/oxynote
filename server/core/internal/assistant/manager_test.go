@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
@@ -17,7 +18,9 @@ import (
 	toolsMock "github.com/oxynote/oxynote/server/core/internal/assistant/tools/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/memkit"
 	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
+	"github.com/oxynote/oxynote/server/core/pkg/redkit"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
@@ -210,24 +213,102 @@ func Test_Manager_Configured(t *testing.T) {
 }
 
 func Test_NewManager(t *testing.T) {
+	cc := map[string]struct {
+		Pool   *redis.Pool
+		Blobs  any
+		Values any
+	}{
+		"Without a pool the conversation is kept in memory": {
+			Blobs:  &memkit.BytesStore{},
+			Values: &memkit.ValueStore[[]*schema.Message]{},
+		},
+		"With a pool the conversation is kept in redis": {
+			Pool:   &redis.Pool{},
+			Blobs:  &redkit.BytesStore{},
+			Values: &redkit.ValueStore[[]*schema.Message]{},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			fc := metricutil.NewFactory("test", prometheus.NewRegistry())
+			m := NewManager(discardLog(), nil, c.Pool, nil, nil, fc, nil, nil, search.NewJobs(false), nil, "claude")
+
+			require.NotNil(t, m)
+			assert.NotNil(t, m.log)
+			assert.NotNil(t, m.history)
+			assert.NotNil(t, m.checkpoints)
+			assert.NotNil(t, m.pendings)
+			assert.NotNil(t, m.offload)
+			assert.NotNil(t, m.metrics)
+			assert.NotNil(t, m.turns.m)
+			assert.Nil(t, m.tree)
+
+			// the checkpoint and the offloaded results share one byte
+			// store, so three stores back the four persist types and
+			// the shared one is swept once.
+			require.Len(t, m.stores, 3)
+			assert.IsType(t, c.Blobs, m.stores[0])
+			assert.IsType(t, c.Values, m.stores[1])
+
+			// an unset summarization model falls back to the chat
+			// model, so summarization costs nothing to configure.
+			assert.Equal(t, m.model, m.summary)
+		})
+	}
+}
+
+func Test_Manager_Start(t *testing.T) {
 	t.Parallel()
 
-	fc := metricutil.NewFactory("test", prometheus.NewRegistry())
-	m := NewManager(discardLog(), nil, &redis.Pool{}, nil, nil, fc, nil, nil, search.NewJobs(false), nil, "claude")
+	var started sync.WaitGroup
 
-	require.NotNil(t, m)
-	assert.NotNil(t, m.log)
-	assert.NotNil(t, m.history)
-	assert.NotNil(t, m.checkpoints)
-	assert.NotNil(t, m.pendings)
-	assert.NotNil(t, m.offload)
-	assert.NotNil(t, m.metrics)
-	assert.NotNil(t, m.turns.m)
-	assert.Nil(t, m.tree)
+	started.Add(3)
 
-	// an unset summarization model falls back to the chat model, so
-	// summarization costs nothing to configure.
-	assert.Equal(t, m.model, m.summary)
+	newStore := func() *persistMock.BlobStore {
+		return &persistMock.BlobStore{
+			StartFunc: func(ctx context.Context) {
+				started.Done()
+
+				<-ctx.Done()
+			},
+		}
+	}
+
+	stores := []*persistMock.BlobStore{newStore(), newStore(), newStore()}
+
+	m := &Manager{
+		stores: []persist.Starter{stores[0], stores[1], stores[2]},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+
+		m.Start(ctx)
+	}()
+
+	started.Wait()
+
+	// every store runs until the manager's context is cancelled, and
+	// the manager blocks for as long as they do.
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("manager did not stop")
+	}
+
+	for _, s := range stores {
+		assert.Len(t, s.StartCalls(), 1)
+	}
 }
 
 func Test_Manager_SetTreeNotifier(t *testing.T) {

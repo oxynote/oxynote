@@ -431,6 +431,36 @@ describe("createAuth", () => {
 		expect(auth.options.basePath).toBe("/api/auth")
 	})
 
+	it("keeps secondary storage when a redis client is given", ({
+		expect,
+	}) => {
+		const { auth } = buildAuth()
+
+		expect(auth.options.secondaryStorage).toBeDefined()
+	})
+
+	// a deployment without valkey hands createAuth no client at all,
+	// which has to leave better-auth reading sessions from the database
+	// rather than half-configured with an unusable storage. Nothing
+	// pins rateLimit.storage either way: better-auth derives it from
+	// whether a secondary storage exists, so it counts in valkey when
+	// there is one and in memory when there is not
+	it("runs without secondary storage when given no redis client", ({
+		expect,
+	}) => {
+		const real = createDatabase("postgresql://u:p@localhost/d")
+		const auth = createAuth({
+			env: testEnv(),
+			store: stubStore(),
+			dialect: real.dialect,
+			core: stubCore(),
+		})
+
+		expect(auth.options.secondaryStorage).toBeUndefined()
+		expect(auth.options.session.storeSessionInDatabase).toBe(true)
+		expect(auth.options.rateLimit).toEqual({ enabled: true })
+	})
+
 	it("registers no social provider without credentials", ({ expect }) => {
 		const { auth } = buildAuth()
 

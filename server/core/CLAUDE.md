@@ -54,7 +54,7 @@ make check-lint     # golangci-lint run (verification only)
   tree. Use a nested `internal/` (e.g. `internal/remote/internal/...`) to hard-lock
   sub-packages (like HTTP handlers) to their parent subtree.
 - `pkg/` — the shared utility packages listed above plus tiny, dependency-light,
-  domain-agnostic helpers (`errcode`, `mathutil`, `sliceutil`-style). Business
+  domain-agnostic helpers (`mathutil`, `sliceutil`-style). Business
   logic never goes here.
 - Package names: short, lowercase, no underscores. Helper siblings are named
   `<parentabbrev><role>` (`redkit`, `wsserver`) or a bare role

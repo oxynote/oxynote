@@ -96,13 +96,23 @@ describe("loadEnv", () => {
 			loadEnv(
 				completeEnv({
 					OXYNOTE_AUTH_REALTIME_DB_DSN: undefined,
-					OXYNOTE_AUTH_REALTIME_VALKEY_URL:
+					OXYNOTE_AUTH_REALTIME_BETTER_AUTH_SECRET:
 						undefined,
 				}),
 			),
 		).toThrow(
-			/OXYNOTE_AUTH_REALTIME_DB_DSN[\s\S]*OXYNOTE_AUTH_REALTIME_VALKEY_URL/,
+			/OXYNOTE_AUTH_REALTIME_DB_DSN[\s\S]*OXYNOTE_AUTH_REALTIME_BETTER_AUTH_SECRET/,
 		)
+	})
+
+	it("accepts an absent valkey URL", ({ expect }) => {
+		const env = loadEnv(
+			completeEnv({
+				OXYNOTE_AUTH_REALTIME_VALKEY_URL: undefined,
+			}),
+		)
+
+		expect(env.valkeyUrl).toBeUndefined()
 	})
 
 	describe("counters", () => {

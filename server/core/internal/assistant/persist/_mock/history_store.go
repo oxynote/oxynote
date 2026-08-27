@@ -30,6 +30,9 @@ var _ persist.HistoryStore = &HistoryStore{}
 //			SetFunc: func(ctx context.Context, key string, value []*schema.Message) error {
 //				panic("mock out the Set method")
 //			},
+//			StartFunc: func(ctx context.Context) {
+//				panic("mock out the Start method")
+//			},
 //		}
 //
 //		// use mockedHistoryStore in code that requires persist.HistoryStore
@@ -45,6 +48,9 @@ type HistoryStore struct {
 
 	// SetFunc mocks the Set method.
 	SetFunc func(ctx context.Context, key string, value []*schema.Message) error
+
+	// StartFunc mocks the Start method.
+	StartFunc func(ctx context.Context)
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -71,10 +77,16 @@ type HistoryStore struct {
 			// Value is the value argument value.
 			Value []*schema.Message
 		}
+		// Start holds details about calls to the Start method.
+		Start []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+		}
 	}
 	lockDelete sync.RWMutex
 	lockGet    sync.RWMutex
 	lockSet    sync.RWMutex
+	lockStart  sync.RWMutex
 }
 
 // Delete calls DeleteFunc.
@@ -196,5 +208,37 @@ func (mock *HistoryStore) SetCalls() []struct {
 	mock.lockSet.RLock()
 	calls = mock.calls.Set
 	mock.lockSet.RUnlock()
+	return calls
+}
+
+// Start calls StartFunc.
+func (mock *HistoryStore) Start(ctx context.Context) {
+	callInfo := struct {
+		Ctx context.Context
+	}{
+		Ctx: ctx,
+	}
+	mock.lockStart.Lock()
+	mock.calls.Start = append(mock.calls.Start, callInfo)
+	mock.lockStart.Unlock()
+	if mock.StartFunc == nil {
+		return
+	}
+	mock.StartFunc(ctx)
+}
+
+// StartCalls gets all the calls that were made to Start.
+// Check the length with:
+//
+//	len(mockedHistoryStore.StartCalls())
+func (mock *HistoryStore) StartCalls() []struct {
+	Ctx context.Context
+} {
+	var calls []struct {
+		Ctx context.Context
+	}
+	mock.lockStart.RLock()
+	calls = mock.calls.Start
+	mock.lockStart.RUnlock()
 	return calls
 }

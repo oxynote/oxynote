@@ -31,7 +31,9 @@ export interface AuthDeps {
 	env: Env
 	store: Store
 	dialect: PostgresDialect
-	redis: SecondaryStorageClient
+	// absent on a deployment running without valkey, which leaves
+	// better-auth with no secondary storage.
+	redis?: SecondaryStorageClient
 	core: CoreClient
 }
 
@@ -332,7 +334,14 @@ export function createAuth({ env, store, dialect, redis, core }: AuthDeps) {
 				domain: env.cookieDomain,
 			},
 		},
-		secondaryStorage: createSecondaryStorage(redis),
+		// without valkey there is no secondary storage at all:
+		// sessions are read from the database, which
+		// storeSessionInDatabase keeps them in either way, and the
+		// rate-limit counters fall back to better-auth's in-memory
+		// storage.
+		...(redis
+			? { secondaryStorage: createSecondaryStorage(redis) }
+			: {}),
 		trustedOrigins: env.trustedOrigins,
 		user: {
 			modelName: "users",
@@ -402,8 +411,8 @@ export function createAuth({ env, store, dialect, redis, core }: AuthDeps) {
 			modelName: "user_sessions",
 			// the OAuth provider (mcp plugin) refuses to run on
 			// secondary-storage-only sessions, so sessions are
-			// persisted to the database as well; Valkey stays the hot
-			// path for lookups.
+			// persisted to the database as well; where Valkey is
+			// configured it stays the hot path for lookups.
 			storeSessionInDatabase: true,
 			fields: {
 				expiresAt: "expires_at",

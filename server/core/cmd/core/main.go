@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/cloudwego/eino/components/model"
+	"github.com/gomodule/redigo/redis"
 	"github.com/jellydator/xync"
 	"github.com/meilisearch/meilisearch-go"
 	"github.com/oxynote/oxynote/server/core/internal/apps/github"
@@ -127,16 +128,23 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 
 	closers = append([]io.Closer{dbc}, closers...)
 
-	rdb, err := redisutil.NewPool(
-		buildinfo.Getenv("VALKEY_NETWORK"),
-		buildinfo.Getenv("VALKEY_ADDRESS"),
-	)
-	if err != nil {
-		fail(log, closers, "cannot create a redis pool", err)
-		return
-	}
+	// an empty VALKEY_ADDRESS is a deployment running without valkey at
+	// all. The nil pool is what tells the assistant to keep its
+	// conversations in this process instead.
+	var rdb *redis.Pool
 
-	closers = append([]io.Closer{rdb}, closers...)
+	if address := buildinfo.Getenv("VALKEY_ADDRESS"); address != "" {
+		rdb, err = redisutil.NewPool(
+			buildinfo.Getenv("VALKEY_NETWORK"),
+			address,
+		)
+		if err != nil {
+			fail(log, closers, "cannot create a redis pool", err)
+			return
+		}
+
+		closers = append([]io.Closer{rdb}, closers...)
+	}
 
 	// an empty GITHUB_APP_ID means the GitHub App integration is disabled.
 	// The zero app ID makes github.NewManager return an unconfigured
@@ -284,6 +292,11 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 	warnDisabled(log, githubMan.Configured(), "github app integration is disabled")
 	warnDisabled(log, slackMan.Configured(), "slack app integration is disabled")
 	warnDisabled(log, assistantMan.Configured(), "assistant is disabled")
+	warnDisabled(
+		log,
+		rdb != nil,
+		"valkey is not configured, assistant conversations are kept in memory: they are lost on restart and are not shared between instances",
+	)
 	warnDisabled(log, searchClient.Configured(), "search is disabled")
 	warnDisabled(log, webchangeClient.Configured(), "changedetection integration is disabled")
 
@@ -355,6 +368,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 
 	backgroundSupv.Go(hooksMan.Start)
 	backgroundSupv.Go(filesMan.Start)
+	backgroundSupv.Go(assistantMan.Start)
 
 	// without search there are no queued jobs to drain, so the manager
 	// is not started at all.

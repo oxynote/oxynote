@@ -26,6 +26,14 @@ func SessionKey(orgID, userID string) string {
 	return fmt.Sprintf("assistant:session:%s:%s", orgID, userID)
 }
 
+// Starter is the background maintenance a conversation store runs for
+// as long as the process does.
+type Starter interface {
+	// Start should run the store's maintenance until ctx is cancelled.
+	// It should block, so the caller owns the goroutine it runs on.
+	Start(ctx context.Context)
+}
+
 // BlobStore is the persistence surface for the opaque byte payloads one
 // conversation accumulates: the checkpoint of a paused turn, and any
 // tool result too large to keep in context. The redkit BytesStore
@@ -37,6 +45,8 @@ func SessionKey(orgID, userID string) string {
 //
 //go:generate ../../../scripts/codegen/mock -t both BlobStore blob_store
 type BlobStore interface {
+	Starter
+
 	// Get should return the stored payload for the key, or
 	// errutil.ErrNotFound when none exists yet.
 	Get(ctx context.Context, key string) ([]byte, error)
