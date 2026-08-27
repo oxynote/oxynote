@@ -601,7 +601,7 @@ func Test_MySQL_buildDSN(t *testing.T) {
 		},
 		"Error returned by unmarshaling credentials": {
 			URL:   "mysql://dbhost/mydb",
-			Creds: Credentials(`{`),
+			Creds: NewCredentials([]byte(`{`)),
 			Err:   assert.AnError,
 		},
 		"URL credentials with default port": { //nolint:gosec // static test credentials
@@ -613,7 +613,7 @@ func Test_MySQL_buildDSN(t *testing.T) {
 		},
 		"Credentials override url user": { //nolint:gosec // static test credentials
 			URL:      "mysql://urluser:urlpass@dbhost:3307/mydb",
-			Creds:    Credentials(`{"username":"credsuser","password":"credspass"}`),
+			Creds:    NewCredentials([]byte(`{"username":"credsuser","password":"credspass"}`)),
 			User:     "credsuser",
 			Password: "credspass",
 			Addr:     "dbhost:3307",
@@ -621,7 +621,7 @@ func Test_MySQL_buildDSN(t *testing.T) {
 		},
 		"Empty credentials keep url user": { //nolint:gosec // static test credentials
 			URL:      "mysql://urluser:urlpass@dbhost:3307/mydb",
-			Creds:    Credentials(`{"username":"","password":""}`),
+			Creds:    NewCredentials([]byte(`{"username":"","password":""}`)),
 			User:     "urluser",
 			Password: "urlpass",
 			Addr:     "dbhost:3307",

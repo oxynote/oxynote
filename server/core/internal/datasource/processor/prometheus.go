@@ -222,10 +222,10 @@ func (p *Prometheus) Series(ctx context.Context, matchers []string, tr TimeRange
 func createPrometheusClient(url string, creds Credentials) (v1.API, error) {
 	var roundTripper http.RoundTripper
 
-	if creds != nil {
+	if len(creds.data) > 0 {
 		var promCreds BasicCredentials
 
-		if err := json.Unmarshal(creds, &promCreds); err != nil {
+		if err := json.Unmarshal(creds.data, &promCreds); err != nil {
 			return nil, fmt.Errorf("error unmarshaling credentials: %w", err)
 		}
 

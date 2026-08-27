@@ -77,6 +77,10 @@ func (r *runner) Type() Type {
 // thing being described yet — while the accessors below ask it about a
 // data source in use, which is the observation worth keeping.
 func (r *runner) TestConnection(ctx context.Context) (processor.ConnectionStatus, error) {
+	if !r.ds.Credentials.IsValid() {
+		return processor.ConnectionStatusInvalidSigningSecret, nil
+	}
+
 	if err := r.ensurePrepared(); err != nil {
 		return "", err
 	}
@@ -121,6 +125,15 @@ func connect[C any](ctx context.Context, r *runner, allowed ...Type) (C, error) 
 			"Data source %q is a %s data source, which does not serve this operation.",
 			r.ds.Name, r.ds.Type,
 		)
+	}
+
+	// credentials that cannot be decrypted are not a connection worth
+	// attempting: there is nothing left to authenticate with, and the data
+	// source would answer for the empty login rather than for the reason.
+	if !r.ds.Credentials.IsValid() {
+		r.recordStatus(ctx, processor.ConnectionStatusInvalidSigningSecret)
+
+		return zero, processor.ConnectionStatusInvalidSigningSecret.Error()
 	}
 
 	if err := r.ensurePrepared(); err != nil {

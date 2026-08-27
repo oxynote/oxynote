@@ -2,6 +2,7 @@ package processor
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -43,6 +44,10 @@ const (
 
 	// ConnectionStatusNotReadOnly indicates that the connection is not read-only.
 	ConnectionStatusNotReadOnly ConnectionStatus = "not_read_only"
+
+	// ConnectionStatusInvalidSigningSecret indicates that the stored credentials
+	// cannot be decrypted with the configured signing secret.
+	ConnectionStatusInvalidSigningSecret ConnectionStatus = "invalid_signing_secret"
 )
 
 // Error returns an error corresponding to the ConnectionStatus.
@@ -56,6 +61,12 @@ func (cs ConnectionStatus) Error() error {
 		return errutil.New(http.StatusBadRequest, "data_source.version_not_supported", "The data source version is not supported.")
 	case ConnectionStatusNotReadOnly:
 		return errutil.New(http.StatusBadRequest, "data_source.not_read_only", "The data source connection must be read-only.")
+	case ConnectionStatusInvalidSigningSecret:
+		return errutil.New(
+			http.StatusBadRequest,
+			"data_source.invalid_signing_secret",
+			"The data source credentials cannot be decrypted and must be entered again.",
+		)
 	default:
 		return nil
 	}
@@ -73,29 +84,77 @@ type Input interface {
 }
 
 // Credentials represents the credentials of a data source in JSON format.
-type Credentials []byte
+type Credentials struct {
+	// data is the credentials themselves, as JSON.
+	data []byte
+
+	// unreadable indicates that the stored credentials could not be
+	// decrypted, which is what a signing secret rotated since they were
+	// written leaves behind. Only Decrypt can decide it, so credentials
+	// carrying it are the ones that came out of a failed read and no
+	// others.
+	unreadable bool
+}
+
+// NewCredentials creates a fresh instance of Credentials carrying the given
+// JSON.
+func NewCredentials(data []byte) Credentials {
+	return Credentials{data: data}
+}
+
+// IsValid reports whether the credentials can be read.
+//
+// Only credentials Decrypt could not make sense of are invalid. Empty
+// credentials are valid and ordinary: they say the data source authenticates
+// through its URL, or not at all.
+func (c *Credentials) IsValid() bool {
+	return !c.unreadable
+}
 
 // MarshalJSON returns the JSON representation of the credentials. Empty
 // credentials marshal as null: emitting nothing at all would make every
 // enclosing struct fail to marshal.
 func (c *Credentials) MarshalJSON() ([]byte, error) {
-	if c == nil || len(*c) == 0 {
+	if c == nil || len(c.data) == 0 {
 		return []byte("null"), nil
 	}
 
-	return []byte(*c), nil
+	return c.data, nil
 }
 
 // UnmarshalJSON sets the credentials from the given JSON data.
 func (c *Credentials) UnmarshalJSON(data []byte) error {
-	*c = data
+	*c = Credentials{data: data}
+
+	return nil
+}
+
+// Scan transforms a database entry into credentials.
+func (c *Credentials) Scan(src any) error {
+	switch v := src.(type) {
+	case []byte:
+		*c = Credentials{data: v}
+	case string:
+		*c = Credentials{data: []byte(v)}
+	default:
+		return errors.New("invalid credentials type")
+	}
 
 	return nil
 }
 
 // Encrypt encrypts the credentials using the provided signing key.
+//
+// Credentials that could not be read encrypt to nothing, so writing them back
+// would replace the stored ciphertext — still readable once the right secret
+// returns — with an encryption of the emptiness left in its place. They are
+// refused instead.
 func (c *Credentials) Encrypt(signingKey string) ([]byte, error) {
-	state, err := cryptoutil.EncryptText(string(*c), []byte(signingKey))
+	if !c.IsValid() {
+		return nil, errors.New("cannot encrypt credentials that could not be decrypted")
+	}
+
+	state, err := cryptoutil.EncryptText(string(c.data), []byte(signingKey))
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt credentials: %w", err)
 	}
@@ -103,14 +162,20 @@ func (c *Credentials) Encrypt(signingKey string) ([]byte, error) {
 	return []byte(state), nil
 }
 
-// Decrypt decrypts the given encrypted credentials using the provided signing key.
+// Decrypt decrypts the stored credentials using the provided signing key.
+//
+// Credentials it cannot read are emptied and marked unreadable rather than
+// left holding ciphertext nobody can use, so every later reader is told the
+// same thing the error says here.
 func (c *Credentials) Decrypt(signingKey string) error {
-	decrypted, err := cryptoutil.DecryptText(string(*c), []byte(signingKey))
+	decrypted, err := cryptoutil.DecryptText(string(c.data), []byte(signingKey))
 	if err != nil {
+		*c = Credentials{unreadable: true}
+
 		return fmt.Errorf("failed to decrypt credentials: %w", err)
 	}
 
-	*c = Credentials(decrypted)
+	*c = Credentials{data: []byte(decrypted)}
 
 	return nil
 }
@@ -151,16 +216,19 @@ type BasicCredentialsUpdate struct {
 func UpdateBasicCredentials(rawCreds Credentials, inp CredentialsUpdateInput) (Credentials, error) {
 	var creds BasicCredentials
 
-	if rawCreds != nil {
-		if err := json.Unmarshal(rawCreds, &creds); err != nil {
-			return nil, fmt.Errorf("error unmarshaling credentials: %w", err)
+	// credentials that could not be read are no base to merge onto: what
+	// they hold is ciphertext nobody can make sense of, so the update
+	// supplies the whole pair rather than half of it.
+	if rawCreds.IsValid() && len(rawCreds.data) > 0 {
+		if err := json.Unmarshal(rawCreds.data, &creds); err != nil {
+			return Credentials{}, fmt.Errorf("error unmarshaling credentials: %w", err)
 		}
 	}
 
 	var update BasicCredentialsUpdate
 
 	if err := json.Unmarshal(inp, &update); err != nil {
-		return nil, fmt.Errorf("error unmarshaling credentials update input: %w", err)
+		return Credentials{}, fmt.Errorf("error unmarshaling credentials update input: %w", err)
 	}
 
 	if update.Username.Valid {
@@ -172,15 +240,15 @@ func UpdateBasicCredentials(rawCreds Credentials, inp CredentialsUpdateInput) (C
 	}
 
 	if creds.Username == "" && creds.Password == "" {
-		return nil, nil
+		return Credentials{}, nil
 	}
 
 	data, err := json.Marshal(creds) //nolint:gosec // credentials are encrypted before storage
 	if err != nil {
-		return nil, fmt.Errorf("error marshaling updated credentials: %w", err)
+		return Credentials{}, fmt.Errorf("error marshaling updated credentials: %w", err)
 	}
 
-	return data, nil
+	return Credentials{data: data}, nil
 }
 
 // _columnScanRows caps how far column classification looks for a value that

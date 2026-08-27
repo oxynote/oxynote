@@ -363,18 +363,18 @@ func Test_createPrometheusClient(t *testing.T) {
 	t.Parallel()
 
 	// error
-	_, err := createPrometheusClient("http://prometheus.test", Credentials(`{`))
+	_, err := createPrometheusClient("http://prometheus.test", NewCredentials([]byte(`{`)))
 	assert.Error(t, err)
 
-	_, err = createPrometheusClient("://", nil)
+	_, err = createPrometheusClient("://", Credentials{})
 	assert.Error(t, err)
 
 	// success
-	client, err := createPrometheusClient("http://prometheus.test", nil)
+	client, err := createPrometheusClient("http://prometheus.test", Credentials{})
 	require.NoError(t, err)
 	assert.NotNil(t, client)
 
-	client, err = createPrometheusClient("http://prometheus.test", Credentials(`{"username":"user","password":"pass"}`))
+	client, err = createPrometheusClient("http://prometheus.test", NewCredentials([]byte(`{"username":"user","password":"pass"}`)))
 	require.NoError(t, err)
 	assert.NotNil(t, client)
 }

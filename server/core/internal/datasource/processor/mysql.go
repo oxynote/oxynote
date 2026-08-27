@@ -317,10 +317,10 @@ func (m *MySQL) buildDSN() (string, error) {
 		password, _ = u.User.Password()
 	}
 
-	if m.inp.Credentials() != nil {
+	if inpCreds := m.inp.Credentials(); len(inpCreds.data) > 0 {
 		var creds BasicCredentials
 
-		if err := json.Unmarshal(m.inp.Credentials(), &creds); err != nil {
+		if err := json.Unmarshal(inpCreds.data, &creds); err != nil {
 			return "", fmt.Errorf("error unmarshaling credentials: %w", err)
 		}
 

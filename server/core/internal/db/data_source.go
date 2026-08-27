@@ -119,9 +119,10 @@ func (a *agent) FetchDataSource(ctx context.Context, id xid.ID, organizationID s
 		return nil, err
 	}
 
-	err := ds.Credentials.Decrypt(a.opts.DataSourceCredentialsSigningSecret)
-	if err != nil {
-		return nil, err
+	if err := ds.Credentials.Decrypt(a.opts.DataSourceCredentialsSigningSecret); err != nil {
+		if merr := a.markCredentialsUndecryptable(ctx, ds); merr != nil {
+			return nil, merr
+		}
 	}
 
 	return ds, nil
@@ -143,13 +144,32 @@ func (a *agent) FetchDataSources(ctx context.Context, organizationID string) ([]
 	}
 
 	for i := range sources {
-		err := sources[i].Credentials.Decrypt(a.opts.DataSourceCredentialsSigningSecret)
-		if err != nil {
-			return nil, err
+		if err := sources[i].Credentials.Decrypt(a.opts.DataSourceCredentialsSigningSecret); err != nil {
+			if merr := a.markCredentialsUndecryptable(ctx, &sources[i]); merr != nil {
+				return nil, merr
+			}
 		}
 	}
 
 	return sources, nil
+}
+
+// markCredentialsUndecryptable records on a data source's row that its stored
+// credentials cannot be read with the configured signing secret. The failed
+// Decrypt has already marked the credentials themselves.
+//
+// The ciphertext is left alone — a secret restored later decrypts it again —
+// but the data source travels carrying the status that says why, so a rotated
+// secret surfaces as one broken connection rather than as a read that fails
+// for everything the organization owns.
+func (a *agent) markCredentialsUndecryptable(ctx context.Context, ds *datasource.DataSource) error {
+	if ds.Status == processor.ConnectionStatusInvalidSigningSecret {
+		return nil
+	}
+
+	ds.Status = processor.ConnectionStatusInvalidSigningSecret
+
+	return a.UpdateDataSourceStatus(ctx, ds.ID, ds.OrganizationID, ds.Status)
 }
 
 // selectDataSource prepares a SQL select statement for fetching data sources.

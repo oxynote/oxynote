@@ -306,10 +306,10 @@ func (p *PostgreSQL) buildConnectionString() (string, error) {
 		return "", fmt.Errorf("error parsing postgresql url: %w", err)
 	}
 
-	if p.inp.Credentials() != nil {
+	if inpCreds := p.inp.Credentials(); len(inpCreds.data) > 0 {
 		var creds BasicCredentials
 
-		if err := json.Unmarshal(p.inp.Credentials(), &creds); err != nil {
+		if err := json.Unmarshal(inpCreds.data, &creds); err != nil {
 			return "", fmt.Errorf("error unmarshaling credentials: %w", err)
 		}
 

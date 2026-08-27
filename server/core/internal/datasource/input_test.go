@@ -13,12 +13,12 @@ func Test_newStateInput(t *testing.T) {
 
 	si := newStateInput(
 		"http://prometheus.test",
-		processor.Credentials(`{"username":"user"}`),
+		processor.NewCredentials([]byte(`{"username":"user"}`)),
 	)
 
 	require.NotNil(t, si)
 	assert.Equal(t, "http://prometheus.test", si.url)
-	assert.Equal(t, processor.Credentials(`{"username":"user"}`), si.credentials)
+	assert.Equal(t, processor.NewCredentials([]byte(`{"username":"user"}`)), si.credentials)
 }
 
 func Test_stateInput_URL(t *testing.T) {
@@ -31,6 +31,6 @@ func Test_stateInput_URL(t *testing.T) {
 func Test_stateInput_Credentials(t *testing.T) {
 	t.Parallel()
 
-	si := &stateInput{credentials: processor.Credentials(`{"username":"user"}`)}
-	assert.Equal(t, processor.Credentials(`{"username":"user"}`), si.Credentials())
+	si := &stateInput{credentials: processor.NewCredentials([]byte(`{"username":"user"}`))}
+	assert.Equal(t, processor.NewCredentials([]byte(`{"username":"user"}`)), si.Credentials())
 }

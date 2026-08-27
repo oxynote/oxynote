@@ -18,6 +18,17 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }
 
+// undecryptableCredentials returns credentials in the state a failed decrypt
+// leaves behind, which is the only way they reach it.
+func undecryptableCredentials(t *testing.T) processor.Credentials {
+	t.Helper()
+
+	creds := processor.NewCredentials([]byte("ciphertext"))
+	require.Error(t, creds.Decrypt("0123456789abcdef0123456789abcdef"))
+
+	return creds
+}
+
 func Test_NewDataSource(t *testing.T) {
 	t.Parallel()
 
@@ -25,7 +36,7 @@ func Test_NewDataSource(t *testing.T) {
 		Type:        TypePrometheus,
 		Name:        "test-source",
 		URL:         "http://prometheus.test",
-		Credentials: processor.Credentials(`{"username":"user","password":"pass"}`),
+		Credentials: processor.NewCredentials([]byte(`{"username":"user","password":"pass"}`)),
 	}, "org-1")
 
 	require.NotNil(t, ds)
@@ -34,7 +45,7 @@ func Test_NewDataSource(t *testing.T) {
 	assert.Equal(t, "test-source", ds.Name)
 	assert.Equal(t, TypePrometheus, ds.Type)
 	assert.Equal(t, "http://prometheus.test", ds.URL)
-	assert.Equal(t, processor.Credentials(`{"username":"user","password":"pass"}`), ds.Credentials)
+	assert.Equal(t, processor.NewCredentials([]byte(`{"username":"user","password":"pass"}`)), ds.Credentials)
 	assert.Equal(t, processor.ConnectionStatusSuccess, ds.Status)
 	assert.WithinDuration(t, timeutil.Now(), ds.CreatedAt, time.Second)
 	assert.False(t, ds.UpdatedAt.Valid)
@@ -111,7 +122,21 @@ func Test_DataSource_ApplyUpdate(t *testing.T) {
 			},
 			Name:  "old",
 			URL:   "http://old.test",
-			Creds: processor.Credentials(`{"username":"user","password":""}`),
+			Creds: processor.NewCredentials([]byte(`{"username":"user","password":""}`)),
+		},
+		"Successful update of undecryptable credentials": {
+			DataSource: &DataSource{
+				Type:        TypePrometheus,
+				Name:        "old",
+				URL:         "http://old.test",
+				Credentials: undecryptableCredentials(t),
+			},
+			Inp: UpdateInput{
+				Credentials: null.ValueFrom(processor.CredentialsUpdateInput(`{"username":"user","password":"pass"}`)),
+			},
+			Name:  "old",
+			URL:   "http://old.test",
+			Creds: processor.NewCredentials([]byte(`{"username":"user","password":"pass"}`)),
 		},
 	}
 
@@ -145,9 +170,9 @@ func Test_DataSource_updateCredentials(t *testing.T) {
 		"Skipped update without valid input": {
 			DataSource: &DataSource{
 				Type:        TypePrometheus,
-				Credentials: processor.Credentials(`{"username":"old","password":""}`),
+				Credentials: processor.NewCredentials([]byte(`{"username":"old","password":""}`)),
 			},
-			Creds: processor.Credentials(`{"username":"old","password":""}`),
+			Creds: processor.NewCredentials([]byte(`{"username":"old","password":""}`)),
 		},
 		"Error returned by processor.UpdatePrometheusCredentials": {
 			DataSource: &DataSource{Type: TypePrometheus},
@@ -157,7 +182,7 @@ func Test_DataSource_updateCredentials(t *testing.T) {
 		"Successful prometheus update": {
 			DataSource: &DataSource{Type: TypePrometheus},
 			Inp:        null.ValueFrom(processor.CredentialsUpdateInput(`{"username":"user"}`)),
-			Creds:      processor.Credentials(`{"username":"user","password":""}`),
+			Creds:      processor.NewCredentials([]byte(`{"username":"user","password":""}`)),
 		},
 		"Error returned by processor.UpdatePostgreSQLCredentials": {
 			DataSource: &DataSource{Type: TypePostgreSQL},
@@ -167,7 +192,7 @@ func Test_DataSource_updateCredentials(t *testing.T) {
 		"Successful postgresql update": {
 			DataSource: &DataSource{Type: TypePostgreSQL},
 			Inp:        null.ValueFrom(processor.CredentialsUpdateInput(`{"username":"user"}`)),
-			Creds:      processor.Credentials(`{"username":"user","password":""}`),
+			Creds:      processor.NewCredentials([]byte(`{"username":"user","password":""}`)),
 		},
 		"Error returned by processor.UpdateMySQLCredentials": {
 			DataSource: &DataSource{Type: TypeMariaDB},
@@ -177,17 +202,32 @@ func Test_DataSource_updateCredentials(t *testing.T) {
 		"Successful mariadb update": {
 			DataSource: &DataSource{Type: TypeMariaDB},
 			Inp:        null.ValueFrom(processor.CredentialsUpdateInput(`{"username":"user"}`)),
-			Creds:      processor.Credentials(`{"username":"user","password":""}`),
+			Creds:      processor.NewCredentials([]byte(`{"username":"user","password":""}`)),
 		},
 		"Successful mysql update": {
 			DataSource: &DataSource{Type: TypeMySQL},
 			Inp:        null.ValueFrom(processor.CredentialsUpdateInput(`{"username":"user"}`)),
-			Creds:      processor.Credentials(`{"username":"user","password":""}`),
+			Creds:      processor.NewCredentials([]byte(`{"username":"user","password":""}`)),
 		},
 		"Invalid data source type": {
 			DataSource: &DataSource{Type: Type("bogus")},
 			Inp:        null.ValueFrom(processor.CredentialsUpdateInput(`{"username":"user"}`)),
 			Err:        assert.AnError,
+		},
+		"Skipped update leaves undecryptable credentials as they are": {
+			DataSource: &DataSource{
+				Type:        TypePrometheus,
+				Credentials: undecryptableCredentials(t),
+			},
+			Creds: undecryptableCredentials(t),
+		},
+		"Successful update replaces undecryptable credentials wholesale": {
+			DataSource: &DataSource{
+				Type:        TypePrometheus,
+				Credentials: undecryptableCredentials(t),
+			},
+			Inp:   null.ValueFrom(processor.CredentialsUpdateInput(`{"username":"user"}`)),
+			Creds: processor.NewCredentials([]byte(`{"username":"user","password":""}`)),
 		},
 	}
 

@@ -33,7 +33,7 @@ func prepDataSources(t *testing.T, db *DB, count int, fn func(int, *datasource.D
 			Name:        "Data Source " + strconv.Itoa(i),
 			Type:        datasource.TypePrometheus,
 			URL:         "http://prometheus-" + strconv.Itoa(i) + ".test",
-			Credentials: processor.Credentials(`{"username":"user","password":"pass"}`),
+			Credentials: processor.NewCredentials([]byte(`{"username":"user","password":"pass"}`)),
 			Status:      processor.ConnectionStatusSuccess,
 			// distinct timestamps keep the fetch order deterministic.
 			CreatedAt: now.Add(-time.Duration(i) * time.Second),
@@ -80,7 +80,7 @@ func Test_agent_InsertDataSource(t *testing.T) {
 			Name:           name,
 			Type:           datasource.TypePrometheus,
 			URL:            "http://prometheus.test",
-			Credentials:    processor.Credentials(`{"token":"secret"}`),
+			Credentials:    processor.NewCredentials([]byte(`{"token":"secret"}`)),
 			Status:         processor.ConnectionStatusSuccess,
 			CreatedAt:      timeutil.Now().Truncate(time.Second),
 		}
@@ -169,7 +169,7 @@ func Test_agent_UpdateDataSource(t *testing.T) {
 			ds := prepDataSources(t, db, 1, nil)[0]
 			ds.Name = "Updated Data Source"
 			ds.URL = "http://updated.test"
-			ds.Credentials = processor.Credentials(`{"token":"rotated"}`)
+			ds.Credentials = processor.NewCredentials([]byte(`{"token":"rotated"}`))
 			ds.Status = processor.ConnectionStatusSuccess
 			ds.UpdatedAt = null.TimeFrom(timeutil.Now().Truncate(time.Second))
 
@@ -220,6 +220,52 @@ func Test_agent_UpdateDataSource(t *testing.T) {
 		res, err := db.FetchDataSource(context.Background(), ds.ID, ds.OrganizationID)
 		require.NoError(t, err)
 		assert.Equal(t, ds.Name, res.Name)
+	})
+
+	t.Run("Credentials that could not be read are not written back", func(t *testing.T) {
+		t.Parallel()
+
+		db := prepTempDB(t)
+		ds := prepDataSources(t, db, 1, nil)[0]
+		poisonDataSourceCredentials(t, db, ds.ID)
+
+		broken, err := db.FetchDataSource(context.Background(), ds.ID, ds.OrganizationID)
+		require.NoError(t, err)
+		require.False(t, broken.Credentials.IsValid())
+
+		// storing the data source as it came back would replace the
+		// ciphertext with an encryption of the nothing left in its place.
+		require.Error(t, db.UpdateDataSource(context.Background(), broken))
+	})
+
+	t.Run("Credentials that could not be read are replaced by new ones", func(t *testing.T) {
+		t.Parallel()
+
+		db := prepTempDB(t)
+		ds := prepDataSources(t, db, 1, nil)[0]
+		poisonDataSourceCredentials(t, db, ds.ID)
+
+		broken, err := db.FetchDataSource(context.Background(), ds.ID, ds.OrganizationID)
+		require.NoError(t, err)
+
+		// what the user re-enters becomes the whole pair: there was nothing
+		// readable left to merge onto.
+		require.NoError(t, broken.ApplyUpdate(datasource.UpdateInput{
+			Credentials: null.ValueFrom(processor.CredentialsUpdateInput(`{"username":"user","password":"pass"}`)),
+		}))
+		broken.Status = processor.ConnectionStatusSuccess
+
+		require.NoError(t, db.UpdateDataSource(context.Background(), broken))
+
+		res, err := db.FetchDataSource(context.Background(), ds.ID, ds.OrganizationID)
+		require.NoError(t, err)
+		assert.True(t, res.Credentials.IsValid())
+		assert.Equal(
+			t,
+			processor.NewCredentials([]byte(`{"username":"user","password":"pass"}`)),
+			res.Credentials,
+		)
+		assert.Equal(t, processor.ConnectionStatusSuccess, res.Status)
 	})
 }
 
@@ -287,6 +333,64 @@ func Test_agent_DeleteDataSource(t *testing.T) {
 	}
 }
 
+// poisonDataSourceCredentials overwrites a data source's stored credentials
+// with bytes no signing secret decrypts, which is what a secret rotated since
+// the credentials were written leaves behind.
+func poisonDataSourceCredentials(t *testing.T, db *DB, id xid.ID) {
+	t.Helper()
+
+	q, args := db.builder.Update("data_sources").
+		SetMap(map[string]any{
+			"credentials": []byte("garbage"),
+		}).
+		Where(sq.Eq{
+			"id": id,
+		}).
+		MustSql()
+
+	_, err := db.sql.Exec(q, args...)
+	require.NoError(t, err)
+}
+
+// fetchDataSourceStatus reads the status column straight off the row, so a
+// test can tell what was stored from what a fetch merely returned.
+func fetchDataSourceStatus(t *testing.T, db *DB, id xid.ID) processor.ConnectionStatus {
+	t.Helper()
+
+	q, args := db.builder.Select("status").
+		From("data_sources").
+		Where(sq.Eq{
+			"id": id,
+		}).
+		MustSql()
+
+	var status processor.ConnectionStatus
+
+	require.NoError(t, db.sql.Get(&status, q, args...))
+
+	return status
+}
+
+// rejectInvalidSigningSecretStatus installs a constraint the status cannot
+// satisfy, so the recording of an undecryptable data source fails while the
+// row itself still reads fine. It is dropped again when the test ends.
+func rejectInvalidSigningSecretStatus(t *testing.T, db *DB) {
+	t.Helper()
+
+	// NOT VALID leaves the rows already carrying the status alone; the
+	// constraint still refuses every write that arrives after it.
+	_, err := db.sql.Exec(
+		`ALTER TABLE data_sources ADD CONSTRAINT status_not_invalid_signing_secret ` +
+			`CHECK (status <> 'invalid_signing_secret') NOT VALID`,
+	)
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		_, err := db.sql.Exec(`ALTER TABLE data_sources DROP CONSTRAINT status_not_invalid_signing_secret`)
+		require.NoError(t, err)
+	})
+}
+
 func Test_agent_FetchDataSource(t *testing.T) {
 	db := prepTempDB(t)
 
@@ -295,19 +399,28 @@ func Test_agent_FetchDataSource(t *testing.T) {
 	testutil.AssertEqualError(t, sql.ErrNoRows, err)
 	assert.Nil(t, res)
 
-	// error - undecryptable credentials
+	// success - undecryptable credentials
 	ds := prepDataSources(t, db, 1, nil)[0]
+	poisonDataSourceCredentials(t, db, ds.ID)
 
-	q, args := db.builder.Update("data_sources").
-		SetMap(map[string]any{
-			"credentials": []byte("garbage"),
-		}).
-		Where(sq.Eq{
-			"id": ds.ID,
-		}).MustSql()
-
-	_, err = db.sql.Exec(q, args...)
+	res, err = db.FetchDataSource(context.Background(), ds.ID, ds.OrganizationID)
 	require.NoError(t, err)
+	require.NotNil(t, res)
+	assert.False(t, res.Credentials.IsValid())
+	assert.Equal(t, processor.ConnectionStatusInvalidSigningSecret, res.Status)
+	assert.Equal(t, processor.ConnectionStatusInvalidSigningSecret, fetchDataSourceStatus(t, db, ds.ID))
+
+	// success - undecryptable credentials already recorded
+	res, err = db.FetchDataSource(context.Background(), ds.ID, ds.OrganizationID)
+	require.NoError(t, err)
+	require.NotNil(t, res)
+	assert.False(t, res.Credentials.IsValid())
+	assert.Equal(t, processor.ConnectionStatusInvalidSigningSecret, res.Status)
+
+	// error - undecryptable credentials cannot be recorded
+	ds = prepDataSources(t, db, 1, nil)[0]
+	poisonDataSourceCredentials(t, db, ds.ID)
+	rejectInvalidSigningSecretStatus(t, db)
 
 	res, err = db.FetchDataSource(context.Background(), ds.ID, ds.OrganizationID)
 	require.Error(t, err)
@@ -337,22 +450,32 @@ func Test_agent_FetchDataSources(t *testing.T) {
 	require.Error(t, err)
 	assert.Nil(t, res)
 
-	// error - undecryptable credentials
+	// success - one undecryptable data source does not break the listing
 	org := prepOrganizations(t, db, 1)[0]
+	mixed := prepDataSources(t, db, 2, func(_ int, nds *datasource.DataSource) {
+		nds.OrganizationID = org
+	})
+
+	poisonDataSourceCredentials(t, db, mixed[1].ID)
+
+	res, err = db.FetchDataSources(context.Background(), org)
+	require.NoError(t, err)
+	require.Len(t, res, len(mixed))
+
+	testutil.AssertFilterEqual(t, *mixed[0], res[0])
+
+	assert.False(t, res[1].Credentials.IsValid())
+	assert.Equal(t, processor.ConnectionStatusInvalidSigningSecret, res[1].Status)
+	assert.Equal(t, processor.ConnectionStatusInvalidSigningSecret, fetchDataSourceStatus(t, db, mixed[1].ID))
+
+	// error - undecryptable credentials cannot be recorded
+	org = prepOrganizations(t, db, 1)[0]
 	ds := prepDataSources(t, db, 1, func(_ int, nds *datasource.DataSource) {
 		nds.OrganizationID = org
 	})[0]
 
-	q, args := db.builder.Update("data_sources").
-		SetMap(map[string]any{
-			"credentials": []byte("garbage"),
-		}).
-		Where(sq.Eq{
-			"id": ds.ID,
-		}).MustSql()
-
-	_, err = db.sql.Exec(q, args...)
-	require.NoError(t, err)
+	poisonDataSourceCredentials(t, db, ds.ID)
+	rejectInvalidSigningSecretStatus(t, db)
 
 	res, err = db.FetchDataSources(context.Background(), org)
 	require.Error(t, err)

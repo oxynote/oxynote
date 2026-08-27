@@ -13,6 +13,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/demo"
+	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/search"
@@ -304,7 +305,7 @@ func (h *Handler) insertDemoDataSource(ctx context.Context, organizationID strin
 		Type:        datasource.TypePrometheus,
 		Name:        "Demo",
 		URL:         demo.URL,
-		Credentials: []byte(`{}`),
+		Credentials: processor.NewCredentials([]byte(`{}`)),
 	}, organizationID)
 
 	if err := h.db.InsertDataSource(ctx, ds); err != nil {

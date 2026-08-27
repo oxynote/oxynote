@@ -760,17 +760,17 @@ func Test_PostgreSQL_buildConnectionString(t *testing.T) {
 		},
 		"Error returned by unmarshaling credentials": {
 			URL:   "postgres://dbhost:5432/mydb",
-			Creds: Credentials(`{`),
+			Creds: NewCredentials([]byte(`{`)),
 			Err:   assert.AnError,
 		},
 		"Credentials override url user": { //nolint:gosec // static test credentials
 			URL:    "postgres://olduser:oldpass@dbhost:5432/mydb",
-			Creds:  Credentials(`{"username":"credsuser","password":"credspass"}`),
+			Creds:  NewCredentials([]byte(`{"username":"credsuser","password":"credspass"}`)),
 			Result: "postgres://credsuser:credspass@dbhost:5432/mydb",
 		},
 		"Empty credentials keep url user": { //nolint:gosec // static test credentials
 			URL:    "postgres://olduser:oldpass@dbhost:5432/mydb",
-			Creds:  Credentials(`{"username":"","password":""}`),
+			Creds:  NewCredentials([]byte(`{"username":"","password":""}`)),
 			Result: "postgres://olduser:oldpass@dbhost:5432/mydb",
 		},
 		"No credentials keep url unchanged": {

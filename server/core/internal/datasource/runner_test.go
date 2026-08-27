@@ -153,14 +153,20 @@ func Test_runner_TestConnection(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		Type    Type
-		Handler http.Handler
-		Result  processor.ConnectionStatus
-		Err     error
+		Type          Type
+		Handler       http.Handler
+		Undecryptable bool
+		Result        processor.ConnectionStatus
+		Err           error
 	}{
 		"A type with no processor behind it": {
 			Type: Type("bogus"),
 			Err:  assert.AnError,
+		},
+		"Credentials that cannot be decrypted": {
+			Type:          TypePrometheus,
+			Undecryptable: true,
+			Result:        processor.ConnectionStatusInvalidSigningSecret,
 		},
 		"A connection that answers": {
 			Type:    TypePrometheus,
@@ -185,7 +191,13 @@ func Test_runner_TestConnection(t *testing.T) {
 
 			store := &StatusStoreMock{}
 
-			cs, err := prepRunner(c.Type, url, store).TestConnection(context.Background())
+			r := prepRunner(c.Type, url, store)
+
+			if c.Undecryptable {
+				r.ds.Credentials = undecryptableCredentials(t)
+			}
+
+			cs, err := r.TestConnection(context.Background())
 
 			testutil.AssertEqualError(t, c.Err, err)
 
@@ -335,6 +347,19 @@ func Test_connect(t *testing.T) {
 	assert.Equal(t, r.ds.ID, ff[0].Id)
 	assert.Equal(t, "org", ff[0].OrganizationID)
 	assert.Equal(t, processor.ConnectionStatusSuccess, ff[0].Status)
+
+	// credentials that cannot be decrypted end the call with the reason,
+	// which is recorded on the way out like any other status.
+	store = &StatusStoreMock{}
+	r = prepRunner(TypePrometheus, srv.URL, store)
+	r.ds.Credentials = undecryptableCredentials(t)
+
+	_, err = connect[Prometheus](context.Background(), r, TypePrometheus)
+	assert.Equal(t, processor.ConnectionStatusInvalidSigningSecret.Error(), err)
+
+	ff = store.UpdateDataSourceStatusCalls()
+	require.Len(t, ff, 1)
+	assert.Equal(t, processor.ConnectionStatusInvalidSigningSecret, ff[0].Status)
 
 	// the wanted client is not one this data source serves
 	_, err = connect[Prometheus](context.Background(), prepRunner(TypePostgreSQL, "", nil), TypePrometheus)

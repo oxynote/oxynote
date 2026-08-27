@@ -285,6 +285,13 @@
 								"update": "{name} has write access"
 							},
 							"description": "The data source user has write access, but Oxynote only needs read permissions. Please provide a read-only user to continue"
+						},
+						"invalid_signing_secret": {
+							"title": {
+								"creation": "{name} couldn't be connected",
+								"update": "{name} couldn't be updated"
+							},
+							"description": "The stored credentials can no longer be read. Please enter the username and password again to reconnect"
 						}
 					}
 				}

@@ -197,6 +197,14 @@ func Test_ConnectionStatus_Error(t *testing.T) {
 			Status: ConnectionStatusNotReadOnly,
 			Err:    errutil.New(http.StatusBadRequest, "data_source.not_read_only", "The data source connection must be read-only."),
 		},
+		"Invalid signing secret status": {
+			Status: ConnectionStatusInvalidSigningSecret,
+			Err: errutil.New(
+				http.StatusBadRequest,
+				"data_source.invalid_signing_secret",
+				"The data source credentials cannot be decrypted and must be entered again.",
+			),
+		},
 		"Success status": {
 			Status: ConnectionStatusSuccess,
 		},
@@ -217,21 +225,84 @@ func Test_ConnectionStatus_Error(t *testing.T) {
 func Test_Credentials_MarshalJSON(t *testing.T) {
 	t.Parallel()
 
-	c := Credentials(`{"username":"user"}`)
+	c := NewCredentials([]byte(`{"username":"user"}`))
 
 	data, err := c.MarshalJSON()
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"username":"user"}`, string(data))
 
-	// an empty payload used to marshal as zero bytes, which makes every
-	// enclosing struct fail with "unexpected end of JSON input".
+	// empty credentials marshal as null rather than as the zero bytes that
+	// make every enclosing struct fail with "unexpected end of JSON input".
 	var empty Credentials
 
+	data, err = empty.MarshalJSON()
+	require.NoError(t, err)
+	assert.JSONEq(t, `null`, string(data))
+
+	// the payload is unexported, so a struct that marshals credentials it
+	// should not emits nothing of them rather than the secret itself.
 	out, err := json.Marshal(struct {
 		Credentials Credentials `json:"credentials"`
-	}{Credentials: empty})
+	}{Credentials: c})
 	require.NoError(t, err)
-	assert.JSONEq(t, `{"credentials":null}`, string(out))
+	assert.JSONEq(t, `{"credentials":{}}`, string(out))
+}
+
+func Test_Credentials_IsValid(t *testing.T) {
+	t.Parallel()
+
+	// credentials carrying a payload, and empty ones standing for a data
+	// source that authenticates through its URL, are both readable.
+	c := NewCredentials([]byte(`{"username":"user"}`))
+	assert.True(t, c.IsValid())
+
+	var empty Credentials
+	assert.True(t, empty.IsValid())
+
+	// only a decrypt that could not make sense of them says otherwise.
+	unreadable := NewCredentials([]byte("not-hex-encoded"))
+	require.Error(t, unreadable.Decrypt(_testSigningKey))
+	assert.False(t, unreadable.IsValid())
+}
+
+func Test_Credentials_Scan(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Src    any
+		Result Credentials
+		Err    error
+	}{
+		"Bytes straight off the column": {
+			Src:    []byte(`{"username":"user"}`),
+			Result: NewCredentials([]byte(`{"username":"user"}`)),
+		},
+		"A driver handing them over as a string": {
+			Src:    `{"username":"user"}`,
+			Result: NewCredentials([]byte(`{"username":"user"}`)),
+		},
+		"Anything else": {
+			Src: 42,
+			Err: assert.AnError,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			var creds Credentials
+
+			err := creds.Scan(c.Src)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, creds)
+		})
+	}
 }
 
 func Test_Credentials_UnmarshalJSON(t *testing.T) {
@@ -240,13 +311,13 @@ func Test_Credentials_UnmarshalJSON(t *testing.T) {
 	var c Credentials
 
 	require.NoError(t, c.UnmarshalJSON([]byte(`{"username":"user"}`)))
-	assert.Equal(t, Credentials(`{"username":"user"}`), c)
+	assert.Equal(t, NewCredentials([]byte(`{"username":"user"}`)), c)
 }
 
 func Test_Credentials_Encrypt(t *testing.T) {
 	t.Parallel()
 
-	c := Credentials(`{"username":"user"}`)
+	c := NewCredentials([]byte(`{"username":"user"}`))
 
 	// error
 	_, err := c.Encrypt("short-key")
@@ -257,25 +328,38 @@ func Test_Credentials_Encrypt(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, data)
 
-	decrypted := Credentials(data)
+	decrypted := NewCredentials(data)
 	require.NoError(t, decrypted.Decrypt(_testSigningKey))
 	assert.Equal(t, c, decrypted)
+
+	// credentials a decrypt could not read are refused, so the ciphertext
+	// they came from is never overwritten by an encryption of nothing.
+	unreadable := NewCredentials([]byte("not-hex-encoded"))
+	require.Error(t, unreadable.Decrypt(_testSigningKey))
+
+	_, err = unreadable.Encrypt(_testSigningKey)
+	assert.Error(t, err)
 }
 
 func Test_Credentials_Decrypt(t *testing.T) {
 	t.Parallel()
 
 	// error
-	c := Credentials("not-hex-encoded")
+	c := NewCredentials([]byte("not-hex-encoded"))
 	assert.Error(t, c.Decrypt(_testSigningKey))
 
+	// what it could not read is dropped rather than left as ciphertext
+	// nobody can use, and says so to every later reader.
+	assert.False(t, c.IsValid())
+	assert.Equal(t, Credentials{unreadable: true}, c)
+
 	// success
-	original := Credentials(`{"username":"user"}`)
+	original := NewCredentials([]byte(`{"username":"user"}`))
 
 	data, err := original.Encrypt(_testSigningKey)
 	require.NoError(t, err)
 
-	c = Credentials(data)
+	c = NewCredentials(data)
 	require.NoError(t, c.Decrypt(_testSigningKey))
 	assert.Equal(t, original, c)
 }
@@ -297,7 +381,7 @@ func Test_UpdateBasicCredentials(t *testing.T) {
 		Err    error
 	}{
 		"Error returned by unmarshaling credentials": {
-			Creds: Credentials(`{`),
+			Creds: NewCredentials([]byte(`{`)),
 			Inp:   CredentialsUpdateInput(`{"username":"user"}`),
 			Err:   assert.AnError,
 		},
@@ -306,22 +390,22 @@ func Test_UpdateBasicCredentials(t *testing.T) {
 			Err: assert.AnError,
 		},
 		"Updated username retains password": {
-			Creds:  Credentials(`{"username":"old","password":"secret"}`),
+			Creds:  NewCredentials([]byte(`{"username":"old","password":"secret"}`)),
 			Inp:    CredentialsUpdateInput(`{"username":"new"}`),
-			Result: Credentials(`{"username":"new","password":"secret"}`),
+			Result: NewCredentials([]byte(`{"username":"new","password":"secret"}`)),
 		},
 		"Updated password retains username": {
-			Creds:  Credentials(`{"username":"user","password":"old"}`),
+			Creds:  NewCredentials([]byte(`{"username":"user","password":"old"}`)),
 			Inp:    CredentialsUpdateInput(`{"password":"new"}`),
-			Result: Credentials(`{"username":"user","password":"new"}`),
+			Result: NewCredentials([]byte(`{"username":"user","password":"new"}`)),
 		},
 		"Cleared credentials": {
-			Creds: Credentials(`{"username":"user","password":"pass"}`),
+			Creds: NewCredentials([]byte(`{"username":"user","password":"pass"}`)),
 			Inp:   CredentialsUpdateInput(`{"username":"","password":""}`),
 		},
 		"Created credentials from scratch": {
 			Inp:    CredentialsUpdateInput(`{"username":"user","password":"pass"}`),
-			Result: Credentials(`{"username":"user","password":"pass"}`),
+			Result: NewCredentials([]byte(`{"username":"user","password":"pass"}`)),
 		},
 	}
 
