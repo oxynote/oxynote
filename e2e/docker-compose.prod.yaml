@@ -71,7 +71,7 @@ services:
   # ports are not published, so every such probe would pass whether the
   # services bound loopback or the wildcard.
   probe:
-    image: alpine:3.23.0
+    image: alpine:3.24.1
     command: ["sleep", "infinity"]
     depends_on:
       oxynote:

@@ -133,7 +133,7 @@ services:
         max-size: 10m
         max-file: "3"
   mariadb:
-    image: mariadb:12.3.2-noble
+    image: mariadb:12.3.3-noble
     command: ["--log-warnings=1"]
     volumes:
       - mariadb_data:/var/lib/mysql
