@@ -1,0 +1,128 @@
+name: Release
+
+# publishes the all-in-one image for a tag, and only once every gate has
+# passed. The gates are the QA workflows themselves, called rather than
+# duplicated — a job cannot depend on a separate workflow's result, so the
+# release is the one place that runs them all and holds the publish behind
+# `needs`. Their path filters do not apply to a called workflow, so each one
+# runs in full here regardless of what the tag touched, which is what a
+# release wants.
+#
+# The prod e2e suite has no trigger of its own any more, so this is what
+# runs it: the image cannot be published without the suite that proves it
+# serves the product and keeps its internal surfaces unreachable.
+#
+# The dev e2e suite is deliberately not a gate here. It runs the same flow
+# tests against a different assembly of the same product, and the prod suite
+# already runs them against the artifact being published — so it would cost
+# a full nuxt image build and a browser run to re-answer a question the gate
+# beside it has already answered about the thing that actually ships.
+on:
+  push:
+    tags:
+      - "v*"
+
+# a tag is published once and the answer is wanted, so a later run must
+# never cancel one in flight.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  web:
+    uses: ./.github/workflows/qa-web.yml
+
+  core:
+    uses: ./.github/workflows/qa-server-core.yml
+
+  auth-realtime:
+    uses: ./.github/workflows/qa-auth-realtime.yml
+
+  datagen:
+    uses: ./.github/workflows/qa-datagen.yml
+
+  launcher:
+    uses: ./.github/workflows/qa-prod-launcher.yml
+
+  e2e-prod:
+    uses: ./.github/workflows/qa-e2e-prod.yml
+
+  publish:
+    name: Publishing the image
+    needs:
+      - web
+      - core
+      - auth-realtime
+      - datagen
+      - launcher
+      - e2e-prod
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      # the only write this workflow needs: pushing to the repository's own
+      # package registry.
+      packages: write
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v7
+        with:
+          # goreleaser derives the version from the tag, and refuses on a
+          # shallow clone that has no tags in it.
+          fetch-depth: 0
+
+      # the binary baked into the image must come from goreleaser and must
+      # not be a snapshot: a snapshot reports itself as version dev running
+      # in a dev environment, which is not what gets published.
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: server/core/go.mod
+          cache-dependency-path: server/core/go.sum
+
+      - name: Set up goreleaser
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          install-only: true
+
+      - name: Set up Docker buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to the container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # the image is tagged latest and the bare semver, so v1.2.3 publishes
+      # ghcr.io/oxynote/oxynote:1.2.3 — the leading v belongs to the git tag
+      # and not to the image.
+      - name: Resolve the version
+        id: version
+        run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      # the e2e gate just built this same image to test it, and it runs
+      # before this job, so its layers are read as well as this job's own —
+      # the nuxt, auth-realtime and fetch stages all land ahead of the first
+      # SENTRY ARG and are identical between the two builds. Only this
+      # scope is written, so the e2e cache stays the e2e gate's to manage.
+      #
+      # the DSNs are baked in at build time and are write-only ingest
+      # addresses. An unset secret leaves its DSN empty, which disables that
+      # component's reporting rather than failing the build.
+      - name: Build and publish
+        run: |
+          make prod-publish \
+            RELEASE_VERSION="${{ steps.version.outputs.value }}" \
+            PROD_BUILD_EXTRA="--cache-from type=gha,scope=prod-release \
+              --cache-from type=gha,scope=e2e-prod \
+              --cache-to type=gha,mode=max,scope=prod-release \
+              --build-arg SENTRY_WEB_DSN=${{ secrets.SENTRY_WEB_DSN }} \
+              --build-arg SENTRY_CORE_DSN=${{ secrets.SENTRY_CORE_DSN }} \
+              --build-arg SENTRY_AUTH_REALTIME_DSN=${{ secrets.SENTRY_AUTH_REALTIME_DSN }} \
+              --build-arg SENTRY_LAUNCHER_DSN=${{ secrets.SENTRY_LAUNCHER_DSN }}"

@@ -24,8 +24,19 @@ expects it. A bare `docker build` fails on that COPY by design.
 the trust-boundary tests that only mean something here. It is the only thing
 that exercises this image as an operator installs it — the dev stack shares
 none of its assembly — so run it locally for a change to the Dockerfile, the
-Caddyfile or the launcher. CI only runs it on a tag, so a change here gets no
-pre-merge signal from it. Details in [e2e/CLAUDE.md](../../e2e/CLAUDE.md).
+Caddyfile or the launcher. CI runs it only as a release gate, so a change
+here gets no pre-merge signal from it. Details in
+[e2e/CLAUDE.md](../../e2e/CLAUDE.md).
+
+**`make prod-publish` is the release build**, run by
+[release.yml](../../.github/workflows/release.yml) on a tag and by nothing
+else. It differs from `prod-build` in two ways that matter: core's binary
+comes from `goreleaser build` rather than a snapshot, so it reports the tag
+as its version and `production` as its environment instead of `dev`; and the
+result is pushed to `ghcr.io/oxynote/oxynote` as `latest` and the bare
+semver — `v1.2.3` publishes `:1.2.3`. Those two tags are the only things the
+registry gets. `goreleaser build` is deliberate: `goreleaser release` would
+also publish `ghcr.io/oxynote/core` from the `dockers_v2` block.
 
 ## Invariants
 

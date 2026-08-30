@@ -15,6 +15,23 @@ build:
 	CORE_SNAPSHOT_TAG=$(IMAGE_TAG) goreleaser release --snapshot --clean
 	docker tag ghcr.io/oxynote/core:$(IMAGE_TAG)-amd64 ghcr.io/oxynote/core:$(IMAGE_TAG)
 
+# The binary on its own, for the all-in-one image: its Dockerfile stages the
+# binary and builds everything else itself, so core's own docker image is
+# waste on this path. `goreleaser build` compiles and stops there, where
+# `release` above also runs the dockers_v2 block — which on a real tag would
+# publish ghcr.io/oxynote/core alongside the image being released.
+#
+# The snapshot variant is for local and e2e builds, where there may be no
+# tag and the version does not matter. A published image must use the other
+# one: a snapshot stamps the binary as version dev in a dev environment.
+.PHONY: build-binary
+build-binary:
+	goreleaser build --clean
+
+.PHONY: build-binary-snapshot
+build-binary-snapshot:
+	goreleaser build --snapshot --clean
+
 # Run all tests with the race detector.
 .PHONY: test
 test:
