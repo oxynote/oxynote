@@ -10,6 +10,8 @@ PROD_BUILD_EXTRA ?=
 COMPOSE := docker-compose -p oxynote -f docker/docker-compose.dev.yaml
 E2E_DEV_COMPOSE := docker compose -f e2e/docker-compose.dev.yaml $(E2E_DEV_COMPOSE_EXTRA)
 E2E_PROD_COMPOSE := docker compose -f e2e/docker-compose.prod.yaml
+PROD_COMPOSE := docker compose -f docker/prod/docker-compose.example.yaml \
+	-f docker/prod/docker-compose.local.yaml
 
 # a tag names the stack an image belongs to. The e2e targets override these
 # to :e2e-dev and :e2e-prod so a run cannot replace the image `make start`
@@ -165,14 +167,18 @@ prod-publish:
 		-t ghcr.io/oxynote/oxynote:$(RELEASE_VERSION) \
 		--push .
 
-# the example compose against the locally built image
+# build the image, then run the example deployment against it on
+# http://localhost:8080 (ctrl-c stops it). The local override adds the mail
+# sink the example only describes in a comment: signup requires a verified
+# address, so without it the verification link is only logged. Read the
+# delivered mail at http://localhost:8025.
 .PHONY: prod-run
-prod-run:
-	OXYNOTE_IMAGE_TAG=prod docker compose -f docker/prod/docker-compose.example.yaml up
+prod-run: prod-build
+	OXYNOTE_IMAGE_TAG=$(PROD_IMAGE_TAG) $(PROD_COMPOSE) up
 
 .PHONY: prod-stop
 prod-stop:
-	docker compose -f docker/prod/docker-compose.example.yaml down
+	$(PROD_COMPOSE) down
 
 # changedetection.io generates its API key on first boot; start it alone and
 # copy the key into core.local.env before the rest of the stack (core reads

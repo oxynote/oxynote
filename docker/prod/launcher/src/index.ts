@@ -3,9 +3,11 @@ import net from "node:net"
 import os from "node:os"
 import { join } from "node:path"
 import * as Sentry from "@sentry/node"
+import { destination } from "pino"
 import { bakedLauncherSentryDsn, bakedSentryDsns } from "./baked.js"
 import { loadConfig, type Config } from "./env.js"
 import { checkLoopbackExposure } from "./loopback.js"
+import { childRecord, createLogger } from "./logging.js"
 import {
 	authRealtimePort,
 	authRealtimeUrl,
@@ -43,8 +45,14 @@ const crashReporter = createCrashReporter(
 // has to SIGKILL the whole container.
 const shutdownDeadlineMs = 55_000
 
-function log(line: string): void {
-	console.log(line)
+// one open stdout for the launcher's own logger and for the children's
+// relayed lines, so every record reaches the stream in write order rather
+// than through two buffers.
+const out = destination(1)
+const log = createLogger("launcher", out)
+
+function logChildLine(name: string, line: string): void {
+	out.write(`${childRecord(name, line)}\n`)
 }
 
 function sleep(ms: number): Promise<void> {
@@ -110,7 +118,7 @@ async function shutdown(supervisor: Supervisor, code: number): Promise<void> {
 	shuttingDown = true
 
 	const deadline = setTimeout(() => {
-		console.error("[launcher] shutdown deadline exceeded")
+		log.error("shutdown deadline exceeded")
 		process.exit(1)
 	}, shutdownDeadlineMs)
 
@@ -123,8 +131,8 @@ async function shutdown(supervisor: Supervisor, code: number): Promise<void> {
 function logEnabledFeatures(config: Config): void {
 	const state = (enabled: boolean) => (enabled ? "on" : "off")
 
-	log(
-		`[launcher] search ${state(config.meilisearch !== undefined)}, ` +
+	log.info(
+		`search ${state(config.meilisearch !== undefined)}, ` +
 			`email ${state(config.smtp !== undefined)}, ` +
 			`github app ${state(config.githubApp !== undefined)}, ` +
 			`slack app ${state(config.slackApp !== undefined)}, ` +
@@ -142,18 +150,18 @@ async function main(): Promise<void> {
 	})
 
 	for (const name of report.generated) {
-		log(`[launcher] generated secret ${name}`)
+		log.info(`generated secret ${name}`)
 	}
 
 	if (report.fromVolume.length > 0) {
-		log(
-			`[launcher] using existing secrets: ${report.fromVolume.join(", ")}`,
+		log.info(
+			`using existing secrets: ${report.fromVolume.join(", ")}`,
 		)
 	}
 
 	if (report.fromEnv.length > 0) {
-		log(
-			`[launcher] secrets provided via environment: ${report.fromEnv.join(", ")}`,
+		log.info(
+			`secrets provided via environment: ${report.fromEnv.join(", ")}`,
 		)
 	}
 
@@ -171,10 +179,11 @@ async function main(): Promise<void> {
 		probe,
 		sleep,
 		log,
+		logChildLine,
 		onUnexpectedExit(name, code) {
 			const message = `${name} exited unexpectedly with code ${code}`
 
-			log(`[launcher] ${message}`)
+			log.error(message)
 			// the child is gone, so whatever it would have reported
 			// for itself is lost — an OOM kill leaves no other
 			// trace at all. Reporting is awaited before the
@@ -226,6 +235,13 @@ async function main(): Promise<void> {
 			readyUrl: `${webUrl}/login`,
 			readyTimeoutMs: 60_000,
 			stopGraceMs: 10_000,
+			// nitro's node-server entry announces the address it
+			// bound with a bare console.log and offers no way to
+			// silence it. That address is this container's
+			// loopback, not the one anyone reaches the app on, so
+			// it is dropped here and the launcher's own "up at"
+			// line — the public URL — is the one left standing.
+			mute: /^Listening on /,
 		},
 		{
 			name: "caddy",
@@ -264,22 +280,18 @@ async function main(): Promise<void> {
 			)
 		}
 	} catch (err) {
-		console.error(
-			`[launcher] ${err instanceof Error ? err.message : String(err)}`,
-		)
+		log.error(err instanceof Error ? err.message : String(err))
 		await crashReporter.report(err)
 		await supervisor.stopAll()
 		process.exit(1)
 	}
 
-	log(`[launcher] oxynote is up at ${config.publicOrigin}`)
+	log.info(`oxynote is up at ${config.publicOrigin}`)
 	logEnabledFeatures(config)
 }
 
 main().catch((err: unknown) => {
-	console.error(
-		`[launcher] ${err instanceof Error ? err.message : String(err)}`,
-	)
+	log.error(err instanceof Error ? err.message : String(err))
 	void crashReporter.report(err).then(() => {
 		process.exit(1)
 	})

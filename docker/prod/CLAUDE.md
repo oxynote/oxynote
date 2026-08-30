@@ -13,7 +13,11 @@ tini. Postgres is the only required external service; valkey, an
 S3-compatible store, meilisearch, SMTP and changedetection.io are optional
 and external too — without a store, objects are kept on the data volume;
 `docker-compose.example.yaml` is the canonical deployment and `README.md`
-the operator-facing reference.
+the operator-facing reference. `docker-compose.local.yaml` is not part of
+either: it is the override **`make prod-run`** layers on the example to
+build the image and drive it from a browser here, adding the mailpit the
+example only describes in a comment — signup requires a verified address, so
+without a relay the verification link is never more than a log line.
 
 Build with **`make prod-build`** from the repository root: core's
 binary must come from goreleaser (never a plain `go build`), so the target
@@ -79,6 +83,29 @@ also publish `ghcr.io/oxynote/core` from the `dockers_v2` block.
   `loadConfig` throws on it.
 - **Crash policy: die, don't restart.** Any child exit tears the rest down
   and exits the container nonzero; restarts belong to the container runtime.
+- **Every line the container emits is a JSON record with a `service`
+  field** naming the process that wrote it — `launcher`, `core`,
+  `auth-realtime`, `web`, `caddy` — which is what the old `[core]`-style
+  tags said, in a form nothing has to parse back out of the text.
+- **`service` is the only thing the launcher adds to a child's line.**
+  `childRecord` ([logging.ts](launcher/src/logging.ts)) merges the field
+  into the object a child already logged and changes nothing else: core's
+  and auth-realtime's `time`/`level`/`msg`, caddy's `ts` and `logger`, all
+  survive as their own keys. Stamping the launcher's level and timestamp on
+  top would report when the relay ran rather than when the event happened,
+  and rank a line the launcher never read. A line that is not a JSON object
+  — plain text, an array, a number — becomes `{msg, service}`, which is all
+  the launcher knows about it. `service` is written last, so the launcher's
+  answer wins over a child that claims a different one.
+- **The launcher's own events go through pino** at a fixed info level, in
+  the shape core and auth-realtime emit (ISO `time`, uppercase `level`,
+  `msg`). They are the container's lifecycle, a dozen lines per boot, and
+  `OXYNOTE_LOG_LEVEL` lowers what the *services* write rather than whether
+  the container narrates its start. Both paths share one open stdout, so
+  records reach the stream in write order.
+- **Each stream gets its own splitter**, since a line is only whole within
+  the stream it arrived on; `mute` drops what a child prints with no way to
+  switch it off (nitro's loopback listen banner).
 - **Supply chain**: every `FROM` is pinned by digest; caddy and tini are
   downloaded at pinned versions and checksum-verified. Caddy is Apache-2.0
   (its LICENSE ships in the image at `/oxynote/licenses/caddy/`); the name

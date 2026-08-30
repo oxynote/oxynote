@@ -74,7 +74,12 @@ function harness(childOptions: { exitOnTerm?: boolean } = {}) {
 	const probe = vi
 		.fn<(url: string) => Promise<boolean>>()
 		.mockResolvedValue(true)
-	const log = vi.fn<(line: string) => void>()
+	const log = {
+		info: vi.fn<(message: string) => void>(),
+		warn: vi.fn<(message: string) => void>(),
+		error: vi.fn<(message: string) => void>(),
+	}
+	const logChildLine = vi.fn<(name: string, line: string) => void>()
 	const onUnexpectedExit = vi.fn<(name: string, code: number) => void>()
 
 	const supervisor = createSupervisor({
@@ -82,10 +87,19 @@ function harness(childOptions: { exitOnTerm?: boolean } = {}) {
 		probe,
 		sleep: () => Promise.resolve(),
 		log,
+		logChildLine,
 		onUnexpectedExit,
 	})
 
-	return { children, spawn, probe, log, onUnexpectedExit, supervisor }
+	return {
+		children,
+		spawn,
+		probe,
+		log,
+		logChildLine,
+		onUnexpectedExit,
+		supervisor,
+	}
 }
 
 describe("createSupervisor", () => {
@@ -121,9 +135,7 @@ describe("createSupervisor", () => {
 			expect(h.probe).toHaveBeenCalledWith(
 				"http://127.0.0.1:1/core",
 			)
-			expect(h.log).toHaveBeenCalledWith(
-				"[launcher] core is ready",
-			)
+			expect(h.log.info).toHaveBeenCalledWith("core is ready")
 		})
 
 		it("gives up when the child never becomes ready", async ({
@@ -161,7 +173,7 @@ describe("createSupervisor", () => {
 			)
 		})
 
-		it("tags the child's output with its name", async ({
+		it("logs the child's output under the child's own name", async ({
 			expect,
 		}) => {
 			const h = harness()
@@ -171,8 +183,10 @@ describe("createSupervisor", () => {
 			h.children[0]?.stdout.emit("data", "hello\n")
 			h.children[0]?.stderr.emit("data", "oops\n")
 
-			expect(h.log).toHaveBeenCalledWith("[core] hello")
-			expect(h.log).toHaveBeenCalledWith("[core] oops")
+			expect(h.logChildLine.mock.calls).toEqual([
+				["core", "hello"],
+				["core", "oops"],
+			])
 		})
 
 		it("reports an exit after readiness as unexpected", async ({
@@ -219,13 +233,15 @@ describe("createSupervisor", () => {
 
 			await h.supervisor.stopAll()
 
-			const stops = h.log.mock.calls
-				.map(([line]) => line)
-				.filter((line) => line.includes("stopping"))
+			const stops = h.log.info.mock.calls
+				.map(([message]) => message)
+				.filter((message) =>
+					message.includes("stopping"),
+				)
 
 			expect(stops).toEqual([
-				"[launcher] stopping caddy",
-				"[launcher] stopping core",
+				"stopping caddy",
+				"stopping core",
 			])
 			expect(h.children[0]?.kill).toHaveBeenCalledWith(
 				"SIGTERM",

@@ -478,6 +478,12 @@ describe("loadConfig", () => {
 			expect(config.logLevel).toBe("DEBUG")
 		})
 
+		it("defaults the log level to WARN", ({ expect }) => {
+			const config = loadConfig(completeEnv({}))
+
+			expect(config.logLevel).toBe("WARN")
+		})
+
 		it.for([
 			{
 				name: "a word as a counter",

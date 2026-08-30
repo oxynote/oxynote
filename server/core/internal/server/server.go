@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"net/url"
-	"strings"
 	"sync"
 	"time"
 
@@ -237,33 +235,15 @@ func NewServer(
 
 // Listen starts listening for incoming connections.
 func (s *Server) Listen() {
-	s.log.Info("listening", slog.String("address", s.Address()))
+	// deliberately without the address: it is the one inside the
+	// container, which is not the one anything reaches the server on, so
+	// logging it only invites a wrong guess.
+	s.log.Info("listening")
 
 	err := s.http.ListenAndServe()
 	if !errors.Is(err, http.ErrServerClosed) {
 		s.log.Error("cannot terminate gracefully", slog.String("error", err.Error()))
 	}
-}
-
-// Address returns the address of the server.
-func (s *Server) Address() string {
-	host := s.http.Addr
-
-	// a host-less address binds all interfaces; localhost stands in for
-	// log readability.
-	if strings.HasPrefix(s.http.Addr, ":") {
-		host = "localhost"
-		if s.http.Addr != ":80" {
-			host += s.http.Addr // port can be random
-		}
-	}
-
-	addr := &url.URL{
-		Scheme: "http",
-		Host:   host,
-	}
-
-	return addr.String()
 }
 
 // Close performs clean up operations.

@@ -14,10 +14,12 @@ cp docker/prod/docker-compose.example.yaml my-deployment.yaml
 docker compose -f my-deployment.yaml up -d
 ```
 
-From a repository checkout, `make prod-build && make prod-run`
-builds the image locally (goreleaser builds the core binary first — a bare
-`docker build` is not supported) and runs the example as-is on
-`http://localhost:8080`.
+From a repository checkout, `make prod-run` builds the image locally
+(goreleaser builds the core binary first — a bare `docker build` is not
+supported) and runs this example on `http://localhost:8080`, with
+`docker-compose.local.yaml` layered on top so signup mail lands in a mailpit
+at `http://localhost:8025` instead of being logged. `make prod-stop` stops
+it.
 
 The image serves plain HTTP on port **8080**. For a real domain, put a
 TLS-terminating proxy in front and set `OXYNOTE_PUBLIC_URL` to the public
@@ -60,7 +62,9 @@ cleanly. An incomplete group fails the boot with the missing name.
 by client IP — disable it behind a proxy that hides the original IP and rate
 limit there instead), `OXYNOTE_MAX_DOCUMENT_HISTORY_ENTRIES`,
 `OXYNOTE_DOCUMENT_HISTORY_RETENTION` (Go duration, e.g. `2160h`),
-`OXYNOTE_LOG_LEVEL` (`DEBUG`/`INFO`/`WARN`/`ERROR`),
+`OXYNOTE_LOG_LEVEL` (`DEBUG`/`INFO`/`WARN`/`ERROR`; the floor for both core
+and auth-realtime, `WARN` by default, so the container logs carry the
+exceptions rather than the traffic),
 `OXYNOTE_TERMS_OF_SERVICE_URL`, `OXYNOTE_PRIVACY_POLICY_URL`.
 
 ## Secrets and the data volume

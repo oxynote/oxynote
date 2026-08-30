@@ -7,6 +7,7 @@ import type { PostgresDialect } from "kysely"
 import type { Store } from "./db.js"
 import type { CoreClient } from "./core.js"
 import type { Env, SocialProviderName } from "./env.js"
+import type { Logger, LogLevel } from "./logging.js"
 import { reported } from "./reporting.js"
 
 export type AuthMethod = "email-password" | "google" | "github" | "slack"
@@ -35,7 +36,19 @@ export interface AuthDeps {
 	// better-auth with no secondary storage.
 	redis?: SecondaryStorageClient
 	core: CoreClient
+	log: Logger
 }
+
+// better-auth's own level names, which are these lowercased. Passing it
+// the matching one lets it drop a message before formatting it, and it
+// resolves its extra "success" level to info before calling out.
+const betterAuthLevels: Record<LogLevel, "debug" | "info" | "warn" | "error"> =
+	{
+		DEBUG: "debug",
+		INFO: "info",
+		WARN: "warn",
+		ERROR: "error",
+	}
 
 // the capability list served by /api/auth-config. Derived from the same
 // credentials that register the social providers, so the endpoint can
@@ -223,7 +236,14 @@ export function createSecondaryStorage(redis: SecondaryStorageClient) {
 	}
 }
 
-export function createAuth({ env, store, dialect, redis, core }: AuthDeps) {
+export function createAuth({
+	env,
+	store,
+	dialect,
+	redis,
+	core,
+	log,
+}: AuthDeps) {
 	const organizationHooks = createOrganizationHooks({ env, store, core })
 
 	function socialProvider(name: SocialProviderName) {
@@ -248,6 +268,15 @@ export function createAuth({ env, store, dialect, redis, core }: AuthDeps) {
 		// redirect URIs below).
 		baseURL: env.authOrigin,
 		basePath: "/api/auth",
+		// better-auth prints its own lines otherwise, on a level of
+		// its own; routed here they obey OXYNOTE_AUTH_REALTIME_LOG_LEVEL
+		// like everything else the service writes.
+		logger: {
+			level: betterAuthLevels[env.logLevel],
+			log: (level, message) => {
+				log[level](`better-auth: ${message}`)
+			},
+		},
 		secret: env.betterAuthSecret,
 		// the dialect instance alone leaves the CLI's schema generator
 		// unable to tell which database it is talking to (instanceof

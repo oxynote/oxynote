@@ -3,6 +3,7 @@ import type * as Y from "yjs"
 import type { CoreClient } from "./core.js"
 import type { Store } from "./db.js"
 import type { Env } from "./env.js"
+import type { Logger } from "./logging.js"
 
 export type StubStore = {
 	[K in keyof Store]: Mock<Store[K]>
@@ -58,6 +59,21 @@ export function stubCore(): StubCore {
 	}
 }
 
+export type StubLogger = {
+	[K in keyof Logger]: Mock<Logger[K]>
+}
+
+// a logger that records instead of writing, so a suite neither prints nor
+// has to spy on the console to assert what a code path logged.
+export function stubLog(): StubLogger {
+	return {
+		debug: vi.fn(),
+		info: vi.fn(),
+		warn: vi.fn(),
+		error: vi.fn(),
+	}
+}
+
 // a complete, valid configuration. Tests override only the field under
 // test so an unrelated env change cannot quietly alter what they assert.
 export function testEnv(overrides: Partial<Env> = {}): Env {
@@ -81,6 +97,7 @@ export function testEnv(overrides: Partial<Env> = {}): Env {
 		maxOrganizations: 100,
 		maxOrganizationMembers: 5,
 		rateLimitEnabled: true,
+		logLevel: "INFO",
 		...overrides,
 	}
 }

@@ -3,6 +3,8 @@ import * as Y from "yjs"
 import { nanoid } from "nanoid"
 import { Hocuspocus } from "@hocuspocus/server"
 import { Logger } from "@hocuspocus/extension-logger"
+// aliased because the extension above already claims the name Logger.
+import type { Logger as ServiceLogger } from "./logging.js"
 import type { CoreClient } from "./core.js"
 import { toAxiosHeaders, toHeaders } from "./headers.js"
 import { bestEffort, reported } from "./reporting.js"
@@ -329,9 +331,28 @@ export function createDocumentHooks({ auth, core }: DocumentHookDeps) {
 	}
 }
 
-export function createHocuspocus(deps: DocumentHookDeps): Hocuspocus {
+export function createHocuspocus({
+	log,
+	...hooks
+}: DocumentHookDeps & { log: ServiceLogger }): Hocuspocus {
 	return new Hocuspocus({
-		extensions: [new Logger()],
-		...createDocumentHooks(deps),
+		// the extension writes a line per connection, load, change and
+		// persist. That is a trace of the traffic rather than
+		// something an operator needs to see, so it goes out at DEBUG
+		// instead of straight to stdout.
+		extensions: [
+			new Logger({
+				log: (...args: unknown[]) => {
+					log.debug(
+						args
+							.map((arg) =>
+								String(arg),
+							)
+							.join(" "),
+					)
+				},
+			}),
+		],
+		...createDocumentHooks(hooks),
 	})
 }

@@ -4,9 +4,10 @@
 # put a TLS-terminating proxy in front for a real domain (the image itself
 # speaks plain HTTP on 8080).
 #
-# `make prod-run` from the repository root uses this file as-is
-# against a locally built image (tag :dev). The full variable reference
-# lives in README.md next to this file.
+# `make prod-run` from the repository root builds the image and runs this
+# file against it, with docker-compose.local.yaml layered on top to add the
+# mail sink a browser trial needs. The full variable reference lives in
+# README.md next to this file.
 
 name: oxynote-prod
 
@@ -45,6 +46,7 @@ services:
 
   postgres:
     image: postgres:18.6-alpine
+    command: ["postgres", "-c", "log_checkpoints=off"]
     environment:
       - POSTGRES_USER=oxynote
       - POSTGRES_PASSWORD=change-me-db
@@ -63,6 +65,7 @@ services:
     environment:
       - MEILI_ENV=production
       - MEILI_MASTER_KEY=change-me-meili-key
+      - MEILI_LOG_LEVEL=WARN
     volumes:
       - meilisearch_data:/meili_data
     healthcheck:

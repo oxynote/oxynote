@@ -2,11 +2,13 @@ import { serve } from "@hono/node-server"
 import { Hono } from "hono"
 import { createNodeWebSocket } from "@hono/node-ws"
 import { createClient } from "redis"
+import { destination } from "pino"
 import { loadEnv } from "./env.js"
 import { createDatabase } from "./db.js"
 import { createCoreClient } from "./core.js"
 import { createAuth } from "./auth.js"
 import { createHocuspocus } from "./hocuspocus.js"
+import { createLogger } from "./logging.js"
 import { createRoutes } from "./routes.js"
 import { bestEffort } from "./reporting.js"
 
@@ -15,6 +17,7 @@ import { bestEffort } from "./reporting.js"
 // needs, which is what makes the rest of the service testable without a
 // database, a redis, or a port.
 const env = loadEnv(process.env)
+const log = createLogger(env.logLevel, destination(1))
 
 const database = createDatabase(env.databaseDSN)
 const { store, dialect } = database
@@ -34,11 +37,12 @@ if (env.valkeyDsn) {
 	await redis.connect()
 }
 
-const auth = createAuth({ env, store, dialect, redis, core })
+const auth = createAuth({ env, store, dialect, redis, core, log })
 
 const hocuspocus = createHocuspocus({
 	auth: { getSession: (input) => auth.api.getSession(input) },
 	core,
+	log,
 })
 
 const app = new Hono()
@@ -111,9 +115,10 @@ const server = serve(
 			port: info.port,
 		})
 
-		console.log(
-			`Server is running on http://localhost:${info.port}`,
-		)
+		// deliberately without the address: this is the port inside
+		// the container, which is not the one anything reaches the
+		// service on, and printing it only invites a wrong guess.
+		log.info("listening")
 	},
 )
 nodeWs.injectWebSocket(server)
@@ -126,7 +131,7 @@ const shutdownDeadlineMs = 15_000
 // seconds, so exiting on the signal alone would drop that window of edits.
 async function shutdown() {
 	const deadline = setTimeout(() => {
-		console.error("shutdown deadline exceeded")
+		log.error("shutdown deadline exceeded")
 		process.exit(1)
 	}, shutdownDeadlineMs)
 	deadline.unref()

@@ -4,6 +4,12 @@
 # files together.
 {
 	admin off # disable the admin API
+
+	# every served request is an INFO access log line, and nothing here
+	# reads them; warnings and errors still come through.
+	log {
+		level WARN
+	}
 }
 
 (common) {

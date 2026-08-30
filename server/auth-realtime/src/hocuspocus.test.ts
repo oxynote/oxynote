@@ -8,7 +8,12 @@ import {
 	type AuthSession,
 } from "./hocuspocus.js"
 import { replaceYdocContent, transformer } from "./ydocument.js"
-import { fragmentXml, stubCore, type StubCore } from "./test-helpers.js"
+import {
+	fragmentXml,
+	stubCore,
+	stubLog,
+	type StubCore,
+} from "./test-helpers.js"
 
 type ConnectedDocument = Y.Doc & { broadcastStateless: Mock }
 
@@ -677,10 +682,34 @@ describe("createDocumentHooks", () => {
 })
 
 describe("createHocuspocus", () => {
+	it("sends the hocuspocus logger's per-connection lines out at DEBUG", ({
+		expect,
+	}) => {
+		const log = stubLog()
+		const server = createHocuspocus({
+			auth: stubAuth(),
+			core: stubCore(),
+			log,
+		})
+		// the extension keeps its sink in its own configuration; the
+		// server exposes no other way to reach it.
+		const logger = server.configuration.extensions[0] as {
+			configuration: { log: (...args: unknown[]) => void }
+		}
+
+		logger.configuration.log("onStoreDocument", "doc-1")
+
+		expect(log.debug.mock.calls).toEqual([
+			["onStoreDocument doc-1"],
+		])
+		expect(log.info.mock.calls).toEqual([])
+	})
+
 	it("wires the document hooks onto the server", ({ expect }) => {
 		const server = createHocuspocus({
 			auth: stubAuth(),
 			core: stubCore(),
+			log: stubLog(),
 		})
 
 		expect(typeof server.configuration.onAuthenticate).toBe(

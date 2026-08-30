@@ -87,7 +87,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - `e2e/` — Playwright end-to-end suite (`@oxynote/e2e`, **pnpm**) plus the two docker-compose stacks it drives: the dev stack built from this repo, and the all-in-one image `docker/prod/` produces. Not shipped; it exercises the composed product through a real backend. Every file, script and make target belonging to one stack is named `dev` or `prod` — neither is the unnamed default. Details: [e2e/CLAUDE.md](e2e/CLAUDE.md).
 - `scripts/` — helpers the root Makefile calls. `run-quietly.sh` runs a build step with its output held back, replaying the log only if the step fails.
 - `docker/` — dev docker-compose stack, Caddyfile, `env/` (committed `*.example.env` templates; `make setup` copies them to the gitignored `*.local.env` files the compose stack reads, and `web.example.env` also to `web/.env` for the host dev server and electron builds), `demo/` (demo-data configs for mariadb/postgres).
-- `docker/prod/` — the production all-in-one image: alpine-based Dockerfile (built via `make prod-build`; core comes from goreleaser), the image's Caddyfile (sibling of `docker/Caddyfile`), the TS launcher (`@oxynote/launcher`, **pnpm**) that validates the flat public `OXYNOTE_*` env, generates internal secrets, and supervises caddy + web + core + auth-realtime, plus the example compose deployment. Details: [docker/prod/CLAUDE.md](docker/prod/CLAUDE.md).
+- `docker/prod/` — the production all-in-one image: alpine-based Dockerfile (built via `make prod-build`; core comes from goreleaser), the image's Caddyfile (sibling of `docker/Caddyfile`), the TS launcher (`@oxynote/launcher`, **pnpm**) that validates the flat public `OXYNOTE_*` env, generates internal secrets, and supervises caddy + web + core + auth-realtime, plus the example compose deployment and the local override `make prod-run` layers on it. Details: [docker/prod/CLAUDE.md](docker/prod/CLAUDE.md).
 
 **One `.gitignore`, and it lives at the repository root.** Components do not carry their own — a rule for a nested directory is written with its path (`e2e/test-results/`, `web/coverage/`), so every exclusion in the repository is readable in one file. The exception is `web/packages/lezer-promql/`, which is a vendored upstream fork and keeps the ignore file it ships with.
 
@@ -107,7 +107,8 @@ make lint      # fix lint/format/type issues in web, auth-realtime, core, datage
 make check-lint # the same gates, verification only
 
 make prod-build # goreleaser core binary + the all-in-one prod image
-make prod-run   # run the example prod compose against the local image
+make prod-run   # build the image + run the example compose on :8080, with
+                # a mailpit on :8025 so signup mail is readable
 make prod-stop  # stop it
 # release-only, run by .github/workflows/release.yml on a tag:
 # make prod-publish RELEASE_VERSION=1.2.3  -> pushes :latest and :1.2.3

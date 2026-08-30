@@ -62,7 +62,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
 		rateLimitDisabled: false,
 		maxDocumentHistoryEntries: "",
 		documentHistoryRetention: "",
-		logLevel: "",
+		logLevel: "WARN",
 		termsOfServiceUrl: "",
 		privacyPolicyUrl: "",
 		crashReportingDisabled: false,

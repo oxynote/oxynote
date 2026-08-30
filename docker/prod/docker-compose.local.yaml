@@ -1,0 +1,29 @@
+# what `make prod-run` layers on top of the example deployment so the image
+# can be driven from a browser on this machine. It is not part of the
+# deployment operators copy — docker-compose.example.yaml is that file, and
+# it stays as documented.
+#
+# the one thing a local run cannot do without is mail: signup requires a
+# verified address, so without a relay the verification link is only ever
+# logged. This starts the mail sink the example already describes in a
+# comment and points the image at it; the delivered mail is read at
+# http://localhost:8025.
+
+name: oxynote-prod
+
+services:
+  oxynote:
+    environment:
+      - OXYNOTE_SMTP_DSN=smtp://mailpit:1025?tls=none
+      - OXYNOTE_EMAIL_FROM_ADDRESS=Oxynote <team@example.com>
+    depends_on:
+      mailpit:
+        condition: service_started
+
+  mailpit:
+    image: axllent/mailpit:v1.31.0
+    environment:
+      - MP_QUIET=true
+    ports:
+      - "8025:8025"
+    restart: unless-stopped

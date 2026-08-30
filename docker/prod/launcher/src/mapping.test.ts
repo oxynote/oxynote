@@ -145,6 +145,15 @@ describe("buildChildEnvs", () => {
 		})
 	})
 
+	it("gives core and auth-realtime the same log level", ({ expect }) => {
+		const envs = build(testConfig({ logLevel: "DEBUG" }))
+
+		expect(envs.core.OXYNOTE_CORE_LOG_LEVEL).toBe("DEBUG")
+		expect(envs.authRealtime.OXYNOTE_AUTH_REALTIME_LOG_LEVEL).toBe(
+			"DEBUG",
+		)
+	})
+
 	it("hands each secret only to the component that needs it", ({
 		expect,
 	}) => {

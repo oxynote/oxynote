@@ -1,5 +1,5 @@
 import type { ChildProcess } from "node:child_process"
-import { createLinePrefixer } from "./logging.js"
+import { createLineSplitter, type Logger } from "./logging.js"
 
 export interface ChildSpec {
 	name: string
@@ -14,6 +14,9 @@ export interface ChildSpec {
 	readyTimeoutMs: number
 	// how long a SIGTERM'd child may drain before SIGKILL.
 	stopGraceMs: number
+	// output lines to drop, for what a child prints with no way to turn
+	// it off.
+	mute?: RegExp
 }
 
 export interface SupervisorDeps {
@@ -25,7 +28,10 @@ export interface SupervisorDeps {
 	// answers whether a GET to the URL returned 200.
 	probe(url: string): Promise<boolean>
 	sleep(ms: number): Promise<void>
-	log(line: string): void
+	// the supervisor's own events.
+	log: Logger
+	// relays one line a child wrote, under that child's name.
+	logChildLine(name: string, line: string): void
 	// called when a child exits outside an initiated shutdown.
 	onUnexpectedExit(name: string, code: number): void
 }
@@ -52,24 +58,23 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 	const children: Child[] = []
 	let stopping = false
 
-	function attachOutput(name: string, child: ChildProcess): void {
+	function attachOutput(spec: ChildSpec, child: ChildProcess): void {
+		// a splitter per stream, never one shared: a line is only ever
+		// whole within the stream it arrived on.
 		for (const stream of [child.stdout, child.stderr]) {
 			if (!stream) {
 				continue
 			}
 
-			const prefixer = createLinePrefixer(
-				`[${name}]`,
-				(line) => {
-					deps.log(line)
-				},
-			)
+			const splitter = createLineSplitter((line) => {
+				deps.logChildLine(spec.name, line)
+			}, spec.mute)
 
 			stream.on("data", (chunk: Buffer) => {
-				prefixer.data(chunk)
+				splitter.data(chunk)
 			})
 			stream.on("close", () => {
-				prefixer.end()
+				splitter.end()
 			})
 		}
 	}
@@ -102,11 +107,11 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 	}
 
 	async function start(spec: ChildSpec): Promise<void> {
-		deps.log(`[launcher] starting ${spec.name}`)
+		deps.log.info(`starting ${spec.name}`)
 
 		const process = deps.spawn(spec.command, spec.args, spec.env)
 
-		attachOutput(spec.name, process)
+		attachOutput(spec, process)
 
 		const exited = new Promise<number>((resolve) => {
 			process.once("exit", (code, signal) => {
@@ -128,7 +133,7 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 
 		await waitReady(child)
 
-		deps.log(`[launcher] ${spec.name} is ready`)
+		deps.log.info(`${spec.name} is ready`)
 	}
 
 	async function stopAll(): Promise<void> {
@@ -139,7 +144,7 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 				continue
 			}
 
-			deps.log(`[launcher] stopping ${child.spec.name}`)
+			deps.log.info(`stopping ${child.spec.name}`)
 			child.process.kill("SIGTERM")
 
 			const graceful = await Promise.race([
@@ -153,8 +158,8 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 				continue
 			}
 
-			deps.log(
-				`[launcher] ${child.spec.name} exceeded its stop grace, killing`,
+			deps.log.warn(
+				`${child.spec.name} exceeded its stop grace, killing`,
 			)
 			child.process.kill("SIGKILL")
 

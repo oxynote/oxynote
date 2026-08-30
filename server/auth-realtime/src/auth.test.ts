@@ -11,7 +11,13 @@ import {
 	type SecondaryStorageClient,
 } from "./auth.js"
 import { createDatabase, type Store } from "./db.js"
-import { stubCore, stubStore, testEnv, type StubCore } from "./test-helpers.js"
+import {
+	stubCore,
+	stubLog,
+	stubStore,
+	testEnv,
+	type StubCore,
+} from "./test-helpers.js"
 
 function stubRedis() {
 	return {
@@ -42,15 +48,17 @@ function buildAuth(
 ) {
 	const real = createDatabase("postgresql://u:p@localhost/d")
 	const core = overrides.core ?? stubCore()
+	const log = stubLog()
 	const auth = createAuth({
 		env: overrides.env ?? testEnv(),
 		store: overrides.store ?? stubStore(),
 		dialect: real.dialect,
 		redis: overrides.redis ?? stubRedis(),
 		core,
+		log,
 	})
 
-	return { auth, core }
+	return { auth, core, log }
 }
 
 describe("authMethods", () => {
@@ -431,6 +439,28 @@ describe("createAuth", () => {
 		expect(auth.options.basePath).toBe("/api/auth")
 	})
 
+	it("takes better-auth's level from the configured one", ({
+		expect,
+	}) => {
+		const { auth } = buildAuth({
+			env: testEnv({ logLevel: "ERROR" }),
+		})
+
+		expect(auth.options.logger.level).toBe("error")
+	})
+
+	it("writes better-auth's own output through the service logger", ({
+		expect,
+	}) => {
+		const { auth, log } = buildAuth()
+
+		auth.options.logger.log("warn", "trusted origin missing")
+
+		expect(log.warn.mock.calls).toEqual([
+			["better-auth: trusted origin missing"],
+		])
+	})
+
 	it("keeps secondary storage when a redis client is given", ({
 		expect,
 	}) => {
@@ -454,6 +484,7 @@ describe("createAuth", () => {
 			store: stubStore(),
 			dialect: real.dialect,
 			core: stubCore(),
+			log: stubLog(),
 		})
 
 		expect(auth.options.secondaryStorage).toBeUndefined()

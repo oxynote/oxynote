@@ -1,5 +1,7 @@
 import { z } from "zod"
 
+import type { LogLevel } from "./logging.js"
+
 export type SocialProviderName = "google" | "github" | "slack"
 
 export interface SocialProviderCredentials {
@@ -39,6 +41,7 @@ export interface Env {
 	maxOrganizations: number
 	maxOrganizationMembers: number
 	rateLimitEnabled: boolean
+	logLevel: LogLevel
 }
 
 // every URL here is one something dials or redirects a browser to, so the
@@ -152,6 +155,13 @@ const schema = z
 		// does not pass the original IP through — so it can be
 		// switched off and left to whatever sits in front.
 		OXYNOTE_AUTH_REALTIME_RATE_LIMIT_DISABLED: flag(false),
+		// the floor for everything this service writes, better-auth's
+		// and hocuspocus's output included. INFO matches core's own
+		// default; the production image lowers both to WARN.
+		OXYNOTE_AUTH_REALTIME_LOG_LEVEL: z
+			.enum(["DEBUG", "INFO", "WARN", "ERROR"])
+			.optional()
+			.transform((value) => value ?? "INFO"),
 		OXYNOTE_AUTH_REALTIME_BETTER_AUTH_GOOGLE_CLIENT_ID: z
 			.string()
 			.optional(),
@@ -272,5 +282,6 @@ export function loadEnv(source: Record<string, string | undefined>): Env {
 			values.OXYNOTE_AUTH_REALTIME_MAX_ORGANIZATION_MEMBERS,
 		rateLimitEnabled:
 			!values.OXYNOTE_AUTH_REALTIME_RATE_LIMIT_DISABLED,
+		logLevel: values.OXYNOTE_AUTH_REALTIME_LOG_LEVEL,
 	}
 }

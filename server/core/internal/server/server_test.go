@@ -299,40 +299,6 @@ func Test_Server_Listen(t *testing.T) {
 	assert.NotContains(t, content2(), "cannot terminate gracefully")
 }
 
-func Test_Server_Address(t *testing.T) {
-	t.Parallel()
-
-	cc := map[string]struct {
-		Addr   string
-		Result string
-	}{
-		"Default HTTP port is omitted": {
-			Addr:   ":80",
-			Result: "http://localhost",
-		},
-		"Custom port is included": {
-			Addr:   ":1234",
-			Result: "http://localhost:1234",
-		},
-		"Host-qualified address is used verbatim": {
-			Addr:   "127.0.0.1:8180",
-			Result: "http://127.0.0.1:8180",
-		},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			s := Server{
-				http: &http.Server{Addr: c.Addr},
-			}
-
-			assert.Equal(t, c.Result, s.Address())
-		})
-	}
-}
-
 func Test_Server_Close(t *testing.T) {
 	t.Parallel()
 

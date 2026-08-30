@@ -133,6 +133,7 @@ services:
 
   postgres:
     image: postgres:18.6-alpine
+    command: ["postgres", "-c", "log_checkpoints=off"]
     environment:
       POSTGRES_USER: devuser
       POSTGRES_PASSWORD: devpass
@@ -148,6 +149,7 @@ services:
     environment:
       - MEILI_MASTER_KEY=devmasterkey
       - MEILI_ENV=development
+      - MEILI_LOG_LEVEL=WARN
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:7700/health"]
       interval: 5s
@@ -158,5 +160,7 @@ services:
   # http port is published rather than proxied through caddy.
   mailpit:
     image: axllent/mailpit:v1.31.0
+    environment:
+      - MP_QUIET=true
     ports:
       - "18025:8025"
