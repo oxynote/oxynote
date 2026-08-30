@@ -138,7 +138,7 @@
 		"@vitest/eslint-plugin": "^1.6.27",
 		"@vue/test-utils": "^2.4.11",
 		"concurrently": "^10.0.5",
-		"electron": "43.4.1",
+		"electron": "44.0.0",
 		"eslint": "^10.9.1",
 		"eslint-config-prettier": "^10.1.8",
 		"happy-dom": "^20.11.6",
