@@ -235,9 +235,6 @@ func NewServer(
 
 // Listen starts listening for incoming connections.
 func (s *Server) Listen() {
-	// deliberately without the address: it is the one inside the
-	// container, which is not the one anything reaches the server on, so
-	// logging it only invites a wrong guess.
 	s.log.Info("listening")
 
 	err := s.http.ListenAndServe()

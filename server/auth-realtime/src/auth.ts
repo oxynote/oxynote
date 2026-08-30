@@ -39,9 +39,7 @@ export interface AuthDeps {
 	log: Logger
 }
 
-// better-auth's own level names, which are these lowercased. Passing it
-// the matching one lets it drop a message before formatting it, and it
-// resolves its extra "success" level to info before calling out.
+// better-auth resolves its extra "success" level to info before calling out.
 const betterAuthLevels: Record<LogLevel, "debug" | "info" | "warn" | "error"> =
 	{
 		DEBUG: "debug",
@@ -268,9 +266,6 @@ export function createAuth({
 		// redirect URIs below).
 		baseURL: env.authOrigin,
 		basePath: "/api/auth",
-		// better-auth prints its own lines otherwise, on a level of
-		// its own; routed here they obey OXYNOTE_AUTH_REALTIME_LOG_LEVEL
-		// like everything else the service writes.
 		logger: {
 			level: betterAuthLevels[env.logLevel],
 			log: (level, message) => {

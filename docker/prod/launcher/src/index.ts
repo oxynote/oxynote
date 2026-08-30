@@ -45,9 +45,8 @@ const crashReporter = createCrashReporter(
 // has to SIGKILL the whole container.
 const shutdownDeadlineMs = 55_000
 
-// one open stdout for the launcher's own logger and for the children's
-// relayed lines, so every record reaches the stream in write order rather
-// than through two buffers.
+// one open stdout for the launcher's records and the children's, so they
+// reach the stream in write order rather than through two buffers.
 const out = destination(1)
 const log = createLogger("launcher", out)
 
@@ -235,12 +234,8 @@ async function main(): Promise<void> {
 			readyUrl: `${webUrl}/login`,
 			readyTimeoutMs: 60_000,
 			stopGraceMs: 10_000,
-			// nitro's node-server entry announces the address it
-			// bound with a bare console.log and offers no way to
-			// silence it. That address is this container's
-			// loopback, not the one anyone reaches the app on, so
-			// it is dropped here and the launcher's own "up at"
-			// line — the public URL — is the one left standing.
+			// nitro announces its loopback bind with a bare
+			// console.log and offers no way to silence it.
 			mute: /^Listening on /,
 		},
 		{

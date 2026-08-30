@@ -49,7 +49,32 @@ the user asked you to leave up.
 
 The test: Every changed line should trace directly to the user's request.
 
-## 4. Goal-Driven Execution
+## 4. Comments Serve the Reader, Not the Requester
+
+**A comment explains the code. It never answers the prompt.**
+
+The reader has never seen the conversation that produced the change, and
+never will. Write only what they need to work on the code in front of them.
+
+- **Never comment a decision to whoever asked for it.** No "deliberately
+  without X", no "as requested", no note explaining why something is absent,
+  removed, or named the way it is. Code says what it does; a comment is for
+  what the code cannot say.
+- **Never narrate the change.** A comment describes the code as it stands,
+  not what it used to be or what moved where. That is what git is for.
+- **Keep it to a line or two.** A paragraph of justification means either
+  the code needs the work, or the comment is arguing with a reviewer who
+  will never read it.
+- Comment a genuine trap: a non-obvious invariant, an upstream bug, an
+  ordering that looks arbitrary and is not.
+
+The test: would this still make sense, and still earn its lines, to someone
+reading the file a year from now with no idea what was asked?
+
+The same applies to the prose in these CLAUDE.md files — write the rule, not
+the story of how it came up.
+
+## 5. Goal-Driven Execution
 
 **Define success criteria. Loop until verified.**
 
@@ -67,7 +92,7 @@ For multi-step tasks, state a brief plan:
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
-## 5. Keep This File in Sync
+## 6. Keep This File in Sync
 
 **If a request contradicts CLAUDE.md, surface it. If the rule changes, update the file.**
 
@@ -139,7 +164,7 @@ Component build/test/qa commands are listed in the nested CLAUDE.md files.
 
 ### Comments
 
-- Only comment **complex implementations, edge cases, and locations that would confuse a future reader**. Do not add comments that restate what the code does, and do not add comments just to acknowledge a prompt or show that you understood the task.
+- Only comment **complex implementations, edge cases, and locations that would confuse a future reader** — under the rules in "Comments Serve the Reader, Not the Requester" above, which apply to every language in the repository.
 - Always use `//` single-line comments. Never use `/* */` — not even for multi-line blocks.
 - **Never reference CLAUDE.md or any other agent-instruction file from a comment.** Comments stand alone for any reader, and CLAUDE.md is agent-facing documentation, not part of the codebase's own narrative. Where a comment would say "see CLAUDE.md", inline the actual rule or rationale instead. Links to real project docs (READMEs, upstream issues, specs) stay fine.
 - Wrap comments at 80 characters. Continuation lines also start with `// `.

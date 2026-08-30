@@ -336,10 +336,8 @@ export function createHocuspocus({
 	...hooks
 }: DocumentHookDeps & { log: ServiceLogger }): Hocuspocus {
 	return new Hocuspocus({
-		// the extension writes a line per connection, load, change and
-		// persist. That is a trace of the traffic rather than
-		// something an operator needs to see, so it goes out at DEBUG
-		// instead of straight to stdout.
+		// a line per connection, load, change and persist: a traffic
+		// trace, so DEBUG.
 		extensions: [
 			new Logger({
 				log: (...args: unknown[]) => {

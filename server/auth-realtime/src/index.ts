@@ -115,9 +115,6 @@ const server = serve(
 			port: info.port,
 		})
 
-		// deliberately without the address: this is the port inside
-		// the container, which is not the one anything reaches the
-		// service on, and printing it only invites a wrong guess.
 		log.info("listening")
 	},
 )

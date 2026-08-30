@@ -155,9 +155,7 @@ const schema = z
 		// does not pass the original IP through — so it can be
 		// switched off and left to whatever sits in front.
 		OXYNOTE_AUTH_REALTIME_RATE_LIMIT_DISABLED: flag(false),
-		// the floor for everything this service writes, better-auth's
-		// and hocuspocus's output included. INFO matches core's own
-		// default; the production image lowers both to WARN.
+		// the floor for better-auth's and hocuspocus's output too.
 		OXYNOTE_AUTH_REALTIME_LOG_LEVEL: z
 			.enum(["DEBUG", "INFO", "WARN", "ERROR"])
 			.optional()

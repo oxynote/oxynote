@@ -59,8 +59,8 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 	let stopping = false
 
 	function attachOutput(spec: ChildSpec, child: ChildProcess): void {
-		// a splitter per stream, never one shared: a line is only ever
-		// whole within the stream it arrived on.
+		// a splitter per stream: a line is only whole within the
+		// stream it arrived on.
 		for (const stream of [child.stdout, child.stderr]) {
 			if (!stream) {
 				continue

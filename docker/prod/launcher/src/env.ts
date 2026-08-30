@@ -618,9 +618,8 @@ export function loadConfig(source: Record<string, string | undefined>): Config {
 			values.OXYNOTE_MAX_DOCUMENT_HISTORY_ENTRIES ?? "",
 		documentHistoryRetention:
 			values.OXYNOTE_DOCUMENT_HISTORY_RETENTION ?? "",
-		// core defaults to INFO on its own, which in this image means
-		// every request the front door serves ends up in `docker logs`.
-		// An operator wants the exceptions, not the traffic.
+		// the components default to INFO on their own, which puts every
+		// served request in `docker logs`.
 		logLevel: values.OXYNOTE_LOG_LEVEL ?? "WARN",
 		termsOfServiceUrl: values.OXYNOTE_TERMS_OF_SERVICE_URL ?? "",
 		privacyPolicyUrl: values.OXYNOTE_PRIVACY_POLICY_URL ?? "",

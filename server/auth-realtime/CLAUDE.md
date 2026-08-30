@@ -100,31 +100,21 @@ Rules that follow, and that a change must not erode:
   seeded, closing a direct connection). A `catch` that also builds a response
   stays written out, because neither helper can express that.
 
-**Every line the service writes goes through
-[logging.ts](src/logging.ts)**, which is **pino**, at the level
-`OXYNOTE_AUTH_REALTIME_LOG_LEVEL` sets (`DEBUG`/`INFO`/`WARN`/`ERROR`, INFO
-by default — the production image lowers it to WARN). It is configured to
-emit what core's slog handler emits — an ISO `time`, an uppercase `level`,
-the message under `msg`, and pino's default `pid`/`hostname` base dropped —
-so a deployment's two services produce one log format rather than two.
+**Every line goes through [logging.ts](src/logging.ts)** — pino, at
+`OXYNOTE_AUTH_REALTIME_LOG_LEVEL` (`DEBUG`/`INFO`/`WARN`/`ERROR`, INFO by
+default; the production image lowers it to WARN). Its records match core's
+slog output, so both services in a deployment log alike. That includes the
+two libraries that would otherwise print on their own terms: better-auth
+takes the matching level and a `log` callback, and hocuspocus's Logger
+extension is routed to DEBUG.
 
-That includes the two libraries that would otherwise print on their own
-terms: better-auth is given the matching level and a `log` callback, and
-hocuspocus's Logger extension is routed to DEBUG, since a line per
-connection, load, change and persist is a trace of the traffic rather than
-something an operator needs.
+`createLogger` takes its destination as an argument — writing to stdout is a
+side effect, so the sink belongs to `index.ts`, and a test passes a stream
+it reads back. `Logger` is a four-method interface rather than pino's own
+type, so a suite hands over four `vi.fn()`s.
 
-`createLogger` takes its destination as an argument because writing to
-stdout is a side effect, so the sink belongs to `index.ts` like every other
-one — it passes pino's `destination(1)`, and a test passes a stream it reads
-back. `Logger` stays a four-method interface rather than pino's own type:
-the service logs messages at levels and nothing more, and a narrow port is
-what lets a suite hand over four `vi.fn()`s.
-
-**Nothing logs an address or a port.** The listen line says `listening` and
-no more: inside a container the bound port is not the one anything reaches
-the service on, so printing it only invites a wrong guess. Core's listen log
-says the same thing for the same reason.
+**Nothing logs an address or a port**, here or in core: a container's bound
+port is not the one anything reaches the service on.
 
 `src/sentry.ts` is the exception: node loads it through `--import` before the
 app graph exists, so it reads `process.env` directly and must not import
