@@ -35,8 +35,16 @@ const GOOGLE = {
 	clientSecret: "google-secret",
 }
 
-// a real auth instance, built against a lazy pg pool that is never dialled.
-// Its `options` are what better-auth would invoke at runtime, so the
+// better-auth starts its context eagerly, and the mcp plugin seeds its
+// resource row from there — the one thing in this file that dials the
+// database. No test awaits that context, so its connection failure would
+// surface as an unhandled rejection in whichever file was running.
+function dropContextInit(auth: { $context: Promise<unknown> }): void {
+	void auth.$context.catch(() => undefined)
+}
+
+// a real auth instance, built against a pg pool that only ever fails to
+// dial. Its `options` are what better-auth would invoke at runtime, so the
 // callbacks are asserted exactly as wired.
 function buildAuth(
 	overrides: {
@@ -57,6 +65,8 @@ function buildAuth(
 		core,
 		log,
 	})
+
+	dropContextInit(auth)
 
 	return { auth, core, log }
 }
@@ -486,6 +496,8 @@ describe("createAuth", () => {
 			core: stubCore(),
 			log: stubLog(),
 		})
+
+		dropContextInit(auth)
 
 		expect(auth.options.secondaryStorage).toBeUndefined()
 		expect(auth.options.session.storeSessionInDatabase).toBe(true)
