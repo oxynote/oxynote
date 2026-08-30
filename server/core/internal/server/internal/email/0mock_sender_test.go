@@ -32,9 +32,6 @@ var _ Sender = &SenderMock{}
 //			SendSignupVerificationFunc: func(eml string, link string)  {
 //				panic("mock out the SendSignupVerification method")
 //			},
-//			SendUserCreationFunc: func(eml string)  {
-//				panic("mock out the SendUserCreation method")
-//			},
 //			SendUserDeletionConfirmationFunc: func(eml string, link string)  {
 //				panic("mock out the SendUserDeletionConfirmation method")
 //			},
@@ -59,9 +56,6 @@ type SenderMock struct {
 
 	// SendSignupVerificationFunc mocks the SendSignupVerification method.
 	SendSignupVerificationFunc func(eml string, link string)
-
-	// SendUserCreationFunc mocks the SendUserCreation method.
-	SendUserCreationFunc func(eml string)
 
 	// SendUserDeletionConfirmationFunc mocks the SendUserDeletionConfirmation method.
 	SendUserDeletionConfirmationFunc func(eml string, link string)
@@ -105,11 +99,6 @@ type SenderMock struct {
 			// Link is the link argument value.
 			Link string
 		}
-		// SendUserCreation holds details about calls to the SendUserCreation method.
-		SendUserCreation []struct {
-			// Eml is the eml argument value.
-			Eml string
-		}
 		// SendUserDeletionConfirmation holds details about calls to the SendUserDeletionConfirmation method.
 		SendUserDeletionConfirmation []struct {
 			// Eml is the eml argument value.
@@ -123,7 +112,6 @@ type SenderMock struct {
 	lockSendOrganizationInvitation   sync.RWMutex
 	lockSendPasswordReset            sync.RWMutex
 	lockSendSignupVerification       sync.RWMutex
-	lockSendUserCreation             sync.RWMutex
 	lockSendUserDeletionConfirmation sync.RWMutex
 }
 
@@ -308,38 +296,6 @@ func (mock *SenderMock) SendSignupVerificationCalls() []struct {
 	mock.lockSendSignupVerification.RLock()
 	calls = mock.calls.SendSignupVerification
 	mock.lockSendSignupVerification.RUnlock()
-	return calls
-}
-
-// SendUserCreation calls SendUserCreationFunc.
-func (mock *SenderMock) SendUserCreation(eml string) {
-	callInfo := struct {
-		Eml string
-	}{
-		Eml: eml,
-	}
-	mock.lockSendUserCreation.Lock()
-	mock.calls.SendUserCreation = append(mock.calls.SendUserCreation, callInfo)
-	mock.lockSendUserCreation.Unlock()
-	if mock.SendUserCreationFunc == nil {
-		return
-	}
-	mock.SendUserCreationFunc(eml)
-}
-
-// SendUserCreationCalls gets all the calls that were made to SendUserCreation.
-// Check the length with:
-//
-//	len(mockedSender.SendUserCreationCalls())
-func (mock *SenderMock) SendUserCreationCalls() []struct {
-	Eml string
-} {
-	var calls []struct {
-		Eml string
-	}
-	mock.lockSendUserCreation.RLock()
-	calls = mock.calls.SendUserCreation
-	mock.lockSendUserCreation.RUnlock()
 	return calls
 }
 

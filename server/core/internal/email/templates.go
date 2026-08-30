@@ -22,10 +22,6 @@ const (
 	// template.
 	TemplateUserDeletion Template = "user_deletion"
 
-	// TemplateUserCreation specifies the welcome template for newly
-	// registered users.
-	TemplateUserCreation Template = "user_creation"
-
 	// TemplatePasswordReset specifies the password reset template.
 	TemplatePasswordReset Template = "password_reset"
 

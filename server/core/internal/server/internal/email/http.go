@@ -60,8 +60,6 @@ func (h *Handler) SendEmail(w http.ResponseWriter, r *http.Request) {
 		h.sender.SendOrganizationInvitation(req.Data.Email, req.Data.Organization, req.Data.Link)
 	case emailCore.TemplateUserDeletion:
 		h.sender.SendUserDeletionConfirmation(req.Data.Email, req.Data.Link)
-	case emailCore.TemplateUserCreation:
-		h.sender.SendUserCreation(req.Data.Email)
 	default:
 		httpserver.RespondError(h.log, w, ErrInvalidTemplate)
 		return
@@ -96,8 +94,4 @@ type Sender interface {
 	// SendUserDeletionConfirmation should send a user deletion
 	// confirmation email.
 	SendUserDeletionConfirmation(eml, link string)
-
-	// SendUserCreation should send a welcome email to a newly
-	// registered user.
-	SendUserCreation(eml string)
 }

@@ -10,11 +10,10 @@ import (
 
 func Test_render(t *testing.T) {
 	cc := map[string]struct {
-		Template   Template
-		Args       map[string]string
-		Contains   []string
-		SourceFile string
-		Err        error
+		Template Template
+		Args     map[string]string
+		Contains []string
+		Err      error
 	}{
 		"Error returned by unknown template": {
 			Template: Template("nonexistent"),
@@ -59,13 +58,6 @@ func Test_render(t *testing.T) {
 				"Reset your password",
 			},
 		},
-		"User creation matches source byte-for-byte": {
-			Template: TemplateUserCreation,
-			// no placeholders, so the output must equal the embedded
-			// source file exactly, proving rendering does not alter
-			// the template (e.g. by stripping comments).
-			SourceFile: "templates/user_creation.html",
-		},
 		"Organization invitation escapes args": {
 			Template: TemplateOrganizationInvitation,
 			Args: map[string]string{
@@ -104,13 +96,6 @@ func Test_render(t *testing.T) {
 
 			for _, want := range c.Contains {
 				assert.Contains(t, res, want)
-			}
-
-			if c.SourceFile != "" {
-				src, rerr := _templateFS.ReadFile(c.SourceFile)
-				require.NoError(t, rerr)
-
-				assert.Equal(t, string(src), res)
 			}
 		})
 	}

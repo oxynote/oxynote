@@ -1,7 +1,7 @@
 import axios from "axios"
 import type { AxiosHeaders } from "axios"
 
-// the four emails core renders on this service's behalf. Naming them here
+// the six emails core renders on this service's behalf. Naming them here
 // keeps a typo in a template name a compile error rather than a silently
 // dropped email.
 export type EmailTemplate =
@@ -11,7 +11,6 @@ export type EmailTemplate =
 	| "signup_verification"
 	| "organization_invitation"
 	| "user_deletion"
-	| "user_creation"
 
 export interface BranchSummary {
 	branchId: string

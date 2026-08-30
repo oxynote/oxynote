@@ -280,16 +280,6 @@ func (s *Sender) SendUserDeletionConfirmation(eml, link string) {
 	)
 }
 
-// SendUserCreation sends a welcome email to a newly registered user.
-func (s *Sender) SendUserCreation(eml string) {
-	s.send(
-		eml,
-		"Welcome to Oxynote",
-		TemplateUserCreation,
-		nil,
-	)
-}
-
 // SendPasswordReset sends an email with a password reset link to the
 // specified email address.
 func (s *Sender) SendPasswordReset(eml, link string) {

@@ -665,20 +665,6 @@ export function createAuth({ env, store, dialect, redis, core }: AuthDeps) {
 			),
 		},
 		databaseHooks: {
-			user: {
-				create: {
-					after: async (user) => {
-						await reported(() =>
-							core.sendEmail(
-								"user_creation",
-								{
-									email: user.email,
-								},
-							),
-						)
-					},
-				},
-			},
 			session: {
 				create: {
 					before: async (session) =>

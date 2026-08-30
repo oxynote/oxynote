@@ -53,7 +53,6 @@ func Test_Handler_SendEmail(t *testing.T) {
 			assert.Empty(t, sender.SendSignupVerificationCalls())
 			assert.Empty(t, sender.SendOrganizationInvitationCalls())
 			assert.Empty(t, sender.SendUserDeletionConfirmationCalls())
-			assert.Empty(t, sender.SendUserCreationCalls())
 		}
 	}
 
@@ -142,19 +141,6 @@ func Test_Handler_SendEmail(t *testing.T) {
 		}
 	}
 
-	wasSendUserCreationCalled := func(count int, eml string) check {
-		return func(t *testing.T, sender *SenderMock, _ *httptest.ResponseRecorder) {
-			ff := sender.SendUserCreationCalls()
-			require.Len(t, ff, count)
-
-			if count == 0 {
-				return
-			}
-
-			assert.Equal(t, eml, ff[0].Eml)
-		}
-	}
-
 	cc := map[string]struct {
 		Body   string
 		Checks []check
@@ -215,11 +201,11 @@ func Test_Handler_SendEmail(t *testing.T) {
 				wasSendUserDeletionConfirmationCalled(1, "user@example.com", "https://example.com/delete"),
 			),
 		},
-		"User creation sent": {
+		"User creation rejected": {
 			Body: `{"template":"user_creation","data":{"email":"user@example.com"}}`,
 			Checks: checks(
-				hasResp(http.StatusNoContent, ""),
-				wasSendUserCreationCalled(1, "user@example.com"),
+				hasResp(http.StatusBadRequest, `{"code":"email.invalid_template","message":"Invalid email template."}`),
+				wasNoSendCalled(),
 			),
 		},
 	}

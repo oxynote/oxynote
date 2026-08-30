@@ -272,22 +272,6 @@ func Test_Sender_SendUserDeletionConfirmation(t *testing.T) {
 	assert.Contains(t, msgBody(t, msg), "https://example.com/delete")
 }
 
-func Test_Sender_SendUserCreation(t *testing.T) {
-	t.Parallel()
-
-	client := &clientMock{}
-	s := stubSender(client)
-
-	s.SendUserCreation("user@example.com")
-
-	s.supv.Wait()
-
-	msg := sentMsg(t, client)
-	assert.Equal(t, "user@example.com", msgTo(t, msg))
-	assert.Equal(t, []string{"Welcome to Oxynote"}, msg.GetGenHeader(mail.HeaderSubject))
-	assert.NotEmpty(t, msgBody(t, msg))
-}
-
 func Test_Sender_SendPasswordReset(t *testing.T) {
 	t.Parallel()
 

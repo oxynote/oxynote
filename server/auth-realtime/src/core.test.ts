@@ -48,7 +48,7 @@ describe("createCoreClient", () => {
 
 			await expect(
 				createCoreClient(BASE_URL, http).sendEmail(
-					"user_creation",
+					"password_reset",
 					{ email: "a@b.c" },
 				),
 			).rejects.toBe(failure)

@@ -623,19 +623,6 @@ describe("createAuth", () => {
 			)
 		})
 
-		it("welcomes a newly created user", async ({ expect }) => {
-			const { auth, core } = buildAuth()
-
-			await auth.options.databaseHooks.user.create.after({
-				email: "a@b.c",
-			} as never)
-
-			expect(core.sendEmail).toHaveBeenCalledWith(
-				"user_creation",
-				{ email: "a@b.c" },
-			)
-		})
-
 		it("propagates a failed send so better-auth fails the request", async ({
 			expect,
 		}) => {
