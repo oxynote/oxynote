@@ -4,22 +4,15 @@ name: QA
 # instead of the dev stack's four containers, plus the trust-boundary tests
 # that only mean something there.
 #
-# **It runs on tags, not on branches.** The dev suite is the one that
-# guards day-to-day work; this one answers a different question — does the
-# artifact we are about to publish actually serve the product, and is its
-# trust boundary intact — and that question is only worth its minutes when
-# something is being released. Building the image means building nuxt,
-# auth-realtime and the launcher from scratch.
-#
-# The release workflow itself does not exist yet. When it does, this should
-# become a gate it depends on rather than a second run triggered by the same
-# tag.
+# **It has no trigger of its own beyond a manual run.** The dev suite is
+# what guards day-to-day work; this one answers a different question — does
+# the artifact about to be published actually serve the product, and is its
+# trust boundary intact — which is only worth its minutes when something is
+# being released. release.yml calls it on a tag and refuses to publish
+# unless it passes, so a tag trigger here would only run it twice.
 on:
-  push:
-    tags:
-      - "v*"
-  # until there is a tag to push, and for re-verifying an image without
-  # cutting a release, this is the only way to reach the suite from CI.
+  workflow_call:
+  # for re-verifying an image without cutting a release.
   workflow_dispatch:
 
 # unlike the branch workflows, a superseded run here is not stale work: a

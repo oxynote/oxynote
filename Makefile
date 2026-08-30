@@ -17,6 +17,10 @@ E2E_PROD_COMPOSE := docker compose -f e2e/docker-compose.prod.yaml
 CORE_IMAGE_TAG ?= dev
 PROD_IMAGE_TAG ?= prod
 
+# the version a published image is tagged with, without a leading v. Set
+# only by the release workflow; prod-publish refuses to run without it.
+RELEASE_VERSION ?=
+
 QUIET := scripts/run-quietly.sh
 
 # backend containers + web dev server on the host with hot reload. Ctrl-c
@@ -139,10 +143,27 @@ build-go:
 # `docker build` is not supported.
 .PHONY: prod-build
 prod-build:
-	@$(QUIET) "building the core binary" sh -c 'cd server/core && make build'
+	@$(QUIET) "building the core binary" sh -c 'cd server/core && make build-binary-snapshot'
 	mkdir -p docker/prod/.build
 	cp server/core/bin/oxynote-core docker/prod/.build/oxynote-core
 	docker build --platform linux/amd64 $(PROD_BUILD_EXTRA) -f docker/prod/Dockerfile -t ghcr.io/oxynote/oxynote:$(PROD_IMAGE_TAG) .
+
+# the published image: the same Dockerfile as prod-build, but core's binary
+# is built from the tag instead of as a snapshot — a snapshot would report
+# itself as version dev in a dev environment — and the result is pushed as
+# latest and the version rather than loaded locally. These are the only two
+# tags the registry gets.
+.PHONY: prod-publish
+prod-publish:
+	@test -n "$(RELEASE_VERSION)" || { echo "RELEASE_VERSION is required, e.g. 1.2.3"; exit 1; }
+	@$(QUIET) "building the core binary" sh -c 'cd server/core && make build-binary'
+	mkdir -p docker/prod/.build
+	cp server/core/bin/oxynote-core docker/prod/.build/oxynote-core
+	docker buildx build --platform linux/amd64 $(PROD_BUILD_EXTRA) \
+		-f docker/prod/Dockerfile \
+		-t ghcr.io/oxynote/oxynote:latest \
+		-t ghcr.io/oxynote/oxynote:$(RELEASE_VERSION) \
+		--push .
 
 # the example compose against the locally built image
 .PHONY: prod-run

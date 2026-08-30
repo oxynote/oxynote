@@ -109,6 +109,8 @@ make check-lint # the same gates, verification only
 make prod-build # goreleaser core binary + the all-in-one prod image
 make prod-run   # run the example prod compose against the local image
 make prod-stop  # stop it
+# release-only, run by .github/workflows/release.yml on a tag:
+# make prod-publish RELEASE_VERSION=1.2.3  -> pushes :latest and :1.2.3
 
 make e2e-dev             # one-shot: build, run playwright, tear the dev stack down
 make e2e-dev-stack-build # build that stack's images, then iterate with `pnpm test:dev`

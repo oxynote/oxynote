@@ -610,26 +610,36 @@ alone reuses the whole image instead of rebuilding it.
 
 **The prod suite is
 [.github/workflows/qa-e2e-prod.yml](../.github/workflows/qa-e2e-prod.yml),
-and it runs on tags, not on branches.** No push and no pull request
-triggers it; `workflow_dispatch` is there so the suite is reachable before
-the first tag exists and for re-verifying an image without cutting a
-release. The dev suite is what guards day-to-day work, and this one answers
-a different question — does the artifact about to be published serve the
-product, and is its trust boundary intact — which is only worth its minutes
-when something is being released, because building the image means building
-nuxt, auth-realtime and the launcher from scratch.
-`cancel-in-progress` is **off** here, the opposite of every branch
-workflow: a superseded branch run is answering about a commit that is no
-longer the branch, but a tag is verified once and its answer is wanted.
+and it has no trigger of its own.** No push, no pull request, no tag:
+[release.yml](../.github/workflows/release.yml) calls it, and refuses to
+publish the image unless it passes. `workflow_dispatch` remains for
+re-verifying an image without cutting a release. Where the dev suite guards
+day-to-day work, the prod suite answers a different question — does the
+artifact about to be published serve the product, and is its trust boundary
+intact — which is worth its minutes exactly when something is being
+released. Its cache reaches the build through `PROD_BUILD_EXTRA` rather
+than a compose override, because compose builds nothing in the prod stack:
+the image comes from `docker build` in the Makefile. That is also why
+[docker-compose.dev.ci.yaml](docker-compose.dev.ci.yaml) carries `dev` in
+its name with no prod counterpart to pair with.
 
-The release workflow does not exist yet. When it does, this should become a
-gate it depends on rather than a second run triggered by the same tag.
+**Being a release gate is what `workflow_call` is for.** A job cannot
+depend on a separate workflow's result, so release.yml is the one place
+that runs the gates and holds the publish behind `needs` — and every
+workflow it calls declares `workflow_call` alongside its own triggers. Path
+filters do not apply to a called workflow, so each one runs in full on a
+tag regardless of what that tag touched, which is what a release wants.
+Nothing is reused from an earlier run of the same commit either: a called
+workflow always executes, so a tag re-runs every gate against the tagged
+tree.
 
-Its cache reaches the build through `PROD_BUILD_EXTRA` rather than a
-compose override, because compose builds nothing in the prod stack — the
-image comes from `docker build` in the Makefile. That is also why
-[docker-compose.dev.ci.yaml](docker-compose.dev.ci.yaml) carries the `dev`
-in its name with no prod counterpart to pair with.
+**The dev suite is deliberately not a gate**, and `qa-e2e-dev.yml` is
+therefore the one QA workflow that does not declare `workflow_call`. It
+runs the same flow tests as the prod suite, against a different assembly of
+the same product, while the prod suite runs them against the artifact
+actually being published — so gating on both would spend a nuxt image build
+and a browser run re-answering a question already answered about the thing
+that ships.
 
 ## Not covered yet
 

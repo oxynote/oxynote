@@ -1,6 +1,9 @@
 name: QA
 
 on:
+  # the release workflow runs every gate on a tag and publishes only
+  # once they all pass, so each one has to be callable.
+  workflow_call:
   push:
     branches:
       - main
