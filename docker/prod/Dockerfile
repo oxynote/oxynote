@@ -14,7 +14,7 @@
 # sneaking into the output.
 
 # mirrors web/Dockerfile.dev (the dev/e2e image); change them together.
-FROM node:24.19.0-bookworm-slim@sha256:a9f5f7c91a432850b2a8a7797adf5eadb6c733ceed61167806cee7ea7fbc29df AS web-builder
+FROM node:24.20.0-bookworm-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e AS web-builder
 
 RUN npm install -g pnpm
 
@@ -42,7 +42,7 @@ RUN pnpm install --frozen-lockfile \
 # the runtime ships the package's own single-file esbuild bundle (see
 # build:bundle and src/bundle.ts — the same artifact Dockerfile.dev and
 # the e2e stack run) instead of the ~83MB production node_modules tree.
-FROM node:24.19.0-bookworm-slim@sha256:a9f5f7c91a432850b2a8a7797adf5eadb6c733ceed61167806cee7ea7fbc29df AS auth-realtime-builder
+FROM node:24.20.0-bookworm-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e AS auth-realtime-builder
 
 RUN npm install -g pnpm
 
@@ -58,7 +58,7 @@ COPY server/auth-realtime/src ./src
 RUN pnpm install --frozen-lockfile && pnpm run check-types && pnpm run build:bundle \
 	&& node -e "import('/server/dist/bundle.mjs').then(() => { console.error('bundle skipped env validation'); process.exit(1) }, (err) => { if (!String(err).includes('invalid environment')) { console.error(err); process.exit(1) } })"
 
-FROM node:24.19.0-bookworm-slim@sha256:a9f5f7c91a432850b2a8a7797adf5eadb6c733ceed61167806cee7ea7fbc29df AS launcher-builder
+FROM node:24.20.0-bookworm-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e AS launcher-builder
 
 RUN npm install -g pnpm
 
@@ -85,7 +85,7 @@ RUN pnpm run check-types && pnpm run build:bundle
 # licenses ship in the final image: caddy's Apache-2.0 rides in its release
 # tarball, tini's MIT is fetched from the same tag as its binary. The name
 # "Caddy" is trademarked; the binary is bundled unmodified and unrebranded.
-FROM node:24.19.0-bookworm-slim@sha256:a9f5f7c91a432850b2a8a7797adf5eadb6c733ceed61167806cee7ea7fbc29df AS fetch
+FROM node:24.20.0-bookworm-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e AS fetch
 
 ARG CADDY_VERSION=2.11.4
 ARG CADDY_SHA512=8220d1f013b6f27510247b2360c9e0ca9f018feebd82515f07635318b34ff9777ccc8fd0b6e6f2486ce3a33fe389fbb7db12d05baa474f4587509fb4f5ebf1c9
@@ -109,7 +109,7 @@ RUN curl -fsSLo caddy.tar.gz "https://github.com/caddyserver/caddy/releases/down
 # system libraries, roughly half the size of the official node binary.
 # The base is digest-pinned; nodejs then tracks alpine 3.23's package
 # repo, which only ships security bumps within the branch.
-FROM alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40
+FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 
 # the exact pins make the build fail — instead of silently shifting —
 # when alpine's v3.23 branch rotates a package (they keep only the
