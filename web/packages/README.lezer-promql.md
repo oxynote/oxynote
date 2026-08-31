@@ -26,6 +26,11 @@ mv web/ui/module/lezer-promql/* .
 rm -rf web .git
 ```
 
+### Keep the license files
+`LICENSE` (Apache-2.0) and `NOTICE` are redistributed with the grammar and
+must survive a re-sync. `NOTICE` also lists the changes below — update it
+when they change.
+
 ### In package.json, rename the package:
 `"name": "@oxynote/lezer-promql",`
 

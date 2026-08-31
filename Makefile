@@ -154,7 +154,8 @@ prod-build:
 # is built from the tag instead of as a snapshot — a snapshot would report
 # itself as version dev in a dev environment — and the result is pushed as
 # latest and the version rather than loaded locally. These are the only two
-# tags the registry gets.
+# tags the registry gets. The version and commit also become OCI labels,
+# which is what links the package to this repository on ghcr.
 .PHONY: prod-publish
 prod-publish:
 	@test -n "$(RELEASE_VERSION)" || { echo "RELEASE_VERSION is required, e.g. 1.2.3"; exit 1; }
@@ -163,6 +164,8 @@ prod-publish:
 	cp server/core/bin/oxynote-core docker/prod/.build/oxynote-core
 	docker buildx build --platform linux/amd64 $(PROD_BUILD_EXTRA) \
 		-f docker/prod/Dockerfile \
+		--build-arg IMAGE_VERSION=$(RELEASE_VERSION) \
+		--build-arg IMAGE_REVISION=$$(git rev-parse HEAD) \
 		-t ghcr.io/oxynote/oxynote:latest \
 		-t ghcr.io/oxynote/oxynote:$(RELEASE_VERSION) \
 		--push .

@@ -7,11 +7,26 @@
 // never alive, and without this the operator sees only a container that
 // exited.
 
+// the categories the SDK collects, as passed below. Spelled out here
+// rather than imported so the injected client stays a structural type a
+// test can satisfy with three functions.
+export interface DataCollection {
+	userInfo: boolean
+	cookies: boolean
+	httpHeaders: { request: boolean; response: boolean }
+	httpBodies: never[]
+	urlQueryParams: boolean
+	genAI: { inputs: boolean; outputs: boolean }
+	databaseQueryData: boolean
+	stackFrameVariables: boolean
+}
+
 export interface SentryClient {
 	init(options: {
 		dsn: string
 		environment: string
 		tracesSampleRate: number
+		dataCollection: DataCollection
 	}): void
 	captureException(error: unknown): void
 	flush(timeout: number): Promise<boolean>
@@ -52,6 +67,20 @@ export function createCrashReporter(
 	client.init({
 		dsn,
 		environment: "production",
+		// every category the SDK may attach, stated in full: an
+		// omitted field takes a default that collects. Errors and
+		// stack traces only, since anything else here would carry
+		// document content.
+		dataCollection: {
+			userInfo: false,
+			cookies: false,
+			httpHeaders: { request: false, response: false },
+			httpBodies: [],
+			urlQueryParams: false,
+			genAI: { inputs: false, outputs: false },
+			databaseQueryData: false,
+			stackFrameVariables: false,
+		},
 		// tracing stays off, as in auth-realtime: the bundle folds
 		// sentry in, which loses the require hooks tracing relies on,
 		// and error capture is the only thing this process wants.

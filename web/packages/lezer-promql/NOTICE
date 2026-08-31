@@ -1,0 +1,24 @@
+The Prometheus systems and service monitoring server
+Copyright 2012-2015 The Prometheus Authors
+
+This product includes software developed at
+SoundCloud Ltd. (https://soundcloud.com/).
+
+The full upstream notice, covering components not included here, is at
+https://github.com/prometheus/prometheus/blob/main/NOTICE
+
+---
+
+This package is a modified copy of the lezer-promql grammar from
+https://github.com/prometheus/prometheus/tree/main/web/ui/module/lezer-promql
+distributed under the Apache License, Version 2.0.
+
+Changes from upstream, published as @oxynote/lezer-promql:
+
+  - src/promql.grammar: added the DynamicDurationPlaceholder token and
+    accepted it as a number, so Grafana-style placeholders ($__interval,
+    $__range, $__rate_interval) parse as durations.
+  - src/highlight.js: styled DynamicDurationPlaceholder as a number.
+  - package.json: renamed the package.
+
+See packages/README.lezer-promql.md for the upstream sync procedure.

@@ -102,18 +102,26 @@ GitHub/Slack install-state keys) are generated on first boot and stored under
 ## Error reporting
 
 Official images carry Sentry DSNs baked in at build time, so crashes in
-self-hosted deployments can reach the Oxynote team. DSNs are write-only
-ingest addresses — they expose nothing about your instance. Set
-`OXYNOTE_CRASH_REPORTING_DISABLED=true` to switch reporting off entirely.
-Locally built images carry no DSNs and report nothing.
+self-hosted deployments can reach the Oxynote team. A DSN is a write-only
+ingest address: it lets the image send events, never read them, and nothing
+can be queried through it.
+
+What an event carries is the crash itself — the error, its stack trace, the
+component and release, the container's hostname, and the request path that
+failed. Every component runs with personal-data collection off, so no
+cookies, request bodies or client IPs are attached, and no document content
+is sent. An error message can still quote what it was working on, so treat the
+reports as diagnostic data leaving your deployment, and switch them off with
+`OXYNOTE_CRASH_REPORTING_DISABLED=true` if that is not acceptable. Locally
+built images carry no DSNs and report nothing.
 
 ## Bundled software
 
 The image bundles [the Caddy web server](https://github.com/caddyserver/caddy)
-unmodified (Apache-2.0; its license ships at `/oxynote/licenses/caddy/LICENSE`)
-and [tini](https://github.com/krallin/tini) (MIT) as the init process. Both
-are downloaded at pinned versions and checksum-verified during the image
-build. Node.js comes from the pinned Alpine base (the v24 line, with full
+unmodified (Apache-2.0) and [tini](https://github.com/krallin/tini) (MIT) as
+the init process. Both are downloaded at pinned versions and
+checksum-verified during the image build, and both licenses ship under
+`/oxynote/licenses/`. Node.js comes from the pinned Alpine base (the v24 line, with full
 ICU locale data).
 
 Currently the image is built for `linux/amd64`.

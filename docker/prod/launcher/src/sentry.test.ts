@@ -32,7 +32,7 @@ function harness(overrides: { flush?: () => Promise<boolean> } = {}): {
 }
 
 describe("createCrashReporter", () => {
-	it("initializes sentry with the baked dsn and no tracing", ({
+	it("initializes sentry with the baked dsn, no tracing and no data collection", ({
 		expect,
 	}) => {
 		const h = harness()
@@ -47,6 +47,19 @@ describe("createCrashReporter", () => {
 			dsn: "https://key@sentry.test/1",
 			environment: "production",
 			tracesSampleRate: 0,
+			dataCollection: {
+				userInfo: false,
+				cookies: false,
+				httpHeaders: {
+					request: false,
+					response: false,
+				},
+				httpBodies: [],
+				urlQueryParams: false,
+				genAI: { inputs: false, outputs: false },
+				databaseQueryData: false,
+				stackFrameVariables: false,
+			},
 		})
 	})
 

@@ -63,6 +63,29 @@ func Setup(cfg Config) (func(), error) {
 		Dsn:         cfg.DSN,
 		Release:     cfg.Release,
 		Environment: cfg.Environment,
+		// every category the SDK may attach, stated in full: an
+		// omitted field takes a default that collects. Errors and
+		// stack traces only, since anything else here would carry
+		// document content. The same set is spelled out in the three
+		// node services.
+		DataCollection: &sentry.DataCollection{
+			UserInfo: sentry.Set(false),
+			Cookies: &sentry.KeyValueCollectionBehavior{
+				Mode: sentry.CollectionOff,
+			},
+			HTTPHeaders: &sentry.HeaderCollectionConfig{
+				Request: &sentry.KeyValueCollectionBehavior{
+					Mode: sentry.CollectionOff,
+				},
+				Response: &sentry.KeyValueCollectionBehavior{
+					Mode: sentry.CollectionOff,
+				},
+			},
+			HTTPBodies: []sentry.BodyType{},
+			QueryParams: &sentry.KeyValueCollectionBehavior{
+				Mode: sentry.CollectionOff,
+			},
+		},
 		// nothing in this codebase emits Sentry Logs, so keep the
 		// default-on telemetry machinery switched off.
 		DisableLogs: true,

@@ -81,10 +81,10 @@ ARG SENTRY_LAUNCHER_DSN=""
 
 RUN pnpm run check-types && pnpm run build:bundle
 
-# caddy and tini at pinned versions, checksum-verified before use. The
-# caddy release tarball also carries the Apache-2.0 LICENSE the final image
-# ships (the name "Caddy" is trademarked; the binary is bundled unmodified
-# and unrebranded).
+# caddy and tini at pinned versions, checksum-verified before use. Both
+# licenses ship in the final image: caddy's Apache-2.0 rides in its release
+# tarball, tini's MIT is fetched from the same tag as its binary. The name
+# "Caddy" is trademarked; the binary is bundled unmodified and unrebranded.
 FROM node:24.19.0-bookworm-slim@sha256:a9f5f7c91a432850b2a8a7797adf5eadb6c733ceed61167806cee7ea7fbc29df AS fetch
 
 ARG CADDY_VERSION=2.11.4
@@ -99,8 +99,10 @@ WORKDIR /fetch
 RUN curl -fsSLo caddy.tar.gz "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_amd64.tar.gz" \
 	&& echo "${CADDY_SHA512}  caddy.tar.gz" | sha512sum -c - \
 	&& tar -xzf caddy.tar.gz caddy LICENSE \
+	&& mv LICENSE caddy-LICENSE \
 	&& curl -fsSLo tini "https://github.com/krallin/tini/releases/download/v${TINI_VERSION}/tini-static-amd64" \
 	&& echo "${TINI_SHA256}  tini" | sha256sum -c - \
+	&& curl -fsSLo tini-LICENSE "https://raw.githubusercontent.com/krallin/tini/v${TINI_VERSION}/LICENSE" \
 	&& chmod 0755 caddy tini
 
 # the runtime node is alpine's own build — v24 linked against shared
@@ -129,7 +131,8 @@ RUN apk add --no-cache "nodejs=${NODE_APK_VERSION}" "icu-data-full=${ICU_DATA_AP
 
 COPY --from=fetch /fetch/tini /tini
 COPY --from=fetch /fetch/caddy /usr/local/bin/caddy
-COPY --from=fetch /fetch/LICENSE /oxynote/licenses/caddy/LICENSE
+COPY --from=fetch /fetch/caddy-LICENSE /oxynote/licenses/caddy/LICENSE
+COPY --from=fetch /fetch/tini-LICENSE /oxynote/licenses/tini/LICENSE
 
 # staged by `make prod-build` from goreleaser's output.
 COPY docker/prod/.build/oxynote-core /oxynote/core/server
@@ -139,6 +142,22 @@ COPY --from=auth-realtime-builder /server/dist/bundle.mjs /oxynote/auth-realtime
 COPY --from=launcher-builder /launcher/dist/launcher.mjs /oxynote/prod/launcher.mjs
 COPY docker/prod/healthcheck.mjs /oxynote/prod/healthcheck.mjs
 COPY docker/prod/Caddyfile /oxynote/prod/Caddyfile
+
+# what ghcr reads to link the package to this repository, and what a
+# scanner reads to tell one build from another. IMAGE_VERSION and
+# IMAGE_REVISION come from `make prod-publish`; a local build leaves them
+# at dev/unknown.
+ARG IMAGE_VERSION=dev
+ARG IMAGE_REVISION=unknown
+LABEL org.opencontainers.image.title="Oxynote" \
+	org.opencontainers.image.description="Collaborative documentation, in one container" \
+	org.opencontainers.image.source="https://github.com/oxynote/oxynote" \
+	org.opencontainers.image.url="https://github.com/oxynote/oxynote" \
+	org.opencontainers.image.documentation="https://github.com/oxynote/oxynote/blob/main/docker/prod/README.md" \
+	org.opencontainers.image.licenses="Apache-2.0" \
+	org.opencontainers.image.vendor="Oxynote" \
+	org.opencontainers.image.version="${IMAGE_VERSION}" \
+	org.opencontainers.image.revision="${IMAGE_REVISION}"
 
 ENV NODE_ENV=production
 ENV HOME=/oxynote
