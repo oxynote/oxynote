@@ -1,5 +1,5 @@
 # inspired by: https://hono.dev/docs/getting-started/nodejs#dockerfile
-FROM node:24.19.0-alpine AS base
+FROM node:24.20.0-alpine AS base
 
 FROM base AS builder
 
