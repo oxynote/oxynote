@@ -28,18 +28,18 @@ QUIET := scripts/run-quietly.sh
 # backend containers + web dev server on the host with hot reload. Ctrl-c
 # stops the web dev server; `make stop` stops the containers.
 .PHONY: dev
-dev: build-go sync-changedetection-key
+dev: check-env build-go sync-changedetection-key
 	$(COMPOSE) up --build -d
 	cd web && NUXT_PUBLIC_APP_BASE_URL=http://localhost:3000 pnpm run start:dev:web
 
 # foreground: streams all logs, ctrl-c stops the stack
 .PHONY: run
-run: build-go sync-changedetection-key
+run: check-env build-go sync-changedetection-key
 	$(COMPOSE) --profile web up --build
 
 # background
 .PHONY: start
-start: build-go sync-changedetection-key
+start: check-env build-go sync-changedetection-key
 	$(COMPOSE) --profile web up --build -d
 
 .PHONY: stop
@@ -190,3 +190,15 @@ prod-stop:
 sync-changedetection-key:
 	$(COMPOSE) up -d changedetection
 	./docker/sync-changedetection-key.sh
+
+# a variable renamed in a template never reaches an env file that already
+# exists, so the stack starts against a name nobody reads. check-env fails
+# before that happens; sync-env rewrites the local files from the
+# templates, keeping the value of every variable they still list.
+.PHONY: check-env
+check-env:
+	./docker/sync-env.sh
+
+.PHONY: sync-env
+sync-env:
+	./docker/sync-env.sh --fix

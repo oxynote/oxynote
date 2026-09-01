@@ -111,7 +111,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - `datagen/` — demo-data generator; separate Go module `github.com/oxynote/oxynote/datagen`. Demo/testing only.
 - `e2e/` — Playwright end-to-end suite (`@oxynote/e2e`, **pnpm**) plus the two docker-compose stacks it drives: the dev stack built from this repo, and the all-in-one image `docker/prod/` produces. Not shipped; it exercises the composed product through a real backend. Every file, script and make target belonging to one stack is named `dev` or `prod` — neither is the unnamed default. Details: [e2e/CLAUDE.md](e2e/CLAUDE.md).
 - `scripts/` — helpers the root Makefile calls. `run-quietly.sh` runs a build step with its output held back, replaying the log only if the step fails.
-- `docker/` — dev docker-compose stack, Caddyfile, `env/` (committed `*.example.env` templates; `make setup` copies them to the gitignored `*.local.env` files the compose stack reads, and `web.example.env` also to `web/.env` for the host dev server and electron builds), `demo/` (demo-data configs for mariadb/postgres).
+- `docker/` — dev docker-compose stack, Caddyfile, `env/` (committed `*.example.env` templates; `make setup` copies them to the gitignored `*.local.env` files the compose stack reads, and `web.example.env` also to `web/.env` for the host dev server and electron builds; `sync-env.sh` reconciles an existing `*.local.env` with its template, since `make setup` only copies when the local file is missing), `demo/` (demo-data configs for mariadb/postgres).
 - `docker/prod/` — the production all-in-one image: alpine-based Dockerfile (built via `make prod-build`; core comes from goreleaser), the image's Caddyfile (sibling of `docker/Caddyfile`), the TS launcher (`@oxynote/launcher`, **pnpm**) that validates the flat public `OXYNOTE_*` env, generates internal secrets, and supervises caddy + web + core + auth-realtime, plus the example compose deployment and the local override `make prod-run` layers on it. Details: [docker/prod/CLAUDE.md](docker/prod/CLAUDE.md).
 
 **One `.gitignore`, and it lives at the repository root.** Components do not carry their own — a rule for a nested directory is written with its path (`e2e/test-results/`, `web/coverage/`), so every exclusion in the repository is readable in one file.
@@ -127,6 +127,8 @@ make run       # build images + run the dev stack in the foreground (ctrl-c stop
 make start     # build images + run the dev stack in the background
 make dev       # backend containers + web dev server on the host (hot reload, :3000)
 make stop      # stop the dev stack
+make check-env # report variables that drifted between *.example.env and *.local.env
+make sync-env  # rewrite *.local.env from the templates, keeping existing values
 
 make lint      # fix lint/format/type issues in web, auth-realtime, core, datagen, e2e, launcher
 make check-lint # the same gates, verification only
