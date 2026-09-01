@@ -26,7 +26,7 @@
 	},
 	"dependencies": {
 		"@better-auth/electron": "^1.7.2",
-		"@better-auth/mcp": "^1.7.1",
+		"@better-auth/mcp": "^1.7.2",
 		"@hocuspocus/extension-logger": "^4.6.0",
 		"@hocuspocus/server": "^4.6.0",
 		"@hocuspocus/transformer": "^4.6.0",
