@@ -1,11 +1,6 @@
 import tailwindcss from "@tailwindcss/vite"
 import { selectableIconList } from "./app/utils/icon"
 
-const lezerPromQLPath = new URL(
-	"./packages/lezer-promql/dist/index.es.js",
-	import.meta.url,
-).pathname
-
 // DESKTOP_BUILD selects how `__DESKTOP_BUILD__` is materialized in the bundle:
 //   - "1"      : pure desktop build (production renderer). __DESKTOP_BUILD__ is
 //                the literal `true` and web branches DCE away.
@@ -38,11 +33,6 @@ export default defineNuxtConfig({
 				: JSON.stringify(isDesktopBuild),
 		},
 		plugins: [tailwindcss()],
-		resolve: {
-			alias: {
-				"@prometheus-io/lezer-promql": lezerPromQLPath,
-			},
-		},
 		optimizeDeps: {
 			include: [
 				"@better-auth/electron/proxy",

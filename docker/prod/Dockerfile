@@ -27,7 +27,6 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 # because the root prepare builds the promql grammar and runs nuxt prepare,
 # and neither has its sources yet.
 COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
-COPY web/packages/lezer-promql/package.json ./packages/lezer-promql/
 RUN pnpm install --frozen-lockfile --ignore-scripts
 
 COPY web/ .
@@ -112,12 +111,12 @@ RUN curl -fsSLo caddy.tar.gz "https://github.com/caddyserver/caddy/releases/down
 FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 
 # the exact pins make the build fail — instead of silently shifting —
-# when alpine's v3.23 branch rotates a package (they keep only the
-# newest build per branch); bump the ARGs together with the base digest.
-# icu-data-full replaces the English-only default so Intl formats every
-# locale during SSR.
+# when alpine's branch rotates a package (they keep only the newest build
+# per branch); bump the ARGs together with the base digest, which a
+# dependabot bump of the digest alone cannot do. icu-data-full replaces the
+# English-only default so Intl formats every locale during SSR.
 ARG NODE_APK_VERSION=24.18.1-r0
-ARG ICU_DATA_APK_VERSION=76.1-r1
+ARG ICU_DATA_APK_VERSION=78.1-r0
 
 # the uid is explicit and never changes: the data volume's files are owned
 # by it, so a shift between releases would lock an existing deployment out

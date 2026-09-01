@@ -20,14 +20,6 @@ const rulesOf = (configs) =>
 export default withNuxt([
 	eslintConfigPrettier,
 
-	// vendored fork of Prometheus's PromQL grammar, re-synced from upstream
-	// (see packages/README.lezer-promql.md) — our rules must not add diff
-	// against upstream or break the gate on the next sync
-	{
-		name: "oxynote/ignores",
-		ignores: ["packages/lezer-promql/**"],
-	},
-
 	// a disable comment whose rule no longer fires is stale and must be
 	// deleted, not carried along
 	{

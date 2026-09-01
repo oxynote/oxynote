@@ -2,8 +2,6 @@ FROM node:24.20.0-alpine AS base
 
 FROM base AS builder
 
-# the lezer-promql build script is a bash script; alpine only ships ash
-RUN apk add --no-cache bash
 RUN npm install -g pnpm
 WORKDIR /app
 
@@ -13,10 +11,8 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 # dependencies come from the manifests alone, so this layer survives every
 # change that does not touch them — which is what makes a rebuild after an
 # ordinary source edit cheap. Scripts are skipped here because the root
-# `prepare` builds the promql grammar and runs `nuxt prepare`, and neither
-# has its sources at this point.
+# `prepare` runs `nuxt prepare`, which has no sources at this point.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY packages/lezer-promql/package.json ./packages/lezer-promql/
 RUN pnpm install --frozen-lockfile --ignore-scripts
 
 COPY . .

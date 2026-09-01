@@ -5,10 +5,6 @@ import type { KnipConfig } from "knip"
 // through the generated .nuxt/imports.d.ts and .nuxt/components.d.ts maps —
 // so only the conventions it cannot know about are configured here.
 const config: KnipConfig = {
-	// the vendored PromQL grammar fork is re-synced from upstream and must
-	// not be reported against (see packages/README.lezer-promql.md)
-	ignoreWorkspaces: ["packages/lezer-promql"],
-
 	// project policy: the hoisted node_modules layout (required by
 	// electron-forge) makes transitive packages importable, and relying on
 	// that is deliberate — package.json declares top-level intent only, so

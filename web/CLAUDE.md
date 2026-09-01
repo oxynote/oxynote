@@ -12,10 +12,10 @@ comment/whitespace rules live in the root [CLAUDE.md](../CLAUDE.md).
 Package manager is **pnpm** (workspace; uses `nodeLinker: hoisted` so Electron Forge's npm-style layout works).
 
 ```bash
-pnpm install                  # installs deps; runs `prepare` (builds lezer-promql + nuxt prepare)
-pnpm setup                    # deps + explicit prepare (guarantees fresh lezer
-                              # build + .nuxt types) + playwright chromium for
-                              # browser-mode tests
+pnpm install                  # installs deps; runs `prepare` (nuxt prepare)
+pnpm setup                    # deps + explicit prepare (guarantees fresh .nuxt
+                              # types) + playwright chromium for browser-mode
+                              # tests
 
 pnpm start:dev:web            # nuxt dev on :3000 (web build)
 pnpm start:dev:desktop        # concurrently runs nuxt dev + electron-forge start with DESKTOP_BUILD=hybrid
@@ -42,7 +42,6 @@ pnpm check-eslint             # eslint --max-warnings 0 . (eslint / fmt are the
                               # fixing counterparts)
 pnpm check-knip               # dead exports/files/dependencies ([knip.ts](knip.ts))
 
-pnpm build:lezer-promql       # rebuild the forked PromQL grammar package
 ```
 
 
@@ -133,7 +132,6 @@ ESLint ([eslint.config.mjs](eslint.config.mjs)) runs **type-aware**: `eslint.con
 - ESLint's TS program cannot resolve `.vue` imports (only `vue-tsc` can), so calls through a component ref are reported as unsafe. Those carry an inline disable with the reason `eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this`.
 - Every `eslint-disable` **must** state a reason after `--`. It is for false positives only, never to avoid a fix. Stale disables are errors (`reportUnusedDisableDirectives`), and eslint runs with `--max-warnings 0`, so warnings fail the gate too.
 - `@typescript-eslint/no-explicit-any` is off; `prefer-function-type` is off (keeps the `defineEmits<{ (e: ...): void }>()` style).
-- The vendored `packages/lezer-promql` fork is excluded so upstream re-syncs cannot break the gate.
 
 **knip** ([knip.ts](knip.ts)) guards dead exports, unused files, and unused dependencies. Its nuxt plugin resolves auto-imports through the generated `.nuxt` maps, so unused components, stores, and utils **are** detected despite having no import statements. Remaining blind spots, documented in the config: `app/composables` are entry points (the auto-import map does not connect their `export default function useX` style, so their internal exports are unreported), and `app/components/shadcn/` is ignored (vendored spares are expected). Knip's `unlisted` check is **off** by policy: the hoisted node_modules layout makes transitive packages importable, that is relied on deliberately, and `package.json` declares top-level intent only. Knip runs with `--cache`, and the cache is keyed by knip version, **not** config — after editing [knip.ts](knip.ts), run `rm -rf node_modules/.cache/knip` or results are stale.
 
@@ -607,9 +605,9 @@ Within a Vue setup script, order the contents as follows:
 
 Use **Tailwind utility classes** by default. When a utility expression can't express what you need, add the custom rule to [app/assets/css/main.css](app/assets/css/main.css) and apply it via a class name — do not use `<style>` blocks in components or inline `style=` attributes for non-dynamic values.
 
-## Forked package: lezer-promql
+## The PromQL grammar
 
-[packages/lezer-promql/](packages/lezer-promql/) is a fork of Prometheus's PromQL grammar that adds Grafana-style dynamic duration placeholders (`$__interval`, etc.). It's aliased into Vite as `@prometheus-io/lezer-promql`. Rebuild with `pnpm build:lezer-promql`. Upstream sync procedure is documented in [packages/README.lezer-promql.md](packages/README.lezer-promql.md) — do not modify the grammar without reading it.
+PromQL parsing goes through [@oxynote/lezer-promql](https://github.com/oxynote/lezer-promql), a fork of Prometheus's grammar that adds Grafana-style dynamic duration placeholders (`$__interval`, etc.). It is a published package, not a workspace one, and reaches the app through a pnpm override in [pnpm-workspace.yaml](pnpm-workspace.yaml) rather than a bundler alias — `@prometheus-io/codemirror-promql` imports the grammar itself, so the fork has to win that resolution too. Changing the grammar means releasing it from its own repository; a new version needs its version bumped in the override and added to `minimumReleaseAgeExclude`.
 
 ## Electron packaging notes
 

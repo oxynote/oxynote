@@ -112,11 +112,6 @@ const appDefine = {
 const appAlias = {
 	"~": fileURLToPath(new URL("./app", import.meta.url)),
 	"@": fileURLToPath(new URL("./app", import.meta.url)),
-	// same fork alias as nuxt.config.ts — without it these projects
-	// would resolve the upstream package instead of the vendored grammar
-	"@prometheus-io/lezer-promql": fileURLToPath(
-		new URL("./packages/lezer-promql/dist/index.es.js", import.meta.url),
-	),
 }
 
 export default defineConfig({

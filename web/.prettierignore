@@ -8,4 +8,3 @@ coverage
 *.md
 *.mdx
 pnpm-lock.yaml
-packages/lezer-promql/src/parser*.js
