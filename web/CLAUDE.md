@@ -23,11 +23,12 @@ pnpm build:web                # production web build (cloudflare_pages preset)
 pnpm package:desktop          # nuxt generate (static) + electron-forge package
 pnpm make:desktop             # nuxt generate (static) + electron-forge make (installers)
 
-pnpm check-lint               # check-types + check-eslint + check-fmt +
-                              # check-knip (read-only)
-pnpm lint                     # fixing variant: check-types + knip --fix
-                              # (removes dead exports/deps/files!) + eslint
-                              # --fix + prettier --write
+pnpm check-lint               # pnpm dedupe --check + check-types +
+                              # check-eslint + check-fmt + check-knip
+                              # (read-only)
+pnpm lint                     # fixing variant: pnpm dedupe + check-types +
+                              # knip --fix (removes dead exports/deps/files!)
+                              # + eslint --fix + prettier --write
 pnpm test                     # vitest run --coverage (node + browser + nuxt
                               # projects; browser needs the playwright chromium
                               # that `pnpm setup` installs)
@@ -41,6 +42,8 @@ pnpm check-types              # nuxt typecheck (regenerates .nuxt types, then
 pnpm check-eslint             # eslint --max-warnings 0 . (eslint / fmt are the
                               # fixing counterparts)
 pnpm check-knip               # dead exports/files/dependencies ([knip.ts](knip.ts))
+pnpm dedupe --check           # fails when the lockfile resolves one package to
+                              # several versions that could share one
 
 ```
 
@@ -134,6 +137,8 @@ ESLint ([eslint.config.mjs](eslint.config.mjs)) runs **type-aware**: `eslint.con
 - `@typescript-eslint/no-explicit-any` is off; `prefer-function-type` is off (keeps the `defineEmits<{ (e: ...): void }>()` style).
 
 **knip** ([knip.ts](knip.ts)) guards dead exports, unused files, and unused dependencies. Its nuxt plugin resolves auto-imports through the generated `.nuxt` maps, so unused components, stores, and utils **are** detected despite having no import statements. Remaining blind spots, documented in the config: `app/composables` are entry points (the auto-import map does not connect their `export default function useX` style, so their internal exports are unreported), and `app/components/shadcn/` is ignored (vendored spares are expected). Knip's `unlisted` check is **off** by policy: the hoisted node_modules layout makes transitive packages importable, that is relied on deliberately, and `package.json` declares top-level intent only. Knip runs with `--cache`, and the cache is keyed by knip version, **not** config — after editing [knip.ts](knip.ts), run `rm -rf node_modules/.cache/knip` or results are stale.
+
+**`pnpm dedupe --check`** is a lint gate because `nodeLinker: hoisted` puts every resolved version of a package on disk, and Nitro externalizes whatever it finds. A lockfile holding two versions of one package therefore ships both into the server bundle. For a package that keeps module-level state — `vue` above all, whose `currentRenderingInstance` lives in `@vue/runtime-core` — that is a crash: one copy renders a component while the other's variable is still null, and SSR dies with `Cannot read properties of null`. Dependency bumps produce the split without touching `package.json`, when a bumped package moves to a new version while a peer-resolved entry keeps the old one.
 
 TypeScript strictness (set in [nuxt.config.ts](nuxt.config.ts)): `noUnusedLocals`, `noUnusedParameters`, `noUncheckedIndexedAccess`, `noImplicitOverride`, `verbatimModuleSyntax`, and `noImplicitAny` all on; `allowUnreachableCode: false` (mirrored in [electron/tsconfig.json](electron/tsconfig.json)). Path aliases `@/*` and `~/*` both point to `app/*`.
 
