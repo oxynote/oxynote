@@ -582,12 +582,14 @@
 					@apply mt-[0.125em];
 				}
 
+				/* the strike is always drawn and only its colour fades in:
+				text-decoration-line is discrete and cannot animate. */
 				p {
-					@apply pl-[0.675em];
+					@apply pl-[0.675em] line-through decoration-transparent transition duration-150;
 				}
 
 				&[data-checked="true"] > div > p {
-					@apply line-through opacity-50;
+					@apply decoration-current opacity-50;
 				}
 
 				/*
@@ -630,16 +632,22 @@
 	}
 
 	input[type="checkbox"] {
-		@apply h-4 w-4 cursor-pointer appearance-none rounded-md border;
+		@apply relative h-4 w-4 cursor-pointer appearance-none rounded-md border transition-colors duration-150;
 	}
 
 	input[type="checkbox"]:checked {
-		@apply relative border-primary bg-primary text-primary-foreground;
+		@apply border-primary bg-primary;
+	}
+
+	input[type="checkbox"]::after {
+		content: "";
+		@apply absolute inset-0 bg-primary-foreground opacity-0 transition-opacity duration-150;
+		mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='square' stroke-linejoin='miter'%3E%3Cpath d='M3.75 8.25 6.5 11 12.25 5.25'/%3E%3C/svg%3E")
+			center / 100% no-repeat;
 	}
 
 	input[type="checkbox"]:checked::after {
-		content: "✓";
-		@apply absolute top-[-0.0625em] left-[-0.0625em] flex h-4 w-4 items-center justify-center text-2base text-primary-foreground;
+		@apply opacity-100;
 	}
 }
 
