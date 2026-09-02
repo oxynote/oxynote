@@ -322,6 +322,7 @@ async function handleMarkAllRead() {
 								</ShadcnUiTooltipTrigger>
 								<ShadcnUiTooltipContent
 									side="bottom"
+									align="start"
 									class="max-w-64 wrap-anywhere"
 								>
 									{{ findNotificationDocumentName(notification) }}

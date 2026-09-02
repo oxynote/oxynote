@@ -32,8 +32,12 @@ definePageMeta({
 
 		// resolved before the page renders so capability-gated markup is
 		// already correct server-side and nothing appears then vanishes on
-		// hydration
-		await useCapabilitiesAPI().fetchCapabilities.refresh()
+		// hydration. Instantiated through runWithContext because the vue app
+		// context is gone after an await, and the query injects its option
+		// defaults
+		await nuxtApp.runWithContext(() =>
+			useCapabilitiesAPI().fetchCapabilities.refresh(),
+		)
 
 		if (!to.params.documentSlug || typeof to.params.documentSlug !== "string") {
 			const docTree = await fetchDocumentTree.refresh()
