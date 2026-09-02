@@ -28,7 +28,9 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/assistant/provider"
 	"github.com/oxynote/oxynote/server/core/internal/buildinfo"
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
+	"github.com/oxynote/oxynote/server/core/internal/datasource/simulation"
 	"github.com/oxynote/oxynote/server/core/internal/db"
+	"github.com/oxynote/oxynote/server/core/internal/document/blockrun"
 	fileMan "github.com/oxynote/oxynote/server/core/internal/document/file/manager"
 	hookMan "github.com/oxynote/oxynote/server/core/internal/document/hook/manager"
 	"github.com/oxynote/oxynote/server/core/internal/email"
@@ -280,6 +282,8 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 	}
 
 	datasourceMan := datasource.NewManager(log, dbc)
+	simulationChecker := simulation.NewChecker(log, dbc, datasourceMan, editClient)
+	blockRunner := blockrun.NewRunner(dbc, simulationChecker)
 
 	assistantMan := assistant.NewManager(
 		log,
@@ -334,6 +338,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 		storageClient,
 		assistantMan,
 		datasourceMan,
+		blockRunner,
 		githubMan,
 		slackMan,
 		webchangeClient,
@@ -380,6 +385,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 	backgroundSupv.Go(hooksMan.Start)
 	backgroundSupv.Go(filesMan.Start)
 	backgroundSupv.Go(assistantMan.Start)
+	backgroundSupv.Go(simulationChecker.Start)
 
 	// without search there are no queued jobs to drain, so the manager
 	// is not started at all.

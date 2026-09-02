@@ -21,7 +21,7 @@ var _ EditApplier = &EditApplierMock{}
 //
 //		// make and configure a mocked EditApplier
 //		mockedEditApplier := &EditApplierMock{
-//			ApplyFunc: func(ctx context.Context, documentID xid.ID, branchID xid.ID, ops []edit.Operation) (edit.Result, error) {
+//			ApplyFunc: func(ctx context.Context, documentID xid.ID, branchID xid.ID, ops []edit.Operation, system bool) (edit.Result, error) {
 //				panic("mock out the Apply method")
 //			},
 //		}
@@ -32,7 +32,7 @@ var _ EditApplier = &EditApplierMock{}
 //	}
 type EditApplierMock struct {
 	// ApplyFunc mocks the Apply method.
-	ApplyFunc func(ctx context.Context, documentID xid.ID, branchID xid.ID, ops []edit.Operation) (edit.Result, error)
+	ApplyFunc func(ctx context.Context, documentID xid.ID, branchID xid.ID, ops []edit.Operation, system bool) (edit.Result, error)
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -46,23 +46,27 @@ type EditApplierMock struct {
 			BranchID xid.ID
 			// Ops is the ops argument value.
 			Ops []edit.Operation
+			// System is the system argument value.
+			System bool
 		}
 	}
 	lockApply sync.RWMutex
 }
 
 // Apply calls ApplyFunc.
-func (mock *EditApplierMock) Apply(ctx context.Context, documentID xid.ID, branchID xid.ID, ops []edit.Operation) (edit.Result, error) {
+func (mock *EditApplierMock) Apply(ctx context.Context, documentID xid.ID, branchID xid.ID, ops []edit.Operation, system bool) (edit.Result, error) {
 	callInfo := struct {
 		Ctx        context.Context
 		DocumentID xid.ID
 		BranchID   xid.ID
 		Ops        []edit.Operation
+		System     bool
 	}{
 		Ctx:        ctx,
 		DocumentID: documentID,
 		BranchID:   branchID,
 		Ops:        ops,
+		System:     system,
 	}
 	mock.lockApply.Lock()
 	mock.calls.Apply = append(mock.calls.Apply, callInfo)
@@ -74,7 +78,7 @@ func (mock *EditApplierMock) Apply(ctx context.Context, documentID xid.ID, branc
 		)
 		return resultOut, errOut
 	}
-	return mock.ApplyFunc(ctx, documentID, branchID, ops)
+	return mock.ApplyFunc(ctx, documentID, branchID, ops, system)
 }
 
 // ApplyCalls gets all the calls that were made to Apply.
@@ -86,12 +90,14 @@ func (mock *EditApplierMock) ApplyCalls() []struct {
 	DocumentID xid.ID
 	BranchID   xid.ID
 	Ops        []edit.Operation
+	System     bool
 } {
 	var calls []struct {
 		Ctx        context.Context
 		DocumentID xid.ID
 		BranchID   xid.ID
 		Ops        []edit.Operation
+		System     bool
 	}
 	mock.lockApply.RLock()
 	calls = mock.calls.Apply

@@ -5,9 +5,11 @@ import ConfigSidebar from "./ConfigSidebar.vue"
 import ConfigField from "../ConfigField.vue"
 import ThresholdInput from "./ThresholdInput.vue"
 import DataSourceSelect from "./DataSourceSelect.vue"
+import SimulationPresetSelect from "./SimulationPresetSelect.vue"
 import { stubChartColorContext, stubThresholdPalette } from "../test-helpers"
 import {
 	defaultMetricConfig,
+	MetricSimulationPreset,
 	VisualizationDataUnit,
 	type MetricConfig,
 } from "../utils"
@@ -507,5 +509,84 @@ describe("<ConfigSidebar>", { concurrent: false }, () => {
 		await nextTick()
 
 		expect(wrapper.emitted("open-settings")).toHaveLength(1)
+	})
+
+	describe("simulation section", () => {
+		it("stays hidden while the block is not simulating", async ({ expect }) => {
+			const wrapper = await mountSidebar()
+
+			expect(wrapper.text()).not.toContain(
+				t("editor.metrics.simulation.section-title"),
+			)
+			expect(wrapper.findComponent(SimulationPresetSelect).exists()).toBe(false)
+		})
+
+		it("explains the simulation and shows the chart it draws", async ({
+			expect,
+		}) => {
+			const wrapper = await mountSidebar({
+				modelValue: configWith({
+					simulationPreset: MetricSimulationPreset.HTTPLatency,
+				}),
+			})
+
+			expect(wrapper.text()).toContain(
+				t("editor.metrics.simulation.section-title"),
+			)
+			expect(wrapper.text()).toContain(
+				t("editor.metrics.simulation.section-description"),
+			)
+			expect(wrapper.text()).toContain(
+				t("editor.metrics.simulation.preset-options.http_latency"),
+			)
+		})
+
+		it("switches the block to another preset", async ({ expect }) => {
+			const config = configWith({
+				simulationPreset: MetricSimulationPreset.CPUUsage,
+			})
+			const wrapper = await mountSidebar({ modelValue: config })
+
+			emitFrom(
+				wrapper,
+				SimulationPresetSelect,
+				"update:modelValue",
+				MetricSimulationPreset.DiskUsage,
+			)
+			await nextTick()
+
+			expect(config.simulationPreset).toBe(MetricSimulationPreset.DiskUsage)
+		})
+
+		it("turns the simulation off again", async ({ expect }) => {
+			const config = configWith({
+				simulationPreset: MetricSimulationPreset.CPUUsage,
+			})
+			const wrapper = await mountSidebar({ modelValue: config })
+
+			await findButtonByText(
+				wrapper,
+				t("editor.metrics.simulation.stop-button"),
+			).trigger("click")
+
+			expect(config.simulationPreset).toBeNull()
+		})
+
+		it("does not offer a reader the switch-off button", async ({ expect }) => {
+			useEditorMeta().setEditable(false)
+
+			const wrapper = await mountSidebar({
+				modelValue: configWith({
+					simulationPreset: MetricSimulationPreset.CPUUsage,
+				}),
+			})
+
+			expect(wrapper.text()).toContain(
+				t("editor.metrics.simulation.section-title"),
+			)
+			expect(wrapper.text()).not.toContain(
+				t("editor.metrics.simulation.stop-button"),
+			)
+		})
 	})
 })

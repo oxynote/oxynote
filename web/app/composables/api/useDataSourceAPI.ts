@@ -21,6 +21,21 @@ const DATA_SOURCE_QUERY_KEYS = {
 		] as const,
 }
 
+// canRunGenericQueries reports whether a block has everything a query
+// needs. Exported because a caller that acts on the answer — offering to
+// simulate, deciding whether a refetch would do anything — has to ask the
+// same question the query asks, not a looser one of its own.
+export function canRunGenericQueries(
+	dataSourceId: string | null | undefined,
+	queries: string[] | null | undefined,
+): boolean {
+	return (
+		!!dataSourceId &&
+		!!queries?.length &&
+		queries.every((q) => q.trim().length > 0)
+	)
+}
+
 export default function () {
 	const { $coreAPIClient } = useNuxtApp()
 	const queryCache = useQueryCache()
@@ -498,17 +513,11 @@ export default function () {
 				return results
 			},
 			enabled: () => {
-				const dataSourceId = toValue(dataSourceIdRef)
 				const params = toValue(paramsRef)
-				const disable = toValue(disableFetch)
 
 				return (
-					dataSourceId !== undefined &&
-					dataSourceId !== null &&
-					params?.queries !== undefined &&
-					params.queries.length > 0 &&
-					params.queries.every((q) => q.trim().length > 0) &&
-					!disable
+					canRunGenericQueries(toValue(dataSourceIdRef), params?.queries) &&
+					!toValue(disableFetch)
 				)
 			},
 			refetchOnMount: false,

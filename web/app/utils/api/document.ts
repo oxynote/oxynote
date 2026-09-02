@@ -293,3 +293,10 @@ export type DocumentTimestamps = Record<
 		updated: DocumentModeTimestamp
 	}
 >
+
+// what running a metric block reports: cleared is true when its data
+// source has started returning real data and the backend has removed the
+// simulation from the block
+export interface MetricSimulationCheckResponse {
+	cleared: boolean
+}

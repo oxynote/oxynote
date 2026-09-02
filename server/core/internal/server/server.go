@@ -23,6 +23,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/assistant"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
+	"github.com/oxynote/oxynote/server/core/internal/server/internal/block"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/document/comment"
@@ -118,6 +119,7 @@ type Server struct {
 		slack        *slack.Handler
 		notification *notification.Handler
 		datasource   *datasource.Handler
+		block        *block.Handler
 		email        *email.Handler
 		ai           *assistant.Handler
 		mcp          *mcp.Handler
@@ -136,6 +138,7 @@ func NewServer(
 	storageClient Storer,
 	assistantMan *assistantCore.Manager,
 	datasourceMan *datasourceCore.Manager,
+	blockRunner block.Runner,
 	githubMan *githubCore.Manager,
 	slackMan *slackCore.Manager,
 	webchangeClient *webchange.Client,
@@ -198,6 +201,7 @@ func NewServer(
 	srv.handlers.slack = slack.NewHandler(log, db, client, slackMan)
 	srv.handlers.notification = notification.NewHandler(log, db, notifier)
 	srv.handlers.datasource = datasource.NewHandler(log, db, datasourceMan)
+	srv.handlers.block = block.NewHandler(log, blockRunner)
 	srv.handlers.email = email.NewHandler(log, emailSender)
 
 	wsAcceptOpts := websocket.AcceptOptions{

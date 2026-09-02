@@ -1,8 +1,14 @@
 import type { VueWrapper } from "@vue/test-utils"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import MainBlock from "./MainBlock.vue"
+import VisualizationContainer from "./VisualizationContainer.vue"
 import { stubChartColorContext } from "./test-helpers"
-import { MetricBlockWidth, TimeRangePreset, type MetricConfig } from "./utils"
+import {
+	MetricBlockWidth,
+	MetricSimulationPreset,
+	TimeRangePreset,
+	type MetricConfig,
+} from "./utils"
 import {
 	makeEditor,
 	makeNode,
@@ -14,6 +20,7 @@ import {
 	disposeMockEndpoints,
 	makeXid,
 } from "~/composables/api/test-helpers"
+import { emitFrom } from "~/components/test-helpers"
 
 const DOCUMENT_ID = makeXid("doc")
 const BRANCH_ID = makeXid("branch")
@@ -262,6 +269,40 @@ describe("<MetricMainBlock>", { concurrent: false }, () => {
 
 		expect(updateAttributes).toHaveBeenCalledTimes(1)
 		expect(updateAttributes).toHaveBeenCalledWith({ title: "Renamed" })
+	})
+
+	it("starts simulating when the visualization asks for it", async ({
+		expect,
+	}) => {
+		const updateAttributes = vi.fn()
+		const wrapper = await mountBlock({ updateAttributes: updateAttributes })
+
+		emitFrom(
+			wrapper,
+			VisualizationContainer,
+			"simulate",
+			MetricSimulationPreset.HTTPLatency,
+		)
+		await nextTick()
+
+		expect(updateAttributes).toHaveBeenCalledWith({
+			simulationPreset: MetricSimulationPreset.HTTPLatency,
+		})
+	})
+
+	it("publishes the stored simulation to the config modal", async ({
+		expect,
+	}) => {
+		const uid = nextUid()
+
+		await mountBlock({
+			uid: uid,
+			attrs: { simulationPreset: MetricSimulationPreset.DiskUsage },
+		})
+
+		expect(storedConfig(uid)?.simulationPreset).toBe(
+			MetricSimulationPreset.DiskUsage,
+		)
 	})
 
 	it("flattens a legacy config on the first edit", async ({ expect }) => {

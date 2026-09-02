@@ -90,6 +90,22 @@ function toNameContent(name: string) {
 	}
 }
 
+// systemOrigin marks a transaction as core's own rather than a person's.
+// Hocuspocus hands the origin's context to onChange and onStoreDocument,
+// which is how a persist knows whether it may touch a protected branch.
+export const systemOrigin = { source: "local", context: { system: true } }
+
+// isSystemContext reads that mark back off whatever context a hook was
+// handed. A client connection's context carries a session instead, and
+// anything else is a change core did not make.
+export function isSystemContext(context: unknown): boolean {
+	return (
+		!!context &&
+		typeof context === "object" &&
+		(context as { system?: unknown }).system === true
+	)
+}
+
 /**
  * Replaces document data in a Y.Doc, fully overwriting existing content.
  * Uses direct cloning to avoid applyUpdate merge semantics that can cause duplication.

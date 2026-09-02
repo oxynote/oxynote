@@ -373,7 +373,8 @@
 					"title": "No Data",
 					"description": "The current configuration returned no data. Please adjust your queries or data sources",
 					"normal-action-button": "Edit Metrics",
-					"readonly-action-button": "View Metrics"
+					"readonly-action-button": "View Metrics",
+					"simulate-action-button": "Simulate data"
 				}
 			},
 			"config": {
@@ -689,6 +690,22 @@
 					"1h": "1h",
 					"2h": "2h",
 					"1d": "1d"
+				}
+			},
+			"simulation": {
+				"label": "Simulation",
+				"section-title": "Simulated data",
+				"section-description": "Simulate the shape this chart will take until the metric it documents becomes available.",
+				"preset-label": "Chart",
+				"preset-placeholder": "Select a chart",
+				"stop-button": "Stop simulating",
+				"preset-options": {
+					"cpu_usage": "CPU usage",
+					"memory_usage": "Memory usage",
+					"disk_usage": "Disk usage",
+					"http_requests": "Request rate",
+					"http_latency": "Request latency",
+					"error_rate": "Error rate"
 				}
 			}
 		},

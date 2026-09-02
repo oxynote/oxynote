@@ -421,7 +421,7 @@ func (i *input) ApplyEdit(documentID xid.ID, ops []edit.Operation) (string, erro
 		return "", err
 	}
 
-	res, err := i.applier.Apply(i.ctx, ref.DocumentID, ref.BranchID, ops)
+	res, err := i.applier.Apply(i.ctx, ref.DocumentID, ref.BranchID, ops, false)
 	if err != nil {
 		i.log.Error(
 			"edit apply failed",
@@ -637,6 +637,7 @@ type TreeNotifier interface {
 type EditApplier interface {
 	// Apply should ship the operation batch to the realtime service
 	// for the (documentID, branchID) document and return the per-op
-	// outcome.
-	Apply(ctx context.Context, documentID, branchID xid.ID, ops []edit.Operation) (edit.Result, error)
+	// outcome. A tool's writes are a person's, never core's own, so
+	// this package always asks for an ordinary one.
+	Apply(ctx context.Context, documentID, branchID xid.ID, ops []edit.Operation, system bool) (edit.Result, error)
 }

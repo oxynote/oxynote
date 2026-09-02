@@ -76,6 +76,11 @@ const (
 
 	// AttrAxisBoundsMax is a metric block's fixed upper axis bound.
 	AttrAxisBoundsMax = "axisBoundsMax"
+
+	// AttrSimulationPreset names the generated series a metric block
+	// draws while its data source has no real data to answer with. It
+	// is unset on a block that queries normally.
+	AttrSimulationPreset = "simulationPreset"
 )
 
 // MarkComment is the inline mark type anchoring a comment to a range of

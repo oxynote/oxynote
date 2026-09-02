@@ -149,6 +149,7 @@ export default withNuxt([
 						"/^editor\\.metrics\\.config\\.refresh-interval-options(-short)?\\./",
 						"/^editor\\.metrics\\.config\\.time-range-options\\./",
 						"/^editor\\.metrics\\.config\\.unit-options\\./",
+						"/^editor\\.metrics\\.simulation\\.preset-options\\./",
 						"/^editor\\.navbar\\.document-modes\\./",
 						"/^settings\\.action-modals\\.data-source-removal\\.title\\./",
 						"/^settings\\.action-modals\\.data-source-upsert\\./",

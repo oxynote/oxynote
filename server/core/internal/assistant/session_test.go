@@ -163,7 +163,7 @@ func stubDocumentDB() *toolsMock.DB {
 // stubEditApplier accepts every edit it is handed.
 func stubEditApplier() *toolsMock.EditApplier {
 	return &toolsMock.EditApplier{
-		ApplyFunc: func(_ context.Context, _, _ xid.ID, _ []edit.Operation) (edit.Result, error) {
+		ApplyFunc: func(_ context.Context, _, _ xid.ID, _ []edit.Operation, _ bool) (edit.Result, error) {
 			return edit.Result{Applied: 1, Errors: []edit.OpError{}}, nil
 		},
 	}

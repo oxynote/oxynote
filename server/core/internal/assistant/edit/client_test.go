@@ -49,6 +49,7 @@ func Test_Client_Apply(t *testing.T) {
 
 	cc := map[string]struct {
 		Ops             []Operation
+		System          bool
 		BaseURL         string
 		CloseEarly      bool
 		TruncateBody    bool
@@ -77,6 +78,19 @@ func Test_Client_Apply(t *testing.T) {
 			StatusCode:      200,
 			ResponseBody:    `{"applied": 2, "errors": []}`,
 			ExpectedApplied: 2,
+			ExpectedErrors:  []OpError{},
+			ExpectedPath:    path,
+		},
+		// the mark is what a protected branch accepts a persist on, so
+		// it has to reach the wire rather than stay a caller's intent.
+		"A system batch is marked as core's own": {
+			Ops: []Operation{
+				Append(block.Block{Type: block.BlockParagraph, Text: "hi"}),
+			},
+			System:          true,
+			StatusCode:      200,
+			ResponseBody:    `{"applied": 1, "errors": []}`,
+			ExpectedApplied: 1,
 			ExpectedErrors:  []OpError{},
 			ExpectedPath:    path,
 		},
@@ -177,7 +191,7 @@ func Test_Client_Apply(t *testing.T) {
 
 			client := NewClient(srv.Client(), baseURL)
 
-			res, err := client.Apply(context.Background(), docID, branchID, c.Ops)
+			res, err := client.Apply(context.Background(), docID, branchID, c.Ops, c.System)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if c.NoRequest {
@@ -198,6 +212,7 @@ func Test_Client_Apply(t *testing.T) {
 				ops, ok := captured.body["operations"].([]any)
 				require.True(t, ok, "request body should carry operations array")
 				assert.Len(t, ops, len(c.Ops))
+				assert.Equal(t, c.System, captured.body["system"])
 			}
 		})
 	}

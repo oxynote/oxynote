@@ -77,6 +77,7 @@ function metricBlock(uid: string): PMNode {
 			thresholds: [{ value: 10, color: "red" }],
 			decimals: 2,
 			unitType: "short",
+			simulationPreset: "http_latency",
 		},
 	}
 }
@@ -220,6 +221,14 @@ describe("editor schema", () => {
 				{ value: 10, color: "red" },
 			])
 			expect(result.attrs?.decimals).toBe(2)
+		})
+
+		it("keeps a metric block's simulation preset", ({ expect }) => {
+			const result = roundTrip(metricBlock("m1"))
+
+			expect(result.attrs?.simulationPreset).toBe(
+				"http_latency",
+			)
 		})
 
 		it("keeps a mermaid block's source text", ({ expect }) => {

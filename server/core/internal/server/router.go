@@ -284,6 +284,7 @@ func (s *Server) router() chi.Router {
 					ssssr.Put("/", s.handlers.document.UpdateDocumentBranch)
 					ssssr.Delete("/", s.handlers.document.DeleteDocumentBranch)
 					ssssr.Put("/review-approve", s.handlers.document.UpdateBranchReviewApproval)
+					ssssr.Post("/blocks/{blockUid}/run", s.handlers.block.RunBlock)
 					ssssr.Route("/reviewers", func(sssssr chi.Router) {
 						sssssr.Get("/", s.handlers.document.FetchBranchReviewers)
 						sssssr.Post("/", s.handlers.document.RequestBranchReviewer)

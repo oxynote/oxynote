@@ -371,6 +371,20 @@ func Test_Compact(t *testing.T) {
 				Attrs: map[string]any{"query": "up", "unit": "%"},
 			},
 		},
+		"Metric keeps an active simulation": {
+			Input: document.Block{
+				Type: document.BlockNodeMetricBlock,
+				Attrs: map[string]any{
+					"uid":              "m1",
+					"simulationPreset": "http_latency",
+				},
+			},
+			Expected: Block{
+				Type:  BlockMetric,
+				UID:   "m1",
+				Attrs: map[string]any{"simulationPreset": "http_latency"},
+			},
+		},
 		// a metric written before this layer knew the configuration: a
 		// legacy config blob, explicit nulls for unset fields, and an
 		// attribute it still does not name. Reading it must leave all

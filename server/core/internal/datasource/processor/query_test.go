@@ -75,6 +75,55 @@ func Test_ChartType_IsValid(t *testing.T) {
 	}
 }
 
+func Test_QueryResult_HasData(t *testing.T) {
+	t.Parallel()
+
+	withPoints := []QueryResultSeries{
+		{Labels: map[string]string{"instance": "web-1"}, Metrics: [][2]any{{1700000000, 1.0}}},
+	}
+
+	cc := map[string]struct {
+		Result   *QueryResult
+		Expected bool
+	}{
+		"A series carrying a point": {
+			Result:   &QueryResult{Status: QueryStatusOK, Data: withPoints},
+			Expected: true,
+		},
+		"One empty series beside a full one": {
+			Result: &QueryResult{
+				Status: QueryStatusOK,
+				Data:   append([]QueryResultSeries{{Labels: map[string]string{}}}, withPoints...),
+			},
+			Expected: true,
+		},
+		"A series carrying no points": {
+			Result: &QueryResult{
+				Status: QueryStatusOK,
+				Data:   []QueryResultSeries{{Labels: map[string]string{}}},
+			},
+		},
+		"No series at all": {
+			Result: &QueryResult{Status: QueryStatusOK},
+		},
+		"Points under a status that is not ok": {
+			Result: &QueryResult{Status: QueryStatusChartAndDataMismatch, Data: withPoints},
+		},
+		"No data at all": {
+			Result: &QueryResult{Status: QueryStatusNoData},
+		},
+		"No result at all": {},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Expected, c.Result.HasData())
+		})
+	}
+}
+
 func Test_isValidValue(t *testing.T) {
 	cc := map[string]struct {
 		Value  float64

@@ -8,6 +8,7 @@ import { DiffStatus } from "~/components/editor/diff/position-map"
 import VisualizationTypeSelect from "./VisualizationTypeSelect.vue"
 import DataSourceSelect from "./DataSourceSelect.vue"
 import UnitSelectWithCustom from "./UnitSelectWithCustom.vue"
+import SimulationPresetSelect from "./SimulationPresetSelect.vue"
 
 const config = defineModel<MetricConfig>({ required: true })
 const props = defineProps<{
@@ -593,6 +594,34 @@ function removeThreshold(index: number) {
 					decimal
 				/>
 			</ConfigField>
+		</div>
+		<div v-if="config.simulationPreset">
+			<div class="mb-2 h-px bg-border" />
+			<div class="flex flex-col gap-1 px-1.75">
+				<span class="text-2sm font-medium">
+					{{ $t("editor.metrics.simulation.section-title") }}
+				</span>
+				<span class="text-2xs text-muted-foreground">
+					{{ $t("editor.metrics.simulation.section-description") }}
+				</span>
+				<ConfigField>
+					<template #label>
+						<span>
+							{{ $t("editor.metrics.simulation.preset-label") }}
+						</span>
+					</template>
+					<SimulationPresetSelect v-model="config.simulationPreset" />
+				</ConfigField>
+				<ShadcnUiButton
+					v-if="!isEditingDisabled"
+					variant="outline-transparent"
+					size="custom"
+					class="h-[1.775rem]! justify-center px-1.5 text-2sm font-normal"
+					@click="config.simulationPreset = null"
+				>
+					{{ $t("editor.metrics.simulation.stop-button") }}
+				</ShadcnUiButton>
+			</div>
 		</div>
 	</div>
 </template>

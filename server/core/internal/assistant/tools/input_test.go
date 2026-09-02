@@ -190,7 +190,7 @@ func failingDocumentDB() *DBMock {
 // stubApplier accepts every edit it is handed.
 func stubApplier() *EditApplierMock {
 	return &EditApplierMock{
-		ApplyFunc: func(_ context.Context, _, _ xid.ID, _ []edit.Operation) (edit.Result, error) {
+		ApplyFunc: func(_ context.Context, _, _ xid.ID, _ []edit.Operation, _ bool) (edit.Result, error) {
 			return edit.Result{Applied: 1, Errors: []edit.OpError{}}, nil
 		},
 	}
@@ -648,7 +648,7 @@ func Test_input_ApplyEdit(t *testing.T) {
 		"Error returned by applier.Apply": {
 			DB: stubDocumentDB(),
 			Applier: &EditApplierMock{
-				ApplyFunc: func(context.Context, xid.ID, xid.ID, []edit.Operation) (edit.Result, error) {
+				ApplyFunc: func(context.Context, xid.ID, xid.ID, []edit.Operation, bool) (edit.Result, error) {
 					return edit.Result{}, assert.AnError
 				},
 			},
@@ -657,7 +657,7 @@ func Test_input_ApplyEdit(t *testing.T) {
 		"Partial failure still reports the outcome": {
 			DB: stubDocumentDB(),
 			Applier: &EditApplierMock{
-				ApplyFunc: func(context.Context, xid.ID, xid.ID, []edit.Operation) (edit.Result, error) {
+				ApplyFunc: func(context.Context, xid.ID, xid.ID, []edit.Operation, bool) (edit.Result, error) {
 					return edit.Result{
 						Applied: 1,
 						Errors:  []edit.OpError{{Index: 1, Message: "uid not found"}},
@@ -692,6 +692,15 @@ func Test_input_ApplyEdit(t *testing.T) {
 			}
 
 			assert.JSONEq(t, c.Result, res)
+
+			// a tool's write is a person's, never core's own: an
+			// edit asking otherwise would land on a protected
+			// branch, which is the one place a tool may not reach.
+			if c.Applier != nil {
+				for _, call := range c.Applier.ApplyCalls() {
+					assert.False(t, call.System)
+				}
+			}
 		})
 	}
 }

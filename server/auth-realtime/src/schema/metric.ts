@@ -44,6 +44,7 @@ export const MetricBlock = Node.create({
 			unitCustom: {},
 			axisBoundsMin: {},
 			axisBoundsMax: {},
+			simulationPreset: {},
 			width: {},
 		}
 	},

@@ -15,6 +15,8 @@ export type EmailTemplate =
 export interface BranchSummary {
 	branchId: string
 	default: boolean
+	// whether the branch refuses every write but core's own.
+	protected: boolean
 }
 
 export interface BranchContent {

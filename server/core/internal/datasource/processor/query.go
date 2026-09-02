@@ -83,6 +83,24 @@ type QueryResult struct {
 	Data []QueryResultSeries `json:"data,omitempty"`
 }
 
+// HasData reports whether the result carries at least one usable point.
+// A nil result, a non-OK status and a set of series that are all empty
+// all read as no data, so a caller asking whether a query answered has
+// one thing to check.
+func (qr *QueryResult) HasData() bool {
+	if qr == nil || qr.Status != QueryStatusOK {
+		return false
+	}
+
+	for _, series := range qr.Data {
+		if len(series.Metrics) > 0 {
+			return true
+		}
+	}
+
+	return false
+}
+
 // isValidValue returns true if the float64 value is a valid numeric value (not NaN or Inf).
 func isValidValue(v float64) bool {
 	return !math.IsNaN(v) && !math.IsInf(v, 0)

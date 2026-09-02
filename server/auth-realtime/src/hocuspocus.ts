@@ -8,7 +8,11 @@ import type { Logger as ServiceLogger } from "./logging.js"
 import type { CoreClient } from "./core.js"
 import { toAxiosHeaders, toHeaders } from "./headers.js"
 import { bestEffort, reported } from "./reporting.js"
-import { replaceYdocContent, transformer } from "./ydocument.js"
+import {
+	isSystemContext,
+	replaceYdocContent,
+	transformer,
+} from "./ydocument.js"
 
 export interface AuthSession {
 	user: { id: string }
@@ -69,6 +73,25 @@ export async function resolveBranchId(
 	}
 
 	return defaultBranch.branchId
+}
+
+// branchIsProtected reports whether the branch takes writes from a person
+// at all. A branch that does not is read-only on the wire: keeping an edit
+// out of the document is the only way to keep it out of the whole-document
+// state a later persist carries, whoever that persist belongs to.
+async function branchIsProtected(
+	core: CoreClient,
+	documentId: string,
+	branchIdentifier: string,
+): Promise<boolean> {
+	const branches = await core.fetchBranches(documentId)
+	const branch = branches.find((b) =>
+		branchIdentifier === "default"
+			? b.default
+			: b.branchId === branchIdentifier,
+	)
+
+	return branch?.protected ?? false
 }
 
 // the placeholder a branch gets when core has content for it that is not a
@@ -132,19 +155,28 @@ export function createDocumentHooks({ auth, core }: DocumentHookDeps) {
 	// test, between cases.
 	const documentMaintainers = new Map<string, Set<string>>()
 
+	// whether every change to each open document since its last persist
+	// came from core. A document nobody has changed is absent, and a
+	// persist of one reads as an ordinary write: core's permission is
+	// only ever lent to changes seen arriving under it.
+	const documentSystemOnly = new Map<string, boolean>()
+
 	return {
 		async onAuthenticate({
+			connectionConfig,
 			documentName,
 			request,
 			requestHeaders,
 			token,
 		}: {
+			connectionConfig: { readOnly: boolean }
 			documentName: string
 			request: any
 			requestHeaders: any
 			token: string
 		}) {
-			const { documentId } = parseDocumentName(documentName)
+			const { documentId, branchIdentifier } =
+				parseDocumentName(documentName)
 
 			const session = await auth.getSession({
 				headers: toHeaders(request, requestHeaders),
@@ -163,6 +195,14 @@ export function createDocumentHooks({ auth, core }: DocumentHookDeps) {
 				}),
 			)
 
+			connectionConfig.readOnly = await reported(() =>
+				branchIsProtected(
+					core,
+					documentId,
+					branchIdentifier,
+				),
+			)
+
 			return { session }
 		},
 
@@ -177,9 +217,19 @@ export function createDocumentHooks({ auth, core }: DocumentHookDeps) {
 			context,
 			documentName,
 		}: {
-			context?: { session?: AuthSession | null } | null
+			context?: {
+				session?: AuthSession | null
+				system?: boolean
+			} | null
 			documentName: string
 		}) {
+			documentSystemOnly.set(
+				documentName,
+				(documentSystemOnly.get(documentName) ??
+					true) &&
+					isSystemContext(context),
+			)
+
 			const userId = context?.session?.user.id
 			if (!userId) {
 				return Promise.resolve()
@@ -276,6 +326,26 @@ export function createDocumentHooks({ auth, core }: DocumentHookDeps) {
 			documentName: string
 			document: ConnectedDocument
 		}) {
+			// both maps describe the window this persist closes, so
+			// they are drained before anything that can fail: a
+			// throw on the way to core must not leave one window's
+			// answer standing for the next.
+			const maintainers = Array.from(
+				documentMaintainers.get(data.documentName) ??
+					[],
+			)
+			documentMaintainers.delete(data.documentName)
+
+			// nothing but core changed the document, so the persist
+			// carries core's own permission and a protected branch
+			// accepts it. One edit in the window is enough to make
+			// it an ordinary write.
+			const system =
+				documentSystemOnly.get(data.documentName) ??
+				false
+
+			documentSystemOnly.delete(data.documentName)
+
 			try {
 				const { documentId, branchIdentifier } =
 					parseDocumentName(data.documentName)
@@ -284,17 +354,6 @@ export function createDocumentHooks({ auth, core }: DocumentHookDeps) {
 					documentId,
 					branchIdentifier,
 				)
-
-				// the field is who edited during this persist,
-				// not the document's maintainer set — core only
-				// ever adds to that set, so draining the map
-				// here is what keeps the two consistent.
-				const maintainers = Array.from(
-					documentMaintainers.get(
-						data.documentName,
-					) ?? [],
-				)
-				documentMaintainers.delete(data.documentName)
 
 				await core.storeBranchContent(
 					documentId,
@@ -314,7 +373,7 @@ export function createDocumentHooks({ auth, core }: DocumentHookDeps) {
 						rawContent: encodeState(
 							data.document,
 						),
-						system: false,
+						system,
 					},
 				)
 			} catch (err) {

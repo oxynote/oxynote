@@ -12,6 +12,7 @@ import type {
 	DocumentTreeElement,
 	DocumentTreeResponse,
 	DocumentTreeUpdateRequest,
+	MetricSimulationCheckResponse,
 } from "~/utils"
 import isDeepEqual from "fast-deep-equal"
 
@@ -534,6 +535,24 @@ export default function () {
 			`/api/documents/search?q=${encodeURIComponent(q)}`,
 			{
 				method: "GET",
+			},
+		)
+	}
+
+	// runs a block, which core resolves from the stored branch and
+	// dispatches on its kind. For a metric block that means probing whether
+	// the data it simulates has arrived; core owns the answer because it
+	// also removes the simulation from the block when it has, and it caches
+	// the probe so several viewers do not each hit the data source.
+	async function checkMetricBlockSimulation(
+		documentId: string,
+		branchId: string,
+		blockUid: string,
+	): Promise<MetricSimulationCheckResponse> {
+		return await $coreAPIClient<MetricSimulationCheckResponse>(
+			`/api/documents/${documentId}/branches/${branchId}/blocks/${encodeURIComponent(blockUid)}/run`,
+			{
+				method: "POST",
 			},
 		)
 	}
@@ -1186,5 +1205,6 @@ export default function () {
 		deleteDocumentBranch,
 		updateDocumentBranch,
 		mergeDocumentBranches,
+		checkMetricBlockSimulation,
 	}
 }

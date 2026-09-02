@@ -27,6 +27,7 @@ function metricConfig(title: string): MetricConfig {
 		baseThresholdColor: "#ffffff",
 		unit: {},
 		axisBounds: {},
+		simulationPreset: null,
 	}
 }
 

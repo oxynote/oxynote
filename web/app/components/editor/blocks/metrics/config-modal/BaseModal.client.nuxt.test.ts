@@ -3,9 +3,11 @@ import { enableAutoUnmount } from "@vue/test-utils"
 import { afterEach, beforeEach, describe, it } from "vitest"
 import BaseModal from "./BaseModal.client.vue"
 import ConfigSidebar from "./ConfigSidebar.vue"
+import VisualizationContainer from "../VisualizationContainer.vue"
 import { stubChartColorContext } from "../test-helpers"
 import {
 	defaultMetricConfig,
+	MetricSimulationPreset,
 	RefreshInterval,
 	TimeRangePreset,
 	type MetricConfig,
@@ -252,6 +254,25 @@ describe("<MetricConfigBaseModal>", { concurrent: false }, () => {
 		await nextTick()
 
 		expect(useEditorStore().activeMetricBlockConfig).toBeNull()
+	})
+
+	it("starts a simulation the preview asks for", async ({ expect }) => {
+		const config = defaultMetricConfig()
+		const uid = activateBlock({ config: config })
+		const wrapper = await mountModal()
+
+		emitFrom(
+			wrapper,
+			VisualizationContainer,
+			"simulate",
+			MetricSimulationPreset.HTTPLatency,
+		)
+		await nextTick()
+
+		expect(
+			useEditorStore().metricBlockConfigs[DOCUMENT_ID]?.[BRANCH_ID]?.[uid]
+				?.simulationPreset,
+		).toBe(MetricSimulationPreset.HTTPLatency)
 	})
 
 	it("stands aside when the reader asks for the data source settings", async ({

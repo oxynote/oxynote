@@ -65,6 +65,17 @@ export type VisualizationUnit =
 	| VisualizationDataUnit
 	| VisualizationMiscUnit
 
+// the generated series a block draws while the metric it documents has no
+// real data to answer with
+export enum MetricSimulationPreset {
+	CPUUsage = "cpu_usage",
+	MemoryUsage = "memory_usage",
+	DiskUsage = "disk_usage",
+	HTTPRequests = "http_requests",
+	HTTPLatency = "http_latency",
+	ErrorRate = "error_rate",
+}
+
 export interface MetricConfig {
 	title: string
 	dataSourceId: string | null
@@ -95,6 +106,9 @@ export interface MetricConfig {
 		min?: number | null
 		max?: number | null
 	}
+	// non-null while the block renders generated data instead of querying
+	// its data source
+	simulationPreset: MetricSimulationPreset | null
 }
 
 export function defaultMetricConfig(): MetricConfig {
@@ -120,6 +134,7 @@ export function defaultMetricConfig(): MetricConfig {
 			min: null,
 			max: null,
 		},
+		simulationPreset: null,
 	}
 }
 
@@ -153,6 +168,8 @@ export function buildConfigFromNodeAttrs(
 				min: legacy.axisBounds?.min ?? null,
 				max: legacy.axisBounds?.max ?? null,
 			},
+			// the legacy blob predates simulation, so it never carries one
+			simulationPreset: null,
 		}
 	}
 
@@ -177,6 +194,9 @@ export function buildConfigFromNodeAttrs(
 			min: (attrs.axisBoundsMin as number | null | undefined) ?? null,
 			max: (attrs.axisBoundsMax as number | null | undefined) ?? null,
 		},
+		simulationPreset:
+			(attrs.simulationPreset as MetricSimulationPreset | null | undefined) ??
+			null,
 	}
 }
 

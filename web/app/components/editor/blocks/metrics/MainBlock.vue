@@ -84,6 +84,7 @@ function migrateLegacyIfNeeded(fieldAttrs: Record<string, any>) {
 		unitCustom: legacy.unit?.custom ?? null,
 		axisBoundsMin: legacy.axisBounds?.min ?? null,
 		axisBoundsMax: legacy.axisBounds?.max ?? null,
+		simulationPreset: null,
 		// overlay caller's edit and clear legacy blob
 		...fieldAttrs,
 		config: null,
@@ -223,6 +224,15 @@ const config = reactive({
 			},
 		}),
 	}),
+	simulationPreset: computed<MetricConfig["simulationPreset"]>({
+		// legacy blobs predate simulation, so the flat attr is the only source
+		get: () =>
+			(props.node.attrs.simulationPreset as MetricConfig["simulationPreset"]) ??
+			null,
+		set: (v) => {
+			migrateLegacyIfNeeded({ simulationPreset: v })
+		},
+	}),
 })
 
 const otherEditingUsers = editingUsersRef(() => props.node.attrs.uid as string)
@@ -351,6 +361,7 @@ function disableVisualizationRefreshTemporarily() {
 					:config="config"
 					:uid="props.node.attrs.uid"
 					:disable-refresh="disableVisualizationRefresh"
+					@simulate="(preset) => (config.simulationPreset = preset)"
 				/>
 			</div>
 			<ShadcnUiPopoverContent class="w-50" side="right" side-flip align="start">

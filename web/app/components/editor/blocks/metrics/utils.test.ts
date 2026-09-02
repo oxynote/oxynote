@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import {
 	buildConfigFromNodeAttrs,
 	defaultMetricConfig,
+	MetricSimulationPreset,
 	RefreshInterval,
 	refreshIntervalToMs,
 	resolveTimeRange,
@@ -37,6 +38,7 @@ describe("defaultMetricConfig", () => {
 			decimals: null,
 			unit: { type: null, custom: null },
 			axisBounds: { min: null, max: null },
+			simulationPreset: null,
 		})
 	})
 
@@ -83,6 +85,7 @@ describe("buildConfigFromNodeAttrs", () => {
 			decimals: 2,
 			unit: { type: VisualizationTimeUnit.Seconds, custom: null },
 			axisBounds: { min: 0, max: 100 },
+			simulationPreset: null,
 		})
 	})
 
@@ -109,6 +112,7 @@ describe("buildConfigFromNodeAttrs", () => {
 			decimals: null,
 			unit: { type: null, custom: null },
 			axisBounds: { min: null, max: null },
+			simulationPreset: null,
 		})
 	})
 
@@ -141,7 +145,16 @@ describe("buildConfigFromNodeAttrs", () => {
 			decimals: 0,
 			unit: { type: VisualizationDataUnit.Megabytes, custom: "reqs" },
 			axisBounds: { min: -1, max: 1 },
+			simulationPreset: null,
 		})
+	})
+
+	it("reads the simulation preset from the flat attribute", ({ expect }) => {
+		expect(
+			buildConfigFromNodeAttrs({
+				simulationPreset: MetricSimulationPreset.HTTPLatency,
+			}).simulationPreset,
+		).toBe(MetricSimulationPreset.HTTPLatency)
 	})
 
 	it("fills defaults when there are no attributes at all", ({ expect }) => {
@@ -157,6 +170,7 @@ describe("buildConfigFromNodeAttrs", () => {
 			decimals: null,
 			unit: { type: null, custom: null },
 			axisBounds: { min: null, max: null },
+			simulationPreset: null,
 		})
 	})
 })

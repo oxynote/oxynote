@@ -542,6 +542,16 @@ func Test_Expand(t *testing.T) {
 				Attrs: map[string]any{"query": "up"},
 			},
 		},
+		"Metric keeps an active simulation": {
+			Input: Block{
+				Type:  BlockMetric,
+				Attrs: map[string]any{"simulationPreset": "http_latency"},
+			},
+			Expected: document.Block{
+				Type:  document.BlockNodeMetricBlock,
+				Attrs: map[string]any{"simulationPreset": "http_latency"},
+			},
+		},
 		// the other half of the legacy round trip: what Compact read
 		// back out has to expand into exactly what it came from.
 		"Metric keeps a legacy config blob, nulls and unknown attrs": {

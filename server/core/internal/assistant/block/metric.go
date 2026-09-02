@@ -115,6 +115,7 @@ func validateMetric(b Block, path string) error {
 		document.AttrDataSourceID,
 		document.AttrUnitCustom,
 		document.AttrBaseThresholdColor,
+		document.AttrSimulationPreset,
 	} {
 		if err := validateMetricString(b.Attrs, key, path); err != nil {
 			return err

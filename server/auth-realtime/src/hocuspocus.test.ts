@@ -114,8 +114,16 @@ describe("resolveBranchId", () => {
 	}) => {
 		const core = stubCore()
 		core.fetchBranches.mockResolvedValue([
-			{ branchId: "branch-2", default: false },
-			{ branchId: "branch-1", default: true },
+			{
+				branchId: "branch-2",
+				default: false,
+				protected: false,
+			},
+			{
+				branchId: "branch-1",
+				default: true,
+				protected: false,
+			},
 		])
 
 		const branchId = await resolveBranchId(core, "doc1", "default")
@@ -129,7 +137,11 @@ describe("resolveBranchId", () => {
 	}) => {
 		const core = stubCore()
 		core.fetchBranches.mockResolvedValue([
-			{ branchId: "branch-2", default: false },
+			{
+				branchId: "branch-2",
+				default: false,
+				protected: false,
+			},
 		])
 
 		await expect(
@@ -158,6 +170,7 @@ describe("createDocumentHooks", () => {
 			const hooks = createDocumentHooks({ auth, core })
 
 			const result = await hooks.onAuthenticate({
+				connectionConfig: { readOnly: false },
 				documentName: "doc1-branch1",
 				request: {},
 				requestHeaders: { cookie: "auth.session=abc" },
@@ -168,6 +181,67 @@ describe("createDocumentHooks", () => {
 			expect(auth.getSession).toHaveBeenCalledTimes(1)
 		})
 
+		// keeping an edit out of the document is the only way to keep it
+		// out of the whole-document state a later persist carries
+		it("locks the connection to a protected branch", async ({
+			expect,
+		}) => {
+			const core = stubCore()
+			core.fetchBranches.mockResolvedValue([
+				{
+					branchId: "branch1",
+					default: false,
+					protected: true,
+				},
+			])
+			const hooks = hooksWith(core)
+			const connectionConfig = { readOnly: false }
+
+			await hooks.onAuthenticate({
+				connectionConfig,
+				documentName: "doc1-branch1",
+				request: {},
+				requestHeaders: { cookie: "auth.session=abc" },
+				token: "",
+			})
+
+			expect(connectionConfig.readOnly).toBe(true)
+		})
+
+		it.for([
+			{
+				name: "the branch takes writes",
+				branches: [
+					{
+						branchId: "branch1",
+						default: false,
+						protected: false,
+					},
+				],
+			},
+			{ name: "the branch is not known", branches: [] },
+		])(
+			"leaves the connection writable when $name",
+			async ({ branches }, { expect }) => {
+				const core = stubCore()
+				core.fetchBranches.mockResolvedValue(branches)
+				const hooks = hooksWith(core)
+				const connectionConfig = { readOnly: false }
+
+				await hooks.onAuthenticate({
+					connectionConfig,
+					documentName: "doc1-branch1",
+					request: {},
+					requestHeaders: {
+						cookie: "auth.session=abc",
+					},
+					token: "",
+				})
+
+				expect(connectionConfig.readOnly).toBe(false)
+			},
+		)
+
 		it("verifies the user's document access with their own headers", async ({
 			expect,
 		}) => {
@@ -175,6 +249,7 @@ describe("createDocumentHooks", () => {
 			const hooks = hooksWith(core)
 
 			await hooks.onAuthenticate({
+				connectionConfig: { readOnly: false },
 				documentName: "doc1-branch1",
 				request: {},
 				requestHeaders: { cookie: "auth.session=abc" },
@@ -190,7 +265,8 @@ describe("createDocumentHooks", () => {
 			expect(options?.headers?.get("cookie")).toBe(
 				"auth.session=abc",
 			)
-			expect.soft(core.fetchBranches).toHaveBeenCalledTimes(0)
+			// the branch is what says whether the connection may write
+			expect.soft(core.fetchBranches).toHaveBeenCalledTimes(1)
 		})
 
 		it("rejects a connection with no session", async ({
@@ -201,6 +277,7 @@ describe("createDocumentHooks", () => {
 
 			await expect(
 				hooks.onAuthenticate({
+					connectionConfig: { readOnly: false },
 					documentName: "doc1-branch1",
 					request: {},
 					requestHeaders: {},
@@ -222,6 +299,7 @@ describe("createDocumentHooks", () => {
 
 			await expect(
 				hooks.onAuthenticate({
+					connectionConfig: { readOnly: false },
 					documentName: "doc1-branch1",
 					request: {},
 					requestHeaders: {},
@@ -241,6 +319,7 @@ describe("createDocumentHooks", () => {
 
 			await expect(
 				hooks.onAuthenticate({
+					connectionConfig: { readOnly: false },
 					documentName: "doc1-branch1",
 					request: {},
 					requestHeaders: {},
@@ -502,7 +581,11 @@ describe("createDocumentHooks", () => {
 		}) => {
 			const core = stubCore()
 			core.fetchBranches.mockResolvedValue([
-				{ branchId: "branch-1", default: true },
+				{
+					branchId: "branch-1",
+					default: true,
+					protected: false,
+				},
 			])
 			const hooks = hooksWith(core)
 
@@ -631,6 +714,86 @@ describe("createDocumentHooks", () => {
 			expect(
 				core.storeBranchContent.mock.calls[0]?.[2].name,
 			).toBe("Untitled Document")
+		})
+
+		it("persists as core's own write when only core changed the document", async ({
+			expect,
+		}) => {
+			const core = stubCore()
+			const hooks = hooksWith(core)
+			const document = seededDocument()
+
+			await hooks.onChange({
+				context: { system: true },
+				documentName: "doc1-branch1",
+			})
+			await hooks.onStoreDocument({
+				documentName: "doc1-branch1",
+				document,
+			})
+
+			expect(
+				core.storeBranchContent.mock.calls[0]?.[2]
+					.system,
+			).toBe(true)
+		})
+
+		// core's permission covers the change core made, not whatever
+		// else happened to be pending in the same window
+		it("persists as an ordinary write when an edit shares the window", async ({
+			expect,
+		}) => {
+			const core = stubCore()
+			const hooks = hooksWith(core)
+			const document = seededDocument()
+
+			await hooks.onChange({
+				context: { system: true },
+				documentName: "doc1-branch1",
+			})
+			await hooks.onChange({
+				context: { session: SESSION },
+				documentName: "doc1-branch1",
+			})
+			await hooks.onStoreDocument({
+				documentName: "doc1-branch1",
+				document,
+			})
+
+			expect(
+				core.storeBranchContent.mock.calls[0]?.[2]
+					.system,
+			).toBe(false)
+		})
+
+		it("persists the next window on its own provenance", async ({
+			expect,
+		}) => {
+			const core = stubCore()
+			const hooks = hooksWith(core)
+			const document = seededDocument()
+
+			await hooks.onChange({
+				context: { system: true },
+				documentName: "doc1-branch1",
+			})
+			await hooks.onStoreDocument({
+				documentName: "doc1-branch1",
+				document,
+			})
+			await hooks.onChange({
+				context: { session: SESSION },
+				documentName: "doc1-branch1",
+			})
+			await hooks.onStoreDocument({
+				documentName: "doc1-branch1",
+				document,
+			})
+
+			expect(
+				core.storeBranchContent.mock.calls[1]?.[2]
+					.system,
+			).toBe(false)
 		})
 
 		// the editors keep their unsaved work either way; telling them

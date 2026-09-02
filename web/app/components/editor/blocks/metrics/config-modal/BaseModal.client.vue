@@ -296,6 +296,7 @@ function openSettings() {
 								hide-empty-action-button
 								simplified-empty
 								:uid="editorStore.activeMetricBlockConfig!"
+								@simulate="(preset) => (config!.simulationPreset = preset)"
 							/>
 						</div>
 						<div v-if="!isMinWidth1024px" class="self-stretch border-b">

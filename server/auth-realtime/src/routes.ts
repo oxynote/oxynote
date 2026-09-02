@@ -10,7 +10,7 @@ import type { Env } from "./env.js"
 import { authMethods } from "./auth.js"
 import { toAxiosHeaders } from "./headers.js"
 import { bestEffort } from "./reporting.js"
-import { replaceYdocContent } from "./ydocument.js"
+import { replaceYdocContent, systemOrigin } from "./ydocument.js"
 import { applyOperations, type Operation } from "./operations.js"
 
 // the two things the routes ask of better-auth: the request handler
@@ -33,7 +33,10 @@ export interface DirectConnection {
 // opens against them.
 export interface DocumentRegistry {
 	documents: { get(documentName: string): Y.Doc | undefined }
-	openDirectConnection(documentName: string): Promise<DirectConnection>
+	openDirectConnection(
+		documentName: string,
+		context?: unknown,
+	): Promise<DirectConnection>
 }
 
 export interface RouteDeps {
@@ -205,11 +208,16 @@ export function createRoutes({
 			return
 		}
 
-		replaceYdocContent(toDocument, {
-			name: merged.documentName,
-			content: merged.content,
-			icon: merged.icon,
-		})
+		// under core's own origin: a merge is core's write, so the
+		// persist hocuspocus debounces afterwards is allowed onto a
+		// protected target — which is what main is throughout a review.
+		toDocument.transact(() => {
+			replaceYdocContent(toDocument, {
+				name: merged.documentName,
+				content: merged.content,
+				icon: merged.icon,
+			})
+		}, systemOrigin)
 
 		// persist rawContent immediately because MergeBranches sets
 		// rawContent to nil in the database. Without this, a server
@@ -369,6 +377,17 @@ export function createRoutes({
 				)
 			}
 
+			// core marks the batches it originates itself. Those
+			// persist straight away and are allowed onto a protected
+			// branch; the debounced store that follows an edit is not,
+			// which is what keeps an editor — or the assistant — from
+			// writing to one through this endpoint.
+			const system =
+				body && typeof body === "object"
+					? (body as { system?: unknown })
+							.system === true
+					: false
+
 			const operations =
 				body && typeof body === "object"
 					? (body as { operations?: unknown })
@@ -400,6 +419,9 @@ export function createRoutes({
 				connection =
 					await hocuspocus.openDirectConnection(
 						documentName,
+						system
+							? systemOrigin.context
+							: {},
 					)
 			} catch (err) {
 				Sentry.captureException(err)

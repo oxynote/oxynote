@@ -69,12 +69,22 @@ func NewClient(httpClient *http.Client, baseURL string) *Client {
 
 // Apply submits the given operations to the Node service for the
 // (documentID, branchID) document and returns the per-op outcome.
+//
+// A system batch is one core originated rather than a person: its persist
+// is allowed onto a protected branch, where the writes an editor or the
+// assistant makes are refused. Only a caller acting for core itself may
+// pass true — nothing reachable from a prompt may.
 // Any transport-level failure (bad status, malformed response,
 // canonical expansion error) is returned as an error and no
 // operations are considered applied; failures of individual
 // operations within an otherwise successful HTTP response are
 // surfaced via Result.Errors.
-func (c *Client) Apply(ctx context.Context, documentID, branchID xid.ID, ops []Operation) (Result, error) {
+func (c *Client) Apply(
+	ctx context.Context,
+	documentID, branchID xid.ID,
+	ops []Operation,
+	system bool,
+) (Result, error) {
 	if len(ops) == 0 {
 		return Result{}, nil
 	}
@@ -92,7 +102,8 @@ func (c *Client) Apply(ctx context.Context, documentID, branchID xid.ID, ops []O
 
 	body, err := json.Marshal(struct {
 		Operations []wireOp `json:"operations"`
-	}{Operations: wires})
+		System     bool     `json:"system"`
+	}{Operations: wires, System: system})
 	if err != nil {
 		return Result{}, fmt.Errorf("marshaling operations: %w", err)
 	}

@@ -63,6 +63,7 @@ func Test_validateMetric(t *testing.T) {
 				document.AttrAxisBoundsMin:      0,
 				document.AttrAxisBoundsMax:      100.5,
 				document.AttrWidth:              "wide",
+				document.AttrSimulationPreset:   "cpu_usage",
 			},
 		},
 		"Nulls are as absent as missing keys": {
@@ -127,6 +128,11 @@ func Test_validateMetric(t *testing.T) {
 			Attrs:        document.Attributes{document.AttrBaseThresholdColor: 1},
 			Err:          assert.AnError,
 			ExpectedPath: "attrs.baseThresholdColor",
+		},
+		"Non-string simulation preset": {
+			Attrs:        document.Attributes{document.AttrSimulationPreset: 1},
+			Err:          assert.AnError,
+			ExpectedPath: "attrs.simulationPreset",
 		},
 		"Non-numeric decimals": {
 			Attrs:        document.Attributes{document.AttrDecimals: "two"},

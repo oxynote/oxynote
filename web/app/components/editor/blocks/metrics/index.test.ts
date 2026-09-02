@@ -237,6 +237,7 @@ describe("MetricBlock", () => {
 				unitCustom: null,
 				axisBoundsMin: null,
 				axisBoundsMax: null,
+				simulationPreset: null,
 				width: MetricBlockWidth.Standard,
 			})
 		})

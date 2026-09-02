@@ -2,7 +2,7 @@ import { describe, it, vi } from "vitest"
 import * as Y from "yjs"
 import { SignJWT, exportJWK, generateKeyPair, type JWTPayload } from "jose"
 import { createRoutes, type DocumentRegistry } from "./routes.js"
-import { replaceYdocContent } from "./ydocument.js"
+import { isSystemContext, replaceYdocContent } from "./ydocument.js"
 import {
 	fragmentXml,
 	stubCore,
@@ -321,6 +321,52 @@ describe("createRoutes", () => {
 			const content = fragmentXml(target, "content")
 			expect(content).toContain("After the merge")
 			expect(content).not.toContain("Before the merge")
+		})
+
+		// main is protected throughout a review, so the persist that
+		// follows the mirrored merge has to be recognisable as core's
+		it("mirrors the merge under core's own origin", async ({
+			expect,
+		}) => {
+			const target = seededDocument("Before the merge")
+			const { registry } = stubRegistry({
+				documents: new Map([["doc1-b1", target]]),
+			})
+			const core = stubCore()
+			core.mergeBranches.mockResolvedValue({
+				status: 200,
+				data: {
+					documentName: "Runbook",
+					content: { type: "doc", content: [] },
+					icon: "lucide:file",
+				},
+			})
+			const { app } = build({ hocuspocus: registry, core })
+
+			const origins: unknown[] = []
+			target.on(
+				"update",
+				(_update: Uint8Array, origin: unknown) => {
+					origins.push(origin)
+				},
+			)
+
+			await app.request("/documents/doc1/merge", {
+				method: "PUT",
+				body: JSON.stringify({
+					fromBranchId: "b2",
+					toBranchId: "b1",
+				}),
+				headers: { "Content-Type": "application/json" },
+			})
+
+			expect(origins).toHaveLength(1)
+			expect(
+				isSystemContext(
+					(origins[0] as { context: unknown })
+						.context,
+				),
+			).toBe(true)
 		})
 
 		// core sets rawContent to nil when it merges, so a restart
@@ -826,12 +872,106 @@ describe("createRoutes", () => {
 			})
 			expect(openDirectConnection).toHaveBeenCalledWith(
 				"doc1-b1",
+				{},
 			)
 			expect(doc.getText("icon").toJSON()).toBe(
 				"lucide:siren",
 			)
 			expect(disconnect).toHaveBeenCalledTimes(1)
 		})
+
+		it("opens the connection as core's own when the batch is marked", async ({
+			expect,
+		}) => {
+			const doc = new Y.Doc()
+			const { registry, openDirectConnection } = stubRegistry(
+				{
+					documents: new Map([["doc1-b1", doc]]),
+					transact: (fn) => {
+						fn(doc)
+
+						return Promise.resolve()
+					},
+				},
+			)
+			const { app } = build({ hocuspocus: registry })
+
+			const res = await app.request(path, {
+				method: "POST",
+				body: JSON.stringify({
+					system: true,
+					operations: [
+						{
+							kind: "set_icon",
+							icon: "lucide:siren",
+						},
+					],
+				}),
+				headers: { "Content-Type": "application/json" },
+			})
+
+			expect(res.status).toBe(200)
+			expect(openDirectConnection).toHaveBeenCalledWith(
+				"doc1-b1",
+				{ system: true },
+			)
+		})
+
+		// what an editor or the assistant sends: the persist that follows
+		// carries no permission of core's, so a protected branch refuses it
+		it.for([
+			{ name: "no system field", input: {} },
+			{
+				name: "a system field of false",
+				input: { system: false },
+			},
+			{
+				name: "a system field that is a string",
+				input: { system: "true" },
+			},
+			{
+				name: "a system field that is a number",
+				input: { system: 1 },
+			},
+		])(
+			"opens the connection as an ordinary one given $name",
+			async ({ input }, { expect }) => {
+				const doc = new Y.Doc()
+				const { registry, openDirectConnection } =
+					stubRegistry({
+						documents: new Map([
+							["doc1-b1", doc],
+						]),
+						transact: (fn) => {
+							fn(doc)
+
+							return Promise.resolve()
+						},
+					})
+				const { app } = build({ hocuspocus: registry })
+
+				await app.request(path, {
+					method: "POST",
+					body: JSON.stringify({
+						...input,
+						operations: [
+							{
+								kind: "set_icon",
+								icon: "lucide:siren",
+							},
+						],
+					}),
+					headers: {
+						"Content-Type":
+							"application/json",
+					},
+				})
+
+				expect(
+					openDirectConnection,
+				).toHaveBeenCalledWith("doc1-b1", {})
+			},
+		)
 
 		it("reports a failing operation without failing the request", async ({
 			expect,
