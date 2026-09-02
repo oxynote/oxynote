@@ -819,6 +819,7 @@ describe("createRoutes", () => {
 		it.for([
 			{ name: "a body that is not JSON", input: "not json" },
 			{ name: "a body with no operations", input: "{}" },
+			{ name: "a body that is not an object", input: "null" },
 			{
 				name: "an operations field that is not an array",
 				input: '{"operations":"append"}',

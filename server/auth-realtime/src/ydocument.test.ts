@@ -3,6 +3,7 @@ import * as Y from "yjs"
 import { fragmentXml } from "./test-helpers.js"
 import {
 	cloneXmlElement,
+	isSystemContext,
 	replaceYdocContent,
 	transformer,
 	type DocumentData,
@@ -153,6 +154,33 @@ describe("cloneXmlElement", () => {
 
 		expect(source.getAttribute("uid")).toBe("p1")
 	})
+})
+
+describe("isSystemContext", () => {
+	it("reads the mark core puts on its own transactions", ({ expect }) => {
+		expect(isSystemContext({ system: true })).toBe(true)
+	})
+
+	it.for([
+		{
+			name: "a client connection's context",
+			input: { session: {} },
+		},
+		{ name: "the mark set to false", input: { system: false } },
+		{
+			name: "the mark spelled as a string",
+			input: { system: "true" },
+		},
+		{ name: "an empty context", input: {} },
+		{ name: "no context at all", input: null },
+		{ name: "an undefined context", input: undefined },
+		{ name: "a context that is not an object", input: "system" },
+	])(
+		"reads $name as a change core did not make",
+		({ input }, { expect }) => {
+			expect(isSystemContext(input)).toBe(false)
+		},
+	)
 })
 
 describe("replaceYdocContent", () => {

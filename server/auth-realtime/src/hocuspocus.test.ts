@@ -208,6 +208,38 @@ describe("createDocumentHooks", () => {
 			expect(connectionConfig.readOnly).toBe(true)
 		})
 
+		// the document name may carry "default" rather than a branch id,
+		// which is the branch core flags as the document's own
+		it("locks the connection when the default branch is protected", async ({
+			expect,
+		}) => {
+			const core = stubCore()
+			core.fetchBranches.mockResolvedValue([
+				{
+					branchId: "branch-2",
+					default: false,
+					protected: false,
+				},
+				{
+					branchId: "branch-1",
+					default: true,
+					protected: true,
+				},
+			])
+			const hooks = hooksWith(core)
+			const connectionConfig = { readOnly: false }
+
+			await hooks.onAuthenticate({
+				connectionConfig,
+				documentName: "doc1-default",
+				request: {},
+				requestHeaders: { cookie: "auth.session=abc" },
+				token: "",
+			})
+
+			expect(connectionConfig.readOnly).toBe(true)
+		})
+
 		it.for([
 			{
 				name: "the branch takes writes",
