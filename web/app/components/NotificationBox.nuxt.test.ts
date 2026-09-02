@@ -1,4 +1,4 @@
-import { mockNuxtImport, mountSuspended } from "@nuxt/test-utils/runtime"
+import { mockNuxtImport } from "@nuxt/test-utils/runtime"
 import { flushPromises } from "@vue/test-utils"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import { toast } from "vue-sonner"
@@ -13,6 +13,8 @@ import {
 	at,
 	findButtonByText,
 	mockAuthOrganization,
+	mountUnderTooltipProvider,
+	openTooltipText,
 	renderedIconNames,
 	seedAuthOrganization,
 	t,
@@ -27,6 +29,7 @@ vi.mock("vue-sonner", () => ({
 const navigateToMock = vi.hoisted(() => vi.fn())
 mockNuxtImport("navigateTo", () => navigateToMock)
 
+const TOOLTIP_DELAY_MS = 600
 const DOC_ID = "doc1".padEnd(20, "0")
 const USER_ID = "user".padEnd(20, "0")
 
@@ -67,7 +70,7 @@ function seedTree() {
 }
 
 function mountBox(props: Record<string, unknown> = {}) {
-	return mountSuspended(NotificationBox, { props: props })
+	return mountUnderTooltipProvider(NotificationBox, { props: props })
 }
 
 function rows(wrapper: Awaited<ReturnType<typeof mountBox>>) {
@@ -92,7 +95,10 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 		mockEndpoint("GET", "/api/notifications/count", () => ({ count: 0 }))
 	})
 
-	afterEach(disposeMockEndpoints)
+	afterEach(() => {
+		disposeMockEndpoints()
+		vi.useRealTimers()
+	})
 
 	it("says the inbox is empty when there are no notifications", async ({
 		expect,
@@ -119,6 +125,22 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 		const wrapper = await mountBox()
 
 		expect(wrapper.text()).toContain("Runbook")
+	})
+
+	it("spells out the document name in a tooltip once hovered", async ({
+		expect,
+	}) => {
+		vi.useFakeTimers()
+		seedTree()
+		seedNotifications([makeNotification()])
+
+		const wrapper = await mountBox()
+		await at(wrapper.findAll("[data-slot='tooltip-trigger']"), 0).trigger(
+			"pointermove",
+		)
+		await vi.advanceTimersByTimeAsync(TOOLTIP_DELAY_MS)
+
+		expect(openTooltipText(wrapper)).toBe("Runbook")
 	})
 
 	it("falls back to a placeholder name for a deleted document", async ({
@@ -471,7 +493,11 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 			await at(rows(wrapper), 0).trigger("click")
 			await flushPromises()
 
-			expect(wrapper.emitted("notification-navigation")).toHaveLength(1)
+			expect(
+				wrapper
+					.findComponent(NotificationBox)
+					.emitted("notification-navigation"),
+			).toHaveLength(1)
 		})
 
 		it.for([
@@ -604,7 +630,11 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 			await at(rows(wrapper), 0).trigger("click")
 			await flushPromises()
 
-			expect(wrapper.emitted("notification-navigation")).toBeUndefined()
+			expect(
+				wrapper
+					.findComponent(NotificationBox)
+					.emitted("notification-navigation"),
+			).toBeUndefined()
 		})
 	})
 
@@ -630,7 +660,11 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 				t("notification.actions.close-notification-box"),
 			).trigger("click")
 
-			expect(wrapper.emitted("close-notification-box")).toHaveLength(1)
+			expect(
+				wrapper
+					.findComponent(NotificationBox)
+					.emitted("close-notification-box"),
+			).toHaveLength(1)
 		})
 	})
 

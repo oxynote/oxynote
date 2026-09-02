@@ -118,6 +118,13 @@ async function buildNotificationHref(notification: Notification) {
 	}
 }
 
+function findNotificationDocumentName(notification: Notification) {
+	return (
+		findDocumentName(notification.metadata.documentId) ||
+		t("notification.document-fallback")
+	)
+}
+
 function findNotificationIcon(notification: Notification) {
 	switch (notification.code) {
 		case NotificationCode.DocumentReviewRequest:
@@ -307,12 +314,19 @@ async function handleMarkAllRead() {
 						class="flex min-w-0 flex-1 flex-col items-center justify-between gap-2"
 					>
 						<div class="flex w-full min-w-0 flex-row justify-between gap-0.5">
-							<div class="min-w-0 flex-2 truncate text-2sm text-foreground">
-								{{
-									findDocumentName(notification.metadata.documentId) ||
-									t("notification.document-fallback")
-								}}
-							</div>
+							<ShadcnUiTooltip :delay-duration="600">
+								<ShadcnUiTooltipTrigger as-child>
+									<div class="min-w-0 flex-2 truncate text-2sm text-foreground">
+										{{ findNotificationDocumentName(notification) }}
+									</div>
+								</ShadcnUiTooltipTrigger>
+								<ShadcnUiTooltipContent
+									side="bottom"
+									class="max-w-64 wrap-anywhere"
+								>
+									{{ findNotificationDocumentName(notification) }}
+								</ShadcnUiTooltipContent>
+							</ShadcnUiTooltip>
 							<span class="flex-1 text-right text-2xs text-muted-foreground/70">
 								{{
 									new Date().getTime() -
