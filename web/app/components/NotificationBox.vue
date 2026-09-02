@@ -29,6 +29,10 @@ const notifications = computed(
 	() => fetchNotifications.data.value?.notifications ?? [],
 )
 
+const hasUnreadNotifications = computed(() =>
+	notifications.value.some((n) => !n.read),
+)
+
 onMounted(() => {
 	unsubWsNotifications = wsState.state?.subscribe(
 		WS_NOTIFICATION_CREATION_TOPIC,
@@ -235,8 +239,7 @@ async function handleMarkRead(
 }
 
 async function handleMarkAllRead() {
-	const unreadNotificationIds = notifications.value.filter((n) => !n.read)
-	if (unreadNotificationIds.length === 0) {
+	if (!hasUnreadNotifications.value) {
 		return
 	}
 
@@ -261,6 +264,7 @@ async function handleMarkAllRead() {
 				</div>
 				<div class="flex items-center gap-2.5">
 					<ShadcnUiButton
+						v-if="hasUnreadNotifications"
 						variant="ghost"
 						size="2sm"
 						:class="cn('px-2 py-1')"

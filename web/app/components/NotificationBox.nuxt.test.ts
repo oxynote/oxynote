@@ -443,24 +443,18 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 			expect(calls[0]?.body).toEqual({ ids: [] })
 		})
 
-		it("does nothing when every notification is already read", async ({
+		it("hides the button when every notification is already read", async ({
 			expect,
 		}) => {
-			const calls = mockEndpoint(
-				"PUT",
-				"/api/notifications/read-status",
-				() => ({}),
-			)
 			seedNotifications([makeNotification({ read: true })])
+
 			const wrapper = await mountBox()
 
-			await findButtonByText(
-				wrapper,
-				t("notification.read-all-button"),
-			).trigger("click")
-			await flushPromises()
-
-			expect(calls).toHaveLength(0)
+			expect(
+				wrapper
+					.findAll("button")
+					.some((b) => b.text().includes(t("notification.read-all-button"))),
+			).toBe(false)
 		})
 
 		it("warns when marking everything read fails", async ({ expect }) => {
