@@ -24,6 +24,9 @@ vi.mock("vue-sonner", () => ({
 const DOC_ID = "doc1".padEnd(20, "0")
 const MAIN_BRANCH = "main".padEnd(20, "0")
 const DRAFT_BRANCH = "draft".padEnd(20, "0")
+// the divider between the document options and the assistant button is a
+// bare div, and the header draws no other one
+const ASSISTANT_SEPARATOR_SELECTOR = "div.w-px"
 
 const BREADCRUMBS = [
 	{ id: DOC_ID, name: "Runbook", href: "/Runbook", icon: "lucide:file" },
@@ -367,7 +370,7 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 		expect(created).toHaveLength(0)
 	})
 
-	it("hides the assistant button on a deployment without the assistant", async ({
+	it("hides the assistant button and its separator on a deployment without the assistant", async ({
 		expect,
 	}) => {
 		mainOnly()
@@ -376,9 +379,10 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 		const wrapper = await mountHeader()
 
 		expect(wrapper.text()).not.toContain(t("editor.navbar.open-ai-assistant"))
+		expect(wrapper.findAll(ASSISTANT_SEPARATOR_SELECTOR)).toHaveLength(0)
 	})
 
-	it("offers the assistant button when the assistant runs", async ({
+	it("offers the assistant button behind a separator when the assistant runs", async ({
 		expect,
 	}) => {
 		mainOnly()
@@ -389,6 +393,7 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 		const wrapper = await mountHeader()
 
 		expect(wrapper.text()).toContain(t("editor.navbar.open-ai-assistant"))
+		expect(wrapper.findAll(ASSISTANT_SEPARATOR_SELECTOR)).toHaveLength(1)
 	})
 
 	it("publishes the header height so the page can offset content", async ({

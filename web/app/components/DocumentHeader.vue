@@ -355,38 +355,40 @@ function activateBranch(branch: "default" | "draft") {
 								</ShadcnUiDropdownMenuItem>
 							</ShadcnUiDropdownMenuContent>
 						</ShadcnUiDropdownMenu>
-						<div class="mx-2 h-5.5 w-px bg-border" />
-						<ShadcnUiTooltip v-if="isAssistantEnabled" :delay-duration="600">
-							<ShadcnUiTooltipTrigger as-child>
-								<ShadcnUiButton
-									variant="ghost"
-									size="icon"
-									:class="
-										cn(
-											'h-7 w-7 cursor-pointer hover:bg-accent/50 active:bg-accent',
-											editorStore.aiAssistantOpen && 'bg-accent/50',
-										)
-									"
-									@click="editorStore.toggleAiAssistantOpen"
-								>
-									<Icon name="hugeicons:rubber-duck" class="size-4" />
-									<span class="sr-only">
-										{{
-											editorStore.aiAssistantOpen
-												? $t("editor.navbar.close-ai-assistant")
-												: $t("editor.navbar.open-ai-assistant")
-										}}
-									</span>
-								</ShadcnUiButton>
-							</ShadcnUiTooltipTrigger>
-							<ShadcnUiTooltipContent side="bottom" align="end">
-								{{
-									editorStore.aiAssistantOpen
-										? $t("editor.navbar.close-ai-assistant")
-										: $t("editor.navbar.open-ai-assistant")
-								}}
-							</ShadcnUiTooltipContent>
-						</ShadcnUiTooltip>
+						<template v-if="isAssistantEnabled">
+							<div class="mx-2 h-5.5 w-px bg-border" />
+							<ShadcnUiTooltip :delay-duration="600">
+								<ShadcnUiTooltipTrigger as-child>
+									<ShadcnUiButton
+										variant="ghost"
+										size="icon"
+										:class="
+											cn(
+												'h-7 w-7 cursor-pointer hover:bg-accent/50 active:bg-accent',
+												editorStore.aiAssistantOpen && 'bg-accent/50',
+											)
+										"
+										@click="editorStore.toggleAiAssistantOpen"
+									>
+										<Icon name="hugeicons:rubber-duck" class="size-4" />
+										<span class="sr-only">
+											{{
+												editorStore.aiAssistantOpen
+													? $t("editor.navbar.close-ai-assistant")
+													: $t("editor.navbar.open-ai-assistant")
+											}}
+										</span>
+									</ShadcnUiButton>
+								</ShadcnUiTooltipTrigger>
+								<ShadcnUiTooltipContent side="bottom" align="end">
+									{{
+										editorStore.aiAssistantOpen
+											? $t("editor.navbar.close-ai-assistant")
+											: $t("editor.navbar.open-ai-assistant")
+									}}
+								</ShadcnUiTooltipContent>
+							</ShadcnUiTooltip>
+						</template>
 					</div>
 				</div>
 			</div>
