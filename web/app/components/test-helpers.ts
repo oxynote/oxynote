@@ -119,6 +119,16 @@ export function mountUnderSidebarProvider(
 // teleported into <body> with it — a pending presence transition outlives
 // it — and their generated ids repeat across mounts, so a stale node would
 // answer the next lookup. Suites driving overlays clear them per test.
+// one persistent-state ref serves a whole app, so a mount after the first
+// no longer re-reads document.cookie — seed the state itself instead
+export function seedPersistentState(key: string, value: unknown) {
+	const state = runInApp(() =>
+		usePersistentState({ key: key, defaultValue: value }),
+	)
+
+	state.value = value
+}
+
 export function clearTeleportedOverlays() {
 	Array.from(document.body.children).forEach((child) => {
 		if (child.id !== "__nuxt" && child.id !== "teleports") {

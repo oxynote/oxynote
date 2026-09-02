@@ -1,6 +1,6 @@
 import { mockNuxtImport } from "@nuxt/test-utils/runtime"
 import { beforeEach, describe, it, vi } from "vitest"
-import { nextTick } from "vue"
+import { effectScope, nextTick } from "vue"
 import usePersistentState from "./usePersistentState"
 
 const { useDetectHostMock } = vi.hoisted(() => {
@@ -56,6 +56,42 @@ describe("usePersistentState", { concurrent: false }, () => {
 		})
 
 		expect(state.value).toEqual({ nested: true })
+	})
+
+	it("hands every caller of one key the same state", ({ expect }) => {
+		arrange(true)
+
+		const first = usePersistentState({
+			key: "ups-identity",
+			defaultValue: "initial",
+		})
+		const second = usePersistentState({
+			key: "ups-identity",
+			defaultValue: "initial",
+		})
+
+		expect(second).toBe(first)
+	})
+
+	it("keeps persisting after the scope that created it is stopped", async ({
+		expect,
+	}) => {
+		arrange(true)
+		const scope = effectScope()
+		scope.run(() =>
+			usePersistentState({ key: "ups-scoped", defaultValue: "initial" }),
+		)
+		scope.stop()
+
+		// the same state the stopped scope created, since one key has one
+		const state = usePersistentState({
+			key: "ups-scoped",
+			defaultValue: "initial",
+		})
+		state.value = "persisted"
+		await nextTick()
+
+		expect(document.cookie).toContain("ups-scoped=persisted")
 	})
 
 	it("shares written state with later readers of the same key", async ({

@@ -9,6 +9,7 @@ import {
 	emitFrom,
 	emitFromNth,
 	mountUnderSidebarProvider,
+	seedPersistentState,
 } from "./test-helpers"
 
 function makeItem(id: string, overrides: Partial<Item> = {}): Item {
@@ -52,11 +53,11 @@ function rowIds(wrapper: Awaited<ReturnType<typeof mountGroup>>["wrapper"]) {
 		.map((el) => el.attributes("data-item-id"))
 }
 
-// the collapse state is a cookie-backed singleton every mount in the file
+// the collapse state is a persisted singleton every mount in the file
 // shares, and the options menus are teleported into the shared <body>
 describe("<SidebarNestedGroup>", { concurrent: false }, () => {
 	beforeEach(() => {
-		document.cookie = "sidebar-item-collapse=; max-age=0; path=/"
+		seedPersistentState("sidebar-item-collapse", {})
 	})
 
 	it("renders nothing for an empty group", async ({ expect }) => {

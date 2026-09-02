@@ -1,6 +1,10 @@
 import { beforeEach, describe, it, vi } from "vitest"
 import NotificationSidebar from "./NotificationSidebar.vue"
-import { emitFrom, mountUnderSidebarProvider } from "./test-helpers"
+import {
+	emitFrom,
+	mountUnderSidebarProvider,
+	seedPersistentState,
+} from "./test-helpers"
 
 // matchMedia is what useMediaQuery reads; happy-dom's own implementation
 // always reports "not matching", so the mobile layout needs a stub
@@ -40,9 +44,9 @@ function panel(wrapper: Awaited<ReturnType<typeof mountSidebar>>) {
 // the viewport stub is a global shared by every mount in the file
 describe("<NotificationSidebar>", { concurrent: false }, () => {
 	beforeEach(() => {
-		// the sidebar provider keeps its open state in this cookie, which
-		// every mount in the file shares
-		document.cookie = "sidebar-state=; max-age=0; path=/"
+		// the sidebar provider reads its open state from this persisted
+		// singleton, which every mount in the file shares
+		seedPersistentState("sidebar-state", true)
 	})
 
 	it("collapses the column while the inbox is closed", async ({ expect }) => {
@@ -125,8 +129,7 @@ describe("<NotificationSidebar>", { concurrent: false }, () => {
 		expect,
 	}) => {
 		stubViewport(false)
-		// the provider reads its open state from this cookie
-		document.cookie = "sidebar-state=false; path=/"
+		seedPersistentState("sidebar-state", false)
 
 		const wrapper = await mountSidebar(true)
 
