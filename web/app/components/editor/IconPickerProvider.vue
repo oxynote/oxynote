@@ -20,7 +20,7 @@ const RecycleScroller = defineAsyncComponent(() =>
 
 const ITEM_SIZE = 28
 const GRID_ITEMS_PER_ROW = 12
-const POPOVER_WIDTH = ITEM_SIZE * GRID_ITEMS_PER_ROW
+const GRID_WIDTH = ITEM_SIZE * GRID_ITEMS_PER_ROW
 
 const { open, anchor, closeIconPicker, selectIcon } = useIconPicker()
 
@@ -134,9 +134,12 @@ function handleEscape(e: KeyboardEvent) {
 				"
 				style="top: 0px; left: 0px"
 			>
+				<!--a grid row is a fixed 12 x 28px, so where scrollbars take up
+				space the popover has to grow by the gutter the scroller reserves
+				below, or the row overflows into a horizontal scrollbar-->
 				<div
 					class="flex h-60 max-h-[50dvh] flex-col"
-					:style="{ width: `${POPOVER_WIDTH}px` }"
+					:style="{ minWidth: `${GRID_WIDTH}px` }"
 				>
 					<div class="px-1 pt-0.5 pb-1">
 						<div class="relative block items-center overflow-hidden">
@@ -168,8 +171,11 @@ function handleEscape(e: KeyboardEvent) {
 						</div>
 					</div>
 					<template v-else>
+						<!--the reserved gutter is what firefox measures the popover's
+						width from; chrome counts the scrollbar without it-->
 						<RecycleScroller
 							v-slot="{ item }"
+							class="[scrollbar-gutter:stable]"
 							:items="icons"
 							:item-size="ITEM_SIZE"
 							:item-secondary-size="ITEM_SIZE"

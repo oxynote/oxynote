@@ -621,14 +621,9 @@
 		@apply max-w-screen overflow-x-hidden bg-background text-foreground;
 	}
 
-	::-webkit-scrollbar {
-		@apply w-2.5;
-	}
-
-	::-webkit-scrollbar-track {
-		@apply bg-(--scrollbar);
-	}
-
+	/* a ::-webkit-scrollbar rule carrying a width switches macOS off its
+	   floating overlay scrollbars, and the page then widens by the
+	   scrollbar's width every time a dialog locks the body's scrolling. */
 	* {
 		scrollbar-width: thin;
 		scrollbar-color: var(--scrollbar) transparent;

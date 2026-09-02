@@ -125,6 +125,13 @@ setup:
 	done
 	test -f web/.env || cp docker/env/web.example.env web/.env
 
+.PHONY: setup-force
+setup-force: setup
+	for f in core auth-realtime web; do \
+		cp docker/env/$$f.example.env docker/env/$$f.local.env; \
+	done
+	cp docker/env/web.example.env web/.env
+
 .PHONY: deps
 deps:
 	cd web && pnpm run deps
