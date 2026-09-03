@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"maps"
 	"slices"
+	"strings"
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/block"
@@ -121,21 +122,22 @@ type input struct {
 	// args is the raw JSON the model supplied.
 	args json.RawMessage
 
-	// touched lists the documents this call changed, in the order the
+	// touched lists the branches this call changed, in the order the
 	// writes below recorded them.
-	touched []xid.ID
+	touched []Touched
 }
 
-// recordTouched notes a document this call changed. Every write in this
+// recordTouched notes a branch this call changed. Every write in this
 // package goes through one of the four methods below, so recording it
 // here is what makes Result.Documents right by construction rather than
 // by a convention about argument names.
-func (i *input) recordTouched(documentID xid.ID) {
-	if documentID.IsNil() || slices.Contains(i.touched, documentID) {
+func (i *input) recordTouched(documentID, branchID xid.ID) {
+	t := Touched{DocumentID: documentID, BranchID: branchID}
+	if documentID.IsNil() || slices.Contains(i.touched, t) {
 		return
 	}
 
-	i.touched = append(i.touched, documentID)
+	i.touched = append(i.touched, t)
 }
 
 // newInput creates a fresh instance of input for one tool call.
@@ -235,11 +237,12 @@ func (i *input) DataSourceRunner(id xid.ID) (datasource.Runner, error) {
 	return i.runners.Runner(*ds), nil
 }
 
-// Document returns the document's default branch. An id naming nothing
-// in the session's organisation is reported as such rather than as the
-// driver's own words, which say nothing a caller can act on.
-func (i *input) Document(id xid.ID) (*document.Document, error) {
-	doc, err := i.db.FetchDocument(i.ctx, id, i.orgID, document.DefaultBranch)
+// Document returns the document on its default branch. An id naming
+// nothing in the session's organisation is reported as such rather
+// than in the driver's own words, which say nothing a caller can act
+// on.
+func (i *input) Document(documentID xid.ID) (*document.Document, error) {
+	doc, err := i.db.FetchDocument(i.ctx, documentID, i.orgID, document.DefaultBranch)
 	if err != nil {
 		if errutil.IsNotFound(err) {
 			return nil, ErrUnknownDocument
@@ -251,23 +254,84 @@ func (i *input) Document(id xid.ID) (*document.Document, error) {
 	return doc, nil
 }
 
-// DocumentContent returns the document's parsed main-branch content.
-func (i *input) DocumentContent(id xid.ID) (document.Content, error) {
-	return i.db.FetchMainBranchContent(i.ctx, id, i.orgID)
+// Branch returns the document on the branch branchID names. A branch id
+// resolves on its own, so one belonging to another document is refused
+// as unknown to this one, and an unknown branch is reported with the
+// ones the document does have.
+func (i *input) Branch(documentID, branchID xid.ID) (*document.Document, error) {
+	doc, err := i.db.FetchDocumentByBranchID(i.ctx, branchID, i.orgID)
+	if err != nil {
+		if errutil.IsNotFound(err) {
+			return nil, i.unknownBranch(documentID, branchID)
+		}
+
+		return nil, err
+	}
+
+	if doc.ID != documentID {
+		return nil, i.unknownBranch(documentID, branchID)
+	}
+
+	return doc, nil
 }
 
-// DocumentBlock finds one block of the document's main branch by uid.
-// It reads the persisted content, which is what every placement check
-// reads too, so a write and its checks see the same document.
-func (i *input) DocumentBlock(id xid.ID, uid string) (document.Block, error) {
-	content, err := i.DocumentContent(id)
+// unknownBranch tells a branch the document does not have from a
+// document the organisation does not have: the branch list is empty
+// only for the latter, since every document has at least one.
+func (i *input) unknownBranch(documentID, branchID xid.ID) error {
+	branches, err := i.DocumentBranches(documentID)
+	if err != nil {
+		return err
+	}
+
+	return fmt.Errorf("branch %s: %w; the branches are %s", branchID, ErrUnknownBranch, strings.Join(branchLabels(branches, nil), ", "))
+}
+
+// DocumentBranches lists every branch of the document. A document the
+// organisation does not have lists no branches, and is reported as
+// unknown rather than as branchless.
+func (i *input) DocumentBranches(documentID xid.ID) ([]document.BranchSummary, error) {
+	branches, err := i.db.FetchDocumentBranches(i.ctx, documentID, i.orgID)
+	if err != nil {
+		return nil, fmt.Errorf("fetching branches: %w", err)
+	}
+
+	if len(branches) == 0 {
+		return nil, ErrUnknownDocument
+	}
+
+	return branches, nil
+}
+
+// DocumentContent returns the parsed content of the branch branchID
+// names. The branch fetch already carries the content, so this is the
+// same lookup in the shape the block walks take.
+func (i *input) DocumentContent(documentID, branchID xid.ID) (document.Content, error) {
+	doc, err := i.Branch(documentID, branchID)
+	if err != nil {
+		return document.Content{}, err
+	}
+
+	return document.Content{
+		OrganizationID: i.orgID,
+		DocumentID:     doc.ID,
+		DocumentName:   doc.DocumentName,
+		Content:        doc.Content,
+	}, nil
+}
+
+// DocumentBlock finds one block of the branch by uid. It reads the
+// persisted content, which is what every placement check reads too, so
+// a write and its checks see the same document.
+func (i *input) DocumentBlock(documentID, branchID xid.ID, blockUID string) (document.Block, error) {
+	content, err := i.DocumentContent(documentID, branchID)
 	if err != nil {
 		return document.Block{}, fmt.Errorf("fetching content: %w", err)
 	}
 
-	b, ok := content.Content.FindByUID(uid)
+	b, ok := content.Content.FindByUID(blockUID)
 	if !ok {
-		return document.Block{}, fmt.Errorf("block %s: %w", uid, errUnknownBlock)
+		return document.Block{}, fmt.Errorf("block %s: %w", blockUID, errUnknownBlock)
 	}
 
 	return b, nil
@@ -344,7 +408,7 @@ func (i *input) CreateDocument(doc document.Document) error {
 		return fmt.Errorf("commit: %w", err)
 	}
 
-	i.recordTouched(doc.ID)
+	i.recordTouched(doc.ID, doc.BranchID)
 
 	return nil
 }
@@ -405,19 +469,19 @@ func (i *input) DeleteDocument(id xid.ID) error {
 	return tx.Commit()
 }
 
-// MoveDocument re-parents the document.
+// MoveDocument re-parents the document doc describes.
 //
 // The destination is validated here rather than by the caller: a move
 // that lands under a missing parent, or under the document's own
 // subtree, is a broken tree, and the check belongs with the write that
 // would cause it.
-func (i *input) MoveDocument(id xid.ID, parentID null.Value[xid.ID]) error {
+func (i *input) MoveDocument(doc *document.Document, parentID null.Value[xid.ID]) error {
 	if parentID.Valid {
 		if err := i.db.CheckDocumentExists(i.ctx, parentID.V, i.orgID); err != nil {
 			return fmt.Errorf("new parent %s: %w", parentID.V, errUnknownParent(err))
 		}
 
-		cycle, err := i.db.CheckDocumentCycle(i.ctx, id, parentID.V, i.orgID)
+		cycle, err := i.db.CheckDocumentCycle(i.ctx, doc.ID, parentID.V, i.orgID)
 		if err != nil {
 			return fmt.Errorf("parent check: %w", err)
 		}
@@ -427,13 +491,14 @@ func (i *input) MoveDocument(id xid.ID, parentID null.Value[xid.ID]) error {
 		}
 	}
 
-	if err := i.db.UpdateDocumentParentID(i.ctx, id, parentID, i.orgID); err != nil {
+	if err := i.db.UpdateDocumentParentID(i.ctx, doc.ID, parentID, i.orgID); err != nil {
 		return fmt.Errorf("update: %w", err)
 	}
 
 	// the parents' own content is unchanged — only the tree shape
-	// around them — so the moved document is the one to record.
-	i.recordTouched(id)
+	// around them — so the moved document is the one to record, on the
+	// branch it was fetched on.
+	i.recordTouched(doc.ID, doc.BranchID)
 
 	return nil
 }
@@ -455,17 +520,22 @@ func (i *input) ReadOffloaded(path string) (string, error) {
 	return i.offload.Read(i.ctx, path)
 }
 
-// errBranchProtected is what a content write reports for a document
-// whose branch is protected. The message names the tool the caller
-// still has, since reading a protected document stays allowed.
-var errBranchProtected = errors.New("this document's branch is protected and takes no edits; read it with get_document or ask someone with access to unprotect it")
+// errBranchProtected is what a content write reports for a branch that
+// is protected. Reading it stays allowed; the caller is told which of
+// the document's branches would take the write instead.
+var errBranchProtected = errors.New("this branch is protected and takes no edits")
 
-// resolveDoc loads the default branch of the given document and returns
-// the ids the edit client needs. The lookup also acts as the cross-org
-// safety check — Document scopes by orgID so a docID from another
-// organisation surfaces as NotFound.
-func (i *input) resolveDoc(documentID xid.ID) (docRef, error) {
-	doc, err := i.Document(documentID)
+// ErrUnknownBranch is what a branch lookup reports for an id the
+// document does not have. The document's branches travel with it, since
+// a stale or guessed id is the usual cause.
+var ErrUnknownBranch = errors.New("this document has no branch with that id")
+
+// resolveDoc loads the branch branchID names of the given document and
+// returns the ids the edit client needs. The lookup
+// also acts as the cross-org safety check — Document scopes by orgID so
+// a docID from another organisation surfaces as NotFound.
+func (i *input) resolveDoc(documentID, branchID xid.ID) (docRef, error) {
+	doc, err := i.Branch(documentID, branchID)
 	if err != nil {
 		return docRef{}, fmt.Errorf("fetching document: %w", err)
 	}
@@ -476,22 +546,54 @@ func (i *input) resolveDoc(documentID xid.ID) (docRef, error) {
 	// this the call reports success, the change shows up in every open
 	// editor, and it is gone at the next load.
 	if doc.Protected {
-		return docRef{}, errBranchProtected
+		return docRef{}, i.protectedBranch(doc)
 	}
 
 	return docRef{DocumentID: doc.ID, BranchID: doc.BranchID}, nil
 }
 
+// protectedBranch builds the refusal for a write to a protected branch,
+// naming the document's unprotected branches so the caller has
+// somewhere to write, or saying there is none.
+func (i *input) protectedBranch(doc *document.Document) error {
+	branches, err := i.DocumentBranches(doc.ID)
+	if err != nil {
+		return fmt.Errorf("branch %s: %w; %w", doc.BranchName, errBranchProtected, err)
+	}
+
+	open := branchLabels(branches, func(b document.BranchSummary) bool { return !b.Protected })
+	if len(open) == 0 {
+		return fmt.Errorf("branch %s: %w; the document has no unprotected branch to write to", doc.BranchName, errBranchProtected)
+	}
+
+	return fmt.Errorf("branch %s: %w; write to one of %s", doc.BranchName, errBranchProtected, strings.Join(open, ", "))
+}
+
+// branchLabels lists the branches keep accepts, or all of them when keep
+// is nil, each as "name (id)": the name is what a person calls it and
+// the id is what a tool call takes.
+func branchLabels(branches []document.BranchSummary, keep func(document.BranchSummary) bool) []string {
+	out := make([]string, 0, len(branches))
+
+	for _, b := range branches {
+		if keep == nil || keep(b) {
+			out = append(out, fmt.Sprintf("%s (%s)", b.BranchName, b.BranchID))
+		}
+	}
+
+	return out
+}
+
 // ApplyEdit is the shared tail of every content-mutating write tool: it
-// resolves the document to a (documentID, branchID) pair, ships the
+// resolves the document and branch to a (documentID, branchID) pair, ships the
 // operation batch to Node, and reports any operation Node refused.
 // Outcomes are logged so partial failures on the Node side (uid not
 // found, malformed block) are visible without re-running the
 // conversation. What the write produced is the tool's own to describe;
 // the persist behind the live document is debounced, so a re-read here
 // would not reliably show it.
-func (i *input) ApplyEdit(documentID xid.ID, ops []edit.Operation) error {
-	ref, err := i.resolveDoc(documentID)
+func (i *input) ApplyEdit(documentID, branchID xid.ID, ops []edit.Operation) error {
+	ref, err := i.resolveDoc(documentID, branchID)
 	if err != nil {
 		i.log.Warn(
 			"edit resolve failed",
@@ -544,7 +646,7 @@ func (i *input) ApplyEdit(documentID xid.ID, ops []edit.Operation) error {
 
 	// the resolved id, not the argument: the caller may have named the
 	// document any way resolveDoc accepts.
-	i.recordTouched(ref.DocumentID)
+	i.recordTouched(ref.DocumentID, ref.BranchID)
 
 	return nil
 }
@@ -556,8 +658,8 @@ func (i *input) ApplyEdit(documentID xid.ID, ops []edit.Operation) error {
 // fetched content and validates against that container. The edit
 // backend applies no schema of its own, so an illegal type let through
 // here would land in the Y.Doc unchallenged.
-func (i *input) ValidatePlacement(documentID xid.ID, referenceUID string, b block.Block) error {
-	content, err := i.DocumentContent(documentID)
+func (i *input) ValidatePlacement(documentID, branchID xid.ID, referenceUID string, b block.Block) error {
+	content, err := i.DocumentContent(documentID, branchID)
 	if err != nil {
 		return fmt.Errorf("fetching content: %w", err)
 	}
@@ -580,8 +682,8 @@ func (i *input) ValidatePlacement(documentID xid.ID, referenceUID string, b bloc
 // A block whose ProseMirror type has no canonical counterpart is a
 // wrapper item (a list item, a macro internal). Those carry attributes
 // the canonical model does not describe, so there is nothing to check.
-func (i *input) ValidateAttrUpdate(documentID xid.ID, blockUID string, attrs map[string]any) error {
-	content, err := i.DocumentContent(documentID)
+func (i *input) ValidateAttrUpdate(documentID, branchID xid.ID, blockUID string, attrs map[string]any) error {
+	content, err := i.DocumentContent(documentID, branchID)
 	if err != nil {
 		return fmt.Errorf("fetching content: %w", err)
 	}
@@ -616,8 +718,8 @@ func (i *input) ValidateAttrUpdate(documentID xid.ID, blockUID string, attrs map
 // narrower rule instead: it may only land in a container of the kind it
 // already sits in, which permits reordering and moving between two
 // lists while keeping a list item from landing at the document root.
-func (i *input) ValidateMove(documentID xid.ID, blockUID, referenceUID string) error {
-	content, err := i.DocumentContent(documentID)
+func (i *input) ValidateMove(documentID, branchID xid.ID, blockUID, referenceUID string) error {
+	content, err := i.DocumentContent(documentID, branchID)
 	if err != nil {
 		return fmt.Errorf("fetching content: %w", err)
 	}
@@ -695,13 +797,19 @@ type DataSourceRunners interface {
 	Runner(ds datasource.DataSource) datasource.Runner
 }
 
-// DB is the persistence surface the tools require. The db package's
-// agent satisfies it.
+// DB is the persistence surface the tools require, composed from the
+// surfaces below. The db package's agent satisfies it.
 //
 //go:generate ../../../scripts/codegen/mock -t both DB db
 type DB interface {
 	sqlutil.DB
+	DocumentDB
+	DataSourceDB
+}
 
+// DocumentDB is the document tree, its branches and their content as
+// the tools read and change them.
+type DocumentDB interface {
 	// FetchDocumentTree should return all documents for the org as a
 	// nested summary tree (sort_index order). Used by
 	// list_documents.
@@ -712,15 +820,19 @@ type DB interface {
 	// list_documents.
 	FetchDocumentTreeByDocumentParentID(ctx context.Context, parentID null.Value[xid.ID], organizationID string) (document.Summaries, error)
 
-	// FetchDocument should return full document content for the named
-	// branch. Used by get_document, read_block, and every write that
-	// names a document.
+	// FetchDocument should return the document on the named branch.
+	// Used by the document-level tools, which act on the default
+	// branch.
 	FetchDocument(ctx context.Context, id xid.ID, organizationID, branchName string) (*document.Document, error)
 
-	// FetchMainBranchContent should return the parsed main-branch
-	// content of the document. Used when an op only needs the
-	// content tree (no branch metadata).
-	FetchMainBranchContent(ctx context.Context, docID xid.ID, organizationID string) (document.Content, error)
+	// FetchDocumentBranches should list the document's branches. Used
+	// by get_document, and to tell an unknown branch from an unknown
+	// document.
+	FetchDocumentBranches(ctx context.Context, docID xid.ID, organizationID string) ([]document.BranchSummary, error)
+
+	// FetchDocumentByBranchID should return the document the branch id
+	// names, on that branch. Used for every branch-targeted call.
+	FetchDocumentByBranchID(ctx context.Context, branchID xid.ID, organizationID string) (*document.Document, error)
 
 	// UpdateDocumentParentID should re-parent a document. Used by
 	// update_document.
@@ -735,7 +847,11 @@ type DB interface {
 	// of id would create a cycle in the document tree. Used by
 	// update_document to reject self and descendant parents.
 	CheckDocumentCycle(ctx context.Context, id, parentID xid.ID, organizationID string) (bool, error)
+}
 
+// DataSourceDB is the organisation's data sources as the tools look
+// them up.
+type DataSourceDB interface {
 	// FetchDataSource should return a data source by id within the org.
 	// Used by every data-source tool to resolve what it was asked about.
 	FetchDataSource(ctx context.Context, id xid.ID, organizationID string) (*datasource.DataSource, error)

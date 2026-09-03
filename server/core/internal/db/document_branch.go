@@ -102,37 +102,6 @@ func (a *agent) ForkDocumentBranch(
 	return err
 }
 
-// FetchMainBranchContent returns the parsed content and display name
-// of a document's main branch, scoped to the given org. Used by the
-// assistant's read tools, which only need these fields and would
-// otherwise pay to deserialize raw_content and the rest of the
-// branch row.
-func (a *agent) FetchMainBranchContent(ctx context.Context, docID xid.ID, organizationID string) (document.Content, error) {
-	q, args := a.builder.Select(
-		`document_name AS "document_name"`,
-		`content AS "content"`,
-	).From("document_branches").
-		Where(sq.Eq{
-			"fk_document_id":     docID,
-			"fk_organization_id": organizationID,
-			// the flag, not the name: the name is user-facing and the
-			// document would read as contentless the moment it changed.
-			`"default"`: true,
-		}).
-		Limit(1).
-		MustSql()
-
-	out := document.Content{
-		OrganizationID: organizationID,
-		DocumentID:     docID,
-	}
-	if err := sqlx.GetContext(ctx, a.sql, &out, q, args...); err != nil {
-		return document.Content{}, err
-	}
-
-	return out, nil
-}
-
 // FetchDocumentBranches fetches all branches for a document as lightweight summaries.
 func (a *agent) FetchDocumentBranches(ctx context.Context, docID xid.ID, organizationID string) ([]document.BranchSummary, error) {
 	q, args := a.selectBranchSummary(a.builder.Select()).

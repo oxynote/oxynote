@@ -9,7 +9,6 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
-	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -65,9 +64,9 @@ type gateCase struct {
 func Test_confirming_InvokableRun(t *testing.T) {
 	t.Parallel()
 
-	docID := xid.New()
-	writeArgs := `{"document_id":"` + docID.String() + `","block_uid":"a","text":"hi"}`
-	deleteArgs := `{"document_id":"` + docID.String() + `","block_uid":"a"}`
+	docID := _testDocID
+	writeArgs := `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"a","text":"hi"}`
+	deleteArgs := `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"a"}`
 
 	// every write tool must ask before it acts. Resuming an approved
 	// turn reruns the tool from the top, so a tool that applied its
@@ -75,7 +74,7 @@ func Test_confirming_InvokableRun(t *testing.T) {
 	cc := map[string]gateCase{
 		"Insert block asks first": {
 			Name:        NameInsertBlock,
-			Args:        `{"document_id":"` + docID.String() + `","reference_block_uid":"b","position":"after","block":{"type":"paragraph"}}`,
+			Args:        `{` + targetArgs(_stubMainBranchID) + `,"reference_block_uid":"b","position":"after","block":{"type":"paragraph"}}`,
 			Interrupted: true,
 		},
 		"Delete block asks first":      {Name: NameDeleteBlock, Args: deleteArgs, Interrupted: true},
@@ -122,7 +121,7 @@ func Test_confirming_InvokableRun(t *testing.T) {
 		},
 		"Missing arguments are refused, never confirmed": {
 			Name:     NameUpdateBlockText,
-			Args:     `{"document_id":"` + docID.String() + `","block_uid":"b"}`,
+			Args:     `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"b"}`,
 			Rejected: "update_block_text: text is required",
 		},
 	}

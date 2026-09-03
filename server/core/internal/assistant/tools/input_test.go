@@ -18,6 +18,7 @@ import (
 	datasourceMock "github.com/oxynote/oxynote/server/core/internal/datasource/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/search"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
@@ -129,6 +130,8 @@ func requiredArgs(t *testing.T, name Name) string {
 			if slices.Contains(infoOf(name).Required, "reference_block_uid") {
 				vals[key] = string(positionAfter)
 			}
+		case _keyBranchID:
+			vals[key] = _stubMainBranchID.String()
 		case "reference_block_uid":
 			// distinct from the "x" other uid keys take, so a payload
 			// naming both a block and a reference is not a self-move.
@@ -177,35 +180,79 @@ const _stubDocumentName = "Runbook"
 // stubDocumentDB answers every document lookup with a resolvable
 // document, so a tool can name its target.
 func stubDocumentDB() *DBMock {
-	branchID := xid.New()
-
 	return &DBMock{
-		FetchDocumentFunc: func(_ context.Context, id xid.ID, orgID, _ string) (*document.Document, error) {
-			return &document.Document{
-				BranchID:       branchID,
-				DocumentName:   _stubDocumentName,
-				ID:             id,
-				OrganizationID: orgID,
-			}, nil
+		FetchDocumentFunc: func(_ context.Context, id xid.ID, orgID, branchName string) (*document.Document, error) {
+			return stubBranchDocument(id, orgID, _stubMainBranchID, branchName), nil
 		},
+		// the stub has the two branches its listing names and no other,
+		// and the draft belongs to the test document alone.
+		FetchDocumentByBranchIDFunc: func(_ context.Context, branchID xid.ID, orgID string) (*document.Document, error) {
+			switch branchID {
+			case _stubMainBranchID:
+				return stubBranchDocument(_testDocID, orgID, branchID, document.DefaultBranch), nil
+			case _stubBranchID:
+				return stubBranchDocument(_testDocID, orgID, branchID, _stubBranchName), nil
+			default:
+				return nil, errutil.ErrNotFound
+			}
+		},
+		FetchDocumentBranchesFunc: stubBranches(false, false),
 	}
 }
+
+// stubBranchDocument builds the document the stubs answer with, on the
+// named branch.
+func stubBranchDocument(id xid.ID, orgID string, branchID xid.ID, branchName string) *document.Document {
+	return &document.Document{
+		BranchID:       branchID,
+		BranchName:     branchName,
+		DocumentName:   _stubDocumentName,
+		Default:        branchName == document.DefaultBranch,
+		ID:             id,
+		OrganizationID: orgID,
+	}
+}
+
+// stubBranches answers a branch listing with the default branch and one
+// named draft, each protected when told so.
+func stubBranches(mainProtected, draftProtected bool) func(context.Context, xid.ID, string) ([]document.BranchSummary, error) {
+	return func(context.Context, xid.ID, string) ([]document.BranchSummary, error) {
+		return []document.BranchSummary{
+			{BranchID: _stubMainBranchID, BranchName: document.DefaultBranch, Default: true, Protected: mainProtected},
+			{BranchID: _stubBranchID, BranchName: _stubBranchName, Protected: draftProtected},
+		}, nil
+	}
+}
+
+// _stubBranchName is the non-default branch every branch stub lists.
+const _stubBranchName = "draft"
+
+// _stubMainBranchID and _stubBranchID are the ids of the two branches
+// every branch stub lists; _unknownBranchID names no branch of any
+// document.
+var (
+	_stubMainBranchID = xid.New()
+	_stubBranchID     = xid.New()
+	_unknownBranchID  = xid.New()
+)
 
 // protectedDocumentDB answers with a document whose branch is
 // protected, which is the one branch a tool's write may not reach.
 func protectedDocumentDB() *DBMock {
-	branchID := xid.New()
-
 	return &DBMock{
-		FetchDocumentFunc: func(_ context.Context, id xid.ID, orgID, _ string) (*document.Document, error) {
-			return &document.Document{
-				BranchID:       branchID,
-				DocumentName:   _stubDocumentName,
-				ID:             id,
-				OrganizationID: orgID,
-				Protected:      true,
-			}, nil
+		FetchDocumentFunc: func(_ context.Context, id xid.ID, orgID, branchName string) (*document.Document, error) {
+			doc := stubBranchDocument(id, orgID, _stubMainBranchID, branchName)
+			doc.Protected = true
+
+			return doc, nil
 		},
+		FetchDocumentByBranchIDFunc: func(_ context.Context, branchID xid.ID, orgID string) (*document.Document, error) {
+			doc := stubBranchDocument(_testDocID, orgID, branchID, document.DefaultBranch)
+			doc.Protected = true
+
+			return doc, nil
+		},
+		FetchDocumentBranchesFunc: stubBranches(true, false),
 	}
 }
 
@@ -213,6 +260,9 @@ func protectedDocumentDB() *DBMock {
 func failingDocumentDB() *DBMock {
 	return &DBMock{
 		FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*document.Document, error) {
+			return nil, assert.AnError
+		},
+		FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*document.Document, error) {
 			return nil, assert.AnError
 		},
 	}
@@ -298,16 +348,16 @@ func Test_input_Decode(t *testing.T) {
 			Err:  "read_block: document_id is required",
 		},
 		"Incomplete arguments are rejected by Validate": {
-			Args: `{"document_id":"` + _testDocID.String() + `"}`,
+			Args: `{` + targetArgs(_stubMainBranchID) + `}`,
 			Err:  "read_block: block_uid is required",
 		},
 		"Unknown keys are ignored": {
-			Args: `{"document_id":"` + _testDocID.String() + `","block_uid":"b","extra":true}`,
-			Want: readBlockArgs{DocumentID: _testDocID, BlockUID: "b"},
+			Args: `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"b","extra":true}`,
+			Want: readBlockArgs{DocumentID: _testDocID, BranchID: _stubMainBranchID, BlockUID: "b"},
 		},
 		"Decoded": {
-			Args: `{"document_id":"` + _testDocID.String() + `","block_uid":"b"}`,
-			Want: readBlockArgs{DocumentID: _testDocID, BlockUID: "b"},
+			Args: `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"b"}`,
+			Want: readBlockArgs{DocumentID: _testDocID, BranchID: _stubMainBranchID, BlockUID: "b"},
 		},
 	}
 
@@ -425,7 +475,7 @@ func Test_input_CreateDocument(t *testing.T) {
 
 			// only a committed document exists to be pointed at.
 			if err == nil {
-				assert.Equal(t, []xid.ID{doc.ID}, inp.touched)
+				assert.Equal(t, []Touched{{DocumentID: doc.ID, BranchID: doc.BranchID}}, inp.touched)
 			} else {
 				assert.Empty(t, inp.touched)
 			}
@@ -554,25 +604,26 @@ func Test_input_recordTouched(t *testing.T) {
 	// a call that changed nothing reports nothing.
 	assert.Empty(t, inp.touched)
 
-	a, b := xid.New(), xid.New()
+	a, b, branch := xid.New(), xid.New(), xid.New()
 
-	inp.recordTouched(a)
-	inp.recordTouched(b)
+	inp.recordTouched(a, branch)
+	inp.recordTouched(b, branch)
 
-	// a document changed twice in one call is still one document, and
-	// the order the call touched them is preserved.
-	inp.recordTouched(a)
+	// a branch changed twice in one call is still one branch, and the
+	// order the call touched them is preserved.
+	inp.recordTouched(a, branch)
 
 	// nothing to record is not something to record.
-	inp.recordTouched(xid.NilID())
+	inp.recordTouched(xid.NilID(), branch)
 
-	assert.Equal(t, []xid.ID{a, b}, inp.touched)
+	assert.Equal(t, []Touched{{DocumentID: a, BranchID: branch}, {DocumentID: b, BranchID: branch}}, inp.touched)
 }
 
 func Test_input_MoveDocument(t *testing.T) {
 	t.Parallel()
 
 	docID := xid.New()
+	branchID := xid.New()
 	parentID := null.ValueFrom(xid.New())
 
 	moveDB := func(exists error, cycle bool, cycleErr, updateErr error) *DBMock {
@@ -637,7 +688,7 @@ func Test_input_MoveDocument(t *testing.T) {
 
 			inp := testInput(testDeps(c.DB, nil, nil), NameUpdateDocument, `{}`)
 
-			err := inp.MoveDocument(docID, c.Parent)
+			err := inp.MoveDocument(&document.Document{ID: docID, BranchID: branchID}, c.Parent)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			// nothing is written until the destination is known good.
@@ -647,7 +698,7 @@ func Test_input_MoveDocument(t *testing.T) {
 			// the parents' own content is unchanged by a re-parent, so
 			// the moved document is the only one recorded.
 			if err == nil {
-				assert.Equal(t, []xid.ID{docID}, inp.touched)
+				assert.Equal(t, []Touched{{DocumentID: docID, BranchID: branchID}}, inp.touched)
 			} else {
 				assert.Empty(t, inp.touched)
 			}
@@ -658,18 +709,19 @@ func Test_input_MoveDocument(t *testing.T) {
 func Test_input_ApplyEdit(t *testing.T) {
 	t.Parallel()
 
-	docID := xid.New()
+	docID := _testDocID
 
 	cc := map[string]struct {
 		DB      *DBMock
 		Applier *EditApplierMock
-		Touched []xid.ID
+		Branch  xid.ID
+		Touched []Touched
 		Applies int
 		Err     error
 	}{
-		"Error returned by db.FetchDocument": {
+		"Error returned by db.FetchDocumentByBranchID": {
 			DB: &DBMock{
-				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*document.Document, error) {
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*document.Document, error) {
 					return nil, assert.AnError
 				},
 			},
@@ -689,8 +741,61 @@ func Test_input_ApplyEdit(t *testing.T) {
 		"Protected branch is refused before anything is applied": {
 			DB:      protectedDocumentDB(),
 			Applier: stubApplier(),
-			Err:     errBranchProtected,
+			Err:     fmt.Errorf("branch main: %w; write to one of draft (%s)", errBranchProtected, _stubBranchID),
 		},
+		"Protected branch with no alternative says so": func() struct {
+			DB      *DBMock
+			Applier *EditApplierMock
+			Branch  xid.ID
+			Touched []Touched
+			Applies int
+			Err     error
+		} {
+			db := protectedDocumentDB()
+			db.FetchDocumentBranchesFunc = stubBranches(true, true)
+
+			return struct {
+				DB      *DBMock
+				Applier *EditApplierMock
+				Branch  xid.ID
+				Touched []Touched
+				Applies int
+				Err     error
+			}{
+				DB:      db,
+				Applier: stubApplier(),
+				Err:     fmt.Errorf("branch main: %w; the document has no unprotected branch to write to", errBranchProtected),
+			}
+		}(),
+		"Applied to a named branch": func() struct {
+			DB      *DBMock
+			Applier *EditApplierMock
+			Branch  xid.ID
+			Touched []Touched
+			Applies int
+			Err     error
+		} {
+			// the branch has to belong to the document being edited.
+			db := stubDocumentDB()
+			db.FetchDocumentByBranchIDFunc = func(_ context.Context, branchID xid.ID, orgID string) (*document.Document, error) {
+				return stubBranchDocument(docID, orgID, branchID, _stubBranchName), nil
+			}
+
+			return struct {
+				DB      *DBMock
+				Applier *EditApplierMock
+				Branch  xid.ID
+				Touched []Touched
+				Applies int
+				Err     error
+			}{
+				DB:      db,
+				Applier: stubApplier(),
+				Branch:  _stubBranchID,
+				Touched: []Touched{{DocumentID: docID, BranchID: _stubBranchID}},
+				Applies: 1,
+			}
+		}(),
 		"Nothing applied is a failure, not a result": {
 			DB: stubDocumentDB(),
 			Applier: &EditApplierMock{
@@ -713,13 +818,13 @@ func Test_input_ApplyEdit(t *testing.T) {
 					}, nil
 				},
 			},
-			Touched: []xid.ID{docID},
+			Touched: []Touched{{DocumentID: docID, BranchID: _stubMainBranchID}},
 			Applies: 1,
 		},
 		"Applied": {
 			DB:      stubDocumentDB(),
 			Applier: stubApplier(),
-			Touched: []xid.ID{docID},
+			Touched: []Touched{{DocumentID: docID, BranchID: _stubMainBranchID}},
 			Applies: 1,
 		},
 	}
@@ -730,7 +835,12 @@ func Test_input_ApplyEdit(t *testing.T) {
 
 			inp := testInput(testDeps(c.DB, c.Applier, nil), NameInsertBlock, `{}`)
 
-			err := inp.ApplyEdit(docID, []edit.Operation{edit.Delete("a")})
+			branch := c.Branch
+			if branch.IsNil() {
+				branch = _stubMainBranchID
+			}
+
+			err := inp.ApplyEdit(docID, branch, []edit.Operation{edit.Delete("a")})
 			testutil.AssertEqualError(t, c.Err, err)
 
 			// an edit that never landed has changed nothing to report.
@@ -757,12 +867,13 @@ func Test_input_ApplyEdit(t *testing.T) {
 	}
 }
 
-// contentWithBlocks builds a DB whose main-branch content is the given
+// contentWithBlocks builds a DB whose branch content is the given
 // top-level blocks, for the validators that read the document to decide.
 func contentWithBlocks(blocks ...document.Block) *DBMock {
 	return &DBMock{
-		FetchMainBranchContentFunc: func(context.Context, xid.ID, string) (document.Content, error) {
-			return document.Content{
+		FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*document.Document, error) {
+			return &document.Document{
+				ID:      _testDocID,
 				Content: document.RootBlock{Content: blocks},
 			}, nil
 		},
@@ -810,10 +921,10 @@ func Test_input_ValidateAttrUpdate(t *testing.T) {
 		Attrs map[string]any
 		Err   error
 	}{
-		"Error returned by db.FetchMainBranchContent": {
+		"Error returned by db.FetchDocumentByBranchID": {
 			DB: &DBMock{
-				FetchMainBranchContentFunc: func(context.Context, xid.ID, string) (document.Content, error) {
-					return document.Content{}, assert.AnError
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*document.Document, error) {
+					return nil, assert.AnError
 				},
 			},
 			UID:   "head",
@@ -865,7 +976,7 @@ func Test_input_ValidateAttrUpdate(t *testing.T) {
 
 			inp := testInput(testDeps(c.DB, nil, nil), NameUpdateBlockAttrs, `{}`)
 
-			err := inp.ValidateAttrUpdate(_testDocID, c.UID, c.Attrs)
+			err := inp.ValidateAttrUpdate(_testDocID, _stubMainBranchID, c.UID, c.Attrs)
 			testutil.AssertEqualError(t, c.Err, err)
 		})
 	}
@@ -923,10 +1034,10 @@ func Test_input_ValidateMove(t *testing.T) {
 		Ref string
 		Err error
 	}{
-		"Error returned by db.FetchMainBranchContent": {
+		"Error returned by db.FetchDocumentByBranchID": {
 			DB: &DBMock{
-				FetchMainBranchContentFunc: func(context.Context, xid.ID, string) (document.Content, error) {
-					return document.Content{}, assert.AnError
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*document.Document, error) {
+					return nil, assert.AnError
 				},
 			},
 			UID: "root-p",
@@ -984,7 +1095,7 @@ func Test_input_ValidateMove(t *testing.T) {
 
 			inp := testInput(testDeps(c.DB, nil, nil), NameMoveBlock, `{}`)
 
-			err := inp.ValidateMove(_testDocID, c.UID, c.Ref)
+			err := inp.ValidateMove(_testDocID, _stubMainBranchID, c.UID, c.Ref)
 			testutil.AssertEqualError(t, c.Err, err)
 		})
 	}
@@ -1004,8 +1115,9 @@ func Test_input_ValidatePlacement(t *testing.T) {
 	// land a block next to: the root ("root-p"), a callout item
 	// ("callout-p") and a split_doc right side ("right-code").
 	contentDB := &DBMock{
-		FetchMainBranchContentFunc: func(context.Context, xid.ID, string) (document.Content, error) {
-			return document.Content{
+		FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*document.Document, error) {
+			return &document.Document{
+				ID: _testDocID,
 				Content: document.RootBlock{
 					Content: []document.Block{
 						{
@@ -1043,10 +1155,10 @@ func Test_input_ValidatePlacement(t *testing.T) {
 		Block block.Block
 		Err   error
 	}{
-		"Error returned by db.FetchMainBranchContent": {
+		"Error returned by db.FetchDocumentByBranchID": {
 			DB: &DBMock{
-				FetchMainBranchContentFunc: func(context.Context, xid.ID, string) (document.Content, error) {
-					return document.Content{}, assert.AnError
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*document.Document, error) {
+					return nil, assert.AnError
 				},
 			},
 			Ref:   "root-p",
@@ -1111,7 +1223,7 @@ func Test_input_ValidatePlacement(t *testing.T) {
 
 			inp := testInput(testDeps(c.DB, nil, nil), NameInsertBlock, `{}`)
 
-			err := inp.ValidatePlacement(_testDocID, c.Ref, c.Block)
+			err := inp.ValidatePlacement(_testDocID, _stubMainBranchID, c.Ref, c.Block)
 			testutil.AssertEqualError(t, c.Err, err)
 		})
 	}
@@ -1248,22 +1360,32 @@ func Test_input_DocumentBlock(t *testing.T) {
 
 	cc := map[string]struct {
 		DB     *DBMock
+		Branch xid.ID
 		UID    string
 		Result string
 		Err    error
 	}{
-		"Error returned by db.FetchMainBranchContent": {
-			DB:  stubContentDB(assert.AnError),
-			UID: _stubContentUID,
-			Err: assert.AnError,
+		"Error returned by db.FetchDocumentByBranchID": {
+			DB:     stubContentDB(assert.AnError),
+			Branch: _stubMainBranchID,
+			UID:    _stubContentUID,
+			Err:    assert.AnError,
+		},
+		"Block found on another branch": {
+			DB:     stubContentDB(nil),
+			Branch: _stubBranchID,
+			UID:    _stubContentUID,
+			Result: "hello",
 		},
 		"Uid the document does not hold": {
-			DB:  stubContentDB(nil),
-			UID: "zzz",
-			Err: fmt.Errorf("block zzz: %w", errUnknownBlock),
+			DB:     stubContentDB(nil),
+			Branch: _stubMainBranchID,
+			UID:    "zzz",
+			Err:    fmt.Errorf("block zzz: %w", errUnknownBlock),
 		},
 		"Block found": {
 			DB:     stubContentDB(nil),
+			Branch: _stubMainBranchID,
 			UID:    _stubContentUID,
 			Result: "hello",
 		},
@@ -1275,7 +1397,7 @@ func Test_input_DocumentBlock(t *testing.T) {
 
 			inp := testInput(testDeps(c.DB, nil, nil), NameUpdateBlockText, `{}`)
 
-			b, err := inp.DocumentBlock(_testDocID, c.UID)
+			b, err := inp.DocumentBlock(_testDocID, c.Branch, c.UID)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {
@@ -1285,4 +1407,266 @@ func Test_input_DocumentBlock(t *testing.T) {
 			assert.Equal(t, c.Result, b.Text)
 		})
 	}
+}
+
+func Test_input_Document(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		DB  *DBMock
+		Err error
+	}{
+		"Error returned by db.FetchDocument": {
+			DB:  failingDocumentDB(),
+			Err: assert.AnError,
+		},
+		"Unknown document": {
+			DB: &DBMock{
+				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*document.Document, error) {
+					return nil, errutil.ErrNotFound
+				},
+			},
+			Err: ErrUnknownDocument,
+		},
+		"Default branch": {DB: stubDocumentDB()},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			doc, err := testInput(testDeps(c.DB, nil, nil), NameGetDocument, `{}`).Document(_testDocID)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, document.DefaultBranch, doc.BranchName)
+			assert.True(t, doc.Default)
+		})
+	}
+}
+
+func Test_input_Branch(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		DB     *DBMock
+		Branch xid.ID
+		Result string
+		Err    error
+	}{
+		"Error returned by db.FetchDocumentByBranchID": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*document.Document, error) {
+					return nil, assert.AnError
+				},
+			},
+			Branch: _stubBranchID,
+			Err:    assert.AnError,
+		},
+		"Unknown branch names the ones that exist": {
+			DB:     stubDocumentDB(),
+			Branch: _unknownBranchID,
+			Err:    fmt.Errorf("branch %s: %w; the branches are main (%s), draft (%s)", _unknownBranchID, ErrUnknownBranch, _stubMainBranchID, _stubBranchID),
+		},
+		"Unknown branch of an unknown document": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*document.Document, error) {
+					return nil, errutil.ErrNotFound
+				},
+			},
+			Branch: _unknownBranchID,
+			Err:    ErrUnknownDocument,
+		},
+		// a branch id resolves on its own, so another document's branch
+		// is refused as unknown to this one.
+		"Branch of another document": {
+			DB: func() *DBMock {
+				db := stubDocumentDB()
+				db.FetchDocumentByBranchIDFunc = func(_ context.Context, branchID xid.ID, orgID string) (*document.Document, error) {
+					return stubBranchDocument(xid.New(), orgID, branchID, _stubBranchName), nil
+				}
+
+				return db
+			}(),
+			Branch: _stubBranchID,
+			Err:    fmt.Errorf("branch %s: %w; the branches are main (%s), draft (%s)", _stubBranchID, ErrUnknownBranch, _stubMainBranchID, _stubBranchID),
+		},
+		"Default branch": {
+			DB:     stubDocumentDB(),
+			Branch: _stubMainBranchID,
+			Result: document.DefaultBranch,
+		},
+		"Another branch": {
+			DB:     stubDocumentDB(),
+			Branch: _stubBranchID,
+			Result: _stubBranchName,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			doc, err := testInput(testDeps(c.DB, nil, nil), NameGetDocument, `{}`).Branch(_testDocID, c.Branch)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, doc.BranchName)
+			assert.Equal(t, c.Branch, doc.BranchID)
+		})
+	}
+}
+
+func Test_input_unknownBranch(t *testing.T) {
+	t.Parallel()
+
+	// error: the listing itself failing is passed on.
+	db := &DBMock{
+		FetchDocumentBranchesFunc: func(context.Context, xid.ID, string) ([]document.BranchSummary, error) {
+			return nil, assert.AnError
+		},
+	}
+
+	err := testInput(testDeps(db, nil, nil), NameGetDocument, `{}`).unknownBranch(_testDocID, _unknownBranchID)
+	require.Error(t, err)
+
+	// success: the branches the document does have travel with the refusal.
+	err = testInput(testDeps(stubDocumentDB(), nil, nil), NameGetDocument, `{}`).unknownBranch(_testDocID, _unknownBranchID)
+	assert.Equal(t, fmt.Errorf("branch %s: %w; the branches are main (%s), draft (%s)", _unknownBranchID, ErrUnknownBranch, _stubMainBranchID, _stubBranchID), err)
+}
+
+func Test_input_DocumentBranches(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		DB     *DBMock
+		Result []document.BranchSummary
+		Err    error
+	}{
+		"Error returned by db.FetchDocumentBranches": {
+			DB: &DBMock{
+				FetchDocumentBranchesFunc: func(context.Context, xid.ID, string) ([]document.BranchSummary, error) {
+					return nil, assert.AnError
+				},
+			},
+			Err: assert.AnError,
+		},
+		// every document has a branch, so none means no document.
+		"No branches is an unknown document": {
+			DB:  &DBMock{},
+			Err: ErrUnknownDocument,
+		},
+		"Branches listed": {
+			DB: stubDocumentDB(),
+			Result: []document.BranchSummary{
+				{BranchID: _stubMainBranchID, BranchName: document.DefaultBranch, Default: true},
+				{BranchID: _stubBranchID, BranchName: _stubBranchName},
+			},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := testInput(testDeps(c.DB, nil, nil), NameGetDocument, `{}`).DocumentBranches(_testDocID)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, got)
+		})
+	}
+}
+
+func Test_input_DocumentContent(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		DB     *DBMock
+		Branch xid.ID
+		Result string
+		Err    error
+	}{
+		"Error returned by db.FetchDocumentByBranchID": {
+			DB:     stubContentDB(assert.AnError),
+			Branch: _stubMainBranchID,
+			Err:    assert.AnError,
+		},
+		"Unknown branch": {
+			DB:     stubContentDB(nil),
+			Branch: _unknownBranchID,
+			Err:    assert.AnError,
+		},
+		"Default branch content": {
+			DB:     stubContentDB(nil),
+			Branch: _stubMainBranchID,
+			Result: "hello",
+		},
+		"Another branch's content": {
+			DB:     stubContentDB(nil),
+			Branch: _stubBranchID,
+			Result: "hello",
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			content, err := testInput(testDeps(c.DB, nil, nil), NameGetDocument, `{}`).DocumentContent(_testDocID, c.Branch)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			require.NotEmpty(t, content.Content.Content)
+			assert.Equal(t, c.Result, content.Content.Content[0].Text)
+			assert.Equal(t, _testDocID, content.DocumentID)
+		})
+	}
+}
+
+func Test_input_protectedBranch(t *testing.T) {
+	t.Parallel()
+
+	doc := &document.Document{ID: _testDocID, BranchName: document.DefaultBranch, Protected: true}
+
+	// error: a listing that fails still says the branch is protected.
+	db := &DBMock{
+		FetchDocumentBranchesFunc: func(context.Context, xid.ID, string) ([]document.BranchSummary, error) {
+			return nil, assert.AnError
+		},
+	}
+
+	err := testInput(testDeps(db, nil, nil), NameInsertBlock, `{}`).protectedBranch(doc)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), errBranchProtected.Error())
+
+	// success: the unprotected branches are offered.
+	err = testInput(testDeps(protectedDocumentDB(), nil, nil), NameInsertBlock, `{}`).protectedBranch(doc)
+	assert.Equal(t, fmt.Errorf("branch main: %w; write to one of draft (%s)", errBranchProtected, _stubBranchID), err)
+}
+
+func Test_branchLabels(t *testing.T) {
+	t.Parallel()
+
+	mainID, draftID := xid.New(), xid.New()
+	branches := []document.BranchSummary{
+		{BranchID: mainID, BranchName: "main", Default: true, Protected: true},
+		{BranchID: draftID, BranchName: "draft"},
+	}
+
+	assert.Equal(t, []string{"main (" + mainID.String() + ")", "draft (" + draftID.String() + ")"}, branchLabels(branches, nil))
+	assert.Equal(t, []string{"draft (" + draftID.String() + ")"}, branchLabels(branches, func(b document.BranchSummary) bool { return !b.Protected }))
+	assert.Empty(t, branchLabels(nil, nil))
 }

@@ -307,27 +307,6 @@ func Test_agent_ForkDocumentBranch(t *testing.T) {
 	assert.Equal(t, null.StringFrom(users[0]), createdBy)
 }
 
-func Test_agent_FetchMainBranchContent(t *testing.T) {
-	db := prepTempDB(t)
-
-	// error - not found
-	res, err := db.FetchMainBranchContent(context.Background(), xid.New(), "non-existent-org-id")
-	testutil.AssertEqualError(t, sql.ErrNoRows, err)
-	assert.Zero(t, res)
-
-	// success
-	doc := prepDocuments(t, db, 1, nil)[0]
-
-	res, err = db.FetchMainBranchContent(context.Background(), doc.ID, doc.OrganizationID)
-	assert.NoError(t, err)
-	assert.Equal(t, document.Content{
-		OrganizationID: doc.OrganizationID,
-		DocumentID:     doc.ID,
-		DocumentName:   doc.DocumentName,
-		Content:        doc.Content,
-	}, res)
-}
-
 func Test_agent_FetchDocumentBranches(t *testing.T) {
 	db := prepTempDB(t)
 

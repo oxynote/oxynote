@@ -83,12 +83,13 @@ const (
 	// decline) of a previously-sent ConfirmRequest.
 	ClientTypeConfirmResponse ClientMessageType = "confirm_response"
 
-	// ClientTypeSetActiveDocument tells the session which document
-	// the user is currently viewing so the system prompt can resolve
-	// "this document" without an explicit id. Sent on connect and
-	// again whenever the user navigates between documents — the
-	// connection itself persists across doc switches so an in-flight
-	// turn isn't torn down.
+	// ClientTypeSetActiveDocument tells the session which document,
+	// and which branch of it, the user is currently viewing so the
+	// system prompt can resolve "this document" without an explicit
+	// id. The payload carries documentId and, when the client knows
+	// it, branchId. Sent on connect and again whenever the user
+	// navigates between documents or branches — the connection itself
+	// persists across switches so an in-flight turn isn't torn down.
 	ClientTypeSetActiveDocument ClientMessageType = "set_active_document"
 )
 

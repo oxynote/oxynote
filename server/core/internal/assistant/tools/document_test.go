@@ -76,14 +76,17 @@ func Test_listDocuments_Execute(t *testing.T) {
 
 	parentID := xid.New()
 	childID := xid.New()
+	parentBranchID := xid.New()
+	childBranchID := xid.New()
 
 	treeDB := &DBMock{
 		FetchDocumentTreeFunc: func(context.Context, string) (document.Summaries, error) {
 			return document.Summaries{{
-				ID:           parentID,
-				DocumentName: "Parent",
-				Icon:         "lucide:file",
-				Children:     document.Summaries{{ID: childID, DocumentName: "Child"}},
+				ID:              parentID,
+				DocumentName:    "Parent",
+				DefaultBranchID: parentBranchID,
+				Icon:            "lucide:file",
+				Children:        document.Summaries{{ID: childID, DocumentName: "Child", DefaultBranchID: childBranchID}},
 			}}, nil
 		},
 		FetchDocumentTreeByDocumentParentIDFunc: func(
@@ -93,7 +96,7 @@ func Test_listDocuments_Execute(t *testing.T) {
 				return nil, assert.AnError
 			}
 
-			return document.Summaries{{ID: childID, DocumentName: "Child"}}, nil
+			return document.Summaries{{ID: childID, DocumentName: "Child", DefaultBranchID: childBranchID}}, nil
 		},
 	}
 
@@ -117,8 +120,8 @@ func Test_listDocuments_Execute(t *testing.T) {
 		"Null parent id lists the whole tree": {
 			DB:   treeDB,
 			Args: `{"parent_id":null}`,
-			Result: `{"documents":[{"id":"` + parentID.String() + `","name":"Parent",` +
-				`"children":[{"id":"` + childID.String() + `","name":"Child"}]}]}`,
+			Result: `{"documents":[{"id":"` + parentID.String() + `","name":"Parent","default_branch_id":"` + parentBranchID.String() + `",` +
+				`"children":[{"id":"` + childID.String() + `","name":"Child","default_branch_id":"` + childBranchID.String() + `"}]}]}`,
 		},
 		"Error returned by db.FetchDocumentTree": {
 			DB: &DBMock{
@@ -132,13 +135,13 @@ func Test_listDocuments_Execute(t *testing.T) {
 		"Whole tree": {
 			DB:   treeDB,
 			Args: `{}`,
-			Result: `{"documents":[{"id":"` + parentID.String() + `","name":"Parent",` +
-				`"children":[{"id":"` + childID.String() + `","name":"Child"}]}]}`,
+			Result: `{"documents":[{"id":"` + parentID.String() + `","name":"Parent","default_branch_id":"` + parentBranchID.String() + `",` +
+				`"children":[{"id":"` + childID.String() + `","name":"Child","default_branch_id":"` + childBranchID.String() + `"}]}]}`,
 		},
 		"Children of one parent": {
 			DB:     treeDB,
 			Args:   `{"parent_id":"` + parentID.String() + `"}`,
-			Result: `{"documents":[{"id":"` + childID.String() + `","name":"Child"}]}`,
+			Result: `{"documents":[{"id":"` + childID.String() + `","name":"Child","default_branch_id":"` + childBranchID.String() + `"}]}`,
 		},
 	}
 
@@ -161,7 +164,7 @@ func Test_listDocuments_Execute(t *testing.T) {
 func Test_getDocumentArgs_Validate(t *testing.T) {
 	t.Parallel()
 
-	assertValidate(t, getDocumentArgs{DocumentID: _testDocID}, map[string]Args{
+	assertValidate(t, getDocumentArgs{DocumentID: _testDocID, BranchID: _stubMainBranchID}, map[string]Args{
 		"document_id": getDocumentArgs{},
 	})
 }
@@ -173,7 +176,8 @@ func Test_getDocument_Info(t *testing.T) {
 
 	assert.Equal(t, NameGetDocument, info.Name)
 	assert.NotEmpty(t, info.Description)
-	assert.Equal(t, []string{_keyDocumentID}, info.Required)
+	assert.Equal(t, []string{_keyDocumentID, _keyBranchID}, info.Required)
+	assert.Contains(t, info.Properties, _keyBranchID)
 }
 
 func Test_getDocument_Traits(t *testing.T) {
@@ -187,10 +191,18 @@ func Test_getDocument_Title(t *testing.T) {
 
 	got, err := getDocument{}.Title(testInput(
 		testDeps(stubDocumentDB(), nil, nil), NameGetDocument,
-		`{"document_id":"`+_testDocID.String()+`"}`,
+		`{`+targetArgs(_stubMainBranchID)+`}`,
 	))
 	require.NoError(t, err)
 	assert.Equal(t, "Reading Runbook", got)
+
+	// a branch other than the default one is named.
+	got, err = getDocument{}.Title(testInput(
+		testDeps(stubDocumentDB(), nil, nil), NameGetDocument,
+		`{`+targetArgs(_stubBranchID)+`}`,
+	))
+	require.NoError(t, err)
+	assert.Equal(t, "Reading Runbook on branch draft", got)
 
 	// the document it names has to resolve; the failure is passed on
 	// rather than described around.
@@ -209,14 +221,23 @@ func Test_getDocument_Execute(t *testing.T) {
 
 	// a document under a parent, protected, with the stub content.
 	nested := stubContentDB(nil)
-	nested.FetchDocumentFunc = func(_ context.Context, id xid.ID, _, _ string) (*document.Document, error) {
-		return &document.Document{
-			DocumentName: "Runbook",
-			Icon:         "lucide:rocket",
-			ID:           id,
-			ParentID:     null.ValueFrom(parentID),
-			Protected:    true,
-		}, nil
+	fetch := nested.FetchDocumentByBranchIDFunc
+	nested.FetchDocumentByBranchIDFunc = func(ctx context.Context, branchID xid.ID, orgID string) (*document.Document, error) {
+		doc, err := fetch(ctx, branchID, orgID)
+		if err != nil {
+			return nil, err
+		}
+
+		doc.Icon = "lucide:rocket"
+		doc.ParentID = null.ValueFrom(parentID)
+		doc.Protected = true
+
+		return doc, nil
+	}
+
+	branchless := stubContentDB(nil)
+	branchless.FetchDocumentBranchesFunc = func(context.Context, xid.ID, string) ([]document.BranchSummary, error) {
+		return nil, assert.AnError
 	}
 
 	cc := map[string]struct {
@@ -232,31 +253,39 @@ func Test_getDocument_Execute(t *testing.T) {
 			Args: `{"document_id":"nope"}`,
 			Err:  assert.AnError,
 		},
-		"Error returned by db.FetchDocument": {
-			DB:   failingDocumentDB(),
-			Args: `{"document_id":"` + _testDocID.String() + `"}`,
-			Err:  assert.AnError,
-		},
-		"Error returned by db.FetchMainBranchContent": {
+		"Error returned by db.FetchDocumentByBranchID": {
 			DB:   stubContentDB(assert.AnError),
-			Args: `{"document_id":"` + _testDocID.String() + `"}`,
+			Args: `{` + targetArgs(_stubMainBranchID) + `}`,
 			Err:  assert.AnError,
 		},
-		"Metadata and rows are returned": {
+		"Error returned by db.FetchDocumentBranches": {
+			DB:   branchless,
+			Args: `{` + targetArgs(_stubMainBranchID) + `}`,
+			Err:  assert.AnError,
+		},
+		"Metadata, branches and rows are returned": {
 			DB:   nested,
-			Args: `{"document_id":"` + _testDocID.String() + `"}`,
+			Args: `{` + targetArgs(_stubMainBranchID) + `}`,
 			Contains: []string{
 				`"name":"Runbook"`,
 				`"icon":"lucide:rocket"`,
 				`"parent_id":"` + parentID.String() + `"`,
 				`"protected":true`,
+				`"branch":{"id":"` + _stubMainBranchID.String() + `","name":"main","protected":true,"default":true}`,
+				`"branches":[{"id":"` + _stubMainBranchID.String() + `","name":"main","protected":false,"default":true,"updated_at":`,
+				`{"id":"` + _stubBranchID.String() + `","name":"draft","protected":false,"default":false,"updated_at":`,
 				`"uid":"a"`,
 				`"kind":"paragraph"`,
 			},
 		},
+		"Another branch is read": {
+			DB:       stubContentDB(nil),
+			Args:     `{` + targetArgs(_stubBranchID) + `}`,
+			Contains: []string{`"branch":{"id":"` + _stubBranchID.String() + `","name":"draft","protected":false,"default":false}`, `"uid":"a"`},
+		},
 		"Root document omits the parent": {
 			DB:       stubContentDB(nil),
-			Args:     `{"document_id":"` + _testDocID.String() + `"}`,
+			Args:     `{` + targetArgs(_stubMainBranchID) + `}`,
 			Contains: []string{`"name":"Runbook"`, `"protected":false`},
 			Omits:    []string{`"parent_id"`, `"branch_id"`},
 		},
@@ -580,6 +609,9 @@ func Test_deleteDocument_Execute(t *testing.T) {
 		"Deleted even when the parent cannot be captured": {
 			DB: stubDeleteDB(&DBMock{
 				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*document.Document, error) {
+					return nil, assert.AnError
+				},
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*document.Document, error) {
 					return nil, assert.AnError
 				},
 			}, nil),
@@ -927,16 +959,20 @@ func Test_summariesToTree(t *testing.T) {
 	id := xid.New()
 	child := xid.New()
 
+	branch := xid.New()
+
 	got := summariesToTree(document.Summaries{{
-		ID:           id,
-		DocumentName: "Parent",
-		Icon:         "lucide:file",
-		Children:     document.Summaries{{ID: child, DocumentName: "Child"}},
+		ID:              id,
+		DocumentName:    "Parent",
+		DefaultBranchID: branch,
+		Icon:            "lucide:file",
+		Children:        document.Summaries{{ID: child, DocumentName: "Child"}},
 	}})
 
 	require.Len(t, got, 1)
 	assert.Equal(t, id, got[0].ID)
 	assert.Equal(t, "Parent", got[0].Name)
+	assert.Equal(t, branch, got[0].DefaultBranchID)
 	require.Len(t, got[0].Children, 1)
 	assert.Equal(t, child, got[0].Children[0].ID)
 }

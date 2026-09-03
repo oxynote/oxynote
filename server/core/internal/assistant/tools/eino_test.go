@@ -11,7 +11,6 @@ import (
 	datasourceMock "github.com/oxynote/oxynote/server/core/internal/datasource/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
-	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -107,11 +106,11 @@ func Test_einoTool_Run(t *testing.T) {
 	// actually applied rather than from its arguments
 	res, err = newEinoTool(updateBlockText{}, testDeps(stubContentDB(nil), stubApplier(), nil)).
 		Run(context.Background(), json.RawMessage(
-			`{"document_id":"`+_testDocID.String()+`","block_uid":"a","text":"hi"}`,
+			`{`+targetArgs(_stubMainBranchID)+`,"block_uid":"a","text":"hi"}`,
 		))
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"blocks":[{"uid":"a","kind":"paragraph","text":"hi","depth":0}]}`, res.Output)
-	assert.Equal(t, []xid.ID{_testDocID}, res.Documents)
+	assert.Equal(t, []Touched{{DocumentID: _testDocID, BranchID: _stubMainBranchID}}, res.Documents)
 }
 
 func Test_einoTool_InvokableRun(t *testing.T) {
@@ -150,7 +149,7 @@ func Test_einoTool_Title(t *testing.T) {
 
 	et := newEinoTool(getDocument{}, testDeps(stubDocumentDB(), nil, nil))
 
-	got, err := et.Title(context.Background(), json.RawMessage(`{"document_id":"`+_testDocID.String()+`"}`))
+	got, err := et.Title(context.Background(), json.RawMessage(`{`+targetArgs(_stubMainBranchID)+`}`))
 	require.NoError(t, err)
 	assert.Equal(t, "Reading Runbook", got)
 }

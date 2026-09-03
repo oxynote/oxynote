@@ -16,13 +16,24 @@ func Test_buildSystemPrompt(t *testing.T) {
 	t.Parallel()
 
 	// no active document returns the base prompt verbatim
-	assert.Equal(t, _basePrompt, buildSystemPrompt(""))
+	assert.Equal(t, _basePrompt, buildSystemPrompt("", ""))
 
 	// an active document appends the current-context section
-	got := buildSystemPrompt("doc-123")
+	got := buildSystemPrompt("doc-123", "")
 	assert.Contains(t, got, _basePrompt)
 	assert.Contains(t, got, "## Current context")
 	assert.Contains(t, got, "`doc-123`")
+	assert.NotContains(t, got, "on branch")
+
+	// a branch other than the default one is named, and the model is
+	// told to read and write with it.
+	branched := buildSystemPrompt("doc-123", "draft")
+	assert.Contains(t, branched, "`doc-123` on branch `draft`")
+	assert.Contains(t, branched, "write with branch_id `draft`")
+	assertHouseStyle(t, branched)
+
+	// documents have branches, and the prompt says so.
+	assert.Contains(t, got, "Documents have branches")
 
 	// width is the one metric enum the prompt is still the only source
 	// for: attrs is a single field shared by every block type, and
@@ -91,6 +102,10 @@ func Test_MCPInstructions(t *testing.T) {
 	// reordering is the etiquette rule the surface exists to teach.
 	assert.Contains(t, got, "move_block")
 
+	// an MCP client learns about branches and the protected rule here.
+	assert.Contains(t, got, "Documents have branches")
+	assert.Contains(t, got, "protected branch is read-only")
+
 	// the persona and its confirmation flow are the chat surface's;
 	// telling an MCP client about either would be a lie.
 	assert.NotContains(t, got, "Rubber Duck")
@@ -134,9 +149,9 @@ func Test_genModelInput(t *testing.T) {
 	assert.Equal(t, "hi", msgs[2].Content)
 }
 
-func Test_activeDocumentID(t *testing.T) {
+func Test_sessionString(t *testing.T) {
 	t.Parallel()
 
-	// outside a run there is no session, so no document is active.
-	assert.Empty(t, activeDocumentID(context.Background()))
+	// outside a run there is no session, so nothing is stored.
+	assert.Empty(t, sessionString(context.Background(), _sessionKeyActiveDocument))
 }

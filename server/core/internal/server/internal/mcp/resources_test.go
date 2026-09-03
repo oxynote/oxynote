@@ -15,18 +15,45 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// stubDocument answers a document fetch with a document of the given
-// name, at the root, so a resource read has metadata to report.
-func stubDocument(name string) func(context.Context, xid.ID, string, string) (*document.Document, error) {
-	return func(_ context.Context, id xid.ID, _, _ string) (*document.Document, error) {
-		return &document.Document{ID: id, DocumentName: name}, nil
+// stubBranches answers a branch listing with the default branch and a
+// draft.
+func stubBranches(context.Context, xid.ID, string) ([]document.BranchSummary, error) {
+	return []document.BranchSummary{
+		{BranchID: _stubMainBranchID, BranchName: document.DefaultBranch, Default: true},
+		{BranchID: _stubDraftBranchID, BranchName: "draft"},
+	}, nil
+}
+
+// stubDraftDocument answers a branch-id fetch with the draft branch of
+// the given document.
+func stubDraftDocument(docID xid.ID) func(context.Context, xid.ID, string) (*document.Document, error) {
+	return func(_ context.Context, branchID xid.ID, _ string) (*document.Document, error) {
+		if branchID != _stubDraftBranchID {
+			return nil, errutil.ErrNotFound
+		}
+
+		return &document.Document{
+			ID:           docID,
+			BranchID:     branchID,
+			BranchName:   "draft",
+			DocumentName: "Doc",
+		}, nil
 	}
 }
+
+// _stubMainBranchID and _stubDraftBranchID are the ids of the two
+// branches the stubs list.
+var (
+	_stubMainBranchID  = xid.New()
+	_stubDraftBranchID = xid.New()
+)
 
 func Test_Handler_addResources(t *testing.T) {
 	t.Parallel()
 
 	parentID := xid.New()
+	parentBranchID := xid.New()
+	childBranchID := xid.New()
 	childID := xid.New()
 
 	// listResources runs resources/list through the handler and
@@ -86,11 +113,13 @@ func Test_Handler_addResources(t *testing.T) {
 				require.Equal(t, "org1", organizationID)
 
 				return document.Summaries{{
-					ID:           parentID,
-					DocumentName: "Parent",
+					ID:              parentID,
+					DocumentName:    "Parent",
+					DefaultBranchID: parentBranchID,
 					Children: document.Summaries{{
-						ID:           childID,
-						DocumentName: "Child",
+						ID:              childID,
+						DocumentName:    "Child",
+						DefaultBranchID: childBranchID,
 					}},
 				}}, nil
 			},
@@ -98,9 +127,10 @@ func Test_Handler_addResources(t *testing.T) {
 
 		hdl := prepHandler(t, []string{ScopeDocumentRead}, stubToolsDB(), db)
 
+		// each document is listed on its default branch.
 		assert.Equal(t, map[string]string{
-			_resourceURIPrefix + parentID.String(): "Parent",
-			_resourceURIPrefix + childID.String():  "Child",
+			_resourceURIPrefix + parentID.String() + _resourceBranchSegment + parentBranchID.String(): "Parent",
+			_resourceURIPrefix + childID.String() + _resourceBranchSegment + childBranchID.String():   "Child",
 		}, listResources(t, hdl))
 	})
 
@@ -122,6 +152,7 @@ func Test_Handler_readDocument(t *testing.T) {
 	t.Parallel()
 
 	docID := xid.New()
+	unknownBranchID := xid.New()
 
 	cc := map[string]struct {
 		URI     string
@@ -143,38 +174,47 @@ func Test_Handler_readDocument(t *testing.T) {
 			ToolsDB: stubToolsDB(),
 			Err:     mcp.ResourceNotFoundError(_resourceURIPrefix),
 		},
-		"Missing document maps to resource not found": {
-			URI: _resourceURIPrefix + docID.String(),
-			ToolsDB: &toolsMock.DB{
-				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*document.Document, error) {
-					return nil, errutil.ErrNotFound
-				},
-			},
-			Err: mcp.ResourceNotFoundError(_resourceURIPrefix + docID.String()),
+		"URI without a branch maps to resource not found": {
+			URI:     _resourceURIPrefix + docID.String(),
+			ToolsDB: stubToolsDB(),
+			Err:     mcp.ResourceNotFoundError(_resourceURIPrefix + docID.String()),
 		},
 		"Internal tool failure passes through": {
-			URI: _resourceURIPrefix + docID.String(),
+			URI: _resourceURIPrefix + docID.String() + _resourceBranchSegment + _stubDraftBranchID.String(),
 			ToolsDB: &toolsMock.DB{
-				FetchDocumentFunc: stubDocument("Doc"),
-				FetchMainBranchContentFunc: func(context.Context, xid.ID, string) (document.Content, error) {
-					return document.Content{}, assert.AnError
+				FetchDocumentByBranchIDFunc: stubDraftDocument(docID),
+				FetchDocumentBranchesFunc: func(context.Context, xid.ID, string) ([]document.BranchSummary, error) {
+					return nil, assert.AnError
 				},
 			},
 			Err:      assert.AnError,
 			Passthru: true,
 		},
-		"Successful read": {
-			URI: _resourceURIPrefix + docID.String(),
+		"Unknown branch maps to resource not found": {
+			URI: _resourceURIPrefix + docID.String() + _resourceBranchSegment + unknownBranchID.String(),
 			ToolsDB: &toolsMock.DB{
-				FetchDocumentFunc: stubDocument("Doc"),
-				FetchMainBranchContentFunc: func(_ context.Context, id xid.ID, organizationID string) (document.Content, error) {
-					require.Equal(t, docID, id)
-					require.Equal(t, "org1", organizationID)
-
-					return document.Content{DocumentName: "Doc"}, nil
-				},
+				FetchDocumentByBranchIDFunc: stubDraftDocument(docID),
+				FetchDocumentBranchesFunc:   stubBranches,
 			},
-			Text: `"name":"Doc"`,
+			Err: mcp.ResourceNotFoundError(_resourceURIPrefix + docID.String() + _resourceBranchSegment + unknownBranchID.String()),
+		},
+		"Branch segment that is not an id": {
+			URI:     _resourceURIPrefix + docID.String() + _resourceBranchSegment + "draft",
+			ToolsDB: stubToolsDB(),
+			Err:     mcp.ResourceNotFoundError(_resourceURIPrefix + docID.String() + _resourceBranchSegment + "draft"),
+		},
+		"Branch URI without a document id": {
+			URI:     _resourceURIPrefix + _resourceBranchSegment + _stubDraftBranchID.String(),
+			ToolsDB: stubToolsDB(),
+			Err:     mcp.ResourceNotFoundError(_resourceURIPrefix + _resourceBranchSegment + _stubDraftBranchID.String()),
+		},
+		"Successful read": {
+			URI: _resourceURIPrefix + docID.String() + _resourceBranchSegment + _stubDraftBranchID.String(),
+			ToolsDB: &toolsMock.DB{
+				FetchDocumentByBranchIDFunc: stubDraftDocument(docID),
+				FetchDocumentBranchesFunc:   stubBranches,
+			},
+			Text: `"branch":{"id":"` + _stubDraftBranchID.String() + `","name":"draft","protected":false,"default":false}`,
 		},
 	}
 

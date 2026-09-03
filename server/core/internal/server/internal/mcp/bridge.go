@@ -12,6 +12,11 @@ import (
 // scheme; the id after the prefix is the document's xid.
 const _resourceURIPrefix = "oxynote://documents/"
 
+// _resourceBranchSegment separates a document id from a branch id in a
+// resource URI: oxynote://documents/{id}/branches/{branch_id} reads that
+// branch, and every resource names one.
+const _resourceBranchSegment = "/branches/"
+
 // annotations declares a tool's intent so MCP clients can gate calls:
 // reads are read-only, writes say whether they can destroy content. A
 // write counts as destructive here when it removes content outright and
@@ -54,12 +59,12 @@ func (h *Handler) toolHandler(e tools.Entry) mcp.ToolHandler {
 
 		content := []mcp.Content{&mcp.TextContent{Text: res.Output}}
 
-		// a call links back to every document it changed, so the client
+		// a call links back to every branch it changed, so the client
 		// can follow the edit straight to its target.
-		for _, id := range res.Documents {
+		for _, t := range res.Documents {
 			content = append(content, &mcp.ResourceLink{
-				URI:      _resourceURIPrefix + id.String(),
-				Name:     id.String(),
+				URI:      _resourceURIPrefix + t.DocumentID.String() + _resourceBranchSegment + t.BranchID.String(),
+				Name:     t.DocumentID.String(),
 				MIMEType: _documentMIMEType,
 			})
 		}

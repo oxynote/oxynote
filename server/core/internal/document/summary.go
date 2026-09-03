@@ -72,6 +72,10 @@ type Summary struct {
 	// DocumentName is the name of the document.
 	DocumentName string `json:"documentName" db:"document_name"`
 
+	// DefaultBranchID is the identifier of the document's default branch,
+	// the one a reader lands on without naming a branch.
+	DefaultBranchID xid.ID `json:"defaultBranchId" db:"default_branch_id"`
+
 	// Icon is the icon associated with the document.
 	Icon string `json:"icon" db:"icon"`
 

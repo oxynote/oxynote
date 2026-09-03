@@ -7,6 +7,7 @@ import (
 
 	"github.com/oxynote/oxynote/server/core/internal/assistant/block"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
+	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/pkg/strutil"
 )
 
@@ -117,4 +118,15 @@ func textPreview(s string, maxLen int) string {
 	s = strings.TrimSpace(s)
 
 	return strutil.Ellipsize(s, maxLen)
+}
+
+// docLabel names a document the way a status line or a confirm card
+// shows it: by display name, with the branch appended when it is not the
+// document's default one, so a write aimed at a branch reads as such.
+func docLabel(doc *document.Document) string {
+	if doc.Default {
+		return doc.DocumentName
+	}
+
+	return doc.DocumentName + " on branch " + doc.BranchName
 }

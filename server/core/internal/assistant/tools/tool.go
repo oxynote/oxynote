@@ -170,9 +170,13 @@ type DescribeInput interface {
 	// than describing a call from zero values.
 	Decode(dst Args) error
 
-	// Document should return the document the id names, for a
-	// description that has to name its subject.
-	Document(id xid.ID) (*document.Document, error)
+	// Document should return the document the id names, on its default
+	// branch, for a description that has to name its subject.
+	Document(documentID xid.ID) (*document.Document, error)
+
+	// Branch should return the document on the branch branchID names,
+	// for a description that has to name the branch it targets.
+	Branch(documentID, branchID xid.ID) (*document.Document, error)
 
 	// DataSource should return the data source the id names, for a
 	// description that has to name its subject.
@@ -206,16 +210,24 @@ type DataSources interface {
 // Every method is already scoped to the session's organisation, so a
 // tool can never reach another one's documents.
 type Documents interface {
-	// Document should return the document's default branch.
-	Document(id xid.ID) (*document.Document, error)
+	// Document should return the document on its default branch.
+	Document(documentID xid.ID) (*document.Document, error)
 
-	// DocumentContent should return the document's parsed main-branch
-	// content, for the ops that only need the block tree.
-	DocumentContent(id xid.ID) (document.Content, error)
+	// Branch should return the document on the branch branchID names,
+	// refusing a branch the document does not have.
+	Branch(documentID, branchID xid.ID) (*document.Document, error)
 
-	// DocumentBlock should return the block uid names in the document's
-	// main-branch content, refusing a uid the document does not hold.
-	DocumentBlock(id xid.ID, uid string) (document.Block, error)
+	// DocumentContent should return the parsed content of the branch
+	// branchID names, for the ops that only need the block tree.
+	DocumentContent(documentID, branchID xid.ID) (document.Content, error)
+
+	// DocumentBlock should return the block blockUID names on the
+	// branch, refusing a uid the branch does not hold.
+	DocumentBlock(documentID, branchID xid.ID, blockUID string) (document.Block, error)
+
+	// DocumentBranches should list every branch of the document,
+	// refusing a document the organisation does not have.
+	DocumentBranches(documentID xid.ID) ([]document.BranchSummary, error)
 
 	// DocumentTree should return every document in the organisation as
 	// a nested summary tree.
@@ -237,9 +249,10 @@ type DocumentWriter interface {
 	// DeleteDocument should remove the document.
 	DeleteDocument(id xid.ID) error
 
-	// MoveDocument should re-parent the document, refusing a parent that
-	// does not exist or that would put the document under itself.
-	MoveDocument(id xid.ID, parentID null.Value[xid.ID]) error
+	// MoveDocument should re-parent the document doc describes, refusing
+	// a parent that does not exist or that would put the document under
+	// itself.
+	MoveDocument(doc *document.Document, parentID null.Value[xid.ID]) error
 
 	// NotifyTreeChange should tell subscribers that the tree under
 	// parentID changed.
@@ -255,21 +268,22 @@ type DocumentWriter interface {
 // realtime service, so connected editors see them as they land.
 type Editor interface {
 	// ApplyEdit should ship an operation batch to the realtime service
-	// for the named document's default branch, reporting any operation
-	// it refused.
-	ApplyEdit(documentID xid.ID, ops []edit.Operation) error
+	// for the branch branchID names of the document, reporting any
+	// operation it refused.
+	ApplyEdit(documentID, branchID xid.ID, ops []edit.Operation) error
 
 	// ValidatePlacement should check that a block is legal next to, or
-	// in place of, the block referenceUID names.
-	ValidatePlacement(documentID xid.ID, referenceUID string, b block.Block) error
+	// in place of, the block referenceUID names on the branch.
+	ValidatePlacement(documentID, branchID xid.ID, referenceUID string, b block.Block) error
 
 	// ValidateAttrUpdate should check that setting attrs on the block
-	// blockUID names leaves it with attributes its type allows.
-	ValidateAttrUpdate(documentID xid.ID, blockUID string, attrs map[string]any) error
+	// blockUID names on the branch leaves it with attributes its type
+	// allows.
+	ValidateAttrUpdate(documentID, branchID xid.ID, blockUID string, attrs map[string]any) error
 
 	// ValidateMove should check that the block blockUID names may sit
-	// where a move relative to referenceUID would put it.
-	ValidateMove(documentID xid.ID, blockUID, referenceUID string) error
+	// where a move relative to referenceUID would put it on the branch.
+	ValidateMove(documentID, branchID xid.ID, blockUID, referenceUID string) error
 }
 
 // Input is everything a tool needs to do its work: the call's arguments

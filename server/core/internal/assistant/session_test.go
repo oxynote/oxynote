@@ -144,33 +144,45 @@ func toolCall(id, name, args string) *schema.Message {
 }
 
 // stubDocumentDB answers every document lookup with the same document,
-// so an edit tool can name what it is about to change, and every content
+// so an edit tool can name what it is about to change, and every branch
 // read with the two paragraphs the edits target.
 func stubDocumentDB() *toolsMock.DB {
-	branchID := xid.New()
+	content := document.RootBlock{
+		Content: []document.Block{
+			{Type: document.BlockNodeParagraph, Attrs: document.Attributes{document.AttrUID: "a"}},
+			{Type: document.BlockNodeParagraph, Attrs: document.Attributes{document.AttrUID: "b"}},
+		},
+	}
 
 	return &toolsMock.DB{
 		FetchDocumentFunc: func(_ context.Context, id xid.ID, orgID, _ string) (*document.Document, error) {
 			return &document.Document{
-				BranchID:       branchID,
+				BranchID:       _stubBranchID,
 				DocumentName:   "Runbook",
+				Default:        true,
 				ID:             id,
 				OrganizationID: orgID,
 			}, nil
 		},
-		FetchMainBranchContentFunc: func(context.Context, xid.ID, string) (document.Content, error) {
-			return document.Content{
-				DocumentName: "Runbook",
-				Content: document.RootBlock{
-					Content: []document.Block{
-						{Type: document.BlockNodeParagraph, Attrs: document.Attributes{document.AttrUID: "a"}},
-						{Type: document.BlockNodeParagraph, Attrs: document.Attributes{document.AttrUID: "b"}},
-					},
-				},
+		FetchDocumentByBranchIDFunc: func(_ context.Context, branchID xid.ID, orgID string) (*document.Document, error) {
+			return &document.Document{
+				BranchID:       branchID,
+				DocumentName:   "Runbook",
+				Default:        true,
+				Content:        content,
+				ID:             _stubDocID,
+				OrganizationID: orgID,
 			}, nil
 		},
 	}
 }
+
+// _stubDocID and _stubBranchID name the document and branch the stubs
+// answer for; an edit has to name both.
+var (
+	_stubDocID    = xid.New()
+	_stubBranchID = xid.New()
+)
 
 // stubEditApplier accepts every edit it is handed.
 func stubEditApplier() *toolsMock.EditApplier {
@@ -248,12 +260,15 @@ func Test_session_SetActiveDocument(t *testing.T) {
 
 	s, _ := prepSession(t, testManager())
 
-	s.SetActiveDocument("doc-9")
+	// both halves are kept as reported; a branch that turns out not to
+	// exist is the next call's to refuse.
+	s.SetActiveDocument("doc-9", "branch-3")
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	assert.Equal(t, "doc-9", s.activeDocumentID)
+	assert.Equal(t, "branch-3", s.activeBranchID)
 }
 
 func Test_session_rememberMessages(t *testing.T) {
@@ -312,6 +327,17 @@ func Test_session_Process(t *testing.T) {
 				defer s.mu.Unlock()
 
 				assert.Equal(t, "doc-1", s.activeDocumentID)
+				assert.Empty(t, s.activeBranchID)
+			},
+		},
+		"Active branch is recorded": {
+			JSON: `{"type":"set_active_document","documentId":"doc-1","branchId":"branch-1"}`,
+			Expect: func(t *testing.T, s *session, _ *recorder) {
+				s.mu.Lock()
+				defer s.mu.Unlock()
+
+				assert.Equal(t, "doc-1", s.activeDocumentID)
+				assert.Equal(t, "branch-1", s.activeBranchID)
 			},
 		},
 		"Empty message content is refused": {
@@ -587,9 +613,9 @@ func Test_session_handleReset(t *testing.T) {
 func Test_session_handleConfirmResponse(t *testing.T) {
 	t.Parallel()
 
-	docID := xid.New().String()
-	edit1 := `{"document_id":"` + docID + `","block_uid":"a","text":"one"}`
-	edit2 := `{"document_id":"` + docID + `","block_uid":"b","text":"two"}`
+	docID := _stubDocID.String()
+	edit1 := `{"document_id":"` + docID + `","branch_id":"` + _stubBranchID.String() + `","block_uid":"a","text":"one"}`
+	edit2 := `{"document_id":"` + docID + `","branch_id":"` + _stubBranchID.String() + `","block_uid":"b","text":"two"}`
 
 	oneWrite := []*schema.Message{
 		toolCall("1", string(tools.NameUpdateBlockText), edit1),
@@ -668,7 +694,7 @@ func Test_session_handleConfirmResponse(t *testing.T) {
 			m.applier = applier
 
 			s, rec := prepSession(t, m)
-			s.SetActiveDocument(docID)
+			s.SetActiveDocument(docID, _stubBranchID.String())
 
 			s.handleMessage(context.Background(), "reword the intro")
 			rec.wait(t)
@@ -903,7 +929,7 @@ func Test_session_runOptions(t *testing.T) {
 	t.Parallel()
 
 	s, _ := prepSession(t, testManager())
-	s.SetActiveDocument("doc-3")
+	s.SetActiveDocument("doc-3", "")
 
 	// the checkpoint id and the active document snapshot, so a mid-turn
 	// navigation cannot shift the prompt under an in-flight turn.

@@ -13,6 +13,10 @@ import (
 // at into the system prompt for one turn.
 const _sessionKeyActiveDocument = "oxynote_assistant_active_document"
 
+// _sessionKeyActiveBranch carries the id of the branch of that document
+// the user is looking at.
+const _sessionKeyActiveBranch = "oxynote_assistant_active_branch"
+
 // _personaSection is the chat-only opening of the system prompt: the
 // Rubber Duck persona, the rule for when to think aloud with the user
 // and when to write, and the tool-use rules that assume the chat
@@ -30,7 +34,7 @@ Keep replies focused and brief: lead with the answer, keep caveats short, and us
 
 Read tools run immediately. Write tools wait for the user's confirmation, and every write in a turn shares one confirmation, so make all the related edits in the same turn. Independent calls also go in one turn. Never invent a uid, document id or parameter value; read it first.
 
-Read before you write: find the document, read it with get_document, and read a block in full only when you are about to edit its inner structure. A protected document takes no edits; say so instead of retrying.
+Read before you write: find the document, read it with get_document, and read a block in full only when you are about to edit its inner structure. Documents have branches, and every read or write of content names one by branch_id: list_documents and search hits carry each document's default_branch_id, and get_document lists every branch of a document with its id. A protected branch is read-only, so write to another branch of the document or say there is none rather than retrying.
 
 The data-source tools are read-only. Answer a question about the data from the query results; add a metric block only when the user asks for a chart, a metric or a dashboard in a document. Discover metric, label and table names with the metadata tools instead of guessing them, and run the query with the chart_type you intend before writing a metric block, so you know it renders.
 
@@ -164,7 +168,7 @@ const _basePrompt = _personaSection + _blockModelSection + _etiquetteSection + _
 // instead of waiting on a confirmation.
 const _mcpIntroSection = `You are connected to Oxynote, a collaborative product for writing technical documentation. The tools operate on the documents of one organisation, which are also listed as resources. Blocks are the unit of content, addressed by uid; comments, hooks and files hang off those uids. Documents are written for humans first, balancing prose with technical detail where it sharpens meaning.
 
-Read before you write: find the document, read it with get_document, and read a block in full only when you are about to edit its inner structure. Write tools apply immediately, and a protected document takes no edits. The data-source tools are read-only; discover metric, label and table names with the metadata tools instead of guessing them, and run a query with the chart_type you intend before writing a metric block, so you know it renders.
+Read before you write: find the document, read it with get_document, and read a block in full only when you are about to edit its inner structure. Documents have branches, and every read or write of content names one by branch_id: list_documents and search hits carry each document's default_branch_id, and get_document lists every branch of a document with its id. Write tools apply immediately, and a protected branch is read-only, so write to another branch of the document. The data-source tools are read-only; discover metric, label and table names with the metadata tools instead of guessing them, and run a query with the chart_type you intend before writing a metric block, so you know it renders.
 
 `
 
@@ -180,8 +184,8 @@ func MCPInstructions() string {
 // activeDocumentID, when non-empty, hints to the model which
 // document the user is currently viewing, useful for resolving
 // "this document" or "here" references without forcing the user to
-// spell out an id.
-func buildSystemPrompt(activeDocumentID string) string {
+// spell out an id; activeBranchID names the branch the client reported.
+func buildSystemPrompt(activeDocumentID, activeBranchID string) string {
 	if activeDocumentID == "" {
 		return _basePrompt
 	}
@@ -189,7 +193,12 @@ func buildSystemPrompt(activeDocumentID string) string {
 	var sb strings.Builder
 	sb.WriteString(_basePrompt)
 	sb.WriteString("\n## Current context\n\n")
-	fmt.Fprintf(&sb, "The user is currently viewing document `%s`. When they say \"this document\", \"here\", or \"the doc\" without naming one, this is the document they mean.\n", activeDocumentID)
+
+	if activeBranchID == "" {
+		fmt.Fprintf(&sb, "The user is currently viewing document `%s`. When they say \"this document\", \"here\", or \"the doc\" without naming one, this is the document they mean.\n", activeDocumentID)
+	} else {
+		fmt.Fprintf(&sb, "The user is currently viewing document `%s` on branch `%s`. When they say \"this document\", \"here\", or \"the doc\" without naming one, this is the document and the branch they mean, so read and write with branch_id `%s`.\n", activeDocumentID, activeBranchID, activeBranchID)
+	}
 
 	return sb.String()
 }
@@ -203,7 +212,7 @@ func buildSystemPrompt(activeDocumentID string) string {
 // template would try to interpolate.
 func genModelInput(ctx context.Context, _ string, input *adk.AgentInput) ([]*schema.Message, error) {
 	msgs := make([]*schema.Message, 0, len(input.Messages)+1)
-	msgs = append(msgs, schema.SystemMessage(buildSystemPrompt(activeDocumentID(ctx))))
+	msgs = append(msgs, schema.SystemMessage(buildSystemPrompt(sessionString(ctx, _sessionKeyActiveDocument), sessionString(ctx, _sessionKeyActiveBranch))))
 
 	// the conversation a completed run leaves behind includes the system
 	// message this function prepended, so appending the input verbatim
@@ -221,19 +230,19 @@ func genModelInput(ctx context.Context, _ string, input *adk.AgentInput) ([]*sch
 	return msgs, nil
 }
 
-// activeDocumentID returns the document the user is viewing for this
-// run, or an empty string when the client has not reported one.
-func activeDocumentID(ctx context.Context) string {
-	v, ok := adk.GetSessionValue(ctx, _sessionKeyActiveDocument)
+// sessionString returns the string the session stores under key for
+// this run, or an empty string when the client has not reported one.
+func sessionString(ctx context.Context, key string) string {
+	v, ok := adk.GetSessionValue(ctx, key)
 	if !ok {
 		return ""
 	}
 
-	id, ok := v.(string)
+	s, ok := v.(string)
 	if !ok {
 		// NOCOV: the value is only ever written as a string.
 		return ""
 	}
 
-	return id
+	return s
 }

@@ -320,12 +320,12 @@ func Test_Set_Label(t *testing.T) {
 		},
 		"Read names the document": {
 			Name:   NameGetDocument,
-			Args:   `{"document_id":"` + _testDocID.String() + `"}`,
+			Args:   `{` + targetArgs(_stubMainBranchID) + `}`,
 			Result: "Reading Runbook",
 		},
 		"Write names the document": {
 			Name:   NameUpdateBlockText,
-			Args:   `{"document_id":"` + _testDocID.String() + `","block_uid":"b","text":"t"}`,
+			Args:   `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"b","text":"t"}`,
 			Result: "Updating Runbook",
 		},
 		"Unresolvable document is not announced": {
@@ -333,9 +333,12 @@ func Test_Set_Label(t *testing.T) {
 				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*document.Document, error) {
 					return nil, assert.AnError
 				},
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*document.Document, error) {
+					return nil, assert.AnError
+				},
 			},
 			Name: NameGetDocument,
-			Args: `{"document_id":"` + _testDocID.String() + `"}`,
+			Args: `{` + targetArgs(_stubMainBranchID) + `}`,
 		},
 		"Malformed arguments are not announced": {
 			// the call is about to fail on these same arguments, and

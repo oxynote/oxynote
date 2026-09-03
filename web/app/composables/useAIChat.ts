@@ -18,6 +18,7 @@ export function useAIChat() {
 	// activeDocumentId is echoed to the server on connect and whenever
 	// it changes, so the model can resolve "this document".
 	const activeDocumentId = ref<string | null>(null)
+	const activeBranchId = ref<string | null>(null)
 
 	const wsUrl = computed(() => {
 		const base = config.public.coreAPIBaseWsURL
@@ -70,10 +71,15 @@ export function useAIChat() {
 		send(JSON.stringify({ type: ClientMessageType.Message, content }))
 	}
 
-	// setActiveDocument records which document the user is looking at.
-	// Called on navigation; the value is also replayed on reconnect.
-	function setActiveDocument(documentId: string | null) {
+	// setActiveDocument records which document, and which branch of it,
+	// the user is looking at. Called on navigation; the value is also
+	// replayed on reconnect.
+	function setActiveDocument(
+		documentId: string | null,
+		branchId: string | null = null,
+	) {
 		activeDocumentId.value = documentId
+		activeBranchId.value = branchId
 		sendActiveDocument()
 	}
 
@@ -86,6 +92,7 @@ export function useAIChat() {
 			JSON.stringify({
 				type: ClientMessageType.SetActiveDocument,
 				documentId: activeDocumentId.value ?? "",
+				branchId: activeBranchId.value ?? "",
 			}),
 		)
 	}

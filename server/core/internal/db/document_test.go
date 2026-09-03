@@ -471,10 +471,11 @@ func Test_agent_UpdateDocumentTree(t *testing.T) {
 	// Root documents
 	for i, doc := range docs {
 		st := document.Summary{
-			DocumentName: doc.DocumentName,
-			ID:           doc.ID,
-			Icon:         doc.Icon,
-			Protected:    doc.Protected,
+			DocumentName:    doc.DocumentName,
+			ID:              doc.ID,
+			DefaultBranchID: doc.BranchID,
+			Icon:            doc.Icon,
+			Protected:       doc.Protected,
 		}
 
 		// Children documents
@@ -483,10 +484,11 @@ func Test_agent_UpdateDocumentTree(t *testing.T) {
 			sdoc.ParentID = null.ValueFrom(docs[i].ID)
 
 			st.Children = append(st.Children, document.Summary{
-				ID:           sdoc.ID,
-				DocumentName: sdoc.DocumentName,
-				Icon:         sdoc.Icon,
-				Protected:    sdoc.Protected,
+				ID:              sdoc.ID,
+				DocumentName:    sdoc.DocumentName,
+				DefaultBranchID: sdoc.BranchID,
+				Icon:            sdoc.Icon,
+				Protected:       sdoc.Protected,
 			})
 		})
 
@@ -526,10 +528,11 @@ func Test_agent_FetchDocumentTree(t *testing.T) {
 	// Root documents
 	for i, doc := range docs {
 		st := document.Summary{
-			DocumentName: doc.DocumentName,
-			ID:           doc.ID,
-			Icon:         doc.Icon,
-			Protected:    doc.Protected,
+			DocumentName:    doc.DocumentName,
+			ID:              doc.ID,
+			DefaultBranchID: doc.BranchID,
+			Icon:            doc.Icon,
+			Protected:       doc.Protected,
 		}
 
 		// Children documents
@@ -538,10 +541,11 @@ func Test_agent_FetchDocumentTree(t *testing.T) {
 			sdoc.ParentID = null.ValueFrom(docs[i].ID)
 
 			st.Children = append(st.Children, document.Summary{
-				ID:           sdoc.ID,
-				DocumentName: sdoc.DocumentName,
-				Icon:         sdoc.Icon,
-				Protected:    sdoc.Protected,
+				ID:              sdoc.ID,
+				DocumentName:    sdoc.DocumentName,
+				DefaultBranchID: sdoc.BranchID,
+				Icon:            sdoc.Icon,
+				Protected:       sdoc.Protected,
 			})
 		})
 
@@ -552,10 +556,11 @@ func Test_agent_FetchDocumentTree(t *testing.T) {
 				sdoc.ParentID = null.ValueFrom(sst.ID)
 
 				sst.Children = append(sst.Children, document.Summary{
-					ID:           sdoc.ID,
-					DocumentName: sdoc.DocumentName,
-					Icon:         sdoc.Icon,
-					Protected:    sdoc.Protected,
+					ID:              sdoc.ID,
+					DocumentName:    sdoc.DocumentName,
+					DefaultBranchID: sdoc.BranchID,
+					Icon:            sdoc.Icon,
+					Protected:       sdoc.Protected,
 				})
 			})
 
@@ -642,10 +647,11 @@ func Test_agent_FetchDocumentTreeByDocumentParentID(t *testing.T) {
 
 	for _, doc := range roots {
 		exp = append(exp, document.Summary{
-			ID:           doc.ID,
-			DocumentName: doc.DocumentName,
-			Icon:         doc.Icon,
-			Protected:    doc.Protected,
+			ID:              doc.ID,
+			DocumentName:    doc.DocumentName,
+			DefaultBranchID: doc.BranchID,
+			Icon:            doc.Icon,
+			Protected:       doc.Protected,
 		})
 	}
 
@@ -663,10 +669,11 @@ func Test_agent_FetchDocumentTreeByDocumentParentID(t *testing.T) {
 
 	for _, doc := range children {
 		exp = append(exp, document.Summary{
-			ID:           doc.ID,
-			DocumentName: doc.DocumentName,
-			Icon:         doc.Icon,
-			Protected:    doc.Protected,
+			ID:              doc.ID,
+			DocumentName:    doc.DocumentName,
+			DefaultBranchID: doc.BranchID,
+			Icon:            doc.Icon,
+			Protected:       doc.Protected,
 		})
 	}
 

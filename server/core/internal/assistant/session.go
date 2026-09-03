@@ -37,6 +37,10 @@ type session struct {
 	// document" without asking.
 	activeDocumentID string
 
+	// activeBranchID is the branch of that document the user is
+	// viewing, as the client reported it.
+	activeBranchID string
+
 	// messages is the conversation as the last completed turn left it,
 	// after the context middlewares compacted it.
 	messages []*schema.Message
@@ -87,12 +91,16 @@ func (s *session) Close() error {
 	return nil
 }
 
-// SetActiveDocument records which document the user is viewing.
-func (s *session) SetActiveDocument(documentID string) {
+// SetActiveDocument records which document, and which branch of it,
+// the user is viewing. Neither is checked here: they are a hint for
+// the prompt, and a call that names them is what finds out whether
+// they resolve.
+func (s *session) SetActiveDocument(documentID, branchID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	s.activeDocumentID = documentID
+	s.activeBranchID = branchID
 }
 
 // rememberMessages records the conversation as a completed run left it,
@@ -195,7 +203,7 @@ func (s *session) Process(ctx context.Context, msg []byte) {
 		s.handleConfirmResponse(ctx, resp.TurnID, resp.Approved, resp.All)
 
 	case protocol.ClientTypeSetActiveDocument:
-		s.SetActiveDocument(gjson.GetBytes(msg, "documentId").String())
+		s.SetActiveDocument(gjson.GetBytes(msg, "documentId").String(), gjson.GetBytes(msg, "branchId").String())
 
 	default:
 		s.writer.WriteJSON(ctx, protocol.NewErrorMessage("unknown message type"))
@@ -418,10 +426,12 @@ func (s *session) goTurn(ctx context.Context, fn func(context.Context) *persist.
 func (s *session) runOptions(extra map[string]any) []adk.AgentRunOption {
 	s.mu.Lock()
 	activeDocumentID := s.activeDocumentID
+	activeBranchID := s.activeBranchID
 	s.mu.Unlock()
 
 	values := map[string]any{
 		_sessionKeyActiveDocument: activeDocumentID,
+		_sessionKeyActiveBranch:   activeBranchID,
 	}
 
 	maps.Copy(values, extra)

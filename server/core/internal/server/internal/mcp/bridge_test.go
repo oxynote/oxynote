@@ -18,8 +18,8 @@ type stubRunner struct {
 	// out is what Run reports as its output.
 	out string
 
-	// docs is what Run reports as the documents it changed.
-	docs []xid.ID
+	// docs is what Run reports as the branches it changed.
+	docs []tools.Touched
 
 	// runErr fails Run when set.
 	runErr error
@@ -80,6 +80,7 @@ func Test_Handler_toolHandler(t *testing.T) {
 	t.Parallel()
 
 	doc1, doc2 := xid.New(), xid.New()
+	branch1, branch2 := xid.New(), xid.New()
 
 	hdl := &Handler{log: discardLog()}
 
@@ -111,16 +112,16 @@ func Test_Handler_toolHandler(t *testing.T) {
 			Text:  `{"ok":true}`,
 		},
 		"A call links the document it changed": {
-			Entry:    tools.Entry{Tool: &stubRunner{out: `{"ok":true}`, docs: []xid.ID{doc1}}, Traits: tools.Traits{Write: true}},
+			Entry:    tools.Entry{Tool: &stubRunner{out: `{"ok":true}`, docs: []tools.Touched{{DocumentID: doc1, BranchID: branch1}}}, Traits: tools.Traits{Write: true}},
 			Args:     `{"document_id":"` + doc1.String() + `"}`,
 			Text:     `{"ok":true}`,
-			LinkURIs: []string{_resourceURIPrefix + doc1.String()},
+			LinkURIs: []string{_resourceURIPrefix + doc1.String() + _resourceBranchSegment + branch1.String()},
 		},
 		"A call links every document it changed": {
-			Entry:    tools.Entry{Tool: &stubRunner{out: `{"ok":true}`, docs: []xid.ID{doc1, doc2}}, Traits: tools.Traits{Write: true}},
+			Entry:    tools.Entry{Tool: &stubRunner{out: `{"ok":true}`, docs: []tools.Touched{{DocumentID: doc1, BranchID: branch1}, {DocumentID: doc2, BranchID: branch2}}}, Traits: tools.Traits{Write: true}},
 			Args:     `{}`,
 			Text:     `{"ok":true}`,
-			LinkURIs: []string{_resourceURIPrefix + doc1.String(), _resourceURIPrefix + doc2.String()},
+			LinkURIs: []string{_resourceURIPrefix + doc1.String() + _resourceBranchSegment + branch1.String(), _resourceURIPrefix + doc2.String() + _resourceBranchSegment + branch2.String()},
 		},
 		"A write that changed nothing has no link to offer": {
 			Entry: tools.Entry{Tool: &stubRunner{out: `{"ok":true}`}, Traits: tools.Traits{Write: true}},

@@ -83,7 +83,8 @@ func checkReadToolShape(t *testing.T, defs map[string]map[string]any) {
 	require.True(t, ok, "inputSchema: %v", get["inputSchema"])
 	assert.Equal(t, "object", schema["type"])
 	assert.Contains(t, schema["properties"], "document_id")
-	assert.Equal(t, []any{"document_id"}, schema["required"])
+	assert.Contains(t, schema["properties"], "branch_id")
+	assert.Equal(t, []any{"document_id", "branch_id"}, schema["required"])
 
 	ann, ok := get["annotations"].(map[string]any)
 	require.True(t, ok, "annotations: %v", get["annotations"])

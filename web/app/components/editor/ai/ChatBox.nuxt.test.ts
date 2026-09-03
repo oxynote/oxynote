@@ -86,7 +86,18 @@ describe("<ChatBox>", { concurrent: false }, () => {
 
 		await mountChat()
 
-		expect(chat.setActiveDocument).toHaveBeenCalledWith(documentId)
+		expect(chat.setActiveDocument).toHaveBeenCalledWith(documentId, null)
+	})
+
+	it("tells the assistant which branch is open", async ({ expect }) => {
+		const documentId = makeXid("doc")
+		const branchId = makeXid("branch")
+		useEditorStore().updateActiveDocumentId(documentId)
+		useEditorStore().updateActiveBranchId(branchId)
+
+		await mountChat()
+
+		expect(chat.setActiveDocument).toHaveBeenCalledWith(documentId, branchId)
 	})
 
 	it("tells the assistant when the reader navigates away", async ({

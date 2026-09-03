@@ -199,6 +199,22 @@ form carrying those uids, and returns `blockRows` of the expanded tree; a write 
 existing block reads it (`Input.DocumentBlock`) before the edit and patches the change
 onto that. Depth in those rows counts from the block itself.
 
+**Branches are addressed by id, always.** Every content tool (`get_document`, `read_block`,
+the block writes) requires `branch_id`; the default branch is a branch like any other, and
+its id travels with every listing (`list_documents` and search hits carry
+`default_branch_id`, `create_document` returns `branch_id`, `get_document` lists every
+branch with its id). `Input.Branch`, `DocumentContent`, `DocumentBlock`, `ApplyEdit` and the
+placement checks take the branch id and resolve it through `FetchDocumentByBranchID`,
+refusing a branch that belongs to another document; an unknown id is refused with the
+branches the document has (`ErrUnknownBranch`, each as "name (id)"), and a protected branch
+reads but refuses every write, naming the unprotected branches to write to instead.
+`Input.Document` is the default-branch fetch the document-level tools use to name and
+change a document; they and search stay branch-free, and only the default branch is
+indexed. No tool creates, renames, deletes or merges a branch. MCP resources name a
+document and a branch (`oxynote://documents/{id}/branches/{branch_id}`); the list carries
+each document on its default branch. The chat client reports the document and branch it
+is viewing; the session stores both unchecked, as a hint the next call verifies.
+
 **Every error names the next step.** The realtime service's operation errors are
 rewritten at the boundary (`describeOpError`): a uid it holds no block for points at
 `get_document`, and its operation kinds are named as the model's tools. Errors the

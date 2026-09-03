@@ -29,32 +29,60 @@ const _stubHeadingUID = "h"
 // stubContentDB answers content reads with a single paragraph the
 // placement checks can find.
 func stubContentDB(err error) *DBMock {
+	root := document.RootBlock{
+		Content: []document.Block{
+			{
+				Type:  document.BlockNodeParagraph,
+				Text:  "hello",
+				Attrs: document.Attributes{document.AttrUID: _stubContentUID},
+			},
+			{
+				Type:  document.BlockNodeHeading,
+				Text:  "Title",
+				Attrs: document.Attributes{document.AttrUID: _stubHeadingUID, document.AttrLevel: 1},
+			},
+		},
+	}
+
 	db := stubDocumentDB()
-	db.FetchMainBranchContentFunc = func(context.Context, xid.ID, string) (document.Content, error) {
-		if err != nil {
-			return document.Content{}, err
+	fetch := db.FetchDocumentFunc
+	fetchByBranch := db.FetchDocumentByBranchIDFunc
+
+	// the document fetches carry the branch's content, which is what a
+	// branch read and get_document use; err makes the branch fetch fail.
+	db.FetchDocumentFunc = func(ctx context.Context, id xid.ID, orgID, branchName string) (*document.Document, error) {
+		doc, ferr := fetch(ctx, id, orgID, branchName)
+		if ferr != nil {
+			return nil, ferr
 		}
 
-		return document.Content{
-			DocumentName: "Runbook",
-			Content: document.RootBlock{
-				Content: []document.Block{
-					{
-						Type:  document.BlockNodeParagraph,
-						Text:  "hello",
-						Attrs: document.Attributes{document.AttrUID: _stubContentUID},
-					},
-					{
-						Type:  document.BlockNodeHeading,
-						Text:  "Title",
-						Attrs: document.Attributes{document.AttrUID: _stubHeadingUID, document.AttrLevel: 1},
-					},
-				},
-			},
-		}, nil
+		doc.Content = root
+
+		return doc, nil
+	}
+
+	db.FetchDocumentByBranchIDFunc = func(ctx context.Context, branchID xid.ID, orgID string) (*document.Document, error) {
+		if err != nil {
+			return nil, err
+		}
+
+		doc, ferr := fetchByBranch(ctx, branchID, orgID)
+		if ferr != nil {
+			return nil, ferr
+		}
+
+		doc.Content = root
+
+		return doc, nil
 	}
 
 	return db
+}
+
+// targetArgs is the document_id and branch_id pair every content tool
+// is called with, naming the test document on the given branch.
+func targetArgs(branchID xid.ID) string {
+	return `"document_id":"` + _testDocID.String() + `","branch_id":"` + branchID.String() + `"`
 }
 
 // _unknownDataSourceID names no data source in any organisation.
@@ -130,9 +158,9 @@ func runEdit(t *testing.T, tl Tool, name Name, c editCase) {
 func Test_readBlockArgs_Validate(t *testing.T) {
 	t.Parallel()
 
-	assertValidate(t, readBlockArgs{DocumentID: _testDocID, BlockUID: "b"}, map[string]Args{
+	assertValidate(t, readBlockArgs{DocumentID: _testDocID, BranchID: _stubMainBranchID, BlockUID: "b"}, map[string]Args{
 		"document_id": readBlockArgs{BlockUID: "b"},
-		"block_uid":   readBlockArgs{DocumentID: _testDocID},
+		"block_uid":   readBlockArgs{DocumentID: _testDocID, BranchID: _stubMainBranchID},
 	})
 }
 
@@ -142,7 +170,7 @@ func Test_readBlock_Info(t *testing.T) {
 	info := readBlock{}.Info()
 
 	assert.Equal(t, NameReadBlock, info.Name)
-	assert.Equal(t, []string{_keyDocumentID, _keyBlockUID}, info.Required)
+	assert.Equal(t, []string{_keyDocumentID, _keyBranchID, _keyBlockUID}, info.Required)
 }
 
 func Test_readBlock_Traits(t *testing.T) {
@@ -185,23 +213,33 @@ func Test_readBlock_Execute(t *testing.T) {
 		},
 		"Block uid is required": {
 			DB:   stubContentDB(nil),
-			Args: `{"document_id":"` + _testDocID.String() + `"}`,
+			Args: `{` + targetArgs(_stubMainBranchID) + `}`,
 			Err:  assert.AnError,
 		},
-		"Error returned by db.FetchMainBranchContent": {
+		"Error returned by db.FetchDocumentByBranchID": {
 			DB:   stubContentDB(assert.AnError),
-			Args: `{"document_id":"` + _testDocID.String() + `","block_uid":"a"}`,
+			Args: `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"a"}`,
 			Err:  assert.AnError,
 		},
 		"Block is absent": {
 			DB:   stubContentDB(nil),
-			Args: `{"document_id":"` + _testDocID.String() + `","block_uid":"missing"}`,
+			Args: `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"missing"}`,
 			Err:  assert.AnError,
 		},
 		"Block is returned": {
 			DB:       stubContentDB(nil),
-			Args:     `{"document_id":"` + _testDocID.String() + `","block_uid":"a"}`,
+			Args:     `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"a"}`,
 			Contains: `"paragraph"`,
+		},
+		"Block is returned from a named branch": {
+			DB:       stubContentDB(nil),
+			Args:     `{` + targetArgs(_stubBranchID) + `,"block_uid":"a"}`,
+			Contains: `"paragraph"`,
+		},
+		"Unknown branch is refused": {
+			DB:   stubContentDB(nil),
+			Args: `{` + targetArgs(_unknownBranchID) + `,"block_uid":"a"}`,
+			Err:  assert.AnError,
 		},
 	}
 
@@ -226,18 +264,18 @@ func Test_insertBlockArgs_Validate(t *testing.T) {
 
 	para := block.Block{Type: block.BlockParagraph}
 
-	assertValidate(t, insertBlockArgs{DocumentID: _testDocID, ReferenceBlockUID: "r", Position: positionAfter, Block: para}, map[string]Args{
+	assertValidate(t, insertBlockArgs{DocumentID: _testDocID, BranchID: _stubMainBranchID, ReferenceBlockUID: "r", Position: positionAfter, Block: para}, map[string]Args{
 		"document_id":         insertBlockArgs{ReferenceBlockUID: "r", Position: positionAfter, Block: para},
-		"reference_block_uid": insertBlockArgs{DocumentID: _testDocID, Position: positionAfter, Block: para},
-		"position":            insertBlockArgs{DocumentID: _testDocID, ReferenceBlockUID: "r", Block: para},
-		"block":               insertBlockArgs{DocumentID: _testDocID, ReferenceBlockUID: "r", Position: positionAfter},
+		"reference_block_uid": insertBlockArgs{DocumentID: _testDocID, BranchID: _stubMainBranchID, Position: positionAfter, Block: para},
+		"position":            insertBlockArgs{DocumentID: _testDocID, BranchID: _stubMainBranchID, ReferenceBlockUID: "r", Block: para},
+		"block":               insertBlockArgs{DocumentID: _testDocID, BranchID: _stubMainBranchID, ReferenceBlockUID: "r", Position: positionAfter},
 	})
 
 	// an end of the document needs no reference, and refuses one: a
 	// reference given with start or end is a contradiction, not a hint.
-	require.NoError(t, insertBlockArgs{DocumentID: _testDocID, Position: positionEnd, Block: para}.Validate())
+	require.NoError(t, insertBlockArgs{DocumentID: _testDocID, BranchID: _stubMainBranchID, Position: positionEnd, Block: para}.Validate())
 
-	err := insertBlockArgs{DocumentID: _testDocID, ReferenceBlockUID: "r", Position: positionStart, Block: para}.Validate()
+	err := insertBlockArgs{DocumentID: _testDocID, BranchID: _stubMainBranchID, ReferenceBlockUID: "r", Position: positionStart, Block: para}.Validate()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "reference_block_uid applies to before and after only")
 }
@@ -248,7 +286,7 @@ func Test_insertBlock_Info(t *testing.T) {
 	info := insertBlock{}.Info()
 
 	assert.Equal(t, NameInsertBlock, info.Name)
-	assert.Equal(t, []string{_keyDocumentID, "position", _keyBlock}, info.Required)
+	assert.Equal(t, []string{_keyDocumentID, _keyBranchID, "position", _keyBlock}, info.Required)
 
 	// the four positions are what the model is shown.
 	pos, ok := info.Properties["position"].(map[string]any)
@@ -269,6 +307,13 @@ func Test_insertBlock_Title(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "Updating Runbook", got)
 
+	// a write aimed at a branch says so, since the card is what the user
+	// approves.
+	got, err = insertBlock{}.Title(testInput(testDeps(stubDocumentDB(), nil, nil), NameInsertBlock,
+		`{`+targetArgs(_stubBranchID)+`,"position":"end","block":`+_paragraphArgs+`}`))
+	require.NoError(t, err)
+	assert.Equal(t, "Updating Runbook on branch draft", got)
+
 	// the document it names has to resolve; the failure is passed on
 	// rather than described around.
 	_, err = insertBlock{}.Title(testInput(testDeps(failingDocumentDB(), nil, nil), NameInsertBlock, requiredArgs(t, NameInsertBlock)))
@@ -283,14 +328,15 @@ func Test_insertBlock_Summary(t *testing.T) {
 	t.Parallel()
 
 	d := testDeps(stubDocumentDB(), nil, nil)
-	beside := `{"document_id":"` + _testDocID.String() + `","reference_block_uid":"a","block":` + _paragraphArgs
-	atEnd := `{"document_id":"` + _testDocID.String() + `","block":` + _paragraphArgs
+	beside := `{` + targetArgs(_stubMainBranchID) + `,"reference_block_uid":"a","block":` + _paragraphArgs
+	atEnd := `{` + targetArgs(_stubMainBranchID) + `,"block":` + _paragraphArgs
 
 	cc := map[string]struct {
 		Args   string
 		Result string
 	}{
 		"Beside a block": {Args: beside + `,"position":"after"}`, Result: "Insert a paragraph after a block in Runbook"},
+		"On a branch":    {Args: `{` + targetArgs(_stubBranchID) + `,"block":` + _paragraphArgs + `,"position":"end"}`, Result: "Append a paragraph to Runbook on branch draft"},
 		"At the start":   {Args: atEnd + `,"position":"start"}`, Result: "Prepend a paragraph to Runbook"},
 		"At the end":     {Args: atEnd + `,"position":"end"}`, Result: "Append a paragraph to Runbook"},
 	}
@@ -324,15 +370,15 @@ func Test_insertBlock_Summary(t *testing.T) {
 func Test_insertBlock_Execute(t *testing.T) {
 	t.Parallel()
 
-	beside := `{"document_id":"` + _testDocID.String() + `","reference_block_uid":"a","block":` + _paragraphArgs
-	atEnd := `{"document_id":"` + _testDocID.String() + `","block":` + _paragraphArgs
+	beside := `{` + targetArgs(_stubMainBranchID) + `,"reference_block_uid":"a","block":` + _paragraphArgs
+	atEnd := `{` + targetArgs(_stubMainBranchID) + `,"block":` + _paragraphArgs
 	paragraphRow := []string{`"kind":"paragraph"`, `"text":"hello"`, `"depth":0`}
 
 	cc := map[string]editCase{
 		"Malformed arguments": {DB: stubContentDB(nil), Args: `{`, Err: assert.AnError},
 		"Reference uid is required beside a block": {
 			DB:   stubContentDB(nil),
-			Args: `{"document_id":"` + _testDocID.String() + `","position":"after","block":` + _paragraphArgs + `}`,
+			Args: `{` + targetArgs(_stubMainBranchID) + `,"position":"after","block":` + _paragraphArgs + `}`,
 			Err:  assert.AnError,
 		},
 		"Reference uid is refused at an end": {
@@ -347,16 +393,26 @@ func Test_insertBlock_Execute(t *testing.T) {
 		},
 		"Error returned by the placement check": {
 			DB: stubContentDB(assert.AnError),
-			Args: `{"document_id":"` + _testDocID.String() + `","reference_block_uid":"a","position":"after",` +
+			Args: `{` + targetArgs(_stubMainBranchID) + `,"reference_block_uid":"a","position":"after",` +
 				`"block":{"type":"titled_code","text":"x","attrs":{"title":"T"}}}`,
 			Err: assert.AnError,
 		},
 		"A type the root refuses": {
 			DB:   stubContentDB(nil),
-			Args: `{"document_id":"` + _testDocID.String() + `","position":"end","block":{"type":"titled_code","text":"x","attrs":{"title":"T"}}}`,
+			Args: `{` + targetArgs(_stubMainBranchID) + `,"position":"end","block":{"type":"titled_code","text":"x","attrs":{"title":"T"}}}`,
 			Err:  assert.AnError,
 		},
-		"Inserted before":       {DB: stubContentDB(nil), Args: beside + `,"position":"before"}`, Contains: paragraphRow},
+		"Inserted before": {DB: stubContentDB(nil), Args: beside + `,"position":"before"}`, Contains: paragraphRow},
+		"Inserted on another branch": {
+			DB:       stubContentDB(nil),
+			Args:     `{` + targetArgs(_stubBranchID) + `,"block":` + _paragraphArgs + `,"position":"end"}`,
+			Contains: paragraphRow,
+		},
+		"Inserted on an unknown branch": {
+			DB:   stubContentDB(nil),
+			Args: `{` + targetArgs(_unknownBranchID) + `,"block":` + _paragraphArgs + `,"position":"end"}`,
+			Err:  assert.AnError,
+		},
 		"Inserted after":        {DB: stubContentDB(nil), Args: beside + `,"position":"after"}`, Contains: paragraphRow},
 		"Inserted at the start": {DB: stubContentDB(nil), Args: atEnd + `,"position":"start"}`, Contains: paragraphRow},
 		"Inserted at the end":   {DB: stubContentDB(nil), Args: atEnd + `,"position":"end"}`, Contains: paragraphRow},
@@ -364,18 +420,18 @@ func Test_insertBlock_Execute(t *testing.T) {
 		// target an entry without reading the document back.
 		"A list reports its entries": {
 			DB:       stubContentDB(nil),
-			Args:     `{"document_id":"` + _testDocID.String() + `","position":"end","block":{"type":"bullet_list","items":[{"type":"paragraph","text":"one"}]}}`,
+			Args:     `{` + targetArgs(_stubMainBranchID) + `,"position":"end","block":{"type":"bullet_list","items":[{"type":"paragraph","text":"one"}]}}`,
 			Contains: []string{`"kind":"bullet_list"`, `"kind":"list_item"`, `"depth":1`, `"parent_uid"`},
 		},
 		"A metric naming a data source the organisation owns": {
 			DB: stubMetricDB(),
-			Args: `{"document_id":"` + _testDocID.String() + `","reference_block_uid":"` + _stubContentUID +
+			Args: `{` + targetArgs(_stubMainBranchID) + `,"reference_block_uid":"` + _stubContentUID +
 				`","position":"after","block":` + metricBlockArgs(_testDataSourceID.String()) + `}`,
 			Contains: []string{`"kind":"metric_grid"`, `"kind":"metric"`},
 		},
 		"A metric naming a data source it does not": {
 			DB: stubMetricDB(),
-			Args: `{"document_id":"` + _testDocID.String() + `","reference_block_uid":"` + _stubContentUID +
+			Args: `{` + targetArgs(_stubMainBranchID) + `,"reference_block_uid":"` + _stubContentUID +
 				`","position":"after","block":` + metricBlockArgs(_unknownDataSourceID) + `}`,
 			Err: assert.AnError,
 		},
@@ -393,10 +449,10 @@ func Test_insertBlock_Execute(t *testing.T) {
 func Test_replaceBlockArgs_Validate(t *testing.T) {
 	t.Parallel()
 
-	assertValidate(t, replaceBlockArgs{DocumentID: _testDocID, BlockUID: "b", Block: block.Block{Type: block.BlockParagraph}}, map[string]Args{
+	assertValidate(t, replaceBlockArgs{DocumentID: _testDocID, BranchID: _stubMainBranchID, BlockUID: "b", Block: block.Block{Type: block.BlockParagraph}}, map[string]Args{
 		"document_id": replaceBlockArgs{BlockUID: "b", Block: block.Block{Type: block.BlockParagraph}},
-		"block_uid":   replaceBlockArgs{DocumentID: _testDocID, Block: block.Block{Type: block.BlockParagraph}},
-		"block":       replaceBlockArgs{DocumentID: _testDocID, BlockUID: "b"},
+		"block_uid":   replaceBlockArgs{DocumentID: _testDocID, BranchID: _stubMainBranchID, Block: block.Block{Type: block.BlockParagraph}},
+		"block":       replaceBlockArgs{DocumentID: _testDocID, BranchID: _stubMainBranchID, BlockUID: "b"},
 	})
 }
 
@@ -406,7 +462,7 @@ func Test_replaceBlock_Info(t *testing.T) {
 	info := replaceBlock{}.Info()
 
 	assert.Equal(t, NameReplaceBlock, info.Name)
-	assert.Equal(t, []string{_keyDocumentID, _keyBlockUID, _keyBlock}, info.Required)
+	assert.Equal(t, []string{_keyDocumentID, _keyBranchID, _keyBlockUID, _keyBlock}, info.Required)
 }
 
 func Test_replaceBlock_Traits(t *testing.T) {
@@ -437,7 +493,7 @@ func Test_replaceBlock_Summary(t *testing.T) {
 
 	got, err := replaceBlock{}.Summary(testInput(
 		testDeps(stubDocumentDB(), nil, nil), NameReplaceBlock,
-		`{"document_id":"`+_testDocID.String()+`","block_uid":"a","block":`+_paragraphArgs+`}`,
+		`{`+targetArgs(_stubMainBranchID)+`,"block_uid":"a","block":`+_paragraphArgs+`}`,
 	))
 	require.NoError(t, err)
 	assert.Equal(t, "Replace a block in Runbook with a paragraph", got.Summary)
@@ -459,28 +515,28 @@ func Test_replaceBlock_Execute(t *testing.T) {
 		"Malformed arguments": {DB: stubContentDB(nil), Args: `{`, Err: assert.AnError},
 		"Block uid is required": {
 			DB:   stubContentDB(nil),
-			Args: `{"document_id":"` + _testDocID.String() + `","block":` + _paragraphArgs + `}`,
+			Args: `{` + targetArgs(_stubMainBranchID) + `,"block":` + _paragraphArgs + `}`,
 			Err:  assert.AnError,
 		},
 		"Error returned by the placement check": {
 			DB: stubContentDB(assert.AnError),
-			Args: `{"document_id":"` + _testDocID.String() + `","block_uid":"a",` +
+			Args: `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"a",` +
 				`"block":{"type":"titled_code","text":"x","attrs":{"title":"T"}}}`,
 			Err: assert.AnError,
 		},
 		"Replaced": {
 			DB:       stubContentDB(nil),
-			Args:     `{"document_id":"` + _testDocID.String() + `","block_uid":"a","block":` + _paragraphArgs + `}`,
+			Args:     `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"a","block":` + _paragraphArgs + `}`,
 			Contains: []string{`"kind":"paragraph"`, `"text":"hello"`},
 		},
 		"A metric grid naming a data source the organisation owns": {
 			DB: stubMetricDB(),
-			Args: `{"document_id":"` + _testDocID.String() + `","block_uid":"` + _stubContentUID +
+			Args: `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"` + _stubContentUID +
 				`","block":` + metricBlockArgs(_testDataSourceID.String()) + `}`,
 		},
 		"A metric grid naming a data source it does not": {
 			DB: stubMetricDB(),
-			Args: `{"document_id":"` + _testDocID.String() + `","block_uid":"` + _stubContentUID +
+			Args: `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"` + _stubContentUID +
 				`","block":` + metricBlockArgs(_unknownDataSourceID) + `}`,
 			Err: assert.AnError,
 		},
@@ -498,10 +554,10 @@ func Test_replaceBlock_Execute(t *testing.T) {
 func Test_updateBlockTextArgs_Validate(t *testing.T) {
 	t.Parallel()
 
-	assertValidate(t, updateBlockTextArgs{DocumentID: _testDocID, BlockUID: "b", Text: "t"}, map[string]Args{
+	assertValidate(t, updateBlockTextArgs{DocumentID: _testDocID, BranchID: _stubMainBranchID, BlockUID: "b", Text: "t"}, map[string]Args{
 		"document_id": updateBlockTextArgs{BlockUID: "b", Text: "t"},
-		"block_uid":   updateBlockTextArgs{DocumentID: _testDocID, Text: "t"},
-		"text":        updateBlockTextArgs{DocumentID: _testDocID, BlockUID: "b"},
+		"block_uid":   updateBlockTextArgs{DocumentID: _testDocID, BranchID: _stubMainBranchID, Text: "t"},
+		"text":        updateBlockTextArgs{DocumentID: _testDocID, BranchID: _stubMainBranchID, BlockUID: "b"},
 	})
 }
 
@@ -511,7 +567,7 @@ func Test_updateBlockText_Info(t *testing.T) {
 	info := updateBlockText{}.Info()
 
 	assert.Equal(t, NameUpdateBlockText, info.Name)
-	assert.Equal(t, []string{_keyDocumentID, _keyBlockUID, "text"}, info.Required)
+	assert.Equal(t, []string{_keyDocumentID, _keyBranchID, _keyBlockUID, "text"}, info.Required)
 }
 
 func Test_updateBlockText_Traits(t *testing.T) {
@@ -543,13 +599,13 @@ func Test_updateBlockText_Summary(t *testing.T) {
 	d := testDeps(stubDocumentDB(), nil, nil)
 
 	got, err := updateBlockText{}.Summary(testInput(d, NameUpdateBlockText,
-		`{"document_id":"`+_testDocID.String()+`","block_uid":"a","text":"a new intro"}`))
+		`{`+targetArgs(_stubMainBranchID)+`,"block_uid":"a","text":"a new intro"}`))
 	require.NoError(t, err)
 	assert.Equal(t, `Update a block in Runbook: "a new intro"`, got.Summary)
 
 	// an empty preview leaves a card that still reads.
 	got, err = updateBlockText{}.Summary(testInput(d, NameUpdateBlockText,
-		`{"document_id":"`+_testDocID.String()+`","block_uid":"a","text":"  "}`))
+		`{`+targetArgs(_stubMainBranchID)+`,"block_uid":"a","text":"  "}`))
 	require.NoError(t, err)
 	assert.Equal(t, "Update text of a block in Runbook", got.Summary)
 
@@ -570,22 +626,27 @@ func Test_updateBlockText_Execute(t *testing.T) {
 		"Malformed arguments": {DB: stubContentDB(nil), Args: `{`, Err: assert.AnError},
 		"Block uid is required": {
 			DB:   stubContentDB(nil),
-			Args: `{"document_id":"` + _testDocID.String() + `","text":"hi"}`,
+			Args: `{` + targetArgs(_stubMainBranchID) + `,"text":"hi"}`,
 			Err:  assert.AnError,
 		},
-		"Error returned by db.FetchMainBranchContent": {
+		"Error returned by db.FetchDocumentByBranchID": {
 			DB:   stubContentDB(assert.AnError),
-			Args: `{"document_id":"` + _testDocID.String() + `","block_uid":"a","text":"hi"}`,
+			Args: `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"a","text":"hi"}`,
 			Err:  assert.AnError,
 		},
 		"Block uid the document does not hold": {
 			DB:   stubContentDB(nil),
-			Args: `{"document_id":"` + _testDocID.String() + `","block_uid":"zzz","text":"hi"}`,
+			Args: `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"zzz","text":"hi"}`,
 			Err:  assert.AnError,
 		},
 		"Text written": {
 			DB:       stubContentDB(nil),
-			Args:     `{"document_id":"` + _testDocID.String() + `","block_uid":"a","text":"hi"}`,
+			Args:     `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"a","text":"hi"}`,
+			Contains: []string{`"uid":"a"`, `"text":"hi"`},
+		},
+		"Text written on a named branch": {
+			DB:       stubContentDB(nil),
+			Args:     `{` + targetArgs(_stubBranchID) + `,"block_uid":"a","text":"hi"}`,
 			Contains: []string{`"uid":"a"`, `"text":"hi"`},
 		},
 	}
@@ -602,10 +663,10 @@ func Test_updateBlockText_Execute(t *testing.T) {
 func Test_updateBlockAttrsArgs_Validate(t *testing.T) {
 	t.Parallel()
 
-	assertValidate(t, updateBlockAttrsArgs{DocumentID: _testDocID, BlockUID: "b", Attrs: map[string]any{"level": 2}}, map[string]Args{
+	assertValidate(t, updateBlockAttrsArgs{DocumentID: _testDocID, BranchID: _stubMainBranchID, BlockUID: "b", Attrs: map[string]any{"level": 2}}, map[string]Args{
 		"document_id": updateBlockAttrsArgs{BlockUID: "b", Attrs: map[string]any{"level": 2}},
-		"block_uid":   updateBlockAttrsArgs{DocumentID: _testDocID, Attrs: map[string]any{"level": 2}},
-		"attrs":       updateBlockAttrsArgs{DocumentID: _testDocID, BlockUID: "b"},
+		"block_uid":   updateBlockAttrsArgs{DocumentID: _testDocID, BranchID: _stubMainBranchID, Attrs: map[string]any{"level": 2}},
+		"attrs":       updateBlockAttrsArgs{DocumentID: _testDocID, BranchID: _stubMainBranchID, BlockUID: "b"},
 	})
 }
 
@@ -615,7 +676,7 @@ func Test_updateBlockAttrs_Info(t *testing.T) {
 	info := updateBlockAttrs{}.Info()
 
 	assert.Equal(t, NameUpdateBlockAttrs, info.Name)
-	assert.Equal(t, []string{_keyDocumentID, _keyBlockUID, "attrs"}, info.Required)
+	assert.Equal(t, []string{_keyDocumentID, _keyBranchID, _keyBlockUID, "attrs"}, info.Required)
 }
 
 func Test_updateBlockAttrs_Traits(t *testing.T) {
@@ -649,7 +710,7 @@ func Test_updateBlockAttrs_Summary(t *testing.T) {
 	// keys are sorted, because the card must read the same every time
 	// the same write is proposed.
 	got, err := updateBlockAttrs{}.Summary(testInput(d, NameUpdateBlockAttrs,
-		`{"document_id":"`+_testDocID.String()+`","block_uid":"a","attrs":{"level":2,"icon":"lucide:warning"}}`))
+		`{`+targetArgs(_stubMainBranchID)+`,"block_uid":"a","attrs":{"level":2,"icon":"lucide:warning"}}`))
 	require.NoError(t, err)
 	assert.Equal(t, "Update block icon, level in Runbook", got.Summary)
 
@@ -670,39 +731,39 @@ func Test_updateBlockAttrs_Execute(t *testing.T) {
 		"Malformed arguments": {DB: stubContentDB(nil), Args: `{`, Err: assert.AnError},
 		"Block uid is required": {
 			DB:   stubContentDB(nil),
-			Args: `{"document_id":"` + _testDocID.String() + `","attrs":{"level":2}}`,
+			Args: `{` + targetArgs(_stubMainBranchID) + `,"attrs":{"level":2}}`,
 			Err:  assert.AnError,
 		},
 		"Attrs must not be empty": {
 			DB:   stubContentDB(nil),
-			Args: `{"document_id":"` + _testDocID.String() + `","block_uid":"h","attrs":{}}`,
+			Args: `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"h","attrs":{}}`,
 			Err:  assert.AnError,
 		},
-		"Error returned by db.FetchMainBranchContent": {
+		"Error returned by db.FetchDocumentByBranchID": {
 			DB:   stubContentDB(assert.AnError),
-			Args: `{"document_id":"` + _testDocID.String() + `","block_uid":"h","attrs":{"level":2}}`,
+			Args: `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"h","attrs":{"level":2}}`,
 			Err:  assert.AnError,
 		},
 		"Block uid the document does not hold": {
 			DB:   stubContentDB(nil),
-			Args: `{"document_id":"` + _testDocID.String() + `","block_uid":"zzz","attrs":{"level":2}}`,
+			Args: `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"zzz","attrs":{"level":2}}`,
 			Err:  assert.AnError,
 		},
 		"Attrs applied": {
 			DB:       stubContentDB(nil),
-			Args:     `{"document_id":"` + _testDocID.String() + `","block_uid":"h","attrs":{"level":2}}`,
+			Args:     `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"h","attrs":{"level":2}}`,
 			Contains: []string{`"uid":"h"`, `"kind":"heading"`, `"level":2`},
 		},
 		// the payload names attributes, not a block type, so a metric's
 		// data source arrives on its own rather than inside a block.
 		"A data source the organisation owns": {
 			DB: stubMetricDB(),
-			Args: `{"document_id":"` + _testDocID.String() + `","block_uid":"a","attrs":{"dataSourceId":"` +
+			Args: `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"a","attrs":{"dataSourceId":"` +
 				_testDataSourceID.String() + `"}}`,
 		},
 		"A data source it does not": {
 			DB: stubMetricDB(),
-			Args: `{"document_id":"` + _testDocID.String() + `","block_uid":"a","attrs":{"dataSourceId":"` +
+			Args: `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"a","attrs":{"dataSourceId":"` +
 				_unknownDataSourceID + `"}}`,
 			Err: assert.AnError,
 		},
@@ -710,7 +771,7 @@ func Test_updateBlockAttrs_Execute(t *testing.T) {
 		// to check, and no other attribute names one at all.
 		"An empty data source is not looked up": {
 			DB:   stubMetricDB(),
-			Args: `{"document_id":"` + _testDocID.String() + `","block_uid":"a","attrs":{"dataSourceId":""}}`,
+			Args: `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"a","attrs":{"dataSourceId":""}}`,
 		},
 	}
 
@@ -726,9 +787,9 @@ func Test_updateBlockAttrs_Execute(t *testing.T) {
 func Test_deleteBlockArgs_Validate(t *testing.T) {
 	t.Parallel()
 
-	assertValidate(t, deleteBlockArgs{DocumentID: _testDocID, BlockUID: "b"}, map[string]Args{
+	assertValidate(t, deleteBlockArgs{DocumentID: _testDocID, BranchID: _stubMainBranchID, BlockUID: "b"}, map[string]Args{
 		"document_id": deleteBlockArgs{BlockUID: "b"},
-		"block_uid":   deleteBlockArgs{DocumentID: _testDocID},
+		"block_uid":   deleteBlockArgs{DocumentID: _testDocID, BranchID: _stubMainBranchID},
 	})
 }
 
@@ -739,7 +800,7 @@ func Test_deleteBlock_Info(t *testing.T) {
 
 	assert.Equal(t, NameDeleteBlock, info.Name)
 	assert.Contains(t, info.Description, "cannot be restored")
-	assert.Equal(t, []string{_keyDocumentID, _keyBlockUID}, info.Required)
+	assert.Equal(t, []string{_keyDocumentID, _keyBranchID, _keyBlockUID}, info.Required)
 }
 
 func Test_deleteBlock_Traits(t *testing.T) {
@@ -771,7 +832,7 @@ func Test_deleteBlock_Summary(t *testing.T) {
 
 	got, err := deleteBlock{}.Summary(testInput(
 		testDeps(stubDocumentDB(), nil, nil), NameDeleteBlock,
-		`{"document_id":"`+_testDocID.String()+`","block_uid":"a"}`,
+		`{`+targetArgs(_stubMainBranchID)+`,"block_uid":"a"}`,
 	))
 	require.NoError(t, err)
 	assert.Equal(t, "Delete a block in Runbook", got.Summary)
@@ -793,12 +854,12 @@ func Test_deleteBlock_Execute(t *testing.T) {
 		"Malformed arguments": {DB: stubDocumentDB(), Args: `{`, Err: assert.AnError},
 		"Block uid is required": {
 			DB:   stubDocumentDB(),
-			Args: `{"document_id":"` + _testDocID.String() + `"}`,
+			Args: `{` + targetArgs(_stubMainBranchID) + `}`,
 			Err:  assert.AnError,
 		},
 		"Deleted": {
 			DB:       stubDocumentDB(),
-			Args:     `{"document_id":"` + _testDocID.String() + `","block_uid":"a"}`,
+			Args:     `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"a"}`,
 			Contains: []string{`"deleted":"a"`},
 		},
 	}
@@ -815,13 +876,13 @@ func Test_deleteBlock_Execute(t *testing.T) {
 func Test_moveBlockArgs_Validate(t *testing.T) {
 	t.Parallel()
 
-	ok := moveBlockArgs{DocumentID: _testDocID, BlockUID: "b", Position: positionAfter, ReferenceBlockUID: "r"}
+	ok := moveBlockArgs{DocumentID: _testDocID, BranchID: _stubMainBranchID, BlockUID: "b", Position: positionAfter, ReferenceBlockUID: "r"}
 
 	assertValidate(t, ok, map[string]Args{
 		"document_id":         moveBlockArgs{BlockUID: "b", Position: positionAfter, ReferenceBlockUID: "r"},
-		"block_uid":           moveBlockArgs{DocumentID: _testDocID, Position: positionAfter, ReferenceBlockUID: "r"},
-		"position":            moveBlockArgs{DocumentID: _testDocID, BlockUID: "b", ReferenceBlockUID: "r"},
-		"reference_block_uid": moveBlockArgs{DocumentID: _testDocID, BlockUID: "b", Position: positionAfter},
+		"block_uid":           moveBlockArgs{DocumentID: _testDocID, BranchID: _stubMainBranchID, Position: positionAfter, ReferenceBlockUID: "r"},
+		"position":            moveBlockArgs{DocumentID: _testDocID, BranchID: _stubMainBranchID, BlockUID: "b", ReferenceBlockUID: "r"},
+		"reference_block_uid": moveBlockArgs{DocumentID: _testDocID, BranchID: _stubMainBranchID, BlockUID: "b", Position: positionAfter},
 	})
 
 	// a block cannot be moved relative to itself.
@@ -848,7 +909,7 @@ func Test_moveBlock_Info(t *testing.T) {
 
 	assert.Equal(t, NameMoveBlock, info.Name)
 	assert.Contains(t, info.Description, "keeps its uid")
-	assert.Equal(t, []string{_keyDocumentID, _keyBlockUID, "position", "reference_block_uid"}, info.Required)
+	assert.Equal(t, []string{_keyDocumentID, _keyBranchID, _keyBlockUID, "position", "reference_block_uid"}, info.Required)
 }
 
 func Test_moveBlock_Traits(t *testing.T) {
@@ -879,7 +940,7 @@ func Test_moveBlock_Summary(t *testing.T) {
 
 	got, err := moveBlock{}.Summary(testInput(
 		testDeps(stubDocumentDB(), nil, nil), NameMoveBlock,
-		`{"document_id":"`+_testDocID.String()+`","block_uid":"a","position":"after","reference_block_uid":"b"}`,
+		`{`+targetArgs(_stubMainBranchID)+`,"block_uid":"a","position":"after","reference_block_uid":"b"}`,
 	))
 	require.NoError(t, err)
 	assert.Equal(t, "Move a block after another block in Runbook", got.Summary)
@@ -897,13 +958,13 @@ func Test_moveBlock_Summary(t *testing.T) {
 func Test_moveBlock_Execute(t *testing.T) {
 	t.Parallel()
 
-	base := `{"document_id":"` + _testDocID.String() + `","block_uid":"a","reference_block_uid":"b"`
+	base := `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"a","reference_block_uid":"b"`
 
 	cc := map[string]editCase{
 		"Malformed arguments": {DB: stubContentDB(nil), Args: `{`, Err: assert.AnError},
 		"Reference uid is required": {
 			DB:   stubContentDB(nil),
-			Args: `{"document_id":"` + _testDocID.String() + `","block_uid":"a","position":"after"}`,
+			Args: `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"a","position":"after"}`,
 			Err:  assert.AnError,
 		},
 		"Position must be before or after": {
@@ -913,17 +974,17 @@ func Test_moveBlock_Execute(t *testing.T) {
 		},
 		"Reference must differ from the block": {
 			DB:   stubContentDB(nil),
-			Args: `{"document_id":"` + _testDocID.String() + `","block_uid":"a","position":"after","reference_block_uid":"a"}`,
+			Args: `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"a","position":"after","reference_block_uid":"a"}`,
 			Err:  assert.AnError,
 		},
-		"Error returned by db.FetchMainBranchContent": {
+		"Error returned by db.FetchDocumentByBranchID": {
 			DB:   stubContentDB(assert.AnError),
 			Args: base + `,"position":"after"}`,
 			Err:  assert.AnError,
 		},
 		"Block uid the document does not hold": {
 			DB:   stubContentDB(nil),
-			Args: `{"document_id":"` + _testDocID.String() + `","block_uid":"zzz","position":"after","reference_block_uid":"b"}`,
+			Args: `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"zzz","position":"after","reference_block_uid":"b"}`,
 			Err:  assert.AnError,
 		},
 		"Moved before": {DB: stubContentDB(nil), Args: base + `,"position":"before"}`, Contains: []string{`"uid":"a"`, `"kind":"paragraph"`}},
@@ -937,6 +998,22 @@ func Test_moveBlock_Execute(t *testing.T) {
 			runEdit(t, moveBlock{}, NameMoveBlock, c)
 		})
 	}
+}
+
+func Test_docTarget_validate(t *testing.T) {
+	t.Parallel()
+
+	// error: each half is required, the document first.
+	err := docTarget{BranchID: _stubMainBranchID}.validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "document_id is required")
+
+	err = docTarget{DocumentID: _testDocID}.validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "branch_id is required")
+
+	// success
+	require.NoError(t, docTarget{DocumentID: _testDocID, BranchID: _stubMainBranchID}.validate())
 }
 
 func Test_position_UnmarshalText(t *testing.T) {

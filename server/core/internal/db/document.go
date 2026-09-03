@@ -433,6 +433,7 @@ func (a *agent) selectDocumentTree(b sq.SelectBuilder, organizationID string) sq
 	return b.Columns(
 		`documents.id AS "id"`,
 		`db.document_name AS "document_name"`,
+		`db.id AS "default_branch_id"`,
 		`db.icon AS "icon"`,
 		`db.protected AS "protected"`,
 		`documents.fk_parent_id AS "fk_parent_id"`,

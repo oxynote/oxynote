@@ -251,7 +251,7 @@ type Result struct {
 	// Output is the tool's result, serialised for the caller.
 	Output string
 
-	// Documents lists the documents this call created or changed, in
+	// Documents lists the branches this call created or changed, in
 	// the order it touched them.
 	//
 	// It is recorded by the Input as the call mutates rather than read
@@ -259,7 +259,17 @@ type Result struct {
 	// several documents and empty for one that changes none — neither
 	// of which an argument can be asked about. A delete records
 	// nothing: the document it names no longer exists to point at.
-	Documents []xid.ID
+	Documents []Touched
+}
+
+// Touched names one branch of a document a call changed, which is what
+// a surface needs to link back to it.
+type Touched struct {
+	// DocumentID is the document changed.
+	DocumentID xid.ID
+
+	// BranchID is the branch of it the change landed on.
+	BranchID xid.ID
 }
 
 // Runner runs one tool call in this package's own vocabulary: the raw

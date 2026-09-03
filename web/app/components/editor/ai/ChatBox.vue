@@ -36,11 +36,11 @@ const {
 } = useAIChat()
 
 // the model resolves "this document" from whatever the user has open,
-// so every navigation is reported.
+// branch included, so every navigation is reported.
 watch(
-	() => editorStore.activeDocumentId,
-	(id) => {
-		setActiveDocument(id)
+	() => [editorStore.activeDocumentId, editorStore.activeBranchId] as const,
+	([id, branchId]) => {
+		setActiveDocument(id, branchId)
 	},
 	{ immediate: true },
 )

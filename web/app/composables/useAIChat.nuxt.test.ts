@@ -143,26 +143,33 @@ describe("useAIChat", { concurrent: false }, () => {
 	})
 
 	describe("setActiveDocument", () => {
-		it("tells the server which document the user has open", ({ expect }) => {
+		it("tells the server which document and branch the user has open", ({
+			expect,
+		}) => {
 			const { chat, sentPayloads } = arrange()
 
-			chat.setActiveDocument("doc-1")
+			chat.setActiveDocument("doc-1", "branch-1")
 
 			expect(sentPayloads()).toEqual([
 				{
 					type: ClientMessageType.SetActiveDocument,
 					documentId: "doc-1",
+					branchId: "branch-1",
 				},
 			])
 		})
 
-		it("sends an empty id when no document is open", ({ expect }) => {
+		it("sends empty ids when no document is open", ({ expect }) => {
 			const { chat, sentPayloads } = arrange()
 
 			chat.setActiveDocument(null)
 
 			expect(sentPayloads()).toEqual([
-				{ type: ClientMessageType.SetActiveDocument, documentId: "" },
+				{
+					type: ClientMessageType.SetActiveDocument,
+					documentId: "",
+					branchId: "",
+				},
 			])
 		})
 
@@ -181,6 +188,7 @@ describe("useAIChat", { concurrent: false }, () => {
 			expect(sentPayloads().at(-1)).toEqual({
 				type: ClientMessageType.SetActiveDocument,
 				documentId: "doc-2",
+				branchId: "",
 			})
 		})
 
