@@ -232,7 +232,7 @@ services:
     # upstream publishes no per-release tags (its version tags lag latest by
     # months), so latest is pinned by digest instead; dependabot bumps the
     # digest when a new latest is published.
-    image: dgtlmoon/sockpuppetbrowser:latest@sha256:7116c61ef9cfce3d48a7efd9355d2fbe19f593ea3cfb52a5ded40ecbcb0a3f9d
+    image: dgtlmoon/sockpuppetbrowser:latest@sha256:f166a963b550c29af465c2fac518212e7e3a75f14f0d2b840cf4b79677295764
     cap_add:
       - SYS_ADMIN # TODO: Recommended in their docker-compose example, need to double-check this.
     restart: unless-stopped
