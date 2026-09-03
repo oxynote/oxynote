@@ -42,6 +42,13 @@ type docSummaryEntry struct {
 	// (heading.level, callout.icon, code.language, list task
 	// item.checked). Opaque attrs (metric configs) are omitted.
 	Attrs map[string]any `json:"attrs,omitempty"`
+
+	// HasChildren marks an entry holding addressable blocks the walk
+	// does not emit — a sublist under a list item, the internals of a
+	// macro. Their text is folded into this entry's Text, so without
+	// the flag the summary reads as though this row were the whole of
+	// it, and the uids an edit would need are invisible.
+	HasChildren bool `json:"has_children,omitempty"`
 }
 
 // walkDocForAssistant builds the flat list of summary entries the
@@ -102,7 +109,7 @@ func (w *docWalker) walkLevel(blocks []document.Block, depth int, parentUID stri
 			document.BlockNodeTaskItem,
 			document.BlockNodeSplitDoc,
 			document.BlockNodeParamList:
-			w.emit(b, uid, depth, parentUID)
+			w.emit(b, uid, depth, parentUID, hasAddressableChildren(b))
 
 		case document.BlockNodeBulletList,
 			document.BlockNodeOrderedList,
@@ -110,26 +117,58 @@ func (w *docWalker) walkLevel(blocks []document.Block, depth int, parentUID stri
 			document.BlockNodeCalloutBlock,
 			document.BlockNodeBlockquote,
 			document.BlockNodeMetricGrid:
-			w.emit(b, uid, depth, parentUID)
+			// the walk lists this block's children itself, so there is
+			// nothing hidden below it to point the reader at.
+			w.emit(b, uid, depth, parentUID, false)
 			w.walkLevel(b.Content, depth+1, uid)
 		default:
 		}
 	}
 }
 
-// emit creates the standard summary entry for a block and appends
-// it to the walker's output.
-func (w *docWalker) emit(b document.Block, uid string, depth int, parentUID string) {
+// emit creates the standard summary entry for a block and appends it to
+// the walker's output. hasChildren says whether the block holds
+// addressable blocks this walk is not going to emit.
+func (w *docWalker) emit(
+	b document.Block,
+	uid string,
+	depth int,
+	parentUID string,
+	hasChildren bool,
+) {
 	entry := docSummaryEntry{
-		UID:       uid,
-		Kind:      canonicalKindForPM(b.Type),
-		Text:      b.Flatten(),
-		Depth:     depth,
-		ParentUID: parentUID,
-		Attrs:     summaryAttrs(b),
+		UID:         uid,
+		Kind:        canonicalKindForPM(b.Type),
+		Text:        b.Flatten(),
+		Depth:       depth,
+		ParentUID:   parentUID,
+		Attrs:       summaryAttrs(b),
+		HasChildren: hasChildren,
 	}
 
 	w.out = append(w.out, entry)
+}
+
+// hasAddressableChildren reports whether the block holds addressable
+// blocks beyond the text the entry already shows. A leading paragraph
+// is that text — every list item has one — so it is not what the flag
+// is for; anything after it is structure the summary does not list.
+func hasAddressableChildren(b document.Block) bool {
+	for i, cb := range b.Content {
+		if i == 0 && cb.Type == document.BlockNodeParagraph {
+			continue
+		}
+
+		if uid, ok := cb.UID(); ok && uid != "" {
+			return true
+		}
+
+		if hasAddressableChildren(cb) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // canonicalKindForPM maps a ProseMirror node type to the canonical kind

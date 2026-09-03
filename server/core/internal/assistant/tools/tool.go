@@ -75,6 +75,15 @@ type Traits struct {
 	// for text edits is not consent to delete a document.
 	Destructive bool
 
+	// Overwrites indicates the write replaces content the caller did
+	// not name: the target's nested blocks go with it, and so do the
+	// uids comments and hooks hang off. It is what MCP's destructive
+	// hint reports, and it is deliberately not Destructive — a client
+	// deciding whether to auto-approve needs to know, while an
+	// approve-all inside a chat turn is meant to cover exactly these
+	// edits.
+	Overwrites bool
+
 	// DataSource indicates the tool reads one of the organisation's
 	// outbound data-source connections rather than its documents. A
 	// surface that gates access by scope asks it: over MCP these tools
@@ -168,6 +177,11 @@ type DescribeInput interface {
 	// DataSource should return the data source the id names, for a
 	// description that has to name its subject.
 	DataSource(dataSourceID xid.ID) (*datasource.DataSource, error)
+
+	// DescendantCount should report how many documents sit under the
+	// named one, at any depth, for a description that has to say how
+	// far a cascade reaches.
+	DescendantCount(id xid.ID) (int, error)
 }
 
 // DataSources is the organisation's outbound data-source connections as
@@ -244,6 +258,14 @@ type Editor interface {
 	// ValidatePlacement should check that a block is legal next to, or
 	// in place of, the block referenceUID names.
 	ValidatePlacement(documentID xid.ID, referenceUID string, b block.Block) error
+
+	// ValidateAttrUpdate should check that setting attrs on the block
+	// blockUID names leaves it with attributes its type allows.
+	ValidateAttrUpdate(documentID xid.ID, blockUID string, attrs map[string]any) error
+
+	// ValidateMove should check that the block blockUID names may sit
+	// where a move relative to referenceUID would put it.
+	ValidateMove(documentID xid.ID, blockUID, referenceUID string) error
 }
 
 // Input is everything a tool needs to do its work: the call's arguments

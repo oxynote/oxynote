@@ -71,9 +71,10 @@ export interface ReplaceOp {
 
 /**
  * Replaces the inline content of a text-bearing block in place,
- * preserving the block's type, attrs, and uid. Children that are
- * themselves blocks (e.g. paragraphs inside a callout) are not
- * affected.
+ * preserving the block's type, attrs, and uid. A callout or blockquote
+ * is written through to its first paragraph, since their schemas hold
+ * blocks rather than text; any other block-carrying target is refused
+ * rather than flattened.
  */
 export interface UpdateTextOp {
 	kind: "update_text"
@@ -298,23 +299,77 @@ function opReplace(doc: Y.Doc, op: ReplaceOp): void {
 	found.parent.insert(found.index, [xml])
 }
 
+// the blocks whose children are inline content, so replacing them
+// wholesale with a text run is the whole edit.
+const TEXT_LEAF_NODES = new Set([
+	"paragraph",
+	"heading",
+	"codeBlock",
+	"mermaidBlock",
+])
+
+// the blocks that hold their text one level down, in a first child
+// paragraph. Their schemas admit block children only, so writing a text
+// run into them directly produces a node the editor cannot parse and
+// the canonical model cannot read back.
+const TEXT_WRAPPER_NODES = new Set(["calloutBlock", "blockquote"])
+
 function opUpdateText(doc: Y.Doc, op: UpdateTextOp): void {
 	const found = findByUid(doc.getXmlFragment("content"), op.block_uid)
 	if (!found) {
 		throw new Error(`block_uid not found: ${op.block_uid}`)
 	}
 
-	// Replace the block's children with a fresh Y.XmlText carrying
-	// the new inline content. Block-level children (e.g. paragraphs
-	// nested inside a list item) would also be wiped — update_text
-	// is only meant for text-bearing leaf blocks (paragraph, heading,
-	// codeBlock, mermaidBlock, …) so that's intended.
-	found.element.delete(0, found.element.length)
+	const nodeName = found.element.nodeName
+
+	// the edit replaces everything under the target, so a block holding
+	// other blocks would lose them — and lose the uids comments and
+	// hooks are anchored to — while reporting success. Only the caller
+	// knows that was not meant, so refuse instead of guessing.
+	if (
+		!TEXT_LEAF_NODES.has(nodeName) &&
+		!TEXT_WRAPPER_NODES.has(nodeName)
+	) {
+		throw new Error(
+			`update_text does not apply to ${nodeName}: it carries ` +
+				`blocks rather than text, and the edit would discard ` +
+				`them. Use replace_block to rewrite it whole, or ` +
+				`update_text on the block holding the text.`,
+		)
+	}
+
+	const target = TEXT_WRAPPER_NODES.has(nodeName)
+		? firstParagraph(found.element)
+		: found.element
+
+	if (!target) {
+		throw new Error(
+			`update_text found no paragraph to write in ${nodeName}`,
+		)
+	}
+
+	target.delete(0, target.length)
 
 	const text = buildInlineText(op.content)
 	if (text) {
-		found.element.insert(0, [text])
+		target.insert(0, [text])
 	}
+}
+
+// firstParagraph returns the wrapper's first paragraph child, which is
+// where its text lives.
+function firstParagraph(el: Y.XmlElement): Y.XmlElement | null {
+	for (let i = 0; i < el.length; i++) {
+		const child = el.get(i)
+		if (
+			child instanceof Y.XmlElement &&
+			child.nodeName === "paragraph"
+		) {
+			return child
+		}
+	}
+
+	return null
 }
 
 function opUpdateAttrs(doc: Y.Doc, op: UpdateAttrsOp): void {

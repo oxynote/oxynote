@@ -46,6 +46,22 @@ function sampleBlocks(): PMNode[] {
 	]
 }
 
+// a bullet list carrying one item, whose paragraph holds the text. The
+// three uids let a test address the list, the item, or the paragraph.
+function bulletList(listUID: string, itemUID: string, text: string): PMNode {
+	return {
+		type: "bulletList",
+		attrs: { uid: listUID },
+		content: [
+			{
+				type: "listItem",
+				attrs: { uid: itemUID },
+				content: [textParagraph("text", text)],
+			},
+		],
+	}
+}
+
 // builds a live document through the same path the Hocuspocus server
 // uses, so every block carries the uid the uid-addressed operations
 // look up.
@@ -749,6 +765,127 @@ describe("applyOperations", () => {
 
 			expect(blockByUid(doc, "intro").length).toBe(0)
 		})
+
+		it("writes into a callout's first paragraph, keeping its other children", ({
+			expect,
+		}) => {
+			const doc = docWith([
+				{
+					type: "calloutBlock",
+					attrs: {
+						uid: "callout",
+						icon: "lucide:zap",
+					},
+					content: [
+						textParagraph(
+							"first",
+							"First line",
+						),
+						textParagraph(
+							"second",
+							"Second line",
+						),
+					],
+				},
+			])
+
+			const result = applyOperations(doc, [
+				{
+					kind: "update_text",
+					block_uid: "callout",
+					content: [
+						{
+							type: "text",
+							text: "Rewritten",
+						},
+					],
+				},
+			])
+
+			const callout = blockByUid(doc, "callout")
+			expect(result.applied).toBe(1)
+			expect(callout.length).toBe(2)
+			expect(inlineDelta(blockByUid(doc, "first"))).toEqual([
+				{ insert: "Rewritten" },
+			])
+			expect(inlineDelta(blockByUid(doc, "second"))).toEqual([
+				{ insert: "Second line" },
+			])
+		})
+
+		it("reports an error when a callout holds no paragraph to write in", ({
+			expect,
+		}) => {
+			const doc = docWith([
+				{
+					type: "calloutBlock",
+					attrs: {
+						uid: "callout",
+						icon: "lucide:zap",
+					},
+					content: [
+						bulletList(
+							"list",
+							"item",
+							"Item",
+						),
+					],
+				},
+			])
+
+			const result = applyOperations(doc, [
+				{
+					kind: "update_text",
+					block_uid: "callout",
+					content: [
+						{
+							type: "text",
+							text: "Rewritten",
+						},
+					],
+				},
+			])
+
+			expect(result.applied).toBe(0)
+			expect(result.errors[0]?.message).toContain(
+				"no paragraph to write in",
+			)
+		})
+
+		it.for([
+			{ name: "a bullet list", uid: "list" },
+			{ name: "a list item", uid: "item" },
+		])(
+			"refuses to overwrite $name, which carries blocks rather than text",
+			({ uid }, { expect }) => {
+				const doc = docWith([
+					bulletList("list", "item", "Item"),
+				])
+
+				const result = applyOperations(doc, [
+					{
+						kind: "update_text",
+						block_uid: uid,
+						content: [
+							{
+								type: "text",
+								text: "Rewritten",
+							},
+						],
+					},
+				])
+
+				expect(result.applied).toBe(0)
+				expect(result.errors[0]?.message).toContain(
+					"carries blocks rather than text",
+				)
+				// the item, and the uid any comment or hook hangs off,
+				// both survive the refusal.
+				expect(
+					inlineDelta(blockByUid(doc, "text")),
+				).toEqual([{ insert: "Item" }])
+			},
+		)
 
 		it("reports an error when the block is absent", ({
 			expect,

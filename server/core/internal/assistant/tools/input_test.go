@@ -178,6 +178,24 @@ func stubDocumentDB() *DBMock {
 	}
 }
 
+// protectedDocumentDB answers with a document whose branch is
+// protected, which is the one branch a tool's write may not reach.
+func protectedDocumentDB() *DBMock {
+	branchID := xid.New()
+
+	return &DBMock{
+		FetchDocumentFunc: func(_ context.Context, id xid.ID, orgID, _ string) (*document.Document, error) {
+			return &document.Document{
+				BranchID:       branchID,
+				DocumentName:   _stubDocumentName,
+				ID:             id,
+				OrganizationID: orgID,
+				Protected:      true,
+			}, nil
+		},
+	}
+}
+
 // failingDocumentDB refuses every document lookup.
 func failingDocumentDB() *DBMock {
 	return &DBMock{
@@ -634,6 +652,7 @@ func Test_input_ApplyEdit(t *testing.T) {
 		Applier *EditApplierMock
 		Result  string
 		Touched []xid.ID
+		Applies int
 		Err     error
 	}{
 		"Error returned by db.FetchDocument": {
@@ -652,7 +671,25 @@ func Test_input_ApplyEdit(t *testing.T) {
 					return edit.Result{}, assert.AnError
 				},
 			},
-			Err: assert.AnError,
+			Applies: 1,
+			Err:     assert.AnError,
+		},
+		"Protected branch is refused before anything is applied": {
+			DB:      protectedDocumentDB(),
+			Applier: stubApplier(),
+			Err:     errBranchProtected,
+		},
+		"Nothing applied is a failure, not a result": {
+			DB: stubDocumentDB(),
+			Applier: &EditApplierMock{
+				ApplyFunc: func(context.Context, xid.ID, xid.ID, []edit.Operation, bool) (edit.Result, error) {
+					return edit.Result{
+						Errors: []edit.OpError{{Index: 0, Message: "uid not found"}},
+					}, nil
+				},
+			},
+			Applies: 1,
+			Err:     errors.New("applying edit: uid not found"),
 		},
 		"Partial failure still reports the outcome": {
 			DB: stubDocumentDB(),
@@ -666,12 +703,14 @@ func Test_input_ApplyEdit(t *testing.T) {
 			},
 			Result:  `{"applied":1,"errors":[{"index":1,"message":"uid not found"}]}`,
 			Touched: []xid.ID{docID},
+			Applies: 1,
 		},
 		"Applied": {
 			DB:      stubDocumentDB(),
 			Applier: stubApplier(),
 			Result:  `{"applied":1,"errors":[]}`,
 			Touched: []xid.ID{docID},
+			Applies: 1,
 		},
 	}
 
@@ -687,6 +726,11 @@ func Test_input_ApplyEdit(t *testing.T) {
 			// an edit that never landed has changed nothing to report.
 			assert.Equal(t, c.Touched, inp.touched)
 
+			// a refusal the tools own — a protected branch — stops
+			// before the batch is shipped, rather than letting it land
+			// and be undone by the persist behind it.
+			assert.Len(t, c.Applier.ApplyCalls(), c.Applies)
+
 			if err != nil {
 				return
 			}
@@ -701,6 +745,239 @@ func Test_input_ApplyEdit(t *testing.T) {
 					assert.False(t, call.System)
 				}
 			}
+		})
+	}
+}
+
+// contentWithBlocks builds a DB whose main-branch content is the given
+// top-level blocks, for the validators that read the document to decide.
+func contentWithBlocks(blocks ...document.Block) *DBMock {
+	return &DBMock{
+		FetchMainBranchContentFunc: func(context.Context, xid.ID, string) (document.Content, error) {
+			return document.Content{
+				Content: document.RootBlock{Content: blocks},
+			}, nil
+		},
+	}
+}
+
+func Test_input_ValidateAttrUpdate(t *testing.T) {
+	t.Parallel()
+
+	// a heading at level 2, a metric inside its grid, and a task item —
+	// a typed block with attr rules, a typed block with enum rules, and
+	// a wrapper item the canonical model does not name.
+	contentDB := contentWithBlocks(
+		document.Block{
+			Type: document.BlockNodeHeading,
+			Attrs: document.Attributes{
+				document.AttrUID:   "head",
+				document.AttrLevel: 2,
+			},
+		},
+		document.Block{
+			Type:  document.BlockNodeMetricGrid,
+			Attrs: document.Attributes{document.AttrUID: "grid"},
+			Content: []document.Block{{
+				Type: document.BlockNodeMetricBlock,
+				Attrs: document.Attributes{
+					document.AttrUID:              "metric",
+					document.AttrSimulationPreset: "cpu_usage",
+				},
+			}},
+		},
+		document.Block{
+			Type:  document.BlockNodeTaskList,
+			Attrs: document.Attributes{document.AttrUID: "tasks"},
+			Content: []document.Block{{
+				Type:  document.BlockNodeTaskItem,
+				Attrs: document.Attributes{document.AttrUID: "task"},
+			}},
+		},
+	)
+
+	cc := map[string]struct {
+		DB    *DBMock
+		UID   string
+		Attrs map[string]any
+		Err   error
+	}{
+		"Error returned by db.FetchMainBranchContent": {
+			DB: &DBMock{
+				FetchMainBranchContentFunc: func(context.Context, xid.ID, string) (document.Content, error) {
+					return document.Content{}, assert.AnError
+				},
+			},
+			UID:   "head",
+			Attrs: map[string]any{document.AttrLevel: 2},
+			Err:   assert.AnError,
+		},
+		"Unresolved uid is left to the backend": {
+			DB:    contentDB,
+			UID:   "missing",
+			Attrs: map[string]any{document.AttrLevel: 9},
+		},
+		"Wrapper item carries attrs the canonical model does not name": {
+			DB:    contentDB,
+			UID:   "task",
+			Attrs: map[string]any{"checked": true},
+		},
+		"Allowed heading level": {
+			DB:    contentDB,
+			UID:   "head",
+			Attrs: map[string]any{document.AttrLevel: 3},
+		},
+		"Heading level outside the range": {
+			DB:    contentDB,
+			UID:   "head",
+			Attrs: map[string]any{document.AttrLevel: 9},
+			Err:   assert.AnError,
+		},
+		"Unrelated attr keeps the level already on the block": {
+			DB:    contentDB,
+			UID:   "head",
+			Attrs: map[string]any{document.AttrIcon: "lucide:hash"},
+		},
+		"Unknown simulation preset": {
+			DB:    contentDB,
+			UID:   "metric",
+			Attrs: map[string]any{document.AttrSimulationPreset: "solar_flares"},
+			Err:   assert.AnError,
+		},
+		"Known simulation preset": {
+			DB:    contentDB,
+			UID:   "metric",
+			Attrs: map[string]any{document.AttrSimulationPreset: "error_rate"},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			inp := testInput(testDeps(c.DB, nil, nil), NameUpdateBlockAttrs, `{}`)
+
+			err := inp.ValidateAttrUpdate(_testDocID, c.UID, c.Attrs)
+			testutil.AssertEqualError(t, c.Err, err)
+		})
+	}
+}
+
+func Test_input_ValidateMove(t *testing.T) {
+	t.Parallel()
+
+	// two lists, so a wrapper item has both a same-kind destination and
+	// a root one to be tested against, plus a split_doc whose right side
+	// holds the one block type that may not sit at the root.
+	contentDB := contentWithBlocks(
+		document.Block{
+			Type:  document.BlockNodeParagraph,
+			Attrs: document.Attributes{document.AttrUID: "root-p"},
+		},
+		document.Block{
+			Type:  document.BlockNodeBulletList,
+			Attrs: document.Attributes{document.AttrUID: "list-a"},
+			Content: []document.Block{
+				{
+					Type:  document.BlockNodeListItem,
+					Attrs: document.Attributes{document.AttrUID: "item-a1"},
+				},
+				{
+					Type:  document.BlockNodeListItem,
+					Attrs: document.Attributes{document.AttrUID: "item-a2"},
+				},
+			},
+		},
+		document.Block{
+			Type:  document.BlockNodeBulletList,
+			Attrs: document.Attributes{document.AttrUID: "list-b"},
+			Content: []document.Block{{
+				Type:  document.BlockNodeListItem,
+				Attrs: document.Attributes{document.AttrUID: "item-b1"},
+			}},
+		},
+		document.Block{
+			Type:  document.BlockNodeSplitDoc,
+			Attrs: document.Attributes{document.AttrUID: "split"},
+			Content: []document.Block{{
+				Type: document.BlockNodeSplitDocRight,
+				Content: []document.Block{{
+					Type:  document.BlockNodeTitledCodeBlock,
+					Attrs: document.Attributes{document.AttrUID: "right-code"},
+				}},
+			}},
+		},
+	)
+
+	cc := map[string]struct {
+		DB  *DBMock
+		UID string
+		Ref string
+		Err error
+	}{
+		"Error returned by db.FetchMainBranchContent": {
+			DB: &DBMock{
+				FetchMainBranchContentFunc: func(context.Context, xid.ID, string) (document.Content, error) {
+					return document.Content{}, assert.AnError
+				},
+			},
+			UID: "root-p",
+			Ref: "list-a",
+			Err: assert.AnError,
+		},
+		"Unresolved moved uid is left to the backend": {
+			DB:  contentDB,
+			UID: "missing",
+			Ref: "root-p",
+		},
+		"Unresolved reference is left to the backend": {
+			DB:  contentDB,
+			UID: "root-p",
+			Ref: "missing",
+		},
+		"Root block beside a root reference": {
+			DB:  contentDB,
+			UID: "root-p",
+			Ref: "list-a",
+		},
+		"Macro internal out to the document root is refused": {
+			DB:  contentDB,
+			UID: "right-code",
+			Ref: "root-p",
+			Err: assert.AnError,
+		},
+		"Root block onto a split_doc right side is refused": {
+			DB:  contentDB,
+			UID: "root-p",
+			Ref: "right-code",
+			Err: assert.AnError,
+		},
+		"List item reordered within its own list": {
+			DB:  contentDB,
+			UID: "item-a1",
+			Ref: "item-a2",
+		},
+		"List item moved into another list of the same kind": {
+			DB:  contentDB,
+			UID: "item-a1",
+			Ref: "item-b1",
+		},
+		"List item out to the document root is refused": {
+			DB:  contentDB,
+			UID: "item-a1",
+			Ref: "root-p",
+			Err: assert.AnError,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			inp := testInput(testDeps(c.DB, nil, nil), NameMoveBlock, `{}`)
+
+			err := inp.ValidateMove(_testDocID, c.UID, c.Ref)
+			testutil.AssertEqualError(t, c.Err, err)
 		})
 	}
 }

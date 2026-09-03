@@ -58,6 +58,31 @@ func Test_walkDocForAssistant(t *testing.T) {
 				{UID: "li1", Kind: "list_item", Text: "one", Depth: 1, ParentUID: "l1"},
 			},
 		},
+		"List item holding a sublist is flagged, since the walk stops there": {
+			Blocks: []document.Block{
+				pmBlock(document.BlockNodeBulletList, "l1", nil,
+					pmBlock(document.BlockNodeListItem, "li1", nil,
+						pmBlock(document.BlockNodeParagraph, "p1", nil, pmText("parent")),
+						pmBlock(document.BlockNodeBulletList, "l2", nil,
+							pmBlock(document.BlockNodeListItem, "li2", nil,
+								pmBlock(document.BlockNodeParagraph, "p2", nil, pmText("child")),
+							),
+						),
+					),
+				),
+			},
+			Result: []docSummaryEntry{
+				{UID: "l1", Kind: "bullet_list", Text: "parent child"},
+				{
+					UID:         "li1",
+					Kind:        "list_item",
+					Text:        "parent child",
+					Depth:       1,
+					ParentUID:   "l1",
+					HasChildren: true,
+				},
+			},
+		},
 		"Task list surfaces checked attr on items": {
 			Blocks: []document.Block{
 				pmBlock(document.BlockNodeTaskList, "t1", nil,
@@ -91,7 +116,7 @@ func Test_walkDocForAssistant(t *testing.T) {
 				),
 			},
 			Result: []docSummaryEntry{
-				{UID: "s1", Kind: "split_doc", Text: "API", Attrs: map[string]any{"inversed": true}},
+				{UID: "s1", Kind: "split_doc", Text: "API", Attrs: map[string]any{"inversed": true}, HasChildren: true},
 			},
 		},
 		"Param list emits a single entry without descending": {
@@ -101,7 +126,7 @@ func Test_walkDocForAssistant(t *testing.T) {
 				),
 			},
 			Result: []docSummaryEntry{
-				{UID: "pl1", Kind: "split_doc_param_list", Text: "Body"},
+				{UID: "pl1", Kind: "split_doc_param_list", Text: "Body", HasChildren: true},
 			},
 		},
 		"Blocks without uid are skipped": {

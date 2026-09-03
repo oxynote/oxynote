@@ -16,6 +16,13 @@
 				"invalid-request": "This authorization request is invalid or has expired.",
 				"decision-failed": "Could not complete the authorization. Please try again."
 			}
+		},
+		"error": {
+			"page-title": "Authorization failed",
+			"heading": "Authorization failed",
+			"description": "Oxynote could not complete this request. Start the authorization again from the application you were connecting.",
+			"code": "Error code: {code}",
+			"button": "Back to Oxynote"
 		}
 	}
 }

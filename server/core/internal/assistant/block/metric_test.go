@@ -14,9 +14,10 @@ func Test_MetricEnums(t *testing.T) {
 
 	got := MetricEnums()
 
-	require.Len(t, got, 5)
+	require.Len(t, got, 6)
 	assert.Equal(t, []string{"line_chart", "bar_chart", "gauge_chart"}, got[document.AttrVisualizationType])
 	assert.Equal(t, []string{"compact", "standard", "wide"}, got[document.AttrWidth])
+	assert.Len(t, got[document.AttrSimulationPreset], 6)
 	assert.Len(t, got[document.AttrTimeRange], 28)
 	assert.Len(t, got[document.AttrRefreshInterval], 10)
 	assert.Len(t, got[document.AttrUnitType], 20)
@@ -108,6 +109,11 @@ func Test_validateMetric(t *testing.T) {
 			Attrs:        document.Attributes{document.AttrWidth: "enormous"},
 			Err:          assert.AnError,
 			ExpectedPath: "attrs.width",
+		},
+		"Unknown simulation preset": {
+			Attrs:        document.Attributes{document.AttrSimulationPreset: "solar_flares"},
+			Err:          assert.AnError,
+			ExpectedPath: "attrs.simulationPreset",
 		},
 		"Non-string title": {
 			Attrs:        document.Attributes{document.AttrTitle: 1},

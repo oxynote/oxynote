@@ -36,7 +36,7 @@ const (
 
 	// _descChartType describes the optional chart-type property shared
 	// by the two query tools.
-	_descChartType = "Optional. One of line_chart, bar_chart, gauge_chart. When set, the result is the transformed series the metric block renders, plus a status, instead of the raw result — use it to check a query before putting it in a metric block."
+	_descChartType = "Optional. One of line_chart, bar_chart, gauge_chart. When set, the result describes what the metric block would draw — render status, series count, and each series' labels, point count and endpoints — instead of the raw data. Use it to check a query before putting it in a metric block; omit it when you need the values themselves."
 )
 
 // errUnknownDataSource is what a lookup reports for an id that names
@@ -593,7 +593,7 @@ type queryPrometheus struct {
 func (queryPrometheus) Info() Info {
 	return Info{
 		Name:        NameQueryPrometheus,
-		Description: "Run a PromQL range query against a Prometheus data source over the given window. Returns the raw result by default, or the series a metric block would render when chart_type is set.",
+		Description: "Run a PromQL range query against a Prometheus data source over the given window. Returns the raw result by default, or a description of what a metric block would render when chart_type is set.",
 		Properties: dataSourceProps(map[string]any{
 			_keyQuery:     stringProp("The PromQL expression to run."),
 			_keyChartType: stringProp(_descChartType),
@@ -665,7 +665,74 @@ func (queryPrometheus) Execute(inp Input) (string, error) {
 		return result(&processor.QueryResult{Status: processor.QueryStatusNoData})
 	}
 
-	return result(res.Transform(in.ChartType))
+	return result(newChartPreview(res.Transform(in.ChartType)))
+}
+
+// _maxPreviewSeries caps how many series a chart check describes. A
+// query behind a metric block draws a handful; one answering with more
+// is already the wrong query, and listing them all would cost more than
+// the check saves.
+const _maxPreviewSeries = 10
+
+// chartPreview is what a query answers with when a chart type was
+// named. Naming one asks whether the query renders, not what it
+// contains — so the shape of the answer is reported and the points
+// behind it are not. A caller that wants the data omits chart_type and
+// gets the raw result.
+type chartPreview struct {
+	// Status is the render outcome: whether the data fits the chart.
+	Status processor.QueryStatus `json:"status"`
+
+	// SeriesCount is how many series the chart would draw, including
+	// any beyond the ones described.
+	SeriesCount int `json:"series_count"`
+
+	// Series describes the first few, each by its labels and extent.
+	Series []chartPreviewSeries `json:"series,omitempty"`
+}
+
+// chartPreviewSeries is one series as a chart check reports it.
+type chartPreviewSeries struct {
+	// Labels are the series' labels, which become its legend entry.
+	Labels map[string]string `json:"labels,omitempty"`
+
+	// PointCount is how many points the series carries.
+	PointCount int `json:"point_count"`
+
+	// First and Last are its endpoints as [timestamp, value], enough
+	// to see the series covers the window and holds real values.
+	First [2]any `json:"first,omitempty"`
+	Last  [2]any `json:"last,omitempty"`
+}
+
+// newChartPreview summarises a transformed result for a chart check.
+func newChartPreview(qr *processor.QueryResult) chartPreview {
+	if qr == nil {
+		// NOCOV: Transform never returns nil; the guard keeps a future
+		// caller from panicking on one.
+		return chartPreview{Status: processor.QueryStatusNoData}
+	}
+
+	out := chartPreview{
+		Status:      qr.Status,
+		SeriesCount: len(qr.Data),
+	}
+
+	for _, sr := range qr.Data[:min(len(qr.Data), _maxPreviewSeries)] {
+		row := chartPreviewSeries{
+			Labels:     sr.Labels,
+			PointCount: len(sr.Metrics),
+		}
+
+		if len(sr.Metrics) > 0 {
+			row.First = sr.Metrics[0]
+			row.Last = sr.Metrics[len(sr.Metrics)-1]
+		}
+
+		out.Series = append(out.Series, row)
+	}
+
+	return out
 }
 
 // getSQLMetadataArgs is what get_sql_metadata is called with.
@@ -879,7 +946,7 @@ type querySQL struct {
 func (querySQL) Info() Info {
 	return Info{
 		Name:        NameQuerySQL,
-		Description: "Run a read-only query against a PostgreSQL, MariaDB or MySQL data source. Returns columns and rows by default, or the series a metric block would render when chart_type is set. $__ macros ($__timeFilter, $__timeGroupAlias, …) are expanded against the window, and the row count is capped.",
+		Description: "Run a read-only query against a PostgreSQL, MariaDB or MySQL data source. Returns columns and rows by default, or a description of what a metric block would render when chart_type is set. $__ macros ($__timeFilter, $__timeGroupAlias, …) are expanded against the window, and the row count is capped.",
 		Properties: dataSourceProps(map[string]any{
 			_keyQuery:     stringProp("The SQL query to run. For a chart, select a time column aliased \"time\" plus one or more numeric columns."),
 			_keyChartType: stringProp(_descChartType),
@@ -965,7 +1032,7 @@ func runPostgreSQLQuery(
 		return result(&processor.QueryResult{Status: processor.QueryStatusNoData})
 	}
 
-	return result(res.Transform(ct))
+	return result(newChartPreview(res.Transform(ct)))
 }
 
 // runMySQLQuery serves query_sql for a MySQL or MariaDB data source.
@@ -994,5 +1061,5 @@ func runMySQLQuery(
 		return result(&processor.QueryResult{Status: processor.QueryStatusNoData})
 	}
 
-	return result(res.Transform(ct))
+	return result(newChartPreview(res.Transform(ct)))
 }

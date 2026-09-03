@@ -102,7 +102,11 @@ describe("01.redirect.global", { concurrent: false }, () => {
 		useDocumentAPIMock.mockReset()
 	})
 
-	it.for([{ page: "desktop-auth" }, { page: "verify-email" }])(
+	it.for([
+		{ page: "desktop-auth" },
+		{ page: "verify-email" },
+		{ page: "auth-error" },
+	])(
 		"lets the $page page pass without touching the session",
 		async ({ page }, { expect }) => {
 			const { fetchAuthSession } = arrange({})

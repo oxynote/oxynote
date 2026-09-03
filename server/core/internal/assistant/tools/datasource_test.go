@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"maps"
+	"strconv"
 	"testing"
 	"time"
 
@@ -1436,4 +1437,83 @@ func Test_dataSourceProps(t *testing.T) {
 	})
 	assert.Contains(t, props, _keyDataSourceID)
 	assert.Contains(t, props, _keyQuery)
+}
+
+func Test_newChartPreview(t *testing.T) {
+	t.Parallel()
+
+	series := func(n int) []processor.QueryResultSeries {
+		out := make([]processor.QueryResultSeries, 0, n)
+
+		for i := range n {
+			out = append(out, processor.QueryResultSeries{
+				Labels:  map[string]string{"i": strconv.Itoa(i)},
+				Metrics: [][2]any{{1, 1.5}, {2, 2.5}, {3, 3.5}},
+			})
+		}
+
+		return out
+	}
+
+	cc := map[string]struct {
+		Input  *processor.QueryResult
+		Result chartPreview
+	}{
+		"Nil result reads as no data": {
+			Input:  nil,
+			Result: chartPreview{Status: processor.QueryStatusNoData},
+		},
+		"Status without data carries no series": {
+			Input:  &processor.QueryResult{Status: processor.QueryStatusNoData},
+			Result: chartPreview{Status: processor.QueryStatusNoData},
+		},
+		"Series report their labels and endpoints, never their points": {
+			Input: &processor.QueryResult{
+				Status: processor.QueryStatusOK,
+				Data:   series(1),
+			},
+			Result: chartPreview{
+				Status:      processor.QueryStatusOK,
+				SeriesCount: 1,
+				Series: []chartPreviewSeries{{
+					Labels:     map[string]string{"i": "0"},
+					PointCount: 3,
+					First:      [2]any{1, 1.5},
+					Last:       [2]any{3, 3.5},
+				}},
+			},
+		},
+		"Empty series reports its count without endpoints": {
+			Input: &processor.QueryResult{
+				Status: processor.QueryStatusOK,
+				Data:   []processor.QueryResultSeries{{Labels: map[string]string{"i": "0"}}},
+			},
+			Result: chartPreview{
+				Status:      processor.QueryStatusOK,
+				SeriesCount: 1,
+				Series:      []chartPreviewSeries{{Labels: map[string]string{"i": "0"}}},
+			},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, newChartPreview(c.Input))
+		})
+	}
+
+	// the cap bounds the answer without hiding how much there was.
+	t.Run("More series than the cap are counted but not listed", func(t *testing.T) {
+		t.Parallel()
+
+		got := newChartPreview(&processor.QueryResult{
+			Status: processor.QueryStatusOK,
+			Data:   series(_maxPreviewSeries + 5),
+		})
+
+		assert.Equal(t, _maxPreviewSeries+5, got.SeriesCount)
+		assert.Len(t, got.Series, _maxPreviewSeries)
+	})
 }

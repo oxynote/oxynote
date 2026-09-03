@@ -24,15 +24,12 @@ func Test_buildSystemPrompt(t *testing.T) {
 	assert.Contains(t, got, "## Current context")
 	assert.Contains(t, got, "`doc-123`")
 
-	// the prompt states exactly the metric values Validate accepts. The
-	// model is told the metric configuration here rather than in a tool
-	// schema — a block's attrs depend on its type, which the shared
-	// block schema cannot express — so this is what keeps the two from
-	// drifting apart.
-	for attr, values := range block.MetricEnums() {
-		for _, v := range values {
-			assert.Contains(t, got, v, "%s value %q is missing from the prompt", attr, v)
-		}
+	// width is the one metric enum the prompt is still the only source
+	// for: attrs is a single field shared by every block type, and
+	// width means something else on an image, so the tool schema cannot
+	// publish it. The rest moved there, where Test_attrProps pins them.
+	for _, v := range block.MetricEnums()[document.AttrWidth] {
+		assert.Contains(t, got, v, "width value %q is missing from the prompt", v)
 	}
 
 	for _, attr := range []string{
@@ -48,6 +45,7 @@ func Test_buildSystemPrompt(t *testing.T) {
 		document.AttrUnitCustom,
 		document.AttrAxisBoundsMin,
 		document.AttrAxisBoundsMax,
+		document.AttrSimulationPreset,
 	} {
 		assert.Contains(t, got, attr, "attr %q is missing from the prompt", attr)
 	}

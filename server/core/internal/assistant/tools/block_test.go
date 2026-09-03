@@ -613,7 +613,7 @@ func Test_replaceBlock_Info(t *testing.T) {
 func Test_replaceBlock_Traits(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, Traits{Write: true}, replaceBlock{}.Traits())
+	assert.Equal(t, Traits{Write: true, Overwrites: true}, replaceBlock{}.Traits())
 }
 
 func Test_replaceBlock_Title(t *testing.T) {
@@ -717,7 +717,7 @@ func Test_updateBlockText_Info(t *testing.T) {
 func Test_updateBlockText_Traits(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, Traits{Write: true}, updateBlockText{}.Traits())
+	assert.Equal(t, Traits{Write: true, Overwrites: true}, updateBlockText{}.Traits())
 }
 
 func Test_updateBlockText_Title(t *testing.T) {

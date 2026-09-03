@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"slices"
 
 	"github.com/guregu/null/v5"
@@ -15,6 +16,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/search"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 	"github.com/rs/xid"
 )
@@ -233,14 +235,43 @@ func (i *input) DataSourceRunner(id xid.ID) (datasource.Runner, error) {
 	return i.runners.Runner(*ds), nil
 }
 
-// Document returns the document's default branch.
+// Document returns the document's default branch. An id naming nothing
+// in the session's organisation is reported as such rather than as the
+// driver's own words, which say nothing a caller can act on.
 func (i *input) Document(id xid.ID) (*document.Document, error) {
-	return i.db.FetchDocument(i.ctx, id, i.orgID, document.DefaultBranch)
+	doc, err := i.db.FetchDocument(i.ctx, id, i.orgID, document.DefaultBranch)
+	if err != nil {
+		if errutil.IsNotFound(err) {
+			return nil, errUnknownDocument
+		}
+
+		return nil, err
+	}
+
+	return doc, nil
 }
 
 // DocumentContent returns the document's parsed main-branch content.
 func (i *input) DocumentContent(id xid.ID) (document.Content, error) {
 	return i.db.FetchMainBranchContent(i.ctx, id, i.orgID)
+}
+
+// DescendantCount reports how many documents sit under the named one at
+// any depth. A document that is not in the tree has none, which is what
+// a caller asking about a missing id should hear.
+func (i *input) DescendantCount(id xid.ID) (int, error) {
+	tree, err := i.DocumentTree()
+	if err != nil {
+		return 0, fmt.Errorf("fetching document tree: %w", err)
+	}
+
+	for _, s := range tree.Descendants() {
+		if s.ID == id {
+			return len(s.Children.Descendants()), nil
+		}
+	}
+
+	return 0, nil
 }
 
 // DocumentTree returns every document in the organisation as a nested
@@ -391,6 +422,11 @@ func (i *input) ReadOffloaded(path string) (string, error) {
 	return i.offload.Read(i.ctx, path)
 }
 
+// errBranchProtected is what a content write reports for a document
+// whose branch is protected. The message names the tool the caller
+// still has, since reading a protected document stays allowed.
+var errBranchProtected = errors.New("this document's branch is protected and takes no edits; read it with read_document_summary or ask someone with access to unprotect it")
+
 // resolveDoc loads the default branch of the given document and returns
 // the ids the edit client needs. The lookup also acts as the cross-org
 // safety check — Document scopes by orgID so a docID from another
@@ -399,6 +435,15 @@ func (i *input) resolveDoc(documentID xid.ID) (docRef, error) {
 	doc, err := i.Document(documentID)
 	if err != nil {
 		return docRef{}, fmt.Errorf("fetching document: %w", err)
+	}
+
+	// a protected branch takes no write but core's own, and this is not
+	// one: the operations endpoint applies the batch to the live Y.Doc
+	// regardless, and only the persist behind it is refused. Without
+	// this the call reports success, the change shows up in every open
+	// editor, and it is gone at the next load.
+	if doc.Protected {
+		return docRef{}, errBranchProtected
 	}
 
 	return docRef{DocumentID: doc.ID, BranchID: doc.BranchID}, nil
@@ -432,6 +477,16 @@ func (i *input) ApplyEdit(documentID xid.ID, ops []edit.Operation) (string, erro
 		)
 
 		return "", fmt.Errorf("applying edit: %w", err)
+	}
+
+	// nothing committed and something to say why is a failed call, not
+	// a result describing a no-op: every write tool ships a single
+	// operation, so there is no partial success to report. Returning an
+	// error is what makes the surfaces treat it as one — the MCP bridge
+	// marks the result isError, and the assistant sees a failure it can
+	// correct rather than a success it will summarise.
+	if res.Applied == 0 && len(res.Errors) > 0 {
+		return "", fmt.Errorf("applying edit: %s", joinOpErrors(res.Errors))
 	}
 
 	if len(res.Errors) > 0 {
@@ -479,6 +534,83 @@ func (i *input) ValidatePlacement(documentID xid.ID, referenceUID string, b bloc
 	}
 
 	return block.ValidateInContainer(parent, b)
+}
+
+// ValidateAttrUpdate checks the attributes an update would leave on the
+// block. The update names some attributes and preserves the rest, so
+// the rules run against the merge rather than the payload — otherwise
+// setting one attribute would be judged as if every other were absent.
+//
+// A block whose ProseMirror type has no canonical counterpart is a
+// wrapper item (a list item, a macro internal). Those carry attributes
+// the canonical model does not describe, so there is nothing to check.
+func (i *input) ValidateAttrUpdate(documentID xid.ID, blockUID string, attrs map[string]any) error {
+	content, err := i.DocumentContent(documentID)
+	if err != nil {
+		return fmt.Errorf("fetching content: %w", err)
+	}
+
+	target, ok := content.Content.FindByUID(blockUID)
+	if !ok {
+		// the uid does not resolve; the edit backend reports that as
+		// the call's result.
+		return nil
+	}
+
+	t, ok := block.CanonicalType(target.Type)
+	if !ok {
+		return nil
+	}
+
+	merged := make(document.Attributes, len(target.Attrs)+len(attrs))
+	maps.Copy(merged, target.Attrs)
+	maps.Copy(merged, attrs)
+
+	return block.ValidateAttrs(t, merged)
+}
+
+// ValidateMove checks that the moved block may live where the move
+// would put it: among the children of whatever holds the reference.
+// Only placement is in question — the block is already in the document,
+// so its content has been through validation once already and may
+// contain shapes this layer can no longer express.
+//
+// A wrapper item (a list item, a macro internal) has no canonical type
+// to check against a container's allowed set, so it is held to a
+// narrower rule instead: it may only land in a container of the kind it
+// already sits in, which permits reordering and moving between two
+// lists while keeping a list item from landing at the document root.
+func (i *input) ValidateMove(documentID xid.ID, blockUID, referenceUID string) error {
+	content, err := i.DocumentContent(documentID)
+	if err != nil {
+		return fmt.Errorf("fetching content: %w", err)
+	}
+
+	moved, ok := content.Content.FindByUID(blockUID)
+	if !ok {
+		// neither uid resolving is the edit backend's report to make.
+		return nil
+	}
+
+	target, ok := content.Content.FindParentTypeByUID(referenceUID)
+	if !ok {
+		return nil
+	}
+
+	t, ok := block.CanonicalType(moved.Type)
+	if !ok {
+		source, ok := content.Content.FindParentTypeByUID(blockUID)
+		if !ok || source == target {
+			return nil
+		}
+
+		return fmt.Errorf(
+			"%s cannot move from %s into %s; it belongs to the block that holds it",
+			moved.Type, source, target,
+		)
+	}
+
+	return block.AllowedInContainer(target, t)
 }
 
 // NotifyTreeChange invokes the tree notifier when one is configured.

@@ -266,6 +266,13 @@ export function createAuth({
 		// redirect URIs below).
 		baseURL: env.authOrigin,
 		basePath: "/api/auth",
+		// without this better-auth's /api/auth/error route redirects to
+		// the origin root, which the reverse proxy serves the frontend
+		// from — a failed authorization would land on a document and
+		// its error query would go unread.
+		onAPIError: {
+			errorURL: `${env.frontendUrl}/auth-error`,
+		},
 		logger: {
 			level: betterAuthLevels[env.logLevel],
 			log: (level, message) => {

@@ -11,8 +11,10 @@ import (
 )
 
 // _defaultDocumentIcon is the icon assigned to assistant-created
-// documents when the model doesn't pick one.
-const _defaultDocumentIcon = "lucide:file"
+// documents when the model doesn't pick one. It matches what the
+// editor gives a document created by hand, so a document's origin is
+// not visible in the sidebar.
+const _defaultDocumentIcon = "mingcute:document-2-fill"
 
 // listDocumentsArgs is what list_documents is called with.
 type listDocumentsArgs struct {
@@ -213,7 +215,7 @@ func (createDocument) Info() Info {
 		Description: "Create a new document. Returns {document_id, branch_id}. The document starts with one empty paragraph; immediately follow up with append_block / insert_block calls to populate it.",
 		Properties: map[string]any{
 			_keyName:          stringProp("Display name for the new document."),
-			document.AttrIcon: stringProp("Lucide icon identifier (e.g. \"lucide:file-text\"). Defaults to \"lucide:file\" when empty."),
+			document.AttrIcon: stringProp("Iconify identifier, as \"collection:name\". The product's own icons are MingCute fills (e.g. \"mingcute:file-code-fill\"); prefer one so the document matches the rest of the sidebar. Defaults to \"mingcute:document-2-fill\" when empty."),
 			"parent_id":       stringProp("Optional parent document id. Omit to create at the org root."),
 		},
 		Required: []string{_keyName},
@@ -305,7 +307,7 @@ type deleteDocument struct{}
 func (deleteDocument) Info() Info {
 	return Info{
 		Name:        NameDeleteDocument,
-		Description: "Delete a document. This is destructive — the user is always asked to confirm and there is no auto-approve.",
+		Description: "Delete a document and every document nested under it — the whole subtree goes, and none of it can be restored. This is destructive — the user is always asked to confirm and there is no auto-approve.",
 		Properties:  documentIDProp("The document id to delete."),
 		Required:    []string{_keyDocumentID},
 	}
@@ -346,12 +348,29 @@ func (deleteDocument) Summary(inp DescribeInput) (ActionSummary, error) {
 		return ActionSummary{}, fmt.Errorf("%s: fetch document: %w", NameDeleteDocument, err)
 	}
 
+	summary := "Delete " + doc.DocumentName
+
+	// the delete cascades, so a card naming only the document would
+	// have the user approve a subtree they were never shown.
+	if n, err := inp.DescendantCount(in.DocumentID); err == nil && n > 0 {
+		summary += fmt.Sprintf(" and the %s nested under it", pluralPages(n))
+	}
+
 	return ActionSummary{
 		Tool:         NameDeleteDocument,
 		DocumentID:   doc.ID,
 		DocumentName: doc.DocumentName,
-		Summary:      "Delete " + doc.DocumentName,
+		Summary:      summary,
 	}, nil
+}
+
+// pluralPages renders a nested-document count for the confirm card.
+func pluralPages(n int) string {
+	if n == 1 {
+		return "1 page"
+	}
+
+	return fmt.Sprintf("%d pages", n)
 }
 
 // Execute deletes the document and refreshes the tree.
@@ -512,7 +531,7 @@ type setDocumentIcon struct{}
 func (setDocumentIcon) Info() Info {
 	return Info{
 		Name:        NameSetDocumentIcon,
-		Description: "Change a document's icon identifier (Lucide-style, e.g. \"lucide:rocket\").",
+		Description: "Change a document's icon. Takes an Iconify identifier, as \"collection:name\"; the product's own icons are MingCute fills (e.g. \"mingcute:rocket-fill\").",
 		Properties: map[string]any{
 			_keyDocumentID:    stringProp(_descDocumentID),
 			document.AttrIcon: stringProp("The new icon identifier."),

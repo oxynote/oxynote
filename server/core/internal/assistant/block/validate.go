@@ -16,9 +16,12 @@ var (
 	// emit any of it back out of a stored blockquote.
 	_allowedBlockquoteItems = _allowedAtRoot
 
-	// _allowedListItemContent is the set of block types that can sit
-	// inside a list/task-list item. Mirrors the web editor's
-	// ListItem default content.
+	// _allowedListItemContent is the set of block types that can be
+	// nested under a list or task-list entry — the "block*" half of
+	// the editor's "paragraph block*" content for ListItem and a
+	// nested TaskItem. The "paragraph" half is the entry itself, which
+	// validateListEntry checks; the two positions take different types
+	// and do not share a rule.
 	_allowedListItemContent = map[Type]bool{
 		BlockParagraph:   true,
 		BlockBulletList:  true,
@@ -153,11 +156,44 @@ func ValidateAsRoot(b Block) error {
 		return err
 	}
 
-	if !_allowedAtRoot[b.Type] {
-		return verr("", fmt.Sprintf(
-			"%s is not allowed at the document root; it must appear inside %s",
-			b.Type, containerForType(b.Type),
-		))
+	return AllowedInContainer(document.BlockNodeDoc, b.Type)
+}
+
+// ValidateAttrs checks the attribute rules for a block of the given
+// type, asking nothing about its content. An attribute-only update
+// names no content, so the content rules have nothing to say about it,
+// while the attributes it does set answer to exactly the rules a whole
+// block's would. Types carrying no attribute rules pass.
+//
+// Callers merge the update over the block's current attributes before
+// calling: a rule reads the attributes the block will end up with, not
+// the subset one call happened to name.
+func ValidateAttrs(t Type, attrs document.Attributes) error {
+	switch t {
+	case BlockHeading:
+		return validateHeadingAttrs(attrs, "")
+	case BlockTitledCode:
+		return validateTitledCodeAttrs(attrs, "")
+	case BlockImage, BlockFigma:
+		return validateSrcAttrs(t, attrs, "")
+	case BlockMetric:
+		return validateMetricAttrs(attrs, "")
+	case BlockParagraph,
+		BlockBlockquote,
+		BlockBulletList,
+		BlockOrderedList,
+		BlockTaskList,
+		BlockCallout,
+		BlockCode,
+		BlockMermaid,
+		BlockHorizontalRule,
+		BlockMetricGrid,
+		BlockSplitDoc,
+		BlockParamList:
+		// these carry no attribute the canonical model constrains:
+		// callout's icon and code's language are free strings, and the
+		// rest have none at all.
+		return nil
 	}
 
 	return nil
@@ -170,12 +206,28 @@ func ValidateAsRoot(b Block) error {
 // direct children are wrapper items — a list, a macro internal —
 // accepts no canonical block at all.
 func ValidateInContainer(container document.BlockNodeType, b Block) error {
-	if container == document.BlockNodeDoc {
-		return ValidateAsRoot(b)
-	}
-
 	if err := validateBlock(b, ""); err != nil {
 		return err
+	}
+
+	return AllowedInContainer(container, b.Type)
+}
+
+// AllowedInContainer reports whether a block of type t may sit among
+// the direct children of the given ProseMirror node, asking nothing
+// about the block's content. A move carries a block that is already in
+// the document, so its content is not in question — only where it is
+// allowed to land.
+func AllowedInContainer(container document.BlockNodeType, t Type) error {
+	if container == document.BlockNodeDoc {
+		if !_allowedAtRoot[t] {
+			return verr("", fmt.Sprintf(
+				"%s is not allowed at the document root; it must appear inside %s",
+				t, containerForType(t),
+			))
+		}
+
+		return nil
 	}
 
 	allowed, ok := _allowedInContainer[container]
@@ -183,10 +235,10 @@ func ValidateInContainer(container document.BlockNodeType, b Block) error {
 		return verr("", fmt.Sprintf("blocks cannot be placed directly inside %s", container))
 	}
 
-	if !allowed[b.Type] {
+	if !allowed[t] {
 		return verr("", fmt.Sprintf(
 			"%s is not allowed inside %s, which holds only %s",
-			b.Type, container, listAllowed(allowed),
+			t, container, listAllowed(allowed),
 		))
 	}
 
@@ -243,7 +295,10 @@ func validateBlock(b Block, path string) error {
 		return validateParamList(b, path)
 	}
 
-	return verr(path, fmt.Sprintf("unknown block type %q", b.Type))
+	return verr(path, fmt.Sprintf(
+		"unknown block type %q; the types are %s",
+		b.Type, strings.Join(Types(), ", "),
+	))
 }
 
 // validateTextBearing checks that the block carries only inline Text
@@ -269,7 +324,12 @@ func validateHeading(b Block, path string) error {
 		return err
 	}
 
-	if a, ok := b.Attrs.Get(document.AttrLevel); !ok || a.Int() < 1 || a.Int() > 3 {
+	return validateHeadingAttrs(b.Attrs, path)
+}
+
+// validateHeadingAttrs checks a heading's level.
+func validateHeadingAttrs(attrs document.Attributes, path string) error {
+	if a, ok := attrs.Get(document.AttrLevel); !ok || a.Int() < 1 || a.Int() > 3 {
 		return verr(joinPath(path, "attrs.level"), "heading level must be 1, 2, or 3")
 	}
 
@@ -339,10 +399,8 @@ func validateTaskList(b Block, path string) error {
 			return err
 		}
 
-		if !_allowedListItemContent[ti.Block.Type] {
-			return verr(joinPath(itemPath, "block"),
-				fmt.Sprintf("task_item content must be one of %s, got %s", listAllowed(_allowedListItemContent), ti.Block.Type),
-			)
+		if err := validateListEntry(ti.Block.Type, joinPath(itemPath, "block")); err != nil {
+			return err
 		}
 
 		if err := validateItemsAllowed(
@@ -384,7 +442,12 @@ func validateTitledCode(b Block, path string) error {
 		return err
 	}
 
-	if a, ok := b.Attrs.Get(document.AttrTitle); !ok || strings.TrimSpace(a.String()) == "" {
+	return validateTitledCodeAttrs(b.Attrs, path)
+}
+
+// validateTitledCodeAttrs checks that a titled_code carries a title.
+func validateTitledCodeAttrs(attrs document.Attributes, path string) error {
+	if a, ok := attrs.Get(document.AttrTitle); !ok || strings.TrimSpace(a.String()) == "" {
 		return verr(joinPath(path, "attrs.title"), "titled_code requires a non-empty title")
 	}
 
@@ -414,8 +477,13 @@ func validateAtomWithSrc(b Block, path string) error {
 		return err
 	}
 
-	if a, ok := b.Attrs.Get(document.AttrSrc); !ok || strings.TrimSpace(a.String()) == "" {
-		return verr(joinPath(path, "attrs.src"), fmt.Sprintf("%s requires a non-empty src", b.Type))
+	return validateSrcAttrs(b.Type, b.Attrs, path)
+}
+
+// validateSrcAttrs checks that an image or figma block carries a src.
+func validateSrcAttrs(t Type, attrs document.Attributes, path string) error {
+	if a, ok := attrs.Get(document.AttrSrc); !ok || strings.TrimSpace(a.String()) == "" {
+		return verr(joinPath(path, "attrs.src"), fmt.Sprintf("%s requires a non-empty src", t))
 	}
 
 	return nil
@@ -645,9 +713,8 @@ func validateListItems(items []Block, path string) error {
 		children := item.Children
 		item.Children = nil
 
-		if !_allowedListItemContent[item.Type] {
-			return verr(itemPath, fmt.Sprintf("type %s not allowed here; expected one of %s",
-				item.Type, listAllowed(_allowedListItemContent)))
+		if err := validateListEntry(item.Type, itemPath); err != nil {
+			return err
 		}
 
 		if err := validateBlock(item, itemPath); err != nil {
@@ -657,6 +724,22 @@ func validateListItems(items []Block, path string) error {
 		if err := validateItemsAllowed(children, joinPath(itemPath, "children"), _allowedListItemContent); err != nil {
 			return err
 		}
+	}
+
+	return nil
+}
+
+// validateListEntry checks the block a list or task-list entry leads
+// with. The editor's ListItem and nested TaskItem both hold
+// "paragraph block*", so the entry is the paragraph and anything else
+// belongs under it — expanding a list as the entry would produce an
+// item with no leading paragraph, which the schema does not admit.
+func validateListEntry(t Type, path string) error {
+	if t != BlockParagraph {
+		return verr(path, fmt.Sprintf(
+			"a list entry is a %s, got %s; nest other blocks under the entry with children",
+			BlockParagraph, t,
+		))
 	}
 
 	return nil

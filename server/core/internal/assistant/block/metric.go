@@ -25,10 +25,10 @@ const (
 
 // Metric enum values. They mirror the editor's enums in
 // web/app/components/editor/blocks/metrics/utils.ts (TimeRangePreset,
-// RefreshInterval, the Visualization*Unit enums, MetricBlockWidth) and
-// web/app/utils/api/data-source/generic-query.ts (GenericQueryChartType);
-// a value added there has to be added here or the assistant cannot author
-// it.
+// RefreshInterval, the Visualization*Unit enums, MetricBlockWidth,
+// MetricSimulationPreset) and web/app/utils/api/data-source/generic-query.ts
+// (GenericQueryChartType); a value added there has to be added here or the
+// assistant cannot author it.
 var (
 	// _metricVisualizationTypes are the chart kinds; they equal the
 	// datasource processor's ChartType values, which the tools package
@@ -62,6 +62,13 @@ var (
 	// _metricWidths are the block widths inside a metric_grid.
 	_metricWidths = []string{"compact", "standard", "wide"}
 
+	// _metricSimulationPresets are the generated series a block draws
+	// while the metric it documents has no real data to answer with.
+	_metricSimulationPresets = []string{
+		"cpu_usage", "memory_usage", "disk_usage",
+		"http_requests", "http_latency", "error_rate",
+	}
+
 	// _metricEnums maps each enum-valued attribute to its values, which
 	// is the table validateMetric checks against and MetricEnums
 	// publishes.
@@ -71,6 +78,7 @@ var (
 		document.AttrRefreshInterval:   _metricRefreshIntervals,
 		document.AttrUnitType:          _metricUnitTypes,
 		document.AttrWidth:             _metricWidths,
+		document.AttrSimulationPreset:  _metricSimulationPresets,
 	}
 )
 
@@ -98,14 +106,22 @@ func validateMetric(b Block, path string) error {
 		return err
 	}
 
+	return validateMetricAttrs(b.Attrs, path)
+}
+
+// validateMetricAttrs checks a metric block's attributes: every enum
+// holds one of its values, every string is a string, every number a
+// number, and the queries and thresholds arrays are well-formed.
+func validateMetricAttrs(attrs document.Attributes, path string) error {
 	for _, key := range []string{
 		document.AttrVisualizationType,
 		document.AttrTimeRange,
 		document.AttrRefreshInterval,
 		document.AttrUnitType,
 		document.AttrWidth,
+		document.AttrSimulationPreset,
 	} {
-		if err := validateMetricEnum(b.Attrs, key, path); err != nil {
+		if err := validateMetricEnum(attrs, key, path); err != nil {
 			return err
 		}
 	}
@@ -115,9 +131,8 @@ func validateMetric(b Block, path string) error {
 		document.AttrDataSourceID,
 		document.AttrUnitCustom,
 		document.AttrBaseThresholdColor,
-		document.AttrSimulationPreset,
 	} {
-		if err := validateMetricString(b.Attrs, key, path); err != nil {
+		if err := validateMetricString(attrs, key, path); err != nil {
 			return err
 		}
 	}
@@ -127,16 +142,16 @@ func validateMetric(b Block, path string) error {
 		document.AttrAxisBoundsMin,
 		document.AttrAxisBoundsMax,
 	} {
-		if err := validateMetricNumber(b.Attrs, key, path); err != nil {
+		if err := validateMetricNumber(attrs, key, path); err != nil {
 			return err
 		}
 	}
 
-	if err := validateMetricQueries(b.Attrs, path); err != nil {
+	if err := validateMetricQueries(attrs, path); err != nil {
 		return err
 	}
 
-	return validateMetricThresholds(b.Attrs, path)
+	return validateMetricThresholds(attrs, path)
 }
 
 // validateMetricEnum checks that the named attribute, when set, is one

@@ -53,6 +53,13 @@ func Test_annotations(t *testing.T) {
 				return &v
 			}(),
 		},
+		"Overwriting write tool is destructive to a client": {
+			Entry: tools.Entry{Traits: tools.Traits{Write: true, Overwrites: true}},
+			Destructive: func() *bool {
+				v := true
+				return &v
+			}(),
+		},
 	}
 
 	for cn, c := range cc {

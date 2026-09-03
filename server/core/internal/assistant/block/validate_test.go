@@ -230,6 +230,30 @@ func Test_Validate(t *testing.T) {
 			Err:          assert.AnError,
 			ExpectedPath: "items[0]",
 		},
+		"Bullet list whose entry is a well-formed list is rejected": {
+			Input: Block{
+				Type: BlockBulletList,
+				Items: []Block{{
+					Type:  BlockBulletList,
+					Items: []Block{{Type: BlockParagraph, Text: "nested"}},
+				}},
+			},
+			Err:          assert.AnError,
+			ExpectedPath: "items[0]",
+		},
+		"Task list whose entry is a well-formed list is rejected": {
+			Input: Block{
+				Type: BlockTaskList,
+				TaskItems: []TaskItem{{
+					Block: Block{
+						Type:  BlockBulletList,
+						Items: []Block{{Type: BlockParagraph, Text: "nested"}},
+					},
+				}},
+			},
+			Err:          assert.AnError,
+			ExpectedPath: "task_items[0]/block",
+		},
 		"List item children are accepted": {
 			Input: Block{
 				Type: BlockBulletList,

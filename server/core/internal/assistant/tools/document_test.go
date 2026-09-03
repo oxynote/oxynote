@@ -449,6 +449,56 @@ func Test_deleteDocument_Summary(t *testing.T) {
 	assert.Equal(t, "Runbook", got.DocumentName)
 	assert.Equal(t, "Delete Runbook", got.Summary)
 
+	// the delete cascades, so a card naming only the document would
+	// have the user approve a subtree they were never shown.
+	withKids := stubDocumentDB()
+	withKids.FetchDocumentTreeFunc = func(context.Context, string) (document.Summaries, error) {
+		return document.Summaries{{
+			ID: _testDocID,
+			Children: document.Summaries{
+				{ID: xid.New()},
+				{ID: xid.New(), Children: document.Summaries{{ID: xid.New()}}},
+			},
+		}}, nil
+	}
+
+	got, err = deleteDocument{}.Summary(testInput(
+		testDeps(withKids, nil, nil), NameDeleteDocument,
+		`{"document_id":"`+_testDocID.String()+`"}`,
+	))
+	require.NoError(t, err)
+	assert.Equal(t, "Delete Runbook and the 3 pages nested under it", got.Summary)
+
+	// one reads as one.
+	withOneKid := stubDocumentDB()
+	withOneKid.FetchDocumentTreeFunc = func(context.Context, string) (document.Summaries, error) {
+		return document.Summaries{{
+			ID:       _testDocID,
+			Children: document.Summaries{{ID: xid.New()}},
+		}}, nil
+	}
+
+	got, err = deleteDocument{}.Summary(testInput(
+		testDeps(withOneKid, nil, nil), NameDeleteDocument,
+		`{"document_id":"`+_testDocID.String()+`"}`,
+	))
+	require.NoError(t, err)
+	assert.Equal(t, "Delete Runbook and the 1 page nested under it", got.Summary)
+
+	// a tree that cannot be read still names the document: the count is
+	// worth having, never worth failing the confirmation over.
+	treeFails := stubDocumentDB()
+	treeFails.FetchDocumentTreeFunc = func(context.Context, string) (document.Summaries, error) {
+		return nil, assert.AnError
+	}
+
+	got, err = deleteDocument{}.Summary(testInput(
+		testDeps(treeFails, nil, nil), NameDeleteDocument,
+		`{"document_id":"`+_testDocID.String()+`"}`,
+	))
+	require.NoError(t, err)
+	assert.Equal(t, "Delete Runbook", got.Summary)
+
 	// the document it names has to resolve; the failure is passed on
 	// rather than described around.
 	_, err = deleteDocument{}.Summary(testInput(testDeps(failingDocumentDB(), nil, nil), NameDeleteDocument, requiredArgs(t, NameDeleteDocument)))

@@ -6,8 +6,14 @@ export default defineNuxtRouteMiddleware(async (to) => {
 	// the deep link or fall back to /login itself. The verify-email info
 	// page must render for signed-out visitors (fresh email-password
 	// signups) and signed-in ones (change-email confirmations) alike, so
-	// neither the auth gate nor the skipAuth redirect may touch it.
-	if (to.name === "desktop-auth" || to.name === "verify-email") {
+	// neither the auth gate nor the skipAuth redirect may touch it. The
+	// auth-error page reports a failed authorization to whoever landed on
+	// it, signed in or not, and either redirect would drop that report.
+	if (
+		to.name === "desktop-auth" ||
+		to.name === "verify-email" ||
+		to.name === "auth-error"
+	) {
 		return
 	}
 

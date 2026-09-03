@@ -449,6 +449,18 @@ describe("createAuth", () => {
 		expect(auth.options.basePath).toBe("/api/auth")
 	})
 
+	// the default is the origin root, which serves the frontend's
+	// document page and reads no error query
+	it("points failed requests at the frontend's error page", ({
+		expect,
+	}) => {
+		const { auth } = buildAuth()
+
+		expect(auth.options.onAPIError.errorURL).toBe(
+			"http://localhost:8080/auth-error",
+		)
+	})
+
 	it("takes better-auth's level from the configured one", ({
 		expect,
 	}) => {

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/oxynote/oxynote/server/core/internal/assistant/block"
+	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
 	"github.com/oxynote/oxynote/server/core/pkg/strutil"
 )
 
@@ -18,6 +19,19 @@ func result(v any) (string, error) {
 	}
 
 	return string(data), nil
+}
+
+// joinOpErrors renders per-operation failures as one message. The
+// index is left out: a tool sends a single operation, so naming its
+// position says nothing the reader can act on.
+func joinOpErrors(errs []edit.OpError) string {
+	msgs := make([]string, 0, len(errs))
+
+	for _, e := range errs {
+		msgs = append(msgs, e.Message)
+	}
+
+	return strings.Join(msgs, "; ")
 }
 
 // errRequired reports an argument the tool cannot act without.

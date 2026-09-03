@@ -41,7 +41,7 @@ type readDocumentSummary struct {
 func (readDocumentSummary) Info() Info {
 	return Info{
 		Name:        NameReadDocumentSummary,
-		Description: "Return an ordered, compact summary of a document: per-block uid, kind, flattened source_text, surrounding_context (ancestor headings, list intro, doc title), and tags. Use this as your default way to read a document — it's ~5-10x cheaper than fetching full content.",
+		Description: "Return an ordered, compact summary of a document: one row per block with its uid, kind, flattened text, depth and parent_uid, plus the few attrs that matter for reads (heading level, callout icon, code language, task checked). Use this as your default way to read a document — it's ~5-10x cheaper than fetching full content. Rows carrying has_children hold nested blocks the summary does not list; read_block returns those.",
 		Properties:  documentIDProp(_descDocumentID),
 		Required:    []string{_keyDocumentID},
 	}
@@ -203,7 +203,7 @@ func (insertBlock) Info() Info {
 			"reference_block_uid": stringProp("The uid of the block to insert relative to."),
 			"position": map[string]any{
 				_keyType: _typeString,
-				"enum": []string{
+				_keyEnum: []string{
 					string(positionBefore),
 					string(positionAfter),
 				},
@@ -382,7 +382,7 @@ func (appendBlock) Info() Info {
 		Description: "Append a single canonical block at the end of a document. Block uid is generated server-side if omitted.",
 		Properties: map[string]any{
 			_keyDocumentID: stringProp(_descTargetDocumentID),
-			_keyBlock:      _blockSchema,
+			_keyBlock:      _rootBlockSchema,
 		},
 		Required: []string{
 			_keyDocumentID,
@@ -462,7 +462,7 @@ func (prependBlock) Info() Info {
 		Description: "Prepend a single canonical block at the start of a document. Block uid is generated server-side if omitted.",
 		Properties: map[string]any{
 			_keyDocumentID: stringProp(_descTargetDocumentID),
-			_keyBlock:      _blockSchema,
+			_keyBlock:      _rootBlockSchema,
 		},
 		Required: []string{
 			_keyDocumentID,
@@ -582,9 +582,10 @@ func (replaceBlock) Info() Info {
 	}
 }
 
-// Traits reports a write.
+// Traits reports a write that overwrites: the replacement takes the
+// target's place whole, so every nested block and uid under it goes.
 func (replaceBlock) Traits() Traits {
-	return Traits{Write: true}
+	return Traits{Write: true, Overwrites: true}
 }
 
 // Title announces which document is being updated.
@@ -695,9 +696,10 @@ func (updateBlockText) Info() Info {
 	}
 }
 
-// Traits reports a write.
+// Traits reports a write that overwrites: the new text replaces the
+// block's whole content, nested blocks and their uids included.
 func (updateBlockText) Traits() Traits {
-	return Traits{Write: true}
+	return Traits{Write: true, Overwrites: true}
 }
 
 // Title announces which document is being updated.
@@ -871,6 +873,10 @@ func (updateBlockAttrs) Execute(inp Input) (string, error) {
 		}
 	}
 
+	if err := inp.ValidateAttrUpdate(in.DocumentID, in.BlockUID, in.Attrs); err != nil {
+		return "", fmt.Errorf("update_block_attrs: %w", err)
+	}
+
 	return inp.ApplyEdit(in.DocumentID, []edit.Operation{edit.UpdateAttrs(in.BlockUID, in.Attrs)})
 }
 
@@ -1023,7 +1029,7 @@ func (moveBlock) Info() Info {
 			_keyBlockUID:   stringProp("The uid of the block to move."),
 			"position": map[string]any{
 				_keyType: _typeString,
-				"enum": []string{
+				_keyEnum: []string{
 					string(positionBefore),
 					string(positionAfter),
 				},
@@ -1093,6 +1099,10 @@ func (moveBlock) Execute(inp Input) (string, error) {
 	op := edit.MoveAfter(in.BlockUID, in.ReferenceBlockUID)
 	if in.Position == positionBefore {
 		op = edit.MoveBefore(in.BlockUID, in.ReferenceBlockUID)
+	}
+
+	if err := inp.ValidateMove(in.DocumentID, in.BlockUID, in.ReferenceBlockUID); err != nil {
+		return "", fmt.Errorf("move_block: %w", err)
 	}
 
 	return inp.ApplyEdit(in.DocumentID, []edit.Operation{op})

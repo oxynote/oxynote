@@ -210,6 +210,12 @@ interface, which would be a second fact to keep in step. What a tool is, it stat
   does.
 - `Destructive` keeps it outside an "approve all" answer. Only `delete_document` and
   `delete_block`.
+- `Overwrites` says the write replaces content the caller did not name — the target's
+  nested blocks, and the uids comments and hooks hang off, go with it.
+  `update_block_text` and `replace_block`. It is what MCP's destructive hint reports
+  alongside `Destructive`, and is deliberately separate from it: a client deciding
+  whether to auto-approve needs to know, while an approve-all inside a chat turn is
+  meant to cover exactly these edits.
 - `DataSource` says the tool reads an outbound connection rather than the organisation's
   documents. Over MCP those answer to their own `data-sources:read` scope and are
   annotated open-world.
@@ -221,7 +227,7 @@ a write cannot skip it by forgetting to ask.
 
 The MCP surface (`internal/server/internal/mcp`) serves the same registry **ungated** via
 `Set.Entries`, minus the internal ones — MCP clients own the approval story, and the
-write/destructive facts become MCP tool annotations. It builds each `mcp.Tool` inline
+write/destructive/overwrites facts become MCP tool annotations. It builds each `mcp.Tool` inline
 from `Entry.Info` and calls `Entry.Tool.Run`, so it never touches eino; every document in
 `Result.Documents` comes back as a resource link. Adding a tool to `tools.Set` extends
 the MCP server for free.
