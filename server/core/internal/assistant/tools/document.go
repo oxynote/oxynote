@@ -37,9 +37,9 @@ type listDocuments struct {
 func (listDocuments) Info() Info {
 	return Info{
 		Name:        NameListDocuments,
-		Description: "List documents in the organisation. Returns the document tree (id, name, icon, children). Use parent_id to list only the direct children of that document; omit to list the whole org.",
+		Description: "List the organisation's documents as a tree of {id, name, icon, children}. Use it to find a document by name or to see what sits under a parent; use search_documents when you are looking for content rather than a title. Pass parent_id to get only that document's direct children, or omit it for the whole organisation.",
 		Properties: map[string]any{
-			"parent_id": stringProp("Optional. Only return the direct children of this parent id. Omit for the full tree."),
+			"parent_id": stringProp("Optional. Return only the direct children of this document. Omit for the full tree."),
 		},
 	}
 }
@@ -132,7 +132,7 @@ type getDocument struct {
 func (getDocument) Info() Info {
 	return Info{
 		Name:        NameGetDocument,
-		Description: "Fetch metadata for one document: name, icon, parent_id, default branch id, protected flag, updated_at.",
+		Description: "Fetch one document's metadata: name, icon, parent_id, default branch id, protected flag and updated_at. Use it to check the protected flag before a series of edits, since a protected document refuses every write, or to learn where a document sits in the tree. It returns no content; read_document_summary does.",
 		Properties:  documentIDProp(_descDocumentID),
 		Required:    []string{_keyDocumentID},
 	}
@@ -212,7 +212,7 @@ func (a createDocumentArgs) Validate() error {
 func (createDocument) Info() Info {
 	return Info{
 		Name:        NameCreateDocument,
-		Description: "Create a new document. Returns {document_id, branch_id}. The document starts with one empty paragraph; immediately follow up with append_block / insert_block calls to populate it.",
+		Description: "Create a new document and return {document_id, branch_id}. The document starts with a single empty paragraph, so follow up with append_block calls in the same turn to fill it. Omit parent_id to create it at the organisation root.",
 		Properties: map[string]any{
 			_keyName:          stringProp("Display name for the new document."),
 			document.AttrIcon: stringProp("Iconify identifier, as \"collection:name\". The product's own icons are MingCute fills (e.g. \"mingcute:file-code-fill\"); prefer one so the document matches the rest of the sidebar. Defaults to \"mingcute:document-2-fill\" when empty."),
@@ -307,7 +307,7 @@ type deleteDocument struct{}
 func (deleteDocument) Info() Info {
 	return Info{
 		Name:        NameDeleteDocument,
-		Description: "Delete a document and every document nested under it — the whole subtree goes, and none of it can be restored. This is destructive — the user is always asked to confirm and there is no auto-approve.",
+		Description: "Delete a document and every document nested under it. The whole subtree goes and cannot be restored, so check the tree with list_documents first, and use move_document when the aim is to relocate rather than remove. Returns {document_id, deleted}.",
 		Properties:  documentIDProp("The document id to delete."),
 		Required:    []string{_keyDocumentID},
 	}
@@ -430,7 +430,7 @@ type renameDocument struct{}
 func (renameDocument) Info() Info {
 	return Info{
 		Name:        NameRenameDocument,
-		Description: "Change a document's display name. The change is applied live via hocuspocus.",
+		Description: "Change a document's display name, visible to everyone at once. Content, icon and position are untouched: use set_document_icon for the icon and move_document for the position. Returns the count of applied operations.",
 		Properties: map[string]any{
 			_keyDocumentID: stringProp(_descDocumentID),
 			_keyName:       stringProp("The new display name."),
@@ -531,7 +531,7 @@ type setDocumentIcon struct{}
 func (setDocumentIcon) Info() Info {
 	return Info{
 		Name:        NameSetDocumentIcon,
-		Description: "Change a document's icon. Takes an Iconify identifier, as \"collection:name\"; the product's own icons are MingCute fills (e.g. \"mingcute:rocket-fill\").",
+		Description: "Change a document's icon. Takes an Iconify identifier as \"collection:name\"; the product's own icons are MingCute fills (e.g. \"mingcute:rocket-fill\"), so prefer one to match the sidebar. When creating a document, pass the icon to create_document instead of making a second call.",
 		Properties: map[string]any{
 			_keyDocumentID:    stringProp(_descDocumentID),
 			document.AttrIcon: stringProp("The new icon identifier."),
@@ -618,7 +618,7 @@ type moveDocument struct{}
 func (moveDocument) Info() Info {
 	return Info{
 		Name:        NameMoveDocument,
-		Description: "Re-parent a document. Omit new_parent_id to move the document to the org root.",
+		Description: "Re-parent a document, keeping its content and its own children. Omit new_parent_id to move it to the organisation root. Fails when the new parent is the document itself or one of its descendants. Returns {document_id, new_parent_id}.",
 		Properties: map[string]any{
 			_keyDocumentID:  stringProp("The document to move."),
 			"new_parent_id": stringProp("Optional new parent document id; omit to move to the root."),

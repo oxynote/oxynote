@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/oxynote/oxynote/server/core/internal/document"
@@ -184,6 +185,57 @@ func Test_Set_Entries(t *testing.T) {
 	// mutating the returned slice must not affect the registry.
 	entries[0].Name = "clobbered"
 	assert.Equal(t, allToolNames()[0], s.Entries()[0].Name)
+}
+
+// Test_Set_Entries_descriptions holds every model-facing string in the
+// registry to the rules a description follows on both surfaces: it
+// says nothing about a confirmation flow, which only the chat surface
+// has, every argument is described, and the text carries the house
+// style (no em dash, British spelling), since the model copies the
+// punctuation it is shown.
+func Test_Set_Entries_descriptions(t *testing.T) {
+	t.Parallel()
+
+	s := New(testDeps(nil, nil, nil))
+
+	for _, e := range s.Entries() {
+		texts := map[string]string{"description": e.Info.Description}
+		collectDescriptions(e.Info.Properties, "", texts)
+
+		for path, text := range texts {
+			assert.NotEmpty(t, text, "%s: %s has no description", e.Name, path)
+
+			for _, banned := range []string{"confirm", "approv", "\u2014", "organization"} {
+				assert.NotContains(t, strings.ToLower(text), banned, "%s: %s", e.Name, path)
+			}
+		}
+	}
+}
+
+// collectDescriptions walks a JSON-schema properties map and records
+// every property's description, keyed by its path, so a property with
+// no description shows up as an empty string rather than being skipped.
+func collectDescriptions(props map[string]any, prefix string, out map[string]string) {
+	for name, raw := range props {
+		prop, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		path := prefix + name
+		desc, _ := prop["description"].(string)
+		out[path] = desc
+
+		if nested, ok := prop["properties"].(map[string]any); ok {
+			collectDescriptions(nested, path+".", out)
+		}
+
+		if items, ok := prop["items"].(map[string]any); ok {
+			if nested, ok := items["properties"].(map[string]any); ok {
+				collectDescriptions(nested, path+"[].", out)
+			}
+		}
+	}
 }
 
 func Test_Set_Entry(t *testing.T) {

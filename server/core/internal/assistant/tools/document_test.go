@@ -404,7 +404,7 @@ func Test_deleteDocument_Info(t *testing.T) {
 	info := deleteDocument{}.Info()
 
 	assert.Equal(t, NameDeleteDocument, info.Name)
-	assert.Contains(t, info.Description, "destructive")
+	assert.Contains(t, info.Description, "cannot be restored")
 	assert.Equal(t, []string{_keyDocumentID}, info.Required)
 }
 

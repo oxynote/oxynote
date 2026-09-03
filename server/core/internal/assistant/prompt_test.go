@@ -53,6 +53,28 @@ func Test_buildSystemPrompt(t *testing.T) {
 	// the model authors metric blocks now, so the prompt must not still
 	// tell it not to.
 	assert.NotContains(t, got, "do not author")
+
+	// the block model is the only schema the chat model sees, so every
+	// type the tools accept has to be in it.
+	for _, bt := range block.Types() {
+		assert.Contains(t, _blockModelSection, "| "+bt+" |", "block type %q is missing from the prompt", bt)
+	}
+
+	// the rubber duck stance needs its counterweight: an explicit
+	// request for text is written, not interviewed about.
+	assert.Contains(t, got, "When someone asks for text, write it")
+
+	assertHouseStyle(t, got)
+}
+
+// assertHouseStyle checks the rules every model-facing text follows:
+// the model copies the prompt's own punctuation, so the text carries
+// no em dash, and it spells organisation the way the product does.
+func assertHouseStyle(t *testing.T, text string) {
+	t.Helper()
+
+	assert.NotContains(t, text, "\u2014")
+	assert.NotContains(t, text, "organization")
 }
 
 func Test_MCPInstructions(t *testing.T) {
@@ -73,6 +95,8 @@ func Test_MCPInstructions(t *testing.T) {
 	// telling an MCP client about either would be a lie.
 	assert.NotContains(t, got, "Rubber Duck")
 	assert.NotContains(t, got, "confirmation")
+
+	assertHouseStyle(t, got)
 }
 
 func Test_genModelInput(t *testing.T) {

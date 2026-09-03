@@ -36,7 +36,7 @@ const (
 
 	// _descChartType describes the optional chart-type property shared
 	// by the two query tools.
-	_descChartType = "Optional. One of line_chart, bar_chart, gauge_chart. When set, the result describes what the metric block would draw — render status, series count, and each series' labels, point count and endpoints — instead of the raw data. Use it to check a query before putting it in a metric block; omit it when you need the values themselves."
+	_descChartType = "Optional. One of line_chart, bar_chart, gauge_chart. When set, the result describes what the metric block would draw (render status, series count, and each series' labels, point count and endpoints) instead of the raw data. Use it to check a query before putting it in a metric block; omit it when you need the values themselves."
 )
 
 // errUnknownDataSource is what a lookup reports for an id that names
@@ -593,7 +593,7 @@ type queryPrometheus struct {
 func (queryPrometheus) Info() Info {
 	return Info{
 		Name:        NameQueryPrometheus,
-		Description: "Run a PromQL range query against a Prometheus data source over the given window. Returns the raw result by default, or a description of what a metric block would render when chart_type is set.",
+		Description: "Run a PromQL range query against a Prometheus data source over the given window. Returns the raw result by default; with chart_type set it instead describes what a metric block would render, which is how to check a query before writing it into a block.",
 		Properties: dataSourceProps(map[string]any{
 			_keyQuery:     stringProp("The PromQL expression to run."),
 			_keyChartType: stringProp(_descChartType),
@@ -845,7 +845,7 @@ type getSQLQueryLabels struct {
 func (getSQLQueryLabels) Info() Info {
 	return Info{
 		Name:        NameGetSQLQueryLabels,
-		Description: "Run a SQL query limited to one row and return its string columns with an example value each — the columns a chart would treat as series labels. Cheaper than query_sql for checking what a query returns.",
+		Description: "Run a SQL query limited to one row and return its string columns with an example value each, which are the columns a chart would treat as series labels. Use it to check what a query returns before charting it; it is cheaper than query_sql.",
 		Properties: dataSourceProps(map[string]any{
 			_keyQuery: stringProp("The SQL query to probe. $__ macros are expanded as they are for a metric block."),
 			_keyFrom:  stringProp(_descFrom),
@@ -946,7 +946,7 @@ type querySQL struct {
 func (querySQL) Info() Info {
 	return Info{
 		Name:        NameQuerySQL,
-		Description: "Run a read-only query against a PostgreSQL, MariaDB or MySQL data source. Returns columns and rows by default, or a description of what a metric block would render when chart_type is set. $__ macros ($__timeFilter, $__timeGroupAlias, …) are expanded against the window, and the row count is capped.",
+		Description: "Run a read-only query against a PostgreSQL, MariaDB or MySQL data source. Returns columns and rows by default, with the row count capped; with chart_type set it instead describes what a metric block would render, which is how to check a query before writing it into a block. $__ macros ($__timeFilter, $__timeGroupAlias and the rest) are expanded against the window.",
 		Properties: dataSourceProps(map[string]any{
 			_keyQuery:     stringProp("The SQL query to run. For a chart, select a time column aliased \"time\" plus one or more numeric columns."),
 			_keyChartType: stringProp(_descChartType),

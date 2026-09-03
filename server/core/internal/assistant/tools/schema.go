@@ -106,7 +106,7 @@ func blockSchema(types []string) map[string]any {
 			},
 			"text": map[string]any{
 				_keyType:        _typeString,
-				_keyDescription: "Inline text for paragraph, heading, blockquote, code, titled_code, mermaid and callout. Raw inside code, titled_code and mermaid; minimal markdown elsewhere. One block is one paragraph — never embed newlines to make several.",
+				_keyDescription: "Inline text for paragraph, heading, blockquote, code, titled_code, mermaid and callout. Raw inside code, titled_code and mermaid; minimal markdown elsewhere. One block is one paragraph; a newline inside text does not start a new one.",
 			},
 			"attrs": map[string]any{
 				_keyType:        _typeObject,

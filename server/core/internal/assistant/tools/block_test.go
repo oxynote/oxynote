@@ -916,7 +916,7 @@ func Test_deleteBlock_Info(t *testing.T) {
 	info := deleteBlock{}.Info()
 
 	assert.Equal(t, NameDeleteBlock, info.Name)
-	assert.Contains(t, info.Description, "destructive")
+	assert.Contains(t, info.Description, "cannot be restored")
 	assert.Equal(t, []string{_keyDocumentID, _keyBlockUID}, info.Required)
 }
 

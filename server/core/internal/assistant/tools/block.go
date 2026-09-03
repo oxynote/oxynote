@@ -41,7 +41,7 @@ type readDocumentSummary struct {
 func (readDocumentSummary) Info() Info {
 	return Info{
 		Name:        NameReadDocumentSummary,
-		Description: "Return an ordered, compact summary of a document: one row per block with its uid, kind, flattened text, depth and parent_uid, plus the few attrs that matter for reads (heading level, callout icon, code language, task checked). Use this as your default way to read a document — it's ~5-10x cheaper than fetching full content. Rows carrying has_children hold nested blocks the summary does not list; read_block returns those.",
+		Description: "Return an ordered, compact summary of a document: one row per block with its uid, kind, flattened text, depth and parent_uid, plus the few attrs that matter for reading (heading level, callout icon, code language, task checked). Use it as the default way to read a document; it costs a fraction of the full content. Rows marked has_children hold nested blocks the summary does not list, and read_block returns those when you need them.",
 		Properties:  documentIDProp(_descDocumentID),
 		Required:    []string{_keyDocumentID},
 	}
@@ -131,7 +131,7 @@ type readBlock struct {
 func (readBlock) Info() Info {
 	return Info{
 		Name:        NameReadBlock,
-		Description: "Return the full canonical content of one block by uid, including any nested children. Use this only when read_document_summary doesn't carry enough detail (e.g. you need the full structure of a split_doc or split_doc_param_list to edit it).",
+		Description: "Return the full canonical content of one block by uid, including any nested children. Use it only when read_document_summary is not enough: to edit a split_doc, a nested list or a split_doc_param_list, whose inner structure has to be written back in full. Fails when the uid is not in the document.",
 		Properties: map[string]any{
 			_keyDocumentID: stringProp(_descDocumentID),
 			_keyBlockUID:   stringProp("The block uid to fetch."),
@@ -197,7 +197,7 @@ type insertBlock struct{}
 func (insertBlock) Info() Info {
 	return Info{
 		Name:        NameInsertBlock,
-		Description: "Insert a single canonical block before or after a referenced block in the document. The reference block stays in place. Block uid is generated server-side if omitted.",
+		Description: "Insert one canonical block before or after a block already in the document; the reference block stays in place. Use append_block or prepend_block when the block goes at the document's end or start. The block has to be legal where it lands: the document root takes every type except titled_code, metric and split_doc_param_list, and a reference inside a split_doc or metric_grid takes only what that container holds. Returns the count of applied operations, not the new uid; read_document_summary again before editing the new block.",
 		Properties: map[string]any{
 			_keyDocumentID:        stringProp(_descTargetDocumentID),
 			"reference_block_uid": stringProp("The uid of the block to insert relative to."),
@@ -379,7 +379,7 @@ type appendBlock struct{}
 func (appendBlock) Info() Info {
 	return Info{
 		Name:        NameAppendBlock,
-		Description: "Append a single canonical block at the end of a document. Block uid is generated server-side if omitted.",
+		Description: "Append one canonical block at the end of a document. Use insert_block to place a block next to an existing one, and prepend_block for the start. The block has to be legal at the document root, which takes every type except titled_code, metric and split_doc_param_list. Returns the count of applied operations, not the new uid; read_document_summary again before editing the new block.",
 		Properties: map[string]any{
 			_keyDocumentID: stringProp(_descTargetDocumentID),
 			_keyBlock:      _rootBlockSchema,
@@ -459,7 +459,7 @@ type prependBlock struct{}
 func (prependBlock) Info() Info {
 	return Info{
 		Name:        NamePrependBlock,
-		Description: "Prepend a single canonical block at the start of a document. Block uid is generated server-side if omitted.",
+		Description: "Prepend one canonical block at the start of a document. Use insert_block to place a block next to an existing one, and append_block for the end. The block has to be legal at the document root, which takes every type except titled_code, metric and split_doc_param_list. Returns the count of applied operations, not the new uid; read_document_summary again before editing the new block.",
 		Properties: map[string]any{
 			_keyDocumentID: stringProp(_descTargetDocumentID),
 			_keyBlock:      _rootBlockSchema,
@@ -568,7 +568,7 @@ type replaceBlock struct{}
 func (replaceBlock) Info() Info {
 	return Info{
 		Name:        NameReplaceBlock,
-		Description: "Replace an existing block by uid with a new block. The replacement keeps the same position in its parent. Useful for changing a block's type or its full structure. Block uid is generated server-side if omitted.",
+		Description: "Replace a block by uid with a new block in the same position. The old block's uid, content and children are all gone unless the new block carries them, so use it to change a block's type or its whole structure. For a wording change use update_block_text, and for an attribute change update_block_attrs; both keep the uid, which comments, hooks and files hang off. Returns the count of applied operations.",
 		Properties: map[string]any{
 			_keyDocumentID: stringProp(_descTargetDocumentID),
 			_keyBlockUID:   stringProp("The uid of the block being replaced."),
@@ -682,7 +682,7 @@ type updateBlockText struct{}
 func (updateBlockText) Info() Info {
 	return Info{
 		Name:        NameUpdateBlockText,
-		Description: "Replace the inline text of a text-bearing block (paragraph, heading, blockquote, code, mermaid, callout-shorthand). The block's type and attrs are preserved. text uses the canonical minimal-markdown subset (**bold**, *italic*, _underline_, ~~strike~~, `code`, [label](url)). For code/mermaid blocks, text is raw and markdown is not parsed.",
+		Description: "Replace the inline text of one text-bearing block: paragraph, heading, blockquote, code, titled_code, mermaid, or a callout written with text. Type, attrs and uid are kept, so this is the tool for wording changes. Text follows the canonical markdown subset (**bold**, *italic*, _underline_, ~~strike~~, backtick code, [label](url)), and is raw in code, titled_code and mermaid. One block is one paragraph; to add a paragraph, insert a block instead.",
 		Properties: map[string]any{
 			_keyDocumentID: stringProp(_descTargetDocumentID),
 			_keyBlockUID:   stringProp("The uid of the block whose text should be replaced."),
@@ -793,7 +793,7 @@ type updateBlockAttrs struct{}
 func (updateBlockAttrs) Info() Info {
 	return Info{
 		Name:        NameUpdateBlockAttrs,
-		Description: "Set or override the named attributes on an existing block. Unmentioned attributes are preserved; the uid attribute cannot be changed.",
+		Description: "Set or override named attributes on an existing block, such as a heading's level or a callout's icon. Attributes not mentioned are kept and uid cannot change. Values are validated for the block's type, so a level outside 1 to 3 or a metric width other than compact, standard or wide is rejected. Use replace_block when the type itself has to change.",
 		Properties: map[string]any{
 			_keyDocumentID: stringProp(_descTargetDocumentID),
 			_keyBlockUID:   stringProp("The uid of the block whose attrs should be updated."),
@@ -909,7 +909,7 @@ type deleteBlock struct{}
 func (deleteBlock) Info() Info {
 	return Info{
 		Name:        NameDeleteBlock,
-		Description: "Delete a block from the document by uid. This is destructive — the user is always asked to confirm and there is no auto-approve.",
+		Description: "Delete one block by uid, including anything nested inside it. Its comments, hooks and files go with it and cannot be restored, so use move_block when the aim is to reorder and update_block_text when the aim is new wording. Returns the count of applied operations.",
 		Properties: map[string]any{
 			_keyDocumentID: stringProp(_descTargetDocumentID),
 			_keyBlockUID:   stringProp("The uid of the block to delete."),
@@ -1023,7 +1023,7 @@ type moveBlock struct{}
 func (moveBlock) Info() Info {
 	return Info{
 		Name:        NameMoveBlock,
-		Description: "Move an existing block before or after a referenced block in the document. The block keeps its uid, attrs, and nested content, so comments and hooks attached to it stay attached — always move a block this way rather than deleting it and inserting a copy.",
+		Description: "Move an existing block before or after another block in the same document. The block keeps its uid, attrs and nested content, so comments, hooks and files attached to it stay attached; deleting it and inserting a copy would lose them. The landing spot has to accept the block's type, by the same rule insert_block applies.",
 		Properties: map[string]any{
 			_keyDocumentID: stringProp(_descTargetDocumentID),
 			_keyBlockUID:   stringProp("The uid of the block to move."),

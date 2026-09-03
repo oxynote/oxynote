@@ -145,7 +145,27 @@ Env lives in `docker/env/`: committed `*.example.env` templates list **every** v
 
 ## Assistant prompt
 
-The system prompt at `server/core/internal/assistant/prompt.go` codifies behaviour for the Rubber Duck AI chat. When fixing a behaviour bug, state the underlying principle in one or two sentences. Don't enumerate edge cases or add numbered steps — spelling every case out drowns the core guidance in noise. Worked examples and tables belong in the prompt only when the model genuinely needs the structure to anchor a concept (the block-schema table and the split_doc example qualify; most rules don't).
+The system prompt at `server/core/internal/assistant/prompt.go` is assembled from section
+constants. The block model, edit etiquette and aesthetics sections ship verbatim to both the
+chat model and MCP clients, so a rule that is only true on one surface (the confirmation
+flow, the Rubber Duck persona) lives in that surface's own section. Behaviour rules come
+first and are restated in two lines at the end, with the block-model reference between them:
+models weight the ends of a prompt over its middle.
+
+Writing a rule:
+
+- State the principle and the reason behind it in one or two sentences; the model
+  generalises from the reason. Don't enumerate edge cases or add numbered steps.
+- Say what to do rather than what to avoid, unless the rule is a hard limit.
+- Keep per-tool facts (when to use a tool, what it returns, what it fails on) in the tool's
+  description; the prompt carries only the workflow across tools.
+- Worked examples and tables belong in the prompt only when the model genuinely needs the
+  structure to anchor a concept (the block-schema table and the split_doc example qualify;
+  most rules don't). Wrap an example in `<example>` tags so it can't be read as a rule.
+- Plain language, no caps or MUST: current models overtrigger on emphasis.
+- No em dashes and British spelling throughout model-facing text; the model copies the
+  punctuation it is shown, and the product bans em dashes. `prompt_test.go` and
+  `tools_test.go` enforce both.
 
 ## Assistant tools
 
@@ -232,9 +252,26 @@ from `Entry.Info` and calls `Entry.Tool.Run`, so it never touches eino; every do
 `Result.Documents` comes back as a resource link. Adding a tool to `tools.Set` extends
 the MCP server for free.
 
-`testdata/tool_schemas.golden` pins every tool's model-facing description. Any change to
-a schema or a description has to be deliberate enough to update that file — a silently
-altered description degrades the assistant in ways no other test catches.
+### Tool descriptions
+
+A description is what the model reads to pick a tool and fill its arguments, and it has to
+stand alone: an MCP client may never show the instructions text. Every description says, in
+three or more sentences for anything non-trivial:
+
+- what the tool does and what it returns;
+- when to use it, and which sibling tool to use instead;
+- the precondition or failure it can hit (a protected document, an illegal placement, a
+  missing uid);
+- for each argument, what it means, whether it is optional, and the default.
+
+It says nothing about confirmation or approval: the chat surface confirms writes and MCP
+clients apply them at once, so approval belongs in the per-surface prompt sections and in
+the MCP annotations. Plain language, no caps or MUST, no em dashes, British spelling.
+
+`testdata/tool_schemas.golden` pins every tool's model-facing description. Regenerate it
+with `UPDATE_GOLDEN=1 go test -run Test_Info_toEino ./internal/assistant/tools/` and review
+the diff as the change — a silently altered description degrades the assistant in ways no
+other test catches.
 
 ## auth-realtime
 
