@@ -213,6 +213,10 @@ type Documents interface {
 	// content, for the ops that only need the block tree.
 	DocumentContent(id xid.ID) (document.Content, error)
 
+	// DocumentBlock should return the block uid names in the document's
+	// main-branch content, refusing a uid the document does not hold.
+	DocumentBlock(id xid.ID, uid string) (document.Block, error)
+
 	// DocumentTree should return every document in the organisation as
 	// a nested summary tree.
 	DocumentTree() (document.Summaries, error)
@@ -251,9 +255,9 @@ type DocumentWriter interface {
 // realtime service, so connected editors see them as they land.
 type Editor interface {
 	// ApplyEdit should ship an operation batch to the realtime service
-	// for the named document's default branch and surface the per-op
-	// result.
-	ApplyEdit(documentID xid.ID, ops []edit.Operation) (string, error)
+	// for the named document's default branch, reporting any operation
+	// it refused.
+	ApplyEdit(documentID xid.ID, ops []edit.Operation) error
 
 	// ValidatePlacement should check that a block is legal next to, or
 	// in place of, the block referenceUID names.

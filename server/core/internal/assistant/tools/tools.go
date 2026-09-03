@@ -24,11 +24,10 @@ type Name string
 // Read tools — never confirmed. The assistant runs these
 // immediately on every relevant turn.
 const (
-	NameListDocuments       Name = "list_documents"
-	NameGetDocument         Name = "get_document"
-	NameReadDocumentSummary Name = "read_document_summary"
-	NameReadBlock           Name = "read_block"
-	NameSearchDocuments     Name = "search_documents"
+	NameListDocuments   Name = "list_documents"
+	NameGetDocument     Name = "get_document"
+	NameReadBlock       Name = "read_block"
+	NameSearchDocuments Name = "search_documents"
 )
 
 // Data-source tools — reads against the organisation's outbound
@@ -52,12 +51,8 @@ const (
 const (
 	NameCreateDocument   Name = "create_document"
 	NameDeleteDocument   Name = "delete_document"
-	NameRenameDocument   Name = "rename_document"
-	NameSetDocumentIcon  Name = "set_document_icon"
-	NameMoveDocument     Name = "move_document"
+	NameUpdateDocument   Name = "update_document"
 	NameInsertBlock      Name = "insert_block"
-	NameAppendBlock      Name = "append_block"
-	NamePrependBlock     Name = "prepend_block"
 	NameReplaceBlock     Name = "replace_block"
 	NameUpdateBlockText  Name = "update_block_text"
 	NameUpdateBlockAttrs Name = "update_block_attrs"
@@ -98,7 +93,6 @@ func New(deps *Deps) *Set {
 	all := []Tool{
 		listDocuments{},
 		getDocument{},
-		readDocumentSummary{},
 		readBlock{},
 	}
 
@@ -122,12 +116,8 @@ func New(deps *Deps) *Set {
 
 		createDocument{},
 		deleteDocument{},
-		renameDocument{},
-		setDocumentIcon{},
-		moveDocument{},
+		updateDocument{},
 		insertBlock{},
-		appendBlock{},
-		prependBlock{},
 		replaceBlock{},
 		updateBlockText{},
 		updateBlockAttrs{},

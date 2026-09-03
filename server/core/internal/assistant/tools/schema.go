@@ -71,19 +71,10 @@ const (
 	_descTargetDocumentID = "The target document id."
 )
 
-// The block argument's schema, in the two shapes the write tools need.
-var (
-	// _blockSchema is for the tools that place a block relative to
-	// another, where the reference's parent decides which types are
-	// legal — so the enum is every canonical type and the container
-	// rule is checked server-side.
-	_blockSchema = blockSchema(block.Types())
-
-	// _rootBlockSchema is for the tools that place a block at the
-	// document root, where the legal set is fixed and can be stated
-	// outright.
-	_rootBlockSchema = blockSchema(block.RootTypes())
-)
+// _blockSchema is the block argument's schema for the write tools. The
+// enum is every canonical type: where a block lands decides which types
+// are legal, and that rule is checked server-side.
+var _blockSchema = blockSchema(block.Types())
 
 // blockSchema builds the block argument's schema with the given set of
 // legal types. The per-field prose is deliberately terse: this schema is

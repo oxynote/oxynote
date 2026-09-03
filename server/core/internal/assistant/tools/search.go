@@ -45,7 +45,7 @@ type searchDocuments struct {
 func (searchDocuments) Info() Info {
 	return Info{
 		Name:        NameSearchDocuments,
-		Description: "Full-text search across every document in the organisation for blocks whose text matches the query. Returns hits with document_id, document_name, block_uid and text. Use it to find where a topic is discussed or which documents the user might mean; use list_documents when you know the title. A hit names the innermost block holding the text, which may sit below anything read_document_summary lists; read_block resolves it.",
+		Description: "Full-text search across every document in the organisation for blocks whose text matches the query. Returns hits with document_id, document_name, block_uid and text. Use it to find where a topic is discussed or which documents the user might mean; use list_documents when you know the title. A hit names the innermost block holding the text, which may sit below anything get_document lists; read_block resolves it.",
 		Properties: map[string]any{
 			_keyQuery: stringProp("The full-text search query (typo-tolerant, matches block text)."),
 			"limit": map[string]any{

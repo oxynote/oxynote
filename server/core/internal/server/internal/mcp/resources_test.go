@@ -15,6 +15,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// stubDocument answers a document fetch with a document of the given
+// name, at the root, so a resource read has metadata to report.
+func stubDocument(name string) func(context.Context, xid.ID, string, string) (*document.Document, error) {
+	return func(_ context.Context, id xid.ID, _, _ string) (*document.Document, error) {
+		return &document.Document{ID: id, DocumentName: name}, nil
+	}
+}
+
 func Test_Handler_addResources(t *testing.T) {
 	t.Parallel()
 
@@ -138,8 +146,8 @@ func Test_Handler_readDocument(t *testing.T) {
 		"Missing document maps to resource not found": {
 			URI: _resourceURIPrefix + docID.String(),
 			ToolsDB: &toolsMock.DB{
-				FetchMainBranchContentFunc: func(context.Context, xid.ID, string) (document.Content, error) {
-					return document.Content{}, errutil.ErrNotFound
+				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*document.Document, error) {
+					return nil, errutil.ErrNotFound
 				},
 			},
 			Err: mcp.ResourceNotFoundError(_resourceURIPrefix + docID.String()),
@@ -147,6 +155,7 @@ func Test_Handler_readDocument(t *testing.T) {
 		"Internal tool failure passes through": {
 			URI: _resourceURIPrefix + docID.String(),
 			ToolsDB: &toolsMock.DB{
+				FetchDocumentFunc: stubDocument("Doc"),
 				FetchMainBranchContentFunc: func(context.Context, xid.ID, string) (document.Content, error) {
 					return document.Content{}, assert.AnError
 				},
@@ -157,6 +166,7 @@ func Test_Handler_readDocument(t *testing.T) {
 		"Successful read": {
 			URI: _resourceURIPrefix + docID.String(),
 			ToolsDB: &toolsMock.DB{
+				FetchDocumentFunc: stubDocument("Doc"),
 				FetchMainBranchContentFunc: func(_ context.Context, id xid.ID, organizationID string) (document.Content, error) {
 					require.Equal(t, docID, id)
 					require.Equal(t, "org1", organizationID)
@@ -164,7 +174,7 @@ func Test_Handler_readDocument(t *testing.T) {
 					return document.Content{DocumentName: "Doc"}, nil
 				},
 			},
-			Text: `"document_name":"Doc"`,
+			Text: `"name":"Doc"`,
 		},
 	}
 

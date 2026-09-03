@@ -19,7 +19,6 @@ func allToolNames() []Name {
 	return []Name{
 		NameListDocuments,
 		NameGetDocument,
-		NameReadDocumentSummary,
 		NameReadBlock,
 		NameSearchDocuments,
 		NameListDataSources,
@@ -33,12 +32,8 @@ func allToolNames() []Name {
 		NameQuerySQL,
 		NameCreateDocument,
 		NameDeleteDocument,
-		NameRenameDocument,
-		NameSetDocumentIcon,
-		NameMoveDocument,
+		NameUpdateDocument,
 		NameInsertBlock,
-		NameAppendBlock,
-		NamePrependBlock,
 		NameReplaceBlock,
 		NameUpdateBlockText,
 		NameUpdateBlockAttrs,
@@ -170,7 +165,47 @@ func Test_Set_Entries(t *testing.T) {
 		// the entry carries the tool's own description, so a surface
 		// outside this package never has to ask the tool for it.
 		assert.Equal(t, e.Name, e.Info.Name)
-		assert.NotEmpty(t, e.Info.Description)
+
+		// every model-facing string follows the rules a description keeps
+		// on both surfaces: it says nothing about a confirmation flow,
+		// which only the chat surface has, every argument is described,
+		// and the text carries the house style (no em dash, British
+		// spelling), since the model copies the punctuation it is shown.
+		texts := map[string]string{"description": e.Info.Description}
+
+		var walk func(props map[string]any, prefix string)
+
+		walk = func(props map[string]any, prefix string) {
+			for name, raw := range props {
+				prop, ok := raw.(map[string]any)
+				if !ok {
+					continue
+				}
+
+				desc, _ := prop["description"].(string)
+				texts[prefix+name] = desc
+
+				if nested, ok := prop["properties"].(map[string]any); ok {
+					walk(nested, prefix+name+".")
+				}
+
+				if items, ok := prop["items"].(map[string]any); ok {
+					if nested, ok := items["properties"].(map[string]any); ok {
+						walk(nested, prefix+name+"[].")
+					}
+				}
+			}
+		}
+
+		walk(e.Info.Properties, "")
+
+		for path, text := range texts {
+			assert.NotEmpty(t, text, "%s: %s has no description", e.Name, path)
+
+			for _, banned := range []string{"confirm", "approv", "\u2014", "organization"} {
+				assert.NotContains(t, strings.ToLower(text), banned, "%s: %s", e.Name, path)
+			}
+		}
 
 		// the entry carries the tool without its confirmation gate,
 		// while the registry keeps the gated one for the chat loop.
@@ -187,57 +222,6 @@ func Test_Set_Entries(t *testing.T) {
 	assert.Equal(t, allToolNames()[0], s.Entries()[0].Name)
 }
 
-// Test_Set_Entries_descriptions holds every model-facing string in the
-// registry to the rules a description follows on both surfaces: it
-// says nothing about a confirmation flow, which only the chat surface
-// has, every argument is described, and the text carries the house
-// style (no em dash, British spelling), since the model copies the
-// punctuation it is shown.
-func Test_Set_Entries_descriptions(t *testing.T) {
-	t.Parallel()
-
-	s := New(testDeps(nil, nil, nil))
-
-	for _, e := range s.Entries() {
-		texts := map[string]string{"description": e.Info.Description}
-		collectDescriptions(e.Info.Properties, "", texts)
-
-		for path, text := range texts {
-			assert.NotEmpty(t, text, "%s: %s has no description", e.Name, path)
-
-			for _, banned := range []string{"confirm", "approv", "\u2014", "organization"} {
-				assert.NotContains(t, strings.ToLower(text), banned, "%s: %s", e.Name, path)
-			}
-		}
-	}
-}
-
-// collectDescriptions walks a JSON-schema properties map and records
-// every property's description, keyed by its path, so a property with
-// no description shows up as an empty string rather than being skipped.
-func collectDescriptions(props map[string]any, prefix string, out map[string]string) {
-	for name, raw := range props {
-		prop, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-
-		path := prefix + name
-		desc, _ := prop["description"].(string)
-		out[path] = desc
-
-		if nested, ok := prop["properties"].(map[string]any); ok {
-			collectDescriptions(nested, path+".", out)
-		}
-
-		if items, ok := prop["items"].(map[string]any); ok {
-			if nested, ok := items["properties"].(map[string]any); ok {
-				collectDescriptions(nested, path+"[].", out)
-			}
-		}
-	}
-}
-
 func Test_Set_Entry(t *testing.T) {
 	t.Parallel()
 
@@ -249,7 +233,7 @@ func Test_Set_Entry(t *testing.T) {
 	}{
 		"Empty registry": {
 			Set:  &Set{},
-			Name: NameReadDocumentSummary,
+			Name: NameGetDocument,
 		},
 		"Unknown name": {
 			Set:  New(testDeps(nil, nil, nil)),
@@ -257,8 +241,8 @@ func Test_Set_Entry(t *testing.T) {
 		},
 		"Registered read tool": {
 			Set:    New(testDeps(nil, nil, nil)),
-			Name:   NameReadDocumentSummary,
-			Result: NameReadDocumentSummary,
+			Name:   NameGetDocument,
+			Result: NameGetDocument,
 			Found:  true,
 		},
 		"Registered write tool comes back ungated": {
@@ -302,12 +286,8 @@ func Test_Set_WriteNames(t *testing.T) {
 	assert.ElementsMatch(t, []string{
 		string(NameCreateDocument),
 		string(NameDeleteDocument),
-		string(NameRenameDocument),
-		string(NameSetDocumentIcon),
-		string(NameMoveDocument),
+		string(NameUpdateDocument),
 		string(NameInsertBlock),
-		string(NameAppendBlock),
-		string(NamePrependBlock),
 		string(NameReplaceBlock),
 		string(NameUpdateBlockText),
 		string(NameUpdateBlockAttrs),
@@ -339,7 +319,7 @@ func Test_Set_Label(t *testing.T) {
 			Args: `{}`,
 		},
 		"Read names the document": {
-			Name:   NameReadDocumentSummary,
+			Name:   NameGetDocument,
 			Args:   `{"document_id":"` + _testDocID.String() + `"}`,
 			Result: "Reading Runbook",
 		},
@@ -354,17 +334,17 @@ func Test_Set_Label(t *testing.T) {
 					return nil, assert.AnError
 				},
 			},
-			Name: NameReadDocumentSummary,
+			Name: NameGetDocument,
 			Args: `{"document_id":"` + _testDocID.String() + `"}`,
 		},
 		"Malformed arguments are not announced": {
 			// the call is about to fail on these same arguments, and
 			// that failure is the tool's to report.
-			Name: NameReadDocumentSummary,
+			Name: NameGetDocument,
 			Args: `{`,
 		},
 		"Missing arguments are not announced": {
-			Name: NameReadDocumentSummary,
+			Name: NameGetDocument,
 			Args: `{}`,
 		},
 	}

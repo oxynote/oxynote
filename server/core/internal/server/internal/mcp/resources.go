@@ -14,7 +14,7 @@ import (
 )
 
 // _documentMIMEType is the media type of a document resource body: the
-// canonical block JSON the read_document_summary tool produces.
+// JSON the get_document tool produces.
 const _documentMIMEType = "application/json"
 
 // addResources registers the organization's documents as MCP resources,
@@ -60,9 +60,9 @@ func (h *Handler) addResources(
 	}
 }
 
-// readDocument serves a document resource read through the
-// read_document_summary tool from the request's own tool set, so
-// organization scoping and output shape stay identical to a tool call.
+// readDocument serves a document resource read through the get_document
+// tool from the request's own tool set, so organization scoping and
+// output shape stay identical to a tool call.
 func (h *Handler) readDocument(set *tools.Set) mcp.ResourceHandler {
 	return func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 		id, ok := strings.CutPrefix(req.Params.URI, _resourceURIPrefix)
@@ -70,15 +70,15 @@ func (h *Handler) readDocument(set *tools.Set) mcp.ResourceHandler {
 			return nil, mcp.ResourceNotFoundError(req.Params.URI)
 		}
 
-		summary, ok := set.Entry(tools.NameReadDocumentSummary)
+		get, ok := set.Entry(tools.NameGetDocument)
 		if !ok {
-			// NOCOV: every tool set registers read_document_summary.
-			return nil, errors.New("read_document_summary tool not registered")
+			// NOCOV: every tool set registers get_document.
+			return nil, errors.New("get_document tool not registered")
 		}
 
-		res, err := summary.Tool.Run(ctx, json.RawMessage(fmt.Sprintf(`{"document_id":%q}`, id)))
+		res, err := get.Tool.Run(ctx, json.RawMessage(fmt.Sprintf(`{"document_id":%q}`, id)))
 		if err != nil {
-			if errutil.IsNotFound(err) {
+			if errutil.IsNotFound(err) || errors.Is(err, tools.ErrUnknownDocument) {
 				return nil, mcp.ResourceNotFoundError(req.Params.URI)
 			}
 

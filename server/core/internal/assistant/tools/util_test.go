@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/oxynote/oxynote/server/core/internal/assistant/block"
+	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -79,6 +80,57 @@ func Test_textPreview(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, c.Result, textPreview(c.Input, c.MaxLen))
+		})
+	}
+}
+
+func Test_joinOpErrors(t *testing.T) {
+	t.Parallel()
+
+	got := joinOpErrors([]edit.OpError{
+		{Index: 0, Message: "block_uid not found: a"},
+		{Index: 1, Message: "something else"},
+	})
+
+	// each message is rewritten for the model and the index is left out,
+	// since a tool ships one operation.
+	assert.Equal(t, "no block with uid a in this document; call get_document for the current uids; something else", got)
+}
+
+func Test_describeOpError(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Msg    string
+		Result string
+	}{
+		"Reference uid not found": {
+			Msg:    "reference_uid not found: r1",
+			Result: "no block with uid r1 in this document; call get_document for the current uids",
+		},
+		"Block uid not found": {
+			Msg:    "block_uid not found: b1",
+			Result: "no block with uid b1 in this document; call get_document for the current uids",
+		},
+		"Reference inside the moved block": {
+			Msg:    "reference_uid is inside the moved block: r1",
+			Result: "reference block r1 sits inside the block being moved; choose a reference outside it",
+		},
+		"Operation kind named as its tool": {
+			Msg:    "update_text does not apply to calloutBlock: use replace_block to rewrite it whole, or update_text on the block holding the text.",
+			Result: "update_block_text does not apply to calloutBlock: use replace_block to rewrite it whole, or update_block_text on the block holding the text.",
+		},
+		"Unknown message passes through": {
+			Msg:    "cannot move a block relative to itself: a",
+			Result: "cannot move a block relative to itself: a",
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, describeOpError(c.Msg))
 		})
 	}
 }

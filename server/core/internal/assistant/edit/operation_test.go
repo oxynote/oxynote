@@ -3,15 +3,19 @@ package edit
 import (
 	"testing"
 
-	"github.com/oxynote/oxynote/server/core/internal/assistant/block"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// paragraph is the block every operation that carries one is built with.
-func paragraph() block.Block {
-	return block.Block{Type: block.BlockParagraph, Text: "hi"}
+// paragraph is the block every operation that carries one is built with,
+// expanded the way a tool hands it over.
+func paragraph() document.Block {
+	return document.Block{
+		Type:    document.BlockNodeParagraph,
+		Attrs:   document.Attributes{document.AttrUID: "p"},
+		Content: []document.Block{{Type: document.BlockNodeText, Text: "hi"}},
+	}
 }
 
 // wire runs the operation and returns the wire form it produced.
@@ -57,11 +61,11 @@ func Test_insert(t *testing.T) {
 	require.NotNil(t, w.Block)
 	assert.Equal(t, document.BlockNodeParagraph, w.Block.Type)
 
-	// an unexpandable block fails before any wire form exists. The
-	// expansion lives in the shared withBlock helper, so this covers
-	// InsertAfter, InsertBefore, Append, Prepend, and Replace alike.
-	_, err := insert("after", "ref", block.Block{Type: "not_a_type"})()
-	require.Error(t, err)
+	// the block ships as handed over, uids included, so what the caller
+	// reported is what lands.
+	uid, ok := w.Block.UID()
+	require.True(t, ok)
+	assert.Equal(t, "p", uid)
 }
 
 func Test_Append(t *testing.T) {

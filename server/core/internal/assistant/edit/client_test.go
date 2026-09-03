@@ -8,7 +8,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/oxynote/oxynote/server/core/internal/assistant/block"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
@@ -63,16 +62,16 @@ func Test_Client_Apply(t *testing.T) {
 		// NoRequest asserts Apply returned before any HTTP round trip.
 		NoRequest bool
 	}{
-		"Expansion failure skips the request": {
-			// an unknown canonical type fails at Expand time, before the
-			// client builds a request at all.
-			Ops:       []Operation{Append(block.Block{Type: "totally_not_a_real_type"})},
+		"Operation failure skips the request": {
+			// an operation that cannot produce its wire form fails before
+			// the client builds a request at all.
+			Ops:       []Operation{func() (wireOp, error) { return wireOp{}, assert.AnError }},
 			Err:       assert.AnError,
 			NoRequest: true,
 		},
 		"Successful batch reports applied count": {
 			Ops: []Operation{
-				Append(block.Block{Type: block.BlockParagraph, Text: "hi"}),
+				Append(paragraph()),
 				Delete("uid-1"),
 			},
 			StatusCode:      200,
@@ -85,7 +84,7 @@ func Test_Client_Apply(t *testing.T) {
 		// it has to reach the wire rather than stay a caller's intent.
 		"A system batch is marked as core's own": {
 			Ops: []Operation{
-				Append(block.Block{Type: block.BlockParagraph, Text: "hi"}),
+				Append(paragraph()),
 			},
 			System:          true,
 			StatusCode:      200,
@@ -97,7 +96,7 @@ func Test_Client_Apply(t *testing.T) {
 		"Partial failure surfaces per-op errors": {
 			Ops: []Operation{
 				Delete("missing"),
-				Append(block.Block{Type: block.BlockParagraph, Text: "ok"}),
+				Append(paragraph()),
 			},
 			StatusCode:      200,
 			ResponseBody:    `{"applied": 1, "errors": [{"index": 0, "message": "block_uid not found: missing"}]}`,

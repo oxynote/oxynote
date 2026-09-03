@@ -66,8 +66,8 @@ func Test_confirming_InvokableRun(t *testing.T) {
 	t.Parallel()
 
 	docID := xid.New()
-	writeArgs := `{"document_id":"` + docID.String() + `","block_uid":"b","text":"hi"}`
-	deleteArgs := `{"document_id":"` + docID.String() + `","block_uid":"b"}`
+	writeArgs := `{"document_id":"` + docID.String() + `","block_uid":"a","text":"hi"}`
+	deleteArgs := `{"document_id":"` + docID.String() + `","block_uid":"a"}`
 
 	// every write tool must ask before it acts. Resuming an approved
 	// turn reruns the tool from the top, so a tool that applied its
@@ -80,14 +80,14 @@ func Test_confirming_InvokableRun(t *testing.T) {
 		},
 		"Delete block asks first":      {Name: NameDeleteBlock, Args: deleteArgs, Interrupted: true},
 		"Delete document asks first":   {Name: NameDeleteDocument, Args: `{"document_id":"` + docID.String() + `"}`, Interrupted: true},
-		"Rename document asks first":   {Name: NameRenameDocument, Args: `{"document_id":"` + docID.String() + `","name":"n"}`, Interrupted: true},
+		"Update document asks first":   {Name: NameUpdateDocument, Args: `{"document_id":"` + docID.String() + `","name":"n"}`, Interrupted: true},
 		"Create document asks first":   {Name: NameCreateDocument, Args: `{"name":"n"}`, Interrupted: true},
 		"Update block text asks first": {Name: NameUpdateBlockText, Args: writeArgs, Interrupted: true},
 		"Approve-all covers a later non-destructive write": {
 			Name:        NameUpdateBlockText,
 			Args:        writeArgs,
 			AutoApprove: true,
-			RespJSON:    `{"applied":1,"errors":[]}`,
+			RespJSON:    `{"blocks":[{"uid":"a","kind":"paragraph","text":"hi","depth":0}]}`,
 			ApplyCalls:  1,
 		},
 		"Approve-all never covers a destructive write": {
@@ -100,7 +100,7 @@ func Test_confirming_InvokableRun(t *testing.T) {
 			Name:       NameUpdateBlockText,
 			Args:       writeArgs,
 			Decision:   &Decision{Approved: true},
-			RespJSON:   `{"applied":1,"errors":[]}`,
+			RespJSON:   `{"blocks":[{"uid":"a","kind":"paragraph","text":"hi","depth":0}]}`,
 			ApplyCalls: 1,
 		},
 		"Declined confirmation reports the refusal": {
@@ -132,7 +132,7 @@ func Test_confirming_InvokableRun(t *testing.T) {
 			t.Parallel()
 
 			applier := stubApplier()
-			ct := gatedTool(t, New(testDeps(stubDocumentDB(), applier, nil)), c.Name)
+			ct := gatedTool(t, New(testDeps(stubContentDB(nil), applier, nil)), c.Name)
 
 			if c.Rejected != "" {
 				// the same payload would be rejected by the tool on

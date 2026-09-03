@@ -70,9 +70,9 @@ func Test_newClearRewriter(t *testing.T) {
 		"Names the tool whose output was cleared": {
 			Writes: []string{"insert_block"},
 			Msg: schema.AssistantMessage("", []schema.ToolCall{
-				{Function: schema.FunctionCall{Name: "read_document_summary"}},
+				{Function: schema.FunctionCall{Name: "get_document"}},
 			}),
-			Contains: []string{"read_document_summary", "cleared", "Call the tool again"},
+			Contains: []string{"get_document", "cleared", "Call the tool again"},
 		},
 		"Names every tool in a cleared batch": {
 			Msg: schema.AssistantMessage("", []schema.ToolCall{

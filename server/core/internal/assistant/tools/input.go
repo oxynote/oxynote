@@ -242,7 +242,7 @@ func (i *input) Document(id xid.ID) (*document.Document, error) {
 	doc, err := i.db.FetchDocument(i.ctx, id, i.orgID, document.DefaultBranch)
 	if err != nil {
 		if errutil.IsNotFound(err) {
-			return nil, errUnknownDocument
+			return nil, ErrUnknownDocument
 		}
 
 		return nil, err
@@ -254,6 +254,23 @@ func (i *input) Document(id xid.ID) (*document.Document, error) {
 // DocumentContent returns the document's parsed main-branch content.
 func (i *input) DocumentContent(id xid.ID) (document.Content, error) {
 	return i.db.FetchMainBranchContent(i.ctx, id, i.orgID)
+}
+
+// DocumentBlock finds one block of the document's main branch by uid.
+// It reads the persisted content, which is what every placement check
+// reads too, so a write and its checks see the same document.
+func (i *input) DocumentBlock(id xid.ID, uid string) (document.Block, error) {
+	content, err := i.DocumentContent(id)
+	if err != nil {
+		return document.Block{}, fmt.Errorf("fetching content: %w", err)
+	}
+
+	b, ok := content.Content.FindByUID(uid)
+	if !ok {
+		return document.Block{}, fmt.Errorf("block %s: %w", uid, errUnknownBlock)
+	}
+
+	return b, nil
 }
 
 // DescendantCount reports how many documents sit under the named one at
@@ -295,7 +312,7 @@ func (i *input) DocumentChildren(parentID null.Value[xid.ID]) (document.Summarie
 func (i *input) CreateDocument(doc document.Document) error {
 	if doc.ParentID.Valid {
 		if err := i.db.CheckDocumentExists(i.ctx, doc.ParentID.V, i.orgID); err != nil {
-			return fmt.Errorf("parent not found: %w", err)
+			return fmt.Errorf("parent %s: %w", doc.ParentID.V, errUnknownParent(err))
 		}
 	}
 
@@ -332,11 +349,27 @@ func (i *input) CreateDocument(doc document.Document) error {
 	return nil
 }
 
-// errUnknownDocument is what DeleteDocument reports for an id that
+// errCyclicParent is what a move reports when the new parent is the
+// document itself or sits under it.
+var errCyclicParent = errors.New("a document cannot be moved under itself or one of its descendants; pick a parent outside its subtree")
+
+// errUnknownBlock is what a block read or write reports for a uid the
+// document does not hold. The message names the read that lists the
+// current uids, since a stale uid is the usual cause.
+var errUnknownBlock = errors.New("no block with that uid in this document; call get_document for the current uids")
+
+// errUnknownParent wraps a parent lookup failure so the model learns
+// where the ids it may use come from; a missing parent is otherwise a
+// bare not-found.
+func errUnknownParent(err error) error {
+	return fmt.Errorf("no document with that id to use as parent; call list_documents for the ids that exist: %w", err)
+}
+
+// ErrUnknownDocument is what a document lookup reports for an id that
 // names nothing in the session's organisation. Another organisation's
 // id lands here too, which is the point: the tools cannot be used to
 // discover that a document exists elsewhere.
-var errUnknownDocument = errors.New("no document with that id in this organisation; call list_documents for the ids that exist")
+var ErrUnknownDocument = errors.New("no document with that id in this organisation; call list_documents for the ids that exist")
 
 // DeleteDocument removes the document. It records nothing as touched:
 // the document is gone, so there is nothing left to point a caller at.
@@ -360,7 +393,7 @@ func (i *input) DeleteDocument(id xid.ID) error {
 	}
 
 	if len(ids) == 0 {
-		return errUnknownDocument
+		return ErrUnknownDocument
 	}
 
 	if err := i.jobs.Enqueue(i.ctx, tx, search.BlocksDifference{
@@ -381,7 +414,7 @@ func (i *input) DeleteDocument(id xid.ID) error {
 func (i *input) MoveDocument(id xid.ID, parentID null.Value[xid.ID]) error {
 	if parentID.Valid {
 		if err := i.db.CheckDocumentExists(i.ctx, parentID.V, i.orgID); err != nil {
-			return fmt.Errorf("new parent not found: %w", err)
+			return fmt.Errorf("new parent %s: %w", parentID.V, errUnknownParent(err))
 		}
 
 		cycle, err := i.db.CheckDocumentCycle(i.ctx, id, parentID.V, i.orgID)
@@ -390,7 +423,7 @@ func (i *input) MoveDocument(id xid.ID, parentID null.Value[xid.ID]) error {
 		}
 
 		if cycle {
-			return errors.New("a document cannot be moved under itself or one of its descendants")
+			return errCyclicParent
 		}
 	}
 
@@ -425,7 +458,7 @@ func (i *input) ReadOffloaded(path string) (string, error) {
 // errBranchProtected is what a content write reports for a document
 // whose branch is protected. The message names the tool the caller
 // still has, since reading a protected document stays allowed.
-var errBranchProtected = errors.New("this document's branch is protected and takes no edits; read it with read_document_summary or ask someone with access to unprotect it")
+var errBranchProtected = errors.New("this document's branch is protected and takes no edits; read it with get_document or ask someone with access to unprotect it")
 
 // resolveDoc loads the default branch of the given document and returns
 // the ids the edit client needs. The lookup also acts as the cross-org
@@ -451,10 +484,13 @@ func (i *input) resolveDoc(documentID xid.ID) (docRef, error) {
 
 // ApplyEdit is the shared tail of every content-mutating write tool: it
 // resolves the document to a (documentID, branchID) pair, ships the
-// operation batch to Node, and surfaces the per-op result. Outcomes are
-// logged so partial failures on the Node side (uid not found, malformed
-// block) are visible without re-running the conversation.
-func (i *input) ApplyEdit(documentID xid.ID, ops []edit.Operation) (string, error) {
+// operation batch to Node, and reports any operation Node refused.
+// Outcomes are logged so partial failures on the Node side (uid not
+// found, malformed block) are visible without re-running the
+// conversation. What the write produced is the tool's own to describe;
+// the persist behind the live document is debounced, so a re-read here
+// would not reliably show it.
+func (i *input) ApplyEdit(documentID xid.ID, ops []edit.Operation) error {
 	ref, err := i.resolveDoc(documentID)
 	if err != nil {
 		i.log.Warn(
@@ -463,7 +499,7 @@ func (i *input) ApplyEdit(documentID xid.ID, ops []edit.Operation) (string, erro
 			slog.String("error", err.Error()),
 		)
 
-		return "", err
+		return err
 	}
 
 	res, err := i.applier.Apply(i.ctx, ref.DocumentID, ref.BranchID, ops, false)
@@ -476,7 +512,7 @@ func (i *input) ApplyEdit(documentID xid.ID, ops []edit.Operation) (string, erro
 			slog.String("error", err.Error()),
 		)
 
-		return "", fmt.Errorf("applying edit: %w", err)
+		return fmt.Errorf("applying edit: %w", err)
 	}
 
 	// nothing committed and something to say why is a failed call, not
@@ -486,7 +522,7 @@ func (i *input) ApplyEdit(documentID xid.ID, ops []edit.Operation) (string, erro
 	// marks the result isError, and the assistant sees a failure it can
 	// correct rather than a success it will summarise.
 	if res.Applied == 0 && len(res.Errors) > 0 {
-		return "", fmt.Errorf("applying edit: %s", joinOpErrors(res.Errors))
+		return fmt.Errorf("applying edit: %s", joinOpErrors(res.Errors))
 	}
 
 	if len(res.Errors) > 0 {
@@ -510,7 +546,7 @@ func (i *input) ApplyEdit(documentID xid.ID, ops []edit.Operation) (string, erro
 	// document any way resolveDoc accepts.
 	i.recordTouched(ref.DocumentID)
 
-	return result(res)
+	return nil
 }
 
 // ValidatePlacement validates a block that is about to land next to, or
@@ -677,8 +713,8 @@ type DB interface {
 	FetchDocumentTreeByDocumentParentID(ctx context.Context, parentID null.Value[xid.ID], organizationID string) (document.Summaries, error)
 
 	// FetchDocument should return full document content for the named
-	// branch. Used by get_document, read_document_summary,
-	// read_block.
+	// branch. Used by get_document, read_block, and every write that
+	// names a document.
 	FetchDocument(ctx context.Context, id xid.ID, organizationID, branchName string) (*document.Document, error)
 
 	// FetchMainBranchContent should return the parsed main-branch
@@ -687,17 +723,17 @@ type DB interface {
 	FetchMainBranchContent(ctx context.Context, docID xid.ID, organizationID string) (document.Content, error)
 
 	// UpdateDocumentParentID should re-parent a document. Used by
-	// move_document.
+	// update_document.
 	UpdateDocumentParentID(ctx context.Context, id xid.ID, parentID null.Value[xid.ID], organizationID string) error
 
 	// CheckDocumentExists should report whether the document exists in
-	// the given org. Used by move_document to validate the new
+	// the given org. Used by update_document to validate the new
 	// parent before issuing UPDATE.
 	CheckDocumentExists(ctx context.Context, id xid.ID, organizationID string) error
 
 	// CheckDocumentCycle should report whether making parentID the parent
 	// of id would create a cycle in the document tree. Used by
-	// move_document to reject self and descendant parents.
+	// update_document to reject self and descendant parents.
 	CheckDocumentCycle(ctx context.Context, id, parentID xid.ID, organizationID string) (bool, error)
 
 	// FetchDataSource should return a data source by id within the org.

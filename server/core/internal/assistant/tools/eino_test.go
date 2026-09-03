@@ -105,12 +105,12 @@ func Test_einoTool_Run(t *testing.T) {
 
 	// a write reports the document it changed, taken from the edit it
 	// actually applied rather than from its arguments
-	res, err = newEinoTool(updateBlockText{}, testDeps(stubDocumentDB(), stubApplier(), nil)).
+	res, err = newEinoTool(updateBlockText{}, testDeps(stubContentDB(nil), stubApplier(), nil)).
 		Run(context.Background(), json.RawMessage(
 			`{"document_id":"`+_testDocID.String()+`","block_uid":"a","text":"hi"}`,
 		))
 	require.NoError(t, err)
-	assert.JSONEq(t, `{"applied":1,"errors":[]}`, res.Output)
+	assert.JSONEq(t, `{"blocks":[{"uid":"a","kind":"paragraph","text":"hi","depth":0}]}`, res.Output)
 	assert.Equal(t, []xid.ID{_testDocID}, res.Documents)
 }
 
@@ -148,7 +148,7 @@ func Test_einoTool_InvokableRun(t *testing.T) {
 func Test_einoTool_Title(t *testing.T) {
 	t.Parallel()
 
-	et := newEinoTool(readDocumentSummary{}, testDeps(stubDocumentDB(), nil, nil))
+	et := newEinoTool(getDocument{}, testDeps(stubDocumentDB(), nil, nil))
 
 	got, err := et.Title(context.Background(), json.RawMessage(`{"document_id":"`+_testDocID.String()+`"}`))
 	require.NoError(t, err)

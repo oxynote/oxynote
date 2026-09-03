@@ -5,8 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/guregu/null/v5"
@@ -121,7 +123,12 @@ func requiredArgs(t *testing.T, name Name) string {
 		case _keyBlock:
 			vals[key] = map[string]any{_keyType: string(block.BlockParagraph)}
 		case "position":
-			vals[key] = string(positionAfter)
+			// a position beside a block needs the reference the tool
+			// requires; one that requires no reference takes an end.
+			vals[key] = string(positionEnd)
+			if slices.Contains(infoOf(name).Required, "reference_block_uid") {
+				vals[key] = string(positionAfter)
+			}
 		case "reference_block_uid":
 			// distinct from the "x" other uid keys take, so a payload
 			// naming both a block and a reference is not a self-move.
@@ -133,6 +140,12 @@ func requiredArgs(t *testing.T, name Name) string {
 		default:
 			vals[key] = "x"
 		}
+	}
+
+	// update_document requires nothing beyond the document, but refuses
+	// a call that changes nothing; a name is the smallest change.
+	if name == NameUpdateDocument {
+		vals[_keyName] = "x"
 	}
 
 	raw, err := json.Marshal(vals)
@@ -493,7 +506,7 @@ func Test_input_DeleteDocument(t *testing.T) {
 		"Empty subtree reports an unknown document": func() tcase {
 			tx := stubTx(nil, nil, nil, nil)
 
-			return tcase{DB: stubDB(tx, nil), Tx: tx, Err: errUnknownDocument}
+			return tcase{DB: stubDB(tx, nil), Tx: tx, Err: ErrUnknownDocument}
 		}(),
 		"Delete and search removal land together": func() tcase {
 			tx := stubTx([]xid.ID{docID, xid.New()}, nil, nil, nil)
@@ -536,7 +549,7 @@ func Test_input_DeleteDocument(t *testing.T) {
 func Test_input_recordTouched(t *testing.T) {
 	t.Parallel()
 
-	inp := testInput(testDeps(nil, nil, nil), NameAppendBlock, `{}`)
+	inp := testInput(testDeps(nil, nil, nil), NameInsertBlock, `{}`)
 
 	// a call that changed nothing reports nothing.
 	assert.Empty(t, inp.touched)
@@ -597,7 +610,7 @@ func Test_input_MoveDocument(t *testing.T) {
 			DB:     moveDB(nil, true, nil, nil),
 			Parent: parentID,
 			Checks: 1,
-			Err:    errors.New("a document cannot be moved under itself or one of its descendants"),
+			Err:    errCyclicParent,
 		},
 		"Error returned by db.UpdateDocumentParentID": {
 			DB:      moveDB(nil, false, nil, assert.AnError),
@@ -622,7 +635,7 @@ func Test_input_MoveDocument(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			inp := testInput(testDeps(c.DB, nil, nil), NameMoveDocument, `{}`)
+			inp := testInput(testDeps(c.DB, nil, nil), NameUpdateDocument, `{}`)
 
 			err := inp.MoveDocument(docID, c.Parent)
 			testutil.AssertEqualError(t, c.Err, err)
@@ -650,7 +663,6 @@ func Test_input_ApplyEdit(t *testing.T) {
 	cc := map[string]struct {
 		DB      *DBMock
 		Applier *EditApplierMock
-		Result  string
 		Touched []xid.ID
 		Applies int
 		Err     error
@@ -684,12 +696,12 @@ func Test_input_ApplyEdit(t *testing.T) {
 			Applier: &EditApplierMock{
 				ApplyFunc: func(context.Context, xid.ID, xid.ID, []edit.Operation, bool) (edit.Result, error) {
 					return edit.Result{
-						Errors: []edit.OpError{{Index: 0, Message: "uid not found"}},
+						Errors: []edit.OpError{{Index: 0, Message: "block_uid not found: a"}},
 					}, nil
 				},
 			},
 			Applies: 1,
-			Err:     errors.New("applying edit: uid not found"),
+			Err:     errors.New("applying edit: no block with uid a in this document; call get_document for the current uids"),
 		},
 		"Partial failure still reports the outcome": {
 			DB: stubDocumentDB(),
@@ -701,14 +713,12 @@ func Test_input_ApplyEdit(t *testing.T) {
 					}, nil
 				},
 			},
-			Result:  `{"applied":1,"errors":[{"index":1,"message":"uid not found"}]}`,
 			Touched: []xid.ID{docID},
 			Applies: 1,
 		},
 		"Applied": {
 			DB:      stubDocumentDB(),
 			Applier: stubApplier(),
-			Result:  `{"applied":1,"errors":[]}`,
 			Touched: []xid.ID{docID},
 			Applies: 1,
 		},
@@ -718,9 +728,9 @@ func Test_input_ApplyEdit(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			inp := testInput(testDeps(c.DB, c.Applier, nil), NameAppendBlock, `{}`)
+			inp := testInput(testDeps(c.DB, c.Applier, nil), NameInsertBlock, `{}`)
 
-			res, err := inp.ApplyEdit(docID, []edit.Operation{edit.Delete("a")})
+			err := inp.ApplyEdit(docID, []edit.Operation{edit.Delete("a")})
 			testutil.AssertEqualError(t, c.Err, err)
 
 			// an edit that never landed has changed nothing to report.
@@ -734,8 +744,6 @@ func Test_input_ApplyEdit(t *testing.T) {
 			if err != nil {
 				return
 			}
-
-			assert.JSONEq(t, c.Result, res)
 
 			// a tool's write is a person's, never core's own: an
 			// edit asking otherwise would land on a protected
@@ -1149,7 +1157,7 @@ func Test_input_NotifyTreeChangeForDocument(t *testing.T) {
 
 			tree := &TreeNotifierMock{}
 
-			testInput(testDeps(c.DB, nil, tree), NameRenameDocument, `{}`).
+			testInput(testDeps(c.DB, nil, tree), NameUpdateDocument, `{}`).
 				NotifyTreeChangeForDocument(_testDocID)
 
 			assert.Len(t, tree.NotifyTreeChangeCalls(), c.Notify)
@@ -1233,4 +1241,48 @@ func Test_input_DataSourceRunner(t *testing.T) {
 	_, err = inp.DataSourceRunner(xid.New())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "list_data_sources")
+}
+
+func Test_input_DocumentBlock(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		DB     *DBMock
+		UID    string
+		Result string
+		Err    error
+	}{
+		"Error returned by db.FetchMainBranchContent": {
+			DB:  stubContentDB(assert.AnError),
+			UID: _stubContentUID,
+			Err: assert.AnError,
+		},
+		"Uid the document does not hold": {
+			DB:  stubContentDB(nil),
+			UID: "zzz",
+			Err: fmt.Errorf("block zzz: %w", errUnknownBlock),
+		},
+		"Block found": {
+			DB:     stubContentDB(nil),
+			UID:    _stubContentUID,
+			Result: "hello",
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			inp := testInput(testDeps(c.DB, nil, nil), NameUpdateBlockText, `{}`)
+
+			b, err := inp.DocumentBlock(_testDocID, c.UID)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, b.Text)
+		})
+	}
 }

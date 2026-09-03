@@ -2,9 +2,9 @@
 // operations endpoint that mutates live Y.Docs. AI-generated edits
 // flow:
 //
-//	block.Block  --Expand-->  document.Block (PM JSON)
-//	                              |
-//	                              v
+//	block.Block  --block.Expand-->  document.Block (PM JSON)
+//	                                    |
+//	                                    v
 //	edit.Operation  --Apply-->  POST /api/internal/.../operations
 //	                              |
 //	                              v
@@ -22,79 +22,65 @@ import (
 )
 
 // Operation is one edit to apply to a live document. An Operation
-// returns the JSON shape expected by the Node endpoint; failures
-// (typically canonical expansion errors) are reported as errors so
-// Apply can fail fast before the round-trip. Operations are
-// constructed via the package-level helpers (InsertAfter,
-// InsertBefore, Append, Prepend, Replace, UpdateText, UpdateAttrs,
-// Delete, SetName, SetIcon) and applied as a batch via Client.Apply. Blocks are
-// expanded to ProseMirror at wire time so a re-extracted block
-// doesn't ship a stale payload.
+// returns the JSON shape expected by the Node endpoint; a failure to
+// produce one is reported as an error so Apply can fail fast before
+// the round-trip. Operations are constructed via the package-level
+// helpers (InsertAfter, InsertBefore, Append, Prepend, Replace,
+// UpdateText, UpdateAttrs, Delete, SetName, SetIcon) and applied as a
+// batch via Client.Apply. A block-carrying operation takes the
+// expanded editor tree, uids already resolved, so the caller can
+// report the uids the write lands with.
 type Operation func() (wireOp, error)
 
 // InsertAfter builds an operation that inserts b immediately after
-// the block identified by referenceUID. The block argument is
-// expanded into ProseMirror JSON at send time.
-func InsertAfter(referenceUID string, b block.Block) Operation {
+// the block identified by referenceUID. b is the expanded editor
+// tree, uids resolved, so the caller knows the uids the write lands
+// with.
+func InsertAfter(referenceUID string, b document.Block) Operation {
 	return insert("after", referenceUID, b)
 }
 
 // InsertBefore builds an operation that inserts b immediately
 // before the block identified by referenceUID.
-func InsertBefore(referenceUID string, b block.Block) Operation {
+func InsertBefore(referenceUID string, b document.Block) Operation {
 	return insert("before", referenceUID, b)
 }
 
 // insert builds the shared wire closure behind InsertAfter and
 // InsertBefore.
-func insert(position, referenceUID string, b block.Block) Operation {
-	return withBlock(b, func(expanded *document.Block) wireOp {
+func insert(position, referenceUID string, b document.Block) Operation {
+	return func() (wireOp, error) {
 		return wireOp{
 			Kind:         "insert",
 			Position:     position,
 			ReferenceUID: referenceUID,
-			Block:        expanded,
-		}
-	})
+			Block:        &b,
+		}, nil
+	}
 }
 
 // Append builds an operation that adds b at the end of the
 // document's top-level content.
-func Append(b block.Block) Operation {
-	return withBlock(b, func(expanded *document.Block) wireOp {
-		return wireOp{Kind: "append", Block: expanded}
-	})
+func Append(b document.Block) Operation {
+	return func() (wireOp, error) {
+		return wireOp{Kind: "append", Block: &b}, nil
+	}
 }
 
 // Prepend builds an operation that adds b at the start of the
 // document's top-level content.
-func Prepend(b block.Block) Operation {
-	return withBlock(b, func(expanded *document.Block) wireOp {
-		return wireOp{Kind: "prepend", Block: expanded}
-	})
+func Prepend(b document.Block) Operation {
+	return func() (wireOp, error) {
+		return wireOp{Kind: "prepend", Block: &b}, nil
+	}
 }
 
 // Replace builds an operation that replaces the block identified by
 // blockUID with b. The replacement preserves the original position
-// in its parent; its uid is taken from b (or freshly generated when
-// b.UID is empty).
-func Replace(blockUID string, b block.Block) Operation {
-	return withBlock(b, func(expanded *document.Block) wireOp {
-		return wireOp{Kind: "replace", BlockUID: blockUID, Block: expanded}
-	})
-}
-
-// withBlock builds an operation that expands b to ProseMirror at
-// wire time and hands the result to wrap for the kind-specific wire
-// form.
-func withBlock(b block.Block, wrap func(expanded *document.Block) wireOp) Operation {
+// in its parent and lands with the uids b carries.
+func Replace(blockUID string, b document.Block) Operation {
 	return func() (wireOp, error) {
-		expanded, err := block.Expand(b)
-		if err != nil {
-			return wireOp{}, err
-		}
-
-		return wrap(&expanded), nil
+		return wireOp{Kind: "replace", BlockUID: blockUID, Block: &b}, nil
 	}
 }
 

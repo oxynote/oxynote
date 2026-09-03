@@ -67,6 +67,25 @@ func walkDocForAssistant(blocks []document.Block) []docSummaryEntry {
 	return w.out
 }
 
+// blockRows builds the summary rows for one block and everything nested
+// in it: what a write returns for the block it wrote or touched. Depth
+// is relative to the block, so the block itself sits at 0 with no
+// parent. A kind the document walk never lists on its own (titled_code
+// lives only inside split_doc.right) still gets its one row here, since
+// the caller just wrote it and needs its uid back.
+func blockRows(b document.Block) []docSummaryEntry {
+	w := &docWalker{}
+	w.walkLevel([]document.Block{b}, 0, "")
+
+	if len(w.out) == 0 {
+		if uid, ok := b.UID(); ok && uid != "" {
+			w.emit(b, uid, 0, "", hasAddressableChildren(b))
+		}
+	}
+
+	return w.out
+}
+
 // docWalker accumulates the summary entries walkDocForAssistant
 // produces as it recurses through the document tree.
 type docWalker struct {

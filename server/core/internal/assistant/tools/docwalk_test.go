@@ -269,3 +269,45 @@ func Test_summaryAttrs(t *testing.T) {
 		})
 	}
 }
+
+func Test_blockRows(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Block  document.Block
+		Result []docSummaryEntry
+	}{
+		"Block without a uid yields nothing": {
+			Block: pmBlock(document.BlockNodeParagraph, "", nil, pmText("x")),
+		},
+		"Block sits at depth zero with no parent": {
+			Block:  pmBlock(document.BlockNodeParagraph, "p", nil, pmText("hello")),
+			Result: []docSummaryEntry{{UID: "p", Kind: "paragraph", Text: "hello"}},
+		},
+		"Nested entries follow the block": {
+			Block: pmBlock(document.BlockNodeBulletList, "l", nil,
+				pmBlock(document.BlockNodeListItem, "i", nil,
+					pmBlock(document.BlockNodeParagraph, "", nil, pmText("one")),
+				),
+			),
+			Result: []docSummaryEntry{
+				{UID: "l", Kind: "bullet_list", Text: "one"},
+				{UID: "i", Kind: "list_item", Text: "one", Depth: 1, ParentUID: "l"},
+			},
+		},
+		// the document walk never lists a titled code block on its own,
+		// but a write of one still has to hand its uid back.
+		"Kind the document walk skips still gets its row": {
+			Block:  pmBlock(document.BlockNodeTitledCodeBlock, "t", map[string]any{"title": "Request"}, pmText("GET /")),
+			Result: []docSummaryEntry{{UID: "t", Kind: "titled_code", Text: "GET /"}},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, blockRows(c.Block))
+		})
+	}
+}

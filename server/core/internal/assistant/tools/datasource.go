@@ -651,7 +651,7 @@ func (queryPrometheus) Execute(inp Input) (string, error) {
 
 	res, err := prom.QueryRange(inp.Context(), in.Query, tr)
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameQueryPrometheus, err)
+		return "", fmt.Errorf("%s: %w; check the query against get_prometheus_metadata", NameQueryPrometheus, err)
 	}
 
 	if in.ChartType == "" {
@@ -946,7 +946,7 @@ type querySQL struct {
 func (querySQL) Info() Info {
 	return Info{
 		Name:        NameQuerySQL,
-		Description: "Run a read-only query against a PostgreSQL, MariaDB or MySQL data source. Returns columns and rows by default, with the row count capped; with chart_type set it instead describes what a metric block would render, which is how to check a query before writing it into a block. $__ macros ($__timeFilter, $__timeGroupAlias and the rest) are expanded against the window.",
+		Description: "Run a read-only query against a PostgreSQL, MariaDB or MySQL data source. Returns columns and rows by default; with chart_type set it instead describes what a metric block would render, which is how to check a query before writing it into a block. $__ macros ($__timeFilter, $__timeGroupAlias and the rest) are expanded against the window.",
 		Properties: dataSourceProps(map[string]any{
 			_keyQuery:     stringProp("The SQL query to run. For a chart, select a time column aliased \"time\" plus one or more numeric columns."),
 			_keyChartType: stringProp(_descChartType),
@@ -1021,7 +1021,7 @@ func runPostgreSQLQuery(
 
 	res, err := pg.Query(inp.Context(), query, tr)
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameQuerySQL, err)
+		return "", fmt.Errorf("%s: %w; check the query against get_sql_metadata", NameQuerySQL, err)
 	}
 
 	if ct == "" {
@@ -1050,7 +1050,7 @@ func runMySQLQuery(
 
 	res, err := my.Query(inp.Context(), query, tr)
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameQuerySQL, err)
+		return "", fmt.Errorf("%s: %w; check the query against get_sql_metadata", NameQuerySQL, err)
 	}
 
 	if ct == "" {

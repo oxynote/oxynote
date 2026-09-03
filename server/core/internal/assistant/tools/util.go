@@ -28,10 +28,33 @@ func joinOpErrors(errs []edit.OpError) string {
 	msgs := make([]string, 0, len(errs))
 
 	for _, e := range errs {
-		msgs = append(msgs, e.Message)
+		msgs = append(msgs, describeOpError(e.Message))
 	}
 
 	return strings.Join(msgs, "; ")
+}
+
+// _opKindNames maps the realtime service's operation kinds, which it
+// names in its errors, to the tools the model knows them as.
+var _opKindNames = strings.NewReplacer("update_text", "update_block_text")
+
+// describeOpError rewrites a realtime-service operation error into
+// what the model can act on: a uid it holds no block for points at
+// get_document, a reference inside the moved block says what to pick
+// instead, and an operation kind is named as its tool. A message with
+// no rewrite passes through as it is.
+func describeOpError(msg string) string {
+	for _, prefix := range []string{"reference_uid not found: ", "block_uid not found: "} {
+		if uid, ok := strings.CutPrefix(msg, prefix); ok {
+			return fmt.Sprintf("no block with uid %s in this document; call get_document for the current uids", uid)
+		}
+	}
+
+	if uid, ok := strings.CutPrefix(msg, "reference_uid is inside the moved block: "); ok {
+		return fmt.Sprintf("reference block %s sits inside the block being moved; choose a reference outside it", uid)
+	}
+
+	return _opKindNames.Replace(msg)
 }
 
 // errRequired reports an argument the tool cannot act without.

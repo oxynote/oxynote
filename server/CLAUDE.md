@@ -169,8 +169,9 @@ Writing a rule:
 
 ## Assistant tools
 
-Tools are grouped by what they act on, a few per file: `document.go` (the tree and one
-document's metadata), `block.go` (reading and editing content), `search.go`,
+Tools are grouped by what they act on, a few per file: `document.go` (the tree, one
+document read whole, and a document's name, icon and place), `block.go` (reading one
+block and editing content), `search.go`,
 `datasource.go` (reads against the organisation's outbound connections). `eino.go` is
 the odd one out — it holds the agent-framework adapter and `read_tool_output`, the one
 tool that exists because of eino rather than because of the domain. `tools.Set` is the
@@ -189,6 +190,21 @@ carrying the output and `Documents`. Every write goes through one of four `Input
 methods — `ApplyEdit`, `CreateDocument`, `MoveDocument`, `DeleteDocument` — and the
 first three record the document as the mutation happens. A delete records nothing: the
 document it names is gone.
+
+**A block write reports what it wrote from the operation, never from a re-read.** The
+realtime service applies an edit to the live document and persists it on a debounce, so
+content read back right after a write may not show it. A write therefore expands its
+block once (`expandForWrite`) to learn the uids it will land with, ships the canonical
+form carrying those uids, and returns `blockRows` of the expanded tree; a write to an
+existing block reads it (`Input.DocumentBlock`) before the edit and patches the change
+onto that. Depth in those rows counts from the block itself.
+
+**Every error names the next step.** The realtime service's operation errors are
+rewritten at the boundary (`describeOpError`): a uid it holds no block for points at
+`get_document`, and its operation kinds are named as the model's tools. Errors the
+package raises itself follow the same shape (`errUnknownDocument`, `errUnknownBlock`,
+`errBranchProtected`, `errUnknownParent`): what was wrong, then the tool or argument
+that fixes it. The service's own messages stay as they are; it is not a model surface.
 
 **`Decode` is the only way into a call's arguments.** There is no lenient variant:
 `Title`, `Summary` and `Execute` all decode and all return an error, so no description is

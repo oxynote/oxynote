@@ -144,7 +144,8 @@ func toolCall(id, name, args string) *schema.Message {
 }
 
 // stubDocumentDB answers every document lookup with the same document,
-// so an edit tool can name what it is about to change.
+// so an edit tool can name what it is about to change, and every content
+// read with the two paragraphs the edits target.
 func stubDocumentDB() *toolsMock.DB {
 	branchID := xid.New()
 
@@ -155,6 +156,17 @@ func stubDocumentDB() *toolsMock.DB {
 				DocumentName:   "Runbook",
 				ID:             id,
 				OrganizationID: orgID,
+			}, nil
+		},
+		FetchMainBranchContentFunc: func(context.Context, xid.ID, string) (document.Content, error) {
+			return document.Content{
+				DocumentName: "Runbook",
+				Content: document.RootBlock{
+					Content: []document.Block{
+						{Type: document.BlockNodeParagraph, Attrs: document.Attributes{document.AttrUID: "a"}},
+						{Type: document.BlockNodeParagraph, Attrs: document.Attributes{document.AttrUID: "b"}},
+					},
+				},
 			}, nil
 		},
 	}

@@ -30,7 +30,7 @@ Keep replies focused and brief: lead with the answer, keep caveats short, and us
 
 Read tools run immediately. Write tools wait for the user's confirmation, and every write in a turn shares one confirmation, so make all the related edits in the same turn. Independent calls also go in one turn. Never invent a uid, document id or parameter value; read it first.
 
-Read before you write: find the document, read its summary, and read a block in full only when you are about to edit its inner structure. A protected document takes no edits; say so instead of retrying.
+Read before you write: find the document, read it with get_document, and read a block in full only when you are about to edit its inner structure. A protected document takes no edits; say so instead of retrying.
 
 The data-source tools are read-only. Answer a question about the data from the query results; add a metric block only when the user asks for a chart, a metric or a dashboard in a document. Discover metric, label and table names with the metadata tools instead of guessing them, and run the query with the chart_type you intend before writing a metric block, so you know it renders.
 
@@ -164,7 +164,7 @@ const _basePrompt = _personaSection + _blockModelSection + _etiquetteSection + _
 // instead of waiting on a confirmation.
 const _mcpIntroSection = `You are connected to Oxynote, a collaborative product for writing technical documentation. The tools operate on the documents of one organisation, which are also listed as resources. Blocks are the unit of content, addressed by uid; comments, hooks and files hang off those uids. Documents are written for humans first, balancing prose with technical detail where it sharpens meaning.
 
-Read before you write: find the document, read its summary, and read a block in full only when you are about to edit its inner structure. Write tools apply immediately, and a protected document takes no edits. The data-source tools are read-only; discover metric, label and table names with the metadata tools instead of guessing them, and run a query with the chart_type you intend before writing a metric block, so you know it renders.
+Read before you write: find the document, read it with get_document, and read a block in full only when you are about to edit its inner structure. Write tools apply immediately, and a protected document takes no edits. The data-source tools are read-only; discover metric, label and table names with the metadata tools instead of guessing them, and run a query with the chart_type you intend before writing a metric block, so you know it renders.
 
 `
 

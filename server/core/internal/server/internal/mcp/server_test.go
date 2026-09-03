@@ -12,7 +12,6 @@ import (
 var _readToolNames = []string{
 	"list_documents",
 	"get_document",
-	"read_document_summary",
 	"read_block",
 	"search_documents",
 }
@@ -22,12 +21,8 @@ var _readToolNames = []string{
 var _writeToolNames = []string{
 	"create_document",
 	"delete_document",
-	"rename_document",
-	"set_document_icon",
-	"move_document",
+	"update_document",
 	"insert_block",
-	"append_block",
-	"prepend_block",
 	"replace_block",
 	"update_block_text",
 	"update_block_attrs",
