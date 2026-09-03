@@ -129,6 +129,39 @@ describe("<ChatBox>", { concurrent: false }, () => {
 		expect(messageTexts(wrapper)).toEqual(["hello", "quack"])
 	})
 
+	// happy-dom lays nothing out, so the container is told how tall its
+	// content is and the scroll position is what the box does with that
+	function messageList(wrapper: VueWrapper, scrollHeight: number) {
+		const container = wrapper.get(".overflow-y-auto").element
+		Object.defineProperty(container, "scrollHeight", { value: scrollHeight })
+
+		return container
+	}
+
+	it("keeps the newest message in view", async ({ expect }) => {
+		const wrapper = await mountChat()
+		const container = messageList(wrapper, 480)
+
+		chat.messages.value.push({ role: ChatMessageRole.User, text: "hello" })
+		await nextTick()
+		await nextTick()
+
+		expect(container.scrollTop).toBe(480)
+	})
+
+	it("keeps a streaming answer in view", async ({ expect }) => {
+		const answer = ref({ role: ChatMessageRole.Assistant, text: "qua" })
+		chat.messages.value = [answer.value]
+		const wrapper = await mountChat()
+		const container = messageList(wrapper, 640)
+
+		answer.value.text = "quack"
+		await nextTick()
+		await nextTick()
+
+		expect(container.scrollTop).toBe(640)
+	})
+
 	it("renders an answer's markdown", async ({ expect }) => {
 		chat.messages.value = [
 			{ role: ChatMessageRole.Assistant, text: "**bold** answer" },

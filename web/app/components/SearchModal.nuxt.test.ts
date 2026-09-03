@@ -300,6 +300,17 @@ describe("<SearchModal>", { concurrent: false }, () => {
 		expect(wrapper.emitted("update:modelValue")?.at(-1)).toEqual([false])
 	})
 
+	it("closes on escape", async ({ expect }) => {
+		const wrapper = await mountModal()
+
+		searchInput().dispatchEvent(
+			new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+		)
+		await nextTick()
+
+		expect(wrapper.emitted("update:modelValue")?.at(-1)).toEqual([false])
+	})
+
 	it("forgets the previous query when it is reopened", async ({ expect }) => {
 		mockSearch([])
 		const wrapper = await mountModal()
