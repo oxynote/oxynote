@@ -2,11 +2,11 @@
 import { extractInitials } from "~/utils/object"
 import {
 	processDocumentTree,
+	processTagTree,
 	type PlainActionFn,
 	type SidebarItem,
+	type SidebarItemAction,
 	type SidebarItemCreate,
-	type SidebarItemDelete,
-	type SidebarItemDuplicate,
 	type SidebarItemLocationUpdate,
 } from "./sidebar"
 import SidebarNestedGroup from "./SidebarNestedGroup.vue"
@@ -26,6 +26,13 @@ const emit = defineEmits<{
 
 const { t } = useI18n({ useScope: "global" })
 const { fetchDocumentTree, updateDocumentTree } = useDocumentAPI()
+const {
+	fetchTagTree,
+	updateTagTree,
+	updateTagVisibility,
+	deleteTag,
+	unassignDocumentTag,
+} = useTagAPI()
 const { fetchOrganization, safeSignOut } = useAuthSession()
 const { fetchGitHubConnectionStatus, gitHubConfigured, fetchGitHubInstallURL } =
 	useGitHubAPI()
@@ -38,6 +45,7 @@ const { openExternalLink } = useExternalLinks()
 const isSearchModalOpen = ref(false)
 const wsState = useWebSocketStateStore()
 let unsubWsTreeChange: (() => void) | null | undefined = null
+let unsubWsTagTreeChange: (() => void) | null | undefined = null
 let initialLoadComplete = false
 
 const { toggleSidebar } = useSidebar()
@@ -58,6 +66,7 @@ useShortcut(SHORTCUT_ACTIONS.toggleSettings.keyboardKey, () => {
 })
 
 interface Section {
+	id: string
 	heading?: string
 	headingAction?: {
 		title: string
@@ -69,17 +78,22 @@ interface Section {
 		fn: PlainActionFn
 	}
 	isEmptyAfterLoad?: boolean
+	// shown in place of the rows while the section has none
+	emptyMessage?: string
 	items: SidebarItem[]
+	onUpdateLocation?: (data: SidebarItemLocationUpdate) => void | Promise<void>
 }
 
 const sections = computed<Section[]>(() => {
 	const topSection: Section = {
+		id: "top",
 		// no group heading
 		items: [],
 	}
 	const rootItems: Section[] = [
 		topSection,
 		{
+			id: "workspace",
 			heading: t("sidebar.sections.main-workspace.heading"),
 			headingAction: {
 				title: t("sidebar.sections.main-workspace.heading-action-title"),
@@ -94,12 +108,35 @@ const sections = computed<Section[]>(() => {
 				editorStore.activeDocumentId,
 				t("sidebar.item-placeholder-name"),
 				fetchOrganization.data.value?.data?.name || "",
+				documentActions,
 			),
 			isEmptyAfterLoad:
 				!fetchDocumentTree.data.value?.length &&
 				!fetchDocumentTree.isPending.value,
+			onUpdateLocation: handleDocumentLocationUpdate,
 		},
 	]
+	const tagItems = processTagTree(
+		fetchTagTree.data.value ?? [],
+		editorStore.activeDocumentId,
+		fetchOrganization.data.value?.data?.name || "",
+		tagActions,
+		taggedDocumentActions,
+	)
+
+	// the section stays as long as the organization has any tag at all: it
+	// carries the control that brings a hidden one back, and hiding the
+	// last visible tag would otherwise take that control with it.
+	if (fetchTagTree.data.value?.length) {
+		rootItems.push({
+			id: "tags",
+			heading: t("sidebar.sections.tags.heading"),
+			emptyMessage: t("sidebar.sections.tags.all-hidden"),
+			items: tagItems,
+			onUpdateLocation: handleTagLocationUpdate,
+		})
+	}
+
 	const topSectionItems: SidebarItem[] = [
 		{
 			id: "search-button",
@@ -108,9 +145,10 @@ const sections = computed<Section[]>(() => {
 			onClick: () => {
 				isSearchModalOpen.value = true
 			},
-			partOfDocumentTree: false,
+			acceptsChildren: false,
 			active: false,
 			draggable: false,
+			actions: [],
 			shortcutTooltip: SHORTCUT_ACTIONS.searchForDocuments,
 			children: null,
 		},
@@ -122,9 +160,10 @@ const sections = computed<Section[]>(() => {
 			onClick: () => {
 				emit("toggle-notifications")
 			},
-			partOfDocumentTree: false,
+			acceptsChildren: false,
 			active: props.notificationSidebarOpen,
 			draggable: false,
+			actions: [],
 			shortcutTooltip: SHORTCUT_ACTIONS.toggleInbox,
 			children: null,
 		},
@@ -144,9 +183,10 @@ const sections = computed<Section[]>(() => {
 			onClick: () => {
 				emit("open-settings", "org-members")
 			},
-			partOfDocumentTree: false,
+			acceptsChildren: false,
 			active: false,
 			draggable: false,
+			actions: [],
 			prefetchUrlOnInteraction: false,
 			localOptimisticInsert: false,
 			children: null,
@@ -164,9 +204,10 @@ const sections = computed<Section[]>(() => {
 			onClick: async () => {
 				await installGitHub()
 			},
-			partOfDocumentTree: false,
+			acceptsChildren: false,
 			active: false,
 			draggable: false,
+			actions: [],
 			prefetchUrlOnInteraction: false,
 			localOptimisticInsert: false,
 			children: null,
@@ -184,9 +225,10 @@ const sections = computed<Section[]>(() => {
 			onClick: async () => {
 				await installSlack()
 			},
-			partOfDocumentTree: false,
+			acceptsChildren: false,
 			active: false,
 			draggable: false,
+			actions: [],
 			prefetchUrlOnInteraction: false,
 			localOptimisticInsert: false,
 			children: null,
@@ -195,6 +237,7 @@ const sections = computed<Section[]>(() => {
 
 	if (nextStepsItems.length) {
 		rootItems.push({
+			id: "next-steps",
 			heading: t("sidebar.sections.next-steps.heading"),
 			items: nextStepsItems,
 		})
@@ -205,6 +248,7 @@ const sections = computed<Section[]>(() => {
 
 onBeforeMount(() => {
 	void fetchDocumentTree.refresh()
+	void fetchTagTree.refresh()
 	void fetchOrganization.refresh()
 	void fetchNotificationCount.refresh()
 })
@@ -215,9 +259,16 @@ onMounted(() => {
 			void fetchDocumentTree.refetch()
 		},
 	)
+	unsubWsTagTreeChange = wsState.state?.subscribe(
+		WS_TAG_TREE_CHANGE_TOPIC,
+		() => {
+			void fetchTagTree.refetch()
+		},
+	)
 })
 onUnmounted(() => {
 	unsubWsTreeChange?.()
+	unsubWsTagTreeChange?.()
 })
 
 if (import.meta.client) {
@@ -253,11 +304,104 @@ function handleCreate(data: SidebarItemCreate) {
 	emit("create-document", data.parentId)
 }
 
-function handleDuplicate(data: SidebarItemDuplicate) {
-	emit("duplicate-document", data.id)
+function documentActions(documentId: string): SidebarItemAction[] {
+	return [
+		{
+			id: "duplicate-page",
+			name: t("sidebar.item-dropdown-menu-buttons.duplicate-page"),
+			icon: "mingcute:copy-2-line",
+			fn: () => {
+				emit("duplicate-document", documentId)
+			},
+		},
+		{
+			id: "add-sub-page",
+			name: t("sidebar.item-dropdown-menu-buttons.add-sub-page"),
+			icon: "lucide:file-plus",
+			fn: () => {
+				emit("create-document", documentId)
+			},
+		},
+		{
+			id: "delete-page",
+			name: t("sidebar.item-dropdown-menu-buttons.delete-page"),
+			icon: "lucide:trash-2",
+			fn: () => {
+				emit("delete-document", documentId)
+			},
+		},
+	]
 }
 
-async function handleLocationUpdate(data: SidebarItemLocationUpdate) {
+function handleTagVisibilityToggle(tag: TagTreeElement) {
+	void handleTagVisibilityUpdate(tag.id, { hidden: !tag.hidden })
+}
+
+function tagActions(tag: TagTreeElement): SidebarItemAction[] {
+	return [
+		{
+			id: "hide-tag",
+			name: t("sidebar.item-dropdown-menu-buttons.hide-tag"),
+			icon: "lucide:eye-off",
+			fn: async () => {
+				await handleTagVisibilityUpdate(tag.id, { hidden: true })
+			},
+		},
+		{
+			id: "delete-tag",
+			name: t("sidebar.item-dropdown-menu-buttons.delete-tag"),
+			icon: "lucide:trash-2",
+			fn: async () => {
+				await handleTagDelete(tag.id)
+			},
+		},
+	]
+}
+
+function taggedDocumentActions(
+	documentId: string,
+	tagId: string,
+): SidebarItemAction[] {
+	return [
+		{
+			id: "remove-tag",
+			name: t("sidebar.item-dropdown-menu-buttons.remove-tag"),
+			icon: "lucide:x",
+			fn: async () => {
+				await handleDocumentTagRemoval(documentId, tagId)
+			},
+		},
+	]
+}
+
+async function handleTagVisibilityUpdate(id: string, req: { hidden: boolean }) {
+	try {
+		await updateTagVisibility.mutateAsync({ id: id, req: req })
+	} catch {
+		showToastMessage("error", t("sidebar.errors.update-tag-failed"))
+	}
+}
+
+async function handleTagDelete(id: string) {
+	try {
+		await deleteTag.mutateAsync(id)
+	} catch {
+		showToastMessage("error", t("sidebar.errors.delete-tag-failed"))
+	}
+}
+
+async function handleDocumentTagRemoval(documentId: string, tagId: string) {
+	try {
+		await unassignDocumentTag.mutateAsync({
+			documentId: documentId,
+			tagId: tagId,
+		})
+	} catch {
+		showToastMessage("error", t("sidebar.errors.remove-document-tag-failed"))
+	}
+}
+
+async function handleDocumentLocationUpdate(data: SidebarItemLocationUpdate) {
 	try {
 		await updateDocumentTree.mutateAsync({
 			id: data.id,
@@ -269,8 +413,15 @@ async function handleLocationUpdate(data: SidebarItemLocationUpdate) {
 	}
 }
 
-function handleDelete(data: SidebarItemDelete) {
-	emit("delete-document", data.id)
+async function handleTagLocationUpdate(data: SidebarItemLocationUpdate) {
+	try {
+		await updateTagTree.mutateAsync({
+			id: data.id,
+			insertBeforeId: data.insertBeforeId,
+		})
+	} catch {
+		showToastMessage("error", t("sidebar.errors.update-tags-failed"))
+	}
 }
 
 async function installGitHub() {
@@ -325,10 +476,7 @@ async function installSlack() {
 					</ShadcnUiSidebarMenu>
 				</ShadcnUiSidebarHeader>
 				<ShadcnUiSidebarContent>
-					<ShadcnUiSidebarGroup
-						v-for="(section, index) in sections"
-						:key="index"
-					>
+					<ShadcnUiSidebarGroup v-for="section in sections" :key="section.id">
 						<ShadcnUiSidebarGroupLabel v-if="section.heading">
 							{{ section.heading }}
 						</ShadcnUiSidebarGroupLabel>
@@ -342,15 +490,24 @@ async function installSlack() {
 								<span class="sr-only">{{ section.headingAction.title }}</span>
 							</ShadcnUiSidebarGroupAction>
 						</ShortcutTooltip>
+						<SidebarTagVisibility
+							v-if="section.id === 'tags'"
+							:tags="fetchTagTree.data.value ?? []"
+							@toggle="handleTagVisibilityToggle"
+						/>
 						<ShadcnUiSidebarGroupContent>
-							<ShadcnUiSidebarMenu>
+							<div
+								v-if="section.emptyMessage && !section.items.length"
+								class="px-2 py-1.25 text-2sm text-sidebar-foreground/60"
+							>
+								{{ section.emptyMessage }}
+							</div>
+							<ShadcnUiSidebarMenu v-else>
 								<SidebarNestedGroup
 									v-model="section.items"
 									:item-id="null"
 									@create="handleCreate"
-									@duplicate="handleDuplicate"
-									@update-location="handleLocationUpdate"
-									@delete="handleDelete"
+									@update-location="section.onUpdateLocation"
 								/>
 							</ShadcnUiSidebarMenu>
 						</ShadcnUiSidebarGroupContent>

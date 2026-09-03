@@ -21,6 +21,11 @@
 				"heading": "Workspace",
 				"heading-action-title": "Add Page"
 			},
+			"tags": {
+				"heading": "Tags",
+				"visibility-action-title": "Choose Visible Tags",
+				"all-hidden": "Every tag is hidden"
+			},
 			"next-steps": {
 				"heading": "Next Steps",
 				"items": {
@@ -40,13 +45,20 @@
 		"item-dropdown-menu-buttons": {
 			"add-sub-page": "Add Sub Page",
 			"duplicate-page": "Duplicate Page",
-			"delete-page": "Delete Page"
+			"delete-page": "Delete Page",
+			"remove-tag": "Remove Tag",
+			"delete-tag": "Delete Tag",
+			"hide-tag": "Hide Tag"
 		},
 		"item-placeholder-name": "Add Page",
 		"toggle-sidebar": "Toggle Sidebar",
 		"errors": {
 			"create-document-failed": "Failed to create a page. Please try again",
 			"update-tree-failed": "Failed to update the page location. Please try again",
+			"update-tags-failed": "Failed to update the tag order. Please try again",
+			"update-tag-failed": "Failed to update the tag. Please try again",
+			"delete-tag-failed": "Failed to delete the tag. Please try again",
+			"remove-document-tag-failed": "Failed to remove the tag from the page. Please try again",
 			"signout-failed": "Failed to log out. Please try again"
 		},
 		"search": {

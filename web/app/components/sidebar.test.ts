@@ -4,7 +4,33 @@ import {
 	documentTreeBreadcrumbs,
 	extractDocumentTreeElement,
 	processDocumentTree,
+	processTagTree,
+	type SidebarItemAction,
 } from "./sidebar"
+
+// the tree builders take their menus from the caller, so the tests hand
+// them a recognisable one instead of the app's real handlers. One object
+// per id: a fresh closure per call would never compare equal to itself.
+const _actions = new Map<string, SidebarItemAction>()
+
+function action(id: string): SidebarItemAction {
+	const existing = _actions.get(id)
+	if (existing) {
+		return existing
+	}
+
+	const made: SidebarItemAction = {
+		id: id,
+		name: id,
+		icon: `lucide:${id}`,
+		fn: () => undefined,
+	}
+	_actions.set(id, made)
+
+	return made
+}
+
+const noActions = () => []
 
 // isXid() only checks for a 20-character length, and
 // createNameSlugWithId() rejects anything shorter
@@ -35,6 +61,7 @@ describe("processDocumentTree", () => {
 			null,
 			"placeholder",
 			"Acme Corp",
+			noActions,
 		)
 
 		expect(items).toEqual([
@@ -42,12 +69,13 @@ describe("processDocumentTree", () => {
 				id: ID_A,
 				name: "Runbook",
 				icon: "lucide:file",
-				partOfDocumentTree: true,
+				acceptsChildren: true,
 				active: false,
 				draggable: true,
 				url: `/Acme-Corp/Runbook-${ID_A}`,
 				prefetchUrlOnInteraction: true,
 				localOptimisticInsert: undefined,
+				actions: [],
 				children: [
 					expect.objectContaining({ id: SIDEBAR_ITEM_PLACEHOLDER_ID }),
 				],
@@ -61,6 +89,7 @@ describe("processDocumentTree", () => {
 			ID_B,
 			"placeholder",
 			"Acme",
+			noActions,
 		)
 
 		expect(items.map((item) => item.active)).toEqual([false, true])
@@ -74,6 +103,7 @@ describe("processDocumentTree", () => {
 			null,
 			"placeholder",
 			"Acme",
+			noActions,
 		)
 
 		expect(item?.url).toBe("#")
@@ -86,6 +116,7 @@ describe("processDocumentTree", () => {
 			null,
 			"placeholder",
 			"Acme",
+			noActions,
 		)
 
 		expect(items[0]?.children).toEqual([
@@ -101,6 +132,7 @@ describe("processDocumentTree", () => {
 			null,
 			"Add a page",
 			"Acme",
+			noActions,
 		)
 
 		expect(items[0]?.children).toEqual([
@@ -108,10 +140,11 @@ describe("processDocumentTree", () => {
 				id: SIDEBAR_ITEM_PLACEHOLDER_ID,
 				name: "Add a page",
 				url: null,
-				partOfDocumentTree: true,
+				acceptsChildren: false,
 				icon: null,
 				active: false,
 				draggable: false,
+				actions: [],
 				children: [],
 			},
 		])
@@ -125,6 +158,7 @@ describe("processDocumentTree", () => {
 			null,
 			"Add a page",
 			"Acme",
+			noActions,
 		)
 
 		expect(items[0]?.children).toEqual([
@@ -133,7 +167,7 @@ describe("processDocumentTree", () => {
 	})
 
 	it("returns a lone placeholder for an empty tree", ({ expect }) => {
-		const items = processDocumentTree([], null, "Add a page", "Acme")
+		const items = processDocumentTree([], null, "Add a page", "Acme", noActions)
 
 		expect(items).toEqual([
 			expect.objectContaining({
@@ -141,6 +175,158 @@ describe("processDocumentTree", () => {
 				name: "Add a page",
 			}),
 		])
+	})
+})
+
+function tagElement(
+	id: string,
+	tagName: string,
+	documents?: DocumentTreeElement[] | null,
+): TagTreeElement {
+	return {
+		id: id,
+		tagName: tagName,
+		color: "#22c55e",
+		hidden: false,
+		documents: documents,
+	}
+}
+
+describe("processTagTree", () => {
+	it("maps a tag onto a draggable row carrying its colour", ({ expect }) => {
+		const items = processTagTree(
+			[tagElement(ID_A, "Production")],
+			null,
+			"Acme",
+			() => [action("hide-tag")],
+			noActions,
+		)
+
+		expect(items).toEqual([
+			{
+				id: ID_A,
+				name: "Production",
+				dotColor: "#22c55e",
+				acceptsChildren: false,
+				active: false,
+				draggable: true,
+				dragGroup: "tags",
+				actions: [action("hide-tag")],
+				children: null,
+			},
+		])
+	})
+
+	it("lists a tag's documents as links into the organization", ({ expect }) => {
+		const items = processTagTree(
+			[tagElement(ID_A, "Production", [treeElement(ID_B, "Runbook")])],
+			null,
+			"Acme Corp",
+			noActions,
+			(documentId, tagId) => [action(`remove-${documentId}-from-${tagId}`)],
+		)
+
+		expect(items[0]?.children).toEqual([
+			{
+				id: ID_B,
+				name: "Runbook",
+				icon: "lucide:file",
+				acceptsChildren: true,
+				active: false,
+				draggable: false,
+				dragGroup: "tag-documents",
+				url: `/Acme-Corp/Runbook-${ID_B}`,
+				prefetchUrlOnInteraction: true,
+				actions: [action(`remove-${ID_B}-from-${ID_A}`)],
+				children: null,
+			},
+		])
+	})
+
+	it("recurses into a document's own children", ({ expect }) => {
+		const items = processTagTree(
+			[
+				tagElement(ID_A, "Production", [
+					treeElement(ID_B, "Parent", [treeElement(ID_C, "Child")]),
+				]),
+			],
+			null,
+			"Acme",
+			noActions,
+			noActions,
+		)
+
+		expect(items[0]?.children?.[0]?.children).toEqual([
+			expect.objectContaining({ id: ID_C, name: "Child", draggable: false }),
+		])
+	})
+
+	it("marks the document that is currently open", ({ expect }) => {
+		const items = processTagTree(
+			[
+				tagElement(ID_A, "Production", [
+					treeElement(ID_B, "First"),
+					treeElement(ID_C, "Second"),
+				]),
+			],
+			ID_C,
+			"Acme",
+			noActions,
+			noActions,
+		)
+
+		expect(items[0]?.children?.map((child) => child.active)).toEqual([
+			false,
+			true,
+		])
+	})
+
+	it("offers the detach action only to the documents carrying the tag", ({
+		expect,
+	}) => {
+		const items = processTagTree(
+			[
+				tagElement(ID_A, "Production", [
+					treeElement(ID_B, "Parent", [treeElement(ID_C, "Child")]),
+				]),
+			],
+			null,
+			"Acme",
+			noActions,
+			(documentId) => [action(`remove-${documentId}`)],
+		)
+
+		const parent = items[0]?.children?.[0]
+
+		expect(parent?.actions).toEqual([action(`remove-${ID_B}`)])
+		expect(parent?.children?.[0]?.actions).toEqual([])
+	})
+
+	it("keeps a hidden tag out of the sidebar", ({ expect }) => {
+		const items = processTagTree(
+			[
+				{ ...tagElement(ID_A, "Production"), hidden: true },
+				tagElement(ID_B, "Staging"),
+			],
+			null,
+			"Acme",
+			noActions,
+			noActions,
+		)
+
+		expect(items.map((item) => item.name)).toEqual(["Staging"])
+	})
+
+	it("leaves a tag holding no documents without a child list", ({ expect }) => {
+		const items = processTagTree(
+			[tagElement(ID_A, "Empty", [])],
+			null,
+			"Acme",
+			noActions,
+			noActions,
+		)
+
+		expect(items[0]?.children).toBeNull()
 	})
 })
 

@@ -1,6 +1,10 @@
 <script lang="ts" setup>
 import type { HTMLAttributes } from "vue"
-import { SIDEBAR_ITEM_PLACEHOLDER_ID, type SidebarItem } from "./sidebar"
+import {
+	SIDEBAR_ITEM_PLACEHOLDER_ID,
+	type SidebarItem,
+	type SidebarItemAction,
+} from "./sidebar"
 import { cn } from "@/lib/utils"
 
 const props = defineProps<{
@@ -13,7 +17,7 @@ const props = defineProps<{
 	class?: HTMLAttributes["class"]
 }>()
 const emit = defineEmits<{
-	(e: "toggle-collapse" | "delete" | "create" | "duplicate"): void
+	(e: "toggle-collapse" | "create"): void
 	(
 		e: "update-location",
 		data: {
@@ -52,17 +56,43 @@ const {
 		minDistance: 5,
 	},
 )
+
+// hovering a row swaps its icon or dot for the collapse chevron and fades
+// the actions menu in. Only a row with a child list to open has the first,
+// and only one that can hold children has the second; a row with neither
+// takes no part in the swap.
+const collapseChevron = computed(
+	() => !!(props.item.icon || props.item.dotColor) && !!props.item.children,
+)
+const actionsMenu = computed(() => props.item.actions.length > 0)
+const swapsOnHover = computed(() => collapseChevron.value || actionsMenu.value)
+
+function handleClick() {
+	if (props.item.id === SIDEBAR_ITEM_PLACEHOLDER_ID) {
+		emit("create")
+		return
+	}
+
+	if (props.item.onClick) {
+		void props.item.onClick()
+		return
+	}
+
+	if (!props.item.url && collapseChevron.value) {
+		emit("toggle-collapse")
+	}
+}
+
+function runAction(action: SidebarItemAction) {
+	void action.fn()
+}
 </script>
 
 <template>
 	<div
 		ref="sidebar-item"
 		:data-dragged-on="isItemDraggedOn ? '' : undefined"
-		:data-dragging-global="
-			props.item.draggable && props.item.partOfDocumentTree
-				? isDraggingGlobal
-				: undefined
-		"
+		:data-dragging-global="swapsOnHover ? isDraggingGlobal : undefined"
 		:data-ghost="props.ghost ? '' : undefined"
 		:class="cn('group/sidebar-item', props.class)"
 	>
@@ -97,18 +127,23 @@ const {
 				/>
 			</div>
 			<ShadcnUiSidebarMenuAction
-				v-if="props.item.icon"
+				v-if="props.item.icon || props.item.dotColor"
 				:class="[
-					'hide-on-parent-hover pointer-events-auto',
-					'opacity-100 transition-opacity duration-50',
+					collapseChevron ? 'hide-on-parent-hover' : undefined,
+					'pointer-events-auto opacity-100 transition-opacity duration-50',
 				]"
 				side="left"
-				:disable-direct-interaction="!props.item.partOfDocumentTree"
+				:disable-direct-interaction="!collapseChevron"
 			>
-				<Icon :name="props.item.icon" />
+				<Icon v-if="props.item.icon" :name="props.item.icon" />
+				<span
+					v-else
+					class="size-2.5 shrink-0 rounded-full"
+					:style="{ backgroundColor: props.item.dotColor }"
+				/>
 			</ShadcnUiSidebarMenuAction>
 			<ShadcnUiSidebarMenuAction
-				v-if="props.item.icon && props.item.partOfDocumentTree"
+				v-if="collapseChevron"
 				class="show-on-parent-hover pointer-events-none opacity-0 transition-opacity duration-50"
 				side="left"
 				@click="emit('toggle-collapse')"
@@ -148,11 +183,7 @@ const {
 						'group-data-ghost/sidebar-item:data-[active=true]:bg-sidebar-accent group-data-ghost/sidebar-item:data-[active=true]:text-sidebar-accent-foreground',
 					)
 				"
-				@click="
-					props.item.id === SIDEBAR_ITEM_PLACEHOLDER_ID
-						? emit('create')
-						: props.item.onClick?.()
-				"
+				@click="handleClick"
 			>
 				<div v-if="!props.item.url" class="min-w-0 cursor-pointer">
 					<div class="flex w-full items-center justify-between gap-1">
@@ -191,12 +222,7 @@ const {
 					<span>{{ props.item.name }}</span>
 				</NuxtLink>
 			</ShadcnUiSidebarMenuButton>
-			<ShadcnUiDropdownMenu
-				v-if="
-					props.item.id !== SIDEBAR_ITEM_PLACEHOLDER_ID &&
-					props.item.partOfDocumentTree
-				"
-			>
+			<ShadcnUiDropdownMenu v-if="actionsMenu">
 				<ShadcnUiDropdownMenuTrigger as-child>
 					<ShadcnUiSidebarMenuAction class="show-on-parent-hover" show-on-hover>
 						<Icon name="lucide:ellipsis" />
@@ -215,23 +241,13 @@ const {
 					loop
 					inside-sheet
 				>
-					<ShadcnUiDropdownMenuItem @click="emit('duplicate')">
-						<Icon name="mingcute:copy-2-line" />
-						<span>
-							{{ $t("sidebar.item-dropdown-menu-buttons.duplicate-page") }}
-						</span>
-					</ShadcnUiDropdownMenuItem>
-					<ShadcnUiDropdownMenuItem @click="emit('create')">
-						<Icon name="lucide:file-plus" />
-						<span>
-							{{ $t("sidebar.item-dropdown-menu-buttons.add-sub-page") }}
-						</span>
-					</ShadcnUiDropdownMenuItem>
-					<ShadcnUiDropdownMenuItem @click="emit('delete')">
-						<Icon name="lucide:trash-2" />
-						<span>
-							{{ $t("sidebar.item-dropdown-menu-buttons.delete-page") }}
-						</span>
+					<ShadcnUiDropdownMenuItem
+						v-for="action in props.item.actions"
+						:key="action.id"
+						@click="runAction(action)"
+					>
+						<Icon :name="action.icon" />
+						<span>{{ action.name }}</span>
 					</ShadcnUiDropdownMenuItem>
 				</ShadcnUiDropdownMenuContent>
 			</ShadcnUiDropdownMenu>

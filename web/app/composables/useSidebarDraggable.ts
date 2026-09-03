@@ -154,6 +154,7 @@ export function useSidebarDraggable(
 		return (
 			store.draggedElem !== null &&
 			toValue(elemSidebarItem).id !== store.draggedElem.item.id &&
+			toValue(elemSidebarItem).dragGroup === store.draggedElem.item.dragGroup &&
 			!isValidDescendent(store.draggedElem.wrapper, toValue(elem))
 		)
 	})
@@ -162,6 +163,10 @@ export function useSidebarDraggable(
 			store.draggedElem !== null &&
 			!elemMouse.isOutside.value &&
 			store.edgeDraggedOn === null &&
+			// a drop on the row itself nests, so a row that takes no children
+			// is no target for one — its edge still is, and a drop there
+			// reorders rather than nests
+			toValue(elemSidebarItem).acceptsChildren &&
 			canDragOn.value
 		)
 	})

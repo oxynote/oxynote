@@ -2,7 +2,7 @@ import { mountSuspended } from "@nuxt/test-utils/runtime"
 import type { VueWrapper } from "@vue/test-utils"
 import { beforeEach, describe, it } from "vitest"
 import ThresholdInput from "./ThresholdInput.vue"
-import { stubChartColorContext, stubThresholdPalette } from "../test-helpers"
+import { stubChartColorContext, stubSelectableColors } from "../test-helpers"
 import { at, clearTeleportedOverlays, t } from "~/components/test-helpers"
 import { DiffStatus } from "~/components/editor/diff/position-map"
 
@@ -31,7 +31,7 @@ describe("<ThresholdInput>", { concurrent: false }, () => {
 	beforeEach(() => {
 		clearTeleportedOverlays()
 		stubChartColorContext()
-		stubThresholdPalette()
+		stubSelectableColors()
 		useEditorMeta().setEditable(true)
 		useEditorStore().setReviewableDiffActive(false)
 	})
@@ -158,7 +158,7 @@ describe("<ThresholdInput>", { concurrent: false }, () => {
 	)
 
 	it("picks a colour from the palette popover", async ({ expect }) => {
-		const palette = stubThresholdPalette()
+		const palette = stubSelectableColors()
 		const wrapper = await mountThreshold()
 		await at(wrapper.findAll("button"), 0).trigger("click")
 		await nextTick()

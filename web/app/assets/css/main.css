@@ -74,22 +74,22 @@
 	--diff-field-added: oklch(53.282% 0.16399 143.531 / 0.2);
 	--diff-field-removed: oklch(57.909% 0.23191 28.689 / 0.2);
 
-	--chart-threshold-1: theme(--color-red-600);
-	--chart-threshold-2: theme(--color-orange-600);
-	--chart-threshold-3: theme(--color-amber-600);
-	--chart-threshold-4: theme(--color-yellow-600);
-	--chart-threshold-5: theme(--color-lime-600);
-	--chart-threshold-6: theme(--color-green-600);
-	--chart-threshold-7: theme(--color-emerald-600);
-	--chart-threshold-8: theme(--color-teal-600);
-	--chart-threshold-9: theme(--color-cyan-600);
-	--chart-threshold-10: theme(--color-sky-600);
-	--chart-threshold-11: theme(--color-blue-600);
-	--chart-threshold-12: theme(--color-indigo-600);
-	--chart-threshold-13: theme(--color-violet-600);
-	--chart-threshold-14: theme(--color-purple-600);
-	--chart-threshold-15: theme(--color-fuchsia-600);
-	--chart-threshold-16: theme(--color-pink-600);
+	--selectable-color-1: theme(--color-red-600);
+	--selectable-color-2: theme(--color-orange-600);
+	--selectable-color-3: theme(--color-amber-600);
+	--selectable-color-4: theme(--color-yellow-600);
+	--selectable-color-5: theme(--color-lime-600);
+	--selectable-color-6: theme(--color-green-600);
+	--selectable-color-7: theme(--color-emerald-600);
+	--selectable-color-8: theme(--color-teal-600);
+	--selectable-color-9: theme(--color-cyan-600);
+	--selectable-color-10: theme(--color-sky-600);
+	--selectable-color-11: theme(--color-blue-600);
+	--selectable-color-12: theme(--color-indigo-600);
+	--selectable-color-13: theme(--color-violet-600);
+	--selectable-color-14: theme(--color-purple-600);
+	--selectable-color-15: theme(--color-fuchsia-600);
+	--selectable-color-16: theme(--color-pink-600);
 
 	--chart-data-1: theme(--color-amber-500);
 	--chart-data-2: theme(--color-teal-500);

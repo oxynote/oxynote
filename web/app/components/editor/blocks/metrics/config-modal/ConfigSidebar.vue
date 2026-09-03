@@ -240,7 +240,7 @@ function addThreshold() {
 		{
 			value: undefined,
 			label: undefined,
-			color: chartStyles().thresholdColors.default,
+			color: chartStyles().selectableColors.default,
 		},
 	]
 }

@@ -35,7 +35,9 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/notification"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/org"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/slack"
+	"github.com/oxynote/oxynote/server/core/internal/server/internal/tag"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/user"
+	tagCore "github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/oxynote/oxynote/server/core/pkg/logutil"
 	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
@@ -112,6 +114,7 @@ type Server struct {
 		user         *user.Handler
 		organization *org.Handler
 		document     *document.Handler
+		tag          *tag.Handler
 		comment      *comment.Handler
 		files        *files.Handler
 		hook         *hook.Handler
@@ -177,6 +180,10 @@ func NewServer(
 		opts.PublicURL+_organizationLogoLocation,
 	)
 	srv.handlers.document = document.NewHandler(log, db, githubMan, webchangeClient, searchGateway, searchJobs, notifier, storageClient)
+	// FIXME: the tag tables do not exist yet, so the handler runs against
+	// an in-memory stand-in seeded per organization. Swap tagCore.NewStubDB
+	// for db once the real agent methods land.
+	srv.handlers.tag = tag.NewHandler(log, tagCore.NewStubDB(db))
 	srv.handlers.comment = comment.NewHandler(log, db, notifier)
 	srv.handlers.files = files.NewHandler(log, db, storageClient, opts.PublicURL+documentCore.FilePathFormat)
 	srv.handlers.hook = hook.NewHandler(log, db, githubMan, webchangeClient)

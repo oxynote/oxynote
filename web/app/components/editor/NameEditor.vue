@@ -17,6 +17,7 @@ import { renderCollaborationCaret } from "./collaboration"
 import IconStack, { type IconMetadata } from "./IconStack.vue"
 import HooksMenuContent from "./hooks/HookMenuContent.vue"
 import MaintainerList from "./MaintainerList.vue"
+import DocumentTagList from "./DocumentTagList.vue"
 import ReviewerList from "./ReviewerList.vue"
 import { prepareHookMetadata } from "./hooks"
 import { showToastMessage } from "../toast"
@@ -479,6 +480,7 @@ async function executeReviewableAction() {
 		</div>
 		<div class="mt-2.5 flex items-center justify-between gap-2">
 			<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+				<DocumentTagList />
 				<ShadcnUiDropdownMenu
 					:open="safeHookMenuOpen"
 					@update:open="(v: boolean) => (hookMenuOpen = v)"

@@ -2,7 +2,10 @@ import { mountSuspended } from "@nuxt/test-utils/runtime"
 import { beforeEach, describe, it } from "vitest"
 import ColorSelect from "./ColorSelect.vue"
 import { at } from "~/components/test-helpers"
-import { stubChartColorContext, stubThresholdPalette } from "../test-helpers"
+import {
+	stubThemeColorContext,
+	stubSelectableColors,
+} from "./test-helpers/theme"
 
 let palette: string[] = []
 
@@ -14,8 +17,8 @@ function mountSelect(color?: string) {
 // these tests cannot interleave
 describe("<ColorSelect>", { concurrent: false }, () => {
 	beforeEach(() => {
-		stubChartColorContext()
-		palette = stubThresholdPalette()
+		stubThemeColorContext()
+		palette = stubSelectableColors()
 	})
 
 	it("offers every colour of the threshold palette", async ({ expect }) => {

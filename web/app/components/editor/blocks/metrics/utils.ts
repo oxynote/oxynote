@@ -124,7 +124,7 @@ export function defaultMetricConfig(): MetricConfig {
 		timeRange: TimeRangePreset.Last5Minutes,
 		refreshInterval: RefreshInterval.M5,
 		thresholds: null,
-		baseThresholdColor: chartStyles().thresholdColors.default,
+		baseThresholdColor: chartStyles().selectableColors.default,
 		decimals: null,
 		unit: {
 			type: null,

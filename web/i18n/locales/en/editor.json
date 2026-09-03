@@ -753,6 +753,19 @@
 				"approve-all": "Approve all",
 				"decline": "Decline"
 			}
+		},
+		"tags": {
+			"label": "Tags",
+			"trigger-title": "Manage Tags",
+			"search-placeholder": "Search or create tag…",
+			"create": "Create",
+			"create-hint": "Type a name to create a new tag",
+			"color-title": "Color",
+			"errors": {
+				"toggle-failed": "Failed to update the page's tags. Please try again",
+				"create-failed": "Failed to create the tag. Please try again"
+			},
+			"overflow": "+{count}"
 		}
 	}
 }

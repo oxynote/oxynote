@@ -9,7 +9,7 @@ const st = chartStyles()
 <template>
 	<div class="grid w-fit grid-cols-4 gap-0.25">
 		<ShadcnUiButton
-			v-for="c in st.thresholdColors.available"
+			v-for="c in st.selectableColors.available"
 			:key="c"
 			size="icon"
 			variant="outline-transparent"

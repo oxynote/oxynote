@@ -6,7 +6,7 @@ import ConfigField from "../ConfigField.vue"
 import ThresholdInput from "./ThresholdInput.vue"
 import DataSourceSelect from "./DataSourceSelect.vue"
 import SimulationPresetSelect from "./SimulationPresetSelect.vue"
-import { stubChartColorContext, stubThresholdPalette } from "../test-helpers"
+import { stubChartColorContext, stubSelectableColors } from "../test-helpers"
 import {
 	defaultMetricConfig,
 	MetricSimulationPreset,
@@ -66,7 +66,7 @@ describe("<ConfigSidebar>", { concurrent: false }, () => {
 		clearTeleportedOverlays()
 		clearQueryCache()
 		stubChartColorContext()
-		stubThresholdPalette()
+		stubSelectableColors()
 		mockEndpoint("GET", "/api/data-sources", () => [])
 		useEditorMeta().setEditable(true)
 		useEditorStore().setReviewableDiffActive(false)

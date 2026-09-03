@@ -46,6 +46,12 @@ func (s *Server) wsRouter() *wsserver.Router {
 		},
 	)
 
+	binderFn("change@tag-tree",
+		func(tpc wsserver.Topic) {
+			s.handlers.tag.BindTreeChange(tpc)
+		},
+	)
+
 	binderFn("change@documents.{documentId}.comments",
 		func(tpc wsserver.Topic) {
 			s.handlers.comment.BindCommentsChange(tpc)
@@ -303,6 +309,10 @@ func (s *Server) router() chi.Router {
 					})
 				})
 			})
+			ssr.Route("/tags", func(sssr chi.Router) {
+				sssr.Post("/", s.handlers.tag.AssignDocumentTag)
+				sssr.Delete("/{tagId}", s.handlers.tag.UnassignDocumentTag)
+			})
 			ssr.Route("/hooks", func(sssr chi.Router) {
 				sssr.Get("/", s.handlers.hook.FetchDocumentHooks)
 				sssr.Post("/", s.handlers.hook.CreateDocumentHook)
@@ -341,6 +351,16 @@ func (s *Server) router() chi.Router {
 		sr.Route("/tree", func(ssr chi.Router) {
 			ssr.Put("/", s.handlers.document.UpdateDocumentTree)
 			ssr.Get("/", s.handlers.document.FetchDocumentTree)
+		})
+	})
+
+	r.Route("/tags", func(sr chi.Router) {
+		sr.Post("/", s.handlers.tag.CreateTag)
+		sr.Put("/{tagId}/visibility", s.handlers.tag.SetTagVisibility)
+		sr.Delete("/{tagId}", s.handlers.tag.DeleteTag)
+		sr.Route("/tree", func(ssr chi.Router) {
+			ssr.Get("/", s.handlers.tag.FetchTagTree)
+			ssr.Put("/", s.handlers.tag.UpdateTagTree)
 		})
 	})
 

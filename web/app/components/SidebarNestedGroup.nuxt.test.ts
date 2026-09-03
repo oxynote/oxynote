@@ -17,10 +17,11 @@ function makeItem(id: string, overrides: Partial<Item> = {}): Item {
 		id: id,
 		name: id,
 		url: `/acme/${id}`,
-		partOfDocumentTree: true,
+		acceptsChildren: true,
 		icon: "lucide:file",
 		active: false,
 		draggable: true,
+		actions: [],
 		children: [],
 		...overrides,
 	}
@@ -31,10 +32,11 @@ function placeholder(): Item {
 		id: SIDEBAR_ITEM_PLACEHOLDER_ID,
 		name: "Add a page",
 		url: null,
-		partOfDocumentTree: true,
+		acceptsChildren: false,
 		icon: null,
 		active: false,
 		draggable: false,
+		actions: [],
 		children: [],
 	}
 }
@@ -143,24 +145,6 @@ describe("<SidebarNestedGroup>", { concurrent: false }, () => {
 		await nextTick()
 
 		expect(wrapper.findComponent(SidebarItem).props("open")).toBe(false)
-	})
-
-	it("reports a deletion with the row's own id", async ({ expect }) => {
-		const { wrapper, group } = await mountGroup([makeItem("a")])
-
-		emitFrom(wrapper, "SidebarItem", "delete")
-		await nextTick()
-
-		expect(group.emitted("delete")).toEqual([[{ id: "a" }]])
-	})
-
-	it("reports a duplication with the row's own id", async ({ expect }) => {
-		const { wrapper, group } = await mountGroup([makeItem("a")])
-
-		emitFrom(wrapper, "SidebarItem", "duplicate")
-		await nextTick()
-
-		expect(group.emitted("duplicate")).toEqual([[{ id: "a" }]])
 	})
 
 	it("makes a creation from a normal row a child of that row", async ({

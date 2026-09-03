@@ -3,8 +3,6 @@ import {
 	SIDEBAR_ITEM_PLACEHOLDER_ID,
 	type SidebarItem,
 	type SidebarItemCreate,
-	type SidebarItemDelete,
-	type SidebarItemDuplicate,
 	type SidebarItemLocationUpdate,
 } from "./sidebar"
 
@@ -14,8 +12,6 @@ const props = defineProps<{
 const emit = defineEmits<{
 	(e: "create", data: SidebarItemCreate): void
 	(e: "update-location", data: SidebarItemLocationUpdate): void
-	(e: "delete", data: SidebarItemDelete): void
-	(e: "duplicate", data: SidebarItemDuplicate): void
 }>()
 const items = defineModel<SidebarItem[]>()
 
@@ -94,16 +90,6 @@ function toggleCollapseOpen(id: string) {
 							:active="item.active"
 							:open="collapseOpen[item.id] === 1"
 							@toggle-collapse="toggleCollapseOpen(item.id)"
-							@delete="
-								emit('delete', {
-									id: item.id,
-								})
-							"
-							@duplicate="
-								emit('duplicate', {
-									id: item.id,
-								})
-							"
 							@create="
 								emit('create', {
 									parentId:
@@ -136,8 +122,6 @@ function toggleCollapseOpen(id: string) {
 										v-model="item.children"
 										:item-id="item.id"
 										@update-location="(data) => emit('update-location', data)"
-										@duplicate="(data) => emit('duplicate', data)"
-										@delete="(data) => emit('delete', data)"
 										@create="(data) => emit('create', data)"
 									/>
 								</ShadcnUiSidebarMenuSub>

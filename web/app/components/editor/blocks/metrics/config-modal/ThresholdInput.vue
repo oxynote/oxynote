@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { cn } from "~/lib/utils"
-import ColorSelect from "./ColorSelect.vue"
+import ColorSelect from "../../../ColorSelect.vue"
 import { DiffStatus } from "~/components/editor/diff/position-map"
 
 const props = defineProps<{

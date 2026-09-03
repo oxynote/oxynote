@@ -25,7 +25,7 @@ import { MetricBlockWidth, RefreshInterval, TimeRangePreset } from "./utils"
 // the block attribute defaults come from defaultMetricConfig, which
 // resolves CSS variables through a canvas — unavailable in node
 vi.mock("~/assets/css", () => ({
-	chartStyles: () => ({ thresholdColors: { default: "#8a3ffc" } }),
+	chartStyles: () => ({ selectableColors: { default: "#8a3ffc" } }),
 }))
 
 // a nesting context standing in for the real containers that accept a

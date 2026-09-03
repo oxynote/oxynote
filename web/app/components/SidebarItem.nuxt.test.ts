@@ -5,13 +5,13 @@ import SidebarItem from "./SidebarItem.vue"
 import {
 	SIDEBAR_ITEM_PLACEHOLDER_ID,
 	type SidebarItem as Item,
+	type SidebarItemAction,
 } from "./sidebar"
 import {
 	at,
 	menuItem,
 	mountUnderSidebarProvider,
 	renderedIconNames,
-	t,
 } from "./test-helpers"
 
 interface CapturedDragOptions {
@@ -67,11 +67,24 @@ function makeItem(overrides: Partial<Item> = {}): Item {
 		id: "doc-1",
 		name: "Runbook",
 		url: "/acme/runbook-doc-1",
-		partOfDocumentTree: true,
+		acceptsChildren: true,
 		icon: "lucide:file",
 		active: false,
 		draggable: true,
+		actions: [],
 		children: [],
+		...overrides,
+	}
+}
+
+function makeAction(
+	overrides: Partial<SidebarItemAction> = {},
+): SidebarItemAction {
+	return {
+		id: "duplicate-page",
+		name: "Duplicate Page",
+		icon: "mingcute:copy-2-line",
+		fn: vi.fn(),
 		...overrides,
 	}
 }
@@ -145,6 +158,110 @@ describe("<SidebarItem>", { concurrent: false }, () => {
 		const { wrapper } = await mountItem(makeItem({ icon: "lucide:book" }))
 
 		expect(renderedIconNames(wrapper)).toContain("lucide:book")
+	})
+
+	it("shows a coloured dot in place of an icon", async ({ expect }) => {
+		const { wrapper } = await mountItem(
+			makeItem({ icon: null, dotColor: "#22c55e" }),
+		)
+
+		expect(
+			at(wrapper.findAll("[data-sidebar='menu-action']"), 0)
+				.get("span")
+				.attributes("style"),
+		).toContain("background-color: #22c55e")
+		expect(renderedIconNames(wrapper)).not.toContain("lucide:file")
+	})
+
+	it("opens a dotted row's collapse from its own chevron", async ({
+		expect,
+	}) => {
+		const { wrapper, item } = await mountItem(
+			makeItem({ icon: null, dotColor: "#22c55e", url: null }),
+		)
+
+		await at(wrapper.findAll("[data-sidebar='menu-action']"), 1).trigger(
+			"click",
+		)
+
+		expect(item.emitted("toggle-collapse")).toHaveLength(1)
+	})
+
+	it("toggles the collapse when a row with nowhere to go is pressed", async ({
+		expect,
+	}) => {
+		const { wrapper, item } = await mountItem(makeItem({ url: null }))
+
+		await wrapper.get("[data-slot='sidebar-menu-button']").trigger("click")
+
+		expect(item.emitted("toggle-collapse")).toHaveLength(1)
+	})
+
+	it("leaves a linked row's collapse alone when it is pressed", async ({
+		expect,
+	}) => {
+		const { wrapper, item } = await mountItem(makeItem())
+
+		await wrapper.get("[data-slot='sidebar-menu-button']").trigger("click")
+
+		expect(item.emitted("toggle-collapse")).toBeUndefined()
+	})
+
+	it("drops the collapse chevron from a row with no child list", async ({
+		expect,
+	}) => {
+		const { wrapper } = await mountItem(
+			makeItem({ children: null, actions: [makeAction()] }),
+		)
+
+		// the icon and the options trigger remain; the chevron does not
+		expect(wrapper.findAll("[data-sidebar='menu-action']")).toHaveLength(2)
+		expect(renderedIconNames(wrapper)).not.toContain("lucide:chevron-right")
+	})
+
+	// the hover fade is pure css, which happy-dom loads none of, so the
+	// marker class is the only trace a test can read: the leading visual is
+	// faded out on hover only where a chevron takes its place
+	it("fades the leading icon out on hover when it has a chevron", async ({
+		expect,
+	}) => {
+		const { wrapper } = await mountItem(makeItem())
+
+		expect(
+			at(wrapper.findAll("[data-sidebar='menu-action']"), 0).classes(),
+		).toContain("hide-on-parent-hover")
+	})
+
+	it("keeps the leading icon on hover when nothing replaces it", async ({
+		expect,
+	}) => {
+		const { wrapper } = await mountItem(makeItem({ children: null }))
+
+		expect(
+			at(wrapper.findAll("[data-sidebar='menu-action']"), 0).classes(),
+		).not.toContain("hide-on-parent-hover")
+	})
+
+	// the hover swap only runs on a row marked with the drag state, so a row
+	// with an actions menu needs the mark even when it has no chevron
+	it("keeps a childless row with an actions menu in the hover swap", async ({
+		expect,
+	}) => {
+		const { item } = await mountItem(
+			makeItem({ children: null, actions: [makeAction()] }),
+		)
+
+		expect(item.attributes("data-dragging-global")).toBe("false")
+	})
+
+	it("leaves a row with neither chevron nor menu out of the hover swap", async ({
+		expect,
+	}) => {
+		const { item } = await mountItem(
+			makeItem({ children: null, actions: [], url: null }),
+		)
+
+		expect(item.attributes("data-dragging-global")).toBeUndefined()
 	})
 
 	it("shows the unread count when the item carries one", async ({ expect }) => {
@@ -230,43 +347,47 @@ describe("<SidebarItem>", { concurrent: false }, () => {
 		)
 	})
 
-	it("hides the options menu on items outside the document tree", async ({
+	it("hides the options menu on a row carrying no actions", async ({
 		expect,
 	}) => {
-		const { wrapper } = await mountItem(
-			makeItem({ partOfDocumentTree: false, url: null }),
-		)
+		const { wrapper } = await mountItem(makeItem({ actions: [], url: null }))
 
 		expect(wrapper.find("[data-slot='dropdown-menu-trigger']").exists()).toBe(
 			false,
 		)
 	})
 
-	it.for([
-		{
-			label: "sidebar.item-dropdown-menu-buttons.duplicate-page",
-			event: "duplicate",
-		},
-		{
-			label: "sidebar.item-dropdown-menu-buttons.add-sub-page",
-			event: "create",
-		},
-		{
-			label: "sidebar.item-dropdown-menu-buttons.delete-page",
-			event: "delete",
-		},
-	] as const)(
-		"asks to $event the page from the options menu",
-		async ({ label, event }, { expect }) => {
-			const { wrapper, item } = await mountItem(makeItem())
-			await wrapper.get("[data-slot='dropdown-menu-trigger']").trigger("click")
+	it("lists the actions the item carries, in order", async ({ expect }) => {
+		const { wrapper } = await mountItem(
+			makeItem({
+				actions: [
+					makeAction({ id: "a", name: "First", icon: "lucide:trash-2" }),
+					makeAction({ id: "b", name: "Second", icon: "lucide:eye-off" }),
+				],
+			}),
+		)
+		await wrapper.get("[data-slot='dropdown-menu-trigger']").trigger("click")
 
-			menuItem(t(label)).click()
-			await nextTick()
+		const rows = Array.from(
+			document.body.querySelectorAll("[role^='menuitem']"),
+		).map((el) => el.textContent.trim())
 
-			expect(item.emitted(event)).toHaveLength(1)
-		},
-	)
+		expect(rows).toEqual(["First", "Second"])
+		expect(renderedIconNames(wrapper)).not.toContain("lucide:eye-off")
+	})
+
+	it("runs an action when its menu row is pressed", async ({ expect }) => {
+		const fn = vi.fn()
+		const { wrapper } = await mountItem(
+			makeItem({ actions: [makeAction({ name: "Duplicate Page", fn: fn })] }),
+		)
+		await wrapper.get("[data-slot='dropdown-menu-trigger']").trigger("click")
+
+		menuItem("Duplicate Page").click()
+		await nextTick()
+
+		expect(fn).toHaveBeenCalledTimes(1)
+	})
 
 	it("does not duplicate itself as a drag ghost while at rest", async ({
 		expect,

@@ -2,13 +2,14 @@ function cssVar(name: string, el: HTMLElement = document.documentElement) {
 	return getComputedStyle(el).getPropertyValue(name).trim()
 }
 
-// converts a CSS variable's color value to hex.
+// converts any CSS color value to hex.
 // the canvas is never added to the DOM; it only exists in memory for color parsing.
 // we paint a pixel and read it back because modern Chromium round-trips
 // newer color formats like oklch through `fillStyle` unchanged, and downstream
-// consumers (mermaid, echarts) only accept hex/rgb.
+// consumers (mermaid, echarts, and anything persisting a color) only accept
+// hex/rgb.
 let colorCtx: CanvasRenderingContext2D | null = null
-function cssColorHex(name: string) {
+export function colorToHex(value: string) {
 	if (!colorCtx) {
 		const canvas = document.createElement("canvas")
 		canvas.width = 1
@@ -17,7 +18,7 @@ function cssColorHex(name: string) {
 		colorCtx = canvas.getContext("2d", { willReadFrequently: true })!
 	}
 	colorCtx.clearRect(0, 0, 1, 1)
-	colorCtx.fillStyle = cssVar(name)
+	colorCtx.fillStyle = value
 	colorCtx.fillRect(0, 0, 1, 1)
 	const [r, g, b, a] = colorCtx.getImageData(0, 0, 1, 1).data as unknown as [
 		number,
@@ -29,6 +30,11 @@ function cssColorHex(name: string) {
 	return a === 255
 		? `#${hex(r)}${hex(g)}${hex(b)}`
 		: `rgba(${r}, ${g}, ${b}, ${(a / 255).toFixed(3)})`
+}
+
+// converts a CSS variable's color value to hex.
+function cssColorHex(name: string) {
+	return colorToHex(cssVar(name))
 }
 
 const rightArrowPath = `path://M8.59 14.59L13.17 10 8.59 5.41 10 4l6 6-6 6z`
@@ -75,25 +81,25 @@ export function chartStyles() {
 			mutedText: cssVar("--muted-foreground-50"),
 			emptyGauge: cssVar("--muted-foreground-7"),
 		},
-		thresholdColors: {
-			default: cssVar("--chart-threshold-6"),
+		selectableColors: {
+			default: cssVar("--selectable-color-6"),
 			available: [
-				cssVar("--chart-threshold-1"),
-				cssVar("--chart-threshold-2"),
-				cssVar("--chart-threshold-3"),
-				cssVar("--chart-threshold-4"),
-				cssVar("--chart-threshold-5"),
-				cssVar("--chart-threshold-6"),
-				cssVar("--chart-threshold-7"),
-				cssVar("--chart-threshold-8"),
-				cssVar("--chart-threshold-9"),
-				cssVar("--chart-threshold-10"),
-				cssVar("--chart-threshold-11"),
-				cssVar("--chart-threshold-12"),
-				cssVar("--chart-threshold-13"),
-				cssVar("--chart-threshold-14"),
-				cssVar("--chart-threshold-15"),
-				cssVar("--chart-threshold-16"),
+				cssVar("--selectable-color-1"),
+				cssVar("--selectable-color-2"),
+				cssVar("--selectable-color-3"),
+				cssVar("--selectable-color-4"),
+				cssVar("--selectable-color-5"),
+				cssVar("--selectable-color-6"),
+				cssVar("--selectable-color-7"),
+				cssVar("--selectable-color-8"),
+				cssVar("--selectable-color-9"),
+				cssVar("--selectable-color-10"),
+				cssVar("--selectable-color-11"),
+				cssVar("--selectable-color-12"),
+				cssVar("--selectable-color-13"),
+				cssVar("--selectable-color-14"),
+				cssVar("--selectable-color-15"),
+				cssVar("--selectable-color-16"),
 			],
 		},
 	}

@@ -40,15 +40,18 @@ mockNuxtImport("useElementBounding", () => useElementBoundingMock)
 function sidebarItem(
 	id: string,
 	parentId: string | null,
+	overrides: Partial<SidebarItem> = {},
 ): SidebarItem & { parentId: string | null } {
 	return {
 		id,
 		name: id,
-		partOfDocumentTree: true,
+		acceptsChildren: true,
 		active: false,
 		draggable: true,
+		actions: [],
 		children: [],
 		parentId,
+		...overrides,
 	}
 }
 
@@ -57,6 +60,7 @@ function makeInstance(
 	opts?: {
 		parentId?: string | null
 		insideWrapperOf?: { wrapper: HTMLElement }
+		item?: Partial<SidebarItem>
 	},
 ) {
 	const dragOptions: CapturedDragOptions = {}
@@ -100,7 +104,7 @@ function makeInstance(
 	scope.run(() => {
 		api = useSidebarDraggable(
 			elem,
-			() => sidebarItem(id, opts?.parentId ?? null),
+			() => sidebarItem(id, opts?.parentId ?? null, opts?.item),
 			document.createElement("div"),
 			() => wrapper,
 			onConfirm,
@@ -244,6 +248,48 @@ describe("useSidebarDraggable", { concurrent: false }, () => {
 		dragged.dragOptions.onEnd?.()
 
 		expect(dragged.onConfirm).toHaveBeenCalledTimes(0)
+	})
+
+	it("does not target an item from another drag group", async ({ expect }) => {
+		const dragged = makeInstance("a", { item: { dragGroup: "tags" } })
+		const target = makeInstance("b", { parentId: "root" })
+		startDrag(dragged)
+
+		target.mouse.isOutside.value = false
+		target.topEdgeMouse.isOutside.value = false
+		await nextTick()
+
+		expect(target.api.isItemDraggedOn.value).toBe(false)
+		expect(target.api.isTopEdgeDraggedOn.value).toBe(false)
+
+		dragged.dragOptions.onEnd?.()
+
+		expect(dragged.onConfirm).toHaveBeenCalledTimes(0)
+	})
+
+	it("takes an edge drop but no nesting drop on a row taking no children", async ({
+		expect,
+	}) => {
+		const dragged = makeInstance("a", { item: { acceptsChildren: false } })
+		const target = makeInstance("b", { item: { acceptsChildren: false } })
+		startDrag(dragged)
+
+		target.mouse.isOutside.value = false
+		await nextTick()
+
+		expect(target.api.isItemDraggedOn.value).toBe(false)
+
+		target.topEdgeMouse.isOutside.value = false
+		await nextTick()
+
+		expect(target.api.isTopEdgeDraggedOn.value).toBe(true)
+
+		dragged.dragOptions.onEnd?.()
+
+		expect(dragged.onConfirm).toHaveBeenCalledExactlyOnceWith({
+			targetParentId: null,
+			targetInsertBeforeId: "b",
+		})
 	})
 
 	it("ends without a confirm when nothing was targeted", ({ expect }) => {

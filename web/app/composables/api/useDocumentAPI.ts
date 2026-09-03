@@ -16,7 +16,9 @@ import type {
 } from "~/utils"
 import isDeepEqual from "fast-deep-equal"
 
-const DOCUMENT_QUERY_KEYS = {
+// exported because the tag tree carries document summaries: useTagAPI reads
+// this entry to build the row it optimistically inserts under a tag.
+export const DOCUMENT_QUERY_KEYS = {
 	root: ["documents", "tree"] as const,
 	branches: (docId: string) => ["documents", docId, "branches"] as const,
 	documentMaintainers: (docId: string) =>

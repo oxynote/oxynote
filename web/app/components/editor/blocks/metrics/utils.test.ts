@@ -14,7 +14,7 @@ import {
 // chartStyles resolves CSS variables through a canvas, which needs a real
 // DOM — the default threshold color is all defaultMetricConfig reads
 vi.mock("~/assets/css", () => ({
-	chartStyles: () => ({ thresholdColors: { default: "#8a3ffc" } }),
+	chartStyles: () => ({ selectableColors: { default: "#8a3ffc" } }),
 }))
 
 // a wednesday in the middle of a month, with sub-second precision so
