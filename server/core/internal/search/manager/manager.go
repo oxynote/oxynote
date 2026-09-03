@@ -145,6 +145,10 @@ func jobScope(bd search.BlocksDifference) (documentIDs []xid.ID, global bool) {
 		}
 	}
 
+	for _, br := range bd.RemovedBranches {
+		add(br.DocumentID)
+	}
+
 	for _, id := range bd.RemovedDocuments {
 		add(id)
 	}

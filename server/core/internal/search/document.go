@@ -21,11 +21,64 @@ type Block struct {
 	// DocumentID is the identifier for the document this block belongs to.
 	DocumentID xid.ID `json:"documentId"`
 
+	// BranchID is the identifier for the branch this block belongs to.
+	BranchID xid.ID `json:"branchId"`
+
+	// BranchName is the name of the branch this block belongs to.
+	BranchName string `json:"branchName"`
+
+	// BranchDefault reports whether the branch is the document's default.
+	BranchDefault bool `json:"branchDefault"`
+
 	// Type is the type of the block (e.g., "paragraph", "heading").
 	Type string `json:"type"`
 
 	// Text is the text content of the block, if applicable.
 	Text string `json:"text"`
+}
+
+// Scope is the branch every block of one indexing pass belongs to.
+type Scope struct {
+	// OrganizationID is the organization owning the document.
+	OrganizationID string
+
+	// DocumentID is the document the branch belongs to.
+	DocumentID xid.ID
+
+	// BranchID is the branch the blocks are read from.
+	BranchID xid.ID
+
+	// BranchName is the branch's name.
+	BranchName string
+
+	// BranchDefault reports whether the branch is the document's default.
+	BranchDefault bool
+}
+
+// Block builds an index entry for uid within the scope. The entry id is
+// prefixed with the branch id: a fork copies its source's content, uids
+// included, so the uid alone names one block on every branch at once.
+func (s Scope) Block(uid, typ, text string) Block {
+	return Block{
+		ID:             s.BranchID.String() + "-" + uid,
+		OrganizationID: s.OrganizationID,
+		DocumentID:     s.DocumentID,
+		BranchID:       s.BranchID,
+		BranchName:     s.BranchName,
+		BranchDefault:  s.BranchDefault,
+		Type:           typ,
+		Text:           text,
+	}
+}
+
+// BranchRemoval names a branch whose every block is removed. The document
+// id is carried so the removal is ordered with the document's other jobs.
+type BranchRemoval struct {
+	// DocumentID is the document the branch belonged to.
+	DocumentID xid.ID `json:"documentId"`
+
+	// BranchID is the removed branch.
+	BranchID xid.ID `json:"branchId"`
 }
 
 // BlocksDifference represents the differences between two slices of Blocks.
@@ -38,6 +91,11 @@ type BlocksDifference struct {
 
 	// Removed contains blocks that have been removed.
 	Removed []Block `json:"removed"`
+
+	// RemovedBranches contains branches whose every block is removed.
+	// Deleting a branch drops its content row, so the index is cleared by
+	// branch instead of by block.
+	RemovedBranches []BranchRemoval `json:"removedBranches"`
 
 	// RemovedDocuments contains documents whose every block is removed.
 	// Deleting a document cascades to its descendants in the database,

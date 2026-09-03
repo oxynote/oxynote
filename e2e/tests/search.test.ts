@@ -8,6 +8,15 @@ import {
 	waitForEditor,
 } from "../helpers/editor"
 import { t } from "../helpers/i18n"
+import { documentId } from "../helpers/api"
+import { authorizeMCPClient, connectMCPClient } from "../helpers/mcp"
+import {
+	branchLabel,
+	branchSwitcher,
+	makeReviewable,
+	switchToBranch,
+} from "../helpers/review"
+import { visit } from "../helpers/page"
 import { openSearch, searchFor } from "../helpers/search"
 import { signUpWithWorkspace } from "../helpers/workspace"
 
@@ -54,6 +63,98 @@ test.describe("search", () => {
 		await result.click()
 
 		await expect(page).toHaveURL(/New-Page-[a-z0-9]{20}/)
+	})
+
+	test("finds text written on a draft branch", async ({ page, request }) => {
+		await signUpWithWorkspace(page, request)
+		await createDocument(page)
+		await documentPersisted(page)
+		await makeReviewable(page)
+		await switchToBranch(page, "draft")
+		await contentEditor(page).click()
+		await page.keyboard.type("The marmalade committee convenes")
+		await documentPersisted(page)
+		await sidebarDocument(page, "Welcome to Oxynote!").click()
+		await expect(page).toHaveURL(/Welcome-to-Oxynote-[a-z0-9]{20}$/)
+
+		const dialog = await openSearch(page)
+		const result = dialog.locator("a", { hasText: "marmalade" })
+		await searchFor(dialog, "marmalade", result)
+
+		// the text exists on the draft alone, so that is the branch the
+		// hit names and the one the link opens
+		await expect(result.getByTestId("search-result-branch")).toHaveText("draft")
+		await result.click()
+
+		await expect(page).toHaveURL(/New-Page-[a-z0-9]{20}\?branch=[a-z0-9]{20}/)
+		await expect(branchSwitcher(page)).toContainText(branchLabel("draft"), {
+			timeout: 15_000,
+		})
+	})
+
+	test("finds a metric block by its title", async ({ page, request }) => {
+		await signUpWithWorkspace(page, request)
+		await createDocument(page)
+		await documentPersisted(page)
+		const id = documentId(page)
+
+		// a metric block has no text to type; its title is configuration,
+		// so the block goes in through the MCP surface the way an assistant
+		// would write it
+		const client = await connectMCPClient(
+			await authorizeMCPClient(page, request, "documents:read documents:write"),
+		)
+
+		const listing = await client.callTool({
+			name: "list_documents",
+			arguments: {},
+		})
+		const listed = JSON.parse(
+			(listing.content as { text: string }[])[0]?.text ?? "{}",
+		) as { documents: { id: string; default_branch_id: string }[] }
+		const branchId = listed.documents.find(
+			(d) => d.id === id,
+		)?.default_branch_id
+		expect(branchId).toBeDefined()
+
+		const inserted = await client.callTool({
+			name: "insert_block",
+			arguments: {
+				document_id: id,
+				branch_id: branchId,
+				position: "end",
+				// a metric lives in a grid; the root refuses a bare one
+				block: {
+					type: "metric_grid",
+					items: [
+						{ type: "metric", attrs: { title: "Pizza Fridays Scheduled" } },
+					],
+				},
+			},
+		})
+		expect(inserted.isError, JSON.stringify(inserted.content)).toBeFalsy()
+		await client.close()
+
+		// the authorization walked the page off the app, and the search
+		// starts from another page so that landing on the found one is
+		// observable in the URL
+		await visit(page, "/")
+		await sidebarDocument(page, "Welcome to Oxynote!").click()
+		await expect(page).toHaveURL(/Welcome-to-Oxynote-[a-z0-9]{20}$/)
+
+		const dialog = await openSearch(page)
+		const result = dialog.locator("a", { hasText: "Pizza Fridays" })
+		await searchFor(dialog, "Pizza", result)
+		await expect(result).toContainText("metricBlock")
+
+		const href = await result.getAttribute("href")
+		const uid = decodeURIComponent(href?.split("#")[1] ?? "")
+		expect(uid).not.toBe("")
+
+		await result.click()
+
+		await expect(page).toHaveURL(/New-Page-[a-z0-9]{20}#/)
+		await expect(page.locator(`[id="${uid}"]`)).toBeInViewport()
 	})
 
 	test("reports when nothing matches", async ({ page, request }) => {

@@ -82,11 +82,26 @@ function resultLink(result: DocumentSearchResult) {
 
 	let href = orgSlug ? `/${orgSlug}/${docSlug}` : `/${docSlug}`
 
+	// the document page opens the default branch unless told otherwise
+	if (!result.branchDefault) {
+		href = href + `?branch=${encodeURIComponent(result.branchId)}`
+	}
+
 	if (result.type !== "document") {
-		href = href + `#${encodeURIComponent(result.id)}`
+		href = href + `#${encodeURIComponent(blockUid(result))}`
 	}
 
 	return href
+}
+
+// blockUid strips the branch prefix off an index entry id, leaving the
+// block's uid, which is what the page anchors on
+function blockUid(result: DocumentSearchResult) {
+	const prefix = `${result.branchId}-`
+
+	return result.id.startsWith(prefix)
+		? result.id.slice(prefix.length)
+		: result.id
 }
 
 function resultIcon(type: string) {
@@ -171,7 +186,7 @@ function resultTypeText(type: string) {
 				<div v-else class="flex w-full flex-col gap-2">
 					<NuxtLink
 						v-for="result in searchResults"
-						:key="`${result.documentId}-${result.id}`"
+						:key="result.id"
 						:href="resultLink(result)"
 						:prefetch="false"
 						class="flex w-full gap-1 rounded-md py-1 no-underline transition hover:bg-accent/50 active:bg-accent"
@@ -188,8 +203,16 @@ function resultTypeText(type: string) {
 								v-html="sanitizeSearchResult(result.text)"
 							/>
 							<!-- eslint-enable vue/no-v-html -->
-							<div class="text-2sm text-muted-foreground capitalize">
-								{{ resultTypeText(result.type) }}
+							<div class="text-2sm text-muted-foreground">
+								<span class="capitalize">
+									{{ resultTypeText(result.type) }}
+								</span>
+								<span
+									data-testid="search-result-branch"
+									class="before:px-1 before:content-['·']"
+								>
+									{{ result.branchName }}
+								</span>
 							</div>
 						</div>
 					</NuxtLink>

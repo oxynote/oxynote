@@ -54,7 +54,9 @@ func Test_searchDocuments_Title(t *testing.T) {
 func Test_searchDocuments_Execute(t *testing.T) {
 	t.Parallel()
 
-	docID := xid.New()
+	docID, branchID := xid.New(), xid.New()
+
+	branchFields := `"branch_id":"` + branchID.String() + `","branch_name":"draft","default":false,`
 
 	hitSearcher := func(limit *int) *SearcherMock {
 		return &SearcherMock{
@@ -63,7 +65,14 @@ func Test_searchDocuments_Execute(t *testing.T) {
 					*limit = l
 				}
 
-				return []search.Block{{DocumentID: docID, ID: "b1", Text: "rate limiting"}}, nil
+				return []search.Block{{
+					DocumentID:    docID,
+					BranchID:      branchID,
+					BranchName:    "draft",
+					BranchDefault: false,
+					ID:            branchID.String() + "-b1",
+					Text:          "rate limiting",
+				}}, nil
 			},
 		}
 	}
@@ -120,7 +129,7 @@ func Test_searchDocuments_Execute(t *testing.T) {
 			Args:  `{"query":"rate limit"}`,
 			Limit: _searchLimitDefault,
 			Result: `{"hits":[{"document_id":"` + docID.String() + `","document_name":"Runbook",` +
-				`"block_uid":"b1","text":"rate limiting"}]}`,
+				branchFields + `"block_uid":"b1","text":"rate limiting"}]}`,
 		},
 		"Losing the names does not fail the search": {
 			Searcher: hitSearcher(nil),
@@ -131,7 +140,7 @@ func Test_searchDocuments_Execute(t *testing.T) {
 			},
 			Args:   `{"query":"rate limit"}`,
 			Limit:  _searchLimitDefault,
-			Result: `{"hits":[{"document_id":"` + docID.String() + `","block_uid":"b1","text":"rate limiting"}]}`,
+			Result: `{"hits":[{"document_id":"` + docID.String() + `",` + branchFields + `"block_uid":"b1","text":"rate limiting"}]}`,
 			Logged: "cannot fetch the document tree for search hit names",
 		},
 		"Requested limit is honoured": {
@@ -139,7 +148,7 @@ func Test_searchDocuments_Execute(t *testing.T) {
 			DB:       &DBMock{},
 			Args:     `{"query":"rate limit","limit":5}`,
 			Limit:    5,
-			Result: `{"hits":[{"document_id":"` + docID.String() + `","block_uid":"b1",` +
+			Result: `{"hits":[{"document_id":"` + docID.String() + `",` + branchFields + `"block_uid":"b1",` +
 				`"text":"rate limiting"}]}`,
 		},
 		"Oversized limit is clipped": {
@@ -147,7 +156,7 @@ func Test_searchDocuments_Execute(t *testing.T) {
 			DB:       &DBMock{},
 			Args:     `{"query":"rate limit","limit":5000}`,
 			Limit:    _searchLimitMax,
-			Result: `{"hits":[{"document_id":"` + docID.String() + `","block_uid":"b1",` +
+			Result: `{"hits":[{"document_id":"` + docID.String() + `",` + branchFields + `"block_uid":"b1",` +
 				`"text":"rate limiting"}]}`,
 		},
 	}

@@ -90,10 +90,14 @@ definePageMeta({
 				(!docSlugName || !equalNameSlugs(docSlugName, docRealName)))
 		) {
 			return navigateTo(
-				`/${createNameSlug(orgRealName)}/${createNameSlugWithId(
-					docRealName,
-					docSlugInfo.id,
-				)}${to.hash || ""}`,
+				{
+					path: `/${createNameSlug(orgRealName)}/${createNameSlugWithId(
+						docRealName,
+						docSlugInfo.id,
+					)}`,
+					query: to.query,
+					hash: to.hash,
+				},
 				{
 					replace: true,
 				},
@@ -220,6 +224,33 @@ watchImmediate(
 	(newV) => {
 		editorStore.updateActiveDocumentId(newV ?? null)
 		setEditable(activeDocMetadata.value?.protected ?? true)
+	},
+)
+
+// a ?branch=<id> query opens that branch of the document. It keys on the
+// route rather than the store so a later switch through the header is not
+// undone; an id the document does not have is ignored and the watch below
+// falls back to the default branch
+watchImmediate(
+	[() => pageRoute.query.branch, fetchBranches.state],
+	([queryBranch, branchState]) => {
+		const branches = branchState.data
+
+		if (typeof queryBranch !== "string" || !branches?.length) {
+			return
+		}
+
+		const branch = branches.find((b) => b.branchId === queryBranch)
+		const defaultBranch = branches.find((b) => b.default)
+
+		if (!branch || branch.branchId === editorStore.activeBranchId) {
+			return
+		}
+
+		editorStore.updateActiveBranchId(branch.branchId)
+		editorStore.updateTargetBranchId(
+			branch.default ? null : (defaultBranch?.branchId ?? null),
+		)
 	},
 )
 
@@ -371,12 +402,14 @@ function applyDocumentNameChange(name: string) {
 		protected: activeDocMetadata.value.protected,
 	})
 
-	void pageRouter.replace(
-		`/${createNameSlug(fetchOrganization.data.value?.data?.slug || "")}/${createNameSlugWithId(
+	void pageRouter.replace({
+		path: `/${createNameSlug(fetchOrganization.data.value?.data?.slug || "")}/${createNameSlugWithId(
 			name,
 			activeDocMetadata.value.id,
-		)}${pageRoute.hash || ""}`,
-	)
+		)}`,
+		query: pageRoute.query,
+		hash: pageRoute.hash,
+	})
 }
 
 function refreshOrganizationRouteSlug() {
@@ -384,12 +417,14 @@ function refreshOrganizationRouteSlug() {
 		return
 	}
 
-	void pageRouter.replace(
-		`/${createNameSlug(fetchOrganization.data.value?.data?.slug || "")}/${createNameSlugWithId(
+	void pageRouter.replace({
+		path: `/${createNameSlug(fetchOrganization.data.value?.data?.slug || "")}/${createNameSlugWithId(
 			activeDocMetadata.value.name,
 			activeDocMetadata.value.id,
-		)}${pageRoute.hash || ""}`,
-	)
+		)}`,
+		query: pageRoute.query,
+		hash: pageRoute.hash,
+	})
 }
 
 function applyIconChange(icon: string) {

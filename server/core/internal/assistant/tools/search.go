@@ -3,6 +3,7 @@ package tools
 import (
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/rs/xid"
@@ -46,7 +47,7 @@ type searchDocuments struct {
 func (searchDocuments) Info() Info {
 	return Info{
 		Name:        NameSearchDocuments,
-		Description: "Full-text search across the default branch of every document in the organisation for blocks whose text matches the query; other branches are not indexed. Returns hits with document_id, document_name, default_branch_id, block_uid and text; the branch id is what a follow-up get_document or read_block takes. Use it to find where a topic is discussed or which documents the user might mean; use list_documents when you know the title. A hit names the innermost block holding the text, which may sit below anything get_document lists; read_block resolves it.",
+		Description: "Full-text search across every branch of every document in the organisation for blocks whose text matches the query. Returns hits with document_id, document_name, branch_id, branch_name, default (whether that branch is the document's default), block_uid and text; branch_id is what a follow-up get_document or read_block takes. A block a fork copied unchanged is found on every branch that holds it. Use it to find where a topic is discussed or which documents the user might mean; use list_documents when you know the title. A hit names the innermost block holding the text, which may sit below anything get_document lists; read_block resolves it.",
 		Properties: map[string]any{
 			_keyQuery: stringProp("The full-text search query (typo-tolerant, matches block text)."),
 			"limit": map[string]any{
@@ -96,8 +97,8 @@ func (searchDocuments) Execute(inp Input) (string, error) {
 		return "", fmt.Errorf("search_documents: search: %w", err)
 	}
 
-	// the index stores block text keyed by (document, block uid) but not
-	// display names; join names in from the document tree so the AI can
+	// the index stores block text keyed by (branch, block uid) but not
+	// document names; join names in from the document tree so the AI can
 	// talk about hits without a follow-up lookup per document. Zero hits
 	// have nothing to decorate, so the fetch is skipped.
 	names := map[xid.ID]document.Summary{}
@@ -123,11 +124,13 @@ func (searchDocuments) Execute(inp Input) (string, error) {
 
 	for _, b := range blocks {
 		hits = append(hits, searchHit{
-			DocumentID:      b.DocumentID,
-			DocumentName:    names[b.DocumentID].DocumentName,
-			DefaultBranchID: names[b.DocumentID].DefaultBranchID,
-			BlockUID:        b.ID,
-			Text:            b.Text,
+			DocumentID:   b.DocumentID,
+			DocumentName: names[b.DocumentID].DocumentName,
+			BranchID:     b.BranchID,
+			BranchName:   b.BranchName,
+			Default:      b.BranchDefault,
+			BlockUID:     strings.TrimPrefix(b.ID, b.BranchID.String()+"-"),
+			Text:         b.Text,
 		})
 	}
 
@@ -152,10 +155,15 @@ type searchHit struct {
 	// and the search.
 	DocumentName string `json:"document_name,omitempty"`
 
-	// DefaultBranchID is the branch the hit was indexed from, which is
-	// the document's default one and what a follow-up read takes; zero
-	// when the tree lookup failed.
-	DefaultBranchID xid.ID `json:"default_branch_id,omitzero"`
+	// BranchID is the branch the hit was indexed from, which is what a
+	// follow-up read takes.
+	BranchID xid.ID `json:"branch_id"`
+
+	// BranchName is that branch's name.
+	BranchName string `json:"branch_name"`
+
+	// Default reports whether that branch is the document's default.
+	Default bool `json:"default"`
 
 	// BlockUID is the matching block's uid attribute, usable with
 	// read_block and the edit tools.

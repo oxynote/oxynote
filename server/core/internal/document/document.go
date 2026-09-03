@@ -262,20 +262,21 @@ func (d Document) HistoryEntry() HistoryEntry {
 	}
 }
 
-// Search converts the document to a search.Document for indexing.
+// Search converts the document's branch to search blocks for indexing.
 func (d Document) Search() map[string]search.Block {
-	res := d.Content.Search(d.OrganizationID, d.ID)
-
-	res[d.ID.String()] = search.Block{
-		// a special block carrying the document name. The map is keyed by the
-		// document ID while the indexed block ID is prefixed, so the title
-		// never collides with a content block that happens to share the ID.
-		ID:             "docname" + d.ID.String(),
+	scope := search.Scope{
 		OrganizationID: d.OrganizationID,
 		DocumentID:     d.ID,
-		Type:           "document",
-		Text:           d.DocumentName,
+		BranchID:       d.BranchID,
+		BranchName:     d.BranchName,
+		BranchDefault:  d.Default,
 	}
+
+	res := d.Content.Search(scope)
+
+	// a special block carrying the document name. The map is keyed by the
+	// document ID, which no content block shares.
+	res[d.ID.String()] = scope.Block("docname", "document", d.DocumentName)
 
 	return res
 }

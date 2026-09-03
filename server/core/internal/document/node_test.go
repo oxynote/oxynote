@@ -296,33 +296,37 @@ func Test_RootBlock_Search(t *testing.T) {
 			},
 			// no text: nothing to index.
 			{Type: BlockNodeHorizontalRule, Attrs: Attributes{"uid": "hr1"}},
+			// a metric block's title is an attribute, not a text child.
+			{
+				Type:  BlockNodeMetricBlock,
+				Attrs: Attributes{"uid": "m1", "title": "Pizza Fridays"},
+			},
+			// an untitled metric block has nothing to index.
+			{
+				Type:  BlockNodeMetricBlock,
+				Attrs: Attributes{"uid": "m2", "title": ""},
+			},
+			{
+				Type:  BlockNodeMetricBlock,
+				Attrs: Attributes{"uid": "m3"},
+			},
 		},
 	}
 
-	res := rb.Search("org-1", documentID)
+	scope := search.Scope{
+		OrganizationID: "org-1",
+		DocumentID:     documentID,
+		BranchID:       xid.New(),
+		BranchName:     "draft",
+	}
+
+	res := rb.Search(scope)
 
 	assert.Equal(t, map[string]search.Block{
-		"p1": {
-			ID:             "p1",
-			OrganizationID: "org-1",
-			DocumentID:     documentID,
-			Type:           "paragraph",
-			Text:           "first",
-		},
-		"li1": {
-			ID:             "li1",
-			OrganizationID: "org-1",
-			DocumentID:     documentID,
-			Type:           "listItem",
-			Text:           "nested",
-		},
-		"p2": {
-			ID:             "p2",
-			OrganizationID: "org-1",
-			DocumentID:     documentID,
-			Type:           "paragraph",
-			Text:           "plain bold tail",
-		},
+		"p1":  scope.Block("p1", "paragraph", "first"),
+		"li1": scope.Block("li1", "listItem", "nested"),
+		"p2":  scope.Block("p2", "paragraph", "plain bold tail"),
+		"m1":  scope.Block("m1", "metricBlock", "Pizza Fridays"),
 	}, res)
 }
 

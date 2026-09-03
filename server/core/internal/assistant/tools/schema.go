@@ -34,7 +34,7 @@ const (
 
 	// _descBranchID describes the branch-id property every content tool
 	// takes.
-	_descBranchID = "The id of the branch to read or write: a document's default_branch_id from list_documents or a search hit, or any id from the branches get_document lists. A protected branch can be read but refuses every write."
+	_descBranchID = "The id of the branch to read or write: a document's default_branch_id from list_documents, a search hit's branch_id, or any id from the branches get_document lists. A protected branch can be read but refuses every write."
 
 	// _keyDocumentID is the shared document-id property name.
 	_keyDocumentID = "document_id"

@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -41,7 +43,36 @@ const (
 	// _taskPollInterval is how often an asynchronous Meilisearch task is
 	// polled while waiting for it to settle.
 	_taskPollInterval = 50 * time.Millisecond
+
+	// _setupTimeout bounds the index setup at boot.
+	_setupTimeout = time.Minute
+
+	// _writeTimeout bounds one batch of index writes, task waits included.
+	_writeTimeout = 2 * time.Minute
+
+	// _searchTimeout bounds one search request.
+	_searchTimeout = 10 * time.Second
 )
+
+// _displayedAttributes are the entry fields search hits carry.
+var _displayedAttributes = []string{
+	"id",
+	"organizationId",
+	"documentId",
+	"branchId",
+	"branchName",
+	"branchDefault",
+	"type",
+	_textAttribute,
+}
+
+// _filterableAttributes are the entry fields searches and removals filter
+// by.
+var _filterableAttributes = []string{
+	"organizationId",
+	"documentId",
+	"branchId",
+}
 
 // Client is a Meilisearch client wrapper.
 type Client struct {
@@ -76,8 +107,12 @@ func (c *Client) Configured() bool {
 	return c.meiliMan != nil
 }
 
-// ensureIndex ensures the documents index exists.
+// ensureIndex ensures the documents index exists and runs with the
+// declared settings.
 func (c *Client) ensureIndex(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, _setupTimeout)
+	defer cancel()
+
 	_, err := c.meiliMan.GetIndexWithContext(ctx, _documentsIndex)
 
 	switch merr, ok := errors.AsType[*meilisearch.Error](err); {
@@ -99,28 +134,68 @@ func (c *Client) ensureIndex(ctx context.Context) error {
 		return fmt.Errorf("getting documents index: %w", err)
 	}
 
-	// the settings updates are idempotent and are therefore applied on every
-	// boot. Applying them only when the index is created leaves an index
-	// whose settings task failed broken for good — with organizationId not
-	// filterable every search fails — and never rolls new synonyms out to an
-	// existing deployment.
-	task, err := c.meiliMan.Index(_documentsIndex).UpdateFilterableAttributesWithContext(ctx, &[]any{
-		"organizationId",
-		"documentId",
-	})
+	// the settings are checked on every boot rather than only when the
+	// index is created: an index whose settings task failed would otherwise
+	// stay broken for good, and new synonyms would never reach an existing
+	// deployment. They are sent only when they differ, since a searchable
+	// or filterable attribute change re-indexes every entry.
+	want, err := indexSettings()
 	if err != nil {
-		return fmt.Errorf("updating filterable attributes: %w", err)
+		return err
+	}
+
+	have, err := c.meiliMan.Index(_documentsIndex).GetSettingsWithContext(ctx)
+	if err != nil {
+		return fmt.Errorf("getting settings: %w", err)
+	}
+
+	if settingsMatch(have, want) {
+		return nil
+	}
+
+	task, err := c.meiliMan.Index(_documentsIndex).UpdateSettingsWithContext(ctx, want)
+	if err != nil {
+		return fmt.Errorf("updating settings: %w", err)
 	}
 
 	if err = c.awaitTask(ctx, task); err != nil {
-		return fmt.Errorf("updating filterable attributes: %w", err)
-	}
-
-	if err = c.setupSynonyms(ctx, _documentsIndex); err != nil {
-		return fmt.Errorf("setting up synonyms: %w", err)
+		return fmt.Errorf("updating settings: %w", err)
 	}
 
 	return nil
+}
+
+// indexSettings returns the settings the documents index runs with. Only
+// the fields it sets are sent; everything else keeps Meilisearch's default.
+func indexSettings() (*meilisearch.Settings, error) {
+	var synonyms map[string][]string
+
+	if err := json.Unmarshal(synonymsFile, &synonyms); err != nil {
+		return nil, fmt.Errorf("unmarshaling synonyms: %w", err)
+	}
+
+	return &meilisearch.Settings{
+		SearchableAttributes: []string{_textAttribute},
+		DisplayedAttributes:  _displayedAttributes,
+		FilterableAttributes: _filterableAttributes,
+		Synonyms:             synonyms,
+	}, nil
+}
+
+// settingsMatch reports whether the index already runs with every field
+// want sets. Attribute lists are compared as sets, since Meilisearch does
+// not promise their order back.
+func settingsMatch(have, want *meilisearch.Settings) bool {
+	sameSet := func(a, b []string) bool {
+		a, b = slices.Sorted(slices.Values(a)), slices.Sorted(slices.Values(b))
+
+		return slices.Equal(a, b)
+	}
+
+	return sameSet(have.SearchableAttributes, want.SearchableAttributes) &&
+		sameSet(have.DisplayedAttributes, want.DisplayedAttributes) &&
+		sameSet(have.FilterableAttributes, want.FilterableAttributes) &&
+		maps.EqualFunc(have.Synonyms, want.Synonyms, sameSet)
 }
 
 // awaitTask blocks until an asynchronous Meilisearch task settles and reports
@@ -133,27 +208,28 @@ func (c *Client) awaitTask(ctx context.Context, info *meilisearch.TaskInfo) erro
 	}
 
 	if task.Status != meilisearch.TaskStatusSucceeded {
-		return fmt.Errorf("task %d finished with status %q", info.TaskUID, task.Status)
+		return fmt.Errorf(
+			"task %d finished with status %q: %s (%s)",
+			info.TaskUID,
+			task.Status,
+			task.Error.Message,
+			task.Error.Code,
+		)
 	}
 
 	return nil
 }
 
-// setupSynonyms sets up synonyms for the documents index.
-func (c *Client) setupSynonyms(ctx context.Context, index string) error {
-	var synonyms map[string][]string
-
-	if err := json.Unmarshal(synonymsFile, &synonyms); err != nil {
-		return fmt.Errorf("unmarshaling synonyms: %w", err)
-	}
-
-	task, err := c.meiliMan.Index(index).UpdateSynonymsWithContext(ctx, &synonyms)
+// settle reports the outcome of one index write: the request error when the
+// call itself failed, otherwise the task's result once Meilisearch has
+// applied it.
+func (c *Client) settle(ctx context.Context, what string, task *meilisearch.TaskInfo, err error) error {
 	if err != nil {
-		return fmt.Errorf("updating synonyms: %w", err)
+		return fmt.Errorf("%s: %w", what, err)
 	}
 
-	if err = c.awaitTask(ctx, task); err != nil {
-		return fmt.Errorf("updating synonyms: %w", err)
+	if err := c.awaitTask(ctx, task); err != nil {
+		return fmt.Errorf("%s: %w", what, err)
 	}
 
 	return nil
@@ -164,6 +240,9 @@ func (c *Client) SearchDocuments(ctx context.Context, organizationID, query stri
 	if !c.Configured() {
 		return nil, ErrNotConfigured
 	}
+
+	ctx, cancel := context.WithTimeout(ctx, _searchTimeout)
+	defer cancel()
 
 	res, err := c.meiliMan.Index(_documentsIndex).SearchWithContext(ctx, query, &meilisearch.SearchRequest{
 		AttributesToSearchOn:  []string{_textAttribute},
@@ -206,6 +285,9 @@ func (c *Client) SearchDocumentBlocks(ctx context.Context, organizationID, query
 		return nil, ErrNotConfigured
 	}
 
+	ctx, cancel := context.WithTimeout(ctx, _searchTimeout)
+	defer cancel()
+
 	res, err := c.meiliMan.Index(_documentsIndex).SearchWithContext(ctx, query, &meilisearch.SearchRequest{
 		AttributesToSearchOn: []string{_textAttribute},
 		Filter:               fmt.Sprintf("organizationId = %q", organizationID),
@@ -231,23 +313,25 @@ func (c *Client) SearchDocumentBlocks(ctx context.Context, organizationID, query
 }
 
 // ReplaceDocumentBlocks replaces document blocks in the index based on the
-// provided differences.
+// provided differences. Every write is awaited, so a batch Meilisearch
+// rejects is reported rather than silently dropped.
 func (c *Client) ReplaceDocumentBlocks(ctx context.Context, bd BlocksDifference) error {
 	if !c.Configured() {
 		return ErrNotConfigured
 	}
 
-	if len(bd.Added) != 0 {
-		_, err := c.meiliMan.Index(_documentsIndex).AddDocumentsWithContext(ctx, bd.Added, nil)
-		if err != nil {
-			return fmt.Errorf("adding documents: %w", err)
-		}
-	}
+	ctx, cancel := context.WithTimeout(ctx, _writeTimeout)
+	defer cancel()
 
-	if len(bd.Updated) != 0 {
-		_, err := c.meiliMan.Index(_documentsIndex).UpdateDocumentsWithContext(ctx, bd.Updated, nil)
-		if err != nil {
-			return fmt.Errorf("updating documents: %w", err)
+	idx := c.meiliMan.Index(_documentsIndex)
+
+	// every entry is complete, so added and updated ones alike are sent as
+	// one add-or-replace request.
+	if docs := slices.Concat(bd.Added, bd.Updated); len(docs) != 0 {
+		task, err := idx.AddDocumentsWithContext(ctx, docs, nil)
+
+		if err = c.settle(ctx, "adding documents", task, err); err != nil {
+			return err
 		}
 	}
 
@@ -258,9 +342,22 @@ func (c *Client) ReplaceDocumentBlocks(ctx context.Context, bd BlocksDifference)
 			ids = append(ids, block.ID)
 		}
 
-		_, err := c.meiliMan.Index(_documentsIndex).DeleteDocumentsWithContext(ctx, ids, nil)
-		if err != nil {
-			return fmt.Errorf("deleting documents: %w", err)
+		task, err := idx.DeleteDocumentsWithContext(ctx, ids, nil)
+
+		if err = c.settle(ctx, "deleting documents", task, err); err != nil {
+			return err
+		}
+	}
+
+	if len(bd.RemovedBranches) != 0 {
+		ids := make([]string, 0, len(bd.RemovedBranches))
+
+		for _, br := range bd.RemovedBranches {
+			ids = append(ids, br.BranchID.String())
+		}
+
+		if err := c.deleteByFilter(ctx, idx, "branchId", ids); err != nil {
+			return fmt.Errorf("deleting branches by filter: %w", err)
 		}
 	}
 
@@ -268,31 +365,35 @@ func (c *Client) ReplaceDocumentBlocks(ctx context.Context, bd BlocksDifference)
 		ids := make([]string, 0, len(bd.RemovedDocuments))
 
 		for _, id := range bd.RemovedDocuments {
-			ids = append(ids, strconv.Quote(id.String()))
+			ids = append(ids, id.String())
 		}
 
-		filter := fmt.Sprintf("documentId IN [%s]", strings.Join(ids, ", "))
-
-		_, err := c.meiliMan.Index(_documentsIndex).DeleteDocumentsByFilterWithContext(ctx, filter, nil)
-		if err != nil {
+		if err := c.deleteByFilter(ctx, idx, "documentId", ids); err != nil {
 			return fmt.Errorf("deleting documents by filter: %w", err)
 		}
 	}
 
 	if len(bd.RemovedOrganizations) != 0 {
-		ids := make([]string, 0, len(bd.RemovedOrganizations))
-
-		for _, id := range bd.RemovedOrganizations {
-			ids = append(ids, strconv.Quote(id))
-		}
-
-		filter := fmt.Sprintf("organizationId IN [%s]", strings.Join(ids, ", "))
-
-		_, err := c.meiliMan.Index(_documentsIndex).DeleteDocumentsByFilterWithContext(ctx, filter, nil)
-		if err != nil {
+		if err := c.deleteByFilter(ctx, idx, "organizationId", bd.RemovedOrganizations); err != nil {
 			return fmt.Errorf("deleting organizations by filter: %w", err)
 		}
 	}
 
 	return nil
+}
+
+// deleteByFilter removes every entry whose field is one of the ids and
+// waits for the removal to apply.
+func (c *Client) deleteByFilter(ctx context.Context, idx meilisearch.IndexManager, field string, ids []string) error {
+	quoted := make([]string, 0, len(ids))
+
+	for _, id := range ids {
+		quoted = append(quoted, strconv.Quote(id))
+	}
+
+	filter := fmt.Sprintf("%s IN [%s]", field, strings.Join(quoted, ", "))
+
+	task, err := idx.DeleteDocumentsByFilterWithContext(ctx, filter, nil)
+
+	return c.settle(ctx, "deleting by "+field, task, err)
 }

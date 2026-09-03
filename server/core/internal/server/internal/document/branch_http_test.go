@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/guregu/null/v5"
@@ -147,6 +148,7 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 		Metadata    int
 		Maintainers int
 		SearchJobs  int
+		BranchID    xid.ID
 	}{
 		"Missing branch ID parameter": {
 			DB:         &DBMock{},
@@ -273,7 +275,7 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 			Metadata:   1,
 			SearchJobs: 1,
 		},
-		"Non-default branch skips the search job": {
+		"Non-default branch queues its own search job": {
 			DB: &DBMock{
 				FetchDocumentUnsafeByBranchIDFunc: func(context.Context, xid.ID) (*documentCore.Document, error) {
 					return branchDoc(_branchID2), nil
@@ -284,10 +286,12 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 					return []string{"u1", "u9"}, nil
 				},
 			},
-			Body:      validBody,
-			RespCode:  http.StatusOK,
-			Committed: 1,
-			Metadata:  1,
+			Body:       validBody,
+			RespCode:   http.StatusOK,
+			Committed:  1,
+			Metadata:   1,
+			SearchJobs: 1,
+			BranchID:   _branchID2,
 		},
 	}
 
@@ -306,6 +310,18 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 			assert.Equal(t, c.Metadata, cnt.metadata)
 			assert.Equal(t, c.Maintainers, cnt.maintainers)
 			assert.Len(t, c.Tx.InsertDocumentSearchJobCalls(), c.SearchJobs)
+
+			// the diff is scoped to the persisted branch: entries are keyed
+			// by its id, whichever branch it is.
+			if !c.BranchID.IsZero() {
+				diff := c.Tx.InsertDocumentSearchJobCalls()[0].Diff
+				require.NotEmpty(t, diff.Updated)
+
+				for _, b := range diff.Updated {
+					assert.Equal(t, c.BranchID, b.BranchID)
+					assert.True(t, strings.HasPrefix(b.ID, c.BranchID.String()+"-"))
+				}
+			}
 		})
 	}
 }
@@ -1188,6 +1204,23 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 			RespCode:  http.StatusInternalServerError,
 			Committed: 1,
 		},
+		"Search job insert error": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
+			},
+			Tx: &TxMock{
+				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
+					return branchDoc(_branchID2), nil
+				},
+				InsertDocumentSearchJobFunc: func(context.Context, search.BlocksDifference) error {
+					return errors.New("boom")
+				},
+			},
+			Body:     validBody,
+			RespCode: http.StatusInternalServerError,
+		},
 		"Successful branch creation": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
@@ -1227,6 +1260,17 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 			if c.RespCode == http.StatusCreated {
 				require.Len(t, c.Tx.ForkDocumentBranchCalls(), 1)
 				assert.Equal(t, "feature", c.Tx.ForkDocumentBranchCalls()[0].TargetBranch)
+
+				// the fork's entries are added under its own branch id before
+				// the commit, so the branch is searchable without an edit.
+				require.Len(t, c.Tx.InsertDocumentSearchJobCalls(), 1)
+				diff := c.Tx.InsertDocumentSearchJobCalls()[0].Diff
+				require.NotEmpty(t, diff.Added)
+
+				for _, b := range diff.Added {
+					assert.Equal(t, _branchID2, b.BranchID)
+					assert.True(t, strings.HasPrefix(b.ID, _branchID2.String()+"-"))
+				}
 			}
 
 			if len(c.CopiedHooks) == 0 {
@@ -1244,12 +1288,14 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 func Test_Handler_DeleteDocumentBranch(t *testing.T) {
 	cc := map[string]struct {
 		DB         *DBMock
+		Tx         *TxMock
 		NoSession  bool
 		OmitDoc    bool
 		OmitBranch bool
 		RespCode   int
 		RespJSON   string
 		Deleted    int
+		Committed  int
 	}{
 		"No session in context": {
 			DB:        &DBMock{},
@@ -1326,7 +1372,26 @@ func Test_Handler_DeleteDocumentBranch(t *testing.T) {
 				CountDocumentBranchesFunc: func(context.Context, xid.ID, string) (int, error) {
 					return 2, nil
 				},
+			},
+			Tx: &TxMock{
 				DeleteDocumentBranchByIDFunc: func(context.Context, xid.ID, string) error {
+					return errors.New("boom")
+				},
+			},
+			RespCode: http.StatusInternalServerError,
+			Deleted:  1,
+		},
+		"Search job insert error": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return branchDoc(_branchID), nil
+				},
+				CountDocumentBranchesFunc: func(context.Context, xid.ID, string) (int, error) {
+					return 2, nil
+				},
+			},
+			Tx: &TxMock{
+				InsertDocumentSearchJobFunc: func(context.Context, search.BlocksDifference) error {
 					return errors.New("boom")
 				},
 			},
@@ -1342,8 +1407,9 @@ func Test_Handler_DeleteDocumentBranch(t *testing.T) {
 					return 2, nil
 				},
 			},
-			RespCode: http.StatusNoContent,
-			Deleted:  1,
+			RespCode:  http.StatusNoContent,
+			Deleted:   1,
+			Committed: 1,
 		},
 	}
 
@@ -1351,7 +1417,12 @@ func Test_Handler_DeleteDocumentBranch(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			hdl, _ := newTestHandler(c.DB, &fakePublisher{})
+			tx := c.Tx
+			if tx == nil {
+				tx = &TxMock{}
+			}
+
+			hdl, _ := newTestHandler(withTx(c.DB, tx, nil), &fakePublisher{})
 
 			rec := httptest.NewRecorder()
 
@@ -1363,7 +1434,17 @@ func Test_Handler_DeleteDocumentBranch(t *testing.T) {
 				assert.JSONEq(t, c.RespJSON, rec.Body.String())
 			}
 
-			assert.Len(t, c.DB.DeleteDocumentBranchByIDCalls(), c.Deleted)
+			assert.Len(t, tx.DeleteDocumentBranchByIDCalls(), c.Deleted)
+			assert.Len(t, tx.CommitCalls(), c.Committed)
+
+			// the branch row is gone with its content, so the index is
+			// cleared by branch id.
+			if c.RespCode == http.StatusNoContent {
+				require.Len(t, tx.InsertDocumentSearchJobCalls(), 1)
+				assert.Equal(t, search.BlocksDifference{
+					RemovedBranches: []search.BranchRemoval{{DocumentID: _documentID, BranchID: _branchID}},
+				}, tx.InsertDocumentSearchJobCalls()[0].Diff)
+			}
 		})
 	}
 }

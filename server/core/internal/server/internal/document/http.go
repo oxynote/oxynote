@@ -617,7 +617,29 @@ func (h *Handler) UpdateDocumentBranch(w http.ResponseWriter, r *http.Request) {
 
 	ndoc := doc.ApplyBranchUpdate(ui.Name, ui.Protected, session.UserID)
 
-	if err := h.db.UpdateDocumentBranchMetadata(r.Context(), ndoc); err != nil {
+	var tx Tx
+
+	if err := h.db.BeginTx(r.Context(), &tx); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
+
+	if err := tx.UpdateDocumentBranchMetadata(r.Context(), ndoc); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	// the index carries the branch name on every entry of the branch.
+	if ndoc.BranchName != doc.BranchName {
+		if err := h.searchJobs.Enqueue(r.Context(), tx, search.BlocksDiff(doc.Search(), ndoc.Search())); err != nil {
+			httpserver.RespondError(h.log, w, err)
+			return
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -755,15 +777,13 @@ func (h *Handler) UpdateDocumentBranchByIDUnsafe(w http.ResponseWriter, r *http.
 		}
 	}
 
-	if ndoc.BranchName == documentCore.DefaultBranch {
-		if err = h.searchJobs.Enqueue(
-			r.Context(),
-			tx,
-			search.BlocksDiff(doc.Search(), ndoc.Search()),
-		); err != nil {
-			httpserver.RespondError(h.log, w, err)
-			return
-		}
+	if err = h.searchJobs.Enqueue(
+		r.Context(),
+		tx,
+		search.BlocksDiff(doc.Search(), ndoc.Search()),
+	); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
 	}
 
 	err = tx.Commit()
@@ -1258,6 +1278,11 @@ func (h *Handler) CreateDocumentBranch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := h.searchJobs.Enqueue(r.Context(), tx, search.BlocksDiff(nil, newDoc.Search())); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
 	if err := tx.Commit(); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -1333,7 +1358,28 @@ func (h *Handler) DeleteDocumentBranch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.db.DeleteDocumentBranchByID(r.Context(), branchID, session.ActiveOrganizationID); err != nil {
+	var tx Tx
+
+	if err := h.db.BeginTx(r.Context(), &tx); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
+
+	if err := tx.DeleteDocumentBranchByID(r.Context(), branchID, session.ActiveOrganizationID); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if err := h.searchJobs.Enqueue(r.Context(), tx, search.BlocksDifference{
+		RemovedBranches: []search.BranchRemoval{{DocumentID: branchDoc.ID, BranchID: branchID}},
+	}); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}

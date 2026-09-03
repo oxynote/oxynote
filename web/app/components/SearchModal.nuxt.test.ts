@@ -12,6 +12,23 @@ import { clearTeleportedOverlays, seedAuthOrganization } from "./test-helpers"
 
 const DEBOUNCE_MS = 300
 const DOC_ID = "doc1".padEnd(20, "0")
+const MAIN_ID = "main".padEnd(20, "0")
+const DRAFT_ID = "draft".padEnd(20, "0")
+
+// hit builds a search hit on the main branch, the way core indexes one:
+// the entry id carries the branch prefix
+function hit(uid: string, type: string, text: string) {
+	return {
+		id: `${MAIN_ID}-${uid}`,
+		documentId: DOC_ID,
+		organizationId: "org1",
+		branchId: MAIN_ID,
+		branchName: "main",
+		branchDefault: true,
+		type,
+		text,
+	}
+}
 
 function seedTree() {
 	seedQueryData(
@@ -130,9 +147,7 @@ describe("<SearchModal>", { concurrent: false }, () => {
 	})
 
 	it("lists the matching documents", async ({ expect }) => {
-		mockSearch([
-			{ id: DOC_ID, documentId: DOC_ID, type: "document", text: "Runbook" },
-		])
+		mockSearch([hit("docname", "document", "Runbook")])
 		await mountModal()
 
 		await search("run")
@@ -145,9 +160,7 @@ describe("<SearchModal>", { concurrent: false }, () => {
 	}) => {
 		seedAuthOrganization({ name: "Acme Corp", slug: "acme-corp" })
 		seedTree()
-		mockSearch([
-			{ id: DOC_ID, documentId: DOC_ID, type: "document", text: "Runbook" },
-		])
+		mockSearch([hit("docname", "document", "Runbook")])
 		await mountModal()
 
 		await search("run")
@@ -162,14 +175,7 @@ describe("<SearchModal>", { concurrent: false }, () => {
 	}) => {
 		seedAuthOrganization({ name: "Acme Corp", slug: "acme-corp" })
 		seedTree()
-		mockSearch([
-			{
-				id: "block-7",
-				documentId: DOC_ID,
-				type: "heading",
-				text: "Rollback steps",
-			},
-		])
+		mockSearch([hit("block-7", "heading", "Rollback steps")])
 		await mountModal()
 
 		await search("roll")
@@ -179,13 +185,57 @@ describe("<SearchModal>", { concurrent: false }, () => {
 		)
 	})
 
+	it("links a hit on another branch with that branch selected", async ({
+		expect,
+	}) => {
+		seedAuthOrganization({ name: "Acme Corp", slug: "acme-corp" })
+		seedTree()
+		mockSearch([
+			{
+				...hit("block-7", "heading", "Rollback steps"),
+				id: `${DRAFT_ID}-block-7`,
+				branchId: DRAFT_ID,
+				branchName: "draft",
+				branchDefault: false,
+			},
+		])
+		await mountModal()
+
+		await search("roll")
+
+		expect(document.body.querySelector("a")?.getAttribute("href")).toBe(
+			`/Acme-Corp/Runbook-${DOC_ID}?branch=${DRAFT_ID}#block-7`,
+		)
+	})
+
+	it("names the branch of every hit", async ({ expect }) => {
+		seedTree()
+		mockSearch([
+			hit("docname", "document", "Runbook"),
+			{
+				...hit("block-7", "heading", "Rollback steps"),
+				id: `${DRAFT_ID}-block-7`,
+				branchId: DRAFT_ID,
+				branchName: "draft",
+				branchDefault: false,
+			},
+		])
+		await mountModal()
+
+		await search("r")
+
+		const branches = [
+			...document.body.querySelectorAll("[data-testid='search-result-branch']"),
+		].map((el) => el.textContent.trim())
+
+		expect(branches).toEqual(["main", "draft"])
+	})
+
 	it("falls back to the bare document id when the tree has no such document", async ({
 		expect,
 	}) => {
 		seedAuthOrganization({ name: "Acme Corp", slug: "acme-corp" })
-		mockSearch([
-			{ id: DOC_ID, documentId: DOC_ID, type: "document", text: "Runbook" },
-		])
+		mockSearch([hit("docname", "document", "Runbook")])
 		await mountModal()
 
 		await search("run")
@@ -199,9 +249,7 @@ describe("<SearchModal>", { concurrent: false }, () => {
 		expect,
 	}) => {
 		seedTree()
-		mockSearch([
-			{ id: DOC_ID, documentId: DOC_ID, type: "document", text: "Runbook" },
-		])
+		mockSearch([hit("docname", "document", "Runbook")])
 		await mountModal()
 
 		await search("run")
@@ -218,7 +266,7 @@ describe("<SearchModal>", { concurrent: false }, () => {
 	])(
 		"marks a $type hit with its own icon",
 		async ({ type, expected }, { expect }) => {
-			mockSearch([{ id: "x", documentId: DOC_ID, type: type, text: "Hit" }])
+			mockSearch([hit("x", type, "Hit")])
 			await mountModal()
 
 			await search("hit")
@@ -242,9 +290,7 @@ describe("<SearchModal>", { concurrent: false }, () => {
 
 	it("closes when a result is followed", async ({ expect }) => {
 		seedTree()
-		mockSearch([
-			{ id: DOC_ID, documentId: DOC_ID, type: "document", text: "Runbook" },
-		])
+		mockSearch([hit("docname", "document", "Runbook")])
 		const wrapper = await mountModal()
 		await search("run")
 

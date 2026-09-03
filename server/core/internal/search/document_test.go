@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -78,4 +79,27 @@ func Test_BlocksDifference_Scan(t *testing.T) {
 
 	assert.Error(t, decoded.Scan("not bytes"))
 	assert.Error(t, decoded.Scan([]byte(`{not json`)))
+}
+
+func Test_Scope_Block(t *testing.T) {
+	t.Parallel()
+
+	scope := Scope{
+		OrganizationID: "org-1",
+		DocumentID:     xid.New(),
+		BranchID:       xid.New(),
+		BranchName:     "draft",
+		BranchDefault:  false,
+	}
+
+	assert.Equal(t, Block{
+		ID:             scope.BranchID.String() + "-p1",
+		OrganizationID: "org-1",
+		DocumentID:     scope.DocumentID,
+		BranchID:       scope.BranchID,
+		BranchName:     "draft",
+		BranchDefault:  false,
+		Type:           "paragraph",
+		Text:           "hello",
+	}, scope.Block("p1", "paragraph", "hello"))
 }

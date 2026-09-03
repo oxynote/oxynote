@@ -270,15 +270,20 @@ func Test_Document_Search(t *testing.T) {
 	nameBlock, ok := res[doc.ID.String()]
 	require.True(t, ok)
 	assert.Equal(t, search.Block{
-		ID:             "docname" + doc.ID.String(),
+		ID:             doc.BranchID.String() + "-docname",
 		OrganizationID: "org-1",
 		DocumentID:     doc.ID,
+		BranchID:       doc.BranchID,
+		BranchName:     DefaultBranch,
+		BranchDefault:  true,
 		Type:           "document",
 		Text:           "Runbook",
 	}, nameBlock)
 
 	contentBlock, ok := res["p1"]
 	require.True(t, ok)
+	assert.Equal(t, doc.BranchID.String()+"-p1", contentBlock.ID)
+	assert.Equal(t, doc.BranchID, contentBlock.BranchID)
 	assert.Equal(t, "hello", contentBlock.Text)
 }
 

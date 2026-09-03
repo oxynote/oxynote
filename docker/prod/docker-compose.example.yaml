@@ -66,6 +66,7 @@ services:
       - MEILI_ENV=production
       - MEILI_MASTER_KEY=change-me-meili-key
       - MEILI_LOG_LEVEL=WARN
+      - MEILI_NO_ANALYTICS=true
     volumes:
       - meilisearch_data:/meili_data
     healthcheck:

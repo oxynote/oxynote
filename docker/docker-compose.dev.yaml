@@ -72,7 +72,7 @@ services:
       postgres:
         condition: service_healthy
       meilisearch:
-        condition: service_started
+        condition: service_healthy
     volumes:
       # optional GitHub App private key: drop oxynote.private-key.pem into
       # docker/github/ and set OXYNOTE_CORE_GITHUB_APP_ID to enable the
@@ -164,6 +164,12 @@ services:
       - MEILI_MASTER_KEY=devmasterkey
       - MEILI_ENV=development
       - MEILI_LOG_LEVEL=WARN
+      - MEILI_NO_ANALYTICS=true
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:7700/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
     restart: unless-stopped
     logging:
       driver: local

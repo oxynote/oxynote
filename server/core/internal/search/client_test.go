@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -86,70 +87,116 @@ func Test_NewClient(t *testing.T) {
 		}
 	}
 
-	wasFilterableUpdated := func(count int) check {
+	wasSettingsUpdated := func(count int) check {
 		return func(t *testing.T, _ *mock.MeiliServiceManager, idx *mock.MeiliIndexManager, _ error) {
-			ff := idx.UpdateFilterableAttributesWithContextCalls()
+			ff := idx.UpdateSettingsWithContextCalls()
 			require.Len(t, ff, count)
 
 			if count == 0 {
 				return
 			}
 
-			assert.Equal(t, &[]any{"organizationId", "documentId"}, ff[0].Request)
+			assert.Equal(t, []string{"text"}, ff[0].Request.SearchableAttributes)
+			assert.Equal(t, _displayedAttributes, ff[0].Request.DisplayedAttributes)
+			assert.Equal(t, _filterableAttributes, ff[0].Request.FilterableAttributes)
+			assert.NotEmpty(t, ff[0].Request.Synonyms)
 		}
 	}
 
-	wasSynonymsUpdated := func(count int) check {
-		return func(t *testing.T, _ *mock.MeiliServiceManager, idx *mock.MeiliIndexManager, _ error) {
-			ff := idx.UpdateSynonymsWithContextCalls()
-			require.Len(t, ff, count)
+	// current is what a settled index reports: the declared settings, with
+	// the attribute lists in an order of Meilisearch's choosing.
+	current := func() *meilisearch.Settings {
+		want, err := indexSettings()
+		require.NoError(t, err)
 
-			if count == 0 {
-				return
-			}
+		have := *want
+		have.DisplayedAttributes = slices.Clone(want.DisplayedAttributes)
+		slices.Reverse(have.DisplayedAttributes)
 
-			require.NotNil(t, ff[0].Request)
-			assert.NotEmpty(t, *ff[0].Request)
+		return &have
+	}
+
+	// fresh is what a just-created index reports.
+	fresh := func() *meilisearch.Settings {
+		return &meilisearch.Settings{
+			SearchableAttributes: []string{"*"},
+			DisplayedAttributes:  []string{"*"},
 		}
 	}
 
 	tests := map[string]struct {
-		GetIndexErr   error
-		CreateErr     error
-		FilterableErr error
-		SynonymsErr   error
-		WaitErr       error
-		TaskStatus    meilisearch.TaskStatus
-		Checks        []check
+		GetIndexErr    error
+		CreateErr      error
+		Settings       *meilisearch.Settings
+		GetSettingsErr error
+		SettingsErr    error
+		WaitErr        error
+		TaskStatus     meilisearch.TaskStatus
+		Checks         []check
 	}{
-		"Existing index still has its settings applied": {
+		"Existing index with the declared settings is left alone": {
+			Settings: current(),
 			Checks: checks(
 				hasError(false),
 				wasCreateIndexCalled(0),
-				wasFilterableUpdated(1),
-				wasSynonymsUpdated(1),
+				wasSettingsUpdated(0),
+			),
+		},
+		"Existing index with stale settings gets them updated": {
+			Settings: func() *meilisearch.Settings {
+				st := current()
+				st.FilterableAttributes = []string{"organizationId", "documentId"}
+
+				return st
+			}(),
+			Checks: checks(
+				hasError(false),
+				wasCreateIndexCalled(0),
+				wasSettingsUpdated(1),
+			),
+		},
+		"Existing index with stale synonyms gets them updated": {
+			Settings: func() *meilisearch.Settings {
+				st := current()
+				st.Synonyms = map[string][]string{"2fa": {"mfa"}}
+
+				return st
+			}(),
+			Checks: checks(
+				hasError(false),
+				wasSettingsUpdated(1),
+			),
+		},
+		"Settings fetch failure fails": {
+			GetSettingsErr: assert.AnError,
+			Checks: checks(
+				hasError(true),
+				wasSettingsUpdated(0),
 			),
 		},
 		"Rejected settings task fails": {
+			Settings:   fresh(),
 			TaskStatus: meilisearch.TaskStatusFailed,
 			Checks: checks(
 				hasError(true),
 				wasCreateIndexCalled(0),
+				wasSettingsUpdated(1),
 			),
 		},
 		"Task wait failure fails": {
-			WaitErr: assert.AnError,
+			Settings: fresh(),
+			WaitErr:  assert.AnError,
 			Checks: checks(
 				hasError(true),
 			),
 		},
 		"Missing index is created with settings": {
 			GetIndexErr: indexNotFoundErr(),
+			Settings:    fresh(),
 			Checks: checks(
 				hasError(false),
 				wasCreateIndexCalled(1),
-				wasFilterableUpdated(1),
-				wasSynonymsUpdated(1),
+				wasSettingsUpdated(1),
 			),
 		},
 		"Other meilisearch errors fail": {
@@ -171,22 +218,16 @@ func Test_NewClient(t *testing.T) {
 			CreateErr:   assert.AnError,
 			Checks: checks(
 				hasError(true),
-				wasFilterableUpdated(0),
+				wasSettingsUpdated(0),
 			),
 		},
-		"Filterable attribute failure fails": {
-			GetIndexErr:   indexNotFoundErr(),
-			FilterableErr: assert.AnError,
-			Checks: checks(
-				hasError(true),
-				wasSynonymsUpdated(0),
-			),
-		},
-		"Synonyms failure fails": {
+		"Settings update failure fails": {
 			GetIndexErr: indexNotFoundErr(),
-			SynonymsErr: assert.AnError,
+			Settings:    fresh(),
+			SettingsErr: assert.AnError,
 			Checks: checks(
 				hasError(true),
+				wasSettingsUpdated(1),
 			),
 		},
 	}
@@ -196,11 +237,11 @@ func Test_NewClient(t *testing.T) {
 			t.Parallel()
 
 			idx := &mock.MeiliIndexManager{
-				UpdateFilterableAttributesWithContextFunc: func(context.Context, *[]any) (*meilisearch.TaskInfo, error) {
-					return &meilisearch.TaskInfo{TaskUID: 2}, tc.FilterableErr
+				GetSettingsWithContextFunc: func(context.Context) (*meilisearch.Settings, error) {
+					return tc.Settings, tc.GetSettingsErr
 				},
-				UpdateSynonymsWithContextFunc: func(context.Context, *map[string][]string) (*meilisearch.TaskInfo, error) {
-					return &meilisearch.TaskInfo{TaskUID: 3}, tc.SynonymsErr
+				UpdateSettingsWithContextFunc: func(context.Context, *meilisearch.Settings) (*meilisearch.TaskInfo, error) {
+					return &meilisearch.TaskInfo{TaskUID: 2}, tc.SettingsErr
 				},
 			}
 
@@ -234,9 +275,19 @@ func Test_NewClient(t *testing.T) {
 }
 
 // newTestClient builds a Client wired straight to the given index mock,
-// bypassing ensureIndex.
-func newTestClient(idx *mock.MeiliIndexManager) *Client {
-	return &Client{meiliMan: stubManagers(idx)}
+// bypassing ensureIndex. Every task the index reports settles with the
+// given status.
+func newTestClient(idx *mock.MeiliIndexManager, status meilisearch.TaskStatus) *Client {
+	svc := stubManagers(idx)
+	svc.WaitForTaskWithContextFunc = func(context.Context, int64, time.Duration) (*meilisearch.Task, error) {
+		task := &meilisearch.Task{Status: status}
+		task.Error.Message = "boom"
+		task.Error.Code = "invalid_document_id"
+
+		return task, nil
+	}
+
+	return &Client{meiliMan: svc}
 }
 
 func Test_Client_SearchDocuments(t *testing.T) {
@@ -259,7 +310,7 @@ func Test_Client_SearchDocuments(t *testing.T) {
 			},
 		}
 
-		data, err := newTestClient(idx).SearchDocuments(context.Background(), "org-1", "hello")
+		data, err := newTestClient(idx, meilisearch.TaskStatusSucceeded).SearchDocuments(context.Background(), "org-1", "hello")
 		require.NoError(t, err)
 
 		assert.JSONEq(t, `[{"id": "b1", "text": "<mark>hello</mark>"}]`, string(data))
@@ -281,7 +332,7 @@ func Test_Client_SearchDocuments(t *testing.T) {
 			},
 		}
 
-		_, err := newTestClient(idx).SearchDocuments(context.Background(), "org-1", "hello")
+		_, err := newTestClient(idx, meilisearch.TaskStatusSucceeded).SearchDocuments(context.Background(), "org-1", "hello")
 		require.Error(t, err)
 	})
 }
@@ -314,7 +365,7 @@ func Test_Client_SearchDocumentBlocks(t *testing.T) {
 			},
 		}
 
-		blocks, err := newTestClient(idx).SearchDocumentBlocks(context.Background(), "org-1", "hello", 7)
+		blocks, err := newTestClient(idx, meilisearch.TaskStatusSucceeded).SearchDocumentBlocks(context.Background(), "org-1", "hello", 7)
 		require.NoError(t, err)
 
 		assert.Equal(t, []Block{{
@@ -343,7 +394,7 @@ func Test_Client_SearchDocumentBlocks(t *testing.T) {
 			},
 		}
 
-		_, err := newTestClient(idx).SearchDocumentBlocks(context.Background(), "org-1", "hello", 7)
+		_, err := newTestClient(idx, meilisearch.TaskStatusSucceeded).SearchDocumentBlocks(context.Background(), "org-1", "hello", 7)
 		require.Error(t, err)
 	})
 
@@ -356,7 +407,7 @@ func Test_Client_SearchDocumentBlocks(t *testing.T) {
 			},
 		}
 
-		_, err := newTestClient(idx).SearchDocumentBlocks(context.Background(), "org-1", "hello", 7)
+		_, err := newTestClient(idx, meilisearch.TaskStatusSucceeded).SearchDocumentBlocks(context.Background(), "org-1", "hello", 7)
 		require.Error(t, err)
 	})
 }
@@ -385,12 +436,6 @@ func Test_Client_ReplaceDocumentBlocks(t *testing.T) {
 		}
 	}
 
-	wasUpdateCalled := func(count int) check {
-		return func(t *testing.T, idx *mock.MeiliIndexManager, _ error) {
-			require.Len(t, idx.UpdateDocumentsWithContextCalls(), count)
-		}
-	}
-
 	wasDeleteCalled := func(count int) check {
 		return func(t *testing.T, idx *mock.MeiliIndexManager, _ error) {
 			require.Len(t, idx.DeleteDocumentsWithContextCalls(), count)
@@ -403,7 +448,16 @@ func Test_Client_ReplaceDocumentBlocks(t *testing.T) {
 		}
 	}
 
+	hasFilter := func(filter string) check {
+		return func(t *testing.T, idx *mock.MeiliIndexManager, _ error) {
+			ff := idx.DeleteDocumentsByFilterWithContextCalls()
+			require.NotEmpty(t, ff)
+			assert.Equal(t, filter, ff[0].Filter)
+		}
+	}
+
 	docID1, docID2 := xid.New(), xid.New()
+	branchID1, branchID2 := xid.New(), xid.New()
 
 	fullDiff := BlocksDifference{
 		Added:   []Block{{ID: "a"}},
@@ -413,8 +467,8 @@ func Test_Client_ReplaceDocumentBlocks(t *testing.T) {
 
 	tests := map[string]struct {
 		Diff            BlocksDifference
+		TaskStatus      meilisearch.TaskStatus
 		AddErr          error
-		UpdateErr       error
 		DeleteErr       error
 		DeleteFilterErr error
 		Checks          []check
@@ -423,9 +477,20 @@ func Test_Client_ReplaceDocumentBlocks(t *testing.T) {
 			Checks: checks(
 				hasError(false),
 				wasAddCalled(0),
-				wasUpdateCalled(0),
 				wasDeleteCalled(0),
 				wasDeleteByFilterCalled(0),
+			),
+		},
+		"Removed branches are cleared by filter": {
+			Diff: BlocksDifference{RemovedBranches: []BranchRemoval{
+				{DocumentID: docID1, BranchID: branchID1},
+				{DocumentID: docID1, BranchID: branchID2},
+			}},
+			Checks: checks(
+				hasError(false),
+				wasDeleteCalled(0),
+				wasDeleteByFilterCalled(1),
+				hasFilter(fmt.Sprintf("branchId IN [%q, %q]", branchID1, branchID2)),
 			),
 		},
 		"Removed documents are cleared by filter": {
@@ -434,15 +499,7 @@ func Test_Client_ReplaceDocumentBlocks(t *testing.T) {
 				hasError(false),
 				wasDeleteCalled(0),
 				wasDeleteByFilterCalled(1),
-				func(t *testing.T, idx *mock.MeiliIndexManager, _ error) {
-					ff := idx.DeleteDocumentsByFilterWithContextCalls()
-					require.NotEmpty(t, ff)
-					assert.Equal(
-						t,
-						fmt.Sprintf("documentId IN [%q, %q]", docID1, docID2),
-						ff[0].Filter,
-					)
-				},
+				hasFilter(fmt.Sprintf("documentId IN [%q, %q]", docID1, docID2)),
 			),
 		},
 		"Removed organizations are cleared by filter": {
@@ -451,11 +508,7 @@ func Test_Client_ReplaceDocumentBlocks(t *testing.T) {
 				hasError(false),
 				wasDeleteCalled(0),
 				wasDeleteByFilterCalled(1),
-				func(t *testing.T, idx *mock.MeiliIndexManager, _ error) {
-					ff := idx.DeleteDocumentsByFilterWithContextCalls()
-					require.NotEmpty(t, ff)
-					assert.Equal(t, `organizationId IN ["org-1", "org-2"]`, ff[0].Filter)
-				},
+				hasFilter(`organizationId IN ["org-1", "org-2"]`),
 			),
 		},
 		"Delete by filter failure is propagated": {
@@ -466,17 +519,17 @@ func Test_Client_ReplaceDocumentBlocks(t *testing.T) {
 				wasDeleteByFilterCalled(1),
 			),
 		},
-		"Full difference dispatches all three": {
+		// added and updated entries are complete either way, so one
+		// add-or-replace request carries both.
+		"Full difference sends one add and one delete": {
 			Diff: fullDiff,
 			Checks: checks(
 				hasError(false),
 				wasAddCalled(1),
-				wasUpdateCalled(1),
 				wasDeleteCalled(1),
 				func(t *testing.T, idx *mock.MeiliIndexManager, _ error) {
-					ff := idx.DeleteDocumentsWithContextCalls()
-					require.NotEmpty(t, ff)
-					assert.Equal(t, []string{"r1", "r2"}, ff[0].Identifiers)
+					assert.Equal(t, []Block{{ID: "a"}, {ID: "u"}}, idx.AddDocumentsWithContextCalls()[0].DocumentsPtr)
+					assert.Equal(t, []string{"r1", "r2"}, idx.DeleteDocumentsWithContextCalls()[0].Identifiers)
 				},
 			),
 		},
@@ -485,16 +538,6 @@ func Test_Client_ReplaceDocumentBlocks(t *testing.T) {
 			AddErr: assert.AnError,
 			Checks: checks(
 				hasError(true),
-				wasUpdateCalled(0),
-				wasDeleteCalled(0),
-			),
-		},
-		"Update failure short-circuits": {
-			Diff:      fullDiff,
-			UpdateErr: assert.AnError,
-			Checks: checks(
-				hasError(true),
-				wasAddCalled(1),
 				wasDeleteCalled(0),
 			),
 		},
@@ -504,7 +547,30 @@ func Test_Client_ReplaceDocumentBlocks(t *testing.T) {
 			Checks: checks(
 				hasError(true),
 				wasAddCalled(1),
-				wasUpdateCalled(1),
+			),
+		},
+		// the request is accepted but the task fails later; the batch is
+		// reported so the job is retried rather than dropped.
+		"Failed task is reported with its cause": {
+			Diff:       fullDiff,
+			TaskStatus: meilisearch.TaskStatusFailed,
+			Checks: checks(
+				hasError(true),
+				wasAddCalled(1),
+				wasDeleteCalled(0),
+				func(t *testing.T, _ *mock.MeiliIndexManager, err error) {
+					assert.ErrorContains(t, err, "boom (invalid_document_id)")
+				},
+			),
+		},
+		"Calls run under a deadline": {
+			Diff: fullDiff,
+			Checks: checks(
+				hasError(false),
+				func(t *testing.T, idx *mock.MeiliIndexManager, _ error) {
+					_, ok := idx.AddDocumentsWithContextCalls()[0].Ctx.Deadline()
+					assert.True(t, ok)
+				},
 			),
 		},
 	}
@@ -515,20 +581,22 @@ func Test_Client_ReplaceDocumentBlocks(t *testing.T) {
 
 			idx := &mock.MeiliIndexManager{
 				AddDocumentsWithContextFunc: func(context.Context, any, *meilisearch.DocumentOptions) (*meilisearch.TaskInfo, error) {
-					return nil, tc.AddErr
-				},
-				UpdateDocumentsWithContextFunc: func(context.Context, any, *meilisearch.DocumentOptions) (*meilisearch.TaskInfo, error) {
-					return nil, tc.UpdateErr
+					return &meilisearch.TaskInfo{TaskUID: 1}, tc.AddErr
 				},
 				DeleteDocumentsWithContextFunc: func(context.Context, []string, *meilisearch.DocumentOptions) (*meilisearch.TaskInfo, error) {
-					return nil, tc.DeleteErr
+					return &meilisearch.TaskInfo{TaskUID: 2}, tc.DeleteErr
 				},
 				DeleteDocumentsByFilterWithContextFunc: func(context.Context, any, *meilisearch.DocumentOptions) (*meilisearch.TaskInfo, error) {
-					return nil, tc.DeleteFilterErr
+					return &meilisearch.TaskInfo{TaskUID: 3}, tc.DeleteFilterErr
 				},
 			}
 
-			err := newTestClient(idx).ReplaceDocumentBlocks(context.Background(), tc.Diff)
+			status := meilisearch.TaskStatusSucceeded
+			if tc.TaskStatus != "" {
+				status = tc.TaskStatus
+			}
+
+			err := newTestClient(idx, status).ReplaceDocumentBlocks(context.Background(), tc.Diff)
 
 			for _, ch := range tc.Checks {
 				ch(t, idx, err)

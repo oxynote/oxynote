@@ -70,11 +70,11 @@ func (rb RootBlock) HasBlock(blockID string) bool {
 }
 
 // Search transforms RootBlock into a search compatible type.
-func (rb RootBlock) Search(organizationID string, documentID xid.ID) map[string]search.Block {
+func (rb RootBlock) Search(scope search.Scope) map[string]search.Block {
 	res := make(map[string]search.Block)
 
 	for _, b := range rb.Content {
-		content := b.Search(organizationID, documentID)
+		content := b.Search(scope)
 
 		maps.Insert(res, maps.All(content))
 	}
@@ -210,7 +210,7 @@ func (b Block) HasBlock(blockID string) bool {
 }
 
 // Search transforms Block into a search compatible type.
-func (b Block) Search(organizationID string, documentID xid.ID) map[string]search.Block {
+func (b Block) Search(scope search.Scope) map[string]search.Block {
 	res := make(map[string]search.Block)
 
 	var text strings.Builder
@@ -224,20 +224,21 @@ func (b Block) Search(organizationID string, documentID xid.ID) map[string]searc
 			continue
 		}
 
-		content := cb.Search(organizationID, documentID)
+		content := cb.Search(scope)
 
 		maps.Insert(res, maps.All(content))
 	}
 
+	// a metric block has no text children; its title is an attribute.
+	if b.Type == BlockNodeMetricBlock {
+		if title, ok := b.Attrs[AttrTitle].(string); ok {
+			text.WriteString(title)
+		}
+	}
+
 	if text.Len() != 0 {
 		if id, ok := b.UID(); ok && id != "" {
-			res[id] = search.Block{
-				ID:             id,
-				OrganizationID: organizationID,
-				DocumentID:     documentID,
-				Type:           string(b.Type),
-				Text:           text.String(),
-			}
+			res[id] = scope.Block(id, string(b.Type), text.String())
 		}
 	}
 

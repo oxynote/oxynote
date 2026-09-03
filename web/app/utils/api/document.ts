@@ -225,9 +225,12 @@ export function defaultDocumentHookState(
 }
 
 export interface DocumentSearchResult {
-	id: string // block/node ID
+	id: string // branch-scoped index entry ID
 	documentId: string
 	organizationId: string
+	branchId: string
+	branchName: string
+	branchDefault: boolean
 	type: string
 	text: string
 }

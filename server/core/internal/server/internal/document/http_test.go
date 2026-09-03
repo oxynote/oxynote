@@ -1395,6 +1395,7 @@ func Test_Handler_UpdateDocumentBranch(t *testing.T) {
 
 	cc := map[string]struct {
 		DB        *DBMock
+		Tx        *TxMock
 		NoSession bool
 		OmitDoc   bool
 		Body      string
@@ -1402,6 +1403,7 @@ func Test_Handler_UpdateDocumentBranch(t *testing.T) {
 		RespCode  int
 		Updated   int
 		Metadata  int
+		Jobs      int
 	}{
 		"No session in context": {
 			DB:        &DBMock{},
@@ -1450,6 +1452,8 @@ func Test_Handler_UpdateDocumentBranch(t *testing.T) {
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
 					return branchDoc(_branchID), nil
 				},
+			},
+			Tx: &TxMock{
 				UpdateDocumentBranchMetadataFunc: func(context.Context, documentCore.Document) error {
 					return errors.New("boom")
 				},
@@ -1457,6 +1461,22 @@ func Test_Handler_UpdateDocumentBranch(t *testing.T) {
 			Body:     validBody,
 			RespCode: http.StatusInternalServerError,
 			Updated:  1,
+		},
+		"Search job insert error": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return branchDoc(_branchID), nil
+				},
+			},
+			Tx: &TxMock{
+				InsertDocumentSearchJobFunc: func(context.Context, search.BlocksDifference) error {
+					return errors.New("boom")
+				},
+			},
+			Body:     validBody,
+			RespCode: http.StatusInternalServerError,
+			Updated:  1,
+			Jobs:     1,
 		},
 		// the main branch is found by its flag in the tree and content
 		// queries, but its name is what the user sees; renaming it would
@@ -1493,6 +1513,7 @@ func Test_Handler_UpdateDocumentBranch(t *testing.T) {
 			RespCode: http.StatusOK,
 			Updated:  1,
 			Metadata: 1,
+			Jobs:     1,
 		},
 	}
 
@@ -1500,21 +1521,37 @@ func Test_Handler_UpdateDocumentBranch(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			hdl, cnt := newTestHandler(c.DB, &fakePublisher{})
+			tx := c.Tx
+			if tx == nil {
+				tx = &TxMock{}
+			}
+
+			hdl, cnt := newTestHandler(withTx(c.DB, tx, nil), &fakePublisher{})
 
 			rec := httptest.NewRecorder()
 
 			hdl.UpdateDocumentBranch(rec, newRequest(http.MethodPut, c.Body, c.NoSession, c.OmitDoc, false))
 
 			assert.Equal(t, c.RespCode, rec.Code)
-			assert.Len(t, c.DB.UpdateDocumentBranchMetadataCalls(), c.Updated)
+			assert.Len(t, tx.UpdateDocumentBranchMetadataCalls(), c.Updated)
+			assert.Len(t, tx.InsertDocumentSearchJobCalls(), c.Jobs)
 			assert.Equal(t, c.Metadata, cnt.metadata)
 
 			if c.RespCode == http.StatusOK {
-				ff := c.DB.UpdateDocumentBranchMetadataCalls()
+				ff := tx.UpdateDocumentBranchMetadataCalls()
 				require.NotEmpty(t, ff)
 				assert.Equal(t, c.WantName, ff[0].Doc.BranchName)
 				assert.True(t, ff[0].Doc.Protected)
+				assert.Len(t, tx.CommitCalls(), 1)
+			}
+
+			// a rename rewrites every entry of the branch, since each one
+			// carries the branch name.
+			if c.Jobs == 1 && c.RespCode == http.StatusOK {
+				diff := tx.InsertDocumentSearchJobCalls()[0].Diff
+				require.Len(t, diff.Updated, 1)
+				assert.Equal(t, _branchID.String()+"-docname", diff.Updated[0].ID)
+				assert.Equal(t, "Renamed", diff.Updated[0].BranchName)
 			}
 		})
 	}

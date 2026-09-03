@@ -102,7 +102,7 @@ Uploaded images live under `organizations/{org}/documents/{doc}/files/{blockUID}
 - **Ordering is inverted between create and delete.** Creating writes the row before the object (upload, duplication); deleting removes the object before the row. Hooks follow the same rule from outside the transaction: `copyHooksToBranch` runs after the fork or merge commits, because `hook.NewHook` creates the watcher as a side effect and a rollback cannot take that back; a failed insert tears the just-created watcher down again. Both leave at most a row without an object, which the sweep resolves — an object without a row is invisible to every cleanup path.
 - **Duplication copies, never shares.** `Document.Duplicate` regenerates every block uid, rewrites image `src` paths to the new document (swapping only the path, never the host), and returns the old→new id map the handler uses to copy each object server-side into the duplicate's own folder. Files are therefore owned by exactly one document.
 - **Search jobs apply in order, per document.** A diff is a delta against the state its predecessors left, so the manager holds back every later diff of a document whose earlier one failed, rather than replaying it on top of newer work; an organization removal is global and holds everything after it. Without this a failed add replayed after a delete re-inserts the blocks of a document that no longer exists, and no later job would ever remove them.
-- **Search index entries are removed from the ids the delete reports.** Only default-branch blocks are indexed, keyed by block uid with a `documentId` field. `agent.DeleteDocument` collects the subtree ids before the row goes away and returns them, and the deletion paths queue a search job carrying them through `search.Jobs` in the same transaction, so the manager clears the index by `documentId` filter — the descendants the cascade destroys have no other trace to clean up by.
+- **Search index entries are branch-scoped.** Every branch of every document is indexed; an entry's id is `<branchId>-<blockUid>` (`<branchId>-docname` for the name entry), since a fork copies its source's uids, and it carries `documentId`, `branchId`, `branchName` and `branchDefault`. Every path that changes a branch queues its diff through `search.Jobs` in the same transaction: a persist on any branch, a fork (a full add of the new branch), a rename (every entry of the branch changes, since each carries the name), a merge (the target's diff). A branch deletion queues a `RemovedBranches` removal the manager applies by `branchId` filter, and a document deletion clears every branch at once: `agent.DeleteDocument` collects the subtree ids before the row goes away and returns them, so the manager clears the index by `documentId` filter — the descendants the cascade destroys have no other trace to clean up by. Index settings are declared in one object in `search.Client` and sent only when they differ from what the index reports, since a searchable or filterable attribute change re-indexes everything; every write task is awaited, so a batch Meilisearch rejects fails its job and is retried in order.
 - History entries pin the files they reference, so `DB_MAX_DOCUMENT_HISTORY_ENTRIES` (count, trimmed on insert) and `DB_DOCUMENT_HISTORY_RETENTION` (age, trimmed in the sweep) also decide how long a removed image survives.
 
 The ProseMirror schema is defined in `server/auth-realtime/src/schema/` (one file per block kind, `index.ts` aggregates). The Go-side mirror is `server/core/internal/document/node.go` (`RootBlock`, `Block`, `Mark`).
@@ -201,16 +201,16 @@ onto that. Depth in those rows counts from the block itself.
 
 **Branches are addressed by id, always.** Every content tool (`get_document`, `read_block`,
 the block writes) requires `branch_id`; the default branch is a branch like any other, and
-its id travels with every listing (`list_documents` and search hits carry
-`default_branch_id`, `create_document` returns `branch_id`, `get_document` lists every
-branch with its id). `Input.Branch`, `DocumentContent`, `DocumentBlock`, `ApplyEdit` and the
+its id travels with every listing (`list_documents` carries `default_branch_id`, a search
+hit carries the `branch_id` it was found on, `create_document` returns `branch_id`,
+`get_document` lists every branch with its id). `Input.Branch`, `DocumentContent`, `DocumentBlock`, `ApplyEdit` and the
 placement checks take the branch id and resolve it through `FetchDocumentByBranchID`,
 refusing a branch that belongs to another document; an unknown id is refused with the
 branches the document has (`ErrUnknownBranch`, each as "name (id)"), and a protected branch
 reads but refuses every write, naming the unprotected branches to write to instead.
 `Input.Document` is the default-branch fetch the document-level tools use to name and
-change a document; they and search stay branch-free, and only the default branch is
-indexed. No tool creates, renames, deletes or merges a branch. MCP resources name a
+change a document; they stay branch-free. Search covers every branch and each hit names
+its own. No tool creates, renames, deletes or merges a branch. MCP resources name a
 document and a branch (`oxynote://documents/{id}/branches/{branch_id}`); the list carries
 each document on its default branch. The chat client reports the document and branch it
 is viewing; the session stores both unchecked, as a hint the next call verifies.

@@ -212,6 +212,34 @@ func Test_Manager_processJobs(t *testing.T) {
 				},
 			),
 		},
+		"A branch removal waits behind its document's failed diff": {
+			Batches: [][]search.DocumentSearchJob{{
+				docJob(1, docA),
+				{
+					ID: 2,
+					BlockDiff: search.BlocksDifference{
+						RemovedBranches: []search.BranchRemoval{{DocumentID: docA, BranchID: xid.New()}},
+					},
+				},
+				{
+					ID: 3,
+					BlockDiff: search.BlocksDifference{
+						RemovedBranches: []search.BranchRemoval{{DocumentID: docB, BranchID: xid.New()}},
+					},
+				},
+			}},
+			FailJobs: map[int64]bool{1: true},
+			Checks: checks(
+				hasError(false),
+				wasReplaceCalled(2),
+				wasDeleteCalled(1),
+				func(t *testing.T, db *DBMock, _ *SearchGatewayMock, _ error) {
+					ff := db.DeleteDocumentSearchJobCalls()
+					require.Len(t, ff, 1)
+					assert.Equal(t, int64(3), ff[0].ID, "the other document's branch removal keeps moving")
+				},
+			),
+		},
 		"An organization removal waits for anything held": {
 			Batches: [][]search.DocumentSearchJob{{
 				docJob(1, docA),

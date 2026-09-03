@@ -150,6 +150,7 @@ services:
       - MEILI_MASTER_KEY=devmasterkey
       - MEILI_ENV=development
       - MEILI_LOG_LEVEL=WARN
+      - MEILI_NO_ANALYTICS=true
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:7700/health"]
       interval: 5s
