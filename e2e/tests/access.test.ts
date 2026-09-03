@@ -1,5 +1,10 @@
 import { expect, test } from "@playwright/test"
-import { coreURL, documentId, sessionCookie } from "../helpers/api"
+import {
+	coreURL,
+	defaultBranchId,
+	documentId,
+	sessionCookie,
+} from "../helpers/api"
 import {
 	newCredentials,
 	signUpAndVerify,
@@ -211,9 +216,11 @@ test.describe("access", () => {
 
 		await signUpWithWorkspace(page, request)
 		const own = documentId(page)
+		const ownBranch = await defaultBranchId(page, own)
 
 		const other = await signUpWithSeparateWorkspace(browser, request)
 		const foreign = documentId(other.page)
+		const foreignBranch = await defaultBranchId(other.page, foreign)
 
 		const client = await connectMCPClient(
 			await authorizeMCPClient(page, request),
@@ -223,8 +230,8 @@ test.describe("access", () => {
 
 		// the token was granted by a user of the first workspace, so the
 		// organization it is bound to is the only one it can see
-		expect(uris).toContain(documentResourceURI(own))
-		expect(uris).not.toContain(documentResourceURI(foreign))
+		expect(uris).toContain(documentResourceURI(own, ownBranch))
+		expect(uris).not.toContain(documentResourceURI(foreign, foreignBranch))
 
 		await client.close()
 		await other.context.close()
@@ -239,9 +246,11 @@ test.describe("access", () => {
 
 		await signUpWithWorkspace(page, request)
 		const own = documentId(page)
+		const ownBranch = await defaultBranchId(page, own)
 
 		const other = await signUpWithSeparateWorkspace(browser, request)
 		const foreign = documentId(other.page)
+		const foreignBranch = await defaultBranchId(other.page, foreign)
 
 		const client = await connectMCPClient(
 			await authorizeMCPClient(page, request),
@@ -251,7 +260,7 @@ test.describe("access", () => {
 		// come back, or the refusal below would say nothing about
 		// scoping and everything about a read that never works
 		const readable = await client.readResource({
-			uri: documentResourceURI(own),
+			uri: documentResourceURI(own, ownBranch),
 		})
 		expect(readable.contents).not.toHaveLength(0)
 
@@ -259,7 +268,9 @@ test.describe("access", () => {
 		// listing is no protection if the read behind it answers for
 		// any id it is handed
 		await expect(
-			client.readResource({ uri: documentResourceURI(foreign) }),
+			client.readResource({
+				uri: documentResourceURI(foreign, foreignBranch),
+			}),
 		).rejects.toThrow()
 
 		await client.close()

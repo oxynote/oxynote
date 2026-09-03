@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test"
+import { expect, type Page } from "@playwright/test"
 import { BASE_URL } from "./config"
 
 // coreURL builds an address for core's API through the front door. Caddy
@@ -19,6 +19,27 @@ export function documentId(page: Page): string {
 	}
 
 	return id
+}
+
+// defaultBranchId asks core, as the page's own user, which branch of the
+// document a reader lands on without picking one.
+export async function defaultBranchId(page: Page, id: string): Promise<string> {
+	const response = await page.request.get(
+		coreURL(`/api/documents/${id}/branches`),
+	)
+	expect(response.ok()).toBe(true)
+
+	const branches = (await response.json()) as {
+		branchId: string
+		default: boolean
+	}[]
+	const branch = branches.find((b) => b.default)
+
+	if (!branch) {
+		throw new Error(`document ${id} has no default branch`)
+	}
+
+	return branch.branchId
 }
 
 // sessionCookie serialises a browser context's cookies into a request

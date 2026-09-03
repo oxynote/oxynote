@@ -98,7 +98,8 @@ export async function connectMCPClient(token: string): Promise<Client> {
 	return client
 }
 
-// documentResourceURI is how the mcp surface addresses a document.
-export function documentResourceURI(id: string): string {
-	return `oxynote://documents/${id}`
+// documentResourceURI is how the mcp surface addresses one branch of a
+// document; every resource names a branch.
+export function documentResourceURI(id: string, branchId: string): string {
+	return `oxynote://documents/${id}/branches/${branchId}`
 }

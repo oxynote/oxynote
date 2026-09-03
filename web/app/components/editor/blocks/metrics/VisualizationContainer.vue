@@ -342,6 +342,7 @@ watch(
 async function refreshData() {
 	if (
 		!editorStore.activeDocumentId ||
+		!editorStore.activeBranchId ||
 		!props.config.dataSourceId ||
 		!props.config.queries?.length ||
 		!props.config.timeRange ||
