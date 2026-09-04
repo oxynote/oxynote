@@ -110,6 +110,12 @@ function pickerInput(): HTMLInputElement {
 	return input
 }
 
+function pressEnter() {
+	pickerInput().dispatchEvent(
+		new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+	)
+}
+
 async function search(text: string) {
 	const input = pickerInput()
 	input.value = text
@@ -320,6 +326,48 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 			color: "#000000",
 		})
 		expect(assigned[0]?.body).toEqual({ tagId: TAG_B })
+	})
+
+	it("creates the typed tag on enter in the search box", async ({ expect }) => {
+		const tree = [makeTag(TAG_A, "Production", "#1a9e4a")]
+		stubTags(tree)
+		const created = mockEndpoint("POST", "/api/tags", () => {
+			tree.push(makeTag(TAG_B, "Rollout", "#000000"))
+
+			return { id: TAG_B }
+		})
+		const assigned = mockEndpoint(
+			"POST",
+			`/api/documents/${DOC_ID}/tags`,
+			() => ({}),
+		)
+		const wrapper = await mountTags()
+		await openPicker(wrapper)
+		await search("Rollout")
+
+		pressEnter()
+		await settleMutations()
+
+		expect(created[0]?.body).toEqual({
+			tagName: "Rollout",
+			color: "#000000",
+		})
+		expect(assigned[0]?.body).toEqual({ tagId: TAG_B })
+	})
+
+	it("creates nothing on enter for a name that already exists", async ({
+		expect,
+	}) => {
+		stubTags([makeTag(TAG_A, "Production", "#1a9e4a")])
+		const created = mockEndpoint("POST", "/api/tags", () => ({ id: TAG_B }))
+		const wrapper = await mountTags()
+		await openPicker(wrapper)
+		await search("production")
+
+		pressEnter()
+		await settleMutations()
+
+		expect(created).toHaveLength(0)
 	})
 
 	it("offers the shared colour picker on the create row", async ({

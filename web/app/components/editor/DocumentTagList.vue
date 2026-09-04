@@ -64,13 +64,27 @@ onBeforeMount(() => {
 
 watch(pickerOpen, (isOpen) => {
 	if (isOpen) {
-		newColor.value ??= chartStyles().selectableColors.default
+		newColor.value = suggestedColor()
 
 		return
 	}
 
 	query.value = ""
 })
+
+// the swatches come from theme variables, which resolve to oklch, while a
+// tag stores hex — both sides go through hex so a colour the palette
+// offers can be recognised in the tags that already hold it
+function suggestedColor(): string {
+	const colors = chartStyles().selectableColors
+
+	return (
+		pickTagColor(
+			colors.available.map(colorToHex),
+			allTags.value.map((tag) => colorToHex(tag.color)),
+		) ?? colorToHex(colors.default)
+	)
+}
 
 function carriesTag(tagId: string): boolean {
 	return documentTags.value.some((tag) => tag.id === tagId)
@@ -118,6 +132,9 @@ async function createAndAssign() {
 		})
 
 		query.value = ""
+		// the tag just created holds a colour now, so the next one drawn has
+		// to weigh it in — the menu stays open across several creations
+		newColor.value = suggestedColor()
 
 		await assignDocumentTag.mutateAsync({
 			documentId: documentId,
@@ -126,6 +143,17 @@ async function createAndAssign() {
 	} catch {
 		showToastMessage("error", t("editor.tags.errors.create-failed"))
 	}
+}
+
+// the create row is the only thing enter can act on: an existing tag is
+// toggled from its own row, and a name already taken leaves nothing to
+// create
+function handleSearchEnter() {
+	if (!showCreate.value) {
+		return
+	}
+
+	void createAndAssign()
 }
 </script>
 
@@ -174,6 +202,7 @@ async function createAndAssign() {
 					:placeholder="$t('editor.tags.search-placeholder')"
 					class="h-[1.775rem] border-none bg-muted px-2 text-2sm md:text-2sm"
 					disable-focus-effect
+					@keydown.enter="handleSearchEnter"
 				/>
 				<ShadcnUiDropdownMenuSeparator />
 				<template v-if="matchingTags.length">
