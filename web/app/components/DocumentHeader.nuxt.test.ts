@@ -283,12 +283,12 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 		mainOnly()
 		const created = mockEndpoint(
 			"POST",
-			`/api/documents/${DOC_ID}/branches`,
+			`http://test.local/auth-realtime/api/documents/${DOC_ID}/branches`,
 			() => ({ branchId: DRAFT_BRANCH }),
 		)
 		const updated = mockEndpoint(
 			"PUT",
-			`/api/documents/${DOC_ID}/branches/${MAIN_BRANCH}`,
+			`http://test.local/auth-realtime/api/documents/${DOC_ID}/branches/${MAIN_BRANCH}`,
 			() => ({}),
 		)
 		const wrapper = await mountHeader()
@@ -318,7 +318,7 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 		)
 		const updated = mockEndpoint(
 			"PUT",
-			`/api/documents/${DOC_ID}/branches/${MAIN_BRANCH}`,
+			`http://test.local/auth-realtime/api/documents/${DOC_ID}/branches/${MAIN_BRANCH}`,
 			() => ({}),
 		)
 		const wrapper = await mountHeader()
@@ -335,9 +335,13 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 
 	it("warns when the reviewability change fails", async ({ expect }) => {
 		mainOnly()
-		mockEndpoint("POST", `/api/documents/${DOC_ID}/branches`, () => {
-			throw createError({ statusCode: 500 })
-		})
+		mockEndpoint(
+			"POST",
+			`http://test.local/auth-realtime/api/documents/${DOC_ID}/branches`,
+			() => {
+				throw createError({ statusCode: 500 })
+			},
+		)
 		const wrapper = await mountHeader()
 		await openOptionsMenu(wrapper)
 
@@ -355,7 +359,7 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 		mainOnly()
 		const created = mockEndpoint(
 			"POST",
-			`/api/documents/${DOC_ID}/branches`,
+			`http://test.local/auth-realtime/api/documents/${DOC_ID}/branches`,
 			() => ({ branchId: DRAFT_BRANCH }),
 		)
 		const wrapper = await mountHeader()
