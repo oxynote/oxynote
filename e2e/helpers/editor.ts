@@ -50,11 +50,36 @@ export async function waitForEditor(page: Page): Promise<void> {
 	await expect(contentEditor(page)).toBeVisible({ timeout: 15_000 })
 }
 
+// workspaceSection is the sidebar group holding the document tree. The
+// sidebar has several groups, and a document listed under a tag is the
+// same row markup as the one in the tree, so anything looked up by row
+// has to say which group it means.
+function workspaceSection(page: Page): Locator {
+	return page.locator('[data-sidebar="group"]', {
+		has: page.locator('[data-sidebar="group-label"]', {
+			hasText: t("sidebar.sections.main-workspace.heading"),
+		}),
+	})
+}
+
 // sidebarDocument is the document's row in the workspace tree. Scoped
 // to the sidebar link because the breadcrumb in the header also exposes
-// the name as a link.
+// the name as a link, and to the workspace group because the tags
+// section lists the same documents again.
 export function sidebarDocument(page: Page, name: string): Locator {
-	return page.locator('a[data-sidebar="menu-button"]', { hasText: name })
+	return workspaceSection(page).locator('a[data-sidebar="menu-button"]', {
+		hasText: name,
+	})
+}
+
+// sidebarDocumentRow is the whole tree row — the link plus the collapse
+// and actions buttons that appear on hover. The inner locator is written
+// out rather than reusing sidebarDocument because `has` resolves its
+// argument against the row, where the enclosing group is out of reach.
+export function sidebarDocumentRow(page: Page, name: string): Locator {
+	return workspaceSection(page).locator('[data-sidebar="menu-item"]', {
+		has: page.locator('a[data-sidebar="menu-button"]', { hasText: name }),
+	})
 }
 
 // openDocumentActions opens the "…" menu on a document's sidebar row.
@@ -64,9 +89,7 @@ export async function openDocumentActions(
 	page: Page,
 	name: string,
 ): Promise<void> {
-	const row = page.locator('[data-sidebar="menu-item"]', {
-		has: sidebarDocument(page, name),
-	})
+	const row = sidebarDocumentRow(page, name)
 
 	await row.first().hover()
 	await row
@@ -84,7 +107,7 @@ export async function openDocumentActions(
 // tree refetch that brings the real row can re-render the sidebar under
 // a click that has already been dispatched.
 export async function createDocument(page: Page): Promise<void> {
-	await page.locator('[data-sidebar="group-action"]').click()
+	await workspaceSection(page).locator('[data-sidebar="group-action"]').click()
 
 	const row = sidebarDocument(page, t("editor.new-document-name"))
 	await expect(row).toHaveAttribute("href", /New-Page-[a-z0-9]{20}$/)

@@ -7,6 +7,7 @@ import {
 	openDocumentActions,
 	openSlashMenu,
 	sidebarDocument,
+	sidebarDocumentRow,
 	titleEditor,
 	waitForEditor,
 } from "../helpers/editor"
@@ -284,11 +285,7 @@ test.describe("editor", () => {
 			})
 			.click()
 
-		const parentRow = page
-			.locator('[data-sidebar="menu-item"]', {
-				has: sidebarDocument(page, parent),
-			})
-			.first()
+		const parentRow = sidebarDocumentRow(page, parent).first()
 		await expect(parentRow).toHaveAttribute("data-item-children", "1")
 
 		// the child list is collapsed until the parent is expanded

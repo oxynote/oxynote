@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { expect, test } from "@playwright/test"
 import {
 	contentEditor,
@@ -93,6 +94,12 @@ test.describe("search", () => {
 	})
 
 	test("finds a metric block by its title", async ({ page, request }) => {
+		// the welcome page is seeded with two metric blocks drawn at random
+		// from a fixed pool, and one of those can carry this very title, so
+		// the block under test is searched for by a marker of its own
+		const marker = randomUUID().slice(0, 8)
+		const title = `Pizza Fridays ${marker}`
+
 		await signUpWithWorkspace(page, request)
 		await createDocument(page)
 		await documentPersisted(page)
@@ -126,9 +133,7 @@ test.describe("search", () => {
 				// a metric lives in a grid; the root refuses a bare one
 				block: {
 					type: "metric_grid",
-					items: [
-						{ type: "metric", attrs: { title: "Pizza Fridays Scheduled" } },
-					],
+					items: [{ type: "metric", attrs: { title: title } }],
 				},
 			},
 		})
@@ -143,8 +148,8 @@ test.describe("search", () => {
 		await expect(page).toHaveURL(/Welcome-to-Oxynote-[a-z0-9]{20}$/)
 
 		const dialog = await openSearch(page)
-		const result = dialog.locator("a", { hasText: "Pizza Fridays" })
-		await searchFor(dialog, "Pizza", result)
+		const result = dialog.locator("a", { hasText: title })
+		await searchFor(dialog, marker, result)
 		await expect(result).toContainText("metricBlock")
 
 		const href = await result.getAttribute("href")
