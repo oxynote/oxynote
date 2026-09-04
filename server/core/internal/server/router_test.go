@@ -82,4 +82,22 @@ func Test_Server_httpRouter(t *testing.T) {
 	assert.True(t, routes["POST /api/x/organizations/{organizationId}/teardown"])
 	assert.True(t, routes["PUT /api/x/documents/{documentId}/branch/{branchId}/"])
 	assert.True(t, routes["POST /api/x/email"])
+
+	// the branch operations are reachable only through auth-realtime,
+	// which stores the editors' pending changes before core reads the
+	// branch: a public mount would let a client skip that.
+	internalOnly := map[string]string{
+		"PUT /api/x/documents/{documentId}/merge":               "PUT /api/*/documents/{documentId}/merge",
+		"POST /api/x/documents/{documentId}/branches":           "POST /api/*/documents/{documentId}/branches/",
+		"PUT /api/x/documents/{documentId}/branches/{branchId}": "PUT /api/*/documents/{documentId}/branches/{branchId}/",
+	}
+
+	for internal, public := range internalOnly {
+		assert.True(t, routes[internal], "%s must be mounted internally", internal)
+		assert.False(t, routes[public], "%s must not be publicly routable", public)
+	}
+
+	// the branch reads and the delete stay public alongside them.
+	assert.True(t, routes["GET /api/*/documents/{documentId}/branches/"])
+	assert.True(t, routes["DELETE /api/*/documents/{documentId}/branches/{branchId}/"])
 }

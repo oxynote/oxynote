@@ -61,7 +61,9 @@ src/
                   everything the service writes goes through
   headers.ts      normalizing whatever shape a transport hands over
   auth.ts         createAuth(deps) + the callbacks better-auth invokes
-  hocuspocus.ts   createHocuspocus(deps) / createDocumentHooks(deps)
+  hocuspocus.ts   createHocuspocus(deps) / createDocumentHooks(deps); the
+                  flushDocument the branch routes run before core reads a
+                  branch's stored row
   routes.ts       createRoutes(deps) -> a Hono app
   operations.ts   pure: applying the assistant's edit ops to a Y.Doc
   ydocument.ts    pure: replacing a Y.Doc's content without CRDT merging

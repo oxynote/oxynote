@@ -25,9 +25,8 @@ export function branchSwitcher(page: Page): Locator {
 
 // makeReviewable turns the open page into a reviewable one through the
 // navbar options menu, which creates the draft branch and protects main.
-// The page's current content must already be persisted if the draft is
-// expected to start from it: the draft is seeded from the stored
-// content, not the live document.
+// makeReviewable enables the review workflow from the navbar menu and
+// waits for the branch switcher that appears once the draft exists.
 export async function makeReviewable(page: Page): Promise<void> {
 	await page
 		.getByRole("button", { name: t("editor.navbar.open-document-options") })

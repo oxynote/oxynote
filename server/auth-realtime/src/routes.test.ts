@@ -1,4 +1,4 @@
-import { describe, it, vi } from "vitest"
+import { describe, it, vi, type Mock } from "vitest"
 import * as Y from "yjs"
 import { SignJWT, exportJWK, generateKeyPair, type JWTPayload } from "jose"
 import { createRoutes, type DocumentRegistry } from "./routes.js"
@@ -64,21 +64,58 @@ function build(
 		auth?: ReturnType<typeof stubAuth>
 		store?: StubStore
 		hocuspocus?: DocumentRegistry
+		flushDocument?: Mock<(documentName: string) => Promise<void>>
 		core?: StubCore
 	} = {},
 ) {
 	const auth = overrides.auth ?? stubAuth()
 	const core = overrides.core ?? stubCore()
 	const store = overrides.store ?? stubStore()
+	const flushDocument: Mock<(documentName: string) => Promise<void>> =
+		overrides.flushDocument ?? vi.fn().mockResolvedValue(undefined)
+	const resetConnections = vi.fn<(documentName: string) => void>()
 	const app = createRoutes({
 		env: overrides.env ?? ENV,
 		auth,
 		store,
 		hocuspocus: overrides.hocuspocus ?? stubRegistry().registry,
+		flushDocument,
+		resetConnections,
 		core,
 	})
 
-	return { app, auth, core, store }
+	return { app, auth, core, store, flushDocument, resetConnections }
+}
+
+// the order in which the flushes and the core call happened, which is
+// what the branch routes are about: the flush has to come first.
+function callOrder(flushDocument: Mock, coreCall: Mock): string[] {
+	return [
+		...flushDocument.mock.invocationCallOrder.map(
+			(order, i) =>
+				`${order}:flush ${String(flushDocument.mock.calls[i]?.[0])}`,
+		),
+		...coreCall.mock.invocationCallOrder.map(
+			(order) => `${order}:core`,
+		),
+	]
+		.sort(
+			(a, b) =>
+				Number(a.split(":")[0]) -
+				Number(b.split(":")[0]),
+		)
+		.map((entry) => entry.slice(entry.indexOf(":") + 1))
+}
+
+function json(body: unknown, cookie?: string): RequestInit {
+	return {
+		method: "PUT",
+		body: JSON.stringify(body),
+		headers: {
+			"Content-Type": "application/json",
+			...(cookie ? { Cookie: cookie } : {}),
+		},
+	}
 }
 
 function seededDocument(text: string): Y.Doc {
@@ -216,7 +253,352 @@ describe("createRoutes", () => {
 		})
 	})
 
+	describe("POST /documents/:documentId/branches", () => {
+		it.for([
+			{ name: "a body that is not JSON", input: "not json" },
+			{
+				name: "a body missing sourceBranchId",
+				input: '{"branch":"draft"}',
+			},
+			{
+				name: "a sourceBranchId that is not a string",
+				input: '{"branch":"draft","sourceBranchId":1}',
+			},
+		])("rejects $name", async ({ input }, { expect }) => {
+			const { app, core, flushDocument } = build()
+
+			const res = await app.request(
+				"/documents/doc1/branches",
+				{
+					...json(null),
+					method: "POST",
+					body: input,
+				},
+			)
+
+			expect(res.status).toBe(400)
+			expect(flushDocument).toHaveBeenCalledTimes(0)
+			expect(core.createBranch).toHaveBeenCalledTimes(0)
+		})
+
+		it("flushes the source branch before core copies it", async ({
+			expect,
+		}) => {
+			const { app, core, flushDocument } = build()
+
+			const res = await app.request(
+				"/documents/doc1/branches",
+				{
+					...json(
+						{
+							branch: "draft",
+							sourceBranchId: "b1",
+						},
+						"auth.session=abc",
+					),
+					method: "POST",
+				},
+			)
+
+			expect(res.status).toBe(200)
+			expect(await res.json()).toEqual({
+				branchId: "branch-2",
+			})
+			expect(
+				callOrder(flushDocument, core.createBranch),
+			).toEqual(["flush doc1-b1", "core"])
+			const [documentId, request, options] =
+				core.createBranch.mock.calls[0] ?? []
+			expect(documentId).toBe("doc1")
+			expect(request?.body).toEqual({
+				branch: "draft",
+				sourceBranchId: "b1",
+			})
+			expect(options?.headers?.get("cookie")).toBe(
+				"auth.session=abc",
+			)
+		})
+
+		// the default branch can be open under its id and under the
+		// "default" alias; a store pending under either is the same edits
+		it("also flushes the default alias when forking the default branch", async ({
+			expect,
+		}) => {
+			const core = stubCore()
+			core.fetchBranches.mockResolvedValue([
+				{
+					branchId: "b1",
+					default: true,
+					protected: false,
+				},
+			])
+			const { app, flushDocument } = build({ core })
+
+			await app.request("/documents/doc1/branches", {
+				...json({
+					branch: "draft",
+					sourceBranchId: "b1",
+				}),
+				method: "POST",
+			})
+
+			expect(
+				flushDocument.mock.calls.map((call) => call[0]),
+			).toEqual(["doc1-b1", "doc1-default"])
+		})
+
+		it("refuses the fork when the flush fails", async ({
+			expect,
+		}) => {
+			const flushDocument = vi
+				.fn()
+				.mockRejectedValue(
+					new Error("core unreachable"),
+				)
+			const { app, core } = build({ flushDocument })
+
+			const res = await app.request(
+				"/documents/doc1/branches",
+				{
+					...json({
+						branch: "draft",
+						sourceBranchId: "b1",
+					}),
+					method: "POST",
+				},
+			)
+
+			expect(res.status).toBe(500)
+			expect(await res.json()).toEqual({
+				error: "pending changes could not be stored",
+			})
+			expect(core.createBranch).toHaveBeenCalledTimes(0)
+		})
+
+		it("answers with core's refusal", async ({ expect }) => {
+			const core = stubCore()
+			core.createBranch.mockRejectedValue({
+				response: {
+					status: 409,
+					data: { error: "branch exists" },
+				},
+			})
+			const { app } = build({ core })
+
+			const res = await app.request(
+				"/documents/doc1/branches",
+				{
+					...json({
+						branch: "draft",
+						sourceBranchId: "b1",
+					}),
+					method: "POST",
+				},
+			)
+
+			expect(res.status).toBe(409)
+			expect(await res.json()).toEqual({
+				error: "branch exists",
+			})
+		})
+	})
+
+	describe("PUT /documents/:documentId/branches/:branchId", () => {
+		it("rejects a body that is not JSON", async ({ expect }) => {
+			const { app, core, flushDocument } = build()
+
+			const res = await app.request(
+				"/documents/doc1/branches/b1",
+				{
+					...json(null),
+					body: "not json",
+				},
+			)
+
+			expect(res.status).toBe(400)
+			expect(flushDocument).toHaveBeenCalledTimes(0)
+			expect(core.updateBranch).toHaveBeenCalledTimes(0)
+		})
+
+		// the store the editors have pending is a user write, and core
+		// refuses those once the branch is protected: it has to land
+		// before the flag is set
+		it("flushes the branch before core changes it", async ({
+			expect,
+		}) => {
+			const { app, core, flushDocument } = build()
+
+			const res = await app.request(
+				"/documents/doc1/branches/b1",
+				json({ protected: true }, "auth.session=abc"),
+			)
+
+			expect(res.status).toBe(200)
+			expect(
+				callOrder(flushDocument, core.updateBranch),
+			).toEqual(["flush doc1-b1", "core"])
+			const [documentId, branchId, request, options] =
+				core.updateBranch.mock.calls[0] ?? []
+			expect(documentId).toBe("doc1")
+			expect(branchId).toBe("b1")
+			expect(request?.body).toEqual({ protected: true })
+			expect(options?.headers?.get("cookie")).toBe(
+				"auth.session=abc",
+			)
+		})
+
+		it.for([
+			{
+				name: "protecting",
+				before: false,
+				body: { protected: true },
+			},
+			{
+				name: "unprotecting",
+				before: true,
+				body: { protected: false },
+			},
+		])(
+			"resets the branch's connections when $name it",
+			async ({ before, body }, { expect }) => {
+				const core = stubCore()
+				core.fetchBranches.mockResolvedValue([
+					{
+						branchId: "b1",
+						default: true,
+						protected: before,
+					},
+				])
+				const { app, resetConnections } = build({
+					core,
+				})
+
+				await app.request(
+					"/documents/doc1/branches/b1",
+					json(body),
+				)
+
+				expect(
+					resetConnections.mock.calls.map(
+						(call) => call[0],
+					),
+				).toEqual(["doc1-b1", "doc1-default"])
+			},
+		)
+
+		it.for([
+			{
+				name: "a rename",
+				body: { name: "release" },
+			},
+			{
+				name: "a protection the branch already has",
+				body: { protected: false },
+			},
+		])(
+			"keeps the connections on $name",
+			async ({ body }, { expect }) => {
+				const core = stubCore()
+				core.fetchBranches.mockResolvedValue([
+					{
+						branchId: "b1",
+						default: false,
+						protected: false,
+					},
+				])
+				const { app, resetConnections } = build({
+					core,
+				})
+
+				const res = await app.request(
+					"/documents/doc1/branches/b1",
+					json(body),
+				)
+
+				expect(res.status).toBe(200)
+				expect(resetConnections).toHaveBeenCalledTimes(
+					0,
+				)
+			},
+		)
+
+		it("keeps the connections when core refuses the change", async ({
+			expect,
+		}) => {
+			const core = stubCore()
+			core.updateBranch.mockResolvedValue({
+				status: 403,
+				data: { error: "not permitted" },
+			})
+			const { app, resetConnections } = build({ core })
+
+			const res = await app.request(
+				"/documents/doc1/branches/b1",
+				json({ protected: true }),
+			)
+
+			expect(res.status).toBe(403)
+			expect(resetConnections).toHaveBeenCalledTimes(0)
+		})
+
+		it("refuses the change when the flush fails", async ({
+			expect,
+		}) => {
+			const flushDocument = vi
+				.fn()
+				.mockRejectedValue(
+					new Error("core unreachable"),
+				)
+			const { app, core, resetConnections } = build({
+				flushDocument,
+			})
+
+			const res = await app.request(
+				"/documents/doc1/branches/b1",
+				json({ protected: true }),
+			)
+
+			expect(res.status).toBe(500)
+			expect(core.updateBranch).toHaveBeenCalledTimes(0)
+			expect(resetConnections).toHaveBeenCalledTimes(0)
+		})
+	})
+
 	describe("PUT /documents/:documentId/merge", () => {
+		it("flushes the source and then the target before core merges", async ({
+			expect,
+		}) => {
+			const { app, core, flushDocument } = build()
+
+			await app.request(
+				"/documents/doc1/merge",
+				json({ fromBranchId: "b2", toBranchId: "b1" }),
+			)
+
+			expect(
+				callOrder(flushDocument, core.mergeBranches),
+			).toEqual(["flush doc1-b2", "flush doc1-b1", "core"])
+		})
+
+		it("refuses the merge when a flush fails", async ({
+			expect,
+		}) => {
+			const flushDocument = vi
+				.fn()
+				.mockRejectedValue(
+					new Error("core unreachable"),
+				)
+			const { app, core } = build({ flushDocument })
+
+			const res = await app.request(
+				"/documents/doc1/merge",
+				json({ fromBranchId: "b2", toBranchId: "b1" }),
+			)
+
+			expect(res.status).toBe(500)
+			expect(core.mergeBranches).toHaveBeenCalledTimes(0)
+		})
+
 		it.for([
 			{ name: "a body that is not JSON", input: "not json" },
 			{ name: "a body that is not an object", input: "null" },

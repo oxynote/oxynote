@@ -228,6 +228,59 @@ test.describe("review workflow", () => {
 			.toBe("Base text with the draft merged in")
 	})
 
+	// the store behind the editor is debounced, and enabling the workflow
+	// forks the page from what is stored: text typed just before has to be
+	// stored first or the draft starts without it and main's own store of
+	// it is refused once main is protected. No documentPersisted() here on
+	// purpose — the toggle lands inside the debounce window.
+	test("keeps text typed just before enabling review on both branches", async ({
+		page,
+		request,
+	}) => {
+		await signUpWithWorkspace(page, request)
+		await createDocument(page)
+		const url = page.url()
+		await contentEditor(page).click()
+		await page.keyboard.type("Typed right before review")
+		await makeReviewable(page)
+
+		await visit(page, url)
+
+		await waitForEditor(page)
+		await expect
+			.poll(() => editorText(contentEditor(page)))
+			.toBe("Typed right before review")
+		await switchToBranch(page, "draft")
+		await expect
+			.poll(() => editorText(contentEditor(page)))
+			.toBe("Typed right before review")
+	})
+
+	// the merge reads the draft as stored, so text typed just before it
+	// has to be stored first. No documentPersisted() before the merge on
+	// purpose.
+	test("keeps text typed just before the merge", async ({ page, request }) => {
+		await signUpWithWorkspace(page, request)
+		await createDocument(page)
+		const url = page.url()
+		await contentEditor(page).click()
+		await page.keyboard.type("Base text")
+		await makeReviewable(page)
+		await switchToBranch(page, "draft")
+		await expect.poll(() => editorText(contentEditor(page))).toBe("Base text")
+		await contentEditor(page).click()
+		await page.keyboard.press("End")
+		await page.keyboard.type(" merged right away")
+		await mergeDraftIntoMain(page)
+
+		await visit(page, url)
+
+		await waitForEditor(page)
+		await expect
+			.poll(() => editorText(contentEditor(page)))
+			.toBe("Base text merged right away")
+	})
+
 	test("keeps the merged content after a reload", async ({ page, request }) => {
 		await signUpWithWorkspace(page, request)
 		await createDocument(page)

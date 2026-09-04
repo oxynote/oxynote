@@ -56,6 +56,14 @@ export function stubCore(): StubCore {
 				icon: "lucide:file",
 			},
 		}),
+		createBranch: vi.fn().mockResolvedValue({
+			status: 200,
+			data: { branchId: "branch-2" },
+		}),
+		updateBranch: vi.fn().mockResolvedValue({
+			status: 200,
+			data: { branchId: "branch-1" },
+		}),
 	}
 }
 

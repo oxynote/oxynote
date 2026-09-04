@@ -1,11 +1,16 @@
 import * as Sentry from "@sentry/node"
-import { Hono } from "hono"
+import { Hono, type Context } from "hono"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
 import { cors } from "hono/cors"
 import { createLocalJWKSet, jwtVerify } from "jose"
 import * as Y from "yjs"
 import type { Store } from "./db.js"
-import type { CoreClient, MergedDocument } from "./core.js"
+import type {
+	BranchSummary,
+	CoreClient,
+	HttpResponse,
+	MergedDocument,
+} from "./core.js"
 import type { Env } from "./env.js"
 import { authMethods } from "./auth.js"
 import { toAxiosHeaders } from "./headers.js"
@@ -44,6 +49,11 @@ export interface RouteDeps {
 	auth: AuthHandler
 	store: Store
 	hocuspocus: DocumentRegistry
+	// runs a document's pending store now; resolves once core has it.
+	flushDocument: (documentName: string) => Promise<void>
+	// drops every client's socket to a document so each reconnects and
+	// authenticates again.
+	resetConnections: (documentName: string) => void
 	core: CoreClient
 }
 
@@ -58,6 +68,16 @@ function readString(source: unknown, key: string): string | undefined {
 	const value = (source as Record<string, unknown>)[key]
 
 	return typeof value === "string" ? value : undefined
+}
+
+function readBoolean(source: unknown, key: string): boolean | undefined {
+	if (!source || typeof source !== "object") {
+		return undefined
+	}
+
+	const value = (source as Record<string, unknown>)[key]
+
+	return typeof value === "boolean" ? value : undefined
 }
 
 // an axios rejection carrying core's own response, which the merge route
@@ -91,9 +111,91 @@ export function createRoutes({
 	auth,
 	store,
 	hocuspocus,
+	flushDocument,
+	resetConnections,
 	core,
 }: RouteDeps): Hono {
 	const app = new Hono()
+
+	// the names a branch's document can be open under: its id, and for
+	// the default branch the alias a client may have connected with.
+	function branchDocumentNames(
+		documentId: string,
+		branchId: string,
+		branch: BranchSummary | undefined,
+	): string[] {
+		const names = [`${documentId}-${branchId}`]
+
+		if (branch?.default) {
+			names.push(`${documentId}-default`)
+		}
+
+		return names
+	}
+
+	// flushBranch stores what the editors hold for a branch before core
+	// reads its row. Returns the branch as core lists it, so a caller can
+	// tell what a change it is about to make actually changed.
+	async function flushBranch(
+		documentId: string,
+		branchId: string,
+	): Promise<BranchSummary | undefined> {
+		const branches = await core.fetchBranches(documentId)
+		const branch = branches.find((b) => b.branchId === branchId)
+
+		for (const name of branchDocumentNames(
+			documentId,
+			branchId,
+			branch,
+		)) {
+			await flushDocument(name)
+		}
+
+		return branch
+	}
+
+	// flushed runs the flushes an operation needs before it may go to
+	// core. A failure means core would read a row the editors are ahead
+	// of, so the operation is refused instead.
+	async function flushed<T>(
+		c: Context,
+		run: () => Promise<T>,
+	): Promise<T | Response> {
+		try {
+			return await run()
+		} catch (error) {
+			Sentry.captureException(error)
+
+			return c.json(
+				{
+					error: "pending changes could not be stored",
+				},
+				500,
+			)
+		}
+	}
+
+	// calledCore answers with whatever core answered, including a refusal
+	// carried on a rejection, so the caller sees core's verdict rather
+	// than a generic failure.
+	async function calledCore(
+		c: Context,
+		fallback: string,
+		call: () => Promise<HttpResponse>,
+	): Promise<HttpResponse | Response> {
+		try {
+			return await call()
+		} catch (error) {
+			Sentry.captureException(error)
+
+			const upstream = upstreamResponse(error)
+			if (upstream) {
+				return c.json(upstream.data, upstream.status)
+			}
+
+			return c.json({ error: fallback }, 500)
+		}
+	}
 
 	app.use(
 		"*",
@@ -133,11 +235,132 @@ export function createRoutes({
 		return c.json({ availableSlots: env.maxOrganizations - count })
 	})
 
-	// auth is delegated: the caller's headers (including the session
-	// cookie) are forwarded to core, whose middleware validates the
-	// session and authorizes the merge. The in-memory Y.Doc mutation
-	// below only runs when core responds 200, so an unauthenticated
-	// caller changes nothing.
+	// the branch operations below are forwarded to core rather than
+	// handled here, and auth is delegated with them: the caller's headers
+	// (including the session cookie) go along, and core's middleware
+	// validates the session and authorizes the change. What this service
+	// adds is the flush: core reads the branch's stored row, and the
+	// editors are up to ten seconds ahead of it until the debounced store
+	// runs.
+
+	// a fork copies the source branch's row.
+	app.post("/documents/:documentId/branches", async (c) => {
+		const documentId = c.req.param("documentId")
+
+		let body: unknown
+		try {
+			body = await c.req.json()
+		} catch {
+			return c.json({ error: "invalid request body" }, 400)
+		}
+
+		const sourceBranchId = readString(body, "sourceBranchId")
+		if (!sourceBranchId) {
+			return c.json(
+				{ error: "sourceBranchId is required" },
+				400,
+			)
+		}
+
+		const source = await flushed(c, () =>
+			flushBranch(documentId, sourceBranchId),
+		)
+		if (source instanceof Response) {
+			return source
+		}
+
+		const response = await calledCore(
+			c,
+			"failed to create branch",
+			() =>
+				core.createBranch(
+					documentId,
+					{ body },
+					{
+						headers: toAxiosHeaders(
+							c.req.raw.headers,
+						),
+					},
+				),
+		)
+		if (response instanceof Response) {
+			return response
+		}
+
+		return c.json(
+			response.data,
+			response.status as ContentfulStatusCode,
+		)
+	})
+
+	// protecting a branch makes core refuse every store but its own, so
+	// the editors' pending one has to land first. Read-only is decided
+	// per connection when it authenticates, so a change either way
+	// resets the branch's connections: each client reconnects and comes
+	// back with the permission the branch now has.
+	app.put("/documents/:documentId/branches/:branchId", async (c) => {
+		const documentId = c.req.param("documentId")
+		const branchId = c.req.param("branchId")
+
+		let body: unknown
+		try {
+			body = await c.req.json()
+		} catch {
+			return c.json({ error: "invalid request body" }, 400)
+		}
+
+		const before = await flushed(c, () =>
+			flushBranch(documentId, branchId),
+		)
+		if (before instanceof Response) {
+			return before
+		}
+
+		const response = await calledCore(
+			c,
+			"failed to update branch",
+			() =>
+				core.updateBranch(
+					documentId,
+					branchId,
+					{ body },
+					{
+						headers: toAxiosHeaders(
+							c.req.raw.headers,
+						),
+					},
+				),
+		)
+		if (response instanceof Response) {
+			return response
+		}
+
+		const protectedFlag = readBoolean(body, "protected")
+
+		if (
+			response.status === 200 &&
+			protectedFlag !== undefined &&
+			protectedFlag !== before?.protected
+		) {
+			for (const name of branchDocumentNames(
+				documentId,
+				branchId,
+				before,
+			)) {
+				resetConnections(name)
+			}
+		}
+
+		return c.json(
+			response.data,
+			response.status as ContentfulStatusCode,
+		)
+	})
+
+	// a merge reads the source branch's row and rewrites the target's;
+	// both are flushed so neither side is behind its editors. The
+	// in-memory Y.Doc mutation below only runs when core responds 200,
+	// so an unauthenticated caller changes nothing.
 	app.put("/documents/:documentId/merge", async (c) => {
 		const documentId = c.req.param("documentId")
 
@@ -160,36 +383,42 @@ export function createRoutes({
 			)
 		}
 
-		try {
-			const response = await core.mergeBranches(
+		const sides = await flushed(c, async () => {
+			await flushBranch(documentId, fromBranchId)
+			await flushBranch(documentId, toBranchId)
+		})
+		if (sides instanceof Response) {
+			return sides
+		}
+
+		const response = await calledCore(c, "failed to merge", () =>
+			core.mergeBranches(
 				documentId,
 				fromBranchId,
 				toBranchId,
-				{ headers: toAxiosHeaders(c.req.raw.headers) },
-			)
-
-			if (response.status === 200) {
-				await applyMergeToOpenDocument(
-					documentId,
-					toBranchId,
-					response.data,
-				)
-			}
-
-			return c.json(
-				response.data,
-				response.status as ContentfulStatusCode,
-			)
-		} catch (error) {
-			Sentry.captureException(error)
-
-			const upstream = upstreamResponse(error)
-			if (upstream) {
-				return c.json(upstream.data, upstream.status)
-			}
-
-			return c.json({ error: "failed to merge" }, 500)
+				{
+					headers: toAxiosHeaders(
+						c.req.raw.headers,
+					),
+				},
+			),
+		)
+		if (response instanceof Response) {
+			return response
 		}
+
+		if (response.status === 200) {
+			await applyMergeToOpenDocument(
+				documentId,
+				toBranchId,
+				response.data as MergedDocument,
+			)
+		}
+
+		return c.json(
+			response.data,
+			response.status as ContentfulStatusCode,
+		)
 	})
 
 	// mirrors the merge into the target branch's live Y.Doc, if one is

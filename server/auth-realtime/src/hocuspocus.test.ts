@@ -4,6 +4,7 @@ import {
 	createDocumentHooks,
 	createHocuspocus,
 	parseDocumentName,
+	resetConnections,
 	resolveBranchId,
 	type AuthSession,
 } from "./hocuspocus.js"
@@ -874,6 +875,246 @@ describe("createDocumentHooks", () => {
 			expect(core.storeBranchContent).toHaveBeenCalledTimes(0)
 		})
 	})
+
+	describe("flushDocument", () => {
+		// a server holding one open document whose store may be pending
+		// or running. executeNow stands in for hocuspocus running the
+		// debounced store: it calls the hook the way the server would.
+		function stubServer(
+			hooks: ReturnType<typeof hooksWith>,
+			document: ConnectedDocument | null,
+			state: "pending" | "running" | "idle",
+		) {
+			const documents = new Map<string, ConnectedDocument>()
+			if (document) {
+				documents.set("doc1-branch1", document)
+			}
+
+			const executeNow = vi.fn(() =>
+				document
+					? hooks.onStoreDocument({
+							documentName:
+								"doc1-branch1",
+							document,
+						})
+					: undefined,
+			)
+
+			return {
+				server: {
+					documents,
+					debouncer: {
+						isDebounced: () =>
+							state === "pending",
+						isCurrentlyExecuting: () =>
+							state === "running",
+						executeNow,
+					},
+				},
+				executeNow,
+			}
+		}
+
+		it("runs the pending store now and resolves once core has it", async ({
+			expect,
+		}) => {
+			const core = stubCore()
+			const hooks = hooksWith(core)
+			const { server, executeNow } = stubServer(
+				hooks,
+				seededDocument("Runbook"),
+				"pending",
+			)
+
+			await hooks.flushDocument(server, "doc1-branch1")
+
+			expect(executeNow).toHaveBeenCalledWith(
+				"onStoreDocument-doc1-branch1",
+			)
+			expect(core.storeBranchContent).toHaveBeenCalledTimes(1)
+			const [, , update] =
+				core.storeBranchContent.mock.calls[0] ?? []
+			expect(update?.name).toBe("Runbook")
+		})
+
+		it("leaves a document that is not open alone", async ({
+			expect,
+		}) => {
+			const core = stubCore()
+			const hooks = hooksWith(core)
+			const { server, executeNow } = stubServer(
+				hooks,
+				null,
+				"pending",
+			)
+
+			await hooks.flushDocument(server, "doc1-branch1")
+
+			expect(executeNow).toHaveBeenCalledTimes(0)
+			expect(core.storeBranchContent).toHaveBeenCalledTimes(0)
+		})
+
+		it("leaves a document with nothing pending alone", async ({
+			expect,
+		}) => {
+			const core = stubCore()
+			const hooks = hooksWith(core)
+			const { server, executeNow } = stubServer(
+				hooks,
+				seededDocument(),
+				"idle",
+			)
+
+			await hooks.flushDocument(server, "doc1-branch1")
+
+			expect(executeNow).toHaveBeenCalledTimes(0)
+			expect(core.storeBranchContent).toHaveBeenCalledTimes(0)
+		})
+
+		// the store hook swallows the failure to warn the editors; the
+		// flush is the one caller that needs to see it.
+		it("rejects with the store's failure and still warns the editors", async ({
+			expect,
+		}) => {
+			const core = stubCore()
+			core.storeBranchContent.mockRejectedValue(
+				new Error("core unreachable"),
+			)
+			const hooks = hooksWith(core)
+			const document = seededDocument()
+			const { server } = stubServer(
+				hooks,
+				document,
+				"pending",
+			)
+
+			await expect(
+				hooks.flushDocument(server, "doc1-branch1"),
+			).rejects.toThrow("core unreachable")
+			expect(
+				document.broadcastStateless,
+			).toHaveBeenCalledWith(
+				JSON.stringify({
+					type: "error",
+					code: "hocuspocus.store_failed",
+				}),
+			)
+		})
+
+		it("waits for a store already in flight", async ({
+			expect,
+		}) => {
+			const core = stubCore()
+			let finish: () => void = () => undefined
+			core.storeBranchContent.mockReturnValue(
+				new Promise<void>((resolve) => {
+					finish = resolve
+				}),
+			)
+			const hooks = hooksWith(core)
+			const document = seededDocument()
+			const { server, executeNow } = stubServer(
+				hooks,
+				document,
+				"running",
+			)
+			const inFlight = hooks.onStoreDocument({
+				documentName: "doc1-branch1",
+				document,
+			})
+
+			let flushed = false
+			const flush = hooks
+				.flushDocument(server, "doc1-branch1")
+				.then(() => {
+					flushed = true
+				})
+			await Promise.resolve()
+
+			expect(flushed).toBe(false)
+			finish()
+			await Promise.all([inFlight, flush])
+			expect(flushed).toBe(true)
+			expect(executeNow).toHaveBeenCalledTimes(0)
+			expect(core.storeBranchContent).toHaveBeenCalledTimes(1)
+		})
+
+		// a persist that failed before the flush was asked for is not
+		// the flush's answer: nothing is pending, so nothing is awaited.
+		it("does not report a failure that predates it", async ({
+			expect,
+		}) => {
+			const core = stubCore()
+			core.storeBranchContent.mockRejectedValueOnce(
+				new Error("core unreachable"),
+			)
+			const hooks = hooksWith(core)
+			const document = seededDocument()
+			await hooks.onStoreDocument({
+				documentName: "doc1-branch1",
+				document,
+			})
+			const { server } = stubServer(hooks, document, "idle")
+
+			await expect(
+				hooks.flushDocument(server, "doc1-branch1"),
+			).resolves.toBeUndefined()
+		})
+	})
+})
+
+describe("resetConnections", () => {
+	function socket() {
+		return { webSocket: { close: vi.fn() } }
+	}
+
+	// the provider reopens a document after losing its socket, which is
+	// what makes it authenticate again and pick up the branch's new
+	// permission
+	it("closes every client's socket with the reset code", ({ expect }) => {
+		const first = socket()
+		const second = socket()
+		const server = {
+			documents: new Map([
+				[
+					"doc1-branch1",
+					{
+						connections: new Map([
+							[first, {}],
+							[second, {}],
+						]),
+					},
+				],
+			]),
+		}
+
+		resetConnections(server, "doc1-branch1")
+
+		expect(first.webSocket.close).toHaveBeenCalledWith(
+			4205,
+			"Reset Connection",
+		)
+		expect(second.webSocket.close).toHaveBeenCalledWith(
+			4205,
+			"Reset Connection",
+		)
+	})
+
+	it("leaves other documents' sockets alone", ({ expect }) => {
+		const other = socket()
+		const server = {
+			documents: new Map([
+				[
+					"doc1-branch2",
+					{ connections: new Map([[other, {}]]) },
+				],
+			]),
+		}
+
+		resetConnections(server, "doc1-branch1")
+
+		expect(other.webSocket.close).toHaveBeenCalledTimes(0)
+	})
 })
 
 describe("createHocuspocus", () => {
@@ -881,14 +1122,14 @@ describe("createHocuspocus", () => {
 		expect,
 	}) => {
 		const log = stubLog()
-		const server = createHocuspocus({
+		const { instance } = createHocuspocus({
 			auth: stubAuth(),
 			core: stubCore(),
 			log,
 		})
 		// the extension keeps its sink in its own configuration; the
 		// server exposes no other way to reach it.
-		const logger = server.configuration.extensions[0] as {
+		const logger = instance.configuration.extensions[0] as {
 			configuration: { log: (...args: unknown[]) => void }
 		}
 
@@ -901,20 +1142,46 @@ describe("createHocuspocus", () => {
 	})
 
 	it("wires the document hooks onto the server", ({ expect }) => {
-		const server = createHocuspocus({
+		const { instance } = createHocuspocus({
 			auth: stubAuth(),
 			core: stubCore(),
 			log: stubLog(),
 		})
 
-		expect(typeof server.configuration.onAuthenticate).toBe(
+		expect(typeof instance.configuration.onAuthenticate).toBe(
 			"function",
 		)
-		expect(typeof server.configuration.onLoadDocument).toBe(
+		expect(typeof instance.configuration.onLoadDocument).toBe(
 			"function",
 		)
-		expect(typeof server.configuration.onStoreDocument).toBe(
+		expect(typeof instance.configuration.onStoreDocument).toBe(
 			"function",
 		)
+	})
+
+	// the flush is bound to the server it came with: a document the
+	// server does not hold cannot have a pending store to run.
+	it("flushes against its own server", async ({ expect }) => {
+		const core = stubCore()
+		const { flushDocument } = createHocuspocus({
+			auth: stubAuth(),
+			core,
+			log: stubLog(),
+		})
+
+		await flushDocument("doc1-branch1")
+
+		expect(core.storeBranchContent).toHaveBeenCalledTimes(0)
+	})
+	it("resets against its own server", ({ expect }) => {
+		const { resetConnections } = createHocuspocus({
+			auth: stubAuth(),
+			core: stubCore(),
+			log: stubLog(),
+		})
+
+		expect(() => {
+			resetConnections("doc1-branch1")
+		}).not.toThrow()
 	})
 })

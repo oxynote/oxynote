@@ -39,7 +39,11 @@ if (env.valkeyDsn) {
 
 const auth = createAuth({ env, store, dialect, redis, core, log })
 
-const hocuspocus = createHocuspocus({
+const {
+	instance: hocuspocus,
+	flushDocument,
+	resetConnections,
+} = createHocuspocus({
 	auth: { getSession: (input) => auth.api.getSession(input) },
 	core,
 	log,
@@ -50,7 +54,18 @@ const app = new Hono()
 // the adapter's own state.
 const nodeWs = createNodeWebSocket({ app })
 
-app.route("/api", createRoutes({ env, auth, store, hocuspocus, core }))
+app.route(
+	"/api",
+	createRoutes({
+		env,
+		auth,
+		store,
+		hocuspocus,
+		flushDocument,
+		resetConnections,
+		core,
+	}),
+)
 
 // the RFC 9728 protected-resource metadata for the MCP surface is served
 // by the mcp plugin's request hook, which matches root-anchored

@@ -615,12 +615,17 @@ export default function () {
 				return
 			}
 
-			await $coreAPIClient(`/api/documents/${id}/branches/${branchId}`, {
-				method: "PUT",
-				body: {
-					protected: protectedMode,
+			// auth-realtime stores what the editor still holds before core
+			// changes the branch, and resets its connections afterwards.
+			await $authRealtimeAPIClient(
+				`/api/documents/${id}/branches/${branchId}`,
+				{
+					method: "PUT",
+					body: {
+						protected: protectedMode,
+					},
 				},
-			})
+			)
 		},
 		async onSuccess(_data, { id, branchId }) {
 			if (!isXid(id) || !isXid(branchId)) {
@@ -693,7 +698,9 @@ export default function () {
 				return
 			}
 
-			return await $coreAPIClient<DocumentBranchCreateResponse>(
+			// auth-realtime stores what the editor still holds before core
+			// copies the source branch.
+			return await $authRealtimeAPIClient<DocumentBranchCreateResponse>(
 				`/api/documents/${docId}/branches`,
 				{
 					method: "POST",

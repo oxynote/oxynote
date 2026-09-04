@@ -45,6 +45,12 @@ export interface MergedDocument {
 	icon: string
 }
 
+// the branch requests this service forwards for the web client. Their
+// bodies are core's to validate, so they travel through untyped.
+interface BranchRequest {
+	body: unknown
+}
+
 export interface RequestOptions {
 	headers?: AxiosHeaders
 }
@@ -105,6 +111,17 @@ export interface CoreClient {
 		toBranchId: string,
 		options: RequestOptions,
 	): Promise<{ status: number; data: MergedDocument }>
+	createBranch(
+		documentId: string,
+		request: BranchRequest,
+		options: RequestOptions,
+	): Promise<HttpResponse>
+	updateBranch(
+		documentId: string,
+		branchId: string,
+		request: BranchRequest,
+		options: RequestOptions,
+	): Promise<HttpResponse>
 }
 
 export function createCoreClient(
@@ -167,9 +184,9 @@ export function createCoreClient(
 			)
 		},
 
-		// the merge itself goes through core's session-authed surface,
-		// not /api/x: the caller's own headers are forwarded so core
-		// decides whether they may merge.
+		// the branch operations live on /api/x so that only this service
+		// can reach them, but core still authorizes them from the
+		// caller's own headers, which is why those are forwarded.
 		async mergeBranches(
 			documentId,
 			fromBranchId,
@@ -177,7 +194,7 @@ export function createCoreClient(
 			options,
 		) {
 			const response = await http.put(
-				`${baseUrl}/api/documents/${documentId}/merge`,
+				`${internal}/documents/${documentId}/merge`,
 				{ fromBranchId, toBranchId },
 				options,
 			)
@@ -186,6 +203,22 @@ export function createCoreClient(
 				status: response.status,
 				data: response.data as MergedDocument,
 			}
+		},
+
+		async createBranch(documentId, request, options) {
+			return http.post(
+				`${internal}/documents/${documentId}/branches`,
+				request.body,
+				options,
+			)
+		},
+
+		async updateBranch(documentId, branchId, request, options) {
+			return http.put(
+				`${internal}/documents/${documentId}/branches/${branchId}`,
+				request.body,
+				options,
+			)
 		},
 	}
 }

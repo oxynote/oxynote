@@ -36,6 +36,64 @@ interface ConnectedDocument extends Y.Doc {
 	broadcastStateless(payload: string): void
 }
 
+// the part of the hocuspocus server a flush reaches into: which documents
+// are open, and the debouncer that holds their pending stores.
+interface FlushableServer {
+	documents: { get(documentName: string): unknown }
+	debouncer: {
+		isDebounced(id: string): boolean
+		isCurrentlyExecuting(id: string): boolean
+		executeNow(id: string): unknown
+	}
+}
+
+// the part a reset reaches into: the socket behind each of a document's
+// client connections.
+interface ResettableServer {
+	documents: {
+		get(documentName: string):
+			| {
+					connections: Map<
+						{
+							webSocket: {
+								close(
+									code?: number,
+									reason?: string,
+								): void
+							}
+						},
+						unknown
+					>
+			  }
+			| undefined
+	}
+}
+
+// the close code hocuspocus itself uses when it resets a connection.
+const resetConnection = { code: 4205, reason: "Reset Connection" }
+
+// resetConnections drops the socket of every client on a document, so each
+// reconnects and authenticates again. Hocuspocus's own closeConnections
+// only tells the provider the document is closed, and the provider leaves
+// it closed: it reopens a document after losing its socket, not after that
+// message. Direct connections have no socket and are unaffected.
+export function resetConnections(
+	server: ResettableServer,
+	documentName: string,
+): void {
+	const document = server.documents.get(documentName)
+	if (!document) {
+		return
+	}
+
+	for (const [connection] of document.connections) {
+		connection.webSocket.close(
+			resetConnection.code,
+			resetConnection.reason,
+		)
+	}
+}
+
 // parseDocumentName splits a document name of the form
 // "documentId-branchIdentifier" into its component parts. The split is on
 // the first dash: xids carry none, but a branch identifier may.
@@ -160,6 +218,12 @@ export function createDocumentHooks({ auth, core }: DocumentHookDeps) {
 	// persist of one reads as an ordinary write: core's permission is
 	// only ever lent to changes seen arriving under it.
 	const documentSystemOnly = new Map<string, boolean>()
+
+	// the most recent persist of each document, settled or not. A flush
+	// awaits the one it triggered or found in flight, which is how a
+	// failure onStoreDocument swallows for the editors' sake still
+	// reaches the caller that needed the content stored.
+	const lastPersist = new Map<string, Promise<void>>()
 
 	return {
 		async onAuthenticate({
@@ -346,7 +410,7 @@ export function createDocumentHooks({ auth, core }: DocumentHookDeps) {
 
 			documentSystemOnly.delete(data.documentName)
 
-			try {
+			const persist = (async () => {
 				const { documentId, branchIdentifier } =
 					parseDocumentName(data.documentName)
 				const branchId = await resolveBranchId(
@@ -376,6 +440,12 @@ export function createDocumentHooks({ auth, core }: DocumentHookDeps) {
 						system,
 					},
 				)
+			})()
+
+			lastPersist.set(data.documentName, persist)
+
+			try {
+				await persist
 			} catch (err) {
 				Sentry.captureException(err)
 
@@ -387,14 +457,48 @@ export function createDocumentHooks({ auth, core }: DocumentHookDeps) {
 				)
 			}
 		},
+
+		// flushDocument runs the document's pending store now and resolves
+		// once core has it, or rejects with what the store failed on. A
+		// document that is not open, or has nothing pending, is left
+		// alone: only a persist this call triggered or found in flight is
+		// awaited, so an old failure cannot block a later caller.
+		flushDocument: async (
+			server: FlushableServer,
+			documentName: string,
+		): Promise<void> => {
+			if (!server.documents.get(documentName)) {
+				return
+			}
+
+			const id = `onStoreDocument-${documentName}`
+
+			if (server.debouncer.isDebounced(id)) {
+				// runs onStoreDocument under the document's save
+				// mutex, after any persist already in flight.
+				await server.debouncer.executeNow(id)
+			} else if (!server.debouncer.isCurrentlyExecuting(id)) {
+				return
+			}
+
+			await lastPersist.get(documentName)
+		},
 	}
+}
+
+interface HocuspocusServer {
+	instance: Hocuspocus
+	flushDocument: (documentName: string) => Promise<void>
+	resetConnections: (documentName: string) => void
 }
 
 export function createHocuspocus({
 	log,
-	...hooks
-}: DocumentHookDeps & { log: ServiceLogger }): Hocuspocus {
-	return new Hocuspocus({
+	...deps
+}: DocumentHookDeps & { log: ServiceLogger }): HocuspocusServer {
+	const { flushDocument, ...hooks } = createDocumentHooks(deps)
+
+	const instance = new Hocuspocus({
 		// a line per connection, load, change and persist: a traffic
 		// trace, so DEBUG.
 		extensions: [
@@ -410,6 +514,15 @@ export function createHocuspocus({
 				},
 			}),
 		],
-		...createDocumentHooks(hooks),
+		...hooks,
 	})
+
+	return {
+		instance,
+		flushDocument: (documentName) =>
+			flushDocument(instance, documentName),
+		resetConnections: (documentName) => {
+			resetConnections(instance, documentName)
+		},
+	}
 }

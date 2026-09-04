@@ -111,7 +111,8 @@ func (s *Server) httpRouter() chi.Router {
 
 		// Note that private routes are not protected by any
 		// authentication middlewares (a reverse proxy like Caddy
-		// should handle that).
+		// should handle that), except the branch operations
+		// auth-realtime forwards on a person's behalf.
 		sr.Mount("/x", s.internalRouter())
 	})
 
@@ -136,6 +137,19 @@ func (s *Server) internalRouter() chi.Router {
 		sr.Route("/branch/{branchId}", func(ssr chi.Router) {
 			ssr.Get("/", s.handlers.document.FetchDocumentBranchByIDUnsafe)
 			ssr.Put("/", s.handlers.document.UpdateDocumentBranchByIDUnsafe)
+		})
+
+		// the branch operations that read or rewrite a branch's stored
+		// content. They are internal so that only auth-realtime, which
+		// first stores what the editors still hold, can start one — yet
+		// they act for a person, so the session it forwards is required
+		// and authorizes the change exactly as on the public surface.
+		sr.Group(func(ssr chi.Router) {
+			ssr.Use(auth.Middleware(s.log, s.opts.Auth, s.client))
+			ssr.Use(s.handlers.document.RequireDocumentAccess)
+			ssr.Put("/merge", s.handlers.document.MergeBranches)
+			ssr.Post("/branches", s.handlers.document.CreateDocumentBranch)
+			ssr.Put("/branches/{branchId}", s.handlers.document.UpdateDocumentBranch)
 		})
 	})
 
@@ -276,12 +290,9 @@ func (s *Server) router() chi.Router {
 			ssr.Get("/maintainers", s.handlers.document.FetchDocumentMaintainers)
 			ssr.Delete("/", s.handlers.document.DeleteDocument)
 			ssr.Post("/duplicate", s.handlers.document.DuplicateDocument)
-			ssr.Put("/merge", s.handlers.document.MergeBranches)
 			ssr.Route("/branches", func(sssr chi.Router) {
 				sssr.Get("/", s.handlers.document.FetchDocumentBranches)
-				sssr.Post("/", s.handlers.document.CreateDocumentBranch)
 				sssr.Route("/{branchId}", func(ssssr chi.Router) {
-					ssssr.Put("/", s.handlers.document.UpdateDocumentBranch)
 					ssssr.Delete("/", s.handlers.document.DeleteDocumentBranch)
 					ssssr.Put("/review-approve", s.handlers.document.UpdateBranchReviewApproval)
 					ssssr.Post("/blocks/{blockUid}/run", s.handlers.block.RunBlock)

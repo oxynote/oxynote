@@ -230,10 +230,10 @@ describe("createCoreClient", () => {
 	})
 
 	describe("mergeBranches", () => {
-		// the merge is the one call that goes to core's session-authed
-		// surface rather than /api/x, because core decides from the
-		// forwarded headers whether the caller may merge
-		it("puts to core's public merge route with the caller's headers", async ({
+		// the route is internal so nothing but this service reaches it,
+		// yet core still decides from the forwarded headers whether the
+		// caller may merge
+		it("puts to core's internal merge route with the caller's headers", async ({
 			expect,
 		}) => {
 			const http = stubHttp({
@@ -256,7 +256,7 @@ describe("createCoreClient", () => {
 
 			expect(http.put).toHaveBeenCalledTimes(1)
 			expect(http.put).toHaveBeenCalledWith(
-				"http://core:8080/api/documents/doc-1/merge",
+				"http://core:8080/api/x/documents/doc-1/merge",
 				{
 					fromBranchId: "branch-2",
 					toBranchId: "branch-1",
@@ -278,6 +278,69 @@ describe("createCoreClient", () => {
 			).mergeBranches("doc-1", "branch-2", "branch-1", {})
 
 			expect(result.status).toBe(409)
+		})
+	})
+
+	describe("createBranch", () => {
+		it("posts the body untouched to core's internal branches route with the caller's headers", async ({
+			expect,
+		}) => {
+			const http = stubHttp({
+				status: 200,
+				data: { branchId: "branch-2" },
+			})
+			const headers = new AxiosHeaders()
+			headers.set("cookie", "auth.session=abc")
+			const body = {
+				branch: "draft",
+				sourceBranchId: "branch-1",
+			}
+
+			const result = await createCoreClient(
+				BASE_URL,
+				http,
+			).createBranch("doc-1", { body }, { headers })
+
+			expect(http.post).toHaveBeenCalledTimes(1)
+			expect(http.post).toHaveBeenCalledWith(
+				"http://core:8080/api/x/documents/doc-1/branches",
+				body,
+				{ headers },
+			)
+			expect(result.status).toBe(200)
+			expect(result.data).toEqual({ branchId: "branch-2" })
+		})
+	})
+
+	describe("updateBranch", () => {
+		it("puts the body untouched to core's internal branch route with the caller's headers", async ({
+			expect,
+		}) => {
+			const http = stubHttp({
+				status: 200,
+				data: { branchId: "branch-1" },
+			})
+			const headers = new AxiosHeaders()
+			headers.set("cookie", "auth.session=abc")
+			const body = { protected: true }
+
+			const result = await createCoreClient(
+				BASE_URL,
+				http,
+			).updateBranch(
+				"doc-1",
+				"branch-1",
+				{ body },
+				{ headers },
+			)
+
+			expect(http.put).toHaveBeenCalledTimes(1)
+			expect(http.put).toHaveBeenCalledWith(
+				"http://core:8080/api/x/documents/doc-1/branches/branch-1",
+				body,
+				{ headers },
+			)
+			expect(result.status).toBe(200)
 		})
 	})
 })

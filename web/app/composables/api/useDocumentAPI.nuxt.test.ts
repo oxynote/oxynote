@@ -807,7 +807,7 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 			])
 			const putCalls = mockEndpoint(
 				"PUT",
-				`/api/documents/${SHORT_ID}/branches/${BRANCH_ID}`,
+				`http://test.local/auth-realtime/api/documents/${SHORT_ID}/branches/${BRANCH_ID}`,
 				() => null,
 			)
 			seedQueryData(TREE_KEY, [makeElem(SHORT_ID, "Doc A")])
@@ -832,7 +832,7 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 			])
 			const putCalls = mockEndpoint(
 				"PUT",
-				`/api/documents/${DOC_ID}/branches/${SHORT_ID}`,
+				`http://test.local/auth-realtime/api/documents/${DOC_ID}/branches/${SHORT_ID}`,
 				() => null,
 			)
 			seedQueryData(TREE_KEY, [makeElem(DOC_ID, "Doc A")])
@@ -855,7 +855,7 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 			const treeCalls = mockEndpoint("GET", TREE_URL, () => [])
 			const put = mockDeferredEndpoint(
 				"PUT",
-				`/api/documents/${DOC_ID}/branches/${BRANCH_ID}`,
+				`http://test.local/auth-realtime/api/documents/${DOC_ID}/branches/${BRANCH_ID}`,
 			)
 			seedQueryData(TREE_KEY, [makeElem(DOC_ID, "Doc A")])
 			const api = makeDocumentAPI()
@@ -883,7 +883,7 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 			mockEndpoint("GET", TREE_URL, () => [])
 			mockEndpoint(
 				"PUT",
-				`/api/documents/${DOC_ID}/branches/${BRANCH_ID}`,
+				`http://test.local/auth-realtime/api/documents/${DOC_ID}/branches/${BRANCH_ID}`,
 				() => {
 					throw createError({ statusCode: 500 })
 				},
@@ -908,7 +908,7 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 			mockEndpoint("GET", TREE_URL, () => [])
 			const put = mockDeferredEndpoint(
 				"PUT",
-				`/api/documents/${DOC_ID}/branches/${BRANCH_ID}`,
+				`http://test.local/auth-realtime/api/documents/${DOC_ID}/branches/${BRANCH_ID}`,
 			)
 			seedQueryData(TREE_KEY, [makeElem(DOC_ID, "Doc A")])
 			const api = makeDocumentAPI()
@@ -932,7 +932,7 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 		it("bails out for a non-xid source branch", async ({ expect }) => {
 			const postCalls = mockEndpoint(
 				"POST",
-				`/api/documents/${DOC_ID}/branches`,
+				`http://test.local/auth-realtime/api/documents/${DOC_ID}/branches`,
 				() => ({}),
 			)
 			seedQueryData(BRANCHES_KEY, [makeBranch(BRANCH_ID, "main")])
@@ -954,7 +954,7 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 		}) => {
 			const postCalls = mockEndpoint(
 				"POST",
-				`/api/documents/${DOC_ID}/branches`,
+				`http://test.local/auth-realtime/api/documents/${DOC_ID}/branches`,
 				() => ({ id: DOC_ID }),
 			)
 			seedQueryData(BRANCHES_KEY, [makeBranch(BRANCH_ID, "main")])
@@ -990,9 +990,13 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 		it("falls back to empty metadata when the source branch is not cached", async ({
 			expect,
 		}) => {
-			mockEndpoint("POST", `/api/documents/${DOC_ID}/branches`, () => ({
-				id: DOC_ID,
-			}))
+			mockEndpoint(
+				"POST",
+				`http://test.local/auth-realtime/api/documents/${DOC_ID}/branches`,
+				() => ({
+					id: DOC_ID,
+				}),
+			)
 			seedQueryData(BRANCHES_KEY, [])
 			const api = makeDocumentAPI()
 
@@ -1011,9 +1015,13 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 		})
 
 		it("rolls back the branches when the request fails", async ({ expect }) => {
-			mockEndpoint("POST", `/api/documents/${DOC_ID}/branches`, () => {
-				throw createError({ statusCode: 500 })
-			})
+			mockEndpoint(
+				"POST",
+				`http://test.local/auth-realtime/api/documents/${DOC_ID}/branches`,
+				() => {
+					throw createError({ statusCode: 500 })
+				},
+			)
 			seedQueryData(BRANCHES_KEY, [makeBranch(BRANCH_ID, "main")])
 			const api = makeDocumentAPI()
 
@@ -1034,7 +1042,7 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 		}) => {
 			const post = mockDeferredEndpoint(
 				"POST",
-				`/api/documents/${DOC_ID}/branches`,
+				`http://test.local/auth-realtime/api/documents/${DOC_ID}/branches`,
 			)
 			seedQueryData(BRANCHES_KEY, [makeBranch(BRANCH_ID, "main")])
 			const api = makeDocumentAPI()

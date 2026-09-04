@@ -68,6 +68,24 @@ const CORE_INTERNAL_ENDPOINTS = [
 		path: "/core/api/x/documents/doc-e2e/branch/branch-e2e/",
 	},
 	{ name: "outgoing email", method: "POST", path: "/core/api/x/email" },
+	// session-authed, but internal all the same: auth-realtime stores the
+	// editors' pending changes before core reads the branch, and a client
+	// reaching these directly would skip that.
+	{
+		name: "a branch merge",
+		method: "PUT",
+		path: "/core/api/x/documents/doc-e2e/merge",
+	},
+	{
+		name: "a branch fork",
+		method: "POST",
+		path: "/core/api/x/documents/doc-e2e/branches",
+	},
+	{
+		name: "a branch protection change",
+		method: "PUT",
+		path: "/core/api/x/documents/doc-e2e/branches/branch-e2e",
+	},
 ] as const
 
 const AUTH_REALTIME_INTERNAL_ENDPOINTS = [
