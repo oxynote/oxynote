@@ -1082,7 +1082,7 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 		it("bails out for a non-xid branch id", async ({ expect }) => {
 			const deleteCalls = mockEndpoint(
 				"DELETE",
-				`/api/documents/${DOC_ID}/branches/${SHORT_ID}`,
+				`http://test.local/auth-realtime/api/documents/${DOC_ID}/branches/${SHORT_ID}`,
 				() => null,
 			)
 			seedQueryData(BRANCHES_KEY, [makeBranch(BRANCH_ID, "main")])
@@ -1102,7 +1102,7 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 		it("removes the branch optimistically", async ({ expect }) => {
 			const deleteCalls = mockEndpoint(
 				"DELETE",
-				`/api/documents/${DOC_ID}/branches/${BRANCH_ID_2}`,
+				`http://test.local/auth-realtime/api/documents/${DOC_ID}/branches/${BRANCH_ID_2}`,
 				() => null,
 			)
 			seedQueryData(BRANCHES_KEY, [
@@ -1127,7 +1127,7 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 		}) => {
 			const deleteCalls = mockEndpoint(
 				"DELETE",
-				`/api/documents/${DOC_ID}/branches/${BRANCH_ID_2}`,
+				`http://test.local/auth-realtime/api/documents/${DOC_ID}/branches/${BRANCH_ID_2}`,
 				() => null,
 			)
 			seedQueryData(BRANCHES_KEY, [makeBranch(BRANCH_ID, "main")])
@@ -1147,7 +1147,7 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 		it("rolls back the branches when the request fails", async ({ expect }) => {
 			mockEndpoint(
 				"DELETE",
-				`/api/documents/${DOC_ID}/branches/${BRANCH_ID}`,
+				`http://test.local/auth-realtime/api/documents/${DOC_ID}/branches/${BRANCH_ID}`,
 				() => {
 					throw createError({ statusCode: 500 })
 				},
@@ -1172,7 +1172,7 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 		}) => {
 			const del = mockDeferredEndpoint(
 				"DELETE",
-				`/api/documents/${DOC_ID}/branches/${BRANCH_ID}`,
+				`http://test.local/auth-realtime/api/documents/${DOC_ID}/branches/${BRANCH_ID}`,
 			)
 			seedQueryData(BRANCHES_KEY, [makeBranch(BRANCH_ID, "main")])
 			const api = makeDocumentAPI()

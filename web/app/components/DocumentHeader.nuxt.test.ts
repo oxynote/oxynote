@@ -313,7 +313,7 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 		mainAndDraft()
 		const deleted = mockEndpoint(
 			"DELETE",
-			`/api/documents/${DOC_ID}/branches/${DRAFT_BRANCH}`,
+			`http://test.local/auth-realtime/api/documents/${DOC_ID}/branches/${DRAFT_BRANCH}`,
 			() => ({}),
 		)
 		const updated = mockEndpoint(
