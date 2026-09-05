@@ -562,6 +562,27 @@ describe("createRoutes", () => {
 			expect(core.updateBranch).toHaveBeenCalledTimes(0)
 			expect(resetConnections).toHaveBeenCalledTimes(0)
 		})
+
+		it("keeps the connections when core is unreachable", async ({
+			expect,
+		}) => {
+			const core = stubCore()
+			core.updateBranch.mockRejectedValue(
+				new Error("connect ECONNREFUSED"),
+			)
+			const { app, resetConnections } = build({ core })
+
+			const res = await app.request(
+				"/documents/doc1/branches/b1",
+				json({ protected: true }),
+			)
+
+			expect(res.status).toBe(500)
+			expect(await res.json()).toEqual({
+				error: "failed to update branch",
+			})
+			expect(resetConnections).toHaveBeenCalledTimes(0)
+		})
 	})
 
 	describe("DELETE /documents/:documentId/branches/:branchId", () => {
@@ -623,6 +644,27 @@ describe("createRoutes", () => {
 			expect(res.status).toBe(409)
 			expect(await res.json()).toEqual({
 				code: "document.last_branch",
+			})
+			expect(resetConnections).toHaveBeenCalledTimes(0)
+		})
+
+		it("keeps the connections when core is unreachable", async ({
+			expect,
+		}) => {
+			const core = stubCore()
+			core.deleteBranch.mockRejectedValue(
+				new Error("connect ECONNREFUSED"),
+			)
+			const { app, resetConnections } = build({ core })
+
+			const res = await app.request(
+				"/documents/doc1/branches/b1",
+				{ method: "DELETE" },
+			)
+
+			expect(res.status).toBe(500)
+			expect(await res.json()).toEqual({
+				error: "failed to delete branch",
 			})
 			expect(resetConnections).toHaveBeenCalledTimes(0)
 		})
