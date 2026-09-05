@@ -365,7 +365,7 @@ export default function () {
 
 			await queryCache.invalidateQueries({ key: DOCUMENT_QUERY_KEYS.root })
 			// the document leaves every tag it was listed under
-			await queryCache.invalidateQueries({ key: TAG_QUERY_KEYS.root })
+			await queryCache.invalidateQueries({ key: TAG_QUERY_KEYS.tree })
 		},
 		onError(_err, _title, { oldTree, newTree }) {
 			const cachedTree = queryCache.getQueryData(DOCUMENT_QUERY_KEYS.root)
@@ -523,7 +523,7 @@ export default function () {
 
 			await queryCache.invalidateQueries({ key: DOCUMENT_QUERY_KEYS.root })
 			// the copy carries the source's tags, so the tag tree lists it too
-			await queryCache.invalidateQueries({ key: TAG_QUERY_KEYS.root })
+			await queryCache.invalidateQueries({ key: TAG_QUERY_KEYS.tree })
 		},
 		onError(_err, _id, { oldTree, newTree }) {
 			const cachedTree = queryCache.getQueryData(DOCUMENT_QUERY_KEYS.root)

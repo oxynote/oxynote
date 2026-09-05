@@ -18,7 +18,7 @@ import { DOCUMENT_QUERY_KEYS } from "./useDocumentAPI"
 export const TAG_QUERY_KEYS = {
 	// the prefix every tag query shares, for invalidating all of them at once
 	all: ["tags"] as const,
-	root: ["tags", "tree"] as const,
+	tree: ["tags", "tree"] as const,
 	branch: (branchId: string) => ["tags", "branch", branchId] as const,
 }
 
@@ -27,7 +27,7 @@ export default function () {
 	const queryCache = useQueryCache()
 
 	const fetchTagTree = useQuery({
-		key: TAG_QUERY_KEYS.root,
+		key: TAG_QUERY_KEYS.tree,
 		query: async () => {
 			return await $coreAPIClient<TagTreeResponse>(`/api/tags/tree`, {
 				method: "GET",
@@ -57,7 +57,7 @@ export default function () {
 			}
 
 			const oldTree = clone(
-				queryCache.getQueryData<TagTreeResponse>(TAG_QUERY_KEYS.root),
+				queryCache.getQueryData<TagTreeResponse>(TAG_QUERY_KEYS.tree),
 			)
 			const newTree = clone(oldTree) ?? []
 
@@ -93,8 +93,8 @@ export default function () {
 				sortIndex: newIndex,
 			}
 
-			queryCache.setQueryData(TAG_QUERY_KEYS.root, newTree)
-			queryCache.cancelQueries({ key: TAG_QUERY_KEYS.root })
+			queryCache.setQueryData(TAG_QUERY_KEYS.tree, newTree)
+			queryCache.cancelQueries({ key: TAG_QUERY_KEYS.tree })
 
 			return { newTree, oldTree, finalReq }
 		},
@@ -115,23 +115,23 @@ export default function () {
 				return
 			}
 
-			await queryCache.invalidateQueries({ key: TAG_QUERY_KEYS.root })
+			await queryCache.invalidateQueries({ key: TAG_QUERY_KEYS.tree })
 		},
 		onError(_err, _req, { oldTree, newTree }) {
-			const cachedTree = queryCache.getQueryData(TAG_QUERY_KEYS.root)
+			const cachedTree = queryCache.getQueryData(TAG_QUERY_KEYS.tree)
 			if (!isDeepEqual(newTree, cachedTree)) {
 				return
 			}
 
 			// rollback
-			queryCache.setQueryData(TAG_QUERY_KEYS.root, oldTree)
+			queryCache.setQueryData(TAG_QUERY_KEYS.tree, oldTree)
 		},
 	})
 
 	const createTag = useMutation({
 		onMutate(req: TagCreateRequest) {
 			const oldTree = clone(
-				queryCache.getQueryData<TagTreeResponse>(TAG_QUERY_KEYS.root),
+				queryCache.getQueryData<TagTreeResponse>(TAG_QUERY_KEYS.tree),
 			)
 			const newTreeElem: TagTreeElement = {
 				id: nanoid(),
@@ -145,8 +145,8 @@ export default function () {
 			// a new tag lands at the end, which is where core appends it
 			const newTree = [...(clone(oldTree) ?? []), newTreeElem]
 
-			queryCache.setQueryData(TAG_QUERY_KEYS.root, newTree)
-			queryCache.cancelQueries({ key: TAG_QUERY_KEYS.root })
+			queryCache.setQueryData(TAG_QUERY_KEYS.tree, newTree)
+			queryCache.cancelQueries({ key: TAG_QUERY_KEYS.tree })
 
 			return { newTree, oldTree, newTreeElem }
 		},
@@ -157,16 +157,16 @@ export default function () {
 			})
 		},
 		async onSuccess() {
-			await queryCache.invalidateQueries({ key: TAG_QUERY_KEYS.root })
+			await queryCache.invalidateQueries({ key: TAG_QUERY_KEYS.tree })
 		},
 		onError(_err, _req, { oldTree, newTree }) {
-			const cachedTree = queryCache.getQueryData(TAG_QUERY_KEYS.root)
+			const cachedTree = queryCache.getQueryData(TAG_QUERY_KEYS.tree)
 			if (!isDeepEqual(newTree, cachedTree)) {
 				return
 			}
 
 			// rollback
-			queryCache.setQueryData(TAG_QUERY_KEYS.root, oldTree)
+			queryCache.setQueryData(TAG_QUERY_KEYS.tree, oldTree)
 		},
 	})
 
@@ -178,7 +178,7 @@ export default function () {
 			}
 
 			const oldTree = clone(
-				queryCache.getQueryData<TagTreeResponse>(TAG_QUERY_KEYS.root),
+				queryCache.getQueryData<TagTreeResponse>(TAG_QUERY_KEYS.tree),
 			)
 			const newTree = clone(oldTree) ?? []
 
@@ -189,8 +189,8 @@ export default function () {
 
 			tag.hidden = req.hidden
 
-			queryCache.setQueryData(TAG_QUERY_KEYS.root, newTree)
-			queryCache.cancelQueries({ key: TAG_QUERY_KEYS.root })
+			queryCache.setQueryData(TAG_QUERY_KEYS.tree, newTree)
+			queryCache.cancelQueries({ key: TAG_QUERY_KEYS.tree })
 
 			return { newTree, oldTree }
 		},
@@ -216,16 +216,16 @@ export default function () {
 				return
 			}
 
-			await queryCache.invalidateQueries({ key: TAG_QUERY_KEYS.root })
+			await queryCache.invalidateQueries({ key: TAG_QUERY_KEYS.tree })
 		},
 		onError(_err, _req, { oldTree, newTree }) {
-			const cachedTree = queryCache.getQueryData(TAG_QUERY_KEYS.root)
+			const cachedTree = queryCache.getQueryData(TAG_QUERY_KEYS.tree)
 			if (!isDeepEqual(newTree, cachedTree)) {
 				return
 			}
 
 			// rollback
-			queryCache.setQueryData(TAG_QUERY_KEYS.root, oldTree)
+			queryCache.setQueryData(TAG_QUERY_KEYS.tree, oldTree)
 		},
 	})
 
@@ -237,12 +237,12 @@ export default function () {
 			}
 
 			const oldTree = clone(
-				queryCache.getQueryData<TagTreeResponse>(TAG_QUERY_KEYS.root),
+				queryCache.getQueryData<TagTreeResponse>(TAG_QUERY_KEYS.tree),
 			)
 			const newTree = (clone(oldTree) ?? []).filter((tag) => tag.id !== id)
 
-			queryCache.setQueryData(TAG_QUERY_KEYS.root, newTree)
-			queryCache.cancelQueries({ key: TAG_QUERY_KEYS.root })
+			queryCache.setQueryData(TAG_QUERY_KEYS.tree, newTree)
+			queryCache.cancelQueries({ key: TAG_QUERY_KEYS.tree })
 
 			return { newTree, oldTree }
 		},
@@ -261,16 +261,16 @@ export default function () {
 				return
 			}
 
-			await queryCache.invalidateQueries({ key: TAG_QUERY_KEYS.root })
+			await queryCache.invalidateQueries({ key: TAG_QUERY_KEYS.tree })
 		},
 		onError(_err, _id, { oldTree, newTree }) {
-			const cachedTree = queryCache.getQueryData(TAG_QUERY_KEYS.root)
+			const cachedTree = queryCache.getQueryData(TAG_QUERY_KEYS.tree)
 			if (!isDeepEqual(newTree, cachedTree)) {
 				return
 			}
 
 			// rollback
-			queryCache.setQueryData(TAG_QUERY_KEYS.root, oldTree)
+			queryCache.setQueryData(TAG_QUERY_KEYS.tree, oldTree)
 		},
 	})
 
@@ -314,7 +314,7 @@ export default function () {
 			}
 
 			const oldTree = clone(
-				queryCache.getQueryData<TagTreeResponse>(TAG_QUERY_KEYS.root),
+				queryCache.getQueryData<TagTreeResponse>(TAG_QUERY_KEYS.tree),
 			)
 			const newTree = clone(oldTree) ?? []
 
@@ -339,10 +339,10 @@ export default function () {
 
 			if (doc?.defaultBranchId === req.branchId) {
 				tag.documents = [...(tag.documents ?? []), clone(doc)]
-			}
 
-			queryCache.setQueryData(TAG_QUERY_KEYS.root, newTree)
-			queryCache.cancelQueries({ key: TAG_QUERY_KEYS.root })
+				queryCache.setQueryData(TAG_QUERY_KEYS.tree, newTree)
+				queryCache.cancelQueries({ key: TAG_QUERY_KEYS.tree })
+			}
 
 			// the branch's own list is only touched once it has been read:
 			// seeding it here would hand a later mount a list holding this
@@ -381,7 +381,7 @@ export default function () {
 				return
 			}
 
-			await queryCache.invalidateQueries({ key: TAG_QUERY_KEYS.root })
+			await queryCache.invalidateQueries({ key: TAG_QUERY_KEYS.tree })
 			await queryCache.invalidateQueries({
 				key: TAG_QUERY_KEYS.branch(req.branchId),
 			})
@@ -389,13 +389,13 @@ export default function () {
 		onError(_err, req, { oldTree, newTree, oldBranchTags, newBranchTags }) {
 			rollbackBranchTags(req.branchId, oldBranchTags, newBranchTags)
 
-			const cachedTree = queryCache.getQueryData(TAG_QUERY_KEYS.root)
+			const cachedTree = queryCache.getQueryData(TAG_QUERY_KEYS.tree)
 			if (!isDeepEqual(newTree, cachedTree)) {
 				return
 			}
 
 			// rollback
-			queryCache.setQueryData(TAG_QUERY_KEYS.root, oldTree)
+			queryCache.setQueryData(TAG_QUERY_KEYS.tree, oldTree)
 		},
 	})
 
@@ -407,7 +407,7 @@ export default function () {
 			}
 
 			const oldTree = clone(
-				queryCache.getQueryData<TagTreeResponse>(TAG_QUERY_KEYS.root),
+				queryCache.getQueryData<TagTreeResponse>(TAG_QUERY_KEYS.tree),
 			)
 			const newTree = clone(oldTree) ?? []
 
@@ -415,14 +415,18 @@ export default function () {
 			// the row only goes when that is the branch losing the tag
 			const tag = newTree.find((t) => t.id === req.tagId)
 			if (tag?.documents) {
-				tag.documents = tag.documents.filter(
+				const documents = tag.documents.filter(
 					(doc) =>
 						doc.id !== req.documentId || doc.defaultBranchId !== req.branchId,
 				)
-			}
 
-			queryCache.setQueryData(TAG_QUERY_KEYS.root, newTree)
-			queryCache.cancelQueries({ key: TAG_QUERY_KEYS.root })
+				if (documents.length !== tag.documents.length) {
+					tag.documents = documents
+
+					queryCache.setQueryData(TAG_QUERY_KEYS.tree, newTree)
+					queryCache.cancelQueries({ key: TAG_QUERY_KEYS.tree })
+				}
+			}
 
 			const branchKey = TAG_QUERY_KEYS.branch(req.branchId)
 			const oldBranchTags = clone(
@@ -455,7 +459,7 @@ export default function () {
 				return
 			}
 
-			await queryCache.invalidateQueries({ key: TAG_QUERY_KEYS.root })
+			await queryCache.invalidateQueries({ key: TAG_QUERY_KEYS.tree })
 			await queryCache.invalidateQueries({
 				key: TAG_QUERY_KEYS.branch(req.branchId),
 			})
@@ -463,13 +467,13 @@ export default function () {
 		onError(_err, req, { oldTree, newTree, oldBranchTags, newBranchTags }) {
 			rollbackBranchTags(req.branchId, oldBranchTags, newBranchTags)
 
-			const cachedTree = queryCache.getQueryData(TAG_QUERY_KEYS.root)
+			const cachedTree = queryCache.getQueryData(TAG_QUERY_KEYS.tree)
 			if (!isDeepEqual(newTree, cachedTree)) {
 				return
 			}
 
 			// rollback
-			queryCache.setQueryData(TAG_QUERY_KEYS.root, oldTree)
+			queryCache.setQueryData(TAG_QUERY_KEYS.tree, oldTree)
 		},
 	})
 
