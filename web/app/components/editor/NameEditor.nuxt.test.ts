@@ -348,6 +348,34 @@ describe("<NameEditor>", { concurrent: false }, () => {
 		expect(highlightPanels()).toHaveLength(1)
 	})
 
+	it("stretches the mark down over the content but not out to its sides", async ({
+		expect,
+	}) => {
+		// happy-dom measures the page's own box as zero-sized, so a panel
+		// that took its width from the content would come out 400px wide
+		const content = document.createElement("div")
+		vi.spyOn(content, "getBoundingClientRect").mockReturnValue({
+			left: 0,
+			top: 0,
+			right: 400,
+			bottom: 900,
+			width: 400,
+			height: 900,
+			x: 0,
+			y: 0,
+			toJSON: () => ({}),
+		})
+		const wrapper = await mountEditor({
+			contentEditor: { view: { dom: content } },
+		})
+
+		await hookHandle(wrapper).trigger("mouseenter")
+
+		const panel = highlightPanels()[0] as HTMLElement | undefined
+		expect(panel?.style.height).toBe("910px")
+		expect(panel?.style.width).toBe("10px")
+	})
+
 	it("clears the mark when the pointer leaves the hook handle", async ({
 		expect,
 	}) => {

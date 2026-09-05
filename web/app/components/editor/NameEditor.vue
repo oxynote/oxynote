@@ -21,6 +21,7 @@ import ReviewerList from "./ReviewerList.vue"
 import { showToastMessage } from "../toast"
 import {
 	DEFAULT_HIGHLIGHT_OVERLAY_PADDING,
+	type HighlightOverlayRect,
 	useHighlightOverlay,
 } from "./highlight-overlay"
 
@@ -94,7 +95,7 @@ const hookStatus = computed(() => {
 })
 const hookMenuOpen = ref(false)
 const hoveringHookHandle = ref(false)
-const nameRowElem = useTemplateRef("name-row")
+const rootElem = useTemplateRef<HTMLElement>("name-editor-root")
 const { isEditable } = useEditorMeta()
 const { isScrolling } = useWindowScroll()
 const { show: showHighlight, hide: hideHighlight } = useHighlightOverlay()
@@ -235,11 +236,12 @@ watch([hoveringHookHandle, hookMenuOpen], ([hovering, menuOpen]) => {
 		return
 	}
 
-	if (!nameRowElem.value) {
+	const rect = documentRect()
+	if (!rect) {
 		return
 	}
 
-	showHighlight(nameRowElem.value, DEFAULT_HIGHLIGHT_OVERLAY_PADDING)
+	showHighlight(rect, DEFAULT_HIGHLIGHT_OVERLAY_PADDING)
 })
 
 // the panel is placed from a viewport rect, so a scroll would leave it
@@ -258,6 +260,30 @@ watch(
 		editorStore.setReviewableDiffActive(false)
 	},
 )
+
+// a page's hooks belong to the whole document, so the panel spans the
+// title, the metadata under it and the content below, rather than the one
+// row the handle sits beside.
+//
+// Only the bottom edge comes from the content editor: its element runs the
+// full width of the page and insets its blocks with margins matching this
+// row, so its own box would carry the page's side spacing into the panel
+function documentRect(): HighlightOverlayRect | null {
+	const header = rootElem.value?.getBoundingClientRect()
+	if (!header) {
+		return null
+	}
+
+	const content = props.contentEditor?.view.dom.getBoundingClientRect()
+	const bottom = Math.max(header.bottom, content?.bottom ?? header.bottom)
+
+	return {
+		left: header.left,
+		top: header.top,
+		width: header.width,
+		height: bottom - header.top,
+	}
+}
 
 function updateDiffMode(active: boolean) {
 	// store the scroll position because the window will scroll to the top
@@ -349,6 +375,7 @@ async function executeReviewableAction() {
 </script>
 <template>
 	<div
+		ref="name-editor-root"
 		class="relative mt-[0.8rem] mb-2 w-[calc(100%-2.5rem)] lg:mt-8 lg:mb-5 lg:w-[calc(100%-6.25rem)]"
 	>
 		<div
@@ -359,7 +386,6 @@ async function executeReviewableAction() {
 			class="flex flex-col-reverse items-start gap-2 sm:flex-row sm:justify-between"
 		>
 			<div
-				ref="name-row"
 				class="group/name-row relative flex flex-1 items-start gap-2 text-foreground"
 			>
 				<ShadcnUiDropdownMenu

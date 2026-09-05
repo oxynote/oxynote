@@ -140,7 +140,7 @@ function handleDragHoverLeave() {
 
 function createDragOverlay(nodeEl: HTMLElement) {
 	showHighlight(
-		nodeEl,
+		nodeEl.getBoundingClientRect(),
 		highlightOverlayByNodeType(props.editor, hoveredNodePos.value ?? 0, nodeEl),
 	)
 }
