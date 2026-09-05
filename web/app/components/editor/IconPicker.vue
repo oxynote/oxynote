@@ -47,7 +47,7 @@ function handleClick() {
 				)
 			"
 			:size="props.size"
-			variant="ghost"
+			variant="ghost-plain"
 			@click="handleClick"
 		>
 			<Icon v-if="props.icon" class="size-6.5" :name="props.icon" />

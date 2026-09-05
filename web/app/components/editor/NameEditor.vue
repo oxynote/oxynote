@@ -14,13 +14,15 @@ import IconPicker from "./IconPicker.vue"
 import DiffTitle from "./diff/DiffTitle.vue"
 import { defaultNamePlaceholder } from "./placeholder"
 import { renderCollaborationCaret } from "./collaboration"
-import IconStack, { type IconMetadata } from "./IconStack.vue"
 import HooksMenuContent from "./hooks/HookMenuContent.vue"
 import MaintainerList from "./MaintainerList.vue"
 import DocumentTagList from "./DocumentTagList.vue"
 import ReviewerList from "./ReviewerList.vue"
-import { prepareHookMetadata } from "./hooks"
 import { showToastMessage } from "../toast"
+import {
+	DEFAULT_HIGHLIGHT_OVERLAY_PADDING,
+	useHighlightOverlay,
+} from "./highlight-overlay"
 
 enum ReviewableAction {
 	ApproveUnapprove = "approve-unapprove",
@@ -80,42 +82,29 @@ const showTitleDiff = computed(
 	() => editorStore.reviewableDiffActive && !!props.targetBranchProvider,
 )
 
-const hookMetadata = computed<IconMetadata[]>(() => {
-	return props.documentHooks
-		.filter((h) => {
-			return h.blockId === null
-		})
-		.map((h) => {
-			const res = prepareHookMetadata(h.id, h.type, t)
-			if (res) {
-				return {
-					...res,
-					staleHook: Number(h.score) === 0,
-					hookUpdatedAt: h.updatedAt ?? new Date(0),
-				}
-			}
-
-			return {
-				id: h.id,
-				name: h.type,
-				icon: "lucide:help-circle",
-				staleHook: Number(h.score) === 0,
-				hookUpdatedAt: h.updatedAt ?? new Date(0),
-			}
-		})
-})
+// a page with no hooks of its own has no status to show, which leaves the
+// handle its neutral colour rather than tinting it as healthy
 const hookStatus = computed(() => {
-	return props.documentHooks
-		.filter((h) => h.blockId === null)
-		.some((h) => Number(h.score) === 0)
-		? "stale"
-		: "fresh"
+	const hooks = props.documentHooks.filter((h) => h.blockId === null)
+	if (!hooks.length) {
+		return null
+	}
+
+	return hooks.some((h) => Number(h.score) === 0) ? "stale" : "fresh"
 })
 const hookMenuOpen = ref(false)
+const hoveringHookHandle = ref(false)
+const nameRowElem = useTemplateRef("name-row")
 const { isEditable } = useEditorMeta()
-const safeHookMenuOpen = computed(() => {
-	return !isEditable.value ? false : hookMenuOpen.value
-})
+const { isScrolling } = useWindowScroll()
+const { show: showHighlight, hide: hideHighlight } = useHighlightOverlay()
+// the hook handle edits the page's hooks, so it follows the same rule as
+// the block handles: gone while the page cannot be edited, and gone in
+// diff mode, where the title is a rendering of two branches rather than
+// an editor
+const isEditingDisabled = computed(
+	() => !isEditable.value || editorStore.reviewableDiffActive,
+)
 const selectedReviewableAction = ref<ReviewableAction>(
 	ReviewableAction.ApproveUnapprove,
 )
@@ -230,12 +219,32 @@ const nameEditor = useTiptapEditor({
 })
 
 onBeforeUnmount(() => {
+	hideHighlight()
 	activeBranchIconFragment.unobserve(activeBranchIconObserverCallback)
 
 	if (targetBranchIconFragment && targetBranchIconObserverCallback) {
 		targetBranchIconFragment.unobserve(targetBranchIconObserverCallback)
 	}
 })
+
+// the panel marks what the handle points at, so it follows the handle's
+// hover and outlasts it for as long as the menu it opened is up
+watch([hoveringHookHandle, hookMenuOpen], ([hovering, menuOpen]) => {
+	if (!hovering && !menuOpen) {
+		hideHighlight()
+		return
+	}
+
+	if (!nameRowElem.value) {
+		return
+	}
+
+	showHighlight(nameRowElem.value, DEFAULT_HIGHLIGHT_OVERLAY_PADDING)
+})
+
+// the panel is placed from a viewport rect, so a scroll would leave it
+// behind the title it covers
+whenever(isScrolling, hideHighlight)
 
 watch(
 	[
@@ -349,7 +358,55 @@ async function executeReviewableAction() {
 		<div
 			class="flex flex-col-reverse items-start gap-2 sm:flex-row sm:justify-between"
 		>
-			<div class="flex flex-1 items-start gap-2 text-foreground">
+			<div
+				ref="name-row"
+				class="group/name-row relative flex flex-1 items-start gap-2 text-foreground"
+			>
+				<ShadcnUiDropdownMenu
+					v-if="!isEditingDisabled"
+					@update:open="(v: boolean) => (hookMenuOpen = v)"
+				>
+					<ShadcnUiDropdownMenuTrigger as-child>
+						<div
+							:data-menu-open="hookMenuOpen ? '' : undefined"
+							:class="
+								cn(
+									'group/hook-handle absolute top-0.5 right-full flex h-7 items-center pr-1 lg:pr-1.5',
+									'pointer-events-none opacity-0 transition-opacity duration-100',
+									'group-hover/name-row:pointer-events-auto group-hover/name-row:opacity-100',
+									'data-menu-open:pointer-events-auto data-menu-open:opacity-100',
+								)
+							"
+							@mouseenter="hoveringHookHandle = true"
+							@mouseleave="hoveringHookHandle = false"
+						>
+							<div
+								:class="
+									cn(
+										'flex size-4 cursor-pointer items-center justify-center rounded-md text-foreground/50 lg:size-5.5',
+										'group-data-menu-open/hook-handle:bg-sidebar-accent/50 hover:bg-sidebar-accent/50 active:bg-sidebar-accent',
+									)
+								"
+							>
+								<Icon
+									:data-hook-status="hookStatus"
+									name="mingcute:leaf-line"
+									class="mt-0.25 size-3.5 data-[hook-status=fresh]:text-hook-status-fresh data-[hook-status=stale]:text-hook-status-stale lg:size-4.5"
+								/>
+							</div>
+							<span class="sr-only">
+								{{ $t("editor.hook-handle.screen-reader-hint") }}
+							</span>
+						</div>
+					</ShadcnUiDropdownMenuTrigger>
+					<ShadcnUiDropdownMenuContent side="right" align="start" loop>
+						<HooksMenuContent
+							:document-hooks="documentHooks"
+							:node-id="null"
+							@open-settings="(v) => emit('open-settings', v)"
+						/>
+					</ShadcnUiDropdownMenuContent>
+				</ShadcnUiDropdownMenu>
 				<IconPicker
 					:icon="activeBranchIcon"
 					:is-modified="
@@ -481,27 +538,6 @@ async function executeReviewableAction() {
 		<div class="mt-2.5 flex items-center justify-between gap-2">
 			<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
 				<DocumentTagList />
-				<ShadcnUiDropdownMenu
-					:open="safeHookMenuOpen"
-					@update:open="(v: boolean) => (hookMenuOpen = v)"
-				>
-					<ShadcnUiDropdownMenuTrigger as-child>
-						<IconStack
-							:data-disabled="!isEditable ? '' : undefined"
-							class="cursor-pointer data-disabled:cursor-default"
-							:title="$t('editor.name-editor.hooks')"
-							:icons="hookMetadata"
-							:disabled="!isEditable"
-						/>
-					</ShadcnUiDropdownMenuTrigger>
-					<ShadcnUiDropdownMenuContent side="bottom" align="start" loop>
-						<HooksMenuContent
-							:document-hooks="documentHooks"
-							:node-id="null"
-							@open-settings="(v) => emit('open-settings', v)"
-						/>
-					</ShadcnUiDropdownMenuContent>
-				</ShadcnUiDropdownMenu>
 				<div
 					v-if="editorStore.branchReviewableActionsActive"
 					class="flex items-center gap-1"

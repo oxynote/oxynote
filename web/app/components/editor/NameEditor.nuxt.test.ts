@@ -130,6 +130,16 @@ function actionMenuTrigger(wrapper: VueWrapper) {
 	return wrapper.findAll("button")[2]
 }
 
+function hookHandle(wrapper: VueWrapper) {
+	return wrapper.get(".group\\/hook-handle")
+}
+
+// the panel marking the title is appended to the body, the way the drag
+// handle marks the block it points at
+function highlightPanels(): NodeListOf<Element> {
+	return document.body.querySelectorAll("[aria-hidden='true'].z-editor-overlay")
+}
+
 // the wrapper is the tooltip provider the editor is mounted inside, so
 // the editor's own events are read off the component
 function emittedFrom(wrapper: VueWrapper, event: string): unknown[][] {
@@ -301,9 +311,62 @@ describe("<NameEditor>", { concurrent: false }, () => {
 			],
 		})
 
-		expect(wrapper.text()).toContain(t("editor.name-editor.hooks"))
+		expect(wrapper.text()).toContain(t("editor.hook-handle.screen-reader-hint"))
+		expect(
+			wrapper.find("[data-hook-status]").attributes("data-hook-status"),
+		).toBe("fresh")
 		expect(wrapper.find(".bg-hook-decoration").attributes("style")).toContain(
 			"display: none",
+		)
+	})
+
+	it("leaves the hook handle untinted on a page with no hooks", async ({
+		expect,
+	}) => {
+		const wrapper = await mountEditor()
+
+		expect(wrapper.find("[data-hook-status]").exists()).toBe(false)
+	})
+
+	it("marks the title when the hook handle is hovered", async ({ expect }) => {
+		const wrapper = await mountEditor()
+
+		await hookHandle(wrapper).trigger("mouseenter")
+
+		expect(highlightPanels()).toHaveLength(1)
+	})
+
+	it("keeps the mark on while the hook menu is open", async ({ expect }) => {
+		const wrapper = await mountEditor()
+		const handle = hookHandle(wrapper)
+		await handle.trigger("pointerdown", { button: 0 })
+		await handle.trigger("click")
+		await nextTick()
+
+		await handle.trigger("mouseleave")
+
+		expect(highlightPanels()).toHaveLength(1)
+	})
+
+	it("clears the mark when the pointer leaves the hook handle", async ({
+		expect,
+	}) => {
+		const wrapper = await mountEditor()
+		await hookHandle(wrapper).trigger("mouseenter")
+
+		await hookHandle(wrapper).trigger("mouseleave")
+
+		expect(highlightPanels()).toHaveLength(0)
+	})
+
+	it("takes the hook handle away while a diff is on", async ({ expect }) => {
+		const wrapper = await mountEditor({ target: makeBranch() })
+
+		useEditorStore().setReviewableDiffActive(true)
+		await nextTick()
+
+		expect(wrapper.text()).not.toContain(
+			t("editor.hook-handle.screen-reader-hint"),
 		)
 	})
 
@@ -321,6 +384,9 @@ describe("<NameEditor>", { concurrent: false }, () => {
 			],
 		})
 
+		expect(
+			wrapper.find("[data-hook-status]").attributes("data-hook-status"),
+		).toBe("stale")
 		expect(
 			wrapper.find(".bg-hook-decoration").attributes("style"),
 		).toBeUndefined()

@@ -7,6 +7,7 @@ import type { HocuspocusProvider } from "@hocuspocus/provider"
 import { cn } from "~/lib/utils"
 import HookMenuContent from "../hooks/HookMenuContent.vue"
 import CoreMenu from "./menu-options/CoreMenu.vue"
+import { useHighlightOverlay } from "../highlight-overlay"
 
 // duration to wait before unlocking drag handle after menu closes,
 // allowing the close animation to complete without visual flicker
@@ -33,9 +34,7 @@ const editorStore = useEditorStore()
 const isEditingDisabled = computed(() => {
 	return !isEditable.value || editorStore.reviewableDiffActive
 })
-const dragOverlayElement = ref<
-	(HTMLElement & { _cleanup?: () => void }) | null
->(null)
+const { show: showHighlight, hide: hideHighlight } = useHighlightOverlay()
 const nodeActionMenuOpen = ref(false)
 const hookMenuOpen = ref(false)
 const hoveringDrag = ref(false)
@@ -120,30 +119,6 @@ function getCurrentNodeEl(): HTMLElement | null {
 	return props.editor.view.nodeDOM(hoveredNodePos.value) as HTMLElement | null
 }
 
-function updateDragOverlayPosition(nodeEl: HTMLElement) {
-	const rect = nodeEl.getBoundingClientRect()
-	const nodeInfo = highlightOverlayByNodeType(
-		props.editor,
-		hoveredNodePos.value ?? 0,
-		nodeEl,
-	)
-
-	const left = rect.left - nodeInfo.extraLeft
-	const top = rect.top - nodeInfo.extraTop
-	const width = rect.width + nodeInfo.extraLeft + nodeInfo.extraRight
-	const height = rect.height + nodeInfo.extraTop + nodeInfo.extraBottom
-
-	if (!dragOverlayElement.value) {
-		return
-	}
-
-	const el = dragOverlayElement.value
-	el.style.left = `${left}px`
-	el.style.top = `${top}px`
-	el.style.width = `${width}px`
-	el.style.height = `${height}px`
-}
-
 function handleDragHoverEnter() {
 	hoveringDrag.value = true
 
@@ -164,30 +139,14 @@ function handleDragHoverLeave() {
 }
 
 function createDragOverlay(nodeEl: HTMLElement) {
-	removeDragOverlay()
-
-	const el = document.createElement("div")
-	el.setAttribute("aria-hidden", "true")
-
-	el.className = cn(
-		"fixed left-0 top-0 w-0 h-0 pointer-events-none z-editor-overlay transition-none rounded-md bg-drag-target/20",
+	showHighlight(
+		nodeEl,
+		highlightOverlayByNodeType(props.editor, hoveredNodePos.value ?? 0, nodeEl),
 	)
-
-	document.body.appendChild(el)
-	dragOverlayElement.value = el
-
-	updateDragOverlayPosition(nodeEl)
 }
 
 function removeDragOverlay() {
-	const el = dragOverlayElement.value
-	el?._cleanup?.()
-
-	if (el?.parentNode) {
-		el.parentNode.removeChild(el)
-	}
-
-	dragOverlayElement.value = null
+	hideHighlight()
 }
 
 function dragStart(e: DragEvent) {

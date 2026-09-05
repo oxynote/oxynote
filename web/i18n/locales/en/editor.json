@@ -84,7 +84,6 @@
 		"name-editor": {
 			"maintainers": "Maintainers",
 			"reviewers": "Reviewers",
-			"hooks": "Hooks",
 			"reviewer-popover": {
 				"approved-by-label": "Approved by",
 				"request-review-screen-reader-hint": "Request review",
