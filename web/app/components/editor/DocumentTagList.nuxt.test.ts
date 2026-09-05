@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, it } from "vitest"
+import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import { enableAutoUnmount } from "@vue/test-utils"
 import {
 	clearQueryCache,
@@ -258,6 +258,84 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 
 		expect(wrapper.findAllComponents(TagPill)).toHaveLength(0)
 		expect(renderedIconNames(wrapper)).toContain("lucide:plus")
+	})
+
+	it("fills up to the ceiling when the row has room", async ({ expect }) => {
+		// the row sizes to its content, so its own width is narrower than the
+		// pills need — the space up to the group's edge is what counts
+		vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+			left: 0,
+			top: 0,
+			right: 2000,
+			bottom: 24,
+			width: 2000,
+			height: 24,
+			x: 0,
+			y: 0,
+			toJSON: () => ({}),
+		})
+		vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(200)
+		vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockReturnValue(300)
+		const tags = ["a", "b", "c", "d", "e"].map((n) =>
+			makeTag(makeXid(`t${n}`), `Tag ${n}`, "#1a9e4a"),
+		)
+		stubTags(
+			tags,
+			tags.map((tag) => tag.id),
+		)
+
+		const wrapper = await mountTags()
+
+		const pills = wrapper.findAllComponents(TagPill)
+		expect(pills.map((p) => p.text())).toEqual([
+			"Tag a",
+			"Tag b",
+			"Tag c",
+			"Tag d",
+			t("editor.tags.overflow", { count: 1 }),
+		])
+		// with several pills up, each keeps its natural width so the row
+		// overflows measurably
+		expect(pills[0]?.classes()).toContain("shrink-0")
+	})
+
+	it("shows fewer tags than the ceiling when the row is narrow", async ({
+		expect,
+	}) => {
+		// happy-dom lays nothing out: every box sits at the origin, so the
+		// group's right edge is the boundary and the trigger needs more than
+		// the space up to it
+		vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+			left: 0,
+			top: 0,
+			right: 140,
+			bottom: 24,
+			width: 140,
+			height: 24,
+			x: 0,
+			y: 0,
+			toJSON: () => ({}),
+		})
+		vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockReturnValue(400)
+		const tags = ["a", "b", "c", "d", "e"].map((n) =>
+			makeTag(makeXid(`t${n}`), `Tag ${n}`, "#1a9e4a"),
+		)
+		stubTags(
+			tags,
+			tags.map((tag) => tag.id),
+		)
+
+		const wrapper = await mountTags()
+
+		const pills = wrapper.findAllComponents(TagPill)
+		expect(pills.map((p) => p.text())).toEqual([
+			"Tag a",
+			t("editor.tags.overflow", { count: 4 }),
+		])
+		// the last pill left has nothing to give way to, so it truncates
+		// rather than pushing the counter out of the row
+		expect(pills[0]?.classes()).toContain("min-w-0")
+		expect(pills[1]?.classes()).toContain("shrink-0")
 	})
 
 	it("collapses past the fourth tag into a counter", async ({ expect }) => {

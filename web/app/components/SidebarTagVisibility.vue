@@ -19,7 +19,13 @@ const emit = defineEmits<{
 				</span>
 			</ShadcnUiSidebarGroupAction>
 		</ShadcnUiDropdownMenuTrigger>
-		<ShadcnUiDropdownMenuContent side="bottom" align="start" loop inside-sheet>
+		<ShadcnUiDropdownMenuContent
+			side="bottom"
+			align="start"
+			loop
+			inside-sheet
+			class="max-w-[min(18rem,var(--reka-dropdown-menu-content-available-width))] min-w-38"
+		>
 			<ShadcnUiDropdownMenuItem
 				v-for="tag in props.tags"
 				:key="tag.id"

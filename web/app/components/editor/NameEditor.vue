@@ -562,15 +562,21 @@ async function executeReviewableAction() {
 			</div>
 		</div>
 		<div class="mt-2.5 flex items-center justify-between gap-2">
-			<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+			<!--
+				the tag row measures the space it has, so the group it sits in
+				has to be allowed to shrink rather than size to its content
+			-->
+			<div
+				class="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center"
+			>
 				<DocumentTagList />
 				<div
 					v-if="editorStore.branchReviewableActionsActive"
-					class="flex items-center gap-1"
+					class="flex shrink-0 items-center gap-1"
 				>
 					<ShadcnUiLabel
 						for="show-diff"
-						class="text-sm font-medium text-muted-foreground"
+						class="text-sm font-medium whitespace-nowrap text-muted-foreground"
 					>
 						{{ $t("editor.name-editor.review-workflow.show-diff") }}
 					</ShadcnUiLabel>
@@ -582,7 +588,7 @@ async function executeReviewableAction() {
 					/>
 				</div>
 			</div>
-			<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+			<div class="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center">
 				<MaintainerList />
 				<ReviewerList v-if="isReviewable" />
 			</div>
