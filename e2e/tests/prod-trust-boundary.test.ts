@@ -86,6 +86,11 @@ const CORE_INTERNAL_ENDPOINTS = [
 		method: "PUT",
 		path: "/core/api/x/documents/doc-e2e/branches/branch-e2e",
 	},
+	{
+		name: "a branch deletion",
+		method: "DELETE",
+		path: "/core/api/x/documents/doc-e2e/branches/branch-e2e",
+	},
 ] as const
 
 const AUTH_REALTIME_INTERNAL_ENDPOINTS = [

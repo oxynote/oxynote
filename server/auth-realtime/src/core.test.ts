@@ -9,6 +9,7 @@ function stubHttp(response: HttpResponse = { status: 200, data: null }) {
 		get: vi.fn().mockResolvedValue(response),
 		post: vi.fn().mockResolvedValue(response),
 		put: vi.fn().mockResolvedValue(response),
+		delete: vi.fn().mockResolvedValue(response),
 	}
 }
 
@@ -341,6 +342,28 @@ describe("createCoreClient", () => {
 				{ headers },
 			)
 			expect(result.status).toBe(200)
+		})
+	})
+
+	describe("deleteBranch", () => {
+		it("deletes core's internal branch route with the caller's headers", async ({
+			expect,
+		}) => {
+			const http = stubHttp({ status: 204, data: null })
+			const headers = new AxiosHeaders()
+			headers.set("cookie", "auth.session=abc")
+
+			const result = await createCoreClient(
+				BASE_URL,
+				http,
+			).deleteBranch("doc-1", "branch-1", { headers })
+
+			expect(http.delete).toHaveBeenCalledTimes(1)
+			expect(http.delete).toHaveBeenCalledWith(
+				"http://core:8080/api/x/documents/doc-1/branches/branch-1",
+				{ headers },
+			)
+			expect(result.status).toBe(204)
 		})
 	})
 })

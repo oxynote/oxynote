@@ -1,6 +1,10 @@
 {
 	"editor": {
 		"unknown-user-caret": "Unknown",
+		"realtime-error": {
+			"title": "Your latest changes could not be saved",
+			"description": "Reload the page to keep editing"
+		},
 		"placeholders": {
 			"name-default": "New Page",
 			"content": {

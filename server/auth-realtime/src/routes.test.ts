@@ -564,6 +564,70 @@ describe("createRoutes", () => {
 		})
 	})
 
+	describe("DELETE /documents/:documentId/branches/:branchId", () => {
+		it("forwards the deletion to core with the caller's headers, without a flush", async ({
+			expect,
+		}) => {
+			const { app, core, flushDocument } = build()
+
+			const res = await app.request(
+				"/documents/doc1/branches/b1",
+				{
+					method: "DELETE",
+					headers: { Cookie: "auth.session=abc" },
+				},
+			)
+
+			expect(res.status).toBe(204)
+			expect(flushDocument).toHaveBeenCalledTimes(0)
+			const [documentId, branchId, options] =
+				core.deleteBranch.mock.calls[0] ?? []
+			expect(documentId).toBe("doc1")
+			expect(branchId).toBe("b1")
+			expect(options?.headers?.get("cookie")).toBe(
+				"auth.session=abc",
+			)
+		})
+
+		it("drops the connections still on the deleted branch", async ({
+			expect,
+		}) => {
+			const { app, resetConnections } = build()
+
+			await app.request("/documents/doc1/branches/b1", {
+				method: "DELETE",
+			})
+
+			expect(
+				resetConnections.mock.calls.map(
+					(call) => call[0],
+				),
+			).toEqual(["doc1-b1"])
+		})
+
+		it("keeps the connections when core refuses the deletion", async ({
+			expect,
+		}) => {
+			const core = stubCore()
+			core.deleteBranch.mockResolvedValue({
+				status: 409,
+				data: { code: "document.last_branch" },
+			})
+			const { app, resetConnections } = build({ core })
+
+			const res = await app.request(
+				"/documents/doc1/branches/b1",
+				{ method: "DELETE" },
+			)
+
+			expect(res.status).toBe(409)
+			expect(await res.json()).toEqual({
+				code: "document.last_branch",
+			})
+			expect(resetConnections).toHaveBeenCalledTimes(0)
+		})
+	})
+
 	describe("PUT /documents/:documentId/merge", () => {
 		it("flushes the source and then the target before core merges", async ({
 			expect,

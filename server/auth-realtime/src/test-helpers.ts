@@ -64,6 +64,10 @@ export function stubCore(): StubCore {
 			status: 200,
 			data: { branchId: "branch-1" },
 		}),
+		deleteBranch: vi.fn().mockResolvedValue({
+			status: 204,
+			data: null,
+		}),
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,8 @@ import (
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/file"
+	hookCore "github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
@@ -1390,130 +1393,114 @@ func Test_Handler_CreateDocument(t *testing.T) {
 	}
 }
 
-func Test_Handler_UpdateDocumentBranch(t *testing.T) {
-	validBody := `{"name":"Renamed","protected":true}`
+func Test_Handler_DeleteDocument(t *testing.T) {
+	fetchStored := func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
+		return storedDoc(), nil
+	}
 
 	cc := map[string]struct {
 		DB        *DBMock
 		Tx        *TxMock
+		BeginErr  error
 		NoSession bool
 		OmitDoc   bool
-		Body      string
-		WantName  string
 		RespCode  int
-		Updated   int
-		Metadata  int
-		Jobs      int
+		Committed int
+		TreeCbs   int
 	}{
 		"No session in context": {
 			DB:        &DBMock{},
+			Tx:        &TxMock{},
 			NoSession: true,
-			Body:      validBody,
 			RespCode:  http.StatusUnauthorized,
 		},
 		"Missing document ID parameter": {
 			DB:       &DBMock{},
+			Tx:       &TxMock{},
 			OmitDoc:  true,
-			Body:     validBody,
 			RespCode: http.StatusNotFound,
 		},
-		"Branch document fetch error": {
+		"Document fetch error": {
 			DB: &DBMock{
-				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
 					return nil, errors.New("boom")
 				},
 			},
-			Body:     validBody,
+			Tx:       &TxMock{},
 			RespCode: http.StatusInternalServerError,
 		},
-		"Branch of another document": {
+		"Hook fetch error": {
 			DB: &DBMock{
-				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
-					doc := branchDoc(_branchID)
-					doc.ID = xid.New()
-
-					return doc, nil
+				FetchDocumentFunc: fetchStored,
+				FetchDocumentHooksByDocumentIDFunc: func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
+					return nil, errors.New("boom")
 				},
 			},
-			Body:     validBody,
-			RespCode: http.StatusNotFound,
-		},
-		"Invalid JSON body": {
-			DB: &DBMock{
-				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
-					return storedDoc(), nil
-				},
-			},
-			Body:     "{",
-			RespCode: http.StatusBadRequest,
-		},
-		"Metadata update error": {
-			DB: &DBMock{
-				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
-					return branchDoc(_branchID), nil
-				},
-			},
-			Tx: &TxMock{
-				UpdateDocumentBranchMetadataFunc: func(context.Context, documentCore.Document) error {
-					return errors.New("boom")
-				},
-			},
-			Body:     validBody,
+			Tx:       &TxMock{},
 			RespCode: http.StatusInternalServerError,
-			Updated:  1,
 		},
-		"Search job insert error": {
+		"Hook cleanup error": {
 			DB: &DBMock{
-				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
-					return branchDoc(_branchID), nil
+				FetchDocumentFunc: fetchStored,
+				FetchDocumentHooksByDocumentIDFunc: func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
+					return []hookCore.Hook{storedHook("bogus")}, nil
 				},
 			},
+			Tx:       &TxMock{},
+			RespCode: http.StatusInternalServerError,
+		},
+		"Transaction start error": {
+			DB:       &DBMock{FetchDocumentFunc: fetchStored},
+			Tx:       &TxMock{},
+			BeginErr: errors.New("boom"),
+			RespCode: http.StatusInternalServerError,
+		},
+		"Document deletion error": {
+			DB: &DBMock{FetchDocumentFunc: fetchStored},
 			Tx: &TxMock{
+				DeleteDocumentFunc: func(context.Context, xid.ID, string) ([]xid.ID, error) {
+					return nil, errors.New("boom")
+				},
+			},
+			RespCode: http.StatusInternalServerError,
+		},
+		"Search removal enqueue error": {
+			DB: &DBMock{FetchDocumentFunc: fetchStored},
+			Tx: &TxMock{
+				DeleteDocumentFunc: func(context.Context, xid.ID, string) ([]xid.ID, error) {
+					return []xid.ID{_documentID}, nil
+				},
 				InsertDocumentSearchJobFunc: func(context.Context, search.BlocksDifference) error {
 					return errors.New("boom")
 				},
 			},
-			Body:     validBody,
 			RespCode: http.StatusInternalServerError,
-			Updated:  1,
-			Jobs:     1,
 		},
-		// the main branch is found by its flag in the tree and content
-		// queries, but its name is what the user sees; renaming it would
-		// leave the document looking nameless.
-		"Renaming the default branch is rejected": {
-			DB: &DBMock{
-				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
-					return storedDoc(), nil
+		"Commit error": {
+			DB: &DBMock{FetchDocumentFunc: fetchStored},
+			Tx: &TxMock{
+				CommitFunc: func() error {
+					return errors.New("boom")
 				},
 			},
-			Body:     validBody,
-			RespCode: http.StatusBadRequest,
+			RespCode:  http.StatusInternalServerError,
+			Committed: 1,
 		},
-		"Protecting the default branch is allowed": {
+		"Successful deletion with hook cleanup": {
 			DB: &DBMock{
-				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
-					return storedDoc(), nil
+				FetchDocumentFunc: fetchStored,
+				FetchDocumentHooksByDocumentIDFunc: func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
+					return []hookCore.Hook{storedHook(hookCore.TypeScheduledReminder)}, nil
 				},
 			},
-			Body:     `{"protected":true}`,
-			WantName: documentCore.DefaultBranch,
-			RespCode: http.StatusOK,
-			Updated:  1,
-			Metadata: 1,
-		},
-		"Successful update": {
-			DB: &DBMock{
-				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
-					return branchDoc(_branchID), nil
+			Tx: &TxMock{
+				DeleteDocumentFunc: func(_ context.Context, id xid.ID, _ string) ([]xid.ID, error) {
+					return []xid.ID{id}, nil
 				},
 			},
-			Body:     validBody,
-			WantName: "Renamed",
-			RespCode: http.StatusOK,
-			Updated:  1,
-			Metadata: 1,
-			Jobs:     1,
+			RespCode:  http.StatusOK,
+			Committed: 1,
+			TreeCbs:   1,
 		},
 	}
 
@@ -1521,38 +1508,373 @@ func Test_Handler_UpdateDocumentBranch(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			tx := c.Tx
-			if tx == nil {
-				tx = &TxMock{}
-			}
-
-			hdl, cnt := newTestHandler(withTx(c.DB, tx, nil), &fakePublisher{})
+			hdl, cnt := newTestHandler(withTx(c.DB, c.Tx, c.BeginErr), &fakePublisher{})
 
 			rec := httptest.NewRecorder()
 
-			hdl.UpdateDocumentBranch(rec, newRequest(http.MethodPut, c.Body, c.NoSession, c.OmitDoc, false))
+			hdl.DeleteDocument(rec, newRequest(http.MethodDelete, "", c.NoSession, c.OmitDoc, true))
 
 			assert.Equal(t, c.RespCode, rec.Code)
-			assert.Len(t, tx.UpdateDocumentBranchMetadataCalls(), c.Updated)
-			assert.Len(t, tx.InsertDocumentSearchJobCalls(), c.Jobs)
-			assert.Equal(t, c.Metadata, cnt.metadata)
+			assert.Len(t, c.Tx.CommitCalls(), c.Committed)
+			assert.Equal(t, c.TreeCbs, cnt.tree)
 
 			if c.RespCode == http.StatusOK {
-				ff := tx.UpdateDocumentBranchMetadataCalls()
-				require.NotEmpty(t, ff)
-				assert.Equal(t, c.WantName, ff[0].Doc.BranchName)
-				assert.True(t, ff[0].Doc.Protected)
-				assert.Len(t, tx.CommitCalls(), 1)
+				require.Len(t, c.Tx.DeleteDocumentCalls(), 1)
+				assert.Equal(t, _documentID, c.Tx.DeleteDocumentCalls()[0].ID)
+
+				// the removal of the returned subtree ids rides the same
+				// transaction as the delete.
+				ff := c.Tx.InsertDocumentSearchJobCalls()
+				require.Len(t, ff, 1)
+				assert.Equal(t, []xid.ID{_documentID}, ff[0].Diff.RemovedDocuments)
+			}
+		})
+	}
+}
+
+func Test_Handler_DuplicateDocument(t *testing.T) {
+	fetchStored := func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
+		return storedDoc(), nil
+	}
+
+	// insertAwareTx returns the freshly inserted duplicate in the parent
+	// subtree so the sort-index swap can find it.
+	insertAwareTx := func() *TxMock {
+		tx := &TxMock{}
+		tx.FetchDocumentTreeByDocumentParentIDFunc = func(context.Context, null.Value[xid.ID], string) (documentCore.Summaries, error) {
+			return documentCore.Summaries{{ID: tx.InsertDocumentCalls()[0].Doc.ID}}, nil
+		}
+
+		return tx
+	}
+
+	// fetchStoredWithImage serves a document whose content holds an image
+	// served by that same document, which is what duplication has to copy.
+	fetchStoredWithImage := func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
+		doc := storedDoc()
+		doc.Content = documentCore.RootBlock{
+			Type: documentCore.BlockNodeDoc,
+			Content: []documentCore.Block{
+				{
+					Type: documentCore.BlockNodeImageBlock,
+					Attrs: documentCore.Attributes{
+						"uid": "img1",
+						"src": "https://app.test/core" + fmt.Sprintf(documentCore.FilePathFormat, _documentID, "img1"),
+					},
+				},
+			},
+		}
+
+		return doc, nil
+	}
+
+	// imageDB serves the document with the image plus the file row that
+	// image refers to, which is what the copy is made from.
+	imageDB := func() *DBMock {
+		return &DBMock{
+			FetchDocumentFunc: fetchStoredWithImage,
+			FetchDocumentFileFunc: func(_ context.Context, id, organizationID string) (*file.File, error) {
+				f := file.NewFile(id, file.LocationDocument, "key", _documentID, organizationID)
+
+				return &f, nil
+			},
+		}
+	}
+
+	cc := map[string]struct {
+		DB          *DBMock
+		Tx          *TxMock
+		Storer      *StorerMock
+		BeginErr    error
+		NoSession   bool
+		OmitDoc     bool
+		RespCode    int
+		Committed   int
+		TreeCbs     int
+		Copies      int
+		CopiedHooks int
+	}{
+		"No session in context": {
+			DB:        &DBMock{},
+			Tx:        &TxMock{},
+			NoSession: true,
+			RespCode:  http.StatusUnauthorized,
+		},
+		"Missing document ID parameter": {
+			DB:       &DBMock{},
+			Tx:       &TxMock{},
+			OmitDoc:  true,
+			RespCode: http.StatusNotFound,
+		},
+		"Document fetch error": {
+			DB: &DBMock{
+				FetchDocumentFunc: func(context.Context, xid.ID, string, string) (*documentCore.Document, error) {
+					return nil, errors.New("boom")
+				},
+			},
+			Tx:       &TxMock{},
+			RespCode: http.StatusInternalServerError,
+		},
+		"Transaction start error": {
+			DB:       &DBMock{FetchDocumentFunc: fetchStored},
+			Tx:       &TxMock{},
+			BeginErr: errors.New("boom"),
+			RespCode: http.StatusInternalServerError,
+		},
+		"Duplicate insertion error": {
+			DB: &DBMock{FetchDocumentFunc: fetchStored},
+			Tx: &TxMock{
+				InsertDocumentFunc: func(context.Context, documentCore.Document) error {
+					return errors.New("boom")
+				},
+			},
+			RespCode: http.StatusInternalServerError,
+		},
+		"Tag copy error": {
+			DB: &DBMock{FetchDocumentFunc: fetchStored},
+			Tx: &TxMock{
+				CopyBranchTagsFunc: func(context.Context, string, xid.ID, xid.ID) error {
+					return errors.New("boom")
+				},
+			},
+			RespCode: http.StatusInternalServerError,
+		},
+		"Sort index swap error": {
+			DB:       &DBMock{FetchDocumentFunc: fetchStored},
+			Tx:       &TxMock{},
+			RespCode: http.StatusBadRequest,
+		},
+		"Commit error": {
+			DB: &DBMock{FetchDocumentFunc: fetchStored},
+			Tx: func() *TxMock {
+				tx := insertAwareTx()
+				tx.CommitFunc = func() error {
+					return errors.New("boom")
+				}
+
+				return tx
+			}(),
+			RespCode:  http.StatusInternalServerError,
+			Committed: 1,
+		},
+		"Successful duplication": {
+			DB:        &DBMock{FetchDocumentFunc: fetchStored},
+			Tx:        insertAwareTx(),
+			RespCode:  http.StatusCreated,
+			Committed: 1,
+			TreeCbs:   1,
+		},
+		"Files are copied along with the document": {
+			DB:        imageDB(),
+			Tx:        insertAwareTx(),
+			Storer:    &StorerMock{},
+			RespCode:  http.StatusCreated,
+			Committed: 1,
+			TreeCbs:   1,
+			Copies:    1,
+		},
+		"Failing file copy still yields the duplicate": {
+			DB: imageDB(),
+			Tx: insertAwareTx(),
+			Storer: &StorerMock{
+				CopyFunc: func(context.Context, string, string, string, string) error {
+					return errors.New("boom")
+				},
+			},
+			RespCode:  http.StatusCreated,
+			Committed: 1,
+			TreeCbs:   1,
+			Copies:    1,
+		},
+		"Hooks are copied along with the document": {
+			DB: func() *DBMock {
+				blockHook := storedHook(hookCore.TypeScheduledReminder)
+				blockHook.BlockID = null.StringFrom("img1")
+
+				db := imageDB()
+				db.FetchDocumentHooksByBranchIDFunc = func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
+					return []hookCore.Hook{blockHook}, nil
+				}
+
+				return db
+			}(),
+			Tx:          insertAwareTx(),
+			Storer:      &StorerMock{},
+			RespCode:    http.StatusCreated,
+			Committed:   1,
+			TreeCbs:     1,
+			Copies:      1,
+			CopiedHooks: 1,
+		},
+		"Failing hook copy still yields the duplicate": {
+			DB: func() *DBMock {
+				db := &DBMock{FetchDocumentFunc: fetchStored}
+				db.FetchDocumentHooksByBranchIDFunc = func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
+					return nil, errors.New("boom")
+				}
+
+				return db
+			}(),
+			Tx:        insertAwareTx(),
+			RespCode:  http.StatusCreated,
+			Committed: 1,
+			TreeCbs:   1,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			hdl, cnt := newTestHandler(withTx(c.DB, c.Tx, c.BeginErr), &fakePublisher{})
+
+			if c.Storer != nil {
+				hdl.storer = c.Storer
 			}
 
-			// a rename rewrites every entry of the branch, since each one
-			// carries the branch name.
-			if c.Jobs == 1 && c.RespCode == http.StatusOK {
-				diff := tx.InsertDocumentSearchJobCalls()[0].Diff
-				require.Len(t, diff.Updated, 1)
-				assert.Equal(t, _branchID.String()+"-docname", diff.Updated[0].ID)
-				assert.Equal(t, "Renamed", diff.Updated[0].BranchName)
+			rec := httptest.NewRecorder()
+
+			hdl.DuplicateDocument(rec, newRequest(http.MethodPost, "", c.NoSession, c.OmitDoc, true))
+
+			assert.Equal(t, c.RespCode, rec.Code)
+			assert.Len(t, c.Tx.CommitCalls(), c.Committed)
+			assert.Equal(t, c.TreeCbs, cnt.tree)
+
+			if c.Storer != nil {
+				assert.Len(t, c.Storer.CopyCalls(), c.Copies)
+				assert.Len(t, c.DB.InsertDocumentFileCalls(), c.Copies)
 			}
+
+			if c.RespCode == http.StatusCreated {
+				// the duplicate is a new document owned by the caller.
+				require.Len(t, c.Tx.InsertDocumentCalls(), 1)
+				dupl := c.Tx.InsertDocumentCalls()[0].Doc
+				assert.NotEqual(t, _documentID, dupl.ID)
+				assert.Equal(t, []string{"u1"}, c.Tx.UpsertDocumentMaintainersCalls()[0].MaintainerIDs)
+
+				// the copy's default branch takes the source's tags before
+				// the commit.
+				require.Len(t, c.Tx.CopyBranchTagsCalls(), 1)
+				assert.Equal(t, _branchID, c.Tx.CopyBranchTagsCalls()[0].FromBranchID)
+				assert.Equal(t, dupl.BranchID, c.Tx.CopyBranchTagsCalls()[0].ToBranchID)
+
+				// the hooks are copied once the commit is through, since
+				// creating one creates its watcher.
+				assert.Empty(t, c.Tx.InsertDocumentHookCalls())
+				require.Len(t, c.DB.InsertDocumentHookCalls(), c.CopiedHooks)
+
+				// a hook anchored to a block follows the block's regenerated
+				// uid rather than pointing at the source's.
+				for _, call := range c.DB.InsertDocumentHookCalls() {
+					assert.Equal(t, null.ValueFrom(dupl.BranchID), call.Hk.BranchID)
+					assert.NotEqual(t, null.StringFrom("img1"), call.Hk.BlockID)
+					assert.True(t, call.Hk.BlockID.Valid)
+				}
+			}
+		})
+	}
+}
+
+func Test_Handler_copyDocumentFiles(t *testing.T) {
+	toDocumentID := xid.New()
+
+	fileDB := func() *DBMock {
+		return &DBMock{
+			FetchDocumentFileFunc: func(_ context.Context, id, organizationID string) (*file.File, error) {
+				f := file.NewFile(id, file.LocationComment, "key", _documentID, organizationID)
+
+				return &f, nil
+			},
+		}
+	}
+
+	cc := map[string]struct {
+		DB      *DBMock
+		Storer  *StorerMock
+		Files   map[string]string
+		Inserts int
+		Copies  int
+	}{
+		"Nothing to copy": {
+			DB:     fileDB(),
+			Storer: &StorerMock{},
+			Files:  map[string]string{},
+		},
+		"File row is missing": {
+			DB: &DBMock{
+				FetchDocumentFileFunc: func(context.Context, string, string) (*file.File, error) {
+					return nil, errors.New("boom")
+				},
+			},
+			Storer: &StorerMock{},
+			Files:  map[string]string{"old-1": "new-1"},
+		},
+		"Error returned by db.InsertDocumentFile": {
+			DB: func() *DBMock {
+				db := fileDB()
+				db.InsertDocumentFileFunc = func(context.Context, file.File) error {
+					return errors.New("boom")
+				}
+
+				return db
+			}(),
+			Storer:  &StorerMock{},
+			Files:   map[string]string{"old-1": "new-1"},
+			Inserts: 1,
+		},
+		"Error returned by storer.Copy": {
+			DB: fileDB(),
+			Storer: &StorerMock{
+				CopyFunc: func(context.Context, string, string, string, string) error {
+					return errors.New("boom")
+				},
+			},
+			Files:   map[string]string{"old-1": "new-1"},
+			Inserts: 1,
+			Copies:  1,
+		},
+		"Successful copy": {
+			DB:      fileDB(),
+			Storer:  &StorerMock{},
+			Files:   map[string]string{"old-1": "new-1"},
+			Inserts: 1,
+			Copies:  1,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			hdl, _ := newTestHandler(c.DB, &fakePublisher{})
+			hdl.storer = c.Storer
+
+			hdl.copyDocumentFiles(context.Background(), c.Files, _documentID, toDocumentID, "org1")
+
+			ff := c.DB.InsertDocumentFileCalls()
+			require.Len(t, ff, c.Inserts)
+
+			cf := c.Storer.CopyCalls()
+			require.Len(t, cf, c.Copies)
+
+			if c.Inserts == 0 {
+				return
+			}
+
+			// the copy owns its row, keyed under the new document.
+			assert.Equal(t, "new-1", ff[0].F.ID)
+			assert.Equal(t, file.LocationComment, ff[0].F.Location)
+			assert.Equal(t, file.Key("org1", toDocumentID, "new-1"), ff[0].F.StorageKey)
+			assert.Equal(t, toDocumentID, ff[0].F.DocumentID.V)
+
+			if c.Copies == 0 {
+				return
+			}
+
+			assert.Equal(t, file.Folder("org1", _documentID), cf[0].SrcFolder)
+			assert.Equal(t, "old-1", cf[0].SrcID)
+			assert.Equal(t, file.Folder("org1", toDocumentID), cf[0].DstFolder)
+			assert.Equal(t, "new-1", cf[0].DstID)
 		})
 	}
 }

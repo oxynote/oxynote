@@ -6,6 +6,7 @@ import ContentEditor from "./ContentEditor.vue"
 import NameEditor from "./NameEditor.vue"
 import DiffEditor from "./diff/DiffEditor.vue"
 import { redirectToLogin } from "~/plugins/03.api-fetch"
+import { showToastMessage } from "~/components/toast"
 import { refreshGapDecorationsInBackground } from "./drag-handle/gap-decorations"
 import { editorCaretColors } from "~/assets/css"
 
@@ -223,8 +224,12 @@ function createBranchProvider(
 		onStateless({ payload }) {
 			const data = JSON.parse(payload) as { type?: string }
 			if (data.type === "error") {
-				// TODO show toast
 				console.error(`Error in provider ${streamName}:`, data)
+				showToastMessage(
+					"error",
+					t("editor.realtime-error.title"),
+					t("editor.realtime-error.description"),
+				)
 			}
 		},
 		onConnect: () => {

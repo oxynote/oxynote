@@ -35,6 +35,14 @@ const providers = vi.hoisted(() => {
 	}
 })
 
+const { showToastMessageMock } = vi.hoisted(() => {
+	return { showToastMessageMock: vi.fn() }
+})
+
+vi.mock("~/components/toast", () => {
+	return { showToastMessage: showToastMessageMock }
+})
+
 vi.mock("@hocuspocus/provider", () => {
 	function FakeProvider(options: ProviderOptions): ProviderEntry {
 		const entry: ProviderEntry = {
@@ -243,10 +251,13 @@ describe("<DocumentContainer>", { concurrent: false }, () => {
 		expect(redirectToLogin).toHaveBeenCalledTimes(1)
 	})
 
-	it("reports an error the realtime service sends", async ({ expect }) => {
+	it("tells the reader about an error the realtime service sends", async ({
+		expect,
+	}) => {
 		const consoleError = vi.spyOn(console, "error").mockImplementation(() => {
 			return undefined
 		})
+		showToastMessageMock.mockClear()
 		await mountContainer()
 
 		providerFor(BRANCH_ID).options.onStateless({
@@ -254,6 +265,8 @@ describe("<DocumentContainer>", { concurrent: false }, () => {
 		})
 
 		expect(consoleError).toHaveBeenCalledTimes(1)
+		expect(showToastMessageMock).toHaveBeenCalledTimes(1)
+		expect(showToastMessageMock.mock.calls[0]?.[0]).toBe("error")
 	})
 
 	it("stays quiet for any other realtime message", async ({ expect }) => {
@@ -262,11 +275,14 @@ describe("<DocumentContainer>", { concurrent: false }, () => {
 		})
 		await mountContainer()
 
+		showToastMessageMock.mockClear()
+
 		providerFor(BRANCH_ID).options.onStateless({
 			payload: JSON.stringify({ type: "info" }),
 		})
 
 		expect(consoleError).toHaveBeenCalledTimes(0)
+		expect(showToastMessageMock).toHaveBeenCalledTimes(0)
 	})
 
 	it("keeps a protected branch read-only", async ({ expect }) => {

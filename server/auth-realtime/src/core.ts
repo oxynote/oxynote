@@ -77,6 +77,7 @@ export interface HttpClient {
 		data?: unknown,
 		config?: RequestOptions,
 	): Promise<HttpResponse>
+	delete(url: string, config?: RequestOptions): Promise<HttpResponse>
 }
 
 // every call this service makes into core. Transport only: a failed
@@ -120,6 +121,11 @@ export interface CoreClient {
 		documentId: string,
 		branchId: string,
 		request: BranchRequest,
+		options: RequestOptions,
+	): Promise<HttpResponse>
+	deleteBranch(
+		documentId: string,
+		branchId: string,
 		options: RequestOptions,
 	): Promise<HttpResponse>
 }
@@ -217,6 +223,13 @@ export function createCoreClient(
 			return http.put(
 				`${internal}/documents/${documentId}/branches/${branchId}`,
 				request.body,
+				options,
+			)
+		},
+
+		async deleteBranch(documentId, branchId, options) {
+			return http.delete(
+				`${internal}/documents/${documentId}/branches/${branchId}`,
 				options,
 			)
 		},

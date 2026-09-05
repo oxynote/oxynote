@@ -775,9 +775,15 @@ export default function () {
 				return
 			}
 
-			await $coreAPIClient(`/api/documents/${docId}/branches/${branchId}`, {
-				method: "DELETE",
-			})
+			// auth-realtime drops the connections still on the branch once
+			// core has removed it, so nobody keeps editing a branch that is
+			// gone.
+			await $authRealtimeAPIClient(
+				`/api/documents/${docId}/branches/${branchId}`,
+				{
+					method: "DELETE",
+				},
+			)
 		},
 		async onSuccess(_data, { docId, branchId }) {
 			if (!isXid(docId) || !isXid(branchId)) {

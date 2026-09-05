@@ -357,6 +357,40 @@ export function createRoutes({
 		)
 	})
 
+	// a delete stores nothing — there is no row left to store into — but
+	// the clients still on the branch hold a live document of it and would
+	// keep editing one that is gone, every later store refused. Once core
+	// confirms, each is dropped and finds no branch to reconnect to.
+	app.delete("/documents/:documentId/branches/:branchId", async (c) => {
+		const documentId = c.req.param("documentId")
+		const branchId = c.req.param("branchId")
+
+		const response = await calledCore(
+			c,
+			"failed to delete branch",
+			() =>
+				core.deleteBranch(documentId, branchId, {
+					headers: toAxiosHeaders(
+						c.req.raw.headers,
+					),
+				}),
+		)
+		if (response instanceof Response) {
+			return response
+		}
+
+		if (response.status === 204) {
+			resetConnections(`${documentId}-${branchId}`)
+
+			return c.body(null, 204)
+		}
+
+		return c.json(
+			response.data,
+			response.status as ContentfulStatusCode,
+		)
+	})
+
 	// a merge reads the source branch's row and rewrites the target's;
 	// both are flushed so neither side is behind its editors. The
 	// in-memory Y.Doc mutation below only runs when core responds 200,

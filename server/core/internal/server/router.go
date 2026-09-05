@@ -146,16 +146,19 @@ func (s *Server) internalRouter() chi.Router {
 		})
 
 		// the branch operations that read or rewrite a branch's stored
-		// content. They are internal so that only auth-realtime, which
-		// first stores what the editors still hold, can start one — yet
-		// they act for a person, so the session it forwards is required
-		// and authorizes the change exactly as on the public surface.
+		// content, or remove a branch editors may still be connected to.
+		// They are internal so that only auth-realtime, which first stores
+		// what the editors still hold and afterwards drops the connections
+		// a change invalidated, can start one — yet they act for a person,
+		// so the session it forwards is required and authorizes the change
+		// exactly as on the public surface.
 		sr.Group(func(ssr chi.Router) {
 			ssr.Use(auth.Middleware(s.log, s.opts.Auth, s.client))
 			ssr.Use(s.handlers.document.RequireDocumentAccess)
 			ssr.Put("/merge", s.handlers.document.MergeBranches)
 			ssr.Post("/branches", s.handlers.document.CreateDocumentBranch)
 			ssr.Put("/branches/{branchId}", s.handlers.document.UpdateDocumentBranch)
+			ssr.Delete("/branches/{branchId}", s.handlers.document.DeleteDocumentBranch)
 		})
 	})
 
@@ -299,7 +302,6 @@ func (s *Server) router() chi.Router {
 			ssr.Route("/branches", func(sssr chi.Router) {
 				sssr.Get("/", s.handlers.document.FetchDocumentBranches)
 				sssr.Route("/{branchId}", func(ssssr chi.Router) {
-					ssssr.Delete("/", s.handlers.document.DeleteDocumentBranch)
 					ssssr.Put("/review-approve", s.handlers.document.UpdateBranchReviewApproval)
 					ssssr.Post("/blocks/{blockUid}/run", s.handlers.block.RunBlock)
 					ssssr.Route("/reviewers", func(sssssr chi.Router) {
