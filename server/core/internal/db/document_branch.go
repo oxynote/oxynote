@@ -6,7 +6,6 @@ import (
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
 	"github.com/oxynote/oxynote/server/core/internal/document"
-	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
 )
 
@@ -14,22 +13,7 @@ import (
 // Called inside the same transaction as InsertDocument.
 func (a *agent) insertDocumentBranch(ctx context.Context, tx *sqlx.Tx, doc document.Document) error {
 	q, args := a.builder.Insert("document_branches").
-		SetMap(map[string]any{
-			"id":                 doc.BranchID,
-			"fk_document_id":     doc.ID,
-			"fk_organization_id": doc.OrganizationID,
-			"branch_name":        doc.BranchName,
-			"document_name":      doc.DocumentName,
-			"icon":               doc.Icon,
-			"content":            doc.Content,
-			"protected":          doc.Protected,
-			`"default"`:          doc.Default,
-			"raw_content":        doc.RawContent,
-			"created_at":         doc.CreatedAt,
-			"fk_created_by":      doc.CreatedBy,
-			"updated_at":         doc.UpdatedAt,
-			"fk_last_updated_by": doc.LastUpdatedBy,
-		}).
+		SetMap(documentBranchRow(doc)).
 		Suffix("ON CONFLICT (fk_document_id, branch_name) DO NOTHING").
 		MustSql()
 
@@ -42,22 +26,7 @@ func (a *agent) insertDocumentBranch(ctx context.Context, tx *sqlx.Tx, doc docum
 // given executor. Called inside the same transaction as UpdateDocument.
 func (a *agent) upsertDocumentBranch(ctx context.Context, ex sqlx.ExecerContext, doc document.Document) error {
 	q, args := a.builder.Insert("document_branches").
-		SetMap(map[string]any{
-			"id":                 doc.BranchID,
-			"fk_document_id":     doc.ID,
-			"fk_organization_id": doc.OrganizationID,
-			"branch_name":        doc.BranchName,
-			"document_name":      doc.DocumentName,
-			"icon":               doc.Icon,
-			"content":            doc.Content,
-			"protected":          doc.Protected,
-			`"default"`:          doc.Default,
-			"raw_content":        doc.RawContent,
-			"created_at":         doc.CreatedAt,
-			"fk_created_by":      doc.CreatedBy,
-			"updated_at":         doc.UpdatedAt,
-			"fk_last_updated_by": doc.LastUpdatedBy,
-		}).
+		SetMap(documentBranchRow(doc)).
 		// "default" is intentionally omitted from the SET clause — it is
 		// set once at branch creation and must never change via upsert.
 		Suffix("ON CONFLICT (fk_document_id, branch_name) DO UPDATE SET " +
@@ -72,32 +41,16 @@ func (a *agent) upsertDocumentBranch(ctx context.Context, ex sqlx.ExecerContext,
 	return err
 }
 
-// ForkDocumentBranch creates a new branch by copying the contents of an
-// existing source branch. A taken target name surfaces as the duplicate-name
-// unique violation — swallowing it would hand the caller the pre-existing
-// branch as if it were freshly forked.
-func (a *agent) ForkDocumentBranch(
-	ctx context.Context,
-	docID xid.ID,
-	orgID string,
-	sourceBranch string,
-	targetBranch string,
-	createdBy string,
-) error {
-	now := timeutil.Now()
+// InsertDocumentBranch inserts a branch row for an existing document. A
+// taken branch name surfaces as the duplicate-name unique violation —
+// swallowing it would hand the caller the pre-existing branch as if it were
+// freshly created.
+func (a *agent) InsertDocumentBranch(ctx context.Context, doc document.Document) error {
+	q, args := a.builder.Insert("document_branches").
+		SetMap(documentBranchRow(doc)).
+		MustSql()
 
-	q := `
-		INSERT INTO document_branches (
-			id, fk_document_id, fk_organization_id, branch_name, document_name, icon,
-			content, raw_content, protected, "default",
-			created_at, fk_created_by, updated_at, fk_last_updated_by
-		)
-		SELECT $1, $2, $3, $4, document_name, icon, content, raw_content, protected, false, $5, $6, $5, $6
-		FROM document_branches
-		WHERE fk_document_id = $2 AND branch_name = $7
-	`
-
-	_, err := a.sql.ExecContext(ctx, q, xid.New(), docID, orgID, targetBranch, now, createdBy, sourceBranch)
+	_, err := a.sql.ExecContext(ctx, q, args...)
 
 	return err
 }
@@ -330,4 +283,25 @@ func (a *agent) trimDocumentBranchHistoryEntries(ctx context.Context, ex sqlx.Ex
 	_, err := ex.ExecContext(ctx, q, args...)
 
 	return err
+}
+
+// documentBranchRow maps a document's branch onto the document_branches
+// columns.
+func documentBranchRow(doc document.Document) map[string]any {
+	return map[string]any{
+		"id":                 doc.BranchID,
+		"fk_document_id":     doc.ID,
+		"fk_organization_id": doc.OrganizationID,
+		"branch_name":        doc.BranchName,
+		"document_name":      doc.DocumentName,
+		"icon":               doc.Icon,
+		"content":            doc.Content,
+		"protected":          doc.Protected,
+		`"default"`:          doc.Default,
+		"raw_content":        doc.RawContent,
+		"created_at":         doc.CreatedAt,
+		"fk_created_by":      doc.CreatedBy,
+		"updated_at":         doc.UpdatedAt,
+		"fk_last_updated_by": doc.LastUpdatedBy,
+	}
 }

@@ -6,7 +6,6 @@ import (
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
-	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
 )
 
@@ -160,18 +159,22 @@ func (a *agent) FetchDocumentHooksByBranchID(ctx context.Context, branchID xid.I
 	return hooks, nil
 }
 
-// SoftDeleteDocumentHooksByBranchID marks all hooks for a branch as soft-deleted.
-// The hook manager job will handle external resource cleanup and eventual DB deletion.
-func (a *agent) SoftDeleteDocumentHooksByBranchID(ctx context.Context, branchID xid.ID, organizationID string) error {
+// DetachDocumentHooksByBranchID cuts every hook of a branch loose from the
+// branch and its document. The hook manager job tears down the external
+// resources and deletes the rows, as it does for a deleted branch. A
+// soft-delete mark is not used because the job lifts it whenever the
+// hook's block is still in the branch, which is the case when the hooks
+// are being replaced rather than their blocks removed.
+func (a *agent) DetachDocumentHooksByBranchID(ctx context.Context, branchID xid.ID, organizationID string) error {
 	q, args := a.builder.Update("document_hooks").
 		SetMap(map[string]any{
-			"soft_deleted_at": timeutil.Now(),
+			"fk_branch_id":   nil,
+			"fk_document_id": nil,
 		}).
 		Where(sq.Eq{
 			"fk_branch_id":       branchID,
 			"fk_organization_id": organizationID,
 		}).
-		Where(sq.Eq{"soft_deleted_at": nil}).
 		MustSql()
 
 	_, err := a.sql.ExecContext(ctx, q, args...)

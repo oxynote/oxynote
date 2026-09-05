@@ -164,6 +164,32 @@ func (d Document) MergeBranch(source Branch, mergedBy string) Document {
 	return nd
 }
 
+// Fork returns a new branch of the document carrying this branch's content.
+// Comment marks are stripped because comments belong to one branch, and the
+// Yjs state is cleared so the first load rebuilds it from the stripped
+// content. A fork is never protected or default, whatever its source is.
+func (d Document) Fork(branchName, createdBy string) Document {
+	now := timeutil.Now()
+
+	nd := d
+	nd.Branch = Branch{
+		BranchID:      xid.New(),
+		BranchName:    branchName,
+		DocumentName:  d.DocumentName,
+		Icon:          d.Icon,
+		Content:       d.Content.StripCommentMarks(),
+		RawContent:    nil,
+		Protected:     false,
+		Default:       false,
+		CreatedAt:     now,
+		CreatedBy:     null.StringFrom(createdBy),
+		UpdatedAt:     now,
+		LastUpdatedBy: null.StringFrom(createdBy),
+	}
+
+	return nd
+}
+
 // ApplyProtection sets the protection status of the document branch.
 func (d Document) ApplyProtection(protected bool, updatedBy string) Document {
 	nd := d

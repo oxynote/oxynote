@@ -193,9 +193,6 @@ var _ DB = &DBMock{}
 //			FetchTagTreeFunc: func(ctx context.Context, organizationID string, userID string) (tagCore.Summaries, error) {
 //				panic("mock out the FetchTagTree method")
 //			},
-//			ForkDocumentBranchFunc: func(ctx context.Context, docID xid.ID, orgID string, sourceBranch string, targetBranch string, createdBy string) error {
-//				panic("mock out the ForkDocumentBranch method")
-//			},
 //			InsertBranchReviewerFunc: func(ctx context.Context, reviewer documentCore.BranchReviewer) error {
 //				panic("mock out the InsertBranchReviewer method")
 //			},
@@ -204,6 +201,9 @@ var _ DB = &DBMock{}
 //			},
 //			InsertDocumentFunc: func(ctx context.Context, doc documentCore.Document) error {
 //				panic("mock out the InsertDocument method")
+//			},
+//			InsertDocumentBranchFunc: func(ctx context.Context, doc documentCore.Document) error {
+//				panic("mock out the InsertDocumentBranch method")
 //			},
 //			InsertDocumentCommentFunc: func(ctx context.Context, c comment.Comment) error {
 //				panic("mock out the InsertDocumentComment method")
@@ -250,8 +250,8 @@ var _ DB = &DBMock{}
 //			SetTagVisibilityFunc: func(ctx context.Context, organizationID string, userID string, id xid.ID, inp tagCore.VisibilityInput) error {
 //				panic("mock out the SetTagVisibility method")
 //			},
-//			SoftDeleteDocumentHooksByBranchIDFunc: func(ctx context.Context, branchID xid.ID, organizationID string) error {
-//				panic("mock out the SoftDeleteDocumentHooksByBranchID method")
+//			DetachDocumentHooksByBranchIDFunc: func(ctx context.Context, branchID xid.ID, organizationID string) error {
+//				panic("mock out the DetachDocumentHooksByBranchID method")
 //			},
 //			UnassignBranchTagFunc: func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error {
 //				panic("mock out the UnassignBranchTag method")
@@ -479,9 +479,6 @@ type DBMock struct {
 	// FetchTagTreeFunc mocks the FetchTagTree method.
 	FetchTagTreeFunc func(ctx context.Context, organizationID string, userID string) (tagCore.Summaries, error)
 
-	// ForkDocumentBranchFunc mocks the ForkDocumentBranch method.
-	ForkDocumentBranchFunc func(ctx context.Context, docID xid.ID, orgID string, sourceBranch string, targetBranch string, createdBy string) error
-
 	// InsertBranchReviewerFunc mocks the InsertBranchReviewer method.
 	InsertBranchReviewerFunc func(ctx context.Context, reviewer documentCore.BranchReviewer) error
 
@@ -490,6 +487,9 @@ type DBMock struct {
 
 	// InsertDocumentFunc mocks the InsertDocument method.
 	InsertDocumentFunc func(ctx context.Context, doc documentCore.Document) error
+
+	// InsertDocumentBranchFunc mocks the InsertDocumentBranch method.
+	InsertDocumentBranchFunc func(ctx context.Context, doc documentCore.Document) error
 
 	// InsertDocumentCommentFunc mocks the InsertDocumentComment method.
 	InsertDocumentCommentFunc func(ctx context.Context, c comment.Comment) error
@@ -536,8 +536,8 @@ type DBMock struct {
 	// SetTagVisibilityFunc mocks the SetTagVisibility method.
 	SetTagVisibilityFunc func(ctx context.Context, organizationID string, userID string, id xid.ID, inp tagCore.VisibilityInput) error
 
-	// SoftDeleteDocumentHooksByBranchIDFunc mocks the SoftDeleteDocumentHooksByBranchID method.
-	SoftDeleteDocumentHooksByBranchIDFunc func(ctx context.Context, branchID xid.ID, organizationID string) error
+	// DetachDocumentHooksByBranchIDFunc mocks the DetachDocumentHooksByBranchID method.
+	DetachDocumentHooksByBranchIDFunc func(ctx context.Context, branchID xid.ID, organizationID string) error
 
 	// UnassignBranchTagFunc mocks the UnassignBranchTag method.
 	UnassignBranchTagFunc func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error
@@ -1076,21 +1076,6 @@ type DBMock struct {
 			// UserID is the userID argument value.
 			UserID string
 		}
-		// ForkDocumentBranch holds details about calls to the ForkDocumentBranch method.
-		ForkDocumentBranch []struct {
-			// Ctx is the ctx argument value.
-			Ctx context.Context
-			// DocID is the docID argument value.
-			DocID xid.ID
-			// OrgID is the orgID argument value.
-			OrgID string
-			// SourceBranch is the sourceBranch argument value.
-			SourceBranch string
-			// TargetBranch is the targetBranch argument value.
-			TargetBranch string
-			// CreatedBy is the createdBy argument value.
-			CreatedBy string
-		}
 		// InsertBranchReviewer holds details about calls to the InsertBranchReviewer method.
 		InsertBranchReviewer []struct {
 			// Ctx is the ctx argument value.
@@ -1107,6 +1092,13 @@ type DBMock struct {
 		}
 		// InsertDocument holds details about calls to the InsertDocument method.
 		InsertDocument []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Doc is the doc argument value.
+			Doc documentCore.Document
+		}
+		// InsertDocumentBranch holds details about calls to the InsertDocumentBranch method.
+		InsertDocumentBranch []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
 			// Doc is the doc argument value.
@@ -1235,8 +1227,8 @@ type DBMock struct {
 			// Inp is the inp argument value.
 			Inp tagCore.VisibilityInput
 		}
-		// SoftDeleteDocumentHooksByBranchID holds details about calls to the SoftDeleteDocumentHooksByBranchID method.
-		SoftDeleteDocumentHooksByBranchID []struct {
+		// DetachDocumentHooksByBranchID holds details about calls to the DetachDocumentHooksByBranchID method.
+		DetachDocumentHooksByBranchID []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
 			// BranchID is the branchID argument value.
@@ -1458,10 +1450,10 @@ type DBMock struct {
 	lockFetchSlackUserLink                        sync.RWMutex
 	lockFetchSlackUserLinkByUserID                sync.RWMutex
 	lockFetchTagTree                              sync.RWMutex
-	lockForkDocumentBranch                        sync.RWMutex
 	lockInsertBranchReviewer                      sync.RWMutex
 	lockInsertDataSource                          sync.RWMutex
 	lockInsertDocument                            sync.RWMutex
+	lockInsertDocumentBranch                      sync.RWMutex
 	lockInsertDocumentComment                     sync.RWMutex
 	lockInsertDocumentCommentReply                sync.RWMutex
 	lockInsertDocumentFile                        sync.RWMutex
@@ -1477,7 +1469,7 @@ type DBMock struct {
 	lockReplaceBranchTags                         sync.RWMutex
 	lockReplaceDocumentComment                    sync.RWMutex
 	lockSetTagVisibility                          sync.RWMutex
-	lockSoftDeleteDocumentHooksByBranchID         sync.RWMutex
+	lockDetachDocumentHooksByBranchID             sync.RWMutex
 	lockUnassignBranchTag                         sync.RWMutex
 	lockUnassignGithubInstallationOrganization    sync.RWMutex
 	lockUnassignSlackAppOrganization              sync.RWMutex
@@ -3836,61 +3828,6 @@ func (mock *DBMock) FetchTagTreeCalls() []struct {
 	return calls
 }
 
-// ForkDocumentBranch calls ForkDocumentBranchFunc.
-func (mock *DBMock) ForkDocumentBranch(ctx context.Context, docID xid.ID, orgID string, sourceBranch string, targetBranch string, createdBy string) error {
-	callInfo := struct {
-		Ctx          context.Context
-		DocID        xid.ID
-		OrgID        string
-		SourceBranch string
-		TargetBranch string
-		CreatedBy    string
-	}{
-		Ctx:          ctx,
-		DocID:        docID,
-		OrgID:        orgID,
-		SourceBranch: sourceBranch,
-		TargetBranch: targetBranch,
-		CreatedBy:    createdBy,
-	}
-	mock.lockForkDocumentBranch.Lock()
-	mock.calls.ForkDocumentBranch = append(mock.calls.ForkDocumentBranch, callInfo)
-	mock.lockForkDocumentBranch.Unlock()
-	if mock.ForkDocumentBranchFunc == nil {
-		var (
-			errOut error
-		)
-		return errOut
-	}
-	return mock.ForkDocumentBranchFunc(ctx, docID, orgID, sourceBranch, targetBranch, createdBy)
-}
-
-// ForkDocumentBranchCalls gets all the calls that were made to ForkDocumentBranch.
-// Check the length with:
-//
-//	len(mockedDB.ForkDocumentBranchCalls())
-func (mock *DBMock) ForkDocumentBranchCalls() []struct {
-	Ctx          context.Context
-	DocID        xid.ID
-	OrgID        string
-	SourceBranch string
-	TargetBranch string
-	CreatedBy    string
-} {
-	var calls []struct {
-		Ctx          context.Context
-		DocID        xid.ID
-		OrgID        string
-		SourceBranch string
-		TargetBranch string
-		CreatedBy    string
-	}
-	mock.lockForkDocumentBranch.RLock()
-	calls = mock.calls.ForkDocumentBranch
-	mock.lockForkDocumentBranch.RUnlock()
-	return calls
-}
-
 // InsertBranchReviewer calls InsertBranchReviewerFunc.
 func (mock *DBMock) InsertBranchReviewer(ctx context.Context, reviewer documentCore.BranchReviewer) error {
 	callInfo := struct {
@@ -4005,6 +3942,45 @@ func (mock *DBMock) InsertDocumentCalls() []struct {
 	mock.lockInsertDocument.RLock()
 	calls = mock.calls.InsertDocument
 	mock.lockInsertDocument.RUnlock()
+	return calls
+}
+
+// InsertDocumentBranch calls InsertDocumentBranchFunc.
+func (mock *DBMock) InsertDocumentBranch(ctx context.Context, doc documentCore.Document) error {
+	callInfo := struct {
+		Ctx context.Context
+		Doc documentCore.Document
+	}{
+		Ctx: ctx,
+		Doc: doc,
+	}
+	mock.lockInsertDocumentBranch.Lock()
+	mock.calls.InsertDocumentBranch = append(mock.calls.InsertDocumentBranch, callInfo)
+	mock.lockInsertDocumentBranch.Unlock()
+	if mock.InsertDocumentBranchFunc == nil {
+		var (
+			errOut error
+		)
+		return errOut
+	}
+	return mock.InsertDocumentBranchFunc(ctx, doc)
+}
+
+// InsertDocumentBranchCalls gets all the calls that were made to InsertDocumentBranch.
+// Check the length with:
+//
+//	len(mockedDB.InsertDocumentBranchCalls())
+func (mock *DBMock) InsertDocumentBranchCalls() []struct {
+	Ctx context.Context
+	Doc documentCore.Document
+} {
+	var calls []struct {
+		Ctx context.Context
+		Doc documentCore.Document
+	}
+	mock.lockInsertDocumentBranch.RLock()
+	calls = mock.calls.InsertDocumentBranch
+	mock.lockInsertDocumentBranch.RUnlock()
 	return calls
 }
 
@@ -4623,8 +4599,8 @@ func (mock *DBMock) SetTagVisibilityCalls() []struct {
 	return calls
 }
 
-// SoftDeleteDocumentHooksByBranchID calls SoftDeleteDocumentHooksByBranchIDFunc.
-func (mock *DBMock) SoftDeleteDocumentHooksByBranchID(ctx context.Context, branchID xid.ID, organizationID string) error {
+// DetachDocumentHooksByBranchID calls DetachDocumentHooksByBranchIDFunc.
+func (mock *DBMock) DetachDocumentHooksByBranchID(ctx context.Context, branchID xid.ID, organizationID string) error {
 	callInfo := struct {
 		Ctx            context.Context
 		BranchID       xid.ID
@@ -4634,23 +4610,23 @@ func (mock *DBMock) SoftDeleteDocumentHooksByBranchID(ctx context.Context, branc
 		BranchID:       branchID,
 		OrganizationID: organizationID,
 	}
-	mock.lockSoftDeleteDocumentHooksByBranchID.Lock()
-	mock.calls.SoftDeleteDocumentHooksByBranchID = append(mock.calls.SoftDeleteDocumentHooksByBranchID, callInfo)
-	mock.lockSoftDeleteDocumentHooksByBranchID.Unlock()
-	if mock.SoftDeleteDocumentHooksByBranchIDFunc == nil {
+	mock.lockDetachDocumentHooksByBranchID.Lock()
+	mock.calls.DetachDocumentHooksByBranchID = append(mock.calls.DetachDocumentHooksByBranchID, callInfo)
+	mock.lockDetachDocumentHooksByBranchID.Unlock()
+	if mock.DetachDocumentHooksByBranchIDFunc == nil {
 		var (
 			errOut error
 		)
 		return errOut
 	}
-	return mock.SoftDeleteDocumentHooksByBranchIDFunc(ctx, branchID, organizationID)
+	return mock.DetachDocumentHooksByBranchIDFunc(ctx, branchID, organizationID)
 }
 
-// SoftDeleteDocumentHooksByBranchIDCalls gets all the calls that were made to SoftDeleteDocumentHooksByBranchID.
+// DetachDocumentHooksByBranchIDCalls gets all the calls that were made to DetachDocumentHooksByBranchID.
 // Check the length with:
 //
-//	len(mockedDB.SoftDeleteDocumentHooksByBranchIDCalls())
-func (mock *DBMock) SoftDeleteDocumentHooksByBranchIDCalls() []struct {
+//	len(mockedDB.DetachDocumentHooksByBranchIDCalls())
+func (mock *DBMock) DetachDocumentHooksByBranchIDCalls() []struct {
 	Ctx            context.Context
 	BranchID       xid.ID
 	OrganizationID string
@@ -4660,9 +4636,9 @@ func (mock *DBMock) SoftDeleteDocumentHooksByBranchIDCalls() []struct {
 		BranchID       xid.ID
 		OrganizationID string
 	}
-	mock.lockSoftDeleteDocumentHooksByBranchID.RLock()
-	calls = mock.calls.SoftDeleteDocumentHooksByBranchID
-	mock.lockSoftDeleteDocumentHooksByBranchID.RUnlock()
+	mock.lockDetachDocumentHooksByBranchID.RLock()
+	calls = mock.calls.DetachDocumentHooksByBranchID
+	mock.lockDetachDocumentHooksByBranchID.RUnlock()
 	return calls
 }
 

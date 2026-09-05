@@ -229,82 +229,58 @@ func Test_agent_upsertDocumentBranch(t *testing.T) {
 	}
 }
 
-func Test_agent_ForkDocumentBranch(t *testing.T) {
-	db := prepTempDB(t)
+func Test_agent_InsertDocumentBranch(t *testing.T) {
+	type tcase struct {
+		Document document.Document
+		Err      error
+	}
 
-	// error - cancelled context
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Duplicate branch name": func(t *testing.T, db *DB) tcase {
+			branch := prepDocumentBranches(t, db, 1, nil)[0]
+			doc := *branch
+			doc.BranchID = xid.New()
 
-	err := db.ForkDocumentBranch(ctx, xid.New(), "org-id", document.DefaultBranch, "feature-x", "user-1")
-	require.Error(t, err)
+			return tcase{
+				Document: doc,
+				Err: errutil.New(
+					http.StatusBadRequest,
+					"document_branch.duplicate_name",
+					"branch name is already in use",
+				),
+			}
+		},
+		"Successful insert": func(t *testing.T, db *DB) tcase {
+			doc := prepDocuments(t, db, 1, nil)[0]
+			doc.BranchID = xid.New()
+			doc.BranchName = "feature-x"
+			doc.Default = false
 
-	// success - source branch does not exist, nothing inserted
-	doc := prepDocuments(t, db, 1, nil)[0]
+			return tcase{
+				Document: *doc,
+			}
+		},
+	}
 
-	err = db.ForkDocumentBranch(context.Background(), doc.ID, doc.OrganizationID, "non-existent-branch", "feature-x", "user-1")
-	require.NoError(t, err)
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	count, err := db.CountDocumentBranches(context.Background(), doc.ID, doc.OrganizationID)
-	require.NoError(t, err)
-	assert.Equal(t, 1, count)
+			db := prepTempDB(t)
+			c := cfn(t, db)
 
-	// success - fork of the default branch
-	users := prepUsers(t, db, 1)
+			err := db.InsertDocumentBranch(context.Background(), c.Document)
+			testutil.RequireEqualError(t, c.Err, err)
 
-	err = db.ForkDocumentBranch(context.Background(), doc.ID, doc.OrganizationID, document.DefaultBranch, "feature-x", users[0])
-	require.NoError(t, err)
+			if err != nil {
+				return
+			}
 
-	var forked document.Document
-
-	q, args := db.builder.Select(
-		`id AS "branch_id"`,
-		`branch_name AS "branch_name"`,
-		`document_name AS "document_name"`,
-		`icon AS "icon"`,
-		`content AS "content"`,
-		`raw_content AS "raw_content"`,
-		`protected AS "protected"`,
-		`"default" AS "default"`,
-		`fk_created_by AS "fk_created_by"`,
-		`fk_last_updated_by AS "fk_last_updated_by"`,
-	).From("document_branches").
-		Where(sq.Eq{
-			"fk_document_id": doc.ID,
-			"branch_name":    "feature-x",
-		}).MustSql()
-
-	err = db.sql.Get(&forked, q, args...)
-	require.NoError(t, err)
-
-	assert.Equal(t, doc.DocumentName, forked.DocumentName)
-	assert.Equal(t, doc.Icon, forked.Icon)
-	assert.Equal(t, doc.Content, forked.Content)
-	assert.Equal(t, doc.RawContent, forked.RawContent)
-	assert.False(t, forked.Default)
-	assert.Equal(t, null.StringFrom(users[0]), forked.CreatedBy)
-	assert.Equal(t, null.StringFrom(users[0]), forked.LastUpdatedBy)
-
-	// error - target branch already exists
-	err = db.ForkDocumentBranch(context.Background(), doc.ID, doc.OrganizationID, document.DefaultBranch, "feature-x", "someone-else")
-	testutil.AssertEqualError(t, errutil.New(
-		http.StatusBadRequest,
-		"document_branch.duplicate_name",
-		"branch name is already in use",
-	), err)
-
-	var createdBy null.String
-
-	q, args = db.builder.Select("fk_created_by").
-		From("document_branches").
-		Where(sq.Eq{
-			"fk_document_id": doc.ID,
-			"branch_name":    "feature-x",
-		}).MustSql()
-
-	err = db.sql.Get(&createdBy, q, args...)
-	require.NoError(t, err)
-	assert.Equal(t, null.StringFrom(users[0]), createdBy)
+			res, err := db.FetchDocumentByBranchID(context.Background(), c.Document.BranchID, c.Document.OrganizationID)
+			require.NoError(t, err)
+			testutil.AssertFilterEqual(t, &c.Document, res)
+		})
+	}
 }
 
 func Test_agent_FetchDocumentBranches(t *testing.T) {

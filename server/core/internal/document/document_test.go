@@ -175,6 +175,36 @@ func Test_Document_MergeBranch(t *testing.T) {
 	assert.Equal(t, null.StringFrom("user-2"), merged.LastUpdatedBy)
 }
 
+func Test_Document_Fork(t *testing.T) {
+	t.Parallel()
+
+	doc := stubDocument()
+	doc.Protected = true
+
+	forked := doc.Fork("feature-x", "user-2")
+
+	// the document identity stays, the branch is a new one that is
+	// neither protected nor default whatever its source was.
+	assert.Equal(t, doc.ID, forked.ID)
+	assert.Equal(t, doc.OrganizationID, forked.OrganizationID)
+	assert.NotEqual(t, doc.BranchID, forked.BranchID)
+	assert.Equal(t, "feature-x", forked.BranchName)
+	assert.False(t, forked.Protected)
+	assert.False(t, forked.Default)
+
+	// display data is carried over; the content loses its comment marks
+	// and the raw content is left for the first load to rebuild.
+	assert.Equal(t, doc.DocumentName, forked.DocumentName)
+	assert.Equal(t, doc.Icon, forked.Icon)
+	assert.NotEqual(t, doc.Content, forked.Content)
+	assert.Equal(t, doc.Content.StripCommentMarks(), forked.Content)
+	assert.Nil(t, forked.RawContent)
+
+	assert.Equal(t, null.StringFrom("user-2"), forked.CreatedBy)
+	assert.Equal(t, null.StringFrom("user-2"), forked.LastUpdatedBy)
+	assert.Equal(t, forked.CreatedAt, forked.UpdatedAt)
+}
+
 func Test_Document_ApplyProtection(t *testing.T) {
 	t.Parallel()
 

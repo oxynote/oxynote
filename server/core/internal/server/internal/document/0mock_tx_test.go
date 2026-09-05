@@ -94,14 +94,14 @@ var _ Tx = &TxMock{}
 //			FetchDocumentUnsafeByBranchIDFunc: func(ctx context.Context, branchID xid.ID) (*documentCore.Document, error) {
 //				panic("mock out the FetchDocumentUnsafeByBranchID method")
 //			},
-//			ForkDocumentBranchFunc: func(ctx context.Context, docID xid.ID, orgID string, sourceBranch string, targetBranch string, createdBy string) error {
-//				panic("mock out the ForkDocumentBranch method")
-//			},
 //			InsertBranchReviewerFunc: func(ctx context.Context, reviewer documentCore.BranchReviewer) error {
 //				panic("mock out the InsertBranchReviewer method")
 //			},
 //			InsertDocumentFunc: func(ctx context.Context, doc documentCore.Document) error {
 //				panic("mock out the InsertDocument method")
+//			},
+//			InsertDocumentBranchFunc: func(ctx context.Context, doc documentCore.Document) error {
+//				panic("mock out the InsertDocumentBranch method")
 //			},
 //			InsertDocumentFileFunc: func(ctx context.Context, f file.File) error {
 //				panic("mock out the InsertDocumentFile method")
@@ -121,8 +121,8 @@ var _ Tx = &TxMock{}
 //			RollbackFunc: func() error {
 //				panic("mock out the Rollback method")
 //			},
-//			SoftDeleteDocumentHooksByBranchIDFunc: func(ctx context.Context, branchID xid.ID, organizationID string) error {
-//				panic("mock out the SoftDeleteDocumentHooksByBranchID method")
+//			DetachDocumentHooksByBranchIDFunc: func(ctx context.Context, branchID xid.ID, organizationID string) error {
+//				panic("mock out the DetachDocumentHooksByBranchID method")
 //			},
 //			UpdateBranchReviewerFunc: func(ctx context.Context, reviewer documentCore.BranchReviewer) error {
 //				panic("mock out the UpdateBranchReviewer method")
@@ -218,14 +218,14 @@ type TxMock struct {
 	// FetchDocumentUnsafeByBranchIDFunc mocks the FetchDocumentUnsafeByBranchID method.
 	FetchDocumentUnsafeByBranchIDFunc func(ctx context.Context, branchID xid.ID) (*documentCore.Document, error)
 
-	// ForkDocumentBranchFunc mocks the ForkDocumentBranch method.
-	ForkDocumentBranchFunc func(ctx context.Context, docID xid.ID, orgID string, sourceBranch string, targetBranch string, createdBy string) error
-
 	// InsertBranchReviewerFunc mocks the InsertBranchReviewer method.
 	InsertBranchReviewerFunc func(ctx context.Context, reviewer documentCore.BranchReviewer) error
 
 	// InsertDocumentFunc mocks the InsertDocument method.
 	InsertDocumentFunc func(ctx context.Context, doc documentCore.Document) error
+
+	// InsertDocumentBranchFunc mocks the InsertDocumentBranch method.
+	InsertDocumentBranchFunc func(ctx context.Context, doc documentCore.Document) error
 
 	// InsertDocumentFileFunc mocks the InsertDocumentFile method.
 	InsertDocumentFileFunc func(ctx context.Context, f file.File) error
@@ -245,8 +245,8 @@ type TxMock struct {
 	// RollbackFunc mocks the Rollback method.
 	RollbackFunc func() error
 
-	// SoftDeleteDocumentHooksByBranchIDFunc mocks the SoftDeleteDocumentHooksByBranchID method.
-	SoftDeleteDocumentHooksByBranchIDFunc func(ctx context.Context, branchID xid.ID, organizationID string) error
+	// DetachDocumentHooksByBranchIDFunc mocks the DetachDocumentHooksByBranchID method.
+	DetachDocumentHooksByBranchIDFunc func(ctx context.Context, branchID xid.ID, organizationID string) error
 
 	// UpdateBranchReviewerFunc mocks the UpdateBranchReviewer method.
 	UpdateBranchReviewerFunc func(ctx context.Context, reviewer documentCore.BranchReviewer) error
@@ -473,21 +473,6 @@ type TxMock struct {
 			// BranchID is the branchID argument value.
 			BranchID xid.ID
 		}
-		// ForkDocumentBranch holds details about calls to the ForkDocumentBranch method.
-		ForkDocumentBranch []struct {
-			// Ctx is the ctx argument value.
-			Ctx context.Context
-			// DocID is the docID argument value.
-			DocID xid.ID
-			// OrgID is the orgID argument value.
-			OrgID string
-			// SourceBranch is the sourceBranch argument value.
-			SourceBranch string
-			// TargetBranch is the targetBranch argument value.
-			TargetBranch string
-			// CreatedBy is the createdBy argument value.
-			CreatedBy string
-		}
 		// InsertBranchReviewer holds details about calls to the InsertBranchReviewer method.
 		InsertBranchReviewer []struct {
 			// Ctx is the ctx argument value.
@@ -497,6 +482,13 @@ type TxMock struct {
 		}
 		// InsertDocument holds details about calls to the InsertDocument method.
 		InsertDocument []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Doc is the doc argument value.
+			Doc documentCore.Document
+		}
+		// InsertDocumentBranch holds details about calls to the InsertDocumentBranch method.
+		InsertDocumentBranch []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
 			// Doc is the doc argument value.
@@ -548,8 +540,8 @@ type TxMock struct {
 		// Rollback holds details about calls to the Rollback method.
 		Rollback []struct {
 		}
-		// SoftDeleteDocumentHooksByBranchID holds details about calls to the SoftDeleteDocumentHooksByBranchID method.
-		SoftDeleteDocumentHooksByBranchID []struct {
+		// DetachDocumentHooksByBranchID holds details about calls to the DetachDocumentHooksByBranchID method.
+		DetachDocumentHooksByBranchID []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
 			// BranchID is the branchID argument value.
@@ -633,16 +625,16 @@ type TxMock struct {
 	lockFetchDocumentTree                   sync.RWMutex
 	lockFetchDocumentTreeByDocumentParentID sync.RWMutex
 	lockFetchDocumentUnsafeByBranchID       sync.RWMutex
-	lockForkDocumentBranch                  sync.RWMutex
 	lockInsertBranchReviewer                sync.RWMutex
 	lockInsertDocument                      sync.RWMutex
+	lockInsertDocumentBranch                sync.RWMutex
 	lockInsertDocumentFile                  sync.RWMutex
 	lockInsertDocumentHook                  sync.RWMutex
 	lockInsertDocumentSearchJob             sync.RWMutex
 	lockPromoteBranchApprovals              sync.RWMutex
 	lockReplaceBranchTags                   sync.RWMutex
 	lockRollback                            sync.RWMutex
-	lockSoftDeleteDocumentHooksByBranchID   sync.RWMutex
+	lockDetachDocumentHooksByBranchID       sync.RWMutex
 	lockUpdateBranchReviewer                sync.RWMutex
 	lockUpdateDocument                      sync.RWMutex
 	lockUpdateDocumentBranchMetadata        sync.RWMutex
@@ -1650,61 +1642,6 @@ func (mock *TxMock) FetchDocumentUnsafeByBranchIDCalls() []struct {
 	return calls
 }
 
-// ForkDocumentBranch calls ForkDocumentBranchFunc.
-func (mock *TxMock) ForkDocumentBranch(ctx context.Context, docID xid.ID, orgID string, sourceBranch string, targetBranch string, createdBy string) error {
-	callInfo := struct {
-		Ctx          context.Context
-		DocID        xid.ID
-		OrgID        string
-		SourceBranch string
-		TargetBranch string
-		CreatedBy    string
-	}{
-		Ctx:          ctx,
-		DocID:        docID,
-		OrgID:        orgID,
-		SourceBranch: sourceBranch,
-		TargetBranch: targetBranch,
-		CreatedBy:    createdBy,
-	}
-	mock.lockForkDocumentBranch.Lock()
-	mock.calls.ForkDocumentBranch = append(mock.calls.ForkDocumentBranch, callInfo)
-	mock.lockForkDocumentBranch.Unlock()
-	if mock.ForkDocumentBranchFunc == nil {
-		var (
-			errOut error
-		)
-		return errOut
-	}
-	return mock.ForkDocumentBranchFunc(ctx, docID, orgID, sourceBranch, targetBranch, createdBy)
-}
-
-// ForkDocumentBranchCalls gets all the calls that were made to ForkDocumentBranch.
-// Check the length with:
-//
-//	len(mockedTx.ForkDocumentBranchCalls())
-func (mock *TxMock) ForkDocumentBranchCalls() []struct {
-	Ctx          context.Context
-	DocID        xid.ID
-	OrgID        string
-	SourceBranch string
-	TargetBranch string
-	CreatedBy    string
-} {
-	var calls []struct {
-		Ctx          context.Context
-		DocID        xid.ID
-		OrgID        string
-		SourceBranch string
-		TargetBranch string
-		CreatedBy    string
-	}
-	mock.lockForkDocumentBranch.RLock()
-	calls = mock.calls.ForkDocumentBranch
-	mock.lockForkDocumentBranch.RUnlock()
-	return calls
-}
-
 // InsertBranchReviewer calls InsertBranchReviewerFunc.
 func (mock *TxMock) InsertBranchReviewer(ctx context.Context, reviewer documentCore.BranchReviewer) error {
 	callInfo := struct {
@@ -1780,6 +1717,45 @@ func (mock *TxMock) InsertDocumentCalls() []struct {
 	mock.lockInsertDocument.RLock()
 	calls = mock.calls.InsertDocument
 	mock.lockInsertDocument.RUnlock()
+	return calls
+}
+
+// InsertDocumentBranch calls InsertDocumentBranchFunc.
+func (mock *TxMock) InsertDocumentBranch(ctx context.Context, doc documentCore.Document) error {
+	callInfo := struct {
+		Ctx context.Context
+		Doc documentCore.Document
+	}{
+		Ctx: ctx,
+		Doc: doc,
+	}
+	mock.lockInsertDocumentBranch.Lock()
+	mock.calls.InsertDocumentBranch = append(mock.calls.InsertDocumentBranch, callInfo)
+	mock.lockInsertDocumentBranch.Unlock()
+	if mock.InsertDocumentBranchFunc == nil {
+		var (
+			errOut error
+		)
+		return errOut
+	}
+	return mock.InsertDocumentBranchFunc(ctx, doc)
+}
+
+// InsertDocumentBranchCalls gets all the calls that were made to InsertDocumentBranch.
+// Check the length with:
+//
+//	len(mockedTx.InsertDocumentBranchCalls())
+func (mock *TxMock) InsertDocumentBranchCalls() []struct {
+	Ctx context.Context
+	Doc documentCore.Document
+} {
+	var calls []struct {
+		Ctx context.Context
+		Doc documentCore.Document
+	}
+	mock.lockInsertDocumentBranch.RLock()
+	calls = mock.calls.InsertDocumentBranch
+	mock.lockInsertDocumentBranch.RUnlock()
 	return calls
 }
 
@@ -2022,8 +1998,8 @@ func (mock *TxMock) RollbackCalls() []struct {
 	return calls
 }
 
-// SoftDeleteDocumentHooksByBranchID calls SoftDeleteDocumentHooksByBranchIDFunc.
-func (mock *TxMock) SoftDeleteDocumentHooksByBranchID(ctx context.Context, branchID xid.ID, organizationID string) error {
+// DetachDocumentHooksByBranchID calls DetachDocumentHooksByBranchIDFunc.
+func (mock *TxMock) DetachDocumentHooksByBranchID(ctx context.Context, branchID xid.ID, organizationID string) error {
 	callInfo := struct {
 		Ctx            context.Context
 		BranchID       xid.ID
@@ -2033,23 +2009,23 @@ func (mock *TxMock) SoftDeleteDocumentHooksByBranchID(ctx context.Context, branc
 		BranchID:       branchID,
 		OrganizationID: organizationID,
 	}
-	mock.lockSoftDeleteDocumentHooksByBranchID.Lock()
-	mock.calls.SoftDeleteDocumentHooksByBranchID = append(mock.calls.SoftDeleteDocumentHooksByBranchID, callInfo)
-	mock.lockSoftDeleteDocumentHooksByBranchID.Unlock()
-	if mock.SoftDeleteDocumentHooksByBranchIDFunc == nil {
+	mock.lockDetachDocumentHooksByBranchID.Lock()
+	mock.calls.DetachDocumentHooksByBranchID = append(mock.calls.DetachDocumentHooksByBranchID, callInfo)
+	mock.lockDetachDocumentHooksByBranchID.Unlock()
+	if mock.DetachDocumentHooksByBranchIDFunc == nil {
 		var (
 			errOut error
 		)
 		return errOut
 	}
-	return mock.SoftDeleteDocumentHooksByBranchIDFunc(ctx, branchID, organizationID)
+	return mock.DetachDocumentHooksByBranchIDFunc(ctx, branchID, organizationID)
 }
 
-// SoftDeleteDocumentHooksByBranchIDCalls gets all the calls that were made to SoftDeleteDocumentHooksByBranchID.
+// DetachDocumentHooksByBranchIDCalls gets all the calls that were made to DetachDocumentHooksByBranchID.
 // Check the length with:
 //
-//	len(mockedTx.SoftDeleteDocumentHooksByBranchIDCalls())
-func (mock *TxMock) SoftDeleteDocumentHooksByBranchIDCalls() []struct {
+//	len(mockedTx.DetachDocumentHooksByBranchIDCalls())
+func (mock *TxMock) DetachDocumentHooksByBranchIDCalls() []struct {
 	Ctx            context.Context
 	BranchID       xid.ID
 	OrganizationID string
@@ -2059,9 +2035,9 @@ func (mock *TxMock) SoftDeleteDocumentHooksByBranchIDCalls() []struct {
 		BranchID       xid.ID
 		OrganizationID string
 	}
-	mock.lockSoftDeleteDocumentHooksByBranchID.RLock()
-	calls = mock.calls.SoftDeleteDocumentHooksByBranchID
-	mock.lockSoftDeleteDocumentHooksByBranchID.RUnlock()
+	mock.lockDetachDocumentHooksByBranchID.RLock()
+	calls = mock.calls.DetachDocumentHooksByBranchID
+	mock.lockDetachDocumentHooksByBranchID.RUnlock()
 	return calls
 }
 

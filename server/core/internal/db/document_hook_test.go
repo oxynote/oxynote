@@ -367,47 +367,58 @@ func Test_agent_FetchDocumentHooksByBranchID(t *testing.T) {
 	testutil.AssertFilterEqual(t, hooks[:1], res)
 }
 
-func Test_agent_SoftDeleteDocumentHooksByBranchID(t *testing.T) {
+func Test_agent_DetachDocumentHooksByBranchID(t *testing.T) {
 	db := prepTempDB(t)
 
 	// error - cancelled context
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := db.SoftDeleteDocumentHooksByBranchID(ctx, xid.New(), "org-id")
+	err := db.DetachDocumentHooksByBranchID(ctx, xid.New(), "org-id")
 	require.Error(t, err)
 
-	// success - active hooks are stamped, already deleted ones keep
-	// their original timestamp
-	deletedAt := timeutil.Now().Truncate(time.Second).Add(-time.Hour)
+	// success - the branch's hooks lose their branch and document, a hook
+	// of another branch keeps both
+	hooks := prepDocumentHooks(t, db, 2, nil)
+	other := prepDocumentHooks(t, db, 1, nil)[0]
 
-	hooks := prepDocumentHooks(t, db, 2, func(i int, hk *hook.Hook) {
-		if i == 1 {
-			hk.SoftDeletedAt = null.TimeFrom(deletedAt)
-		}
-	})
-
-	err = db.SoftDeleteDocumentHooksByBranchID(context.Background(), hooks[0].BranchID.V, hooks[0].OrganizationID.String)
+	err = db.DetachDocumentHooksByBranchID(context.Background(), hooks[0].BranchID.V, hooks[0].OrganizationID.String)
 	require.NoError(t, err)
 
-	var stamps []null.Time
+	type refs struct {
+		BranchID   null.Value[xid.ID] `db:"fk_branch_id"`
+		DocumentID null.Value[xid.ID] `db:"fk_document_id"`
+	}
 
-	q, args := db.builder.Select("soft_deleted_at").
+	var rows []refs
+
+	q, args := db.builder.Select("fk_branch_id", "fk_document_id").
 		From("document_hooks").
 		Where(sq.Eq{
 			"id": []xid.ID{hooks[0].ID, hooks[1].ID},
 		}).
-		OrderBy("id ASC").
 		MustSql()
 
-	err = db.sql.Select(&stamps, q, args...)
+	err = db.sql.Select(&rows, q, args...)
 	require.NoError(t, err)
-	require.Len(t, stamps, 2)
+	require.Len(t, rows, 2)
 
-	require.True(t, stamps[0].Valid)
-	assert.WithinDuration(t, timeutil.Now(), stamps[0].Time, time.Minute)
-	assert.True(t, stamps[1].Valid)
-	assert.WithinDuration(t, deletedAt, stamps[1].Time, time.Second)
+	for _, r := range rows {
+		assert.False(t, r.BranchID.Valid)
+		assert.False(t, r.DocumentID.Valid)
+	}
+
+	var kept refs
+
+	q, args = db.builder.Select("fk_branch_id", "fk_document_id").
+		From("document_hooks").
+		Where(sq.Eq{"id": other.ID}).
+		MustSql()
+
+	err = db.sql.Get(&kept, q, args...)
+	require.NoError(t, err)
+	assert.Equal(t, other.BranchID, kept.BranchID)
+	assert.Equal(t, other.DocumentID, kept.DocumentID)
 }
 
 func Test_agent_FetchDocumentHooksByOrganizationID(t *testing.T) {

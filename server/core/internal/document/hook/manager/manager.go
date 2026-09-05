@@ -100,8 +100,9 @@ func (m *Manager) processHooks(ctx context.Context) error {
 		for _, h := range hooks {
 			ps.OffsetID = h.ID
 
-			// The branch, the document or the whole organization was
-			// deleted, which is the only trace left of the hook: tear down
+			// The hook was cut loose — its branch, document or whole
+			// organization was deleted, or a merge replaced the branch's
+			// hooks — and the row is the only trace left of it: tear down
 			// the external resource it holds before the row goes away with
 			// the last reference to it.
 			if !h.BranchID.Valid || !h.DocumentID.Valid || !h.OrganizationID.Valid {

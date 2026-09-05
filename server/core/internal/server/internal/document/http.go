@@ -875,7 +875,8 @@ func (h *Handler) UpdateBranchReviewApproval(w http.ResponseWriter, r *http.Requ
 }
 
 // MergeBranches merges the content of a source branch into a target branch.
-// The target branch's hooks are soft-deleted and replaced with copies from the source.
+// The target branch's hooks are detached for the hook manager to tear down
+// and replaced with copies from the source.
 // Target branch comments are cleared. Source branch reviewer approvals are promoted.
 func (h *Handler) MergeBranches(w http.ResponseWriter, r *http.Request) {
 	session, ok := auth.RequireSession(h.log, w, r)
@@ -940,7 +941,7 @@ func (h *Handler) MergeBranches(w http.ResponseWriter, r *http.Request) {
 
 	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
 
-	if err := tx.SoftDeleteDocumentHooksByBranchID(r.Context(), toDoc.BranchID, session.ActiveOrganizationID); err != nil {
+	if err := tx.DetachDocumentHooksByBranchID(r.Context(), toDoc.BranchID, session.ActiveOrganizationID); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -1273,6 +1274,8 @@ func (h *Handler) CreateDocumentBranch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	newDoc := sourceDoc.Fork(inp.Branch, session.UserID)
+
 	var tx Tx
 
 	if err = h.db.BeginTx(r.Context(), &tx); err != nil {
@@ -1282,20 +1285,7 @@ func (h *Handler) CreateDocumentBranch(w http.ResponseWriter, r *http.Request) {
 
 	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
 
-	if err = tx.ForkDocumentBranch(
-		r.Context(),
-		sourceDoc.ID,
-		session.ActiveOrganizationID,
-		sourceDoc.BranchName,
-		inp.Branch,
-		session.UserID,
-	); err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	newDoc, err := tx.FetchDocument(r.Context(), sourceDoc.ID, session.ActiveOrganizationID, inp.Branch)
-	if err != nil {
+	if err = tx.InsertDocumentBranch(r.Context(), newDoc); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -1633,9 +1623,9 @@ type HooksDBAgent interface {
 	// FetchDocumentHooksByBranchID should fetch all hooks for a specific branch.
 	FetchDocumentHooksByBranchID(ctx context.Context, branchID xid.ID, organizationID string) ([]hook.Hook, error)
 
-	// SoftDeleteDocumentHooksByBranchID should mark all hooks for a branch as soft-deleted
-	// so the hook manager job can handle external resource cleanup.
-	SoftDeleteDocumentHooksByBranchID(ctx context.Context, branchID xid.ID, organizationID string) error
+	// DetachDocumentHooksByBranchID should cut every hook of a branch loose
+	// from its branch and document so the hook manager job tears it down.
+	DetachDocumentHooksByBranchID(ctx context.Context, branchID xid.ID, organizationID string) error
 }
 
 // DocumentsDBAgent is an interface that handles communication with the
@@ -1682,8 +1672,8 @@ type BranchesDBAgent interface {
 	// This is intended only for internal system use cases.
 	FetchDocumentBranchesUnsafe(ctx context.Context, docID xid.ID) ([]documentCore.BranchSummary, error)
 
-	// ForkDocumentBranch should create a new branch by copying the contents of an existing source branch.
-	ForkDocumentBranch(ctx context.Context, docID xid.ID, orgID, sourceBranch, targetBranch, createdBy string) error
+	// InsertDocumentBranch should insert a branch row for an existing document.
+	InsertDocumentBranch(ctx context.Context, doc documentCore.Document) error
 
 	// FetchDocumentBranches should fetch all branches for a document as lightweight summaries.
 	FetchDocumentBranches(ctx context.Context, docID xid.ID, organizationID string) ([]documentCore.BranchSummary, error)
