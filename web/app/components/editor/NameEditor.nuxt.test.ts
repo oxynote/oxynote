@@ -511,6 +511,13 @@ describe("<NameEditor>", { concurrent: false }, () => {
 			`/api/documents/${DOCUMENT_ID}/branches/${TARGET_BRANCH_ID}/reviewers`,
 			() => [],
 		)
+		// the header's tag queries are invalidated along with them
+		mockEndpoint("GET", "/api/tags/tree", () => [])
+		mockEndpoint(
+			"GET",
+			`/api/documents/${DOCUMENT_ID}/branches/${BRANCH_ID}/tags`,
+			() => [],
+		)
 		const wrapper = await mountEditor()
 		await openActionMenu(wrapper)
 		menuItem(t("editor.name-editor.review-workflow.merge.title")).click()
