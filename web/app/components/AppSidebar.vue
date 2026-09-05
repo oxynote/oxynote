@@ -31,7 +31,7 @@ const {
 	updateTagTree,
 	updateTagVisibility,
 	deleteTag,
-	unassignDocumentTag,
+	unassignBranchTag,
 } = useTagAPI()
 const { fetchOrganization, safeSignOut } = useAuthSession()
 const { fetchGitHubConnectionStatus, gitHubConfigured, fetchGitHubInstallURL } =
@@ -360,6 +360,7 @@ function tagActions(tag: TagTreeElement): SidebarItemAction[] {
 
 function taggedDocumentActions(
 	documentId: string,
+	defaultBranchId: string,
 	tagId: string,
 ): SidebarItemAction[] {
 	return [
@@ -368,7 +369,7 @@ function taggedDocumentActions(
 			name: t("sidebar.item-dropdown-menu-buttons.remove-tag"),
 			icon: "lucide:x",
 			fn: async () => {
-				await handleDocumentTagRemoval(documentId, tagId)
+				await handleDocumentTagRemoval(documentId, defaultBranchId, tagId)
 			},
 		},
 	]
@@ -390,10 +391,17 @@ async function handleTagDelete(id: string) {
 	}
 }
 
-async function handleDocumentTagRemoval(documentId: string, tagId: string) {
+// the tree lists a document under a tag by its default branch, so that is
+// the branch the row's action detaches
+async function handleDocumentTagRemoval(
+	documentId: string,
+	defaultBranchId: string,
+	tagId: string,
+) {
 	try {
-		await unassignDocumentTag.mutateAsync({
+		await unassignBranchTag.mutateAsync({
 			documentId: documentId,
+			branchId: defaultBranchId,
 			tagId: tagId,
 		})
 	} catch {

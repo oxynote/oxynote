@@ -19,6 +19,7 @@ import (
 	"github.com/lann/builder"
 	"github.com/orlangure/gnomock"
 	pgDocker "github.com/orlangure/gnomock/preset/postgres"
+	"github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/ioutil"
 	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
@@ -159,6 +160,25 @@ func Test_DetectError(t *testing.T) {
 		mapped := DetectError(err)
 		assert.Equal(t, http.StatusBadRequest, errutil.StatusCode(mapped, false))
 		assert.Contains(t, mapped.Error(), "branch name is already in use")
+	})
+
+	t.Run("Duplicate tag name", func(t *testing.T) {
+		t.Parallel()
+
+		db := prepTempDB(t)
+
+		existing := prepTags(t, db, 1, nil)[0]
+
+		dup := tag.NewTag(
+			tag.CreateInput{TagName: existing.TagName, Color: "#000000"},
+			existing.OrganizationID,
+			prepUsers(t, db, 1)[0],
+		)
+
+		err := db.InsertTag(context.Background(), dup)
+		require.Error(t, err)
+
+		assert.Equal(t, tag.ErrDuplicateTagName, DetectError(err))
 	})
 }
 

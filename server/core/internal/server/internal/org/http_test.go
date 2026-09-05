@@ -23,6 +23,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/internal/storage"
+	"github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
@@ -105,6 +106,52 @@ func Test_NewHandler(t *testing.T) {
 	assert.Equal(t, "loc", hdl.logoLocation)
 }
 
+// assertSeededTags checks that the seeded tags were inserted in their
+// display order, each owned by the organization and its first member.
+func assertSeededTags(t *testing.T, tx *TxMock, count int) {
+	t.Helper()
+
+	ff := tx.InsertTagCalls()
+	require.Len(t, ff, count)
+
+	if count == 0 {
+		return
+	}
+
+	names := make([]string, 0, len(ff))
+	colors := make([]string, 0, len(ff))
+
+	for _, f := range ff {
+		names = append(names, f.T.TagName)
+		colors = append(colors, f.T.Color)
+		assert.Equal(t, "org2", f.T.OrganizationID)
+		assert.Equal(t, null.StringFrom("member1"), f.T.CreatedBy)
+	}
+
+	assert.Equal(t, []string{"Production", "Staging", "Incidents"}, names)
+	assert.Equal(t, []string{"#22c55e", "#f97316", "#3b82f6"}, colors)
+}
+
+// assertWelcomeDocumentTagged checks that the welcome document's default
+// branch went under the first seeded tag, and under it alone.
+func assertWelcomeDocumentTagged(t *testing.T, tx *TxMock, count int) {
+	t.Helper()
+
+	ff := tx.AssignBranchTagCalls()
+	require.Len(t, ff, count)
+
+	if count == 0 {
+		return
+	}
+
+	doc := tx.InsertDocumentCalls()[0].Doc
+
+	assert.Equal(t, "org2", ff[0].OrganizationID)
+	assert.Equal(t, doc.ID, ff[0].DocumentID)
+	assert.Equal(t, doc.BranchID, ff[0].BranchID)
+	assert.Equal(t, tx.InsertTagCalls()[0].T.ID, ff[0].TagID)
+}
+
 func Test_Handler_InitializeOrganization(t *testing.T) {
 	type check func(*testing.T, *DBMock, *TxMock, *httptest.ResponseRecorder)
 
@@ -165,6 +212,18 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 
 			assert.Equal(t, "org2", ff[0].OrganizationID)
 			assert.Equal(t, []string{"member1"}, ff[0].MaintainerIDs)
+		}
+	}
+
+	wasInsertTagCalled := func(count int) check {
+		return func(t *testing.T, _ *DBMock, tx *TxMock, _ *httptest.ResponseRecorder) {
+			assertSeededTags(t, tx, count)
+		}
+	}
+
+	wasWelcomeDocumentTagged := func(count int) check {
+		return func(t *testing.T, _ *DBMock, tx *TxMock, _ *httptest.ResponseRecorder) {
+			assertWelcomeDocumentTagged(t, tx, count)
 		}
 	}
 
@@ -281,6 +340,33 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 				wasCommitCalled(0),
 			),
 		},
+		"Tag insertion error": {
+			Members: []string{"member1"},
+			Tx: &TxMock{
+				InsertTagFunc: func(context.Context, tag.Tag) error {
+					return errors.New("boom")
+				},
+			},
+			Checks: checks(
+				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				wasWelcomeDocumentTagged(0),
+				wasCommitCalled(0),
+			),
+		},
+		"Tag assignment error": {
+			Members: []string{"member1"},
+			Tx: &TxMock{
+				AssignBranchTagFunc: func(context.Context, string, xid.ID, xid.ID, xid.ID) error {
+					return errors.New("boom")
+				},
+			},
+			Checks: checks(
+				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				wasInsertTagCalled(3),
+				wasWelcomeDocumentTagged(1),
+				wasCommitCalled(0),
+			),
+		},
 		"Search job insertion error": {
 			Members: []string{"member1"},
 			Tx: &TxMock{
@@ -321,6 +407,8 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 				wasInsertDataSourceCalled(1),
 				wasInsertDocumentCalled(1),
 				wasUpsertMaintainersCalled(1),
+				wasInsertTagCalled(3),
+				wasWelcomeDocumentTagged(1),
 				wasSearchJobInserted(1),
 				wasCommitCalled(1),
 			),

@@ -117,7 +117,11 @@ export function processTagTree(
 	activeDocId: string | null,
 	orgName: string,
 	tagActions: (tag: TagTreeElement) => SidebarItemAction[],
-	documentActions: (documentId: string, tagId: string) => SidebarItemAction[],
+	documentActions: (
+		documentId: string,
+		defaultBranchId: string,
+		tagId: string,
+	) => SidebarItemAction[],
 ): SidebarItem[] {
 	return data
 		.filter((v) => !v.hidden)
@@ -145,15 +149,21 @@ export function processTagTree(
 // documents listed under a tag stay put: they are a view of the tag's
 // membership, not the tree that decides where a document lives.
 //
-// Only the documents at the top of that list carry the tag. The ones below
-// them are a document's own subtree, which the tag says nothing about, so
-// the menu that detaches a document from the tag stops at the first level.
+// Only the documents at the top of that list carry the tag, on their default
+// branch. The ones below them are a document's own subtree, which the tag
+// says nothing about, so the menu that detaches a document from the tag
+// stops at the first level — and skips a row still waiting for the server
+// to answer, which has no branch to detach yet.
 function processTagDocuments(
 	data: DocumentTreeElement[],
 	activeDocId: string | null,
 	orgName: string,
 	tagId: string,
-	documentActions: (documentId: string, tagId: string) => SidebarItemAction[],
+	documentActions: (
+		documentId: string,
+		defaultBranchId: string,
+		tagId: string,
+	) => SidebarItemAction[],
 	carriesTag = true,
 ): SidebarItem[] {
 	return data.map((v) => ({
@@ -166,7 +176,10 @@ function processTagDocuments(
 		dragGroup: TAG_DOCUMENT_DRAG_GROUP,
 		url: `/${createNameSlug(orgName)}/${createNameSlugWithId(v.documentName, v.id)}`,
 		prefetchUrlOnInteraction: true,
-		actions: carriesTag ? documentActions(v.id, tagId) : [],
+		actions:
+			carriesTag && v.defaultBranchId
+				? documentActions(v.id, v.defaultBranchId, tagId)
+				: [],
 		children: v.children?.length
 			? processTagDocuments(
 					v.children,

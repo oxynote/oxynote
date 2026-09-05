@@ -175,14 +175,37 @@ func (h *Handler) DeleteTag(w http.ResponseWriter, r *http.Request) {
 	httpserver.Respond(h.log, w, nil, http.StatusNoContent)
 }
 
-// AssignDocumentTag handles making the path document carry a tag.
-func (h *Handler) AssignDocumentTag(w http.ResponseWriter, r *http.Request) {
+// FetchBranchTags handles the retrieval of the ids of the tags the path
+// branch carries.
+func (h *Handler) FetchBranchTags(w http.ResponseWriter, r *http.Request) {
 	session, ok := auth.RequireSession(h.log, w, r)
 	if !ok {
 		return
 	}
 
-	documentID, err := httpserver.ExtractNamedID(r, "documentId")
+	documentID, branchID, err := extractBranchPath(r)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	ids, err := h.db.FetchBranchTagIDs(r.Context(), session.ActiveOrganizationID, documentID, branchID)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	httpserver.Respond(h.log, w, ids, http.StatusOK)
+}
+
+// AssignBranchTag handles making the path branch carry a tag.
+func (h *Handler) AssignBranchTag(w http.ResponseWriter, r *http.Request) {
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
+		return
+	}
+
+	documentID, branchID, err := extractBranchPath(r)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -195,7 +218,7 @@ func (h *Handler) AssignDocumentTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.db.AssignDocumentTag(r.Context(), session.ActiveOrganizationID, documentID, inp.TagID)
+	err = h.db.AssignBranchTag(r.Context(), session.ActiveOrganizationID, documentID, branchID, inp.TagID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -206,14 +229,14 @@ func (h *Handler) AssignDocumentTag(w http.ResponseWriter, r *http.Request) {
 	httpserver.Respond(h.log, w, nil, http.StatusNoContent)
 }
 
-// UnassignDocumentTag handles stopping the path document carrying a tag.
-func (h *Handler) UnassignDocumentTag(w http.ResponseWriter, r *http.Request) {
+// UnassignBranchTag handles stopping the path branch carrying a tag.
+func (h *Handler) UnassignBranchTag(w http.ResponseWriter, r *http.Request) {
 	session, ok := auth.RequireSession(h.log, w, r)
 	if !ok {
 		return
 	}
 
-	documentID, err := httpserver.ExtractNamedID(r, "documentId")
+	documentID, branchID, err := extractBranchPath(r)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -225,7 +248,7 @@ func (h *Handler) UnassignDocumentTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.db.UnassignDocumentTag(r.Context(), session.ActiveOrganizationID, documentID, tagID)
+	err = h.db.UnassignBranchTag(r.Context(), session.ActiveOrganizationID, documentID, branchID, tagID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -236,13 +259,30 @@ func (h *Handler) UnassignDocumentTag(w http.ResponseWriter, r *http.Request) {
 	httpserver.Respond(h.log, w, nil, http.StatusNoContent)
 }
 
+// extractBranchPath reads the document and branch ids out of the request
+// path.
+func extractBranchPath(r *http.Request) (xid.ID, xid.ID, error) {
+	documentID, err := httpserver.ExtractNamedID(r, "documentId")
+	if err != nil {
+		return xid.NilID(), xid.NilID(), err
+	}
+
+	branchID, err := httpserver.ExtractNamedID(r, "branchId")
+	if err != nil {
+		return xid.NilID(), xid.NilID(), err
+	}
+
+	return documentID, branchID, nil
+}
+
 // DB is an interface that handles communication with the tag database.
 //
 //go:generate ../../../../scripts/codegen/mock -t internal DB db
 type DB interface {
 	// FetchTagTree should fetch an organization's tags together with the
-	// documents carrying each of them, in their display order. Each
-	// summary's Hidden should reflect the given user's own preference.
+	// documents whose default branch carries each of them, in their display
+	// order. Each summary's Hidden should reflect the given user's own
+	// preference.
 	FetchTagTree(ctx context.Context, organizationID, userID string) (tagCore.Summaries, error)
 
 	// UpdateTagTree should rewrite the display order of an organization's
@@ -264,11 +304,15 @@ type DB interface {
 	// DeleteTag should remove a tag and every assignment of it.
 	DeleteTag(ctx context.Context, id xid.ID, organizationID string) error
 
-	// AssignDocumentTag should make a document carry a tag. Assigning a tag
-	// the document already carries should change nothing.
-	AssignDocumentTag(ctx context.Context, organizationID string, documentID, tagID xid.ID) error
+	// FetchBranchTagIDs should fetch the ids of the tags a document's branch
+	// carries, in the tags' display order.
+	FetchBranchTagIDs(ctx context.Context, organizationID string, documentID, branchID xid.ID) ([]xid.ID, error)
 
-	// UnassignDocumentTag should stop a document carrying a tag. Removing a
-	// tag the document does not carry should change nothing.
-	UnassignDocumentTag(ctx context.Context, organizationID string, documentID, tagID xid.ID) error
+	// AssignBranchTag should make a document's branch carry a tag. Assigning
+	// a tag the branch already carries should change nothing.
+	AssignBranchTag(ctx context.Context, organizationID string, documentID, branchID, tagID xid.ID) error
+
+	// UnassignBranchTag should stop a document's branch carrying a tag.
+	// Removing a tag the branch does not carry should change nothing.
+	UnassignBranchTag(ctx context.Context, organizationID string, documentID, branchID, tagID xid.ID) error
 }

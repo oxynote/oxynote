@@ -9,13 +9,17 @@ import type {
 	TagTreeUpdateRequest,
 	TagVisibilityRequest,
 	UnprocessedTagTreeUpdateRequest,
-	DocumentTagRequest,
+	BranchTagRequest,
+	BranchTagsResponse,
 } from "~/utils"
 import isDeepEqual from "fast-deep-equal"
 import { DOCUMENT_QUERY_KEYS } from "./useDocumentAPI"
 
-const TAG_QUERY_KEYS = {
+export const TAG_QUERY_KEYS = {
+	// the prefix every tag query shares, for invalidating all of them at once
+	all: ["tags"] as const,
 	root: ["tags", "tree"] as const,
+	branch: (branchId: string) => ["tags", "branch", branchId] as const,
 }
 
 export default function () {
@@ -270,9 +274,41 @@ export default function () {
 		},
 	})
 
-	const assignDocumentTag = useMutation({
-		onMutate(req: DocumentTagRequest) {
-			if (!isXid(req.documentId) || !isXid(req.tagId)) {
+	function useFetchBranchTags(
+		docIdRef: MaybeRefOrGetter<string | null | undefined>,
+		branchIdRef: MaybeRefOrGetter<string | null | undefined>,
+	) {
+		return useQuery({
+			key: () => TAG_QUERY_KEYS.branch(toValue(branchIdRef) || ""),
+			query: async () => {
+				const docId = toValue(docIdRef)
+				const branchId = toValue(branchIdRef)
+				if (!docId || !branchId) {
+					return []
+				}
+
+				return await $coreAPIClient<BranchTagsResponse>(
+					`/api/documents/${docId}/branches/${branchId}/tags`,
+					{
+						method: "GET",
+					},
+				)
+			},
+			enabled: () => !!toValue(docIdRef) && !!toValue(branchIdRef),
+			// the header remounts on every branch switch, and a merge
+			// invalidates the target's list while it is unmounted. Refetching
+			// on mount only fetches a stale entry, so a fresh one stays put
+			refetchOnMount: true,
+			refetchOnWindowFocus: false,
+			refetchOnReconnect: false,
+			staleTime: 6 * 60 * 1000, // 6 mins
+			autoRefetch: true,
+		})
+	}
+
+	const assignBranchTag = useMutation({
+		onMutate(req: BranchTagRequest) {
+			if (!isXid(req.documentId) || !isXid(req.branchId) || !isXid(req.tagId)) {
 				// optimisticInserts use nanoid
 				return
 			}
@@ -291,7 +327,9 @@ export default function () {
 			// copied out of the document tree rather than invented here. A
 			// caller the document tree has not reached yet — the editor, on a
 			// document opened before the sidebar loaded — still assigns; it
-			// just waits for the refetch to draw the row.
+			// just waits for the refetch to draw the row. The tree lists a
+			// document under a tag by its default branch alone, so tagging any
+			// other branch draws nothing.
 			const doc = findDocument(
 				queryCache.getQueryData<DocumentTreeResponse>(
 					DOCUMENT_QUERY_KEYS.root,
@@ -299,34 +337,58 @@ export default function () {
 				req.documentId,
 			)
 
-			if (doc) {
+			if (doc?.defaultBranchId === req.branchId) {
 				tag.documents = [...(tag.documents ?? []), clone(doc)]
 			}
 
 			queryCache.setQueryData(TAG_QUERY_KEYS.root, newTree)
 			queryCache.cancelQueries({ key: TAG_QUERY_KEYS.root })
 
-			return { newTree, oldTree }
+			// the branch's own list is only touched once it has been read:
+			// seeding it here would hand a later mount a list holding this
+			// tag alone
+			const branchKey = TAG_QUERY_KEYS.branch(req.branchId)
+			const oldBranchTags = clone(
+				queryCache.getQueryData<BranchTagsResponse>(branchKey),
+			)
+			const newBranchTags = oldBranchTags
+				? [...oldBranchTags.filter((id) => id !== req.tagId), req.tagId]
+				: undefined
+
+			if (newBranchTags) {
+				queryCache.setQueryData(branchKey, newBranchTags)
+				queryCache.cancelQueries({ key: branchKey })
+			}
+
+			return { newTree, oldTree, newBranchTags, oldBranchTags }
 		},
-		mutation: async (req: DocumentTagRequest) => {
-			if (!isXid(req.documentId) || !isXid(req.tagId)) {
+		mutation: async (req: BranchTagRequest) => {
+			if (!isXid(req.documentId) || !isXid(req.branchId) || !isXid(req.tagId)) {
 				// optimisticInserts use nanoid
 				return
 			}
 
-			await $coreAPIClient(`/api/documents/${req.documentId}/tags`, {
-				method: "POST",
-				body: { tagId: req.tagId },
-			})
+			await $coreAPIClient(
+				`/api/documents/${req.documentId}/branches/${req.branchId}/tags`,
+				{
+					method: "POST",
+					body: { tagId: req.tagId },
+				},
+			)
 		},
 		async onSuccess(_data, req) {
-			if (!isXid(req.documentId) || !isXid(req.tagId)) {
+			if (!isXid(req.documentId) || !isXid(req.branchId) || !isXid(req.tagId)) {
 				return
 			}
 
 			await queryCache.invalidateQueries({ key: TAG_QUERY_KEYS.root })
+			await queryCache.invalidateQueries({
+				key: TAG_QUERY_KEYS.branch(req.branchId),
+			})
 		},
-		onError(_err, _req, { oldTree, newTree }) {
+		onError(_err, req, { oldTree, newTree, oldBranchTags, newBranchTags }) {
+			rollbackBranchTags(req.branchId, oldBranchTags, newBranchTags)
+
 			const cachedTree = queryCache.getQueryData(TAG_QUERY_KEYS.root)
 			if (!isDeepEqual(newTree, cachedTree)) {
 				return
@@ -337,9 +399,9 @@ export default function () {
 		},
 	})
 
-	const unassignDocumentTag = useMutation({
-		onMutate(req: DocumentTagRequest) {
-			if (!isXid(req.documentId) || !isXid(req.tagId)) {
+	const unassignBranchTag = useMutation({
+		onMutate(req: BranchTagRequest) {
+			if (!isXid(req.documentId) || !isXid(req.branchId) || !isXid(req.tagId)) {
 				// optimisticInserts use nanoid
 				return
 			}
@@ -349,37 +411,58 @@ export default function () {
 			)
 			const newTree = clone(oldTree) ?? []
 
+			// the tree lists a document under a tag by its default branch, so
+			// the row only goes when that is the branch losing the tag
 			const tag = newTree.find((t) => t.id === req.tagId)
 			if (tag?.documents) {
-				tag.documents = tag.documents.filter((doc) => doc.id !== req.documentId)
+				tag.documents = tag.documents.filter(
+					(doc) =>
+						doc.id !== req.documentId || doc.defaultBranchId !== req.branchId,
+				)
 			}
 
 			queryCache.setQueryData(TAG_QUERY_KEYS.root, newTree)
 			queryCache.cancelQueries({ key: TAG_QUERY_KEYS.root })
 
-			return { newTree, oldTree }
+			const branchKey = TAG_QUERY_KEYS.branch(req.branchId)
+			const oldBranchTags = clone(
+				queryCache.getQueryData<BranchTagsResponse>(branchKey),
+			)
+			const newBranchTags = oldBranchTags?.filter((id) => id !== req.tagId)
+
+			if (newBranchTags) {
+				queryCache.setQueryData(branchKey, newBranchTags)
+				queryCache.cancelQueries({ key: branchKey })
+			}
+
+			return { newTree, oldTree, newBranchTags, oldBranchTags }
 		},
-		mutation: async (req: DocumentTagRequest) => {
-			if (!isXid(req.documentId) || !isXid(req.tagId)) {
+		mutation: async (req: BranchTagRequest) => {
+			if (!isXid(req.documentId) || !isXid(req.branchId) || !isXid(req.tagId)) {
 				// optimisticInserts use nanoid
 				return
 			}
 
 			await $coreAPIClient(
-				`/api/documents/${req.documentId}/tags/${req.tagId}`,
+				`/api/documents/${req.documentId}/branches/${req.branchId}/tags/${req.tagId}`,
 				{
 					method: "DELETE",
 				},
 			)
 		},
 		async onSuccess(_data, req) {
-			if (!isXid(req.documentId) || !isXid(req.tagId)) {
+			if (!isXid(req.documentId) || !isXid(req.branchId) || !isXid(req.tagId)) {
 				return
 			}
 
 			await queryCache.invalidateQueries({ key: TAG_QUERY_KEYS.root })
+			await queryCache.invalidateQueries({
+				key: TAG_QUERY_KEYS.branch(req.branchId),
+			})
 		},
-		onError(_err, _req, { oldTree, newTree }) {
+		onError(_err, req, { oldTree, newTree, oldBranchTags, newBranchTags }) {
+			rollbackBranchTags(req.branchId, oldBranchTags, newBranchTags)
+
 			const cachedTree = queryCache.getQueryData(TAG_QUERY_KEYS.root)
 			if (!isDeepEqual(newTree, cachedTree)) {
 				return
@@ -390,14 +473,34 @@ export default function () {
 		},
 	})
 
+	// rollbackBranchTags restores a branch's cached tag list after a failed
+	// mutation, unless something else has written it since
+	function rollbackBranchTags(
+		branchId: string,
+		oldBranchTags: BranchTagsResponse | undefined,
+		newBranchTags: BranchTagsResponse | undefined,
+	) {
+		if (!newBranchTags) {
+			return
+		}
+
+		const branchKey = TAG_QUERY_KEYS.branch(branchId)
+		if (!isDeepEqual(newBranchTags, queryCache.getQueryData(branchKey))) {
+			return
+		}
+
+		queryCache.setQueryData(branchKey, oldBranchTags)
+	}
+
 	return {
 		fetchTagTree,
 		updateTagTree,
 		createTag,
 		updateTagVisibility,
 		deleteTag,
-		assignDocumentTag,
-		unassignDocumentTag,
+		useFetchBranchTags,
+		assignBranchTag,
+		unassignBranchTag,
 	}
 }
 

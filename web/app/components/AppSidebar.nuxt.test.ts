@@ -33,6 +33,7 @@ const navigateToMock = vi.hoisted(() => vi.fn())
 mockNuxtImport("navigateTo", () => navigateToMock)
 
 const DOC_ID = "doc1".padEnd(20, "0")
+const BRANCH_ID = "br1".padEnd(20, "0")
 const TAG_A = "taga".padEnd(20, "0")
 const TAG_B = "tagb".padEnd(20, "0")
 
@@ -42,15 +43,7 @@ function tagElement(id: string, tagName: string, color: string) {
 		tagName: tagName,
 		color: color,
 		hidden: false,
-		documents: [
-			{
-				id: DOC_ID,
-				documentName: "Runbook",
-				icon: "lucide:file",
-				protected: false,
-				children: null,
-			},
-		],
+		documents: [treeElement()],
 	}
 }
 
@@ -60,6 +53,7 @@ function treeElement() {
 		documentName: "Runbook",
 		icon: "lucide:file",
 		protected: false,
+		defaultBranchId: BRANCH_ID,
 		children: null,
 	}
 }
@@ -733,11 +727,15 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 			expect(calls).toHaveLength(1)
 		})
 
-		it("detaches a document from the tag listing it", async ({ expect }) => {
+		// the tree lists a document under a tag by its default branch, so
+		// that is the branch the row detaches
+		it("detaches a document's default branch from the tag listing it", async ({
+			expect,
+		}) => {
 			stubQueries({ tags: seededTags() })
 			const calls = mockEndpoint(
 				"DELETE",
-				`/api/documents/${DOC_ID}/tags/${TAG_A}`,
+				`/api/documents/${DOC_ID}/branches/${BRANCH_ID}/tags/${TAG_A}`,
 				() => ({}),
 			)
 			const wrapper = await mountSidebar()

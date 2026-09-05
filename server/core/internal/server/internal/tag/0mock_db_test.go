@@ -21,23 +21,29 @@ var _ DB = &DBMock{}
 //
 //		// make and configure a mocked DB
 //		mockedDB := &DBMock{
-//			FetchTagTreeFunc: func(ctx context.Context, organizationID string) (tagCore.Summaries, error) {
-//				panic("mock out the FetchTagTree method")
-//			},
-//			UpdateTagTreeFunc: func(ctx context.Context, tree tagCore.Summaries, organizationID string) error {
-//				panic("mock out the UpdateTagTree method")
-//			},
-//			InsertTagFunc: func(ctx context.Context, t tagCore.Tag) error {
-//				panic("mock out the InsertTag method")
+//			AssignBranchTagFunc: func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error {
+//				panic("mock out the AssignBranchTag method")
 //			},
 //			DeleteTagFunc: func(ctx context.Context, id xid.ID, organizationID string) error {
 //				panic("mock out the DeleteTag method")
 //			},
-//			AssignDocumentTagFunc: func(ctx context.Context, organizationID string, documentID xid.ID, tagID xid.ID) error {
-//				panic("mock out the AssignDocumentTag method")
+//			FetchBranchTagIDsFunc: func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID) ([]xid.ID, error) {
+//				panic("mock out the FetchBranchTagIDs method")
 //			},
-//			UnassignDocumentTagFunc: func(ctx context.Context, organizationID string, documentID xid.ID, tagID xid.ID) error {
-//				panic("mock out the UnassignDocumentTag method")
+//			FetchTagTreeFunc: func(ctx context.Context, organizationID string, userID string) (tagCore.Summaries, error) {
+//				panic("mock out the FetchTagTree method")
+//			},
+//			InsertTagFunc: func(ctx context.Context, t tagCore.Tag) error {
+//				panic("mock out the InsertTag method")
+//			},
+//			SetTagVisibilityFunc: func(ctx context.Context, organizationID string, userID string, id xid.ID, inp tagCore.VisibilityInput) error {
+//				panic("mock out the SetTagVisibility method")
+//			},
+//			UnassignBranchTagFunc: func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error {
+//				panic("mock out the UnassignBranchTag method")
+//			},
+//			UpdateTagTreeFunc: func(ctx context.Context, tree tagCore.Summaries, organizationID string) error {
+//				panic("mock out the UpdateTagTree method")
 //			},
 //		}
 //
@@ -46,11 +52,17 @@ var _ DB = &DBMock{}
 //
 //	}
 type DBMock struct {
+	// AssignBranchTagFunc mocks the AssignBranchTag method.
+	AssignBranchTagFunc func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error
+
+	// DeleteTagFunc mocks the DeleteTag method.
+	DeleteTagFunc func(ctx context.Context, id xid.ID, organizationID string) error
+
+	// FetchBranchTagIDsFunc mocks the FetchBranchTagIDs method.
+	FetchBranchTagIDsFunc func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID) ([]xid.ID, error)
+
 	// FetchTagTreeFunc mocks the FetchTagTree method.
 	FetchTagTreeFunc func(ctx context.Context, organizationID string, userID string) (tagCore.Summaries, error)
-
-	// UpdateTagTreeFunc mocks the UpdateTagTree method.
-	UpdateTagTreeFunc func(ctx context.Context, tree tagCore.Summaries, organizationID string) error
 
 	// InsertTagFunc mocks the InsertTag method.
 	InsertTagFunc func(ctx context.Context, t tagCore.Tag) error
@@ -58,17 +70,47 @@ type DBMock struct {
 	// SetTagVisibilityFunc mocks the SetTagVisibility method.
 	SetTagVisibilityFunc func(ctx context.Context, organizationID string, userID string, id xid.ID, inp tagCore.VisibilityInput) error
 
-	// DeleteTagFunc mocks the DeleteTag method.
-	DeleteTagFunc func(ctx context.Context, id xid.ID, organizationID string) error
+	// UnassignBranchTagFunc mocks the UnassignBranchTag method.
+	UnassignBranchTagFunc func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error
 
-	// AssignDocumentTagFunc mocks the AssignDocumentTag method.
-	AssignDocumentTagFunc func(ctx context.Context, organizationID string, documentID xid.ID, tagID xid.ID) error
-
-	// UnassignDocumentTagFunc mocks the UnassignDocumentTag method.
-	UnassignDocumentTagFunc func(ctx context.Context, organizationID string, documentID xid.ID, tagID xid.ID) error
+	// UpdateTagTreeFunc mocks the UpdateTagTree method.
+	UpdateTagTreeFunc func(ctx context.Context, tree tagCore.Summaries, organizationID string) error
 
 	// calls tracks calls to the methods.
 	calls struct {
+		// AssignBranchTag holds details about calls to the AssignBranchTag method.
+		AssignBranchTag []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+			// DocumentID is the documentID argument value.
+			DocumentID xid.ID
+			// BranchID is the branchID argument value.
+			BranchID xid.ID
+			// TagID is the tagID argument value.
+			TagID xid.ID
+		}
+		// DeleteTag holds details about calls to the DeleteTag method.
+		DeleteTag []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// ID is the id argument value.
+			ID xid.ID
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+		}
+		// FetchBranchTagIDs holds details about calls to the FetchBranchTagIDs method.
+		FetchBranchTagIDs []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+			// DocumentID is the documentID argument value.
+			DocumentID xid.ID
+			// BranchID is the branchID argument value.
+			BranchID xid.ID
+		}
 		// FetchTagTree holds details about calls to the FetchTagTree method.
 		FetchTagTree []struct {
 			// Ctx is the ctx argument value.
@@ -77,15 +119,6 @@ type DBMock struct {
 			OrganizationID string
 			// UserID is the userID argument value.
 			UserID string
-		}
-		// UpdateTagTree holds details about calls to the UpdateTagTree method.
-		UpdateTagTree []struct {
-			// Ctx is the ctx argument value.
-			Ctx context.Context
-			// Tree is the tree argument value.
-			Tree tagCore.Summaries
-			// OrganizationID is the organizationID argument value.
-			OrganizationID string
 		}
 		// InsertTag holds details about calls to the InsertTag method.
 		InsertTag []struct {
@@ -107,45 +140,175 @@ type DBMock struct {
 			// Inp is the inp argument value.
 			Inp tagCore.VisibilityInput
 		}
-		// DeleteTag holds details about calls to the DeleteTag method.
-		DeleteTag []struct {
-			// Ctx is the ctx argument value.
-			Ctx context.Context
-			// ID is the id argument value.
-			ID xid.ID
-			// OrganizationID is the organizationID argument value.
-			OrganizationID string
-		}
-		// AssignDocumentTag holds details about calls to the AssignDocumentTag method.
-		AssignDocumentTag []struct {
+		// UnassignBranchTag holds details about calls to the UnassignBranchTag method.
+		UnassignBranchTag []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
 			// OrganizationID is the organizationID argument value.
 			OrganizationID string
 			// DocumentID is the documentID argument value.
 			DocumentID xid.ID
+			// BranchID is the branchID argument value.
+			BranchID xid.ID
 			// TagID is the tagID argument value.
 			TagID xid.ID
 		}
-		// UnassignDocumentTag holds details about calls to the UnassignDocumentTag method.
-		UnassignDocumentTag []struct {
+		// UpdateTagTree holds details about calls to the UpdateTagTree method.
+		UpdateTagTree []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
+			// Tree is the tree argument value.
+			Tree tagCore.Summaries
 			// OrganizationID is the organizationID argument value.
 			OrganizationID string
-			// DocumentID is the documentID argument value.
-			DocumentID xid.ID
-			// TagID is the tagID argument value.
-			TagID xid.ID
 		}
 	}
-	lockFetchTagTree        sync.RWMutex
-	lockUpdateTagTree       sync.RWMutex
-	lockInsertTag           sync.RWMutex
-	lockSetTagVisibility    sync.RWMutex
-	lockDeleteTag           sync.RWMutex
-	lockAssignDocumentTag   sync.RWMutex
-	lockUnassignDocumentTag sync.RWMutex
+	lockAssignBranchTag   sync.RWMutex
+	lockDeleteTag         sync.RWMutex
+	lockFetchBranchTagIDs sync.RWMutex
+	lockFetchTagTree      sync.RWMutex
+	lockInsertTag         sync.RWMutex
+	lockSetTagVisibility  sync.RWMutex
+	lockUnassignBranchTag sync.RWMutex
+	lockUpdateTagTree     sync.RWMutex
+}
+
+// AssignBranchTag calls AssignBranchTagFunc.
+func (mock *DBMock) AssignBranchTag(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error {
+	callInfo := struct {
+		Ctx            context.Context
+		OrganizationID string
+		DocumentID     xid.ID
+		BranchID       xid.ID
+		TagID          xid.ID
+	}{
+		Ctx:            ctx,
+		OrganizationID: organizationID,
+		DocumentID:     documentID,
+		BranchID:       branchID,
+		TagID:          tagID,
+	}
+	mock.lockAssignBranchTag.Lock()
+	mock.calls.AssignBranchTag = append(mock.calls.AssignBranchTag, callInfo)
+	mock.lockAssignBranchTag.Unlock()
+	if mock.AssignBranchTagFunc == nil {
+		var errOut error
+		return errOut
+	}
+	return mock.AssignBranchTagFunc(ctx, organizationID, documentID, branchID, tagID)
+}
+
+// AssignBranchTagCalls gets all the calls that were made to AssignBranchTag.
+// Check the length with:
+//
+//	len(mockedDB.AssignBranchTagCalls())
+func (mock *DBMock) AssignBranchTagCalls() []struct {
+	Ctx            context.Context
+	OrganizationID string
+	DocumentID     xid.ID
+	BranchID       xid.ID
+	TagID          xid.ID
+} {
+	var calls []struct {
+		Ctx            context.Context
+		OrganizationID string
+		DocumentID     xid.ID
+		BranchID       xid.ID
+		TagID          xid.ID
+	}
+	mock.lockAssignBranchTag.RLock()
+	calls = mock.calls.AssignBranchTag
+	mock.lockAssignBranchTag.RUnlock()
+	return calls
+}
+
+// DeleteTag calls DeleteTagFunc.
+func (mock *DBMock) DeleteTag(ctx context.Context, id xid.ID, organizationID string) error {
+	callInfo := struct {
+		Ctx            context.Context
+		ID             xid.ID
+		OrganizationID string
+	}{
+		Ctx:            ctx,
+		ID:             id,
+		OrganizationID: organizationID,
+	}
+	mock.lockDeleteTag.Lock()
+	mock.calls.DeleteTag = append(mock.calls.DeleteTag, callInfo)
+	mock.lockDeleteTag.Unlock()
+	if mock.DeleteTagFunc == nil {
+		var errOut error
+		return errOut
+	}
+	return mock.DeleteTagFunc(ctx, id, organizationID)
+}
+
+// DeleteTagCalls gets all the calls that were made to DeleteTag.
+// Check the length with:
+//
+//	len(mockedDB.DeleteTagCalls())
+func (mock *DBMock) DeleteTagCalls() []struct {
+	Ctx            context.Context
+	ID             xid.ID
+	OrganizationID string
+} {
+	var calls []struct {
+		Ctx            context.Context
+		ID             xid.ID
+		OrganizationID string
+	}
+	mock.lockDeleteTag.RLock()
+	calls = mock.calls.DeleteTag
+	mock.lockDeleteTag.RUnlock()
+	return calls
+}
+
+// FetchBranchTagIDs calls FetchBranchTagIDsFunc.
+func (mock *DBMock) FetchBranchTagIDs(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID) ([]xid.ID, error) {
+	callInfo := struct {
+		Ctx            context.Context
+		OrganizationID string
+		DocumentID     xid.ID
+		BranchID       xid.ID
+	}{
+		Ctx:            ctx,
+		OrganizationID: organizationID,
+		DocumentID:     documentID,
+		BranchID:       branchID,
+	}
+	mock.lockFetchBranchTagIDs.Lock()
+	mock.calls.FetchBranchTagIDs = append(mock.calls.FetchBranchTagIDs, callInfo)
+	mock.lockFetchBranchTagIDs.Unlock()
+	if mock.FetchBranchTagIDsFunc == nil {
+		var (
+			idsOut []xid.ID
+			errOut error
+		)
+		return idsOut, errOut
+	}
+	return mock.FetchBranchTagIDsFunc(ctx, organizationID, documentID, branchID)
+}
+
+// FetchBranchTagIDsCalls gets all the calls that were made to FetchBranchTagIDs.
+// Check the length with:
+//
+//	len(mockedDB.FetchBranchTagIDsCalls())
+func (mock *DBMock) FetchBranchTagIDsCalls() []struct {
+	Ctx            context.Context
+	OrganizationID string
+	DocumentID     xid.ID
+	BranchID       xid.ID
+} {
+	var calls []struct {
+		Ctx            context.Context
+		OrganizationID string
+		DocumentID     xid.ID
+		BranchID       xid.ID
+	}
+	mock.lockFetchBranchTagIDs.RLock()
+	calls = mock.calls.FetchBranchTagIDs
+	mock.lockFetchBranchTagIDs.RUnlock()
+	return calls
 }
 
 // FetchTagTree calls FetchTagTreeFunc.
@@ -189,47 +352,6 @@ func (mock *DBMock) FetchTagTreeCalls() []struct {
 	mock.lockFetchTagTree.RLock()
 	calls = mock.calls.FetchTagTree
 	mock.lockFetchTagTree.RUnlock()
-	return calls
-}
-
-// UpdateTagTree calls UpdateTagTreeFunc.
-func (mock *DBMock) UpdateTagTree(ctx context.Context, tree tagCore.Summaries, organizationID string) error {
-	callInfo := struct {
-		Ctx            context.Context
-		Tree           tagCore.Summaries
-		OrganizationID string
-	}{
-		Ctx:            ctx,
-		Tree:           tree,
-		OrganizationID: organizationID,
-	}
-	mock.lockUpdateTagTree.Lock()
-	mock.calls.UpdateTagTree = append(mock.calls.UpdateTagTree, callInfo)
-	mock.lockUpdateTagTree.Unlock()
-	if mock.UpdateTagTreeFunc == nil {
-		var errOut error
-		return errOut
-	}
-	return mock.UpdateTagTreeFunc(ctx, tree, organizationID)
-}
-
-// UpdateTagTreeCalls gets all the calls that were made to UpdateTagTree.
-// Check the length with:
-//
-//	len(mockedDB.UpdateTagTreeCalls())
-func (mock *DBMock) UpdateTagTreeCalls() []struct {
-	Ctx            context.Context
-	Tree           tagCore.Summaries
-	OrganizationID string
-} {
-	var calls []struct {
-		Ctx            context.Context
-		Tree           tagCore.Summaries
-		OrganizationID string
-	}
-	mock.lockUpdateTagTree.RLock()
-	calls = mock.calls.UpdateTagTree
-	mock.lockUpdateTagTree.RUnlock()
 	return calls
 }
 
@@ -319,133 +441,92 @@ func (mock *DBMock) SetTagVisibilityCalls() []struct {
 	return calls
 }
 
-// DeleteTag calls DeleteTagFunc.
-func (mock *DBMock) DeleteTag(ctx context.Context, id xid.ID, organizationID string) error {
-	callInfo := struct {
-		Ctx            context.Context
-		ID             xid.ID
-		OrganizationID string
-	}{
-		Ctx:            ctx,
-		ID:             id,
-		OrganizationID: organizationID,
-	}
-	mock.lockDeleteTag.Lock()
-	mock.calls.DeleteTag = append(mock.calls.DeleteTag, callInfo)
-	mock.lockDeleteTag.Unlock()
-	if mock.DeleteTagFunc == nil {
-		var errOut error
-		return errOut
-	}
-	return mock.DeleteTagFunc(ctx, id, organizationID)
-}
-
-// DeleteTagCalls gets all the calls that were made to DeleteTag.
-// Check the length with:
-//
-//	len(mockedDB.DeleteTagCalls())
-func (mock *DBMock) DeleteTagCalls() []struct {
-	Ctx            context.Context
-	ID             xid.ID
-	OrganizationID string
-} {
-	var calls []struct {
-		Ctx            context.Context
-		ID             xid.ID
-		OrganizationID string
-	}
-	mock.lockDeleteTag.RLock()
-	calls = mock.calls.DeleteTag
-	mock.lockDeleteTag.RUnlock()
-	return calls
-}
-
-// AssignDocumentTag calls AssignDocumentTagFunc.
-func (mock *DBMock) AssignDocumentTag(ctx context.Context, organizationID string, documentID xid.ID, tagID xid.ID) error {
+// UnassignBranchTag calls UnassignBranchTagFunc.
+func (mock *DBMock) UnassignBranchTag(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error {
 	callInfo := struct {
 		Ctx            context.Context
 		OrganizationID string
 		DocumentID     xid.ID
+		BranchID       xid.ID
 		TagID          xid.ID
 	}{
 		Ctx:            ctx,
 		OrganizationID: organizationID,
 		DocumentID:     documentID,
+		BranchID:       branchID,
 		TagID:          tagID,
 	}
-	mock.lockAssignDocumentTag.Lock()
-	mock.calls.AssignDocumentTag = append(mock.calls.AssignDocumentTag, callInfo)
-	mock.lockAssignDocumentTag.Unlock()
-	if mock.AssignDocumentTagFunc == nil {
+	mock.lockUnassignBranchTag.Lock()
+	mock.calls.UnassignBranchTag = append(mock.calls.UnassignBranchTag, callInfo)
+	mock.lockUnassignBranchTag.Unlock()
+	if mock.UnassignBranchTagFunc == nil {
 		var errOut error
 		return errOut
 	}
-	return mock.AssignDocumentTagFunc(ctx, organizationID, documentID, tagID)
+	return mock.UnassignBranchTagFunc(ctx, organizationID, documentID, branchID, tagID)
 }
 
-// AssignDocumentTagCalls gets all the calls that were made to AssignDocumentTag.
+// UnassignBranchTagCalls gets all the calls that were made to UnassignBranchTag.
 // Check the length with:
 //
-//	len(mockedDB.AssignDocumentTagCalls())
-func (mock *DBMock) AssignDocumentTagCalls() []struct {
+//	len(mockedDB.UnassignBranchTagCalls())
+func (mock *DBMock) UnassignBranchTagCalls() []struct {
 	Ctx            context.Context
 	OrganizationID string
 	DocumentID     xid.ID
+	BranchID       xid.ID
 	TagID          xid.ID
 } {
 	var calls []struct {
 		Ctx            context.Context
 		OrganizationID string
 		DocumentID     xid.ID
+		BranchID       xid.ID
 		TagID          xid.ID
 	}
-	mock.lockAssignDocumentTag.RLock()
-	calls = mock.calls.AssignDocumentTag
-	mock.lockAssignDocumentTag.RUnlock()
+	mock.lockUnassignBranchTag.RLock()
+	calls = mock.calls.UnassignBranchTag
+	mock.lockUnassignBranchTag.RUnlock()
 	return calls
 }
 
-// UnassignDocumentTag calls UnassignDocumentTagFunc.
-func (mock *DBMock) UnassignDocumentTag(ctx context.Context, organizationID string, documentID xid.ID, tagID xid.ID) error {
+// UpdateTagTree calls UpdateTagTreeFunc.
+func (mock *DBMock) UpdateTagTree(ctx context.Context, tree tagCore.Summaries, organizationID string) error {
 	callInfo := struct {
 		Ctx            context.Context
+		Tree           tagCore.Summaries
 		OrganizationID string
-		DocumentID     xid.ID
-		TagID          xid.ID
 	}{
 		Ctx:            ctx,
+		Tree:           tree,
 		OrganizationID: organizationID,
-		DocumentID:     documentID,
-		TagID:          tagID,
 	}
-	mock.lockUnassignDocumentTag.Lock()
-	mock.calls.UnassignDocumentTag = append(mock.calls.UnassignDocumentTag, callInfo)
-	mock.lockUnassignDocumentTag.Unlock()
-	if mock.UnassignDocumentTagFunc == nil {
+	mock.lockUpdateTagTree.Lock()
+	mock.calls.UpdateTagTree = append(mock.calls.UpdateTagTree, callInfo)
+	mock.lockUpdateTagTree.Unlock()
+	if mock.UpdateTagTreeFunc == nil {
 		var errOut error
 		return errOut
 	}
-	return mock.UnassignDocumentTagFunc(ctx, organizationID, documentID, tagID)
+	return mock.UpdateTagTreeFunc(ctx, tree, organizationID)
 }
 
-// UnassignDocumentTagCalls gets all the calls that were made to UnassignDocumentTag.
+// UpdateTagTreeCalls gets all the calls that were made to UpdateTagTree.
 // Check the length with:
 //
-//	len(mockedDB.UnassignDocumentTagCalls())
-func (mock *DBMock) UnassignDocumentTagCalls() []struct {
+//	len(mockedDB.UpdateTagTreeCalls())
+func (mock *DBMock) UpdateTagTreeCalls() []struct {
 	Ctx            context.Context
+	Tree           tagCore.Summaries
 	OrganizationID string
-	DocumentID     xid.ID
-	TagID          xid.ID
 } {
 	var calls []struct {
 		Ctx            context.Context
+		Tree           tagCore.Summaries
 		OrganizationID string
-		DocumentID     xid.ID
-		TagID          xid.ID
 	}
-	mock.lockUnassignDocumentTag.RLock()
-	calls = mock.calls.UnassignDocumentTag
-	mock.lockUnassignDocumentTag.RUnlock()
+	mock.lockUpdateTagTree.RLock()
+	calls = mock.calls.UpdateTagTree
+	mock.lockUpdateTagTree.RUnlock()
 	return calls
 }

@@ -460,9 +460,10 @@ func Test_RootBlock_Duplicate(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			dup, files := c.Input.Duplicate(c.OldDocumentID, c.NewDocumentID)
+			dup, files, uids := c.Input.Duplicate(c.OldDocumentID, c.NewDocumentID)
 
 			c.Check(t, c.Input, dup, files)
+			assertUIDsRemapped(t, c.Input, dup, uids)
 		})
 	}
 }
@@ -520,4 +521,36 @@ func Test_RootBlock_Scan(t *testing.T) {
 
 	assert.Error(t, decoded.Scan(42))
 	assert.Error(t, decoded.Scan([]byte(`{not json`)))
+}
+
+// assertUIDsRemapped checks that the uid map pairs every block uid of the
+// source with the uid the duplicate carries in its place, and nothing else.
+func assertUIDsRemapped(t *testing.T, orig, dup RootBlock, uids map[string]string) {
+	t.Helper()
+
+	origUIDs := collectUIDs(orig.Content)
+	dupUIDs := collectUIDs(dup.Content)
+
+	require.Len(t, uids, len(origUIDs))
+	require.Len(t, dupUIDs, len(origUIDs))
+
+	for i, old := range origUIDs {
+		assert.Equal(t, dupUIDs[i], uids[old])
+		assert.NotEqual(t, old, uids[old])
+	}
+}
+
+// collectUIDs lists the uids of the blocks in document order.
+func collectUIDs(blocks []Block) []string {
+	var uids []string
+
+	for _, b := range blocks {
+		if uid, ok := b.UID(); ok {
+			uids = append(uids, uid)
+		}
+
+		uids = append(uids, collectUIDs(b.Content)...)
+	}
+
+	return uids
 }

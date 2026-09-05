@@ -1,3 +1,4 @@
+import { flushPromises } from "@vue/test-utils"
 import { afterEach, beforeEach, describe, it } from "vitest"
 import type { DocumentTreeElement } from "~/utils"
 import {
@@ -16,6 +17,8 @@ import {
 	seedQueryData,
 } from "./test-helpers"
 import useDocumentAPI from "./useDocumentAPI"
+import useDocumentHookAPI from "./useDocumentHookAPI"
+import useTagAPI from "./useTagAPI"
 
 const DOC_ID = makeXid("doc1")
 const DOC_ID_2 = makeXid("doc2")
@@ -522,12 +525,15 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 
 		it("removes a root document optimistically", async ({ expect }) => {
 			const treeCalls = mockEndpoint("GET", TREE_URL, () => [])
+			const tagTreeCalls = mockEndpoint("GET", "/api/tags/tree", () => [])
 			const del = mockDeferredEndpoint("DELETE", `/api/documents/${DOC_ID}`)
 			seedQueryData(TREE_KEY, [
 				makeElem(DOC_ID, "Doc A"),
 				makeElem(DOC_ID_2, "Doc B"),
 			])
 			const api = makeDocumentAPI()
+			const tagAPI = runInApp(() => useTagAPI())
+			await tagAPI.fetchTagTree.refresh()
 
 			const pending = api.deleteDocument.mutateAsync(DOC_ID)
 			await del.reached
@@ -536,9 +542,12 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 			del.resolve(null)
 
 			await pending
+			await flushPromises()
 
 			expect(del.calls).toHaveLength(1)
 			expect(treeCalls).toHaveLength(1)
+			// the document leaves every tag it was listed under
+			expect(tagTreeCalls).toHaveLength(2)
 		})
 
 		it("removes a nested document and drops the emptied children key", async ({
@@ -654,12 +663,15 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 			expect,
 		}) => {
 			const treeCalls = mockEndpoint("GET", TREE_URL, () => [])
+			const tagTreeCalls = mockEndpoint("GET", "/api/tags/tree", () => [])
 			const post = mockDeferredEndpoint(
 				"POST",
 				`/api/documents/${DOC_ID}/duplicate`,
 			)
 			seedQueryData(TREE_KEY, [makeElem(DOC_ID, "Doc A", { icon: "icon-src" })])
 			const api = makeDocumentAPI()
+			const tagAPI = runInApp(() => useTagAPI())
+			await tagAPI.fetchTagTree.refresh()
 
 			const pending = api.duplicateDocument.mutateAsync(DOC_ID)
 			await post.reached
@@ -680,9 +692,12 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 			post.resolve({ id: DOC_ID_2 })
 
 			await pending
+			await flushPromises()
 
 			expect(post.calls).toHaveLength(1)
 			expect(treeCalls).toHaveLength(1)
+			// the copy carries the source's tags, so the tag tree lists it too
+			expect(tagTreeCalls).toHaveLength(2)
 		})
 
 		it("inserts the copy under the source document's parent", async ({
@@ -1207,6 +1222,47 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 				fromBranchId: BRANCH_ID,
 				toBranchId: BRANCH_ID_2,
 			})
+		})
+
+		it("refreshes the hooks and tags the target branch took from the source", async ({
+			expect,
+		}) => {
+			seedAuthSession(USER_ID)
+			seedAuthOrganization(ORG_ID)
+			mockEndpoint("PUT", MERGE_URL, () => null)
+			const hookCalls = mockEndpoint(
+				"GET",
+				`/api/documents/${DOC_ID}/hooks`,
+				() => [],
+			)
+			const tagCalls = mockEndpoint(
+				"GET",
+				`/api/documents/${DOC_ID}/branches/${BRANCH_ID_2}/tags`,
+				() => [],
+			)
+			const treeCalls = mockEndpoint("GET", "/api/tags/tree", () => [])
+			const api = makeDocumentAPI()
+			const hooks = runInApp(() =>
+				useDocumentHookAPI().useFetchDocumentHooksByDocID(DOC_ID, BRANCH_ID_2),
+			)
+			const tagAPI = runInApp(() => useTagAPI())
+			const tags = runInApp(() =>
+				tagAPI.useFetchBranchTags(DOC_ID, BRANCH_ID_2),
+			)
+			await hooks.refresh()
+			await tags.refresh()
+			await tagAPI.fetchTagTree.refresh()
+
+			await api.mergeDocumentBranches.mutateAsync({
+				docId: DOC_ID,
+				fromBranchId: BRANCH_ID,
+				toBranchId: BRANCH_ID_2,
+			})
+			await flushPromises()
+
+			expect(hookCalls).toHaveLength(2)
+			expect(tagCalls).toHaveLength(2)
+			expect(treeCalls).toHaveLength(2)
 		})
 	})
 

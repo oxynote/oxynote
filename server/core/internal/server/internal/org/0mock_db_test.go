@@ -11,6 +11,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/search"
+	"github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/rs/xid"
 )
 
@@ -24,6 +25,9 @@ var _ DB = &DBMock{}
 //
 //		// make and configure a mocked DB
 //		mockedDB := &DBMock{
+//			AssignBranchTagFunc: func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error {
+//				panic("mock out the AssignBranchTag method")
+//			},
 //			BeginTxFunc: func(ctx context.Context, dest any) error {
 //				panic("mock out the BeginTx method")
 //			},
@@ -48,6 +52,9 @@ var _ DB = &DBMock{}
 //			InsertDocumentSearchJobFunc: func(ctx context.Context, diff search.BlocksDifference) error {
 //				panic("mock out the InsertDocumentSearchJob method")
 //			},
+//			InsertTagFunc: func(ctx context.Context, t tag.Tag) error {
+//				panic("mock out the InsertTag method")
+//			},
 //			UpdateOrganizationLogoFunc: func(ctx context.Context, organizationID string, logo string) error {
 //				panic("mock out the UpdateOrganizationLogo method")
 //			},
@@ -61,6 +68,9 @@ var _ DB = &DBMock{}
 //
 //	}
 type DBMock struct {
+	// AssignBranchTagFunc mocks the AssignBranchTag method.
+	AssignBranchTagFunc func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error
+
 	// BeginTxFunc mocks the BeginTx method.
 	BeginTxFunc func(ctx context.Context, dest any) error
 
@@ -85,6 +95,9 @@ type DBMock struct {
 	// InsertDocumentSearchJobFunc mocks the InsertDocumentSearchJob method.
 	InsertDocumentSearchJobFunc func(ctx context.Context, diff search.BlocksDifference) error
 
+	// InsertTagFunc mocks the InsertTag method.
+	InsertTagFunc func(ctx context.Context, t tag.Tag) error
+
 	// UpdateOrganizationLogoFunc mocks the UpdateOrganizationLogo method.
 	UpdateOrganizationLogoFunc func(ctx context.Context, organizationID string, logo string) error
 
@@ -93,6 +106,19 @@ type DBMock struct {
 
 	// calls tracks calls to the methods.
 	calls struct {
+		// AssignBranchTag holds details about calls to the AssignBranchTag method.
+		AssignBranchTag []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+			// DocumentID is the documentID argument value.
+			DocumentID xid.ID
+			// BranchID is the branchID argument value.
+			BranchID xid.ID
+			// TagID is the tagID argument value.
+			TagID xid.ID
+		}
 		// BeginTx holds details about calls to the BeginTx method.
 		BeginTx []struct {
 			// Ctx is the ctx argument value.
@@ -149,6 +175,13 @@ type DBMock struct {
 			// Diff is the diff argument value.
 			Diff search.BlocksDifference
 		}
+		// InsertTag holds details about calls to the InsertTag method.
+		InsertTag []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// T is the t argument value.
+			T tag.Tag
+		}
 		// UpdateOrganizationLogo holds details about calls to the UpdateOrganizationLogo method.
 		UpdateOrganizationLogo []struct {
 			// Ctx is the ctx argument value.
@@ -170,6 +203,7 @@ type DBMock struct {
 			MaintainerIDs []string
 		}
 	}
+	lockAssignBranchTag                           sync.RWMutex
 	lockBeginTx                                   sync.RWMutex
 	lockDeleteGithubInstallationsByOrganizationID sync.RWMutex
 	lockDeleteSlackAppsByOrganizationID           sync.RWMutex
@@ -178,8 +212,58 @@ type DBMock struct {
 	lockInsertDataSource                          sync.RWMutex
 	lockInsertDocument                            sync.RWMutex
 	lockInsertDocumentSearchJob                   sync.RWMutex
+	lockInsertTag                                 sync.RWMutex
 	lockUpdateOrganizationLogo                    sync.RWMutex
 	lockUpsertDocumentMaintainers                 sync.RWMutex
+}
+
+// AssignBranchTag calls AssignBranchTagFunc.
+func (mock *DBMock) AssignBranchTag(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error {
+	callInfo := struct {
+		Ctx            context.Context
+		OrganizationID string
+		DocumentID     xid.ID
+		BranchID       xid.ID
+		TagID          xid.ID
+	}{
+		Ctx:            ctx,
+		OrganizationID: organizationID,
+		DocumentID:     documentID,
+		BranchID:       branchID,
+		TagID:          tagID,
+	}
+	mock.lockAssignBranchTag.Lock()
+	mock.calls.AssignBranchTag = append(mock.calls.AssignBranchTag, callInfo)
+	mock.lockAssignBranchTag.Unlock()
+	if mock.AssignBranchTagFunc == nil {
+		var errOut error
+		return errOut
+	}
+	return mock.AssignBranchTagFunc(ctx, organizationID, documentID, branchID, tagID)
+}
+
+// AssignBranchTagCalls gets all the calls that were made to AssignBranchTag.
+// Check the length with:
+//
+//	len(mockedDB.AssignBranchTagCalls())
+func (mock *DBMock) AssignBranchTagCalls() []struct {
+	Ctx            context.Context
+	OrganizationID string
+	DocumentID     xid.ID
+	BranchID       xid.ID
+	TagID          xid.ID
+} {
+	var calls []struct {
+		Ctx            context.Context
+		OrganizationID string
+		DocumentID     xid.ID
+		BranchID       xid.ID
+		TagID          xid.ID
+	}
+	mock.lockAssignBranchTag.RLock()
+	calls = mock.calls.AssignBranchTag
+	mock.lockAssignBranchTag.RUnlock()
+	return calls
 }
 
 // BeginTx calls BeginTxFunc.
@@ -493,6 +577,43 @@ func (mock *DBMock) InsertDocumentSearchJobCalls() []struct {
 	mock.lockInsertDocumentSearchJob.RLock()
 	calls = mock.calls.InsertDocumentSearchJob
 	mock.lockInsertDocumentSearchJob.RUnlock()
+	return calls
+}
+
+// InsertTag calls InsertTagFunc.
+func (mock *DBMock) InsertTag(ctx context.Context, t tag.Tag) error {
+	callInfo := struct {
+		Ctx context.Context
+		T   tag.Tag
+	}{
+		Ctx: ctx,
+		T:   t,
+	}
+	mock.lockInsertTag.Lock()
+	mock.calls.InsertTag = append(mock.calls.InsertTag, callInfo)
+	mock.lockInsertTag.Unlock()
+	if mock.InsertTagFunc == nil {
+		var errOut error
+		return errOut
+	}
+	return mock.InsertTagFunc(ctx, t)
+}
+
+// InsertTagCalls gets all the calls that were made to InsertTag.
+// Check the length with:
+//
+//	len(mockedDB.InsertTagCalls())
+func (mock *DBMock) InsertTagCalls() []struct {
+	Ctx context.Context
+	T   tag.Tag
+} {
+	var calls []struct {
+		Ctx context.Context
+		T   tag.Tag
+	}
+	mock.lockInsertTag.RLock()
+	calls = mock.calls.InsertTag
+	mock.lockInsertTag.RUnlock()
 	return calls
 }
 

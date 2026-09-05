@@ -30,6 +30,10 @@ var (
 
 	// _documentID is the document the assignment tests operate on.
 	_documentID = xid.New()
+
+	// _branchID is the branch of that document the assignment tests operate
+	// on.
+	_branchID = xid.New()
 )
 
 // addSession stores a test session on the request context.
@@ -556,13 +560,108 @@ func Test_Handler_DeleteTag(t *testing.T) {
 	}
 }
 
-func Test_Handler_AssignDocumentTag(t *testing.T) {
+func Test_Handler_FetchBranchTags(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
 		DB         *DBMock
 		NoSession  bool
 		DocumentID string
+		BranchID   string
+		Code       int
+		Body       string
+		Fetches    int
+	}{
+		"No session in context": {
+			DB:         &DBMock{},
+			NoSession:  true,
+			DocumentID: _documentID.String(),
+			BranchID:   _branchID.String(),
+			Code:       http.StatusUnauthorized,
+			Body:       `{"code":"account.not_authenticated","message":"not authenticated"}`,
+		},
+		"Malformed document id": {
+			DB:         &DBMock{},
+			DocumentID: "not-an-xid",
+			BranchID:   _branchID.String(),
+			Code:       http.StatusNotFound,
+			Body:       `{"code":"general","message":"not found"}`,
+		},
+		"Malformed branch id": {
+			DB:         &DBMock{},
+			DocumentID: _documentID.String(),
+			BranchID:   "not-an-xid",
+			Code:       http.StatusNotFound,
+			Body:       `{"code":"general","message":"not found"}`,
+		},
+		"Fetch error": {
+			DB: &DBMock{
+				FetchBranchTagIDsFunc: func(context.Context, string, xid.ID, xid.ID) ([]xid.ID, error) {
+					return nil, errors.New("boom")
+				},
+			},
+			DocumentID: _documentID.String(),
+			BranchID:   _branchID.String(),
+			Code:       http.StatusInternalServerError,
+			Body:       `{"code":"general","message":"internal server error"}`,
+			Fetches:    1,
+		},
+		"Successful fetch": {
+			DB: &DBMock{
+				FetchBranchTagIDsFunc: func(context.Context, string, xid.ID, xid.ID) ([]xid.ID, error) {
+					return []xid.ID{_tagID}, nil
+				},
+			},
+			DocumentID: _documentID.String(),
+			BranchID:   _branchID.String(),
+			Code:       http.StatusOK,
+			Body:       `["` + _tagID.String() + `"]`,
+			Fetches:    1,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			hdl := Handler{log: slog.New(slog.DiscardHandler), db: c.DB}
+
+			req := withParams(
+				httptest.NewRequest(http.MethodGet, "http://test.com/", http.NoBody),
+				map[string]string{"documentId": c.DocumentID, "branchId": c.BranchID},
+			)
+
+			if !c.NoSession {
+				req = req.WithContext(addSession(req.Context()))
+			}
+
+			rec := httptest.NewRecorder()
+			hdl.FetchBranchTags(rec, req)
+
+			assert.Equal(t, c.Code, rec.Code)
+			assert.JSONEq(t, c.Body, rec.Body.String())
+			require.Len(t, c.DB.FetchBranchTagIDsCalls(), c.Fetches)
+
+			if c.Fetches == 0 {
+				return
+			}
+
+			call := c.DB.FetchBranchTagIDsCalls()[0]
+			assert.Equal(t, "org1", call.OrganizationID)
+			assert.Equal(t, _documentID, call.DocumentID)
+			assert.Equal(t, _branchID, call.BranchID)
+		})
+	}
+}
+
+func Test_Handler_AssignBranchTag(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		DB         *DBMock
+		NoSession  bool
+		DocumentID string
+		BranchID   string
 		Payload    string
 		Code       int
 		Body       string
@@ -573,6 +672,7 @@ func Test_Handler_AssignDocumentTag(t *testing.T) {
 			DB:         &DBMock{},
 			NoSession:  true,
 			DocumentID: _documentID.String(),
+			BranchID:   _branchID.String(),
 			Payload:    `{}`,
 			Code:       http.StatusUnauthorized,
 			Body:       `{"code":"account.not_authenticated","message":"not authenticated"}`,
@@ -580,6 +680,15 @@ func Test_Handler_AssignDocumentTag(t *testing.T) {
 		"Malformed document id": {
 			DB:         &DBMock{},
 			DocumentID: "not-an-xid",
+			BranchID:   _branchID.String(),
+			Payload:    `{}`,
+			Code:       http.StatusNotFound,
+			Body:       `{"code":"general","message":"not found"}`,
+		},
+		"Malformed branch id": {
+			DB:         &DBMock{},
+			DocumentID: _documentID.String(),
+			BranchID:   "not-an-xid",
 			Payload:    `{}`,
 			Code:       http.StatusNotFound,
 			Body:       `{"code":"general","message":"not found"}`,
@@ -587,17 +696,19 @@ func Test_Handler_AssignDocumentTag(t *testing.T) {
 		"Malformed payload": {
 			DB:         &DBMock{},
 			DocumentID: _documentID.String(),
+			BranchID:   _branchID.String(),
 			Payload:    `{`,
 			Code:       http.StatusBadRequest,
 			Body:       `{"code":"request.invalid_json","message":"invalid JSON body"}`,
 		},
 		"Assignment error": {
 			DB: &DBMock{
-				AssignDocumentTagFunc: func(context.Context, string, xid.ID, xid.ID) error {
+				AssignBranchTagFunc: func(context.Context, string, xid.ID, xid.ID, xid.ID) error {
 					return errors.New("boom")
 				},
 			},
 			DocumentID: _documentID.String(),
+			BranchID:   _branchID.String(),
 			Payload:    `{"tagId":"` + _tagID.String() + `"}`,
 			Code:       http.StatusInternalServerError,
 			Body:       `{"code":"general","message":"internal server error"}`,
@@ -606,6 +717,7 @@ func Test_Handler_AssignDocumentTag(t *testing.T) {
 		"Successful assignment": {
 			DB:         &DBMock{},
 			DocumentID: _documentID.String(),
+			BranchID:   _branchID.String(),
 			Payload:    `{"tagId":"` + _tagID.String() + `"}`,
 			Code:       http.StatusNoContent,
 			Assigns:    1,
@@ -623,7 +735,7 @@ func Test_Handler_AssignDocumentTag(t *testing.T) {
 
 			req := withParams(
 				httptest.NewRequest(http.MethodPost, "http://test.com/", strings.NewReader(c.Payload)),
-				map[string]string{"documentId": c.DocumentID},
+				map[string]string{"documentId": c.DocumentID, "branchId": c.BranchID},
 			)
 
 			if !c.NoSession {
@@ -631,10 +743,10 @@ func Test_Handler_AssignDocumentTag(t *testing.T) {
 			}
 
 			rec := httptest.NewRecorder()
-			hdl.AssignDocumentTag(rec, req)
+			hdl.AssignBranchTag(rec, req)
 
 			assert.Equal(t, c.Code, rec.Code)
-			assert.Len(t, c.DB.AssignDocumentTagCalls(), c.Assigns)
+			assert.Len(t, c.DB.AssignBranchTagCalls(), c.Assigns)
 			assert.Len(t, tpc.PublishManyCalls(), c.Notifies)
 
 			if c.Body != "" {
@@ -644,21 +756,23 @@ func Test_Handler_AssignDocumentTag(t *testing.T) {
 
 			assert.Zero(t, rec.Body.Len())
 
-			call := c.DB.AssignDocumentTagCalls()[0]
+			call := c.DB.AssignBranchTagCalls()[0]
 			assert.Equal(t, "org1", call.OrganizationID)
 			assert.Equal(t, _documentID, call.DocumentID)
+			assert.Equal(t, _branchID, call.BranchID)
 			assert.Equal(t, _tagID, call.TagID)
 		})
 	}
 }
 
-func Test_Handler_UnassignDocumentTag(t *testing.T) {
+func Test_Handler_UnassignBranchTag(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
 		DB         *DBMock
 		NoSession  bool
 		DocumentID string
+		BranchID   string
 		TagID      string
 		Code       int
 		Body       string
@@ -669,6 +783,7 @@ func Test_Handler_UnassignDocumentTag(t *testing.T) {
 			DB:         &DBMock{},
 			NoSession:  true,
 			DocumentID: _documentID.String(),
+			BranchID:   _branchID.String(),
 			TagID:      _tagID.String(),
 			Code:       http.StatusUnauthorized,
 			Body:       `{"code":"account.not_authenticated","message":"not authenticated"}`,
@@ -676,6 +791,15 @@ func Test_Handler_UnassignDocumentTag(t *testing.T) {
 		"Malformed document id": {
 			DB:         &DBMock{},
 			DocumentID: "not-an-xid",
+			BranchID:   _branchID.String(),
+			TagID:      _tagID.String(),
+			Code:       http.StatusNotFound,
+			Body:       `{"code":"general","message":"not found"}`,
+		},
+		"Malformed branch id": {
+			DB:         &DBMock{},
+			DocumentID: _documentID.String(),
+			BranchID:   "not-an-xid",
 			TagID:      _tagID.String(),
 			Code:       http.StatusNotFound,
 			Body:       `{"code":"general","message":"not found"}`,
@@ -683,17 +807,19 @@ func Test_Handler_UnassignDocumentTag(t *testing.T) {
 		"Malformed tag id": {
 			DB:         &DBMock{},
 			DocumentID: _documentID.String(),
+			BranchID:   _branchID.String(),
 			TagID:      "not-an-xid",
 			Code:       http.StatusNotFound,
 			Body:       `{"code":"general","message":"not found"}`,
 		},
 		"Unassignment error": {
 			DB: &DBMock{
-				UnassignDocumentTagFunc: func(context.Context, string, xid.ID, xid.ID) error {
+				UnassignBranchTagFunc: func(context.Context, string, xid.ID, xid.ID, xid.ID) error {
 					return errors.New("boom")
 				},
 			},
 			DocumentID: _documentID.String(),
+			BranchID:   _branchID.String(),
 			TagID:      _tagID.String(),
 			Code:       http.StatusInternalServerError,
 			Body:       `{"code":"general","message":"internal server error"}`,
@@ -702,6 +828,7 @@ func Test_Handler_UnassignDocumentTag(t *testing.T) {
 		"Successful unassignment": {
 			DB:         &DBMock{},
 			DocumentID: _documentID.String(),
+			BranchID:   _branchID.String(),
 			TagID:      _tagID.String(),
 			Code:       http.StatusNoContent,
 			Unassigns:  1,
@@ -719,7 +846,7 @@ func Test_Handler_UnassignDocumentTag(t *testing.T) {
 
 			req := withParams(
 				httptest.NewRequest(http.MethodDelete, "http://test.com/", http.NoBody),
-				map[string]string{"documentId": c.DocumentID, "tagId": c.TagID},
+				map[string]string{"documentId": c.DocumentID, "branchId": c.BranchID, "tagId": c.TagID},
 			)
 
 			if !c.NoSession {
@@ -727,10 +854,10 @@ func Test_Handler_UnassignDocumentTag(t *testing.T) {
 			}
 
 			rec := httptest.NewRecorder()
-			hdl.UnassignDocumentTag(rec, req)
+			hdl.UnassignBranchTag(rec, req)
 
 			assert.Equal(t, c.Code, rec.Code)
-			assert.Len(t, c.DB.UnassignDocumentTagCalls(), c.Unassigns)
+			assert.Len(t, c.DB.UnassignBranchTagCalls(), c.Unassigns)
 			assert.Len(t, tpc.PublishManyCalls(), c.Notifies)
 
 			if c.Body != "" {
@@ -740,9 +867,10 @@ func Test_Handler_UnassignDocumentTag(t *testing.T) {
 
 			assert.Zero(t, rec.Body.Len())
 
-			call := c.DB.UnassignDocumentTagCalls()[0]
+			call := c.DB.UnassignBranchTagCalls()[0]
 			assert.Equal(t, "org1", call.OrganizationID)
 			assert.Equal(t, _documentID, call.DocumentID)
+			assert.Equal(t, _branchID, call.BranchID)
 			assert.Equal(t, _tagID, call.TagID)
 		})
 	}

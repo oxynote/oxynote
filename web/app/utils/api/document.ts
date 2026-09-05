@@ -17,6 +17,9 @@ export interface DocumentTreeElement {
 	documentName: string
 	icon: string
 	protected: boolean
+	// the branch a reader lands on without naming one. A row the tree
+	// edits insert optimistically has none until the server answers
+	defaultBranchId?: string
 	children?: DocumentTreeElement[] | null
 
 	// local-only

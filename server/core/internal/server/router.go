@@ -307,11 +307,12 @@ func (s *Server) router() chi.Router {
 						sssssr.Post("/", s.handlers.document.RequestBranchReviewer)
 						sssssr.Delete("/", s.handlers.document.RemoveBranchReviewer)
 					})
+					ssssr.Route("/tags", func(sssssr chi.Router) {
+						sssssr.Get("/", s.handlers.tag.FetchBranchTags)
+						sssssr.Post("/", s.handlers.tag.AssignBranchTag)
+						sssssr.Delete("/{tagId}", s.handlers.tag.UnassignBranchTag)
+					})
 				})
-			})
-			ssr.Route("/tags", func(sssr chi.Router) {
-				sssr.Post("/", s.handlers.tag.AssignDocumentTag)
-				sssr.Delete("/{tagId}", s.handlers.tag.UnassignDocumentTag)
 			})
 			ssr.Route("/hooks", func(sssr chi.Router) {
 				sssr.Get("/", s.handlers.hook.FetchDocumentHooks)

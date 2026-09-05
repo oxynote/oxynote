@@ -362,6 +362,40 @@ CREATE TABLE document_maintainers (
 );
 CREATE INDEX document_maintainers_fk_document_id_idx ON document_maintainers (fk_document_id);
 
+-- Tags label document branches. A tag belongs to an organization; a branch
+-- carries any number of them, and whether a member sees a tag in their
+-- sidebar is that member's own setting.
+
+CREATE TABLE tags (
+	id TEXT PRIMARY KEY,
+	fk_organization_id TEXT NOT NULL REFERENCES organizations ON DELETE CASCADE,
+	tag_name TEXT NOT NULL,
+	color TEXT NOT NULL,
+	sort_index INTEGER NOT NULL,
+	created_at TIMESTAMP NOT NULL,
+	fk_created_by TEXT REFERENCES users ON DELETE SET NULL,
+	UNIQUE (fk_organization_id, tag_name)
+);
+CREATE INDEX tags_fk_organization_id_idx ON tags (fk_organization_id);
+CREATE INDEX tags_fk_created_by_idx ON tags (fk_created_by);
+
+CREATE TABLE document_branch_tags (
+	fk_branch_id TEXT NOT NULL REFERENCES document_branches ON DELETE CASCADE,
+	fk_tag_id TEXT NOT NULL REFERENCES tags ON DELETE CASCADE,
+	fk_organization_id TEXT NOT NULL REFERENCES organizations ON DELETE CASCADE,
+	PRIMARY KEY (fk_branch_id, fk_tag_id)
+);
+CREATE INDEX document_branch_tags_fk_tag_id_idx ON document_branch_tags (fk_tag_id);
+CREATE INDEX document_branch_tags_fk_organization_id_idx ON document_branch_tags (fk_organization_id);
+
+CREATE TABLE user_tag_settings (
+	fk_user_id TEXT NOT NULL REFERENCES users ON DELETE CASCADE,
+	fk_tag_id TEXT NOT NULL REFERENCES tags ON DELETE CASCADE,
+	hidden BOOLEAN NOT NULL DEFAULT FALSE,
+	PRIMARY KEY (fk_user_id, fk_tag_id)
+);
+CREATE INDEX user_tag_settings_fk_tag_id_idx ON user_tag_settings (fk_tag_id);
+
 CREATE TABLE branch_reviewers (
 	fk_branch_id        TEXT NOT NULL REFERENCES document_branches(id) ON DELETE CASCADE,
 	fk_user_id          TEXT NOT NULL REFERENCES users ON DELETE CASCADE,
@@ -445,6 +479,9 @@ DROP TABLE slack_apps;
 DROP TABLE document_search_jobs;
 DROP TABLE document_files;
 DROP TABLE branch_reviewers;
+DROP TABLE user_tag_settings;
+DROP TABLE document_branch_tags;
+DROP TABLE tags;
 DROP TABLE document_maintainers;
 DROP TABLE document_comment_replies;
 DROP TABLE document_comments;

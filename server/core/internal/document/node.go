@@ -264,23 +264,29 @@ func (rb RootBlock) StripCommentMarks() RootBlock {
 // Duplicate creates a copy of the RootBlock with all comment marks
 // removed, nodeCommentId attributes removed, and uid attributes regenerated.
 // Image blocks pointing at the source document's own files have their src
-// rewritten to the duplicate's, and the returned map pairs every such file's
-// old id with its new one so the caller can copy the objects themselves.
-func (rb RootBlock) Duplicate(oldDocumentID, newDocumentID xid.ID) (RootBlock, map[string]string) {
+// rewritten to the duplicate's, and the first returned map pairs every such
+// file's old id with its new one so the caller can copy the objects
+// themselves. The second pairs every block's old uid with its new one, for
+// whatever else is keyed by block.
+func (rb RootBlock) Duplicate(oldDocumentID, newDocumentID xid.ID) (RootBlock, map[string]string, map[string]string) {
 	dc := &duplication{
 		oldDocumentID: oldDocumentID,
 		newDocumentID: newDocumentID,
 		files:         make(map[string]string),
+		uids:          make(map[string]string),
 	}
 
-	return rb.copyStripped(dc), dc.files
+	return rb.copyStripped(dc), dc.files, dc.uids
 }
 
 // RegenerateUIDs returns a copy of the RootBlock with comment marks removed
 // and every uid attribute regenerated. Unlike Duplicate it rewrites no file
 // references, which suits content templates: they carry none.
 func (rb RootBlock) RegenerateUIDs() RootBlock {
-	return rb.copyStripped(&duplication{files: make(map[string]string)})
+	return rb.copyStripped(&duplication{
+		files: make(map[string]string),
+		uids:  make(map[string]string),
+	})
 }
 
 // duplication carries the state a block tree needs while it is being
@@ -295,6 +301,10 @@ type duplication struct {
 	// files maps the source document's file ids to the ids the duplicate
 	// refers to them by.
 	files map[string]string
+
+	// uids maps the source document's block uids to the ones the duplicate
+	// carries in their place.
+	uids map[string]string
 }
 
 // copyStripped returns a copy of the RootBlock with comment marks and
@@ -353,7 +363,7 @@ func (b Block) copyStripped(dc *duplication) Block {
 			}
 
 			if dc != nil && k == AttrUID {
-				newAttrs[k] = strutil.NanoID()
+				newAttrs[k] = dc.regenerateUID(v)
 				continue
 			}
 
@@ -370,6 +380,18 @@ func (b Block) copyStripped(dc *duplication) Block {
 	}
 
 	return newBlock
+}
+
+// regenerateUID mints the uid a duplicated block carries in place of the
+// given one and records the pair.
+func (d *duplication) regenerateUID(old any) string {
+	uid := strutil.NanoID()
+
+	if s, ok := old.(string); ok {
+		d.uids[s] = uid
+	}
+
+	return uid
 }
 
 // rewriteFileRef points a duplicated image block at the duplicate's own copy

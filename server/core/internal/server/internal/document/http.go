@@ -551,7 +551,7 @@ func (h *Handler) CreateDocument(w http.ResponseWriter, r *http.Request) {
 
 	doc := documentCore.NewDocument(di, session.ActiveOrganizationID, session.UserID)
 
-	if err := h.insertDocumentTx(r.Context(), doc, session); err != nil {
+	if err := h.insertDocumentTx(r.Context(), doc, null.Value[xid.ID]{}, session); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -955,6 +955,11 @@ func (h *Handler) MergeBranches(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := tx.ReplaceBranchTags(r.Context(), session.ActiveOrganizationID, fromDoc.BranchID, toDoc.BranchID); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
 	if err := h.searchJobs.Enqueue(r.Context(), tx, search.BlocksDiff(toDoc.Search(), ndoc.Search())); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -978,6 +983,7 @@ func (h *Handler) MergeBranches(w http.ResponseWriter, r *http.Request) {
 		toDoc.BranchID,
 		toDoc.ID,
 		session.ActiveOrganizationID,
+		nil,
 	); err != nil {
 		logutil.Critical(h.log, err).Error(
 			"cannot copy hooks to the merged branch",
@@ -1104,11 +1110,27 @@ func (h *Handler) DuplicateDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	duplDoc, files := doc.Duplicate(session.UserID)
+	duplDoc, files, uids := doc.Duplicate(session.UserID)
 
-	if err = h.insertDocumentTx(r.Context(), duplDoc, session); err != nil {
+	if err = h.insertDocumentTx(r.Context(), duplDoc, null.ValueFrom(doc.BranchID), session); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
+	}
+
+	// the hooks are copied after the commit: creating one creates its
+	// external watcher too, and a rollback cannot take that back.
+	if err := h.copyHooksToBranch(
+		r.Context(),
+		doc.BranchID,
+		duplDoc.BranchID,
+		duplDoc.ID,
+		session.ActiveOrganizationID,
+		uids,
+	); err != nil {
+		logutil.Critical(h.log, err).Error(
+			"cannot copy hooks to the duplicated document",
+			slog.String("branch_id", duplDoc.BranchID.String()),
+		)
 	}
 
 	h.copyDocumentFiles(r.Context(), files, id, duplDoc.ID, session.ActiveOrganizationID)
@@ -1278,6 +1300,11 @@ func (h *Handler) CreateDocumentBranch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := tx.CopyBranchTags(r.Context(), session.ActiveOrganizationID, sourceDoc.BranchID, newDoc.BranchID); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
 	if err := h.searchJobs.Enqueue(r.Context(), tx, search.BlocksDiff(nil, newDoc.Search())); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -1296,6 +1323,7 @@ func (h *Handler) CreateDocumentBranch(w http.ResponseWriter, r *http.Request) {
 		newDoc.BranchID,
 		sourceDoc.ID,
 		session.ActiveOrganizationID,
+		nil,
 	); err != nil {
 		logutil.Critical(h.log, err).Error(
 			"cannot copy hooks to the forked branch",
@@ -1400,7 +1428,18 @@ func (h *Handler) DeleteDocumentBranch(w http.ResponseWriter, r *http.Request) {
 // outside the caller's transaction: a rollback cannot take a changedetection.io
 // watcher back, and the row that would have pointed at it is gone. A failed
 // insert tears the watcher down again for the same reason.
-func (h *Handler) copyHooksToBranch(ctx context.Context, fromBranchID, toBranchID, documentID xid.ID, organizationID string) error {
+//
+// A branch whose content was duplicated carries fresh block uids, so the
+// caller passes the old-to-new uid map and a hook anchored to a block is
+// re-anchored through it; a hook whose block the map does not name has
+// nothing to point at on the target and is dropped. A nil map keeps every
+// block id as it is, which is right for a fork or a merge.
+func (h *Handler) copyHooksToBranch(
+	ctx context.Context,
+	fromBranchID, toBranchID, documentID xid.ID,
+	organizationID string,
+	uids map[string]string,
+) error {
 	hooks, err := h.db.FetchDocumentHooksByBranchID(ctx, fromBranchID, organizationID)
 	if err != nil {
 		return err
@@ -1419,10 +1458,21 @@ func (h *Handler) copyHooksToBranch(ctx context.Context, fromBranchID, toBranchI
 			continue
 		}
 
+		blockID := hk.BlockID
+
+		if uids != nil && blockID.Valid {
+			uid, ok := uids[blockID.String]
+			if !ok {
+				continue
+			}
+
+			blockID = null.StringFrom(uid)
+		}
+
 		newHk, err := hook.NewHook(ctx, hook.CreateInput{
 			Type:     hk.Type,
 			BranchID: toBranchID,
-			BlockID:  hk.BlockID,
+			BlockID:  blockID,
 			Settings: hk.Settings,
 		}, documentID, toBranchID, organizationID, inp)
 		if err != nil {
@@ -1476,9 +1526,15 @@ func (h *Handler) upsertBranchReviewer(
 
 // insertDocumentTx inserts a new document together with its maintainer and
 // its search job, and slots it at the top of its parent's tree, all in one
-// transaction. The tree-change notification is left to the caller, since it
-// must not fire before the commit.
-func (h *Handler) insertDocumentTx(ctx context.Context, doc documentCore.Document, session auth.Session) error {
+// transaction. A document duplicated from a branch also takes that branch's
+// tags. The tree-change notification is left to the caller, since it must
+// not fire before the commit.
+func (h *Handler) insertDocumentTx(
+	ctx context.Context,
+	doc documentCore.Document,
+	sourceBranchID null.Value[xid.ID],
+	session auth.Session,
+) error {
 	var tx Tx
 
 	if err := h.db.BeginTx(ctx, &tx); err != nil {
@@ -1495,6 +1551,12 @@ func (h *Handler) insertDocumentTx(ctx context.Context, doc documentCore.Documen
 
 	if err := tx.InsertDocument(ctx, doc); err != nil {
 		return err
+	}
+
+	if sourceBranchID.Valid {
+		if err := tx.CopyBranchTags(ctx, session.ActiveOrganizationID, sourceBranchID.V, doc.BranchID); err != nil {
+			return err
+		}
 	}
 
 	if err := tx.UpsertDocumentMaintainers(
@@ -1635,6 +1697,14 @@ type BranchesDBAgent interface {
 	// UpdateDocumentBranchMetadata should update the name and protection status of a branch
 	// without modifying content or inserting a history entry.
 	UpdateDocumentBranchMetadata(ctx context.Context, doc documentCore.Document) error
+
+	// CopyBranchTags should make the target branch carry every tag the
+	// source branch carries, on top of its own.
+	CopyBranchTags(ctx context.Context, organizationID string, fromBranchID, toBranchID xid.ID) error
+
+	// ReplaceBranchTags should make the target branch carry exactly the
+	// tags the source branch carries.
+	ReplaceBranchTags(ctx context.Context, organizationID string, fromBranchID, toBranchID xid.ID) error
 }
 
 // TreeDBAgent is an interface that handles communication with the document

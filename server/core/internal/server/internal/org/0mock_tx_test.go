@@ -11,6 +11,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/search"
+	"github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/rs/xid"
 )
 
@@ -24,6 +25,9 @@ var _ Tx = &TxMock{}
 //
 //		// make and configure a mocked Tx
 //		mockedTx := &TxMock{
+//			AssignBranchTagFunc: func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error {
+//				panic("mock out the AssignBranchTag method")
+//			},
 //			CommitFunc: func() error {
 //				panic("mock out the Commit method")
 //			},
@@ -48,6 +52,9 @@ var _ Tx = &TxMock{}
 //			InsertDocumentSearchJobFunc: func(ctx context.Context, diff search.BlocksDifference) error {
 //				panic("mock out the InsertDocumentSearchJob method")
 //			},
+//			InsertTagFunc: func(ctx context.Context, t tag.Tag) error {
+//				panic("mock out the InsertTag method")
+//			},
 //			RollbackFunc: func() error {
 //				panic("mock out the Rollback method")
 //			},
@@ -64,6 +71,9 @@ var _ Tx = &TxMock{}
 //
 //	}
 type TxMock struct {
+	// AssignBranchTagFunc mocks the AssignBranchTag method.
+	AssignBranchTagFunc func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error
+
 	// CommitFunc mocks the Commit method.
 	CommitFunc func() error
 
@@ -88,6 +98,9 @@ type TxMock struct {
 	// InsertDocumentSearchJobFunc mocks the InsertDocumentSearchJob method.
 	InsertDocumentSearchJobFunc func(ctx context.Context, diff search.BlocksDifference) error
 
+	// InsertTagFunc mocks the InsertTag method.
+	InsertTagFunc func(ctx context.Context, t tag.Tag) error
+
 	// RollbackFunc mocks the Rollback method.
 	RollbackFunc func() error
 
@@ -99,6 +112,19 @@ type TxMock struct {
 
 	// calls tracks calls to the methods.
 	calls struct {
+		// AssignBranchTag holds details about calls to the AssignBranchTag method.
+		AssignBranchTag []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+			// DocumentID is the documentID argument value.
+			DocumentID xid.ID
+			// BranchID is the branchID argument value.
+			BranchID xid.ID
+			// TagID is the tagID argument value.
+			TagID xid.ID
+		}
 		// Commit holds details about calls to the Commit method.
 		Commit []struct {
 		}
@@ -151,6 +177,13 @@ type TxMock struct {
 			// Diff is the diff argument value.
 			Diff search.BlocksDifference
 		}
+		// InsertTag holds details about calls to the InsertTag method.
+		InsertTag []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// T is the t argument value.
+			T tag.Tag
+		}
 		// Rollback holds details about calls to the Rollback method.
 		Rollback []struct {
 		}
@@ -175,6 +208,7 @@ type TxMock struct {
 			MaintainerIDs []string
 		}
 	}
+	lockAssignBranchTag                           sync.RWMutex
 	lockCommit                                    sync.RWMutex
 	lockDeleteGithubInstallationsByOrganizationID sync.RWMutex
 	lockDeleteSlackAppsByOrganizationID           sync.RWMutex
@@ -183,9 +217,59 @@ type TxMock struct {
 	lockInsertDataSource                          sync.RWMutex
 	lockInsertDocument                            sync.RWMutex
 	lockInsertDocumentSearchJob                   sync.RWMutex
+	lockInsertTag                                 sync.RWMutex
 	lockRollback                                  sync.RWMutex
 	lockUpdateOrganizationLogo                    sync.RWMutex
 	lockUpsertDocumentMaintainers                 sync.RWMutex
+}
+
+// AssignBranchTag calls AssignBranchTagFunc.
+func (mock *TxMock) AssignBranchTag(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error {
+	callInfo := struct {
+		Ctx            context.Context
+		OrganizationID string
+		DocumentID     xid.ID
+		BranchID       xid.ID
+		TagID          xid.ID
+	}{
+		Ctx:            ctx,
+		OrganizationID: organizationID,
+		DocumentID:     documentID,
+		BranchID:       branchID,
+		TagID:          tagID,
+	}
+	mock.lockAssignBranchTag.Lock()
+	mock.calls.AssignBranchTag = append(mock.calls.AssignBranchTag, callInfo)
+	mock.lockAssignBranchTag.Unlock()
+	if mock.AssignBranchTagFunc == nil {
+		var errOut error
+		return errOut
+	}
+	return mock.AssignBranchTagFunc(ctx, organizationID, documentID, branchID, tagID)
+}
+
+// AssignBranchTagCalls gets all the calls that were made to AssignBranchTag.
+// Check the length with:
+//
+//	len(mockedTx.AssignBranchTagCalls())
+func (mock *TxMock) AssignBranchTagCalls() []struct {
+	Ctx            context.Context
+	OrganizationID string
+	DocumentID     xid.ID
+	BranchID       xid.ID
+	TagID          xid.ID
+} {
+	var calls []struct {
+		Ctx            context.Context
+		OrganizationID string
+		DocumentID     xid.ID
+		BranchID       xid.ID
+		TagID          xid.ID
+	}
+	mock.lockAssignBranchTag.RLock()
+	calls = mock.calls.AssignBranchTag
+	mock.lockAssignBranchTag.RUnlock()
+	return calls
 }
 
 // Commit calls CommitFunc.
@@ -490,6 +574,43 @@ func (mock *TxMock) InsertDocumentSearchJobCalls() []struct {
 	mock.lockInsertDocumentSearchJob.RLock()
 	calls = mock.calls.InsertDocumentSearchJob
 	mock.lockInsertDocumentSearchJob.RUnlock()
+	return calls
+}
+
+// InsertTag calls InsertTagFunc.
+func (mock *TxMock) InsertTag(ctx context.Context, t tag.Tag) error {
+	callInfo := struct {
+		Ctx context.Context
+		T   tag.Tag
+	}{
+		Ctx: ctx,
+		T:   t,
+	}
+	mock.lockInsertTag.Lock()
+	mock.calls.InsertTag = append(mock.calls.InsertTag, callInfo)
+	mock.lockInsertTag.Unlock()
+	if mock.InsertTagFunc == nil {
+		var errOut error
+		return errOut
+	}
+	return mock.InsertTagFunc(ctx, t)
+}
+
+// InsertTagCalls gets all the calls that were made to InsertTag.
+// Check the length with:
+//
+//	len(mockedTx.InsertTagCalls())
+func (mock *TxMock) InsertTagCalls() []struct {
+	Ctx context.Context
+	T   tag.Tag
+} {
+	var calls []struct {
+		Ctx context.Context
+		T   tag.Tag
+	}
+	mock.lockInsertTag.RLock()
+	calls = mock.calls.InsertTag
+	mock.lockInsertTag.RUnlock()
 	return calls
 }
 

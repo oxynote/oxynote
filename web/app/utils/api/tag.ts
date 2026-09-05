@@ -46,7 +46,11 @@ export interface TagVisibilityRequest {
 	hidden: boolean
 }
 
-export interface DocumentTagRequest {
+export interface BranchTagRequest {
 	documentId: string
+	branchId: string
 	tagId: string
 }
+
+// the ids of the tags a branch carries, in the tags' display order
+export type BranchTagsResponse = string[]

@@ -21,6 +21,10 @@ var (
 	// ErrInvalidTagColor is returned when a tag carries a colour the frontend
 	// cannot render as a dot.
 	ErrInvalidTagColor = errutil.New(http.StatusBadRequest, "tag.invalid_color", "tag colour must be a hex triplet")
+
+	// ErrDuplicateTagName is returned when a tag is created under a name the
+	// organization already uses.
+	ErrDuplicateTagName = errutil.New(http.StatusConflict, "tag.duplicate_name", "tag name is already in use")
 )
 
 // Tag represents a label a document can carry. A document may carry many
@@ -116,7 +120,7 @@ type SwapInput struct {
 	SortIndex int `json:"sortIndex"`
 }
 
-// AssignInput is the input for attaching a tag to a document.
+// AssignInput is the input for attaching a tag to a document branch.
 type AssignInput struct {
 	// TagID is the identifier of the tag to attach.
 	TagID xid.ID `json:"tagId"`

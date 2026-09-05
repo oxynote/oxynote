@@ -486,14 +486,15 @@ func NewDocumentContent() RootBlock {
 // Duplicate creates a copy of the document with a new ID, duplicated content
 // (with comment marks removed, nodeCommentId attributes removed, and uid
 // attributes regenerated), and cleared raw content. The new document name
-// includes a timestamp suffix. The returned map pairs the source document's
-// file ids with the ids the copy refers to them by, so the caller can copy
-// the stored objects.
-func (d Document) Duplicate(duplicatedBy string) (Document, map[string]string) {
+// includes a timestamp suffix. The first returned map pairs the source
+// document's file ids with the ids the copy refers to them by, so the caller
+// can copy the stored objects; the second pairs the source's block uids with
+// the copy's, so the caller can carry over whatever is keyed by block.
+func (d Document) Duplicate(duplicatedBy string) (Document, map[string]string, map[string]string) {
 	tstamp := timeutil.Now()
 	id := xid.New()
 
-	content, files := d.Content.Duplicate(d.ID, id)
+	content, files, uids := d.Content.Duplicate(d.ID, id)
 
 	return Document{
 		ID:             id,
@@ -511,5 +512,5 @@ func (d Document) Duplicate(duplicatedBy string) (Document, map[string]string) {
 		CreatedBy:      null.StringFrom(duplicatedBy),
 		UpdatedAt:      tstamp,
 		LastUpdatedBy:  null.StringFrom(duplicatedBy),
-	}, files
+	}, files, uids
 }

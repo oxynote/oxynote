@@ -1,7 +1,7 @@
 import { nanoid } from "nanoid"
 import isDeepEqual from "fast-deep-equal"
 
-const DOCUMENT_HOOK_QUERY_KEYS = {
+export const DOCUMENT_HOOK_QUERY_KEYS = {
 	list: (docId: string, branchId: string) =>
 		["documents", "hooks", docId, branchId] as const,
 }

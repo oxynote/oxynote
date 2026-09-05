@@ -37,6 +37,7 @@ const noActions = () => []
 const ID_A = "a".padEnd(20, "0")
 const ID_B = "b".padEnd(20, "0")
 const ID_C = "c".padEnd(20, "0")
+const BRANCH_A = "branch-a".padEnd(20, "0")
 
 function treeElement(
 	id: string,
@@ -48,6 +49,7 @@ function treeElement(
 		documentName: documentName,
 		icon: "lucide:file",
 		protected: false,
+		defaultBranchId: BRANCH_A,
 		children: children,
 	}
 }
@@ -223,7 +225,9 @@ describe("processTagTree", () => {
 			null,
 			"Acme Corp",
 			noActions,
-			(documentId, tagId) => [action(`remove-${documentId}-from-${tagId}`)],
+			(documentId, branchId, tagId) => [
+				action(`remove-${documentId}@${branchId}-from-${tagId}`),
+			],
 		)
 
 		expect(items[0]?.children).toEqual([
@@ -237,10 +241,27 @@ describe("processTagTree", () => {
 				dragGroup: "tag-documents",
 				url: `/Acme-Corp/Runbook-${ID_B}`,
 				prefetchUrlOnInteraction: true,
-				actions: [action(`remove-${ID_B}-from-${ID_A}`)],
+				actions: [action(`remove-${ID_B}@${BRANCH_A}-from-${ID_A}`)],
 				children: null,
 			},
 		])
+	})
+
+	it("offers no detach action to a row still waiting for its branch", ({
+		expect,
+	}) => {
+		const optimistic = treeElement(ID_B, "Runbook")
+		delete optimistic.defaultBranchId
+
+		const items = processTagTree(
+			[tagElement(ID_A, "Production", [optimistic])],
+			null,
+			"Acme",
+			noActions,
+			() => [action("remove-tag")],
+		)
+
+		expect(items[0]?.children?.[0]?.actions).toEqual([])
 	})
 
 	it("recurses into a document's own children", ({ expect }) => {

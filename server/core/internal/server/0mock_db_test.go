@@ -16,6 +16,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	notificationCore "github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/internal/search"
+	tagCore "github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/rs/xid"
 )
@@ -30,6 +31,9 @@ var _ DB = &DBMock{}
 //
 //		// make and configure a mocked DB
 //		mockedDB := &DBMock{
+//			AssignBranchTagFunc: func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error {
+//				panic("mock out the AssignBranchTag method")
+//			},
 //			BeginTxFunc: func(ctx context.Context, dest any) error {
 //				panic("mock out the BeginTx method")
 //			},
@@ -41,6 +45,9 @@ var _ DB = &DBMock{}
 //			},
 //			CheckOrganizationMemberFunc: func(ctx context.Context, organizationID string, userID string) (bool, error) {
 //				panic("mock out the CheckOrganizationMember method")
+//			},
+//			CopyBranchTagsFunc: func(ctx context.Context, organizationID string, fromBranchID xid.ID, toBranchID xid.ID) error {
+//				panic("mock out the CopyBranchTags method")
 //			},
 //			CountDocumentBranchesFunc: func(ctx context.Context, docID xid.ID, organizationID string) (int, error) {
 //				panic("mock out the CountDocumentBranches method")
@@ -87,11 +94,17 @@ var _ DB = &DBMock{}
 //			DeleteSlackUserLinkFunc: func(ctx context.Context, slackUserID string, teamID string) error {
 //				panic("mock out the DeleteSlackUserLink method")
 //			},
+//			DeleteTagFunc: func(ctx context.Context, id xid.ID, organizationID string) error {
+//				panic("mock out the DeleteTag method")
+//			},
 //			FetchBranchReviewerFunc: func(ctx context.Context, branchID xid.ID, userID string, organizationID string) (*documentCore.BranchReviewer, error) {
 //				panic("mock out the FetchBranchReviewer method")
 //			},
 //			FetchBranchReviewersFunc: func(ctx context.Context, branchID xid.ID, organizationID string) ([]documentCore.BranchReviewer, error) {
 //				panic("mock out the FetchBranchReviewers method")
+//			},
+//			FetchBranchTagIDsFunc: func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID) ([]xid.ID, error) {
+//				panic("mock out the FetchBranchTagIDs method")
 //			},
 //			FetchDataSourceFunc: func(ctx context.Context, id xid.ID, organizationID string) (*datasource.DataSource, error) {
 //				panic("mock out the FetchDataSource method")
@@ -177,6 +190,9 @@ var _ DB = &DBMock{}
 //			FetchSlackUserLinkByUserIDFunc: func(ctx context.Context, userID string, organizationID string) (*slackCore.UserLink, error) {
 //				panic("mock out the FetchSlackUserLinkByUserID method")
 //			},
+//			FetchTagTreeFunc: func(ctx context.Context, organizationID string, userID string) (tagCore.Summaries, error) {
+//				panic("mock out the FetchTagTree method")
+//			},
 //			ForkDocumentBranchFunc: func(ctx context.Context, docID xid.ID, orgID string, sourceBranch string, targetBranch string, createdBy string) error {
 //				panic("mock out the ForkDocumentBranch method")
 //			},
@@ -216,17 +232,29 @@ var _ DB = &DBMock{}
 //			InsertSlackUserLinkFunc: func(ctx context.Context, link slackCore.UserLink) error {
 //				panic("mock out the InsertSlackUserLink method")
 //			},
+//			InsertTagFunc: func(ctx context.Context, t tagCore.Tag) error {
+//				panic("mock out the InsertTag method")
+//			},
 //			MarkReadByNotificationsIDsFunc: func(ctx context.Context, organizationID string, userID string, ids []xid.ID) error {
 //				panic("mock out the MarkReadByNotificationsIDs method")
 //			},
 //			PromoteBranchApprovalsFunc: func(ctx context.Context, fromBranchID xid.ID, toBranchID xid.ID, organizationID string) error {
 //				panic("mock out the PromoteBranchApprovals method")
 //			},
+//			ReplaceBranchTagsFunc: func(ctx context.Context, organizationID string, fromBranchID xid.ID, toBranchID xid.ID) error {
+//				panic("mock out the ReplaceBranchTags method")
+//			},
 //			ReplaceDocumentCommentFunc: func(ctx context.Context, c comment.Comment) error {
 //				panic("mock out the ReplaceDocumentComment method")
 //			},
+//			SetTagVisibilityFunc: func(ctx context.Context, organizationID string, userID string, id xid.ID, inp tagCore.VisibilityInput) error {
+//				panic("mock out the SetTagVisibility method")
+//			},
 //			SoftDeleteDocumentHooksByBranchIDFunc: func(ctx context.Context, branchID xid.ID, organizationID string) error {
 //				panic("mock out the SoftDeleteDocumentHooksByBranchID method")
+//			},
+//			UnassignBranchTagFunc: func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error {
+//				panic("mock out the UnassignBranchTag method")
 //			},
 //			UnassignGithubInstallationOrganizationFunc: func(ctx context.Context, organizationID string) error {
 //				panic("mock out the UnassignGithubInstallationOrganization method")
@@ -273,6 +301,9 @@ var _ DB = &DBMock{}
 //			UpdateSlackUserLinkFunc: func(ctx context.Context, link slackCore.UserLink) error {
 //				panic("mock out the UpdateSlackUserLink method")
 //			},
+//			UpdateTagTreeFunc: func(ctx context.Context, tree tagCore.Summaries, organizationID string) error {
+//				panic("mock out the UpdateTagTree method")
+//			},
 //			UpdateUserImageFunc: func(ctx context.Context, userID string, image string) error {
 //				panic("mock out the UpdateUserImage method")
 //			},
@@ -286,6 +317,9 @@ var _ DB = &DBMock{}
 //
 //	}
 type DBMock struct {
+	// AssignBranchTagFunc mocks the AssignBranchTag method.
+	AssignBranchTagFunc func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error
+
 	// BeginTxFunc mocks the BeginTx method.
 	BeginTxFunc func(ctx context.Context, dest any) error
 
@@ -297,6 +331,9 @@ type DBMock struct {
 
 	// CheckOrganizationMemberFunc mocks the CheckOrganizationMember method.
 	CheckOrganizationMemberFunc func(ctx context.Context, organizationID string, userID string) (bool, error)
+
+	// CopyBranchTagsFunc mocks the CopyBranchTags method.
+	CopyBranchTagsFunc func(ctx context.Context, organizationID string, fromBranchID xid.ID, toBranchID xid.ID) error
 
 	// CountDocumentBranchesFunc mocks the CountDocumentBranches method.
 	CountDocumentBranchesFunc func(ctx context.Context, docID xid.ID, organizationID string) (int, error)
@@ -343,11 +380,17 @@ type DBMock struct {
 	// DeleteSlackUserLinkFunc mocks the DeleteSlackUserLink method.
 	DeleteSlackUserLinkFunc func(ctx context.Context, slackUserID string, teamID string) error
 
+	// DeleteTagFunc mocks the DeleteTag method.
+	DeleteTagFunc func(ctx context.Context, id xid.ID, organizationID string) error
+
 	// FetchBranchReviewerFunc mocks the FetchBranchReviewer method.
 	FetchBranchReviewerFunc func(ctx context.Context, branchID xid.ID, userID string, organizationID string) (*documentCore.BranchReviewer, error)
 
 	// FetchBranchReviewersFunc mocks the FetchBranchReviewers method.
 	FetchBranchReviewersFunc func(ctx context.Context, branchID xid.ID, organizationID string) ([]documentCore.BranchReviewer, error)
+
+	// FetchBranchTagIDsFunc mocks the FetchBranchTagIDs method.
+	FetchBranchTagIDsFunc func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID) ([]xid.ID, error)
 
 	// FetchDataSourceFunc mocks the FetchDataSource method.
 	FetchDataSourceFunc func(ctx context.Context, id xid.ID, organizationID string) (*datasource.DataSource, error)
@@ -433,6 +476,9 @@ type DBMock struct {
 	// FetchSlackUserLinkByUserIDFunc mocks the FetchSlackUserLinkByUserID method.
 	FetchSlackUserLinkByUserIDFunc func(ctx context.Context, userID string, organizationID string) (*slackCore.UserLink, error)
 
+	// FetchTagTreeFunc mocks the FetchTagTree method.
+	FetchTagTreeFunc func(ctx context.Context, organizationID string, userID string) (tagCore.Summaries, error)
+
 	// ForkDocumentBranchFunc mocks the ForkDocumentBranch method.
 	ForkDocumentBranchFunc func(ctx context.Context, docID xid.ID, orgID string, sourceBranch string, targetBranch string, createdBy string) error
 
@@ -472,17 +518,29 @@ type DBMock struct {
 	// InsertSlackUserLinkFunc mocks the InsertSlackUserLink method.
 	InsertSlackUserLinkFunc func(ctx context.Context, link slackCore.UserLink) error
 
+	// InsertTagFunc mocks the InsertTag method.
+	InsertTagFunc func(ctx context.Context, t tagCore.Tag) error
+
 	// MarkReadByNotificationsIDsFunc mocks the MarkReadByNotificationsIDs method.
 	MarkReadByNotificationsIDsFunc func(ctx context.Context, organizationID string, userID string, ids []xid.ID) error
 
 	// PromoteBranchApprovalsFunc mocks the PromoteBranchApprovals method.
 	PromoteBranchApprovalsFunc func(ctx context.Context, fromBranchID xid.ID, toBranchID xid.ID, organizationID string) error
 
+	// ReplaceBranchTagsFunc mocks the ReplaceBranchTags method.
+	ReplaceBranchTagsFunc func(ctx context.Context, organizationID string, fromBranchID xid.ID, toBranchID xid.ID) error
+
 	// ReplaceDocumentCommentFunc mocks the ReplaceDocumentComment method.
 	ReplaceDocumentCommentFunc func(ctx context.Context, c comment.Comment) error
 
+	// SetTagVisibilityFunc mocks the SetTagVisibility method.
+	SetTagVisibilityFunc func(ctx context.Context, organizationID string, userID string, id xid.ID, inp tagCore.VisibilityInput) error
+
 	// SoftDeleteDocumentHooksByBranchIDFunc mocks the SoftDeleteDocumentHooksByBranchID method.
 	SoftDeleteDocumentHooksByBranchIDFunc func(ctx context.Context, branchID xid.ID, organizationID string) error
+
+	// UnassignBranchTagFunc mocks the UnassignBranchTag method.
+	UnassignBranchTagFunc func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error
 
 	// UnassignGithubInstallationOrganizationFunc mocks the UnassignGithubInstallationOrganization method.
 	UnassignGithubInstallationOrganizationFunc func(ctx context.Context, organizationID string) error
@@ -529,6 +587,9 @@ type DBMock struct {
 	// UpdateSlackUserLinkFunc mocks the UpdateSlackUserLink method.
 	UpdateSlackUserLinkFunc func(ctx context.Context, link slackCore.UserLink) error
 
+	// UpdateTagTreeFunc mocks the UpdateTagTree method.
+	UpdateTagTreeFunc func(ctx context.Context, tree tagCore.Summaries, organizationID string) error
+
 	// UpdateUserImageFunc mocks the UpdateUserImage method.
 	UpdateUserImageFunc func(ctx context.Context, userID string, image string) error
 
@@ -537,6 +598,19 @@ type DBMock struct {
 
 	// calls tracks calls to the methods.
 	calls struct {
+		// AssignBranchTag holds details about calls to the AssignBranchTag method.
+		AssignBranchTag []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+			// DocumentID is the documentID argument value.
+			DocumentID xid.ID
+			// BranchID is the branchID argument value.
+			BranchID xid.ID
+			// TagID is the tagID argument value.
+			TagID xid.ID
+		}
 		// BeginTx holds details about calls to the BeginTx method.
 		BeginTx []struct {
 			// Ctx is the ctx argument value.
@@ -572,6 +646,17 @@ type DBMock struct {
 			OrganizationID string
 			// UserID is the userID argument value.
 			UserID string
+		}
+		// CopyBranchTags holds details about calls to the CopyBranchTags method.
+		CopyBranchTags []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+			// FromBranchID is the fromBranchID argument value.
+			FromBranchID xid.ID
+			// ToBranchID is the toBranchID argument value.
+			ToBranchID xid.ID
 		}
 		// CountDocumentBranches holds details about calls to the CountDocumentBranches method.
 		CountDocumentBranches []struct {
@@ -702,6 +787,15 @@ type DBMock struct {
 			// TeamID is the teamID argument value.
 			TeamID string
 		}
+		// DeleteTag holds details about calls to the DeleteTag method.
+		DeleteTag []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// ID is the id argument value.
+			ID xid.ID
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+		}
 		// FetchBranchReviewer holds details about calls to the FetchBranchReviewer method.
 		FetchBranchReviewer []struct {
 			// Ctx is the ctx argument value.
@@ -721,6 +815,17 @@ type DBMock struct {
 			BranchID xid.ID
 			// OrganizationID is the organizationID argument value.
 			OrganizationID string
+		}
+		// FetchBranchTagIDs holds details about calls to the FetchBranchTagIDs method.
+		FetchBranchTagIDs []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+			// DocumentID is the documentID argument value.
+			DocumentID xid.ID
+			// BranchID is the branchID argument value.
+			BranchID xid.ID
 		}
 		// FetchDataSource holds details about calls to the FetchDataSource method.
 		FetchDataSource []struct {
@@ -962,6 +1067,15 @@ type DBMock struct {
 			// OrganizationID is the organizationID argument value.
 			OrganizationID string
 		}
+		// FetchTagTree holds details about calls to the FetchTagTree method.
+		FetchTagTree []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+			// UserID is the userID argument value.
+			UserID string
+		}
 		// ForkDocumentBranch holds details about calls to the ForkDocumentBranch method.
 		ForkDocumentBranch []struct {
 			// Ctx is the ctx argument value.
@@ -1061,6 +1175,13 @@ type DBMock struct {
 			// Link is the link argument value.
 			Link slackCore.UserLink
 		}
+		// InsertTag holds details about calls to the InsertTag method.
+		InsertTag []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// T is the t argument value.
+			T tagCore.Tag
+		}
 		// MarkReadByNotificationsIDs holds details about calls to the MarkReadByNotificationsIDs method.
 		MarkReadByNotificationsIDs []struct {
 			// Ctx is the ctx argument value.
@@ -1083,12 +1204,36 @@ type DBMock struct {
 			// OrganizationID is the organizationID argument value.
 			OrganizationID string
 		}
+		// ReplaceBranchTags holds details about calls to the ReplaceBranchTags method.
+		ReplaceBranchTags []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+			// FromBranchID is the fromBranchID argument value.
+			FromBranchID xid.ID
+			// ToBranchID is the toBranchID argument value.
+			ToBranchID xid.ID
+		}
 		// ReplaceDocumentComment holds details about calls to the ReplaceDocumentComment method.
 		ReplaceDocumentComment []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
 			// C is the c argument value.
 			C comment.Comment
+		}
+		// SetTagVisibility holds details about calls to the SetTagVisibility method.
+		SetTagVisibility []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+			// UserID is the userID argument value.
+			UserID string
+			// ID is the id argument value.
+			ID xid.ID
+			// Inp is the inp argument value.
+			Inp tagCore.VisibilityInput
 		}
 		// SoftDeleteDocumentHooksByBranchID holds details about calls to the SoftDeleteDocumentHooksByBranchID method.
 		SoftDeleteDocumentHooksByBranchID []struct {
@@ -1098,6 +1243,19 @@ type DBMock struct {
 			BranchID xid.ID
 			// OrganizationID is the organizationID argument value.
 			OrganizationID string
+		}
+		// UnassignBranchTag holds details about calls to the UnassignBranchTag method.
+		UnassignBranchTag []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+			// DocumentID is the documentID argument value.
+			DocumentID xid.ID
+			// BranchID is the branchID argument value.
+			BranchID xid.ID
+			// TagID is the tagID argument value.
+			TagID xid.ID
 		}
 		// UnassignGithubInstallationOrganization holds details about calls to the UnassignGithubInstallationOrganization method.
 		UnassignGithubInstallationOrganization []struct {
@@ -1216,6 +1374,15 @@ type DBMock struct {
 			// Link is the link argument value.
 			Link slackCore.UserLink
 		}
+		// UpdateTagTree holds details about calls to the UpdateTagTree method.
+		UpdateTagTree []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Tree is the tree argument value.
+			Tree tagCore.Summaries
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+		}
 		// UpdateUserImage holds details about calls to the UpdateUserImage method.
 		UpdateUserImage []struct {
 			// Ctx is the ctx argument value.
@@ -1237,10 +1404,12 @@ type DBMock struct {
 			MaintainerIDs []string
 		}
 	}
+	lockAssignBranchTag                           sync.RWMutex
 	lockBeginTx                                   sync.RWMutex
 	lockCheckDocumentCycle                        sync.RWMutex
 	lockCheckDocumentExists                       sync.RWMutex
 	lockCheckOrganizationMember                   sync.RWMutex
+	lockCopyBranchTags                            sync.RWMutex
 	lockCountDocumentBranches                     sync.RWMutex
 	lockDeleteBranchReviewer                      sync.RWMutex
 	lockDeleteDataSource                          sync.RWMutex
@@ -1256,8 +1425,10 @@ type DBMock struct {
 	lockDeleteSlackApp                            sync.RWMutex
 	lockDeleteSlackAppsByOrganizationID           sync.RWMutex
 	lockDeleteSlackUserLink                       sync.RWMutex
+	lockDeleteTag                                 sync.RWMutex
 	lockFetchBranchReviewer                       sync.RWMutex
 	lockFetchBranchReviewers                      sync.RWMutex
+	lockFetchBranchTagIDs                         sync.RWMutex
 	lockFetchDataSource                           sync.RWMutex
 	lockFetchDataSources                          sync.RWMutex
 	lockFetchDocument                             sync.RWMutex
@@ -1286,6 +1457,7 @@ type DBMock struct {
 	lockFetchSlackMessages                        sync.RWMutex
 	lockFetchSlackUserLink                        sync.RWMutex
 	lockFetchSlackUserLinkByUserID                sync.RWMutex
+	lockFetchTagTree                              sync.RWMutex
 	lockForkDocumentBranch                        sync.RWMutex
 	lockInsertBranchReviewer                      sync.RWMutex
 	lockInsertDataSource                          sync.RWMutex
@@ -1299,10 +1471,14 @@ type DBMock struct {
 	lockInsertSlackApp                            sync.RWMutex
 	lockInsertSlackMessage                        sync.RWMutex
 	lockInsertSlackUserLink                       sync.RWMutex
+	lockInsertTag                                 sync.RWMutex
 	lockMarkReadByNotificationsIDs                sync.RWMutex
 	lockPromoteBranchApprovals                    sync.RWMutex
+	lockReplaceBranchTags                         sync.RWMutex
 	lockReplaceDocumentComment                    sync.RWMutex
+	lockSetTagVisibility                          sync.RWMutex
 	lockSoftDeleteDocumentHooksByBranchID         sync.RWMutex
+	lockUnassignBranchTag                         sync.RWMutex
 	lockUnassignGithubInstallationOrganization    sync.RWMutex
 	lockUnassignSlackAppOrganization              sync.RWMutex
 	lockUpdateBranchReviewer                      sync.RWMutex
@@ -1318,8 +1494,58 @@ type DBMock struct {
 	lockUpdateOrganizationLogo                    sync.RWMutex
 	lockUpdateSlackAppOrganizationID              sync.RWMutex
 	lockUpdateSlackUserLink                       sync.RWMutex
+	lockUpdateTagTree                             sync.RWMutex
 	lockUpdateUserImage                           sync.RWMutex
 	lockUpsertDocumentMaintainers                 sync.RWMutex
+}
+
+// AssignBranchTag calls AssignBranchTagFunc.
+func (mock *DBMock) AssignBranchTag(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error {
+	callInfo := struct {
+		Ctx            context.Context
+		OrganizationID string
+		DocumentID     xid.ID
+		BranchID       xid.ID
+		TagID          xid.ID
+	}{
+		Ctx:            ctx,
+		OrganizationID: organizationID,
+		DocumentID:     documentID,
+		BranchID:       branchID,
+		TagID:          tagID,
+	}
+	mock.lockAssignBranchTag.Lock()
+	mock.calls.AssignBranchTag = append(mock.calls.AssignBranchTag, callInfo)
+	mock.lockAssignBranchTag.Unlock()
+	if mock.AssignBranchTagFunc == nil {
+		var errOut error
+		return errOut
+	}
+	return mock.AssignBranchTagFunc(ctx, organizationID, documentID, branchID, tagID)
+}
+
+// AssignBranchTagCalls gets all the calls that were made to AssignBranchTag.
+// Check the length with:
+//
+//	len(mockedDB.AssignBranchTagCalls())
+func (mock *DBMock) AssignBranchTagCalls() []struct {
+	Ctx            context.Context
+	OrganizationID string
+	DocumentID     xid.ID
+	BranchID       xid.ID
+	TagID          xid.ID
+} {
+	var calls []struct {
+		Ctx            context.Context
+		OrganizationID string
+		DocumentID     xid.ID
+		BranchID       xid.ID
+		TagID          xid.ID
+	}
+	mock.lockAssignBranchTag.RLock()
+	calls = mock.calls.AssignBranchTag
+	mock.lockAssignBranchTag.RUnlock()
+	return calls
 }
 
 // BeginTx calls BeginTxFunc.
@@ -1493,6 +1719,51 @@ func (mock *DBMock) CheckOrganizationMemberCalls() []struct {
 	mock.lockCheckOrganizationMember.RLock()
 	calls = mock.calls.CheckOrganizationMember
 	mock.lockCheckOrganizationMember.RUnlock()
+	return calls
+}
+
+// CopyBranchTags calls CopyBranchTagsFunc.
+func (mock *DBMock) CopyBranchTags(ctx context.Context, organizationID string, fromBranchID xid.ID, toBranchID xid.ID) error {
+	callInfo := struct {
+		Ctx            context.Context
+		OrganizationID string
+		FromBranchID   xid.ID
+		ToBranchID     xid.ID
+	}{
+		Ctx:            ctx,
+		OrganizationID: organizationID,
+		FromBranchID:   fromBranchID,
+		ToBranchID:     toBranchID,
+	}
+	mock.lockCopyBranchTags.Lock()
+	mock.calls.CopyBranchTags = append(mock.calls.CopyBranchTags, callInfo)
+	mock.lockCopyBranchTags.Unlock()
+	if mock.CopyBranchTagsFunc == nil {
+		var errOut error
+		return errOut
+	}
+	return mock.CopyBranchTagsFunc(ctx, organizationID, fromBranchID, toBranchID)
+}
+
+// CopyBranchTagsCalls gets all the calls that were made to CopyBranchTags.
+// Check the length with:
+//
+//	len(mockedDB.CopyBranchTagsCalls())
+func (mock *DBMock) CopyBranchTagsCalls() []struct {
+	Ctx            context.Context
+	OrganizationID string
+	FromBranchID   xid.ID
+	ToBranchID     xid.ID
+} {
+	var calls []struct {
+		Ctx            context.Context
+		OrganizationID string
+		FromBranchID   xid.ID
+		ToBranchID     xid.ID
+	}
+	mock.lockCopyBranchTags.RLock()
+	calls = mock.calls.CopyBranchTags
+	mock.lockCopyBranchTags.RUnlock()
 	return calls
 }
 
@@ -2131,6 +2402,47 @@ func (mock *DBMock) DeleteSlackUserLinkCalls() []struct {
 	return calls
 }
 
+// DeleteTag calls DeleteTagFunc.
+func (mock *DBMock) DeleteTag(ctx context.Context, id xid.ID, organizationID string) error {
+	callInfo := struct {
+		Ctx            context.Context
+		ID             xid.ID
+		OrganizationID string
+	}{
+		Ctx:            ctx,
+		ID:             id,
+		OrganizationID: organizationID,
+	}
+	mock.lockDeleteTag.Lock()
+	mock.calls.DeleteTag = append(mock.calls.DeleteTag, callInfo)
+	mock.lockDeleteTag.Unlock()
+	if mock.DeleteTagFunc == nil {
+		var errOut error
+		return errOut
+	}
+	return mock.DeleteTagFunc(ctx, id, organizationID)
+}
+
+// DeleteTagCalls gets all the calls that were made to DeleteTag.
+// Check the length with:
+//
+//	len(mockedDB.DeleteTagCalls())
+func (mock *DBMock) DeleteTagCalls() []struct {
+	Ctx            context.Context
+	ID             xid.ID
+	OrganizationID string
+} {
+	var calls []struct {
+		Ctx            context.Context
+		ID             xid.ID
+		OrganizationID string
+	}
+	mock.lockDeleteTag.RLock()
+	calls = mock.calls.DeleteTag
+	mock.lockDeleteTag.RUnlock()
+	return calls
+}
+
 // FetchBranchReviewer calls FetchBranchReviewerFunc.
 func (mock *DBMock) FetchBranchReviewer(ctx context.Context, branchID xid.ID, userID string, organizationID string) (*documentCore.BranchReviewer, error) {
 	callInfo := struct {
@@ -2220,6 +2532,54 @@ func (mock *DBMock) FetchBranchReviewersCalls() []struct {
 	mock.lockFetchBranchReviewers.RLock()
 	calls = mock.calls.FetchBranchReviewers
 	mock.lockFetchBranchReviewers.RUnlock()
+	return calls
+}
+
+// FetchBranchTagIDs calls FetchBranchTagIDsFunc.
+func (mock *DBMock) FetchBranchTagIDs(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID) ([]xid.ID, error) {
+	callInfo := struct {
+		Ctx            context.Context
+		OrganizationID string
+		DocumentID     xid.ID
+		BranchID       xid.ID
+	}{
+		Ctx:            ctx,
+		OrganizationID: organizationID,
+		DocumentID:     documentID,
+		BranchID:       branchID,
+	}
+	mock.lockFetchBranchTagIDs.Lock()
+	mock.calls.FetchBranchTagIDs = append(mock.calls.FetchBranchTagIDs, callInfo)
+	mock.lockFetchBranchTagIDs.Unlock()
+	if mock.FetchBranchTagIDsFunc == nil {
+		var (
+			idsOut []xid.ID
+			errOut error
+		)
+		return idsOut, errOut
+	}
+	return mock.FetchBranchTagIDsFunc(ctx, organizationID, documentID, branchID)
+}
+
+// FetchBranchTagIDsCalls gets all the calls that were made to FetchBranchTagIDs.
+// Check the length with:
+//
+//	len(mockedDB.FetchBranchTagIDsCalls())
+func (mock *DBMock) FetchBranchTagIDsCalls() []struct {
+	Ctx            context.Context
+	OrganizationID string
+	DocumentID     xid.ID
+	BranchID       xid.ID
+} {
+	var calls []struct {
+		Ctx            context.Context
+		OrganizationID string
+		DocumentID     xid.ID
+		BranchID       xid.ID
+	}
+	mock.lockFetchBranchTagIDs.RLock()
+	calls = mock.calls.FetchBranchTagIDs
+	mock.lockFetchBranchTagIDs.RUnlock()
 	return calls
 }
 
@@ -3432,6 +3792,50 @@ func (mock *DBMock) FetchSlackUserLinkByUserIDCalls() []struct {
 	return calls
 }
 
+// FetchTagTree calls FetchTagTreeFunc.
+func (mock *DBMock) FetchTagTree(ctx context.Context, organizationID string, userID string) (tagCore.Summaries, error) {
+	callInfo := struct {
+		Ctx            context.Context
+		OrganizationID string
+		UserID         string
+	}{
+		Ctx:            ctx,
+		OrganizationID: organizationID,
+		UserID:         userID,
+	}
+	mock.lockFetchTagTree.Lock()
+	mock.calls.FetchTagTree = append(mock.calls.FetchTagTree, callInfo)
+	mock.lockFetchTagTree.Unlock()
+	if mock.FetchTagTreeFunc == nil {
+		var (
+			summariesOut tagCore.Summaries
+			errOut       error
+		)
+		return summariesOut, errOut
+	}
+	return mock.FetchTagTreeFunc(ctx, organizationID, userID)
+}
+
+// FetchTagTreeCalls gets all the calls that were made to FetchTagTree.
+// Check the length with:
+//
+//	len(mockedDB.FetchTagTreeCalls())
+func (mock *DBMock) FetchTagTreeCalls() []struct {
+	Ctx            context.Context
+	OrganizationID string
+	UserID         string
+} {
+	var calls []struct {
+		Ctx            context.Context
+		OrganizationID string
+		UserID         string
+	}
+	mock.lockFetchTagTree.RLock()
+	calls = mock.calls.FetchTagTree
+	mock.lockFetchTagTree.RUnlock()
+	return calls
+}
+
 // ForkDocumentBranch calls ForkDocumentBranchFunc.
 func (mock *DBMock) ForkDocumentBranch(ctx context.Context, docID xid.ID, orgID string, sourceBranch string, targetBranch string, createdBy string) error {
 	callInfo := struct {
@@ -3955,6 +4359,43 @@ func (mock *DBMock) InsertSlackUserLinkCalls() []struct {
 	return calls
 }
 
+// InsertTag calls InsertTagFunc.
+func (mock *DBMock) InsertTag(ctx context.Context, t tagCore.Tag) error {
+	callInfo := struct {
+		Ctx context.Context
+		T   tagCore.Tag
+	}{
+		Ctx: ctx,
+		T:   t,
+	}
+	mock.lockInsertTag.Lock()
+	mock.calls.InsertTag = append(mock.calls.InsertTag, callInfo)
+	mock.lockInsertTag.Unlock()
+	if mock.InsertTagFunc == nil {
+		var errOut error
+		return errOut
+	}
+	return mock.InsertTagFunc(ctx, t)
+}
+
+// InsertTagCalls gets all the calls that were made to InsertTag.
+// Check the length with:
+//
+//	len(mockedDB.InsertTagCalls())
+func (mock *DBMock) InsertTagCalls() []struct {
+	Ctx context.Context
+	T   tagCore.Tag
+} {
+	var calls []struct {
+		Ctx context.Context
+		T   tagCore.Tag
+	}
+	mock.lockInsertTag.RLock()
+	calls = mock.calls.InsertTag
+	mock.lockInsertTag.RUnlock()
+	return calls
+}
+
 // MarkReadByNotificationsIDs calls MarkReadByNotificationsIDsFunc.
 func (mock *DBMock) MarkReadByNotificationsIDs(ctx context.Context, organizationID string, userID string, ids []xid.ID) error {
 	callInfo := struct {
@@ -4049,6 +4490,51 @@ func (mock *DBMock) PromoteBranchApprovalsCalls() []struct {
 	return calls
 }
 
+// ReplaceBranchTags calls ReplaceBranchTagsFunc.
+func (mock *DBMock) ReplaceBranchTags(ctx context.Context, organizationID string, fromBranchID xid.ID, toBranchID xid.ID) error {
+	callInfo := struct {
+		Ctx            context.Context
+		OrganizationID string
+		FromBranchID   xid.ID
+		ToBranchID     xid.ID
+	}{
+		Ctx:            ctx,
+		OrganizationID: organizationID,
+		FromBranchID:   fromBranchID,
+		ToBranchID:     toBranchID,
+	}
+	mock.lockReplaceBranchTags.Lock()
+	mock.calls.ReplaceBranchTags = append(mock.calls.ReplaceBranchTags, callInfo)
+	mock.lockReplaceBranchTags.Unlock()
+	if mock.ReplaceBranchTagsFunc == nil {
+		var errOut error
+		return errOut
+	}
+	return mock.ReplaceBranchTagsFunc(ctx, organizationID, fromBranchID, toBranchID)
+}
+
+// ReplaceBranchTagsCalls gets all the calls that were made to ReplaceBranchTags.
+// Check the length with:
+//
+//	len(mockedDB.ReplaceBranchTagsCalls())
+func (mock *DBMock) ReplaceBranchTagsCalls() []struct {
+	Ctx            context.Context
+	OrganizationID string
+	FromBranchID   xid.ID
+	ToBranchID     xid.ID
+} {
+	var calls []struct {
+		Ctx            context.Context
+		OrganizationID string
+		FromBranchID   xid.ID
+		ToBranchID     xid.ID
+	}
+	mock.lockReplaceBranchTags.RLock()
+	calls = mock.calls.ReplaceBranchTags
+	mock.lockReplaceBranchTags.RUnlock()
+	return calls
+}
+
 // ReplaceDocumentComment calls ReplaceDocumentCommentFunc.
 func (mock *DBMock) ReplaceDocumentComment(ctx context.Context, c comment.Comment) error {
 	callInfo := struct {
@@ -4085,6 +4571,55 @@ func (mock *DBMock) ReplaceDocumentCommentCalls() []struct {
 	mock.lockReplaceDocumentComment.RLock()
 	calls = mock.calls.ReplaceDocumentComment
 	mock.lockReplaceDocumentComment.RUnlock()
+	return calls
+}
+
+// SetTagVisibility calls SetTagVisibilityFunc.
+func (mock *DBMock) SetTagVisibility(ctx context.Context, organizationID string, userID string, id xid.ID, inp tagCore.VisibilityInput) error {
+	callInfo := struct {
+		Ctx            context.Context
+		OrganizationID string
+		UserID         string
+		ID             xid.ID
+		Inp            tagCore.VisibilityInput
+	}{
+		Ctx:            ctx,
+		OrganizationID: organizationID,
+		UserID:         userID,
+		ID:             id,
+		Inp:            inp,
+	}
+	mock.lockSetTagVisibility.Lock()
+	mock.calls.SetTagVisibility = append(mock.calls.SetTagVisibility, callInfo)
+	mock.lockSetTagVisibility.Unlock()
+	if mock.SetTagVisibilityFunc == nil {
+		var errOut error
+		return errOut
+	}
+	return mock.SetTagVisibilityFunc(ctx, organizationID, userID, id, inp)
+}
+
+// SetTagVisibilityCalls gets all the calls that were made to SetTagVisibility.
+// Check the length with:
+//
+//	len(mockedDB.SetTagVisibilityCalls())
+func (mock *DBMock) SetTagVisibilityCalls() []struct {
+	Ctx            context.Context
+	OrganizationID string
+	UserID         string
+	ID             xid.ID
+	Inp            tagCore.VisibilityInput
+} {
+	var calls []struct {
+		Ctx            context.Context
+		OrganizationID string
+		UserID         string
+		ID             xid.ID
+		Inp            tagCore.VisibilityInput
+	}
+	mock.lockSetTagVisibility.RLock()
+	calls = mock.calls.SetTagVisibility
+	mock.lockSetTagVisibility.RUnlock()
 	return calls
 }
 
@@ -4128,6 +4663,55 @@ func (mock *DBMock) SoftDeleteDocumentHooksByBranchIDCalls() []struct {
 	mock.lockSoftDeleteDocumentHooksByBranchID.RLock()
 	calls = mock.calls.SoftDeleteDocumentHooksByBranchID
 	mock.lockSoftDeleteDocumentHooksByBranchID.RUnlock()
+	return calls
+}
+
+// UnassignBranchTag calls UnassignBranchTagFunc.
+func (mock *DBMock) UnassignBranchTag(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error {
+	callInfo := struct {
+		Ctx            context.Context
+		OrganizationID string
+		DocumentID     xid.ID
+		BranchID       xid.ID
+		TagID          xid.ID
+	}{
+		Ctx:            ctx,
+		OrganizationID: organizationID,
+		DocumentID:     documentID,
+		BranchID:       branchID,
+		TagID:          tagID,
+	}
+	mock.lockUnassignBranchTag.Lock()
+	mock.calls.UnassignBranchTag = append(mock.calls.UnassignBranchTag, callInfo)
+	mock.lockUnassignBranchTag.Unlock()
+	if mock.UnassignBranchTagFunc == nil {
+		var errOut error
+		return errOut
+	}
+	return mock.UnassignBranchTagFunc(ctx, organizationID, documentID, branchID, tagID)
+}
+
+// UnassignBranchTagCalls gets all the calls that were made to UnassignBranchTag.
+// Check the length with:
+//
+//	len(mockedDB.UnassignBranchTagCalls())
+func (mock *DBMock) UnassignBranchTagCalls() []struct {
+	Ctx            context.Context
+	OrganizationID string
+	DocumentID     xid.ID
+	BranchID       xid.ID
+	TagID          xid.ID
+} {
+	var calls []struct {
+		Ctx            context.Context
+		OrganizationID string
+		DocumentID     xid.ID
+		BranchID       xid.ID
+		TagID          xid.ID
+	}
+	mock.lockUnassignBranchTag.RLock()
+	calls = mock.calls.UnassignBranchTag
+	mock.lockUnassignBranchTag.RUnlock()
 	return calls
 }
 
@@ -4737,6 +5321,47 @@ func (mock *DBMock) UpdateSlackUserLinkCalls() []struct {
 	mock.lockUpdateSlackUserLink.RLock()
 	calls = mock.calls.UpdateSlackUserLink
 	mock.lockUpdateSlackUserLink.RUnlock()
+	return calls
+}
+
+// UpdateTagTree calls UpdateTagTreeFunc.
+func (mock *DBMock) UpdateTagTree(ctx context.Context, tree tagCore.Summaries, organizationID string) error {
+	callInfo := struct {
+		Ctx            context.Context
+		Tree           tagCore.Summaries
+		OrganizationID string
+	}{
+		Ctx:            ctx,
+		Tree:           tree,
+		OrganizationID: organizationID,
+	}
+	mock.lockUpdateTagTree.Lock()
+	mock.calls.UpdateTagTree = append(mock.calls.UpdateTagTree, callInfo)
+	mock.lockUpdateTagTree.Unlock()
+	if mock.UpdateTagTreeFunc == nil {
+		var errOut error
+		return errOut
+	}
+	return mock.UpdateTagTreeFunc(ctx, tree, organizationID)
+}
+
+// UpdateTagTreeCalls gets all the calls that were made to UpdateTagTree.
+// Check the length with:
+//
+//	len(mockedDB.UpdateTagTreeCalls())
+func (mock *DBMock) UpdateTagTreeCalls() []struct {
+	Ctx            context.Context
+	Tree           tagCore.Summaries
+	OrganizationID string
+} {
+	var calls []struct {
+		Ctx            context.Context
+		Tree           tagCore.Summaries
+		OrganizationID string
+	}
+	mock.lockUpdateTagTree.RLock()
+	calls = mock.calls.UpdateTagTree
+	mock.lockUpdateTagTree.RUnlock()
 	return calls
 }
 

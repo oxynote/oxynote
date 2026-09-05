@@ -21,7 +21,11 @@ const TAG_B = makeXid("tagb")
 const TAG_C = makeXid("tagc")
 const DOC_A = makeXid("doca")
 const DOC_CHILD = makeXid("docc")
+const BRANCH_A = makeXid("bra")
+const BRANCH_DRAFT = makeXid("brd")
 const SHORT_ID = "local-1"
+const BRANCH_A_TAGS_KEY = ["tags", "branch", BRANCH_A] as const
+const BRANCH_A_TAGS_URL = `/api/documents/${DOC_A}/branches/${BRANCH_A}/tags`
 
 type TagAPI = ReturnType<typeof useTagAPI>
 
@@ -38,6 +42,7 @@ interface TestDocument {
 	documentName: string
 	icon: string
 	protected: boolean
+	defaultBranchId: string
 	children: TestDocument[] | null
 }
 
@@ -54,7 +59,18 @@ function makeDoc(
 	documentName: string,
 	children: TestDocument[] | null = null,
 ): TestDocument {
-	return { id, documentName, icon: "lucide:file", protected: false, children }
+	return {
+		id,
+		documentName,
+		icon: "lucide:file",
+		protected: false,
+		defaultBranchId: BRANCH_A,
+		children,
+	}
+}
+
+function branchTagIds() {
+	return readQueryData(BRANCH_A_TAGS_KEY) as string[] | undefined
 }
 
 function readTree() {
@@ -407,18 +423,39 @@ describe("useTagAPI", { concurrent: false }, () => {
 		})
 	})
 
-	describe("assignDocumentTag", () => {
+	describe("useFetchBranchTags", () => {
+		it("fetches the ids of the tags the branch carries", async ({ expect }) => {
+			const calls = mockEndpoint("GET", BRANCH_A_TAGS_URL, () => [TAG_A])
+			const api = makeTagAPI()
+
+			const query = runInApp(() => api.useFetchBranchTags(DOC_A, BRANCH_A))
+			await query.refresh()
+
+			expect(calls).toHaveLength(1)
+			expect(query.data.value).toEqual([TAG_A])
+		})
+
+		it("answers nothing without a branch to ask about", async ({ expect }) => {
+			const calls = mockEndpoint("GET", BRANCH_A_TAGS_URL, () => [TAG_A])
+			const api = makeTagAPI()
+
+			const query = runInApp(() => api.useFetchBranchTags(DOC_A, null))
+			await query.refresh()
+
+			expect(calls).toHaveLength(0)
+			expect(query.data.value).toEqual([])
+		})
+	})
+
+	describe("assignBranchTag", () => {
 		it("bails out for a non-xid id without a request", async ({ expect }) => {
-			const postCalls = mockEndpoint(
-				"POST",
-				`/api/documents/${DOC_A}/tags`,
-				() => ({}),
-			)
+			const postCalls = mockEndpoint("POST", BRANCH_A_TAGS_URL, () => ({}))
 			seedQueryData(TREE_KEY, [makeTag(TAG_A, "Production")])
 			const api = makeTagAPI()
 
-			await api.assignDocumentTag.mutateAsync({
+			await api.assignBranchTag.mutateAsync({
 				documentId: DOC_A,
+				branchId: BRANCH_A,
 				tagId: SHORT_ID,
 			})
 
@@ -426,18 +463,15 @@ describe("useTagAPI", { concurrent: false }, () => {
 		})
 
 		it("rejects when the tag is not in the tree", async ({ expect }) => {
-			const postCalls = mockEndpoint(
-				"POST",
-				`/api/documents/${DOC_A}/tags`,
-				() => ({}),
-			)
+			const postCalls = mockEndpoint("POST", BRANCH_A_TAGS_URL, () => ({}))
 			seedQueryData(TREE_KEY, [makeTag(TAG_A, "Production")])
 			seedQueryData(DOCUMENT_TREE_KEY, [makeDoc(DOC_A, "Runbook")])
 			const api = makeTagAPI()
 
 			await expect(
-				api.assignDocumentTag.mutateAsync({
+				api.assignBranchTag.mutateAsync({
 					documentId: DOC_A,
+					branchId: BRANCH_A,
 					tagId: TAG_B,
 				}),
 			).rejects.toThrow("invalid document tag data")
@@ -451,17 +485,14 @@ describe("useTagAPI", { concurrent: false }, () => {
 			mockEndpoint("GET", TREE_URL, () => [
 				makeTag(TAG_A, "Production", [makeDoc(DOC_A, "Runbook")]),
 			])
-			const postCalls = mockEndpoint(
-				"POST",
-				`/api/documents/${DOC_A}/tags`,
-				() => ({}),
-			)
+			const postCalls = mockEndpoint("POST", BRANCH_A_TAGS_URL, () => ({}))
 			seedQueryData(TREE_KEY, [makeTag(TAG_A, "Production")])
 			seedQueryData(DOCUMENT_TREE_KEY, [])
 			const api = makeTagAPI()
 
-			await api.assignDocumentTag.mutateAsync({
+			await api.assignBranchTag.mutateAsync({
 				documentId: DOC_A,
+				branchId: BRANCH_A,
 				tagId: TAG_A,
 			})
 			await flushPromises()
@@ -477,36 +508,96 @@ describe("useTagAPI", { concurrent: false }, () => {
 			const treeCalls = mockEndpoint("GET", TREE_URL, () => [
 				makeTag(TAG_A, "Production", [makeDoc(DOC_A, "Runbook")]),
 			])
-			const post = mockDeferredEndpoint("POST", `/api/documents/${DOC_A}/tags`)
+			// the branch list core answers with once the tag is assigned
+			const carried: string[] = []
+			const branchCalls = mockEndpoint("GET", BRANCH_A_TAGS_URL, () => carried)
+			const post = mockDeferredEndpoint("POST", BRANCH_A_TAGS_URL)
 			seedQueryData(TREE_KEY, [makeTag(TAG_A, "Production")])
 			seedQueryData(DOCUMENT_TREE_KEY, [
 				makeDoc(DOC_A, "Runbook", [makeDoc(DOC_CHILD, "Rollback")]),
 			])
 			const api = makeTagAPI()
+			const branchTags = runInApp(() => api.useFetchBranchTags(DOC_A, BRANCH_A))
+			await branchTags.refresh()
 
-			const pending = api.assignDocumentTag.mutateAsync({
+			const pending = api.assignBranchTag.mutateAsync({
 				documentId: DOC_A,
+				branchId: BRANCH_A,
 				tagId: TAG_A,
 			})
 			await post.reached
 
 			expect(documentIds()).toEqual([DOC_A])
 			expect(readTree()?.[0]?.documents[0]?.children).toHaveLength(1)
+			expect(branchTagIds()).toEqual([TAG_A])
 			expect(post.calls[0]?.body).toEqual({ tagId: TAG_A })
 
+			carried.push(TAG_A)
 			post.resolve({})
 			await pending
 			await flushPromises()
 
 			expect(treeCalls).toHaveLength(1)
+			expect(branchCalls).toHaveLength(2)
 			expect(documentIds()).toEqual([DOC_A])
+			expect(branchTags.data.value).toEqual([TAG_A])
+		})
+
+		it("draws no row for a branch that is not the document's default", async ({
+			expect,
+		}) => {
+			mockEndpoint("GET", TREE_URL, () => [makeTag(TAG_A, "Production")])
+			const postCalls = mockEndpoint(
+				"POST",
+				`/api/documents/${DOC_A}/branches/${BRANCH_DRAFT}/tags`,
+				() => ({}),
+			)
+			seedQueryData(TREE_KEY, [makeTag(TAG_A, "Production")])
+			seedQueryData(DOCUMENT_TREE_KEY, [makeDoc(DOC_A, "Runbook")])
+			const api = makeTagAPI()
+
+			await api.assignBranchTag.mutateAsync({
+				documentId: DOC_A,
+				branchId: BRANCH_DRAFT,
+				tagId: TAG_A,
+			})
+
+			// the tree lists a document under a tag by its default branch,
+			// so the draft's tag changes nothing in it
+			expect(postCalls).toHaveLength(1)
+			expect(documentIds()).toEqual([])
+		})
+
+		it("leaves an unread branch list for the refetch to fill", async ({
+			expect,
+		}) => {
+			mockEndpoint("GET", TREE_URL, () => [])
+			const post = mockDeferredEndpoint("POST", BRANCH_A_TAGS_URL)
+			seedQueryData(TREE_KEY, [makeTag(TAG_A, "Production")])
+			seedQueryData(DOCUMENT_TREE_KEY, [])
+			const api = makeTagAPI()
+
+			const pending = api.assignBranchTag.mutateAsync({
+				documentId: DOC_A,
+				branchId: BRANCH_A,
+				tagId: TAG_A,
+			})
+			await post.reached
+
+			// a list seeded here would hand a later mount this tag alone
+			expect(branchTagIds()).toBeUndefined()
+
+			post.resolve({})
+			await pending
 		})
 
 		it("finds a document nested deep in the tree", async ({ expect }) => {
-			mockEndpoint("GET", TREE_URL, () => [])
+			mockEndpoint("GET", TREE_URL, () => [
+				makeTag(TAG_A, "Production", [makeDoc(DOC_CHILD, "Rollback")]),
+			])
 			const postCalls = mockEndpoint(
 				"POST",
-				`/api/documents/${DOC_CHILD}/tags`,
+				`/api/documents/${DOC_CHILD}/branches/${BRANCH_A}/tags`,
 				() => ({}),
 			)
 			seedQueryData(TREE_KEY, [makeTag(TAG_A, "Production")])
@@ -515,41 +606,46 @@ describe("useTagAPI", { concurrent: false }, () => {
 			])
 			const api = makeTagAPI()
 
-			await api.assignDocumentTag.mutateAsync({
+			await api.assignBranchTag.mutateAsync({
 				documentId: DOC_CHILD,
+				branchId: BRANCH_A,
 				tagId: TAG_A,
 			})
 
 			expect(postCalls).toHaveLength(1)
+			expect(documentIds()).toEqual([DOC_CHILD])
 		})
 
-		it("takes the document away again when the request fails", async ({
+		it("takes the document and the tag away again when the request fails", async ({
 			expect,
 		}) => {
-			mockEndpoint("POST", `/api/documents/${DOC_A}/tags`, () => {
+			mockEndpoint("POST", BRANCH_A_TAGS_URL, () => {
 				throw createError({ statusCode: 500 })
 			})
 			seedQueryData(TREE_KEY, [makeTag(TAG_A, "Production")])
 			seedQueryData(DOCUMENT_TREE_KEY, [makeDoc(DOC_A, "Runbook")])
+			seedQueryData(BRANCH_A_TAGS_KEY, [])
 			const api = makeTagAPI()
 
 			await expect(
-				api.assignDocumentTag.mutateAsync({
+				api.assignBranchTag.mutateAsync({
 					documentId: DOC_A,
+					branchId: BRANCH_A,
 					tagId: TAG_A,
 				}),
 			).rejects.toThrow()
 			await flushPromises()
 
 			expect(documentIds()).toEqual([])
+			expect(branchTagIds()).toEqual([])
 		})
 	})
 
-	describe("unassignDocumentTag", () => {
+	describe("unassignBranchTag", () => {
 		it("bails out for a non-xid id without a request", async ({ expect }) => {
 			const delCalls = mockEndpoint(
 				"DELETE",
-				`/api/documents/${DOC_A}/tags/${SHORT_ID}`,
+				`${BRANCH_A_TAGS_URL}/${SHORT_ID}`,
 				() => ({}),
 			)
 			seedQueryData(TREE_KEY, [
@@ -557,8 +653,9 @@ describe("useTagAPI", { concurrent: false }, () => {
 			])
 			const api = makeTagAPI()
 
-			await api.unassignDocumentTag.mutateAsync({
+			await api.unassignBranchTag.mutateAsync({
 				documentId: DOC_A,
+				branchId: BRANCH_A,
 				tagId: SHORT_ID,
 			})
 
@@ -572,28 +669,64 @@ describe("useTagAPI", { concurrent: false }, () => {
 			const treeCalls = mockEndpoint("GET", TREE_URL, () => [
 				makeTag(TAG_A, "Production"),
 			])
+			// the branch list core answers with once the tag is removed
+			const carried = [TAG_A, TAG_B]
+			const branchCalls = mockEndpoint("GET", BRANCH_A_TAGS_URL, () => carried)
 			const del = mockDeferredEndpoint(
 				"DELETE",
-				`/api/documents/${DOC_A}/tags/${TAG_A}`,
+				`${BRANCH_A_TAGS_URL}/${TAG_A}`,
+			)
+			seedQueryData(TREE_KEY, [
+				makeTag(TAG_A, "Production", [makeDoc(DOC_A, "Runbook")]),
+			])
+			const api = makeTagAPI()
+			const branchTags = runInApp(() => api.useFetchBranchTags(DOC_A, BRANCH_A))
+			await branchTags.refresh()
+
+			const pending = api.unassignBranchTag.mutateAsync({
+				documentId: DOC_A,
+				branchId: BRANCH_A,
+				tagId: TAG_A,
+			})
+			await del.reached
+
+			expect(documentIds()).toEqual([])
+			expect(branchTagIds()).toEqual([TAG_B])
+
+			carried.shift()
+			del.resolve({})
+			await pending
+			await flushPromises()
+
+			expect(treeCalls).toHaveLength(1)
+			expect(branchCalls).toHaveLength(2)
+			expect(branchTags.data.value).toEqual([TAG_B])
+		})
+
+		it("keeps the row when a branch other than the default loses the tag", async ({
+			expect,
+		}) => {
+			mockEndpoint("GET", TREE_URL, () => [
+				makeTag(TAG_A, "Production", [makeDoc(DOC_A, "Runbook")]),
+			])
+			const delCalls = mockEndpoint(
+				"DELETE",
+				`/api/documents/${DOC_A}/branches/${BRANCH_DRAFT}/tags/${TAG_A}`,
+				() => ({}),
 			)
 			seedQueryData(TREE_KEY, [
 				makeTag(TAG_A, "Production", [makeDoc(DOC_A, "Runbook")]),
 			])
 			const api = makeTagAPI()
 
-			const pending = api.unassignDocumentTag.mutateAsync({
+			await api.unassignBranchTag.mutateAsync({
 				documentId: DOC_A,
+				branchId: BRANCH_DRAFT,
 				tagId: TAG_A,
 			})
-			await del.reached
 
-			expect(documentIds()).toEqual([])
-
-			del.resolve({})
-			await pending
-			await flushPromises()
-
-			expect(treeCalls).toHaveLength(1)
+			expect(delCalls).toHaveLength(1)
+			expect(documentIds()).toEqual([DOC_A])
 		})
 
 		it("still asks core to detach a tag the cached tree does not carry", async ({
@@ -602,7 +735,7 @@ describe("useTagAPI", { concurrent: false }, () => {
 			mockEndpoint("GET", TREE_URL, () => [])
 			const delCalls = mockEndpoint(
 				"DELETE",
-				`/api/documents/${DOC_A}/tags/${TAG_B}`,
+				`${BRANCH_A_TAGS_URL}/${TAG_B}`,
 				() => ({}),
 			)
 			seedQueryData(TREE_KEY, [
@@ -610,32 +743,38 @@ describe("useTagAPI", { concurrent: false }, () => {
 			])
 			const api = makeTagAPI()
 
-			await api.unassignDocumentTag.mutateAsync({
+			await api.unassignBranchTag.mutateAsync({
 				documentId: DOC_A,
+				branchId: BRANCH_A,
 				tagId: TAG_B,
 			})
 
 			expect(delCalls).toHaveLength(1)
 		})
 
-		it("puts the document back when the request fails", async ({ expect }) => {
-			mockEndpoint("DELETE", `/api/documents/${DOC_A}/tags/${TAG_A}`, () => {
+		it("puts the document and the tag back when the request fails", async ({
+			expect,
+		}) => {
+			mockEndpoint("DELETE", `${BRANCH_A_TAGS_URL}/${TAG_A}`, () => {
 				throw createError({ statusCode: 500 })
 			})
 			seedQueryData(TREE_KEY, [
 				makeTag(TAG_A, "Production", [makeDoc(DOC_A, "Runbook")]),
 			])
+			seedQueryData(BRANCH_A_TAGS_KEY, [TAG_A])
 			const api = makeTagAPI()
 
 			await expect(
-				api.unassignDocumentTag.mutateAsync({
+				api.unassignBranchTag.mutateAsync({
 					documentId: DOC_A,
+					branchId: BRANCH_A,
 					tagId: TAG_A,
 				}),
 			).rejects.toThrow()
 			await flushPromises()
 
 			expect(documentIds()).toEqual([DOC_A])
+			expect(branchTagIds()).toEqual([TAG_A])
 		})
 	})
 })

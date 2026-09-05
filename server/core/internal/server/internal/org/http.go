@@ -19,6 +19,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/internal/storage"
+	"github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
@@ -31,6 +32,14 @@ const _organizationsLogoFolderFormat = "organizations/%s/logo"
 
 // ErrNoOrganizationMembers is returned when an organization has no members.
 var ErrNoOrganizationMembers = errutil.New(http.StatusBadRequest, "organization.no_members", "organization has no members")
+
+// _seedTags are the tags a fresh organization starts with, in display
+// order. The welcome document goes under the first of them.
+var _seedTags = []tag.CreateInput{
+	{TagName: "Production", Color: "#22c55e"},
+	{TagName: "Staging", Color: "#f97316"},
+	{TagName: "Incidents", Color: "#3b82f6"},
+}
 
 // Handler holds dependencies required for organization-related operations.
 type Handler struct {
@@ -119,6 +128,26 @@ func (h *Handler) InitializeOrganization(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err = tx.UpsertDocumentMaintainers(r.Context(), doc.ID, id, []string{members[0]}); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	var productionID xid.ID
+
+	for i, inp := range _seedTags {
+		t := tag.NewTag(inp, id, members[0])
+
+		if i == 0 {
+			productionID = t.ID
+		}
+
+		if err = tx.InsertTag(r.Context(), t); err != nil {
+			httpserver.RespondError(h.log, w, err)
+			return
+		}
+	}
+
+	if err = tx.AssignBranchTag(r.Context(), id, doc.ID, doc.BranchID, productionID); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -340,6 +369,8 @@ type Tx interface {
 
 // DBAgent is an interface that handles communication with the document database.
 type DBAgent interface {
+	TagsDBAgent
+
 	// InsertDataSource inserts a data source into the database.
 	InsertDataSource(ctx context.Context, ds *datasource.DataSource) error
 
@@ -369,6 +400,16 @@ type DBAgent interface {
 
 	// UpsertDocumentMaintainers should insert or update maintainers for a document.
 	UpsertDocumentMaintainers(ctx context.Context, documentID xid.ID, organizationID string, maintainerIDs []string) error
+}
+
+// TagsDBAgent is an interface that handles communication with the tag
+// database, covering what seeding an organization needs.
+type TagsDBAgent interface {
+	// InsertTag should store a new tag at the end of its organization's tags.
+	InsertTag(ctx context.Context, t tag.Tag) error
+
+	// AssignBranchTag should make a document's branch carry a tag.
+	AssignBranchTag(ctx context.Context, organizationID string, documentID, branchID, tagID xid.ID) error
 }
 
 // Storer is an interface that defines methods for uploading and retrieving objects.

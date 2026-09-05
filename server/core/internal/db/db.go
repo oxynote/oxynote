@@ -21,6 +21,7 @@ import (
 	pgx "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
 	"github.com/lann/builder"
+	"github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/ioutil"
 	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
@@ -230,6 +231,8 @@ func DetectError(err error) error {
 				"document_branch.duplicate_name",
 				"branch name is already in use",
 			)
+		case "tags_fk_organization_id_tag_name_key":
+			return tag.ErrDuplicateTagName
 		}
 	}
 

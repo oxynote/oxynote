@@ -37,6 +37,9 @@ var _ Tx = &TxMock{}
 //			CommitFunc: func() error {
 //				panic("mock out the Commit method")
 //			},
+//			CopyBranchTagsFunc: func(ctx context.Context, organizationID string, fromBranchID xid.ID, toBranchID xid.ID) error {
+//				panic("mock out the CopyBranchTags method")
+//			},
 //			CountDocumentBranchesFunc: func(ctx context.Context, docID xid.ID, organizationID string) (int, error) {
 //				panic("mock out the CountDocumentBranches method")
 //			},
@@ -112,6 +115,9 @@ var _ Tx = &TxMock{}
 //			PromoteBranchApprovalsFunc: func(ctx context.Context, fromBranchID xid.ID, toBranchID xid.ID, organizationID string) error {
 //				panic("mock out the PromoteBranchApprovals method")
 //			},
+//			ReplaceBranchTagsFunc: func(ctx context.Context, organizationID string, fromBranchID xid.ID, toBranchID xid.ID) error {
+//				panic("mock out the ReplaceBranchTags method")
+//			},
 //			RollbackFunc: func() error {
 //				panic("mock out the Rollback method")
 //			},
@@ -154,6 +160,9 @@ type TxMock struct {
 
 	// CommitFunc mocks the Commit method.
 	CommitFunc func() error
+
+	// CopyBranchTagsFunc mocks the CopyBranchTags method.
+	CopyBranchTagsFunc func(ctx context.Context, organizationID string, fromBranchID xid.ID, toBranchID xid.ID) error
 
 	// CountDocumentBranchesFunc mocks the CountDocumentBranches method.
 	CountDocumentBranchesFunc func(ctx context.Context, docID xid.ID, organizationID string) (int, error)
@@ -230,6 +239,9 @@ type TxMock struct {
 	// PromoteBranchApprovalsFunc mocks the PromoteBranchApprovals method.
 	PromoteBranchApprovalsFunc func(ctx context.Context, fromBranchID xid.ID, toBranchID xid.ID, organizationID string) error
 
+	// ReplaceBranchTagsFunc mocks the ReplaceBranchTags method.
+	ReplaceBranchTagsFunc func(ctx context.Context, organizationID string, fromBranchID xid.ID, toBranchID xid.ID) error
+
 	// RollbackFunc mocks the Rollback method.
 	RollbackFunc func() error
 
@@ -287,6 +299,17 @@ type TxMock struct {
 		}
 		// Commit holds details about calls to the Commit method.
 		Commit []struct {
+		}
+		// CopyBranchTags holds details about calls to the CopyBranchTags method.
+		CopyBranchTags []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+			// FromBranchID is the fromBranchID argument value.
+			FromBranchID xid.ID
+			// ToBranchID is the toBranchID argument value.
+			ToBranchID xid.ID
 		}
 		// CountDocumentBranches holds details about calls to the CountDocumentBranches method.
 		CountDocumentBranches []struct {
@@ -511,6 +534,17 @@ type TxMock struct {
 			// OrganizationID is the organizationID argument value.
 			OrganizationID string
 		}
+		// ReplaceBranchTags holds details about calls to the ReplaceBranchTags method.
+		ReplaceBranchTags []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+			// FromBranchID is the fromBranchID argument value.
+			FromBranchID xid.ID
+			// ToBranchID is the toBranchID argument value.
+			ToBranchID xid.ID
+		}
 		// Rollback holds details about calls to the Rollback method.
 		Rollback []struct {
 		}
@@ -580,6 +614,7 @@ type TxMock struct {
 	lockCheckDocumentExists                 sync.RWMutex
 	lockCheckOrganizationMember             sync.RWMutex
 	lockCommit                              sync.RWMutex
+	lockCopyBranchTags                      sync.RWMutex
 	lockCountDocumentBranches               sync.RWMutex
 	lockDeleteBranchReviewer                sync.RWMutex
 	lockDeleteDocument                      sync.RWMutex
@@ -605,6 +640,7 @@ type TxMock struct {
 	lockInsertDocumentHook                  sync.RWMutex
 	lockInsertDocumentSearchJob             sync.RWMutex
 	lockPromoteBranchApprovals              sync.RWMutex
+	lockReplaceBranchTags                   sync.RWMutex
 	lockRollback                            sync.RWMutex
 	lockSoftDeleteDocumentHooksByBranchID   sync.RWMutex
 	lockUpdateBranchReviewer                sync.RWMutex
@@ -777,6 +813,51 @@ func (mock *TxMock) CommitCalls() []struct {
 	mock.lockCommit.RLock()
 	calls = mock.calls.Commit
 	mock.lockCommit.RUnlock()
+	return calls
+}
+
+// CopyBranchTags calls CopyBranchTagsFunc.
+func (mock *TxMock) CopyBranchTags(ctx context.Context, organizationID string, fromBranchID xid.ID, toBranchID xid.ID) error {
+	callInfo := struct {
+		Ctx            context.Context
+		OrganizationID string
+		FromBranchID   xid.ID
+		ToBranchID     xid.ID
+	}{
+		Ctx:            ctx,
+		OrganizationID: organizationID,
+		FromBranchID:   fromBranchID,
+		ToBranchID:     toBranchID,
+	}
+	mock.lockCopyBranchTags.Lock()
+	mock.calls.CopyBranchTags = append(mock.calls.CopyBranchTags, callInfo)
+	mock.lockCopyBranchTags.Unlock()
+	if mock.CopyBranchTagsFunc == nil {
+		var errOut error
+		return errOut
+	}
+	return mock.CopyBranchTagsFunc(ctx, organizationID, fromBranchID, toBranchID)
+}
+
+// CopyBranchTagsCalls gets all the calls that were made to CopyBranchTags.
+// Check the length with:
+//
+//	len(mockedTx.CopyBranchTagsCalls())
+func (mock *TxMock) CopyBranchTagsCalls() []struct {
+	Ctx            context.Context
+	OrganizationID string
+	FromBranchID   xid.ID
+	ToBranchID     xid.ID
+} {
+	var calls []struct {
+		Ctx            context.Context
+		OrganizationID string
+		FromBranchID   xid.ID
+		ToBranchID     xid.ID
+	}
+	mock.lockCopyBranchTags.RLock()
+	calls = mock.calls.CopyBranchTags
+	mock.lockCopyBranchTags.RUnlock()
 	return calls
 }
 
@@ -1863,6 +1944,51 @@ func (mock *TxMock) PromoteBranchApprovalsCalls() []struct {
 	mock.lockPromoteBranchApprovals.RLock()
 	calls = mock.calls.PromoteBranchApprovals
 	mock.lockPromoteBranchApprovals.RUnlock()
+	return calls
+}
+
+// ReplaceBranchTags calls ReplaceBranchTagsFunc.
+func (mock *TxMock) ReplaceBranchTags(ctx context.Context, organizationID string, fromBranchID xid.ID, toBranchID xid.ID) error {
+	callInfo := struct {
+		Ctx            context.Context
+		OrganizationID string
+		FromBranchID   xid.ID
+		ToBranchID     xid.ID
+	}{
+		Ctx:            ctx,
+		OrganizationID: organizationID,
+		FromBranchID:   fromBranchID,
+		ToBranchID:     toBranchID,
+	}
+	mock.lockReplaceBranchTags.Lock()
+	mock.calls.ReplaceBranchTags = append(mock.calls.ReplaceBranchTags, callInfo)
+	mock.lockReplaceBranchTags.Unlock()
+	if mock.ReplaceBranchTagsFunc == nil {
+		var errOut error
+		return errOut
+	}
+	return mock.ReplaceBranchTagsFunc(ctx, organizationID, fromBranchID, toBranchID)
+}
+
+// ReplaceBranchTagsCalls gets all the calls that were made to ReplaceBranchTags.
+// Check the length with:
+//
+//	len(mockedTx.ReplaceBranchTagsCalls())
+func (mock *TxMock) ReplaceBranchTagsCalls() []struct {
+	Ctx            context.Context
+	OrganizationID string
+	FromBranchID   xid.ID
+	ToBranchID     xid.ID
+} {
+	var calls []struct {
+		Ctx            context.Context
+		OrganizationID string
+		FromBranchID   xid.ID
+		ToBranchID     xid.ID
+	}
+	mock.lockReplaceBranchTags.RLock()
+	calls = mock.calls.ReplaceBranchTags
+	mock.lockReplaceBranchTags.RUnlock()
 	return calls
 }
 

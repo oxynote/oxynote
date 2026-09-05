@@ -9,10 +9,19 @@ import { showToastMessage } from "../toast"
 const MAX_VISIBLE_TAGS = 4
 
 const { t } = useI18n({ useScope: "global" })
-const { fetchTagTree, createTag, assignDocumentTag, unassignDocumentTag } =
-	useTagAPI()
+const {
+	fetchTagTree,
+	useFetchBranchTags,
+	createTag,
+	assignBranchTag,
+	unassignBranchTag,
+} = useTagAPI()
 const editorStore = useEditorStore()
 const { isEditable } = useEditorMeta()
+const fetchBranchTags = useFetchBranchTags(
+	() => editorStore.activeDocumentId,
+	() => editorStore.activeBranchId,
+)
 
 const open = ref(false)
 // a read only document still shows its pills, but the picker behind them
@@ -25,13 +34,13 @@ const newColor = ref<string | undefined>(undefined)
 
 const allTags = computed(() => fetchTagTree.data.value ?? [])
 
-// a document carries a tag when it sits at the top of that tag's list; the
-// documents nested below are its own subtree and carry nothing themselves
-const documentTags = computed(() =>
-	allTags.value.filter((tag) =>
-		tag.documents?.some((doc) => doc.id === editorStore.activeDocumentId),
-	),
-)
+// the pills are the open branch's own tags, which the tree cannot answer:
+// it lists a document under a tag by its default branch alone
+const documentTags = computed(() => {
+	const ids = fetchBranchTags.data.value ?? []
+
+	return allTags.value.filter((tag) => ids.includes(tag.id))
+})
 
 const visibleTags = computed(() =>
 	documentTags.value.slice(0, MAX_VISIBLE_TAGS),
@@ -92,22 +101,25 @@ function carriesTag(tagId: string): boolean {
 
 async function toggleTag(tag: TagTreeElement) {
 	const documentId = editorStore.activeDocumentId
-	if (!documentId) {
+	const branchId = editorStore.activeBranchId
+	if (!documentId || !branchId) {
 		return
 	}
 
 	try {
 		if (carriesTag(tag.id)) {
-			await unassignDocumentTag.mutateAsync({
+			await unassignBranchTag.mutateAsync({
 				documentId: documentId,
+				branchId: branchId,
 				tagId: tag.id,
 			})
 
 			return
 		}
 
-		await assignDocumentTag.mutateAsync({
+		await assignBranchTag.mutateAsync({
 			documentId: documentId,
+			branchId: branchId,
 			tagId: tag.id,
 		})
 	} catch {
@@ -117,7 +129,8 @@ async function toggleTag(tag: TagTreeElement) {
 
 async function createAndAssign() {
 	const documentId = editorStore.activeDocumentId
-	if (!documentId || !trimmedQuery.value) {
+	const branchId = editorStore.activeBranchId
+	if (!documentId || !branchId || !trimmedQuery.value) {
 		return
 	}
 
@@ -136,8 +149,9 @@ async function createAndAssign() {
 		// to weigh it in — the menu stays open across several creations
 		newColor.value = suggestedColor()
 
-		await assignDocumentTag.mutateAsync({
+		await assignBranchTag.mutateAsync({
 			documentId: documentId,
+			branchId: branchId,
 			tagId: created.id,
 		})
 	} catch {

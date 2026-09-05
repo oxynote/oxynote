@@ -5,7 +5,9 @@ import {
 	disposeMockEndpoints,
 	makeXid,
 	mockEndpoint,
+	runInApp,
 } from "~/composables/api/test-helpers"
+import useDocumentAPI from "~/composables/api/useDocumentAPI"
 import DocumentTagList from "./DocumentTagList.vue"
 import TagPill from "./TagPill.vue"
 import ColorSelect from "./ColorSelect.vue"
@@ -24,9 +26,10 @@ import {
 let palette: string[] = []
 
 const DOC_ID = makeXid("doc")
-const OTHER_DOC_ID = makeXid("odc")
+const BRANCH_ID = makeXid("br")
 const TAG_A = makeXid("taga")
 const TAG_B = makeXid("tagb")
+const BRANCH_TAGS_URL = `/api/documents/${DOC_ID}/branches/${BRANCH_ID}/tags`
 
 type TestDocument = ReturnType<typeof makeDoc>
 
@@ -55,10 +58,11 @@ function makeTag(
 	}
 }
 
-// the tags a document carries and the ones it does not both come from one
-// tree, so each test states the whole thing
-function stubTags(tags: unknown[]) {
-	return mockEndpoint("GET", "/api/tags/tree", () => tags)
+// the tree says which tags exist and the branch endpoint which of them the
+// open branch carries, so each test states both
+function stubTags(tags: unknown[], carried: string[] = []) {
+	mockEndpoint("GET", "/api/tags/tree", () => tags)
+	mockEndpoint("GET", BRANCH_TAGS_URL, () => carried)
 }
 
 async function mountTags() {
@@ -138,6 +142,7 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 		stubThemeColorContext()
 		palette = stubSelectableColors()
 		useEditorStore().activeDocumentId = DOC_ID
+		useEditorStore().activeBranchId = BRANCH_ID
 	})
 
 	afterEach(disposeMockEndpoints)
@@ -150,16 +155,97 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 		expect(wrapper.text()).toContain(t("editor.tags.label"))
 	})
 
-	it("shows a pill for every tag the document carries", async ({ expect }) => {
-		stubTags([
-			makeTag(TAG_A, "Production", "#1a9e4a", [makeDoc(DOC_ID)]),
-			makeTag(TAG_B, "Staging", "#e8760c", [makeDoc(OTHER_DOC_ID)]),
-		])
+	it("shows a pill for every tag the branch carries", async ({ expect }) => {
+		stubTags(
+			[
+				makeTag(TAG_A, "Production", "#1a9e4a"),
+				makeTag(TAG_B, "Staging", "#e8760c"),
+			],
+			[TAG_A],
+		)
 
 		const wrapper = await mountTags()
 
 		expect(wrapper.findAllComponents(TagPill).map((p) => p.text())).toEqual([
 			"Production",
+		])
+	})
+
+	it("shows the tags main took from a merged draft after switching back", async ({
+		expect,
+	}) => {
+		// main carries Production; the draft carries Staging too. Merging
+		// the draft hands Staging to main, and the header has to show it
+		// once main is open again rather than the list it had before
+		const DRAFT_ID = makeXid("draft")
+		const mainTags = [TAG_A]
+		mockEndpoint("GET", "/api/tags/tree", () => [
+			makeTag(TAG_A, "Production", "#1a9e4a"),
+			makeTag(TAG_B, "Staging", "#e8760c"),
+		])
+		mockEndpoint("GET", BRANCH_TAGS_URL, () => mainTags)
+		mockEndpoint(
+			"GET",
+			`/api/documents/${DOC_ID}/branches/${DRAFT_ID}/tags`,
+			() => [TAG_A, TAG_B],
+		)
+		mockEndpoint(
+			"PUT",
+			`http://test.local/auth-realtime/api/documents/${DOC_ID}/merge`,
+			() => {
+				mainTags.push(TAG_B)
+
+				return null
+			},
+		)
+		// the page remounts the header on every branch switch
+		const onMain = await mountTags()
+		expect(onMain.findAllComponents(TagPill).map((p) => p.text())).toEqual([
+			"Production",
+		])
+		onMain.unmount()
+
+		useEditorStore().activeBranchId = DRAFT_ID
+		const onDraft = await mountTags()
+		expect(onDraft.findAllComponents(TagPill).map((p) => p.text())).toEqual([
+			"Production",
+			"Staging",
+		])
+
+		const documentAPI = runInApp(() => useDocumentAPI())
+		await documentAPI.mergeDocumentBranches.mutateAsync({
+			docId: DOC_ID,
+			fromBranchId: DRAFT_ID,
+			toBranchId: BRANCH_ID,
+		})
+		onDraft.unmount()
+
+		useEditorStore().activeBranchId = BRANCH_ID
+		const backOnMain = await mountTags()
+
+		expect(backOnMain.findAllComponents(TagPill).map((p) => p.text())).toEqual([
+			"Production",
+			"Staging",
+		])
+	})
+
+	it("draws the open branch's tags rather than the default branch's", async ({
+		expect,
+	}) => {
+		// the tree lists the document under Production through its default
+		// branch; the open branch carries Staging alone
+		stubTags(
+			[
+				makeTag(TAG_A, "Production", "#1a9e4a", [makeDoc(DOC_ID)]),
+				makeTag(TAG_B, "Staging", "#e8760c"),
+			],
+			[TAG_B],
+		)
+
+		const wrapper = await mountTags()
+
+		expect(wrapper.findAllComponents(TagPill).map((p) => p.text())).toEqual([
+			"Staging",
 		])
 	})
 
@@ -175,10 +261,12 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 	})
 
 	it("collapses past the fourth tag into a counter", async ({ expect }) => {
+		const tags = ["a", "b", "c", "d", "e"].map((n) =>
+			makeTag(makeXid(`t${n}`), `Tag ${n}`, "#1a9e4a"),
+		)
 		stubTags(
-			["a", "b", "c", "d", "e"].map((n) =>
-				makeTag(makeXid(`t${n}`), `Tag ${n}`, "#1a9e4a", [makeDoc(DOC_ID)]),
-			),
+			tags,
+			tags.map((tag) => tag.id),
 		)
 
 		const wrapper = await mountTags()
@@ -192,11 +280,14 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 		])
 	})
 
-	it("ticks the tags the document already carries", async ({ expect }) => {
-		stubTags([
-			makeTag(TAG_A, "Production", "#1a9e4a", [makeDoc(DOC_ID)]),
-			makeTag(TAG_B, "Staging", "#e8760c"),
-		])
+	it("ticks the tags the branch already carries", async ({ expect }) => {
+		stubTags(
+			[
+				makeTag(TAG_A, "Production", "#1a9e4a"),
+				makeTag(TAG_B, "Staging", "#e8760c"),
+			],
+			[TAG_A],
+		)
 		const wrapper = await mountTags()
 
 		await openPicker(wrapper)
@@ -208,13 +299,9 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 		expect(ticks).toEqual([true, false])
 	})
 
-	it("attaches a tag the document does not carry", async ({ expect }) => {
+	it("attaches a tag the branch does not carry", async ({ expect }) => {
 		stubTags([makeTag(TAG_A, "Production", "#1a9e4a")])
-		const calls = mockEndpoint(
-			"POST",
-			`/api/documents/${DOC_ID}/tags`,
-			() => ({}),
-		)
+		const calls = mockEndpoint("POST", BRANCH_TAGS_URL, () => ({}))
 		const wrapper = await mountTags()
 		await openPicker(wrapper)
 
@@ -230,10 +317,10 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 	}) => {
 		// the open popover anchors to the trigger element, so swapping the
 		// plus button out for the pills strands the panel in the page corner
-		const tree = [makeTag(TAG_A, "Production", "#1a9e4a")]
-		stubTags(tree)
-		mockEndpoint("POST", `/api/documents/${DOC_ID}/tags`, () => {
-			tree[0] = makeTag(TAG_A, "Production", "#1a9e4a", [makeDoc(DOC_ID)])
+		const carried: string[] = []
+		stubTags([makeTag(TAG_A, "Production", "#1a9e4a")], carried)
+		mockEndpoint("POST", BRANCH_TAGS_URL, () => {
+			carried.push(TAG_A)
 
 			return {}
 		})
@@ -250,11 +337,11 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 		)
 	})
 
-	it("detaches a tag the document already carries", async ({ expect }) => {
-		stubTags([makeTag(TAG_A, "Production", "#1a9e4a", [makeDoc(DOC_ID)])])
+	it("detaches a tag the branch already carries", async ({ expect }) => {
+		stubTags([makeTag(TAG_A, "Production", "#1a9e4a")], [TAG_A])
 		const calls = mockEndpoint(
 			"DELETE",
-			`/api/documents/${DOC_ID}/tags/${TAG_A}`,
+			`${BRANCH_TAGS_URL}/${TAG_A}`,
 			() => ({}),
 		)
 		const wrapper = await mountTags()
@@ -304,11 +391,7 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 
 			return { id: TAG_B }
 		})
-		const assigned = mockEndpoint(
-			"POST",
-			`/api/documents/${DOC_ID}/tags`,
-			() => ({}),
-		)
+		const assigned = mockEndpoint("POST", BRANCH_TAGS_URL, () => ({}))
 		const wrapper = await mountTags()
 		await openPicker(wrapper)
 
@@ -336,11 +419,7 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 
 			return { id: TAG_B }
 		})
-		const assigned = mockEndpoint(
-			"POST",
-			`/api/documents/${DOC_ID}/tags`,
-			() => ({}),
-		)
+		const assigned = mockEndpoint("POST", BRANCH_TAGS_URL, () => ({}))
 		const wrapper = await mountTags()
 		await openPicker(wrapper)
 		await search("Rollout")

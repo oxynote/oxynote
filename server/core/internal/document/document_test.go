@@ -357,9 +357,10 @@ func Test_Document_Duplicate(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			dup, files := c.Document.Duplicate("user-2")
+			dup, files, uids := c.Document.Duplicate("user-2")
 
 			c.Check(t, c.Document, dup, files)
+			assertUIDsRemapped(t, c.Document.Content, dup.Content, uids)
 		})
 	}
 }

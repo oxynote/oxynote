@@ -15,6 +15,8 @@ import type {
 	MetricSimulationCheckResponse,
 } from "~/utils"
 import isDeepEqual from "fast-deep-equal"
+import { DOCUMENT_HOOK_QUERY_KEYS } from "./useDocumentHookAPI"
+import { TAG_QUERY_KEYS } from "./useTagAPI"
 
 // exported because the tag tree carries document summaries: useTagAPI reads
 // this entry to build the row it optimistically inserts under a tag.
@@ -362,6 +364,8 @@ export default function () {
 			}
 
 			await queryCache.invalidateQueries({ key: DOCUMENT_QUERY_KEYS.root })
+			// the document leaves every tag it was listed under
+			await queryCache.invalidateQueries({ key: TAG_QUERY_KEYS.root })
 		},
 		onError(_err, _title, { oldTree, newTree }) {
 			const cachedTree = queryCache.getQueryData(DOCUMENT_QUERY_KEYS.root)
@@ -518,6 +522,8 @@ export default function () {
 			}
 
 			await queryCache.invalidateQueries({ key: DOCUMENT_QUERY_KEYS.root })
+			// the copy carries the source's tags, so the tag tree lists it too
+			await queryCache.invalidateQueries({ key: TAG_QUERY_KEYS.root })
 		},
 		onError(_err, _id, { oldTree, newTree }) {
 			const cachedTree = queryCache.getQueryData(DOCUMENT_QUERY_KEYS.root)
@@ -830,6 +836,15 @@ export default function () {
 			await queryCache.invalidateQueries({
 				key: DOCUMENT_QUERY_KEYS.branchReviewers(docId, toBranchId),
 			})
+
+			// the target took the source's hooks and tags along with its
+			// content. Every tag query goes, not just the target branch's:
+			// when the target is the default branch the sidebar's tag tree
+			// lists the document by it
+			await queryCache.invalidateQueries({
+				key: DOCUMENT_HOOK_QUERY_KEYS.list(docId, toBranchId),
+			})
+			await queryCache.invalidateQueries({ key: TAG_QUERY_KEYS.all })
 		},
 	})
 
