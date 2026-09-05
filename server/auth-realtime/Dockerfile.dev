@@ -4,7 +4,7 @@ FROM node:24.20.0-alpine AS base
 FROM base AS builder
 
 RUN apk add --no-cache gcompat
-RUN npm install -g pnpm
+RUN npm install -g pnpm@11.1.3
 WORKDIR /server
 
 # pnpm-workspace.yaml carries the allowBuilds settings — without it the

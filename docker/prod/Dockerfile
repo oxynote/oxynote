@@ -16,7 +16,7 @@
 # mirrors web/Dockerfile.dev (the dev/e2e image); change them together.
 FROM node:24.20.0-bookworm-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e AS web-builder
 
-RUN npm install -g pnpm
+RUN npm install -g pnpm@11.1.3
 
 WORKDIR /app
 
@@ -43,7 +43,7 @@ RUN pnpm install --frozen-lockfile \
 # the e2e stack run) instead of the ~83MB production node_modules tree.
 FROM node:24.20.0-bookworm-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e AS auth-realtime-builder
 
-RUN npm install -g pnpm
+RUN npm install -g pnpm@11.1.3
 
 WORKDIR /server
 
@@ -59,7 +59,7 @@ RUN pnpm install --frozen-lockfile && pnpm run check-types && pnpm run build:bun
 
 FROM node:24.20.0-bookworm-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e AS launcher-builder
 
-RUN npm install -g pnpm
+RUN npm install -g pnpm@11.1.3
 
 WORKDIR /launcher
 
