@@ -397,7 +397,7 @@ async function executeReviewableAction() {
 							:data-menu-open="hookMenuOpen ? '' : undefined"
 							:class="
 								cn(
-									'group/hook-handle absolute top-0.5 right-full flex h-7 items-center pr-1 lg:pr-1.5',
+									'group/hook-handle absolute top-0.5 right-full flex h-7 items-center pr-1.5',
 									'pointer-events-none opacity-0 transition-opacity duration-100',
 									'group-hover/name-row:pointer-events-auto group-hover/name-row:opacity-100',
 									'data-menu-open:pointer-events-auto data-menu-open:opacity-100',
@@ -407,17 +407,30 @@ async function executeReviewableAction() {
 							@mouseleave="hoveringHookHandle = false"
 						>
 							<div
+								:data-hook-status="hookStatus"
 								:class="
 									cn(
-										'flex size-4 cursor-pointer items-center justify-center rounded-md text-foreground/50 lg:size-5.5',
+										'flex h-5 w-3 cursor-pointer items-center justify-center rounded-sm text-foreground/50 lg:size-5.5 lg:rounded-md',
+										'data-[hook-status=fresh]:text-hook-status-fresh data-[hook-status=stale]:text-hook-status-stale',
 										'group-data-menu-open/hook-handle:bg-sidebar-accent/50 hover:bg-sidebar-accent/50 active:bg-sidebar-accent',
 									)
 								"
 							>
+								<!--
+									the block handles fold their hook menu into the drag
+									handle where the gutter is too narrow for both, so the
+									title takes the same handle at the same width there and
+									keeps the hook button where the block ones do
+								-->
+								<div class="relative h-5 w-3 overflow-hidden lg:hidden">
+									<Icon
+										name="mingcute:dots-line"
+										class="absolute top-1/2 left-1/2 size-5 -translate-x-1/2 -translate-y-1/2"
+									/>
+								</div>
 								<Icon
-									:data-hook-status="hookStatus"
 									name="mingcute:leaf-line"
-									class="mt-0.25 size-3.5 data-[hook-status=fresh]:text-hook-status-fresh data-[hook-status=stale]:text-hook-status-stale lg:size-4.5"
+									class="mt-0.25 hidden size-4.5 lg:block"
 								/>
 							</div>
 							<span class="sr-only">

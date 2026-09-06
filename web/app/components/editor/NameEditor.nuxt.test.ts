@@ -24,6 +24,7 @@ import {
 	findButtonByText,
 	menuItem,
 	mountUnderTooltipProvider,
+	renderedIconNames,
 	seedAuthOrganization,
 	seedAuthSession,
 	settleMutations,
@@ -385,6 +386,18 @@ describe("<NameEditor>", { concurrent: false }, () => {
 		await hookHandle(wrapper).trigger("mouseleave")
 
 		expect(highlightPanels()).toHaveLength(0)
+	})
+
+	it("carries both the wide and the narrow hook handle glyph", async ({
+		expect,
+	}) => {
+		// which of the two shows is a breakpoint the stylesheet decides, so
+		// both are in the markup
+		const wrapper = await mountEditor()
+
+		expect(renderedIconNames(wrapper)).toEqual(
+			expect.arrayContaining(["mingcute:leaf-line", "mingcute:dots-line"]),
+		)
 	})
 
 	it("takes the hook handle away while a diff is on", async ({ expect }) => {
