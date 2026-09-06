@@ -29,14 +29,13 @@ const tooltipOpen = ref<string | null>(null)
 
 const icons = computed<
 	{
-		normalName: string
+		name: string
 		id: string
 	}[]
 >(() => {
 	return selectableIcons.filter((icon) => {
 		return (
-			!iconFilter.value ||
-			icon.prettyName.includes(iconFilter.value.toLowerCase())
+			!iconFilter.value || icon.name.includes(iconFilter.value.toLowerCase())
 		)
 	})
 })
@@ -210,7 +209,7 @@ function handleEscape(e: KeyboardEvent) {
 									sticky="always"
 									class="px-1.5 py-1"
 								>
-									<span>{{ item.normalName }}</span>
+									<span>{{ item.name }}</span>
 								</ShadcnUiTooltipContent>
 							</ShadcnUiTooltip>
 						</RecycleScroller>

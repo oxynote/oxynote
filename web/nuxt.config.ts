@@ -176,7 +176,12 @@ export default defineNuxtConfig({
 		mode: "css",
 		cssLayer: "base",
 		clientBundle: {
-			icons: selectableIconList(),
+			// the document title icons are a fifth of the startup download,
+			// so the web build leaves them out and the server resolves each
+			// one on first use: inlined for SSR, fetched in batches after
+			// client-side navigation. The desktop build has no server to ask
+			// and loads from disk, so it bundles them and stays offline-safe
+			icons: isDesktopBuild ? selectableIconList() : [],
 			scan: true,
 			sizeLimitKb: 256,
 		},

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import IconPickerProvider from "./IconPickerProvider.vue"
 import IconPicker from "./IconPicker.vue"
 import { mountUnderTooltipProvider, t } from "~/components/test-helpers"
+import { selectableIcons } from "~/utils/icon"
 
 // the real list is virtualized off the rendered row heights, which
 // happy-dom reports as zero — nothing would ever be drawn. The stand-in
@@ -128,10 +129,11 @@ describe("<IconPickerProvider>", { concurrent: false }, () => {
 		await openPicker(wrapper)
 		const total = popover()?.querySelectorAll("button").length ?? 0
 
-		await typeFilter("tag")
+		await typeFilter("git")
 
 		const filtered = popover()?.querySelectorAll("button").length ?? 0
 
+		expect(total).toBe(selectableIcons.length)
 		expect(filtered).toBeGreaterThan(0)
 		expect(filtered).toBeLessThan(total)
 	})
@@ -139,13 +141,13 @@ describe("<IconPickerProvider>", { concurrent: false }, () => {
 	it("hands the chosen icon to the child that asked", async ({ expect }) => {
 		const wrapper = await mountProvider()
 		await openPicker(wrapper)
-		await typeFilter("tag 2")
+		await typeFilter("git merge")
 
 		popover()?.querySelectorAll("button")[0]?.click()
 		await nextTick()
 
 		expect(wrapper.findComponent(IconPicker).emitted("select")).toEqual([
-			["mingcute:tag-2-fill"],
+			["mingcute:git-merge-fill"],
 		])
 		expect(popoverOpen()).toBe(false)
 	})
@@ -207,7 +209,7 @@ describe("<IconPickerProvider>", { concurrent: false }, () => {
 	it("clears the filter each time it opens", async ({ expect }) => {
 		const wrapper = await mountProvider()
 		await openPicker(wrapper)
-		await typeFilter("tag")
+		await typeFilter("git")
 		document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }))
 		await nextTick()
 
