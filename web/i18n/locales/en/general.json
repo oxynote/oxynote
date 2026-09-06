@@ -19,7 +19,7 @@
 		},
 		"size-limit-exceeded": {
 			"title": "File too large",
-			"description": "The file exceeds the maximum allowed size of 5MB. Please upload a smaller file."
+			"description": "The file exceeds the maximum allowed size. Please upload a smaller file."
 		}
 	}
 }

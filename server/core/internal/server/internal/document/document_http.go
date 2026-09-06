@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"path"
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/apps/github"
@@ -752,7 +753,7 @@ func (h *Handler) DuplicateDocument(w http.ResponseWriter, r *http.Request) {
 		uids,
 	)
 
-	h.copyDocumentFiles(r.Context(), files, id, duplDoc.ID, session.ActiveOrganizationID)
+	h.copyDocumentFiles(r.Context(), files, duplDoc.ID, session.ActiveOrganizationID)
 
 	if h.tree.changeCallback != nil {
 		h.tree.changeCallback(session.ActiveOrganizationID, duplDoc.ParentID)
@@ -778,7 +779,7 @@ func (h *Handler) DuplicateDocument(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) copyDocumentFiles(
 	ctx context.Context,
 	files map[string]string,
-	fromDocumentID, toDocumentID xid.ID,
+	toDocumentID xid.ID,
 	organizationID string,
 ) {
 	for oldID, newID := range files {
@@ -796,15 +797,18 @@ func (h *Handler) copyDocumentFiles(
 			continue
 		}
 
-		fromFolder := file.Folder(organizationID, fromDocumentID)
-		toFolder := file.Folder(organizationID, toDocumentID)
+		fromFolder, fromKey := path.Split(f.StorageKey)
+		toFolder, toKey := path.Split(file.Key(organizationID, toDocumentID, newID))
 
 		err = h.db.InsertDocumentFile(ctx, file.NewFile(
 			newID,
 			f.Location,
-			file.Key(organizationID, toDocumentID, newID),
+			path.Join(toFolder, toKey),
 			toDocumentID,
 			organizationID,
+			f.Name,
+			f.Size,
+			f.ContentType,
 		))
 		if err != nil {
 			logutil.Critical(h.log, err).Error(
@@ -815,7 +819,7 @@ func (h *Handler) copyDocumentFiles(
 			continue
 		}
 
-		err = h.storer.Copy(ctx, fromFolder, oldID, toFolder, newID)
+		err = h.storer.Copy(ctx, fromFolder, fromKey, toFolder, toKey)
 		if err != nil {
 			logutil.Critical(h.log, err).Error(
 				"cannot copy duplicated document file",

@@ -413,6 +413,9 @@ CREATE TABLE document_files (
 	storage_key TEXT NOT NULL,
 	fk_document_id TEXT REFERENCES documents ON DELETE SET NULL,
 	fk_organization_id TEXT REFERENCES organizations ON DELETE SET NULL,
+	name TEXT NOT NULL,
+	size BIGINT NOT NULL,
+	content_type TEXT NOT NULL,
 	created_at TIMESTAMP NOT NULL,
 	unreferenced_at TIMESTAMP
 );

@@ -181,6 +181,7 @@ func Test_canonicalKindForPM(t *testing.T) {
 		"Mermaid":               {PM: document.BlockNodeMermaidBlock, Result: "mermaid"},
 		"Horizontal rule":       {PM: document.BlockNodeHorizontalRule, Result: "horizontal_rule"},
 		"Image":                 {PM: document.BlockNodeImageBlock, Result: "image"},
+		"File":                  {PM: document.BlockNodeFileBlock, Result: "file"},
 		"Figma":                 {PM: document.BlockNodeFigmaBlock, Result: "figma"},
 		"Metric":                {PM: document.BlockNodeMetricBlock, Result: "metric"},
 		"Metric grid":           {PM: document.BlockNodeMetricGrid, Result: "metric_grid"},
@@ -194,6 +195,38 @@ func Test_canonicalKindForPM(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, c.Result, canonicalKindForPM(c.PM))
+		})
+	}
+}
+
+func Test_presentAttrs(t *testing.T) {
+	cc := map[string]struct {
+		Input  document.Block
+		Keys   []string
+		Result map[string]any
+	}{
+		"Named attrs with values are kept": {
+			Input:  pmBlock(document.BlockNodeFileBlock, "f", map[string]any{"name": "a.zip", "size": 1, "other": "x"}),
+			Keys:   []string{"name", "size"},
+			Result: map[string]any{"name": "a.zip", "size": 1},
+		},
+		"Empty and nil values are dropped": {
+			Input:  pmBlock(document.BlockNodeFileBlock, "f", map[string]any{"name": "", "size": nil, "src": "http://f"}),
+			Keys:   []string{"name", "size", "src"},
+			Result: map[string]any{"src": "http://f"},
+		},
+		"Nothing present": {
+			Input:  pmBlock(document.BlockNodeFileBlock, "f", nil),
+			Keys:   []string{"name"},
+			Result: nil,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, presentAttrs(c.Input, c.Keys...))
 		})
 	}
 }
@@ -235,6 +268,16 @@ func Test_summaryAttrs(t *testing.T) {
 		},
 		"Image without usable attrs": {
 			Input:  pmBlock(document.BlockNodeImageBlock, "i", nil),
+			Result: nil,
+		},
+		"File attrs filtered": {
+			Input: pmBlock(document.BlockNodeFileBlock, "f", map[string]any{
+				"src": "http://f", "name": "notes.zip", "contentType": "application/zip", "size": 2048, "uploading": false,
+			}),
+			Result: map[string]any{"src": "http://f", "name": "notes.zip", "contentType": "application/zip", "size": 2048},
+		},
+		"File without usable attrs": {
+			Input:  pmBlock(document.BlockNodeFileBlock, "f", nil),
 			Result: nil,
 		},
 		"Figma attrs filtered": {

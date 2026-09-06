@@ -441,6 +441,10 @@ func Test_Validate(t *testing.T) {
 		"Image with src passes": {
 			Input: Block{Type: BlockImage, Attrs: map[string]any{"src": "http://x"}},
 		},
+		"File is rejected as authoring": {
+			Input: Block{Type: BlockFile, Attrs: map[string]any{"src": "http://x", "name": "notes.zip"}},
+			Err:   assert.AnError,
+		},
 		"Figma with task_items is rejected": {
 			Input: Block{Type: BlockFigma, TaskItems: []TaskItem{{Block: Block{Type: BlockParagraph}}}},
 			Err:   assert.AnError,
@@ -662,6 +666,10 @@ func Test_ValidateAsRoot(t *testing.T) {
 			Input: Block{Type: BlockHeading, Text: "x"},
 			Err:   assert.AnError,
 		},
+		"File at root is rejected as authoring": {
+			Input: Block{Type: BlockFile, Attrs: map[string]any{"src": "http://x"}},
+			Err:   assert.AnError,
+		},
 	}
 
 	for cn, c := range cc {
@@ -679,6 +687,109 @@ func Test_ValidateAsRoot(t *testing.T) {
 			var ve *validationError
 
 			assert.ErrorAs(t, err, &ve, "expected validationError, got %T", err)
+		})
+	}
+}
+
+func Test_ValidateAttrs(t *testing.T) {
+	cc := map[string]struct {
+		Type  Type
+		Attrs document.Attributes
+		Err   error
+	}{
+		"Heading with a level passes": {
+			Type:  BlockHeading,
+			Attrs: document.Attributes{"level": 2},
+		},
+		"Heading without a level fails": {
+			Type: BlockHeading,
+			Err:  assert.AnError,
+		},
+		"Titled code with a title passes": {
+			Type:  BlockTitledCode,
+			Attrs: document.Attributes{"title": "ex.go"},
+		},
+		"Image with src passes": {
+			Type:  BlockImage,
+			Attrs: document.Attributes{"src": "http://x"},
+		},
+		"Figma without src fails": {
+			Type: BlockFigma,
+			Err:  assert.AnError,
+		},
+		"File is rejected as authoring": {
+			Type:  BlockFile,
+			Attrs: document.Attributes{"name": "renamed.zip"},
+			Err:   errFileNotAuthored,
+		},
+		"Metric with a valid width passes": {
+			Type:  BlockMetric,
+			Attrs: document.Attributes{"width": "compact"},
+		},
+		"Paragraph carries no attribute rules": {
+			Type:  BlockParagraph,
+			Attrs: document.Attributes{"anything": "goes"},
+		},
+		"Unknown type carries no attribute rules": {
+			Type: Type("wibble"),
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			err := ValidateAttrs(c.Type, c.Attrs)
+
+			testutil.AssertEqualError(t, c.Err, err)
+		})
+	}
+}
+
+func Test_AllowedInContainer(t *testing.T) {
+	cc := map[string]struct {
+		Container document.BlockNodeType
+		Type      Type
+		Err       error
+	}{
+		"Paragraph at the root": {
+			Container: document.BlockNodeDoc,
+			Type:      BlockParagraph,
+		},
+		// a file block is never written, but an existing one can be moved
+		// among the root blocks the way an image can.
+		"File at the root": {
+			Container: document.BlockNodeDoc,
+			Type:      BlockFile,
+		},
+		"Metric at the root": {
+			Container: document.BlockNodeDoc,
+			Type:      BlockMetric,
+			Err:       assert.AnError,
+		},
+		"Metric in a metric grid": {
+			Container: document.BlockNodeMetricGrid,
+			Type:      BlockMetric,
+		},
+		"File in a metric grid": {
+			Container: document.BlockNodeMetricGrid,
+			Type:      BlockFile,
+			Err:       assert.AnError,
+		},
+		"Unknown container": {
+			Container: document.BlockNodeType("wibble"),
+			Type:      BlockParagraph,
+			Err:       assert.AnError,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			err := AllowedInContainer(c.Container, c.Type)
+
+			testutil.AssertEqualError(t, c.Err, err)
 		})
 	}
 }

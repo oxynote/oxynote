@@ -13,6 +13,7 @@ import { ParameterList } from "../blocks/split-documentation/parameter-list"
 import { CalloutBlock } from "../blocks/callout"
 import { insertMetricBlock } from "../blocks/metrics"
 import { ImageBlock } from "../blocks/image"
+import { FileBlock } from "../blocks/file"
 import {
 	extractHocuspocusProviderFromEditor,
 	isRangeBeingEditedByOther,
@@ -366,38 +367,16 @@ const allItems: CommandItem[] = [
 		icon: "lucide:image",
 		group: CommandGroup.BasicBlock,
 		command: ({ editor, range }: CommandData) => {
-			const { state, view } = editor
-			const { schema } = state
-
-			const imageNode = schema.nodes[ImageBlock.name]
-			if (!imageNode) {
-				return
-			}
-
-			const $pos = state.doc.resolve(range.from)
-
-			const paragraphStart = $pos.before()
-			const paragraphEnd = $pos.after()
-
-			// block if another user is editing in this range
-			const provider = extractHocuspocusProviderFromEditor(editor)
-			if (
-				isRangeBeingEditedByOther(
-					provider,
-					state.doc,
-					paragraphStart,
-					paragraphEnd,
-				)
-			) {
-				return
-			}
-
-			const image = imageNode.create()
-
-			const tr = state.tr.delete(paragraphStart, paragraphEnd)
-			tr.insert(paragraphStart, image)
-
-			view.dispatch(tr)
+			replaceParagraphWithEmptyBlock(editor, range, ImageBlock.name)
+		},
+	},
+	{
+		title: "File",
+		nodeType: FileBlock.name,
+		icon: "lucide:paperclip",
+		group: CommandGroup.BasicBlock,
+		command: ({ editor, range }: CommandData) => {
+			replaceParagraphWithEmptyBlock(editor, range, FileBlock.name)
 		},
 	},
 	{
@@ -590,4 +569,39 @@ export function filterSlashItems({
 			item.title.toLowerCase().includes(query.toLowerCase())
 		)
 	})
+}
+
+// replaceParagraphWithEmptyBlock swaps the paragraph the slash command
+// was typed in for an empty atom of the given type, which then invites
+// the reader to fill it
+function replaceParagraphWithEmptyBlock(
+	editor: Editor,
+	range: CommandData["range"],
+	nodeName: string,
+) {
+	const { state, view } = editor
+	const { schema } = state
+
+	const nodeType = schema.nodes[nodeName]
+	if (!nodeType) {
+		return
+	}
+
+	const $pos = state.doc.resolve(range.from)
+
+	const paragraphStart = $pos.before()
+	const paragraphEnd = $pos.after()
+
+	// block if another user is editing in this range
+	const provider = extractHocuspocusProviderFromEditor(editor)
+	if (
+		isRangeBeingEditedByOther(provider, state.doc, paragraphStart, paragraphEnd)
+	) {
+		return
+	}
+
+	const tr = state.tr.delete(paragraphStart, paragraphEnd)
+	tr.insert(paragraphStart, nodeType.create())
+
+	view.dispatch(tr)
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -1559,7 +1558,7 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 					Type: documentCore.BlockNodeImageBlock,
 					Attrs: documentCore.Attributes{
 						"uid": "img1",
-						"src": "https://app.test/core" + fmt.Sprintf(documentCore.FilePathFormat, _documentID, "img1"),
+						"src": "https://app.test/core" + documentCore.FilePath(_documentID, "img1", "shot.png"),
 					},
 				},
 			},
@@ -1574,7 +1573,7 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 		return &DBMock{
 			FetchDocumentFunc: fetchStoredWithImage,
 			FetchDocumentFileFunc: func(_ context.Context, id, organizationID string) (*file.File, error) {
-				f := file.NewFile(id, file.LocationDocument, "key", _documentID, organizationID)
+				f := file.NewFile(id, file.LocationDocument, "key", _documentID, organizationID, "shot.png", 1024, "image/png")
 
 				return &f, nil
 			},
@@ -1781,7 +1780,7 @@ func Test_Handler_copyDocumentFiles(t *testing.T) {
 	fileDB := func() *DBMock {
 		return &DBMock{
 			FetchDocumentFileFunc: func(_ context.Context, id, organizationID string) (*file.File, error) {
-				f := file.NewFile(id, file.LocationComment, "key", _documentID, organizationID)
+				f := file.NewFile(id, file.LocationComment, file.Key(organizationID, _documentID, id), _documentID, organizationID, "shot.png", 1024, "image/png")
 
 				return &f, nil
 			},
@@ -1849,7 +1848,7 @@ func Test_Handler_copyDocumentFiles(t *testing.T) {
 			hdl, _ := newTestHandler(c.DB, &fakePublisher{})
 			hdl.storer = c.Storer
 
-			hdl.copyDocumentFiles(context.Background(), c.Files, _documentID, toDocumentID, "org1")
+			hdl.copyDocumentFiles(context.Background(), c.Files, toDocumentID, "org1")
 
 			ff := c.DB.InsertDocumentFileCalls()
 			require.Len(t, ff, c.Inserts)
@@ -1871,9 +1870,11 @@ func Test_Handler_copyDocumentFiles(t *testing.T) {
 				return
 			}
 
-			assert.Equal(t, file.Folder("org1", _documentID), cf[0].SrcFolder)
+			// the copy goes from the source row's key to the new row's, so
+			// both carry the extension.
+			assert.Equal(t, file.Folder("org1", _documentID)+"/", cf[0].SrcFolder)
 			assert.Equal(t, "old-1", cf[0].SrcID)
-			assert.Equal(t, file.Folder("org1", toDocumentID), cf[0].DstFolder)
+			assert.Equal(t, file.Folder("org1", toDocumentID)+"/", cf[0].DstFolder)
 			assert.Equal(t, "new-1", cf[0].DstID)
 		})
 	}

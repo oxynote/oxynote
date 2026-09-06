@@ -45,6 +45,8 @@ func Compact(b document.Block) (Block, error) {
 		}, nil
 	case document.BlockNodeImageBlock:
 		return compactImage(b, uid), nil
+	case document.BlockNodeFileBlock:
+		return compactFile(b, uid), nil
 	case document.BlockNodeFigmaBlock:
 		return compactFigma(b, uid), nil
 	case document.BlockNodeMetricBlock:
@@ -330,6 +332,21 @@ func compactImage(b document.Block, uid string) Block {
 
 	return Block{
 		Type:  BlockImage,
+		UID:   uid,
+		Attrs: attrsOrNil(attrs),
+	}
+}
+
+// compactFile compacts a fileBlock atom node, surfacing its
+// src/name/contentType/size attributes.
+func compactFile(b document.Block, uid string) Block {
+	attrs := document.Attributes{}
+
+	copyStringAttrs(attrs, b.Attrs, document.AttrSrc, document.AttrName, document.AttrContentType)
+	copyPositiveIntAttrs(attrs, b.Attrs, document.AttrSize)
+
+	return Block{
+		Type:  BlockFile,
 		UID:   uid,
 		Attrs: attrsOrNil(attrs),
 	}

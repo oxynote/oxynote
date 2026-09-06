@@ -1,14 +1,22 @@
-import type { Editor, JSONContent } from "@tiptap/core"
+import type { JSONContent } from "@tiptap/core"
+import { Editor } from "@tiptap/core"
+import Document from "@tiptap/extension-document"
+import Paragraph from "@tiptap/extension-paragraph"
+import Text from "@tiptap/extension-text"
 import { Schema } from "@tiptap/pm/model"
 import { EditorState, TextSelection } from "@tiptap/pm/state"
 import { describe, it, vi } from "vitest"
 import {
 	CALLOUT_BLOCK_NAME,
 	CODE_BLOCK_NAME,
+	FILE_BLOCK_NAME,
+	IMAGE_BLOCK_NAME,
 	SPLIT_DOCUMENTATION_LEFT_SIDE_NAME,
 	SPLIT_DOCUMENTATION_PARAMETER_LIST_NAME,
 	SPLIT_DOCUMENTATION_RIGHT_SIDE_NAME,
 } from "../blocks/node-names"
+import { FileBlock } from "../blocks/file"
+import { ImageBlock } from "../blocks/image"
 import {
 	allowSlashItemsByContext,
 	CommandGroup,
@@ -103,6 +111,28 @@ function titles(query: string, cursorText: string): string[] {
 	const editor = { state: stateAt(cursorText) } as unknown as Editor
 
 	return filterSlashItems({ query, editor }).map((item) => item.title)
+}
+
+// a live editor holding the two upload atoms, for the commands that
+// replace the paragraph the menu was opened in
+function makeUploadEditor(): Editor {
+	return new Editor({
+		extensions: [Document, Text, Paragraph, ImageBlock, FileBlock],
+		content: {
+			type: "doc",
+			content: [paragraph("before"), paragraph("/"), paragraph("after")],
+		},
+	})
+}
+
+function topLevelTypes(editor: Editor): string[] {
+	const types: string[] = []
+
+	editor.state.doc.forEach((child) => {
+		types.push(child.type.name)
+	})
+
+	return types
 }
 
 describe("commandGroupSortIndex", () => {
@@ -266,4 +296,55 @@ describe("filterSlashItems", () => {
 			expect(setNode).toHaveBeenCalledWith("heading", { level })
 		},
 	)
+
+	it.for([
+		{ title: "File", expected: FILE_BLOCK_NAME },
+		{ title: "Image", expected: IMAGE_BLOCK_NAME },
+	])(
+		"returns a $title command that swaps the paragraph for an empty $expected",
+		({ title, expected }, { expect }) => {
+			const editor = makeUploadEditor()
+			// the slash was typed in the middle paragraph
+			editor.commands.setTextSelection(10)
+			const from = editor.state.selection.from
+
+			const item = filterSlashItems({ query: title, editor }).find(
+				(v) => v.title === title,
+			)
+			if (!item) {
+				throw new Error(`the ${title} item is missing from the slash menu`)
+			}
+
+			item.command({ editor, range: { from, to: from } })
+
+			expect(topLevelTypes(editor)).toEqual([
+				"paragraph",
+				expected,
+				"paragraph",
+			])
+			expect(editor.state.doc.child(1).attrs.src).toBeNull()
+			expect(editor.state.doc.child(1).attrs.uploading).toBe(false)
+		},
+	)
+
+	it("returns a File command that leaves a schema without the block alone", ({
+		expect,
+	}) => {
+		const editor = new Editor({
+			extensions: [Document, Text, Paragraph],
+			content: { type: "doc", content: [paragraph("/")] },
+		})
+		editor.commands.setTextSelection(1)
+
+		const item = filterSlashItems({ query: "File", editor }).find(
+			(v) => v.title === "File",
+		)
+		if (!item) {
+			throw new Error("the File item is missing from the slash menu")
+		}
+
+		item.command({ editor, range: { from: 1, to: 1 } })
+
+		expect(topLevelTypes(editor)).toEqual(["paragraph"])
+	})
 })

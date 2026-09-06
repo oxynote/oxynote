@@ -3,7 +3,9 @@ package file
 
 import (
 	"fmt"
+	"mime"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/guregu/null/v5"
@@ -19,7 +21,9 @@ func Folder(organizationID string, documentID xid.ID) string {
 	return fmt.Sprintf(_folderFormat, organizationID, documentID)
 }
 
-// Key returns the storage key of the given document's file.
+// Key returns the storage key of the given document's file. The key
+// is the file id alone: a re-upload into the same block then overwrites
+// its object in place, so no object is ever left without a row naming it.
 func Key(organizationID string, documentID xid.ID, id string) string {
 	return path.Join(Folder(organizationID, documentID), id)
 }
@@ -67,6 +71,18 @@ type File struct {
 	// belongs to. Null when the organization has been deleted.
 	OrganizationID null.String `json:"organizationId" db:"fk_organization_id"`
 
+	// Name is the file name the upload carried, which the file is served
+	// back under.
+	Name string `json:"name" db:"name"`
+
+	// Size is the size of the stored object in bytes.
+	Size int64 `json:"size" db:"size"`
+
+	// ContentType is the media type detected from the object's bytes at
+	// upload time. It is what the file is served as: a client's own claim
+	// about the type never reaches the row.
+	ContentType string `json:"contentType" db:"content_type"`
+
 	// CreatedAt is the timestamp when the file was created.
 	CreatedAt time.Time `json:"createdAt" db:"created_at"`
 
@@ -77,15 +93,61 @@ type File struct {
 }
 
 // NewFile creates a new file instance.
-func NewFile(id string, loc Location, storageKey string, documentID xid.ID, organizationID string) File {
+func NewFile(
+	id string,
+	loc Location,
+	storageKey string,
+	documentID xid.ID,
+	organizationID string,
+	name string,
+	size int64,
+	contentType string,
+) File {
 	return File{
 		ID:             id,
 		Location:       loc,
 		StorageKey:     storageKey,
 		DocumentID:     null.ValueFrom(documentID),
 		OrganizationID: null.StringFrom(organizationID),
+		Name:           name,
+		Size:           size,
+		ContentType:    contentType,
 		CreatedAt:      timeutil.Now(),
 	}
+}
+
+// Viewable reports whether a browser may render the file inline. The
+// set is a fixed allowlist of types a browser shows rather than runs:
+// HTML, SVG, XML and scripts are deliberately absent, since served inline
+// they would execute under the API's origin.
+func Viewable(contentType string) bool {
+	mt, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return false
+	}
+
+	switch mt {
+	case "application/pdf", "image/png", "image/jpeg", "image/gif", "image/webp", "text/plain":
+		return true
+	}
+
+	return strings.HasPrefix(mt, "video/") || strings.HasPrefix(mt, "audio/")
+}
+
+// Disposition returns the Content-Disposition header value the file is
+// served with: inline for a viewable type, attachment for everything
+// else, carrying the file's name either way. The name is formatted as a
+// media type parameter, which quotes it and percent-encodes non-ASCII
+// and control characters into an RFC 2231 filename*, so no name can
+// break out of the header.
+func (f File) Disposition() string {
+	disposition := "attachment"
+
+	if Viewable(f.ContentType) {
+		disposition = "inline"
+	}
+
+	return mime.FormatMediaType(disposition, map[string]string{"filename": f.Name})
 }
 
 // Orphaned reports whether the file lost its owner, which happens when the

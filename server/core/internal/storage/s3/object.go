@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/url"
 	"path"
 	"strings"
@@ -18,20 +17,15 @@ import (
 
 // Upload uploads a new object.
 // If the object with the same ID already exists, it is overwritten.
-func (c *Client) Upload(ctx context.Context, folder, id string, r io.Reader) error {
-	data, ct, err := storage.ReadObject(r)
-	if err != nil {
-		return err
-	}
-
-	_, err = c.client.PutObject(
+func (c *Client) Upload(ctx context.Context, folder, id string, data []byte, contentType string) error {
+	_, err := c.client.PutObject(
 		ctx,
 		&awss3.PutObjectInput{
 			Bucket:        aws.String(c.bucket),
 			Key:           aws.String(path.Join(folder, id)),
 			Body:          bytes.NewReader(data),
 			ContentLength: aws.Int64(int64(len(data))),
-			ContentType:   aws.String(ct),
+			ContentType:   aws.String(contentType),
 		},
 	)
 	if err != nil {

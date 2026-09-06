@@ -27,6 +27,7 @@ import { CalloutBlock } from "./callout.js"
 import { MermaidBlock } from "./mermaid.js"
 import { MetricBlock, MetricGrid } from "./metric.js"
 import { ImageBlock } from "./image.js"
+import { FileBlock } from "./file.js"
 import { FigmaBlock } from "./figma.js"
 import { CodeBlock, CodeBlockTitle, TitledCodeBlock } from "./code-block.js"
 import {
@@ -67,6 +68,7 @@ const contentExtensionsWithIDs: Extensions = [
 	MetricBlock,
 	MetricGrid,
 	ImageBlock,
+	FileBlock,
 	FigmaBlock,
 	CodeBlock,
 	MermaidBlock,

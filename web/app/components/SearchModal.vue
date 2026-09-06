@@ -110,6 +110,8 @@ function resultIcon(type: string) {
 			return "lucide:file-text"
 		case "heading":
 			return "lucide:heading"
+		case "fileBlock":
+			return "lucide:paperclip"
 		default:
 			return "lucide:text"
 	}

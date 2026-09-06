@@ -15,20 +15,16 @@ import (
 
 // Upload uploads a new object.
 // If the object with the same ID already exists, it is overwritten.
-func (c *Client) Upload(_ context.Context, folder, id string, r io.Reader) error {
+//
+// The content type is not kept: a file system holds no metadata, so an
+// object is sniffed again on the way out. A caller that needs the exact
+// type back records it alongside the object's key.
+func (c *Client) Upload(_ context.Context, folder, id string, data []byte, _ string) error {
 	full, err := c.resolve(folder, id)
 	if err != nil {
 		return err
 	}
 
-	data, _, err := storage.ReadObject(r)
-	if err != nil {
-		return err
-	}
-
-	// the content type is not kept: an object is sniffed again on the way
-	// out, and the three types ReadObject admits are exactly the ones
-	// http.DetectContentType tells apart.
 	return writeObject(full, data)
 }
 

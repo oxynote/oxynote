@@ -144,6 +144,16 @@
 				"upload-failed": "Failed to upload the selected image. Please try again"
 			}
 		},
+		"file": {
+			"description": "Upload a file",
+			"empty": "File not uploaded",
+			"uploading": "Uploading...",
+			"upload-unavailable": "Upload unavailable",
+			"errors": {
+				"upload-failed": "Failed to upload the selected file. Please try again",
+				"download-failed": "Failed to download the file. Please try again"
+			}
+		},
 		"mermaid": {
 			"preview": {
 				"loading": "The diagram is loading...",

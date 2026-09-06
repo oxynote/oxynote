@@ -79,6 +79,12 @@ const (
 	// "alt", "title", "width".
 	BlockImage Type = "image"
 
+	// BlockFile is a file attachment. Attrs "src", "name",
+	// "contentType" and "size" describe the uploaded file. It is only
+	// ever created by uploading in the editor: the AI reads and moves
+	// one but never writes it.
+	BlockFile Type = "file"
+
 	// BlockFigma is an embedded Figma frame. Required attr "src";
 	// optional "width", "height".
 	BlockFigma Type = "figma"

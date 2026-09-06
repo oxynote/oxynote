@@ -1,7 +1,6 @@
 package document
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
@@ -360,7 +359,7 @@ func Test_Document_Duplicate(t *testing.T) {
 				Type: BlockNodeImageBlock,
 				Attrs: Attributes{
 					"uid": "img1",
-					"src": "https://app.test/core" + fmt.Sprintf(FilePathFormat, doc.ID, "img1"),
+					"src": "https://app.test/core" + FilePath(doc.ID, "img1", "shot.png"),
 				},
 			}
 
@@ -375,7 +374,7 @@ func Test_Document_Duplicate(t *testing.T) {
 					// the duplicate refers to its own copy under its own document.
 					assert.Equal(
 						t,
-						"https://app.test/core"+fmt.Sprintf(FilePathFormat, dup.ID, newID),
+						"https://app.test/core"+FilePath(dup.ID, newID, "shot.png"),
 						dup.Content.Content[0].Attrs["src"],
 					)
 				},

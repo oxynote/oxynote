@@ -21,6 +21,17 @@ var _testJPEG = append([]byte("\xff\xd8\xff"), bytes.Repeat([]byte{2}, 1024)...)
 // type sniffing detects image/webp.
 var _testWebP = append([]byte("RIFF\x00\x00\x00\x00WEBPVP8 "), bytes.Repeat([]byte{3}, 1024)...)
 
+// _testLargeText is a 20 MB plain-text object: over the image limit and
+// under the file limit.
+var _testLargeText = bytes.Repeat([]byte("text "), 4*1024*1024)
+
+func Test_Policy_MaxUploadBytes(t *testing.T) {
+	t.Parallel()
+
+	assert.EqualValues(t, 5*1024*1024+64*1024, ImagePolicy.MaxUploadBytes())
+	assert.EqualValues(t, 25*1024*1024+64*1024, FilePolicy.MaxUploadBytes())
+}
+
 func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }

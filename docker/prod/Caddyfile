@@ -14,7 +14,7 @@
 
 (common) {
 	request_body {
-		max_size 10MB # must be higher than file upload limit
+		max_size 30MB # must be higher than file upload limit
 	}
 
 	header -Server

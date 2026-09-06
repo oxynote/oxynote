@@ -23,7 +23,7 @@ func TestMain(m *testing.M) {
 // stubFile builds a file created long enough ago to be past the grace
 // period, which is what the interesting cases need.
 func stubFile() file.File {
-	f := file.NewFile("file-1", file.LocationDocument, "folder/file-1", xid.New(), "org-1")
+	f := file.NewFile("file-1", file.LocationDocument, "folder/file-1", xid.New(), "org-1", "shot.png", 1024, "image/png")
 	f.CreatedAt = timeutil.Now().Add(-_fileRetentionDuration * 2)
 
 	return f

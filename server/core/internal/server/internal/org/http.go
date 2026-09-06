@@ -4,7 +4,6 @@ package org
 import (
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 
@@ -178,16 +177,22 @@ func (h *Handler) UploadOrganizationLogo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	file, err := httpserver.FormFile(w, r, "logo", storage.MaxUploadBytes, storage.ErrSizeLimitExceeded)
+	file, err := httpserver.FormFile(w, r, "logo", storage.ImagePolicy.MaxUploadBytes(), storage.ErrSizeLimitExceeded)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 	defer file.Close() //nolint:errcheck // error provides no meaningful info
 
+	data, contentType, err := storage.ReadObject(file, storage.ImagePolicy)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
 	logoFolder := fmt.Sprintf(_organizationsLogoFolderFormat, session.ActiveOrganizationID)
 
-	err = h.storer.Upload(r.Context(), logoFolder, session.ActiveOrganizationID, file)
+	err = h.storer.Upload(r.Context(), logoFolder, session.ActiveOrganizationID, data, contentType)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -416,8 +421,9 @@ type TagsDBAgent interface {
 //
 //go:generate ../../../../scripts/codegen/mock -t internal Storer
 type Storer interface {
-	// Upload uploads a new object.
-	Upload(ctx context.Context, folder, id string, r io.Reader) error
+	// Upload should store the object's bytes under the given content
+	// type.
+	Upload(ctx context.Context, folder, id string, data []byte, contentType string) error
 
 	// Retrieve retrieves an object by its ID.
 	Retrieve(ctx context.Context, folder, id string) (*storage.ObjectInfo, bool, error)

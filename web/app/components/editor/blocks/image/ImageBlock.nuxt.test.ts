@@ -60,6 +60,11 @@ function pngFile() {
 	return new File(["binary"], "shot.png", { type: "image/png" })
 }
 
+// what the server answers a successful image upload with
+function uploadedImage() {
+	return { id: "image-1", name: "shot.png", size: 6, contentType: "image/png" }
+}
+
 // the resize maths starts from the rendered image box, which happy-dom
 // reports as zero-sized — every resize test states the size it drags from
 function sizeImage(wrapper: VueWrapper, width: number, height: number) {
@@ -409,7 +414,7 @@ describe("<ImageBlock>", { concurrent: false }, () => {
 			(_call, event) => {
 				setResponseHeader(event, "location", "https://cdn.test/stored.png")
 
-				return null
+				return uploadedImage()
 			},
 		)
 		const updateAttributes = vi.fn()
@@ -420,12 +425,16 @@ describe("<ImageBlock>", { concurrent: false }, () => {
 		await vi.waitFor(() => {
 			expect(calls).toHaveLength(1)
 		}, WAIT_FOR_OPTIONS)
-		expect(calls[0]?.query).toEqual({ id: "image-1", location: "document" })
+		expect(calls[0]?.query).toEqual({
+			id: "image-1",
+			location: "document",
+			kind: "image",
+		})
 		expect(updateAttributes).toHaveBeenCalledTimes(2)
 		expect(updateAttributes).toHaveBeenNthCalledWith(1, { uploading: true })
 		expect(updateAttributes).toHaveBeenNthCalledWith(2, {
 			src: matchingString(
-				new RegExp(`/api/documents/${DOCUMENT_ID}/files/image-1$`),
+				new RegExp(`/api/documents/${DOCUMENT_ID}/files/image-1-shot.png$`),
 			),
 			uid: "image-1",
 			uploading: false,
@@ -442,7 +451,7 @@ describe("<ImageBlock>", { concurrent: false }, () => {
 			(_call, event) => {
 				setResponseHeader(event, "location", "https://cdn.test/stored.png")
 
-				return null
+				return uploadedImage()
 			},
 		)
 		const updateAttributes = vi.fn()
@@ -545,9 +554,7 @@ describe("<ImageBlock>", { concurrent: false }, () => {
 		expect(consoleError).toHaveBeenCalledTimes(0)
 	})
 
-	it("warns when the upload response carries no location", async ({
-		expect,
-	}) => {
+	it("warns when the upload response carries no body", async ({ expect }) => {
 		const consoleError = vi.spyOn(console, "error").mockImplementation(() => {
 			return undefined
 		})

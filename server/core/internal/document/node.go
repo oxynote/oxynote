@@ -19,6 +19,14 @@ import (
 // router mounts the file routes on this very format.
 const FilePathFormat = "/api/documents/%s/files/%s"
 
+// FilePath returns the URL path a document's file is served under: the
+// file route with the id followed by a dash and the file name, so the
+// address reads as the file it is. Every uid is a 21-character nanoid,
+// which is what lets the server cut the id off the front again.
+func FilePath(documentID xid.ID, id, name string) string {
+	return fmt.Sprintf(FilePathFormat, documentID, id+"-"+url.PathEscape(name))
+}
+
 // RootBlock represents a block in a document.
 type RootBlock struct {
 	// Type is the type of the root block (always BlockNodeText's
@@ -229,10 +237,16 @@ func (b Block) Search(scope search.Scope) map[string]search.Block {
 		maps.Insert(res, maps.All(content))
 	}
 
-	// a metric block has no text children; its title is an attribute.
-	if b.Type == BlockNodeMetricBlock {
+	// a metric block and a file block have no text children; the title
+	// and the file name are attributes.
+	switch b.Type { //nolint:exhaustive // the other types index their text children
+	case BlockNodeMetricBlock:
 		if title, ok := b.Attrs[AttrTitle].(string); ok {
 			text.WriteString(title)
+		}
+	case BlockNodeFileBlock:
+		if name, ok := b.Attrs[AttrName].(string); ok {
+			text.WriteString(name)
 		}
 	}
 
@@ -370,7 +384,7 @@ func (b Block) copyStripped(dc *duplication) Block {
 			newAttrs[k] = v
 		}
 
-		if dc != nil && b.Type == BlockNodeImageBlock {
+		if dc != nil && (b.Type == BlockNodeImageBlock || b.Type == BlockNodeFileBlock) {
 			dc.rewriteFileRef(b.Attrs, newAttrs)
 		}
 
@@ -394,10 +408,10 @@ func (d *duplication) regenerateUID(old any) string {
 	return uid
 }
 
-// rewriteFileRef points a duplicated image block at the duplicate's own copy
-// of the file and records the pair. Images served from anywhere but the
-// source document's file route are left as they are: an externally hosted
-// image has no object to copy.
+// rewriteFileRef points a duplicated image or file block at the
+// duplicate's own copy of the file and records the pair. Files served
+// from anywhere but the source document's file route are left as they
+// are: an externally hosted image has no object to copy.
 func (d *duplication) rewriteFileRef(attrs, newAttrs Attributes) {
 	oldID, ok := attrs[AttrUID].(string)
 	if !ok {
@@ -419,15 +433,23 @@ func (d *duplication) rewriteFileRef(attrs, newAttrs Attributes) {
 		return
 	}
 
+	// the id is followed by the dash and the file name.
 	oldPath := fmt.Sprintf(FilePathFormat, d.oldDocumentID, oldID)
-	if !strings.HasSuffix(u.Path, oldPath) {
+
+	idx := strings.Index(u.Path, oldPath)
+	if idx < 0 {
+		return
+	}
+
+	rest := u.Path[idx+len(oldPath):]
+	if !strings.HasPrefix(rest, "-") {
 		return
 	}
 
 	// only the path is swapped: the src was built by the frontend from its
 	// own api base url, which need not match this server's public url.
-	u.Path = strings.TrimSuffix(u.Path, oldPath) +
-		fmt.Sprintf(FilePathFormat, d.newDocumentID, newID)
+	u.Path = u.Path[:idx] + fmt.Sprintf(FilePathFormat, d.newDocumentID, newID) + rest
+	u.RawPath = ""
 
 	newAttrs[AttrSrc] = u.String()
 	d.files[oldID] = newID

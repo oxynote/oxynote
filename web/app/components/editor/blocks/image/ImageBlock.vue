@@ -181,13 +181,18 @@ async function handleFileChange(event: Event) {
 	props.updateAttributes({ uploading: true })
 
 	try {
-		await uploadDocumentFile.mutateAsync({
+		const uploaded = await uploadDocumentFile.mutateAsync({
 			documentId: documentId.value,
 			id: blockId,
 			loc: DocumentFileLocation.Document,
+			kind: DocumentFileKind.Image,
 			file,
 		})
-		const nextSrc = buildDocumentFileSrc(documentId.value, blockId)
+		const nextSrc = buildDocumentFileSrc(
+			documentId.value,
+			blockId,
+			uploaded.name,
+		)
 		props.updateAttributes({ src: nextSrc, uid: blockId, uploading: false })
 	} catch (error) {
 		props.updateAttributes({ uploading: false })

@@ -1,11 +1,13 @@
 import { describe, it, vi } from "vitest"
 import {
+	CommentExtensions,
 	createPendingCommentId,
 	deleteCommentFromEditor,
 	deletePendingCommentData,
 	isPendingCommentId,
 	pendingCommentBelongsToActiveUser,
 } from "./utils"
+import { FILE_BLOCK_NAME, IMAGE_BLOCK_NAME } from "../blocks/node-names"
 import { DIFF_COMMENT_TX_META } from "../diff/diff-content-lock"
 import {
 	commented,
@@ -71,6 +73,22 @@ describe("pendingCommentBelongsToActiveUser", () => {
 	])("$name", ({ id, userId, expected }, { expect }) => {
 		expect(pendingCommentBelongsToActiveUser(id, userId)).toBe(expected)
 	})
+})
+
+describe("CommentExtensions", () => {
+	// a comment has no file endpoint of its own to upload into, so the
+	// attachment blocks stay out of its schema
+	it.for([
+		{ name: "file", input: FILE_BLOCK_NAME },
+		{ name: "image", input: IMAGE_BLOCK_NAME },
+	])(
+		"leaves the $name block out of comment editors",
+		({ input }, { expect }) => {
+			expect(
+				CommentExtensions.map((extension) => extension.name),
+			).not.toContain(input)
+		},
+	)
 })
 
 describe("deletePendingCommentData", () => {

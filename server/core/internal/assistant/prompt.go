@@ -68,13 +68,14 @@ Inline text is a minimal markdown subset: **bold**, *italic*, _underline_, ~~str
 | mermaid | text (raw mermaid source) | - |
 | horizontal_rule | - | - |
 | image | - | src (required), alt, title, width |
+| file | - | name, contentType, size, src; read-only |
 | figma | - | src (required), width, height |
 | metric | - | chart configuration, see "Metric blocks" |
 | metric_grid | items: [metric] | - |
 | split_doc | left: [Block], right: [Block] | inversed (optional) |
 | split_doc_param_list | header (plain text), params: [{name, type, description}] | - |
 
-Three types live only inside a container: titled_code and metric go in split_doc's right side (metric also in a metric_grid), and split_doc_param_list goes in split_doc's left side. Every other type is fine at the document root, and a write that puts a block where its type is not allowed is rejected.
+Three types live only inside a container: titled_code and metric go in split_doc's right side (metric also in a metric_grid), and split_doc_param_list goes in split_doc's left side. Every other type is fine at the document root, and a write that puts a block where its type is not allowed is rejected. A file block is a file someone uploaded in the editor: you can read it and move it, but a write that creates or edits one is rejected.
 
 ### Metric blocks
 

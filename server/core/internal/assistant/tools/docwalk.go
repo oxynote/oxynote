@@ -122,6 +122,7 @@ func (w *docWalker) walkLevel(blocks []document.Block, depth int, parentUID stri
 			document.BlockNodeMermaidBlock,
 			document.BlockNodeHorizontalRule,
 			document.BlockNodeImageBlock,
+			document.BlockNodeFileBlock,
 			document.BlockNodeFigmaBlock,
 			document.BlockNodeMetricBlock,
 			document.BlockNodeListItem,
@@ -216,7 +217,7 @@ func canonicalKindForPM(pm document.BlockNodeType) string {
 // (already on the entry); opaque metric configurations are dropped
 // because they would balloon the payload and the AI never edits
 // them by hand anyway.
-func summaryAttrs(b document.Block) map[string]any { //nolint:cyclop // this function is complex, however, it's well-structured
+func summaryAttrs(b document.Block) map[string]any {
 	switch b.Type {
 	case document.BlockNodeHeading:
 		if v, ok := b.Attrs[document.AttrLevel]; ok {
@@ -235,29 +236,11 @@ func summaryAttrs(b document.Block) map[string]any { //nolint:cyclop // this fun
 			return map[string]any{document.AttrChecked: v}
 		}
 	case document.BlockNodeImageBlock:
-		out := map[string]any{}
-
-		for _, k := range []string{document.AttrSrc, document.AttrAlt, document.AttrTitle, document.AttrWidth} {
-			if v, ok := b.Attrs[k]; ok && v != nil && v != "" {
-				out[k] = v
-			}
-		}
-
-		if len(out) > 0 {
-			return out
-		}
+		return presentAttrs(b, document.AttrSrc, document.AttrAlt, document.AttrTitle, document.AttrWidth)
+	case document.BlockNodeFileBlock:
+		return presentAttrs(b, document.AttrName, document.AttrContentType, document.AttrSize, document.AttrSrc)
 	case document.BlockNodeFigmaBlock:
-		out := map[string]any{}
-
-		for _, k := range []string{document.AttrSrc, document.AttrWidth, document.AttrHeight} {
-			if v, ok := b.Attrs[k]; ok && v != nil && v != "" {
-				out[k] = v
-			}
-		}
-
-		if len(out) > 0 {
-			return out
-		}
+		return presentAttrs(b, document.AttrSrc, document.AttrWidth, document.AttrHeight)
 	case document.BlockNodeSplitDoc:
 		if a, ok := b.Attrs.Get(document.AttrInversed); ok && a.Bool() {
 			return map[string]any{document.AttrInversed: true}
@@ -267,4 +250,22 @@ func summaryAttrs(b document.Block) map[string]any { //nolint:cyclop // this fun
 	}
 
 	return nil
+}
+
+// presentAttrs picks the named attrs the block carries with a value,
+// or nil when it carries none of them.
+func presentAttrs(b document.Block, keys ...string) map[string]any {
+	out := map[string]any{}
+
+	for _, k := range keys {
+		if v, ok := b.Attrs[k]; ok && v != nil && v != "" {
+			out[k] = v
+		}
+	}
+
+	if len(out) == 0 {
+		return nil
+	}
+
+	return out
 }

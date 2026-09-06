@@ -104,11 +104,11 @@ type DBMock struct {
 			At null.Time
 		}
 	}
-	lockCheckDocumentFileReferenced           sync.RWMutex
-	lockDeleteDocumentFile                    sync.RWMutex
+	lockCheckDocumentFileReferenced               sync.RWMutex
+	lockDeleteDocumentFile                        sync.RWMutex
 	lockDeleteExpiredDocumentBranchHistoryEntries sync.RWMutex
-	lockFetchPaginatedDocumentFiles           sync.RWMutex
-	lockUpdateDocumentFileUnreferencedAt      sync.RWMutex
+	lockFetchPaginatedDocumentFiles               sync.RWMutex
+	lockUpdateDocumentFileUnreferencedAt          sync.RWMutex
 }
 
 // CheckDocumentFileReferenced calls CheckDocumentFileReferencedFunc.

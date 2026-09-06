@@ -5,7 +5,6 @@ package server
 
 import (
 	"context"
-	"io"
 	"sync"
 
 	"github.com/oxynote/oxynote/server/core/internal/storage"
@@ -30,7 +29,7 @@ var _ Storer = &StorerMock{}
 //			RetrieveFunc: func(ctx context.Context, folder string, id string) (*storage.ObjectInfo, bool, error) {
 //				panic("mock out the Retrieve method")
 //			},
-//			UploadFunc: func(ctx context.Context, folder string, id string, r io.Reader) error {
+//			UploadFunc: func(ctx context.Context, folder string, id string, data []byte, contentType string) error {
 //				panic("mock out the Upload method")
 //			},
 //		}
@@ -50,7 +49,7 @@ type StorerMock struct {
 	RetrieveFunc func(ctx context.Context, folder string, id string) (*storage.ObjectInfo, bool, error)
 
 	// UploadFunc mocks the Upload method.
-	UploadFunc func(ctx context.Context, folder string, id string, r io.Reader) error
+	UploadFunc func(ctx context.Context, folder string, id string, data []byte, contentType string) error
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -93,8 +92,10 @@ type StorerMock struct {
 			Folder string
 			// ID is the id argument value.
 			ID string
-			// R is the r argument value.
-			R io.Reader
+			// Data is the data argument value.
+			Data []byte
+			// ContentType is the contentType argument value.
+			ContentType string
 		}
 	}
 	lockCopy     sync.RWMutex
@@ -243,17 +244,19 @@ func (mock *StorerMock) RetrieveCalls() []struct {
 }
 
 // Upload calls UploadFunc.
-func (mock *StorerMock) Upload(ctx context.Context, folder string, id string, r io.Reader) error {
+func (mock *StorerMock) Upload(ctx context.Context, folder string, id string, data []byte, contentType string) error {
 	callInfo := struct {
-		Ctx    context.Context
-		Folder string
-		ID     string
-		R      io.Reader
+		Ctx         context.Context
+		Folder      string
+		ID          string
+		Data        []byte
+		ContentType string
 	}{
-		Ctx:    ctx,
-		Folder: folder,
-		ID:     id,
-		R:      r,
+		Ctx:         ctx,
+		Folder:      folder,
+		ID:          id,
+		Data:        data,
+		ContentType: contentType,
 	}
 	mock.lockUpload.Lock()
 	mock.calls.Upload = append(mock.calls.Upload, callInfo)
@@ -264,7 +267,7 @@ func (mock *StorerMock) Upload(ctx context.Context, folder string, id string, r 
 		)
 		return errOut
 	}
-	return mock.UploadFunc(ctx, folder, id, r)
+	return mock.UploadFunc(ctx, folder, id, data, contentType)
 }
 
 // UploadCalls gets all the calls that were made to Upload.
@@ -272,16 +275,18 @@ func (mock *StorerMock) Upload(ctx context.Context, folder string, id string, r 
 //
 //	len(mockedStorer.UploadCalls())
 func (mock *StorerMock) UploadCalls() []struct {
-	Ctx    context.Context
-	Folder string
-	ID     string
-	R      io.Reader
+	Ctx         context.Context
+	Folder      string
+	ID          string
+	Data        []byte
+	ContentType string
 } {
 	var calls []struct {
-		Ctx    context.Context
-		Folder string
-		ID     string
-		R      io.Reader
+		Ctx         context.Context
+		Folder      string
+		ID          string
+		Data        []byte
+		ContentType string
 	}
 	mock.lockUpload.RLock()
 	calls = mock.calls.Upload

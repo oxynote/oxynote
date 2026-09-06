@@ -6,6 +6,7 @@ import type { Node as PMNode } from "prosemirror-model"
 import type { EditorView } from "prosemirror-view"
 import {
 	CODE_BLOCK_NAME,
+	FILE_BLOCK_NAME,
 	IMAGE_BLOCK_NAME,
 	METRIC_BLOCK_NAME,
 } from "../blocks/node-names"
@@ -15,6 +16,7 @@ import {
 const NODE_VIEW_BLOCK_NAMES: ReadonlySet<string> = new Set([
 	CODE_BLOCK_NAME,
 	IMAGE_BLOCK_NAME,
+	FILE_BLOCK_NAME,
 ])
 
 declare module "@tiptap/core" {

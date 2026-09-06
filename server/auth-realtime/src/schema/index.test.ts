@@ -20,6 +20,7 @@ import {
 } from "./index.js"
 import { FigmaBlock } from "./figma.js"
 import { ImageBlock } from "./image.js"
+import { FileBlock } from "./file.js"
 import { MermaidBlock } from "./mermaid.js"
 import { MetricBlock, MetricGrid } from "./metric.js"
 import { transformer } from "../ydocument.js"
@@ -131,6 +132,7 @@ describe("getEditorExtensions", () => {
 		{ name: "metric", input: "metricBlock" },
 		{ name: "metric grid", input: "metricGrid" },
 		{ name: "image", input: "imageBlock" },
+		{ name: "file", input: "fileBlock" },
 		{ name: "figma", input: "figmaBlock" },
 		{ name: "mermaid", input: "mermaidBlock" },
 		{ name: "titled code", input: "titledCodeBlock" },
@@ -180,6 +182,19 @@ describe("editor schema", () => {
 						src: "https://example/x.png",
 						alt: "x",
 						width: 400,
+					},
+				},
+			},
+			{
+				name: "a file attachment",
+				input: {
+					type: "fileBlock",
+					attrs: {
+						uid: "f1",
+						src: "https://example/x.zip",
+						name: "notes.zip",
+						size: 2048,
+						contentType: "application/zip",
 					},
 				},
 			},
@@ -656,6 +671,7 @@ describe("schema html contract", () => {
 
 	it.for([
 		{ name: "image", input: ImageBlock, expected: "img" },
+		{ name: "file", input: FileBlock, expected: "a" },
 		{ name: "mermaid", input: MermaidBlock, expected: "pre" },
 		{ name: "code", input: CodeBlock, expected: "pre" },
 		{ name: "callout", input: CalloutBlock, expected: "div" },
@@ -695,6 +711,103 @@ describe("schema html contract", () => {
 				"lucide:text",
 			)
 		})
+	})
+
+	describe("file attributes", () => {
+		it("tags the block as file-block and parses it back", ({
+			expect,
+		}) => {
+			expect(render(FileBlock)[1]["data-type"]).toBe(
+				"file-block",
+			)
+			expect(parseSelector(FileBlock)).toBe(
+				`a[data-type="file-block"]`,
+			)
+		})
+
+		// the size arrives as a string on the element and is stored as a
+		// number, so a document round-trips as a number
+		it("parses the size into a number", ({ expect }) => {
+			const attr = attributesOf(FileBlock).size
+
+			expect(
+				attr?.parseHTML?.({
+					getAttribute: () => "2048",
+				}),
+			).toBe(2048)
+		})
+
+		it.for([
+			{ name: "src", input: "src" },
+			{ name: "name", input: "name" },
+			{ name: "size", input: "size" },
+			{ name: "content type", input: "contentType" },
+		])(
+			"parses a missing $name as null",
+			({ input }, { expect }) => {
+				const attr = attributesOf(FileBlock)[input]
+
+				expect(
+					attr?.parseHTML?.({
+						getAttribute: () => null,
+					}),
+				).toBeNull()
+			},
+		)
+
+		it.for([
+			{
+				name: "src",
+				input: "src",
+				value: "https://example/x.zip",
+				expected: "href",
+			},
+			{
+				name: "name",
+				input: "name",
+				value: "notes.zip",
+				expected: "data-name",
+			},
+			{
+				name: "size",
+				input: "size",
+				value: 2048,
+				expected: "data-size",
+			},
+			{
+				name: "content type",
+				input: "contentType",
+				value: "application/zip",
+				expected: "data-content-type",
+			},
+		])(
+			"writes $name back to $expected",
+			({ input, value, expected }, { expect }) => {
+				const attr = attributesOf(FileBlock)[input]
+
+				expect(
+					attr?.renderHTML?.({ [input]: value }),
+				).toEqual({
+					[expected]: value,
+				})
+			},
+		)
+
+		it.for([
+			{ name: "src", input: "src" },
+			{ name: "name", input: "name" },
+			{ name: "size", input: "size" },
+			{ name: "content type", input: "contentType" },
+		])(
+			"writes no attribute for an unset $name",
+			({ input }, { expect }) => {
+				const attr = attributesOf(FileBlock)[input]
+
+				expect(
+					attr?.renderHTML?.({ [input]: null }),
+				).toEqual({})
+			},
+		)
 	})
 
 	describe("figma attributes", () => {

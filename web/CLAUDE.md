@@ -90,7 +90,7 @@ API composables live in [app/composables/api/](app/composables/api/) and are re-
 
 Document editor is in [app/components/editor/](app/components/editor/). Real-time collaboration uses **Yjs** + **Hocuspocus** (`NUXT_PUBLIC_AUTH_REALTIME_API_BASE_WS_URL`). Notable subsystems:
 
-- `blocks/` — custom node types (mermaid, metrics, code-block, figma, image, callout, split-documentation)
+- `blocks/` — custom node types (mermaid, metrics, code-block, figma, image, file, callout, split-documentation); `upload-handler.ts` routes dropped and pasted files to the image or file block by type
 - `comments/` — comment marks + node-comment extension
 - `diff/` — branch diffing UI (compute, render, decorations)
 - `drag-handle/`, `slash/`, `link/`, `ai/` — editor UX extensions

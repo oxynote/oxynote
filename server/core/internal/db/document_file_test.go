@@ -11,6 +11,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/document/comment"
 	"github.com/oxynote/oxynote/server/core/internal/document/file"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
@@ -27,10 +28,13 @@ func prepDocumentFiles(t *testing.T, db *DB, count int, fn func(int, *file.File)
 
 	for i := range count {
 		f := file.File{
-			ID:         "file-" + xid.New().String(),
-			Location:   file.LocationDocument,
-			StorageKey: "organizations/org/documents/doc/files/file",
-			CreatedAt:  now.Add(-time.Duration(i) * time.Second),
+			ID:          "file-" + xid.New().String(),
+			Location:    file.LocationDocument,
+			StorageKey:  "organizations/org/documents/doc/files/file",
+			Name:        "shot.png",
+			Size:        1024,
+			ContentType: "image/png",
+			CreatedAt:   now.Add(-time.Duration(i) * time.Second),
 		}
 
 		if fn != nil {
@@ -52,6 +56,9 @@ func prepDocumentFiles(t *testing.T, db *DB, count int, fn func(int, *file.File)
 				"storage_key":        f.StorageKey,
 				"fk_document_id":     f.DocumentID,
 				"fk_organization_id": f.OrganizationID,
+				"name":               f.Name,
+				"size":               f.Size,
+				"content_type":       f.ContentType,
 				"created_at":         f.CreatedAt,
 				"unreferenced_at":    f.UnreferencedAt,
 			}).MustSql()
@@ -77,14 +84,26 @@ func Test_agent_InsertDocumentFile(t *testing.T) {
 
 			f.Location = file.LocationComment
 			f.StorageKey = "organizations/org/documents/doc/files/replaced"
+			f.Name = "notes.zip"
+			f.Size = 2048
+			f.ContentType = "application/zip"
 			f.CreatedAt = timeutil.Now().Truncate(time.Second)
 			f.UnreferencedAt = null.Time{}
 
 			return tcase{File: f}
 		},
+		"Re-upload from another organization": func(t *testing.T, db *DB) tcase {
+			f := prepDocumentFiles(t, db, 1, nil)[0]
+			doc := prepDocuments(t, db, 1, nil)[0]
+
+			f.DocumentID = null.ValueFrom(doc.ID)
+			f.OrganizationID = null.StringFrom(doc.OrganizationID)
+
+			return tcase{File: f, Err: errutil.ErrNotFound}
+		},
 		"Missing document": func(_ *testing.T, _ *DB) tcase {
 			return tcase{
-				File: file.NewFile("file-1", file.LocationDocument, "key", xid.New(), "org-1"),
+				File: file.NewFile("file-1", file.LocationDocument, "key", xid.New(), "org-1", "shot.png", 1024, "image/png"),
 				Err:  assert.AnError,
 			}
 		},
@@ -98,6 +117,9 @@ func Test_agent_InsertDocumentFile(t *testing.T) {
 					StorageKey:     "organizations/org/documents/doc/files/file-1",
 					DocumentID:     null.ValueFrom(doc.ID),
 					OrganizationID: null.StringFrom(doc.OrganizationID),
+					Name:           "notes.pdf",
+					Size:           4096,
+					ContentType:    "application/pdf",
 					CreatedAt:      timeutil.Now().Truncate(time.Second),
 				},
 			}
@@ -204,6 +226,22 @@ func Test_agent_CheckDocumentFileReferenced(t *testing.T) {
 		"Referenced by branch content": func(t *testing.T, db *DB) (string, xid.ID, bool) {
 			doc := prepDocuments(t, db, 1, func(_ int, doc *document.Document) {
 				doc.Content.Content[0].Attrs = document.Attributes{"uid": "file-ref"}
+			})[0]
+
+			return "file-ref", doc.ID, true
+		},
+		"Referenced by a file block in branch content": func(t *testing.T, db *DB) (string, xid.ID, bool) {
+			doc := prepDocuments(t, db, 1, func(_ int, doc *document.Document) {
+				doc.Content.Content = append(doc.Content.Content, document.Block{
+					Type: document.BlockNodeFileBlock,
+					Attrs: document.Attributes{
+						"uid":         "file-ref",
+						"src":         "/api/documents/" + doc.ID.String() + "/files/file-ref",
+						"name":        "notes.zip",
+						"size":        2048,
+						"contentType": "application/zip",
+					},
+				})
 			})[0]
 
 			return "file-ref", doc.ID, true

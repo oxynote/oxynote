@@ -360,6 +360,29 @@ func Test_Compact(t *testing.T) {
 				Attrs: map[string]any{"src": "http://x", "title": "shot", "width": 200},
 			},
 		},
+		"File carries src, name, content type and size attrs": {
+			Input: document.Block{
+				Type: document.BlockNodeFileBlock,
+				Attrs: map[string]any{
+					"uid": "f1", "src": "http://x", "name": "notes.zip", "contentType": "application/zip", "size": 2048, "uploading": false,
+				},
+			},
+			Expected: Block{
+				Type:  BlockFile,
+				UID:   "f1",
+				Attrs: map[string]any{"src": "http://x", "name": "notes.zip", "contentType": "application/zip", "size": 2048},
+			},
+		},
+		"File without attrs": {
+			Input: document.Block{
+				Type:  document.BlockNodeFileBlock,
+				Attrs: map[string]any{"uid": "f1"},
+			},
+			Expected: Block{
+				Type: BlockFile,
+				UID:  "f1",
+			},
+		},
 		"Metric passes attrs through without uid": {
 			Input: document.Block{
 				Type:  document.BlockNodeMetricBlock,

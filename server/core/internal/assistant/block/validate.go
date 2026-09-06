@@ -1,11 +1,20 @@
 package block
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
 
 	"github.com/oxynote/oxynote/server/core/internal/document"
+)
+
+// errFileNotAuthored is returned by every write path handed a file
+// block: one exists only by uploading in the editor, so the AI reads and
+// moves it but never writes it.
+var errFileNotAuthored = errors.New(
+	"file blocks are created by uploading in the editor and cannot be written by the assistant; " +
+		"move_block moves an existing one",
 )
 
 // Allowed child-type sets, mirroring the editor's schema rules.
@@ -102,6 +111,7 @@ var (
 		BlockMermaid:        true,
 		BlockHorizontalRule: true,
 		BlockImage:          true,
+		BlockFile:           true,
 		BlockFigma:          true,
 		BlockMetricGrid:     true,
 		BlockSplitDoc:       true,
@@ -176,6 +186,8 @@ func ValidateAttrs(t Type, attrs document.Attributes) error {
 		return validateTitledCodeAttrs(attrs, "")
 	case BlockImage, BlockFigma:
 		return validateSrcAttrs(t, attrs, "")
+	case BlockFile:
+		return errFileNotAuthored
 	case BlockMetric:
 		return validateMetricAttrs(attrs, "")
 	case BlockParagraph,
@@ -287,6 +299,8 @@ func validateBlock(b Block, path string) error {
 		return validateMetric(b, path)
 	case BlockImage, BlockFigma:
 		return validateAtomWithSrc(b, path)
+	case BlockFile:
+		return verr(path, errFileNotAuthored.Error())
 	case BlockMetricGrid:
 		return validateMetricGrid(b, path)
 	case BlockSplitDoc:

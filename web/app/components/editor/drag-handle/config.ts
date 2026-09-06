@@ -26,6 +26,7 @@ import { MetricGrid } from "../blocks/metrics"
 import {
 	CODE_BLOCK_NAME,
 	FIGMA_BLOCK_NAME,
+	FILE_BLOCK_NAME,
 	MERMAID_BLOCK_NAME,
 	METRIC_BLOCK_NAME,
 	TITLED_CODE_BLOCK_NAME,
@@ -148,6 +149,7 @@ export function gapZoneConfigByType(
 				debugColor: "rgba(0, 64, 128, 0.2)",
 			}
 		case ImageBlock.name:
+		case FILE_BLOCK_NAME:
 			return {
 				height: "1.5rem",
 				includeBeforeFirst: true,
@@ -397,6 +399,7 @@ export const DRAG_HANDLE_IGNORE_SELF_CLASS = "drag-handle-ignore-self"
 export const DRAGGABLE_NODE_TYPES = new Set([
 	Paragraph.name,
 	ImageBlock.name,
+	FILE_BLOCK_NAME,
 	Heading.name,
 	ListItem.name,
 	TaskItem.name,
@@ -475,6 +478,11 @@ export function handlePositionByNodeType(
 		case ImageBlock.name:
 		case FIGMA_BLOCK_NAME:
 			res.yOffset = 4
+			break
+		// the card is one short row, so the handle sits on its middle
+		case FILE_BLOCK_NAME:
+			res.placement = "left"
+			res.yOffset = 0
 			break
 		case HorizontalRule.name:
 			res.placement = "left"

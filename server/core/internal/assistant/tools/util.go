@@ -91,6 +91,8 @@ func blockKindLabel(kind block.Type) string {
 		return "a divider"
 	case block.BlockImage:
 		return "an image"
+	case block.BlockFile:
+		return "a file attachment"
 	case block.BlockFigma:
 		return "a figma embed"
 	case block.BlockMetric:

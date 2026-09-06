@@ -39,7 +39,7 @@ import {
 } from "./comments/node-comment-extension"
 import type { TextCommentIndicatorState } from "./comments/comment-mark"
 import CommentIndicatorContainer from "./comments/CommentIndicatorContainer.vue"
-import { createImageFileHandler } from "./blocks/image"
+import { createUploadFileHandler } from "./blocks/upload-handler"
 import { createFigmaLinkHandler } from "./blocks/figma"
 import { contentExtensionsWithIDs, editorProseClass } from "./schema-extensions"
 import { METRIC_BLOCK_NAME } from "./blocks/node-names"
@@ -208,7 +208,7 @@ const contentEditor = useEditor({
 				props.nameEditor?.chain().focus("end").run()
 			},
 		}),
-		createImageFileHandler({ documentId: editorStore.activeDocumentId }),
+		createUploadFileHandler({ documentId: editorStore.activeDocumentId }),
 		createFigmaLinkHandler(),
 	],
 	onCreate: ({ editor }) => {

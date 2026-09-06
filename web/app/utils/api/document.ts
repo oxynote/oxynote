@@ -64,6 +64,22 @@ export enum DocumentFileLocation {
 	Comment = "comment",
 }
 
+// the block an upload belongs to, which decides the size and type rules
+// the server admits it under
+export enum DocumentFileKind {
+	Image = "image",
+	File = "file",
+}
+
+export interface DocumentFileUpload {
+	id: string
+	// the file name the upload carried, as the server recorded it
+	name: string
+	size: number
+	// the media type the server detected from the bytes
+	contentType: string
+}
+
 export enum DocumentHookType {
 	ScheduledReminder = "scheduled-reminder",
 	GitHubTracking = "github-tracking",

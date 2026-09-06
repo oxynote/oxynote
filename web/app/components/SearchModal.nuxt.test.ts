@@ -262,6 +262,7 @@ describe("<SearchModal>", { concurrent: false }, () => {
 	it.for([
 		{ type: "document", expected: "i-lucide:file-text" },
 		{ type: "heading", expected: "i-lucide:heading" },
+		{ type: "fileBlock", expected: "i-lucide:paperclip" },
 		{ type: "paragraph", expected: "i-lucide:text" },
 	])(
 		"marks a $type hit with its own icon",

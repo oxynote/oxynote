@@ -641,6 +641,10 @@ func Test_Expand(t *testing.T) {
 			Input: Block{Type: "not_a_type"},
 			Err:   assert.AnError,
 		},
+		"File cannot be authored": {
+			Input: Block{Type: BlockFile, Attrs: map[string]any{"src": "http://x", "name": "notes.zip"}},
+			Err:   errFileNotAuthored,
+		},
 	}
 
 	for cn, c := range cc {

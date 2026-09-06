@@ -1,41 +1,42 @@
 package storage
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"slices"
+	"strings"
+	"unicode/utf8"
 )
 
-// ReadObject reads an object off r, rejecting it unless it is one of the
-// supported image types and stays within the size limit, and returns its
-// bytes alongside the detected content type.
+// ReadObject reads an object off r, rejecting it unless it satisfies the
+// policy, and returns its bytes alongside the detected content type. The
+// type is detected from the bytes, so a client's own claim about it never
+// reaches storage.
 //
 // The object is fully buffered rather than streamed: the read side is
-// already capped at _maxObjectSize, and a backend handed the exact bytes
-// can write them in one seekable, exactly-sized pass.
-func ReadObject(r io.Reader) ([]byte, string, error) {
-	r = newLimitedReader(r, _maxObjectSize)
+// already capped at the policy's size, and a backend handed the exact
+// bytes can write them in one seekable, exactly-sized pass.
+func ReadObject(r io.Reader, p Policy) ([]byte, string, error) {
+	r = newLimitedReader(r, p.MaxSize)
 
 	prefix, ct, err := SniffContentType(r)
 	if err != nil {
 		return nil, "", err
 	}
 
-	switch ct {
-	case "image/jpeg", "image/png", "image/webp":
-		// OK.
-	default:
+	if len(p.ContentTypes) > 0 && !slices.Contains(p.ContentTypes, ct) {
 		return nil, "", ErrInvalidContentType
 	}
 
-	rest, err := io.ReadAll(r)
+	data, err := io.ReadAll(io.MultiReader(bytes.NewReader(prefix), r))
 	if err != nil {
 		return nil, "", fmt.Errorf("reading object: %w", err)
 	}
 
-	return slices.Concat(prefix, rest), ct, nil
+	return data, ct, nil
 }
 
 // SniffContentType detects the content type of the object r holds,
@@ -52,7 +53,39 @@ func SniffContentType(r io.Reader) ([]byte, string, error) {
 		return nil, "", fmt.Errorf("reading object: %w", err)
 	}
 
-	return buf[:n], http.DetectContentType(buf[:n]), nil
+	return buf[:n], detectContentType(buf[:n]), nil
+}
+
+// detectContentType names the type of an object by its leading bytes. A
+// magic-number match is trusted only when the bytes are not plain text:
+// http.DetectContentType reads a CSV whose first cell is "BMW" as a bitmap
+// and one starting "GIF89a" as a gif, while a real image carries bytes no
+// text file does. Text the sniffer itself names, HTML included, is left
+// as it says.
+func detectContentType(buf []byte) string {
+	ct := http.DetectContentType(buf)
+
+	if !strings.HasPrefix(ct, "text/") && isText(buf) {
+		return "text/plain; charset=utf-8"
+	}
+
+	return ct
+}
+
+// isText reports whether the bytes are valid UTF-8 carrying no control
+// characters beyond the whitespace a text file uses.
+func isText(buf []byte) bool {
+	if !utf8.Valid(buf) {
+		return false
+	}
+
+	for _, b := range buf {
+		if b < 0x20 && b != '\t' && b != '\n' && b != '\r' {
+			return false
+		}
+	}
+
+	return true
 }
 
 // limitedReader wraps an io.Reader and returns ErrSizeLimitExceeded when the limit is exceeded.

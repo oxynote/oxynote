@@ -15,49 +15,28 @@ import (
 // type sniffing detects image/png.
 var _testPNG = append([]byte("\x89PNG\r\n\x1a\n"), bytes.Repeat([]byte{1}, 1024)...)
 
-// _testJPEG is a data prefix carrying the JPEG magic bytes so content
-// type sniffing detects image/jpeg.
-var _testJPEG = append([]byte("\xff\xd8\xff"), bytes.Repeat([]byte{2}, 1024)...)
-
-// _testWebP is a data prefix carrying the WebP magic bytes so content
-// type sniffing detects image/webp.
-var _testWebP = append([]byte("RIFF\x00\x00\x00\x00WEBPVP8 "), bytes.Repeat([]byte{3}, 1024)...)
-
 func Test_Client_Upload(t *testing.T) {
 	cc := map[string]struct {
 		Fake        *fakeS3
-		Reader      io.Reader
 		Data        []byte
 		ContentType string
 		Err         error
 	}{
-		"Error returned by storage.ReadObject": {
-			Fake:   &fakeS3{},
-			Reader: &errReader{},
-			Err:    assert.AnError,
-		},
 		"Error returned by PutObject": {
-			Fake:   &fakeS3{failUpload: true},
-			Reader: bytes.NewReader(_testPNG),
-			Err:    assert.AnError,
+			Fake:        &fakeS3{failUpload: true},
+			Data:        _testPNG,
+			ContentType: "image/png",
+			Err:         assert.AnError,
 		},
 		"Successful PNG upload": {
 			Fake:        &fakeS3{},
-			Reader:      bytes.NewReader(_testPNG),
 			Data:        _testPNG,
 			ContentType: "image/png",
 		},
-		"Successful JPEG upload": {
+		"Successful upload under the content type it was given": {
 			Fake:        &fakeS3{},
-			Reader:      bytes.NewReader(_testJPEG),
-			Data:        _testJPEG,
-			ContentType: "image/jpeg",
-		},
-		"Successful WebP upload": {
-			Fake:        &fakeS3{},
-			Reader:      bytes.NewReader(_testWebP),
-			Data:        _testWebP,
-			ContentType: "image/webp",
+			Data:        []byte("PK\x03\x04 zipped bytes"),
+			ContentType: "application/zip",
 		},
 	}
 
@@ -67,7 +46,7 @@ func Test_Client_Upload(t *testing.T) {
 
 			client := prepClient(t, c.Fake)
 
-			err := client.Upload(context.Background(), "folder", "object-id", c.Reader)
+			err := client.Upload(context.Background(), "folder", "object-id", c.Data, c.ContentType)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {
@@ -218,12 +197,4 @@ func Test_Client_Delete(t *testing.T) {
 			assert.NotContains(t, c.Fake.objects, "folder/object-id")
 		})
 	}
-}
-
-// errReader is a reader that always fails.
-type errReader struct{}
-
-// Read returns a read failure.
-func (er *errReader) Read(_ []byte) (int, error) {
-	return 0, assert.AnError
 }

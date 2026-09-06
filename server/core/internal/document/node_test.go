@@ -2,7 +2,6 @@ package document
 
 import (
 	"encoding/json"
-	"fmt"
 	"testing"
 
 	"github.com/oxynote/oxynote/server/core/internal/search"
@@ -310,6 +309,16 @@ func Test_RootBlock_Search(t *testing.T) {
 				Type:  BlockNodeMetricBlock,
 				Attrs: Attributes{"uid": "m3"},
 			},
+			// a file block's name is an attribute, not a text child.
+			{
+				Type:  BlockNodeFileBlock,
+				Attrs: Attributes{"uid": "f1", "name": "quarterly-report.pdf", "size": 2048},
+			},
+			// a file block still uploading has no name to index.
+			{
+				Type:  BlockNodeFileBlock,
+				Attrs: Attributes{"uid": "f2"},
+			},
 		},
 	}
 
@@ -327,6 +336,7 @@ func Test_RootBlock_Search(t *testing.T) {
 		"li1": scope.Block("li1", "listItem", "nested"),
 		"p2":  scope.Block("p2", "paragraph", "plain bold tail"),
 		"m1":  scope.Block("m1", "metricBlock", "Pizza Fridays"),
+		"f1":  scope.Block("f1", "fileBlock", "quarterly-report.pdf"),
 	}, res)
 }
 
@@ -351,6 +361,30 @@ func Test_RootBlock_StripCommentMarks(t *testing.T) {
 			},
 		},
 	}, stripped)
+}
+
+func Test_FilePath(t *testing.T) {
+	cc := map[string]struct {
+		ID     string
+		Name   string
+		Result string
+	}{
+		"Plain name":      {ID: "f1", Name: "notes.zip", Result: "/files/f1-notes.zip"},
+		"Name with space": {ID: "f1", Name: "my notes.zip", Result: "/files/f1-my%20notes.zip"},
+		"Name with dash":  {ID: "f1", Name: "a-b.zip", Result: "/files/f1-a-b.zip"},
+		"Name with slash": {ID: "f1", Name: "a/b.zip", Result: "/files/f1-a%2Fb.zip"},
+		"Non-ASCII name":  {ID: "f1", Name: "résumé.pdf", Result: "/files/f1-r%C3%A9sum%C3%A9.pdf"},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			documentID := xid.New()
+
+			assert.Equal(t, "/api/documents/"+documentID.String()+c.Result, FilePath(documentID, c.ID, c.Name))
+		})
+	}
 }
 
 func Test_RootBlock_Duplicate(t *testing.T) {
@@ -403,7 +437,7 @@ func Test_RootBlock_Duplicate(t *testing.T) {
 							Type: BlockNodeImageBlock,
 							Attrs: Attributes{
 								"uid": "img1",
-								"src": "https://app.test/core" + fmt.Sprintf(FilePathFormat, oldDocumentID, "img1"),
+								"src": "https://app.test/core" + FilePath(oldDocumentID, "img1", "shot.png"),
 							},
 						},
 						{
@@ -417,18 +451,29 @@ func Test_RootBlock_Duplicate(t *testing.T) {
 							Type: BlockNodeImageBlock,
 							Attrs: Attributes{
 								"uid": "img3",
-								"src": "https://app.test/core" + fmt.Sprintf(FilePathFormat, xid.New(), "img3"),
+								"src": "https://app.test/core" + FilePath(xid.New(), "img3", "shot.png"),
 							},
 						},
 						{
 							Type:  BlockNodeImageBlock,
 							Attrs: Attributes{"uid": "img4"},
 						},
+						{
+							Type: BlockNodeFileBlock,
+							Attrs: Attributes{
+								"uid":         "file1",
+								"src":         "https://app.test/core" + FilePath(oldDocumentID, "file1", "my notes.zip"),
+								"name":        "notes.zip",
+								"size":        2048,
+								"contentType": "application/zip",
+							},
+						},
 					},
 				},
 				Check: func(t *testing.T, orig, dup RootBlock, files map[string]string) {
-					// only the image served by the source document is remapped.
-					require.Len(t, files, 1)
+					// only the image and the file served by the source
+					// document are remapped.
+					require.Len(t, files, 2)
 
 					newID, ok := files["img1"]
 					require.True(t, ok)
@@ -438,7 +483,7 @@ func Test_RootBlock_Duplicate(t *testing.T) {
 					assert.Equal(t, newID, uid)
 					assert.Equal(
 						t,
-						"https://app.test/core"+fmt.Sprintf(FilePathFormat, newDocumentID, newID),
+						"https://app.test/core"+FilePath(newDocumentID, newID, "shot.png"),
 						dup.Content[0].Attrs["src"],
 						"the host and path prefix must survive the rewrite",
 					)
@@ -449,8 +494,27 @@ func Test_RootBlock_Duplicate(t *testing.T) {
 					assert.Equal(t, orig.Content[2].Attrs["src"], dup.Content[2].Attrs["src"])
 					assert.NotContains(t, dup.Content[3].Attrs, "src")
 
+					// the file block is remapped the way the image is, keeps
+					// the file name segment of its address, and keeps what
+					// it shows.
+					newFileID, ok := files["file1"]
+					require.True(t, ok)
+
+					fileUID, ok := dup.Content[4].UID()
+					require.True(t, ok)
+					assert.Equal(t, newFileID, fileUID)
+					assert.Equal(
+						t,
+						"https://app.test/core"+FilePath(newDocumentID, newFileID, "my notes.zip"),
+						dup.Content[4].Attrs["src"],
+					)
+					assert.Equal(t, "notes.zip", dup.Content[4].Attrs["name"])
+					assert.Equal(t, 2048, dup.Content[4].Attrs["size"])
+					assert.Equal(t, "application/zip", dup.Content[4].Attrs["contentType"])
+
 					// the original is untouched.
 					assert.Equal(t, "img1", orig.Content[0].Attrs["uid"])
+					assert.Equal(t, "file1", orig.Content[4].Attrs["uid"])
 				},
 			}
 		}(),

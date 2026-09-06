@@ -32,8 +32,12 @@ func addSession(ctx context.Context) context.Context {
 	})
 }
 
+// _testPNG is a data prefix carrying the PNG magic bytes so content
+// type sniffing detects image/png.
+var _testPNG = append([]byte("\x89PNG\r\n\x1a\n"), bytes.Repeat([]byte{1}, 1024)...)
+
 // multipartBody builds a multipart form body carrying a single file field.
-func multipartBody(t *testing.T, field, content string) (io.Reader, string) {
+func multipartBody(t *testing.T, field string, content []byte) (io.Reader, string) {
 	t.Helper()
 
 	var buf bytes.Buffer
@@ -43,7 +47,7 @@ func multipartBody(t *testing.T, field, content string) (io.Reader, string) {
 	fw, err := mw.CreateFormFile(field, "img.png")
 	require.NoError(t, err)
 
-	_, err = fw.Write([]byte(content))
+	_, err = fw.Write(content)
 	require.NoError(t, err)
 	require.NoError(t, mw.Close())
 
@@ -245,6 +249,8 @@ func Test_Handler_UploadUserImage(t *testing.T) {
 
 			assert.Equal(t, "users/images", ff[0].Folder)
 			assert.Equal(t, "u1", ff[0].ID)
+			assert.Equal(t, _testPNG, ff[0].Data)
+			assert.Equal(t, "image/png", ff[0].ContentType)
 		}
 	}
 
@@ -281,7 +287,9 @@ func Test_Handler_UploadUserImage(t *testing.T) {
 		Storer    *StorerMock
 		NoSession bool
 		NoFile    bool
-		Checks    []check
+		// Content is the multipart file's bytes; nil sends a PNG.
+		Content []byte
+		Checks  []check
 	}{
 		"No session in context": {
 			DB:        &DBMock{},
@@ -303,10 +311,20 @@ func Test_Handler_UploadUserImage(t *testing.T) {
 				wasUpdateUserImageCalled(0),
 			),
 		},
+		"Error returned by storage.ReadObject": {
+			DB:      &DBMock{},
+			Storer:  &StorerMock{},
+			Content: []byte("plain text data"),
+			Checks: checks(
+				hasResp(http.StatusBadRequest, `{"code":"storage.invalid_content_type","message":"invalid content type"}`),
+				wasUploadCalled(0),
+				wasUpdateUserImageCalled(0),
+			),
+		},
 		"Storer upload error": {
 			DB: &DBMock{},
 			Storer: &StorerMock{
-				UploadFunc: func(context.Context, string, string, io.Reader) error {
+				UploadFunc: func(context.Context, string, string, []byte, string) error {
 					return errors.New("boom")
 				},
 			},
@@ -382,7 +400,12 @@ func Test_Handler_UploadUserImage(t *testing.T) {
 			)
 
 			if !c.NoFile {
-				body, contentType = multipartBody(t, "image", "img-data")
+				content := c.Content
+				if content == nil {
+					content = _testPNG
+				}
+
+				body, contentType = multipartBody(t, "image", content)
 			}
 
 			req := httptest.NewRequest(http.MethodPut, "http://test.com/", body)

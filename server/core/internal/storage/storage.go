@@ -12,12 +12,17 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 )
 
-// _maxObjectSize is the maximum allowed size for an object (5 MB).
-const _maxObjectSize = 5 * 1024 * 1024 // 5 MB
+const (
+	// _maxImageSize is the largest image ImagePolicy admits (5 MB).
+	_maxImageSize = 5 * 1024 * 1024
 
-// MaxUploadBytes bounds an upload request's body: the object size limit
-// plus headroom for multipart boundaries and part headers.
-const MaxUploadBytes = _maxObjectSize + 64*1024
+	// _maxFileSize is the largest attachment FilePolicy admits (25 MB).
+	_maxFileSize = 25 * 1024 * 1024
+
+	// _uploadHeadroom is the room an upload request's body gets on top of
+	// the object size limit, for multipart boundaries and part headers.
+	_uploadHeadroom = 64 * 1024
+)
 
 // _sniffLen is the number of leading bytes http.DetectContentType
 // examines when detecting an object's content type.
@@ -29,7 +34,38 @@ var (
 
 	// ErrSizeLimitExceeded is returned when the reader exceeds the size limit.
 	ErrSizeLimitExceeded = errutil.New(http.StatusBadRequest, "storage.size_limit_exceeded", "file size exceeds limit")
+
+	// ImagePolicy admits the images shown inline: logos, avatars and
+	// image blocks. The three types are the ones http.DetectContentType
+	// tells apart, so a backend sniffing an object on the way out names
+	// the same type the upload was admitted under.
+	ImagePolicy = Policy{ //nolint:gochecknoglobals // used as a constant
+		MaxSize:      _maxImageSize,
+		ContentTypes: []string{"image/jpeg", "image/png", "image/webp"},
+	}
+
+	// FilePolicy admits the attachments a file block carries: any type,
+	// served back under a Content-Disposition rather than rendered.
+	FilePolicy = Policy{ //nolint:gochecknoglobals // used as a constant
+		MaxSize: _maxFileSize,
+	}
 )
+
+// Policy states what an upload must satisfy before it is stored.
+type Policy struct {
+	// MaxSize is the largest object accepted, in bytes.
+	MaxSize int64
+
+	// ContentTypes lists the content types accepted. Empty accepts every
+	// type.
+	ContentTypes []string
+}
+
+// MaxUploadBytes bounds an upload request's body: the object size limit
+// plus headroom for multipart boundaries and part headers.
+func (p Policy) MaxUploadBytes() int64 {
+	return p.MaxSize + _uploadHeadroom
+}
 
 // ObjectInfo contains metadata about a retrieved object.
 type ObjectInfo struct {
@@ -48,9 +84,10 @@ type ObjectInfo struct {
 // hold either one; every consumer declares the narrower interface it
 // actually calls.
 type Store interface {
-	// Upload should upload a new object, overwriting an object already
-	// stored under the same folder and id.
-	Upload(ctx context.Context, folder, id string, r io.Reader) error
+	// Upload should store the object's bytes under the given content
+	// type, overwriting an object already stored under the same folder
+	// and id.
+	Upload(ctx context.Context, folder, id string, data []byte, contentType string) error
 
 	// Retrieve should retrieve an object by its ID, reporting whether it
 	// was there at all.

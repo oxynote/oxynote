@@ -21,6 +21,7 @@ import {
 import {
 	CODE_BLOCK_NAME,
 	FIGMA_BLOCK_NAME,
+	FILE_BLOCK_NAME,
 	IMAGE_BLOCK_NAME,
 	MERMAID_BLOCK_NAME,
 	METRIC_BLOCK_NAME,
@@ -41,6 +42,7 @@ type NodeName =
 	| "listItem"
 	| "horizontalRule"
 	| typeof IMAGE_BLOCK_NAME
+	| typeof FILE_BLOCK_NAME
 	| typeof FIGMA_BLOCK_NAME
 	| typeof TITLED_CODE_BLOCK_NAME
 	| "text"
@@ -59,6 +61,7 @@ const schema = new Schema<NodeName>({
 		listItem: { group: "block", content: "paragraph+" },
 		horizontalRule: { group: "block", atom: true },
 		[IMAGE_BLOCK_NAME]: { group: "block", atom: true },
+		[FILE_BLOCK_NAME]: { group: "block", atom: true },
 		[FIGMA_BLOCK_NAME]: { group: "block", atom: true },
 		[TITLED_CODE_BLOCK_NAME]: { group: "block", content: "text*" },
 		text: { group: "inline" },
@@ -206,6 +209,15 @@ describe("gapZoneConfigByType", () => {
 		{
 			name: "image block gaps are a plain row",
 			childNodeType: IMAGE_BLOCK_NAME,
+			expected: {
+				height: "1.5rem",
+				includeBeforeFirst: true,
+				debugColor: "rgba(0, 64, 128, 0.2)",
+			},
+		},
+		{
+			name: "file block gaps are a plain row",
+			childNodeType: FILE_BLOCK_NAME,
 			expected: {
 				height: "1.5rem",
 				includeBeforeFirst: true,
@@ -685,6 +697,7 @@ describe("DRAGGABLE_NODE_TYPES", () => {
 	it.for([
 		{ typeName: "paragraph", expected: true },
 		{ typeName: IMAGE_BLOCK_NAME, expected: true },
+		{ typeName: FILE_BLOCK_NAME, expected: true },
 		{ typeName: "heading", expected: true },
 		{ typeName: "listItem", expected: true },
 		{ typeName: "taskItem", expected: true },
@@ -828,6 +841,11 @@ describe("handlePositionByNodeType", () => {
 			name: "image blocks drop by four pixels",
 			node: () => block(IMAGE_BLOCK_NAME),
 			expected: { placement: "left-start", yOffset: 4, xOffset: 0 },
+		},
+		{
+			name: "file blocks are centred on the card",
+			node: () => block(FILE_BLOCK_NAME),
+			expected: { placement: "left", yOffset: 0, xOffset: 0 },
 		},
 		{
 			name: "figma blocks drop by four pixels",

@@ -1,5 +1,6 @@
 import {
 	CALLOUT_BLOCK_NAME,
+	FILE_BLOCK_NAME,
 	IMAGE_BLOCK_NAME,
 	MERMAID_BLOCK_NAME,
 	METRIC_BLOCK_NAME,
@@ -32,6 +33,7 @@ import type { OverlayPadding } from "./diff-decorations"
  */
 export const DEFAULT_OPAQUE_TYPES: string[] = [
 	IMAGE_BLOCK_NAME,
+	FILE_BLOCK_NAME,
 	METRIC_BLOCK_NAME,
 	HorizontalRule.name,
 ]
@@ -40,7 +42,10 @@ export const DEFAULT_OPAQUE_TYPES: string[] = [
  * node types that handle diff styling inside their node-view component
  * rather than via ProseMirror decorations on the root element.
  */
-export const SELF_DECORATED_TYPES = new Set<string>([IMAGE_BLOCK_NAME])
+export const SELF_DECORATED_TYPES = new Set<string>([
+	IMAGE_BLOCK_NAME,
+	FILE_BLOCK_NAME,
+])
 
 // node types that receive a modifiedTextContent attribute during
 // inline diff expansion. this lets their node-view components

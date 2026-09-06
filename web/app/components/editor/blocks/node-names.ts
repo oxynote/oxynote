@@ -6,6 +6,7 @@ export const TITLED_CODE_BLOCK_NAME = "titledCodeBlock"
 export const METRIC_BLOCK_NAME = "metricBlock"
 export const METRIC_GRID_NAME = "metricGrid"
 export const IMAGE_BLOCK_NAME = "imageBlock"
+export const FILE_BLOCK_NAME = "fileBlock"
 export const CALLOUT_BLOCK_NAME = "calloutBlock"
 
 export const MERMAID_BLOCK_NAME = "mermaidBlock"

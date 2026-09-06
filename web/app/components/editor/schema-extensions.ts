@@ -32,6 +32,7 @@ import { CalloutBlock } from "./blocks/callout"
 import { CodeBlock, CodeBlockTitle, TitledCodeBlock } from "./blocks/code-block"
 import { MetricBlock, MetricGrid } from "./blocks/metrics"
 import { ImageBlock } from "./blocks/image"
+import { FileBlock } from "./blocks/file"
 import {
 	ParameterList,
 	ParameterListHeader,
@@ -123,6 +124,7 @@ const nodeExtensions: Extensions = [
 	MetricGrid,
 	MetricBlock,
 	ImageBlock,
+	FileBlock,
 	MermaidBlock,
 	FigmaBlock,
 	SplitDocumentation,

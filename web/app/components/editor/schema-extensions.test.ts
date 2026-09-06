@@ -106,7 +106,9 @@ describe("contentExtensionsWithIDs", () => {
 				.filter((extension) => extension.type === "node")
 				.map((extension) => extension.name),
 		)
-		expect(types).toEqual(expect.arrayContaining(["paragraph", "imageBlock"]))
+		expect(types).toEqual(
+			expect.arrayContaining(["paragraph", "imageBlock", "fileBlock"]),
+		)
 		expect(types).not.toContain("bold")
 		expect(types).not.toContain("link")
 		expect(types).not.toContain("listKeymap")
@@ -136,6 +138,7 @@ describe("contentExtensionsWithIDs", () => {
 			"taskItem",
 			"calloutBlock",
 			"imageBlock",
+			"fileBlock",
 			"mermaidBlock",
 			"figmaBlock",
 			"splitDocumentation",
@@ -192,7 +195,7 @@ describe("contentExtensionsWithIDs", () => {
 	})
 
 	describe("the uid attribute", () => {
-		it.for(["paragraph", "heading", "calloutBlock", "imageBlock"])(
+		it.for(["paragraph", "heading", "calloutBlock", "imageBlock", "fileBlock"])(
 			"adds a uid attribute to the %s node",
 			(name, { expect }) => {
 				expect(nodeType(schema, name).spec.attrs?.uid).toEqual({

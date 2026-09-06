@@ -75,6 +75,10 @@ const (
 	// src/alt/title/width.
 	BlockNodeImageBlock BlockNodeType = "imageBlock"
 
+	// BlockNodeFileBlock is a file attachment atom carrying
+	// src/name/size/contentType.
+	BlockNodeFileBlock BlockNodeType = "fileBlock"
+
 	// BlockNodeFigmaBlock embeds a Figma frame via
 	// src/width/height.
 	BlockNodeFigmaBlock BlockNodeType = "figmaBlock"

@@ -1,7 +1,6 @@
 package fs
 
 import (
-	"bytes"
 	"context"
 	"io"
 	"os"
@@ -10,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/oxynote/oxynote/server/core/internal/storage"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -22,21 +20,14 @@ func Test_Client_Upload(t *testing.T) {
 		Prep   func(t *testing.T, client *Client)
 		Folder string
 		ID     string
-		Reader io.Reader
 		Data   []byte
 		Err    error
 	}{
 		"Error returned by resolve": {
 			Folder: "../elsewhere",
 			ID:     "object-id",
-			Reader: bytes.NewReader(_testPNG),
+			Data:   _testPNG,
 			Err:    ErrInvalidKey,
-		},
-		"Error returned by storage.ReadObject": {
-			Folder: "folder",
-			ID:     "object-id",
-			Reader: strings.NewReader("plain text data"),
-			Err:    storage.ErrInvalidContentType,
 		},
 		"Error returned by writeObject": {
 			Prep: func(t *testing.T, client *Client) {
@@ -48,7 +39,7 @@ func Test_Client_Upload(t *testing.T) {
 			},
 			Folder: "folder",
 			ID:     "object-id",
-			Reader: bytes.NewReader(_testPNG),
+			Data:   _testPNG,
 			Err:    assert.AnError,
 		},
 		"Existing object is replaced": {
@@ -59,19 +50,21 @@ func Test_Client_Upload(t *testing.T) {
 			},
 			Folder: "folder",
 			ID:     "object-id",
-			Reader: bytes.NewReader(_testPNG),
 			Data:   _testPNG,
 		},
 		"Successful upload into a nested folder": {
 			Folder: "organizations/acme/documents/doc/files",
 			ID:     "object-id",
-			Reader: bytes.NewReader(_testPNG),
 			Data:   _testPNG,
+		},
+		"Successful upload of an object the store cannot sniff": {
+			Folder: "folder",
+			ID:     "object-id",
+			Data:   []byte("PK\x03\x04 zipped bytes"),
 		},
 		"Successful upload": {
 			Folder: "folder",
 			ID:     "object-id",
-			Reader: bytes.NewReader(_testPNG),
 			Data:   _testPNG,
 		},
 	}
@@ -86,7 +79,7 @@ func Test_Client_Upload(t *testing.T) {
 				c.Prep(t, client)
 			}
 
-			err := client.Upload(context.Background(), c.Folder, c.ID, c.Reader)
+			err := client.Upload(context.Background(), c.Folder, c.ID, c.Data, "application/octet-stream")
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {

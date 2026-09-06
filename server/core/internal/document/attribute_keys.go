@@ -34,6 +34,15 @@ const (
 	// AttrHeight is the rendered height of an embed.
 	AttrHeight = "height"
 
+	// AttrName is the file name a file block shows.
+	AttrName = "name"
+
+	// AttrSize is the size in bytes of a file block's file.
+	AttrSize = "size"
+
+	// AttrContentType is the media type of a file block's file.
+	AttrContentType = "contentType"
+
 	// AttrInversed indicates that a split documentation macro renders its
 	// sides the other way round.
 	AttrInversed = "inversed"

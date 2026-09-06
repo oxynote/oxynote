@@ -327,7 +327,7 @@ func (s *Server) router() chi.Router {
 			})
 			ssr.Route("/files", func(sssr chi.Router) {
 				sssr.Post("/", s.handlers.files.UploadDocumentFile)
-				sssr.Get("/{id}", s.handlers.files.RetrieveDocumentFile)
+				sssr.Get("/{ref}", s.handlers.files.RetrieveDocumentFile)
 			})
 
 			ssr.Route("/comments", func(sssr chi.Router) {

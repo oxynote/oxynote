@@ -44,6 +44,8 @@ func Expand(b Block) (document.Block, error) {
 		return expandHorizontalRule(b), nil
 	case BlockImage:
 		return expandImage(b), nil
+	case BlockFile:
+		return document.Block{}, errFileNotAuthored
 	case BlockFigma:
 		return expandFigma(b), nil
 	case BlockMetric:

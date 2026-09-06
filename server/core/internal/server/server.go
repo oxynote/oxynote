@@ -18,7 +18,6 @@ import (
 	assistantCore "github.com/oxynote/oxynote/server/core/internal/assistant"
 	"github.com/oxynote/oxynote/server/core/internal/buildinfo"
 	datasourceCore "github.com/oxynote/oxynote/server/core/internal/datasource"
-	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
 	notificationCore "github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/assistant"
@@ -181,7 +180,7 @@ func NewServer(
 	srv.handlers.document = document.NewHandler(log, db, githubMan, webchangeClient, searchGateway, searchJobs, notifier, storageClient)
 	srv.handlers.tag = tag.NewHandler(log, db)
 	srv.handlers.comment = comment.NewHandler(log, db, notifier)
-	srv.handlers.files = files.NewHandler(log, db, storageClient, opts.PublicURL+documentCore.FilePathFormat)
+	srv.handlers.files = files.NewHandler(log, db, storageClient, opts.PublicURL)
 	srv.handlers.hook = hook.NewHandler(log, db, githubMan, webchangeClient)
 
 	// The assistant's CRUD tools mutate the document tree directly

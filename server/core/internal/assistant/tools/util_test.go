@@ -45,6 +45,7 @@ func Test_blockKindLabel(t *testing.T) {
 		"Mermaid":         {Kind: "mermaid", Result: "a mermaid diagram"},
 		"Horizontal rule": {Kind: "horizontal_rule", Result: "a divider"},
 		"Image":           {Kind: "image", Result: "an image"},
+		"File":            {Kind: "file", Result: "a file attachment"},
 		"Figma":           {Kind: "figma", Result: "a figma embed"},
 		"Metric":          {Kind: "metric", Result: "a metric"},
 		"Metric grid":     {Kind: "metric_grid", Result: "a metric grid"},
