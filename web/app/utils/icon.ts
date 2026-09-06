@@ -648,7 +648,7 @@ const icons: (string | [id: string, name: string])[] = [
 	"simple-icons:julia",
 	"simple-icons:webassembly",
 	"simple-icons:powershell",
-	"mdi:bash",
+	["simple-icons:gnubash", "bash"],
 
 	// frameworks & tooling
 	["simple-icons:vuedotjs", "vue.js"],

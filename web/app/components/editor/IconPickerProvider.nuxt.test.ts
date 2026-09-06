@@ -30,8 +30,8 @@ vi.mock("vue-virtual-scroller", async () => {
 
 // the provider installs the icon-picker context that its children reach
 // through useIconPicker, so an IconPicker inside the slot is what opens
-// it. Each icon in the list carries a tooltip, whose context the app
-// installs once at page level.
+// it. The grid's shared tooltip needs the context the app installs once
+// at page level.
 function mountProvider() {
 	return mountUnderTooltipProvider(IconPickerProvider, {
 		slots: {

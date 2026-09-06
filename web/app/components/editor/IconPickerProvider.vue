@@ -6,6 +6,7 @@ import {
 	offset,
 	shift,
 } from "@floating-ui/dom"
+import { buttonVariants } from "~/components/shadcn/ui/button"
 import { cn } from "~/lib/utils"
 
 // With defineAsyncComponent, Vue doesn't load the actual module until it's
@@ -21,11 +22,15 @@ const RecycleScroller = defineAsyncComponent(() =>
 const ITEM_SIZE = 28
 const GRID_ITEMS_PER_ROW = 12
 const GRID_WIDTH = ITEM_SIZE * GRID_ITEMS_PER_ROW
+const TOOLTIP_DELAY_MS = 1000
 
 const { open, anchor, closeIconPicker, selectIcon } = useIconPicker()
+const { cssSelectorPrefix } = useAppConfig().icon
 
 const iconFilter = ref("")
-const tooltipOpen = ref<string | null>(null)
+// the one tooltip the grid shares, anchored to the hovered cell
+const tooltip = ref<{ name: string; cell: HTMLElement } | null>(null)
+let tooltipTimer: ReturnType<typeof setTimeout> | null = null
 
 const icons = computed<
 	{
@@ -43,6 +48,18 @@ const icons = computed<
 const floatingElem = useTemplateRef("icon-picker")
 let cleanupAutoUpdate: (() => void) | null = null
 
+// the icons' stylesheet is large and only the picker needs it, so it loads
+// once the page's own load has finished rather than competing with it
+onMounted(() => {
+	const load = () => void import("virtual:icon-picker.css")
+
+	if (document.readyState === "complete") {
+		load()
+	} else {
+		window.addEventListener("load", load, { once: true })
+	}
+})
+
 onBeforeUnmount(() => {
 	document.removeEventListener("mousedown", handleClickOutside)
 	document.removeEventListener("keydown", handleEscape)
@@ -52,7 +69,7 @@ onBeforeUnmount(() => {
 watch(open, (newV) => {
 	if (newV) {
 		iconFilter.value = ""
-		tooltipOpen.value = null
+		hideTooltip()
 
 		void nextTick(() => {
 			document.addEventListener("mousedown", handleClickOutside)
@@ -94,7 +111,35 @@ async function updatePosition() {
 }
 
 function handleScroll() {
-	tooltipOpen.value = null
+	hideTooltip()
+}
+
+function hideTooltip() {
+	if (tooltipTimer) {
+		clearTimeout(tooltipTimer)
+		tooltipTimer = null
+	}
+
+	tooltip.value = null
+}
+
+// one delegated listener for the whole grid, so a cell is a plain button
+function handleGridHover(e: MouseEvent) {
+	const cell = (e.target as HTMLElement).closest<HTMLElement>("[data-name]")
+	if (!cell) {
+		return
+	}
+
+	const name = cell.dataset.name ?? ""
+	if (tooltip.value?.name === name) {
+		return
+	}
+
+	hideTooltip()
+
+	tooltipTimer = setTimeout(() => {
+		tooltip.value = { name, cell }
+	}, TOOLTIP_DELAY_MS)
 }
 
 function handleClickOutside(e: MouseEvent) {
@@ -179,40 +224,51 @@ function handleEscape(e: KeyboardEvent) {
 							:item-size="ITEM_SIZE"
 							:item-secondary-size="ITEM_SIZE"
 							:grid-items="GRID_ITEMS_PER_ROW"
-							:buffer="400"
+							:buffer="600"
 							key-field="id"
+							skip-hover
 							@scroll="handleScroll"
+							@mouseover="handleGridHover"
+							@mouseleave="hideTooltip"
 						>
-							<ShadcnUiTooltip
-								:delay-duration="1000"
-								:open="tooltipOpen === item.id"
-								@update:open="(v) => (tooltipOpen = v ? item.id : null)"
+							<!--the scroller patches each recycled cell on every scroll, so
+							a cell has to be cheap to patch: plain elements, no components-->
+							<button
+								type="button"
+								:class="cn(buttonVariants({ variant: 'ghost', size: 'icon' }))"
+								:style="{
+									width: `${ITEM_SIZE}px`,
+									height: `${ITEM_SIZE}px`,
+								}"
+								:aria-label="item.name"
+								:data-name="item.name"
+								@click="selectIcon(item.id)"
 							>
-								<ShadcnUiTooltipTrigger as-child>
-									<ShadcnUiButton
-										:style="{
-											width: `${ITEM_SIZE}px`,
-											height: `${ITEM_SIZE}px`,
-										}"
-										size="icon"
-										variant="ghost"
-										@click="selectIcon(item.id)"
-									>
-										<Icon class="size-[20px]" :name="item.id" />
-									</ShadcnUiButton>
-								</ShadcnUiTooltipTrigger>
-								<ShadcnUiTooltipContent
-									align="center"
-									side="bottom"
-									hide-when-detached
-									position-strategy="absolute"
-									sticky="always"
-									class="px-1.5 py-1"
-								>
-									<span>{{ item.name }}</span>
-								</ShadcnUiTooltipContent>
-							</ShadcnUiTooltip>
+								<span
+									class="iconify size-[20px]"
+									:class="cssSelectorPrefix + item.id"
+								/>
+							</button>
 						</RecycleScroller>
+						<ShadcnUiTooltip :open="tooltip !== null" :delay-duration="0">
+							<!--the trigger registers the anchor; the hovered cell, not the
+							trigger itself, is what the content positions against-->
+							<ShadcnUiTooltipTrigger
+								as="span"
+								class="hidden"
+								:reference="tooltip?.cell"
+							/>
+							<ShadcnUiTooltipContent
+								align="center"
+								side="bottom"
+								hide-when-detached
+								position-strategy="absolute"
+								sticky="always"
+								class="px-1.5 py-1"
+							>
+								<span>{{ tooltip?.name }}</span>
+							</ShadcnUiTooltipContent>
+						</ShadcnUiTooltip>
 					</template>
 				</div>
 			</div>
