@@ -88,11 +88,17 @@ test.describe("tags", () => {
 
 		await expect(sidebarTag(page, "Release")).toBeVisible()
 
-		// deleting takes the tag off every page
+		// deleting takes the tag off every page, once confirmed
 		await openTagActions(page, "Release")
 		await page
 			.getByRole("menuitem", {
 				name: t("sidebar.item-dropdown-menu-buttons.delete-tag"),
+			})
+			.click()
+		await page
+			.getByRole("dialog")
+			.getByRole("button", {
+				name: t("sidebar.tag-deletion-modal.confirm-button"),
 			})
 			.click()
 
