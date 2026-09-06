@@ -108,6 +108,74 @@ describe("useTagAPI", { concurrent: false }, () => {
 		})
 	})
 
+	describe("updateTagTreeDocumentCache", () => {
+		it("renames a document under every tag listing it", ({ expect }) => {
+			seedQueryData(TREE_KEY, [
+				makeTag(TAG_A, "Production", [makeDoc(DOC_A, "Runbook")]),
+				makeTag(TAG_B, "Staging", [makeDoc(DOC_A, "Runbook")]),
+			])
+
+			makeTagAPI().updateTagTreeDocumentCache(DOC_A, {
+				name: "Playbook",
+				icon: "lucide:book",
+				protected: true,
+			})
+
+			expect(
+				(readTree() ?? []).map((tag) => tag.documents[0]?.documentName),
+			).toEqual(["Playbook", "Playbook"])
+			expect(readTree()?.[0]?.documents[0]?.icon).toBe("lucide:book")
+			expect(readTree()?.[0]?.documents[0]?.protected).toBe(true)
+		})
+
+		it("renames a document nested under another", ({ expect }) => {
+			seedQueryData(TREE_KEY, [
+				makeTag(TAG_A, "Production", [
+					makeDoc(DOC_A, "Runbook", [makeDoc(DOC_CHILD, "Rollback")]),
+				]),
+			])
+
+			makeTagAPI().updateTagTreeDocumentCache(DOC_CHILD, {
+				name: "Recovery",
+				icon: "lucide:book",
+				protected: false,
+			})
+
+			expect(readTree()?.[0]?.documents[0]?.children?.[0]?.documentName).toBe(
+				"Recovery",
+			)
+		})
+
+		it("leaves the other documents alone", ({ expect }) => {
+			seedQueryData(TREE_KEY, [
+				makeTag(TAG_A, "Production", [
+					makeDoc(DOC_A, "Runbook"),
+					makeDoc(DOC_CHILD, "Rollback"),
+				]),
+			])
+
+			makeTagAPI().updateTagTreeDocumentCache(DOC_A, {
+				name: "Playbook",
+				icon: "lucide:book",
+				protected: false,
+			})
+
+			expect(
+				(readTree()?.[0]?.documents ?? []).map((doc) => doc.documentName),
+			).toEqual(["Playbook", "Rollback"])
+		})
+
+		it("does nothing without a tag tree to update", ({ expect }) => {
+			makeTagAPI().updateTagTreeDocumentCache(DOC_A, {
+				name: "Playbook",
+				icon: "lucide:book",
+				protected: false,
+			})
+
+			expect(readTree()).toBeUndefined()
+		})
+	})
+
 	describe("updateTagTree", () => {
 		it("bails out for a non-xid tag id without a request", async ({
 			expect,

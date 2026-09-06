@@ -117,7 +117,7 @@ const {
 	duplicateDocument,
 	useFetchDocumentBranchesByDocId,
 } = useDocumentAPI()
-const { deleteTag } = useTagAPI()
+const { deleteTag, updateTagTreeDocumentCache } = useTagAPI()
 const { fetchOrganization } = useAuthSession()
 const { t } = useI18n({ useScope: "global" })
 const { setEditable } = useEditorMeta()
@@ -406,6 +406,11 @@ function applyDocumentNameChange(name: string) {
 		icon: activeDocMetadata.value.icon,
 		protected: activeDocMetadata.value.protected,
 	})
+	updateTagTreeDocumentCache(activeDocMetadata.value.id, {
+		name: name,
+		icon: activeDocMetadata.value.icon,
+		protected: activeDocMetadata.value.protected,
+	})
 
 	void pageRouter.replace({
 		path: `/${createNameSlug(fetchOrganization.data.value?.data?.slug || "")}/${createNameSlugWithId(
@@ -438,6 +443,11 @@ function applyIconChange(icon: string) {
 	}
 
 	updateDocumentTreeElementCache(activeDocMetadata.value.id, {
+		name: activeDocMetadata.value.name,
+		icon: icon,
+		protected: activeDocMetadata.value.protected,
+	})
+	updateTagTreeDocumentCache(activeDocMetadata.value.id, {
 		name: activeDocMetadata.value.name,
 		icon: icon,
 		protected: activeDocMetadata.value.protected,

@@ -496,8 +496,51 @@ export default function () {
 		queryCache.setQueryData(branchKey, oldBranchTags)
 	}
 
+	// updateTagTreeDocumentCache carries a document's live name and icon into
+	// the tag tree, which holds its own copy of every row it lists. A
+	// document sits under as many tags as it carries, so every one of them
+	// is walked rather than stopping at the first hit.
+	function updateTagTreeDocumentCache(
+		id: string,
+		data: {
+			name: string
+			icon: string
+			protected: boolean
+		},
+	) {
+		const tree = clone(
+			queryCache.getQueryData<TagTreeResponse>(TAG_QUERY_KEYS.tree),
+		)
+		if (!tree) {
+			return
+		}
+
+		const walkDocuments = (elems: DocumentTreeElement[]) => {
+			for (const elem of elems) {
+				if (elem.id === id) {
+					elem.documentName = data.name
+					elem.icon = data.icon
+					elem.protected = data.protected
+				}
+
+				if (elem.children) {
+					walkDocuments(elem.children)
+				}
+			}
+		}
+
+		tree.forEach((tag) => {
+			if (tag.documents) {
+				walkDocuments(tag.documents)
+			}
+		})
+
+		queryCache.setQueryData(TAG_QUERY_KEYS.tree, tree)
+	}
+
 	return {
 		fetchTagTree,
+		updateTagTreeDocumentCache,
 		updateTagTree,
 		createTag,
 		updateTagVisibility,
