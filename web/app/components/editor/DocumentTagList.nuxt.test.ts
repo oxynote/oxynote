@@ -4,6 +4,7 @@ import {
 	clearQueryCache,
 	disposeMockEndpoints,
 	makeXid,
+	mockDeferredEndpoint,
 	mockEndpoint,
 	runInApp,
 } from "~/composables/api/test-helpers"
@@ -447,6 +448,22 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 		expect(pickerRows().filter((row) => row.includes("Production"))).toEqual([])
 	})
 
+	it("reopens with the search box empty", async ({ expect }) => {
+		stubTags([
+			makeTag(TAG_A, "Production", "#1a9e4a"),
+			makeTag(TAG_B, "Staging", "#e8760c"),
+		])
+		const wrapper = await mountTags()
+		await openPicker(wrapper)
+		await search("stag")
+
+		await openPicker(wrapper)
+		await openPicker(wrapper)
+
+		expect(pickerInput().value).toBe("")
+		expect(pickerRows()).toEqual(["Production", "Staging"])
+	})
+
 	it("hints at creation while nothing is typed", async ({ expect }) => {
 		stubTags([makeTag(TAG_A, "Production", "#1a9e4a")])
 		const wrapper = await mountTags()
@@ -510,6 +527,43 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 			color: "#000000",
 		})
 		expect(assigned[0]?.body).toEqual({ tagId: TAG_B })
+	})
+
+	it("keeps the other tags listed while the new one is still in flight", async ({
+		expect,
+	}) => {
+		// the create settles only once the refetch behind it has, so a slow
+		// request leaves the list on screen for as long as it takes
+		stubTags([makeTag(TAG_A, "Production", "#1a9e4a")])
+		const created = mockDeferredEndpoint("POST", "/api/tags")
+		const wrapper = await mountTags()
+		await openPicker(wrapper)
+		await search("Rollout")
+
+		pressEnter()
+		await created.reached
+		await nextTick()
+
+		expect(pickerRows()).toEqual(["Production", "Rollout"])
+	})
+
+	it("scrolls the list down to the tag it just appended", async ({
+		expect,
+	}) => {
+		// happy-dom lays nothing out, so the list reports a height for the
+		// scroll to aim at
+		vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(500)
+		stubTags([makeTag(TAG_A, "Production", "#1a9e4a")])
+		mockEndpoint("POST", "/api/tags", () => ({ id: TAG_B }))
+		mockEndpoint("POST", BRANCH_TAGS_URL, () => ({}))
+		const wrapper = await mountTags()
+		await openPicker(wrapper)
+		await search("Rollout")
+
+		pressEnter()
+		await nextTick()
+
+		expect(pickerItems()[0]?.parentElement?.scrollTop).toBe(500)
 	})
 
 	it("creates nothing on enter for a name that already exists", async ({

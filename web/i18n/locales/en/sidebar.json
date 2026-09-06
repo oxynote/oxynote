@@ -24,7 +24,7 @@
 			"tags": {
 				"heading": "Tags",
 				"visibility-action-title": "Choose Visible Tags",
-				"all-hidden": "Every tag is hidden"
+				"all-hidden": "All tags are hidden"
 			},
 			"next-steps": {
 				"heading": "Next Steps",
@@ -52,6 +52,12 @@
 		},
 		"item-placeholder-name": "Add Page",
 		"toggle-sidebar": "Toggle Sidebar",
+		"tag-deletion-modal": {
+			"title": "Delete Tag",
+			"description": "Are you sure you want to delete {name}? It will be removed from every page using it. This action cannot be undone.",
+			"confirm-button": "Delete tag",
+			"cancel-button": "Cancel"
+		},
 		"errors": {
 			"create-document-failed": "Failed to create a page. Please try again",
 			"update-tree-failed": "Failed to update the page location. Please try again",

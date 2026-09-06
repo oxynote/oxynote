@@ -49,6 +49,7 @@ const documentTags = computed(() => {
 
 const rowElem = useTemplateRef<HTMLElement>("tag-row")
 const triggerElem = useTemplateRef<HTMLElement>("tag-trigger")
+const listElem = useTemplateRef<HTMLElement>("tag-list")
 const rowParentElem = computed(() => rowElem.value?.parentElement ?? null)
 // the count settles by trying one more pill until the row overflows, then
 // stepping back. tooMany remembers the count that overflowed, so the two
@@ -115,14 +116,16 @@ useResizeObserver([rowElem, rowParentElem], () => {
 	void measureOnResize()
 })
 
+// the search is emptied on the way in rather than on the way out: the
+// list is still on screen while the menu fades, and clearing it then
+// shows the rows springing back to their full length mid-close
 watch(pickerOpen, (isOpen) => {
-	if (isOpen) {
-		newColor.value = suggestedColor()
-
+	if (!isOpen) {
 		return
 	}
 
 	query.value = ""
+	newColor.value = suggestedColor()
 })
 
 // the swatches come from theme variables, which resolve to oklch, while a
@@ -205,21 +208,31 @@ async function toggleTag(tag: TagTreeElement) {
 async function createAndAssign() {
 	const documentId = editorStore.activeDocumentId
 	const branchId = editorStore.activeBranchId
-	if (!documentId || !branchId || !trimmedQuery.value) {
+	const tagName = trimmedQuery.value
+	if (!documentId || !branchId || !tagName) {
 		return
 	}
 
+	// the search box is emptied before the request rather than after it.
+	// mutateAsync settles only once the refetch its success triggers has,
+	// and until then the typed name narrows the list to the one tag that
+	// matches it — the one just created
+	query.value = ""
+
 	try {
-		const created = await createTag.mutateAsync({
-			tagName: trimmedQuery.value,
+		const creating = createTag.mutateAsync({
+			tagName: tagName,
 			// the swatches resolve from theme variables, which are oklch; the
 			// stored colour is hex so it survives a theme change
 			color: colorToHex(
 				newColor.value ?? chartStyles().selectableColors.default,
 			),
 		})
+		// the tag is appended, so the row it adds is below the fold on a
+		// list long enough to scroll. onMutate has already put it there
+		void nextTick(scrollListToEnd)
 
-		query.value = ""
+		const created = await creating
 		// the tag just created holds a colour now, so the next one drawn has
 		// to weigh it in — the menu stays open across several creations
 		newColor.value = suggestedColor()
@@ -232,6 +245,15 @@ async function createAndAssign() {
 	} catch {
 		showToastMessage("error", t("editor.tags.errors.create-failed"))
 	}
+}
+
+function scrollListToEnd() {
+	const list = listElem.value
+	if (!list) {
+		return
+	}
+
+	list.scrollTop = list.scrollHeight
 }
 
 // the create row is the only thing enter can act on: an existing tag is
@@ -307,7 +329,7 @@ function handleSearchEnter() {
 				/>
 				<ShadcnUiDropdownMenuSeparator />
 				<template v-if="matchingTags.length">
-					<div class="max-h-47.5 overflow-y-auto">
+					<div ref="tag-list" class="max-h-47.5 overflow-y-auto">
 						<ShadcnUiDropdownMenuItem
 							v-for="tag in matchingTags"
 							:key="tag.id"

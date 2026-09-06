@@ -400,6 +400,25 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 		expect(sidebar(wrapper).emitted("initial-load-complete")).toHaveLength(1)
 	})
 
+	it("announces that every section has loaded with every tag hidden", async ({
+		expect,
+	}) => {
+		// a reload hands the cache its answers before the sidebar is built,
+		// so the tags section is there from the first render — and with the
+		// last visible tag hidden it has no rows to report
+		stubQueries()
+		seedQueryData(["documents", "tree"], [treeElement()])
+		seedQueryData(
+			["tags", "tree"],
+			[{ ...tagElement(TAG_A, "Production", "#22c55e"), hidden: true }],
+		)
+
+		const wrapper = await mountSidebar()
+		await settleMutations()
+
+		expect(sidebar(wrapper).emitted("initial-load-complete")).toHaveLength(1)
+	})
+
 	describe("next steps", { concurrent: false }, () => {
 		it("invites the user to add team members while alone", async ({
 			expect,
@@ -714,7 +733,9 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 			expect(calls[0]?.body).toEqual({ hidden: true })
 		})
 
-		it("deletes a tag from its options menu", async ({ expect }) => {
+		it("asks the page to delete a tag from its options menu", async ({
+			expect,
+		}) => {
 			stubQueries({ tags: seededTags() })
 			const calls = mockEndpoint("DELETE", `/api/tags/${TAG_A}`, () => ({}))
 			const wrapper = await mountSidebar()
@@ -724,7 +745,12 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 			menuItem(t("sidebar.item-dropdown-menu-buttons.delete-tag")).click()
 			await settleMutations()
 
-			expect(calls).toHaveLength(1)
+			// the modal outlives the sidebar's own drawer on a narrow screen,
+			// so the page owns it and the deletion with it
+			expect(sidebar(wrapper).emitted("delete-tag")).toEqual([
+				[{ id: TAG_A, name: "Production" }],
+			])
+			expect(calls).toHaveLength(0)
 		})
 
 		// the tree lists a document under a tag by its default branch, so

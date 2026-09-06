@@ -117,6 +117,7 @@ const {
 	duplicateDocument,
 	useFetchDocumentBranchesByDocId,
 } = useDocumentAPI()
+const { deleteTag } = useTagAPI()
 const { fetchOrganization } = useAuthSession()
 const { t } = useI18n({ useScope: "global" })
 const { setEditable } = useEditorMeta()
@@ -148,6 +149,10 @@ const settingModalOpen = ref<
 >(false)
 const pendingDocDeletion = ref<{
 	deleteDocument: () => Promise<void>
+	name: string
+} | null>(null)
+const pendingTagDeletion = ref<{
+	deleteTag: () => Promise<void>
 	name: string
 } | null>(null)
 const notificationSidebarOpen = ref(false)
@@ -509,6 +514,19 @@ function handleDocumentDeletion(id: string | null | undefined) {
 	}
 }
 
+function handleTagDeletion(tag: { id: string; name: string }) {
+	pendingTagDeletion.value = {
+		name: tag.name,
+		deleteTag: async () => {
+			try {
+				await deleteTag.mutateAsync(tag.id)
+			} catch {
+				showToastMessage("error", t("sidebar.errors.delete-tag-failed"))
+			}
+		},
+	}
+}
+
 async function handleDocumentDuplication(id?: string) {
 	if (!id) {
 		id = activeDocMetadata.value?.id
@@ -586,6 +604,7 @@ function clearLinkHighlightNodeOnce() {
 				@create-document="handleDocumentCreation"
 				@duplicate-document="handleDocumentDuplication"
 				@delete-document="handleDocumentDeletion"
+				@delete-tag="handleTagDeletion"
 				@open-settings="
 					(target) =>
 						target === 'org-members'
@@ -610,6 +629,7 @@ function clearLinkHighlightNodeOnce() {
 				v-if="activeDocMetadata && allSectionsLoaded"
 				v-model="pendingDocDeletion"
 			/>
+			<TagDeletionModal v-model="pendingTagDeletion" />
 			<main class="w-full min-w-0 bg-background">
 				<EditorIconPickerProvider>
 					<DocumentHeader

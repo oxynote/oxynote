@@ -21,18 +21,14 @@ const emit = defineEmits<{
 	(e: "initial-load-complete" | "toggle-notifications"): void
 	(e: "open-settings", target: "org-members" | null): void
 	(e: "delete-document" | "duplicate-document", id: string): void
+	(e: "delete-tag", tag: { id: string; name: string }): void
 	(e: "create-document", parentId: string | null): void
 }>()
 
 const { t } = useI18n({ useScope: "global" })
 const { fetchDocumentTree, updateDocumentTree } = useDocumentAPI()
-const {
-	fetchTagTree,
-	updateTagTree,
-	updateTagVisibility,
-	deleteTag,
-	unassignBranchTag,
-} = useTagAPI()
+const { fetchTagTree, updateTagTree, updateTagVisibility, unassignBranchTag } =
+	useTagAPI()
 const { fetchOrganization, safeSignOut } = useAuthSession()
 const { fetchGitHubConnectionStatus, gitHubConfigured, fetchGitHubInstallURL } =
 	useGitHubAPI()
@@ -131,6 +127,9 @@ const sections = computed<Section[]>(() => {
 		rootItems.push({
 			id: "tags",
 			heading: t("sidebar.sections.tags.heading"),
+			// the tree has answered by the time this section exists, so no
+			// rows means every tag is hidden rather than still on its way
+			isEmptyAfterLoad: true,
 			emptyMessage: t("sidebar.sections.tags.all-hidden"),
 			items: tagItems,
 			onUpdateLocation: handleTagLocationUpdate,
@@ -351,8 +350,8 @@ function tagActions(tag: TagTreeElement): SidebarItemAction[] {
 			id: "delete-tag",
 			name: t("sidebar.item-dropdown-menu-buttons.delete-tag"),
 			icon: "lucide:trash-2",
-			fn: async () => {
-				await handleTagDelete(tag.id)
+			fn: () => {
+				emit("delete-tag", { id: tag.id, name: tag.tagName })
 			},
 		},
 	]
@@ -380,14 +379,6 @@ async function handleTagVisibilityUpdate(id: string, req: { hidden: boolean }) {
 		await updateTagVisibility.mutateAsync({ id: id, req: req })
 	} catch {
 		showToastMessage("error", t("sidebar.errors.update-tag-failed"))
-	}
-}
-
-async function handleTagDelete(id: string) {
-	try {
-		await deleteTag.mutateAsync(id)
-	} catch {
-		showToastMessage("error", t("sidebar.errors.delete-tag-failed"))
 	}
 }
 
@@ -506,7 +497,7 @@ async function installSlack() {
 						<ShadcnUiSidebarGroupContent>
 							<div
 								v-if="section.emptyMessage && !section.items.length"
-								class="px-2 py-1.25 text-2sm text-sidebar-foreground/60"
+								class="flex h-7 items-center px-2 text-2sm text-sidebar-foreground/60"
 							>
 								{{ section.emptyMessage }}
 							</div>
