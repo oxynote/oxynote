@@ -41,7 +41,7 @@
 		"qa-fix": "pnpm run lint && pnpm run test"
 	},
 	"dependencies": {
-		"@better-auth/electron": "^1.7.1",
+		"@better-auth/electron": "^1.7.2",
 		"@codemirror/lang-sql": "^6.10.0",
 		"@floating-ui/dom": "^1.8.0",
 		"@hocuspocus/provider": "^4.6.0",
