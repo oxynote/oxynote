@@ -55,10 +55,13 @@ export interface CommandData {
 }
 
 export interface CommandItem {
-	title: string
+	titleI18nKey: string
+	descriptionI18nKey: string
 	nodeType: string
 	icon: string
 	group: CommandGroup
+	// the markdown that inserts the same block when typed; a trailing space
+	// means the rule only fires on the space that follows it
 	shortcut?: string
 	disabled?: boolean
 	specialContext?: boolean
@@ -114,14 +117,15 @@ function whitelistSlashItemsByContext(state: EditorState): string[] {
 	return allNormalItems.map((v) => v.nodeType)
 }
 
-const allItems: CommandItem[] = [
+export const allItems: CommandItem[] = [
 	// text group
 	{
-		title: "Heading 1",
+		titleI18nKey: "editor.slash-commands.items.heading-1.title",
+		descriptionI18nKey: "editor.slash-commands.items.heading-1.description",
 		nodeType: Heading.name,
 		icon: "lucide:heading-1",
 		group: CommandGroup.Text,
-		shortcut: "#",
+		shortcut: "# ",
 		command: ({ editor, range }: CommandData) => {
 			const $pos = editor.state.doc.resolve(range.from)
 			const provider = extractHocuspocusProviderFromEditor(editor)
@@ -145,11 +149,12 @@ const allItems: CommandItem[] = [
 		},
 	},
 	{
-		title: "Heading 2",
+		titleI18nKey: "editor.slash-commands.items.heading-2.title",
+		descriptionI18nKey: "editor.slash-commands.items.heading-2.description",
 		nodeType: Heading.name,
 		icon: "lucide:heading-2",
 		group: CommandGroup.Text,
-		shortcut: "##",
+		shortcut: "## ",
 		command: ({ editor, range }: CommandData) => {
 			const $pos = editor.state.doc.resolve(range.from)
 			const provider = extractHocuspocusProviderFromEditor(editor)
@@ -173,11 +178,12 @@ const allItems: CommandItem[] = [
 		},
 	},
 	{
-		title: "Heading 3",
+		titleI18nKey: "editor.slash-commands.items.heading-3.title",
+		descriptionI18nKey: "editor.slash-commands.items.heading-3.description",
 		nodeType: Heading.name,
 		icon: "lucide:heading-3",
 		group: CommandGroup.Text,
-		shortcut: "###",
+		shortcut: "### ",
 		command: ({ editor, range }: CommandData) => {
 			const $pos = editor.state.doc.resolve(range.from)
 			const provider = extractHocuspocusProviderFromEditor(editor)
@@ -202,11 +208,12 @@ const allItems: CommandItem[] = [
 	},
 	// list group
 	{
-		title: "Bulleted list",
+		titleI18nKey: "editor.slash-commands.items.bulleted-list.title",
+		descriptionI18nKey: "editor.slash-commands.items.bulleted-list.description",
 		nodeType: BulletList.name,
 		icon: "lucide:list",
 		group: CommandGroup.List,
-		shortcut: "-",
+		shortcut: "- ",
 		command: ({ editor, range }: CommandData) => {
 			const $pos = editor.state.doc.resolve(range.from)
 			const provider = extractHocuspocusProviderFromEditor(editor)
@@ -225,11 +232,12 @@ const allItems: CommandItem[] = [
 		},
 	},
 	{
-		title: "Numbered list",
+		titleI18nKey: "editor.slash-commands.items.numbered-list.title",
+		descriptionI18nKey: "editor.slash-commands.items.numbered-list.description",
 		nodeType: OrderedList.name,
 		icon: "lucide:list-ordered",
 		group: CommandGroup.List,
-		shortcut: "1.",
+		shortcut: "1. ",
 		command: ({ editor, range }: CommandData) => {
 			const $pos = editor.state.doc.resolve(range.from)
 			const provider = extractHocuspocusProviderFromEditor(editor)
@@ -248,11 +256,12 @@ const allItems: CommandItem[] = [
 		},
 	},
 	{
-		title: "Checklist",
+		titleI18nKey: "editor.slash-commands.items.checklist.title",
+		descriptionI18nKey: "editor.slash-commands.items.checklist.description",
 		nodeType: TaskList.name,
 		icon: "lucide:list-checks",
 		group: CommandGroup.List,
-		shortcut: "[]",
+		shortcut: "[] ",
 		command: ({ editor, range }: CommandData) => {
 			const $pos = editor.state.doc.resolve(range.from)
 			const provider = extractHocuspocusProviderFromEditor(editor)
@@ -272,7 +281,8 @@ const allItems: CommandItem[] = [
 	},
 	// basic block group
 	{
-		title: "Code Block",
+		titleI18nKey: "editor.slash-commands.items.code-block.title",
+		descriptionI18nKey: "editor.slash-commands.items.code-block.description",
 		nodeType: CodeBlock.name,
 		icon: "lucide:square-code",
 		group: CommandGroup.BasicBlock,
@@ -317,7 +327,8 @@ const allItems: CommandItem[] = [
 		},
 	},
 	{
-		title: "Callout",
+		titleI18nKey: "editor.slash-commands.items.callout.title",
+		descriptionI18nKey: "editor.slash-commands.items.callout.description",
 		nodeType: CalloutBlock.name,
 		icon: "lucide:square-m",
 		group: CommandGroup.BasicBlock,
@@ -362,7 +373,8 @@ const allItems: CommandItem[] = [
 		},
 	},
 	{
-		title: "Image",
+		titleI18nKey: "editor.slash-commands.items.image.title",
+		descriptionI18nKey: "editor.slash-commands.items.image.description",
 		nodeType: ImageBlock.name,
 		icon: "lucide:image",
 		group: CommandGroup.BasicBlock,
@@ -371,7 +383,8 @@ const allItems: CommandItem[] = [
 		},
 	},
 	{
-		title: "File",
+		titleI18nKey: "editor.slash-commands.items.file.title",
+		descriptionI18nKey: "editor.slash-commands.items.file.description",
 		nodeType: FileBlock.name,
 		icon: "lucide:paperclip",
 		group: CommandGroup.BasicBlock,
@@ -380,7 +393,8 @@ const allItems: CommandItem[] = [
 		},
 	},
 	{
-		title: "Figma Embed",
+		titleI18nKey: "editor.slash-commands.items.figma-embed.title",
+		descriptionI18nKey: "editor.slash-commands.items.figma-embed.description",
 		nodeType: FigmaBlock.name,
 		icon: "simple-icons:figma",
 		group: CommandGroup.BasicBlock,
@@ -419,7 +433,8 @@ const allItems: CommandItem[] = [
 		},
 	},
 	{
-		title: "Divider",
+		titleI18nKey: "editor.slash-commands.items.divider.title",
+		descriptionI18nKey: "editor.slash-commands.items.divider.description",
 		nodeType: HorizontalRule.name,
 		icon: "lucide:minus",
 		group: CommandGroup.BasicBlock,
@@ -461,7 +476,9 @@ const allItems: CommandItem[] = [
 	},
 	// power block group
 	{
-		title: "Mermaid Diagram",
+		titleI18nKey: "editor.slash-commands.items.mermaid-diagram.title",
+		descriptionI18nKey:
+			"editor.slash-commands.items.mermaid-diagram.description",
 		nodeType: MermaidBlock.name,
 		icon: "lucide:network",
 		group: CommandGroup.PowerBlock,
@@ -503,7 +520,9 @@ const allItems: CommandItem[] = [
 		},
 	},
 	{
-		title: "Split Documentation",
+		titleI18nKey: "editor.slash-commands.items.split-documentation.title",
+		descriptionI18nKey:
+			"editor.slash-commands.items.split-documentation.description",
 		nodeType: SplitDocumentation.name,
 		icon: "lucide:square-split-horizontal",
 		group: CommandGroup.PowerBlock,
@@ -527,7 +546,8 @@ const allItems: CommandItem[] = [
 		},
 	},
 	{
-		title: "Live Metrics",
+		titleI18nKey: "editor.slash-commands.items.live-metrics.title",
+		descriptionI18nKey: "editor.slash-commands.items.live-metrics.description",
 		nodeType: METRIC_BLOCK_NAME,
 		icon: "lucide:chart-line",
 		group: CommandGroup.PowerBlock,
@@ -553,12 +573,16 @@ const allItems: CommandItem[] = [
 ]
 const allNormalItems = allItems.filter((v) => !v.specialContext)
 
+// the query matches the title the reader sees, so the caller supplies the
+// translation
 export function filterSlashItems({
 	query,
 	editor,
+	t,
 }: {
 	query: string
 	editor: Editor
+	t: (key: string) => string
 }): CommandItem[] {
 	// NOTE: the group order is determined by the group enum, but the item order
 	// within the group is established here.
@@ -566,7 +590,7 @@ export function filterSlashItems({
 		const res = whitelistSlashItemsByContext(editor.state)
 		return (
 			res.includes(item.nodeType) &&
-			item.title.toLowerCase().includes(query.toLowerCase())
+			t(item.titleI18nKey).toLowerCase().includes(query.toLowerCase())
 		)
 	})
 }

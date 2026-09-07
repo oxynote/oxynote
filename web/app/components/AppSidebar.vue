@@ -578,6 +578,12 @@ async function installSlack() {
 										<ShadcnUiKbd v-if="!val.connector">
 											{{ val.key }}
 										</ShadcnUiKbd>
+										<span
+											v-else-if="val.connector === 'sequence'"
+											class="text-xs text-muted-foreground"
+										>
+											{{ $t("shortcuts.connector") }}
+										</span>
 									</template>
 								</ShadcnUiKbdGroup>
 							</ShadcnUiSidebarMenuButton>

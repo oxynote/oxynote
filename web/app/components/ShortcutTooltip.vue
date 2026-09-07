@@ -56,7 +56,10 @@ function handlePointerLeave() {
 						:key="index"
 					>
 						<ShadcnUiKbd v-if="!val.connector">{{ val.key }}</ShadcnUiKbd>
-						<span v-else class="text-xs text-muted-foreground">
+						<span
+							v-else-if="val.connector === 'sequence'"
+							class="text-xs text-muted-foreground"
+						>
 							{{ $t("shortcuts.connector") }}
 						</span>
 					</template>

@@ -195,6 +195,7 @@ const contentEditor = useEditor({
 		RemoteDeleteSelectionGuard,
 		TrailingNode.configure({ notAfter: [Paragraph.name] }),
 		SlashCommands.configure({
+			t,
 			decorationClass: cn(
 				"font-normal relative z-1",
 				"before:absolute before:content-[''] before:-top-[0.075em] before:-left-[0.25em] before:-right-[0.25em] before:-bottom-[0.075em] before:bg-[var(--tw-prose-pre-bg)] before:-z-1 before:rounded-sm before:border-1 before:border-border",

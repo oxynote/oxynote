@@ -4,16 +4,21 @@ import { describe, it, vi } from "vitest"
 import CommandList from "./CommandList.vue"
 import CommandButton from "./CommandButton.vue"
 import { CommandGroup, type CommandData, type CommandItem } from "./items"
-import { at } from "~/components/test-helpers"
+import { at, t } from "~/components/test-helpers"
+
+// the list renders the translated title of each item, so fixtures name a
+// real slash command and expectations resolve the same string
+const title = (slug: string) => t(`editor.slash-commands.items.${slug}.title`)
 
 function item(
-	title: string,
+	slug: string,
 	group: CommandGroup,
 	overrides: Partial<CommandItem> = {},
 ): CommandItem {
 	return {
-		title: title,
-		nodeType: title.toLowerCase(),
+		titleI18nKey: `editor.slash-commands.items.${slug}.title`,
+		descriptionI18nKey: `editor.slash-commands.items.${slug}.description`,
+		nodeType: slug,
 		icon: "lucide:type",
 		group: group,
 		command: () => undefined,
@@ -26,7 +31,7 @@ function mountList(
 	options: {
 		query?: string
 		command?: (item: {
-			title: string
+			titleI18nKey: string
 			command: (data: CommandData) => void
 		}) => void
 		initClose?: () => void
@@ -45,7 +50,7 @@ function mountList(
 function titles(wrapper: VueWrapper): string[] {
 	return wrapper
 		.findAllComponents(CommandButton)
-		.map((button) => (button.props("item") as CommandItem).title)
+		.map((button) => (button.props("item") as { title: string }).title)
 }
 
 function selectedTitle(wrapper: VueWrapper): string | undefined {
@@ -73,34 +78,37 @@ function pressKey(wrapper: VueWrapper, key: string): boolean {
 describe("<CommandList>", () => {
 	it("lists the commands it was given", async ({ expect }) => {
 		const wrapper = await mountList([
-			item("Heading 1", CommandGroup.Text),
-			item("Bullet list", CommandGroup.List),
+			item("heading-1", CommandGroup.Text),
+			item("bulleted-list", CommandGroup.List),
 		])
 
-		expect(titles(wrapper)).toEqual(["Heading 1", "Bullet list"])
+		expect(titles(wrapper)).toEqual([
+			title("heading-1"),
+			title("bulleted-list"),
+		])
 	})
 
 	it("orders the commands by group", async ({ expect }) => {
 		const wrapper = await mountList([
-			item("Mermaid", CommandGroup.PowerBlock),
-			item("Bullet list", CommandGroup.List),
-			item("Heading 1", CommandGroup.Text),
-			item("Code", CommandGroup.BasicBlock),
+			item("mermaid-diagram", CommandGroup.PowerBlock),
+			item("bulleted-list", CommandGroup.List),
+			item("heading-1", CommandGroup.Text),
+			item("code-block", CommandGroup.BasicBlock),
 		])
 
 		expect(titles(wrapper)).toEqual([
-			"Heading 1",
-			"Bullet list",
-			"Code",
-			"Mermaid",
+			title("heading-1"),
+			title("bulleted-list"),
+			title("code-block"),
+			title("mermaid-diagram"),
 		])
 	})
 
 	it("separates the groups from one another", async ({ expect }) => {
 		const wrapper = await mountList([
-			item("Heading 1", CommandGroup.Text),
-			item("Heading 2", CommandGroup.Text),
-			item("Bullet list", CommandGroup.List),
+			item("heading-1", CommandGroup.Text),
+			item("heading-2", CommandGroup.Text),
+			item("bulleted-list", CommandGroup.List),
 		])
 
 		expect(wrapper.findAll(".bg-border")).toHaveLength(1)
@@ -108,8 +116,8 @@ describe("<CommandList>", () => {
 
 	it("draws no separators inside a single group", async ({ expect }) => {
 		const wrapper = await mountList([
-			item("Heading 1", CommandGroup.Text),
-			item("Heading 2", CommandGroup.Text),
+			item("heading-1", CommandGroup.Text),
+			item("heading-2", CommandGroup.Text),
 		])
 
 		expect(wrapper.findAll(".bg-border")).toHaveLength(0)
@@ -117,64 +125,64 @@ describe("<CommandList>", () => {
 
 	it("preselects the first command", async ({ expect }) => {
 		const wrapper = await mountList([
-			item("Heading 1", CommandGroup.Text),
-			item("Heading 2", CommandGroup.Text),
+			item("heading-1", CommandGroup.Text),
+			item("heading-2", CommandGroup.Text),
 		])
 
-		expect(selectedTitle(wrapper)).toBe("Heading 1")
+		expect(selectedTitle(wrapper)).toBe(title("heading-1"))
 	})
 
 	it("follows the pointer onto another command", async ({ expect }) => {
 		const wrapper = await mountList([
-			item("Heading 1", CommandGroup.Text),
-			item("Heading 2", CommandGroup.Text),
+			item("heading-1", CommandGroup.Text),
+			item("heading-2", CommandGroup.Text),
 		])
 
 		await at(wrapper.findAll("button"), 1).trigger("mouseover")
 
-		expect(selectedTitle(wrapper)).toBe("Heading 2")
+		expect(selectedTitle(wrapper)).toBe(title("heading-2"))
 	})
 
 	it("moves the selection down with the arrow keys", async ({ expect }) => {
 		const wrapper = await mountList([
-			item("Heading 1", CommandGroup.Text),
-			item("Heading 2", CommandGroup.Text),
+			item("heading-1", CommandGroup.Text),
+			item("heading-2", CommandGroup.Text),
 		])
 
 		expect(pressKey(wrapper, "ArrowDown")).toBe(true)
 		await nextTick()
 
-		expect(selectedTitle(wrapper)).toBe("Heading 2")
+		expect(selectedTitle(wrapper)).toBe(title("heading-2"))
 	})
 
 	it("wraps around at the bottom of the list", async ({ expect }) => {
 		const wrapper = await mountList([
-			item("Heading 1", CommandGroup.Text),
-			item("Heading 2", CommandGroup.Text),
+			item("heading-1", CommandGroup.Text),
+			item("heading-2", CommandGroup.Text),
 		])
 		pressKey(wrapper, "ArrowDown")
 
 		pressKey(wrapper, "ArrowDown")
 		await nextTick()
 
-		expect(selectedTitle(wrapper)).toBe("Heading 1")
+		expect(selectedTitle(wrapper)).toBe(title("heading-1"))
 	})
 
 	it("wraps around at the top of the list", async ({ expect }) => {
 		const wrapper = await mountList([
-			item("Heading 1", CommandGroup.Text),
-			item("Heading 2", CommandGroup.Text),
+			item("heading-1", CommandGroup.Text),
+			item("heading-2", CommandGroup.Text),
 		])
 
 		expect(pressKey(wrapper, "ArrowUp")).toBe(true)
 		await nextTick()
 
-		expect(selectedTitle(wrapper)).toBe("Heading 2")
+		expect(selectedTitle(wrapper)).toBe(title("heading-2"))
 	})
 
 	it("runs the selected command on enter", async ({ expect }) => {
 		const command = vi.fn()
-		const heading = item("Heading 1", CommandGroup.Text)
+		const heading = item("heading-1", CommandGroup.Text)
 		const wrapper = await mountList([heading], { command: command })
 
 		expect(pressKey(wrapper, "Enter")).toBe(true)
@@ -185,9 +193,9 @@ describe("<CommandList>", () => {
 
 	it("runs the command the reader clicked", async ({ expect }) => {
 		const command = vi.fn()
-		const list = item("Bullet list", CommandGroup.List)
+		const list = item("bulleted-list", CommandGroup.List)
 		const wrapper = await mountList(
-			[item("Heading 1", CommandGroup.Text), list],
+			[item("heading-1", CommandGroup.Text), list],
 			{ command: command },
 		)
 
@@ -198,7 +206,7 @@ describe("<CommandList>", () => {
 	})
 
 	it("ignores keys it has no use for", async ({ expect }) => {
-		const wrapper = await mountList([item("Heading 1", CommandGroup.Text)])
+		const wrapper = await mountList([item("heading-1", CommandGroup.Text)])
 
 		expect(pressKey(wrapper, "Escape")).toBe(false)
 	})
@@ -227,7 +235,7 @@ describe("<CommandList>", () => {
 	}) => {
 		const initClose = vi.fn()
 		const command = vi.fn()
-		const wrapper = await mountList([item("Heading 1", CommandGroup.Text)], {
+		const wrapper = await mountList([item("heading-1", CommandGroup.Text)], {
 			query: "xyz",
 			initClose: initClose,
 			command: command,
@@ -244,18 +252,20 @@ describe("<CommandList>", () => {
 		expect,
 	}) => {
 		const wrapper = await mountList([
-			item("Heading 1", CommandGroup.Text),
-			item("Heading 2", CommandGroup.Text),
+			item("heading-1", CommandGroup.Text),
+			item("heading-2", CommandGroup.Text),
 		])
 		pressKey(wrapper, "ArrowDown")
 
-		await wrapper.setProps({ items: [item("Code", CommandGroup.BasicBlock)] })
+		await wrapper.setProps({
+			items: [item("code-block", CommandGroup.BasicBlock)],
+		})
 
-		expect(selectedTitle(wrapper)).toBe("Code")
+		expect(selectedTitle(wrapper)).toBe(title("code-block"))
 	})
 
 	it("fades in once it is mounted", async ({ expect }) => {
-		const wrapper = await mountList([item("Heading 1", CommandGroup.Text)])
+		const wrapper = await mountList([item("heading-1", CommandGroup.Text)])
 
 		expect(wrapper.get("div").attributes("data-state")).toBe("open")
 	})
@@ -263,7 +273,7 @@ describe("<CommandList>", () => {
 	it("fades out before handing control back", async ({ expect }) => {
 		vi.useFakeTimers()
 		const afterClose = vi.fn()
-		const wrapper = await mountList([item("Heading 1", CommandGroup.Text)])
+		const wrapper = await mountList([item("heading-1", CommandGroup.Text)])
 
 		api(wrapper).close(afterClose)
 		await nextTick()

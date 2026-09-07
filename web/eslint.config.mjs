@@ -158,6 +158,7 @@ export default withNuxt([
 						// t() later (the rule only tracks direct call sites)
 						"/^editor\\.ai-chat\\.tool-status\\./",
 						"/^editor\\.hooks\\.[a-z-]+\\.existing-item-(block|full-document)-explanation$/",
+						"/^editor\\.slash-commands\\.items\\./",
 						"/^shortcuts\\.groups\\./",
 						"/^shortcuts\\.modal\\.entries\\./",
 						"/^shortcuts\\.keys\\./",

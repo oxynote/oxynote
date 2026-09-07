@@ -6,48 +6,146 @@
 			"description": "Every keyboard shortcut available in the app",
 			"entries": {
 				"toggle-settings": {
-					"label": "Settings",
-					"description": "Opens and closes settings. Works anywhere in the workspace."
+					"label": "Open settings",
+					"description": "Opens settings. Press again to close. Works anywhere in the workspace."
 				},
 				"toggle-shortcuts": {
-					"label": "Keyboard shortcuts",
-					"description": "Opens and closes this list. Works anywhere in the workspace."
+					"label": "View keyboard shortcuts",
+					"description": "Opens this list. Press again to close. Works anywhere in the workspace."
 				},
 				"toggle-sidebar": {
-					"label": "Sidebar",
+					"label": "Toggle sidebar",
 					"description": "Shows and hides the page sidebar. Works while you type too."
 				},
 				"toggle-inbox": {
-					"label": "Inbox",
-					"description": "Opens and closes the notification panel on the right."
+					"label": "Toggle inbox",
+					"description": "Opens and closes the inbox on the right. Works anywhere in the workspace."
 				},
 				"search-for-documents": {
-					"label": "Search",
-					"description": "Opens and closes page search."
+					"label": "Open search",
+					"description": "Opens page search. Press again to close."
 				},
 				"create-new-document": {
-					"label": "New page",
+					"label": "Create new page",
 					"description": "Adds a new top level page. You stay on the page you are on."
 				},
 				"add-params-to-split-doc": {
-					"label": "Add a parameter list",
-					"description": "Use it on the left side of a split documentation block. Adds a parameter list at the bottom and puts your cursor in it."
+					"label": "Add parameter list to split documentation",
+					"description": "Adds a parameter list to the left side of a split documentation block and puts your cursor in it. Works from anywhere in the block."
 				},
 				"add-code-block-to-split-doc": {
-					"label": "Add a code block",
-					"description": "The same key on the right side of a split documentation block. Adds a code block at the bottom and puts your cursor in its title."
+					"label": "Add code block to split documentation",
+					"description": "Adds a code block to the right side of a split documentation block and puts your cursor in its title. Works from anywhere in the block."
 				},
 				"add-metrics-to-split-doc": {
-					"label": "Add a metrics block",
-					"description": "Use it on the right side of a split documentation block. Adds a metrics block at the bottom. Your cursor does not move."
+					"label": "Add metrics block to split documentation",
+					"description": "Adds a metrics block to the right side of a split documentation block. Your cursor does not move. Works from anywhere in the block."
+				},
+				"undo": {
+					"label": "Undo",
+					"description": "Takes back your last change in the page."
+				},
+				"redo": {
+					"label": "Redo",
+					"description": "Puts back the change you just undid."
+				},
+				"bold": {
+					"label": "Bold",
+					"description": "Makes the selected text bold."
+				},
+				"italic": {
+					"label": "Italic",
+					"description": "Makes the selected text italic."
+				},
+				"underline": {
+					"label": "Underline",
+					"description": "Underlines the selected text."
+				},
+				"strikethrough": {
+					"label": "Strikethrough",
+					"description": "Strikes through the selected text."
+				},
+				"inline-code": {
+					"label": "Inline code",
+					"description": "Shows the selected text as code."
+				},
+				"heading-1": {
+					"label": "Heading 1",
+					"description": "Turns the line into a large heading. Press again to turn it back."
+				},
+				"heading-2": {
+					"label": "Heading 2",
+					"description": "Turns the line into a medium heading. Press again to turn it back."
+				},
+				"heading-3": {
+					"label": "Heading 3",
+					"description": "Turns the line into a small heading. Press again to turn it back."
+				},
+				"bulleted-list": {
+					"label": "Bulleted list",
+					"description": "Turns the line into a bullet point. Press again to turn it back."
+				},
+				"numbered-list": {
+					"label": "Numbered list",
+					"description": "Turns the line into a numbered item. Press again to turn it back."
+				},
+				"checklist": {
+					"label": "Checklist",
+					"description": "Turns the line into a checkbox item. Press again to turn it back."
+				},
+				"quote": {
+					"label": "Quote",
+					"description": "Turns the line into a quote. Press again to turn it back."
+				},
+				"code-block": {
+					"label": "Code block",
+					"description": "Turns the line into a code block. Press again to turn it back."
+				},
+				"indent-list-item": {
+					"label": "Indent list item",
+					"description": "Moves the list item one level deeper. Works with the cursor in a list."
+				},
+				"outdent-list-item": {
+					"label": "Outdent list item",
+					"description": "Moves the list item one level up. Works with the cursor in a list."
+				},
+				"exit-code-block": {
+					"label": "Leave code block",
+					"description": "Adds a new line below the code block and moves your cursor there. Works with the cursor in a code block or a Mermaid diagram."
+				},
+				"md-bold": {
+					"label": "Bold",
+					"description": "Type it around a word to make it bold."
+				},
+				"md-italic": {
+					"label": "Italic",
+					"description": "Type it around a word to make it italic. Underscores work too."
+				},
+				"md-inline-code": {
+					"label": "Inline code",
+					"description": "Type it around a word to show it as code."
+				},
+				"md-strikethrough": {
+					"label": "Strikethrough",
+					"description": "Type it around a word to strike it through."
+				},
+				"md-quote": {
+					"label": "Quote",
+					"description": "Type it at the start of a line to turn the line into a quote."
 				}
-			}
+			},
+			"space-key": "Space",
+			"markdown-block-hint": "Type it at the start of a line.",
+			"slash-hint": "Type it at the start of a line, then pick the block from the menu."
 		},
 		"groups": {
 			"general": "General",
 			"navigation": "Navigation",
 			"pages": "Pages",
-			"editor": "Editor"
+			"formatting": "Formatting",
+			"split-documentation": "Split Documentation",
+			"markdown": "Markdown",
+			"slash-commands": "Slash Commands"
 		},
 		"keys": {
 			"toggle-sidebar": "Open/close sidebar",

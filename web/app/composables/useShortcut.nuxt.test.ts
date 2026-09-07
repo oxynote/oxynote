@@ -20,17 +20,60 @@ function mountShortcut(
 	return mount(Host)
 }
 
-function pressKey(key: string) {
-	window.dispatchEvent(new KeyboardEvent("keydown", { key }))
+function pressKey(key: string, code?: string) {
+	window.dispatchEvent(new KeyboardEvent("keydown", { key, code }))
 }
 
-function releaseKey(key: string) {
-	window.dispatchEvent(new KeyboardEvent("keyup", { key }))
+function releaseKey(key: string, code?: string) {
+	window.dispatchEvent(new KeyboardEvent("keyup", { key, code }))
 }
 
 // the tests drive shared window key state — the tests cannot interleave,
 // and each releases the keys it pressed
 describe("useShortcut", { concurrent: false }, () => {
+	// with shift held the browser reports "|" as the key for the backslash;
+	// the shortcut still matches because punctuation is bound by its code
+	it("matches shifted punctuation by its key code", async ({ expect }) => {
+		const handler = vi.fn()
+		const wrapper = mountShortcut(
+			{ macOS: "⌘+⇧+\\", other: "Ctrl+Shift+\\" },
+			handler,
+		)
+
+		pressKey("Control")
+		pressKey("Shift")
+		pressKey("|", "Backslash")
+		await nextTick()
+
+		expect(handler).toHaveBeenCalledTimes(1)
+
+		releaseKey("|", "Backslash")
+		releaseKey("Shift")
+		releaseKey("Control")
+		wrapper.unmount()
+	})
+
+	// ⌘⇧\ holds every key of ⌘\, so without this the sidebar would toggle
+	// on the inbox shortcut
+	it("ignores the combo while a modifier outside it is held", async ({
+		expect,
+	}) => {
+		const handler = vi.fn()
+		const wrapper = mountShortcut({ macOS: "⌘+K", other: "Ctrl+K" }, handler)
+
+		pressKey("Control")
+		pressKey("Shift")
+		pressKey("K", "KeyK")
+		await nextTick()
+
+		expect(handler).toHaveBeenCalledTimes(0)
+
+		releaseKey("K", "KeyK")
+		releaseKey("Shift")
+		releaseKey("Control")
+		wrapper.unmount()
+	})
+
 	it("fires the handler when the shortcut combo is pressed", async ({
 		expect,
 	}) => {

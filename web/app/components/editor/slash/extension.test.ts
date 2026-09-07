@@ -167,8 +167,8 @@ function freshStorage(): SlashCommandStorage {
 
 function commandItem(title: string): CommandItem {
 	return {
-		title,
-		description: "",
+		titleI18nKey: title,
+		descriptionI18nKey: "",
 		icon: "",
 		group: "text" as never,
 		command: vi.fn(),
@@ -246,6 +246,7 @@ describe("SlashCommands", { concurrent: false }, () => {
 		expect(SlashCommands.config.addOptions?.call({} as never)).toEqual({
 			decorationClass: "slash-command-filter",
 			decorationEmptyClass: "slash-command-filter-empty",
+			t: expect.any(Function) as unknown,
 		})
 	})
 
@@ -263,7 +264,19 @@ describe("SlashCommands", { concurrent: false }, () => {
 		expect(plugins).toEqual([{ suggestion: true }])
 		expect(suggestion.char).toBe(SLASH_COMMAND_TRIGGER_CHAR)
 		expect(suggestion.editor).toBe(editor)
-		expect(suggestion.items).toBe(filterSlashItems)
+		// the items callback forwards the options' t: under the default
+		// identity t a title only matches its own key, so a hit on the key
+		// proves the wrapper handed it through
+		const items = suggestion.items?.({
+			query: "heading-1",
+			editor,
+			signal: new AbortController().signal,
+		})
+
+		expect(items).not.toHaveLength(0)
+		expect(items).toEqual(
+			filterSlashItems({ query: "heading-1", editor, t: options.t }),
+		)
 		expect(suggestion.decorationClass).toBe(options.decorationClass)
 		expect(suggestion.decorationEmptyClass).toBe(options.decorationEmptyClass)
 	})

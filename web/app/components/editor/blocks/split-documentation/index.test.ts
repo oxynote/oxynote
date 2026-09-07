@@ -1412,118 +1412,83 @@ describe("SplitDocumentation", () => {
 		})
 	})
 
-	describe("Mod-e", () => {
-		it("appends a parameter list when the cursor is on the left side", ({
-			expect,
-		}) => {
-			const node = defaultDoc()
-			const { editor, appendParameterListOnLeftSide, appendBlockOnRightSide } =
-				makeShortcutEditor(node, startOfText(node, "body"))
-			const modE = nodeKeyboardShortcut(
-				SplitDocumentation,
-				editor,
-				"Mod-e",
-				schema,
-			)
+	// each block shortcut acts on one fixed side and reaches it from
+	// anywhere in the split documentation, so the cursor's side never
+	// changes what the key does
+	describe.for([
+		{
+			key: "Mod-Alt-p",
+			command: "appendParameterListOnLeftSide" as const,
+			side: SPLIT_DOCUMENTATION_LEFT_SIDE_NAME,
+			blockType: null,
+		},
+		{
+			key: "Mod-Alt-e",
+			command: "appendBlockOnRightSide" as const,
+			side: SPLIT_DOCUMENTATION_RIGHT_SIDE_NAME,
+			blockType: "code",
+		},
+		{
+			key: "Mod-Alt-g",
+			command: "appendBlockOnRightSide" as const,
+			side: SPLIT_DOCUMENTATION_RIGHT_SIDE_NAME,
+			blockType: "metrics",
+		},
+	])("$key", ({ key, command, side, blockType }) => {
+		it.for([
+			{ name: "left", text: "body" },
+			{ name: "right", text: "run me" },
+		])(
+			"acts on its own side with the cursor on the $name side",
+			({ text }, { expect }) => {
+				const node = defaultDoc()
+				const commands = makeShortcutEditor(node, startOfText(node, text))
+				const shortcut = nodeKeyboardShortcut(
+					SplitDocumentation,
+					commands.editor,
+					key,
+					schema,
+				)
 
-			expect(modE({ editor })).toBe(true)
-			expect(appendParameterListOnLeftSide).toHaveBeenCalledExactlyOnceWith(
-				posOf(node, SPLIT_DOCUMENTATION_LEFT_SIDE_NAME),
-			)
-			expect(appendBlockOnRightSide).toHaveBeenCalledTimes(0)
-		})
-
-		it("appends a code block when the cursor is on the right side", ({
-			expect,
-		}) => {
-			const node = defaultDoc()
-			const { editor, appendParameterListOnLeftSide, appendBlockOnRightSide } =
-				makeShortcutEditor(node, startOfText(node, "run me"))
-			const modE = nodeKeyboardShortcut(
-				SplitDocumentation,
-				editor,
-				"Mod-e",
-				schema,
-			)
-
-			expect(modE({ editor })).toBe(true)
-			expect(appendBlockOnRightSide).toHaveBeenCalledExactlyOnceWith(
-				posOf(node, SPLIT_DOCUMENTATION_RIGHT_SIDE_NAME),
-				"code",
-			)
-			expect(appendParameterListOnLeftSide).toHaveBeenCalledTimes(0)
-		})
+				expect(shortcut({ editor: commands.editor })).toBe(true)
+				expect(commands[command]).toHaveBeenCalledExactlyOnceWith(
+					...(blockType === null
+						? [posOf(node, side)]
+						: [posOf(node, side), blockType]),
+				)
+			},
+		)
 
 		it("does nothing outside a split documentation", ({ expect }) => {
 			const node = doc(paragraph("plain"))
 			const { editor, appendParameterListOnLeftSide, appendBlockOnRightSide } =
 				makeShortcutEditor(node, startOfText(node, "plain"))
-			const modE = nodeKeyboardShortcut(
+			const shortcut = nodeKeyboardShortcut(
 				SplitDocumentation,
 				editor,
-				"Mod-e",
+				key,
 				schema,
 			)
 
-			expect(modE({ editor })).toBe(false)
+			expect(shortcut({ editor })).toBe(false)
 			expect(appendParameterListOnLeftSide).toHaveBeenCalledTimes(0)
 			expect(appendBlockOnRightSide).toHaveBeenCalledTimes(0)
 		})
 	})
 
-	describe("Mod-m", () => {
-		it("appends a metric block when the cursor is on the right side", ({
-			expect,
-		}) => {
-			const node = defaultDoc()
-			const { editor, appendParameterListOnLeftSide, appendBlockOnRightSide } =
-				makeShortcutEditor(node, startOfText(node, "run me"))
-			const modM = nodeKeyboardShortcut(
-				SplitDocumentation,
-				editor,
-				"Mod-m",
-				schema,
-			)
+	// the bare Mod-e used to shadow the code mark inside the block
+	describe("replaced bindings", () => {
+		it.for([{ key: "Mod-e" }, { key: "Mod-m" }])(
+			"no longer binds $key",
+			({ key }, { expect }) => {
+				const node = defaultDoc()
+				const { editor } = makeShortcutEditor(node, startOfText(node, "body"))
 
-			expect(modM({ editor })).toBe(true)
-			expect(appendBlockOnRightSide).toHaveBeenCalledExactlyOnceWith(
-				posOf(node, SPLIT_DOCUMENTATION_RIGHT_SIDE_NAME),
-				"metrics",
-			)
-			expect(appendParameterListOnLeftSide).toHaveBeenCalledTimes(0)
-		})
-
-		it("does nothing when the cursor is on the left side", ({ expect }) => {
-			const node = defaultDoc()
-			const { editor, appendParameterListOnLeftSide, appendBlockOnRightSide } =
-				makeShortcutEditor(node, startOfText(node, "body"))
-			const modM = nodeKeyboardShortcut(
-				SplitDocumentation,
-				editor,
-				"Mod-m",
-				schema,
-			)
-
-			expect(modM({ editor })).toBe(false)
-			expect(appendBlockOnRightSide).toHaveBeenCalledTimes(0)
-			expect(appendParameterListOnLeftSide).toHaveBeenCalledTimes(0)
-		})
-
-		it("does nothing outside a split documentation", ({ expect }) => {
-			const node = doc(paragraph("plain"))
-			const { editor, appendParameterListOnLeftSide, appendBlockOnRightSide } =
-				makeShortcutEditor(node, startOfText(node, "plain"))
-			const modM = nodeKeyboardShortcut(
-				SplitDocumentation,
-				editor,
-				"Mod-m",
-				schema,
-			)
-
-			expect(modM({ editor })).toBe(false)
-			expect(appendBlockOnRightSide).toHaveBeenCalledTimes(0)
-			expect(appendParameterListOnLeftSide).toHaveBeenCalledTimes(0)
-		})
+				expect(() =>
+					nodeKeyboardShortcut(SplitDocumentation, editor, key, schema),
+				).toThrow(`defines no ${key} shortcut`)
+			},
+		)
 	})
 
 	describe("Enter", () => {

@@ -1034,8 +1034,7 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 		})
 
 		// the suite runs as a non-mac host, so the row prints the keys of the
-		// "other" variant, one <kbd> each and without the "then" connector the
-		// tooltips put between them
+		// "other" variant, one <kbd> each; a chord carries no connector word
 		it("spells the shortcut out on the shortcuts row", async ({ expect }) => {
 			stubQueries()
 			const wrapper = await mountSidebar()

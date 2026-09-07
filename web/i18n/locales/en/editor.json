@@ -167,7 +167,69 @@
 			}
 		},
 		"slash-commands": {
-			"no-results": "Add '{query}' to the page"
+			"no-results": "Add '{query}' to the page",
+			"items": {
+				"heading-1": {
+					"title": "Heading 1",
+					"description": "Turns the line into a large heading."
+				},
+				"heading-2": {
+					"title": "Heading 2",
+					"description": "Turns the line into a medium heading."
+				},
+				"heading-3": {
+					"title": "Heading 3",
+					"description": "Turns the line into a small heading."
+				},
+				"bulleted-list": {
+					"title": "Bulleted list",
+					"description": "Starts a list with bullet points."
+				},
+				"numbered-list": {
+					"title": "Numbered list",
+					"description": "Starts a list with numbers."
+				},
+				"checklist": {
+					"title": "Checklist",
+					"description": "Starts a list with checkboxes."
+				},
+				"code-block": {
+					"title": "Code Block",
+					"description": "Adds a block for code with syntax highlighting."
+				},
+				"callout": {
+					"title": "Callout",
+					"description": "Adds a highlighted box for notes and warnings."
+				},
+				"image": {
+					"title": "Image",
+					"description": "Adds an image."
+				},
+				"file": {
+					"title": "File",
+					"description": "Attaches a file."
+				},
+				"figma-embed": {
+					"title": "Figma Embed",
+					"description": "Embeds a Figma file."
+				},
+				"divider": {
+					"title": "Divider",
+					"description": "Adds a horizontal line."
+				},
+				"mermaid-diagram": {
+					"title": "Mermaid Diagram",
+					"description": "Adds a Mermaid diagram."
+				},
+				"split-documentation": {
+					"title": "Split Documentation",
+					"description": "Adds a block with documentation on the left and code or metrics on the right."
+				},
+				"live-metrics": {
+					"title": "Live Metrics",
+					"description": "Adds a live chart from one of your data sources."
+				}
+			}
 		},
 		"icon-select-menu": {
 			"input-placeholder": "Filter...",

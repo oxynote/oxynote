@@ -20,6 +20,8 @@ const MAX_UNKNOWN_CHARS = 5
 export interface SlashCommandOptions {
 	decorationClass: string
 	decorationEmptyClass: string
+	// resolves an item's title for matching the typed query against it
+	t: (key: string) => string
 }
 
 export interface SlashCommandStorage {
@@ -48,6 +50,7 @@ export const SlashCommands = Extension.create<
 		return {
 			decorationClass: "slash-command-filter",
 			decorationEmptyClass: "slash-command-filter-empty",
+			t: (key: string) => key,
 		}
 	},
 	addStorage() {
@@ -71,7 +74,7 @@ export const SlashCommands = Extension.create<
 						allowSlashItemsByContext(state)
 					)
 				},
-				items: filterSlashItems,
+				items: (props) => filterSlashItems({ ...props, t: this.options.t }),
 				render: () => {
 					const storage = this.storage
 					const editor = this.editor

@@ -568,88 +568,38 @@ export const SplitDocumentation = Node.create({
 	},
 	addKeyboardShortcuts() {
 		return {
-			"Mod-e": ({ editor }) => {
-				const { state } = editor
-				const { selection } = state
-				const $from = selection.$from
-
-				// Find enclosing splitDocumentation node
-				let splitDocDepth = -1
-				for (let d = $from.depth; d >= 0; d--) {
-					if ($from.node(d).type.name === this.name) {
-						splitDocDepth = d
-						break
-					}
-				}
-				if (splitDocDepth === -1) {
+			"Mod-Alt-p": () => {
+				const pos = sidePos(
+					this.editor.state,
+					SPLIT_DOCUMENTATION_LEFT_SIDE_NAME,
+				)
+				if (pos === null) {
 					return false
 				}
 
-				const splitDocNode = $from.node(splitDocDepth)
-				const splitDocPos = $from.before(splitDocDepth)
-
-				// Figure out which child contains the cursor
-				const index = $from.index(splitDocDepth) // child index inside splitDocumentation
-				const child = splitDocNode.child(index)
-
-				// Compute absolute pos of that child
-				let offset = 0
-				for (let i = 0; i < index; i++) {
-					offset += splitDocNode.child(i).nodeSize
-				}
-
-				const childPos = splitDocPos + 1 + offset
-
-				if (child.type.name === "splitDocumentationLeftSide") {
-					return this.editor.commands.appendParameterListOnLeftSide(childPos)
-				}
-
-				if (child.type.name === "splitDocumentationRightSide") {
-					return this.editor.commands.appendBlockOnRightSide(childPos, "code")
-				}
-
-				return false
+				return this.editor.commands.appendParameterListOnLeftSide(pos)
 			},
-			"Mod-m": ({ editor }) => {
-				const { state } = editor
-				const { selection } = state
-				const $from = selection.$from
-
-				// Find enclosing splitDocumentation node
-				let splitDocDepth = -1
-				for (let d = $from.depth; d >= 0; d--) {
-					if ($from.node(d).type.name === this.name) {
-						splitDocDepth = d
-						break
-					}
-				}
-				if (splitDocDepth === -1) {
+			"Mod-Alt-e": () => {
+				const pos = sidePos(
+					this.editor.state,
+					SPLIT_DOCUMENTATION_RIGHT_SIDE_NAME,
+				)
+				if (pos === null) {
 					return false
 				}
 
-				const splitDocNode = $from.node(splitDocDepth)
-				const splitDocPos = $from.before(splitDocDepth)
-
-				// Figure out which child contains the cursor
-				const index = $from.index(splitDocDepth) // child index inside splitDocumentation
-				const child = splitDocNode.child(index)
-
-				// Compute absolute pos of that child
-				let offset = 0
-				for (let i = 0; i < index; i++) {
-					offset += splitDocNode.child(i).nodeSize
+				return this.editor.commands.appendBlockOnRightSide(pos, "code")
+			},
+			"Mod-Alt-g": () => {
+				const pos = sidePos(
+					this.editor.state,
+					SPLIT_DOCUMENTATION_RIGHT_SIDE_NAME,
+				)
+				if (pos === null) {
+					return false
 				}
 
-				const childPos = splitDocPos + 1 + offset
-
-				if (child.type.name === "splitDocumentationRightSide") {
-					return this.editor.commands.appendBlockOnRightSide(
-						childPos,
-						"metrics",
-					)
-				}
-
-				return false
+				return this.editor.commands.appendBlockOnRightSide(pos, "metrics")
 			},
 			// when the cursor is inside the heading and the Enter key is
 			// pressed, we don't want the cursor to create extra paragraphs,
@@ -798,4 +748,34 @@ function findAncestorDepth(pos: ResolvedPos, names: string[]): number {
 	}
 
 	return -1
+}
+
+// resolves the position of one side of the split documentation block
+// holding the cursor, whichever part of the block the cursor is actually
+// in. Returns null when the cursor is outside a split documentation.
+function sidePos(state: EditorState, sideName: string): number | null {
+	const { $from } = state.selection
+
+	for (let depth = $from.depth; depth > 0; depth--) {
+		if ($from.node(depth).type.name !== SPLIT_DOCUMENTATION_NAME) {
+			continue
+		}
+
+		const block = $from.node(depth)
+		const blockPos = $from.before(depth)
+		let offset = 0
+
+		for (let index = 0; index < block.childCount; index++) {
+			const child = block.child(index)
+			if (child.type.name === sideName) {
+				return blockPos + 1 + offset
+			}
+
+			offset += child.nodeSize
+		}
+
+		return null
+	}
+
+	return null
 }

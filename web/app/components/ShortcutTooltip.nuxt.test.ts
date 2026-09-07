@@ -91,7 +91,24 @@ describe("<ShortcutTooltip>", { concurrent: false }, () => {
 		await wrapper.get("button").trigger("pointerenter")
 		await vi.advanceTimersByTimeAsync(HOVER_DELAY_MS)
 
-		expect(openTooltipText(wrapper)).toBe("CtrlthenK")
+		expect(openTooltipText(wrapper)).toBe("CtrlK")
+	})
+
+	it("writes the connector only between the keys of a sequence", async ({
+		expect,
+	}) => {
+		vi.useFakeTimers()
+		const wrapper = await mountTooltip({
+			shortcut: {
+				keyboardKey: { macOS: "G Shift+I", other: "G Shift+I" },
+				i18nKey: null,
+			},
+		})
+
+		await wrapper.get("button").trigger("pointerenter")
+		await vi.advanceTimersByTimeAsync(HOVER_DELAY_MS)
+
+		expect(openTooltipText(wrapper)).toBe(`G${t("shortcuts.connector")}ShiftI`)
 	})
 
 	it("cancels a pending open when the pointer leaves early", async ({

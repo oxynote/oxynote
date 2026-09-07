@@ -13,7 +13,7 @@ const props = defineProps<{
 	query: string
 	items: CommandItem[]
 	command: (props: {
-		title: string
+		titleI18nKey: string
 		command: (data: CommandData) => void
 	}) => void
 	initClose: () => void
@@ -141,7 +141,12 @@ function selectItem(index: number) {
 		<template v-if="processedItems.length">
 			<template v-for="(item, index) in processedItems" :key="index">
 				<CommandButton
-					:item="item"
+					:item="{
+						icon: item.icon,
+						title: $t(item.titleI18nKey),
+						shortcut: item.shortcut,
+						disabled: item.disabled,
+					}"
 					:item-index="index"
 					:selected-index="selectedIndex"
 					@click="selectItem(index)"
