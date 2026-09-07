@@ -91,7 +91,7 @@ services:
       retries: 20
 
   meilisearch:
-    image: getmeili/meilisearch:v1.53.1
+    image: getmeili/meilisearch:v1.53.2
     environment:
       - MEILI_MASTER_KEY=devmasterkey
       - MEILI_ENV=development
@@ -106,7 +106,7 @@ services:
   # port is published rather than proxied through the image's front door —
   # which routes nothing but the product.
   mailpit:
-    image: axllent/mailpit:v1.31.0
+    image: axllent/mailpit:v1.31.1
     environment:
       - MP_QUIET=true
     ports:
