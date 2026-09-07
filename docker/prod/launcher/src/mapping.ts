@@ -45,6 +45,7 @@ export interface ChildEnvs {
 // docker/env/web.example.env — the nuxt-side defaults are empty strings, so
 // omitting them here would blank the links.
 const webDocumentationLinks = {
+	NUXT_PUBLIC_DOCS_URL: "https://github.com/oxynote/oxynote",
 	NUXT_PUBLIC_LINK_TO_MORE_INFO_ABOUT_PRODUCT: "https://oxynote.io",
 	NUXT_PUBLIC_POSTGRESQL_READ_ONLY_USER_SETUP_GUIDE_URL:
 		"https://tableplus.com/blog/2018/04/postgresql-how-to-create-read-only-user.html",

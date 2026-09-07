@@ -147,6 +147,7 @@ const createLoading = ref(false)
 const settingModalOpen = ref<
 	boolean | "org-members" | "github" | "metric-data-sources"
 >(false)
+const shortcutsModalOpen = ref(false)
 const pendingDocDeletion = ref<{
 	deleteDocument: () => Promise<void>
 	name: string
@@ -615,12 +616,9 @@ function clearLinkHighlightNodeOnce() {
 				@duplicate-document="handleDocumentDuplication"
 				@delete-document="handleDocumentDeletion"
 				@delete-tag="handleTagDeletion"
-				@open-settings="
-					(target) =>
-						target === 'org-members'
-							? (settingModalOpen = target)
-							: (settingModalOpen = true)
-				"
+				@open-settings="(target) => (settingModalOpen = target)"
+				@toggle-settings="settingModalOpen = !settingModalOpen"
+				@toggle-shortcuts="shortcutsModalOpen = !shortcutsModalOpen"
 				@toggle-notifications="toggleNotificationSidebar"
 				@initial-load-complete="loadedSections.sidebar = true"
 			/>
@@ -632,6 +630,7 @@ function clearLinkHighlightNodeOnce() {
 				v-model="settingModalOpen"
 				@refresh-organization-slug="refreshOrganizationRouteSlug"
 			/>
+			<ShortcutModal v-model="shortcutsModalOpen" />
 			<EditorBlocksMetricsConfigModalBaseModal
 				@open-settings="() => (settingModalOpen = 'metric-data-sources')"
 			/>

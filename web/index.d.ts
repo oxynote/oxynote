@@ -20,6 +20,7 @@ declare module "nuxt/schema" {
 		coreAPIBaseWsURL: string
 		termsOfServiceURL: string
 		privacyPolicyURL: string
+		docsURL: string
 		postgresqlReadOnlyUserSetupGuideURL: string
 		mysqlReadOnlyUserSetupGuideURL: string
 		mariadbReadOnlyUserSetupGuideURL: string

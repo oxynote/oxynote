@@ -35,6 +35,12 @@
 				}
 			}
 		},
+		"footer": {
+			"docs": "Docs",
+			"docs-external-link-hint": "Opens in a new tab",
+			"shortcuts": "Keyboard Shortcuts",
+			"shortcuts-narrow": "Shortcuts"
+		},
 		"item-collapse-trigger-button": {
 			"open-screen-reader-hint": "Open Sub Pages",
 			"close-screen-reader-hint": "Close Sub Pages"

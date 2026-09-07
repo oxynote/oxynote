@@ -44,6 +44,13 @@ export const SHORTCUT_ACTIONS = {
 		},
 		i18nKey: "shortcuts.keys.toggle-settings",
 	},
+	toggleShortcuts: {
+		keyboardKey: {
+			macOS: "⌘+/",
+			other: "Ctrl+/",
+		},
+		i18nKey: "shortcuts.keys.toggle-shortcuts",
+	},
 	addParamsToSplitDocLeftSide: {
 		// context-dependent (handle by the node)
 		keyboardKey: {
@@ -76,6 +83,87 @@ export const SHORTCUT_ACTIONS = {
 		i18nKey: null, // the shortcut is hidden/implicit
 	},
 }
+
+// the groups the shortcut modal renders, in order. Each entry carries its
+// own label and description: an action's own i18nKey is the terse text the
+// tooltips show next to a button that already names the action, which reads
+// as filler in a standalone list. An action whose i18nKey is null explains
+// itself where it is used and stays out of the modal.
+export const SHORTCUT_GROUPS = [
+	{
+		i18nKey: "shortcuts.groups.general",
+		shortcuts: [
+			{
+				action: SHORTCUT_ACTIONS.toggleSettings,
+				i18nKey: "shortcuts.modal.entries.toggle-settings.label",
+				descriptionI18nKey:
+					"shortcuts.modal.entries.toggle-settings.description",
+			},
+			{
+				action: SHORTCUT_ACTIONS.toggleShortcuts,
+				i18nKey: "shortcuts.modal.entries.toggle-shortcuts.label",
+				descriptionI18nKey:
+					"shortcuts.modal.entries.toggle-shortcuts.description",
+			},
+		],
+	},
+	{
+		i18nKey: "shortcuts.groups.navigation",
+		shortcuts: [
+			{
+				action: SHORTCUT_ACTIONS.toggleSidebar,
+				i18nKey: "shortcuts.modal.entries.toggle-sidebar.label",
+				descriptionI18nKey:
+					"shortcuts.modal.entries.toggle-sidebar.description",
+			},
+			{
+				action: SHORTCUT_ACTIONS.toggleInbox,
+				i18nKey: "shortcuts.modal.entries.toggle-inbox.label",
+				descriptionI18nKey: "shortcuts.modal.entries.toggle-inbox.description",
+			},
+			{
+				action: SHORTCUT_ACTIONS.searchForDocuments,
+				i18nKey: "shortcuts.modal.entries.search-for-documents.label",
+				descriptionI18nKey:
+					"shortcuts.modal.entries.search-for-documents.description",
+			},
+		],
+	},
+	{
+		i18nKey: "shortcuts.groups.pages",
+		shortcuts: [
+			{
+				action: SHORTCUT_ACTIONS.createNewDocument,
+				i18nKey: "shortcuts.modal.entries.create-new-document.label",
+				descriptionI18nKey:
+					"shortcuts.modal.entries.create-new-document.description",
+			},
+		],
+	},
+	{
+		i18nKey: "shortcuts.groups.editor",
+		shortcuts: [
+			{
+				action: SHORTCUT_ACTIONS.addParamsToSplitDocLeftSide,
+				i18nKey: "shortcuts.modal.entries.add-params-to-split-doc.label",
+				descriptionI18nKey:
+					"shortcuts.modal.entries.add-params-to-split-doc.description",
+			},
+			{
+				action: SHORTCUT_ACTIONS.addCodeBlockToSplitDocRightSide,
+				i18nKey: "shortcuts.modal.entries.add-code-block-to-split-doc.label",
+				descriptionI18nKey:
+					"shortcuts.modal.entries.add-code-block-to-split-doc.description",
+			},
+			{
+				action: SHORTCUT_ACTIONS.addMetricsToSplitDocRightSide,
+				i18nKey: "shortcuts.modal.entries.add-metrics-to-split-doc.label",
+				descriptionI18nKey:
+					"shortcuts.modal.entries.add-metrics-to-split-doc.description",
+			},
+		],
+	},
+]
 
 export function shortcutByOS(
 	action: { macOS: string; other: string },

@@ -1,5 +1,5 @@
 // icons a document can carry in its title, in the order the picker shows
-// them.
+// them. For the best visual results, prefer "filled" or thicker icons.
 const icons: (string | [id: string, name: string])[] = [
 	// documents & knowledge
 	"mingcute:document-2-fill",

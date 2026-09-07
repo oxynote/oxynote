@@ -351,5 +351,27 @@ describe("buildChildEnvs", () => {
 		expect(
 			envs.web.NUXT_PUBLIC_LINK_TO_MORE_INFO_ABOUT_PRODUCT,
 		).toBe("https://oxynote.io")
+		expect(envs.web.NUXT_PUBLIC_DOCS_URL).toBe(
+			"https://github.com/oxynote/oxynote",
+		)
+	})
+
+	it("keeps the documentation links out of the deployer's reach", ({
+		expect,
+	}) => {
+		const envs = buildChildEnvs(
+			testConfig(),
+			testSecrets(),
+			testSentryDsns,
+			{
+				...inheritedEnv,
+				NUXT_PUBLIC_DOCS_URL:
+					"https://evil.example.com",
+			},
+		)
+
+		expect(envs.web.NUXT_PUBLIC_DOCS_URL).toBe(
+			"https://github.com/oxynote/oxynote",
+		)
 	})
 })

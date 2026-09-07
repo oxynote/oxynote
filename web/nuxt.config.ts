@@ -133,6 +133,7 @@ export default defineNuxtConfig({
 			coreAPIBaseWsURL: "",
 			termsOfServiceURL: "",
 			privacyPolicyURL: "",
+			docsURL: "",
 			postgresqlReadOnlyUserSetupGuideURL: "",
 			mysqlReadOnlyUserSetupGuideURL: "",
 			mariadbReadOnlyUserSetupGuideURL: "",

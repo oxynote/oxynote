@@ -177,6 +177,12 @@ function openMenuRows() {
 	)
 }
 
+function footerRows(wrapper: Awaited<ReturnType<typeof mountSidebar>>) {
+	return wrapper
+		.get("[data-slot='sidebar-footer']")
+		.findAll("[data-slot='sidebar-menu-button']")
+}
+
 function itemNamed(
 	wrapper: Awaited<ReturnType<typeof mountSidebar>>,
 	name: string,
@@ -351,7 +357,7 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 		expect(sidebar(wrapper).emitted("create-document")).toEqual([[null]])
 	})
 
-	it("asks to open the settings from the workspace header", async ({
+	it("asks to toggle the settings from the workspace header", async ({
 		expect,
 	}) => {
 		stubQueries()
@@ -360,7 +366,7 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 		emitFrom(wrapper, "AppSidebarHeader", "open-settings")
 		await nextTick()
 
-		expect(sidebar(wrapper).emitted("open-settings")).toEqual([[null]])
+		expect(sidebar(wrapper).emitted("toggle-settings")).toHaveLength(1)
 	})
 
 	it("sends the user to the login page after signing out", async ({
@@ -967,6 +973,80 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 			await nextTick()
 
 			expect(sidebar(wrapper).emitted("create-document")).toEqual([[DOC_ID]])
+		})
+	})
+
+	describe("footer", { concurrent: false }, () => {
+		it("stays out of the part of the sidebar that scrolls", async ({
+			expect,
+		}) => {
+			stubQueries({ tree: [treeElement()] })
+			const wrapper = await mountSidebar()
+			await settleMutations()
+
+			const scroller = wrapper.get("[data-slot='sidebar-content']")
+
+			expect(scroller.find("[data-slot='sidebar-footer']").exists()).toBe(false)
+			expect(wrapper.find("[data-slot='sidebar-footer']").exists()).toBe(true)
+		})
+
+		it("links to the documentation in a new tab", async ({ expect }) => {
+			stubQueries()
+			const wrapper = await mountSidebar()
+
+			const link = at(footerRows(wrapper), 0)
+
+			expect(link.text()).toContain(t("sidebar.footer.docs"))
+			expect(link.attributes("href")).toBe(useRuntimeConfig().public.docsURL)
+			expect(link.attributes("target")).toBe("_blank")
+			expect(link.attributes("rel")).toBe("noopener noreferrer")
+		})
+
+		it("asks to toggle the shortcuts modal from the shortcuts row", async ({
+			expect,
+		}) => {
+			stubQueries()
+			const wrapper = await mountSidebar()
+
+			const row = at(footerRows(wrapper), 1)
+
+			expect(row.text()).toContain(t("sidebar.footer.shortcuts"))
+
+			await row.trigger("click")
+
+			expect(sidebar(wrapper).emitted("toggle-shortcuts")).toHaveLength(1)
+		})
+
+		it("carries a narrow label for a shrunken sidebar", async ({ expect }) => {
+			stubQueries()
+			const wrapper = await mountSidebar()
+
+			// both labels sit in the dom and a container query picks between
+			// them, which happy-dom does not evaluate
+			const labels = at(footerRows(wrapper), 1)
+				.findAll("span")
+				.map((span) => span.text())
+
+			expect(labels).toEqual([
+				t("sidebar.footer.shortcuts"),
+				t("sidebar.footer.shortcuts-narrow"),
+			])
+		})
+
+		// the suite runs as a non-mac host, so the row prints the keys of the
+		// "other" variant, one <kbd> each and without the "then" connector the
+		// tooltips put between them
+		it("spells the shortcut out on the shortcuts row", async ({ expect }) => {
+			stubQueries()
+			const wrapper = await mountSidebar()
+
+			const keys = at(footerRows(wrapper), 1)
+				.findAll("kbd[data-slot='kbd-group'] kbd")
+				.map((key) => key.text())
+
+			expect(keys).toEqual(
+				SHORTCUT_ACTIONS.toggleShortcuts.keyboardKey.other.split("+"),
+			)
 		})
 	})
 })

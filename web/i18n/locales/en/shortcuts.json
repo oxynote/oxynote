@@ -1,12 +1,61 @@
 {
 	"shortcuts": {
 		"connector": "then",
+		"modal": {
+			"title": "Keyboard Shortcuts",
+			"description": "Every keyboard shortcut available in the app",
+			"entries": {
+				"toggle-settings": {
+					"label": "Settings",
+					"description": "Opens and closes settings. Works anywhere in the workspace."
+				},
+				"toggle-shortcuts": {
+					"label": "Keyboard shortcuts",
+					"description": "Opens and closes this list. Works anywhere in the workspace."
+				},
+				"toggle-sidebar": {
+					"label": "Sidebar",
+					"description": "Shows and hides the page sidebar. Works while you type too."
+				},
+				"toggle-inbox": {
+					"label": "Inbox",
+					"description": "Opens and closes the notification panel on the right."
+				},
+				"search-for-documents": {
+					"label": "Search",
+					"description": "Opens and closes page search."
+				},
+				"create-new-document": {
+					"label": "New page",
+					"description": "Adds a new top level page. You stay on the page you are on."
+				},
+				"add-params-to-split-doc": {
+					"label": "Add a parameter list",
+					"description": "Use it on the left side of a split documentation block. Adds a parameter list at the bottom and puts your cursor in it."
+				},
+				"add-code-block-to-split-doc": {
+					"label": "Add a code block",
+					"description": "The same key on the right side of a split documentation block. Adds a code block at the bottom and puts your cursor in its title."
+				},
+				"add-metrics-to-split-doc": {
+					"label": "Add a metrics block",
+					"description": "Use it on the right side of a split documentation block. Adds a metrics block at the bottom. Your cursor does not move."
+				}
+			}
+		},
+		"groups": {
+			"general": "General",
+			"navigation": "Navigation",
+			"pages": "Pages",
+			"editor": "Editor"
+		},
 		"keys": {
 			"toggle-sidebar": "Open/close sidebar",
 			"search-for-documents": "Search for pages",
 			"create-new-document": "Create new pages",
 			"toggle-inbox": "Open/close inbox",
 			"toggle-settings": "Open/close settings",
+			"toggle-shortcuts": "Open/close keyboard shortcuts",
 			"add-params-to-split-doc-left-side": "Add parameters",
 			"add-code-block-to-split-doc-right-side": "Add code block",
 			"add-metrics-to-split-doc-right-side": "Add metrics"

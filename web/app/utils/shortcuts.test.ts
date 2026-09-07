@@ -4,6 +4,8 @@ import {
 	extractShortcutKeys,
 	normalizeShortcut,
 	shortcutByOS,
+	SHORTCUT_ACTIONS,
+	SHORTCUT_GROUPS,
 } from "./shortcuts"
 
 const shortcut = { macOS: "⌘+K", other: "Ctrl+K" }
@@ -87,5 +89,35 @@ describe("extractShortcutKeys", () => {
 			{ connector: true },
 			{ key: "K" },
 		])
+	})
+})
+
+describe("SHORTCUT_GROUPS", () => {
+	// the modal renders nothing but these groups, so an action that never
+	// lands in one is a shortcut the user can never look up
+	it("files every documented action into exactly one group", ({ expect }) => {
+		const grouped = SHORTCUT_GROUPS.flatMap((group) =>
+			group.shortcuts.map((entry) => entry.action),
+		)
+		const documented = Object.values(SHORTCUT_ACTIONS).filter(
+			(action) => action.i18nKey !== null,
+		)
+
+		expect(grouped).toHaveLength(documented.length)
+		expect(new Set(grouped).size).toBe(grouped.length)
+		documented.forEach((action) => {
+			expect(grouped).toContain(action)
+		})
+	})
+
+	it("leaves the self-explanatory actions out", ({ expect }) => {
+		const grouped = SHORTCUT_GROUPS.flatMap((group) =>
+			group.shortcuts.map((entry) => entry.action),
+		)
+
+		expect(grouped).not.toContain(
+			SHORTCUT_ACTIONS.addSlashCommandQueryAsPlainText,
+		)
+		expect(grouped).not.toContain(SHORTCUT_ACTIONS.openEditorCompletionMenu)
 	})
 })

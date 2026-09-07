@@ -18,14 +18,22 @@ const props = defineProps<{
 	notificationSidebarOpen: boolean
 }>()
 const emit = defineEmits<{
-	(e: "initial-load-complete" | "toggle-notifications"): void
-	(e: "open-settings", target: "org-members" | null): void
+	(
+		e:
+			| "initial-load-complete"
+			| "toggle-notifications"
+			| "toggle-shortcuts"
+			| "toggle-settings",
+	): void
+	(e: "open-settings", target: "org-members"): void
 	(e: "delete-document" | "duplicate-document", id: string): void
 	(e: "delete-tag", tag: { id: string; name: string }): void
 	(e: "create-document", parentId: string | null): void
 }>()
 
 const { t } = useI18n({ useScope: "global" })
+const config = useRuntimeConfig()
+const { osType } = useDetectHost()
 const { fetchDocumentTree, updateDocumentTree } = useDocumentAPI()
 const { fetchTagTree, updateTagTree, updateTagVisibility, unassignBranchTag } =
 	useTagAPI()
@@ -59,6 +67,9 @@ useShortcut(SHORTCUT_ACTIONS.createNewDocument.keyboardKey, () => {
 })
 useShortcut(SHORTCUT_ACTIONS.toggleSettings.keyboardKey, () => {
 	toggleSettings()
+})
+useShortcut(SHORTCUT_ACTIONS.toggleShortcuts.keyboardKey, () => {
+	emit("toggle-shortcuts")
 })
 
 interface Section {
@@ -286,7 +297,7 @@ if (import.meta.client) {
 }
 
 function toggleSettings() {
-	emit("open-settings", null)
+	emit("toggle-settings")
 }
 
 async function handleLogout() {
@@ -454,9 +465,9 @@ async function installSlack() {
 		<Transition v-bind="defaultTransitionProps">
 			<div
 				v-if="props.allInitialSectionsLoaded"
-				class="h-full w-full overflow-y-auto"
+				class="flex h-full w-full flex-col"
 			>
-				<ShadcnUiSidebarHeader class="pb-0">
+				<ShadcnUiSidebarHeader class="shrink-0 pb-0">
 					<ShadcnUiSidebarMenu>
 						<AppSidebarHeader
 							:workspace-name="fetchOrganization.data?.value?.data?.name"
@@ -512,6 +523,67 @@ async function installSlack() {
 						</ShadcnUiSidebarGroupContent>
 					</ShadcnUiSidebarGroup>
 				</ShadcnUiSidebarContent>
+				<ShadcnUiSidebarFooter class="shrink-0 border-t border-sidebar-border">
+					<!--icons are sized in em, so the row text size is what keeps them
+						level with the ones in the sections above-->
+					<ShadcnUiSidebarMenu class="text-sm">
+						<ShadcnUiSidebarMenuItem>
+							<ShadcnUiSidebarMenuAction side="left" disable-direct-interaction>
+								<Icon name="mingcute:book-6-line" />
+							</ShadcnUiSidebarMenuAction>
+							<ShadcnUiSidebarMenuButton size="md" as-child>
+								<a
+									:href="config.public.docsURL"
+									target="_blank"
+									rel="noopener noreferrer"
+								>
+									<span class="truncate">
+										{{ $t("sidebar.footer.docs") }}
+									</span>
+									<Icon
+										name="mingcute:external-link-line"
+										class="ml-auto size-3.5 text-sidebar-foreground/70"
+									/>
+									<span class="sr-only">
+										{{ $t("sidebar.footer.docs-external-link-hint") }}
+									</span>
+								</a>
+							</ShadcnUiSidebarMenuButton>
+						</ShadcnUiSidebarMenuItem>
+						<ShadcnUiSidebarMenuItem class="@container">
+							<ShadcnUiSidebarMenuAction side="left" disable-direct-interaction>
+								<Icon name="mingcute:keyboard-line" />
+							</ShadcnUiSidebarMenuAction>
+							<ShadcnUiSidebarMenuButton
+								size="md"
+								class="cursor-pointer"
+								@click="emit('toggle-shortcuts')"
+							>
+								<span class="truncate @max-[13.5rem]:hidden">
+									{{ $t("sidebar.footer.shortcuts") }}
+								</span>
+								<span class="hidden truncate @max-[13.5rem]:inline">
+									{{ $t("sidebar.footer.shortcuts-narrow") }}
+								</span>
+								<ShadcnUiKbdGroup class="ml-auto">
+									<template
+										v-for="(val, index) in extractShortcutKeys(
+											shortcutByOS(
+												SHORTCUT_ACTIONS.toggleShortcuts.keyboardKey,
+												osType,
+											),
+										)"
+										:key="index"
+									>
+										<ShadcnUiKbd v-if="!val.connector">
+											{{ val.key }}
+										</ShadcnUiKbd>
+									</template>
+								</ShadcnUiKbdGroup>
+							</ShadcnUiSidebarMenuButton>
+						</ShadcnUiSidebarMenuItem>
+					</ShadcnUiSidebarMenu>
+				</ShadcnUiSidebarFooter>
 			</div>
 		</Transition>
 		<SearchModal v-model="isSearchModalOpen" />
