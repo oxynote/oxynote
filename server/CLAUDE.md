@@ -67,7 +67,7 @@ So from a frontend's point of view: auth + realtime is `:8080/auth-realtime/...`
 - `/api/x/...` (internal): no auth at all — reverse proxy must firewall. Used by auth-realtime to fetch/store branch content (`/x/documents/{id}/branches`, `/x/documents/{id}/branch/{branchId}`), trigger emails, and initialize or tear down orgs.
 - `/api/apps/...` (public, sessionless): where GitHub and Slack deliver. `POST /apps/github/events` and `POST /apps/slack/{events,commands,slash}` are gated by the provider's request signature; `GET /apps/slack/install` completes the direct-install OAuth exchange. These must stay outside `/api/x` — third parties reach core through the same front door as browsers, and the proxy 403s the internal subtree.
 - `/api/mcp` (public, bearer-authed): the MCP surface (`internal/server/internal/mcp`), a streamable HTTP MCP server bridging the assistant's ungated tool registry (`tools.Set.Entries`) plus documents-as-resources. Bearer tokens are JWTs issued by auth-realtime's `@better-auth/mcp` OAuth provider; core validates each request against auth-realtime's internal `GET /api/internal/mcp/session` (JWKS verify + consent-row check, so revoking a client 401s immediately) and scopes the tool list by the token's `documents:read` / `documents:write` / `data-sources:read` scopes. Tokens are org-bound via an `org_id` claim minted at issuance. `SERVER_MCP_SESSION_URL` and `SERVER_MCP_RESOURCE_URL` are required env; the Caddyfile routes `/.well-known/oauth-*` and `/api/auth/*` at the front door to auth-realtime for OAuth discovery.
-- WebSocket topics under `/api/ws` (routed by `wetsocks/wsserver` from the first-party `github.com/oxynote/wetsocks` library): `change@document-tree`, `change@documents.{documentId}.comments|metadata|reviewers|maintainers`, `post@slack.messages`, `creation@notifications`, `ping@version`. Topic binders live on the per-domain handler types under `internal/server/internal/...` (`Handler.BindXxx`).
+- WebSocket topics under `/api/ws` (routed by `wetsocks/wsserver` from the first-party `github.com/oxynote/wetsocks` library): `change@document-tree`, `change@tag-tree`, `change@documents.{documentId}.comments|metadata|reviewers|maintainers|tags`, `post@slack.messages`, `creation@notifications`, `ping@version`. Topic binders live on the per-domain handler types under `internal/server/internal/...` (`Handler.BindXxx`).
 
 Most public routes in the README (`/api/documents`, `/api/documents/tree`, etc.) are served by core; the README is the closest thing to a contract spec — when changing handlers, update it.
 
@@ -173,7 +173,8 @@ Writing a rule:
 
 Tools are grouped by what they act on, a few per file: `document.go` (the tree, one
 document read whole, and a document's name, icon and place), `block.go` (reading one
-block and editing content), `search.go`,
+block and editing content), `tag.go` (the organisation's tags and which branch
+carries them), `search.go`,
 `datasource.go` (reads against the organisation's outbound connections). `eino.go` is
 the odd one out — it holds the agent-framework adapter and `read_tool_output`, the one
 tool that exists because of eino rather than because of the domain. `tools.Set` is the
@@ -188,29 +189,43 @@ outside the package reaches a tool through `Entry`: `Entry.Info` to describe it
 and `Entry.Tool`, a `Runner`, to run it.
 
 **A call reports what it changed; it is never asked.** `Runner.Run` returns a `Result`
-carrying the output and `Documents`. Every write goes through one of four `Input`
-methods — `ApplyEdit`, `CreateDocument`, `MoveDocument`, `DeleteDocument` — and the
-first three record the document as the mutation happens. A delete records nothing: the
-document it names is gone.
+carrying the output and `Documents`. Every document write goes through one of the
+`Input` methods — `ApplyEdit`, `CreateDocument`, `MoveDocument`, `DeleteDocument`,
+`AssignTag`, `UnassignTag` — and all but the delete record the document as the mutation
+happens. A delete records nothing: the document it names is gone. The tag-only writes
+(`CreateTag`, `UpdateTag`, `DeleteTag`, `MoveTag`) change no document and record none.
+
+**Tag writes announce themselves like tree writes.** Every tag tool's `Execute` ends
+with `Input.NotifyTagTreeChange`, which reaches the tag handler's exported
+`NotifyTreeChange` through `tools.TagNotifier`; `server.NewServer` hands it to the
+manager with `SetTagNotifier` right beside `SetTreeNotifier`, so a tag changed by the
+assistant or an MCP client refreshes connected sidebars the way the HTTP handlers do.
+`assign_tag` and `unassign_tag` also call `NotifyBranchTagsChange`, which publishes on
+`change@documents.{documentId}.tags` so the header of an open document redraws its
+pills; the sidebar tree alone would not reach it, since the header reads the branch's
+own tags.
+`Input.FetchTag` resolves a tag id through the repository's `FetchTagTree` (the one
+read carrying name, colour and documents together), refusing an unknown id with
+`ErrUnknownTag`.
 
 **A block write reports what it wrote from the operation, never from a re-read.** The
 realtime service applies an edit to the live document and persists it on a debounce, so
 content read back right after a write may not show it. A write therefore expands its
 block once (`expandForWrite`) to learn the uids it will land with, ships the canonical
 form carrying those uids, and returns `blockRows` of the expanded tree; a write to an
-existing block reads it (`Input.DocumentBlock`) before the edit and patches the change
+existing block reads it (`Input.FetchDocumentBlock`) before the edit and patches the change
 onto that. Depth in those rows counts from the block itself.
 
 **Branches are addressed by id, always.** Every content tool (`get_document`, `read_block`,
 the block writes) requires `branch_id`; the default branch is a branch like any other, and
 its id travels with every listing (`list_documents` carries `default_branch_id`, a search
 hit carries the `branch_id` it was found on, `create_document` returns `branch_id`,
-`get_document` lists every branch with its id). `Input.Branch`, `DocumentContent`, `DocumentBlock`, `ApplyEdit` and the
+`get_document` lists every branch with its id). `Input.FetchBranch`, `FetchDocumentContent`, `FetchDocumentBlock`, `ApplyEdit` and the
 placement checks take the branch id and resolve it through `FetchDocumentByBranchID`,
 refusing a branch that belongs to another document; an unknown id is refused with the
 branches the document has (`ErrUnknownBranch`, each as "name (id)"), and a protected branch
 reads but refuses every write, naming the unprotected branches to write to instead.
-`Input.Document` is the default-branch fetch the document-level tools use to name and
+`Input.FetchDocument` is the default-branch fetch the document-level tools use to name and
 change a document; they stay branch-free. Search covers every branch and each hit names
 its own. No tool creates, renames, deletes or merges a branch. MCP resources name a
 document and a branch (`oxynote://documents/{id}/branches/{branch_id}`); the list carries
@@ -237,14 +252,16 @@ Arguments are typed, not parsed: ids are `xid.ID` (optional ones
 (`within "/document_id"`). An empty string is an invalid value, never "absent". Ids stay
 `xid.ID` all the way to the wire; only the protocol and MCP edges render strings.
 
-A `Title` or `Summary` that names its target fetches it — `inp.Document`,
-`inp.DataSource` — and uses the name on the row; a target that does not resolve is an
+A `Title` or `Summary` that names its target fetches it — `inp.FetchDocument`,
+`inp.FetchDataSource` — and uses the name on the row; a target that does not resolve is an
 error passed on, never a placeholder. An unreadable payload ends no turn: the gate hands
 the rejection back as the call's result, and `Set.Label` turns it into an empty label.
 
 `Input` is built per call and carries its context, raw arguments, and every resource a
 tool reaches through, already scoped to the session's (organisation, user) pair — so a
-tool cannot reach another organisation's documents. `DescribeInput` is its read-only
+tool cannot reach another organisation's documents. Its reads keep the repository's
+`Fetch` prefix (`FetchDocument`, `FetchBranch`, `FetchTagTree`, ...), so a tool reads
+the same verb the db layer uses. `DescribeInput` is its read-only
 half, handed to `Title` and `Confirm`. Shared work that needs dependencies goes on
 `Input`; dependency-free helpers live in `util.go`.
 
@@ -254,7 +271,8 @@ refuses a missing parent or a move under the document's own subtree, `CreateDocu
 refuses a missing parent. A tool parses its arguments and hands them over.
 
 **One tool interface.** Every tool satisfies `Tool`; the ones that propose nothing embed
-`plainSummary`. Whether a tool writes is asked of `Traits.Write` alone — never a marker
+`plainSummary`, plain reads embed `plainTraits`, and tools too generic to announce embed
+`plainTitle`, so a read never restates the three lines a mixin already says. Whether a tool writes is asked of `Traits.Write` alone — never a marker
 interface, which would be a second fact to keep in step. What a tool is, it states in one
 `Traits()`:
 
@@ -262,8 +280,8 @@ interface, which would be a second fact to keep in step. What a tool is, it stat
   middlewares. A tool declaring it must describe the change in `Summary`, and is the only
   kind ever asked for one; `Test_New` checks that a write produces one and nothing else
   does.
-- `Destructive` keeps it outside an "approve all" answer. Only `delete_document` and
-  `delete_block`.
+- `Destructive` keeps it outside an "approve all" answer. Only `delete_document`,
+  `delete_block` and `delete_tag`.
 - `Overwrites` says the write replaces content the caller did not name — the target's
   nested blocks, and the uids comments and hooks hang off, go with it.
   `update_block_text` and `replace_block`. It is what MCP's destructive hint reports

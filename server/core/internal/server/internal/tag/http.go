@@ -21,6 +21,10 @@ type Handler struct {
 		changeCallback     func(organizationID string)
 		userChangeCallback func(organizationID, userID string)
 	}
+
+	branchTags struct {
+		changeCallback func(organizationID string, documentID, branchID xid.ID)
+	}
 }
 
 // NewHandler creates a new tag handling instance.
@@ -78,7 +82,7 @@ func (h *Handler) UpdateTagTree(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.notifyTreeChange(session.ActiveOrganizationID)
+	h.NotifyTreeChange(session.ActiveOrganizationID)
 
 	httpserver.Respond(h.log, w, swapped, http.StatusOK)
 }
@@ -109,7 +113,7 @@ func (h *Handler) CreateTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.notifyTreeChange(session.ActiveOrganizationID)
+	h.NotifyTreeChange(session.ActiveOrganizationID)
 
 	httpserver.Respond(h.log, w, t, http.StatusCreated)
 }
@@ -170,7 +174,7 @@ func (h *Handler) DeleteTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.notifyTreeChange(session.ActiveOrganizationID)
+	h.NotifyTreeChange(session.ActiveOrganizationID)
 
 	httpserver.Respond(h.log, w, nil, http.StatusNoContent)
 }
@@ -224,7 +228,8 @@ func (h *Handler) AssignBranchTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.notifyTreeChange(session.ActiveOrganizationID)
+	h.NotifyTreeChange(session.ActiveOrganizationID)
+	h.NotifyBranchTagsChange(session.ActiveOrganizationID, documentID, branchID)
 
 	httpserver.Respond(h.log, w, nil, http.StatusNoContent)
 }
@@ -254,7 +259,8 @@ func (h *Handler) UnassignBranchTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.notifyTreeChange(session.ActiveOrganizationID)
+	h.NotifyTreeChange(session.ActiveOrganizationID)
+	h.NotifyBranchTagsChange(session.ActiveOrganizationID, documentID, branchID)
 
 	httpserver.Respond(h.log, w, nil, http.StatusNoContent)
 }

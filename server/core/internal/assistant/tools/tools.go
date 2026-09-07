@@ -1,5 +1,5 @@
 // Package tools owns the AI assistant's tool surface. Tools are grouped
-// by what they act on — documents, blocks, the search index — and each
+// by what they act on — documents, blocks, tags, the search index — and each
 // describes itself, names what it is about to do, and does its work in
 // this package's own vocabulary; eino.go is the only place that speaks
 // the agent framework's. All tools execute server-side — there is no
@@ -28,6 +28,7 @@ const (
 	NameGetDocument     Name = "get_document"
 	NameReadBlock       Name = "read_block"
 	NameSearchDocuments Name = "search_documents"
+	NameListTags        Name = "list_tags"
 )
 
 // Data-source tools — reads against the organisation's outbound
@@ -58,6 +59,12 @@ const (
 	NameUpdateBlockAttrs Name = "update_block_attrs"
 	NameDeleteBlock      Name = "delete_block"
 	NameMoveBlock        Name = "move_block"
+	NameCreateTag        Name = "create_tag"
+	NameUpdateTag        Name = "update_tag"
+	NameDeleteTag        Name = "delete_tag"
+	NameAssignTag        Name = "assign_tag"
+	NameUnassignTag      Name = "unassign_tag"
+	NameMoveTag          Name = "move_tag"
 )
 
 // Set is the tools one session offers the model: an immutable registry
@@ -94,6 +101,7 @@ func New(deps *Deps) *Set {
 		listDocuments{},
 		getDocument{},
 		readBlock{},
+		listTags{},
 	}
 
 	// a deployment without search has no index behind search_documents,
@@ -123,6 +131,12 @@ func New(deps *Deps) *Set {
 		updateBlockAttrs{},
 		deleteBlock{},
 		moveBlock{},
+		createTag{},
+		updateTag{},
+		deleteTag{},
+		assignTag{},
+		unassignTag{},
+		moveTag{},
 
 		readToolOutput{},
 	)

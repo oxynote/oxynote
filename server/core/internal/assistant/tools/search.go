@@ -41,6 +41,7 @@ func (a searchDocumentsArgs) Validate() error {
 // searchDocuments runs a full-text search across the organisation.
 type searchDocuments struct {
 	plainSummary
+	plainTraits
 }
 
 // Info returns the tool's model-facing description.
@@ -57,11 +58,6 @@ func (searchDocuments) Info() Info {
 		},
 		Required: []string{_keyQuery},
 	}
-}
-
-// Traits reports a plain read.
-func (searchDocuments) Traits() Traits {
-	return Traits{}
 }
 
 // Title announces the query being run.
@@ -104,7 +100,7 @@ func (searchDocuments) Execute(inp Input) (string, error) {
 	names := map[xid.ID]document.Summary{}
 
 	if len(blocks) > 0 {
-		tree, terr := inp.DocumentTree()
+		tree, terr := inp.FetchDocumentTree()
 		if terr != nil {
 			// the names decorate the hits; losing them is not worth
 			// failing the search over, but it should not pass unnoticed

@@ -76,6 +76,21 @@ const (
 	// _descTargetDocumentID describes a document-id property that names
 	// the edit target.
 	_descTargetDocumentID = "The target document id."
+
+	// _keyTagID is the shared tag-id property name.
+	_keyTagID = "tag_id"
+
+	// _descTagID describes the tag-id property every tag tool takes.
+	_descTagID = "The tag id, as list_tags or a document's tags report it."
+
+	// _keyColor is the shared tag-colour property name.
+	_keyColor = "color"
+
+	// _keySortIndex is the shared sort-position property name.
+	_keySortIndex = "sort_index"
+
+	// _descColor describes a tag-colour property.
+	_descColor = "The tag's colour as a hex triplet with the leading hash, such as \"#22c55e\"."
 )
 
 // _blockSchema is the block argument's schema for the write tools. The

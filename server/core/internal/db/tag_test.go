@@ -557,6 +557,106 @@ func Test_agent_FetchBranchTagIDs(t *testing.T) {
 	}
 }
 
+func Test_agent_FetchBranchTags(t *testing.T) {
+	type tcase struct {
+		CancelledContext bool
+		OrganizationID   string
+		DocumentID       xid.ID
+		BranchID         xid.ID
+		Result           []tag.Tag
+		Err              error
+	}
+
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Cancelled context": func(t *testing.T, db *DB) tcase {
+			doc := prepDocuments(t, db, 1, nil)[0]
+
+			return tcase{
+				CancelledContext: true,
+				OrganizationID:   doc.OrganizationID,
+				DocumentID:       doc.ID,
+				BranchID:         doc.BranchID,
+				Err:              assert.AnError,
+			}
+		},
+		"Branch without tags": func(t *testing.T, db *DB) tcase {
+			doc := prepDocuments(t, db, 1, nil)[0]
+
+			return tcase{
+				OrganizationID: doc.OrganizationID,
+				DocumentID:     doc.ID,
+				BranchID:       doc.BranchID,
+				Result:         []tag.Tag{},
+			}
+		},
+		"Tags in their display order": func(t *testing.T, db *DB) tcase {
+			tags := prepTags(t, db, 3, func(i int, tg *tag.Tag) {
+				tg.SortIndex = (i + 2) % 3
+			})
+			doc := prepDocuments(t, db, 1, func(_ int, doc *document.Document) {
+				doc.OrganizationID = tags[0].OrganizationID
+			})[0]
+
+			prepBranchTags(t, db, doc.OrganizationID, doc.BranchID, tags[0].ID, tags[1].ID, tags[2].ID)
+
+			return tcase{
+				OrganizationID: doc.OrganizationID,
+				DocumentID:     doc.ID,
+				BranchID:       doc.BranchID,
+				Result:         []tag.Tag{tags[1], tags[2], tags[0]},
+			}
+		},
+		"Branch of another document": func(t *testing.T, db *DB) tcase {
+			tg := prepTags(t, db, 1, nil)[0]
+			doc := prepTaggedDocument(t, db, tg)
+
+			return tcase{
+				OrganizationID: doc.OrganizationID,
+				DocumentID:     xid.New(),
+				BranchID:       doc.BranchID,
+				Result:         []tag.Tag{},
+			}
+		},
+		"Branch of another organization": func(t *testing.T, db *DB) tcase {
+			tg := prepTags(t, db, 1, nil)[0]
+			doc := prepTaggedDocument(t, db, tg)
+
+			return tcase{
+				OrganizationID: prepOrganizations(t, db, 1)[0],
+				DocumentID:     doc.ID,
+				BranchID:       doc.BranchID,
+				Result:         []tag.Tag{},
+			}
+		},
+	}
+
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			if c.CancelledContext {
+				cancel()
+			}
+
+			res, err := db.FetchBranchTags(ctx, c.OrganizationID, c.DocumentID, c.BranchID)
+			testutil.RequireEqualError(t, c.Err, err)
+
+			if err != nil {
+				assert.Nil(t, res)
+				return
+			}
+
+			testutil.AssertFilterEqual(t, c.Result, res, time.Time{})
+		})
+	}
+}
+
 func Test_agent_UpdateTagTree(t *testing.T) {
 	type tcase struct {
 		CancelledContext bool
@@ -620,6 +720,135 @@ func Test_agent_UpdateTagTree(t *testing.T) {
 			testutil.RequireEqualError(t, c.Err, err)
 
 			assert.Equal(t, c.Order, tagOrder(t, db, c.OrganizationID))
+		})
+	}
+}
+
+func Test_agent_UpdateTag(t *testing.T) {
+	type tcase struct {
+		CancelledContext bool
+		OrganizationID   string
+		Tag              tag.Tag
+		Input            tag.UpdateInput
+		Name             string
+		Color            string
+		Err              error
+	}
+
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Cancelled context": func(t *testing.T, db *DB) tcase {
+			tg := prepTags(t, db, 1, nil)[0]
+
+			return tcase{
+				CancelledContext: true,
+				OrganizationID:   tg.OrganizationID,
+				Tag:              tg,
+				Input:            tag.UpdateInput{TagName: null.StringFrom("Release")},
+				Name:             tg.TagName,
+				Color:            tg.Color,
+				Err:              assert.AnError,
+			}
+		},
+		"Nothing to set": func(t *testing.T, db *DB) tcase {
+			tg := prepTags(t, db, 1, nil)[0]
+
+			return tcase{
+				OrganizationID: tg.OrganizationID,
+				Tag:            tg,
+				Name:           tg.TagName,
+				Color:          tg.Color,
+				Err:            tag.ErrEmptyTagUpdate,
+			}
+		},
+		"Tag of another organization": func(t *testing.T, db *DB) tcase {
+			tg := prepTags(t, db, 1, nil)[0]
+
+			return tcase{
+				OrganizationID: prepOrganizations(t, db, 1)[0],
+				Tag:            tg,
+				Input:          tag.UpdateInput{TagName: null.StringFrom("Release")},
+				Name:           tg.TagName,
+				Color:          tg.Color,
+				Err:            errutil.ErrNotFound,
+			}
+		},
+		"Duplicate name in the organization": func(t *testing.T, db *DB) tcase {
+			tags := prepTags(t, db, 2, nil)
+
+			return tcase{
+				OrganizationID: tags[0].OrganizationID,
+				Tag:            tags[0],
+				Input:          tag.UpdateInput{TagName: null.StringFrom(tags[1].TagName)},
+				Name:           tags[0].TagName,
+				Color:          tags[0].Color,
+				Err:            tag.ErrDuplicateTagName,
+			}
+		},
+		"Renames only": func(t *testing.T, db *DB) tcase {
+			tg := prepTags(t, db, 1, nil)[0]
+
+			return tcase{
+				OrganizationID: tg.OrganizationID,
+				Tag:            tg,
+				Input:          tag.UpdateInput{TagName: null.StringFrom("Release")},
+				Name:           "Release",
+				Color:          tg.Color,
+			}
+		},
+		"Recolours only": func(t *testing.T, db *DB) tcase {
+			tg := prepTags(t, db, 1, nil)[0]
+
+			return tcase{
+				OrganizationID: tg.OrganizationID,
+				Tag:            tg,
+				Input:          tag.UpdateInput{Color: null.StringFrom("#3b82f6")},
+				Name:           tg.TagName,
+				Color:          "#3b82f6",
+			}
+		},
+		"Renames and recolours": func(t *testing.T, db *DB) tcase {
+			tg := prepTags(t, db, 1, nil)[0]
+
+			return tcase{
+				OrganizationID: tg.OrganizationID,
+				Tag:            tg,
+				Input:          tag.UpdateInput{TagName: null.StringFrom("Release"), Color: null.StringFrom("#3b82f6")},
+				Name:           "Release",
+				Color:          "#3b82f6",
+			}
+		},
+	}
+
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			if c.CancelledContext {
+				cancel()
+			}
+
+			err := db.UpdateTag(ctx, c.OrganizationID, c.Tag.ID, c.Input)
+			testutil.RequireEqualError(t, c.Err, err)
+
+			q, args := db.builder.Select("tag_name", "color").
+				From("tags").
+				Where(sq.Eq{"id": c.Tag.ID}).
+				MustSql()
+
+			var stored struct {
+				TagName string `db:"tag_name"`
+				Color   string `db:"color"`
+			}
+
+			require.NoError(t, sqlx.Get(db.sql, &stored, q, args...))
+			assert.Equal(t, c.Name, stored.TagName)
+			assert.Equal(t, c.Color, stored.Color)
 		})
 	}
 }

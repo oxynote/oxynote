@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	jsonv2 "encoding/json/v2"
@@ -17,10 +18,16 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/search"
+	"github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 	"github.com/rs/xid"
 )
+
+// ErrUnknownTag is what a tag lookup reports for an id that names
+// nothing in the session's organisation. Another organisation's id lands
+// here too, for the same reason as ErrUnknownDocument.
+var ErrUnknownTag = errors.New("no tag with that id in this organisation; call list_tags for the ids that exist")
 
 // Deps carries the wiring a tool set is built from: the services every
 // tool reaches through and the (organization, user) pair every call is
@@ -58,6 +65,10 @@ type Deps struct {
 	// mutates the document tree.
 	tree TreeNotifier
 
+	// tags notifies tag-tree subscribers after the assistant changes
+	// a tag or what carries it.
+	tags TagNotifier
+
 	// offload retrieves results parked outside the conversation.
 	offload OffloadReader
 
@@ -82,6 +93,7 @@ func NewDeps(
 	runners DataSourceRunners,
 	applier EditApplier,
 	tree TreeNotifier,
+	tags TagNotifier,
 	offload OffloadReader,
 	orgID, userID string,
 ) *Deps {
@@ -97,6 +109,7 @@ func NewDeps(
 		runners: runners,
 		applier: applier,
 		tree:    tree,
+		tags:    tags,
 		offload: offload,
 		orgID:   orgID,
 		userID:  userID,
@@ -157,8 +170,17 @@ func (i *input) Context() context.Context {
 // failed on. A domain type that parses itself — an id, a timestamp, an
 // enum — reports only that the value is bad; the path json/v2 adds is
 // what makes the message actionable for the model.
+//
+// A provider calling a tool that declares no parameters may send no
+// arguments at all rather than an empty object, so an empty payload
+// reads as one; Validate still decides whether that is acceptable.
 func (i *input) Decode(dst Args) error {
-	if err := jsonv2.Unmarshal(i.args, dst); err != nil {
+	args := i.args
+	if len(bytes.TrimSpace(args)) == 0 {
+		args = json.RawMessage("{}")
+	}
+
+	if err := jsonv2.Unmarshal(args, dst); err != nil {
 		return fmt.Errorf("%s: invalid input: %w", i.name, err)
 	}
 
@@ -179,12 +201,12 @@ func (i *input) UserID() string {
 	return i.userID
 }
 
-// DataSource returns the data source the id names.
+// FetchDataSource returns the data source the id names.
 //
 // The lookup is the cross-org safety check: FetchDataSource scopes by
 // organisation, so an id belonging to another one is as absent as an id
 // belonging to nobody, and the model is told the same thing either way.
-func (i *input) DataSource(dataSourceID xid.ID) (*datasource.DataSource, error) {
+func (i *input) FetchDataSource(dataSourceID xid.ID) (*datasource.DataSource, error) {
 	ds, err := i.db.FetchDataSource(i.ctx, dataSourceID, i.orgID)
 	if err != nil {
 		return nil, errUnknownDataSource
@@ -193,8 +215,8 @@ func (i *input) DataSource(dataSourceID xid.ID) (*datasource.DataSource, error) 
 	return ds, nil
 }
 
-// DataSources returns every data source the organisation owns.
-func (i *input) DataSources() ([]datasource.DataSource, error) {
+// FetchDataSources returns every data source the organisation owns.
+func (i *input) FetchDataSources() ([]datasource.DataSource, error) {
 	return i.db.FetchDataSources(i.ctx, i.orgID)
 }
 
@@ -214,7 +236,7 @@ func (i *input) CheckDataSources(ids []string) error {
 			return fmt.Errorf("metric %s %q: %w", document.AttrDataSourceID, raw, err)
 		}
 
-		if _, err := i.DataSource(id); err != nil {
+		if _, err := i.FetchDataSource(id); err != nil {
 			return fmt.Errorf("metric %s %q: %w", document.AttrDataSourceID, raw, err)
 		}
 	}
@@ -237,11 +259,11 @@ func (i *input) DataSourceRunner(id xid.ID) (datasource.Runner, error) {
 	return i.runners.Runner(*ds), nil
 }
 
-// Document returns the document on its default branch. An id naming
+// FetchDocument returns the document on its default branch. An id naming
 // nothing in the session's organisation is reported as such rather
 // than in the driver's own words, which say nothing a caller can act
 // on.
-func (i *input) Document(documentID xid.ID) (*document.Document, error) {
+func (i *input) FetchDocument(documentID xid.ID) (*document.Document, error) {
 	doc, err := i.db.FetchDocument(i.ctx, documentID, i.orgID, document.DefaultBranch)
 	if err != nil {
 		if errutil.IsNotFound(err) {
@@ -254,11 +276,11 @@ func (i *input) Document(documentID xid.ID) (*document.Document, error) {
 	return doc, nil
 }
 
-// Branch returns the document on the branch branchID names. A branch id
+// FetchBranch returns the document on the branch branchID names. A branch id
 // resolves on its own, so one belonging to another document is refused
 // as unknown to this one, and an unknown branch is reported with the
 // ones the document does have.
-func (i *input) Branch(documentID, branchID xid.ID) (*document.Document, error) {
+func (i *input) FetchBranch(documentID, branchID xid.ID) (*document.Document, error) {
 	doc, err := i.db.FetchDocumentByBranchID(i.ctx, branchID, i.orgID)
 	if err != nil {
 		if errutil.IsNotFound(err) {
@@ -279,7 +301,7 @@ func (i *input) Branch(documentID, branchID xid.ID) (*document.Document, error) 
 // document the organisation does not have: the branch list is empty
 // only for the latter, since every document has at least one.
 func (i *input) unknownBranch(documentID, branchID xid.ID) error {
-	branches, err := i.DocumentBranches(documentID)
+	branches, err := i.FetchDocumentBranches(documentID)
 	if err != nil {
 		return err
 	}
@@ -287,10 +309,10 @@ func (i *input) unknownBranch(documentID, branchID xid.ID) error {
 	return fmt.Errorf("branch %s: %w; the branches are %s", branchID, ErrUnknownBranch, strings.Join(branchLabels(branches, nil), ", "))
 }
 
-// DocumentBranches lists every branch of the document. A document the
+// FetchDocumentBranches lists every branch of the document. A document the
 // organisation does not have lists no branches, and is reported as
 // unknown rather than as branchless.
-func (i *input) DocumentBranches(documentID xid.ID) ([]document.BranchSummary, error) {
+func (i *input) FetchDocumentBranches(documentID xid.ID) ([]document.BranchSummary, error) {
 	branches, err := i.db.FetchDocumentBranches(i.ctx, documentID, i.orgID)
 	if err != nil {
 		return nil, fmt.Errorf("fetching branches: %w", err)
@@ -303,11 +325,11 @@ func (i *input) DocumentBranches(documentID xid.ID) ([]document.BranchSummary, e
 	return branches, nil
 }
 
-// DocumentContent returns the parsed content of the branch branchID
+// FetchDocumentContent returns the parsed content of the branch branchID
 // names. The branch fetch already carries the content, so this is the
 // same lookup in the shape the block walks take.
-func (i *input) DocumentContent(documentID, branchID xid.ID) (document.Content, error) {
-	doc, err := i.Branch(documentID, branchID)
+func (i *input) FetchDocumentContent(documentID, branchID xid.ID) (document.Content, error) {
+	doc, err := i.FetchBranch(documentID, branchID)
 	if err != nil {
 		return document.Content{}, err
 	}
@@ -320,11 +342,11 @@ func (i *input) DocumentContent(documentID, branchID xid.ID) (document.Content, 
 	}, nil
 }
 
-// DocumentBlock finds one block of the branch by uid. It reads the
+// FetchDocumentBlock finds one block of the branch by uid. It reads the
 // persisted content, which is what every placement check reads too, so
 // a write and its checks see the same document.
-func (i *input) DocumentBlock(documentID, branchID xid.ID, blockUID string) (document.Block, error) {
-	content, err := i.DocumentContent(documentID, branchID)
+func (i *input) FetchDocumentBlock(documentID, branchID xid.ID, blockUID string) (document.Block, error) {
+	content, err := i.FetchDocumentContent(documentID, branchID)
 	if err != nil {
 		return document.Block{}, fmt.Errorf("fetching content: %w", err)
 	}
@@ -341,7 +363,7 @@ func (i *input) DocumentBlock(documentID, branchID xid.ID, blockUID string) (doc
 // any depth. A document that is not in the tree has none, which is what
 // a caller asking about a missing id should hear.
 func (i *input) DescendantCount(id xid.ID) (int, error) {
-	tree, err := i.DocumentTree()
+	tree, err := i.FetchDocumentTree()
 	if err != nil {
 		return 0, fmt.Errorf("fetching document tree: %w", err)
 	}
@@ -355,14 +377,14 @@ func (i *input) DescendantCount(id xid.ID) (int, error) {
 	return 0, nil
 }
 
-// DocumentTree returns every document in the organisation as a nested
+// FetchDocumentTree returns every document in the organisation as a nested
 // summary tree.
-func (i *input) DocumentTree() (document.Summaries, error) {
+func (i *input) FetchDocumentTree() (document.Summaries, error) {
 	return i.db.FetchDocumentTree(i.ctx, i.orgID)
 }
 
-// DocumentChildren returns the direct children of parentID.
-func (i *input) DocumentChildren(parentID null.Value[xid.ID]) (document.Summaries, error) {
+// FetchDocumentChildren returns the direct children of parentID.
+func (i *input) FetchDocumentChildren(parentID null.Value[xid.ID]) (document.Summaries, error) {
 	return i.db.FetchDocumentTreeByDocumentParentID(i.ctx, parentID, i.orgID)
 }
 
@@ -535,7 +557,7 @@ var ErrUnknownBranch = errors.New("this document has no branch with that id")
 // also acts as the cross-org safety check — Document scopes by orgID so
 // a docID from another organisation surfaces as NotFound.
 func (i *input) resolveDoc(documentID, branchID xid.ID) (docRef, error) {
-	doc, err := i.Branch(documentID, branchID)
+	doc, err := i.FetchBranch(documentID, branchID)
 	if err != nil {
 		return docRef{}, fmt.Errorf("fetching document: %w", err)
 	}
@@ -556,7 +578,7 @@ func (i *input) resolveDoc(documentID, branchID xid.ID) (docRef, error) {
 // naming the document's unprotected branches so the caller has
 // somewhere to write, or saying there is none.
 func (i *input) protectedBranch(doc *document.Document) error {
-	branches, err := i.DocumentBranches(doc.ID)
+	branches, err := i.FetchDocumentBranches(doc.ID)
 	if err != nil {
 		return fmt.Errorf("branch %s: %w; %w", doc.BranchName, errBranchProtected, err)
 	}
@@ -659,7 +681,7 @@ func (i *input) ApplyEdit(documentID, branchID xid.ID, ops []edit.Operation) err
 // backend applies no schema of its own, so an illegal type let through
 // here would land in the Y.Doc unchallenged.
 func (i *input) ValidatePlacement(documentID, branchID xid.ID, referenceUID string, b block.Block) error {
-	content, err := i.DocumentContent(documentID, branchID)
+	content, err := i.FetchDocumentContent(documentID, branchID)
 	if err != nil {
 		return fmt.Errorf("fetching content: %w", err)
 	}
@@ -683,7 +705,7 @@ func (i *input) ValidatePlacement(documentID, branchID xid.ID, referenceUID stri
 // wrapper item (a list item, a macro internal). Those carry attributes
 // the canonical model does not describe, so there is nothing to check.
 func (i *input) ValidateAttrUpdate(documentID, branchID xid.ID, blockUID string, attrs map[string]any) error {
-	content, err := i.DocumentContent(documentID, branchID)
+	content, err := i.FetchDocumentContent(documentID, branchID)
 	if err != nil {
 		return fmt.Errorf("fetching content: %w", err)
 	}
@@ -719,7 +741,7 @@ func (i *input) ValidateAttrUpdate(documentID, branchID xid.ID, blockUID string,
 // already sits in, which permits reordering and moving between two
 // lists while keeping a list item from landing at the document root.
 func (i *input) ValidateMove(documentID, branchID xid.ID, blockUID, referenceUID string) error {
-	content, err := i.DocumentContent(documentID, branchID)
+	content, err := i.FetchDocumentContent(documentID, branchID)
 	if err != nil {
 		return fmt.Errorf("fetching content: %w", err)
 	}
@@ -767,12 +789,163 @@ func (i *input) NotifyTreeChange(parentID null.Value[xid.ID]) {
 // which don't carry a parent in their args. Failures (e.g. doc fetched
 // after delete) silently skip the notification.
 func (i *input) NotifyTreeChangeForDocument(documentID xid.ID) {
-	doc, err := i.Document(documentID)
+	doc, err := i.FetchDocument(documentID)
 	if err != nil || doc == nil {
 		return
 	}
 
 	i.NotifyTreeChange(doc.ParentID)
+}
+
+// FetchTagTree returns every tag in the organisation in display order, each
+// with the documents whose default branch carries it and whether the
+// session's user hides it.
+func (i *input) FetchTagTree() (tag.Summaries, error) {
+	return i.db.FetchTagTree(i.ctx, i.orgID, i.userID)
+}
+
+// FetchTag returns the tag the id names, with the documents carrying it. The
+// tree is the one read that carries a tag's name, colour and documents
+// together, so a lookup walks it rather than asking for a second shape.
+func (i *input) FetchTag(tagID xid.ID) (*tag.Summary, error) {
+	tree, err := i.FetchTagTree()
+	if err != nil {
+		return nil, fmt.Errorf("fetching tags: %w", err)
+	}
+
+	for _, s := range tree {
+		if s.ID == tagID {
+			return &s, nil
+		}
+	}
+
+	return nil, fmt.Errorf("tag %s: %w", tagID, ErrUnknownTag)
+}
+
+// FetchBranchTags returns the tags the branch branchID names carries, in the
+// tags' display order.
+func (i *input) FetchBranchTags(documentID, branchID xid.ID) ([]tag.Tag, error) {
+	return i.db.FetchBranchTags(i.ctx, i.orgID, documentID, branchID)
+}
+
+// CreateTag inserts the tag at the end of the organisation's tags. A
+// name the organisation already uses is refused in the repository's own
+// words, which name the clash.
+func (i *input) CreateTag(t tag.Tag) error {
+	return i.db.InsertTag(i.ctx, t)
+}
+
+// UpdateTag renames and/or recolours the tag the id names.
+func (i *input) UpdateTag(tagID xid.ID, inp tag.UpdateInput) error {
+	if err := i.db.UpdateTag(i.ctx, i.orgID, tagID, inp); err != nil {
+		if errutil.IsNotFound(err) {
+			return fmt.Errorf("tag %s: %w", tagID, ErrUnknownTag)
+		}
+
+		return err
+	}
+
+	return nil
+}
+
+// DeleteTag removes the tag the id names together with every assignment
+// of it.
+func (i *input) DeleteTag(tagID xid.ID) error {
+	if err := i.db.DeleteTag(i.ctx, tagID, i.orgID); err != nil {
+		if errutil.IsNotFound(err) {
+			return fmt.Errorf("tag %s: %w", tagID, ErrUnknownTag)
+		}
+
+		return err
+	}
+
+	return nil
+}
+
+// AssignTag makes the branch branchID names carry the tag. The branch is
+// resolved first so an unknown document or branch is reported as such;
+// what the repository then fails to find can only be the tag.
+func (i *input) AssignTag(documentID, branchID, tagID xid.ID) error {
+	doc, err := i.FetchBranch(documentID, branchID)
+	if err != nil {
+		return err
+	}
+
+	if err := i.db.AssignBranchTag(i.ctx, i.orgID, doc.ID, doc.BranchID, tagID); err != nil {
+		if errutil.IsNotFound(err) {
+			return fmt.Errorf("tag %s: %w", tagID, ErrUnknownTag)
+		}
+
+		return err
+	}
+
+	i.recordTouched(doc.ID, doc.BranchID)
+
+	return nil
+}
+
+// UnassignTag stops the branch branchID names carrying the tag. The
+// repository treats a tag the branch does not carry as nothing to do, so
+// the tag is looked up here for the call to report an id that names
+// nothing.
+func (i *input) UnassignTag(documentID, branchID, tagID xid.ID) error {
+	doc, err := i.FetchBranch(documentID, branchID)
+	if err != nil {
+		return err
+	}
+
+	if _, err := i.FetchTag(tagID); err != nil {
+		return err
+	}
+
+	if err := i.db.UnassignBranchTag(i.ctx, i.orgID, doc.ID, doc.BranchID, tagID); err != nil {
+		return err
+	}
+
+	i.recordTouched(doc.ID, doc.BranchID)
+
+	return nil
+}
+
+// MoveTag moves the tag to the given position among the organisation's
+// tags, which are then rewritten in the resulting order. The position is
+// a 0-based index into the display order, and one outside it is refused.
+func (i *input) MoveTag(tagID xid.ID, sortIndex int) error {
+	tree, err := i.FetchTagTree()
+	if err != nil {
+		return fmt.Errorf("fetching tags: %w", err)
+	}
+
+	moved, err := tree.Swap(tagID, sortIndex)
+	if err != nil {
+		if errutil.IsNotFound(err) {
+			return fmt.Errorf("tag %s: %w", tagID, ErrUnknownTag)
+		}
+
+		return err
+	}
+
+	return i.db.UpdateTagTree(i.ctx, moved, i.orgID)
+}
+
+// NotifyTagTreeChange invokes the tag notifier when one is configured.
+// A nil notifier silently no-ops, like the document tree's.
+func (i *input) NotifyTagTreeChange() {
+	if i.tags == nil {
+		return
+	}
+
+	i.tags.NotifyTreeChange(i.orgID)
+}
+
+// NotifyBranchTagsChange invokes the tag notifier for one branch's tags
+// when one is configured. A nil notifier silently no-ops.
+func (i *input) NotifyBranchTagsChange(documentID, branchID xid.ID) {
+	if i.tags == nil {
+		return
+	}
+
+	i.tags.NotifyBranchTagsChange(i.orgID, documentID, branchID)
 }
 
 // docRef wraps the (documentID, branchID) pair the edit client needs to
@@ -805,6 +978,7 @@ type DB interface {
 	sqlutil.DB
 	DocumentDB
 	DataSourceDB
+	TagDB
 }
 
 // DocumentDB is the document tree, its branches and their content as
@@ -861,6 +1035,43 @@ type DataSourceDB interface {
 	FetchDataSources(ctx context.Context, organizationID string) ([]datasource.DataSource, error)
 }
 
+// TagDB is the organisation's tags and their branch assignments as the
+// tools read and change them.
+type TagDB interface {
+	// FetchTagTree should return the org's tags in display order, each
+	// with the documents whose default branch carries it and whether the
+	// given user hides it. Used by list_tags and every tag lookup.
+	FetchTagTree(ctx context.Context, organizationID, userID string) (tag.Summaries, error)
+
+	// FetchBranchTags should return the tags a document's branch carries
+	// in the tags' display order. Used by get_document.
+	FetchBranchTags(ctx context.Context, organizationID string, documentID, branchID xid.ID) ([]tag.Tag, error)
+
+	// InsertTag should store a new tag at the end of its org's tags,
+	// refusing a name the org already uses. Used by create_tag.
+	InsertTag(ctx context.Context, t tag.Tag) error
+
+	// UpdateTag should rename and/or recolour a tag within the org. Used
+	// by update_tag.
+	UpdateTag(ctx context.Context, organizationID string, id xid.ID, inp tag.UpdateInput) error
+
+	// DeleteTag should remove a tag and every assignment of it. Used by
+	// delete_tag.
+	DeleteTag(ctx context.Context, id xid.ID, organizationID string) error
+
+	// AssignBranchTag should make a document's branch carry a tag,
+	// changing nothing when it already does. Used by assign_tag.
+	AssignBranchTag(ctx context.Context, organizationID string, documentID, branchID, tagID xid.ID) error
+
+	// UnassignBranchTag should stop a document's branch carrying a tag,
+	// changing nothing when it does not. Used by unassign_tag.
+	UnassignBranchTag(ctx context.Context, organizationID string, documentID, branchID, tagID xid.ID) error
+
+	// UpdateTagTree should rewrite the display order of the org's tags to
+	// the order of the given tree. Used by move_tag.
+	UpdateTagTree(ctx context.Context, tree tag.Summaries, organizationID string) error
+}
+
 // Tx is the transactional half of DB, so a tool whose write spans
 // tables can commit or abandon all of it at once.
 //
@@ -911,6 +1122,24 @@ type TreeNotifier interface {
 	// organizationID. Implementations must be safe to call
 	// concurrently.
 	NotifyTreeChange(organizationID string, parentID null.Value[xid.ID])
+}
+
+// TagNotifier publishes tag-tree-change events so connected clients can
+// refresh their sidebar's tag tree after assistant-driven tag writes.
+// The server tag handler satisfies this interface via its
+// NotifyTreeChange method.
+//
+//go:generate ../../../scripts/codegen/mock -t internal TagNotifier tag_notifier
+type TagNotifier interface {
+	// NotifyTreeChange should tell subscribers that the tag tree of
+	// organizationID changed. Implementations must be safe to call
+	// concurrently.
+	NotifyTreeChange(organizationID string)
+
+	// NotifyBranchTagsChange should tell the subscribers of the document
+	// that the tags its branch branchID carries changed. Implementations
+	// must be safe to call concurrently.
+	NotifyBranchTagsChange(organizationID string, documentID, branchID xid.ID)
 }
 
 // EditApplier is the live-document mutation surface the write tools

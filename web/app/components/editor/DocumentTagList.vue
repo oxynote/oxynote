@@ -4,6 +4,7 @@ import { availableRowWidth, stepTagFit } from "./tag-fit"
 import ColorSelect from "./ColorSelect.vue"
 import { chartStyles, colorToHex } from "~/assets/css"
 import { showToastMessage } from "../toast"
+import { TAG_QUERY_KEYS } from "~/composables/api/useTagAPI"
 
 // the ceiling on the pills, whatever the row's width. Measuring only ever
 // takes it down from here
@@ -27,6 +28,40 @@ const fetchBranchTags = useFetchBranchTags(
 	() => editorStore.activeDocumentId,
 	() => editorStore.activeBranchId,
 )
+const queryCache = useQueryCache()
+const wsState = useWebSocketStateStore()
+let unsubWsBranchTagsChange: (() => void) | null | undefined = null
+
+// the sidebar refetches its tree on the tag tree topic, but the pills read
+// the branch's own list, which only this topic announces: a tag put on the
+// document by someone else, or by the assistant, would otherwise sit
+// unseen until the list went stale
+watchImmediate(
+	() => editorStore.activeDocumentId,
+	(newId) => {
+		unsubWsBranchTagsChange?.()
+		unsubWsBranchTagsChange = null
+
+		if (!newId) {
+			return
+		}
+
+		unsubWsBranchTagsChange = wsState.state?.subscribe(
+			makeWsBranchTagsChangeTopic(newId),
+			(rawPayload) => {
+				const payload = rawPayload as WSBranchTagsChangePayload
+
+				void queryCache.invalidateQueries({
+					key: TAG_QUERY_KEYS.branch(payload.branchId),
+				})
+			},
+		)
+	},
+)
+
+onUnmounted(() => {
+	unsubWsBranchTagsChange?.()
+})
 
 const open = ref(false)
 // a read only document still shows its pills, but the picker behind them

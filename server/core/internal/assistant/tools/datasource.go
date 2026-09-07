@@ -126,6 +126,7 @@ type sqlQueryLabelsResult struct {
 // listDataSources lists the organisation's data sources.
 type listDataSources struct {
 	plainSummary
+	plainTitle
 }
 
 // Info returns the tool's model-facing description.
@@ -142,14 +143,9 @@ func (listDataSources) Traits() Traits {
 	return Traits{DataSource: true}
 }
 
-// Title returns no status line: listing is too generic to announce.
-func (listDataSources) Title(_ DescribeInput) (string, error) {
-	return "", nil
-}
-
 // Execute lists the data sources the organisation owns.
 func (listDataSources) Execute(inp Input) (string, error) {
-	sources, err := inp.DataSources()
+	sources, err := inp.FetchDataSources()
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", NameListDataSources, err)
 	}
@@ -215,7 +211,7 @@ func (getPrometheusMetadata) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	ds, err := inp.DataSource(in.DataSourceID)
+	ds, err := inp.FetchDataSource(in.DataSourceID)
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", NameGetPrometheusMetadata, err)
 	}
@@ -309,7 +305,7 @@ func (listPrometheusLabelNames) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	ds, err := inp.DataSource(in.DataSourceID)
+	ds, err := inp.FetchDataSource(in.DataSourceID)
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", NameListPrometheusLabelNames, err)
 	}
@@ -416,7 +412,7 @@ func (listPrometheusLabelValues) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	ds, err := inp.DataSource(in.DataSourceID)
+	ds, err := inp.FetchDataSource(in.DataSourceID)
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", NameListPrometheusLabelValues, err)
 	}
@@ -517,7 +513,7 @@ func (listPrometheusSeries) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	ds, err := inp.DataSource(in.DataSourceID)
+	ds, err := inp.FetchDataSource(in.DataSourceID)
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", NameListPrometheusSeries, err)
 	}
@@ -617,7 +613,7 @@ func (queryPrometheus) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	ds, err := inp.DataSource(in.DataSourceID)
+	ds, err := inp.FetchDataSource(in.DataSourceID)
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", NameQueryPrometheus, err)
 	}
@@ -778,7 +774,7 @@ func (getSQLMetadata) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	ds, err := inp.DataSource(in.DataSourceID)
+	ds, err := inp.FetchDataSource(in.DataSourceID)
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", NameGetSQLMetadata, err)
 	}
@@ -868,7 +864,7 @@ func (getSQLQueryLabels) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	ds, err := inp.DataSource(in.DataSourceID)
+	ds, err := inp.FetchDataSource(in.DataSourceID)
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", NameGetSQLQueryLabels, err)
 	}
@@ -970,7 +966,7 @@ func (querySQL) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	ds, err := inp.DataSource(in.DataSourceID)
+	ds, err := inp.FetchDataSource(in.DataSourceID)
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", NameQuerySQL, err)
 	}

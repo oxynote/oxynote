@@ -52,6 +52,7 @@ func (a readToolOutputArgs) Validate() error {
 // moved out of the conversation.
 type readToolOutput struct {
 	plainSummary
+	plainTitle
 }
 
 // Info returns the tool's model-facing description.
@@ -72,12 +73,6 @@ func (readToolOutput) Info() Info {
 // of that state would be offered a tool it can never call.
 func (readToolOutput) Traits() Traits {
 	return Traits{Internal: true}
-}
-
-// Title returns no status line: fetching back an offloaded result is
-// bookkeeping, not something the user asked for.
-func (readToolOutput) Title(_ DescribeInput) (string, error) {
-	return "", nil
 }
 
 // Execute returns the stored output.

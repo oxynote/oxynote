@@ -131,6 +131,28 @@ func (a *agent) FetchBranchTagIDs(ctx context.Context, organizationID string, do
 	return ids, nil
 }
 
+// FetchBranchTags retrieves the tags a document's branch carries, in the
+// tags' display order.
+func (a *agent) FetchBranchTags(ctx context.Context, organizationID string, documentID, branchID xid.ID) ([]tag.Tag, error) {
+	q, args := a.selectTag(a.builder.Select(), organizationID).
+		Join("document_branch_tags dbt ON dbt.fk_tag_id = tags.id").
+		Join("document_branches db ON db.id = dbt.fk_branch_id").
+		Where(sq.Eq{
+			"dbt.fk_branch_id":       branchID,
+			"dbt.fk_organization_id": organizationID,
+			"db.fk_document_id":      documentID,
+		}).
+		MustSql()
+
+	tags := []tag.Tag{}
+
+	if err := sqlx.SelectContext(ctx, a.sql, &tags, q, args...); err != nil {
+		return nil, err
+	}
+
+	return tags, nil
+}
+
 // UpdateTagTree rewrites the display order of an organization's tags to the
 // order of the given tree. A tag outside the organization aborts the whole
 // rewrite.
@@ -164,6 +186,50 @@ func (a *agent) UpdateTagTree(ctx context.Context, tree tag.Summaries, organizat
 
 		return nil
 	})
+}
+
+// UpdateTag renames and/or recolours a tag, leaving an unset field as it
+// is. A tag outside the organization is not found.
+func (a *agent) UpdateTag(ctx context.Context, organizationID string, id xid.ID, inp tag.UpdateInput) error {
+	set := map[string]any{}
+
+	if inp.TagName.Valid {
+		set["tag_name"] = inp.TagName.String
+	}
+
+	if inp.Color.Valid {
+		set["color"] = inp.Color.String
+	}
+
+	// the builder refuses an update that sets nothing, and there is
+	// nothing to write anyway.
+	if len(set) == 0 {
+		return tag.ErrEmptyTagUpdate
+	}
+
+	q, args := a.builder.Update("tags").
+		SetMap(set).
+		Where(sq.Eq{
+			"id":                 id,
+			"fk_organization_id": organizationID,
+		}).
+		MustSql()
+
+	res, err := a.sql.ExecContext(ctx, q, args...)
+	if err != nil {
+		return err
+	}
+
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if n == 0 {
+		return errutil.ErrNotFound
+	}
+
+	return nil
 }
 
 // SetTagVisibility records whether one user keeps a tag out of their
@@ -343,6 +409,22 @@ func (a *agent) copyBranchTags(
 	_, err := ex.ExecContext(ctx, q, toBranchID, fromBranchID, organizationID)
 
 	return err
+}
+
+// selectTag prepares a select statement for tags in display order,
+// carrying the organization scope.
+func (a *agent) selectTag(b sq.SelectBuilder, organizationID string) sq.SelectBuilder {
+	return b.Columns(
+		`tags.id AS "id"`,
+		`tags.fk_organization_id AS "organization_id"`,
+		`tags.tag_name AS "tag_name"`,
+		`tags.color AS "color"`,
+		`tags.sort_index AS "sort_index"`,
+		`tags.created_at AS "created_at"`,
+		`tags.fk_created_by AS "created_by"`,
+	).From("tags").
+		Where(sq.Eq{"tags.fk_organization_id": organizationID}).
+		OrderBy("tags.sort_index", "tags.id")
 }
 
 // selectTagSummary prepares a select statement for tag summaries in display

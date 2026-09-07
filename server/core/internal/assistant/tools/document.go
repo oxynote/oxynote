@@ -33,6 +33,8 @@ func (listDocumentsArgs) Validate() error {
 // listDocuments returns the organisation's document tree.
 type listDocuments struct {
 	plainSummary
+	plainTraits
+	plainTitle
 }
 
 // Info returns the tool's model-facing description.
@@ -44,16 +46,6 @@ func (listDocuments) Info() Info {
 			"parent_id": stringProp("Optional. Return only the direct children of this document. Omit for the full tree."),
 		},
 	}
-}
-
-// Traits reports a plain read.
-func (listDocuments) Traits() Traits {
-	return Traits{}
-}
-
-// Title returns no status line: listing is too generic to announce.
-func (listDocuments) Title(_ DescribeInput) (string, error) {
-	return "", nil
 }
 
 // Execute lists the documents the model asked for.
@@ -70,9 +62,9 @@ func (listDocuments) Execute(inp Input) (string, error) {
 	)
 
 	if in.ParentID.Valid {
-		tree, err = inp.DocumentChildren(in.ParentID)
+		tree, err = inp.FetchDocumentChildren(in.ParentID)
 	} else {
-		tree, err = inp.DocumentTree()
+		tree, err = inp.FetchDocumentTree()
 	}
 
 	if err != nil {
@@ -124,24 +116,20 @@ func (a getDocumentArgs) Validate() error {
 // of its content.
 type getDocument struct {
 	plainSummary
+	plainTraits
 }
 
 // Info returns the tool's model-facing description.
 func (getDocument) Info() Info {
 	return Info{
 		Name:        NameGetDocument,
-		Description: "Read one document on one branch: its name, icon, parent_id, protected flag and updated_at, the branch read and every branch the document has (each with the id a branch_id argument takes), followed by one row per block with the block's uid, kind, flattened text, depth, parent_uid and the few attrs that matter for reading (heading level, callout icon, code language, task checked). Use it as the way to read a document before editing it; branch_id is the default_branch_id a listing or search hit carries, or any id from branches. A protected branch can be read but refuses every write, so pick an unprotected branch id from branches to write to. Rows marked has_children hold nested blocks the rows do not list, and read_block returns those when you need them.",
+		Description: "Read one document on one branch: its name, icon, parent_id, protected flag and updated_at, the branch read and every branch the document has (each with the id a branch_id argument takes), the tags the branch carries as [{id, name, color}], followed by one row per block with the block's uid, kind, flattened text, depth, parent_uid and the few attrs that matter for reading (heading level, callout icon, code language, task checked). Use it as the way to read a document before editing it; branch_id is the default_branch_id a listing or search hit carries, or any id from branches. A protected branch can be read but refuses every write, so pick an unprotected branch id from branches to write to. Rows marked has_children hold nested blocks the rows do not list, and read_block returns those when you need them.",
 		Properties: map[string]any{
 			_keyDocumentID: stringProp(_descDocumentID),
 			_keyBranchID:   stringProp(_descBranchID),
 		},
 		Required: []string{_keyDocumentID, _keyBranchID},
 	}
-}
-
-// Traits reports a plain read.
-func (getDocument) Traits() Traits {
-	return Traits{}
 }
 
 // Title announces which document is being read.
@@ -152,7 +140,7 @@ func (getDocument) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	doc, err := inp.Branch(in.DocumentID, in.BranchID)
+	doc, err := inp.FetchBranch(in.DocumentID, in.BranchID)
 	if err != nil {
 		return "", fmt.Errorf("%s: fetch document: %w", NameGetDocument, err)
 	}
@@ -169,14 +157,19 @@ func (getDocument) Execute(inp Input) (string, error) {
 		return "", err
 	}
 
-	doc, err := inp.Branch(in.DocumentID, in.BranchID)
+	doc, err := inp.FetchBranch(in.DocumentID, in.BranchID)
 	if err != nil {
 		return "", fmt.Errorf("get_document: fetch: %w", err)
 	}
 
-	branches, err := inp.DocumentBranches(in.DocumentID)
+	branches, err := inp.FetchDocumentBranches(in.DocumentID)
 	if err != nil {
 		return "", fmt.Errorf("get_document: %w", err)
+	}
+
+	tags, err := inp.FetchBranchTags(in.DocumentID, in.BranchID)
+	if err != nil {
+		return "", fmt.Errorf("get_document: fetch tags: %w", err)
 	}
 
 	out := documentResult{
@@ -188,6 +181,7 @@ func (getDocument) Execute(inp Input) (string, error) {
 		UpdatedAt:  doc.UpdatedAt.UTC().Format(time.RFC3339),
 		Branch:     branchInfo{ID: doc.BranchID, Name: doc.BranchName, Protected: doc.Protected, Default: doc.Default},
 		Branches:   make([]branchInfo, 0, len(branches)),
+		Tags:       tagInfos(tags),
 		Blocks:     walkDocForAssistant(doc.Content.Content),
 	}
 
@@ -229,6 +223,9 @@ type documentResult struct {
 
 	// Branches is every branch the document has.
 	Branches []branchInfo `json:"branches"`
+
+	// Tags is every tag the branch read carries.
+	Tags []tagInfo `json:"tags"`
 
 	// Blocks is the branch's content, one row per block.
 	Blocks []docSummaryEntry `json:"blocks"`
@@ -399,7 +396,7 @@ func (deleteDocument) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	doc, err := inp.Document(in.DocumentID)
+	doc, err := inp.FetchDocument(in.DocumentID)
 	if err != nil {
 		return "", fmt.Errorf("%s: fetch document: %w", NameDeleteDocument, err)
 	}
@@ -415,7 +412,7 @@ func (deleteDocument) Summary(inp DescribeInput) (ActionSummary, error) {
 		return ActionSummary{}, err
 	}
 
-	doc, err := inp.Document(in.DocumentID)
+	doc, err := inp.FetchDocument(in.DocumentID)
 	if err != nil {
 		return ActionSummary{}, fmt.Errorf("%s: fetch document: %w", NameDeleteDocument, err)
 	}
@@ -457,7 +454,7 @@ func (deleteDocument) Execute(inp Input) (string, error) {
 	// tree-change notification to the affected subtree.
 	var parentID null.Value[xid.ID]
 
-	if doc, ferr := inp.Document(in.DocumentID); ferr == nil && doc != nil {
+	if doc, ferr := inp.FetchDocument(in.DocumentID); ferr == nil && doc != nil {
 		parentID = doc.ParentID
 	}
 
@@ -582,7 +579,7 @@ func (updateDocument) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	doc, err := inp.Document(in.DocumentID)
+	doc, err := inp.FetchDocument(in.DocumentID)
 	if err != nil {
 		return "", fmt.Errorf("%s: fetch document: %w", NameUpdateDocument, err)
 	}
@@ -598,7 +595,7 @@ func (updateDocument) Summary(inp DescribeInput) (ActionSummary, error) {
 		return ActionSummary{}, err
 	}
 
-	doc, err := inp.Document(in.DocumentID)
+	doc, err := inp.FetchDocument(in.DocumentID)
 	if err != nil {
 		return ActionSummary{}, fmt.Errorf("%s: fetch document: %w", NameUpdateDocument, err)
 	}
@@ -628,7 +625,7 @@ func (updateDocument) Execute(inp Input) (string, error) {
 		return "", err
 	}
 
-	doc, err := inp.Document(in.DocumentID)
+	doc, err := inp.FetchDocument(in.DocumentID)
 	if err != nil {
 		return "", fmt.Errorf("update_document: fetch document: %w", err)
 	}

@@ -189,6 +189,7 @@ func NewServer(
 	// tools can notify sidebar subscribers after create/delete/move/
 	// rename/set-icon.
 	assistantMan.SetTreeNotifier(srv.handlers.document)
+	assistantMan.SetTagNotifier(srv.handlers.tag)
 
 	// the MCP handler serves the assistant's tool registry over the
 	// Model Context Protocol; it must be built after the tree notifier

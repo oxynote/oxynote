@@ -321,6 +321,16 @@ func Test_Manager_SetTreeNotifier(t *testing.T) {
 	assert.Nil(t, m.tree)
 }
 
+func Test_Manager_SetTagNotifier(t *testing.T) {
+	t.Parallel()
+
+	m := testManager()
+	require.Nil(t, m.tags)
+
+	m.SetTagNotifier(nil)
+	assert.Nil(t, m.tags)
+}
+
 func Test_Manager_ToolSet(t *testing.T) {
 	t.Parallel()
 
@@ -330,10 +340,10 @@ func Test_Manager_ToolSet(t *testing.T) {
 	require.NotNil(t, s)
 
 	// the set carries the full registry — the thirteen document tools,
-	// the nine data-source tools and the offloaded-result reader —
-	// wired from the manager's shared dependencies and scoped to the
-	// requested pair.
-	assert.Len(t, s.Tools(), 23)
+	// the seven tag tools, the nine data-source tools and the
+	// offloaded-result reader — wired from the manager's shared
+	// dependencies and scoped to the requested pair.
+	assert.Len(t, s.Tools(), 30)
 }
 
 func Test_Manager_claimTurn(t *testing.T) {

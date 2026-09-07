@@ -65,6 +65,7 @@ func (a readBlockArgs) Validate() error {
 // readBlock returns the full canonical content of one block.
 type readBlock struct {
 	plainSummary
+	plainTraits
 }
 
 // Info returns the tool's model-facing description.
@@ -85,11 +86,6 @@ func (readBlock) Info() Info {
 	}
 }
 
-// Traits reports a plain read.
-func (readBlock) Traits() Traits {
-	return Traits{}
-}
-
 // Title announces which document the block is being read from.
 func (readBlock) Title(inp DescribeInput) (string, error) {
 	var in readBlockArgs
@@ -98,7 +94,7 @@ func (readBlock) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	doc, err := inp.Branch(in.DocumentID, in.BranchID)
+	doc, err := inp.FetchBranch(in.DocumentID, in.BranchID)
 	if err != nil {
 		return "", fmt.Errorf("%s: fetch document: %w", NameReadBlock, err)
 	}
@@ -114,7 +110,7 @@ func (readBlock) Execute(inp Input) (string, error) {
 		return "", err
 	}
 
-	content, err := inp.DocumentContent(in.DocumentID, in.BranchID)
+	content, err := inp.FetchDocumentContent(in.DocumentID, in.BranchID)
 	if err != nil {
 		return "", fmt.Errorf("read_block: fetch content: %w", err)
 	}
@@ -258,7 +254,7 @@ func (insertBlock) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	doc, err := inp.Branch(in.DocumentID, in.BranchID)
+	doc, err := inp.FetchBranch(in.DocumentID, in.BranchID)
 	if err != nil {
 		return "", fmt.Errorf("%s: fetch document: %w", NameInsertBlock, err)
 	}
@@ -274,7 +270,7 @@ func (insertBlock) Summary(inp DescribeInput) (ActionSummary, error) {
 		return ActionSummary{}, err
 	}
 
-	doc, err := inp.Branch(in.DocumentID, in.BranchID)
+	doc, err := inp.FetchBranch(in.DocumentID, in.BranchID)
 	if err != nil {
 		return ActionSummary{}, fmt.Errorf("%s: fetch document: %w", NameInsertBlock, err)
 	}
@@ -422,7 +418,7 @@ func (replaceBlock) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	doc, err := inp.Branch(in.DocumentID, in.BranchID)
+	doc, err := inp.FetchBranch(in.DocumentID, in.BranchID)
 	if err != nil {
 		return "", fmt.Errorf("%s: fetch document: %w", NameReplaceBlock, err)
 	}
@@ -438,7 +434,7 @@ func (replaceBlock) Summary(inp DescribeInput) (ActionSummary, error) {
 		return ActionSummary{}, err
 	}
 
-	doc, err := inp.Branch(in.DocumentID, in.BranchID)
+	doc, err := inp.FetchBranch(in.DocumentID, in.BranchID)
 	if err != nil {
 		return ActionSummary{}, fmt.Errorf("%s: fetch document: %w", NameReplaceBlock, err)
 	}
@@ -546,7 +542,7 @@ func (updateBlockText) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	doc, err := inp.Branch(in.DocumentID, in.BranchID)
+	doc, err := inp.FetchBranch(in.DocumentID, in.BranchID)
 	if err != nil {
 		return "", fmt.Errorf("%s: fetch document: %w", NameUpdateBlockText, err)
 	}
@@ -564,7 +560,7 @@ func (updateBlockText) Summary(inp DescribeInput) (ActionSummary, error) {
 
 	preview := textPreview(in.Text, _maxPreviewLen)
 
-	doc, err := inp.Branch(in.DocumentID, in.BranchID)
+	doc, err := inp.FetchBranch(in.DocumentID, in.BranchID)
 	if err != nil {
 		return ActionSummary{}, fmt.Errorf("%s: fetch document: %w", NameUpdateBlockText, err)
 	}
@@ -590,7 +586,7 @@ func (updateBlockText) Execute(inp Input) (string, error) {
 		return "", err
 	}
 
-	b, err := inp.DocumentBlock(in.DocumentID, in.BranchID, in.BlockUID)
+	b, err := inp.FetchDocumentBlock(in.DocumentID, in.BranchID, in.BlockUID)
 	if err != nil {
 		return "", fmt.Errorf("update_block_text: %w", err)
 	}
@@ -677,7 +673,7 @@ func (updateBlockAttrs) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	doc, err := inp.Branch(in.DocumentID, in.BranchID)
+	doc, err := inp.FetchBranch(in.DocumentID, in.BranchID)
 	if err != nil {
 		return "", fmt.Errorf("%s: fetch document: %w", NameUpdateBlockAttrs, err)
 	}
@@ -697,7 +693,7 @@ func (updateBlockAttrs) Summary(inp DescribeInput) (ActionSummary, error) {
 	// the same every time the same write is proposed.
 	keys := slices.Sorted(maps.Keys(in.Attrs))
 
-	doc, err := inp.Branch(in.DocumentID, in.BranchID)
+	doc, err := inp.FetchBranch(in.DocumentID, in.BranchID)
 	if err != nil {
 		return ActionSummary{}, fmt.Errorf("%s: fetch document: %w", NameUpdateBlockAttrs, err)
 	}
@@ -731,7 +727,7 @@ func (updateBlockAttrs) Execute(inp Input) (string, error) {
 		return "", fmt.Errorf("update_block_attrs: %w", err)
 	}
 
-	b, err := inp.DocumentBlock(in.DocumentID, in.BranchID, in.BlockUID)
+	b, err := inp.FetchDocumentBlock(in.DocumentID, in.BranchID, in.BlockUID)
 	if err != nil {
 		return "", fmt.Errorf("update_block_attrs: %w", err)
 	}
@@ -809,7 +805,7 @@ func (deleteBlock) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	doc, err := inp.Branch(in.DocumentID, in.BranchID)
+	doc, err := inp.FetchBranch(in.DocumentID, in.BranchID)
 	if err != nil {
 		return "", fmt.Errorf("%s: fetch document: %w", NameDeleteBlock, err)
 	}
@@ -825,7 +821,7 @@ func (deleteBlock) Summary(inp DescribeInput) (ActionSummary, error) {
 		return ActionSummary{}, err
 	}
 
-	doc, err := inp.Branch(in.DocumentID, in.BranchID)
+	doc, err := inp.FetchBranch(in.DocumentID, in.BranchID)
 	if err != nil {
 		return ActionSummary{}, fmt.Errorf("%s: fetch document: %w", NameDeleteBlock, err)
 	}
@@ -944,7 +940,7 @@ func (moveBlock) Title(inp DescribeInput) (string, error) {
 		return "", err
 	}
 
-	doc, err := inp.Branch(in.DocumentID, in.BranchID)
+	doc, err := inp.FetchBranch(in.DocumentID, in.BranchID)
 	if err != nil {
 		return "", fmt.Errorf("%s: fetch document: %w", NameMoveBlock, err)
 	}
@@ -960,7 +956,7 @@ func (moveBlock) Summary(inp DescribeInput) (ActionSummary, error) {
 		return ActionSummary{}, err
 	}
 
-	doc, err := inp.Branch(in.DocumentID, in.BranchID)
+	doc, err := inp.FetchBranch(in.DocumentID, in.BranchID)
 	if err != nil {
 		return ActionSummary{}, fmt.Errorf("%s: fetch document: %w", NameMoveBlock, err)
 	}
@@ -990,7 +986,7 @@ func (moveBlock) Execute(inp Input) (string, error) {
 		return "", fmt.Errorf("move_block: %w", err)
 	}
 
-	b, err := inp.DocumentBlock(in.DocumentID, in.BranchID, in.BlockUID)
+	b, err := inp.FetchDocumentBlock(in.DocumentID, in.BranchID, in.BlockUID)
 	if err != nil {
 		return "", fmt.Errorf("move_block: %w", err)
 	}

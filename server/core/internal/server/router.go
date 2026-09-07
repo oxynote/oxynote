@@ -76,6 +76,12 @@ func (s *Server) wsRouter() *wsserver.Router {
 		},
 	)
 
+	binderFn("change@documents.{documentId}.tags",
+		func(tpc wsserver.Topic) {
+			s.handlers.tag.BindBranchTagsChange(tpc)
+		},
+	)
+
 	// slack messages
 	binderFn("post@slack.messages",
 		func(tpc wsserver.Topic) {

@@ -9,6 +9,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/search"
+	"github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
@@ -240,6 +241,20 @@ func Test_getDocument_Execute(t *testing.T) {
 		return nil, assert.AnError
 	}
 
+	untaggable := stubContentDB(nil)
+	untaggable.FetchBranchTagsFunc = func(context.Context, string, xid.ID, xid.ID) ([]tag.Tag, error) {
+		return nil, assert.AnError
+	}
+
+	tagged := stubContentDB(nil)
+	tagged.FetchBranchTagsFunc = func(_ context.Context, _ string, documentID, branchID xid.ID) ([]tag.Tag, error) {
+		if documentID != _testDocID || branchID != _stubBranchID {
+			return nil, assert.AnError
+		}
+
+		return []tag.Tag{{ID: _testTagID, TagName: _stubTagName, Color: _stubTagColor}}, nil
+	}
+
 	cc := map[string]struct {
 		DB       *DBMock
 		Args     string
@@ -263,6 +278,11 @@ func Test_getDocument_Execute(t *testing.T) {
 			Args: `{` + targetArgs(_stubMainBranchID) + `}`,
 			Err:  assert.AnError,
 		},
+		"Error returned by db.FetchBranchTags": {
+			DB:   untaggable,
+			Args: `{` + targetArgs(_stubMainBranchID) + `}`,
+			Err:  assert.AnError,
+		},
 		"Metadata, branches and rows are returned": {
 			DB:   nested,
 			Args: `{` + targetArgs(_stubMainBranchID) + `}`,
@@ -274,6 +294,7 @@ func Test_getDocument_Execute(t *testing.T) {
 				`"branch":{"id":"` + _stubMainBranchID.String() + `","name":"main","protected":true,"default":true}`,
 				`"branches":[{"id":"` + _stubMainBranchID.String() + `","name":"main","protected":false,"default":true,"updated_at":`,
 				`{"id":"` + _stubBranchID.String() + `","name":"draft","protected":false,"default":false,"updated_at":`,
+				`"tags":[]`,
 				`"uid":"a"`,
 				`"kind":"paragraph"`,
 			},
@@ -282,6 +303,13 @@ func Test_getDocument_Execute(t *testing.T) {
 			DB:       stubContentDB(nil),
 			Args:     `{` + targetArgs(_stubBranchID) + `}`,
 			Contains: []string{`"branch":{"id":"` + _stubBranchID.String() + `","name":"draft","protected":false,"default":false}`, `"uid":"a"`},
+		},
+		"Tags of the branch read are listed": {
+			DB:   tagged,
+			Args: `{` + targetArgs(_stubBranchID) + `}`,
+			Contains: []string{
+				`"tags":[{"id":"` + _testTagID.String() + `","name":"Production","color":"#22c55e"}]`,
+			},
 		},
 		"Root document omits the parent": {
 			DB:       stubContentDB(nil),

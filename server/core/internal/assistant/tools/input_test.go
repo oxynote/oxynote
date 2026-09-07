@@ -18,6 +18,7 @@ import (
 	datasourceMock "github.com/oxynote/oxynote/server/core/internal/datasource/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/search"
+	"github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
@@ -32,6 +33,21 @@ func TestMain(m *testing.M) {
 
 // _testDocID is the document id the tool tests address.
 var _testDocID = xid.New()
+
+// _testTagID is the tag id the tag tool tests address; _otherTagID is
+// the second tag every tag stub lists, and _unknownTagID names none.
+var (
+	_testTagID    = xid.New()
+	_otherTagID   = xid.New()
+	_unknownTagID = xid.New()
+)
+
+// _stubTagName and _stubTagColor are what the stubbed tag lookups answer
+// with for _testTagID.
+const (
+	_stubTagName  = "Production"
+	_stubTagColor = "#22c55e"
+)
 
 // discardLog returns a logger that writes nowhere.
 func discardLog() *slog.Logger {
@@ -78,10 +94,6 @@ func testDeps(db *DBMock, applier *EditApplierMock, tree *TreeNotifierMock) *Dep
 
 // testInput builds the per-call input a tool is handed.
 func testInput(d *Deps, name Name, args string) *input {
-	if args == "" {
-		args = "{}"
-	}
-
 	return d.newInput(context.Background(), name, json.RawMessage(args))
 }
 
@@ -121,6 +133,12 @@ func requiredArgs(t *testing.T, name Name) string {
 		switch key {
 		case _keyDocumentID, _keyDataSourceID:
 			vals[key] = _testDocID.String()
+		case _keyTagID:
+			vals[key] = _testTagID.String()
+		case _keyColor:
+			vals[key] = _stubTagColor
+		case _keySortIndex:
+			vals[key] = 0
 		case _keyBlock:
 			vals[key] = map[string]any{_keyType: string(block.BlockParagraph)}
 		case "position":
@@ -145,9 +163,10 @@ func requiredArgs(t *testing.T, name Name) string {
 		}
 	}
 
-	// update_document requires nothing beyond the document, but refuses
-	// a call that changes nothing; a name is the smallest change.
-	if name == NameUpdateDocument {
+	// update_document and update_tag require nothing beyond their
+	// target, but refuse a call that changes nothing; a name is the
+	// smallest change.
+	if name == NameUpdateDocument || name == NameUpdateTag {
 		vals[_keyName] = "x"
 	}
 
@@ -197,7 +216,33 @@ func stubDocumentDB() *DBMock {
 			}
 		},
 		FetchDocumentBranchesFunc: stubBranches(false, false),
+		FetchTagTreeFunc:          stubTagTree,
 	}
+}
+
+// stubTagTree answers a tag tree listing with two tags: the test tag,
+// carried by the test document, and a hidden one carried by nothing.
+func stubTagTree(context.Context, string, string) (tag.Summaries, error) {
+	return tag.Summaries{
+		{
+			ID:      _testTagID,
+			TagName: _stubTagName,
+			Color:   _stubTagColor,
+			Documents: document.Summaries{{
+				ID:              _testDocID,
+				DocumentName:    _stubDocumentName,
+				DefaultBranchID: _stubMainBranchID,
+				Children:        document.Summaries{{ID: xid.New(), DocumentName: "Nested"}},
+			}},
+		},
+		{
+			ID:        _otherTagID,
+			TagName:   "Staging",
+			Color:     "#f97316",
+			Hidden:    true,
+			Documents: document.Summaries{},
+		},
+	}, nil
 }
 
 // stubBranchDocument builds the document the stubs answer with, on the
@@ -286,6 +331,7 @@ func Test_NewDeps(t *testing.T) {
 		runner   = &datasourceMock.Runner{}
 		applier  = &EditApplierMock{}
 		tree     = &TreeNotifierMock{}
+		tags     = &TagNotifierMock{}
 		offload  = &offloadReaderMock{}
 	)
 
@@ -295,7 +341,7 @@ func Test_NewDeps(t *testing.T) {
 
 	jobs := search.NewJobs(true)
 
-	d := NewDeps(discardLog(), db, searcher, jobs, runners, applier, tree, offload, "org", "user")
+	d := NewDeps(discardLog(), db, searcher, jobs, runners, applier, tree, tags, offload, "org", "user")
 	require.NotNil(t, d)
 
 	assert.NotNil(t, d.log)
@@ -305,6 +351,7 @@ func Test_NewDeps(t *testing.T) {
 	assert.Same(t, runners, d.runners)
 	assert.Same(t, applier, d.applier)
 	assert.Same(t, tree, d.tree)
+	assert.Same(t, tags, d.tags)
 	assert.Same(t, offload, d.offload)
 	assert.Equal(t, "org", d.orgID)
 	assert.Equal(t, "user", d.userID)
@@ -336,6 +383,10 @@ func Test_input_Decode(t *testing.T) {
 		Want readBlockArgs
 	}{
 		"Malformed JSON": {Args: `{`, Err: "read_block: invalid input:"},
+		// a provider calling a parameterless tool sends nothing rather
+		// than an empty object; that is a payload, not a decode failure.
+		"Empty arguments read as none": {Args: ``, Err: "read_block: document_id is required"},
+		"Blank arguments read as none": {Args: " \n", Err: "read_block: document_id is required"},
 		// NOTE: json/v2 randomizes the modal verb of its error messages per
 		// process ("cannot" / "unable to") to keep callers off the exact
 		// wording, so the expectation starts after it.
@@ -1310,29 +1361,29 @@ func Test_input_CheckDataSources(t *testing.T) {
 	}
 }
 
-func Test_input_DataSource(t *testing.T) {
+func Test_input_FetchDataSource(t *testing.T) {
 	t.Parallel()
 
 	d := dataSourceDeps(t, datasource.TypePrometheus, nil)
 	inp := testInput(d, NameQueryPrometheus, "")
 
-	ds, err := inp.DataSource(_testDataSourceID)
+	ds, err := inp.FetchDataSource(_testDataSourceID)
 	require.NoError(t, err)
 	require.NotNil(t, ds)
 	assert.Equal(t, "prod", ds.Name)
 
 	// an id the organisation owns nothing for comes back as a failure
 	// rather than as a zero data source.
-	_, err = inp.DataSource(xid.New())
+	_, err = inp.FetchDataSource(xid.New())
 	require.Error(t, err)
 }
 
-func Test_input_DataSources(t *testing.T) {
+func Test_input_FetchDataSources(t *testing.T) {
 	t.Parallel()
 
 	d := dataSourceDeps(t, datasource.TypePrometheus, nil)
 
-	got, err := testInput(d, NameListDataSources, "").DataSources()
+	got, err := testInput(d, NameListDataSources, "").FetchDataSources()
 	require.NoError(t, err)
 	require.Len(t, got, 1)
 	assert.Equal(t, "prod", got[0].Name)
@@ -1355,7 +1406,7 @@ func Test_input_DataSourceRunner(t *testing.T) {
 	assert.Contains(t, err.Error(), "list_data_sources")
 }
 
-func Test_input_DocumentBlock(t *testing.T) {
+func Test_input_FetchDocumentBlock(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
@@ -1397,7 +1448,7 @@ func Test_input_DocumentBlock(t *testing.T) {
 
 			inp := testInput(testDeps(c.DB, nil, nil), NameUpdateBlockText, `{}`)
 
-			b, err := inp.DocumentBlock(_testDocID, c.Branch, c.UID)
+			b, err := inp.FetchDocumentBlock(_testDocID, c.Branch, c.UID)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {
@@ -1409,7 +1460,7 @@ func Test_input_DocumentBlock(t *testing.T) {
 	}
 }
 
-func Test_input_Document(t *testing.T) {
+func Test_input_FetchDocument(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
@@ -1435,7 +1486,7 @@ func Test_input_Document(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			doc, err := testInput(testDeps(c.DB, nil, nil), NameGetDocument, `{}`).Document(_testDocID)
+			doc, err := testInput(testDeps(c.DB, nil, nil), NameGetDocument, `{}`).FetchDocument(_testDocID)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {
@@ -1448,7 +1499,7 @@ func Test_input_Document(t *testing.T) {
 	}
 }
 
-func Test_input_Branch(t *testing.T) {
+func Test_input_FetchBranch(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
@@ -1510,7 +1561,7 @@ func Test_input_Branch(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			doc, err := testInput(testDeps(c.DB, nil, nil), NameGetDocument, `{}`).Branch(_testDocID, c.Branch)
+			doc, err := testInput(testDeps(c.DB, nil, nil), NameGetDocument, `{}`).FetchBranch(_testDocID, c.Branch)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {
@@ -1541,7 +1592,7 @@ func Test_input_unknownBranch(t *testing.T) {
 	assert.Equal(t, fmt.Errorf("branch %s: %w; the branches are main (%s), draft (%s)", _unknownBranchID, ErrUnknownBranch, _stubMainBranchID, _stubBranchID), err)
 }
 
-func Test_input_DocumentBranches(t *testing.T) {
+func Test_input_FetchDocumentBranches(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
@@ -1575,7 +1626,7 @@ func Test_input_DocumentBranches(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := testInput(testDeps(c.DB, nil, nil), NameGetDocument, `{}`).DocumentBranches(_testDocID)
+			got, err := testInput(testDeps(c.DB, nil, nil), NameGetDocument, `{}`).FetchDocumentBranches(_testDocID)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {
@@ -1587,7 +1638,7 @@ func Test_input_DocumentBranches(t *testing.T) {
 	}
 }
 
-func Test_input_DocumentContent(t *testing.T) {
+func Test_input_FetchDocumentContent(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
@@ -1622,7 +1673,7 @@ func Test_input_DocumentContent(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			content, err := testInput(testDeps(c.DB, nil, nil), NameGetDocument, `{}`).DocumentContent(_testDocID, c.Branch)
+			content, err := testInput(testDeps(c.DB, nil, nil), NameGetDocument, `{}`).FetchDocumentContent(_testDocID, c.Branch)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {
@@ -1669,4 +1720,452 @@ func Test_branchLabels(t *testing.T) {
 	assert.Equal(t, []string{"main (" + mainID.String() + ")", "draft (" + draftID.String() + ")"}, branchLabels(branches, nil))
 	assert.Equal(t, []string{"draft (" + draftID.String() + ")"}, branchLabels(branches, func(b document.BranchSummary) bool { return !b.Protected }))
 	assert.Empty(t, branchLabels(nil, nil))
+}
+
+func Test_input_FetchTagTree(t *testing.T) {
+	t.Parallel()
+
+	db := stubTagDB(nil)
+
+	tree, err := testInput(testDeps(db, nil, nil), NameListTags, `{}`).FetchTagTree()
+	require.NoError(t, err)
+	require.Len(t, tree, 2)
+	assert.Equal(t, _testTagID, tree[0].ID)
+
+	// the tree is the session's own: scoped to its pair, so the hidden
+	// flags are the user's.
+	ff := db.FetchTagTreeCalls()
+	require.Len(t, ff, 1)
+	assert.Equal(t, "org", ff[0].OrganizationID)
+	assert.Equal(t, "user", ff[0].UserID)
+
+	_, err = testInput(testDeps(stubTagDB(assert.AnError), nil, nil), NameListTags, `{}`).FetchTagTree()
+	require.Error(t, err)
+}
+
+func Test_input_FetchTag(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		DB     *DBMock
+		ID     xid.ID
+		Result string
+		Err    error
+	}{
+		"Error returned by db.FetchTagTree": {
+			DB:  stubTagDB(assert.AnError),
+			ID:  _testTagID,
+			Err: assert.AnError,
+		},
+		"Unknown tag": {
+			DB:  stubTagDB(nil),
+			ID:  _unknownTagID,
+			Err: fmt.Errorf("tag %s: %w", _unknownTagID, ErrUnknownTag),
+		},
+		"Known tag": {
+			DB:     stubTagDB(nil),
+			ID:     _otherTagID,
+			Result: "Staging",
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			tg, err := testInput(testDeps(c.DB, nil, nil), NameDeleteTag, `{}`).FetchTag(c.ID)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				assert.Nil(t, tg)
+				return
+			}
+
+			assert.Equal(t, c.Result, tg.TagName)
+		})
+	}
+}
+
+func Test_input_FetchBranchTags(t *testing.T) {
+	t.Parallel()
+
+	db := &DBMock{
+		FetchBranchTagsFunc: func(_ context.Context, orgID string, documentID, branchID xid.ID) ([]tag.Tag, error) {
+			if orgID != "org" || documentID != _testDocID || branchID != _stubBranchID {
+				return nil, assert.AnError
+			}
+
+			return []tag.Tag{{ID: _testTagID}}, nil
+		},
+	}
+
+	tags, err := testInput(testDeps(db, nil, nil), NameGetDocument, `{}`).FetchBranchTags(_testDocID, _stubBranchID)
+	require.NoError(t, err)
+	assert.Equal(t, []tag.Tag{{ID: _testTagID}}, tags)
+
+	_, err = testInput(testDeps(db, nil, nil), NameGetDocument, `{}`).FetchBranchTags(_testDocID, _unknownBranchID)
+	require.Error(t, err)
+}
+
+func Test_input_CreateTag(t *testing.T) {
+	t.Parallel()
+
+	tg := tag.NewTag(tag.CreateInput{TagName: "Release", Color: "#3b82f6"}, "org", "user")
+
+	db := &DBMock{}
+	require.NoError(t, testInput(testDeps(db, nil, nil), NameCreateTag, `{}`).CreateTag(tg))
+
+	ff := db.InsertTagCalls()
+	require.Len(t, ff, 1)
+	assert.Equal(t, tg, ff[0].T)
+
+	// the repository's own refusal of a duplicate name passes through
+	// untouched: it already names the clash.
+	db = &DBMock{
+		InsertTagFunc: func(context.Context, tag.Tag) error { return tag.ErrDuplicateTagName },
+	}
+	assert.Equal(t, tag.ErrDuplicateTagName, testInput(testDeps(db, nil, nil), NameCreateTag, `{}`).CreateTag(tg))
+}
+
+func Test_input_UpdateTag(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		DB  *DBMock
+		Err error
+	}{
+		"Error returned by db.UpdateTag": {
+			DB: &DBMock{
+				UpdateTagFunc: func(context.Context, string, xid.ID, tag.UpdateInput) error {
+					return assert.AnError
+				},
+			},
+			Err: assert.AnError,
+		},
+		"Unknown tag": {
+			DB: &DBMock{
+				UpdateTagFunc: func(context.Context, string, xid.ID, tag.UpdateInput) error {
+					return errutil.ErrNotFound
+				},
+			},
+			Err: fmt.Errorf("tag %s: %w", _testTagID, ErrUnknownTag),
+		},
+		"Updated": {DB: &DBMock{}},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			inp := tag.UpdateInput{TagName: null.StringFrom("Release")}
+
+			err := testInput(testDeps(c.DB, nil, nil), NameUpdateTag, `{}`).UpdateTag(_testTagID, inp)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			ff := c.DB.UpdateTagCalls()
+			require.Len(t, ff, 1)
+			assert.Equal(t, "org", ff[0].OrganizationID)
+			assert.Equal(t, _testTagID, ff[0].ID)
+			assert.Equal(t, inp, ff[0].Inp)
+		})
+	}
+}
+
+func Test_input_DeleteTag(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		DB  *DBMock
+		Err error
+	}{
+		"Error returned by db.DeleteTag": {
+			DB: &DBMock{
+				DeleteTagFunc: func(context.Context, xid.ID, string) error { return assert.AnError },
+			},
+			Err: assert.AnError,
+		},
+		"Unknown tag": {
+			DB: &DBMock{
+				DeleteTagFunc: func(context.Context, xid.ID, string) error { return errutil.ErrNotFound },
+			},
+			Err: fmt.Errorf("tag %s: %w", _testTagID, ErrUnknownTag),
+		},
+		"Deleted": {DB: &DBMock{}},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			err := testInput(testDeps(c.DB, nil, nil), NameDeleteTag, `{}`).DeleteTag(_testTagID)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			ff := c.DB.DeleteTagCalls()
+			require.Len(t, ff, 1)
+			assert.Equal(t, _testTagID, ff[0].ID)
+			assert.Equal(t, "org", ff[0].OrganizationID)
+		})
+	}
+}
+
+func Test_input_AssignTag(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		DB      *DBMock
+		Branch  xid.ID
+		Assigns int
+		Touched []Touched
+		Err     error
+	}{
+		"Unknown branch is refused before the write": {
+			DB:     stubDocumentDB(),
+			Branch: _unknownBranchID,
+			Err:    fmt.Errorf("branch %s: %w; the branches are main (%s), draft (%s)", _unknownBranchID, ErrUnknownBranch, _stubMainBranchID, _stubBranchID),
+		},
+		"Unknown tag": {
+			DB: func() *DBMock {
+				db := stubDocumentDB()
+				db.AssignBranchTagFunc = func(context.Context, string, xid.ID, xid.ID, xid.ID) error {
+					return errutil.ErrNotFound
+				}
+
+				return db
+			}(),
+			Branch:  _stubMainBranchID,
+			Assigns: 1,
+			Err:     fmt.Errorf("tag %s: %w", _testTagID, ErrUnknownTag),
+		},
+		"Error returned by db.AssignBranchTag": {
+			DB: func() *DBMock {
+				db := stubDocumentDB()
+				db.AssignBranchTagFunc = func(context.Context, string, xid.ID, xid.ID, xid.ID) error {
+					return assert.AnError
+				}
+
+				return db
+			}(),
+			Branch:  _stubMainBranchID,
+			Assigns: 1,
+			Err:     assert.AnError,
+		},
+		"Assigned and recorded": {
+			DB:      stubDocumentDB(),
+			Branch:  _stubBranchID,
+			Assigns: 1,
+			Touched: []Touched{{DocumentID: _testDocID, BranchID: _stubBranchID}},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			inp := testInput(testDeps(c.DB, nil, nil), NameAssignTag, `{}`)
+
+			err := inp.AssignTag(_testDocID, c.Branch, _testTagID)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			ff := c.DB.AssignBranchTagCalls()
+			require.Len(t, ff, c.Assigns)
+
+			if c.Assigns > 0 {
+				assert.Equal(t, "org", ff[0].OrganizationID)
+				assert.Equal(t, _testDocID, ff[0].DocumentID)
+				assert.Equal(t, c.Branch, ff[0].BranchID)
+				assert.Equal(t, _testTagID, ff[0].TagID)
+			}
+
+			assert.Equal(t, c.Touched, inp.touched)
+		})
+	}
+}
+
+func Test_input_UnassignTag(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		DB        *DBMock
+		Branch    xid.ID
+		Tag       xid.ID
+		Unassigns int
+		Touched   []Touched
+		Err       error
+	}{
+		"Unknown branch is refused before the write": {
+			DB:     stubTagDB(nil),
+			Branch: _unknownBranchID,
+			Tag:    _testTagID,
+			Err:    fmt.Errorf("branch %s: %w; the branches are main (%s), draft (%s)", _unknownBranchID, ErrUnknownBranch, _stubMainBranchID, _stubBranchID),
+		},
+		// the repository treats a tag the branch does not carry as
+		// nothing to do, so an id naming nothing is caught here.
+		"Unknown tag": {
+			DB:     stubTagDB(nil),
+			Branch: _stubMainBranchID,
+			Tag:    _unknownTagID,
+			Err:    fmt.Errorf("tag %s: %w", _unknownTagID, ErrUnknownTag),
+		},
+		"Error returned by db.UnassignBranchTag": {
+			DB: func() *DBMock {
+				db := stubTagDB(nil)
+				db.UnassignBranchTagFunc = func(context.Context, string, xid.ID, xid.ID, xid.ID) error {
+					return assert.AnError
+				}
+
+				return db
+			}(),
+			Branch:    _stubMainBranchID,
+			Tag:       _testTagID,
+			Unassigns: 1,
+			Err:       assert.AnError,
+		},
+		"Unassigned and recorded": {
+			DB:        stubTagDB(nil),
+			Branch:    _stubBranchID,
+			Tag:       _testTagID,
+			Unassigns: 1,
+			Touched:   []Touched{{DocumentID: _testDocID, BranchID: _stubBranchID}},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			inp := testInput(testDeps(c.DB, nil, nil), NameUnassignTag, `{}`)
+
+			err := inp.UnassignTag(_testDocID, c.Branch, c.Tag)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			ff := c.DB.UnassignBranchTagCalls()
+			require.Len(t, ff, c.Unassigns)
+
+			if c.Unassigns > 0 {
+				assert.Equal(t, "org", ff[0].OrganizationID)
+				assert.Equal(t, _testDocID, ff[0].DocumentID)
+				assert.Equal(t, c.Branch, ff[0].BranchID)
+				assert.Equal(t, c.Tag, ff[0].TagID)
+			}
+
+			assert.Equal(t, c.Touched, inp.touched)
+		})
+	}
+}
+
+func Test_input_MoveTag(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		DB        *DBMock
+		Tag       xid.ID
+		SortIndex int
+		Order     []xid.ID
+		Err       error
+	}{
+		"Error returned by db.FetchTagTree": {
+			DB:  stubTagDB(assert.AnError),
+			Tag: _testTagID,
+			Err: assert.AnError,
+		},
+		"Unknown tag": {
+			DB:  stubTagDB(nil),
+			Tag: _unknownTagID,
+			Err: fmt.Errorf("tag %s: %w", _unknownTagID, ErrUnknownTag),
+		},
+		"Sort index past the last tag": {
+			DB:        stubTagDB(nil),
+			Tag:       _testTagID,
+			SortIndex: 2,
+			Err:       assert.AnError,
+		},
+		"Negative sort index": {
+			DB:        stubTagDB(nil),
+			Tag:       _testTagID,
+			SortIndex: -1,
+			Err:       assert.AnError,
+		},
+		"Error returned by db.UpdateTagTree": {
+			DB: func() *DBMock {
+				db := stubTagDB(nil)
+				db.UpdateTagTreeFunc = func(context.Context, tag.Summaries, string) error {
+					return assert.AnError
+				}
+
+				return db
+			}(),
+			Tag:       _testTagID,
+			SortIndex: 1,
+			Order:     []xid.ID{_otherTagID, _testTagID},
+			Err:       assert.AnError,
+		},
+		"Moved": {
+			DB:        stubTagDB(nil),
+			Tag:       _testTagID,
+			SortIndex: 1,
+			Order:     []xid.ID{_otherTagID, _testTagID},
+		},
+		"Kept in place": {
+			DB:        stubTagDB(nil),
+			Tag:       _testTagID,
+			SortIndex: 0,
+			Order:     []xid.ID{_testTagID, _otherTagID},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			err := testInput(testDeps(c.DB, nil, nil), NameMoveTag, `{}`).MoveTag(c.Tag, c.SortIndex)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			ff := c.DB.UpdateTagTreeCalls()
+
+			if c.Order == nil {
+				assert.Empty(t, ff)
+				return
+			}
+
+			require.Len(t, ff, 1)
+			assert.Equal(t, "org", ff[0].OrganizationID)
+
+			order := make([]xid.ID, 0, len(ff[0].Tree))
+			for _, s := range ff[0].Tree {
+				order = append(order, s.ID)
+			}
+
+			assert.Equal(t, c.Order, order)
+		})
+	}
+}
+
+func Test_input_NotifyTagTreeChange(t *testing.T) {
+	t.Parallel()
+
+	// a session without a notifier silently no-ops.
+	testInput(testDeps(nil, nil, nil), NameCreateTag, `{}`).NotifyTagTreeChange()
+
+	d, tags := tagDeps(nil)
+	testInput(d, NameCreateTag, `{}`).NotifyTagTreeChange()
+
+	ff := tags.NotifyTreeChangeCalls()
+	require.Len(t, ff, 1)
+	assert.Equal(t, "org", ff[0].OrganizationID)
+}
+
+func Test_input_NotifyBranchTagsChange(t *testing.T) {
+	t.Parallel()
+
+	// a session without a notifier silently no-ops.
+	testInput(testDeps(nil, nil, nil), NameAssignTag, `{}`).NotifyBranchTagsChange(_testDocID, _stubBranchID)
+
+	d, tags := tagDeps(nil)
+	testInput(d, NameAssignTag, `{}`).NotifyBranchTagsChange(_testDocID, _stubBranchID)
+
+	ff := tags.NotifyBranchTagsChangeCalls()
+	require.Len(t, ff, 1)
+	assert.Equal(t, "org", ff[0].OrganizationID)
+	assert.Equal(t, _testDocID, ff[0].DocumentID)
+	assert.Equal(t, _stubBranchID, ff[0].BranchID)
 }

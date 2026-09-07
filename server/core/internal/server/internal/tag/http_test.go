@@ -730,8 +730,10 @@ func Test_Handler_AssignBranchTag(t *testing.T) {
 			t.Parallel()
 
 			tpc := &wsMock.Topic{}
+			branchTpc := &wsMock.Topic{}
 			hdl := Handler{log: slog.New(slog.DiscardHandler), db: c.DB}
 			hdl.BindTreeChange(tpc)
+			hdl.BindBranchTagsChange(branchTpc)
 
 			req := withParams(
 				httptest.NewRequest(http.MethodPost, "http://test.com/", strings.NewReader(c.Payload)),
@@ -748,6 +750,7 @@ func Test_Handler_AssignBranchTag(t *testing.T) {
 			assert.Equal(t, c.Code, rec.Code)
 			assert.Len(t, c.DB.AssignBranchTagCalls(), c.Assigns)
 			assert.Len(t, tpc.PublishManyCalls(), c.Notifies)
+			assert.Len(t, branchTpc.PublishManyCalls(), c.Notifies)
 
 			if c.Body != "" {
 				assert.JSONEq(t, c.Body, rec.Body.String())
@@ -841,8 +844,10 @@ func Test_Handler_UnassignBranchTag(t *testing.T) {
 			t.Parallel()
 
 			tpc := &wsMock.Topic{}
+			branchTpc := &wsMock.Topic{}
 			hdl := Handler{log: slog.New(slog.DiscardHandler), db: c.DB}
 			hdl.BindTreeChange(tpc)
+			hdl.BindBranchTagsChange(branchTpc)
 
 			req := withParams(
 				httptest.NewRequest(http.MethodDelete, "http://test.com/", http.NoBody),
@@ -859,6 +864,7 @@ func Test_Handler_UnassignBranchTag(t *testing.T) {
 			assert.Equal(t, c.Code, rec.Code)
 			assert.Len(t, c.DB.UnassignBranchTagCalls(), c.Unassigns)
 			assert.Len(t, tpc.PublishManyCalls(), c.Notifies)
+			assert.Len(t, branchTpc.PublishManyCalls(), c.Notifies)
 
 			if c.Body != "" {
 				assert.JSONEq(t, c.Body, rec.Body.String())

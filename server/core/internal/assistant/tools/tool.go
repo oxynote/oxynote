@@ -10,6 +10,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/search"
+	"github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/rs/xid"
 )
 
@@ -141,6 +142,25 @@ func (plainSummary) Summary(_ DescribeInput) (ActionSummary, error) {
 	return ActionSummary{}, nil
 }
 
+// plainTraits implements the Tool interface to avoid Traits
+// re-implementation in tools that are plain reads.
+type plainTraits struct{}
+
+// Traits reports a plain read: no write, no outbound connection, nothing
+// internal.
+func (plainTraits) Traits() Traits {
+	return Traits{}
+}
+
+// plainTitle implements the Tool interface to avoid Title
+// re-implementation in tools too generic to announce.
+type plainTitle struct{}
+
+// Title returns no status line.
+func (plainTitle) Title(_ DescribeInput) (string, error) {
+	return "", nil
+}
+
 // Args is one tool call's decoded arguments. Validate is what Decode
 // runs once the payload is read, so a tool states what it requires next
 // to the fields that carry it, and nothing downstream of Decode sees a
@@ -170,31 +190,35 @@ type DescribeInput interface {
 	// than describing a call from zero values.
 	Decode(dst Args) error
 
-	// Document should return the document the id names, on its default
+	// FetchDocument should return the document the id names, on its default
 	// branch, for a description that has to name its subject.
-	Document(documentID xid.ID) (*document.Document, error)
+	FetchDocument(documentID xid.ID) (*document.Document, error)
 
-	// Branch should return the document on the branch branchID names,
+	// FetchBranch should return the document on the branch branchID names,
 	// for a description that has to name the branch it targets.
-	Branch(documentID, branchID xid.ID) (*document.Document, error)
+	FetchBranch(documentID, branchID xid.ID) (*document.Document, error)
 
-	// DataSource should return the data source the id names, for a
+	// FetchDataSource should return the data source the id names, for a
 	// description that has to name its subject.
-	DataSource(dataSourceID xid.ID) (*datasource.DataSource, error)
+	FetchDataSource(dataSourceID xid.ID) (*datasource.DataSource, error)
 
 	// DescendantCount should report how many documents sit under the
 	// named one, at any depth, for a description that has to say how
 	// far a cascade reaches.
 	DescendantCount(id xid.ID) (int, error)
+
+	// FetchTag should return the tag the id names, with the documents
+	// carrying it, for a description that has to name its subject.
+	FetchTag(tagID xid.ID) (*tag.Summary, error)
 }
 
 // DataSources is the organisation's outbound data-source connections as
 // a tool reads them. Every method is already scoped to the session's
 // organisation, so a tool can never reach another one's connections.
 type DataSources interface {
-	// DataSources should return every data source the organisation
+	// FetchDataSources should return every data source the organisation
 	// owns.
-	DataSources() ([]datasource.DataSource, error)
+	FetchDataSources() ([]datasource.DataSource, error)
 
 	// DataSourceRunner should return the runner that operates the data
 	// source the id names, or an error when the organisation owns no
@@ -210,32 +234,32 @@ type DataSources interface {
 // Every method is already scoped to the session's organisation, so a
 // tool can never reach another one's documents.
 type Documents interface {
-	// Document should return the document on its default branch.
-	Document(documentID xid.ID) (*document.Document, error)
+	// FetchDocument should return the document on its default branch.
+	FetchDocument(documentID xid.ID) (*document.Document, error)
 
-	// Branch should return the document on the branch branchID names,
+	// FetchBranch should return the document on the branch branchID names,
 	// refusing a branch the document does not have.
-	Branch(documentID, branchID xid.ID) (*document.Document, error)
+	FetchBranch(documentID, branchID xid.ID) (*document.Document, error)
 
-	// DocumentContent should return the parsed content of the branch
+	// FetchDocumentContent should return the parsed content of the branch
 	// branchID names, for the ops that only need the block tree.
-	DocumentContent(documentID, branchID xid.ID) (document.Content, error)
+	FetchDocumentContent(documentID, branchID xid.ID) (document.Content, error)
 
-	// DocumentBlock should return the block blockUID names on the
+	// FetchDocumentBlock should return the block blockUID names on the
 	// branch, refusing a uid the branch does not hold.
-	DocumentBlock(documentID, branchID xid.ID, blockUID string) (document.Block, error)
+	FetchDocumentBlock(documentID, branchID xid.ID, blockUID string) (document.Block, error)
 
-	// DocumentBranches should list every branch of the document,
+	// FetchDocumentBranches should list every branch of the document,
 	// refusing a document the organisation does not have.
-	DocumentBranches(documentID xid.ID) ([]document.BranchSummary, error)
+	FetchDocumentBranches(documentID xid.ID) ([]document.BranchSummary, error)
 
-	// DocumentTree should return every document in the organisation as
+	// FetchDocumentTree should return every document in the organisation as
 	// a nested summary tree.
-	DocumentTree() (document.Summaries, error)
+	FetchDocumentTree() (document.Summaries, error)
 
-	// DocumentChildren should return the direct children of parentID; a
+	// FetchDocumentChildren should return the direct children of parentID; a
 	// null parent means the organisation's root.
-	DocumentChildren(parentID null.Value[xid.ID]) (document.Summaries, error)
+	FetchDocumentChildren(parentID null.Value[xid.ID]) (document.Summaries, error)
 }
 
 // DocumentWriter changes the shape of the document tree and announces
@@ -262,6 +286,56 @@ type DocumentWriter interface {
 	// parent and fire a tree-change for it, for the ops whose arguments
 	// carry no parent.
 	NotifyTreeChangeForDocument(documentID xid.ID)
+}
+
+// Tags is the organisation's tags as a tool reads them. Every method is
+// already scoped to the session's organisation.
+type Tags interface {
+	// FetchTagTree should return every tag in the organisation in display
+	// order, each with the documents whose default branch carries it and
+	// whether the session's user hides it.
+	FetchTagTree() (tag.Summaries, error)
+
+	// FetchBranchTags should return the tags the branch branchID names
+	// carries, in the tags' display order.
+	FetchBranchTags(documentID, branchID xid.ID) ([]tag.Tag, error)
+}
+
+// TagWriter changes the organisation's tags and what carries them, and
+// announces the change so connected sidebars stay in step.
+type TagWriter interface {
+	// CreateTag should insert the tag at the end of the organisation's
+	// tags, refusing a name the organisation already uses.
+	CreateTag(t tag.Tag) error
+
+	// UpdateTag should rename and/or recolour the tag the id names,
+	// refusing an id that names nothing.
+	UpdateTag(tagID xid.ID, inp tag.UpdateInput) error
+
+	// DeleteTag should remove the tag the id names and every assignment
+	// of it, refusing an id that names nothing.
+	DeleteTag(tagID xid.ID) error
+
+	// AssignTag should make the branch branchID names carry the tag,
+	// refusing a document, branch or tag that does not exist.
+	AssignTag(documentID, branchID, tagID xid.ID) error
+
+	// UnassignTag should stop the branch branchID names carrying the
+	// tag, refusing a document, branch or tag that does not exist.
+	UnassignTag(documentID, branchID, tagID xid.ID) error
+
+	// MoveTag should move the tag to the 0-based position among the
+	// organisation's tags, refusing a position outside them.
+	MoveTag(tagID xid.ID, sortIndex int) error
+
+	// NotifyTagTreeChange should tell subscribers that the tag tree
+	// changed.
+	NotifyTagTreeChange()
+
+	// NotifyBranchTagsChange should tell the document's subscribers that
+	// the tags the branch branchID names carries changed, so an open
+	// header refreshes its pills.
+	NotifyBranchTagsChange(documentID, branchID xid.ID)
 }
 
 // Editor applies content changes to a live document through the
@@ -293,11 +367,15 @@ type Editor interface {
 // It is a facade over the narrower surfaces above rather than a list of
 // its own, and it is built per call, so a tool holds no state between
 // them.
+//
+//nolint:interfacebloat // facade composed of the narrower surfaces above
 type Input interface {
 	DescribeInput
 	Documents
 	DocumentWriter
 	DataSources
+	Tags
+	TagWriter
 	Editor
 
 	// OrganizationID should return the organisation every call is

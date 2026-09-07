@@ -34,6 +34,7 @@ func Test_buildSystemPrompt(t *testing.T) {
 
 	// documents have branches, and the prompt says so.
 	assert.Contains(t, got, "Documents have branches")
+	assert.Contains(t, got, "assign_tag and unassign_tag take a branch_id")
 
 	// width is the one metric enum the prompt is still the only source
 	// for: attrs is a single field shared by every block type, and
@@ -104,6 +105,7 @@ func Test_MCPInstructions(t *testing.T) {
 
 	// an MCP client learns about branches and the protected rule here.
 	assert.Contains(t, got, "Documents have branches")
+	assert.Contains(t, got, "assign_tag and unassign_tag take a branch_id")
 	assert.Contains(t, got, "protected branch is read-only")
 
 	// the persona and its confirmation flow are the chat surface's;

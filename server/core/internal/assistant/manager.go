@@ -53,6 +53,7 @@ type Manager struct {
 	summary model.ToolCallingChatModel
 	applier tools.EditApplier
 	tree    tools.TreeNotifier
+	tags    tools.TagNotifier
 
 	history     *persist.History
 	checkpoints *persist.Checkpoints
@@ -180,6 +181,13 @@ func (m *Manager) SetTreeNotifier(tree tools.TreeNotifier) {
 	m.tree = tree
 }
 
+// SetTagNotifier wires the tag-tree-change notifier the assistant uses
+// to broadcast sidebar refresh events after tag mutations. Like
+// SetTreeNotifier, call it once during startup, before serving traffic.
+func (m *Manager) SetTagNotifier(tags tools.TagNotifier) {
+	m.tags = tags
+}
+
 // ToolSet builds the tool registry for one (organization, user) pair
 // from the manager's shared wiring. The MCP surface uses it to serve
 // the same tools the assistant's sessions get, scoped the same way.
@@ -192,6 +200,7 @@ func (m *Manager) ToolSet(orgID, userID string) *tools.Set {
 		m.runners,
 		m.applier,
 		m.tree,
+		m.tags,
 		m.offload,
 		orgID,
 		userID,

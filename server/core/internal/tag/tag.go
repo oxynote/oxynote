@@ -25,6 +25,10 @@ var (
 	// ErrDuplicateTagName is returned when a tag is created under a name the
 	// organization already uses.
 	ErrDuplicateTagName = errutil.New(http.StatusConflict, "tag.duplicate_name", "tag name is already in use")
+
+	// ErrEmptyTagUpdate is returned when a tag update sets neither a name nor
+	// a colour.
+	ErrEmptyTagUpdate = errutil.New(http.StatusBadRequest, "tag.empty_update", "tag update needs a name or a colour")
 )
 
 // Tag represents a label a document can carry. A document may carry many
@@ -103,6 +107,35 @@ func NewTag(inp CreateInput, organizationID, userID string) Tag {
 		CreatedAt:      timeutil.Now(),
 		CreatedBy:      null.StringFrom(userID),
 	}
+}
+
+// UpdateInput is the input for renaming or recolouring a tag. A field left
+// unset keeps its current value.
+type UpdateInput struct {
+	// TagName is the new display name of the tag.
+	TagName null.String `json:"tagName"`
+
+	// Color is the new colour of the tag as a hex triplet, including the
+	// leading hash.
+	Color null.String `json:"color"`
+}
+
+// Validate reports whether the input changes a tag: at least one field has
+// to be set, and a set field is held to the same rules as on creation.
+func (ui UpdateInput) Validate() error {
+	if !ui.TagName.Valid && !ui.Color.Valid {
+		return ErrEmptyTagUpdate
+	}
+
+	if ui.TagName.Valid && ui.TagName.String == "" {
+		return ErrInvalidTagName
+	}
+
+	if ui.Color.Valid && !isHexColorValid(ui.Color.String) {
+		return ErrInvalidTagColor
+	}
+
+	return nil
 }
 
 // VisibilityInput is the input for changing whether one user sees a tag.

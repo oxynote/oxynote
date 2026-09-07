@@ -1,5 +1,15 @@
 export const WS_TAG_TREE_CHANGE_TOPIC = "change@tag-tree"
 
+export function makeWsBranchTagsChangeTopic(docId: string): string {
+	return `change@documents.${docId}.tags`
+}
+
+// what the branch tags change topic carries: the branch whose tags changed,
+// so a header showing another branch of the document leaves its list alone
+export interface WSBranchTagsChangePayload {
+	branchId: string
+}
+
 export interface Tag {
 	id: string
 	organizationId: string

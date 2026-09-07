@@ -3,6 +3,7 @@ package tag
 import (
 	"testing"
 
+	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
@@ -42,6 +43,45 @@ func Test_CreateInput_Validate(t *testing.T) {
 		},
 		"Uppercase hex colour": {
 			Input: CreateInput{TagName: "Production", Color: "#22C55E"},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Err, c.Input.Validate())
+		})
+	}
+}
+
+func Test_UpdateInput_Validate(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Input UpdateInput
+		Err   error
+	}{
+		"Neither field set": {
+			Input: UpdateInput{},
+			Err:   ErrEmptyTagUpdate,
+		},
+		"Empty name": {
+			Input: UpdateInput{TagName: null.StringFrom("")},
+			Err:   ErrInvalidTagName,
+		},
+		"Malformed colour": {
+			Input: UpdateInput{Color: null.StringFrom("22c55e")},
+			Err:   ErrInvalidTagColor,
+		},
+		"Name only": {
+			Input: UpdateInput{TagName: null.StringFrom("Production")},
+		},
+		"Colour only": {
+			Input: UpdateInput{Color: null.StringFrom("#22C55E")},
+		},
+		"Both fields": {
+			Input: UpdateInput{TagName: null.StringFrom("Production"), Color: null.StringFrom("#22c55e")},
 		},
 	}
 

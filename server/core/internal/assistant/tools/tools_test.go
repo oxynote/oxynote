@@ -20,6 +20,7 @@ func allToolNames() []Name {
 		NameListDocuments,
 		NameGetDocument,
 		NameReadBlock,
+		NameListTags,
 		NameSearchDocuments,
 		NameListDataSources,
 		NameGetPrometheusMetadata,
@@ -39,6 +40,12 @@ func allToolNames() []Name {
 		NameUpdateBlockAttrs,
 		NameDeleteBlock,
 		NameMoveBlock,
+		NameCreateTag,
+		NameUpdateTag,
+		NameDeleteTag,
+		NameAssignTag,
+		NameUnassignTag,
+		NameMoveTag,
 		NameReadToolOutput,
 	}
 }
@@ -157,7 +164,7 @@ func Test_Set_Entries(t *testing.T) {
 	entries := s.Entries()
 	require.Len(t, entries, len(allToolNames()))
 
-	destructive := []Name{NameDeleteDocument, NameDeleteBlock}
+	destructive := []Name{NameDeleteDocument, NameDeleteBlock, NameDeleteTag}
 
 	for i, e := range entries {
 		assert.Equal(t, allToolNames()[i], e.Name)
@@ -293,6 +300,12 @@ func Test_Set_WriteNames(t *testing.T) {
 		string(NameUpdateBlockAttrs),
 		string(NameDeleteBlock),
 		string(NameMoveBlock),
+		string(NameCreateTag),
+		string(NameUpdateTag),
+		string(NameDeleteTag),
+		string(NameAssignTag),
+		string(NameUnassignTag),
+		string(NameMoveTag),
 	}, got)
 
 	// mutating the returned slice must not affect the registry.
@@ -327,6 +340,11 @@ func Test_Set_Label(t *testing.T) {
 			Name:   NameUpdateBlockText,
 			Args:   `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"b","text":"t"}`,
 			Result: "Updating Runbook",
+		},
+		"Tag write names the tag": {
+			Name:   NameDeleteTag,
+			Args:   `{"tag_id":"` + _testTagID.String() + `"}`,
+			Result: "Deleting tag Production",
 		},
 		"Unresolvable document is not announced": {
 			DB: &DBMock{
