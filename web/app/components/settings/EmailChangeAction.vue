@@ -61,9 +61,9 @@ const onSubmit = form.handleSubmit(async (values) => {
 </script>
 <template>
 	<div class="flex flex-col">
-		<p class="text-2sm text-muted-foreground">
+		<ShadcnUiDialogDescription class="text-2sm">
 			{{ $t("settings.action-modals.email-change.description") }}
-		</p>
+		</ShadcnUiDialogDescription>
 		<form
 			class="mt-5 flex w-full flex-col items-center gap-5"
 			autocomplete="off"

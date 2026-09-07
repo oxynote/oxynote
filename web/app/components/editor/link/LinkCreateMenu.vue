@@ -44,6 +44,7 @@ function handleKeydown(event: KeyboardEvent) {
 </script>
 <template>
 	<div class="flex items-center gap-0.75">
+		<!-- eslint-disable vuejs-accessibility/no-autofocus -- the menu opens on the person's own request to type a url, so focus belongs in its only field -->
 		<ShadcnUiInput
 			v-model="linkUrl"
 			:placeholder="$t('editor.link.page-or-url-placeholder')"
@@ -52,6 +53,7 @@ function handleKeydown(event: KeyboardEvent) {
 			disable-focus-effect
 			@keydown="handleKeydown"
 		/>
+		<!-- eslint-enable vuejs-accessibility/no-autofocus -->
 		<div class="h-full w-[0.0625rem] shrink-0 bg-border" />
 		<ShadcnUiButton size="icon-sm" variant="ghost" @click="cancel">
 			<Icon name="lucide:x" />

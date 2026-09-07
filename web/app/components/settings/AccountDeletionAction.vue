@@ -56,9 +56,9 @@ async function deleteAccount() {
 <template>
 	<div class="flex flex-col gap-4">
 		<div class="flex flex-col gap-2 self-stretch">
-			<p class="text-2sm text-muted-foreground">
+			<ShadcnUiDialogDescription class="text-2sm">
 				{{ $t("settings.action-modals.account-deletion.description") }}
-			</p>
+			</ShadcnUiDialogDescription>
 			<div v-if="lastOrgMemeber" class="text-2sm font-medium text-foreground">
 				{{
 					$t(

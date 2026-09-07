@@ -150,7 +150,7 @@ function selectItem(index: number) {
 					:item-index="index"
 					:selected-index="selectedIndex"
 					@click="selectItem(index)"
-					@hover="selectedIndex = index"
+					@highlight="selectedIndex = index"
 				/>
 				<div
 					v-if="

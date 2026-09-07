@@ -30,6 +30,7 @@ function handleClick(btn: "first" | "second") {
 
 <template>
 	<div
+		role="presentation"
 		class="group/right-side-extra-action absolute -bottom-7 left-0 z-10 flex h-7 w-full cursor-default items-center justify-center gap-3"
 		@mousedown="
 			(e) => {

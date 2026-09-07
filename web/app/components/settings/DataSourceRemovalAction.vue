@@ -47,18 +47,19 @@ async function removeDataSource() {
 </script>
 <template>
 	<div class="flex flex-col gap-5">
-		<i18n-t
-			scope="global"
-			keypath="settings.action-modals.data-source-removal.description"
-			class="text-2sm text-muted-foreground"
-			tag="p"
-		>
-			<template #name>
-				<span class="font-medium text-foreground">
-					{{ props.data.name }}
-				</span>
-			</template>
-		</i18n-t>
+		<ShadcnUiDialogDescription as-child class="text-2sm">
+			<i18n-t
+				scope="global"
+				keypath="settings.action-modals.data-source-removal.description"
+				tag="p"
+			>
+				<template #name>
+					<span class="font-medium text-foreground">
+						{{ props.data.name }}
+					</span>
+				</template>
+			</i18n-t>
+		</ShadcnUiDialogDescription>
 		<div class="flex w-full gap-2">
 			<ShadcnUiButton
 				type="submit"

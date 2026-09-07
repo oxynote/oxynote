@@ -75,7 +75,7 @@ function sizeImage(wrapper: VueWrapper, width: number, height: number) {
 
 async function startDrag(wrapper: VueWrapper) {
 	await wrapper
-		.get("[aria-label='Resize image']")
+		.get(".cursor-nwse-resize")
 		.trigger("mousedown", { clientX: 100, clientY: 200 })
 }
 
@@ -257,7 +257,7 @@ describe("<ImageBlock>", { concurrent: false }, () => {
 	}) => {
 		const wrapper = await mountImage({ src: "https://cdn.test/a.png" })
 
-		expect(wrapper.find("[aria-label='Resize image']").exists()).toBe(true)
+		expect(wrapper.find(".cursor-nwse-resize").exists()).toBe(true)
 	})
 
 	it("hides the resize handle in read mode", async ({ expect }) => {
@@ -265,7 +265,7 @@ describe("<ImageBlock>", { concurrent: false }, () => {
 
 		const wrapper = await mountImage({ src: "https://cdn.test/a.png" })
 
-		expect(wrapper.find("[aria-label='Resize image']").exists()).toBe(false)
+		expect(wrapper.find(".cursor-nwse-resize").exists()).toBe(false)
 	})
 
 	it("scales the image while the handle is dragged", async ({ expect }) => {
@@ -379,7 +379,7 @@ describe("<ImageBlock>", { concurrent: false }, () => {
 			.spyOn(fileInput(wrapper), "click")
 			.mockImplementation(() => undefined)
 
-		await wrapper.get("[data-node-view-wrapper] > div").trigger("click")
+		await wrapper.get("[data-node-view-wrapper] > button").trigger("click")
 
 		expect(click).toHaveBeenCalledTimes(1)
 	})
@@ -389,7 +389,7 @@ describe("<ImageBlock>", { concurrent: false }, () => {
 		const wrapper = await mountImage()
 		const click = vi.spyOn(fileInput(wrapper), "click")
 
-		await wrapper.get("[data-node-view-wrapper] > div").trigger("click")
+		await wrapper.get("[data-node-view-wrapper] > button").trigger("click")
 
 		expect(click).toHaveBeenCalledTimes(0)
 	})
@@ -400,7 +400,7 @@ describe("<ImageBlock>", { concurrent: false }, () => {
 		const wrapper = await mountImage({ uploading: true })
 		const click = vi.spyOn(fileInput(wrapper), "click")
 
-		await wrapper.get("[data-node-view-wrapper] > div").trigger("click")
+		await wrapper.get("[data-node-view-wrapper] > button").trigger("click")
 
 		expect(click).toHaveBeenCalledTimes(0)
 	})

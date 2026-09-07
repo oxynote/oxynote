@@ -243,6 +243,7 @@ function handleAvatarClick() {
 					<input
 						ref="avatarInput"
 						type="file"
+						aria-hidden="true"
 						accept="image/png,image/jpeg,image/webp"
 						class="hidden"
 						@change="handleAvatarChange"

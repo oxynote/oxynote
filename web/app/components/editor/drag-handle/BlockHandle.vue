@@ -138,6 +138,19 @@ function handleDragHoverLeave() {
 	removeDragOverlay()
 }
 
+// focus moving between the handle's own buttons is not a leave
+function handleDragFocusOut(e: FocusEvent) {
+	const handle = e.currentTarget as HTMLElement
+	if (
+		e.relatedTarget instanceof globalThis.Node &&
+		handle.contains(e.relatedTarget)
+	) {
+		return
+	}
+
+	handleDragHoverLeave()
+}
+
 function createDragOverlay(nodeEl: HTMLElement) {
 	showHighlight(
 		nodeEl.getBoundingClientRect(),
@@ -179,6 +192,8 @@ function dragEnd() {
 		@node-change="handleNodeHover"
 		@mouseenter="handleDragHoverEnter"
 		@mouseleave="handleDragHoverLeave"
+		@focusin="handleDragHoverEnter"
+		@focusout="handleDragFocusOut"
 		@dragstart="dragStart"
 		@dragend="dragEnd"
 	>

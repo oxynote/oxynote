@@ -83,8 +83,9 @@ test.describe("search", () => {
 		await searchFor(dialog, "marmalade", result)
 
 		// the text exists on the draft alone, so that is the branch the
-		// hit names and the one the link opens
-		await expect(result.getByTestId("search-result-branch")).toHaveText("draft")
+		// hit names and the one the link opens. The branch name is the last
+		// span of the result's meta line
+		await expect(result.locator("span:last-child")).toHaveText("draft")
 		await result.click()
 
 		await expect(page).toHaveURL(/New-Page-[a-z0-9]{20}\?branch=[a-z0-9]{20}/)

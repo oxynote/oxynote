@@ -258,13 +258,14 @@ onBeforeUnmount(() => {
 			</div>
 			<iframe
 				:src="embedUrl"
+				:title="t('editor.figma.iframe-title')"
 				class="block w-full border-0"
 				:style="{ height: `${displayHeight}px` }"
 				allowfullscreen
 			/>
 			<div
 				v-if="!isEditingDisabled"
-				aria-label="Resize"
+				aria-hidden="true"
 				class="absolute right-0.25 bottom-0.25 size-4 cursor-nwse-resize text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
 				contenteditable="false"
 				@mousedown="startResize"
@@ -274,13 +275,15 @@ onBeforeUnmount(() => {
 		</div>
 
 		<!-- Empty state -->
-		<div
+		<button
 			v-else
 			ref="figma-anchor"
+			type="button"
 			contenteditable="false"
+			:aria-disabled="isEditingDisabled"
 			:class="
 				cn(
-					'relative flex w-full items-center gap-2 rounded-md bg-muted p-2 transition-colors duration-150 select-none',
+					'relative flex w-full items-center gap-2 rounded-md bg-muted p-2 text-left transition-colors duration-150 select-none',
 					!isEditingDisabled &&
 						'cursor-pointer hover:bg-muted/70 active:bg-muted/90',
 					diffClass,
@@ -296,7 +299,7 @@ onBeforeUnmount(() => {
 						: t("editor.figma.description")
 				}}
 			</span>
-		</div>
+		</button>
 	</NodeViewWrapper>
 
 	<!-- URL popover -->
@@ -317,6 +320,7 @@ onBeforeUnmount(() => {
 				contenteditable="false"
 			>
 				<div class="flex items-center gap-0.75">
+					<!-- eslint-disable vuejs-accessibility/no-autofocus -- the popover opens on the person's own request to type a url, so focus belongs in its only field -->
 					<ShadcnUiInput
 						v-model="urlInput"
 						:placeholder="t('editor.figma.placeholder')"
@@ -325,6 +329,7 @@ onBeforeUnmount(() => {
 						disable-focus-effect
 						@keydown="handleKeydown"
 					/>
+					<!-- eslint-enable vuejs-accessibility/no-autofocus -->
 					<div class="w-[0.0625rem] shrink-0 self-stretch bg-border" />
 					<ShadcnUiButton size="icon-sm" variant="ghost" @click="closePopover">
 						<Icon name="lucide:x" />

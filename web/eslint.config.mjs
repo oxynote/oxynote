@@ -3,6 +3,7 @@ import js from "@eslint/js"
 import vueI18n from "@intlify/eslint-plugin-vue-i18n"
 import pluginTs from "@typescript-eslint/eslint-plugin"
 import vitest from "@vitest/eslint-plugin"
+import vueA11y from "eslint-plugin-vuejs-accessibility"
 import eslintConfigPrettier from "eslint-config-prettier/flat"
 import withNuxt from "./.nuxt/eslint.config.mjs"
 
@@ -115,6 +116,8 @@ export default withNuxt([
 		},
 	},
 
+	...vueA11y.configs["flat/recommended"],
+
 	...vueI18n.configs["flat/recommended"],
 	{
 		name: "oxynote/vue-i18n",
@@ -179,6 +182,22 @@ export default withNuxt([
 		files: ["app/components/shadcn/ui/**"],
 		rules: {
 			"@intlify/vue-i18n/no-raw-text": "off",
+		},
+	},
+
+	// the shadcn wrappers render a bare input, textarea or label whose
+	// association is made where they are used, so the rules pairing a
+	// control with its label cannot see it. InputGroupAddon's click only
+	// moves focus into the input it decorates — a pointer convenience with
+	// nothing for a keyboard to reach.
+	{
+		name: "oxynote/vue-a11y/shadcn",
+		files: ["app/components/shadcn/ui/**"],
+		rules: {
+			"vuejs-accessibility/click-events-have-key-events": "off",
+			"vuejs-accessibility/form-control-has-label": "off",
+			"vuejs-accessibility/label-has-for": "off",
+			"vuejs-accessibility/no-static-element-interactions": "off",
 		},
 	},
 

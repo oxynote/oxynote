@@ -36,15 +36,6 @@ const sharedTestOptions = {
 		if (log.startsWith("[Icon] failed to load icon")) {
 			return false
 		}
-
-		// temporary suppression. reka-ui warns once per dialog mount that
-		// no DialogDescription answers the aria-describedby it points at,
-		// and every modal in the app has that gap, so no individual suite
-		// can act on it. Delete this branch once the dialogs describe
-		// themselves
-		if (log.startsWith("Warning: Missing `Description`")) {
-			return false
-		}
 	},
 } satisfies TestUserConfig
 

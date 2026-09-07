@@ -124,7 +124,7 @@ function hideTooltip() {
 }
 
 // one delegated listener for the whole grid, so a cell is a plain button
-function handleGridHover(e: MouseEvent) {
+function handleGridHover(e: Event) {
 	const cell = (e.target as HTMLElement).closest<HTMLElement>("[data-name]")
 	if (!cell) {
 		return
@@ -230,6 +230,8 @@ function handleEscape(e: KeyboardEvent) {
 							@scroll="handleScroll"
 							@mouseover="handleGridHover"
 							@mouseleave="hideTooltip"
+							@focusin="handleGridHover"
+							@focusout="hideTooltip"
 						>
 							<!--the scroller patches each recycled cell on every scroll, so
 							a cell has to be cheap to patch: plain elements, no components-->

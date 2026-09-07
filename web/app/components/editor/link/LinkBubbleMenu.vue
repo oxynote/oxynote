@@ -245,6 +245,16 @@ function handlePopoverMouseLeave() {
 	}
 }
 
+// focus moving between the popover's own controls is not a leave
+function handlePopoverFocusOut(e: FocusEvent) {
+	const popover = e.currentTarget as HTMLElement
+	if (e.relatedTarget instanceof Node && popover.contains(e.relatedTarget)) {
+		return
+	}
+
+	handlePopoverMouseLeave()
+}
+
 function handleClickOutside(event?: MouseEvent) {
 	if (!isEditing.value || !popoverElem.value) {
 		return
@@ -512,6 +522,7 @@ defineExpose({
 			leave-active-class="animate-out"
 			leave-to-class="fade-out-0"
 		>
+			<!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -- the handlers only track whether the pointer or focus is inside the popover so it stays open; the popover is a container, not a control -->
 			<div
 				v-if="renderPopover && currentLink"
 				ref="link-bubble-popover"
@@ -522,6 +533,8 @@ defineExpose({
 				class="absolute z-popover max-w-[20rem] min-w-40 gap-2 rounded-lg border border-border bg-background py-1 shadow-md"
 				@mouseenter="handlePopoverMouseEnter"
 				@mouseleave="handlePopoverMouseLeave"
+				@focusin="handlePopoverMouseEnter"
+				@focusout="handlePopoverFocusOut"
 			>
 				<div v-if="!isEditing" class="flex h-full min-w-0 flex-col gap-1.5">
 					<div class="flex h-full min-w-0 items-center gap-1 pr-1 pl-1.75">

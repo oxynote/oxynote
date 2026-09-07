@@ -86,18 +86,19 @@ async function removeMember() {
 </script>
 <template>
 	<div class="flex flex-col gap-5">
-		<i18n-t
-			scope="global"
-			keypath="settings.action-modals.workspace-member-removal.description"
-			class="text-2sm text-muted-foreground"
-			tag="p"
-		>
-			<template #member>
-				<span class="font-medium text-foreground">
-					{{ props.member.user.name }}
-				</span>
-			</template>
-		</i18n-t>
+		<ShadcnUiDialogDescription as-child class="text-2sm">
+			<i18n-t
+				scope="global"
+				keypath="settings.action-modals.workspace-member-removal.description"
+				tag="p"
+			>
+				<template #member>
+					<span class="font-medium text-foreground">
+						{{ props.member.user.name }}
+					</span>
+				</template>
+			</i18n-t>
+		</ShadcnUiDialogDescription>
 		<div class="flex w-full gap-2">
 			<ShadcnUiButton
 				type="submit"

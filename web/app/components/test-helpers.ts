@@ -11,6 +11,7 @@ import {
 	seedQueryData,
 	type RecordedCall,
 } from "~/composables/api/test-helpers"
+import { Dialog } from "./shadcn/ui/dialog"
 import { SidebarProvider } from "./shadcn/ui/sidebar"
 import { TooltipProvider } from "./shadcn/ui/tooltip"
 
@@ -207,6 +208,25 @@ export function openTooltipText(wrapper: VueWrapper): string {
 	return document.getElementById(id)?.textContent ?? ""
 }
 
+// a DialogDescription reads the id it answers from the dialog root's
+// context, so a component that renders one — the settings actions, whose
+// dialog is the ActionModal around them — needs a root to mount at all.
+// The root renders inline, and the wrapper handed back is the component's
+// own, so its emitted events stay visible to the test.
+export async function mountUnderDialogRoot(
+	component: TestComponent,
+	options: { props?: Record<string, unknown> } = {},
+) {
+	const root = await mountSuspended(Dialog, {
+		props: { open: true },
+		slots: {
+			default: () => h(component, options.props),
+		},
+	})
+
+	return root.findComponent(component)
+}
+
 // the settings action modals hold their submit for delay(300) so the
 // spinner is visible; driving that needs fake timers, but installing them
 // before the mount leaves the nuxt app's own async setup frozen — so they
@@ -215,7 +235,7 @@ export async function mountWithFrozenClock(
 	component: TestComponent,
 	options: { props?: Record<string, unknown> } = {},
 ) {
-	const wrapper = await mountSuspended(component, { props: options.props })
+	const wrapper = await mountUnderDialogRoot(component, options)
 	vi.useFakeTimers()
 
 	return wrapper

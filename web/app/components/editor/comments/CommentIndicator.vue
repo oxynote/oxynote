@@ -28,7 +28,9 @@ const offsets = computed(() => {
 })
 </script>
 <template>
-	<div
+	<button
+		type="button"
+		:aria-label="$t('editor.comment-indicator.screen-reader-hint')"
 		:data-hovered="props.hovered || props.forcedHighlight ? '' : undefined"
 		:class="
 			cn(
@@ -41,7 +43,7 @@ const offsets = computed(() => {
 			left: `${props.left + offsets.left}px`,
 		}"
 	>
-		<div
+		<span
 			:class="
 				cn(
 					'flex items-center justify-center rounded-full border',
@@ -53,6 +55,6 @@ const offsets = computed(() => {
 				name="mingcute:message-4-fill"
 				class="relative size-3 text-foreground"
 			/>
-		</div>
-	</div>
+		</span>
+	</button>
 </template>

@@ -327,7 +327,7 @@ describe("<FileBlock>", { concurrent: false }, () => {
 			.spyOn(fileInput(wrapper), "click")
 			.mockImplementation(() => undefined)
 
-		await wrapper.get("[data-node-view-wrapper] > div").trigger("click")
+		await wrapper.get("[data-node-view-wrapper] > button").trigger("click")
 
 		expect(click).toHaveBeenCalledTimes(1)
 		expect(fileInput(wrapper).getAttribute("accept")).toBeNull()
@@ -338,7 +338,7 @@ describe("<FileBlock>", { concurrent: false }, () => {
 		const wrapper = await mountFile()
 		const click = vi.spyOn(fileInput(wrapper), "click")
 
-		await wrapper.get("[data-node-view-wrapper] > div").trigger("click")
+		await wrapper.get("[data-node-view-wrapper] > button").trigger("click")
 
 		expect(click).toHaveBeenCalledTimes(0)
 	})
@@ -350,7 +350,7 @@ describe("<FileBlock>", { concurrent: false }, () => {
 		const wrapper = await mountFile()
 		const click = vi.spyOn(fileInput(wrapper), "click")
 
-		await wrapper.get("[data-node-view-wrapper] > div").trigger("click")
+		await wrapper.get("[data-node-view-wrapper] > button").trigger("click")
 
 		expect(click).toHaveBeenCalledTimes(0)
 	})
@@ -360,7 +360,7 @@ describe("<FileBlock>", { concurrent: false }, () => {
 		const wrapper = await mountFile()
 		const click = vi.spyOn(fileInput(wrapper), "click")
 
-		await wrapper.get("[data-node-view-wrapper] > div").trigger("click")
+		await wrapper.get("[data-node-view-wrapper] > button").trigger("click")
 
 		expect(click).toHaveBeenCalledTimes(0)
 	})
@@ -371,7 +371,7 @@ describe("<FileBlock>", { concurrent: false }, () => {
 		const wrapper = await mountFile({ uploading: true })
 		const click = vi.spyOn(fileInput(wrapper), "click")
 
-		await wrapper.get("[data-node-view-wrapper] > div").trigger("click")
+		await wrapper.get("[data-node-view-wrapper] > button").trigger("click")
 
 		expect(click).toHaveBeenCalledTimes(0)
 	})

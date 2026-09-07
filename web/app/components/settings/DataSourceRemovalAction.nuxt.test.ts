@@ -1,4 +1,3 @@
-import { mountSuspended } from "@nuxt/test-utils/runtime"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import { toast } from "vue-sonner"
 import {
@@ -7,7 +6,12 @@ import {
 	mockEndpoint,
 } from "~/composables/api/test-helpers"
 import DataSourceRemovalAction from "./DataSourceRemovalAction.vue"
-import { findButtonByText, settleMutations, t } from "../test-helpers"
+import {
+	findButtonByText,
+	mountUnderDialogRoot,
+	settleMutations,
+	t,
+} from "../test-helpers"
 
 vi.mock("vue-sonner", () => ({
 	toast: { custom: vi.fn(), dismiss: vi.fn() },
@@ -24,7 +28,7 @@ const DATA_SOURCE: DataSource = {
 }
 
 function mountAction() {
-	return mountSuspended(DataSourceRemovalAction, {
+	return mountUnderDialogRoot(DataSourceRemovalAction, {
 		props: { data: DATA_SOURCE },
 	})
 }

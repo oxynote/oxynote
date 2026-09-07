@@ -125,10 +125,10 @@ async function openActionMenu(wrapper: VueWrapper) {
 	await nextTick()
 }
 
-// the icon picker comes first, then the review action and the menu that
-// switches between the review actions
+// the hook handle and the icon picker come first, then the review action
+// and the menu that switches between the review actions
 function actionMenuTrigger(wrapper: VueWrapper) {
-	return wrapper.findAll("button")[2]
+	return wrapper.findAll("button")[3]
 }
 
 function hookHandle(wrapper: VueWrapper) {

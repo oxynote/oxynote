@@ -24,7 +24,10 @@ function handleTypeSelection(type: GenericQueryChartType) {
 </script>
 <template>
 	<div class="flex gap-1 px-1.75">
-		<div
+		<button
+			type="button"
+			:aria-pressed="config?.visualizationType === GenericQueryChartType.Line"
+			:aria-disabled="isEditingDisabled"
 			:class="
 				cn(
 					'flex flex-1 flex-col items-center justify-center gap-0.5 rounded-md border py-1 opacity-100 transition-all duration-150 select-none',
@@ -45,11 +48,14 @@ function handleTypeSelection(type: GenericQueryChartType) {
 			@click="handleTypeSelection(GenericQueryChartType.Line)"
 		>
 			<Icon name="lucide:chart-line" class="size-5 shrink-0" />
-			<div class="text-2sm text-foreground">
+			<span class="text-2sm text-foreground">
 				{{ $t("editor.metrics.config.type-options.line-chart.title") }}
-			</div>
-		</div>
-		<div
+			</span>
+		</button>
+		<button
+			type="button"
+			:aria-pressed="config?.visualizationType === GenericQueryChartType.Bar"
+			:aria-disabled="isEditingDisabled"
 			:class="
 				cn(
 					'flex flex-1 flex-col items-center justify-center gap-0.5 rounded-md border py-1 opacity-100 transition-all duration-150 select-none',
@@ -70,11 +76,14 @@ function handleTypeSelection(type: GenericQueryChartType) {
 			@click="handleTypeSelection(GenericQueryChartType.Bar)"
 		>
 			<Icon name="lucide:bar-chart-3" class="size-5 shrink-0" />
-			<div class="text-2sm text-foreground">
+			<span class="text-2sm text-foreground">
 				{{ $t("editor.metrics.config.type-options.bar-chart.title") }}
-			</div>
-		</div>
-		<div
+			</span>
+		</button>
+		<button
+			type="button"
+			:aria-pressed="config?.visualizationType === GenericQueryChartType.Gauge"
+			:aria-disabled="isEditingDisabled"
 			:class="
 				cn(
 					'flex flex-1 flex-col items-center justify-center rounded-md border py-1 opacity-100 transition-all duration-150 select-none',
@@ -95,9 +104,9 @@ function handleTypeSelection(type: GenericQueryChartType) {
 			@click="handleTypeSelection(GenericQueryChartType.Gauge)"
 		>
 			<Icon name="lucide:gauge" class="size-5.5 shrink-0" />
-			<div class="text-2sm text-foreground">
+			<span class="text-2sm text-foreground">
 				{{ $t("editor.metrics.config.type-options.gauge-chart.title") }}
-			</div>
-		</div>
+			</span>
+		</button>
 	</div>
 </template>

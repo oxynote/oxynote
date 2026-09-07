@@ -57,18 +57,19 @@ async function deleteDocument() {
 						</ShadcnUiButton>
 					</ShadcnUiDialogHeader>
 					<div class="flex flex-col gap-2 self-stretch">
-						<i18n-t
-							scope="global"
-							keypath="editor.document-deletion-modal.description"
-							tag="p"
-							class="text-2sm text-muted-foreground"
-						>
-							<template #name>
-								<span class="font-medium break-all">
-									{{ lastValidTarget?.name }}
-								</span>
-							</template>
-						</i18n-t>
+						<ShadcnUiDialogDescription as-child class="text-2sm">
+							<i18n-t
+								scope="global"
+								keypath="editor.document-deletion-modal.description"
+								tag="p"
+							>
+								<template #name>
+									<span class="font-medium break-all">
+										{{ lastValidTarget?.name }}
+									</span>
+								</template>
+							</i18n-t>
+						</ShadcnUiDialogDescription>
 					</div>
 					<div class="flex gap-2 self-stretch">
 						<ShadcnUiButton

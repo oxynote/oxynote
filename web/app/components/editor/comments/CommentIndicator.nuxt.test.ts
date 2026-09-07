@@ -18,7 +18,7 @@ function mountIndicator(props: Record<string, unknown> = {}) {
 }
 
 function position(wrapper: VueWrapper): string {
-	return wrapper.get("div").attributes("style") ?? ""
+	return wrapper.get("button").attributes("style") ?? ""
 }
 
 describe("<CommentIndicator>", () => {
@@ -66,25 +66,25 @@ describe("<CommentIndicator>", () => {
 	it("stays faded while nothing points at it", async ({ expect }) => {
 		const wrapper = await mountIndicator()
 
-		expect(wrapper.get("div").attributes("data-hovered")).toBeUndefined()
+		expect(wrapper.get("button").attributes("data-hovered")).toBeUndefined()
 	})
 
 	it("becomes solid once the pointer is on it", async ({ expect }) => {
 		const wrapper = await mountIndicator({ hovered: true })
 
-		expect(wrapper.get("div").attributes("data-hovered")).toBe("")
+		expect(wrapper.get("button").attributes("data-hovered")).toBe("")
 	})
 
 	it("becomes solid while it is forcibly highlighted", async ({ expect }) => {
 		const wrapper = await mountIndicator({ forcedHighlight: true })
 
-		expect(wrapper.get("div").attributes("data-hovered")).toBe("")
+		expect(wrapper.get("button").attributes("data-hovered")).toBe("")
 	})
 
 	it("animates its moves while the page is still", async ({ expect }) => {
 		const wrapper = await mountIndicator()
 
-		expect(wrapper.get("div").classes()).toContain(
+		expect(wrapper.get("button").classes()).toContain(
 			"transition-[top,left,opacity]",
 		)
 	})

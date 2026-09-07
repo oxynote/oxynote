@@ -37,11 +37,12 @@ const open = ref(false)
 <template>
 	<div class="flex w-full flex-col">
 		<ShadcnUiCollapsible :open="open">
-			<div
+			<button
+				type="button"
 				:data-selected="itemSelected ? '' : undefined"
 				:class="
 					cn(
-						'flex cursor-pointer items-center justify-between gap-1 rounded py-0.75 pr-2 pl-1 text-2sm font-medium select-none hover:bg-accent/50 hover:text-accent-foreground active:bg-accent active:text-accent-foreground',
+						'flex w-full cursor-pointer items-center justify-between gap-1 rounded py-0.75 pr-2 pl-1 text-left text-2sm font-medium select-none hover:bg-accent/50 hover:text-accent-foreground active:bg-accent active:text-accent-foreground',
 						'hover:[&>*>*>.hide-on-parent-hover]:pointer-events-none hover:[&>*>*>.hide-on-parent-hover]:opacity-0',
 						'hover:[&>*>*>.show-on-parent-hover]:pointer-events-auto hover:[&>*>*>.show-on-parent-hover]:opacity-100',
 						'data-[selected]:bg-accent/50 data-[selected]:text-accent-foreground data-[selected]:active:bg-accent data-[selected]:active:text-accent-foreground',
@@ -96,7 +97,7 @@ const open = ref(false)
 					name="mingcute:check-fill"
 					class="size-3.5 shrink-0"
 				/>
-			</div>
+			</button>
 			<ShadcnUiCollapsibleContent v-if="item.type === 'folder'" as-child>
 				<div :class="['ml-3.25 py-1 pl-2', 'border-l border-border']">
 					<div v-if="subItems.length" class="flex flex-col gap-1">

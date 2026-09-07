@@ -21,7 +21,7 @@ function mountTypeSelect(props: Record<string, unknown> = {}) {
 }
 
 function tiles(wrapper: VueWrapper) {
-	return wrapper.findAll("div.flex-1")
+	return wrapper.findAll("button")
 }
 
 // the editable flag is a shared cookie state and the editor store is

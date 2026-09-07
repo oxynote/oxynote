@@ -1,4 +1,3 @@
-import { mountSuspended } from "@nuxt/test-utils/runtime"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import { toast } from "vue-sonner"
 import {
@@ -9,6 +8,7 @@ import AccountDeletionAction from "./AccountDeletionAction.vue"
 import {
 	findButtonByText,
 	mockAuthEndpoint,
+	mountUnderDialogRoot,
 	seedAuthOrganization,
 	settleMutations,
 	t,
@@ -19,7 +19,7 @@ vi.mock("vue-sonner", () => ({
 }))
 
 function mountAction() {
-	return mountSuspended(AccountDeletionAction)
+	return mountUnderDialogRoot(AccountDeletionAction)
 }
 
 async function confirmDeletion(

@@ -211,11 +211,13 @@ async function downloadOnDesktop() {
 				</span>
 			</span>
 		</component>
-		<div
+		<button
 			v-else
+			type="button"
+			:aria-disabled="!canUpload"
 			:class="
 				cn(
-					'relative flex w-full items-center gap-2 rounded-md bg-muted p-2 transition-colors duration-150 select-none',
+					'relative flex w-full items-center gap-2 rounded-md bg-muted p-2 text-left transition-colors duration-150 select-none',
 					canUpload && 'active:bg-muted-90 cursor-pointer hover:bg-muted/70',
 					diffClass,
 				)
@@ -237,9 +239,10 @@ async function downloadOnDesktop() {
 			<input
 				ref="fileInputRef"
 				type="file"
+				aria-hidden="true"
 				class="hidden"
 				@change="handleFileChange"
 			/>
-		</div>
+		</button>
 	</NodeViewWrapper>
 </template>

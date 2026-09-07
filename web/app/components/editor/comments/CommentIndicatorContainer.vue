@@ -39,6 +39,8 @@ const emit = defineEmits<{
 			@mouseleave="
 				emit('comment-hover-change', 'node', overlay.nodeCommentId, false)
 			"
+			@focus="emit('comment-hover-change', 'node', overlay.nodeCommentId, true)"
+			@blur="emit('comment-hover-change', 'node', overlay.nodeCommentId, false)"
 		/>
 	</Teleport>
 	<Teleport
@@ -60,6 +62,8 @@ const emit = defineEmits<{
 			@mouseleave="
 				emit('comment-hover-change', 'text', indicator.commentId, false)
 			"
+			@focus="emit('comment-hover-change', 'text', indicator.commentId, true)"
+			@blur="emit('comment-hover-change', 'text', indicator.commentId, false)"
 		/>
 	</Teleport>
 </template>

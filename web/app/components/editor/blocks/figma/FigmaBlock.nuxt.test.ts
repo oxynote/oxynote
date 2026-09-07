@@ -53,7 +53,7 @@ function dragBy(dx: number, dy: number) {
 
 async function startDrag(wrapper: VueWrapper) {
 	await wrapper
-		.get("[aria-label='Resize']")
+		.get(".cursor-nwse-resize")
 		.trigger("mousedown", { clientX: 100, clientY: 200 })
 }
 
@@ -202,7 +202,7 @@ describe("<FigmaBlock>", { concurrent: false }, () => {
 		const wrapper = await mountFigma({ src: FIGMA_URL })
 
 		expect(wrapper.find("[aria-label='Edit URL']").exists()).toBe(true)
-		expect(wrapper.find("[aria-label='Resize']").exists()).toBe(true)
+		expect(wrapper.find(".cursor-nwse-resize").exists()).toBe(true)
 	})
 
 	it("hides the edit and resize controls in read mode", async ({ expect }) => {
@@ -211,13 +211,13 @@ describe("<FigmaBlock>", { concurrent: false }, () => {
 		const wrapper = await mountFigma({ src: FIGMA_URL })
 
 		expect(wrapper.find("[aria-label='Edit URL']").exists()).toBe(false)
-		expect(wrapper.find("[aria-label='Resize']").exists()).toBe(false)
+		expect(wrapper.find(".cursor-nwse-resize").exists()).toBe(false)
 	})
 
 	it("opens the url popover from the empty state", async ({ expect }) => {
 		const wrapper = await mountFigma()
 
-		await wrapper.get("[data-node-view-wrapper] > div").trigger("click")
+		await wrapper.get("[data-node-view-wrapper] > button").trigger("click")
 
 		expect(popoverInput()).not.toBeNull()
 	})
@@ -234,7 +234,7 @@ describe("<FigmaBlock>", { concurrent: false }, () => {
 		useEditorMeta().setEditable(false)
 		const wrapper = await mountFigma()
 
-		await wrapper.get("[data-node-view-wrapper] > div").trigger("click")
+		await wrapper.get("[data-node-view-wrapper] > button").trigger("click")
 
 		expect(popoverInput()).toBeNull()
 	})

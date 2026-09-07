@@ -212,6 +212,7 @@ function handleMemberDelete(member: OrganizationMember) {
 					<input
 						ref="logoInput"
 						type="file"
+						aria-hidden="true"
 						accept="image/png,image/jpeg,image/webp"
 						class="hidden"
 						@change="handleLogoChange"

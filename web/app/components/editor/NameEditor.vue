@@ -393,20 +393,24 @@ async function executeReviewableAction() {
 					@update:open="(v: boolean) => (hookMenuOpen = v)"
 				>
 					<ShadcnUiDropdownMenuTrigger as-child>
-						<div
+						<button
+							type="button"
 							:data-menu-open="hookMenuOpen ? '' : undefined"
 							:class="
 								cn(
 									'group/hook-handle absolute top-0.5 right-full flex h-7 items-center pr-1.5',
 									'pointer-events-none opacity-0 transition-opacity duration-100',
 									'group-hover/name-row:pointer-events-auto group-hover/name-row:opacity-100',
+									'focus-visible:pointer-events-auto focus-visible:opacity-100',
 									'data-menu-open:pointer-events-auto data-menu-open:opacity-100',
 								)
 							"
 							@mouseenter="hoveringHookHandle = true"
 							@mouseleave="hoveringHookHandle = false"
+							@focus="hoveringHookHandle = true"
+							@blur="hoveringHookHandle = false"
 						>
-							<div
+							<span
 								:data-hook-status="hookStatus"
 								:class="
 									cn(
@@ -422,21 +426,21 @@ async function executeReviewableAction() {
 									title takes the same handle at the same width there and
 									keeps the hook button where the block ones do
 								-->
-								<div class="relative h-5 w-3 overflow-hidden lg:hidden">
+								<span class="relative h-5 w-3 overflow-hidden lg:hidden">
 									<Icon
 										name="mingcute:dots-line"
 										class="absolute top-1/2 left-1/2 size-5 -translate-x-1/2 -translate-y-1/2"
 									/>
-								</div>
+								</span>
 								<Icon
 									name="mingcute:leaf-line"
 									class="mt-0.25 hidden size-4.5 lg:block"
 								/>
-							</div>
+							</span>
 							<span class="sr-only">
 								{{ $t("editor.hook-handle.screen-reader-hint") }}
 							</span>
-						</div>
+						</button>
 					</ShadcnUiDropdownMenuTrigger>
 					<ShadcnUiDropdownMenuContent side="right" align="start" loop>
 						<HooksMenuContent

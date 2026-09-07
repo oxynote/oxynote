@@ -209,10 +209,7 @@ function resultTypeText(type: string) {
 								<span class="capitalize">
 									{{ resultTypeText(result.type) }}
 								</span>
-								<span
-									data-testid="search-result-branch"
-									class="before:px-1 before:content-['·']"
-								>
+								<span class="before:px-1 before:content-['·']">
 									{{ result.branchName }}
 								</span>
 							</div>

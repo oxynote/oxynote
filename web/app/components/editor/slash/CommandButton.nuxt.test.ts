@@ -71,11 +71,21 @@ describe("<CommandButton>", () => {
 		expect(wrapper.emitted("click")).toHaveLength(1)
 	})
 
-	it("reports the pointer moving over it", async ({ expect }) => {
+	it("asks to be highlighted when the pointer moves over it", async ({
+		expect,
+	}) => {
 		const wrapper = await mountButton()
 
 		await wrapper.get("button").trigger("mouseover")
 
-		expect(wrapper.emitted("hover")).toHaveLength(1)
+		expect(wrapper.emitted("highlight")).toHaveLength(1)
+	})
+
+	it("asks to be highlighted when it receives focus", async ({ expect }) => {
+		const wrapper = await mountButton()
+
+		await wrapper.get("button").trigger("focus")
+
+		expect(wrapper.emitted("highlight")).toHaveLength(1)
 	})
 })

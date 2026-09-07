@@ -133,7 +133,8 @@
 			"description": "Embed Figma",
 			"placeholder": "https://www.figma.com/... + Enter",
 			"edit": "Edit URL",
-			"empty": "No Figma embed"
+			"empty": "No Figma embed",
+			"iframe-title": "Figma embed"
 		},
 		"image": {
 			"description": "Upload an image",
@@ -237,6 +238,9 @@
 		},
 		"bubble-menu": {
 			"comment-label": "Comment"
+		},
+		"comment-indicator": {
+			"screen-reader-hint": "Open comment"
 		},
 		"comment-thread": {
 			"unknown-author": "Unknown",
@@ -808,6 +812,7 @@
 			"sheet-description": "Rubber Duck chat panel.",
 			"empty-state-description": "Quack! Tell me what's on your mind and I'll help you think it through.",
 			"input-placeholder": "Quack quack...",
+			"input-label": "Message",
 			"send": "Send",
 			"new-chat": "New Chat",
 			"tool-status": {

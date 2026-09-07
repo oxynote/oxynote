@@ -283,6 +283,7 @@ onUnmounted(() => {
 			<div class="flex flex-col gap-2">
 				<textarea
 					v-model="inputText"
+					:aria-label="t('editor.ai-chat.input-label')"
 					class="flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
 					:placeholder="t('editor.ai-chat.input-placeholder')"
 					rows="2"

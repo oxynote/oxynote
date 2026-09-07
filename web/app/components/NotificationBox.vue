@@ -305,9 +305,12 @@ async function handleMarkAllRead() {
 				<div
 					v-for="notification in notifications"
 					:key="notification.id"
+					role="link"
+					tabindex="0"
 					class="flex min-w-0 cursor-pointer items-center gap-2 rounded-md p-2 hover:bg-accent/40 [&:active:not(:has(button:active))]:bg-accent/70"
 					:class="notification.read && 'opacity-60'"
 					@click="handleNotificationClick(notification)"
+					@keydown.enter.self="handleNotificationClick(notification)"
 				>
 					<ShadcnUiAvatar class="mt-0.25 size-8.25 border">
 						<ShadcnUiAvatarFallback>

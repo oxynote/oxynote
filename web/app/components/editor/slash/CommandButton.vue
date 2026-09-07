@@ -7,7 +7,7 @@ const props = defineProps<{
 	selectedIndex: number | null
 }>()
 const emit = defineEmits<{
-	(e: "click" | "hover"): void
+	(e: "click" | "highlight"): void
 }>()
 </script>
 
@@ -22,7 +22,8 @@ const emit = defineEmits<{
 			)
 		"
 		@click="emit('click')"
-		@mouseover="emit('hover')"
+		@mouseover="emit('highlight')"
+		@focus="emit('highlight')"
 	>
 		<div class="flex items-center gap-2">
 			<Icon

@@ -224,8 +224,11 @@ describe("<SearchModal>", { concurrent: false }, () => {
 
 		await search("r")
 
+		// a result's spans are its icon, its type and its branch name, in that
+		// order, and highlights are <mark>s — so the branch is the only span
+		// that closes its parent
 		const branches = [
-			...document.body.querySelectorAll("[data-testid='search-result-branch']"),
+			...document.body.querySelectorAll("a span:last-child"),
 		].map((el) => el.textContent.trim())
 
 		expect(branches).toEqual(["main", "draft"])

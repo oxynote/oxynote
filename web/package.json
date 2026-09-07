@@ -147,6 +147,7 @@
 		"electron": "44.0.0",
 		"eslint": "^10.9.1",
 		"eslint-config-prettier": "^10.1.8",
+		"eslint-plugin-vuejs-accessibility": "^2.6.0",
 		"happy-dom": "^20.11.13",
 		"knip": "^6.33.0",
 		"playwright": "^1.62.1",

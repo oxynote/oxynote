@@ -139,9 +139,9 @@ async function onSetSubmit() {
 <template>
 	<div class="flex flex-col">
 		<template v-if="hasPassword">
-			<p class="text-2sm text-muted-foreground">
+			<ShadcnUiDialogDescription class="text-2sm">
 				{{ $t("settings.action-modals.password-change.description") }}
-			</p>
+			</ShadcnUiDialogDescription>
 			<form
 				class="mt-5 flex w-full flex-col gap-5"
 				autocomplete="off"
@@ -284,18 +284,19 @@ async function onSetSubmit() {
 			</form>
 		</template>
 		<template v-else>
-			<i18n-t
-				scope="global"
-				keypath="settings.action-modals.password-change.description-set"
-				tag="p"
-				class="text-2sm text-muted-foreground"
-			>
-				<template #email>
-					<span class="font-semibold">
-						{{ fetchAuthSession.state.value.data?.data?.user.email }}
-					</span>
-				</template>
-			</i18n-t>
+			<ShadcnUiDialogDescription as-child class="text-2sm">
+				<i18n-t
+					scope="global"
+					keypath="settings.action-modals.password-change.description-set"
+					tag="p"
+				>
+					<template #email>
+						<span class="font-semibold">
+							{{ fetchAuthSession.state.value.data?.data?.user.email }}
+						</span>
+					</template>
+				</i18n-t>
+			</ShadcnUiDialogDescription>
 			<div class="mt-5 flex w-full gap-2">
 				<ShadcnUiButton
 					type="button"
