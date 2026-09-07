@@ -21,6 +21,7 @@ func allToolNames() []Name {
 		NameGetDocument,
 		NameReadBlock,
 		NameListTags,
+		NameListHooks,
 		NameSearchDocuments,
 		NameListDataSources,
 		NameGetPrometheusMetadata,
@@ -46,6 +47,10 @@ func allToolNames() []Name {
 		NameAssignTag,
 		NameUnassignTag,
 		NameMoveTag,
+		NameCreateHook,
+		NameUpdateHook,
+		NameResetHook,
+		NameDeleteHook,
 		NameReadToolOutput,
 	}
 }
@@ -164,7 +169,7 @@ func Test_Set_Entries(t *testing.T) {
 	entries := s.Entries()
 	require.Len(t, entries, len(allToolNames()))
 
-	destructive := []Name{NameDeleteDocument, NameDeleteBlock, NameDeleteTag}
+	destructive := []Name{NameDeleteDocument, NameDeleteBlock, NameDeleteTag, NameDeleteHook}
 
 	for i, e := range entries {
 		assert.Equal(t, allToolNames()[i], e.Name)
@@ -306,6 +311,10 @@ func Test_Set_WriteNames(t *testing.T) {
 		string(NameAssignTag),
 		string(NameUnassignTag),
 		string(NameMoveTag),
+		string(NameCreateHook),
+		string(NameUpdateHook),
+		string(NameResetHook),
+		string(NameDeleteHook),
 	}, got)
 
 	// mutating the returned slice must not affect the registry.

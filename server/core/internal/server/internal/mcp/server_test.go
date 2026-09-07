@@ -14,6 +14,7 @@ var _readToolNames = []string{
 	"get_document",
 	"read_block",
 	"list_tags",
+	"list_hooks",
 	"search_documents",
 }
 
@@ -35,6 +36,10 @@ var _writeToolNames = []string{
 	"assign_tag",
 	"unassign_tag",
 	"move_tag",
+	"create_hook",
+	"update_hook",
+	"reset_hook",
+	"delete_hook",
 }
 
 // _dataSourceToolNames is every data-source tool the MCP surface serves

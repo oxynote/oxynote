@@ -296,6 +296,8 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 		searchClient,
 		searchJobs,
 		datasourceMan,
+		githubMan,
+		webchangeClient,
 		string(assistantOpts.Provider),
 	)
 

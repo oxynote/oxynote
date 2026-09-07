@@ -13,10 +13,14 @@ import (
 	"strings"
 
 	"github.com/guregu/null/v5"
+	"github.com/oxynote/oxynote/server/core/internal/apps/github"
+	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/block"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/hook"
+	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
@@ -28,6 +32,12 @@ import (
 // nothing in the session's organisation. Another organisation's id lands
 // here too, for the same reason as ErrUnknownDocument.
 var ErrUnknownTag = errors.New("no tag with that id in this organisation; call list_tags for the ids that exist")
+
+// errUnknownHook is what a hook lookup reports for an id the addressed
+// document does not hold. A hook of another document, another
+// organisation or a deleted document lands here too: the tools cannot
+// be used to reach a hook through a document it is not on.
+var errUnknownHook = errors.New("no hook with that id on this document; call list_hooks for the ids it has")
 
 // Deps carries the wiring a tool set is built from: the services every
 // tool reaches through and the (organization, user) pair every call is
@@ -57,6 +67,15 @@ type Deps struct {
 	// runners hands out the runner a data-source tool reads through.
 	runners DataSourceRunners
 
+	// githubMan is the GitHub App integration a github-tracking hook
+	// reads through; unconfigured on a deployment without the app.
+	githubMan *github.Manager
+
+	// webchangeClient is the changedetection.io integration a
+	// url-watcher hook holds its watcher in; unconfigured on a
+	// deployment without it.
+	webchangeClient *webchange.Client
+
 	// applier is the edit client for content mutations and the
 	// rename/set-icon ops that must propagate to connected editors.
 	applier EditApplier
@@ -68,6 +87,10 @@ type Deps struct {
 	// tags notifies tag-tree subscribers after the assistant changes
 	// a tag or what carries it.
 	tags TagNotifier
+
+	// hooks notifies a document's subscribers after the assistant
+	// changes the hooks on one of its branches.
+	hooks HookNotifier
 
 	// offload retrieves results parked outside the conversation.
 	offload OffloadReader
@@ -91,9 +114,12 @@ func NewDeps(
 	searcher Searcher,
 	jobs *search.Jobs,
 	runners DataSourceRunners,
+	githubMan *github.Manager,
+	webchangeClient *webchange.Client,
 	applier EditApplier,
 	tree TreeNotifier,
 	tags TagNotifier,
+	hooks HookNotifier,
 	offload OffloadReader,
 	orgID, userID string,
 ) *Deps {
@@ -103,16 +129,19 @@ func NewDeps(
 			"org_id", orgID,
 			"user_id", userID,
 		),
-		db:      db,
-		search:  searcher,
-		jobs:    jobs,
-		runners: runners,
-		applier: applier,
-		tree:    tree,
-		tags:    tags,
-		offload: offload,
-		orgID:   orgID,
-		userID:  userID,
+		db:              db,
+		search:          searcher,
+		jobs:            jobs,
+		runners:         runners,
+		githubMan:       githubMan,
+		webchangeClient: webchangeClient,
+		applier:         applier,
+		tree:            tree,
+		tags:            tags,
+		hooks:           hooks,
+		offload:         offload,
+		orgID:           orgID,
+		userID:          userID,
 	}
 }
 
@@ -948,6 +977,184 @@ func (i *input) NotifyBranchTagsChange(documentID, branchID xid.ID) {
 	i.tags.NotifyBranchTagsChange(i.orgID, documentID, branchID)
 }
 
+// hookInput builds the dependencies a hook's processor reaches through,
+// scoped to the session's organisation.
+func (i *input) hookInput() *hook.Input {
+	return hook.NewInput(i.orgID, i.githubMan, i.webchangeClient)
+}
+
+// FetchHooks returns every hook on the branch branchID names, refusing a
+// branch the document does not have.
+func (i *input) FetchHooks(documentID, branchID xid.ID) ([]hook.Hook, error) {
+	doc, err := i.FetchBranch(documentID, branchID)
+	if err != nil {
+		return nil, err
+	}
+
+	hooks, err := i.db.FetchDocumentHooksByBranchID(i.ctx, doc.BranchID, i.orgID)
+	if err != nil {
+		return nil, fmt.Errorf("fetching hooks: %w", err)
+	}
+
+	return hooks, nil
+}
+
+// FetchHook returns the hook the id names on the document. The lookup is
+// scoped to the organisation, and a hook of another document, or of a
+// document that was deleted and left it behind, is refused as unknown to
+// the one addressed.
+func (i *input) FetchHook(documentID, hookID xid.ID) (*hook.Hook, error) {
+	hk, err := i.db.FetchDocumentHook(i.ctx, hookID, i.orgID)
+	if err != nil {
+		if errutil.IsNotFound(err) {
+			return nil, i.unknownHook(documentID, hookID)
+		}
+
+		return nil, fmt.Errorf("fetching hook: %w", err)
+	}
+
+	if !hk.DocumentID.Valid || hk.DocumentID.V != documentID {
+		return nil, i.unknownHook(documentID, hookID)
+	}
+
+	return hk, nil
+}
+
+// unknownHook builds the refusal for a hook the document does not hold,
+// naming the document the call addressed.
+func (i *input) unknownHook(documentID, hookID xid.ID) error {
+	return fmt.Errorf("hook %s on document %s: %w", hookID, documentID, errUnknownHook)
+}
+
+// CreateHook creates a hook on the branch branchID names, anchored to the
+// block blockUID names when one is given. The branch and block are
+// checked here rather than by the caller, so a hook cannot land on a
+// branch of another document or on a block the branch does not hold. A
+// type whose integration the deployment lacks is refused before anything
+// is created.
+func (i *input) CreateHook(documentID, branchID xid.ID, blockUID string, tp hook.Type, settings processor.Settings) (*hook.Hook, error) {
+	doc, err := i.FetchBranch(documentID, branchID)
+	if err != nil {
+		return nil, err
+	}
+
+	var blockID null.String
+
+	if blockUID != "" {
+		if _, ok := doc.Content.FindByUID(blockUID); !ok {
+			return nil, fmt.Errorf("block %s: %w", blockUID, errUnknownBlock)
+		}
+
+		blockID = null.StringFrom(blockUID)
+	}
+
+	// the github processor records a missing app as a status rather than
+	// an error, so a hook created here would sit silently unable to work.
+	switch tp {
+	case hook.TypeGithubTracking:
+		if !i.githubMan.Configured() {
+			return nil, fmt.Errorf("%s: %w", tp, github.ErrNotConfigured)
+		}
+	case hook.TypeURLWatcher:
+		if !i.webchangeClient.Configured() {
+			return nil, fmt.Errorf("%s: %w", tp, webchange.ErrNotConfigured)
+		}
+	case hook.TypeScheduledReminder, hook.TypeContainerImageWatcher:
+		// nothing outside the deployment to check.
+	}
+
+	hk, err := hook.NewHook(i.ctx, hook.CreateInput{
+		Type:     tp,
+		BranchID: doc.BranchID,
+		BlockID:  blockID,
+		Settings: settings,
+	}, doc.ID, doc.BranchID, i.orgID, i.hookInput())
+	if err != nil {
+		return nil, err
+	}
+
+	if err := i.db.InsertDocumentHook(i.ctx, *hk); err != nil {
+		// NewHook created the watcher as a side effect, and without a row
+		// nothing would ever tear it down.
+		if derr := hk.Delete(i.ctx, i.hookInput()); derr != nil {
+			i.log.Error(
+				"tearing down the hook of a failed insert",
+				slog.String("hook_id", hk.ID.String()),
+				slog.String("error", derr.Error()),
+			)
+		}
+
+		return nil, fmt.Errorf("insert: %w", err)
+	}
+
+	i.hookChanged(hk)
+
+	return hk, nil
+}
+
+// UpdateHook replaces the hook's settings and resets its score and state,
+// as a fresh hook with those settings would have them.
+func (i *input) UpdateHook(hk *hook.Hook, settings processor.Settings) error {
+	if err := hk.ApplyUpdate(i.ctx, hook.UpdateInput{Settings: settings}, i.hookInput()); err != nil {
+		return err
+	}
+
+	if err := i.db.UpdateDocumentHook(i.ctx, *hk); err != nil {
+		return fmt.Errorf("update: %w", err)
+	}
+
+	i.hookChanged(hk)
+
+	return nil
+}
+
+// ResetHook restores the hook's score and state, keeping its settings.
+func (i *input) ResetHook(hk *hook.Hook) error {
+	if err := hk.Reset(i.ctx, i.hookInput()); err != nil {
+		return err
+	}
+
+	if err := i.db.UpdateDocumentHook(i.ctx, *hk); err != nil {
+		return fmt.Errorf("update: %w", err)
+	}
+
+	i.hookChanged(hk)
+
+	return nil
+}
+
+// DeleteHook tears down what the hook holds outside the document and
+// removes its row. The branch stays, and the editor showing it has to
+// redraw, so the delete records the branch as touched.
+func (i *input) DeleteHook(hk *hook.Hook) error {
+	if err := hk.Delete(i.ctx, i.hookInput()); err != nil {
+		return err
+	}
+
+	if err := i.db.DeleteDocumentHook(i.ctx, hk.ID); err != nil {
+		return fmt.Errorf("delete: %w", err)
+	}
+
+	i.hookChanged(hk)
+
+	return nil
+}
+
+// hookChanged records the branch a hook write changed and announces it
+// to the document's subscribers. A hook whose branch was deleted, and
+// which the sweep has not yet removed, has no branch to link to.
+func (i *input) hookChanged(hk *hook.Hook) {
+	if hk.BranchID.Valid {
+		i.recordTouched(hk.DocumentID.V, hk.BranchID.V)
+	}
+
+	if i.hooks == nil {
+		return
+	}
+
+	i.hooks.NotifyHooksChange(i.orgID, hk.DocumentID, hk.BranchID)
+}
+
 // docRef wraps the (documentID, branchID) pair the edit client needs to
 // address a live Y.Doc. The branch is resolved to the document's
 // default branch — multi-branch editing is out of scope for the
@@ -979,6 +1186,7 @@ type DB interface {
 	DocumentDB
 	DataSourceDB
 	TagDB
+	HookDB
 }
 
 // DocumentDB is the document tree, its branches and their content as
@@ -1072,6 +1280,29 @@ type TagDB interface {
 	UpdateTagTree(ctx context.Context, tree tag.Summaries, organizationID string) error
 }
 
+// HookDB is the freshness hooks on a document's branches as the tools
+// read and change them.
+type HookDB interface {
+	// FetchDocumentHooksByBranchID should return every hook on a branch
+	// within the org. Used by list_hooks.
+	FetchDocumentHooksByBranchID(ctx context.Context, branchID xid.ID, organizationID string) ([]hook.Hook, error)
+
+	// FetchDocumentHook should return a hook by id within the org. Used
+	// by every hook write to resolve what it was asked about.
+	FetchDocumentHook(ctx context.Context, id xid.ID, organizationID string) (*hook.Hook, error)
+
+	// InsertDocumentHook should store a new hook. Used by create_hook.
+	InsertDocumentHook(ctx context.Context, hk hook.Hook) error
+
+	// UpdateDocumentHook should store a hook's changed settings, score
+	// and state. Used by update_hook and reset_hook.
+	UpdateDocumentHook(ctx context.Context, hk hook.Hook) error
+
+	// DeleteDocumentHook should remove a hook the caller has already
+	// fetched org-scoped. Used by delete_hook.
+	DeleteDocumentHook(ctx context.Context, id xid.ID) error
+}
+
 // Tx is the transactional half of DB, so a tool whose write spans
 // tables can commit or abandon all of it at once.
 //
@@ -1140,6 +1371,20 @@ type TagNotifier interface {
 	// that the tags its branch branchID carries changed. Implementations
 	// must be safe to call concurrently.
 	NotifyBranchTagsChange(organizationID string, documentID, branchID xid.ID)
+}
+
+// HookNotifier publishes hook-change events so an open editor redraws
+// its hook indicators after assistant-driven hook writes. The server
+// hook handler satisfies this interface via its NotifyHooksChange
+// method.
+//
+//go:generate ../../../scripts/codegen/mock -t internal HookNotifier hook_notifier
+type HookNotifier interface {
+	// NotifyHooksChange should tell the subscribers of the document that
+	// the hooks on its branch branchID changed, and do nothing for a hook
+	// whose document or branch is gone. Implementations must be safe to
+	// call concurrently.
+	NotifyHooksChange(organizationID string, documentID, branchID null.Value[xid.ID])
 }
 
 // EditApplier is the live-document mutation surface the write tools

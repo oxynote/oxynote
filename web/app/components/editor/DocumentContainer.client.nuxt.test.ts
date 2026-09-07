@@ -6,10 +6,19 @@ import {
 	clearQueryCache,
 	disposeMockEndpoints,
 	makeXid,
+	mockEndpoint,
 	seedQueryData,
 } from "~/composables/api/test-helpers"
-import { at, emitFrom, seedAuthSession } from "~/components/test-helpers"
+import {
+	at,
+	emitFrom,
+	seedAuthSession,
+	settleMutations,
+	WAIT_FOR_OPTIONS,
+} from "~/components/test-helpers"
 import { stubThemeColorContext } from "./test-helpers/theme"
+import type WsState from "~/utils/websocket"
+import { makeWsHooksChangeTopic } from "~/utils"
 
 // the real provider opens a websocket to the realtime service; the
 // stand-in records what it was asked to sync and lets the suite fire the
@@ -147,6 +156,85 @@ describe("<DocumentContainer>", { concurrent: false }, () => {
 	})
 
 	afterEach(disposeMockEndpoints)
+	afterEach(() => {
+		useWebSocketStateStore().state = null
+	})
+
+	// stubSocket stands in for the socket, handing back every handler a
+	// mount subscribes so a test can fire the server's message itself
+	function stubSocket() {
+		const handlers: ((payload: object) => void)[] = []
+		const subscribe = vi.fn(
+			(_topic: string, handler: (payload: object) => void) => {
+				handlers.push(handler)
+
+				return () => undefined
+			},
+		)
+		useWebSocketStateStore().state = {
+			subscribe: subscribe,
+		} as unknown as WsState
+
+		return { handlers, subscribe }
+	}
+
+	it("refetches the branch's hooks when the server says they changed", async ({
+		expect,
+	}) => {
+		const calls = mockEndpoint(
+			"GET",
+			`/api/documents/${DOCUMENT_ID}/hooks`,
+			() => [],
+		)
+		const { handlers, subscribe } = stubSocket()
+
+		await mountContainer()
+
+		// the list was seeded, so nothing has been fetched yet
+		const before = calls.length
+		handlers.forEach((handler) => {
+			handler({ branchId: BRANCH_ID })
+		})
+		await vi.waitFor(() => {
+			expect(calls.length).toBeGreaterThan(before)
+		}, WAIT_FOR_OPTIONS)
+		expect(subscribe).toHaveBeenCalledTimes(1)
+		expect(subscribe.mock.calls[0]?.[0]).toBe(
+			makeWsHooksChangeTopic(DOCUMENT_ID),
+		)
+	})
+
+	it("leaves the hooks alone when another branch's hooks changed", async ({
+		expect,
+	}) => {
+		const calls = mockEndpoint(
+			"GET",
+			`/api/documents/${DOCUMENT_ID}/hooks`,
+			() => [],
+		)
+		const { handlers } = stubSocket()
+
+		await mountContainer()
+
+		const before = calls.length
+		handlers.forEach((handler) => {
+			handler({ branchId: TARGET_BRANCH_ID })
+		})
+		await settleMutations()
+
+		expect(calls.length).toBe(before)
+	})
+
+	it("subscribes to no hooks topic while no page is open", async ({
+		expect,
+	}) => {
+		useEditorStore().updateActiveDocumentId(null)
+		const { subscribe } = stubSocket()
+
+		await mountContainer()
+
+		expect(subscribe).toHaveBeenCalledTimes(0)
+	})
 
 	it("syncs the active branch under the document and branch id", async ({
 		expect,

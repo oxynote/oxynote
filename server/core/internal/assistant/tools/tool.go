@@ -9,6 +9,8 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/hook"
+	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/rs/xid"
@@ -210,6 +212,10 @@ type DescribeInput interface {
 	// FetchTag should return the tag the id names, with the documents
 	// carrying it, for a description that has to name its subject.
 	FetchTag(tagID xid.ID) (*tag.Summary, error)
+
+	// FetchHook should return the hook the id names on the document, for
+	// a description that has to name its subject.
+	FetchHook(documentID, hookID xid.ID) (*hook.Hook, error)
 }
 
 // DataSources is the organisation's outbound data-source connections as
@@ -338,6 +344,36 @@ type TagWriter interface {
 	NotifyBranchTagsChange(documentID, branchID xid.ID)
 }
 
+// Hooks is the freshness hooks on a document's branches as a tool reads
+// them. Every method is already scoped to the session's organisation.
+type Hooks interface {
+	// FetchHooks should return every hook on the branch branchID names,
+	// refusing a branch the document does not have.
+	FetchHooks(documentID, branchID xid.ID) ([]hook.Hook, error)
+}
+
+// HookWriter changes the hooks on a document's branches and announces
+// the change so an open editor stays in step.
+type HookWriter interface {
+	// CreateHook should create a hook of the type with the settings on
+	// the branch branchID names, anchored to the block blockUID names
+	// when one is given, refusing a branch or block that does not exist
+	// and a type whose integration the deployment lacks.
+	CreateHook(documentID, branchID xid.ID, blockUID string, t hook.Type, settings processor.Settings) (*hook.Hook, error)
+
+	// UpdateHook should replace the hook's settings and reset its score
+	// and state.
+	UpdateHook(hk *hook.Hook, settings processor.Settings) error
+
+	// ResetHook should restore the hook's score and state, keeping its
+	// settings.
+	ResetHook(hk *hook.Hook) error
+
+	// DeleteHook should tear down what the hook holds outside the
+	// document and remove it.
+	DeleteHook(hk *hook.Hook) error
+}
+
 // Editor applies content changes to a live document through the
 // realtime service, so connected editors see them as they land.
 type Editor interface {
@@ -376,6 +412,8 @@ type Input interface {
 	DataSources
 	Tags
 	TagWriter
+	Hooks
+	HookWriter
 	Editor
 
 	// OrganizationID should return the organisation every call is

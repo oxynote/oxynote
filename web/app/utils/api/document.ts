@@ -12,6 +12,16 @@ export function makeWsDocumentReviewersChangeTopic(docId: string): string {
 	return `change@documents.${docId}.reviewers`
 }
 
+export function makeWsHooksChangeTopic(docId: string): string {
+	return `change@documents.${docId}.hooks`
+}
+
+// what the hooks change topic carries: the branch whose hooks changed, so an
+// editor showing another branch of the document leaves its list alone
+export interface WSHooksChangePayload {
+	branchId: string
+}
+
 export interface DocumentTreeElement {
 	id: string
 	documentName: string

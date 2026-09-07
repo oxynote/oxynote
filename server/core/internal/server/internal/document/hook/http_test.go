@@ -49,6 +49,7 @@ func urlWatcherHook() *hookCore.Hook {
 		Type:           hookCore.TypeURLWatcher,
 		DocumentID:     null.ValueFrom(_documentID),
 		OrganizationID: null.StringFrom("org1"),
+		BranchID:       null.ValueFrom(_branchID),
 		Settings:       processor.Settings(`{"url":"https://example.com"}`),
 		State:          processor.State(`{"watcherId":"w1"}`),
 	}
@@ -62,8 +63,41 @@ func scheduledHook(typ hookCore.Type) *hookCore.Hook {
 		Type:           typ,
 		DocumentID:     null.ValueFrom(_documentID),
 		OrganizationID: null.StringFrom("org1"),
+		BranchID:       null.ValueFrom(_branchID),
 		Settings:       processor.Settings(`{"scale":"linear"}`),
 	}
+}
+
+// notified is one hooks-change announcement a handler made.
+type notified struct {
+	organizationID string
+	documentID     xid.ID
+	branchID       xid.ID
+}
+
+// recordNotifications binds the handler's hooks-change callback to a
+// list the test reads back.
+func recordNotifications(hdl *Handler) *[]notified {
+	var out []notified
+
+	hdl.hooks.changeCallback = func(organizationID string, documentID, branchID xid.ID) {
+		out = append(out, notified{organizationID, documentID, branchID})
+	}
+
+	return &out
+}
+
+// assertNotified checks that a write that succeeded announced the branch
+// once and one that failed announced nothing.
+func assertNotified(t *testing.T, got []notified, code int) {
+	t.Helper()
+
+	if code >= http.StatusBadRequest {
+		assert.Empty(t, got)
+		return
+	}
+
+	assert.Equal(t, []notified{{"org1", _documentID, _branchID}}, got)
 }
 
 func Test_NewHandler(t *testing.T) {
@@ -212,6 +246,7 @@ func Test_Handler_FetchDocumentHooks(t *testing.T) {
 				db:              c.DB,
 				webchangeClient: webchange.NewClient("", ""),
 			}
+			got := recordNotifications(&hdl)
 
 			req := httptest.NewRequest(http.MethodGet, "http://test.com/"+c.Query, http.NoBody)
 
@@ -228,6 +263,9 @@ func Test_Handler_FetchDocumentHooks(t *testing.T) {
 			rec := httptest.NewRecorder()
 
 			hdl.FetchDocumentHooks(rec, req.WithContext(ctx))
+
+			// a read announces nothing.
+			assert.Empty(t, *got)
 
 			for _, ch := range c.Checks {
 				ch(t, c.DB, rec)
@@ -349,6 +387,28 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 				wasInsertCalled(0),
 			),
 		},
+		"Block not in the branch": {
+			DB:   &DBMock{},
+			Body: `{"type":"scheduled-reminder","branchId":"` + _branchID.String() + `","blockId":"nope","settings":{"scale":"linear"}}`,
+			Checks: checks(
+				hasResp(http.StatusNotFound, `{"code":"document.hook_block_not_found","message":"block not found in the branch"}`),
+				wasInsertCalled(0),
+			),
+		},
+		"Successful creation on a block": {
+			DB:   &DBMock{},
+			Body: `{"type":"scheduled-reminder","branchId":"` + _branchID.String() + `","blockId":"b1","settings":{"scale":"linear"}}`,
+			Checks: checks(
+				func(t *testing.T, db *DBMock, rec *httptest.ResponseRecorder) {
+					assert.Equal(t, http.StatusCreated, rec.Code)
+
+					ff := db.InsertDocumentHookCalls()
+					require.Len(t, ff, 1)
+					assert.Equal(t, null.StringFrom("b1"), ff[0].Hk.BlockID)
+				},
+				wasInsertCalled(1),
+			),
+		},
 		"URL watcher without changedetection": {
 			DB:   &DBMock{},
 			Body: `{"type":"url-watcher","branchId":"` + _branchID.String() + `","settings":{"url":"https://example.com"}}`,
@@ -374,9 +434,19 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
+			// the branch holds one block, so a hook can anchor to it and
+			// to nothing else.
 			if c.DB.FetchDocumentByBranchIDFunc == nil {
 				c.DB.FetchDocumentByBranchIDFunc = func(context.Context, xid.ID, string) (*document.Document, error) {
-					return &document.Document{ID: _documentID}, nil
+					return &document.Document{
+						ID: _documentID,
+						Content: document.RootBlock{
+							Content: []document.Block{{
+								Type:  document.BlockNodeParagraph,
+								Attrs: document.Attributes{document.AttrUID: "b1"},
+							}},
+						},
+					}, nil
 				}
 			}
 
@@ -385,6 +455,7 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 				db:              c.DB,
 				webchangeClient: webchange.NewClient("", ""),
 			}
+			got := recordNotifications(&hdl)
 
 			req := httptest.NewRequest(http.MethodPost, "http://test.com/", strings.NewReader(c.Body))
 
@@ -401,6 +472,8 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 			rec := httptest.NewRecorder()
 
 			hdl.CreateDocumentHook(rec, req.WithContext(ctx))
+
+			assertNotified(t, *got, rec.Code)
 
 			for _, ch := range c.Checks {
 				ch(t, c.DB, rec)
@@ -583,6 +656,7 @@ func Test_Handler_UpdateDocumentHook(t *testing.T) {
 				db:              c.DB,
 				webchangeClient: webchange.NewClient("", ""),
 			}
+			got := recordNotifications(&hdl)
 
 			req := httptest.NewRequest(http.MethodPut, "http://test.com/", strings.NewReader(c.Body))
 
@@ -603,6 +677,8 @@ func Test_Handler_UpdateDocumentHook(t *testing.T) {
 			rec := httptest.NewRecorder()
 
 			hdl.UpdateDocumentHook(rec, req.WithContext(ctx))
+
+			assertNotified(t, *got, rec.Code)
 
 			for _, ch := range c.Checks {
 				ch(t, c.DB, rec)
@@ -727,6 +803,7 @@ func Test_Handler_ResetDocumentHook(t *testing.T) {
 				db:              c.DB,
 				webchangeClient: webchange.NewClient("", ""),
 			}
+			got := recordNotifications(&hdl)
 
 			req := httptest.NewRequest(http.MethodPost, "http://test.com/", http.NoBody)
 
@@ -747,6 +824,8 @@ func Test_Handler_ResetDocumentHook(t *testing.T) {
 			rec := httptest.NewRecorder()
 
 			hdl.ResetDocumentHook(rec, req.WithContext(ctx))
+
+			assertNotified(t, *got, rec.Code)
 
 			assert.Equal(t, c.RespCode, rec.Code)
 
@@ -875,6 +954,7 @@ func Test_Handler_DeleteDocumentHook(t *testing.T) {
 				db:              c.DB,
 				webchangeClient: webchange.NewClient("", ""),
 			}
+			got := recordNotifications(&hdl)
 
 			req := httptest.NewRequest(http.MethodDelete, "http://test.com/", http.NoBody)
 
@@ -895,6 +975,8 @@ func Test_Handler_DeleteDocumentHook(t *testing.T) {
 			rec := httptest.NewRecorder()
 
 			hdl.DeleteDocumentHook(rec, req.WithContext(ctx))
+
+			assertNotified(t, *got, rec.Code)
 
 			assert.Equal(t, c.RespCode, rec.Code)
 

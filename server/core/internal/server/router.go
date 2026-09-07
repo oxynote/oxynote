@@ -82,6 +82,12 @@ func (s *Server) wsRouter() *wsserver.Router {
 		},
 	)
 
+	binderFn("change@documents.{documentId}.hooks",
+		func(tpc wsserver.Topic) {
+			s.handlers.hook.BindHooksChange(tpc)
+		},
+	)
+
 	// slack messages
 	binderFn("post@slack.messages",
 		func(tpc wsserver.Topic) {

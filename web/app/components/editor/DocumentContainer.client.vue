@@ -9,6 +9,7 @@ import { redirectToLogin } from "~/plugins/03.api-fetch"
 import { showToastMessage } from "~/components/toast"
 import { refreshGapDecorationsInBackground } from "./drag-handle/gap-decorations"
 import { editorCaretColors } from "~/assets/css"
+import { DOCUMENT_HOOK_QUERY_KEYS } from "~/composables/api/useDocumentHookAPI"
 
 interface BranchProviderEntry {
 	provider: HocuspocusProvider
@@ -46,6 +47,39 @@ const fetchDocumentHooks = documentHookAPI.useFetchDocumentHooksByDocID(
 	() => editorStore.activeDocumentId,
 	() => editorStore.activeBranchId,
 )
+const queryCache = useQueryCache()
+const wsState = useWebSocketStateStore()
+let unsubWsHooksChange: (() => void) | null | undefined = null
+
+// the hook menus refetch after their own writes, but a hook the assistant or
+// an MCP client adds arrives only on this topic: without it the indicators
+// would sit stale until the list expired
+watchImmediate(
+	() => editorStore.activeDocumentId,
+	(newId) => {
+		unsubWsHooksChange?.()
+		unsubWsHooksChange = null
+
+		if (!newId) {
+			return
+		}
+
+		unsubWsHooksChange = wsState.state?.subscribe(
+			makeWsHooksChangeTopic(newId),
+			(rawPayload) => {
+				const payload = rawPayload as WSHooksChangePayload
+
+				void queryCache.invalidateQueries({
+					key: DOCUMENT_HOOK_QUERY_KEYS.list(newId, payload.branchId),
+				})
+			},
+		)
+	},
+)
+
+onUnmounted(() => {
+	unsubWsHooksChange?.()
+})
 
 const userCaretDetails = computed(() => {
 	const caretColors = editorCaretColors()

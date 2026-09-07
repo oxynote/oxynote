@@ -190,6 +190,7 @@ func NewServer(
 	// rename/set-icon.
 	assistantMan.SetTreeNotifier(srv.handlers.document)
 	assistantMan.SetTagNotifier(srv.handlers.tag)
+	assistantMan.SetHookNotifier(srv.handlers.hook)
 
 	// the MCP handler serves the assistant's tool registry over the
 	// Model Context Protocol; it must be built after the tree notifier

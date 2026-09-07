@@ -23,6 +23,8 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/gomodule/redigo/redis"
 	"github.com/jellydator/xync"
+	"github.com/oxynote/oxynote/server/core/internal/apps/github"
+	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/persist"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/protocol"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
@@ -54,6 +56,10 @@ type Manager struct {
 	applier tools.EditApplier
 	tree    tools.TreeNotifier
 	tags    tools.TagNotifier
+	hooks   tools.HookNotifier
+
+	githubMan       *github.Manager
+	webchangeClient *webchange.Client
 
 	history     *persist.History
 	checkpoints *persist.Checkpoints
@@ -84,10 +90,12 @@ type Manager struct {
 // is the edit pipe to the Node hocuspocus service; the search client
 // backs the search_documents tool and searchJobs is the queue document
 // writes announce themselves to; providerName labels token metrics so
-// usage stays readable across a provider change; the tree notifier
-// broadcasts sidebar refresh events after document tree mutations and is
-// wired post-construction via SetTreeNotifier because the document
-// handler that satisfies it is built later, inside server.NewServer.
+// usage stays readable across a provider change; githubMan and
+// webchangeClient are the integrations the hook tools create watchers
+// through; the tree notifier broadcasts sidebar refresh events after
+// document tree mutations and is wired post-construction via
+// SetTreeNotifier because the document handler that satisfies it is
+// built later, inside server.NewServer.
 func NewManager(
 	log *slog.Logger,
 	db tools.DB,
@@ -99,6 +107,8 @@ func NewManager(
 	searcher tools.Searcher,
 	searchJobs *search.Jobs,
 	runners tools.DataSourceRunners,
+	githubMan *github.Manager,
+	webchangeClient *webchange.Client,
 	providerName string,
 ) *Manager {
 	if summaryModel == nil {
@@ -135,6 +145,9 @@ func NewManager(
 		model:   chatModel,
 		summary: summaryModel,
 		applier: editClient,
+
+		githubMan:       githubMan,
+		webchangeClient: webchangeClient,
 
 		history:     persist.NewHistory(log, history),
 		checkpoints: persist.NewCheckpoints(log, blobs),
@@ -188,6 +201,14 @@ func (m *Manager) SetTagNotifier(tags tools.TagNotifier) {
 	m.tags = tags
 }
 
+// SetHookNotifier wires the hook-change notifier the assistant uses to
+// tell an open editor its hook indicators changed after hook mutations.
+// Like SetTagNotifier, call it once during startup, before serving
+// traffic.
+func (m *Manager) SetHookNotifier(hooks tools.HookNotifier) {
+	m.hooks = hooks
+}
+
 // ToolSet builds the tool registry for one (organization, user) pair
 // from the manager's shared wiring. The MCP surface uses it to serve
 // the same tools the assistant's sessions get, scoped the same way.
@@ -198,9 +219,12 @@ func (m *Manager) ToolSet(orgID, userID string) *tools.Set {
 		m.search,
 		m.jobs,
 		m.runners,
+		m.githubMan,
+		m.webchangeClient,
 		m.applier,
 		m.tree,
 		m.tags,
+		m.hooks,
 		m.offload,
 		orgID,
 		userID,

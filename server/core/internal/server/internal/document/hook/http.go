@@ -24,12 +24,20 @@ var ErrBranchMismatch = errutil.New(http.StatusNotFound, "document.branch_mismat
 // document identified by the request path.
 var ErrHookMismatch = errutil.New(http.StatusNotFound, "document.hook_mismatch", "hook does not belong to the document")
 
+// ErrBlockNotFound is returned when a hook is to be anchored to a block the
+// branch's content does not hold.
+var ErrBlockNotFound = errutil.New(http.StatusNotFound, "document.hook_block_not_found", "block not found in the branch")
+
 // Handler holds dependencies required for document hook operations.
 type Handler struct {
 	log             *slog.Logger
 	db              DB
 	githubMan       *github.Manager
 	webchangeClient *webchange.Client
+
+	hooks struct {
+		changeCallback func(organizationID string, documentID, branchID xid.ID)
+	}
 }
 
 // NewHandler creates a new handler instance with the provided logger and database.
@@ -131,6 +139,16 @@ func (h *Handler) CreateDocumentHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// a hook anchored to a block the branch does not hold is invisible in
+	// the editor and soft-deleted by the next sweep, so it is refused
+	// rather than created to vanish.
+	if hi.BlockID.Valid {
+		if _, ok := branchDoc.Content.FindByUID(hi.BlockID.String); !ok {
+			httpserver.RespondError(h.log, w, ErrBlockNotFound)
+			return
+		}
+	}
+
 	hk, err := hookCore.NewHook(
 		r.Context(),
 		hi,
@@ -152,6 +170,8 @@ func (h *Handler) CreateDocumentHook(w http.ResponseWriter, r *http.Request) {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
+
+	h.NotifyHooksChange(session.ActiveOrganizationID, hk.DocumentID, hk.BranchID)
 
 	httpserver.Respond(
 		h.log,
@@ -219,6 +239,8 @@ func (h *Handler) UpdateDocumentHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.NotifyHooksChange(session.ActiveOrganizationID, hk.DocumentID, hk.BranchID)
+
 	httpserver.Respond(
 		h.log,
 		w,
@@ -274,6 +296,8 @@ func (h *Handler) ResetDocumentHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.NotifyHooksChange(session.ActiveOrganizationID, hk.DocumentID, hk.BranchID)
+
 	httpserver.Respond(
 		h.log,
 		w,
@@ -328,6 +352,8 @@ func (h *Handler) DeleteDocumentHook(w http.ResponseWriter, r *http.Request) {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
+
+	h.NotifyHooksChange(session.ActiveOrganizationID, hk.DocumentID, hk.BranchID)
 
 	httpserver.Respond(
 		h.log,

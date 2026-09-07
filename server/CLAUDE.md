@@ -67,7 +67,7 @@ So from a frontend's point of view: auth + realtime is `:8080/auth-realtime/...`
 - `/api/x/...` (internal): no auth at all — reverse proxy must firewall. Used by auth-realtime to fetch/store branch content (`/x/documents/{id}/branches`, `/x/documents/{id}/branch/{branchId}`), trigger emails, and initialize or tear down orgs.
 - `/api/apps/...` (public, sessionless): where GitHub and Slack deliver. `POST /apps/github/events` and `POST /apps/slack/{events,commands,slash}` are gated by the provider's request signature; `GET /apps/slack/install` completes the direct-install OAuth exchange. These must stay outside `/api/x` — third parties reach core through the same front door as browsers, and the proxy 403s the internal subtree.
 - `/api/mcp` (public, bearer-authed): the MCP surface (`internal/server/internal/mcp`), a streamable HTTP MCP server bridging the assistant's ungated tool registry (`tools.Set.Entries`) plus documents-as-resources. Bearer tokens are JWTs issued by auth-realtime's `@better-auth/mcp` OAuth provider; core validates each request against auth-realtime's internal `GET /api/internal/mcp/session` (JWKS verify + consent-row check, so revoking a client 401s immediately) and scopes the tool list by the token's `documents:read` / `documents:write` / `data-sources:read` scopes. Tokens are org-bound via an `org_id` claim minted at issuance. `SERVER_MCP_SESSION_URL` and `SERVER_MCP_RESOURCE_URL` are required env; the Caddyfile routes `/.well-known/oauth-*` and `/api/auth/*` at the front door to auth-realtime for OAuth discovery.
-- WebSocket topics under `/api/ws` (routed by `wetsocks/wsserver` from the first-party `github.com/oxynote/wetsocks` library): `change@document-tree`, `change@tag-tree`, `change@documents.{documentId}.comments|metadata|reviewers|maintainers|tags`, `post@slack.messages`, `creation@notifications`, `ping@version`. Topic binders live on the per-domain handler types under `internal/server/internal/...` (`Handler.BindXxx`).
+- WebSocket topics under `/api/ws` (routed by `wetsocks/wsserver` from the first-party `github.com/oxynote/wetsocks` library): `change@document-tree`, `change@tag-tree`, `change@documents.{documentId}.comments|metadata|reviewers|maintainers|tags|hooks`, `post@slack.messages`, `creation@notifications`, `ping@version`. Topic binders live on the per-domain handler types under `internal/server/internal/...` (`Handler.BindXxx`).
 
 Most public routes in the README (`/api/documents`, `/api/documents/tree`, etc.) are served by core; the README is the closest thing to a contract spec — when changing handlers, update it.
 
@@ -174,7 +174,7 @@ Writing a rule:
 Tools are grouped by what they act on, a few per file: `document.go` (the tree, one
 document read whole, and a document's name, icon and place), `block.go` (reading one
 block and editing content), `tag.go` (the organisation's tags and which branch
-carries them), `search.go`,
+carries them), `hook.go` (the freshness hooks on a branch), `search.go`,
 `datasource.go` (reads against the organisation's outbound connections). `eino.go` is
 the odd one out — it holds the agent-framework adapter and `read_tool_output`, the one
 tool that exists because of eino rather than because of the domain. `tools.Set` is the
@@ -191,8 +191,10 @@ and `Entry.Tool`, a `Runner`, to run it.
 **A call reports what it changed; it is never asked.** `Runner.Run` returns a `Result`
 carrying the output and `Documents`. Every document write goes through one of the
 `Input` methods — `ApplyEdit`, `CreateDocument`, `MoveDocument`, `DeleteDocument`,
-`AssignTag`, `UnassignTag` — and all but the delete record the document as the mutation
-happens. A delete records nothing: the document it names is gone. The tag-only writes
+`AssignTag`, `UnassignTag`, `CreateHook`, `UpdateHook`, `ResetHook`, `DeleteHook` — and
+all but the document delete record the document as the mutation happens. A document
+delete records nothing: the document it names is gone. A hook delete does record the
+branch: it stays, and the editor showing it has to redraw. The tag-only writes
 (`CreateTag`, `UpdateTag`, `DeleteTag`, `MoveTag`) change no document and record none.
 
 **Tag writes announce themselves like tree writes.** Every tag tool's `Execute` ends
@@ -207,6 +209,26 @@ own tags.
 `Input.FetchTag` resolves a tag id through the repository's `FetchTagTree` (the one
 read carrying name, colour and documents together), refusing an unknown id with
 `ErrUnknownTag`.
+
+**Hook writes share the HTTP handler's lifecycle and announce themselves the same
+way.** `Input.CreateHook`, `UpdateHook`, `ResetHook` and `DeleteHook` drive
+`hook.NewHook`, `Hook.ApplyUpdate`, `Hook.Reset` and `Hook.Delete` with a `hook.Input`
+built from the GitHub manager and changedetection client `Deps` carries, so a watcher
+created or torn down by the assistant is the same watcher the HTTP handler would have
+made. Each write then calls the hook handler's exported `NotifyHooksChange` through
+`tools.HookNotifier` (`server.NewServer` wires it with `SetHookNotifier`, beside the tag
+one), which publishes on `change@documents.{documentId}.hooks` so an open editor redraws
+its hook indicators; the HTTP handler publishes on the same topic after its own writes.
+`CreateHook` refuses a `block_uid` the branch does not hold with `errUnknownBlock` and a
+github-tracking or url-watcher hook on a deployment without that integration, before
+anything is created; `Input.FetchHook` scopes the lookup to the organisation and refuses
+a hook of another document, or of a deleted one, with `errUnknownHook` naming the
+document addressed. Settings arrive as one `settings` object whose shape the hook type
+decides, the way a block's type decides its fields: `decodeHookSettings` switches on
+the type and unmarshals into the processor's own struct, requiring that type's fields
+and refusing any other type's naming its owner (`hookSettingOwner`). A scheduled
+reminder is stored with scale `linear` and duration `custom`, which is how the editor
+labels a concrete date.
 
 **A block write reports what it wrote from the operation, never from a re-read.** The
 realtime service applies an edit to the live document and persists it on a debounce, so
@@ -281,7 +303,7 @@ interface, which would be a second fact to keep in step. What a tool is, it stat
   kind ever asked for one; `Test_New` checks that a write produces one and nothing else
   does.
 - `Destructive` keeps it outside an "approve all" answer. Only `delete_document`,
-  `delete_block` and `delete_tag`.
+  `delete_block`, `delete_tag` and `delete_hook`.
 - `Overwrites` says the write replaces content the caller did not name — the target's
   nested blocks, and the uids comments and hooks hang off, go with it.
   `update_block_text` and `replace_block`. It is what MCP's destructive hint reports

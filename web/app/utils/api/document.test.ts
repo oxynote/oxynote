@@ -7,6 +7,7 @@ import {
 	makeWsDocumentMaintainersChangeTopic,
 	makeWsDocumentMetadataChangeTopic,
 	makeWsDocumentReviewersChangeTopic,
+	makeWsHooksChangeTopic,
 	type DocumentTreeElement,
 } from "./document"
 
@@ -46,6 +47,12 @@ describe("makeWsDocumentReviewersChangeTopic", () => {
 		expect(makeWsDocumentReviewersChangeTopic("d1")).toBe(
 			"change@documents.d1.reviewers",
 		)
+	})
+})
+
+describe("makeWsHooksChangeTopic", () => {
+	it("builds the hooks change topic for the document", ({ expect }) => {
+		expect(makeWsHooksChangeTopic("d1")).toBe("change@documents.d1.hooks")
 	})
 })
 

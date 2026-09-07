@@ -12,6 +12,8 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/gomodule/redigo/redis"
 	mock "github.com/oxynote/oxynote/server/core/internal/_mock"
+	"github.com/oxynote/oxynote/server/core/internal/apps/github"
+	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/persist"
 	persistMock "github.com/oxynote/oxynote/server/core/internal/assistant/persist/_mock"
 	protocolMock "github.com/oxynote/oxynote/server/core/internal/assistant/protocol/_mock"
@@ -234,7 +236,9 @@ func Test_NewManager(t *testing.T) {
 			t.Parallel()
 
 			fc := metricutil.NewFactory("test", prometheus.NewRegistry())
-			m := NewManager(discardLog(), nil, c.Pool, nil, nil, fc, nil, nil, search.NewJobs(false), nil, "claude")
+			gh := &github.Manager{}
+			wc := &webchange.Client{}
+			m := NewManager(discardLog(), nil, c.Pool, nil, nil, fc, nil, nil, search.NewJobs(false), nil, gh, wc, "claude")
 
 			require.NotNil(t, m)
 			assert.NotNil(t, m.log)
@@ -244,7 +248,11 @@ func Test_NewManager(t *testing.T) {
 			assert.NotNil(t, m.offload)
 			assert.NotNil(t, m.metrics)
 			assert.NotNil(t, m.turns.m)
+			assert.Same(t, gh, m.githubMan)
+			assert.Same(t, wc, m.webchangeClient)
 			assert.Nil(t, m.tree)
+			assert.Nil(t, m.tags)
+			assert.Nil(t, m.hooks)
 
 			// the checkpoint and the offloaded results share one byte
 			// store, so three stores back the four persist types and
@@ -331,6 +339,16 @@ func Test_Manager_SetTagNotifier(t *testing.T) {
 	assert.Nil(t, m.tags)
 }
 
+func Test_Manager_SetHookNotifier(t *testing.T) {
+	t.Parallel()
+
+	m := testManager()
+	require.Nil(t, m.hooks)
+
+	m.SetHookNotifier(nil)
+	assert.Nil(t, m.hooks)
+}
+
 func Test_Manager_ToolSet(t *testing.T) {
 	t.Parallel()
 
@@ -340,10 +358,10 @@ func Test_Manager_ToolSet(t *testing.T) {
 	require.NotNil(t, s)
 
 	// the set carries the full registry — the thirteen document tools,
-	// the seven tag tools, the nine data-source tools and the
-	// offloaded-result reader — wired from the manager's shared
-	// dependencies and scoped to the requested pair.
-	assert.Len(t, s.Tools(), 30)
+	// the seven tag tools, the five hook tools, the nine data-source
+	// tools and the offloaded-result reader — wired from the manager's
+	// shared dependencies and scoped to the requested pair.
+	assert.Len(t, s.Tools(), 35)
 }
 
 func Test_Manager_claimTurn(t *testing.T) {
