@@ -157,7 +157,7 @@ services:
         max-file: "3"
   meilisearch:
     container_name: meilisearch
-    image: getmeili/meilisearch:v1.53.1
+    image: getmeili/meilisearch:v1.53.2
     volumes:
       - meilisearch_data:/meili_data
     environment:
@@ -179,7 +179,7 @@ services:
         max-file: "3"
   mailpit:
     container_name: mailpit
-    image: axllent/mailpit:v1.31.0
+    image: axllent/mailpit:v1.31.1
     environment:
       - MP_QUIET=true
     restart: unless-stopped
@@ -191,7 +191,7 @@ services:
         max-file: "3"
   valkey:
     container_name: valkey
-    image: valkey/valkey:9.1.1-alpine
+    image: valkey/valkey:9.1.2-alpine
     command: ["valkey-server", "--loglevel", "warning"]
     volumes:
       - valkey_data:/data
@@ -209,7 +209,7 @@ services:
         max-file: "3"
   changedetection:
     container_name: changedetection
-    image: dgtlmoon/changedetection.io:0.55.8
+    image: dgtlmoon/changedetection.io:0.60.3
     volumes:
       - changedetection_data:/datastore
     environment:
@@ -243,7 +243,7 @@ services:
       - MAX_CONCURRENT_CHROME_PROCESSES=10
       - LOG_LEVEL=WARNING
   grafana:
-    image: grafana/grafana:13.2.0
+    image: grafana/grafana:13.2.1
     container_name: grafana
     ports:
       - "8083:3000"

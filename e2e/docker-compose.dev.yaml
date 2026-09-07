@@ -145,7 +145,7 @@ services:
       retries: 20
 
   meilisearch:
-    image: getmeili/meilisearch:v1.53.1
+    image: getmeili/meilisearch:v1.53.2
     environment:
       - MEILI_MASTER_KEY=devmasterkey
       - MEILI_ENV=development
@@ -160,7 +160,7 @@ services:
   # the tests read verification links out of mailpit's REST API, so its
   # http port is published rather than proxied through caddy.
   mailpit:
-    image: axllent/mailpit:v1.31.0
+    image: axllent/mailpit:v1.31.1
     environment:
       - MP_QUIET=true
     ports:

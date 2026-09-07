@@ -62,7 +62,7 @@ services:
     restart: unless-stopped
 
   meilisearch:
-    image: getmeili/meilisearch:v1.53.1
+    image: getmeili/meilisearch:v1.53.2
     environment:
       - MEILI_ENV=production
       - MEILI_MASTER_KEY=change-me-meili-key
