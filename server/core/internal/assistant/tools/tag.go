@@ -123,11 +123,11 @@ type createTagArgs struct {
 // Validate checks the arguments are complete and the colour well formed.
 func (a createTagArgs) Validate() error {
 	if a.Name == "" {
-		return errRequired(_keyName)
+		return errRequired("name")
 	}
 
 	if a.Color == "" {
-		return errRequired(_keyColor)
+		return errRequired("color")
 	}
 
 	return a.input().Validate()
@@ -147,10 +147,10 @@ func (createTag) Info() Info {
 		Name:        NameCreateTag,
 		Description: "Create a tag and return {tag_id}. name is the display name, which has to be unused in the organisation, and color a hex triplet with the leading hash; a malformed colour or a name already in use is refused. The new tag lands last in the sidebar order, so use move_tag to place it, and assign_tag to put it on a document branch.",
 		Properties: map[string]any{
-			_keyName:  stringProp("Display name for the new tag; unique within the organisation."),
-			_keyColor: stringProp(_descColor),
+			"name":  map[string]any{"type": "string", "description": "Display name for the new tag; unique within the organisation."},
+			"color": map[string]any{"type": "string", "description": "The tag's colour as a hex triplet with the leading hash, such as \"#22c55e\"."},
 		},
-		Required: []string{_keyName, _keyColor},
+		Required: []string{"name", "color"},
 	}
 }
 
@@ -224,7 +224,7 @@ type updateTagArgs struct {
 // Validate checks the arguments name a tag and change something.
 func (a updateTagArgs) Validate() error {
 	if a.TagID.IsNil() {
-		return errRequired(_keyTagID)
+		return errRequired("tag_id")
 	}
 
 	return a.input().Validate()
@@ -271,11 +271,11 @@ func (updateTag) Info() Info {
 		Name:        NameUpdateTag,
 		Description: "Rename and/or recolour a tag; give only the fields to change, and the other keeps its value. name is the new display name, which has to be unused in the organisation, and color a hex triplet with the leading hash; a call with neither is refused. Returns {tag_id} with the fields that changed. To change which documents carry the tag use assign_tag and unassign_tag instead.",
 		Properties: map[string]any{
-			_keyTagID: stringProp(_descTagID),
-			_keyName:  stringProp("Optional. The new display name; omit to keep the current one."),
-			_keyColor: stringProp("Optional. The new colour as a hex triplet with the leading hash; omit to keep the current one."),
+			"tag_id": map[string]any{"type": "string", "description": "The tag id, as list_tags or a document's tags report it."},
+			"name":   map[string]any{"type": "string", "description": "Optional. The new display name; omit to keep the current one."},
+			"color":  map[string]any{"type": "string", "description": "Optional. The new colour as a hex triplet with the leading hash; omit to keep the current one."},
 		},
-		Required: []string{_keyTagID},
+		Required: []string{"tag_id"},
 	}
 }
 
@@ -361,7 +361,7 @@ type deleteTagArgs struct {
 // Validate checks the arguments are complete.
 func (a deleteTagArgs) Validate() error {
 	if a.TagID.IsNil() {
-		return errRequired(_keyTagID)
+		return errRequired("tag_id")
 	}
 
 	return nil
@@ -376,9 +376,9 @@ func (deleteTag) Info() Info {
 		Name:        NameDeleteTag,
 		Description: "Delete a tag. Every document carrying it loses it, on every branch, and the tag cannot be restored; use unassign_tag when the aim is to take it off one document rather than remove it. Returns {tag_id, deleted}.",
 		Properties: map[string]any{
-			_keyTagID: stringProp("The id of the tag to delete."),
+			"tag_id": map[string]any{"type": "string", "description": "The id of the tag to delete."},
 		},
-		Required: []string{_keyTagID},
+		Required: []string{"tag_id"},
 	}
 }
 
@@ -475,7 +475,7 @@ func (a branchTagArgs) Validate() error {
 	}
 
 	if a.TagID.IsNil() {
-		return errRequired(_keyTagID)
+		return errRequired("tag_id")
 	}
 
 	return nil
@@ -490,7 +490,7 @@ func (assignTag) Info() Info {
 		Name:        NameAssignTag,
 		Description: "Put a tag on one branch of a document, so the document is listed under the tag in the sidebar when the branch is its default one. document_id and branch_id name the branch the way the content tools do, and tag_id is the tag's id from list_tags. A tag the branch already carries is left as it is, and a hidden tag can still be assigned. Returns {document_id, branch_id, tag_id}.",
 		Properties:  branchTagProps(),
-		Required:    []string{_keyDocumentID, _keyBranchID, _keyTagID},
+		Required:    []string{"document_id", "branch_id", "tag_id"},
 	}
 }
 
@@ -568,7 +568,7 @@ func (unassignTag) Info() Info {
 		Name:        NameUnassignTag,
 		Description: "Take a tag off one branch of a document; the tag itself stays for other documents, so use delete_tag to remove it everywhere. document_id and branch_id name the branch the way the content tools do, and tag_id is the tag's id from the document's tags on get_document or from list_tags. A tag the branch does not carry is nothing to do, and the call still succeeds. Returns {document_id, branch_id, tag_id}.",
 		Properties:  branchTagProps(),
-		Required:    []string{_keyDocumentID, _keyBranchID, _keyTagID},
+		Required:    []string{"document_id", "branch_id", "tag_id"},
 	}
 }
 
@@ -662,11 +662,11 @@ type moveTagArgs struct {
 // Validate checks the arguments are complete.
 func (a moveTagArgs) Validate() error {
 	if a.TagID.IsNil() {
-		return errRequired(_keyTagID)
+		return errRequired("tag_id")
 	}
 
 	if !a.SortIndex.Valid {
-		return errRequired(_keySortIndex)
+		return errRequired("sort_index")
 	}
 
 	return nil
@@ -681,10 +681,10 @@ func (moveTag) Info() Info {
 		Name:        NameMoveTag,
 		Description: "Move a tag to a position in the sidebar order, which is the order list_tags returns. sort_index is the 0-based position the tag should end up at, so 0 puts it first, and a position past the last tag is refused; the other tags keep their relative order. Returns {tag_id, sort_index}.",
 		Properties: map[string]any{
-			_keyTagID:     stringProp(_descTagID),
-			_keySortIndex: map[string]any{_keyType: _typeInteger, _keyDescription: "The 0-based position the tag should end up at among the organisation's tags."},
+			"tag_id":     map[string]any{"type": "string", "description": "The tag id, as list_tags or a document's tags report it."},
+			"sort_index": map[string]any{"type": "integer", "description": "The 0-based position the tag should end up at among the organisation's tags."},
 		},
-		Required: []string{_keyTagID, _keySortIndex},
+		Required: []string{"tag_id", "sort_index"},
 	}
 }
 
@@ -781,8 +781,8 @@ func tagInfos(tags []tag.Tag) []tagInfo {
 // share.
 func branchTagProps() map[string]any {
 	return map[string]any{
-		_keyDocumentID: stringProp(_descDocumentID),
-		_keyBranchID:   stringProp("The id of the branch the tag goes on or comes off: a document's default_branch_id from list_documents or list_tags, or any id from the branches get_document lists."),
-		_keyTagID:      stringProp(_descTagID),
+		"document_id": map[string]any{"type": "string", "description": "The document id."},
+		"branch_id":   map[string]any{"type": "string", "description": "The id of the branch the tag goes on or comes off: a document's default_branch_id from list_documents or list_tags, or any id from the branches get_document lists."},
+		"tag_id":      map[string]any{"type": "string", "description": "The tag id, as list_tags or a document's tags report it."},
 	}
 }

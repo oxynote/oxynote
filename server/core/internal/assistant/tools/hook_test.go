@@ -70,18 +70,49 @@ func Test_hookSettingsSchema(t *testing.T) {
 
 	got := hookSettingsSchema()
 
-	assert.Equal(t, _typeObject, got[_keyType])
-
-	// every setting of every type is published, so a client can fill any
-	// of them without the prose, and every one names a type that owns it.
-	props, ok := got["properties"].(map[string]any)
+	variants, ok := got["anyOf"].([]map[string]any)
 	require.True(t, ok)
 
-	for _, key := range []string{_keySchedule, _keyRepository, _keyBranch, _keyPaths, _keyURL, _keyImage} {
-		assert.Contains(t, props, key)
+	// one variant per hook type, in the order the domain lists them,
+	// each pinning its type as a constant so the settings cannot name
+	// one type and take another's fields.
+	want := []hook.Type{hook.TypeScheduledReminder, hook.TypeGithubTracking, hook.TypeURLWatcher, hook.TypeContainerImageWatcher}
+	require.Len(t, variants, len(want))
 
-		_, owned := hookSettingOwner(key)
-		assert.True(t, owned, key)
+	seen := map[string]bool{}
+
+	for i, v := range variants {
+		tp := want[i]
+		require.NoError(t, tp.Validate())
+
+		assert.Equal(t, string(tp), v["title"])
+		assert.Equal(t, false, v["additionalProperties"])
+
+		props, pok := v["properties"].(map[string]any)
+		require.True(t, pok)
+		assert.Equal(t, map[string]any{"const": string(tp)}, props["type"])
+
+		// every field of the variant is required, and belongs to the
+		// type the variant names.
+		required, rok := v["required"].([]string)
+		require.True(t, rok)
+		assert.Len(t, props, len(required))
+
+		for _, key := range required {
+			assert.Contains(t, props, key)
+
+			if key == "type" {
+				continue
+			}
+
+			seen[key] = true
+		}
+	}
+
+	// every setting of every type is published, so a client can fill
+	// any of them without the prose.
+	for _, key := range []string{"schedule", "repository", "branch", "paths", "url", "image"} {
+		assert.True(t, seen[key], key)
 	}
 }
 
@@ -89,93 +120,78 @@ func Test_decodeHookSettings(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		Type   hook.Type
 		Raw    string
+		Type   hook.Type
 		Result string
 		Err    error
 	}{
-		"Unknown type": {Type: "bogus", Raw: `{}`, Err: fmt.Errorf("type %q: %w", "bogus", hook.ErrInvalidType)},
-		"Malformed settings": {
-			Type: hook.TypeScheduledReminder,
-			Raw:  `{`,
-			Err:  assert.AnError,
-		},
+		"Type is required":   {Raw: `{"url":"https://example.com"}`, Err: errRequired("settings.type")},
+		"Absent settings":    {Err: errRequired("settings.type")},
+		"Unknown type":       {Raw: `{"type":"bogus"}`, Err: fmt.Errorf("type %q: %w", "bogus", hook.ErrInvalidType)},
+		"Malformed settings": {Raw: `{`, Err: assert.AnError},
+		"Malformed type":     {Raw: `{"type":1}`, Err: assert.AnError},
 		// the editor labels a linear reminder with a custom duration as
 		// a date, which is what a tool call sets.
 		"Scheduled reminder": {
+			Raw:    `{"type":"scheduled-reminder","schedule":"2030-01-01T00:00:00Z"}`,
 			Type:   hook.TypeScheduledReminder,
-			Raw:    `{"schedule":"2030-01-01T00:00:00Z"}`,
 			Result: `{"scale":"linear","duration":"custom","schedule":"2030-01-01T00:00:00Z"}`,
 		},
 		"Scheduled reminder without a schedule": {
-			Type: hook.TypeScheduledReminder,
-			Raw:  `{}`,
-			Err:  errRequired(_keySchedule),
-		},
-		"Scheduled reminder without settings": {
-			Type: hook.TypeScheduledReminder,
-			Err:  errRequired(_keySchedule),
+			Raw: `{"type":"scheduled-reminder"}`,
+			Err: errRequired("schedule"),
 		},
 		"GitHub tracking": {
+			Raw:    `{"type":"github-tracking","repository":"o/r","branch":"main","paths":["a","b"]}`,
 			Type:   hook.TypeGithubTracking,
-			Raw:    `{"repository":"o/r","branch":"main","paths":["a","b"]}`,
 			Result: `{"repository":"o/r","branch":"main","paths":["a","b"]}`,
 		},
 		"GitHub tracking without a repository": {
-			Type: hook.TypeGithubTracking,
-			Raw:  `{"branch":"main","paths":["a"]}`,
-			Err:  errRequired(_keyRepository),
+			Raw: `{"type":"github-tracking","branch":"main","paths":["a"]}`,
+			Err: errRequired("repository"),
 		},
 		"GitHub tracking without a branch": {
-			Type: hook.TypeGithubTracking,
-			Raw:  `{"repository":"o/r","paths":["a"]}`,
-			Err:  errRequired(_keyBranch),
+			Raw: `{"type":"github-tracking","repository":"o/r","paths":["a"]}`,
+			Err: errRequired("branch"),
 		},
 		"GitHub tracking without paths": {
-			Type: hook.TypeGithubTracking,
-			Raw:  `{"repository":"o/r","branch":"main","paths":[]}`,
-			Err:  errRequired(_keyPaths),
+			Raw: `{"type":"github-tracking","repository":"o/r","branch":"main","paths":[]}`,
+			Err: errRequired("paths"),
 		},
 		"URL watcher": {
+			Raw:    `{"type":"url-watcher","url":"https://example.com"}`,
 			Type:   hook.TypeURLWatcher,
-			Raw:    `{"url":"https://example.com"}`,
 			Result: `{"url":"https://example.com"}`,
 		},
 		"URL watcher without a url": {
-			Type: hook.TypeURLWatcher,
-			Raw:  `{}`,
-			Err:  errRequired(_keyURL),
+			Raw: `{"type":"url-watcher"}`,
+			Err: errRequired("url"),
 		},
 		"Container image watcher": {
+			Raw:    `{"type":"container-image-watcher","image":"nginx:1"}`,
 			Type:   hook.TypeContainerImageWatcher,
-			Raw:    `{"image":"nginx:1"}`,
 			Result: `{"image":"nginx:1"}`,
 		},
 		"Container image watcher without an image": {
-			Type: hook.TypeContainerImageWatcher,
-			Raw:  `{}`,
-			Err:  errRequired(_keyImage),
+			Raw: `{"type":"container-image-watcher"}`,
+			Err: errRequired("image"),
 		},
-		// another type's field is refused naming the type it belongs to.
+		// another type's field is refused like any other unknown one.
 		"Scheduled reminder with a url": {
-			Type: hook.TypeScheduledReminder,
-			Raw:  `{"schedule":"2030-01-01T00:00:00Z","url":"https://example.com"}`,
-			Err:  fmt.Errorf("%s applies to %s only", _keyURL, hook.TypeURLWatcher),
+			Raw: `{"type":"scheduled-reminder","schedule":"2030-01-01T00:00:00Z","url":"https://example.com"}`,
+			Err: fmt.Errorf("%s is not a %s setting", "url", hook.TypeScheduledReminder),
 		},
 		"URL watcher with github paths": {
-			Type: hook.TypeURLWatcher,
-			Raw:  `{"url":"https://example.com","paths":["a"]}`,
-			Err:  fmt.Errorf("%s applies to %s only", _keyPaths, hook.TypeGithubTracking),
+			Raw: `{"type":"url-watcher","url":"https://example.com","paths":["a"]}`,
+			Err: fmt.Errorf("%s is not a %s setting", "paths", hook.TypeURLWatcher),
 		},
 		"Container image watcher with a schedule": {
-			Type: hook.TypeContainerImageWatcher,
-			Raw:  `{"image":"nginx:1","schedule":"2030-01-01T00:00:00Z"}`,
-			Err:  fmt.Errorf("%s applies to %s only", _keySchedule, hook.TypeScheduledReminder),
+			Raw: `{"type":"container-image-watcher","image":"nginx:1","schedule":"2030-01-01T00:00:00Z"}`,
+			Err: fmt.Errorf("%s is not a %s setting", "schedule", hook.TypeContainerImageWatcher),
 		},
 		"Setting of no type": {
-			Type: hook.TypeURLWatcher,
-			Raw:  `{"url":"https://example.com","colour":"red"}`,
-			Err:  fmt.Errorf("%s is not a hook setting", "colour"),
+			Raw: `{"type":"url-watcher","url":"https://example.com","colour":"red"}`,
+			Err: fmt.Errorf("%s is not a %s setting", "colour", hook.TypeURLWatcher),
 		},
 	}
 
@@ -183,14 +199,17 @@ func Test_decodeHookSettings(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := decodeHookSettings(c.Type, json.RawMessage(c.Raw))
+			tp, got, err := decodeHookSettings(json.RawMessage(c.Raw))
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {
+				assert.Empty(t, tp)
 				assert.Nil(t, got)
+
 				return
 			}
 
+			assert.Equal(t, c.Type, tp)
 			assert.JSONEq(t, c.Result, string(got))
 		})
 	}
@@ -202,52 +221,21 @@ func Test_decodeSettings(t *testing.T) {
 	var uw processor.URLWatcher
 
 	// an absent payload decodes as an empty one.
-	require.NoError(t, decodeSettings(nil, &uw))
+	require.NoError(t, decodeSettings(hook.TypeURLWatcher, nil, &uw))
 	assert.Empty(t, uw.URL)
 
-	require.NoError(t, decodeSettings(json.RawMessage(`{"url":"https://example.com"}`), &uw))
+	require.NoError(t, decodeSettings(hook.TypeURLWatcher, json.RawMessage(`{"url":"https://example.com"}`), &uw))
 	assert.Equal(t, "https://example.com", uw.URL)
 
-	err := decodeSettings(json.RawMessage(`{"image":"nginx:1"}`), &uw)
-	assert.Equal(t, fmt.Errorf("%s applies to %s only", _keyImage, hook.TypeContainerImageWatcher), err)
-
-	err = decodeSettings(json.RawMessage(`{"colour":"red"}`), &uw)
-	assert.Equal(t, fmt.Errorf("%s is not a hook setting", "colour"), err)
+	err := decodeSettings(hook.TypeURLWatcher, json.RawMessage(`{"colour":"red"}`), &uw)
+	assert.Equal(t, fmt.Errorf("%s is not a %s setting", "colour", hook.TypeURLWatcher), err)
 
 	// a value of the wrong shape is reported with its path.
-	err = decodeSettings(json.RawMessage(`{"url":1}`), &uw)
+	err = decodeSettings(hook.TypeURLWatcher, json.RawMessage(`{"url":1}`), &uw)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid settings")
 
-	require.Error(t, decodeSettings(json.RawMessage(`{`), &uw))
-}
-
-func Test_hookSettingOwner(t *testing.T) {
-	t.Parallel()
-
-	cc := map[string]struct {
-		Key    string
-		Result hook.Type
-		Owned  bool
-	}{
-		"Schedule":   {Key: _keySchedule, Result: hook.TypeScheduledReminder, Owned: true},
-		"Repository": {Key: _keyRepository, Result: hook.TypeGithubTracking, Owned: true},
-		"Branch":     {Key: _keyBranch, Result: hook.TypeGithubTracking, Owned: true},
-		"Paths":      {Key: _keyPaths, Result: hook.TypeGithubTracking, Owned: true},
-		"URL":        {Key: _keyURL, Result: hook.TypeURLWatcher, Owned: true},
-		"Image":      {Key: _keyImage, Result: hook.TypeContainerImageWatcher, Owned: true},
-		"Unknown":    {Key: "colour"},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			got, owned := hookSettingOwner(c.Key)
-			assert.Equal(t, c.Owned, owned)
-			assert.Equal(t, c.Result, got)
-		})
-	}
+	require.Error(t, decodeSettings(hook.TypeURLWatcher, json.RawMessage(`{`), &uw))
 }
 
 func Test_listHooksArgs_Validate(t *testing.T) {
@@ -256,8 +244,8 @@ func Test_listHooksArgs_Validate(t *testing.T) {
 	assertValidate(t,
 		listHooksArgs{docTarget{DocumentID: _testDocID, BranchID: _stubMainBranchID}},
 		map[string]Args{
-			_keyDocumentID: listHooksArgs{docTarget{BranchID: _stubMainBranchID}},
-			_keyBranchID:   listHooksArgs{docTarget{DocumentID: _testDocID}},
+			"document_id": listHooksArgs{docTarget{BranchID: _stubMainBranchID}},
+			"branch_id":   listHooksArgs{docTarget{DocumentID: _testDocID}},
 		},
 	)
 }
@@ -269,8 +257,8 @@ func Test_listHooks_Info(t *testing.T) {
 
 	assert.Equal(t, NameListHooks, info.Name)
 	assert.NotEmpty(t, info.Description)
-	assert.Equal(t, []string{_keyDocumentID, _keyBranchID}, info.Required)
-	assert.Contains(t, info.Properties, _keyBranchID)
+	assert.Equal(t, []string{"document_id", "branch_id"}, info.Required)
+	assert.Contains(t, info.Properties, "branch_id")
 }
 
 func Test_listHooks_Traits(t *testing.T) {
@@ -362,44 +350,41 @@ func Test_newHookRow(t *testing.T) {
 func Test_createHookArgs_Validate(t *testing.T) {
 	t.Parallel()
 
-	scheduled := json.RawMessage(`{"schedule":"` + _stubSchedule + `"}`)
+	scheduled := json.RawMessage(`{"type":"scheduled-reminder","schedule":"` + _stubSchedule + `"}`)
 
 	ok := createHookArgs{
 		DocumentID: _testDocID, BranchID: _stubMainBranchID,
-		Type:     hook.TypeScheduledReminder,
 		Settings: scheduled,
 	}
 
 	assertValidate(t, ok, map[string]Args{
-		_keyDocumentID: createHookArgs{
+		"document_id": createHookArgs{
 			docTarget: docTarget{BranchID: _stubMainBranchID},
-			Type:      hook.TypeScheduledReminder,
 			Settings:  scheduled,
 		},
-		_keyBranchID: createHookArgs{
+		"branch_id": createHookArgs{
 			docTarget: docTarget{DocumentID: _testDocID},
-			Type:      hook.TypeScheduledReminder,
 			Settings:  scheduled,
 		},
-		_keyType: createHookArgs{
+		"settings.type": createHookArgs{
 			docTarget: ok.docTarget,
-			Settings:  scheduled,
+			Settings:  json.RawMessage(`{"schedule":"` + _stubSchedule + `"}`),
 		},
-		_keySchedule: createHookArgs{
+		"schedule": createHookArgs{
 			docTarget: ok.docTarget,
-			Type:      hook.TypeScheduledReminder,
+			Settings:  json.RawMessage(`{"type":"scheduled-reminder"}`),
 		},
 	})
 
 	// an unknown type is refused before its settings are looked at.
-	err := createHookArgs{docTarget: ok.docTarget, Type: "bogus"}.Validate()
+	err := createHookArgs{docTarget: ok.docTarget, Settings: json.RawMessage(`{"type":"bogus"}`)}.Validate()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `type "bogus"`)
 
-	// another type's field is refused naming the type it belongs to.
-	err = createHookArgs{docTarget: ok.docTarget, Type: hook.TypeURLWatcher, Settings: json.RawMessage(`{"url":"https://example.com","image":"x"}`)}.Validate()
+	// another type's field is refused like any other unknown one.
+	err = createHookArgs{docTarget: ok.docTarget, Settings: json.RawMessage(`{"type":"url-watcher","url":"https://example.com","image":"x"}`)}.Validate()
 	require.Error(t, err)
-	assert.Equal(t, fmt.Errorf("%s applies to %s only", _keyImage, hook.TypeContainerImageWatcher), err)
+	assert.Equal(t, fmt.Errorf("%s is not a %s setting", "image", hook.TypeURLWatcher), err)
 }
 
 func Test_createHook_Info(t *testing.T) {
@@ -409,17 +394,15 @@ func Test_createHook_Info(t *testing.T) {
 
 	assert.Equal(t, NameCreateHook, info.Name)
 	assert.NotEmpty(t, info.Description)
-	assert.Equal(t, []string{_keyDocumentID, _keyBranchID, _keyType, _keySettings}, info.Required)
+	assert.Equal(t, []string{"document_id", "branch_id", "settings"}, info.Required)
 
-	for _, key := range []string{_keyDocumentID, _keyBranchID, _keyType, _keyBlockUID, _keySettings} {
+	for _, key := range []string{"document_id", "branch_id", "block_uid", "settings"} {
 		assert.Contains(t, info.Properties, key)
 	}
 
-	assert.Equal(t, hookSettingsSchema(), info.Properties[_keySettings])
-
-	// the type is an enum of the four hook types, so a client can refuse
-	// a bad one itself.
-	assert.Equal(t, hookTypes(), info.Properties[_keyType].(map[string]any)[_keyEnum])
+	// the type lives inside settings, where each variant pins it.
+	assert.NotContains(t, info.Properties, "type")
+	assert.Equal(t, hookSettingsSchema(), info.Properties["settings"])
 
 	// the two types that need an integration say so, since a deployment
 	// may lack it.
@@ -435,7 +418,7 @@ func Test_createHook_Traits(t *testing.T) {
 func Test_createHook_Title(t *testing.T) {
 	t.Parallel()
 
-	scheduled := `,"type":"scheduled-reminder","settings":{"schedule":"` + _stubSchedule + `"}`
+	scheduled := `,"settings":{"type":"scheduled-reminder","schedule":"` + _stubSchedule + `"}`
 
 	got, err := createHook{}.Title(testInput(testDeps(stubHookDB(), nil, nil), NameCreateHook, `{`+targetArgs(_stubMainBranchID)+scheduled+`}`))
 	require.NoError(t, err)
@@ -455,7 +438,7 @@ func Test_createHook_Title(t *testing.T) {
 func Test_createHook_Summary(t *testing.T) {
 	t.Parallel()
 
-	scheduled := `,"type":"scheduled-reminder","settings":{"schedule":"` + _stubSchedule + `"}`
+	scheduled := `,"settings":{"type":"scheduled-reminder","schedule":"` + _stubSchedule + `"}`
 
 	got, err := createHook{}.Summary(testInput(testDeps(stubHookDB(), nil, nil), NameCreateHook, `{`+targetArgs(_stubMainBranchID)+scheduled+`}`))
 	require.NoError(t, err)
@@ -482,7 +465,7 @@ func Test_createHook_Summary(t *testing.T) {
 func Test_createHook_Execute(t *testing.T) {
 	t.Parallel()
 
-	scheduled := `"type":"scheduled-reminder","settings":{"schedule":"` + _stubSchedule + `"}`
+	scheduled := `"settings":{"type":"scheduled-reminder","schedule":"` + _stubSchedule + `"}`
 
 	failing := stubHookDB()
 	failing.InsertDocumentHookFunc = func(context.Context, hook.Hook) error {
@@ -497,16 +480,16 @@ func Test_createHook_Execute(t *testing.T) {
 		Err      error
 	}{
 		"Malformed arguments": {DB: stubHookDB(), Args: `{`, Err: assert.AnError},
-		"Type is required":    {DB: stubHookDB(), Args: `{` + targetArgs(_stubBranchID) + `}`, Err: assert.AnError},
+		"Type is required":    {DB: stubHookDB(), Args: `{` + targetArgs(_stubBranchID) + `,"settings":{}}`, Err: assert.AnError},
 		"Schedule is required": {
 			DB:   stubHookDB(),
-			Args: `{` + targetArgs(_stubBranchID) + `,"type":"scheduled-reminder","settings":{}}`,
+			Args: `{` + targetArgs(_stubBranchID) + `,"settings":{"type":"scheduled-reminder"}}`,
 			Err:  assert.AnError,
 		},
 		"Another type's field is refused": {
 			DB:   stubHookDB(),
-			Args: `{` + targetArgs(_stubBranchID) + `,"type":"scheduled-reminder","settings":{"schedule":"` + _stubSchedule + `","url":"https://example.com"}}`,
-			Err:  fmt.Errorf("%s: %w", NameCreateHook, fmt.Errorf("%s applies to %s only", _keyURL, hook.TypeURLWatcher)),
+			Args: `{` + targetArgs(_stubBranchID) + `,"settings":{"type":"scheduled-reminder","schedule":"` + _stubSchedule + `","url":"https://example.com"}}`,
+			Err:  fmt.Errorf("%s: %w", NameCreateHook, fmt.Errorf("%s is not a %s setting", "url", hook.TypeScheduledReminder)),
 		},
 		"Unknown branch": {
 			DB:   stubHookDB(),
@@ -520,12 +503,12 @@ func Test_createHook_Execute(t *testing.T) {
 		},
 		"GitHub tracking without the app": {
 			DB:   stubHookDB(),
-			Args: `{` + targetArgs(_stubBranchID) + `,"type":"github-tracking","settings":{"repository":"o/r","branch":"main","paths":["a"]}}`,
+			Args: `{` + targetArgs(_stubBranchID) + `,"settings":{"type":"github-tracking","repository":"o/r","branch":"main","paths":["a"]}}`,
 			Err:  fmt.Errorf("create_hook: %w", fmt.Errorf("%s: %w", hook.TypeGithubTracking, github.ErrNotConfigured)),
 		},
 		"URL watcher without changedetection": {
 			DB:   stubHookDB(),
-			Args: `{` + targetArgs(_stubBranchID) + `,"type":"url-watcher","settings":{"url":"https://example.com"}}`,
+			Args: `{` + targetArgs(_stubBranchID) + `,"settings":{"type":"url-watcher","url":"https://example.com"}}`,
 			Err:  fmt.Errorf("create_hook: %w", fmt.Errorf("%s: %w", hook.TypeURLWatcher, webchange.ErrNotConfigured)),
 		},
 		"Error returned by db.InsertDocumentHook": {
@@ -592,16 +575,17 @@ func Test_createHook_Execute(t *testing.T) {
 func Test_updateHookArgs_Validate(t *testing.T) {
 	t.Parallel()
 
-	settings := json.RawMessage(`{}`)
+	settings := json.RawMessage(`{"type":"url-watcher","url":"https://example.com"}`)
 
-	// the settings are checked against the hook's type later, so any
-	// payload passes here.
+	// the settings are checked against the hook's own type later, so any
+	// type's complete settings pass here.
 	assertValidate(t,
 		updateHookArgs{DocumentID: _testDocID, HookID: _testHookID, Settings: settings},
 		map[string]Args{
-			_keyDocumentID: updateHookArgs{hookRefArgs: hookRefArgs{HookID: _testHookID}, Settings: settings},
-			_keyHookID:     updateHookArgs{hookRefArgs: hookRefArgs{DocumentID: _testDocID}, Settings: settings},
-			_keySettings:   updateHookArgs{hookRefArgs: hookRefArgs{DocumentID: _testDocID, HookID: _testHookID}},
+			"document_id":   updateHookArgs{hookRefArgs: hookRefArgs{HookID: _testHookID}, Settings: settings},
+			"hook_id":       updateHookArgs{hookRefArgs: hookRefArgs{DocumentID: _testDocID}, Settings: settings},
+			"settings.type": updateHookArgs{hookRefArgs: hookRefArgs{DocumentID: _testDocID, HookID: _testHookID}},
+			"url":           updateHookArgs{hookRefArgs: hookRefArgs{DocumentID: _testDocID, HookID: _testHookID}, Settings: json.RawMessage(`{"type":"url-watcher"}`)},
 		},
 	)
 }
@@ -613,14 +597,17 @@ func Test_updateHook_Info(t *testing.T) {
 
 	assert.Equal(t, NameUpdateHook, info.Name)
 	assert.NotEmpty(t, info.Description)
-	assert.Equal(t, []string{_keyDocumentID, _keyHookID, _keySettings}, info.Required)
+	assert.Equal(t, []string{"document_id", "hook_id", "settings"}, info.Required)
 
-	for _, key := range []string{_keyDocumentID, _keyHookID, _keySettings} {
+	for _, key := range []string{"document_id", "hook_id", "settings"} {
 		assert.Contains(t, info.Properties, key)
 	}
 
-	assert.Equal(t, hookSettingsSchema(), info.Properties[_keySettings])
-	assert.NotContains(t, info.Properties, _keyType)
+	assert.Equal(t, hookSettingsSchema(), info.Properties["settings"])
+	assert.NotContains(t, info.Properties, "type")
+
+	// a hook keeps its type, and the description says how to change it.
+	assert.Contains(t, info.Description, "delete the hook and create another")
 }
 
 func Test_updateHook_Traits(t *testing.T) {
@@ -632,7 +619,7 @@ func Test_updateHook_Traits(t *testing.T) {
 func Test_updateHook_Title(t *testing.T) {
 	t.Parallel()
 
-	got, err := updateHook{}.Title(testInput(testDeps(stubHookDB(), nil, nil), NameUpdateHook, `{`+hookArgs(_testHookID)+`,"settings":{}}`))
+	got, err := updateHook{}.Title(testInput(testDeps(stubHookDB(), nil, nil), NameUpdateHook, `{`+hookArgs(_testHookID)+`,"settings":{"type":"scheduled-reminder","schedule":"`+_stubSchedule+`"}}`))
 	require.NoError(t, err)
 	assert.Equal(t, "Updating a hook on Runbook", got)
 
@@ -646,7 +633,7 @@ func Test_updateHook_Title(t *testing.T) {
 func Test_updateHook_Summary(t *testing.T) {
 	t.Parallel()
 
-	got, err := updateHook{}.Summary(testInput(testDeps(stubHookDB(), nil, nil), NameUpdateHook, `{`+hookArgs(_testHookID)+`,"settings":{"schedule":"`+_stubSchedule+`"}}`))
+	got, err := updateHook{}.Summary(testInput(testDeps(stubHookDB(), nil, nil), NameUpdateHook, `{`+hookArgs(_testHookID)+`,"settings":{"type":"scheduled-reminder","schedule":"`+_stubSchedule+`"}}`))
 	require.NoError(t, err)
 	assert.Equal(t, ActionSummary{
 		Tool:         NameUpdateHook,
@@ -657,11 +644,11 @@ func Test_updateHook_Summary(t *testing.T) {
 
 	// settings of another type are refused here, so the user is not
 	// asked to approve a call that cannot run.
-	_, err = updateHook{}.Summary(testInput(testDeps(stubHookDB(), nil, nil), NameUpdateHook, `{`+hookArgs(_testHookID)+`,"settings":{"url":"https://example.com"}}`))
+	_, err = updateHook{}.Summary(testInput(testDeps(stubHookDB(), nil, nil), NameUpdateHook, `{`+hookArgs(_testHookID)+`,"settings":{"type":"url-watcher","url":"https://example.com"}}`))
 	require.Error(t, err)
-	assert.Equal(t, fmt.Errorf("%s: %w", NameUpdateHook, fmt.Errorf("%s applies to %s only", _keyURL, hook.TypeURLWatcher)), err)
+	assert.Equal(t, fmt.Errorf("%s: %w", NameUpdateHook, errHookTypeMismatch(hook.TypeScheduledReminder, hook.TypeURLWatcher)), err)
 
-	_, err = updateHook{}.Summary(testInput(testDeps(stubHookDB(), nil, nil), NameUpdateHook, `{`+hookArgs(_unknownHookID)+`,"settings":{"schedule":"`+_stubSchedule+`"}}`))
+	_, err = updateHook{}.Summary(testInput(testDeps(stubHookDB(), nil, nil), NameUpdateHook, `{`+hookArgs(_unknownHookID)+`,"settings":{"type":"scheduled-reminder","schedule":"`+_stubSchedule+`"}}`))
 	require.Error(t, err)
 
 	_, err = updateHook{}.Summary(testInput(testDeps(stubHookDB(), nil, nil), NameUpdateHook, `{`))
@@ -688,32 +675,39 @@ func Test_updateHook_Execute(t *testing.T) {
 		"Hook id is required": {DB: stubHookDB(), Args: `{"document_id":"` + _testDocID.String() + `"}`, Err: assert.AnError},
 		"Unknown hook": {
 			DB:   stubHookDB(),
-			Args: `{` + hookArgs(_unknownHookID) + `,"settings":{"schedule":"` + _stubSchedule + `"}}`,
+			Args: `{` + hookArgs(_unknownHookID) + `,"settings":{"type":"scheduled-reminder","schedule":"` + _stubSchedule + `"}}`,
 			Err:  fmt.Errorf("update_hook: %w", fmt.Errorf("hook %s on document %s: %w", _unknownHookID, _testDocID, errUnknownHook)),
 		},
 		"Settings are required": {
 			DB:   stubHookDB(),
 			Args: `{` + hookArgs(_testHookID) + `}`,
-			Err:  fmt.Errorf("%s: %w", NameUpdateHook, errRequired(_keySettings)),
+			Err:  fmt.Errorf("%s: %w", NameUpdateHook, errRequired("settings"+"."+"type")),
 		},
 		"Schedule is required for a scheduled reminder": {
 			DB:   stubHookDB(),
-			Args: `{` + hookArgs(_testHookID) + `,"settings":{}}`,
-			Err:  fmt.Errorf("update_hook: %w", errRequired(_keySchedule)),
+			Args: `{` + hookArgs(_testHookID) + `,"settings":{"type":"scheduled-reminder"}}`,
+			Err:  fmt.Errorf("%s: %w", NameUpdateHook, errRequired("schedule")),
 		},
 		"Another type's field is refused": {
 			DB:   stubHookDB(),
-			Args: `{` + hookArgs(_testHookID) + `,"settings":{"schedule":"` + _stubSchedule + `","image":"nginx:1"}}`,
-			Err:  fmt.Errorf("update_hook: %w", fmt.Errorf("%s applies to %s only", _keyImage, hook.TypeContainerImageWatcher)),
+			Args: `{` + hookArgs(_testHookID) + `,"settings":{"type":"scheduled-reminder","schedule":"` + _stubSchedule + `","image":"nginx:1"}}`,
+			Err:  fmt.Errorf("%s: %w", NameUpdateHook, fmt.Errorf("%s is not a %s setting", "image", hook.TypeScheduledReminder)),
+		},
+		// a hook keeps its type for life, so complete settings of another
+		// type are refused once the hook is known.
+		"Another type's settings are refused": {
+			DB:   stubHookDB(),
+			Args: `{` + hookArgs(_testHookID) + `,"settings":{"type":"url-watcher","url":"https://example.com"}}`,
+			Err:  fmt.Errorf("update_hook: %w", errHookTypeMismatch(hook.TypeScheduledReminder, hook.TypeURLWatcher)),
 		},
 		"Error returned by db.UpdateDocumentHook": {
 			DB:   failing,
-			Args: `{` + hookArgs(_testHookID) + `,"settings":{"schedule":"` + later.Format(time.RFC3339) + `"}}`,
+			Args: `{` + hookArgs(_testHookID) + `,"settings":{"type":"scheduled-reminder","schedule":"` + later.Format(time.RFC3339) + `"}}`,
 			Err:  assert.AnError,
 		},
 		"Updated": {
 			DB:     stubHookDB(),
-			Args:   `{` + hookArgs(_testHookID) + `,"settings":{"schedule":"` + later.Format(time.RFC3339) + `"}}`,
+			Args:   `{` + hookArgs(_testHookID) + `,"settings":{"type":"scheduled-reminder","schedule":"` + later.Format(time.RFC3339) + `"}}`,
 			Notify: 1,
 		},
 	}
@@ -759,8 +753,8 @@ func Test_hookRefArgs_Validate(t *testing.T) {
 	assertValidate(t,
 		hookRefArgs{DocumentID: _testDocID, HookID: _testHookID},
 		map[string]Args{
-			_keyDocumentID: hookRefArgs{HookID: _testHookID},
-			_keyHookID:     hookRefArgs{DocumentID: _testDocID},
+			"document_id": hookRefArgs{HookID: _testHookID},
+			"hook_id":     hookRefArgs{DocumentID: _testDocID},
 		},
 	)
 }
@@ -770,8 +764,8 @@ func Test_hookRefProps(t *testing.T) {
 
 	got := hookRefProps()
 
-	assert.Contains(t, got, _keyDocumentID)
-	assert.Contains(t, got, _keyHookID)
+	assert.Contains(t, got, "document_id")
+	assert.Contains(t, got, "hook_id")
 }
 
 func Test_resetHook_Info(t *testing.T) {
@@ -781,8 +775,8 @@ func Test_resetHook_Info(t *testing.T) {
 
 	assert.Equal(t, NameResetHook, info.Name)
 	assert.NotEmpty(t, info.Description)
-	assert.Equal(t, []string{_keyDocumentID, _keyHookID}, info.Required)
-	assert.Contains(t, info.Properties, _keyHookID)
+	assert.Equal(t, []string{"document_id", "hook_id"}, info.Required)
+	assert.Contains(t, info.Properties, "hook_id")
 }
 
 func Test_resetHook_Traits(t *testing.T) {
@@ -896,8 +890,8 @@ func Test_deleteHook_Info(t *testing.T) {
 
 	assert.Equal(t, NameDeleteHook, info.Name)
 	assert.NotEmpty(t, info.Description)
-	assert.Equal(t, []string{_keyDocumentID, _keyHookID}, info.Required)
-	assert.Contains(t, info.Properties, _keyHookID)
+	assert.Equal(t, []string{"document_id", "hook_id"}, info.Required)
+	assert.Contains(t, info.Properties, "hook_id")
 }
 
 func Test_deleteHook_Traits(t *testing.T) {
@@ -1072,16 +1066,4 @@ func Test_hookLabel(t *testing.T) {
 
 	assert.Equal(t, "Website Changes hook on Runbook on branch draft", hookLabel(hook.TypeURLWatcher, null.String{}, doc))
 	assert.Equal(t, "Website Changes hook on Runbook on branch draft, block b", hookLabel(hook.TypeURLWatcher, null.StringFrom("b"), doc))
-}
-
-func Test_hookTypes(t *testing.T) {
-	t.Parallel()
-
-	got := hookTypes()
-	require.Len(t, got, 4)
-
-	// every published type is one the domain accepts.
-	for _, v := range got {
-		require.NoError(t, hook.Type(v).Validate())
-	}
 }

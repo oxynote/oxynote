@@ -170,7 +170,7 @@ func Test_readBlock_Info(t *testing.T) {
 	info := readBlock{}.Info()
 
 	assert.Equal(t, NameReadBlock, info.Name)
-	assert.Equal(t, []string{_keyDocumentID, _keyBranchID, _keyBlockUID}, info.Required)
+	assert.Equal(t, []string{"document_id", "branch_id", "block_uid"}, info.Required)
 }
 
 func Test_readBlock_Traits(t *testing.T) {
@@ -286,12 +286,12 @@ func Test_insertBlock_Info(t *testing.T) {
 	info := insertBlock{}.Info()
 
 	assert.Equal(t, NameInsertBlock, info.Name)
-	assert.Equal(t, []string{_keyDocumentID, _keyBranchID, "position", _keyBlock}, info.Required)
+	assert.Equal(t, []string{"document_id", "branch_id", "position", "block"}, info.Required)
 
 	// the four positions are what the model is shown.
 	pos, ok := info.Properties["position"].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, []string{"before", "after", "start", "end"}, pos[_keyEnum])
+	assert.Equal(t, []string{"before", "after", "start", "end"}, pos["enum"])
 }
 
 func Test_insertBlock_Traits(t *testing.T) {
@@ -462,7 +462,7 @@ func Test_replaceBlock_Info(t *testing.T) {
 	info := replaceBlock{}.Info()
 
 	assert.Equal(t, NameReplaceBlock, info.Name)
-	assert.Equal(t, []string{_keyDocumentID, _keyBranchID, _keyBlockUID, _keyBlock}, info.Required)
+	assert.Equal(t, []string{"document_id", "branch_id", "block_uid", "block"}, info.Required)
 }
 
 func Test_replaceBlock_Traits(t *testing.T) {
@@ -567,7 +567,7 @@ func Test_updateBlockText_Info(t *testing.T) {
 	info := updateBlockText{}.Info()
 
 	assert.Equal(t, NameUpdateBlockText, info.Name)
-	assert.Equal(t, []string{_keyDocumentID, _keyBranchID, _keyBlockUID, "text"}, info.Required)
+	assert.Equal(t, []string{"document_id", "branch_id", "block_uid", "text"}, info.Required)
 }
 
 func Test_updateBlockText_Traits(t *testing.T) {
@@ -676,7 +676,7 @@ func Test_updateBlockAttrs_Info(t *testing.T) {
 	info := updateBlockAttrs{}.Info()
 
 	assert.Equal(t, NameUpdateBlockAttrs, info.Name)
-	assert.Equal(t, []string{_keyDocumentID, _keyBranchID, _keyBlockUID, "attrs"}, info.Required)
+	assert.Equal(t, []string{"document_id", "branch_id", "block_uid", "attrs"}, info.Required)
 }
 
 func Test_updateBlockAttrs_Traits(t *testing.T) {
@@ -800,7 +800,7 @@ func Test_deleteBlock_Info(t *testing.T) {
 
 	assert.Equal(t, NameDeleteBlock, info.Name)
 	assert.Contains(t, info.Description, "cannot be restored")
-	assert.Equal(t, []string{_keyDocumentID, _keyBranchID, _keyBlockUID}, info.Required)
+	assert.Equal(t, []string{"document_id", "branch_id", "block_uid"}, info.Required)
 }
 
 func Test_deleteBlock_Traits(t *testing.T) {
@@ -909,7 +909,7 @@ func Test_moveBlock_Info(t *testing.T) {
 
 	assert.Equal(t, NameMoveBlock, info.Name)
 	assert.Contains(t, info.Description, "keeps its uid")
-	assert.Equal(t, []string{_keyDocumentID, _keyBranchID, _keyBlockUID, "position", "reference_block_uid"}, info.Required)
+	assert.Equal(t, []string{"document_id", "branch_id", "block_uid", "position", "reference_block_uid"}, info.Required)
 }
 
 func Test_moveBlock_Traits(t *testing.T) {

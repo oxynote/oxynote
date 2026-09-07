@@ -3,7 +3,6 @@ package tools
 import (
 	"errors"
 	"fmt"
-	"maps"
 	"time"
 
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
@@ -16,28 +15,6 @@ import (
 // model names neither end of the range. An hour is what the metric
 // block's own default preset covers.
 const _defaultQueryWindow = time.Hour
-
-// Shared property names and descriptions for the data-source tools.
-const (
-	// _keyDataSourceID is the shared data-source-id property name.
-	_keyDataSourceID = "data_source_id"
-
-	// _descDataSourceID describes the data-source-id property.
-	_descDataSourceID = "The data source id, from list_data_sources."
-
-	// _descFrom describes the range-start property.
-	_descFrom = "Optional. Range start as an RFC3339 timestamp. Defaults to an hour before 'to'."
-
-	// _descTo describes the range-end property.
-	_descTo = "Optional. Range end as an RFC3339 timestamp. Defaults to now."
-
-	// _descMatchers describes the Prometheus series-selector property.
-	_descMatchers = "PromQL series selectors, e.g. [\"up\", \"{job=\\\"api\\\"}\"]."
-
-	// _descChartType describes the optional chart-type property shared
-	// by the two query tools.
-	_descChartType = "Optional. One of line_chart, bar_chart, gauge_chart. When set, the result describes what the metric block would draw (render status, series count, and each series' labels, point count and endpoints) instead of the raw data. Use it to check a query before putting it in a metric block; omit it when you need the values themselves."
-)
 
 // errUnknownDataSource is what a lookup reports for an id that names
 // nothing in the session's organisation. Another organisation's id
@@ -80,16 +57,6 @@ func (a timeRangeArgs) resolve() (processor.TimeRange, error) {
 	}
 
 	return out, nil
-}
-
-// dataSourceProps builds a data-source tool's schema from the shared
-// data-source-id property plus whatever else the tool takes.
-func dataSourceProps(extra map[string]any) map[string]any {
-	out := map[string]any{_keyDataSourceID: stringProp(_descDataSourceID)}
-
-	maps.Copy(out, extra)
-
-	return out
 }
 
 // dataSourceInfo is one row of list_data_sources. It is deliberately
@@ -176,7 +143,7 @@ type getPrometheusMetadataArgs struct {
 // Validate checks the arguments are complete.
 func (a getPrometheusMetadataArgs) Validate() error {
 	if a.DataSourceID.IsNil() {
-		return errRequired(_keyDataSourceID)
+		return errRequired("data_source_id")
 	}
 
 	return nil
@@ -193,8 +160,8 @@ func (getPrometheusMetadata) Info() Info {
 	return Info{
 		Name:        NameGetPrometheusMetadata,
 		Description: "List the metrics a Prometheus data source exposes, with each metric's type, help text and unit. Use it to find the metric names to write a PromQL query against instead of guessing them.",
-		Properties:  dataSourceProps(nil),
-		Required:    []string{_keyDataSourceID},
+		Properties:  map[string]any{"data_source_id": map[string]any{"type": "string", "description": "The data source id, from list_data_sources."}},
+		Required:    []string{"data_source_id"},
 	}
 }
 
@@ -260,7 +227,7 @@ type prometheusLabelNamesArgs struct {
 // Validate checks the arguments are complete.
 func (a prometheusLabelNamesArgs) Validate() error {
 	if a.DataSourceID.IsNil() {
-		return errRequired(_keyDataSourceID)
+		return errRequired("data_source_id")
 	}
 
 	return nil
@@ -277,18 +244,19 @@ func (listPrometheusLabelNames) Info() Info {
 	return Info{
 		Name:        NameListPrometheusLabelNames,
 		Description: "List the label names present in a Prometheus data source, optionally only those on the series the matchers select. Pair it with list_prometheus_label_values to build a filtered PromQL query.",
-		Properties: dataSourceProps(map[string]any{
-			_keyMatchers: map[string]any{
-				_keyType:        _typeArray,
-				_keyDescription: "Optional. " + _descMatchers,
-				_keyItems: map[string]any{
-					_keyType: _typeString,
+		Properties: map[string]any{
+			"data_source_id": map[string]any{"type": "string", "description": "The data source id, from list_data_sources."},
+			"matchers": map[string]any{
+				"type":        "array",
+				"description": "Optional. PromQL series selectors, e.g. [\"up\", \"{job=\\\"api\\\"}\"].",
+				"items": map[string]any{
+					"type": "string",
 				},
 			},
-			_keyFrom: stringProp(_descFrom),
-			_keyTo:   stringProp(_descTo),
-		}),
-		Required: []string{_keyDataSourceID},
+			"from": map[string]any{"type": "string", "description": "Optional. Range start as an RFC3339 timestamp. Defaults to an hour before 'to'."},
+			"to":   map[string]any{"type": "string", "description": "Optional. Range end as an RFC3339 timestamp. Defaults to now."},
+		},
+		Required: []string{"data_source_id"},
 	}
 }
 
@@ -362,11 +330,11 @@ type prometheusLabelValuesArgs struct {
 // Validate checks the arguments are complete.
 func (a prometheusLabelValuesArgs) Validate() error {
 	if a.DataSourceID.IsNil() {
-		return errRequired(_keyDataSourceID)
+		return errRequired("data_source_id")
 	}
 
 	if a.Label == "" {
-		return errRequired(_keyLabel)
+		return errRequired("label")
 	}
 
 	return nil
@@ -383,19 +351,20 @@ func (listPrometheusLabelValues) Info() Info {
 	return Info{
 		Name:        NameListPrometheusLabelValues,
 		Description: "List the values a label takes in a Prometheus data source, optionally only on the series the matchers select. Use it to discover the concrete label values a query should filter on.",
-		Properties: dataSourceProps(map[string]any{
-			_keyLabel: stringProp("The label whose values to list, e.g. \"job\"."),
-			_keyMatchers: map[string]any{
-				_keyType:        _typeArray,
-				_keyDescription: "Optional. " + _descMatchers,
-				_keyItems: map[string]any{
-					_keyType: _typeString,
+		Properties: map[string]any{
+			"data_source_id": map[string]any{"type": "string", "description": "The data source id, from list_data_sources."},
+			"label":          map[string]any{"type": "string", "description": "The label whose values to list, e.g. \"job\"."},
+			"matchers": map[string]any{
+				"type":        "array",
+				"description": "Optional. PromQL series selectors, e.g. [\"up\", \"{job=\\\"api\\\"}\"].",
+				"items": map[string]any{
+					"type": "string",
 				},
 			},
-			_keyFrom: stringProp(_descFrom),
-			_keyTo:   stringProp(_descTo),
-		}),
-		Required: []string{_keyDataSourceID, _keyLabel},
+			"from": map[string]any{"type": "string", "description": "Optional. Range start as an RFC3339 timestamp. Defaults to an hour before 'to'."},
+			"to":   map[string]any{"type": "string", "description": "Optional. Range end as an RFC3339 timestamp. Defaults to now."},
+		},
+		Required: []string{"data_source_id", "label"},
 	}
 }
 
@@ -465,11 +434,11 @@ type prometheusSeriesArgs struct {
 // Validate checks the arguments are complete.
 func (a prometheusSeriesArgs) Validate() error {
 	if a.DataSourceID.IsNil() {
-		return errRequired(_keyDataSourceID)
+		return errRequired("data_source_id")
 	}
 
 	if len(a.Matchers) == 0 {
-		return errRequired(_keyMatchers)
+		return errRequired("matchers")
 	}
 
 	return nil
@@ -485,18 +454,19 @@ func (listPrometheusSeries) Info() Info {
 	return Info{
 		Name:        NameListPrometheusSeries,
 		Description: "List the series matching a set of selectors in a Prometheus data source, each as its full label set. Use it to see which label combinations a metric actually has before querying it.",
-		Properties: dataSourceProps(map[string]any{
-			_keyMatchers: map[string]any{
-				_keyType:        _typeArray,
-				_keyDescription: _descMatchers,
-				_keyItems: map[string]any{
-					_keyType: _typeString,
+		Properties: map[string]any{
+			"data_source_id": map[string]any{"type": "string", "description": "The data source id, from list_data_sources."},
+			"matchers": map[string]any{
+				"type":        "array",
+				"description": "PromQL series selectors, e.g. [\"up\", \"{job=\\\"api\\\"}\"].",
+				"items": map[string]any{
+					"type": "string",
 				},
 			},
-			_keyFrom: stringProp(_descFrom),
-			_keyTo:   stringProp(_descTo),
-		}),
-		Required: []string{_keyDataSourceID, _keyMatchers},
+			"from": map[string]any{"type": "string", "description": "Optional. Range start as an RFC3339 timestamp. Defaults to an hour before 'to'."},
+			"to":   map[string]any{"type": "string", "description": "Optional. Range end as an RFC3339 timestamp. Defaults to now."},
+		},
+		Required: []string{"data_source_id", "matchers"},
 	}
 }
 
@@ -570,11 +540,11 @@ type queryPrometheusArgs struct {
 // Validate checks the arguments are complete.
 func (a queryPrometheusArgs) Validate() error {
 	if a.DataSourceID.IsNil() {
-		return errRequired(_keyDataSourceID)
+		return errRequired("data_source_id")
 	}
 
 	if a.Query == "" {
-		return errRequired(_keyQuery)
+		return errRequired("query")
 	}
 
 	return nil
@@ -590,13 +560,14 @@ func (queryPrometheus) Info() Info {
 	return Info{
 		Name:        NameQueryPrometheus,
 		Description: "Run a PromQL range query against a Prometheus data source over the given window. Returns the raw result by default; with chart_type set it instead describes what a metric block would render, which is how to check a query before writing it into a block.",
-		Properties: dataSourceProps(map[string]any{
-			_keyQuery:     stringProp("The PromQL expression to run."),
-			_keyChartType: stringProp(_descChartType),
-			_keyFrom:      stringProp(_descFrom),
-			_keyTo:        stringProp(_descTo),
-		}),
-		Required: []string{_keyDataSourceID, _keyQuery},
+		Properties: map[string]any{
+			"data_source_id": map[string]any{"type": "string", "description": "The data source id, from list_data_sources."},
+			"query":          map[string]any{"type": "string", "description": "The PromQL expression to run."},
+			"chart_type":     map[string]any{"type": "string", "description": "Optional. One of line_chart, bar_chart, gauge_chart. When set, the result describes what the metric block would draw (render status, series count, and each series' labels, point count and endpoints) instead of the raw data. Use it to check a query before putting it in a metric block; omit it when you need the values themselves."},
+			"from":           map[string]any{"type": "string", "description": "Optional. Range start as an RFC3339 timestamp. Defaults to an hour before 'to'."},
+			"to":             map[string]any{"type": "string", "description": "Optional. Range end as an RFC3339 timestamp. Defaults to now."},
+		},
+		Required: []string{"data_source_id", "query"},
 	}
 }
 
@@ -740,7 +711,7 @@ type getSQLMetadataArgs struct {
 // Validate checks the arguments are complete.
 func (a getSQLMetadataArgs) Validate() error {
 	if a.DataSourceID.IsNil() {
-		return errRequired(_keyDataSourceID)
+		return errRequired("data_source_id")
 	}
 
 	return nil
@@ -756,8 +727,8 @@ func (getSQLMetadata) Info() Info {
 	return Info{
 		Name:        NameGetSQLMetadata,
 		Description: "List the tables and their columns in a PostgreSQL, MariaDB or MySQL data source, plus the default schema. Read it before writing a query so the table and column names are the real ones.",
-		Properties:  dataSourceProps(nil),
-		Required:    []string{_keyDataSourceID},
+		Properties:  map[string]any{"data_source_id": map[string]any{"type": "string", "description": "The data source id, from list_data_sources."}},
+		Required:    []string{"data_source_id"},
 	}
 }
 
@@ -822,11 +793,11 @@ type sqlQueryLabelsArgs struct {
 // Validate checks the arguments are complete.
 func (a sqlQueryLabelsArgs) Validate() error {
 	if a.DataSourceID.IsNil() {
-		return errRequired(_keyDataSourceID)
+		return errRequired("data_source_id")
 	}
 
 	if a.Query == "" {
-		return errRequired(_keyQuery)
+		return errRequired("query")
 	}
 
 	return nil
@@ -842,12 +813,13 @@ func (getSQLQueryLabels) Info() Info {
 	return Info{
 		Name:        NameGetSQLQueryLabels,
 		Description: "Run a SQL query limited to one row and return its string columns with an example value each, which are the columns a chart would treat as series labels. Use it to check what a query returns before charting it; it is cheaper than query_sql.",
-		Properties: dataSourceProps(map[string]any{
-			_keyQuery: stringProp("The SQL query to probe. $__ macros are expanded as they are for a metric block."),
-			_keyFrom:  stringProp(_descFrom),
-			_keyTo:    stringProp(_descTo),
-		}),
-		Required: []string{_keyDataSourceID, _keyQuery},
+		Properties: map[string]any{
+			"data_source_id": map[string]any{"type": "string", "description": "The data source id, from list_data_sources."},
+			"query":          map[string]any{"type": "string", "description": "The SQL query to probe. $__ macros are expanded as they are for a metric block."},
+			"from":           map[string]any{"type": "string", "description": "Optional. Range start as an RFC3339 timestamp. Defaults to an hour before 'to'."},
+			"to":             map[string]any{"type": "string", "description": "Optional. Range end as an RFC3339 timestamp. Defaults to now."},
+		},
+		Required: []string{"data_source_id", "query"},
 	}
 }
 
@@ -923,11 +895,11 @@ type querySQLArgs struct {
 // Validate checks the arguments are complete.
 func (a querySQLArgs) Validate() error {
 	if a.DataSourceID.IsNil() {
-		return errRequired(_keyDataSourceID)
+		return errRequired("data_source_id")
 	}
 
 	if a.Query == "" {
-		return errRequired(_keyQuery)
+		return errRequired("query")
 	}
 
 	return nil
@@ -943,13 +915,14 @@ func (querySQL) Info() Info {
 	return Info{
 		Name:        NameQuerySQL,
 		Description: "Run a read-only query against a PostgreSQL, MariaDB or MySQL data source. Returns columns and rows by default; with chart_type set it instead describes what a metric block would render, which is how to check a query before writing it into a block. $__ macros ($__timeFilter, $__timeGroupAlias and the rest) are expanded against the window.",
-		Properties: dataSourceProps(map[string]any{
-			_keyQuery:     stringProp("The SQL query to run. For a chart, select a time column aliased \"time\" plus one or more numeric columns."),
-			_keyChartType: stringProp(_descChartType),
-			_keyFrom:      stringProp(_descFrom),
-			_keyTo:        stringProp(_descTo),
-		}),
-		Required: []string{_keyDataSourceID, _keyQuery},
+		Properties: map[string]any{
+			"data_source_id": map[string]any{"type": "string", "description": "The data source id, from list_data_sources."},
+			"query":          map[string]any{"type": "string", "description": "The SQL query to run. For a chart, select a time column aliased \"time\" plus one or more numeric columns."},
+			"chart_type":     map[string]any{"type": "string", "description": "Optional. One of line_chart, bar_chart, gauge_chart. When set, the result describes what the metric block would draw (render status, series count, and each series' labels, point count and endpoints) instead of the raw data. Use it to check a query before putting it in a metric block; omit it when you need the values themselves."},
+			"from":           map[string]any{"type": "string", "description": "Optional. Range start as an RFC3339 timestamp. Defaults to an hour before 'to'."},
+			"to":             map[string]any{"type": "string", "description": "Optional. Range end as an RFC3339 timestamp. Defaults to now."},
+		},
+		Required: []string{"data_source_id", "query"},
 	}
 }
 

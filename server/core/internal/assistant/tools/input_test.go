@@ -150,24 +150,21 @@ func requiredArgs(t *testing.T, name Name) string {
 
 	for _, key := range infoOf(name).Required {
 		switch key {
-		case _keyDocumentID, _keyDataSourceID:
+		case "document_id", "data_source_id":
 			vals[key] = _testDocID.String()
-		case _keyTagID:
+		case "tag_id":
 			vals[key] = _testTagID.String()
-		case _keyHookID:
+		case "hook_id":
 			vals[key] = _testHookID.String()
-		case _keyType:
-			vals[key] = string(hook.TypeScheduledReminder)
-		case _keySettings:
-			// the stubbed hook is a scheduled reminder, and so is the
-			// type above.
-			vals[key] = map[string]any{_keySchedule: _stubSchedule}
-		case _keyColor:
+		case "settings":
+			// the stubbed hook is a scheduled reminder.
+			vals[key] = map[string]any{"type": string(hook.TypeScheduledReminder), "schedule": _stubSchedule}
+		case "color":
 			vals[key] = _stubTagColor
-		case _keySortIndex:
+		case "sort_index":
 			vals[key] = 0
-		case _keyBlock:
-			vals[key] = map[string]any{_keyType: string(block.BlockParagraph)}
+		case "block":
+			vals[key] = map[string]any{"type": string(block.BlockParagraph)}
 		case "position":
 			// a position beside a block needs the reference the tool
 			// requires; one that requires no reference takes an end.
@@ -175,13 +172,13 @@ func requiredArgs(t *testing.T, name Name) string {
 			if slices.Contains(infoOf(name).Required, "reference_block_uid") {
 				vals[key] = string(positionAfter)
 			}
-		case _keyBranchID:
+		case "branch_id":
 			vals[key] = _stubMainBranchID.String()
 		case "reference_block_uid":
 			// distinct from the "x" other uid keys take, so a payload
 			// naming both a block and a reference is not a self-move.
 			vals[key] = "r"
-		case _keyMatchers:
+		case "matchers":
 			vals[key] = []string{"up"}
 		case "attrs":
 			vals[key] = map[string]any{"level": 2}
@@ -194,7 +191,7 @@ func requiredArgs(t *testing.T, name Name) string {
 	// target, but refuse a call that changes nothing; a name is the
 	// smallest change.
 	if name == NameUpdateDocument || name == NameUpdateTag {
-		vals[_keyName] = "x"
+		vals["name"] = "x"
 	}
 
 	raw, err := json.Marshal(vals)

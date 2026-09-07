@@ -166,9 +166,9 @@ func Test_createTag_Info(t *testing.T) {
 
 	assert.Equal(t, NameCreateTag, info.Name)
 	assert.NotEmpty(t, info.Description)
-	assert.Equal(t, []string{_keyName, _keyColor}, info.Required)
-	assert.Contains(t, info.Properties, _keyName)
-	assert.Contains(t, info.Properties, _keyColor)
+	assert.Equal(t, []string{"name", "color"}, info.Required)
+	assert.Contains(t, info.Properties, "name")
+	assert.Contains(t, info.Properties, "color")
 }
 
 func Test_createTag_Traits(t *testing.T) {
@@ -290,9 +290,9 @@ func Test_updateTag_Info(t *testing.T) {
 
 	assert.Equal(t, NameUpdateTag, info.Name)
 	assert.NotEmpty(t, info.Description)
-	assert.Equal(t, []string{_keyTagID}, info.Required)
-	assert.Contains(t, info.Properties, _keyName)
-	assert.Contains(t, info.Properties, _keyColor)
+	assert.Equal(t, []string{"tag_id"}, info.Required)
+	assert.Contains(t, info.Properties, "name")
+	assert.Contains(t, info.Properties, "color")
 }
 
 func Test_updateTag_Traits(t *testing.T) {
@@ -451,7 +451,7 @@ func Test_deleteTag_Info(t *testing.T) {
 
 	assert.Equal(t, NameDeleteTag, info.Name)
 	assert.Contains(t, info.Description, "cannot be restored")
-	assert.Equal(t, []string{_keyTagID}, info.Required)
+	assert.Equal(t, []string{"tag_id"}, info.Required)
 }
 
 func Test_deleteTag_Traits(t *testing.T) {
@@ -602,9 +602,9 @@ func Test_branchTagProps(t *testing.T) {
 
 	props := branchTagProps()
 
-	assert.Contains(t, props, _keyDocumentID)
-	assert.Contains(t, props, _keyBranchID)
-	assert.Contains(t, props, _keyTagID)
+	assert.Contains(t, props, "document_id")
+	assert.Contains(t, props, "branch_id")
+	assert.Contains(t, props, "tag_id")
 }
 
 func Test_assignTag_Info(t *testing.T) {
@@ -614,8 +614,8 @@ func Test_assignTag_Info(t *testing.T) {
 
 	assert.Equal(t, NameAssignTag, info.Name)
 	assert.NotEmpty(t, info.Description)
-	assert.Equal(t, []string{_keyDocumentID, _keyBranchID, _keyTagID}, info.Required)
-	assert.Contains(t, info.Properties, _keyBranchID)
+	assert.Equal(t, []string{"document_id", "branch_id", "tag_id"}, info.Required)
+	assert.Contains(t, info.Properties, "branch_id")
 }
 
 func Test_assignTag_Traits(t *testing.T) {
@@ -791,8 +791,8 @@ func Test_unassignTag_Info(t *testing.T) {
 
 	assert.Equal(t, NameUnassignTag, info.Name)
 	assert.NotEmpty(t, info.Description)
-	assert.Equal(t, []string{_keyDocumentID, _keyBranchID, _keyTagID}, info.Required)
-	assert.Contains(t, info.Properties, _keyBranchID)
+	assert.Equal(t, []string{"document_id", "branch_id", "tag_id"}, info.Required)
+	assert.Contains(t, info.Properties, "branch_id")
 }
 
 func Test_unassignTag_Traits(t *testing.T) {
@@ -985,8 +985,8 @@ func Test_moveTag_Info(t *testing.T) {
 
 	assert.Equal(t, NameMoveTag, info.Name)
 	assert.NotEmpty(t, info.Description)
-	assert.Equal(t, []string{_keyTagID, _keySortIndex}, info.Required)
-	assert.Contains(t, info.Properties, _keySortIndex)
+	assert.Equal(t, []string{"tag_id", "sort_index"}, info.Required)
+	assert.Contains(t, info.Properties, "sort_index")
 }
 
 func Test_moveTag_Traits(t *testing.T) {

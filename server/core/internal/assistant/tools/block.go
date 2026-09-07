@@ -31,11 +31,11 @@ type docTarget struct {
 // validate checks the target names a document and a branch.
 func (t docTarget) validate() error {
 	if t.DocumentID.IsNil() {
-		return errRequired(_keyDocumentID)
+		return errRequired("document_id")
 	}
 
 	if t.BranchID.IsNil() {
-		return errRequired(_keyBranchID)
+		return errRequired("branch_id")
 	}
 
 	return nil
@@ -56,7 +56,7 @@ func (a readBlockArgs) Validate() error {
 	}
 
 	if a.BlockUID == "" {
-		return errRequired(_keyBlockUID)
+		return errRequired("block_uid")
 	}
 
 	return nil
@@ -74,14 +74,14 @@ func (readBlock) Info() Info {
 		Name:        NameReadBlock,
 		Description: "Return the full canonical content of one block by uid, including any nested children. Use it only when get_document's rows are not enough: to edit a split_doc, a nested list or a split_doc_param_list, whose inner structure has to be written back in full. Fails when the uid is not in the document.",
 		Properties: map[string]any{
-			_keyDocumentID: stringProp(_descDocumentID),
-			_keyBranchID:   stringProp(_descBranchID),
-			_keyBlockUID:   stringProp("The block uid to fetch."),
+			"document_id": map[string]any{"type": "string", "description": "The document id."},
+			"branch_id":   map[string]any{"type": "string", "description": "The id of the branch to read or write: a document's default_branch_id from list_documents, a search hit's branch_id, or any id from the branches get_document lists. A protected branch can be read but refuses every write."},
+			"block_uid":   map[string]any{"type": "string", "description": "The block uid to fetch."},
 		},
 		Required: []string{
-			_keyDocumentID,
-			_keyBranchID,
-			_keyBlockUID,
+			"document_id",
+			"branch_id",
+			"block_uid",
 		},
 	}
 }
@@ -138,26 +138,26 @@ func (insertBlock) Info() Info {
 		Name:        NameInsertBlock,
 		Description: "Insert one canonical block into a document. position start or end puts it at the document's start or end; before or after puts it beside the block reference_block_uid names, which stays in place. The block has to be legal where it lands: the document root takes every type except titled_code, metric and split_doc_param_list, and a reference inside a split_doc or metric_grid takes only what that container holds. Returns the summary rows of the new block and everything nested in it, uids included, with depth counted from the block itself.",
 		Properties: map[string]any{
-			_keyDocumentID:        stringProp(_descTargetDocumentID),
-			_keyBranchID:          stringProp(_descBranchID),
-			"reference_block_uid": stringProp("The uid of the block to insert beside. Required with before and after; leave it out with start and end."),
+			"document_id":         map[string]any{"type": "string", "description": "The target document id."},
+			"branch_id":           map[string]any{"type": "string", "description": "The id of the branch to read or write: a document's default_branch_id from list_documents, a search hit's branch_id, or any id from the branches get_document lists. A protected branch can be read but refuses every write."},
+			"reference_block_uid": map[string]any{"type": "string", "description": "The uid of the block to insert beside. Required with before and after; leave it out with start and end."},
 			"position": map[string]any{
-				_keyType: _typeString,
-				_keyEnum: []string{
+				"type": "string",
+				"enum": []string{
 					string(positionBefore),
 					string(positionAfter),
 					string(positionStart),
 					string(positionEnd),
 				},
-				_keyDescription: "Where the block lands: before or after the reference block, or at the start or end of the document.",
+				"description": "Where the block lands: before or after the reference block, or at the start or end of the document.",
 			},
-			_keyBlock: _blockSchema,
+			"block": _blockSchema,
 		},
 		Required: []string{
-			_keyDocumentID,
-			_keyBranchID,
+			"document_id",
+			"branch_id",
 			"position",
-			_keyBlock,
+			"block",
 		},
 	}
 }
@@ -235,7 +235,7 @@ func (a insertBlockArgs) Validate() error {
 	}
 
 	if a.Block.Type == "" {
-		return errRequired(_keyBlock)
+		return errRequired("block")
 	}
 
 	return nil
@@ -371,11 +371,11 @@ func (a replaceBlockArgs) Validate() error {
 	}
 
 	if a.BlockUID == "" {
-		return errRequired(_keyBlockUID)
+		return errRequired("block_uid")
 	}
 
 	if a.Block.Type == "" {
-		return errRequired(_keyBlock)
+		return errRequired("block")
 	}
 
 	return nil
@@ -390,16 +390,16 @@ func (replaceBlock) Info() Info {
 		Name:        NameReplaceBlock,
 		Description: "Replace a block by uid with a new block in the same position. The old block's uid, content and children are all gone unless the new block carries them, so use it to change a block's type or its whole structure. For a wording change use update_block_text, and for an attribute change update_block_attrs; both keep the uid, which comments, hooks and files hang off. Returns the summary rows of the new block and everything nested in it, uids included, with depth counted from the block itself.",
 		Properties: map[string]any{
-			_keyDocumentID: stringProp(_descTargetDocumentID),
-			_keyBranchID:   stringProp(_descBranchID),
-			_keyBlockUID:   stringProp("The uid of the block being replaced."),
-			_keyBlock:      _blockSchema,
+			"document_id": map[string]any{"type": "string", "description": "The target document id."},
+			"branch_id":   map[string]any{"type": "string", "description": "The id of the branch to read or write: a document's default_branch_id from list_documents, a search hit's branch_id, or any id from the branches get_document lists. A protected branch can be read but refuses every write."},
+			"block_uid":   map[string]any{"type": "string", "description": "The uid of the block being replaced."},
+			"block":       _blockSchema,
 		},
 		Required: []string{
-			_keyDocumentID,
-			_keyBranchID,
-			_keyBlockUID,
-			_keyBlock,
+			"document_id",
+			"branch_id",
+			"block_uid",
+			"block",
 		},
 	}
 }
@@ -495,7 +495,7 @@ func (a updateBlockTextArgs) Validate() error {
 	}
 
 	if a.BlockUID == "" {
-		return errRequired(_keyBlockUID)
+		return errRequired("block_uid")
 	}
 
 	if a.Text == "" {
@@ -514,15 +514,15 @@ func (updateBlockText) Info() Info {
 		Name:        NameUpdateBlockText,
 		Description: "Replace the inline text of one text-bearing block: paragraph, heading, blockquote, code, titled_code, mermaid, or a callout written with text. Type, attrs and uid are kept, so this is the tool for wording changes. Text follows the canonical markdown subset (**bold**, *italic*, _underline_, ~~strike~~, backtick code, [label](url)), and is raw in code, titled_code and mermaid. One block is one paragraph; to add a paragraph, insert a block instead. Returns the block's summary row with the new text.",
 		Properties: map[string]any{
-			_keyDocumentID: stringProp(_descTargetDocumentID),
-			_keyBranchID:   stringProp(_descBranchID),
-			_keyBlockUID:   stringProp("The uid of the block whose text should be replaced."),
-			"text":         stringProp("New inline text in canonical markdown."),
+			"document_id": map[string]any{"type": "string", "description": "The target document id."},
+			"branch_id":   map[string]any{"type": "string", "description": "The id of the branch to read or write: a document's default_branch_id from list_documents, a search hit's branch_id, or any id from the branches get_document lists. A protected branch can be read but refuses every write."},
+			"block_uid":   map[string]any{"type": "string", "description": "The uid of the block whose text should be replaced."},
+			"text":        map[string]any{"type": "string", "description": "New inline text in canonical markdown."},
 		},
 		Required: []string{
-			_keyDocumentID,
-			_keyBranchID,
-			_keyBlockUID,
+			"document_id",
+			"branch_id",
+			"block_uid",
 			"text",
 		},
 	}
@@ -624,7 +624,7 @@ func (a updateBlockAttrsArgs) Validate() error {
 	}
 
 	if a.BlockUID == "" {
-		return errRequired(_keyBlockUID)
+		return errRequired("block_uid")
 	}
 
 	if len(a.Attrs) == 0 {
@@ -643,18 +643,18 @@ func (updateBlockAttrs) Info() Info {
 		Name:        NameUpdateBlockAttrs,
 		Description: "Set or override named attributes on an existing block, such as a heading's level or a callout's icon. Attributes not mentioned are kept and uid cannot change. Values are validated for the block's type, so a level outside 1 to 3 or a metric width other than compact, standard or wide is rejected. Use replace_block when the type itself has to change. Returns the summary rows of the block and everything nested in it, attrs as they now stand.",
 		Properties: map[string]any{
-			_keyDocumentID: stringProp(_descTargetDocumentID),
-			_keyBranchID:   stringProp(_descBranchID),
-			_keyBlockUID:   stringProp("The uid of the block whose attrs should be updated."),
+			"document_id": map[string]any{"type": "string", "description": "The target document id."},
+			"branch_id":   map[string]any{"type": "string", "description": "The id of the branch to read or write: a document's default_branch_id from list_documents, a search hit's branch_id, or any id from the branches get_document lists. A protected branch can be read but refuses every write."},
+			"block_uid":   map[string]any{"type": "string", "description": "The uid of the block whose attrs should be updated."},
 			"attrs": map[string]any{
-				_keyType:        _typeObject,
-				_keyDescription: "Attribute keys and values to set (e.g. {\"level\": 2}, {\"icon\": \"lucide:warning\"}).",
+				"type":        "object",
+				"description": "Attribute keys and values to set (e.g. {\"level\": 2}, {\"icon\": \"lucide:warning\"}).",
 			},
 		},
 		Required: []string{
-			_keyDocumentID,
-			_keyBranchID,
-			_keyBlockUID,
+			"document_id",
+			"branch_id",
+			"block_uid",
 			"attrs",
 		},
 	}
@@ -764,7 +764,7 @@ func (a deleteBlockArgs) Validate() error {
 	}
 
 	if a.BlockUID == "" {
-		return errRequired(_keyBlockUID)
+		return errRequired("block_uid")
 	}
 
 	return nil
@@ -779,14 +779,14 @@ func (deleteBlock) Info() Info {
 		Name:        NameDeleteBlock,
 		Description: "Delete one block by uid, including anything nested inside it. Its comments, hooks and files go with it and cannot be restored, so use move_block when the aim is to reorder and update_block_text when the aim is new wording. Returns {deleted: uid}.",
 		Properties: map[string]any{
-			_keyDocumentID: stringProp(_descTargetDocumentID),
-			_keyBranchID:   stringProp(_descBranchID),
-			_keyBlockUID:   stringProp("The uid of the block to delete."),
+			"document_id": map[string]any{"type": "string", "description": "The target document id."},
+			"branch_id":   map[string]any{"type": "string", "description": "The id of the branch to read or write: a document's default_branch_id from list_documents, a search hit's branch_id, or any id from the branches get_document lists. A protected branch can be read but refuses every write."},
+			"block_uid":   map[string]any{"type": "string", "description": "The uid of the block to delete."},
 		},
 		Required: []string{
-			_keyDocumentID,
-			_keyBranchID,
-			_keyBlockUID,
+			"document_id",
+			"branch_id",
+			"block_uid",
 		},
 	}
 }
@@ -873,7 +873,7 @@ func (a moveBlockArgs) Validate() error {
 	}
 
 	if a.BlockUID == "" {
-		return errRequired(_keyBlockUID)
+		return errRequired("block_uid")
 	}
 
 	if a.Position == "" {
@@ -904,23 +904,23 @@ func (moveBlock) Info() Info {
 		Name:        NameMoveBlock,
 		Description: "Move an existing block before or after another block in the same document. The block keeps its uid, attrs and nested content, so comments, hooks and files attached to it stay attached; deleting it and inserting a copy would lose them. The landing spot has to accept the block's type, by the same rule insert_block applies. Returns the summary rows of the moved block and everything nested in it.",
 		Properties: map[string]any{
-			_keyDocumentID: stringProp(_descTargetDocumentID),
-			_keyBranchID:   stringProp(_descBranchID),
-			_keyBlockUID:   stringProp("The uid of the block to move."),
+			"document_id": map[string]any{"type": "string", "description": "The target document id."},
+			"branch_id":   map[string]any{"type": "string", "description": "The id of the branch to read or write: a document's default_branch_id from list_documents, a search hit's branch_id, or any id from the branches get_document lists. A protected branch can be read but refuses every write."},
+			"block_uid":   map[string]any{"type": "string", "description": "The uid of the block to move."},
 			"position": map[string]any{
-				_keyType: _typeString,
-				_keyEnum: []string{
+				"type": "string",
+				"enum": []string{
 					string(positionBefore),
 					string(positionAfter),
 				},
-				_keyDescription: "Landing side relative to the reference block.",
+				"description": "Landing side relative to the reference block.",
 			},
-			"reference_block_uid": stringProp("The uid of the block to move relative to."),
+			"reference_block_uid": map[string]any{"type": "string", "description": "The uid of the block to move relative to."},
 		},
 		Required: []string{
-			_keyDocumentID,
-			_keyBranchID,
-			_keyBlockUID,
+			"document_id",
+			"branch_id",
+			"block_uid",
 			"position",
 			"reference_block_uid",
 		},

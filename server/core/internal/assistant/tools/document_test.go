@@ -177,8 +177,8 @@ func Test_getDocument_Info(t *testing.T) {
 
 	assert.Equal(t, NameGetDocument, info.Name)
 	assert.NotEmpty(t, info.Description)
-	assert.Equal(t, []string{_keyDocumentID, _keyBranchID}, info.Required)
-	assert.Contains(t, info.Properties, _keyBranchID)
+	assert.Equal(t, []string{"document_id", "branch_id"}, info.Required)
+	assert.Contains(t, info.Properties, "branch_id")
 }
 
 func Test_getDocument_Traits(t *testing.T) {
@@ -479,7 +479,7 @@ func Test_deleteDocument_Info(t *testing.T) {
 
 	assert.Equal(t, NameDeleteDocument, info.Name)
 	assert.Contains(t, info.Description, "cannot be restored")
-	assert.Equal(t, []string{_keyDocumentID}, info.Required)
+	assert.Equal(t, []string{"document_id"}, info.Required)
 }
 
 func Test_deleteDocument_Traits(t *testing.T) {
@@ -752,8 +752,8 @@ func Test_updateDocument_Info(t *testing.T) {
 	info := updateDocument{}.Info()
 
 	assert.Equal(t, NameUpdateDocument, info.Name)
-	assert.Equal(t, []string{_keyDocumentID}, info.Required)
-	assert.Contains(t, info.Properties, _keyName)
+	assert.Equal(t, []string{"document_id"}, info.Required)
+	assert.Contains(t, info.Properties, "name")
 	assert.Contains(t, info.Properties, document.AttrIcon)
 	assert.Contains(t, info.Properties, "parent_id")
 }

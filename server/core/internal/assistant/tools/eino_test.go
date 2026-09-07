@@ -196,8 +196,8 @@ func Test_readToolOutput_Info(t *testing.T) {
 	// read_block, a generic read_file would invite the wrong call.
 	assert.Equal(t, NameReadToolOutput, info.Name)
 	assert.NotEmpty(t, info.Description)
-	assert.Contains(t, info.Properties, _offloadPathKey)
-	assert.Equal(t, []string{_offloadPathKey}, info.Required)
+	assert.Contains(t, info.Properties, "file_path")
+	assert.Equal(t, []string{"file_path"}, info.Required)
 }
 
 func Test_readToolOutput_Traits(t *testing.T) {

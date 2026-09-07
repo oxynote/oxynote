@@ -32,7 +32,7 @@ type searchDocumentsArgs struct {
 // Validate checks the arguments are complete.
 func (a searchDocumentsArgs) Validate() error {
 	if a.Query == "" {
-		return errRequired(_keyQuery)
+		return errRequired("query")
 	}
 
 	return nil
@@ -50,13 +50,13 @@ func (searchDocuments) Info() Info {
 		Name:        NameSearchDocuments,
 		Description: "Full-text search across every branch of every document in the organisation for blocks whose text matches the query. Returns hits with document_id, document_name, branch_id, branch_name, default (whether that branch is the document's default), block_uid and text; branch_id is what a follow-up get_document or read_block takes. A block a fork copied unchanged is found on every branch that holds it. Use it to find where a topic is discussed or which documents the user might mean; use list_documents when you know the title. A hit names the innermost block holding the text, which may sit below anything get_document lists; read_block resolves it.",
 		Properties: map[string]any{
-			_keyQuery: stringProp("The full-text search query (typo-tolerant, matches block text)."),
+			"query": map[string]any{"type": "string", "description": "The full-text search query (typo-tolerant, matches block text)."},
 			"limit": map[string]any{
-				_keyType:        "integer",
-				_keyDescription: "Maximum number of hits to return. Defaults to 20; cap is 50.",
+				"type":        "integer",
+				"description": "Maximum number of hits to return. Defaults to 20; cap is 50.",
 			},
 		},
-		Required: []string{_keyQuery},
+		Required: []string{"query"},
 	}
 }
 

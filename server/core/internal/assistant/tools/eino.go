@@ -28,11 +28,6 @@ import (
 // read_block invites the model to reach for the wrong one.
 const NameReadToolOutput Name = "read_tool_output"
 
-// _offloadPathKey is the argument naming which offloaded result to
-// retrieve. It matches the placeholder the reduction middleware leaves
-// in the conversation.
-const _offloadPathKey = "file_path"
-
 // readToolOutputArgs is what read_tool_output is called with.
 type readToolOutputArgs struct {
 	// FilePath is the stored output to retrieve.
@@ -42,7 +37,7 @@ type readToolOutputArgs struct {
 // Validate checks the arguments are complete.
 func (a readToolOutputArgs) Validate() error {
 	if a.FilePath == "" {
-		return errRequired(_offloadPathKey)
+		return errRequired("file_path")
 	}
 
 	return nil
@@ -62,9 +57,9 @@ func (readToolOutput) Info() Info {
 		Description: "Retrieve the full output of an earlier tool call that was too large to keep in the conversation. " +
 			"Pass the path shown in the truncation notice.",
 		Properties: map[string]any{
-			_offloadPathKey: stringProp("The stored output path from the truncation notice."),
+			"file_path": map[string]any{"type": "string", "description": "The stored output path from the truncation notice."},
 		},
-		Required: []string{_offloadPathKey},
+		Required: []string{"file_path"},
 	}
 }
 

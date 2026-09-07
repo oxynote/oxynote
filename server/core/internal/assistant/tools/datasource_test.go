@@ -277,7 +277,7 @@ func Test_getPrometheusMetadata_Info(t *testing.T) {
 	info := getPrometheusMetadata{}.Info()
 
 	assert.Equal(t, NameGetPrometheusMetadata, info.Name)
-	assert.Equal(t, []string{_keyDataSourceID}, info.Required)
+	assert.Equal(t, []string{"data_source_id"}, info.Required)
 }
 
 func Test_getPrometheusMetadata_Traits(t *testing.T) {
@@ -397,9 +397,9 @@ func Test_listPrometheusLabelNames_Info(t *testing.T) {
 	info := listPrometheusLabelNames{}.Info()
 
 	assert.Equal(t, NameListPrometheusLabelNames, info.Name)
-	assert.Equal(t, []string{_keyDataSourceID}, info.Required)
-	assert.Contains(t, info.Properties, _keyMatchers)
-	assert.Contains(t, info.Properties, _keyFrom)
+	assert.Equal(t, []string{"data_source_id"}, info.Required)
+	assert.Contains(t, info.Properties, "matchers")
+	assert.Contains(t, info.Properties, "from")
 }
 
 func Test_listPrometheusLabelNames_Traits(t *testing.T) {
@@ -514,7 +514,7 @@ func Test_listPrometheusLabelValues_Info(t *testing.T) {
 	info := listPrometheusLabelValues{}.Info()
 
 	assert.Equal(t, NameListPrometheusLabelValues, info.Name)
-	assert.Equal(t, []string{_keyDataSourceID, _keyLabel}, info.Required)
+	assert.Equal(t, []string{"data_source_id", "label"}, info.Required)
 }
 
 func Test_listPrometheusLabelValues_Traits(t *testing.T) {
@@ -653,7 +653,7 @@ func Test_listPrometheusSeries_Info(t *testing.T) {
 	info := listPrometheusSeries{}.Info()
 
 	assert.Equal(t, NameListPrometheusSeries, info.Name)
-	assert.Equal(t, []string{_keyDataSourceID, _keyMatchers}, info.Required)
+	assert.Equal(t, []string{"data_source_id", "matchers"}, info.Required)
 }
 
 func Test_listPrometheusSeries_Traits(t *testing.T) {
@@ -784,8 +784,8 @@ func Test_queryPrometheus_Info(t *testing.T) {
 	info := queryPrometheus{}.Info()
 
 	assert.Equal(t, NameQueryPrometheus, info.Name)
-	assert.Equal(t, []string{_keyDataSourceID, _keyQuery}, info.Required)
-	assert.Contains(t, info.Properties, _keyChartType)
+	assert.Equal(t, []string{"data_source_id", "query"}, info.Required)
+	assert.Contains(t, info.Properties, "chart_type")
 
 	// the chart types the metric block schema declares are exactly the
 	// ones chart_type accepts. The block package cannot import the
@@ -793,7 +793,7 @@ func Test_queryPrometheus_Info(t *testing.T) {
 	// leaf package — so the two lists are only kept equal by this check.
 	for _, v := range block.MetricEnums()[document.AttrVisualizationType] {
 		assert.True(t, processor.ChartType(v).IsValid(), "%q is in the block schema but not a chart type", v)
-		assert.Contains(t, _descChartType, v)
+		assert.Contains(t, "Optional. One of line_chart, bar_chart, gauge_chart. When set, the result describes what the metric block would draw (render status, series count, and each series' labels, point count and endpoints) instead of the raw data. Use it to check a query before putting it in a metric block; omit it when you need the values themselves.", v)
 	}
 
 	for _, ct := range []processor.ChartType{
@@ -948,7 +948,7 @@ func Test_getSQLMetadata_Info(t *testing.T) {
 	info := getSQLMetadata{}.Info()
 
 	assert.Equal(t, NameGetSQLMetadata, info.Name)
-	assert.Equal(t, []string{_keyDataSourceID}, info.Required)
+	assert.Equal(t, []string{"data_source_id"}, info.Required)
 }
 
 func Test_getSQLMetadata_Traits(t *testing.T) {
@@ -1058,7 +1058,7 @@ func Test_getSQLQueryLabels_Info(t *testing.T) {
 	info := getSQLQueryLabels{}.Info()
 
 	assert.Equal(t, NameGetSQLQueryLabels, info.Name)
-	assert.Equal(t, []string{_keyDataSourceID, _keyQuery}, info.Required)
+	assert.Equal(t, []string{"data_source_id", "query"}, info.Required)
 }
 
 func Test_getSQLQueryLabels_Traits(t *testing.T) {
@@ -1177,8 +1177,8 @@ func Test_querySQL_Info(t *testing.T) {
 	info := querySQL{}.Info()
 
 	assert.Equal(t, NameQuerySQL, info.Name)
-	assert.Equal(t, []string{_keyDataSourceID, _keyQuery}, info.Required)
-	assert.Contains(t, info.Properties, _keyChartType)
+	assert.Equal(t, []string{"data_source_id", "query"}, info.Required)
+	assert.Contains(t, info.Properties, "chart_type")
 }
 
 func Test_querySQL_Traits(t *testing.T) {
@@ -1425,18 +1425,6 @@ func Test_timeRangeArgs_resolve(t *testing.T) {
 			c.Check(t, tr)
 		})
 	}
-}
-
-func Test_dataSourceProps(t *testing.T) {
-	t.Parallel()
-
-	assert.Equal(t, map[string]any{_keyDataSourceID: stringProp(_descDataSourceID)}, dataSourceProps(nil))
-
-	props := dataSourceProps(map[string]any{
-		_keyQuery: stringProp("q"),
-	})
-	assert.Contains(t, props, _keyDataSourceID)
-	assert.Contains(t, props, _keyQuery)
 }
 
 func Test_newChartPreview(t *testing.T) {

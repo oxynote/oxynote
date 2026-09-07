@@ -5,213 +5,278 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/document"
 )
 
-// JSON-schema literals shared by the tool schemas.
-const (
-	// _keyType is the JSON-schema type key.
-	_keyType = "type"
+// _blockSchema is the block argument's schema for the write tools: one
+// variant per type the assistant can write, each naming its type as a
+// constant and taking only its own fields. file is absent, since it is
+// only ever created by uploading in the editor.
+var _blockSchema = blockSchema()
 
-	// _typeObject is the JSON-schema object type.
-	_typeObject = "object"
+// blockSchema builds the block argument's schema, one variant per
+// writable type in documentation order.
+func blockSchema() map[string]any {
+	types := block.Types()
+	variants := make([]map[string]any, 0, len(types))
 
-	// _typeString is the JSON-schema string type.
-	_typeString = "string"
+	for _, t := range types {
+		if v, ok := blockVariant(block.Type(t)); ok {
+			variants = append(variants, v)
+		}
+	}
 
-	// _typeArray is the JSON-schema array type.
-	_typeArray = "array"
-
-	// _typeInteger is the JSON-schema integer type.
-	_typeInteger = "integer"
-
-	// _keyDescription is the JSON-schema description key.
-	_keyDescription = "description"
-
-	// _keyEnum is the JSON-schema enum key, naming the values a
-	// property accepts.
-	_keyEnum = "enum"
-
-	// _keyBranchID is the shared branch-id property name.
-	_keyBranchID = "branch_id"
-
-	// _descBranchID describes the branch-id property every content tool
-	// takes.
-	_descBranchID = "The id of the branch to read or write: a document's default_branch_id from list_documents, a search hit's branch_id, or any id from the branches get_document lists. A protected branch can be read but refuses every write."
-
-	// _keyDocumentID is the shared document-id property name.
-	_keyDocumentID = "document_id"
-
-	// _keyName is the shared display-name property name.
-	_keyName = "name"
-
-	// _keyBlockUID is the shared block-uid property name.
-	_keyBlockUID = "block_uid"
-
-	// _keyBlock is the shared canonical-block property name.
-	_keyBlock = "block"
-
-	// _keyQuery is the shared query property name.
-	_keyQuery = "query"
-
-	// _keyFrom is the shared range-start property name.
-	_keyFrom = "from"
-
-	// _keyTo is the shared range-end property name.
-	_keyTo = "to"
-
-	// _keyChartType is the shared chart-type property name.
-	_keyChartType = "chart_type"
-
-	// _keyMatchers is the shared Prometheus series-selector property
-	// name.
-	_keyMatchers = "matchers"
-
-	// _keyLabel is the shared Prometheus label property name.
-	_keyLabel = "label"
-
-	// _keyItems is the JSON-schema array-element key.
-	_keyItems = "items"
-
-	// _descDocumentID describes the document-id property.
-	_descDocumentID = "The document id."
-
-	// _descTargetDocumentID describes a document-id property that names
-	// the edit target.
-	_descTargetDocumentID = "The target document id."
-
-	// _keyTagID is the shared tag-id property name.
-	_keyTagID = "tag_id"
-
-	// _descTagID describes the tag-id property every tag tool takes.
-	_descTagID = "The tag id, as list_tags or a document's tags report it."
-
-	// _keyColor is the shared tag-colour property name.
-	_keyColor = "color"
-
-	// _keySortIndex is the shared sort-position property name.
-	_keySortIndex = "sort_index"
-
-	// _descColor describes a tag-colour property.
-	_descColor = "The tag's colour as a hex triplet with the leading hash, such as \"#22c55e\"."
-)
-
-// _blockSchema is the block argument's schema for the write tools. The
-// enum is every canonical type: where a block lands decides which types
-// are legal, and that rule is checked server-side.
-var _blockSchema = blockSchema(block.Types())
-
-// blockSchema builds the block argument's schema with the given set of
-// legal types. The per-field prose is deliberately terse: this schema is
-// published to MCP clients, which may never receive the server
-// instructions, and to the assistant, whose system prompt already
-// carries the full block model and pays for every word on every turn.
-func blockSchema(types []string) map[string]any {
 	return map[string]any{
-		_keyType:        _typeObject,
-		_keyDescription: "A canonical block. Which fields apply depends on type; supply only that type's own.",
-		"properties": map[string]any{
-			_keyType: map[string]any{
-				_keyType:        _typeString,
-				_keyDescription: "The block's canonical type.",
-				_keyEnum:        types,
+		"description": "A canonical block. Its type decides which fields it takes.",
+		"anyOf":       variants,
+	}
+}
+
+// blockVariant builds the schema of one block type: its type as a
+// constant, its uid, the fields it takes and which of them are
+// required, and no other field. The second result is false for a type
+// the assistant cannot write.
+func blockVariant(t block.Type) (map[string]any, bool) {
+	var (
+		props    map[string]any
+		required []string
+	)
+
+	switch t {
+	case block.BlockParagraph:
+		props = map[string]any{
+			"text": map[string]any{"type": "string", "description": "Inline text in minimal markdown. One block is one paragraph; a newline inside text does not start a new one."},
+			"children": map[string]any{
+				"type":        "array",
+				"description": "Only when the paragraph is a list or task-list entry: the blocks indented under it, each a paragraph, bullet_list, ordered_list or task_list.",
+				"items":       map[string]any{"type": "object"},
 			},
-			"uid": map[string]any{
-				_keyType:        _typeString,
-				_keyDescription: "Leave unset. Uids are generated server-side and are the handle later edits use.",
+		}
+	case block.BlockHeading:
+		props = map[string]any{
+			"text": map[string]any{"type": "string", "description": "Inline text in minimal markdown. One block is one paragraph; a newline inside text does not start a new one."},
+			"attrs": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					document.AttrLevel: map[string]any{
+						"type":        "integer",
+						"description": "The heading level.",
+						"enum":        []int{1, 2, 3},
+					},
+				},
+				"required": []string{document.AttrLevel},
 			},
-			"text": map[string]any{
-				_keyType:        _typeString,
-				_keyDescription: "Inline text for paragraph, heading, blockquote, code, titled_code, mermaid and callout. Raw inside code, titled_code and mermaid; minimal markdown elsewhere. One block is one paragraph; a newline inside text does not start a new one.",
+		}
+		required = []string{"attrs"}
+	case block.BlockBlockquote:
+		props = map[string]any{
+			"text": map[string]any{"type": "string", "description": "Inline text in minimal markdown. One block is one paragraph; a newline inside text does not start a new one. Use text or items, not both."},
+			"items": map[string]any{
+				"type":        "array",
+				"description": "The blocks it quotes, of any type legal at the document root. Use text or items, not both.",
+				"items":       map[string]any{"type": "object"},
+			},
+		}
+	case block.BlockBulletList, block.BlockOrderedList:
+		props = map[string]any{
+			"items": map[string]any{
+				"type":        "array",
+				"description": "The entries, each a paragraph block. Blocks nested under an entry go in that paragraph's children.",
+				"items":       map[string]any{"type": "object"},
+				"minItems":    1,
+			},
+		}
+		required = []string{"items"}
+	case block.BlockTaskList:
+		props = map[string]any{
+			"task_items": map[string]any{
+				"type":        "array",
+				"description": "The rows, each a checked flag and a paragraph block. Blocks nested under a row go in that paragraph's children.",
+				"minItems":    1,
+				"items": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"checked": map[string]any{"type": "boolean"},
+						"block":   map[string]any{"type": "object"},
+					},
+					"required": []string{"block"},
+				},
+			},
+		}
+		required = []string{"task_items"}
+	case block.BlockCallout:
+		props = map[string]any{
+			"text": map[string]any{"type": "string", "description": "Inline text in minimal markdown. One block is one paragraph; a newline inside text does not start a new one. Use text or items, not both."},
+			"items": map[string]any{
+				"type":        "array",
+				"description": "The blocks it holds, each a paragraph, bullet_list, ordered_list or task_list. Use text or items, not both.",
+				"items":       map[string]any{"type": "object"},
 			},
 			"attrs": map[string]any{
-				_keyType:        _typeObject,
-				_keyDescription: "Per-type attributes. Required where the type says so: heading level, titled_code title, image and figma src. Also code language, callout icon, image alt and width, and a metric's chart configuration, whose width is compact, standard or wide.",
-				"properties":    attrProps(),
+				"type": "object",
+				"properties": map[string]any{
+					document.AttrIcon: map[string]any{"type": "string", "description": "Iconify identifier; defaults to lucide:text."},
+				},
 			},
+		}
+	case block.BlockCode:
+		props = map[string]any{
+			"text": map[string]any{"type": "string", "description": "Raw source; no markdown."},
+			"attrs": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					document.AttrLanguage: map[string]any{"type": "string", "description": "Optional; leave empty rather than guess."},
+				},
+			},
+		}
+	case block.BlockTitledCode:
+		props = map[string]any{
+			"text": map[string]any{"type": "string", "description": "Raw source; no markdown."},
+			"attrs": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					document.AttrTitle:    map[string]any{"type": "string", "description": "Plain-text title of the block."},
+					document.AttrLanguage: map[string]any{"type": "string", "description": "Optional; leave empty rather than guess."},
+				},
+				"required": []string{document.AttrTitle},
+			},
+		}
+		required = []string{"attrs"}
+	case block.BlockMermaid:
+		props = map[string]any{"text": map[string]any{"type": "string", "description": "Raw source; no markdown."}}
+	case block.BlockHorizontalRule:
+		props = map[string]any{}
+	case block.BlockImage:
+		props = map[string]any{
+			"attrs": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					document.AttrSrc:   map[string]any{"type": "string", "description": "The image address."},
+					document.AttrAlt:   map[string]any{"type": "string", "description": "Alternative text."},
+					document.AttrTitle: map[string]any{"type": "string", "description": "Caption."},
+					document.AttrWidth: map[string]any{"type": "integer", "description": "Display width in pixels."},
+				},
+				"required": []string{document.AttrSrc},
+			},
+		}
+		required = []string{"attrs"}
+	case block.BlockFigma:
+		props = map[string]any{
+			"attrs": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					document.AttrSrc:    map[string]any{"type": "string", "description": "The Figma frame address."},
+					document.AttrWidth:  map[string]any{"type": "integer", "description": "Display width in pixels."},
+					document.AttrHeight: map[string]any{"type": "integer", "description": "Display height in pixels."},
+				},
+				"required": []string{document.AttrSrc},
+			},
+		}
+		required = []string{"attrs"}
+	case block.BlockMetric:
+		props = map[string]any{
+			"attrs": map[string]any{
+				"type":        "object",
+				"description": "The chart configuration: the data source, the queries, the window and the display settings, as the block model describes them. Legal only inside a metric_grid or on a split_doc right side.",
+				"properties":  metricAttrProps(),
+			},
+		}
+	case block.BlockMetricGrid:
+		props = map[string]any{
 			"items": map[string]any{
-				_keyType:        _typeArray,
-				_keyDescription: "Entries of bullet_list and ordered_list, which are paragraphs; items of metric_grid, and of blockquote or callout when not using text.",
+				"type":        "array",
+				"description": "The metric blocks it holds.",
+				"items":       map[string]any{"type": "object"},
+				"minItems":    1,
 			},
-			"children": map[string]any{
-				_keyType:        _typeArray,
-				_keyDescription: "Blocks nested under a single list entry. A list entry is a paragraph; anything else nested under it goes here, never in the entry itself and never in a second entry.",
-			},
-			"task_items": map[string]any{
-				_keyType:        _typeArray,
-				_keyDescription: "Rows of task_list, each {checked, block}.",
-			},
+		}
+		required = []string{"items"}
+	case block.BlockSplitDoc:
+		props = map[string]any{
 			"left": map[string]any{
-				_keyType:        _typeArray,
-				_keyDescription: "split_doc concept side. Must start with a level-1 heading; split_doc_param_list is legal only here.",
+				"type":        "array",
+				"description": "The concept side. Must start with a level-1 heading; then paragraphs, lists and callouts; then any split_doc_param_list, which is legal only here.",
+				"items":       map[string]any{"type": "object"},
+				"minItems":    1,
 			},
 			"right": map[string]any{
-				_keyType:        _typeArray,
-				_keyDescription: "split_doc example side. Holds titled_code or metric only, and is the one place titled_code is legal.",
+				"type":        "array",
+				"description": "The example side. Holds titled_code or metric only, and is the one place titled_code is legal.",
+				"items":       map[string]any{"type": "object"},
+				"minItems":    1,
 			},
-			"header": map[string]any{
-				_keyType:        _typeString,
-				_keyDescription: "split_doc_param_list heading, as plain text.",
+			"attrs": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					document.AttrInversed: map[string]any{"type": "boolean", "description": "Flips the two sides."},
+				},
 			},
+		}
+		required = []string{"left", "right"}
+	case block.BlockParamList:
+		props = map[string]any{
+			"header": map[string]any{"type": "string", "description": "The section header, as plain text."},
 			"params": map[string]any{
-				_keyType:        _typeArray,
-				_keyDescription: "split_doc_param_list rows, each {name, type, description}.",
+				"type":        "array",
+				"description": "The rows.",
+				"minItems":    1,
+				"items": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"name":        map[string]any{"type": "string", "description": "The parameter name, as plain text."},
+						"type":        map[string]any{"type": "string", "description": "The parameter type, as plain text."},
+						"description": map[string]any{"type": "string", "description": "The description, in minimal markdown."},
+					},
+					"required": []string{"name"},
+				},
 			},
-		},
-		"required": []string{_keyType},
+		}
+		required = []string{"header", "params"}
+	default:
+		return nil, false
 	}
+
+	props["type"] = map[string]any{"const": string(t)}
+	props["uid"] = map[string]any{"type": "string", "description": "Leave unset; generated server-side."}
+
+	return map[string]any{
+		"title":                string(t),
+		"type":                 "object",
+		"properties":           props,
+		"required":             append([]string{"type"}, required...),
+		"additionalProperties": false,
+	}, true
 }
 
 // _enumAttrs are the metric attributes whose legal values are a fixed
 // set, listed in the order the block model introduces them.
-//
-// width is deliberately absent. attrs is one field shared by every
-// block type, so a name means the same thing everywhere it appears,
-// and width is a metric's size but an image's pixel width. It carries
-// no enum here and stays described in the block model instead.
 var _enumAttrs = []struct {
 	// Name is the attribute's key inside attrs.
 	Name string
 
-	// Desc names the block the attribute belongs to and what it sets.
+	// Desc says what the attribute sets.
 	Desc string
 }{
-	{document.AttrVisualizationType, "metric: the chart kind."},
-	{document.AttrTimeRange, "metric: the window queried."},
-	{document.AttrRefreshInterval, "metric: how often the chart re-queries."},
-	{document.AttrUnitType, "metric: the unit values are read in. With custom, put the label in unitCustom."},
-	{document.AttrSimulationPreset, "metric: draws this generated series in place of the query's own result, for a block documenting a metric that has no real data yet. Omit it to chart the query."},
+	{document.AttrVisualizationType, "The chart kind."},
+	{document.AttrTimeRange, "The window queried."},
+	{document.AttrRefreshInterval, "How often the chart re-queries."},
+	{document.AttrUnitType, "The unit values are read in. With custom, put the label in unitCustom."},
+	{document.AttrWidth, "The chart's size."},
+	{document.AttrSimulationPreset, "Draws this generated series in place of the query's own result, for a block documenting a metric that has no real data yet. Omit it to chart the query."},
 }
 
-// attrProps builds the attrs sub-schema. Only attributes with a fixed
-// value set appear: publishing the set as an enum is what lets a client
-// reject a bad value itself, rather than learning the values from prose
-// it may never have been given.
-func attrProps() map[string]any {
+// metricAttrProps builds the metric attrs sub-schema. Only attributes
+// with a fixed value set appear: publishing the set as an enum is what
+// lets a client reject a bad value itself, rather than learning the
+// values from prose it may never have been given.
+func metricAttrProps() map[string]any {
 	enums := block.MetricEnums()
-
-	out := map[string]any{
-		document.AttrLevel: map[string]any{
-			_keyType:        _typeInteger,
-			_keyDescription: "heading: the level. Required on a heading.",
-			_keyEnum:        []int{1, 2, 3},
-		},
-	}
+	out := make(map[string]any, len(_enumAttrs))
 
 	for _, a := range _enumAttrs {
 		out[a.Name] = map[string]any{
-			_keyType:        _typeString,
-			_keyDescription: a.Desc,
-			_keyEnum:        enums[a.Name],
+			"type":        "string",
+			"description": a.Desc,
+			"enum":        enums[a.Name],
 		}
 	}
 
 	return out
-}
-
-// stringProp builds a JSON-schema string property with a description.
-func stringProp(desc string) map[string]any {
-	return map[string]any{_keyType: _typeString, _keyDescription: desc}
-}
-
-// documentIDProp builds the shared document-id property.
-func documentIDProp(desc string) map[string]any {
-	return map[string]any{_keyDocumentID: stringProp(desc)}
 }

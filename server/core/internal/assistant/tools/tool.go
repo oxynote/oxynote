@@ -47,7 +47,7 @@ type Info struct {
 // second vocabulary per surface.
 func (info Info) Schema() map[string]any {
 	out := map[string]any{
-		_keyType:     _typeObject,
+		"type":       "object",
 		"properties": info.Properties,
 	}
 

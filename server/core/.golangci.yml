@@ -263,6 +263,13 @@ linters:
           - goconst
           - mnd
         path: internal/datasource/demo
+      # the tool schemas are JSON Schema written as map literals, so "type",
+      # "properties" and "required" recur as often as the schema has objects.
+      # They are the vocabulary of the format, not thresholds a name would
+      # explain.
+      - linters:
+          - goconst
+        path: internal/assistant/tools
       # the demo timeline promises bit-identical replay, so its tests compare
       # the floats it produces exactly. A tolerance would pass on precisely
       # the drift the assertions exist to catch.

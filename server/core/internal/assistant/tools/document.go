@@ -12,12 +12,6 @@ import (
 	"github.com/rs/xid"
 )
 
-// _defaultDocumentIcon is the icon assigned to assistant-created
-// documents when the model doesn't pick one. It matches what the
-// editor gives a document created by hand, so a document's origin is
-// not visible in the sidebar.
-const _defaultDocumentIcon = "mingcute:document-2-fill"
-
 // listDocumentsArgs is what list_documents is called with.
 type listDocumentsArgs struct {
 	// ParentID narrows the listing to one parent's children. Null
@@ -43,7 +37,7 @@ func (listDocuments) Info() Info {
 		Name:        NameListDocuments,
 		Description: "List the organisation's documents as a tree of {id, name, default_branch_id, children}; default_branch_id is what get_document and the block tools take as branch_id for the document's default branch. Use it to find a document by name or to see what sits under a parent; use search_documents when you are looking for content rather than a title. Pass parent_id to get only that document's direct children, or omit it for the whole organisation.",
 		Properties: map[string]any{
-			"parent_id": stringProp("Optional. Return only the direct children of this document. Omit for the full tree."),
+			"parent_id": map[string]any{"type": "string", "description": "Optional. Return only the direct children of this document. Omit for the full tree."},
 		},
 	}
 }
@@ -125,10 +119,10 @@ func (getDocument) Info() Info {
 		Name:        NameGetDocument,
 		Description: "Read one document on one branch: its name, icon, parent_id, protected flag and updated_at, the branch read and every branch the document has (each with the id a branch_id argument takes), the tags the branch carries as [{id, name, color}], followed by one row per block with the block's uid, kind, flattened text, depth, parent_uid and the few attrs that matter for reading (heading level, callout icon, code language, task checked). Use it as the way to read a document before editing it; branch_id is the default_branch_id a listing or search hit carries, or any id from branches. A protected branch can be read but refuses every write, so pick an unprotected branch id from branches to write to. Rows marked has_children hold nested blocks the rows do not list, and read_block returns those when you need them.",
 		Properties: map[string]any{
-			_keyDocumentID: stringProp(_descDocumentID),
-			_keyBranchID:   stringProp(_descBranchID),
+			"document_id": map[string]any{"type": "string", "description": "The document id."},
+			"branch_id":   map[string]any{"type": "string", "description": "The id of the branch to read or write: a document's default_branch_id from list_documents, a search hit's branch_id, or any id from the branches get_document lists. A protected branch can be read but refuses every write."},
 		},
-		Required: []string{_keyDocumentID, _keyBranchID},
+		Required: []string{"document_id", "branch_id"},
 	}
 }
 
@@ -271,7 +265,7 @@ type createDocumentArgs struct {
 // Validate checks the arguments are complete.
 func (a createDocumentArgs) Validate() error {
 	if a.Name == "" {
-		return errRequired(_keyName)
+		return errRequired("name")
 	}
 
 	return nil
@@ -283,11 +277,11 @@ func (createDocument) Info() Info {
 		Name:        NameCreateDocument,
 		Description: "Create a new document and return {document_id, branch_id}, the branch_id being its default branch. The document starts with a single empty paragraph, so follow up with insert_block calls (position end, that branch_id) in the same turn to fill it. Omit parent_id to create it at the organisation root.",
 		Properties: map[string]any{
-			_keyName:          stringProp("Display name for the new document."),
-			document.AttrIcon: stringProp("Iconify identifier, as \"collection:name\". The product's own icons are MingCute fills (e.g. \"mingcute:file-code-fill\"); prefer one so the document matches the rest of the sidebar. Defaults to \"mingcute:document-2-fill\" when empty."),
-			"parent_id":       stringProp("Optional parent document id. Omit to create at the org root."),
+			"name":            map[string]any{"type": "string", "description": "Display name for the new document."},
+			document.AttrIcon: map[string]any{"type": "string", "description": "Iconify identifier, as \"collection:name\". The product's own icons are MingCute fills (e.g. \"mingcute:file-code-fill\"); prefer one so the document matches the rest of the sidebar. Defaults to \"mingcute:document-2-fill\" when empty."},
+			"parent_id":       map[string]any{"type": "string", "description": "Optional parent document id. Omit to create at the org root."},
 		},
-		Required: []string{_keyName},
+		Required: []string{"name"},
 	}
 }
 
@@ -333,7 +327,7 @@ func (createDocument) Execute(inp Input) (string, error) {
 
 	icon := in.Icon
 	if icon == "" {
-		icon = _defaultDocumentIcon
+		icon = "mingcute:document-2-fill"
 	}
 
 	doc := document.NewDocument(document.CreateInput{
@@ -363,7 +357,7 @@ type deleteDocumentArgs struct {
 // Validate checks the arguments are complete.
 func (a deleteDocumentArgs) Validate() error {
 	if a.DocumentID.IsNil() {
-		return errRequired(_keyDocumentID)
+		return errRequired("document_id")
 	}
 
 	return nil
@@ -377,8 +371,8 @@ func (deleteDocument) Info() Info {
 	return Info{
 		Name:        NameDeleteDocument,
 		Description: "Delete a document and every document nested under it. The whole subtree goes and cannot be restored, so check the tree with list_documents first, and use update_document when the aim is to relocate rather than remove. Returns {document_id, deleted}.",
-		Properties:  documentIDProp("The document id to delete."),
-		Required:    []string{_keyDocumentID},
+		Properties:  map[string]any{"document_id": map[string]any{"type": "string", "description": "The document id to delete."}},
+		Required:    []string{"document_id"},
 	}
 }
 
@@ -490,7 +484,7 @@ type updateDocumentArgs struct {
 // Validate checks the arguments are complete and consistent.
 func (a updateDocumentArgs) Validate() error {
 	if a.DocumentID.IsNil() {
-		return errRequired(_keyDocumentID)
+		return errRequired("document_id")
 	}
 
 	if a.Name == "" && a.Icon == "" && a.ParentID == nil {
@@ -557,12 +551,12 @@ func (updateDocument) Info() Info {
 		Name:        NameUpdateDocument,
 		Description: "Change a document's name, icon or place in the tree, any combination in one call; content is untouched. Give only the fields to change: name is the new display name, icon an Iconify identifier as \"collection:name\" (the product's own icons are MingCute fills, e.g. \"mingcute:rocket-fill\", so prefer one to match the sidebar), and parent_id the new parent, or an empty string for the organisation root. A call with none of the three is refused, and a parent that is the document itself or one of its descendants fails. Returns {document_id} with the fields that changed.",
 		Properties: map[string]any{
-			_keyDocumentID:    stringProp(_descDocumentID),
-			_keyName:          stringProp("Optional. The new display name; omit to keep the current one."),
-			document.AttrIcon: stringProp("Optional. The new icon identifier; omit to keep the current one."),
-			"parent_id":       stringProp("Optional. The new parent document id, or an empty string to move the document to the organisation root; omit to leave it where it is."),
+			"document_id":     map[string]any{"type": "string", "description": "The document id."},
+			"name":            map[string]any{"type": "string", "description": "Optional. The new display name; omit to keep the current one."},
+			document.AttrIcon: map[string]any{"type": "string", "description": "Optional. The new icon identifier; omit to keep the current one."},
+			"parent_id":       map[string]any{"type": "string", "description": "Optional. The new parent document id, or an empty string to move the document to the organisation root; omit to leave it where it is."},
 		},
-		Required: []string{_keyDocumentID},
+		Required: []string{"document_id"},
 	}
 }
 
