@@ -21,7 +21,7 @@ const SessionKeyAutoApprove = "oxynote_assistant_auto_approve"
 // the interrupt info. gob needs a name for a concrete type it meets
 // through an interface, and a checkpoint already in Redis carries the
 // name it was written with, so a rename fails to decode it.
-func init() {
+func init() { //nolint:gochecknoinits // gob names must be registered before any checkpoint is decoded
 	schema.RegisterName[confirmState]("oxynote_assistant_confirm_state")
 	schema.RegisterName[ActionSummary]("oxynote_assistant_action_summary")
 }
