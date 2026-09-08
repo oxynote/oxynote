@@ -100,8 +100,6 @@ type Set struct {
 
 // New creates a fresh instance of Set.
 func New(deps *Deps) *Set {
-	registerConfirmTypes()
-
 	all := []Tool{
 		listDocuments{},
 		getDocument{},

@@ -266,6 +266,17 @@ func (d Document) ApplyBranchUpdate(name null.String, protected null.Bool, updat
 	return nd
 }
 
+// Title names the document the way a status line or a confirm card
+// shows it: by display name, with the branch appended when it is not the
+// default one, so a write aimed at a branch reads as such.
+func (d Document) Title() string {
+	if d.Default {
+		return d.DocumentName
+	}
+
+	return d.DocumentName + " on branch " + d.BranchName
+}
+
 // HistoryEntry returns a history entry for the current state of the document.
 // Entries aggregate per branch and per time bucket: the branch is part of the
 // ID so that two branches of one document edited within the same bucket keep

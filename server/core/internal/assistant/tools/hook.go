@@ -371,7 +371,7 @@ func (createHook) Title(inp DescribeInput) (string, error) {
 		return "", fmt.Errorf("%s: fetch document: %w", NameCreateHook, err)
 	}
 
-	return "Adding a hook to " + docLabel(doc), nil
+	return "Adding a hook to " + doc.Title(), nil
 }
 
 // Summary names the hook type and where it goes.
@@ -777,7 +777,7 @@ func describeHook(inp DescribeInput, name Name, ref hookRefArgs) (*document.Docu
 // hookLabel names a hook by its type, the document it is on and, when
 // anchored, its block, in the words the confirm card uses.
 func hookLabel(tp hook.Type, blockUID null.String, doc *document.Document) string {
-	label := tp.HumanizedString() + " hook on " + docLabel(doc)
+	label := tp.HumanizedString() + " hook on " + doc.Title()
 
 	if blockUID.Valid {
 		label += ", block " + blockUID.String

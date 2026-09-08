@@ -11,6 +11,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/strutil"
 	"github.com/rs/xid"
 )
 
@@ -259,7 +260,7 @@ func (insertBlock) Title(inp DescribeInput) (string, error) {
 		return "", fmt.Errorf("%s: fetch document: %w", NameInsertBlock, err)
 	}
 
-	return "Updating " + docLabel(doc), nil
+	return "Updating " + doc.Title(), nil
 }
 
 // Summary describes the insertion the model wants to make.
@@ -275,17 +276,17 @@ func (insertBlock) Summary(inp DescribeInput) (ActionSummary, error) {
 		return ActionSummary{}, fmt.Errorf("%s: fetch document: %w", NameInsertBlock, err)
 	}
 
-	kind := blockKindLabel(in.Block.Type)
+	kind := in.Block.Type.Label()
 
 	var summary string
 
 	switch in.Position {
 	case positionStart:
-		summary = fmt.Sprintf("Prepend %s to %s", kind, docLabel(doc))
+		summary = fmt.Sprintf("Prepend %s to %s", kind, doc.Title())
 	case positionEnd:
-		summary = fmt.Sprintf("Append %s to %s", kind, docLabel(doc))
+		summary = fmt.Sprintf("Append %s to %s", kind, doc.Title())
 	default:
-		summary = fmt.Sprintf("Insert %s %s a block in %s", kind, in.Position, docLabel(doc))
+		summary = fmt.Sprintf("Insert %s %s a block in %s", kind, in.Position, doc.Title())
 	}
 
 	return ActionSummary{
@@ -423,7 +424,7 @@ func (replaceBlock) Title(inp DescribeInput) (string, error) {
 		return "", fmt.Errorf("%s: fetch document: %w", NameReplaceBlock, err)
 	}
 
-	return "Updating " + docLabel(doc), nil
+	return "Updating " + doc.Title(), nil
 }
 
 // Summary describes the replacement the model wants to make.
@@ -443,7 +444,7 @@ func (replaceBlock) Summary(inp DescribeInput) (ActionSummary, error) {
 		Tool:         NameReplaceBlock,
 		DocumentID:   doc.ID,
 		DocumentName: doc.DocumentName,
-		Summary:      fmt.Sprintf("Replace a block in %s with %s", doc.DocumentName, blockKindLabel(in.Block.Type)),
+		Summary:      fmt.Sprintf("Replace a block in %s with %s", doc.DocumentName, in.Block.Type.Label()),
 	}, nil
 }
 
@@ -547,7 +548,7 @@ func (updateBlockText) Title(inp DescribeInput) (string, error) {
 		return "", fmt.Errorf("%s: fetch document: %w", NameUpdateBlockText, err)
 	}
 
-	return "Updating " + docLabel(doc), nil
+	return "Updating " + doc.Title(), nil
 }
 
 // Summary previews the text the model wants to write.
@@ -558,7 +559,7 @@ func (updateBlockText) Summary(inp DescribeInput) (ActionSummary, error) {
 		return ActionSummary{}, err
 	}
 
-	preview := textPreview(in.Text, _maxPreviewLen)
+	preview := strutil.Preview(in.Text, _maxPreviewLen)
 
 	doc, err := inp.FetchBranch(in.DocumentID, in.BranchID)
 	if err != nil {
@@ -567,7 +568,7 @@ func (updateBlockText) Summary(inp DescribeInput) (ActionSummary, error) {
 
 	summary := fmt.Sprintf("Update a block in %s: %q", doc.DocumentName, preview)
 	if preview == "" {
-		summary = "Update text of a block in " + docLabel(doc)
+		summary = "Update text of a block in " + doc.Title()
 	}
 
 	return ActionSummary{
@@ -678,7 +679,7 @@ func (updateBlockAttrs) Title(inp DescribeInput) (string, error) {
 		return "", fmt.Errorf("%s: fetch document: %w", NameUpdateBlockAttrs, err)
 	}
 
-	return "Updating " + docLabel(doc), nil
+	return "Updating " + doc.Title(), nil
 }
 
 // Summary names the attributes the model wants to set.
@@ -702,7 +703,7 @@ func (updateBlockAttrs) Summary(inp DescribeInput) (ActionSummary, error) {
 		Tool:         NameUpdateBlockAttrs,
 		DocumentID:   doc.ID,
 		DocumentName: doc.DocumentName,
-		Summary:      fmt.Sprintf("Update block %s in %s", strings.Join(keys, ", "), docLabel(doc)),
+		Summary:      fmt.Sprintf("Update block %s in %s", strings.Join(keys, ", "), doc.Title()),
 	}, nil
 }
 
@@ -810,7 +811,7 @@ func (deleteBlock) Title(inp DescribeInput) (string, error) {
 		return "", fmt.Errorf("%s: fetch document: %w", NameDeleteBlock, err)
 	}
 
-	return "Updating " + docLabel(doc), nil
+	return "Updating " + doc.Title(), nil
 }
 
 // Summary describes the deletion the model wants to make.
@@ -830,7 +831,7 @@ func (deleteBlock) Summary(inp DescribeInput) (ActionSummary, error) {
 		Tool:         NameDeleteBlock,
 		DocumentID:   doc.ID,
 		DocumentName: doc.DocumentName,
-		Summary:      "Delete a block in " + docLabel(doc),
+		Summary:      "Delete a block in " + doc.Title(),
 	}, nil
 }
 
@@ -945,7 +946,7 @@ func (moveBlock) Title(inp DescribeInput) (string, error) {
 		return "", fmt.Errorf("%s: fetch document: %w", NameMoveBlock, err)
 	}
 
-	return "Updating " + docLabel(doc), nil
+	return "Updating " + doc.Title(), nil
 }
 
 // Summary describes the move the model wants to make.
@@ -965,7 +966,7 @@ func (moveBlock) Summary(inp DescribeInput) (ActionSummary, error) {
 		Tool:         NameMoveBlock,
 		DocumentID:   doc.ID,
 		DocumentName: doc.DocumentName,
-		Summary:      fmt.Sprintf("Move a block %s another block in %s", in.Position, docLabel(doc)),
+		Summary:      fmt.Sprintf("Move a block %s another block in %s", in.Position, doc.Title()),
 	}, nil
 }
 

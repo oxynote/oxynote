@@ -108,6 +108,15 @@ func Test_NewTag(t *testing.T) {
 	assert.Zero(t, tg.SortIndex)
 }
 
+func Test_Tag_Summary(t *testing.T) {
+	t.Parallel()
+
+	id := xid.New()
+	tg := Tag{ID: id, OrganizationID: "org1", TagName: "Production", Color: "#22c55e", SortIndex: 3}
+
+	assert.Equal(t, Summary{ID: id, TagName: "Production", Color: "#22c55e"}, tg.Summary())
+}
+
 func Test_Summaries_Swap(t *testing.T) {
 	t.Parallel()
 

@@ -489,8 +489,12 @@ func (assignTag) Info() Info {
 	return Info{
 		Name:        NameAssignTag,
 		Description: "Put a tag on one branch of a document, so the document is listed under the tag in the sidebar when the branch is its default one. document_id and branch_id name the branch the way the content tools do, and tag_id is the tag's id from list_tags. A tag the branch already carries is left as it is, and a hidden tag can still be assigned. Returns {document_id, branch_id, tag_id}.",
-		Properties:  branchTagProps(),
-		Required:    []string{"document_id", "branch_id", "tag_id"},
+		Properties: map[string]any{
+			"document_id": map[string]any{"type": "string", "description": "The document id."},
+			"branch_id":   map[string]any{"type": "string", "description": "The id of the branch the tag goes on or comes off: a document's default_branch_id from list_documents or list_tags, or any id from the branches get_document lists."},
+			"tag_id":      map[string]any{"type": "string", "description": "The tag id, as list_tags or a document's tags report it."},
+		},
+		Required: []string{"document_id", "branch_id", "tag_id"},
 	}
 }
 
@@ -512,7 +516,7 @@ func (assignTag) Title(inp DescribeInput) (string, error) {
 		return "", fmt.Errorf("%s: fetch document: %w", NameAssignTag, err)
 	}
 
-	return "Tagging " + docLabel(doc), nil
+	return "Tagging " + doc.Title(), nil
 }
 
 // Summary names the tag and the document it goes on.
@@ -537,7 +541,7 @@ func (assignTag) Summary(inp DescribeInput) (ActionSummary, error) {
 		Tool:         NameAssignTag,
 		DocumentID:   doc.ID,
 		DocumentName: doc.DocumentName,
-		Summary:      fmt.Sprintf("Put tag %s on %s", tg.TagName, docLabel(doc)),
+		Summary:      fmt.Sprintf("Put tag %s on %s", tg.TagName, doc.Title()),
 	}, nil
 }
 
@@ -567,8 +571,12 @@ func (unassignTag) Info() Info {
 	return Info{
 		Name:        NameUnassignTag,
 		Description: "Take a tag off one branch of a document; the tag itself stays for other documents, so use delete_tag to remove it everywhere. document_id and branch_id name the branch the way the content tools do, and tag_id is the tag's id from the document's tags on get_document or from list_tags. A tag the branch does not carry is nothing to do, and the call still succeeds. Returns {document_id, branch_id, tag_id}.",
-		Properties:  branchTagProps(),
-		Required:    []string{"document_id", "branch_id", "tag_id"},
+		Properties: map[string]any{
+			"document_id": map[string]any{"type": "string", "description": "The document id."},
+			"branch_id":   map[string]any{"type": "string", "description": "The id of the branch the tag goes on or comes off: a document's default_branch_id from list_documents or list_tags, or any id from the branches get_document lists."},
+			"tag_id":      map[string]any{"type": "string", "description": "The tag id, as list_tags or a document's tags report it."},
+		},
+		Required: []string{"document_id", "branch_id", "tag_id"},
 	}
 }
 
@@ -590,7 +598,7 @@ func (unassignTag) Title(inp DescribeInput) (string, error) {
 		return "", fmt.Errorf("%s: fetch document: %w", NameUnassignTag, err)
 	}
 
-	return "Untagging " + docLabel(doc), nil
+	return "Untagging " + doc.Title(), nil
 }
 
 // Summary names the tag and the document it comes off.
@@ -615,7 +623,7 @@ func (unassignTag) Summary(inp DescribeInput) (ActionSummary, error) {
 		Tool:         NameUnassignTag,
 		DocumentID:   doc.ID,
 		DocumentName: doc.DocumentName,
-		Summary:      fmt.Sprintf("Take tag %s off %s", tg.TagName, docLabel(doc)),
+		Summary:      fmt.Sprintf("Take tag %s off %s", tg.TagName, doc.Title()),
 	}, nil
 }
 
@@ -752,37 +760,4 @@ type movedTagResult struct {
 
 	// SortIndex is the 0-based position it now has.
 	SortIndex int `json:"sort_index"`
-}
-
-// tagInfo describes one tag a branch carries to the model.
-type tagInfo struct {
-	// ID is the tag id, which is what a tool's tag_id takes.
-	ID xid.ID `json:"id"`
-
-	// Name is the tag's display name.
-	Name string `json:"name"`
-
-	// Color is the tag's colour as a hex triplet.
-	Color string `json:"color"`
-}
-
-// tagInfos converts the tags a branch carries into the model's shape.
-func tagInfos(tags []tag.Tag) []tagInfo {
-	out := make([]tagInfo, 0, len(tags))
-
-	for _, t := range tags {
-		out = append(out, tagInfo{ID: t.ID, Name: t.TagName, Color: t.Color})
-	}
-
-	return out
-}
-
-// branchTagProps builds the argument schema assign_tag and unassign_tag
-// share.
-func branchTagProps() map[string]any {
-	return map[string]any{
-		"document_id": map[string]any{"type": "string", "description": "The document id."},
-		"branch_id":   map[string]any{"type": "string", "description": "The id of the branch the tag goes on or comes off: a document's default_branch_id from list_documents or list_tags, or any id from the branches get_document lists."},
-		"tag_id":      map[string]any{"type": "string", "description": "The tag id, as list_tags or a document's tags report it."},
-	}
 }

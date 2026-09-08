@@ -109,6 +109,12 @@ func NewTag(inp CreateInput, organizationID, userID string) Tag {
 	}
 }
 
+// Summary returns the tag on its own: the identity, name and colour,
+// without the per-user hidden flag or the documents carrying it.
+func (t Tag) Summary() Summary {
+	return Summary{ID: t.ID, TagName: t.TagName, Color: t.Color}
+}
+
 // UpdateInput is the input for renaming or recolouring a tag. A field left
 // unset keeps its current value.
 type UpdateInput struct {

@@ -675,7 +675,7 @@ func (i *input) ApplyEdit(documentID, branchID xid.ID, ops []edit.Operation) err
 	// marks the result isError, and the assistant sees a failure it can
 	// correct rather than a success it will summarise.
 	if res.Applied == 0 && len(res.Errors) > 0 {
-		return fmt.Errorf("applying edit: %s", joinOpErrors(res.Errors))
+		return fmt.Errorf("applying edit: %s", edit.JoinOpErrors(res.Errors))
 	}
 
 	if len(res.Errors) > 0 {

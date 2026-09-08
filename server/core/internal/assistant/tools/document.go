@@ -9,6 +9,7 @@ import (
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
 	"github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/rs/xid"
 )
 
@@ -117,7 +118,7 @@ type getDocument struct {
 func (getDocument) Info() Info {
 	return Info{
 		Name:        NameGetDocument,
-		Description: "Read one document on one branch: its name, icon, parent_id, protected flag and updated_at, the branch read and every branch the document has (each with the id a branch_id argument takes), the tags the branch carries as [{id, name, color}], followed by one row per block with the block's uid, kind, flattened text, depth, parent_uid and the few attrs that matter for reading (heading level, callout icon, code language, task checked). Use it as the way to read a document before editing it; branch_id is the default_branch_id a listing or search hit carries, or any id from branches. A protected branch can be read but refuses every write, so pick an unprotected branch id from branches to write to. Rows marked has_children hold nested blocks the rows do not list, and read_block returns those when you need them.",
+		Description: "Read one document on one branch: its name, icon, parent_id, protected flag and updated_at, the branch read and every branch the document has (each with the id a branch_id argument takes), the tags the branch carries as [{id, tagName, color}], followed by one row per block with the block's uid, kind, flattened text, depth, parent_uid and the few attrs that matter for reading (heading level, callout icon, code language, task checked). Use it as the way to read a document before editing it; branch_id is the default_branch_id a listing or search hit carries, or any id from branches. A protected branch can be read but refuses every write, so pick an unprotected branch id from branches to write to. Rows marked has_children hold nested blocks the rows do not list, and read_block returns those when you need them.",
 		Properties: map[string]any{
 			"document_id": map[string]any{"type": "string", "description": "The document id."},
 			"branch_id":   map[string]any{"type": "string", "description": "The id of the branch to read or write: a document's default_branch_id from list_documents, a search hit's branch_id, or any id from the branches get_document lists. A protected branch can be read but refuses every write."},
@@ -139,7 +140,7 @@ func (getDocument) Title(inp DescribeInput) (string, error) {
 		return "", fmt.Errorf("%s: fetch document: %w", NameGetDocument, err)
 	}
 
-	return "Reading " + docLabel(doc), nil
+	return "Reading " + doc.Title(), nil
 }
 
 // Execute fetches the branch and summarises its content. The document
@@ -175,8 +176,12 @@ func (getDocument) Execute(inp Input) (string, error) {
 		UpdatedAt:  doc.UpdatedAt.UTC().Format(time.RFC3339),
 		Branch:     branchInfo{ID: doc.BranchID, Name: doc.BranchName, Protected: doc.Protected, Default: doc.Default},
 		Branches:   make([]branchInfo, 0, len(branches)),
-		Tags:       tagInfos(tags),
+		Tags:       make([]tag.Summary, 0, len(tags)),
 		Blocks:     walkDocForAssistant(doc.Content.Content),
+	}
+
+	for _, tg := range tags {
+		out.Tags = append(out.Tags, tg.Summary())
 	}
 
 	for _, b := range branches {
@@ -219,7 +224,7 @@ type documentResult struct {
 	Branches []branchInfo `json:"branches"`
 
 	// Tags is every tag the branch read carries.
-	Tags []tagInfo `json:"tags"`
+	Tags []tag.Summary `json:"tags"`
 
 	// Blocks is the branch's content, one row per block.
 	Blocks []docSummaryEntry `json:"blocks"`

@@ -137,15 +137,6 @@ func Test_listTags_Execute(t *testing.T) {
 	}
 }
 
-func Test_tagInfos(t *testing.T) {
-	t.Parallel()
-
-	assert.Equal(t, []tagInfo{}, tagInfos(nil))
-	assert.Equal(t, []tagInfo{
-		{ID: _testTagID, Name: _stubTagName, Color: _stubTagColor},
-	}, tagInfos([]tag.Tag{{ID: _testTagID, TagName: _stubTagName, Color: _stubTagColor, OrganizationID: "org"}}))
-}
-
 func Test_createTagArgs_Validate(t *testing.T) {
 	t.Parallel()
 
@@ -595,16 +586,6 @@ func Test_branchTagArgs_Validate(t *testing.T) {
 		"branch_id":   branchTagArgs{docTarget: docTarget{DocumentID: _testDocID}, TagID: _testTagID},
 		"tag_id":      branchTagArgs{docTarget: docTarget{DocumentID: _testDocID, BranchID: _stubMainBranchID}},
 	})
-}
-
-func Test_branchTagProps(t *testing.T) {
-	t.Parallel()
-
-	props := branchTagProps()
-
-	assert.Contains(t, props, "document_id")
-	assert.Contains(t, props, "branch_id")
-	assert.Contains(t, props, "tag_id")
 }
 
 func Test_assignTag_Info(t *testing.T) {

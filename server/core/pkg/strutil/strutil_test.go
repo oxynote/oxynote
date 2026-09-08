@@ -34,3 +34,24 @@ func Test_Ellipsize(t *testing.T) {
 		})
 	}
 }
+
+func Test_Preview(t *testing.T) {
+	cc := map[string]struct {
+		Input  string
+		MaxLen int
+		Result string
+	}{
+		"Newlines collapse":  {Input: "a\nb\nc", MaxLen: 10, Result: "a b c"},
+		"Whitespace trimmed": {Input: "  x  ", MaxLen: 10, Result: "x"},
+		"Long text elided":   {Input: "abcdef", MaxLen: 3, Result: "abc…"},
+		"Empty input":        {Input: "", MaxLen: 3, Result: ""},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, Preview(c.Input, c.MaxLen))
+		})
+	}
+}

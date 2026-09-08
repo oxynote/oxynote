@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"encoding/json"
-	"sync"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/components/tool"
@@ -17,23 +16,14 @@ import (
 // survives the checkpoint written when the turn is interrupted.
 const SessionKeyAutoApprove = "oxynote_assistant_auto_approve"
 
-// _registerOnce guards the one-time registration of the types that
-// cross an interrupt. Registering twice panics.
-var _registerOnce sync.Once
-
-// registerConfirmTypes teaches the checkpoint serialiser about the
-// values a paused write carries. A turn parked on a confirmation is
-// written to Redis, and an unregistered type fails that write, which
-// would surface as a failed turn rather than a prompt.
-//
-// The names are the identities those checkpoints are written under.
-// Renaming one strands every turn already parked in Redis, so a rename
-// is only free while nothing is deployed.
-func registerConfirmTypes() {
-	_registerOnce.Do(func() {
-		schema.RegisterName[confirmState]("oxynote_assistant_confirm_state")
-		schema.RegisterName[ActionSummary]("oxynote_assistant_action_summary")
-	})
+// the checkpoint is gob-encoded, and both values sit behind interface
+// fields in it: confirmState as the interrupt state, ActionSummary as
+// the interrupt info. gob needs a name for a concrete type it meets
+// through an interface, and a checkpoint already in Redis carries the
+// name it was written with, so a rename fails to decode it.
+func init() {
+	schema.RegisterName[confirmState]("oxynote_assistant_confirm_state")
+	schema.RegisterName[ActionSummary]("oxynote_assistant_action_summary")
 }
 
 // ActionSummary is the human-readable description of a pending write op

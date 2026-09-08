@@ -30,16 +30,6 @@ type Result struct {
 	Errors []OpError `json:"errors"`
 }
 
-// OpError describes one operation's failure on the Node side.
-type OpError struct {
-	// Index is the position of the failing op in the request's
-	// operations array.
-	Index int `json:"index"`
-
-	// Message is the short reason from Node.
-	Message string `json:"message"`
-}
-
 // Client posts batched operations to the Node hocuspocus service's
 // internal operations endpoint. The base URL points at the Node
 // service (e.g. http://auth-realtime:8081); endpoint replaces its

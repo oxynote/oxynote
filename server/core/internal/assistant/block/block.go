@@ -111,6 +111,55 @@ const (
 	BlockParamList Type = "split_doc_param_list"
 )
 
+// Label turns the type into a friendlier label for the confirm UI.
+// Unknown types fall through verbatim.
+func (t Type) Label() string {
+	switch t {
+	case BlockParagraph:
+		return "a paragraph"
+	case BlockHeading:
+		return "a heading"
+	case BlockBlockquote:
+		return "a blockquote"
+	case BlockBulletList:
+		return "a bullet list"
+	case BlockOrderedList:
+		return "an ordered list"
+	case BlockTaskList:
+		return "a task list"
+	case BlockCallout:
+		return "a callout"
+	case BlockCode:
+		return "a code block"
+	case BlockTitledCode:
+		return "a titled code block"
+	case BlockMermaid:
+		return "a mermaid diagram"
+	case BlockHorizontalRule:
+		return "a divider"
+	case BlockImage:
+		return "an image"
+	case BlockFile:
+		return "a file attachment"
+	case BlockFigma:
+		return "a figma embed"
+	case BlockMetric:
+		return "a metric"
+	case BlockMetricGrid:
+		return "a metric grid"
+	case BlockSplitDoc:
+		return "a split documentation block"
+	case BlockParamList:
+		return "a parameter list"
+	}
+
+	if t == "" {
+		return "a block"
+	}
+
+	return "a " + string(t) + " block"
+}
+
 // Block is the canonical representation of a single block as the AI
 // reads and writes it. Not every field is meaningful for every block
 // type:
