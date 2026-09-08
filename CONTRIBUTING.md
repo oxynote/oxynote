@@ -127,6 +127,14 @@ stack on `19080` (`19025`).
   deployment. See [docker/prod/README.md](docker/prod/README.md).
 - `scripts/` — helpers the root Makefile calls.
 
+## AI coding agents
+
+Instructions for coding agents live in `AGENTS.md` at the repository root
+and in each component directory; the root file maps the components and
+links their files. Every `CLAUDE.md` next to one is a one-line import that
+points Claude Code at the `AGENTS.md` beside it — edit `AGENTS.md`, never
+the shim.
+
 ## Adding a data source
 
 Decide first what you are adding. If the new type is compatible with an
