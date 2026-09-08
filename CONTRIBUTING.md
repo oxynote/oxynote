@@ -190,6 +190,51 @@ needs its own processor, client interface, routes and assistant tools.
    and the prerequisites above if a new container became a test
    dependency. The e2e suite creates no data sources and needs nothing.
 
+## Adding a hook
+
+Decide first whether the hook depends on an integration the deployment
+may not have, the way GitHub tracking needs the GitHub app and the
+website watcher needs changedetection.io. Such a hook also needs a
+client under `server/core/internal/apps/`, a capability flag and the
+gating in step 3.
+
+1. **Create the type constant.** The type constant, its validation and
+   its human-readable name (used in notification text), and the switch
+   that turns a stored hook into a running processor all live in
+   `server/core/internal/document/hook/`. Add the constant, then follow
+   an existing type through the package. A hook with its own client gets
+   it through the input that hands processors their clients, declared
+   in the processor package and implemented in this one.
+2. **Write the processor.** `server/core/internal/document/hook/processor/`
+   holds one processor per type. Its struct is the hook's settings, and
+   it computes a freshness score and a state from them, resets that
+   state, and tears down whatever it holds outside the deployment.
+3. **Gate on the integration.** If the hook depends on an integration,
+   three places refuse or skip it when the deployment lacks it: the
+   manager in `server/core/internal/document/hook/manager/` skips it
+   while processing, the assistant's create refuses it, and the
+   capabilities endpoint in `server/core/internal/server/` reports
+   whether it is configured, so the web app can hide it.
+4. **Add the assistant tools.** The hook tools in
+   `server/core/internal/assistant/tools/` take settings as one object
+   whose shape the type decides: add the type's schema variant and its
+   decoding case.
+5. **Add the type to the web app.** The frontend knows the types, their
+   settings and their state through `web/app/utils/api/document.ts`.
+   Add a directory with the config menu under
+   `web/app/components/editor/hooks/`, then follow an existing type
+   through the menu content beside it (the component and props switches
+   and the add-menu entry, gated on the capability when the hook depends
+   on one) and through the notification box in `web/app/components/`.
+   Their strings live in `web/i18n/locales/`.
+6. **Extend the tests.** Every place above that switches on the type has
+   a table-driven test with one row per type; extend the tables in the
+   packages you touched, and the unit test beside each web component.
+   Assistant tool descriptions are compared against a golden file;
+   regenerate it from `server/core/` with
+   `UPDATE_GOLDEN=1 go test -run Test_Info_toEino ./internal/assistant/tools/`
+   and review the diff. The e2e suite creates no hooks and needs nothing.
+
 ## Before opening a pull request
 
 Run `make check-lint`. CI runs the same gates per component, plus the unit
