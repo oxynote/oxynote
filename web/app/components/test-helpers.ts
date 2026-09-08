@@ -5,6 +5,7 @@ import { mountSuspended } from "@nuxt/test-utils/runtime"
 import { flushPromises, type VueWrapper } from "@vue/test-utils"
 import { vi } from "vitest"
 import type { H3Event } from "h3"
+import type { ComponentPublicInstance } from "vue"
 import {
 	mockEndpoint,
 	runInApp,
@@ -224,7 +225,10 @@ export async function mountUnderDialogRoot(
 		},
 	})
 
-	return root.findComponent(component)
+	// the cast picks the findComponent overload that returns a plain VueWrapper;
+	// the `any` component would otherwise select the ComponentOptions one and
+	// hand every caller a VueWrapper<any, any>
+	return root.findComponent(component as ComponentPublicInstance)
 }
 
 // the settings action modals hold their submit for delay(300) so the
