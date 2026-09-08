@@ -52,7 +52,7 @@ cleanly. An incomplete group fails the boot with the missing name.
 | GitHub App | `OXYNOTE_GITHUB_APP_ID`, `OXYNOTE_GITHUB_APP_SLUG`, `OXYNOTE_GITHUB_APP_SIGNATURE_SECRET`; mount the app's private key at `/oxynote/github/private-key.pem` |
 | Slack app | `OXYNOTE_SLACK_APP_CLIENT_ID`, `OXYNOTE_SLACK_APP_CLIENT_SECRET`, `OXYNOTE_SLACK_APP_SIGNATURE_SECRET` |
 | Social login | `OXYNOTE_SOCIAL_LOGIN_{GITHUB,GOOGLE,SLACK}_CLIENT_ID` + `_CLIENT_SECRET` (both halves per provider) |
-| AI assistant | `OXYNOTE_AI_ASSISTANT_PROVIDER` (`anthropic`, `openai`, `google`, `ollama`, `openrouter`) plus the vendor's credentials: `OXYNOTE_AI_ASSISTANT_API_KEY`, `_MODEL`, `_BASE_URL`, `_MAX_TOKENS`, `_REQUEST_TIMEOUT`, `_SUMMARY_MODEL`, `_AZURE_API_VERSION`, `_BEDROCK_{REGION,ACCESS_KEY,SECRET_ACCESS_KEY,SESSION_TOKEN}`, `_VERTEX_{PROJECT_ID,REGION,SERVICE_ACCOUNT_JSON}` |
+| AI assistant | `OXYNOTE_AI_ASSISTANT_PROVIDER` (`anthropic`, `openai`, `google`, `ollama`, `openrouter`) plus the vendor's credentials, detailed in [docs/ai.md](../../docs/ai.md): `OXYNOTE_AI_ASSISTANT_API_KEY`, `_MODEL`, `_BASE_URL`, `_MAX_TOKENS`, `_REQUEST_TIMEOUT`, `_SUMMARY_MODEL`, `_AZURE_API_VERSION`, `_BEDROCK_{REGION,ACCESS_KEY,SECRET_ACCESS_KEY,SESSION_TOKEN}`, `_VERTEX_{PROJECT_ID,REGION,SERVICE_ACCOUNT_JSON}` |
 | URL watching | `OXYNOTE_CHANGE_DETECTION_URL`, `OXYNOTE_CHANGE_DETECTION_API_KEY` (a changedetection.io instance) |
 
 ### Tuning
