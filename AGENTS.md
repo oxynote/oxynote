@@ -1,187 +1,162 @@
 # AGENTS.md
 
-This file provides guidance to AI coding agents when working with code in this repository. Each component directory carries its own AGENTS.md; read it before working in that component.
+Guidance for AI coding agents working in this repository. Each component
+directory has its own AGENTS.md; read it before working there.
 
-## 1. Think Before Coding
+## 1. Think before coding
 
-**Don't assume. Don't hide confusion. Surface tradeoffs.**
+State your assumptions. If several interpretations exist, present them
+rather than picking one silently. If a simpler approach exists, say so. If
+something is unclear, stop and ask.
 
-Before implementing:
-- State your assumptions explicitly. If uncertain, ask.
-- If multiple interpretations exist, present them - don't pick silently.
-- If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what's confusing. Ask.
+## 2. Simplicity first
 
-## 2. Simplicity First
+The minimum code that solves the problem: no features beyond the ask, no
+abstractions for single-use code, no unrequested configurability, no error
+handling for impossible cases. If 200 lines could be 50, rewrite.
 
-**Minimum code that solves the problem. Nothing speculative.**
+## 3. Surgical changes
 
-- No features beyond what was asked.
-- No abstractions for single-use code.
-- No "flexibility" or "configurability" that wasn't requested.
-- No error handling for impossible scenarios.
-- If you write 200 lines and it could be 50, rewrite it.
+Touch only what the request needs. Do not improve adjacent code, comments
+or formatting, do not refactor what is not broken, and match the existing
+style. Mention unrelated dead code; do not delete it. Remove only the
+imports, variables and functions your own change made unused.
 
-Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+**Leave no containers running.** Stop every stack or container you started
+before finishing, including after a failure or interruption (`make e2e-*`
+tears its own down). Leave up only a stack that was already running or that
+the user asked to keep.
 
-## 3. Surgical Changes
+## 4. Comments serve the reader, not the requester
 
-**Touch only what you must. Clean up only your own mess.**
+A comment explains the code as it stands. Never address it to whoever asked
+for the change ("as requested", "deliberately without X"), never narrate
+what changed or moved, never justify at paragraph length. Comment genuine
+traps: a non-obvious invariant, an upstream bug, an ordering that looks
+arbitrary and is not. Test: does it still earn its lines for someone reading
+the file a year from now with no idea what was asked? The same test applies
+to the prose in these AGENTS.md files.
 
-When editing existing code:
-- Don't "improve" adjacent code, comments, or formatting.
-- Don't refactor things that aren't broken.
-- Match existing style, even if you'd do it differently.
-- If you notice unrelated dead code, mention it - don't delete it.
+## 5. Goal-driven execution
 
-When your changes create orphans:
-- Remove imports/variables/functions that YOUR changes made unused.
-- Don't remove pre-existing dead code unless asked.
+Turn the task into a verifiable goal ("fix the bug" becomes a test that
+reproduces it, then passes). For multi-step work, state a short plan with a
+check per step and loop until every check passes.
 
-**Leave no containers running.** If you start a stack or a container while
-working — `make start`, `make dev`, `make prod-run`, a bare `docker compose
-up`, a one-off `docker run` — stop it before you finish, including when the
-task failed or you are interrupted. The `make e2e-*` targets tear their own
-stack down; anything you started by hand is yours to stop. A stack left up
-holds ports, burns battery and silently changes what the next command sees.
-The exception is a stack that was already running when you started, or one
-the user asked you to leave up.
+## 6. AGENTS.md itself
 
-The test: Every changed line should trace directly to the user's request.
-
-## 4. Comments Serve the Reader, Not the Requester
-
-**A comment explains the code. It never answers the prompt.**
-
-The reader has never seen the conversation that produced the change, and
-never will. Write only what they need to work on the code in front of them.
-
-- **Never comment a decision to whoever asked for it.** No "deliberately
-  without X", no "as requested", no note explaining why something is absent,
-  removed, or named the way it is. Code says what it does; a comment is for
-  what the code cannot say.
-- **Never narrate the change.** A comment describes the code as it stands,
-  not what it used to be or what moved where. That is what git is for.
-- **Keep it to a line or two.** A paragraph of justification means either
-  the code needs the work, or the comment is arguing with a reviewer who
-  will never read it.
-- Comment a genuine trap: a non-obvious invariant, an upstream bug, an
-  ordering that looks arbitrary and is not.
-
-The test: would this still make sense, and still earn its lines, to someone
-reading the file a year from now with no idea what was asked?
-
-The same applies to the prose in these AGENTS.md files — write the rule, not
-the story of how it came up.
-
-## 5. Goal-Driven Execution
-
-**Define success criteria. Loop until verified.**
-
-Transform tasks into verifiable goals:
-- "Add validation" → "Write tests for invalid inputs, then make them pass"
-- "Fix the bug" → "Write a test that reproduces it, then make it pass"
-- "Refactor X" → "Ensure tests pass before and after"
-
-For multi-step tasks, state a brief plan:
-```
-1. [Step] → verify: [check]
-2. [Step] → verify: [check]
-3. [Step] → verify: [check]
-```
-
-Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
-
-## 6. Keep This File in Sync
-
-**If a request contradicts AGENTS.md, surface it. If the rule changes, update the file.**
-
-- When the user asks for something that contradicts this file (or a nested AGENTS.md), don't silently comply and don't silently refuse — name the conflict and ask which side wins.
-- If the user confirms the new direction, update the affected AGENTS.md section as part of the same task, so the documentation never drifts from how the code actually works.
+- If a request contradicts this file or a nested one, name the conflict and
+  ask which side wins. Once the new direction is confirmed, update the
+  affected section in the same task.
+- These files hold only what cannot be learned from the code, the READMEs
+  or git history: conventions, invariants, traps, and where things live.
+  Before adding a line, check that it is not already stated, not readable
+  from the code it describes, and not the story of one change. Write the
+  rule; a reason only where the rule would otherwise look arbitrary.
+- Some tools load at most 32 KiB of AGENTS.md per session: this file plus
+  every AGENTS.md on the path to the working directory. This file plus any
+  component's file stay under 32 KiB together; a package-level file below a
+  component stays under 5 KiB (`wc -c`). When a file grows, cut before
+  adding.
 
 ---
 
 ## Repository map
 
-**Oxynote** — collaborative documentation product. One repo, four buildable components:
+Oxynote is a collaborative documentation product. One repo, four buildable
+components:
 
-- `web/` — Nuxt 4 + Vue 3 frontend; ships as both a web app (SSR) and an Electron desktop app. Own **pnpm** workspace. Details: [web/AGENTS.md](web/AGENTS.md).
-- `server/core/` — Go API server (`oxynote-core`). Go module `github.com/oxynote/oxynote/server/core`. Details: [server/AGENTS.md](server/AGENTS.md).
-- `server/auth-realtime/` — Node service (`@oxynote/auth-realtime`, **pnpm**) running Better Auth and a Hocuspocus (Yjs) server in one Hono process. Details: [server/auth-realtime/AGENTS.md](server/auth-realtime/AGENTS.md).
-- `datagen/` — demo-data generator; separate Go module `github.com/oxynote/oxynote/datagen`. Demo/testing only.
-- `e2e/` — Playwright end-to-end suite (`@oxynote/e2e`, **pnpm**) plus the two docker-compose stacks it drives: the dev stack built from this repo, and the all-in-one image `docker/prod/` produces. Not shipped; it exercises the composed product through a real backend. Every file, script and make target belonging to one stack is named `dev` or `prod` — neither is the unnamed default. Details: [e2e/AGENTS.md](e2e/AGENTS.md).
-- `scripts/` — helpers the root Makefile calls. `run-quietly.sh` runs a build step with its output held back, replaying the log only if the step fails.
-- `docker/` — dev docker-compose stack, Caddyfile, `env/` (committed `*.example.env` templates; `make setup` copies them to the gitignored `*.local.env` files the compose stack reads, and `web.example.env` also to `web/.env` for the host dev server and electron builds; `sync-env.sh` reconciles an existing `*.local.env` with its template, since `make setup` only copies when the local file is missing, and `make setup-force` copies over them regardless), `demo/` (demo-data configs for mariadb/postgres).
-- `docker/prod/` — the production all-in-one image: alpine-based Dockerfile (built via `make prod-build`; core comes from goreleaser), the image's Caddyfile (sibling of `docker/Caddyfile`), the TS launcher (`@oxynote/launcher`, **pnpm**) that validates the flat public `OXYNOTE_*` env, generates internal secrets, and supervises caddy + web + core + auth-realtime, plus the example compose deployment and the local override `make prod-run` layers on it. Details: [docker/prod/AGENTS.md](docker/prod/AGENTS.md).
+- `web/` — Nuxt 4 + Vue 3; ships as a web app (SSR) and an Electron desktop
+  app. Own pnpm workspace. [web/AGENTS.md](web/AGENTS.md).
+- `server/core/` — Go API server, module
+  `github.com/oxynote/oxynote/server/core`. Architecture in
+  [server/AGENTS.md](server/AGENTS.md), Go standards in
+  [server/core/AGENTS.md](server/core/AGENTS.md).
+- `server/auth-realtime/` — Node service: Better Auth and Hocuspocus (Yjs)
+  in one Hono process. pnpm.
+  [server/auth-realtime/AGENTS.md](server/auth-realtime/AGENTS.md).
+- `datagen/` — demo-data generator, separate Go module.
+- `e2e/` — Playwright suite plus the two compose stacks it drives, `dev`
+  (built from this repo) and `prod` (the all-in-one image); neither is an
+  unnamed default. [e2e/AGENTS.md](e2e/AGENTS.md).
+- `docker/` — dev compose stack, Caddyfile, `env/` (committed
+  `*.example.env` templates; `make setup` copies them to the gitignored
+  `*.local.env` the stack reads), `demo/` data configs.
+- `docker/prod/` — the production all-in-one image, its Caddyfile, the TS
+  launcher and the example compose. [docker/prod/AGENTS.md](docker/prod/AGENTS.md).
+- `scripts/` — helpers the root Makefile calls.
 
-**One `.gitignore`, and it lives at the repository root.** Components do not carry their own — a rule for a nested directory is written with its path (`e2e/test-results/`, `web/coverage/`), so every exclusion in the repository is readable in one file.
+One `.gitignore`, at the repository root. Nested rules carry their path
+(`e2e/test-results/`).
 
 ## Common commands
 
 From the repository root:
 
 ```sh
-make deps      # install web/ + auth-realtime (pnpm) and go module dependencies
-make setup     # deps + web prepare + creates docker/env/*.local.env from templates
-make setup-force # setup, but *.local.env is rewritten from the templates, values and all
-make run       # build images + run the dev stack in the foreground (ctrl-c stops it)
-make start     # build images + run the dev stack in the background
-make dev       # backend containers + web dev server on the host (hot reload, :3000)
-make stop      # stop the dev stack
-make check-env # report variables that drifted between *.example.env and *.local.env
-make sync-env  # rewrite *.local.env from the templates, keeping existing values
-
-make lint      # fix lint/format/type issues in web, auth-realtime, core, datagen, e2e, launcher
-make check-lint # the same gates, verification only
-
-make prod-build # goreleaser core binary + the all-in-one prod image
-make prod-run   # build the image + run the example compose on :8080, with
-                # a mailpit on :8025 so signup mail is readable
-make prod-stop  # stop it
-# release-only, run by .github/workflows/release.yml on a tag:
-# make prod-publish RELEASE_VERSION=1.2.3  -> pushes :latest and :1.2.3
-
-make e2e-dev             # one-shot: build, run playwright, tear the dev stack down
-make e2e-dev-stack-build # build that stack's images, then iterate with `pnpm test:dev`
-make e2e-dev-stack-stop  # stop it and drop its data
-
-make e2e-prod             # the same suite against the all-in-one image
-make e2e-prod-stack-build # build that image, then iterate with `pnpm test:prod`
-make e2e-prod-stack-stop  # stop it and drop its data
+make deps / setup / setup-force   # deps; + env files from templates; + overwrite them
+make run / start / stop           # dev stack foreground / background / stop
+make dev                          # backend containers + web dev server on :3000
+make check-env / sync-env         # report / reconcile *.local.env against templates
+make lint / check-lint            # fix / verify lint, format and types everywhere
+make prod-build / prod-run / prod-stop         # all-in-one image on :8080 (mailpit :8025)
+make e2e-{dev,prod}[-stack-build|-stack-stop]  # dev stack :18080, prod image :19080
 ```
 
-The e2e dev stack listens on `:18080` (and mailpit on `:18025`) and the prod one on `:19080` (`:19025`), so all three stacks run alongside each other rather than fighting for ports.
-
-Component build/test/qa commands are listed in the nested AGENTS.md files.
+`make prod-publish` is release-only (`.github/workflows/release.yml`).
+Component commands are in the nested files.
 
 ## Cross-component contracts
 
-- **Front door**: Caddy on host `:8080`. `/core/*` is path-stripped and proxied to core (`:8080`); `/auth-realtime/*` is path-stripped and proxied to auth-realtime (`:8081`, so `/auth-realtime/api/...` and `/auth-realtime/hocuspocus` publicly); everything else goes to the web SSR container. The frontend reaches the core API via `NUXT_PUBLIC_CORE_API_BASE_HTTP_URL` (`…:8080/core`) and auth/realtime via `NUXT_PUBLIC_AUTH_REALTIME_API_BASE_*_URL` (`…:8080/auth-realtime`).
-- **Trust boundary**: core has four surfaces. `/api/...` requires a session. `/api/x/...` (core) and `/api/internal/...` (auth-realtime) have no auth and must never be exposed by the reverse proxy (the Caddyfile blocks both at the front door) — they exist for service-to-service calls (auth-realtime ↔ core). Four of core's `/api/x` routes are internal *and* session-authed: fork (`POST .../branches`), branch update (`PUT .../branches/{branchId}`), merge (`PUT .../merge`) and branch delete (`DELETE .../branches/{branchId}`) act for a person but are reachable only through auth-realtime, which first flushes the branch's pending Hocuspocus store so core reads what the editors show, forwards the caller's session for core to authorize, and resets the branch's connections after a protection change or a delete. `/api/apps/...` is public and sessionless: GitHub and Slack deliver webhooks and OAuth callbacks there, and every request proves itself with the provider's signature or an encrypted state parameter. `/api/mcp` is the MCP surface: OAuth 2.1 bearer tokens issued by auth-realtime (which is the authorization server via `@better-auth/mcp`), validated per request against auth-realtime's internal MCP session endpoint; the Caddyfile also routes the front-door `/.well-known/oauth-*` discovery documents and `/api/auth/*` OAuth endpoints to auth-realtime.
-- **Session validation**: core's auth middleware validates sessions by calling auth-realtime's `/api/auth/get-session`; auth-realtime owns the Better Auth schema.
-- **Yjs invariant**: the Hocuspocus `documentName` is `"<documentId>-<branchIdentifier>"`, split on the first `-`. Never seed or merge one Y.Doc from another with `Y.applyUpdate` — use `replaceYdocContent` (`server/auth-realtime/src/ydocument.ts`). Read the document-storage section of [server/AGENTS.md](server/AGENTS.md) before touching branch content anywhere.
-- **System writes**: a protected branch refuses every persist but core's own. Core marks the batches it originates with `edit.Client.Apply`'s `system` argument, which only a caller acting for core itself may set, auth-realtime opens the direct connection under that origin, and `onStoreDocument` marks the persist system only while every change in the window came from core. Protection itself is enforced where a write enters the document — `onAuthenticate` makes a connection to a protected branch read-only — because the persist carries whole-document state and could otherwise smuggle an edit it never authorised.
-- **Env naming**: core reads `OXYNOTE_CORE_*` (via `buildinfo.Getenv`), auth-realtime reads `OXYNOTE_AUTH_REALTIME_*`, the frontend reads `NUXT_PUBLIC_*`.
-- **`_DSN` vs `_URL`**: a variable holding a connection string with credentials in it ends in `_DSN` — `DB_DSN`, `VALKEY_DSN`, `SMTP_DSN`, `OBJECT_STORAGE_DSN` (public), `SENTRY_DSN`. A variable holding a plain address ends in `_URL`, and any credential it needs is its own variable — `MEILISEARCH_URL` + `_MASTER_KEY`, `CHANGE_DETECTION_URL`/`CHANGEDETECTION_API_URL` + its key, `OBJECT_STORAGE_URL` + key/secret on core's side, plus every address that is not a dependency at all (`PUBLIC_URL`, `BASE_APP_URL`, `TERMS_OF_SERVICE_URL`). The suffix is a claim about whether the value is a secret, so it holds across the trust boundary: the same dependency is never `_DSN` publicly and `_URL` internally.
+- **Front door**: Caddy on `:8080`. `/core/*` is path-stripped to core
+  (`:8080`), `/auth-realtime/*` to auth-realtime (`:8081`), everything else
+  to web SSR. The frontend uses `NUXT_PUBLIC_CORE_API_BASE_HTTP_URL` and
+  `NUXT_PUBLIC_AUTH_REALTIME_API_BASE_*_URL`.
+- **Trust boundary**: `/api/...` needs a session. Core's `/api/x/...` and
+  auth-realtime's `/api/internal/...` have no auth, exist for
+  service-to-service calls, and are blocked by the Caddyfile; never expose
+  them. Fork, branch update, merge and branch delete are `/api/x` routes
+  that are also session-authed and reachable only through auth-realtime
+  (see [server/AGENTS.md](server/AGENTS.md)). `/api/apps/...` is public and
+  sessionless (GitHub/Slack webhooks and OAuth callbacks, proven by
+  signature or encrypted state). `/api/mcp` takes OAuth 2.1 bearer tokens
+  issued by auth-realtime and validated against its internal MCP session
+  endpoint.
+- **Session validation**: core calls auth-realtime's `/api/auth/get-session`;
+  auth-realtime owns the Better Auth schema.
+- **Yjs invariant**: the Hocuspocus `documentName` is
+  `"<documentId>-<branchIdentifier>"`, split on the first `-`. Never seed or
+  merge one Y.Doc from another with `Y.applyUpdate`; use `replaceYdocContent`
+  (`server/auth-realtime/src/ydocument.ts`). Read the document-storage
+  section of [server/AGENTS.md](server/AGENTS.md) before touching branch
+  content.
+- **System writes**: a protected branch accepts only core's own persists,
+  marked through `edit.Client.Apply`'s `system` argument and recognised by
+  `onStoreDocument` only while every change came from core. Protection is
+  enforced at the connection (`onAuthenticate` makes it read-only), because
+  a persist carries whole-document state.
+- **Env naming**: core reads `OXYNOTE_CORE_*` (via `buildinfo.Getenv`),
+  auth-realtime `OXYNOTE_AUTH_REALTIME_*`, the frontend `NUXT_PUBLIC_*`.
+- **`_DSN` vs `_URL`**: a connection string carrying credentials ends in
+  `_DSN`; a plain address ends in `_URL` and any credential is its own
+  variable (`MEILISEARCH_URL` + `_MASTER_KEY`). The suffix says whether the
+  value is a secret, so the same dependency is never `_DSN` on one side of
+  the trust boundary and `_URL` on the other.
 
 ## Code style (TS/JS — web and auth-realtime)
 
-### Comments
+- Comment only complex implementations, edge cases and places that would
+  confuse a future reader, under section 4 above.
+- `//` comments only, never `/* */`, wrapped at 80 characters.
+- Never reference AGENTS.md or another agent-instruction file from a comment;
+  inline the rule instead. Links to real docs (READMEs, upstream issues) are
+  fine.
+- Within a comment the first sentence starts lowercase and later sentences
+  uppercase (`// strip the leading "; " that getCookie emits. Downstream
+  code expects a bare pair.`), unless the first word is an identifier.
+- A blank line before and after each logical block (function, `if`/`else`,
+  loop, `try`/`catch`, `switch`), not between every statement. An `if` or
+  `switch` follows the declaration of the value it checks directly, with no
+  blank line between them.
 
-- Only comment **complex implementations, edge cases, and locations that would confuse a future reader** — under the rules in "Comments Serve the Reader, Not the Requester" above, which apply to every language in the repository.
-- Always use `//` single-line comments. Never use `/* */` — not even for multi-line blocks.
-- **Never reference AGENTS.md or any other agent-instruction file from a comment.** Comments stand alone for any reader, and AGENTS.md is agent-facing documentation, not part of the codebase's own narrative. Where a comment would say "see AGENTS.md", inline the actual rule or rationale instead. Links to real project docs (READMEs, upstream issues, specs) stay fine.
-- Wrap comments at 80 characters. Continuation lines also start with `// `.
-- Within a single comment, the **first sentence starts with a lowercase letter**; every following sentence starts with an uppercase letter. Sentences are still separated with proper punctuation. However, if the first word is the name of a class/function, use the casing of that class/function and don't override it.
-
-  Example:
-  ```ts
-  // strip the leading "; " that getCookie always emits. Downstream code
-  // expects a bare cookie pair, not a header-prefix fragment.
-  ```
-
-### Whitespace
-
-Leave a blank line **before and after each logical block**: function definitions, `if`/`else` branches, `for`/`while` loops, `try`/`catch`, `switch` blocks, etc. The goal is visual separation between distinct units of logic — not blank lines between every statement.
-
-Go style, Vue conventions, and per-component formatting configs live in the nested AGENTS.md files.
+Go style and Vue conventions live in the nested files.

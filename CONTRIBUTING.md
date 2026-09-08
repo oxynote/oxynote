@@ -129,11 +129,11 @@ stack on `19080` (`19025`).
 
 ## AI coding agents
 
-Instructions for coding agents live in `AGENTS.md` at the repository root
-and in each component directory; the root file maps the components and
-links their files. Every `CLAUDE.md` next to one is a one-line import that
-points Claude Code at the `AGENTS.md` beside it — edit `AGENTS.md`, never
-the shim.
+Instructions for coding agents live in `AGENTS.md` at the repository root,
+in each component directory, and in a few core packages with rules of their
+own; the root file maps the components and links their files. Every
+`CLAUDE.md` next to one is a one-line import that points Claude Code at the
+`AGENTS.md` beside it — edit `AGENTS.md`, never the shim.
 
 ## Adding a data source
 

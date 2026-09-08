@@ -1,621 +1,348 @@
 # AGENTS.md
 
-Guidance for the `web/` frontend. Shared working principles and the TS/JS
-comment/whitespace rules live in the root [AGENTS.md](../AGENTS.md).
+Guidance for the `web/` frontend. Shared principles and TS/JS style live in
+the root [AGENTS.md](../AGENTS.md).
 
-## Project
+Nuxt 4 + Vue 3, shipping as a web app (SSR, Cloudflare Pages preset; the
+docker image uses `node-server`) and an Electron desktop app (static SPA).
 
-**Oxynote** web frontend — Nuxt 4 + Vue 3 frontend that ships as both a web app (Cloudflare Pages, SSR) and an Electron desktop app (static SPA).
+## Commands
 
-## Common commands
-
-Package manager is **pnpm** (workspace; uses `nodeLinker: hoisted` so Electron Forge's npm-style layout works).
+pnpm workspace with `nodeLinker: hoisted` (Electron Forge needs the
+npm-style layout).
 
 ```bash
-pnpm install                  # installs deps; runs `prepare` (nuxt prepare)
-pnpm setup                    # deps + explicit prepare (guarantees fresh .nuxt
-                              # types) + playwright chromium for browser-mode
-                              # tests
-
-pnpm start:dev:web            # nuxt dev on :3000 (web build)
-pnpm start:dev:desktop        # concurrently runs nuxt dev + electron-forge start with DESKTOP_BUILD=hybrid
-pnpm build:web                # production web build (cloudflare_pages preset)
-pnpm package:desktop          # nuxt generate (static) + electron-forge package
-pnpm make:desktop             # nuxt generate (static) + electron-forge make (installers)
-
-pnpm check-lint               # pnpm dedupe --check + check-types +
-                              # check-eslint + check-fmt + check-knip
-                              # (read-only)
-pnpm lint                     # fixing variant: pnpm dedupe + check-types +
-                              # knip --fix (removes dead exports/deps/files!)
-                              # + eslint --fix + prettier --write
-pnpm test                     # vitest run --coverage (node + browser + nuxt
-                              # projects; browser needs the playwright chromium
-                              # that `pnpm setup` installs)
-pnpm test-watch               # vitest in watch mode
-pnpm qa                       # check-lint + test; qa-fix = lint + test
-pnpm check-types              # nuxt typecheck (regenerates .nuxt types, then
-                              # vue-tsc -b --noEmit; plain vue-tsc --noEmit on
-                              # the solution-style root tsconfig checks nothing)
-                              # + tsc on electron/ (own tsconfig, not part of
-                              # the nuxt solution)
-pnpm check-eslint             # eslint --max-warnings 0 . (eslint / fmt are the
-                              # fixing counterparts)
-pnpm check-knip               # dead exports/files/dependencies ([knip.ts](knip.ts))
-pnpm dedupe --check           # fails when the lockfile resolves one package to
-                              # several versions that could share one
-
+pnpm setup                # deps + nuxt prepare + playwright chromium (browser-mode tests)
+pnpm start:dev:web        # nuxt dev on :3000
+pnpm start:dev:desktop    # nuxt dev + electron-forge start, DESKTOP_BUILD=hybrid
+pnpm build:web            # production web build
+pnpm package:desktop / make:desktop   # nuxt generate + electron-forge package / make
+pnpm check-lint           # dedupe --check + check-types + check-eslint + check-fmt + check-knip
+pnpm lint                 # fixing variant (knip --fix removes dead exports/deps/files)
+pnpm test                 # vitest run --coverage (node + browser + nuxt projects);  test-watch
+pnpm qa                   # check-lint + test;  qa-fix = lint + test
+pnpm check-types          # nuxt typecheck (regenerates .nuxt, then vue-tsc -b) + tsc on electron/
 ```
 
+## Build modes
 
-## Build modes (critical)
+`DESKTOP_BUILD` drives a Vite `define` producing `__DESKTOP_BUILD__`
+([nuxt.config.ts](nuxt.config.ts), [index.d.ts](index.d.ts)):
 
-The `DESKTOP_BUILD` env var drives a Vite `define` that materializes `__DESKTOP_BUILD__` in the bundle. See [nuxt.config.ts:9-24](nuxt.config.ts#L9-L24) and [index.d.ts:1-9](index.d.ts#L1-L9):
+- unset/`0`: web build, literal `false`, SSR on.
+- `1`: desktop build, literal `true`, SSR off, nitro `static`, renderer
+  served from `oxynote://app/index.html`.
+- `hybrid`: dev only; one dev server serves both the Electron renderer and
+  the browser opened for OAuth, so `__DESKTOP_BUILD__` becomes a runtime
+  probe of `window.__isElectron` (set by
+  [electron/preload.ts](electron/preload.ts)).
 
-- `DESKTOP_BUILD=0` / unset → web build. `__DESKTOP_BUILD__` is literal `false`. SSR enabled. Nitro preset `cloudflare_pages`, overridable via `NITRO_PRESET` (the docker image builds with `node-server`).
-- `DESKTOP_BUILD=1` → pure desktop build. Literal `true`. SSR off. Nitro preset `static`. Renderer is served from `oxynote://app/index.html` out of `.output/public/`.
-- `DESKTOP_BUILD=hybrid` → dev-only, used by `start:dev:desktop`. One Nuxt dev server is hit by *both* the Electron renderer and the system browser opened for OAuth. `__DESKTOP_BUILD__` becomes a *runtime probe* of `window.__isElectron` (set by [electron/preload.ts](electron/preload.ts)) so each context picks the right branch from the same bundle.
+Branch on platform only through `__DESKTOP_BUILD__`, never
+`process.platform`, `import.meta.client` or feature detection. The literal
+substitution is the security boundary: no desktop code path can carry a
+session cookie.
 
-When writing code that branches on platform, always use `__DESKTOP_BUILD__` — never `process.platform`, `import.meta.client`, or feature-detect on `window`. The literal-substitution is the security boundary: in the desktop bundle, no code path can carry a session cookie.
+## Auth
 
-## Auth architecture
+Better Auth with `@better-auth/electron`.
 
-Uses **Better Auth** with the `@better-auth/electron` plugin. Two distinct flows:
-
-- **Web**: `app/plugins/02.auth.ts` instantiates a standard `createAuthClient` with `credentials: "include"`. Session cookies flow normally.
-- **Desktop**: the renderer's `createAuthClient` is forced to `credentials: "omit"`. The real session lives in **main**'s [electron/auth-client.ts](electron/auth-client.ts) backed by `electron-store` (encrypted via `safeStorage` + Electron's `EnableCookieEncryption` fuse). The renderer reaches auth only through `window.__host.auth.*` IPC bridges defined in [electron/auth-ipc.ts](electron/auth-ipc.ts) and [electron/preload.ts](electron/preload.ts). To add a new auth operation: add a handler in `auth-ipc.ts`, expose it in `preload.ts`, type it in [index.d.ts](index.d.ts), and add the desktop branch in [app/composables/useAuthSession.ts](app/composables/useAuthSession.ts).
-
-Main's [electron/main.ts](electron/main.ts) injects the session cookie into renderer-originated requests via `webRequest.onBeforeSendHeaders` — this is why the renderer never holds the cookie. The `/api/auth/*` path is carved out of that injection because those calls must keep going through the IPC bridge.
-
-OAuth flow on desktop: renderer calls `window.requestAuth({ provider })` → opens system browser at `${APP_BASE_URL}/login` → web flow completes → server redirects to `oxynote://` deep-link → OS focuses Electron → Better Auth's `setupMain()` exchanges the code → main fires `onAuthenticated` over the bridge → [app/plugins/electron-auth.client.ts](app/plugins/electron-auth.client.ts) refetches session and navigates.
+- **Web**: `app/plugins/02.auth.ts` creates a standard client with
+  `credentials: "include"`.
+- **Desktop**: the renderer's client is `credentials: "omit"`. The session
+  lives in main ([electron/auth-client.ts](electron/auth-client.ts),
+  `electron-store` encrypted via `safeStorage`); the renderer reaches auth
+  only through `window.__host.auth.*` IPC
+  ([electron/auth-ipc.ts](electron/auth-ipc.ts),
+  [electron/preload.ts](electron/preload.ts)). Adding an auth operation:
+  handler in `auth-ipc.ts`, expose in `preload.ts`, type in `index.d.ts`,
+  desktop branch in
+  [app/composables/useAuthSession.ts](app/composables/useAuthSession.ts).
+  Main injects the cookie into renderer requests via
+  `webRequest.onBeforeSendHeaders`, except `/api/auth/*`, which must stay on
+  the IPC bridge.
+- Desktop OAuth: `window.requestAuth({ provider })` → system browser at
+  `${APP_BASE_URL}/login` → redirect to `oxynote://` → `setupMain()`
+  exchanges the code → `onAuthenticated` over the bridge →
+  [app/plugins/electron-auth.client.ts](app/plugins/electron-auth.client.ts)
+  refetches and navigates.
 
 ## API clients
 
-`app/plugins/03.api-fetch.ts` provides two `$fetch` instances:
+`app/plugins/03.api-fetch.ts` provides `$coreAPIClient`
+(`NUXT_PUBLIC_CORE_API_BASE_HTTP_URL`) and `$authRealtimeAPIClient`
+(`NUXT_PUBLIC_AUTH_REALTIME_API_BASE_HTTP_URL`). Both propagate SSR request
+headers (captured eagerly at plugin setup; the H3 context is lost inside
+`onRequest` on workerd) and redirect to `/login` on 401. When
+`NUXT_CORE_API_INTERNAL_HTTP_URL` / `NUXT_AUTH_REALTIME_API_INTERNAL_HTTP_URL`
+are set, SSR fetches use them (needed inside a container where the public
+origin is unreachable).
 
-- `$coreAPIClient` → core API (`NUXT_PUBLIC_CORE_API_BASE_HTTP_URL`)
-- `$authRealtimeAPIClient` → auth-realtime API (`NUXT_PUBLIC_AUTH_REALTIME_API_BASE_HTTP_URL`)
+## Data, editor, routing
 
-Both propagate SSR request headers (captured eagerly during plugin setup — the H3 context is lost inside `onRequest` callbacks on Cloudflare workerd) and redirect to `/login` on 401.
-
-When the server-only runtime config keys `coreAPIInternalHttpURL` / `authRealtimeAPIInternalHttpURL` (`NUXT_CORE_API_INTERNAL_HTTP_URL` / `NUXT_AUTH_REALTIME_API_INTERNAL_HTTP_URL`) are set, SSR fetches (including the auth client in `app/plugins/02.auth.ts`) use them instead of the public URLs — required when the app runs inside a container where the public localhost origin is unreachable.
-
-## Data layer
-
-**Pinia Colada** (`useQuery` / `useMutation`) is the standard data-fetching primitive. Auto-refetch plugin is configured but *disabled by default* — opt in per-query with `autoRefetch: true` (typed augmentation in [index.d.ts:34-38](index.d.ts#L34-L38)). See [colada.options.ts](colada.options.ts).
-
-API composables live in [app/composables/api/](app/composables/api/) and are re-exported by [app/composables/index.ts](app/composables/index.ts) for auto-import. Request/response types live in [app/utils/api/](app/utils/api/) and are re-exported by [app/utils/index.ts](app/utils/index.ts).
-
-## Editor (TipTap + Yjs)
-
-Document editor is in [app/components/editor/](app/components/editor/). Real-time collaboration uses **Yjs** + **Hocuspocus** (`NUXT_PUBLIC_AUTH_REALTIME_API_BASE_WS_URL`). Notable subsystems:
-
-- `blocks/` — custom node types (mermaid, metrics, code-block, figma, image, file, callout, split-documentation); `upload-handler.ts` routes dropped and pasted files to the image or file block by type
-- `comments/` — comment marks + node-comment extension
-- `diff/` — branch diffing UI (compute, render, decorations)
-- `drag-handle/`, `slash/`, `link/`, `ai/` — editor UX extensions
-- `hooks/` — block-level integrations (github tracking, container image watcher, scheduled reminders, URL watcher)
-
-Editor-wide state (active document, branch, locks, metric configs, diff statuses) lives in [app/stores/editor.ts](app/stores/editor.ts).
-
-## Routing
-
-Single dynamic page handles the workspace: [app/pages/[[organizationSlug]]/[[documentSlug]].vue](app/pages/[[organizationSlug]]/[[documentSlug]].vue). The global middleware [app/middleware/01.redirect.global.ts](app/middleware/01.redirect.global.ts) handles auth gating, onboarding, and root-path redirection to the first document.
-
-Pages with `definePageMeta({ skipAuth: true })` are reachable when signed-out (login, signup, accept-invite, verify-email, desktop-auth).
+- **Pinia Colada** (`useQuery`/`useMutation`) is the data primitive.
+  Auto-refetch is configured but off by default; opt in per query with
+  `autoRefetch: true`. API composables: [app/composables/api/](app/composables/api/);
+  request/response types: [app/utils/api/](app/utils/api/); both re-exported
+  through `index.ts` for auto-import.
+- **Editor**: [app/components/editor/](app/components/editor/), TipTap +
+  Yjs/Hocuspocus (`NUXT_PUBLIC_AUTH_REALTIME_API_BASE_WS_URL`). `blocks/`
+  (custom nodes; `upload-handler.ts` routes dropped files), `comments/`,
+  `diff/`, `drag-handle/`, `slash/`, `link/`, `ai/`, `hooks/`. Editor-wide
+  state is [app/stores/editor.ts](app/stores/editor.ts).
+- **Routing**: one dynamic page,
+  `app/pages/[[organizationSlug]]/[[documentSlug]].vue`;
+  [app/middleware/01.redirect.global.ts](app/middleware/01.redirect.global.ts)
+  handles auth gating, onboarding and the root redirect.
+  `definePageMeta({ skipAuth: true })` marks signed-out pages.
 
 ## i18n
 
-All user-facing text **must** live under [i18n/locales/en/](i18n/locales/en/) — never inline. The setup combines multiple JSON files into one big i18n object, so each file must have a **root namespace key** (e.g. `{ "sidebar": { ... } }`). To add a new namespace, also register the filename in `nuxt.config.ts` under `i18n.locales[0].files`.
-
-`<i18n-t>` carries **`scope="global"`** on every use. Its default scope is `parent`, which looks for an ancestor that opened its own i18n scope; nothing in this app does, so without the prop vue-i18n warns once per render and falls back to the global scope anyway.
-
-Form validation (vee-validate) uses its own internal messages — see [README.md](README.md).
+All user-facing text lives under [i18n/locales/en/](i18n/locales/en/), never
+inline. Each JSON file has a root namespace key; a new file is registered in
+`nuxt.config.ts` under `i18n.locales[0].files`. `<i18n-t>` always carries
+`scope="global"` (the default `parent` scope finds no ancestor and warns per
+render). vee-validate uses its own messages (see [README.md](README.md)).
 
 ## UI
 
-- **shadcn-vue** components live in [app/components/shadcn/ui/](app/components/shadcn/ui/) with prefix `ShadcnUi`. Configured in [components.json](components.json).
-- **Tailwind v4** via `@tailwindcss/vite`, theme in [app/assets/css/main.css](app/assets/css/main.css).
-- Icons via `@nuxt/icon` (CSS mode). The client bundle holds the icons the scanner finds in app code, plus — on the desktop build only — the document title icons listed by `selectableIconList()` in [app/utils/icon.ts](app/utils/icon.ts). The web build resolves those on demand through the server so they stay off the startup path. The picker itself does not go through `<Icon>`: [modules/icon-picker-css.ts](modules/icon-picker-css.ts) generates one stylesheet with a rule per selectable icon, served as `virtual:icon-picker.css` and imported by the picker provider once the page's load event has fired. Custom SVGs live in [app/assets/custom-icons/](app/assets/custom-icons/) and are reachable under the `custom-icons:` prefix.
-- **Every dialog describes itself.** reka-ui points `DialogContent`'s `aria-describedby` at a `DialogDescription`, so each dialog and sheet renders one — `ShadcnUiDialogDescription` (or the sheet variant) with `sr-only` when nothing visible plays that role, `as-child` around an `<i18n-t tag="p">` when the visible description is interpolated. The settings action components render theirs inside the `ActionModal` around them, which is why their tests mount through `mountUnderDialogRoot`. A dialog missing one makes reka-ui warn once per mount in `nuxt dev` and in test output.
+- shadcn-vue components in [app/components/shadcn/ui/](app/components/shadcn/ui/),
+  prefix `ShadcnUi`; Tailwind v4, theme in
+  [app/assets/css/main.css](app/assets/css/main.css).
+- Icons via `@nuxt/icon` (CSS mode). The desktop build bundles the
+  selectable title icons (`selectableIconList()` in
+  [app/utils/icon.ts](app/utils/icon.ts)); the web build resolves them via
+  the server. The picker uses
+  [modules/icon-picker-css.ts](modules/icon-picker-css.ts), one rule per
+  icon, loaded after the page's load event. Custom SVGs:
+  [app/assets/custom-icons/](app/assets/custom-icons/), prefix
+  `custom-icons:`.
+- **Every dialog and sheet renders a `DialogDescription`** (`sr-only` when
+  nothing visible plays that role; `as-child` around `<i18n-t tag="p">` when
+  interpolated), or reka-ui warns per mount. Settings action components
+  render theirs inside `ActionModal`, so their tests mount through
+  `mountUnderDialogRoot`.
 
 ## Formatting & TS
 
-Prettier uses **tabs**, no semicolons, trailing commas — see [prettier.config.js](prettier.config.js).
+Prettier: tabs, no semicolons, trailing commas. ESLint is type-aware
+(`*-type-checked` via `eslint.config.typescript.tsconfigPath`), plus
+`eslint:recommended`, typescript-eslint strict + stylistic,
+`@intlify/eslint-plugin-vue-i18n` and `eslint-plugin-vuejs-accessibility`
+(shadcn wrappers are exempt from the label-association and static-element
+rules).
 
-ESLint ([eslint.config.mjs](eslint.config.mjs)) runs **type-aware**: `eslint.config.typescript.tsconfigPath` in `nuxt.config.ts` switches the generated Nuxt preset to the `*-type-checked` rule sets, on top of which the config adds `eslint:recommended` (the Nuxt preset ships no base JS rules), typescript-eslint **strict + stylistic**, `@intlify/eslint-plugin-vue-i18n`, and `eslint-plugin-vuejs-accessibility` (its recommended set; the shadcn wrappers are exempt from the label-association and static-element rules, since the association is made where they are used). Consequences worth knowing:
+- A cold `check-eslint` takes about a minute; the cache
+  (`node_modules/.cache/eslint`) is per-file while results depend on other
+  files' types, so after cross-file type changes `rm -rf` it. CI runs cold.
+- ESLint cannot resolve `.vue` imports, so calls through a component ref
+  carry the disable `eslint's ts program resolves .vue imports as error
+  typed, vue-tsc accepts this`.
+- Every `eslint-disable` states a reason after `--`, for false positives
+  only. Stale disables are errors; `--max-warnings 0`.
+- `no-explicit-any` and `prefer-function-type` are off.
 
-- Linting builds a full TS program, so a cold `check-eslint` takes about a
-  minute. Runs are cached (`node_modules/.cache/eslint`) — unchanged files
-  are near-instant. Caveat: the cache is per-file while type-aware results
-  depend on *other* files' types, so after cross-file type changes a cached
-  file can report stale results locally. CI always runs cold and is the
-  gate of record; locally, `rm -rf node_modules/.cache/eslint` forces a
-  full run.
-- ESLint's TS program cannot resolve `.vue` imports (only `vue-tsc` can), so calls through a component ref are reported as unsafe. Those carry an inline disable with the reason `eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this`.
-- Every `eslint-disable` **must** state a reason after `--`. It is for false positives only, never to avoid a fix. Stale disables are errors (`reportUnusedDisableDirectives`), and eslint runs with `--max-warnings 0`, so warnings fail the gate too.
-- `@typescript-eslint/no-explicit-any` is off; `prefer-function-type` is off (keeps the `defineEmits<{ (e: ...): void }>()` style).
+knip ([knip.ts](knip.ts)) resolves auto-imports through `.nuxt`, so unused
+components, stores and utils are detected. Blind spots: `app/composables`
+are entry points (their internal exports go unreported) and
+`app/components/shadcn/` is ignored. `unlisted` is off by policy (hoisted
+layout, transitive imports relied on). The cache is keyed by knip version:
+after editing `knip.ts`, `rm -rf node_modules/.cache/knip`.
 
-**knip** ([knip.ts](knip.ts)) guards dead exports, unused files, and unused dependencies. Its nuxt plugin resolves auto-imports through the generated `.nuxt` maps, so unused components, stores, and utils **are** detected despite having no import statements. Remaining blind spots, documented in the config: `app/composables` are entry points (the auto-import map does not connect their `export default function useX` style, so their internal exports are unreported), and `app/components/shadcn/` is ignored (vendored spares are expected). Knip's `unlisted` check is **off** by policy: the hoisted node_modules layout makes transitive packages importable, that is relied on deliberately, and `package.json` declares top-level intent only. Knip runs with `--cache`, and the cache is keyed by knip version, **not** config — after editing [knip.ts](knip.ts), run `rm -rf node_modules/.cache/knip` or results are stale.
+**`pnpm dedupe --check` is a lint gate**: with `nodeLinker: hoisted` Nitro
+externalizes every resolved version, so two versions of `vue` in the
+lockfile ship both into the server bundle and SSR crashes (`Cannot read
+properties of null` from `currentRenderingInstance`). Dependency bumps cause
+the split without touching `package.json`.
 
-**`pnpm dedupe --check`** is a lint gate because `nodeLinker: hoisted` puts every resolved version of a package on disk, and Nitro externalizes whatever it finds. A lockfile holding two versions of one package therefore ships both into the server bundle. For a package that keeps module-level state — `vue` above all, whose `currentRenderingInstance` lives in `@vue/runtime-core` — that is a crash: one copy renders a component while the other's variable is still null, and SSR dies with `Cannot read properties of null`. Dependency bumps produce the split without touching `package.json`, when a bumped package moves to a new version while a peer-resolved entry keeps the old one.
-
-TypeScript strictness (set in [nuxt.config.ts](nuxt.config.ts)): `noUnusedLocals`, `noUnusedParameters`, `noUncheckedIndexedAccess`, `noImplicitOverride`, `verbatimModuleSyntax`, and `noImplicitAny` all on; `allowUnreachableCode: false` (mirrored in [electron/tsconfig.json](electron/tsconfig.json)). Path aliases `@/*` and `~/*` both point to `app/*`.
-
-Note `noUncheckedIndexedAccess` makes every index access `T | undefined`, and TypeScript does not track assignments made inside a callback — so a variable filled in by a `forEach`/`descendants` callback stays narrowed to its initializer afterwards. Prefer a sentinel value or a restructure over a non-null assertion when that happens.
+TypeScript (in `nuxt.config.ts`): `noUnusedLocals`, `noUnusedParameters`,
+`noUncheckedIndexedAccess`, `noImplicitOverride`, `verbatimModuleSyntax`,
+`noImplicitAny`, `allowUnreachableCode: false` (mirrored in
+[electron/tsconfig.json](electron/tsconfig.json)). `@/*` and `~/*` both point
+to `app/*`. Under `noUncheckedIndexedAccess`, a variable filled inside a
+`forEach`/`descendants` callback stays narrowed to its initializer; prefer a
+sentinel or a restructure over a non-null assertion.
 
 ## Testing
 
 ### Layout
 
-- **All tests except e2e are co-located**: the test file lives in the same
-  directory as the file it tests, paired 1:1 — `string.ts` →
-  `string.test.ts`, `CalendarInput.vue` → `CalendarInput.nuxt.test.ts`.
-  Never a parallel `tests/unit/...` mirror tree.
-- When a test exercises behaviour spanning two source files, it lives
-  with the file that initiates the behaviour (a round-trip test lands
-  beside the file that starts the round-trip).
-- **The test file mirrors the source file's order**: top-level
-  `describe` blocks appear in the same order as the functions they test
-  appear in the source, so the two files read side by side.
-- **The suffix encodes the test environment** — never `.spec.ts`, never an
-  `@vitest-environment` pragma comment:
+- **Tests are co-located 1:1** (`string.ts` → `string.test.ts`,
+  `CalendarInput.vue` → `CalendarInput.nuxt.test.ts`), never a mirror tree.
+  A test spanning two files lives with the one that initiates the
+  behaviour. Top-level `describe`s follow the source file's order.
+- **The suffix encodes the environment**, never `.spec.ts`, never an
+  `@vitest-environment` pragma:
 
   | suffix | environment | for |
   | --- | --- | --- |
-  | `.test.ts` | node, no DOM | pure logic: utils, editor diff/blocks helpers, `electron/` (with `vi.mock("electron")`) |
-  | `.nuxt.test.ts` | nuxt runtime | composables/stores (auto-imports, `registerEndpoint`) and **all component tests** (`mountSuspended`, real children, mocked network) |
-  | `.browser.test.ts` | vitest browser mode (headless chromium via playwright) | DOM behavior happy-dom fakes (e.g. real `getBoundingClientRect` geometry in tiptap overlays, DOMPurify) |
-  | `.test-d.ts` | typecheck only | compile-time contracts (`expectTypeOf`), e.g. `app/utils/api/` types |
-  | `.bench.ts` | `vitest bench` | perf on hot paths (diff/lcs) — add only when a regression bites |
+  | `.test.ts` | node | pure logic; `electron/` with `vi.mock("electron")` |
+  | `.nuxt.test.ts` | nuxt runtime | composables/stores and all component tests (`mountSuspended`, real children, mocked network) |
+  | `.browser.test.ts` | headless chromium | DOM behaviour happy-dom fakes (geometry, DOMPurify) |
+  | `.test-d.ts` | typecheck | compile-time contracts (`expectTypeOf`) |
+  | `.bench.ts` | `vitest bench` | hot paths, only when a regression bites |
 
-- Only **e2e** (Playwright, incl. visual regression via `toHaveScreenshot`)
-  lives outside this component altogether, in the repo-root
-  [e2e/](../e2e/) package. Those tests drive the whole composed product
-  against a real backend, so they belong to no single component and stay
-  out of `web/`'s toolchain — see [e2e/AGENTS.md](../e2e/AGENTS.md).
-- There is no separate "integration" tier: component tests are the
-  integration layer (real children, mocked IO); e2e covers cross-system.
-- Co-location inside `app/` is safe by design: Nuxt's default `ignore`
-  list excludes `**/*.{spec,test}.*` from all scanners, so a test file
-  next to a plugin or middleware is never registered as one. The
-  `.nuxt.test.ts` suffix is the officially documented environment opt-in;
-  the vitest config still declares the env-by-suffix globs explicitly so
-  the mapping is configuration, not tool default.
-- **`app/components/shadcn/` is out of scope for the suite**: those
-  components are vendored and regenerated by the shadcn CLI, so they get
-  no tests of their own. Every vitest project excludes the directory from
-  test collection and it is excluded from coverage, so a test file placed
-  there would simply never run — do not write one. Rendering a shadcn
-  component as a real child of a component under test is expected and
-  fine; so is importing one as a test harness (see
-  `mountUnderSidebarProvider` below).
+- e2e lives in the repo-root [e2e/](../e2e/) package. There is no separate
+  integration tier: component tests are the integration layer.
+- Nuxt's default `ignore` excludes `**/*.{spec,test}.*` from its scanners,
+  so co-location inside `app/` is safe.
+- **`app/components/shadcn/` is out of scope**: vendored, regenerated by the
+  CLI, excluded from collection and coverage. Rendering one as a real child,
+  or importing one as a harness, is fine.
 
 ### Naming
 
-**The rule: `describe` names the subject, `it` completes the sentence
-"it …" with observable behaviour.**
-
-```ts
-describe("useCart", () => {
-	describe("addItem", () => {
-		it("increments the total by the item price")
-		it("merges duplicate items into one line with summed quantity")
-		it("throws when the item is out of stock")
-	})
-})
-```
-
-Read it aloud: "useCart addItem increments the total by the item price."
-If the concatenation isn't a grammatical sentence, the name is off. This
-matters practically because reporters print exactly that concatenation on
-failure, and a good name lets you diagnose without opening the file.
-
-**`describe`**
-
-- Top level: **always required** — every test file wraps its tests in a
-  root `describe` identifying the testable unit by its real identifier —
-  `useCart`, `<PriceTag>`, `formatDate`. Never bare top-level `it` calls.
-  Don't paraphrase ("cart logic"), use the greppable name.
-- Nested level (optional): a method, prop, or condition — `addItem`,
-  `when the user is anonymous`. One level of nesting is usually right,
-  two is the ceiling. Deeply nested describes with `beforeEach` at each
-  level are a classic readability trap: state gets assembled across four
-  scopes and no single test is comprehensible alone.
-- `describe("when X", ...)` grouping is good when several tests share a
-  precondition; otherwise put the condition in the `it` name.
-
-**`it`**
-
-- Present tense, third person, no "should".
-  `it("returns null for empty input")`, not `it("should return null…")` —
-  "should" is eight wasted characters on every line and adds nothing.
-- State behaviour + condition, not implementation:
-  `it("retries the request twice before failing")`, not
-  `it("calls fetchWithRetry with maxRetries=2")`. The test name should
-  survive a refactor that preserves behaviour.
-- Be specific enough that a failure is informative. `it("works")`,
-  `it("handles errors")`, `it("renders correctly")` are useless — which
-  error, what is correct? `it("renders the fallback avatar when the image
-  404s")` tells you what broke.
-- Edge cases worth naming explicitly: empty input, boundary values, error
-  paths. A suite skeleton often reads: happy path first, then
-  `it("returns [] when the list is empty")`,
-  `it("throws TypeError for non-ISO strings")`, etc.
-
-For components, name from the user's perspective where possible:
-`it("shows the discount badge when price is reduced")` rather than
-`it("sets showBadge to true")`.
-
-Parameterized tests: use the format placeholders so each case gets a
-distinct name — `it.for(cases)("parses %s as %i", ...)` — otherwise
-failures all report the same string.
+`describe` names the subject by its greppable identifier (every file has a
+root `describe`; never bare `it`); `it` completes "it …" with observable
+behaviour and its condition, present tense, no "should", specific enough to
+diagnose from the failure line (`it("renders the fallback avatar when the
+image 404s")`). One level of nesting is usual, two the ceiling; `describe("when
+X")` groups tests sharing a precondition. Name components from the user's
+perspective.
 
 ### Parameterized tests
 
-**Use `it.for` wherever cases differ only in inputs and expected
-outputs — pure data tables.** The moment cases differ in behaviour —
-different mock wiring, different setup, different assertions — they are
-separate `it`s inside the method's `describe` (see the next section),
-never rows sharing one callback: divergent cases in a shared callback
-breed conditionals, and neither a breakpoint nor a reporter line can
-target a single row.
-
-For data tables, writing a separate test per case gets repetitive;
-`it.for` defines the cases as data and runs the same test logic for all
-of them:
-
-```ts
-it.for([
-	[1, 1, 2],
-	[1, 2, 3],
-	[2, 1, 3],
-])("add(%i, %i) -> %i", ([a, b, expected], { expect }) => {
-	expect(a + b).toBe(expected)
-})
-```
-
-The placeholders `%i`, `%s`, and `%f` in the test name are replaced with
-the corresponding values from each row, so the output shows
-`add(1, 1) -> 2`, `add(1, 2) -> 3`, and so on.
-
-When cases have more than two or three values, objects are more readable.
-Use `$property` in the name to interpolate fields:
-
-```ts
-it.for([
-	{ input: "", expected: [] },
-	{ input: "a", expected: ["a"] },
-	{ input: "a,b", expected: ["a", "b"] },
-])("splits $input into $expected", ({ input, expected }, { expect }) => {
-	expect(split(input)).toEqual(expected)
-})
-```
-
-- When placeholder interpolation cannot form a grammatical sentence, give
-  the case an explicit `name` field and use it as the whole title:
-  `it.for(cases)("$name", …)`.
-- Case objects use the same field vocabulary everywhere: `name`, `input`,
-  `expected`.
-- Hoist bulky case data into named builders above the table instead of
-  inlining large literals. Store mutable case values as thunks
-  (`makeDoc: () => …`) invoked inside the test body, so a case object
-  can never leak state between tests.
-- Always `it.for`, never `it.each`: `.for` passes the test context as
-  the second callback argument — which the concurrency rule below
-  requires for `expect` — while `.each` spreads the case and provides no
-  context.
+`it.for` for cases differing only in inputs and outputs; cases differing in
+setup, mocks or assertions are separate `it`s. Use `%s`/`%i` or `$field`
+placeholders so every row has a distinct title, or a `name` field as the
+whole title when placeholders cannot form a sentence. Fields: `name`,
+`input`, `expected`. Hoist bulky data into builders; store mutable case
+values as thunks so rows cannot share state. Never `it.each` (it provides no
+test context).
 
 ### Mocks & path coverage
 
-- **Every exported function is covered by unit tests** — a module's
-  exports are its testable contract, and none of them ships untested.
-  Modules with no exports whose evaluation wires things up (entry
-  points like `electron/main.ts` and `electron/preload.ts`) are tested
-  through their module side effects: mock the boundaries, import the
-  module, assert the wiring.
-- **Every path gets a test** — the success path and each failure path,
-  including one per collaborator that can fail, especially in unit tests.
-  A `describe` per method groups them; the linear `it`s are the rows,
-  named after the observable behaviour
-  (`it("propagates the error from db.createItem")`).
-- A branch that genuinely cannot be reproduced in tests carries a
-  `// NOCOV: <lowercase reason>.` comment as the first line inside the
-  branch body. Environment-bound code is the typical legitimate case:
-  `__DESKTOP_BUILD__` splits, SSR guards, browser-quirk workarounds.
-- NOCOV is a reviewer covenant, not a tool directive: it is deliberately
-  not wired to the coverage provider (whose ignore hints require the
-  banned `/* */` comment form), so coverage reports stay truthful and
-  the marker explains the residual gap in place. It never excuses a
-  testable path.
-- Per-test mock behaviour is configured inline with `vi.fn()`
-  (`mockResolvedValue`, `mockRejectedValue`, `mockImplementation`).
-  `vi.mock` module mocks are hoisted and file-level — they cannot vary
-  per test, so anything that must differ between tests is injected, not
-  module-mocked.
-- Repeated stub shapes become local factory closures
-  (`const stubDb = (err?: Error) => …`) defined next to the tests that
-  use them; dependencies shared across many tests become `test.extend`
-  fixtures.
-- Helpers repeated across a directory's test files live in a colocated
-  `test-helpers.ts` module (e.g.
-  [app/composables/api/test-helpers.ts](app/composables/api/test-helpers.ts)).
-  It must never be re-exported for app use (in `composables/`, keep it
-  out of `index.ts` — nested files only enter the auto-imports through
-  that re-export), and the `app/**/test-helpers.ts` coverage exclude in
-  [vitest.config.ts](vitest.config.ts) keeps it out of the coverage
-  denominator. Domain-specific fixtures and factories stay file-local.
-- **One act per test**: arrange once, invoke the unit once, then assert
-  as many facets of that single outcome as needed — result, error, and
-  interactions all belong in the same test when they describe one
-  scenario. Needing a second invocation of the unit is the real "and"
-  smell — split the test, not the assertions.
-- **Every injected dependency is accounted for in every test**: assert
-  the calls that must have happened (count and arguments) and the zero
-  counts of the ones that must not —
-  `expect(db.createItem).toHaveBeenCalledTimes(0)` after a failed
-  precondition is as load-bearing as any positive assertion. This holds
-  even when the return value already proves the outcome: a call is a
-  potential side effect, and output assertions cannot reveal a stray one.
-- Interaction assertions at injected boundaries are behaviour, not
-  implementation: they pin the unit's contract — which effects occur,
-  with what, and when — and survive any behaviour-preserving refactor of
-  the unit's internals.
-- **Only e2e is allowed a real backend**: unit and component tests never
-  perform real IO — network, filesystem, IPC — every such boundary is
-  mocked (`registerEndpoint`, injected stubs).
-- Test through the module's public exports. Never export something
-  solely for tests — an internal complex enough to need direct tests is
-  extracted into its own module.
-- Plain `expect` for guards and preconditions; `expect.soft` is
-  permitted in the final outcome-accounting block, where it reports the
-  whole broken accounting at once instead of stopping at the first
-  failed count.
+- **Every exported function is covered; every path gets a test** (success,
+  plus one failure per collaborator). Entry-point modules
+  (`electron/main.ts`, `preload.ts`) are tested through their side effects:
+  mock the boundaries, import, assert the wiring.
+- `// NOCOV: <lowercase reason>.` as the first line of a branch that cannot
+  be reproduced (`__DESKTOP_BUILD__` splits, SSR guards, browser quirks). It
+  is a reviewer covenant, not wired to the coverage provider, and never
+  excuses a testable path.
+- Per-test behaviour via `vi.fn()` configured inline. `vi.mock` is hoisted
+  and file-level, so anything that must differ between tests is injected.
+- Repeated stub shapes become local factory closures; shared dependencies
+  become `test.extend` fixtures; helpers shared across a directory live in a
+  colocated `test-helpers.ts` (never re-exported for app use; excluded from
+  coverage in `vitest.config.ts`).
+- **One act per test**; assert every facet of that one outcome.
+- **Account for every injected dependency**: the calls that must have
+  happened (count and arguments) and zero counts for those that must not,
+  even when the return value already proves the outcome.
+- **Only e2e gets a real backend.** No network, filesystem or IPC here;
+  `registerEndpoint` and stubs.
+- Test through public exports; never export for tests.
+- Plain `expect` for preconditions; `expect.soft` only in the final
+  outcome-accounting block.
 
 ### Component tests
 
-Component tests mount the real component inside the nuxt runtime with
-`mountSuspended` and drive it the way a user does. Shared helpers live in
-[app/components/test-helpers.ts](app/components/test-helpers.ts) — the
-things that come up in nearly every suite:
+`mountSuspended` inside the nuxt runtime, driven like a user. Helpers:
+[app/components/test-helpers.ts](app/components/test-helpers.ts).
 
-- **Never hardcode a translation.** User-facing text is asserted through
-  `t()` from
-  [app/components/test-helpers.ts](app/components/test-helpers.ts), which
-  resolves the key against the same i18n instance the component renders
-  with — `expect(wrapper.text()).toContain(t("sidebar.sections.top.inbox"))`,
-  never `toContain("Inbox")`. A copied english string is a second,
-  unmaintained definition of the message: it keeps passing when the copy
-  changes and, in the other direction, a message edit silently breaks a
-  suite that has nothing to do with it. This covers every place the text
-  appears — assertions, the text a lookup helper searches for
-  (`findButtonByText(wrapper, t("..."))`), and props the test feeds in.
-  Rules that follow from it:
-  - **Interpolated messages take their values through `t()` too**, the
-    same ones the component passes:
-    `t("sidebar.search.no-results", { query: "run" })` — never a hand-spliced
-    `"No results found for " + query`, and never a bare prefix like
-    `toContain("No results found for")` that skips the interpolation
-    entirely.
-  - **Pick the key the component actually renders.** Many messages share
-    an english value (six different `cancel-button` keys all read
-    "Cancel"), so the wrong key still passes today and only diverges when
-    one of them is reworded. Follow the component to its key rather than
-    grepping the locale file for the text.
-  - **`t()` needs the nuxt app context**, so it only runs inside a test
-    body or a hook — never at module scope. Text shared across a suite
-    goes in a helper function, not a top-level `const`.
-- **Context providers.** `useSidebar`, `useSidebarWidth` and reka-ui's
-  tooltip context are installed once at page level in the app, so a
-  component that reads one cannot mount on its own. Mount it through
-  `mountUnderSidebarProvider` / `mountUnderTooltipProvider`.
-- **Overlays live in `<body>`.** Tooltip, dropdown, dialog and sheet
-  bodies are teleported out of the wrapper, so `wrapper.text()` never
-  sees them — reach them with `menuItem()`, `teleportedButton()` and
-  `openTooltipText()`. Unmounting does not always take a teleported node
-  with it (a pending presence transition outlives it) and reka-ui reuses
-  its generated ids across mounts, so suites that drive overlays call
-  `clearTeleportedOverlays()` from a `beforeEach`. Sheet-based suites
-  must **not**: ripping out a node vue still has mounted breaks its next
-  patch.
-- **No real IO, again.** The global route middleware asks better-auth for
-  the session on every navigation, which means every mount — so
-  [vitest.nuxt-setup.ts](vitest.nuxt-setup.ts) stubs a signed-out session
-  for the whole nuxt project (unstubbed it is a real request that costs
-  ~5s per mount). `@nuxt/icon` is pinned to `provider: "none"` in the
-  same config for the same reason. Suites that need a signed-in state
-  seed the cache with `seedAuthSession` / `seedAuthOrganization` /
-  `seedAuthAccounts`, or register endpoints.
-- **An endpoint is registered under the url the client actually asks
-  for**, which is not the same string everywhere: `$coreAPIClient` has an
-  empty base in tests, so it matches a bare path (`/api/documents/tree`),
-  while `$authRealtimeAPIClient` has an absolute one and matches the full
-  url. better-auth needs *both* spellings — the absolute one keeps the
-  request off the real network, the path one is what the test-time h3 app
-  matches a handler on — so it goes through `mockAuthEndpoint()`.
-- **A failing endpoint answers with an h3 error**, never a bare `throw
-  new Error(...)`. h3 treats anything that is not an `H3Error` as
-  unhandled and dumps it with its full stack to stderr — for an outcome
-  the test is asserting on. `throw createError({ statusCode: 500 })`
-  fails the request the same way and stays quiet.
-- **Viewport-dependent layouts.** happy-dom has no `matchMedia`, so
-  `useMediaQuery` reports "not matching" for every query — pick a side
-  deliberately with `stubViewportMatches()`.
-- **Pointer and geometry behaviour** (the sidebar drag) is driven the way
-  [app/composables/useSidebarDraggable.nuxt.test.ts](app/composables/useSidebarDraggable.nuxt.test.ts)
-  does it: `mockNuxtImport` the vueuse primitives (`useDraggable`,
-  `useMouseInElement`, `useElementBounding`), then drive the captured
-  callbacks and refs. Everything between them and the component stays
-  real. Return **refs**, not plain objects — a plain `{ value }` leaves
-  every watcher and computed behind it inert, and the assertions then
-  pass or fail on flush timing rather than on behaviour.
-- **Settling.** A pinia-colada mutation that invalidates queries on
-  success resolves several macrotasks deep; use `settleMutations()`, or
-  `settleActionSubmit()` for the settings action modals (which also hold
-  their submit for `delay(300)`, so they mount through
-  `mountWithFrozenClock()`). better-auth backs off internally before
-  surfacing a failed request, and vee-validate renders messages on its
-  own scheduler — neither exposes a signal, so those assertions are the
-  documented `vi.waitFor` exception.
-- **Shared app state forces `{ concurrent: false }`.** Beyond `vi.mock`
-  singletons, the same applies to nuxt `useState`, pinia stores,
-  cookie-backed `usePersistentState`, `vi.stubGlobal`, fake timers and
-  the teleport target — all of them are shared by every mount in a file.
-  Mark **each** describe that touches them, nested ones included: the
-  option only covers the suite it is on.
-- **A component that keeps watching after its test** — one holding a
-  colour-mode watcher, a branch sync, or a teleported overlay vue still
-  patches — is taken down with `enableAutoUnmount(afterEach)` rather than
-  left mounted. A leftover instance answers the next test too, and
-  `clearTeleportedOverlays()` cannot be used on it: ripping out a node
-  vue still has mounted breaks its next patch.
+- **Never hardcode a translation.** Assert through `t()` from the helpers,
+  interpolation included (`t("sidebar.search.no-results", { query: "run"
+  })`), for assertions, lookup text and props alike. Pick the key the
+  component actually renders (many share an English value). `t()` needs the
+  nuxt context, so call it inside a test or hook, never at module scope.
+- **Context providers**: `useSidebar`, `useSidebarWidth` and the tooltip
+  context are page-level; mount through `mountUnderSidebarProvider` /
+  `mountUnderTooltipProvider`.
+- **Overlays live in `<body>`**; reach them with `menuItem()`,
+  `teleportedButton()`, `openTooltipText()`. Suites driving overlays call
+  `clearTeleportedOverlays()` in `beforeEach`; sheet-based suites must not
+  (removing a node vue still has mounted breaks its next patch).
+- [vitest.nuxt-setup.ts](vitest.nuxt-setup.ts) stubs a signed-out session
+  for the whole nuxt project (the route middleware asks for it on every
+  mount) and pins `@nuxt/icon` to `provider: "none"`. Signed-in suites use
+  `seedAuthSession` / `seedAuthOrganization` / `seedAuthAccounts`.
+- **Register an endpoint under the url the client asks for**:
+  `$coreAPIClient` has an empty base in tests (bare path),
+  `$authRealtimeAPIClient` an absolute one; better-auth needs both spellings
+  via `mockAuthEndpoint()`.
+- **A failing endpoint throws `createError({ statusCode })`**, never a bare
+  `Error` (h3 dumps non-H3Errors to stderr).
+- happy-dom has no `matchMedia`; pick a side with `stubViewportMatches()`.
+- Pointer/geometry behaviour: `mockNuxtImport` the vueuse primitives
+  (`useDraggable`, `useMouseInElement`, `useElementBounding`) and drive the
+  captured callbacks, returning **refs**, not plain objects (see
+  `useSidebarDraggable.nuxt.test.ts`).
+- **Settling**: `settleMutations()` for pinia-colada invalidation,
+  `settleActionSubmit()` for settings action modals (mounted with
+  `mountWithFrozenClock()` for their `delay(300)`). better-auth's backoff
+  and vee-validate's scheduler are the documented `vi.waitFor` exceptions.
+- **Shared app state forces `{ concurrent: false }`**: `vi.mock`
+  singletons, `useState`, pinia stores, `usePersistentState`,
+  `vi.stubGlobal`, fake timers, the teleport target. Mark each describe
+  that touches them, nested ones included.
+- A component that keeps watching after its test (colour-mode watcher,
+  branch sync, teleported overlay) is taken down with
+  `enableAutoUnmount(afterEach)`.
 
 ### Editor component tests
 
-The editor suites reuse a few things the rest of the components do not:
+- Node views mount through `mountNodeView()`
+  ([test-helpers/node-view.ts](app/components/editor/test-helpers/node-view.ts)),
+  with `makeNode()`/`makeEditor()`; the command chain is recorded, so assert
+  which commands ran.
+- Anything painting theme colours (charts, metric blocks, carets) needs
+  `stubThemeColorContext()`
+  ([test-helpers/theme.ts](app/components/editor/test-helpers/theme.ts))
+  first; happy-dom has no 2d context.
+- Charts are asserted via the echarts option (`chartOption()`) with
+  `vue-echarts` stubbed. Virtualized lists (`vue-virtual-scroller`) are
+  mocked with a pass-through component.
+- `editor.commands` is rebuilt on every access; shadow the getter with a
+  recording proxy to spy.
+- A live editor with real extensions when the behaviour reads the document;
+  collaboration components also need a provider stand-in (`document`,
+  `awareness`, `on`/`off`).
 
-- **Node views** ([app/components/editor/test-helpers/node-view.ts](app/components/editor/test-helpers/node-view.ts))
-  mount on their own through `mountNodeView()`, which supplies every
-  `nodeViewProps` entry plus the `onDragStart` / `decorationClasses`
-  injections tiptap's renderer would provide. `makeNode()` and
-  `makeEditor()` stand in for the node and the editor; the command chain
-  a node view builds is recorded, so a suite asserts *which* commands ran
-  and with what rather than reaching into prosemirror.
-- **Theme colours** are resolved by painting CSS variables onto a canvas,
-  which happy-dom has no 2d context for — anything rendering a chart, a
-  metric block or a caret needs `stubThemeColorContext()` from
-  [app/components/editor/test-helpers/theme.ts](app/components/editor/test-helpers/theme.ts)
-  first.
-- **Charts** are asserted through the option object handed to echarts
-  (`chartOption()`), with `vue-echarts` replaced by a stub — echarts
-  itself needs a canvas.
-- **Virtualized lists** (`vue-virtual-scroller`) measure row heights,
-  which happy-dom reports as zero, so nothing is ever drawn: suites that
-  need the rows mock the module with a pass-through component.
-- **`editor.commands` is rebuilt on every access**, so a spy on one of
-  them is never the object the component calls. Shadow the getter with a
-  recording proxy when a suite needs to see which commands ran.
-- **A live editor** is built with the real extensions when the behaviour
-  under test reads the document (link marks, comment marks, the merged
-  diff). A collaboration-backed component also needs a provider
-  stand-in carrying `document`, `awareness` and `on`/`off`.
+### Snapshots, independence, determinism
 
-### Snapshots
-
-Snapshots are golden files, not lazy assertion dumps: use them only for
-golden-style serialized outputs (ProseMirror JSON, diff structures) —
-`toMatchInlineSnapshot` for small values, file snapshots for large ones,
-explicit assertions everywhere else. Under concurrency they require the
-context-local `expect` (see below).
-
-### Independence & concurrency
-
-- **Every test is completely independent**: it creates its own fresh
-  state (a new instance, store, or mount per test) and never depends on
-  execution order or on state left behind by another test. Each
-  `describe` block focuses on one method; each test verifies one specific
-  behaviour — the suite reads like a specification of the unit, and a
-  failure's name plus assertion tell you exactly what broke without
-  opening the file.
-- Repeating the same setup in every test is a candidate for `beforeEach`
-  or a `test.extend` fixture — never for module-level shared mutable
-  state.
-- **All tests run concurrently**: the vitest config sets
-  `sequence.concurrent: true`. Test independence is what makes this safe;
-  a test that needs sequential execution is a smell, not a config
-  exception. The one principled exception: suites asserting call
-  accounting on shared module-level mocks (`vi.mock` singletons) run
-  under `describe("…", { concurrent: false }, …)` with a comment —
-  module mocks are per-file singletons and cannot be isolated across
-  interleaving tests. Prefer per-test injected mocks wherever the design
-  allows; they stay concurrency-safe.
-- Under concurrency, snapshots and assertions must use the `expect` from
-  the local test context (`it("…", ({ expect }) => …)`) — the global
-  `expect` cannot reliably attribute them to the right test when tests
-  interleave. See
-  [test.concurrent](https://vitest.dev/api/test#test-concurrent).
-- Mock and global state cannot leak between tests by construction: the
-  vitest config sets `restoreMocks: true`, `unstubGlobals: true`, and
-  `unstubEnvs: true`, so `vi.spyOn` spies, stubbed globals, and env stubs
-  are restored after every test without per-file `afterEach` cleanup.
-  Caveat: since vitest 4, `restoreMocks` does **not** touch hand-made
-  `vi.fn()` singletons — suites holding them (module-mock trees) reset
-  them explicitly in a `beforeEach`.
-
-### Determinism
-
-- Never sleepy: no `setTimeout`-based waiting in tests. Await concrete
-  signals — `nextTick()`, `flushPromises()`, an emitted event, a promise
-  returned by the unit itself.
-- Time is driven, not waited on: `vi.useFakeTimers()` +
-  `advanceTimersByTime()` for timer-dependent code, `vi.setSystemTime()`
-  for deterministic timestamps — assert exact dates, never wall-clock
-  deltas.
-- `vi.waitFor` is the last resort for genuinely nondeterministic
-  scheduling and always carries a comment justifying why no concrete
-  signal exists.
-
-### Prior art
-
-Co-location is established practice across the ecosystem, including
-dependencies of this app:
-[Reka UI](https://github.com/unovue/reka-ui/tree/v2/packages/core/src/Dialog)
-(`Dialog.test.ts` among the Dialog `.vue` components),
-[Pinia Colada](https://github.com/posva/pinia-colada/tree/main/src)
-(co-located specs plus `.test-d.ts` type tests),
-[VueUse](https://github.com/vueuse/vueuse/tree/main/packages/core/useMouse),
-[PrimeVue](https://github.com/primefaces/primevue/tree/master/packages/primevue/src/button)
-(`Button.spec.js` beside `Button.vue`),
-[SvelteKit](https://github.com/sveltejs/kit/tree/main/packages/kit/src/utils),
-[immich](https://github.com/immich-app/immich) (co-located specs + a
-dedicated `e2e/` package), and — on nuxt 4's `app/` layout specifically —
-[kun-galgame-forum](https://github.com/KunMoe/kun-galgame-forum/tree/master/apps/web/app/components/editkit)
-(specs beside components inside `app/`).
+- Snapshots only for golden-style serialized output (ProseMirror JSON, diff
+  structures); explicit assertions everywhere else.
+- Every test builds its own state; repeated setup goes in `beforeEach` or a
+  `test.extend` fixture, never module-level mutable state.
+- All tests run concurrently (`sequence.concurrent`), so assertions and
+  snapshots use the context-local `expect` (`it("…", ({ expect }) => …)`). A
+  test needing sequential execution is a smell; the one exception is call
+  accounting on `vi.mock` singletons under `{ concurrent: false }` with a
+  comment.
+- `restoreMocks`, `unstubGlobals`, `unstubEnvs` are set globally. Since
+  vitest 4 `restoreMocks` does not touch hand-made `vi.fn()` singletons;
+  reset those in `beforeEach`.
+- Never sleep: await `nextTick()`, `flushPromises()`, an event or the unit's
+  promise. Drive time with fake timers and `vi.setSystemTime()`; assert
+  exact values. `vi.waitFor` is the last resort and always carries a
+  justifying comment.
 
 ## Code style
 
-### Assignments
+- **One assignment per statement** (`no-multi-assign`): no chaining, no
+  assignment inside an expression such as `const group = (groups[key] ??=
+  …)`. `??=` as its own statement is fine.
+- `<script setup>` order: imports; `defineProps`/`defineEmits`/`defineExpose`;
+  store and composable initializations; `ref`/`computed`; lifecycle hooks;
+  watchers; functions.
+- Tailwind utilities by default; custom rules go in `main.css` and are
+  applied by class. No `<style>` blocks or static inline `style=`.
 
-**One assignment per statement.** Never chain them, and never assign from inside
-an expression — enforced by `no-multi-assign`.
+## PromQL grammar
 
-```ts
-// no: the line both mutates the map and binds a local
-const group = (groups[key] ??= { items: [] })
+[@oxynote/lezer-promql](https://github.com/oxynote/lezer-promql) forks
+Prometheus's grammar to add Grafana-style placeholders (`$__interval`). It is
+a published package reaching the app through a pnpm override in
+[pnpm-workspace.yaml](pnpm-workspace.yaml) (so `@prometheus-io/codemirror-promql`
+resolves it too). A grammar change is a release from its own repo, then a
+bump in the override and in `minimumReleaseAgeExclude`.
 
-// yes
-let group = groups[key]
-if (!group) {
-	group = { items: [] }
-	groups[key] = group
-}
-```
+## Electron packaging
 
-`??=` itself is fine and used across the codebase; keep it as its own
-statement (`elem.children ??= []`).
-
-### Vue `<script setup>` ordering
-
-Within a Vue setup script, order the contents as follows:
-
-1. Imports
-2. `defineProps`, `defineEmits`, `defineExpose`
-3. Store and composable initializations (`useFoo()`, `useStore()`, etc.)
-4. `ref` and `computed` declarations
-5. `onMounted` / `onUnmounted` (and other lifecycle hooks)
-6. Watchers (`watch`, `watchEffect`, `watchImmediate`)
-7. Functions
-
-### Styling
-
-Use **Tailwind utility classes** by default. When a utility expression can't express what you need, add the custom rule to [app/assets/css/main.css](app/assets/css/main.css) and apply it via a class name — do not use `<style>` blocks in components or inline `style=` attributes for non-dynamic values.
-
-## The PromQL grammar
-
-PromQL parsing goes through [@oxynote/lezer-promql](https://github.com/oxynote/lezer-promql), a fork of Prometheus's grammar that adds Grafana-style dynamic duration placeholders (`$__interval`, etc.). It is a published package, not a workspace one, and reaches the app through a pnpm override in [pnpm-workspace.yaml](pnpm-workspace.yaml) rather than a bundler alias — `@prometheus-io/codemirror-promql` imports the grammar itself, so the fork has to win that resolution too. Changing the grammar means releasing it from its own repository; a new version needs its version bumped in the override and added to `minimumReleaseAgeExclude`.
-
-## Electron packaging notes
-
-`forge.config.ts` allowlists only `/.vite` (compiled main+preload) and `/.output/public` (renderer SPA) into the package — anything else is excluded. The `oxynote://` protocol is registered at install time for OAuth deep-links. Production Fuses disable `RunAsNode`, `EnableNodeOptionsEnvironmentVariable`, and require ASAR integrity. Main and preload are forced to `.cjs` output (see [vite.electron.config.ts](vite.electron.config.ts)) because root `package.json` is `"type": "module"`.
-
-`__API_BASE_URL__` and `__APP_BASE_URL__` are **baked in at build time** for the Electron bundle — runtime env cannot override them. The build fails if those env vars are missing.
+`forge.config.ts` allowlists only `/.vite` and `/.output/public`. The
+`oxynote://` protocol is registered at install for OAuth deep links. Fuses
+disable `RunAsNode` and `EnableNodeOptionsEnvironmentVariable` and require
+ASAR integrity. Main and preload are forced to `.cjs`
+([vite.electron.config.ts](vite.electron.config.ts)) because `package.json`
+is `"type": "module"`. `__API_BASE_URL__` and `__APP_BASE_URL__` are baked
+at build time; the build fails if they are missing.
