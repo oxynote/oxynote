@@ -27,16 +27,16 @@
 		"@eslint/js": "^10.0.1",
 		"@hocuspocus/provider": "^4.6.0",
 		"@modelcontextprotocol/sdk": "^1.30.0",
-		"@playwright/test": "^1.62.1",
+		"@playwright/test": "^1.63.0",
 		"@types/node": "^24.13.3",
 		"@types/ws": "^8.18.1",
-		"eslint": "^10.9.1",
+		"eslint": "^10.10.0",
 		"eslint-config-prettier": "^10.1.8",
 		"eslint-plugin-playwright": "^2.11.0",
-		"knip": "^6.33.0",
+		"knip": "^6.34.0",
 		"prettier": "3.9.6",
 		"typescript": "^6.0.3",
-		"typescript-eslint": "^8.68.0",
+		"typescript-eslint": "^8.69.0",
 		"ws": "^8.21.3"
 	}
 }
