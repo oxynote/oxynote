@@ -374,6 +374,7 @@ func Test_Expand(t *testing.T) {
 				},
 				Right: []Block{
 					{Type: BlockTitledCode, Text: "ok", Attrs: map[string]any{"title": "example"}},
+					{Type: BlockMermaid, Text: "graph TD"},
 				},
 			},
 			Expected: document.Block{
@@ -397,6 +398,7 @@ func Test_Expand(t *testing.T) {
 									{Type: document.BlockNodeCodeBlock, Content: []document.Block{{Type: "text", Text: "ok"}}},
 								},
 							},
+							{Type: document.BlockNodeMermaidBlock, Content: []document.Block{{Type: "text", Text: "graph TD"}}},
 						},
 					},
 				},

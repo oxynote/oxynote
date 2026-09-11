@@ -25,6 +25,7 @@ import {
 import {
 	CODE_BLOCK_NAME,
 	CODE_BLOCK_TITLE_NAME,
+	MERMAID_BLOCK_NAME,
 	METRIC_BLOCK_NAME,
 	SPLIT_DOCUMENTATION_RIGHT_SIDE_NAME,
 	TITLED_CODE_BLOCK_NAME,
@@ -47,9 +48,10 @@ const schema = new Schema({
 			content: `${CODE_BLOCK_TITLE_NAME} ${CODE_BLOCK_NAME}`,
 		},
 		[METRIC_BLOCK_NAME]: { group: "block" },
+		[MERMAID_BLOCK_NAME]: { group: "block", content: "text*", code: true },
 		[SPLIT_DOCUMENTATION_RIGHT_SIDE_NAME]: {
 			group: "block",
-			content: `(${TITLED_CODE_BLOCK_NAME} | ${METRIC_BLOCK_NAME})+`,
+			content: `(${TITLED_CODE_BLOCK_NAME} | ${METRIC_BLOCK_NAME} | ${MERMAID_BLOCK_NAME})+`,
 		},
 		horizontalRule: { group: "block" },
 		text: { group: "inline" },
@@ -221,6 +223,33 @@ describe("CodeBlockTitle", () => {
 			expect(run.state().doc.firstChild?.childCount).toBe(1)
 			expect(run.state().doc.firstChild?.firstChild?.type.name).toBe(
 				METRIC_BLOCK_NAME,
+			)
+		})
+
+		it("deletes the titled code block when the side holds a mermaid block", ({
+			expect,
+		}) => {
+			const run = shortcutsAt(
+				CodeBlockTitle,
+				CODE_BLOCK_TITLE_NAME,
+				docOf(
+					rightSide(
+						titled("t", "ab"),
+						schema.nodes[MERMAID_BLOCK_NAME].create(
+							null,
+							schema.text("graph TD"),
+						),
+					),
+				),
+				3,
+			)
+
+			const handled = run.shortcuts.Backspace?.({ editor: run.editor })
+
+			expect(handled).toBe(true)
+			expect(run.state().doc.firstChild?.childCount).toBe(1)
+			expect(run.state().doc.firstChild?.firstChild?.type.name).toBe(
+				MERMAID_BLOCK_NAME,
 			)
 		})
 

@@ -757,6 +757,7 @@ describe("DRAG_DISABLED_EXCEPT_RULES", () => {
 				"taskItem",
 				"paragraph",
 				METRIC_BLOCK_NAME,
+				MERMAID_BLOCK_NAME,
 			],
 		},
 	])("$name", ({ typeName, expected }, { expect }) => {

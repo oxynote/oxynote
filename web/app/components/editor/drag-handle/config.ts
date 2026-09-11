@@ -439,6 +439,7 @@ export const DRAG_DISABLED_EXCEPT_RULES = new Map<string, Set<string>>([
 			TaskItem.name,
 			Paragraph.name,
 			METRIC_BLOCK_NAME,
+			MERMAID_BLOCK_NAME,
 		]),
 	],
 	[ParameterListItem.name, new Set([])],

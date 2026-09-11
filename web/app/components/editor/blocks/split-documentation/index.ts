@@ -1,5 +1,5 @@
 import { type Editor, mergeAttributes, Node, type Range } from "@tiptap/core"
-import type { Node as PMNode, ResolvedPos } from "@tiptap/pm/model"
+import type { Node as PMNode, ResolvedPos, Schema } from "@tiptap/pm/model"
 import { VueNodeViewRenderer } from "@tiptap/vue-3"
 import MainBlock from "./MainBlock.vue"
 import Paragraph from "@tiptap/extension-paragraph"
@@ -18,6 +18,7 @@ import {
 	CODE_BLOCK_TITLE_NAME,
 	TITLED_CODE_BLOCK_NAME,
 	METRIC_BLOCK_NAME,
+	MERMAID_BLOCK_NAME,
 	SPLIT_DOCUMENTATION_NAME,
 	SPLIT_DOCUMENTATION_LEFT_SIDE_NAME,
 	SPLIT_DOCUMENTATION_RIGHT_SIDE_NAME,
@@ -25,6 +26,8 @@ import {
 	SPLIT_DOCUMENTATION_PARAMETER_LIST_ITEM_NAME,
 } from "../node-names"
 import { deleteNode } from "../../tiptap-utils/node"
+
+export type RightSideBlockType = "code" | "metrics" | "diagram"
 
 declare module "@tiptap/core" {
 	interface Commands<ReturnType> {
@@ -34,13 +37,13 @@ declare module "@tiptap/core" {
 			appendParameterListOnLeftSide: (leftSideNodePos: number) => ReturnType
 			appendBlockOnRightSide: (
 				rightSideNodePos: number,
-				blockType: "code" | "metrics",
+				blockType: RightSideBlockType,
 			) => ReturnType
 			/* This method expects nodePos to be the position of a TitledCodeBlock or other hovered node */
 			insertBlockOnRightSide: (
 				nodePos: number,
 				side: "above" | "below",
-				blockType: "code" | "metrics",
+				blockType: RightSideBlockType,
 			) => ReturnType
 			/* This method expects nodePos to be the position of a ParameterList */
 			insertParameterListOnLeftSide: (
@@ -65,6 +68,38 @@ const allowedLeftSideContent = [
 ]
 
 const extraLeftSideContent = [SPLIT_DOCUMENTATION_PARAMETER_LIST_NAME]
+
+const RIGHT_SIDE_BLOCK_NAMES = new Set([
+	TITLED_CODE_BLOCK_NAME,
+	METRIC_BLOCK_NAME,
+	MERMAID_BLOCK_NAME,
+])
+
+function createRightSideBlock(
+	schema: Schema,
+	blockType: RightSideBlockType,
+): PMNode | null | undefined {
+	switch (blockType) {
+		case "code": {
+			const titleNode = schema.nodes[CODE_BLOCK_TITLE_NAME]?.createAndFill()
+			const extendedCode = schema.nodes[CODE_BLOCK_NAME]?.createAndFill()
+			if (!titleNode || !extendedCode) {
+				return null
+			}
+
+			return schema.nodes[TITLED_CODE_BLOCK_NAME]?.createAndFill(null, [
+				titleNode,
+				extendedCode,
+			])
+		}
+
+		case "metrics":
+			return schema.nodes[METRIC_BLOCK_NAME]?.createAndFill()
+
+		case "diagram":
+			return schema.nodes[MERMAID_BLOCK_NAME]?.createAndFill()
+	}
+}
 
 export const SplitDocumentationLeftSide = Node.create({
 	name: SPLIT_DOCUMENTATION_LEFT_SIDE_NAME,
@@ -142,7 +177,7 @@ export const SplitDocumentationLeftSide = Node.create({
 export const SplitDocumentationRightSide = Node.create({
 	name: SPLIT_DOCUMENTATION_RIGHT_SIDE_NAME,
 	group: SPLIT_DOCUMENTATION_RIGHT_SIDE_NAME, // custom group to prevent it from being accepted elsewhere (e.g., top-level content)
-	content: `(${TITLED_CODE_BLOCK_NAME} | ${METRIC_BLOCK_NAME})+`,
+	content: `(${TITLED_CODE_BLOCK_NAME} | ${METRIC_BLOCK_NAME} | ${MERMAID_BLOCK_NAME})+`,
 	isolating: false,
 	defining: true,
 	selectable: false,
@@ -303,7 +338,7 @@ export const SplitDocumentation = Node.create({
 					return true
 				},
 			appendBlockOnRightSide:
-				(rightSideNodePos: number, blockType: "code" | "metrics") =>
+				(rightSideNodePos: number, blockType: RightSideBlockType) =>
 				({ state, tr, dispatch }) => {
 					const { schema, doc } = state
 					const rightNode = doc.nodeAt(rightSideNodePos)
@@ -311,24 +346,7 @@ export const SplitDocumentation = Node.create({
 						return false
 					}
 
-					const titleNode = schema.nodes[CODE_BLOCK_TITLE_NAME]?.createAndFill()
-					const extendedCode = schema.nodes[CODE_BLOCK_NAME]?.createAndFill()
-
-					if (!titleNode || !extendedCode) {
-						return false
-					}
-
-					let newBlock: PMNode | null | undefined
-
-					if (blockType === "code") {
-						newBlock = schema.nodes[TITLED_CODE_BLOCK_NAME]?.createAndFill(
-							null,
-							[titleNode, extendedCode],
-						)
-					} else {
-						newBlock = schema.nodes[METRIC_BLOCK_NAME]?.createAndFill()
-					}
-
+					const newBlock = createRightSideBlock(schema, blockType)
 					if (!newBlock) {
 						return false
 					}
@@ -338,7 +356,7 @@ export const SplitDocumentation = Node.create({
 					tr.insert(insertPos, newBlock)
 
 					// metric blocks don’t have text content to select
-					if (blockType === "code") {
+					if (blockType !== "metrics") {
 						const newBlockPos = insertPos
 						const textStart = newBlockPos + 1
 
@@ -478,23 +496,19 @@ export const SplitDocumentation = Node.create({
 					return true
 				},
 
-			/* This method expects nodePos to be the position of a TitledCodeBlock or MetricBlock */
+			/* This method expects nodePos to be the position of a block inside a right side */
 			insertBlockOnRightSide:
 				(
 					nodePos: number,
 					side: "above" | "below",
-					blockType: "code" | "metrics",
+					blockType: RightSideBlockType,
 				) =>
 				({ state, tr, dispatch }) => {
 					const { schema, doc } = state
 
-					// nodePos is the position of a TitledCodeBlock or MetricBlock
+					// nodePos is the position of a TitledCodeBlock, MetricBlock or MermaidBlock
 					const node = doc.nodeAt(nodePos)
-					if (
-						!node ||
-						(node.type.name !== TITLED_CODE_BLOCK_NAME &&
-							node.type.name !== METRIC_BLOCK_NAME)
-					) {
+					if (!node || !RIGHT_SIDE_BLOCK_NAMES.has(node.type.name)) {
 						return false
 					}
 
@@ -516,24 +530,7 @@ export const SplitDocumentation = Node.create({
 						return false
 					}
 
-					const titleNode = schema.nodes[CODE_BLOCK_TITLE_NAME]?.createAndFill()
-					const extendedCode = schema.nodes[CODE_BLOCK_NAME]?.createAndFill()
-
-					if (!titleNode || !extendedCode) {
-						return false
-					}
-
-					let newBlock: PMNode | null | undefined
-
-					if (blockType === "code") {
-						newBlock = schema.nodes[TITLED_CODE_BLOCK_NAME]?.createAndFill(
-							null,
-							[titleNode, extendedCode],
-						)
-					} else {
-						newBlock = schema.nodes[METRIC_BLOCK_NAME]?.createAndFill()
-					}
-
+					const newBlock = createRightSideBlock(schema, blockType)
 					if (!newBlock) {
 						return false
 					}
@@ -551,7 +548,7 @@ export const SplitDocumentation = Node.create({
 					tr.insert(insertPos, newBlock)
 
 					// metric blocks don’t have text content to select
-					if (blockType === "code") {
+					if (blockType !== "metrics") {
 						const textStart = insertPos + 1
 						tr.setSelection(
 							TextSelection.near(tr.doc.resolve(textStart), 1),
@@ -600,6 +597,17 @@ export const SplitDocumentation = Node.create({
 				}
 
 				return this.editor.commands.appendBlockOnRightSide(pos, "metrics")
+			},
+			"Mod-Alt-d": () => {
+				const pos = sidePos(
+					this.editor.state,
+					SPLIT_DOCUMENTATION_RIGHT_SIDE_NAME,
+				)
+				if (pos === null) {
+					return false
+				}
+
+				return this.editor.commands.appendBlockOnRightSide(pos, "diagram")
 			},
 			// when the cursor is inside the heading and the Enter key is
 			// pressed, we don't want the cursor to create extra paragraphs,

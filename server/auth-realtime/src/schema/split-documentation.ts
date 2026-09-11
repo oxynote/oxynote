@@ -6,6 +6,7 @@ import { ParameterList } from "./parameter-list.js"
 import { CalloutBlock } from "./callout.js"
 import { TitledCodeBlock } from "./code-block.js"
 import { MetricBlock } from "./metric.js"
+import { MermaidBlock } from "./mermaid.js"
 
 const allowedLeftSideContent = [
 	Paragraph.name,
@@ -48,7 +49,7 @@ export const SplitDocumentationRightSide = Node.create({
 	isolating: false,
 	defining: true,
 	selectable: false,
-	content: `(${TitledCodeBlock.name} | ${MetricBlock.name})+`,
+	content: `(${TitledCodeBlock.name} | ${MetricBlock.name} | ${MermaidBlock.name})+`,
 	parseHTML() {
 		return [
 			{

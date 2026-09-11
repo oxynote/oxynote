@@ -224,7 +224,7 @@ type Block struct {
 	Left []Block `json:"left,omitempty"`
 
 	// Right is the right-side content of a split_doc. Each block
-	// must be a titled_code or a metric.
+	// must be a titled_code, a metric or a mermaid.
 	Right []Block `json:"right,omitempty"`
 
 	// Header is the section header of a param_list. Plain text (no

@@ -1,30 +1,21 @@
-<script lang="ts" setup>
-const props = withDefaults(
-	defineProps<{
-		buttonText: string
-		buttonIcon?: string
-		buttonShortcut?: {
+<script lang="ts" setup generic="T extends string">
+const props = defineProps<{
+	buttons: {
+		id: T
+		text: string
+		icon?: string
+		shortcut?: {
 			keyboardKey: { macOS: string; other: string }
 			i18nKey: string | null
 		}
-		secondButtonText?: string
-		secondButtonIcon?: string
-		secondButtonShortcut?: {
-			keyboardKey: { macOS: string; other: string }
-			i18nKey: string | null
-		}
-	}>(),
-	{
-		buttonIcon: "lucide:circle-plus",
-		secondButtonIcon: "lucide:circle-plus",
-	},
-)
+	}[]
+}>()
 const emit = defineEmits<{
-	(e: "button-click", btn: "first" | "second"): void
+	(e: "button-click", id: T): void
 }>()
 
-function handleClick(btn: "first" | "second") {
-	emit("button-click", btn)
+function handleClick(id: T) {
+	emit("button-click", id)
 }
 </script>
 
@@ -45,30 +36,20 @@ function handleClick(btn: "first" | "second") {
 			}
 		"
 	>
-		<ShortcutTooltip side="bottom" :shortcut="props.buttonShortcut">
-			<ShadcnUiButton
-				variant="dim"
-				size="custom"
-				class="gap-1 text-2sm opacity-0 transition-opacity group-hover/right-side-extra-action:opacity-100 supports-[hover:none]:opacity-100"
-				@click="handleClick('first')"
-			>
-				<Icon :name="props.buttonIcon" />
-				{{ props.buttonText }}
-			</ShadcnUiButton>
-		</ShortcutTooltip>
-		<template v-if="props.secondButtonText">
+		<template v-for="(button, index) in props.buttons" :key="button.id">
 			<div
+				v-if="index > 0"
 				class="h-4 w-px bg-accent-foreground/10 opacity-0 transition-opacity group-hover/right-side-extra-action:opacity-100 supports-[hover:none]:opacity-100"
 			/>
-			<ShortcutTooltip side="bottom" :shortcut="props.secondButtonShortcut">
+			<ShortcutTooltip side="bottom" :shortcut="button.shortcut">
 				<ShadcnUiButton
 					variant="dim"
 					size="custom"
 					class="gap-1 text-2sm opacity-0 transition-opacity group-hover/right-side-extra-action:opacity-100 supports-[hover:none]:opacity-100"
-					@click="handleClick('second')"
+					@click="handleClick(button.id)"
 				>
-					<Icon :name="props.secondButtonIcon" />
-					{{ props.secondButtonText }}
+					<Icon :name="button.icon ?? 'lucide:circle-plus'" />
+					{{ button.text }}
 				</ShadcnUiButton>
 			</ShortcutTooltip>
 		</template>

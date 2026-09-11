@@ -198,7 +198,7 @@ func blockVariant(t block.Type) (map[string]any, bool) {
 			},
 			"right": map[string]any{
 				"type":        "array",
-				"description": "The example side. Holds titled_code or metric only, and is the one place titled_code is legal.",
+				"description": "The example side. Holds titled_code, metric or mermaid only, and is the one place titled_code is legal.",
 				"items":       map[string]any{"type": "object"},
 				"minItems":    1,
 			},

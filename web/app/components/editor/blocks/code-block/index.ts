@@ -21,7 +21,6 @@ import {
 	CODE_BLOCK_TITLE_NAME,
 	TITLED_CODE_BLOCK_NAME,
 	SPLIT_DOCUMENTATION_RIGHT_SIDE_NAME,
-	METRIC_BLOCK_NAME,
 } from "../node-names"
 import { COMMENT_MARK_NAME } from "../../mark-names"
 
@@ -66,19 +65,11 @@ export const CodeBlockTitle = Node.create({
 					if (
 						grandGrandParent.type.name === SPLIT_DOCUMENTATION_RIGHT_SIDE_NAME
 					) {
-						const leftSideBlockCount = grandGrandParent.childCount
-							? grandGrandParent.content.content.filter(
-									(child) =>
-										child.type.name === TITLED_CODE_BLOCK_NAME ||
-										child.type.name === METRIC_BLOCK_NAME,
-								).length
-							: 0
-
-						// In case this is the last code element, we wan't to
-						// avoid doing anything as by default TipTap will
+						// In case this is the last right side element, we wan't
+						// to avoid doing anything as by default TipTap will
 						// move the cursor outside of the SplitDocumentation
 						// block.
-						if (leftSideBlockCount === 1) {
+						if (grandGrandParent.childCount === 1) {
 							return true
 						}
 					}

@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import type { Node } from "@tiptap/pm/model"
 import type { Editor } from "@tiptap/vue-3"
+import type { RightSideBlockType } from "../../blocks/split-documentation"
 import { SUPPRESS_SCROLL_TO_SELECTION_META } from "../../scroll-control"
 
 const props = defineProps<{
@@ -16,7 +17,7 @@ const props = defineProps<{
 
 function addNeighborBlock(
 	side: "above" | "below",
-	blockType: "code" | "metrics",
+	blockType: RightSideBlockType,
 ) {
 	if (props.hovered == null) {
 		return
@@ -77,6 +78,30 @@ function addNeighborBlock(
 				{{
 					$t(
 						"editor.drag-handle.options.split-doc-right-side.add-metrics-below-block",
+					)
+				}}
+			</span>
+		</div>
+	</ShadcnUiDropdownMenuItem>
+	<ShadcnUiDropdownMenuItem @click="addNeighborBlock('above', 'diagram')">
+		<div class="flex w-full items-center gap-1">
+			<Icon name="lucide:list-start" class="scale-x-[-1] transform" />
+			<span>
+				{{
+					$t(
+						"editor.drag-handle.options.split-doc-right-side.add-diagram-above-block",
+					)
+				}}
+			</span>
+		</div>
+	</ShadcnUiDropdownMenuItem>
+	<ShadcnUiDropdownMenuItem @click="addNeighborBlock('below', 'diagram')">
+		<div class="flex w-full items-center gap-1">
+			<Icon name="lucide:list-end" class="scale-x-[-1] transform" />
+			<span>
+				{{
+					$t(
+						"editor.drag-handle.options.split-doc-right-side.add-diagram-below-block",
 					)
 				}}
 			</span>

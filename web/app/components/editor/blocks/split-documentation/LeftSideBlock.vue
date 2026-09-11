@@ -32,11 +32,16 @@ function addElement() {
 		/>
 		<div v-show="!isEditingDisabled">
 			<EditorBlocksSplitDocumentationBottomAction
-				:button-text="
-					$t('editor.split-documentation.left-side-bottom-action-button')
-				"
-				button-icon="lucide:list-plus"
-				:button-shortcut="SHORTCUT_ACTIONS.addParamsToSplitDocLeftSide"
+				:buttons="[
+					{
+						id: 'params',
+						text: $t(
+							'editor.split-documentation.left-side-bottom-action-button',
+						),
+						icon: 'lucide:list-plus',
+						shortcut: SHORTCUT_ACTIONS.addParamsToSplitDocLeftSide,
+					},
+				]"
 				@button-click="addElement"
 			/>
 		</div>

@@ -75,6 +75,14 @@ export const SHORTCUT_ACTIONS = {
 		},
 		i18nKey: "shortcuts.keys.add-metrics-to-split-doc-right-side",
 	},
+	addDiagramToSplitDocRightSide: {
+		// context-dependent (handle by the node)
+		keyboardKey: {
+			macOS: "⌘+⌥+D",
+			other: "Ctrl+Alt+D",
+		},
+		i18nKey: "shortcuts.keys.add-diagram-to-split-doc-right-side",
+	},
 	openEditorCompletionMenu: {
 		keyboardKey: {
 			macOS: "Ctrl+Space",
@@ -244,6 +252,10 @@ export const SHORTCUT_GROUPS: {
 			entry("add-metrics-to-split-doc", {
 				kind: "action",
 				action: SHORTCUT_ACTIONS.addMetricsToSplitDocRightSide,
+			}),
+			entry("add-diagram-to-split-doc", {
+				kind: "action",
+				action: SHORTCUT_ACTIONS.addDiagramToSplitDocRightSide,
 			}),
 		],
 	},
