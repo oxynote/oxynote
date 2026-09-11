@@ -132,7 +132,7 @@ func blockVariant(t block.Type) (map[string]any, bool) {
 			"attrs": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					document.AttrTitle:    map[string]any{"type": "string", "description": "Plain-text title of the block."},
+					document.AttrTitle:    map[string]any{"type": "string", "description": "Plain-text label naming what the code is. For an endpoint, the method and route, such as POST /v1/assets/{id}/due-date/preview."},
 					document.AttrLanguage: map[string]any{"type": "string", "description": "Optional; leave empty rather than guess."},
 				},
 				"required": []string{document.AttrTitle},

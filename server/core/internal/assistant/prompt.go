@@ -119,7 +119,7 @@ A split_doc_param_list captures a named, typed parameter table: request bodies, 
     }
   ],
   "right": [
-    {"type": "titled_code", "attrs": {"title": "Request"}, "text": "POST /api/auth/login\n{\n  \"email\": \"...\",\n  \"password\": \"...\"\n}"}
+    {"type": "titled_code", "attrs": {"title": "POST /api/auth/login"}, "text": "{\n  \"email\": \"...\",\n  \"password\": \"...\"\n}"}
   ]
 }
 </example>
@@ -147,6 +147,7 @@ Documents are for humans to read. Make them read well.
 - The document name is shown above the content, so open with the first real paragraph or section rather than a heading that repeats it.
 - split_doc draws its own dividers, so leave horizontal_rule out next to it.
 - For code and titled_code, write language-agnostic pseudo-code or a natural-language sketch unless the document names a stack, and leave language empty rather than guessing one.
+- A titled_code title names what the code is. For a request or response that is the method and route, such as POST /v1/assets/{id}/due-date/preview, so the body itself does not repeat it.
 - Use callout for a constraint, warning or gotcha the reader must not miss; ordinary emphasis belongs in prose.
 - Keep the outline flat: most documents need two or three sections, and a heading earns its place only when the section under it runs longer than a paragraph or two.
 
