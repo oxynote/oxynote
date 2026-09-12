@@ -115,6 +115,22 @@ describe("<HookMenuContent>", { concurrent: false }, () => {
 		expect(menuText()).toContain(t("editor.hooks.time-expiration.title"))
 	})
 
+	it("leaves website changes out when the server has no changedetection", async ({
+		expect,
+	}) => {
+		mockGitHub(true)
+		seedCapabilities({ changeDetection: false })
+		await mountContent()
+
+		await openHookSubMenu(t(ADD_NEW))
+
+		await vi.waitFor(() => {
+			expect(menuText()).toContain(t("editor.hooks.github-tracking.title"))
+		}, WAIT_FOR_OPTIONS)
+		expect(menuText()).not.toContain(t("editor.hooks.url-watcher.title"))
+		expect(menuText()).toContain(t("editor.hooks.time-expiration.title"))
+	})
+
 	it("lists the hooks already on the block", async ({ expect }) => {
 		mockGitHub(true)
 

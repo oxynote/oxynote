@@ -42,6 +42,7 @@ const { fetchGitHubConnectionStatus, gitHubConfigured, fetchGitHubInstallURL } =
 	useGitHubAPI()
 const { fetchSlackConnectionStatus, slackConfigured, fetchSlackInstallURL } =
 	useSlackAPI()
+const { isSearchEnabled } = useCapabilitiesAPI()
 const { useFetchNotificationCount } = useNotificationAPI()
 const fetchNotificationCount = useFetchNotificationCount({ read: false })
 const editorStore = useEditorStore()
@@ -57,6 +58,10 @@ useShortcut(SHORTCUT_ACTIONS.toggleSidebar.keyboardKey, () => {
 	toggleSidebar()
 })
 useShortcut(SHORTCUT_ACTIONS.searchForDocuments.keyboardKey, () => {
+	if (!isSearchEnabled.value) {
+		return
+	}
+
 	isSearchModalOpen.value = !isSearchModalOpen.value
 })
 useShortcut(SHORTCUT_ACTIONS.toggleInbox.keyboardKey, () => {
@@ -149,20 +154,6 @@ const sections = computed<Section[]>(() => {
 
 	const topSectionItems: SidebarItem[] = [
 		{
-			id: "search-button",
-			name: t("sidebar.sections.top.search-button"),
-			icon: "lucide:search",
-			onClick: () => {
-				isSearchModalOpen.value = true
-			},
-			acceptsChildren: false,
-			active: false,
-			draggable: false,
-			actions: [],
-			shortcutTooltip: SHORTCUT_ACTIONS.searchForDocuments,
-			children: null,
-		},
-		{
 			id: "inbox",
 			name: t("sidebar.sections.top.inbox"),
 			count: fetchNotificationCount.data.value?.count || 0,
@@ -178,6 +169,23 @@ const sections = computed<Section[]>(() => {
 			children: null,
 		},
 	]
+
+	if (isSearchEnabled.value) {
+		topSectionItems.unshift({
+			id: "search-button",
+			name: t("sidebar.sections.top.search-button"),
+			icon: "lucide:search",
+			onClick: () => {
+				isSearchModalOpen.value = true
+			},
+			acceptsChildren: false,
+			active: false,
+			draggable: false,
+			actions: [],
+			shortcutTooltip: SHORTCUT_ACTIONS.searchForDocuments,
+			children: null,
+		})
+	}
 
 	topSection.items = topSectionItems
 	const nextStepsItems: SidebarItem[] = []

@@ -325,6 +325,20 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 		).not.toBeNull()
 	})
 
+	it("leaves the search row out when the server has no search", async ({
+		expect,
+	}) => {
+		stubQueries()
+		seedCapabilities({ search: false })
+
+		const wrapper = await mountSidebar()
+
+		expect(wrapper.text()).not.toContain(
+			t("sidebar.sections.top.search-button"),
+		)
+		expect(wrapper.text()).toContain(t("sidebar.sections.top.inbox"))
+	})
+
 	it("asks to toggle the notification sidebar from the inbox row", async ({
 		expect,
 	}) => {

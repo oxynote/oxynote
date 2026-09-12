@@ -15,6 +15,7 @@ const emit = defineEmits<{
 }>()
 
 const { gitHubConfigured } = useGitHubAPI()
+const { isChangeDetectionEnabled } = useCapabilitiesAPI()
 
 const isSubOpen = ref(false)
 
@@ -142,6 +143,7 @@ function hookProps(
 					@open-settings="(target: 'github') => emit('open-settings', target)"
 				/>
 				<URLWatcherConfigMenu
+					v-if="isChangeDetectionEnabled"
 					:node-id="nodeId"
 					@force-close="isSubOpen = false"
 				/>
