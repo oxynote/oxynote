@@ -33,14 +33,6 @@ const sharedTestOptions = {
 		if (log.includes("<Suspense> is an experimental feature")) {
 			return false
 		}
-
-		// the nuxt overrides below point @nuxt/icon at no provider, so
-		// every icon that is not already in the client bundle fails its
-		// load and warns once per render. That is the intended trade for
-		// keeping the iconify api off the network, not a test failure
-		if (log.startsWith("[Icon] failed to load icon")) {
-			return false
-		}
 	},
 } satisfies TestUserConfig
 
