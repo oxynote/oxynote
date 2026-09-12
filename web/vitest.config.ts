@@ -19,6 +19,11 @@ const sharedTestOptions = {
 		concurrent: true,
 	},
 	restoreMocks: true,
+	// vitest clears every mock's call history before each test by
+	// default, which under concurrency also wipes the mocks of tests
+	// still running. Each test builds its own mocks, so nothing needs
+	// clearing.
+	clearMocks: false,
 	unstubGlobals: true,
 	unstubEnvs: true,
 	// @nuxt/test-utils mounts the test app inside <Suspense>, so vue's dev

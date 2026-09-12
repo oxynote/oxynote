@@ -133,7 +133,7 @@
 		"@iconify-json/svg-spinners": "^1.2.4",
 		"@intlify/eslint-plugin-vue-i18n": "^4.5.1",
 		"@nuxt/eslint": "^1.17.0",
-		"@nuxt/test-utils": "^4.2.0",
+		"@nuxt/test-utils": "^4.3.2",
 		"@tailwindcss/typography": "^0.5.20",
 		"@tailwindcss/vite": "^4.3.3",
 		"@typescript-eslint/eslint-plugin": "^8.69.0",
