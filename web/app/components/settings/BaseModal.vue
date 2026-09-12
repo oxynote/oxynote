@@ -20,6 +20,7 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n({ useScope: "global" })
+const { isAnyAppEnabled } = useCapabilitiesAPI()
 const openAction = ref<
 	| null
 	| "email-change"
@@ -35,7 +36,7 @@ const openAction = ref<
 const actionOpts = ref<OrganizationMember | DataSourceType | DataSource | null>(
 	null,
 )
-const sections = [
+const sections = computed(() => [
 	{
 		title: t("settings.profile.title"),
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
@@ -47,12 +48,16 @@ const sections = [
 		component: WorkspaceSection,
 		id: ORG_SECTION_ID,
 	},
-	{
-		title: t("settings.apps.title"),
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
-		component: AppsSection,
-		id: APP_SECTION_ID, // for scrolling into view when opened
-	},
+	...(isAnyAppEnabled.value
+		? [
+				{
+					title: t("settings.apps.title"),
+					// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
+					component: AppsSection,
+					id: APP_SECTION_ID, // for scrolling into view when opened
+				},
+			]
+		: []),
 	{
 		title: t("settings.mcp.title"),
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
@@ -64,7 +69,7 @@ const sections = [
 		component: DataSourceSection,
 		id: DATA_SOURCE_SECTION_ID,
 	},
-]
+])
 
 whenever(open, async (val) => {
 	if (val === "org-members") {

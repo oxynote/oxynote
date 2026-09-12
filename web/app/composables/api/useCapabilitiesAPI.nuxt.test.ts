@@ -98,6 +98,36 @@ describe("useCapabilitiesAPI", { concurrent: false }, () => {
 		})
 	})
 
+	describe("isAnyAppEnabled", () => {
+		const cc: Record<string, { github: boolean; slack: boolean }> = {
+			"both apps are available": { github: true, slack: true },
+			"only github is available": { github: true, slack: false },
+			"only slack is available": { github: false, slack: true },
+		}
+
+		Object.entries(cc).forEach(([name, c]) => {
+			it(`reports enabled when ${name}`, async ({ expect }) => {
+				mockEndpoint("GET", "/api/capabilities", () => stubCapabilities(c))
+				const api = makeCapabilitiesAPI()
+
+				await api.fetchCapabilities.refresh()
+
+				expect(api.isAnyAppEnabled.value).toBe(true)
+			})
+		})
+
+		it("reports disabled when neither app is available", async ({ expect }) => {
+			mockEndpoint("GET", "/api/capabilities", () =>
+				stubCapabilities({ github: false, slack: false }),
+			)
+			const api = makeCapabilitiesAPI()
+
+			await api.fetchCapabilities.refresh()
+
+			expect(api.isAnyAppEnabled.value).toBe(false)
+		})
+	})
+
 	describe("isAssistantEnabled", () => {
 		const cc: Record<string, { status: AssistantStatus; enabled: boolean }> = {
 			"runs a full-strength model": {

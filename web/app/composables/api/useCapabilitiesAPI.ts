@@ -28,6 +28,9 @@ export default function () {
 
 	const isGithubEnabled = enabled((c) => c.github)
 	const isSlackEnabled = enabled((c) => c.slack)
+	// github and slack are the only connectable apps, so both being off
+	// leaves nothing for the apps settings section to show
+	const isAnyAppEnabled = enabled((c) => c.github || c.slack)
 	const isChangeDetectionEnabled = enabled((c) => c.changeDetection)
 	const isSearchEnabled = enabled((c) => c.search)
 
@@ -47,6 +50,7 @@ export default function () {
 		fetchCapabilities,
 		isGithubEnabled,
 		isSlackEnabled,
+		isAnyAppEnabled,
 		isChangeDetectionEnabled,
 		isSearchEnabled,
 		isAssistantEnabled,

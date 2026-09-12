@@ -16,6 +16,7 @@ import {
 	mockAuthOrganization,
 	seedAuthAccounts,
 	seedAuthSession,
+	seedCapabilities,
 	t,
 	teleportedButton,
 } from "../test-helpers"
@@ -110,6 +111,29 @@ describe("<BaseModal>", { concurrent: false }, () => {
 			t("settings.mcp.title"),
 			t("settings.data-sources.title"),
 		])
+	})
+
+	it.for([{ app: "github" }, { app: "slack" }] as {
+		app: "github" | "slack"
+	}[])(
+		"keeps the apps section while only $app is available",
+		async ({ app }, { expect }) => {
+			seedCapabilities({ github: app === "github", slack: app === "slack" })
+
+			await mountModal()
+
+			expect(dialogText()).toContain(t("settings.apps.title"))
+		},
+	)
+
+	it("drops the apps section on a deployment with no apps", async ({
+		expect,
+	}) => {
+		seedCapabilities({ github: false, slack: false })
+
+		await mountModal()
+
+		expect(dialogText()).not.toContain(t("settings.apps.title"))
 	})
 
 	it("gives the deep-linkable sections their anchors", async ({ expect }) => {
