@@ -209,7 +209,7 @@ services:
         max-file: "3"
   changedetection:
     container_name: changedetection
-    image: dgtlmoon/changedetection.io:0.60.3
+    image: dgtlmoon/changedetection.io:0.60.4
     volumes:
       - changedetection_data:/datastore
     environment:
