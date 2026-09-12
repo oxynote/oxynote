@@ -151,7 +151,7 @@ already running, this is all it takes:
 ```sh
 docker run -d --name oxynote \
   -p 8080:8080 \
-  -e OXYNOTE_DB_DSN='postgresql://dbusername:dbpass@postgres.example.com/oxynote?sslmode=disable' \
+  -e OXYNOTE_DB_DSN='postgresql://dbusername:dbpass@postgres.example.com/oxynote?sslmode=require' \
   -v oxynote_data:/oxynote/data \
   ghcr.io/oxynote/oxynote:latest
 ```
@@ -159,15 +159,12 @@ docker run -d --name oxynote \
 Open http://localhost:8080 and sign up. Until you configure an email sender,
 the verification link shows up in the container's logs instead of your
 inbox. Keep the data volume: it holds your uploads and the secrets that keep
-everyone signed in and every data source connected. The container assumes it
-can be reached at http://localhost:8080. If you want to open it anywhere
-else, set `OXYNOTE_PUBLIC_URL` to that address, and put a TLS-terminating
-proxy in front for the domain.
-
-No PostgreSQL yet? The compose file below starts one next to Oxynote.
+everyone signed in and every data source connected. To open it at any other
+address, set `OXYNOTE_PUBLIC_URL` to that address, and put a TLS-terminating
+proxy in front for a domain.
 
 <details>
-<summary>Docker Compose with PostgreSQL, Meilisearch for search and Mailpit for email</summary>
+<summary>No PostgreSQL yet? This compose file starts one next to Oxynote, plus Meilisearch for search and Mailpit for email</summary>
 
 ```yaml
 name: oxynote

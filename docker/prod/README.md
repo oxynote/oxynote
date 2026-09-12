@@ -36,7 +36,7 @@ fails the boot with an error naming it.
 
 | Variable | Meaning |
 | --- | --- |
-| `OXYNOTE_DB_DSN` | PostgreSQL DSN, e.g. `postgresql://user:pass@host/db?sslmode=disable`. One database serves the whole product; migrations run automatically at boot. |
+| `OXYNOTE_DB_DSN` | PostgreSQL DSN, e.g. `postgresql://user:pass@host/db?sslmode=require`. One database serves the whole product; migrations run automatically at boot. |
 
 ### Public address
 
