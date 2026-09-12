@@ -118,11 +118,10 @@ puzzle are coming.
 Think of Oxynote as a Notion-style workspace that knows what a running
 system is. A page is still a page: you type, others see it as you type,
 blocks move around. The difference is what a block can be. One block is a
-chart that runs a Prometheus query, or a SQL query against PostgreSQL,
-MySQL or MariaDB, every time the page opens. The paragraph above it says
-what the chart means. Because the chart is part of the page rather than a
-link to somewhere else, there is no link to maintain and no second place
-to check.
+chart that runs a Prometheus query, or a SQL query on PostgreSQL, MySQL or
+MariaDB, every time the page opens. The paragraph above it says what the
+chart means. Because the chart is part of the page rather than a link to
+somewhere else, there is no link to maintain and no second place to check.
 
 The same idea carries into API docs. Stripe made the two-column reference
 the standard, parameters on the left, request and response on the right,
@@ -150,8 +149,8 @@ Oxynote runs as one container next to a PostgreSQL database you already
 have. It needs to know two things: the address people will open in the
 browser, and how to reach that database.
 
-```sh
-docker run -d --name oxynote \
+```console
+$ docker run -d --name oxynote \
   -p 8080:8080 \
   -e OXYNOTE_PUBLIC_URL=http://localhost:8080 \
   -e OXYNOTE_DB_DSN='postgresql://oxynote:change-me@postgres.example.com/oxynote?sslmode=disable' \
@@ -261,14 +260,13 @@ source, see [CONTRIBUTING.md](CONTRIBUTING.md).
   <img src="docs/images/metric-grid-light.png" alt="The Release health page in Oxynote: a paragraph and a section called The Friday rule, then a metric grid with a Friday deploys bar chart, a hotfixes per release line chart with a Needs attention threshold, and deploy confidence gauges.">
 </picture>
 
-A `Live Metrics` block is one query and one chart: a time series, a bar
-chart or a gauge, fed by Prometheus or by SQL against PostgreSQL, MySQL or
-MariaDB. Put several of those
-blocks in a grid and you have something as dense as a Grafana dashboard, if
-that is what you want. What Grafana does not give you is the text around the
-grid: what each chart means, why the threshold sits where it does, and what
-to do when it is crossed, right next to the charts, with no question of
-where it should go.
+A `Live Metrics` block shows a time series, a bar chart or a gauge, built
+from one or more Prometheus or SQL queries, with PostgreSQL, MySQL and
+MariaDB supported on the SQL side. A metric grid is several of those blocks
+side by side. In Grafana that would be a dashboard. In Oxynote it is a
+dashboard inside a page, which means the explanation goes around it: what a
+chart shows, why the threshold sits where it does, what to do when it is
+crossed, all on the same page as the charts.
 
 ### Reviews
 
@@ -368,7 +366,7 @@ person who has to decide and for the agent helping them.
 **Live data in pages**
 
 - ✅ Metric charts from Prometheus queries
-- ✅ Metric charts from SQL queries against PostgreSQL, MySQL and MariaDB
+- ✅ Metric charts from SQL queries on PostgreSQL, MySQL and MariaDB
 - ✅ Metric grids, dashboard-style, with the explanation around them
 - ⚪ Log blocks backed by Loki, next to the charts
 
@@ -377,7 +375,7 @@ person who has to decide and for the agent helping them.
 - ✅ Drafts with a diff of text and charts, approvals and merge into main
 - ✅ Protected pages that only change through a merged draft
 - ✅ Comments on text, diagrams and charts, with an inbox
-- ✅ Page history
+- ⚪ Page history
 - ⚪ Edit suggestions: a reviewer proposes the change, the author accepts
   it
 
