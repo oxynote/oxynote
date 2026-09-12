@@ -107,6 +107,12 @@ function count() {
 	return z.string().regex(/^\d+$/, "must be a whole number").optional()
 }
 
+// what the public origin falls back to. Caddy listens on 8080 inside the
+// container, so a container published as 8080:8080 is reachable here with
+// no variable set; anything else (a domain, another host port) needs
+// OXYNOTE_PUBLIC_URL.
+const defaultPublicUrl = "http://localhost:8080"
+
 // the public origin every URL derives from. A path would silently break the
 // caddy routing, which is root-anchored.
 const publicOrigin = httpUrl().refine(
@@ -327,7 +333,7 @@ const aiAssistantKeys = [
 // with OXYNOTE_ is a boot error, so a typo — or an internal component
 // variable — fails loudly instead of being silently ignored.
 const baseSchema = z.object({
-	OXYNOTE_PUBLIC_URL: publicOrigin,
+	OXYNOTE_PUBLIC_URL: publicOrigin.optional(),
 	OXYNOTE_DB_DSN: z.string().min(1),
 	OXYNOTE_VALKEY_DSN: valkeyDsn.optional(),
 	OXYNOTE_OBJECT_STORAGE_DSN: objectStorageDsn.optional(),
@@ -558,7 +564,7 @@ export function loadConfig(source: Record<string, string | undefined>): Config {
 	}
 
 	const values = result.data
-	const url = new URL(values.OXYNOTE_PUBLIC_URL)
+	const url = new URL(values.OXYNOTE_PUBLIC_URL ?? defaultPublicUrl)
 
 	return {
 		publicOrigin: url.origin,

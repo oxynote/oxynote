@@ -298,7 +298,9 @@
 					"add-code-block-above-block": "Add Code Above",
 					"add-code-block-below-block": "Add Code Below",
 					"add-metrics-above-block": "Add Live Metrics Above",
-					"add-metrics-below-block": "Add Live Metrics Below"
+					"add-metrics-below-block": "Add Live Metrics Below",
+					"add-diagram-above-block": "Add Diagram Above",
+					"add-diagram-below-block": "Add Diagram Below"
 				},
 				"metric-block": {
 					"width": "Resize",
@@ -413,7 +415,8 @@
 			"left-side-bottom-action-button": "Add Parameters",
 			"right-side-bottom-action-buttons": {
 				"add-code": "Add Code",
-				"add-metrics": "Add Metrics"
+				"add-metrics": "Add Metrics",
+				"add-diagram": "Add Diagram"
 			}
 		},
 		"metrics": {

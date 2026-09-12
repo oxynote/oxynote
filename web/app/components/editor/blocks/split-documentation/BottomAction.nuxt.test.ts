@@ -13,162 +13,88 @@ const SHORTCUT = {
 	i18nKey: null,
 }
 
-function mountAction(props: Record<string, unknown>) {
-	return mountUnderTooltipProvider(BottomAction, { props: props })
+const PARAMS_KEY = "editor.split-documentation.left-side-bottom-action-button"
+const CODE_KEY =
+	"editor.split-documentation.right-side-bottom-action-buttons.add-code"
+const METRICS_KEY =
+	"editor.split-documentation.right-side-bottom-action-buttons.add-metrics"
+
+function mountAction(buttons: Record<string, unknown>[]) {
+	return mountUnderTooltipProvider(BottomAction, { props: { buttons } })
 }
 
-// the emitted button-click payloads, in the order they were emitted
+// the emitted button-click payloads, in the order they were emitted.
+// findComponent cannot type a generic component, so the wrapper is
+// asserted
 function clicks(wrapper: VueWrapper): unknown[] {
-	return (
-		wrapper.findComponent(BottomAction).emitted("button-click") ?? []
-	).map((args) => args[0])
+	const action = wrapper.findComponent(BottomAction) as unknown as VueWrapper
+
+	return (action.emitted("button-click") ?? []).map((args) => args[0])
 }
 
 describe("<SplitDocumentationBottomAction>", () => {
-	it("labels the first button with the given text", async ({ expect }) => {
-		const wrapper = await mountAction({
-			buttonText: t(
-				"editor.split-documentation.left-side-bottom-action-button",
-			),
-		})
+	it("labels a button with its text", async ({ expect }) => {
+		const wrapper = await mountAction([{ id: "params", text: t(PARAMS_KEY) }])
 
-		expect(wrapper.text()).toContain(
-			t("editor.split-documentation.left-side-bottom-action-button"),
-		)
+		expect(wrapper.text()).toContain(t(PARAMS_KEY))
 	})
 
-	it("shows a plus icon on the first button by default", async ({ expect }) => {
-		const wrapper = await mountAction({
-			buttonText: t(
-				"editor.split-documentation.left-side-bottom-action-button",
-			),
-		})
+	it("shows a plus icon by default", async ({ expect }) => {
+		const wrapper = await mountAction([{ id: "params", text: t(PARAMS_KEY) }])
 
 		expect(renderedIconNames(wrapper)).toEqual(["lucide:circle-plus"])
 	})
 
-	it("shows the given icon on the first button", async ({ expect }) => {
-		const wrapper = await mountAction({
-			buttonText: t(
-				"editor.split-documentation.left-side-bottom-action-button",
-			),
-			buttonIcon: "lucide:list-plus",
-		})
+	it("shows the given icon", async ({ expect }) => {
+		const wrapper = await mountAction([
+			{ id: "params", text: t(PARAMS_KEY), icon: "lucide:list-plus" },
+		])
 
 		expect(renderedIconNames(wrapper)).toEqual(["lucide:list-plus"])
 	})
 
-	it("reports a first-button click", async ({ expect }) => {
-		const wrapper = await mountAction({
-			buttonText: t(
-				"editor.split-documentation.left-side-bottom-action-button",
-			),
-		})
+	it("reports a click with the button's id", async ({ expect }) => {
+		const wrapper = await mountAction([{ id: "params", text: t(PARAMS_KEY) }])
 
-		await findButtonByText(
-			wrapper,
-			t("editor.split-documentation.left-side-bottom-action-button"),
-		).trigger("click")
+		await findButtonByText(wrapper, t(PARAMS_KEY)).trigger("click")
 
-		expect(clicks(wrapper)).toEqual(["first"])
+		expect(clicks(wrapper)).toEqual(["params"])
 	})
 
-	it("renders only one button when no second text is given", async ({
-		expect,
-	}) => {
-		const wrapper = await mountAction({
-			buttonText: t(
-				"editor.split-documentation.right-side-bottom-action-buttons.add-code",
-			),
-		})
-
-		expect(wrapper.findAll("button")).toHaveLength(1)
-	})
-
-	it("renders the second button when its text is given", async ({ expect }) => {
-		const wrapper = await mountAction({
-			buttonText: t(
-				"editor.split-documentation.right-side-bottom-action-buttons.add-code",
-			),
-			secondButtonText: t(
-				"editor.split-documentation.right-side-bottom-action-buttons.add-metrics",
-			),
-		})
+	it("renders one button per entry", async ({ expect }) => {
+		const wrapper = await mountAction([
+			{ id: "code", text: t(CODE_KEY), icon: "lucide:code" },
+			{ id: "metrics", text: t(METRICS_KEY) },
+		])
 
 		expect(wrapper.findAll("button")).toHaveLength(2)
-		expect(wrapper.text()).toContain(
-			t(
-				"editor.split-documentation.right-side-bottom-action-buttons.add-metrics",
-			),
-		)
-	})
-
-	it("shows a plus icon on the second button by default", async ({
-		expect,
-	}) => {
-		const wrapper = await mountAction({
-			buttonText: t(
-				"editor.split-documentation.right-side-bottom-action-buttons.add-code",
-			),
-			buttonIcon: "lucide:code",
-			secondButtonText: t(
-				"editor.split-documentation.right-side-bottom-action-buttons.add-metrics",
-			),
-		})
-
+		expect(wrapper.text()).toContain(t(CODE_KEY))
+		expect(wrapper.text()).toContain(t(METRICS_KEY))
 		expect(renderedIconNames(wrapper)).toEqual([
 			"lucide:code",
 			"lucide:circle-plus",
 		])
 	})
 
-	it("shows the given icon on the second button", async ({ expect }) => {
-		const wrapper = await mountAction({
-			buttonText: t(
-				"editor.split-documentation.right-side-bottom-action-buttons.add-code",
-			),
-			buttonIcon: "lucide:code",
-			secondButtonText: t(
-				"editor.split-documentation.right-side-bottom-action-buttons.add-metrics",
-			),
-			secondButtonIcon: "lucide:chart-line",
-		})
-
-		expect(renderedIconNames(wrapper)).toEqual([
-			"lucide:code",
-			"lucide:chart-line",
+	it("reports a click on a later button with its own id", async ({
+		expect,
+	}) => {
+		const wrapper = await mountAction([
+			{ id: "code", text: t(CODE_KEY) },
+			{ id: "metrics", text: t(METRICS_KEY) },
 		])
-	})
 
-	it("reports a second-button click", async ({ expect }) => {
-		const wrapper = await mountAction({
-			buttonText: t(
-				"editor.split-documentation.right-side-bottom-action-buttons.add-code",
-			),
-			secondButtonText: t(
-				"editor.split-documentation.right-side-bottom-action-buttons.add-metrics",
-			),
-		})
+		await findButtonByText(wrapper, t(METRICS_KEY)).trigger("click")
 
-		await findButtonByText(
-			wrapper,
-			t(
-				"editor.split-documentation.right-side-bottom-action-buttons.add-metrics",
-			),
-		).trigger("click")
-
-		expect(clicks(wrapper)).toEqual(["second"])
+		expect(clicks(wrapper)).toEqual(["metrics"])
 	})
 
 	it("wraps a button carrying a shortcut in a tooltip trigger", async ({
 		expect,
 	}) => {
-		const wrapper = await mountAction({
-			buttonText: t(
-				"editor.split-documentation.left-side-bottom-action-button",
-			),
-			buttonShortcut: SHORTCUT,
-		})
+		const wrapper = await mountAction([
+			{ id: "params", text: t(PARAMS_KEY), shortcut: SHORTCUT },
+		])
 
 		expect(wrapper.findAll("[data-slot='tooltip-trigger']")).toHaveLength(1)
 	})
@@ -176,11 +102,7 @@ describe("<SplitDocumentationBottomAction>", () => {
 	it("swallows a mousedown on the overlay background itself", async ({
 		expect,
 	}) => {
-		const wrapper = await mountAction({
-			buttonText: t(
-				"editor.split-documentation.left-side-bottom-action-button",
-			),
-		})
+		const wrapper = await mountAction([{ id: "params", text: t(PARAMS_KEY) }])
 		const event = new MouseEvent("mousedown", {
 			bubbles: true,
 			cancelable: true,
@@ -192,20 +114,13 @@ describe("<SplitDocumentationBottomAction>", () => {
 	})
 
 	it("lets a mousedown on the button through", async ({ expect }) => {
-		const wrapper = await mountAction({
-			buttonText: t(
-				"editor.split-documentation.left-side-bottom-action-button",
-			),
-		})
+		const wrapper = await mountAction([{ id: "params", text: t(PARAMS_KEY) }])
 		const event = new MouseEvent("mousedown", {
 			bubbles: true,
 			cancelable: true,
 		})
 
-		findButtonByText(
-			wrapper,
-			t("editor.split-documentation.left-side-bottom-action-button"),
-		).element.dispatchEvent(event)
+		findButtonByText(wrapper, t(PARAMS_KEY)).element.dispatchEvent(event)
 
 		expect(event.defaultPrevented).toBe(false)
 	})

@@ -122,7 +122,14 @@ func Test_Validate(t *testing.T) {
 			Err:          assert.AnError,
 			ExpectedPath: "left[0]",
 		},
-		"Split doc requires right of titled_code or metric": {
+		"Split doc accepts a mermaid block on the right": {
+			Input: Block{
+				Type:  BlockSplitDoc,
+				Left:  []Block{{Type: BlockHeading, Text: "T", Attrs: map[string]any{"level": 1}}},
+				Right: []Block{{Type: BlockMermaid, Text: "graph TD"}},
+			},
+		},
+		"Split doc requires right of titled_code, metric or mermaid": {
 			Input: Block{
 				Type:  BlockSplitDoc,
 				Left:  []Block{{Type: BlockHeading, Text: "T", Attrs: map[string]any{"level": 1}}},
@@ -854,6 +861,10 @@ func Test_ValidateInContainer(t *testing.T) {
 		"Split doc right passes a titled code": {
 			Container: document.BlockNodeSplitDocRight,
 			Input:     titledCode,
+		},
+		"Split doc right passes a mermaid block": {
+			Container: document.BlockNodeSplitDocRight,
+			Input:     Block{Type: BlockMermaid, Text: "graph TD"},
 		},
 		"Split doc right rejects a paragraph": {
 			Container: document.BlockNodeSplitDocRight,

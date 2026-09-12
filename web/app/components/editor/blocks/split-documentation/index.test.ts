@@ -21,6 +21,7 @@ import { CalloutBlock } from "../callout"
 import {
 	CODE_BLOCK_NAME,
 	CODE_BLOCK_TITLE_NAME,
+	MERMAID_BLOCK_NAME,
 	METRIC_BLOCK_NAME,
 	SPLIT_DOCUMENTATION_LEFT_SIDE_NAME,
 	SPLIT_DOCUMENTATION_NAME,
@@ -86,6 +87,14 @@ const TitledCodeBlockStub = TiptapNode.create({
 	isolating: true,
 })
 
+const MermaidBlockStub = TiptapNode.create({
+	name: MERMAID_BLOCK_NAME,
+	group: "block",
+	content: "text*",
+	code: true,
+	isolating: true,
+})
+
 // the real document only accepts blocks, which keeps parameter lists,
 // list items, and right side blocks locked inside a split
 // documentation. Accepting them at the top level too is what makes the
@@ -112,6 +121,7 @@ const schema = getSchema([
 	CodeBlockStub,
 	TitledCodeBlockStub,
 	MetricBlockStub,
+	MermaidBlockStub,
 	SplitDocumentation,
 	SplitDocumentationLeftSide,
 	SplitDocumentationRightSide,
@@ -154,6 +164,10 @@ function titledCode(title: string, code: string): JSONContent {
 
 function metric(): JSONContent {
 	return { type: METRIC_BLOCK_NAME }
+}
+
+function mermaid(source: string): JSONContent {
+	return { type: MERMAID_BLOCK_NAME, content: [{ type: "text", text: source }] }
 }
 
 function leftSide(...content: JSONContent[]): JSONContent {
@@ -766,6 +780,16 @@ describe("SplitDocumentationRightSide", () => {
 			valid: true,
 		},
 		{
+			name: "accepts mermaid blocks among the other right side blocks",
+			makeChildren: () => [
+				mermaid("graph TD"),
+				titledCode("cmd", "run me"),
+				metric(),
+				mermaid("graph LR"),
+			],
+			valid: true,
+		},
+		{
 			name: "rejects an empty right side",
 			makeChildren: () => [],
 			valid: false,
@@ -781,6 +805,30 @@ describe("SplitDocumentationRightSide", () => {
 				fragmentOf(makeChildren()),
 			),
 		).toBe(valid)
+	})
+
+	// the side requires at least one block, so ProseMirror fits the
+	// deletion by filling the side back up with the first allowed type
+	it("refills the side when its only mermaid block is deleted", ({
+		expect,
+	}) => {
+		const node = doc(
+			splitDocBlock(
+				leftSide(heading("Title"), paragraph("body")),
+				rightSide(mermaid("graph TD")),
+			),
+		)
+		const pos = posOf(node, MERMAID_BLOCK_NAME)
+		const block = nodeOf(node, MERMAID_BLOCK_NAME)
+
+		const tr = stateAt(node).tr.delete(pos, pos + block.nodeSize)
+
+		expect(() => {
+			tr.doc.check()
+		}).not.toThrow()
+		expect(
+			childTypes(nodeOf(tr.doc, SPLIT_DOCUMENTATION_RIGHT_SIDE_NAME)),
+		).toEqual([TITLED_CODE_BLOCK_NAME])
 	})
 
 	it("matches only right side markers when parsing html", ({ expect }) => {
@@ -1188,6 +1236,22 @@ describe("SplitDocumentation", () => {
 			expect(run.state.selection.from).toBe(cursor)
 		})
 
+		it("appends a mermaid block and moves the cursor into it", ({ expect }) => {
+			const node = defaultDoc()
+			const run = runCommand(stateAt(node), "appendBlockOnRightSide", [
+				posOf(node, SPLIT_DOCUMENTATION_RIGHT_SIDE_NAME),
+				"diagram",
+			])
+
+			expect(run.handled).toBe(true)
+			expect(
+				childTypes(nodeOf(run.state.doc, SPLIT_DOCUMENTATION_RIGHT_SIDE_NAME)),
+			).toEqual([TITLED_CODE_BLOCK_NAME, MERMAID_BLOCK_NAME])
+			expect(run.state.selection.$from.parent.type.name).toBe(
+				MERMAID_BLOCK_NAME,
+			)
+		})
+
 		it("does nothing when the position holds another node", ({ expect }) => {
 			const node = defaultDoc()
 			const run = runCommand(stateAt(node), "appendBlockOnRightSide", [
@@ -1373,6 +1437,44 @@ describe("SplitDocumentation", () => {
 			])
 		})
 
+		it("inserts a mermaid block below the hovered one and selects its source", ({
+			expect,
+		}) => {
+			const node = docWithTwoRightSideBlocks()
+			const run = runCommand(stateAt(node), "insertBlockOnRightSide", [
+				posOf(node, TITLED_CODE_BLOCK_NAME),
+				"below",
+				"diagram",
+			])
+
+			expect(run.handled).toBe(true)
+			expect(
+				childTypes(nodeOf(run.state.doc, SPLIT_DOCUMENTATION_RIGHT_SIDE_NAME)),
+			).toEqual([TITLED_CODE_BLOCK_NAME, MERMAID_BLOCK_NAME, METRIC_BLOCK_NAME])
+			expect(run.state.selection.$from.parent.type.name).toBe(
+				MERMAID_BLOCK_NAME,
+			)
+		})
+
+		it("finds the right side from a hovered mermaid block", ({ expect }) => {
+			const node = doc(
+				splitDocBlock(
+					leftSide(heading("Title"), paragraph("body")),
+					rightSide(mermaid("graph TD"), metric()),
+				),
+			)
+			const run = runCommand(stateAt(node), "insertBlockOnRightSide", [
+				posOf(node, MERMAID_BLOCK_NAME),
+				"above",
+				"code",
+			])
+
+			expect(run.handled).toBe(true)
+			expect(
+				childTypes(nodeOf(run.state.doc, SPLIT_DOCUMENTATION_RIGHT_SIDE_NAME)),
+			).toEqual([TITLED_CODE_BLOCK_NAME, MERMAID_BLOCK_NAME, METRIC_BLOCK_NAME])
+		})
+
 		it("does nothing when the position holds a block of another type", ({
 			expect,
 		}) => {
@@ -1433,6 +1535,12 @@ describe("SplitDocumentation", () => {
 			command: "appendBlockOnRightSide" as const,
 			side: SPLIT_DOCUMENTATION_RIGHT_SIDE_NAME,
 			blockType: "metrics",
+		},
+		{
+			key: "Mod-Alt-d",
+			command: "appendBlockOnRightSide" as const,
+			side: SPLIT_DOCUMENTATION_RIGHT_SIDE_NAME,
+			blockType: "diagram",
 		},
 	])("$key", ({ key, command, side, blockType }) => {
 		it.for([

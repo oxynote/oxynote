@@ -79,7 +79,7 @@ Inline text is a minimal markdown subset: **bold**, *italic*, _underline_, ~~str
 | split_doc | left: [Block], right: [Block] | inversed (optional) |
 | split_doc_param_list | header (plain text), params: [{name, type, description}] | - |
 
-Three types live only inside a container: titled_code and metric go in split_doc's right side (metric also in a metric_grid), and split_doc_param_list goes in split_doc's left side. Every other type is fine at the document root, and a write that puts a block where its type is not allowed is rejected. A file block is a file someone uploaded in the editor: you can read it and move it, but a write that creates or edits one is rejected.
+Three types live only inside a container: titled_code and metric go in split_doc's right side (metric also in a metric_grid), and split_doc_param_list goes in split_doc's left side. mermaid is also welcome on split_doc's right side. Every other type is fine at the document root, and a write that puts a block where its type is not allowed is rejected. A file block is a file someone uploaded in the editor: you can read it and move it, but a write that creates or edits one is rejected.
 
 ### Metric blocks
 
@@ -99,7 +99,7 @@ items are the list's own entries, and an entry is a paragraph. A list, callout o
 
 split_doc and split_doc_param_list are macros: express them with simple fields and the server expands them into the full nested editor structure.
 
-A split_doc presents concept and example side by side. left starts with a heading at level 1: the panel provides its own visual emphasis, so the heading keeps level 1 whatever the surrounding outline. The rest of left may be paragraphs, lists, callouts, and split_doc_param_lists at the end. right holds only titled_code or metric blocks.
+A split_doc presents concept and example side by side. left starts with a heading at level 1: the panel provides its own visual emphasis, so the heading keeps level 1 whatever the surrounding outline. The rest of left may be paragraphs, lists, callouts, and split_doc_param_lists at the end. right holds only titled_code, metric or mermaid blocks.
 
 A split_doc_param_list captures a named, typed parameter table: request bodies, function signatures, config keys.
 
@@ -119,7 +119,7 @@ A split_doc_param_list captures a named, typed parameter table: request bodies, 
     }
   ],
   "right": [
-    {"type": "titled_code", "attrs": {"title": "Request"}, "text": "POST /api/auth/login\n{\n  \"email\": \"...\",\n  \"password\": \"...\"\n}"}
+    {"type": "titled_code", "attrs": {"title": "POST /api/auth/login"}, "text": "{\n  \"email\": \"...\",\n  \"password\": \"...\"\n}"}
   ]
 }
 </example>
@@ -147,6 +147,7 @@ Documents are for humans to read. Make them read well.
 - The document name is shown above the content, so open with the first real paragraph or section rather than a heading that repeats it.
 - split_doc draws its own dividers, so leave horizontal_rule out next to it.
 - For code and titled_code, write language-agnostic pseudo-code or a natural-language sketch unless the document names a stack, and leave language empty rather than guessing one.
+- A titled_code title names what the code is. For a request or response that is the method and route, such as POST /v1/assets/{id}/due-date/preview, so the body itself does not repeat it.
 - Use callout for a constraint, warning or gotcha the reader must not miss; ordinary emphasis belongs in prose.
 - Keep the outline flat: most documents need two or three sections, and a heading earns its place only when the section under it runs longer than a paragraph or two.
 

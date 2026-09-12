@@ -14,7 +14,7 @@ import { clearTeleportedOverlays, menuItem, t } from "~/components/test-helpers"
 describe("<SplitDocRightSideMenu>", { concurrent: false }, () => {
 	afterEach(clearTeleportedOverlays)
 
-	it("offers all four insertion points", async ({ expect }) => {
+	it("offers all six insertion points", async ({ expect }) => {
 		const { editor } = makeEditor()
 
 		await mountMenuOptions(SplitDocRightSideMenu, {
@@ -22,7 +22,7 @@ describe("<SplitDocRightSideMenu>", { concurrent: false }, () => {
 			hovered: hoveredBlock(4),
 		})
 
-		expect(document.body.querySelectorAll("[role^='menuitem']")).toHaveLength(4)
+		expect(document.body.querySelectorAll("[role^='menuitem']")).toHaveLength(6)
 	})
 
 	it.for([
@@ -96,6 +96,41 @@ describe("<SplitDocRightSideMenu>", { concurrent: false }, () => {
 				4,
 				side,
 				"metrics",
+			])
+		},
+	)
+
+	it.for([
+		{
+			label:
+				"editor.drag-handle.options.split-doc-right-side.add-diagram-above-block",
+			side: "above",
+		},
+		{
+			label:
+				"editor.drag-handle.options.split-doc-right-side.add-diagram-below-block",
+			side: "below",
+		},
+	])(
+		"inserts a diagram block $side the hovered one",
+		async ({ label, side }, { expect }) => {
+			const { editor, commands } = makeEditor()
+			await mountMenuOptions(SplitDocRightSideMenu, {
+				editor: editor,
+				hovered: hoveredBlock(4),
+			})
+
+			menuItem(t(label)).click()
+
+			expect(commandNames(commands)).toEqual([
+				"focus",
+				"insertBlockOnRightSide",
+				"run",
+			])
+			expect(commandArgs(commands, "insertBlockOnRightSide")).toEqual([
+				4,
+				side,
+				"diagram",
 			])
 		},
 	)

@@ -63,6 +63,7 @@ var (
 	_allowedSplitDocRight = map[Type]bool{
 		BlockTitledCode: true,
 		BlockMetric:     true,
+		BlockMermaid:    true,
 	}
 
 	// _allowedSplitDocLeft is what a block landing on an existing
@@ -536,7 +537,7 @@ func validateMetricGrid(b Block, path string) error {
 
 // validateSplitDoc checks the split_doc shape: a level-1 heading
 // leading the left side, body blocks before any param_lists, and
-// titled_code/metric blocks on the right.
+// titled_code/metric/mermaid blocks on the right.
 func validateSplitDoc(b Block, path string) error {
 	if err := mustHaveNoCanonicalCompoundExcept(b, path, "left", "right"); err != nil {
 		return err

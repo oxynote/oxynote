@@ -15,6 +15,8 @@ const ADD_CODE_BUTTON =
 	"editor.split-documentation.right-side-bottom-action-buttons.add-code"
 const ADD_METRICS_BUTTON =
 	"editor.split-documentation.right-side-bottom-action-buttons.add-metrics"
+const ADD_DIAGRAM_BUTTON =
+	"editor.split-documentation.right-side-bottom-action-buttons.add-diagram"
 
 function mountRightSide(overrides: Record<string, unknown> = {}) {
 	return mountNodeViewUnderTooltipProvider(RightSideBlock, {
@@ -67,13 +69,14 @@ describe("<SplitDocumentationRightSideBlock>", { concurrent: false }, () => {
 		expect(root.attributes("data-diff-status")).toBe("removed")
 	})
 
-	it("offers both add actions while editing is possible", async ({
+	it("offers all three add actions while editing is possible", async ({
 		expect,
 	}) => {
 		const wrapper = await mountRightSide()
 
 		expect(wrapper.text()).toContain(t(ADD_CODE_BUTTON))
 		expect(wrapper.text()).toContain(t(ADD_METRICS_BUTTON))
+		expect(wrapper.text()).toContain(t(ADD_DIAGRAM_BUTTON))
 		expect(actionsHidden(wrapper)).toBe(false)
 	})
 
@@ -138,6 +141,23 @@ describe("<SplitDocumentationRightSideBlock>", { concurrent: false }, () => {
 		expect(commandArgs(commands, "appendBlockOnRightSide")).toEqual([
 			4,
 			"metrics",
+		])
+	})
+
+	it("appends a diagram block at the node's position", async ({ expect }) => {
+		const { editor, commands } = makeEditor()
+		const wrapper = await mountRightSide({ editor: editor, getPos: () => 4 })
+
+		await findButtonByText(wrapper, t(ADD_DIAGRAM_BUTTON)).trigger("click")
+
+		expect(commandNames(commands)).toEqual([
+			"focus",
+			"appendBlockOnRightSide",
+			"run",
+		])
+		expect(commandArgs(commands, "appendBlockOnRightSide")).toEqual([
+			4,
+			"diagram",
 		])
 	})
 

@@ -305,7 +305,7 @@ describe("editor schema", () => {
 		})
 
 		// the widest node in the schema: a heading and prose on the
-		// left, code or metrics on the right
+		// left, code, metrics or diagrams on the right
 		it("keeps both sides of a split documentation block", ({
 			expect,
 		}) => {
@@ -332,6 +332,18 @@ describe("editor schema", () => {
 						attrs: { uid: "s1-r" },
 						content: [
 							titledCodeBlock("s1-c"),
+							{
+								type: "mermaidBlock",
+								attrs: {
+									uid: "s1-m",
+								},
+								content: [
+									{
+										type: "text",
+										text: "graph TD",
+									},
+								],
+							},
 						],
 					},
 				],
@@ -346,6 +358,13 @@ describe("editor schema", () => {
 			expect(result.content?.[0]?.content?.[0]?.type).toBe(
 				"heading",
 			)
+			expect(result.content?.[1]?.content?.[1]?.type).toBe(
+				"mermaidBlock",
+			)
+			expect(
+				result.content?.[1]?.content?.[1]?.content?.[0]
+					?.text,
+			).toBe("graph TD")
 		})
 
 		it("keeps a parameter list's header and items", ({

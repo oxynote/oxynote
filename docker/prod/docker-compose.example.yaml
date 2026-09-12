@@ -1,8 +1,8 @@
 # the canonical production deployment: the all-in-one image plus the
 # backing services it needs. Copy this file, replace every change-me value,
-# set OXYNOTE_PUBLIC_URL to the origin users will open in the browser, and
-# put a TLS-terminating proxy in front for a real domain (the image itself
-# speaks plain HTTP on 8080).
+# and for a real domain put a TLS-terminating proxy in front and set
+# OXYNOTE_PUBLIC_URL to the origin users will open in the browser (the image
+# itself speaks plain HTTP on 8080).
 #
 # `make prod-run` from the repository root builds the image and runs this
 # file against it, with docker-compose.local.yaml layered on top to add the
@@ -18,7 +18,8 @@ services:
       - "8080:8080"
     environment:
       # the public origin; every URL, cookie domain and CORS rule the
-      # components need derives from this one value.
+      # components need derives from this one value. Optional: this is
+      # the default, and it matches the 8080:8080 port mapping above.
       - OXYNOTE_PUBLIC_URL=http://localhost:8080
       - OXYNOTE_DB_DSN=postgresql://oxynote:change-me-db@postgres/oxynote?sslmode=disable
       # optional: full-text search.
@@ -61,7 +62,7 @@ services:
     restart: unless-stopped
 
   meilisearch:
-    image: getmeili/meilisearch:v1.53.1
+    image: getmeili/meilisearch:v1.53.2
     environment:
       - MEILI_ENV=production
       - MEILI_MASTER_KEY=change-me-meili-key

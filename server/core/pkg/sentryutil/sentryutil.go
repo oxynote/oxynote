@@ -86,9 +86,6 @@ func Setup(cfg Config) (func(), error) {
 				Mode: sentry.CollectionOff,
 			},
 		},
-		// nothing in this codebase emits Sentry Logs, so keep the
-		// default-on telemetry machinery switched off.
-		DisableLogs: true,
 		BeforeSend: func(e *sentry.Event, _ *sentry.EventHint) *sentry.Event {
 			// NOTE: Remove default info.
 			e.Modules = nil

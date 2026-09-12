@@ -41,6 +41,10 @@
 					"label": "Add metrics block to split documentation",
 					"description": "Adds a metrics block to the right side of a split documentation block. Your cursor does not move. Works from anywhere in the block."
 				},
+				"add-diagram-to-split-doc": {
+					"label": "Add diagram to split documentation",
+					"description": "Adds a mermaid diagram to the right side of a split documentation block and puts your cursor in its source. Works from anywhere in the block."
+				},
 				"undo": {
 					"label": "Undo",
 					"description": "Takes back your last change in the page."
@@ -156,7 +160,8 @@
 			"toggle-shortcuts": "Open/close keyboard shortcuts",
 			"add-params-to-split-doc-left-side": "Add parameters",
 			"add-code-block-to-split-doc-right-side": "Add code block",
-			"add-metrics-to-split-doc-right-side": "Add metrics"
+			"add-metrics-to-split-doc-right-side": "Add metrics",
+			"add-diagram-to-split-doc-right-side": "Add diagram"
 		}
 	}
 }

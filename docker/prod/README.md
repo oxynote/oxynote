@@ -10,7 +10,7 @@ relay and changedetection.io are optional and also external.
 
 ```sh
 cp docker/prod/docker-compose.example.yaml my-deployment.yaml
-# replace every change-me value, set OXYNOTE_PUBLIC_URL
+# replace every change-me value; for a real domain set OXYNOTE_PUBLIC_URL
 docker compose -f my-deployment.yaml up -d
 ```
 
@@ -21,9 +21,10 @@ supported) and runs this example on `http://localhost:8080`, with
 at `http://localhost:8025` instead of being logged. `make prod-stop` stops
 it.
 
-The image serves plain HTTP on port **8080**. For a real domain, put a
-TLS-terminating proxy in front and set `OXYNOTE_PUBLIC_URL` to the public
-`https://` origin.
+The image serves plain HTTP on port **8080** and assumes it is reached at
+`http://localhost:8080` unless told otherwise, so publish the container as
+`8080:8080` for a local run. For a real domain, put a TLS-terminating proxy
+in front and set `OXYNOTE_PUBLIC_URL` to the public `https://` origin.
 
 ## Configuration
 
@@ -35,8 +36,13 @@ fails the boot with an error naming it.
 
 | Variable | Meaning |
 | --- | --- |
-| `OXYNOTE_PUBLIC_URL` | the origin users open in the browser, e.g. `https://notes.example.com`. Scheme + host only — every public URL, the cookie domain, and the CORS rules derive from it. |
-| `OXYNOTE_DB_DSN` | PostgreSQL DSN, e.g. `postgresql://user:pass@host/db?sslmode=disable`. One database serves the whole product; migrations run automatically at boot. |
+| `OXYNOTE_DB_DSN` | PostgreSQL DSN, e.g. `postgresql://user:pass@host/db?sslmode=require`. One database serves the whole product; migrations run automatically at boot. |
+
+### Public address
+
+| Variable | Meaning |
+| --- | --- |
+| `OXYNOTE_PUBLIC_URL` | the origin users open in the browser, e.g. `https://notes.example.com`. Scheme + host only — every public URL, the cookie domain, and the CORS rules derive from it. Defaults to `http://localhost:8080`, which is right only while the container's port 8080 is published as host port 8080; set it for a domain or any other host port. |
 
 ### Optional features
 
