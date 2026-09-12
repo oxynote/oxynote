@@ -19,6 +19,11 @@ const sharedTestOptions = {
 		concurrent: true,
 	},
 	restoreMocks: true,
+	// vitest clears every mock's call history before each test by
+	// default, which under concurrency also wipes the mocks of tests
+	// still running. Each test builds its own mocks, so nothing needs
+	// clearing.
+	clearMocks: false,
 	unstubGlobals: true,
 	unstubEnvs: true,
 	// @nuxt/test-utils mounts the test app inside <Suspense>, so vue's dev
@@ -26,14 +31,6 @@ const sharedTestOptions = {
 	// — pure noise in test output
 	onConsoleLog(log: string) {
 		if (log.includes("<Suspense> is an experimental feature")) {
-			return false
-		}
-
-		// the nuxt overrides below point @nuxt/icon at no provider, so
-		// every icon that is not already in the client bundle fails its
-		// load and warns once per render. That is the intended trade for
-		// keeping the iconify api off the network, not a test failure
-		if (log.startsWith("[Icon] failed to load icon")) {
 			return false
 		}
 	},
