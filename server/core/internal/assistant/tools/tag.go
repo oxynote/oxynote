@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"cmp"
 	"fmt"
 	"strings"
 
@@ -29,7 +30,7 @@ type listTags struct {
 func (listTags) Info() Info {
 	return Info{
 		Name:        NameListTags,
-		Description: "List the organisation's tags in their sidebar order as [{id, name, color, hidden, documents}], where documents is [{id, name, default_branch_id}] for every document whose default branch carries the tag. Use it to find a tag by name before assigning it, and to learn the id that update_tag, delete_tag, move_tag, assign_tag and unassign_tag take as tag_id. A tag assigned to a non-default branch shows under tags on get_document for that branch but not here. hidden says whether the current user keeps the tag out of their own sidebar; it does not stop the tag being assigned.",
+		Description: "List the organisation's tags in their sidebar order as [{id, name, color, hidden, documents}], where color is a palette name, or unknown for a tag whose stored colour is outside the palette and wants recolouring with update_tag, and documents is [{id, name, default_branch_id}] for every document whose default branch carries the tag. Use it to find a tag by name before assigning it, and to learn the id that update_tag, delete_tag, move_tag, assign_tag and unassign_tag take as tag_id. A tag assigned to a non-default branch shows under tags on get_document for that branch but not here. hidden says whether the current user keeps the tag out of their own sidebar; it does not stop the tag being assigned.",
 		Properties:  map[string]any{},
 	}
 }
@@ -53,7 +54,7 @@ func (listTags) Execute(inp Input) (string, error) {
 		e := tagEntry{
 			ID:        s.ID,
 			Name:      s.TagName,
-			Color:     s.Color,
+			ColorName: cmp.Or(tag.ColorName(s.Color), "unknown"),
 			Hidden:    s.Hidden,
 			Documents: make([]tagDocument, 0, len(s.Documents)),
 		}
@@ -88,8 +89,10 @@ type tagEntry struct {
 	// Name is the tag's display name.
 	Name string `json:"name"`
 
-	// Color is the tag's colour as a hex triplet.
-	Color string `json:"color"`
+	// ColorName is the palette name of the tag's colour, or "unknown" for
+	// one stored outside the palette: before the palette existed, or by
+	// another browser's rounding of a shade.
+	ColorName string `json:"color"`
 
 	// Hidden indicates the current user keeps the tag out of their own
 	// sidebar.
@@ -116,26 +119,36 @@ type createTagArgs struct {
 	// Name is the new tag's display name. Required.
 	Name string `json:"name"`
 
-	// Color is the new tag's colour as a hex triplet. Required.
-	Color string `json:"color"`
+	// ColorName is the new tag's colour as a palette name. Required.
+	ColorName string `json:"color"`
 }
 
-// Validate checks the arguments are complete and the colour well formed.
+// Validate checks the arguments are complete and the colour in the palette.
 func (a createTagArgs) Validate() error {
 	if a.Name == "" {
 		return errRequired("name")
 	}
 
-	if a.Color == "" {
+	if a.ColorName == "" {
 		return errRequired("color")
 	}
 
-	return a.input().Validate()
+	inp, err := a.input()
+	if err != nil {
+		return err
+	}
+
+	return inp.Validate()
 }
 
 // input returns the arguments as the domain's create input.
-func (a createTagArgs) input() tag.CreateInput {
-	return tag.CreateInput{TagName: a.Name, Color: a.Color}
+func (a createTagArgs) input() (tag.CreateInput, error) {
+	hex := tag.ColorHex(a.ColorName)
+	if hex == "" {
+		return tag.CreateInput{}, tag.ErrInvalidTagColor
+	}
+
+	return tag.CreateInput{TagName: a.Name, Color: hex}, nil
 }
 
 // createTag creates a new tag in the organisation.
@@ -145,10 +158,10 @@ type createTag struct{}
 func (createTag) Info() Info {
 	return Info{
 		Name:        NameCreateTag,
-		Description: "Create a tag and return {tag_id}. name is the display name, which has to be unused in the organisation, and color a hex triplet with the leading hash; a malformed colour or a name already in use is refused. The new tag lands last in the sidebar order, so use move_tag to place it, and assign_tag to put it on a document branch.",
+		Description: "Create a tag and return {tag_id}. name is the display name, which has to be unused in the organisation, and color one of the palette names the schema lists; a colour outside the palette or a name already in use is refused. The new tag lands last in the sidebar order, so use move_tag to place it, and assign_tag to put it on a document branch.",
 		Properties: map[string]any{
 			"name":  map[string]any{"type": "string", "description": "Display name for the new tag; unique within the organisation."},
-			"color": map[string]any{"type": "string", "description": "The tag's colour as a hex triplet with the leading hash, such as \"#22c55e\"."},
+			"color": map[string]any{"type": "string", "enum": tag.ColorNames(), "description": "The tag's colour, one of the palette names."},
 		},
 		Required: []string{"name", "color"},
 	}
@@ -180,7 +193,7 @@ func (createTag) Summary(inp DescribeInput) (ActionSummary, error) {
 
 	return ActionSummary{
 		Tool:    NameCreateTag,
-		Summary: fmt.Sprintf("Create tag %s (%s)", in.Name, in.Color),
+		Summary: fmt.Sprintf("Create tag %s (%s)", in.Name, in.ColorName),
 	}, nil
 }
 
@@ -192,7 +205,12 @@ func (createTag) Execute(inp Input) (string, error) {
 		return "", err
 	}
 
-	t := tag.NewTag(in.input(), inp.OrganizationID(), inp.UserID())
+	ci, err := in.input()
+	if err != nil {
+		return "", err
+	}
+
+	t := tag.NewTag(ci, inp.OrganizationID(), inp.UserID())
 
 	if err := inp.CreateTag(t); err != nil {
 		return "", fmt.Errorf("create_tag: %w", err)
@@ -217,8 +235,9 @@ type updateTagArgs struct {
 	// Name is the new display name; empty leaves it unchanged.
 	Name string `json:"name"`
 
-	// Color is the new colour; empty leaves it unchanged.
-	Color string `json:"color"`
+	// ColorName is the new colour as a palette name; empty leaves it
+	// unchanged.
+	ColorName string `json:"color"`
 }
 
 // Validate checks the arguments name a tag and change something.
@@ -227,23 +246,33 @@ func (a updateTagArgs) Validate() error {
 		return errRequired("tag_id")
 	}
 
-	return a.input().Validate()
+	inp, err := a.input()
+	if err != nil {
+		return err
+	}
+
+	return inp.Validate()
 }
 
 // input returns the arguments as the domain's update input, with only
 // the fields that were given set.
-func (a updateTagArgs) input() tag.UpdateInput {
+func (a updateTagArgs) input() (tag.UpdateInput, error) {
 	var inp tag.UpdateInput
 
 	if a.Name != "" {
 		inp.TagName = null.StringFrom(a.Name)
 	}
 
-	if a.Color != "" {
-		inp.Color = null.StringFrom(a.Color)
+	if a.ColorName != "" {
+		hex := tag.ColorHex(a.ColorName)
+		if hex == "" {
+			return tag.UpdateInput{}, tag.ErrInvalidTagColor
+		}
+
+		inp.Color = null.StringFrom(hex)
 	}
 
-	return inp
+	return inp, nil
 }
 
 // changes lists the requested changes in the words the confirm card
@@ -255,8 +284,8 @@ func (a updateTagArgs) changes(currentName string) []string {
 		out = append(out, fmt.Sprintf("rename %s to %q", currentName, a.Name))
 	}
 
-	if a.Color != "" {
-		out = append(out, "set the colour to "+a.Color)
+	if a.ColorName != "" {
+		out = append(out, "set the colour to "+a.ColorName)
 	}
 
 	return out
@@ -269,11 +298,11 @@ type updateTag struct{}
 func (updateTag) Info() Info {
 	return Info{
 		Name:        NameUpdateTag,
-		Description: "Rename and/or recolour a tag; give only the fields to change, and the other keeps its value. name is the new display name, which has to be unused in the organisation, and color a hex triplet with the leading hash; a call with neither is refused. Returns {tag_id} with the fields that changed. To change which documents carry the tag use assign_tag and unassign_tag instead.",
+		Description: "Rename and/or recolour a tag; give only the fields to change, and the other keeps its value. name is the new display name, which has to be unused in the organisation, and color one of the palette names the schema lists; a call with neither is refused. Returns {tag_id} with the fields that changed. To change which documents carry the tag use assign_tag and unassign_tag instead.",
 		Properties: map[string]any{
 			"tag_id": map[string]any{"type": "string", "description": "The tag id, as list_tags or a document's tags report it."},
 			"name":   map[string]any{"type": "string", "description": "Optional. The new display name; omit to keep the current one."},
-			"color":  map[string]any{"type": "string", "description": "Optional. The new colour as a hex triplet with the leading hash; omit to keep the current one."},
+			"color":  map[string]any{"type": "string", "enum": tag.ColorNames(), "description": "Optional. The new colour, one of the palette names; omit to keep the current one."},
 		},
 		Required: []string{"tag_id"},
 	}
@@ -330,7 +359,12 @@ func (updateTag) Execute(inp Input) (string, error) {
 		return "", err
 	}
 
-	if err := inp.UpdateTag(in.TagID, in.input()); err != nil {
+	ui, err := in.input()
+	if err != nil {
+		return "", err
+	}
+
+	if err = inp.UpdateTag(in.TagID, ui); err != nil {
 		return "", fmt.Errorf("update_tag: %w", err)
 	}
 
@@ -348,8 +382,8 @@ type updatedTagResult struct {
 	// Name is the new display name, when one was set.
 	Name string `json:"name,omitempty"`
 
-	// Color is the new colour, when one was set.
-	Color string `json:"color,omitempty"`
+	// ColorName is the new colour's palette name, when one was set.
+	ColorName string `json:"color,omitempty"`
 }
 
 // deleteTagArgs is what delete_tag is called with.

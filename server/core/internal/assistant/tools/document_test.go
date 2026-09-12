@@ -308,7 +308,7 @@ func Test_getDocument_Execute(t *testing.T) {
 			DB:   tagged,
 			Args: `{` + targetArgs(_stubBranchID) + `}`,
 			Contains: []string{
-				`"tags":[{"id":"` + _testTagID.String() + `","tagName":"Production","color":"#22c55e","hidden":false}]`,
+				`"tags":[{"id":"` + _testTagID.String() + `","name":"Production","color":"green"}]`,
 			},
 		},
 		"Root document omits the parent": {

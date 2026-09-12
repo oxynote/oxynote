@@ -35,9 +35,9 @@ var ErrNoOrganizationMembers = errutil.New(http.StatusBadRequest, "organization.
 // _seedTags are the tags a fresh organization starts with, in display
 // order. The welcome document goes under the first of them.
 var _seedTags = []tag.CreateInput{
-	{TagName: "Production", Color: "#22c55e"},
-	{TagName: "Staging", Color: "#f97316"},
-	{TagName: "Incidents", Color: "#3b82f6"},
+	{TagName: "Production", Color: "#00a63e"},
+	{TagName: "Staging", Color: "#f54a00"},
+	{TagName: "Incidents", Color: "#155dfc"},
 }
 
 // Handler holds dependencies required for organization-related operations.

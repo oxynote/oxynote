@@ -114,9 +114,9 @@ func Test_listTags_Execute(t *testing.T) {
 			DB:   stubTagDB(nil),
 			Args: `{}`,
 			Result: `{"tags":[` +
-				`{"id":"` + _testTagID.String() + `","name":"Production","color":"#22c55e","hidden":false,` +
+				`{"id":"` + _testTagID.String() + `","name":"Production","color":"green","hidden":false,` +
 				`"documents":[{"id":"` + _testDocID.String() + `","name":"Runbook","default_branch_id":"` + _stubMainBranchID.String() + `"}]},` +
-				`{"id":"` + _otherTagID.String() + `","name":"Staging","color":"#f97316","hidden":true,"documents":[]}` +
+				`{"id":"` + _otherTagID.String() + `","name":"Staging","color":"unknown","hidden":true,"documents":[]}` +
 				`]}`,
 		},
 	}
@@ -140,14 +140,13 @@ func Test_listTags_Execute(t *testing.T) {
 func Test_createTagArgs_Validate(t *testing.T) {
 	t.Parallel()
 
-	assertValidate(t, createTagArgs{Name: "Release", Color: "#3b82f6"}, map[string]Args{
-		"name":  createTagArgs{Color: "#3b82f6"},
+	assertValidate(t, createTagArgs{Name: "Release", ColorName: "blue"}, map[string]Args{
+		"name":  createTagArgs{ColorName: "blue"},
 		"color": createTagArgs{Name: "Release"},
 	})
 
-	// a colour the sidebar cannot render is refused in the domain's
-	// words.
-	assert.Equal(t, tag.ErrInvalidTagColor, createTagArgs{Name: "Release", Color: "3b82f6"}.Validate())
+	// a colour outside the palette is refused in the domain's words.
+	assert.Equal(t, tag.ErrInvalidTagColor, createTagArgs{Name: "Release", ColorName: "navy"}.Validate())
 }
 
 func Test_createTag_Info(t *testing.T) {
@@ -159,7 +158,20 @@ func Test_createTag_Info(t *testing.T) {
 	assert.NotEmpty(t, info.Description)
 	assert.Equal(t, []string{"name", "color"}, info.Required)
 	assert.Contains(t, info.Properties, "name")
-	assert.Contains(t, info.Properties, "color")
+	assert.Equal(t, tag.ColorNames(), colorEnum(t, info))
+}
+
+// colorEnum returns the palette names a tool's schema lists for color.
+func colorEnum(t *testing.T, info Info) []string {
+	t.Helper()
+
+	prop, ok := info.Properties["color"].(map[string]any)
+	require.True(t, ok)
+
+	names, ok := prop["enum"].([]string)
+	require.True(t, ok)
+
+	return names
 }
 
 func Test_createTag_Traits(t *testing.T) {
@@ -173,7 +185,7 @@ func Test_createTag_Title(t *testing.T) {
 
 	d := testDeps(nil, nil, nil)
 
-	got, err := createTag{}.Title(testInput(d, NameCreateTag, `{"name":"Release","color":"#3b82f6"}`))
+	got, err := createTag{}.Title(testInput(d, NameCreateTag, `{"name":"Release","color":"blue"}`))
 	require.NoError(t, err)
 	assert.Equal(t, "Creating tag Release", got)
 
@@ -187,9 +199,9 @@ func Test_createTag_Summary(t *testing.T) {
 	d := testDeps(nil, nil, nil)
 
 	// a tag that does not exist yet has no id to name, and no document.
-	got, err := createTag{}.Summary(testInput(d, NameCreateTag, `{"name":"Release","color":"#3b82f6"}`))
+	got, err := createTag{}.Summary(testInput(d, NameCreateTag, `{"name":"Release","color":"blue"}`))
 	require.NoError(t, err)
-	assert.Equal(t, ActionSummary{Tool: NameCreateTag, Summary: "Create tag Release (#3b82f6)"}, got)
+	assert.Equal(t, ActionSummary{Tool: NameCreateTag, Summary: "Create tag Release (blue)"}, got)
 
 	_, err = createTag{}.Summary(testInput(d, NameCreateTag, `{}`))
 	require.Error(t, err)
@@ -205,17 +217,17 @@ func Test_createTag_Execute(t *testing.T) {
 		Err    error
 	}{
 		"Malformed arguments":     {DB: &DBMock{}, Args: `{`, Err: assert.AnError},
-		"Name is required":        {DB: &DBMock{}, Args: `{"color":"#3b82f6"}`, Err: assert.AnError},
+		"Name is required":        {DB: &DBMock{}, Args: `{"color":"blue"}`, Err: assert.AnError},
 		"Colour is required":      {DB: &DBMock{}, Args: `{"name":"Release"}`, Err: assert.AnError},
-		"Malformed colour":        {DB: &DBMock{}, Args: `{"name":"Release","color":"blue"}`, Err: assert.AnError},
-		"Empty name is not a tag": {DB: &DBMock{}, Args: `{"name":"","color":"#3b82f6"}`, Err: assert.AnError},
+		"Unknown colour":          {DB: &DBMock{}, Args: `{"name":"Release","color":"navy"}`, Err: assert.AnError},
+		"Empty name is not a tag": {DB: &DBMock{}, Args: `{"name":"","color":"blue"}`, Err: assert.AnError},
 		"Name already in use": {
 			DB: &DBMock{
 				InsertTagFunc: func(context.Context, tag.Tag) error {
 					return tag.ErrDuplicateTagName
 				},
 			},
-			Args: `{"name":"Release","color":"#3b82f6"}`,
+			Args: `{"name":"Release","color":"blue"}`,
 			Err:  fmt.Errorf("create_tag: %w", tag.ErrDuplicateTagName),
 		},
 		"Error returned by db.InsertTag": {
@@ -224,12 +236,12 @@ func Test_createTag_Execute(t *testing.T) {
 					return assert.AnError
 				},
 			},
-			Args: `{"name":"Release","color":"#3b82f6"}`,
+			Args: `{"name":"Release","color":"blue"}`,
 			Err:  assert.AnError,
 		},
 		"Created": {
 			DB:     &DBMock{},
-			Args:   `{"name":"Release","color":"#3b82f6"}`,
+			Args:   `{"name":"Release","color":"blue"}`,
 			Notify: 1,
 		},
 	}
@@ -256,7 +268,7 @@ func Test_createTag_Execute(t *testing.T) {
 			assert.Equal(t, "org", ff[0].T.OrganizationID)
 			assert.Equal(t, "user", ff[0].T.CreatedBy.String)
 			assert.Equal(t, "Release", ff[0].T.TagName)
-			assert.Equal(t, "#3b82f6", ff[0].T.Color)
+			assert.Equal(t, "#155dfc", ff[0].T.Color)
 			assert.JSONEq(t, `{"tag_id":"`+ff[0].T.ID.String()+`"}`, res)
 		})
 	}
@@ -270,8 +282,8 @@ func Test_updateTagArgs_Validate(t *testing.T) {
 	})
 
 	assert.Equal(t, tag.ErrEmptyTagUpdate, updateTagArgs{TagID: _testTagID}.Validate())
-	assert.Equal(t, tag.ErrInvalidTagColor, updateTagArgs{TagID: _testTagID, Color: "blue"}.Validate())
-	require.NoError(t, updateTagArgs{TagID: _testTagID, Color: "#3b82f6"}.Validate())
+	assert.Equal(t, tag.ErrInvalidTagColor, updateTagArgs{TagID: _testTagID, ColorName: "navy"}.Validate())
+	require.NoError(t, updateTagArgs{TagID: _testTagID, ColorName: "blue"}.Validate())
 }
 
 func Test_updateTag_Info(t *testing.T) {
@@ -283,7 +295,7 @@ func Test_updateTag_Info(t *testing.T) {
 	assert.NotEmpty(t, info.Description)
 	assert.Equal(t, []string{"tag_id"}, info.Required)
 	assert.Contains(t, info.Properties, "name")
-	assert.Contains(t, info.Properties, "color")
+	assert.Equal(t, tag.ColorNames(), colorEnum(t, info))
 }
 
 func Test_updateTag_Traits(t *testing.T) {
@@ -335,13 +347,13 @@ func Test_updateTag_Summary(t *testing.T) {
 		},
 		"Recolour only": {
 			DB:     stubTagDB(nil),
-			Args:   `{` + tagArgs(_testTagID) + `,"color":"#3b82f6"}`,
-			Result: "Set the colour to #3b82f6",
+			Args:   `{` + tagArgs(_testTagID) + `,"color":"blue"}`,
+			Result: "Set the colour to blue",
 		},
 		"Rename and recolour": {
 			DB:     stubTagDB(nil),
-			Args:   `{` + tagArgs(_testTagID) + `,"name":"Release","color":"#3b82f6"}`,
-			Result: `Rename Production to "Release" and set the colour to #3b82f6`,
+			Args:   `{` + tagArgs(_testTagID) + `,"name":"Release","color":"blue"}`,
+			Result: `Rename Production to "Release" and set the colour to blue`,
 		},
 	}
 
@@ -374,7 +386,7 @@ func Test_updateTag_Execute(t *testing.T) {
 		"Malformed arguments": {DB: &DBMock{}, Args: `{`, Err: assert.AnError},
 		"Tag id is required":  {DB: &DBMock{}, Args: `{"name":"Release"}`, Err: assert.AnError},
 		"Nothing to change":   {DB: &DBMock{}, Args: `{` + tagArgs(_testTagID) + `}`, Err: assert.AnError},
-		"Malformed colour":    {DB: &DBMock{}, Args: `{` + tagArgs(_testTagID) + `,"color":"blue"}`, Err: assert.AnError},
+		"Unknown colour":      {DB: &DBMock{}, Args: `{` + tagArgs(_testTagID) + `,"color":"navy"}`, Err: assert.AnError},
 		"Unknown tag": {
 			DB: &DBMock{
 				UpdateTagFunc: func(context.Context, string, xid.ID, tag.UpdateInput) error {
@@ -401,9 +413,9 @@ func Test_updateTag_Execute(t *testing.T) {
 		},
 		"Renamed and recoloured": {
 			DB:     &DBMock{},
-			Args:   `{` + tagArgs(_testTagID) + `,"name":"Release","color":"#3b82f6"}`,
+			Args:   `{` + tagArgs(_testTagID) + `,"name":"Release","color":"blue"}`,
 			Notify: 1,
-			Result: `{"tag_id":"` + _testTagID.String() + `","name":"Release","color":"#3b82f6"}`,
+			Result: `{"tag_id":"` + _testTagID.String() + `","name":"Release","color":"blue"}`,
 		},
 	}
 

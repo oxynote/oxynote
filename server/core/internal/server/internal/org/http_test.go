@@ -133,7 +133,7 @@ func assertSeededTags(t *testing.T, tx *TxMock, count int) {
 	}
 
 	assert.Equal(t, []string{"Production", "Staging", "Incidents"}, names)
-	assert.Equal(t, []string{"#22c55e", "#f97316", "#3b82f6"}, colors)
+	assert.Equal(t, []string{"#00a63e", "#f54a00", "#155dfc"}, colors)
 }
 
 // assertWelcomeDocumentTagged checks that the welcome document's default

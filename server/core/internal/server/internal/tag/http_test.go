@@ -309,15 +309,21 @@ func Test_Handler_CreateTag(t *testing.T) {
 		},
 		"Missing name": {
 			DB:      &DBMock{},
-			Payload: `{"tagName":"","color":"#22c55e"}`,
+			Payload: `{"tagName":"","color":"#00a63e"}`,
 			Code:    http.StatusBadRequest,
 			Body:    `{"code":"tag.invalid_name","message":"tag name cannot be empty"}`,
 		},
-		"Malformed colour": {
+		"Off-palette colour": {
+			DB:      &DBMock{},
+			Payload: `{"tagName":"Production","color":"#22c55e"}`,
+			Code:    http.StatusBadRequest,
+			Body:    `{"code":"tag.invalid_color","message":"tag colour must be one of the palette"}`,
+		},
+		"Colour name instead of hex": {
 			DB:      &DBMock{},
 			Payload: `{"tagName":"Production","color":"green"}`,
 			Code:    http.StatusBadRequest,
-			Body:    `{"code":"tag.invalid_color","message":"tag colour must be a hex triplet"}`,
+			Body:    `{"code":"tag.invalid_color","message":"tag colour must be one of the palette"}`,
 		},
 		"Tag insert error": {
 			DB: &DBMock{
@@ -325,14 +331,14 @@ func Test_Handler_CreateTag(t *testing.T) {
 					return errors.New("boom")
 				},
 			},
-			Payload: `{"tagName":"Production","color":"#22c55e"}`,
+			Payload: `{"tagName":"Production","color":"#00a63e"}`,
 			Code:    http.StatusInternalServerError,
 			Body:    `{"code":"general","message":"internal server error"}`,
 			Inserts: 1,
 		},
 		"Successful creation": {
 			DB:       &DBMock{},
-			Payload:  `{"tagName":"Production","color":"#22c55e"}`,
+			Payload:  `{"tagName":"Production","color":"#00a63e"}`,
 			Code:     http.StatusCreated,
 			Inserts:  1,
 			Notifies: 1,

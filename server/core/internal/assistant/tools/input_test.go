@@ -52,7 +52,7 @@ var (
 // with for _testTagID.
 const (
 	_stubTagName  = "Production"
-	_stubTagColor = "#22c55e"
+	_stubTagColor = "#00a63e"
 )
 
 // discardLog returns a logger that writes nowhere.
@@ -160,7 +160,8 @@ func requiredArgs(t *testing.T, name Name) string {
 			// the stubbed hook is a scheduled reminder.
 			vals[key] = map[string]any{"type": string(hook.TypeScheduledReminder), "schedule": _stubSchedule}
 		case "color":
-			vals[key] = _stubTagColor
+			// the tools take a palette name, not the hex the stub stores.
+			vals[key] = "green"
 		case "sort_index":
 			vals[key] = 0
 		case "block":

@@ -18,9 +18,9 @@ var (
 	// ErrInvalidTagName is returned when a tag is created without a name.
 	ErrInvalidTagName = errutil.New(http.StatusBadRequest, "tag.invalid_name", "tag name cannot be empty")
 
-	// ErrInvalidTagColor is returned when a tag carries a colour the frontend
-	// cannot render as a dot.
-	ErrInvalidTagColor = errutil.New(http.StatusBadRequest, "tag.invalid_color", "tag colour must be a hex triplet")
+	// ErrInvalidTagColor is returned when a tag carries a colour outside
+	// the palette.
+	ErrInvalidTagColor = errutil.New(http.StatusBadRequest, "tag.invalid_color", "tag colour must be one of the palette")
 
 	// ErrDuplicateTagName is returned when a tag is created under a name the
 	// organization already uses.
@@ -43,7 +43,7 @@ type Tag struct {
 	// TagName is the display name of the tag.
 	TagName string `json:"tagName" db:"tag_name"`
 
-	// Color is the tag's colour as a hex triplet, including the leading hash.
+	// Color is the tag's colour: the Hex of one palette entry.
 	Color string `json:"color" db:"color"`
 
 	// SortIndex is the position of the tag among its organization's tags.
@@ -61,7 +61,7 @@ type CreateInput struct {
 	// TagName is the display name of the tag.
 	TagName string `json:"tagName"`
 
-	// Color is the tag's colour as a hex triplet, including the leading hash.
+	// Color is the tag's colour: the Hex of one palette entry.
 	Color string `json:"color"`
 }
 
@@ -71,30 +71,11 @@ func (ci CreateInput) Validate() error {
 		return ErrInvalidTagName
 	}
 
-	if !isHexColorValid(ci.Color) {
+	if ColorName(ci.Color) == "" {
 		return ErrInvalidTagColor
 	}
 
 	return nil
-}
-
-// isHexColorValid reports whether the value is a "#rrggbb" hex triplet.
-func isHexColorValid(color string) bool {
-	if len(color) != 7 || color[0] != '#' {
-		return false
-	}
-
-	for _, c := range color[1:] {
-		isDigit := c >= '0' && c <= '9'
-		isLower := c >= 'a' && c <= 'f'
-		isUpper := c >= 'A' && c <= 'F'
-
-		if !isDigit && !isLower && !isUpper {
-			return false
-		}
-	}
-
-	return true
 }
 
 // NewTag creates a fresh instance of Tag from the given input.
@@ -121,8 +102,7 @@ type UpdateInput struct {
 	// TagName is the new display name of the tag.
 	TagName null.String `json:"tagName"`
 
-	// Color is the new colour of the tag as a hex triplet, including the
-	// leading hash.
+	// Color is the new colour of the tag: the Hex of one palette entry.
 	Color null.String `json:"color"`
 }
 
@@ -137,7 +117,7 @@ func (ui UpdateInput) Validate() error {
 		return ErrInvalidTagName
 	}
 
-	if ui.Color.Valid && !isHexColorValid(ui.Color.String) {
+	if ui.Color.Valid && ColorName(ui.Color.String) == "" {
 		return ErrInvalidTagColor
 	}
 
@@ -200,7 +180,7 @@ type Summary struct {
 	// TagName is the display name of the tag.
 	TagName string `json:"tagName" db:"tag_name"`
 
-	// Color is the tag's colour as a hex triplet, including the leading hash.
+	// Color is the tag's colour: the Hex of one palette entry.
 	Color string `json:"color" db:"color"`
 
 	// Hidden reports whether the user who asked for the tree keeps this tag

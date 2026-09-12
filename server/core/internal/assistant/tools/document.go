@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"strings"
@@ -118,7 +119,7 @@ type getDocument struct {
 func (getDocument) Info() Info {
 	return Info{
 		Name:        NameGetDocument,
-		Description: "Read one document on one branch: its name, icon, parent_id, protected flag and updated_at, the branch read and every branch the document has (each with the id a branch_id argument takes), the tags the branch carries as [{id, tagName, color}], followed by one row per block with the block's uid, kind, flattened text, depth, parent_uid and the few attrs that matter for reading (heading level, callout icon, code language, task checked). Use it as the way to read a document before editing it; branch_id is the default_branch_id a listing or search hit carries, or any id from branches. A protected branch can be read but refuses every write, so pick an unprotected branch id from branches to write to. Rows marked has_children hold nested blocks the rows do not list, and read_block returns those when you need them.",
+		Description: "Read one document on one branch: its name, icon, parent_id, protected flag and updated_at, the branch read and every branch the document has (each with the id a branch_id argument takes), the tags the branch carries as [{id, name, color}] with color a palette name as list_tags reports it, followed by one row per block with the block's uid, kind, flattened text, depth, parent_uid and the few attrs that matter for reading (heading level, callout icon, code language, task checked). Use it as the way to read a document before editing it; branch_id is the default_branch_id a listing or search hit carries, or any id from branches. A protected branch can be read but refuses every write, so pick an unprotected branch id from branches to write to. Rows marked has_children hold nested blocks the rows do not list, and read_block returns those when you need them.",
 		Properties: map[string]any{
 			"document_id": map[string]any{"type": "string", "description": "The document id."},
 			"branch_id":   map[string]any{"type": "string", "description": "The id of the branch to read or write: a document's default_branch_id from list_documents, a search hit's branch_id, or any id from the branches get_document lists. A protected branch can be read but refuses every write."},
@@ -176,12 +177,12 @@ func (getDocument) Execute(inp Input) (string, error) {
 		UpdatedAt:  doc.UpdatedAt.UTC().Format(time.RFC3339),
 		Branch:     branchInfo{ID: doc.BranchID, Name: doc.BranchName, Protected: doc.Protected, Default: doc.Default},
 		Branches:   make([]branchInfo, 0, len(branches)),
-		Tags:       make([]tag.Summary, 0, len(tags)),
+		Tags:       make([]documentTag, 0, len(tags)),
 		Blocks:     walkDocForAssistant(doc.Content.Content),
 	}
 
 	for _, tg := range tags {
-		out.Tags = append(out.Tags, tg.Summary())
+		out.Tags = append(out.Tags, documentTag{ID: tg.ID, Name: tg.TagName, ColorName: cmp.Or(tag.ColorName(tg.Color), "unknown")})
 	}
 
 	for _, b := range branches {
@@ -224,10 +225,23 @@ type documentResult struct {
 	Branches []branchInfo `json:"branches"`
 
 	// Tags is every tag the branch read carries.
-	Tags []tag.Summary `json:"tags"`
+	Tags []documentTag `json:"tags"`
 
 	// Blocks is the branch's content, one row per block.
 	Blocks []docSummaryEntry `json:"blocks"`
+}
+
+// documentTag is one tag row of get_document.
+type documentTag struct {
+	// ID is the tag id, which is what a tool's tag_id takes.
+	ID xid.ID `json:"id"`
+
+	// Name is the tag's display name.
+	Name string `json:"name"`
+
+	// ColorName is the palette name of the tag's colour, or "unknown" as
+	// list_tags reports it.
+	ColorName string `json:"color"`
 }
 
 // branchInfo describes one branch of a document to the model.

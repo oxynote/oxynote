@@ -26,23 +26,20 @@ func Test_CreateInput_Validate(t *testing.T) {
 			Input: CreateInput{TagName: "", Color: "#22c55e"},
 			Err:   ErrInvalidTagName,
 		},
-		"Colour without a hash": {
-			Input: CreateInput{TagName: "Production", Color: "22c55e"},
-			Err:   ErrInvalidTagColor,
-		},
-		"Colour of the wrong length": {
-			Input: CreateInput{TagName: "Production", Color: "#22c5"},
-			Err:   ErrInvalidTagColor,
-		},
-		"Colour with a non-hex digit": {
-			Input: CreateInput{TagName: "Production", Color: "#22c55z"},
-			Err:   ErrInvalidTagColor,
-		},
-		"Lowercase hex colour": {
+		"Off-palette colour": {
 			Input: CreateInput{TagName: "Production", Color: "#22c55e"},
+			Err:   ErrInvalidTagColor,
 		},
-		"Uppercase hex colour": {
-			Input: CreateInput{TagName: "Production", Color: "#22C55E"},
+		"Uppercase palette colour": {
+			Input: CreateInput{TagName: "Production", Color: "#00A63E"},
+			Err:   ErrInvalidTagColor,
+		},
+		"Colour name instead of hex": {
+			Input: CreateInput{TagName: "Production", Color: "green"},
+			Err:   ErrInvalidTagColor,
+		},
+		"Palette colour": {
+			Input: CreateInput{TagName: "Production", Color: "#00a63e"},
 		},
 	}
 
@@ -70,18 +67,22 @@ func Test_UpdateInput_Validate(t *testing.T) {
 			Input: UpdateInput{TagName: null.StringFrom("")},
 			Err:   ErrInvalidTagName,
 		},
-		"Malformed colour": {
-			Input: UpdateInput{Color: null.StringFrom("22c55e")},
+		"Off-palette colour": {
+			Input: UpdateInput{Color: null.StringFrom("#22c55e")},
+			Err:   ErrInvalidTagColor,
+		},
+		"Empty colour": {
+			Input: UpdateInput{Color: null.StringFrom("")},
 			Err:   ErrInvalidTagColor,
 		},
 		"Name only": {
 			Input: UpdateInput{TagName: null.StringFrom("Production")},
 		},
 		"Colour only": {
-			Input: UpdateInput{Color: null.StringFrom("#22C55E")},
+			Input: UpdateInput{Color: null.StringFrom("#00a63e")},
 		},
 		"Both fields": {
-			Input: UpdateInput{TagName: null.StringFrom("Production"), Color: null.StringFrom("#22c55e")},
+			Input: UpdateInput{TagName: null.StringFrom("Production"), Color: null.StringFrom("#00a63e")},
 		},
 	}
 
