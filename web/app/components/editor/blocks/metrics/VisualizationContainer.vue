@@ -167,9 +167,9 @@ watch(simulationPreset, (preset, previous) => {
 	}
 })
 
-// bumped on every refresh tick so the generated window re-resolves against
+// set on every refresh tick so the generated window re-resolves against
 // the current time and the chart slides forward like a live one
-const simulationTick = ref(0)
+const simulationNow = ref<Date>()
 
 // a block can only simulate what it will later query, so the same
 // configuration a real query needs has to be in place first
@@ -221,12 +221,13 @@ const data = computed<{
 }>(() => {
 	const preset = drawnPreset.value
 	if (preset) {
-		// reading the tick is what makes a refresh regenerate the window
-		void simulationTick.value
-
 		return mergeVisualizationResults(
 			props.config.visualizationType,
-			generateSimulatedQueryResults(preset, props.config.timeRange),
+			generateSimulatedQueryResults(
+				preset,
+				props.config.timeRange,
+				simulationNow.value,
+			),
 			debouncedConfig.value.decimals || null,
 			orderedLegendLabel(),
 		)
@@ -366,7 +367,7 @@ async function refreshData() {
 	)
 
 	if (simulationPreset.value) {
-		simulationTick.value++
+		simulationNow.value = new Date()
 
 		return
 	}

@@ -1311,11 +1311,10 @@ describe("useDocumentCommentAPI", { concurrent: false }, () => {
 			{
 				name: "leaves the cached comments untouched when no optimistic entry exists",
 				makeSeed: () => [makeComment(COMMENT_ID), makeComment(COMMENT_ID_2)],
-				makeExpected: (server: DocumentComment) => {
-					void server
-
-					return [makeComment(COMMENT_ID), makeComment(COMMENT_ID_2)]
-				},
+				makeExpected: () => [
+					makeComment(COMMENT_ID),
+					makeComment(COMMENT_ID_2),
+				],
 			},
 			{
 				name: "replaces the optimistic entry with the server comment",
