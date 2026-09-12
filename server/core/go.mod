@@ -7,13 +7,13 @@ require (
 	github.com/Masterminds/squirrel v1.5.4
 	github.com/aws/aws-sdk-go-v2 v1.46.0
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.3
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.111.0
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.112.0
 	github.com/blang/semver/v4 v4.0.0
 	github.com/bradleyfalzon/ghinstallation/v2 v2.19.0
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/cloudwego/eino v0.9.19
 	github.com/cloudwego/eino-ext/components/model/claude v0.1.25
-	github.com/cloudwego/eino-ext/components/model/gemini v0.1.34
+	github.com/cloudwego/eino-ext/components/model/gemini v0.1.36
 	github.com/cloudwego/eino-ext/components/model/ollama v0.1.9
 	github.com/cloudwego/eino-ext/components/model/openai v0.1.13
 	github.com/cloudwego/eino-ext/components/model/openrouter v0.1.10
@@ -32,7 +32,7 @@ require (
 	github.com/gosimple/slug v1.15.0
 	github.com/guregu/null/v5 v5.0.0
 	github.com/hashicorp/go-multierror v1.1.1
-	github.com/jackc/pgx/v5 v5.10.0
+	github.com/jackc/pgx/v5 v5.11.0
 	github.com/jarcoal/httpmock v1.4.2
 	github.com/jellydator/ttlcache/v3 v3.4.1
 	github.com/jellydator/xync v0.0.0-20240601154136-0f038e166df4
@@ -57,7 +57,7 @@ require (
 	github.com/tidwall/gjson v1.19.0
 	github.com/wneessen/go-mail v0.8.1
 	go.uber.org/goleak v1.3.0
-	google.golang.org/genai v1.70.0
+	google.golang.org/genai v1.71.0
 )
 
 require (
