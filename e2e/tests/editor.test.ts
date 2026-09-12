@@ -6,6 +6,7 @@ import {
 	editorText,
 	openDocumentActions,
 	openSlashMenu,
+	readModeToggle,
 	sidebarDocument,
 	sidebarDocumentRow,
 	titleEditor,
@@ -56,6 +57,59 @@ test.describe("editor", () => {
 		).toBeVisible()
 		await expect(page).toHaveTitle(
 			t("general.document-page-title", { suffix: "Release Notes" }),
+		)
+	})
+
+	test("switches the page to read mode", async ({ page, request }) => {
+		await signUpWithWorkspace(page, request)
+		await createDocument(page)
+
+		await readModeToggle(page).click()
+
+		await expect(contentEditor(page)).toHaveAttribute(
+			"contenteditable",
+			"false",
+		)
+		await expect(titleEditor(page)).toHaveAttribute("contenteditable", "false")
+		await expect(readModeToggle(page)).toHaveAccessibleName(
+			t("editor.navbar.toggle-read-mode"),
+		)
+	})
+
+	test("switches the page back to edit mode", async ({ page, request }) => {
+		await signUpWithWorkspace(page, request)
+		await createDocument(page)
+		await readModeToggle(page).click()
+		await expect(contentEditor(page)).toHaveAttribute(
+			"contenteditable",
+			"false",
+		)
+
+		await readModeToggle(page).click()
+
+		await expect(contentEditor(page)).toHaveAttribute("contenteditable", "true")
+		await expect(titleEditor(page)).toHaveAttribute("contenteditable", "true")
+		await expect(readModeToggle(page)).toHaveAccessibleName(
+			t("editor.navbar.toggle-edit-mode"),
+		)
+	})
+
+	test("keeps read mode across a reload", async ({ page, request }) => {
+		await signUpWithWorkspace(page, request)
+		await createDocument(page)
+		const url = page.url()
+		await readModeToggle(page).click()
+		await expect(contentEditor(page)).toHaveAttribute(
+			"contenteditable",
+			"false",
+		)
+
+		await visit(page, url)
+
+		await waitForEditor(page)
+		await expect(contentEditor(page)).toHaveAttribute(
+			"contenteditable",
+			"false",
 		)
 	})
 

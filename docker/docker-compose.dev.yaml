@@ -165,6 +165,10 @@ services:
       - MEILI_ENV=development
       - MEILI_LOG_LEVEL=WARN
       - MEILI_NO_ANALYTICS=true
+      # the data volume outlives image bumps, and meilisearch refuses to
+      # open a database written by an older engine unless told to upgrade
+      # it in place
+      - MEILI_UPGRADE_DB=true
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:7700/health"]
       interval: 5s

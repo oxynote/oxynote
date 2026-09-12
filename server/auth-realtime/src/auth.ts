@@ -359,6 +359,14 @@ export function createAuth({
 			enabled: env.rateLimitEnabled,
 		},
 		advanced: {
+			// better-auth compares the database against its own schema once,
+			// at startup, and keeps a mismatch for the life of the process.
+			// Core's migrations create these tables and core starts alongside
+			// this service, so the check would race the migration and then
+			// refuse every sign-up until a restart
+			database: {
+				validateSchema: false,
+			},
 			cookiePrefix: "auth",
 			crossSubDomainCookies: {
 				enabled: true,

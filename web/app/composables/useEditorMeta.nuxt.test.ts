@@ -1,4 +1,4 @@
-import { describe, it } from "vitest"
+import { beforeEach, describe, it } from "vitest"
 import { isReadonly } from "vue"
 import useEditorMeta from "./useEditorMeta"
 
@@ -6,6 +6,10 @@ import useEditorMeta from "./useEditorMeta"
 // editor store — the tests cannot interleave, and each arranges the state
 // it asserts
 describe("useEditorMeta", { concurrent: false }, () => {
+	beforeEach(() => {
+		useEditorStore().setActiveBranchProtected(false)
+	})
+
 	it("toggles the editable flag", ({ expect }) => {
 		const meta = useEditorMeta()
 		meta.setEditable(true)
@@ -21,6 +25,29 @@ describe("useEditorMeta", { concurrent: false }, () => {
 		meta.setEditable(false)
 
 		expect(meta.isEditable.value).toBe(false)
+	})
+
+	it("reads a protected branch as not editable", ({ expect }) => {
+		const meta = useEditorMeta()
+		meta.setEditable(true)
+
+		useEditorStore().setActiveBranchProtected(true)
+
+		expect(meta.isEditable.value).toBe(false)
+		expect(meta.isBranchProtected.value).toBe(true)
+	})
+
+	it("restores the reader's choice once the branch is unprotected", ({
+		expect,
+	}) => {
+		const meta = useEditorMeta()
+		meta.setEditable(true)
+		useEditorStore().setActiveBranchProtected(true)
+
+		useEditorStore().setActiveBranchProtected(false)
+
+		expect(meta.isEditable.value).toBe(true)
+		expect(meta.isBranchProtected.value).toBe(false)
 	})
 
 	it("locks the editor through the store", ({ expect }) => {

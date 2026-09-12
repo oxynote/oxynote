@@ -12,7 +12,7 @@ const emit = defineEmits<{
 	(e: "delete-document" | "duplicate-document"): void
 }>()
 
-const { isEditable, toggleIsEditable } = useEditorMeta()
+const { isEditable, isBranchProtected, toggleIsEditable } = useEditorMeta()
 const editorStore = useEditorStore()
 const { isAssistantEnabled } = useCapabilitiesAPI()
 const { useFetchDocumentBranchesByDocId } = useDocumentAPI()
@@ -28,6 +28,26 @@ const isReviewable = computed(() => {
 	// NOTE this will be removed in the future
 	const branches = fetchBranches.state.value.data
 	return !!branches && branches.length > 1
+})
+const modeTooltip = computed(() => {
+	if (isBranchProtected.value) {
+		return [
+			t("editor.navbar.mode-tooltip.protected-line-1"),
+			t("editor.navbar.mode-tooltip.protected-line-2"),
+		]
+	}
+
+	if (isEditable.value) {
+		return [
+			t("editor.navbar.mode-tooltip.edit-line-1"),
+			t("editor.navbar.mode-tooltip.edit-line-2"),
+		]
+	}
+
+	return [
+		t("editor.navbar.mode-tooltip.read-line-1"),
+		t("editor.navbar.mode-tooltip.read-line-2"),
+	]
 })
 const activeBranchMode = computed(() => {
 	// NOTE this will be removed in the future
@@ -258,7 +278,7 @@ function activateBranch(branch: "default" | "draft") {
 								</ShadcnUiDropdownMenuItem>
 							</ShadcnUiDropdownMenuContent>
 						</ShadcnUiDropdownMenu>
-						<ShadcnUiTooltip v-else :delay-duration="600">
+						<ShadcnUiTooltip :delay-duration="600">
 							<ShadcnUiTooltipTrigger as-child>
 								<ShadcnUiButton
 									variant="ghost"
@@ -268,6 +288,7 @@ function activateBranch(branch: "default" | "draft") {
 											'h-7 w-7 cursor-pointer hover:bg-accent/50 active:bg-accent',
 										)
 									"
+									:disabled="isBranchProtected"
 									@click="toggleIsEditable"
 								>
 									<Icon
@@ -286,19 +307,12 @@ function activateBranch(branch: "default" | "draft") {
 							</ShadcnUiTooltipTrigger>
 							<ShadcnUiTooltipContent side="bottom" align="end">
 								<div class="flex max-w-48 flex-col gap-2">
-									<div class="break-normal whitespace-normal">
-										{{
-											!isEditable
-												? $t("editor.navbar.mode-tooltip.read-line-1")
-												: $t("editor.navbar.mode-tooltip.edit-line-1")
-										}}
-									</div>
-									<div class="break-normal whitespace-normal">
-										{{
-											!isEditable
-												? $t("editor.navbar.mode-tooltip.read-line-2")
-												: $t("editor.navbar.mode-tooltip.edit-line-2")
-										}}
+									<div
+										v-for="line in modeTooltip"
+										:key="line"
+										class="break-normal whitespace-normal"
+									>
+										{{ line }}
 									</div>
 								</div>
 							</ShadcnUiTooltipContent>

@@ -14,7 +14,6 @@ CREATE TABLE users (
 
 CREATE TABLE user_accounts (
 	id TEXT NOT NULL PRIMARY KEY,
-	issuer TEXT NOT NULL,
 	account_id TEXT NOT NULL,
 	provider_id TEXT NOT NULL,
 	fk_user_id TEXT NOT NULL REFERENCES users ON DELETE CASCADE,
@@ -29,7 +28,6 @@ CREATE TABLE user_accounts (
 	updated_at TIMESTAMPTZ NOT NULL
 );
 CREATE INDEX user_accounts_user_id_idx ON user_accounts (fk_user_id);
-CREATE UNIQUE INDEX user_accounts_issuer_account_id_idx ON user_accounts (issuer, account_id);
 
 -- sessions live primarily in Valkey; the table exists because the OAuth
 -- provider plugin requires database-backed sessions alongside secondary

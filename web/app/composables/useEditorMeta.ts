@@ -1,17 +1,23 @@
 export default function () {
-	const isEditable = usePersistentState<boolean>({
+	// the reader's own read/edit choice. Whether the page can actually be
+	// edited also depends on the branch, so consumers read isEditable
+	const editablePreference = usePersistentState<boolean>({
 		key: "editor-editable",
 		defaultValue: true,
 	})
 
 	const editorStore = useEditorStore()
 
+	const isEditable = computed(
+		() => editablePreference.value && !editorStore.activeBranchProtected,
+	)
+
 	function toggleIsEditable() {
-		isEditable.value = !isEditable.value
+		editablePreference.value = !editablePreference.value
 	}
 
 	function setEditable(v: boolean) {
-		isEditable.value = v
+		editablePreference.value = v
 	}
 
 	function updateLock(v: boolean) {
@@ -19,9 +25,10 @@ export default function () {
 	}
 
 	return {
-		isEditable: readonly(isEditable),
+		isEditable,
 		toggleIsEditable,
 		setEditable,
+		isBranchProtected: computed(() => editorStore.activeBranchProtected),
 		isLocked: computed(() => editorStore.locked), // locks are used by drag handle menus
 		updateLock,
 		isEditableAndUnlocked: computed(

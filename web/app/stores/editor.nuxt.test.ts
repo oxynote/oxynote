@@ -54,6 +54,16 @@ describe("useEditorStore", () => {
 		})
 	})
 
+	describe("setActiveBranchProtected", () => {
+		it("sets the protected flag", ({ expect }) => {
+			const store = makeStore()
+
+			store.setActiveBranchProtected(true)
+
+			expect(store.activeBranchProtected).toBe(true)
+		})
+	})
+
 	describe("updatePreloadedBranchIds", () => {
 		it("replaces the preloaded branch ids", ({ expect }) => {
 			const store = makeStore()

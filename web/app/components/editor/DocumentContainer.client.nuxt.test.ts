@@ -395,6 +395,27 @@ describe("<DocumentContainer>", { concurrent: false }, () => {
 		expect(useEditorMeta().isEditable.value).toBe(false)
 	})
 
+	it("keeps read mode once the reader switches to it", async ({ expect }) => {
+		await mountContainer()
+
+		useEditorMeta().toggleIsEditable()
+		await nextTick()
+
+		expect(useEditorMeta().isEditable.value).toBe(false)
+	})
+
+	it("keeps a protected branch read-only whatever the reader prefers", async ({
+		expect,
+	}) => {
+		seedBranches({ branchId: BRANCH_ID, protected: true })
+		await mountContainer()
+
+		useEditorMeta().setEditable(true)
+		await nextTick()
+
+		expect(useEditorMeta().isEditable.value).toBe(false)
+	})
+
 	it("passes the content editor on once it is ready", async ({ expect }) => {
 		const wrapper = await mountContainer()
 		await sync(BRANCH_ID)

@@ -13,6 +13,16 @@ export function contentEditor(page: Page): Locator {
 	return page.locator(".content-editor .ProseMirror")
 }
 
+// readModeToggle is the navbar button switching the page between read and
+// edit mode. Its accessible name is the mode the page is in.
+export function readModeToggle(page: Page): Locator {
+	return page.getByRole("button", {
+		name: new RegExp(
+			`^(${t("editor.navbar.toggle-edit-mode")}|${t("editor.navbar.toggle-read-mode")})$`,
+		),
+	})
+}
+
 // editorText reads an editor's text without its decoration widgets. A
 // collaborator's caret is rendered as a widget inside the paragraph it
 // sits in, label and all, so a plain text read of a shared document

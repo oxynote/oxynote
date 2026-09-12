@@ -40,7 +40,7 @@ const { useFetchDocumentBranchesByDocId } = useDocumentAPI()
 const fetchBranches = useFetchDocumentBranchesByDocId(
 	() => editorStore.activeDocumentId,
 )
-const { isEditable, setEditable } = useEditorMeta()
+const { isEditable } = useEditorMeta()
 const route = useRoute()
 const nuxtApp = useNuxtApp()
 const fetchDocumentHooks = documentHookAPI.useFetchDocumentHooksByDocID(
@@ -225,16 +225,19 @@ watch(nameEditor, (v) => {
 	}
 })
 
-watchImmediate([isEditable, activeBranch, nameEditor, contentEditor], () => {
-	const editable = activeBranch.value ? !activeBranch.value.protected : false
-	setEditable(editable)
+// a branch that is still loading or unknown is treated as protected, so
+// nothing is editable before the branch list has answered
+watchImmediate(activeBranch, (branch) => {
+	editorStore.setActiveBranchProtected(branch ? branch.protected : true)
+})
 
+watchImmediate([isEditable, nameEditor, contentEditor], () => {
 	if (nameEditor.value) {
-		nameEditor.value.setEditable(editable)
+		nameEditor.value.setEditable(isEditable.value)
 	}
 
 	if (contentEditor.value) {
-		contentEditor.value.setEditable(editable)
+		contentEditor.value.setEditable(isEditable.value)
 	}
 })
 

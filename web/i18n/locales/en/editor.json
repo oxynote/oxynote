@@ -57,7 +57,9 @@
 				"edit-line-1": "You are in edit mode. Changes are saved automatically.",
 				"edit-line-2": "Click to switch to read mode.",
 				"read-line-1": "You are in read mode.",
-				"read-line-2": "Click to switch to edit mode."
+				"read-line-2": "Click to switch to edit mode.",
+				"protected-line-1": "This version is protected.",
+				"protected-line-2": "Edit mode cannot be turned on here."
 			},
 			"open-document-options": "Open Page Options",
 			"close-ai-assistant": "Close Rubber Duck",

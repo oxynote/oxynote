@@ -120,7 +120,6 @@ const {
 const { deleteTag, updateTagTreeDocumentCache } = useTagAPI()
 const { fetchOrganization } = useAuthSession()
 const { t } = useI18n({ useScope: "global" })
-const { setEditable } = useEditorMeta()
 const { isAssistantEnabled } = useCapabilitiesAPI()
 const wsState = useWebSocketStateStore()
 let unsubWsDocMetadataChange: (() => void) | null | undefined = null
@@ -229,7 +228,6 @@ watchImmediate(
 	() => activeDocMetadata.value?.id,
 	(newV) => {
 		editorStore.updateActiveDocumentId(newV ?? null)
-		setEditable(activeDocMetadata.value?.protected ?? true)
 	},
 )
 

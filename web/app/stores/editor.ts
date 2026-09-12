@@ -8,6 +8,7 @@ type BlockId = string
 
 export const useEditorStore = defineStore("editor", () => {
 	const locked = ref(false)
+	const activeBranchProtected = ref(false) // the active branch refuses edits from everyone; the container sets it from the branch metadata
 	const preloadedBranchIds = ref<BranchId[]>([]) // used to track branches that have been preloaded (e.g. for diffing) to avoid refetching data when switching between them
 	const activeDocumentId = ref<DocumentId | null>(null)
 	const activeBranchId = ref<BranchId | null>(null)
@@ -36,6 +37,10 @@ export const useEditorStore = defineStore("editor", () => {
 
 	function updateLock(v: boolean) {
 		locked.value = v
+	}
+
+	function setActiveBranchProtected(v: boolean) {
+		activeBranchProtected.value = v
 	}
 
 	function updatePreloadedBranchIds(branchIds: BranchId[]) {
@@ -300,6 +305,8 @@ export const useEditorStore = defineStore("editor", () => {
 	return {
 		locked,
 		updateLock,
+		activeBranchProtected,
+		setActiveBranchProtected,
 		preloadedBranchIds,
 		updatePreloadedBranchIds,
 		activeDocumentId,

@@ -15,8 +15,8 @@ export function branchLabel(branch: BranchName): string {
 }
 
 // branchSwitcher is the navbar dropdown trigger naming the open branch
-// of a reviewable page. Non-reviewable pages render the read/edit toggle
-// in its place, so its presence is what proves reviewability.
+// of a reviewable page. Non-reviewable pages have no switcher, so its
+// presence is what proves reviewability.
 export function branchSwitcher(page: Page): Locator {
 	return page.getByRole("button", {
 		name: new RegExp(`^(${branchLabel("main")}|${branchLabel("draft")})$`),

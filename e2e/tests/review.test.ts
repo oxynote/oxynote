@@ -5,6 +5,7 @@ import {
 	createDocument,
 	documentPersisted,
 	editorText,
+	readModeToggle,
 	titleEditor,
 	waitForEditor,
 } from "../helpers/editor"
@@ -64,6 +65,52 @@ test.describe("review workflow", () => {
 			"false",
 		)
 		await expect(titleEditor(page)).toHaveAttribute("contenteditable", "false")
+	})
+
+	test("disables the read toggle on the locked main branch", async ({
+		page,
+		request,
+	}) => {
+		await signUpWithWorkspace(page, request)
+		await createDocument(page)
+
+		await makeReviewable(page)
+
+		await expect(readModeToggle(page)).toBeDisabled()
+	})
+
+	test("explains on the locked main branch why edit mode is off", async ({
+		page,
+		request,
+	}) => {
+		await signUpWithWorkspace(page, request)
+		await createDocument(page)
+		await makeReviewable(page)
+
+		await readModeToggle(page).hover()
+
+		// the element with the tooltip role is a visually hidden copy that
+		// the role query skips, so the visible content is what gets asserted
+		await expect(page.locator('[data-slot="tooltip-content"]')).toContainText(
+			t("editor.navbar.mode-tooltip.protected-line-1"),
+		)
+	})
+
+	test("lets the reader switch the draft to read mode", async ({
+		page,
+		request,
+	}) => {
+		await signUpWithWorkspace(page, request)
+		await createDocument(page)
+		await makeReviewable(page)
+		await switchToBranch(page, "draft")
+
+		await readModeToggle(page).click()
+
+		await expect(contentEditor(page)).toHaveAttribute(
+			"contenteditable",
+			"false",
+		)
 	})
 
 	test("keeps the draft editable while the main branch is locked", async ({

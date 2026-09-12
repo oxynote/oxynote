@@ -88,6 +88,7 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 		editorStore.mappedDefaultBranchId = MAIN_BRANCH
 		editorStore.aiAssistantOpen = false
 		useEditorMeta().setEditable(true)
+		editorStore.setActiveBranchProtected(false)
 	})
 
 	afterEach(disposeMockEndpoints)
@@ -176,6 +177,31 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 		).trigger("click")
 
 		expect(wrapper.text()).toContain(t("editor.navbar.toggle-edit-mode"))
+	})
+
+	it("keeps the read/edit toggle once the document is reviewable", async ({
+		expect,
+	}) => {
+		mainAndDraft()
+
+		const wrapper = await mountHeader()
+
+		expect(wrapper.text()).toContain(t("editor.navbar.toggle-edit-mode"))
+	})
+
+	it("disables the toggle in read mode while the branch is protected", async ({
+		expect,
+	}) => {
+		mainOnly()
+		useEditorStore().setActiveBranchProtected(true)
+
+		const wrapper = await mountHeader()
+
+		const toggle = findButtonByText(
+			wrapper,
+			t("editor.navbar.toggle-read-mode"),
+		)
+		expect(toggle.attributes("disabled")).toBeDefined()
 	})
 
 	it("offers a version picker once the document is reviewable", async ({
