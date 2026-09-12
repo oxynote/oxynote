@@ -52,6 +52,23 @@ describe("loadConfig", () => {
 	})
 
 	describe("public URL", () => {
+		it("defaults to localhost on the container's port", ({
+			expect,
+		}) => {
+			const config = loadConfig(
+				completeEnv({ OXYNOTE_PUBLIC_URL: undefined }),
+			)
+
+			expect(config.publicOrigin).toBe(
+				"http://localhost:8080",
+			)
+			expect(config.publicHostPort).toBe("localhost:8080")
+			expect(config.cookieDomain).toBe("localhost")
+			expect(config.publicWebSocketOrigin).toBe(
+				"ws://localhost:8080",
+			)
+		})
+
 		it("derives the host forms and the WebSocket origin", ({
 			expect,
 		}) => {

@@ -145,28 +145,29 @@ agents edit the same pages, and the pages stay designed for people.
 
 ## Quick start
 
-Oxynote runs as one container next to a PostgreSQL database you already
-have. It needs to know two things: the address people will open in the
-browser, and how to reach that database.
+Oxynote is one container plus a PostgreSQL database. With a database
+already running, this is all it takes:
 
-```console
-$ docker run -d --name oxynote \
+```sh
+docker run -d --name oxynote \
   -p 8080:8080 \
-  -e OXYNOTE_PUBLIC_URL=http://localhost:8080 \
-  -e OXYNOTE_DB_DSN='postgresql://oxynote:change-me@postgres.example.com/oxynote?sslmode=disable' \
+  -e OXYNOTE_DB_DSN='postgresql://dbusername:dbpass@postgres.example.com/oxynote?sslmode=disable' \
   -v oxynote_data:/oxynote/data \
   ghcr.io/oxynote/oxynote:latest
 ```
 
-Open the address and sign up. Until you configure an email sender, the
-verification link shows up in the container's logs instead of your inbox.
-Keep the data volume: it holds your uploads and the secrets that keep
-everyone signed in and every data source connected. For a real domain, put a
-TLS-terminating proxy in front and set the public URL to the `https://`
-address.
+Open http://localhost:8080 and sign up. Until you configure an email sender,
+the verification link shows up in the container's logs instead of your
+inbox. Keep the data volume: it holds your uploads and the secrets that keep
+everyone signed in and every data source connected. The container assumes it
+can be reached at http://localhost:8080. If you want to open it anywhere
+else, set `OXYNOTE_PUBLIC_URL` to that address, and put a TLS-terminating
+proxy in front for the domain.
+
+No PostgreSQL yet? The compose file below starts one next to Oxynote.
 
 <details>
-<summary>Docker Compose with PostgreSQL, Meilisearch for search and Mailpit for mail</summary>
+<summary>Docker Compose with PostgreSQL, Meilisearch for search and Mailpit for email</summary>
 
 ```yaml
 name: oxynote
@@ -177,7 +178,6 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - OXYNOTE_PUBLIC_URL=http://localhost:8080
       - OXYNOTE_DB_DSN=postgresql://oxynote:change-me-db@postgres/oxynote?sslmode=disable
       - OXYNOTE_MEILISEARCH_URL=http://meilisearch:7700
       - OXYNOTE_MEILISEARCH_MASTER_KEY=change-me-meili-key
