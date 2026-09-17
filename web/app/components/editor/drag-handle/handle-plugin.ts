@@ -373,6 +373,10 @@ export const DragHandlePlugin = ({
 	let currentNodeRelPos: Y.RelativePosition | null = null // needed for yjs mapping
 	let animationFrameId: number | null = null
 	let pendingMouseCoords: { x: number; y: number } | null = null
+	// the editor sees no mouse events while a modal menu is up, so the
+	// pointer is followed on the document to know where it is once the
+	// menu has closed
+	let lastMouseCoords: { x: number; y: number } | null = null
 	let draggingNodeUid: string | null = null // tracks the UID of the node currently being dragged
 
 	// resolve the plugin key once for use throughout the plugin
@@ -489,31 +493,66 @@ export const DragHandlePlugin = ({
 
 		// redetect which node is under the cursor after the drop completes
 		setTimeout(() => {
-			const result = findDraggableNodeAtCoords(editor, e.clientX, e.clientY)
-			if (!result) {
-				hideHandle()
-
-				currentNode = null
-				currentNodePos = -1
-
-				onNodeChange?.({ editor, node: null, pos: -1, depth: 0 })
-
-				return
-			}
-
-			currentNode = result.node
-			currentNodePos = result.pos
-			currentNodeRelPos = findRelativePos(editor.view.state, currentNodePos)
-
-			onNodeChange?.({
-				editor,
-				node: currentNode,
-				pos: currentNodePos,
-				depth: result.depth,
-			})
-			repositionDragHandle(result.dom, currentNodePos)
-			showHandle()
+			retargetHandle(e.clientX, e.clientY)
 		}, 10)
+	}
+
+	function forgetNode() {
+		hideHandle()
+
+		currentNode = null
+		currentNodePos = -1
+
+		onNodeChange?.({ editor, node: null, pos: -1, depth: 0 })
+	}
+
+	// retargetHandle moves the handle to the node under the given point,
+	// or takes it away when none is there
+	function retargetHandle(x: number, y: number) {
+		const result = findDraggableNodeAtCoords(editor, x, y)
+		if (!result) {
+			forgetNode()
+			return
+		}
+
+		currentNode = result.node
+		currentNodePos = result.pos
+		currentNodeRelPos = findRelativePos(editor.view.state, currentNodePos)
+
+		onNodeChange?.({
+			editor,
+			node: currentNode,
+			pos: currentNodePos,
+			depth: result.depth,
+		})
+		repositionDragHandle(result.dom, currentNodePos)
+		showHandle()
+	}
+
+	// the lock kept the handle on its node whatever the pointer did, so
+	// unlocking catches up with where the pointer is now: still on the
+	// handle, on some block, or off the editor altogether
+	function retargetAfterUnlock() {
+		if (!lastMouseCoords) {
+			return
+		}
+
+		const { x, y } = lastMouseCoords
+		const target = document.elementFromPoint(x, y)
+		if (wrapper.contains(target)) {
+			return
+		}
+
+		if (editor.view.dom.contains(target)) {
+			retargetHandle(x, y)
+			return
+		}
+
+		forgetNode()
+	}
+
+	function trackMouse(e: MouseEvent) {
+		lastMouseCoords = { x: e.clientX, y: e.clientY }
 	}
 
 	element.addEventListener("dragstart", onDragStart)
@@ -554,7 +593,12 @@ export const DragHandlePlugin = ({
 					const isRemote = tr.docChanged && isChangeOrigin(tr)
 
 					if (isLocked !== undefined) {
+						const wasLocked = locked
 						locked = isLocked
+
+						if (wasLocked && !isLocked) {
+							retargetAfterUnlock()
+						}
 					}
 
 					if (hideDragHandle) {
@@ -637,6 +681,7 @@ export const DragHandlePlugin = ({
 				element.style.pointerEvents = "auto"
 
 				editor.view.dom.parentElement?.appendChild(wrapper)
+				document.addEventListener("mousemove", trackMouse)
 
 				wrapper.style.pointerEvents = "none"
 				wrapper.style.position = "absolute"
@@ -677,6 +722,8 @@ export const DragHandlePlugin = ({
 						}
 					},
 					destroy() {
+						document.removeEventListener("mousemove", trackMouse)
+
 						// clear awareness if we were mid-drag
 						clearDragAwareness()
 

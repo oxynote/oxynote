@@ -886,6 +886,92 @@ describe("DragHandlePlugin", { concurrent: false }, () => {
 			expect(onNodeChange).toHaveBeenCalledTimes(1)
 		})
 
+		it("keeps the handle where it is when unlocked with the pointer on it", ({
+			expect,
+		}) => {
+			const { editor, element, handle, onNodeChange } = setup()
+			hover(editor, handle.plugin, 0)
+			editor.view.dispatch(editor.state.tr.setMeta("lockDragHandle", true))
+			vi.spyOn(document, "elementFromPoint").mockReturnValue(element)
+			document.dispatchEvent(
+				new MouseEvent("mousemove", { clientX: 30, clientY: 40 }),
+			)
+
+			editor.view.dispatch(editor.state.tr.setMeta("lockDragHandle", false))
+
+			expect(onNodeChange).toHaveBeenCalledTimes(1)
+			expect(findDraggableNodeAtCoords).toHaveBeenCalledTimes(1)
+			expect(element.style.visibility).toBe("")
+		})
+
+		it("moves the handle to the block under the pointer when unlocked", ({
+			expect,
+		}) => {
+			const { editor, element, handle, onNodeChange } = setup({
+				content: [paragraph("one"), paragraph("two")],
+			})
+			hover(editor, handle.plugin, 0)
+			editor.view.dispatch(editor.state.tr.setMeta("lockDragHandle", true))
+			const second = must(editor.state.doc.nodeAt(5), "the second paragraph")
+			const secondDom = must(editor.view.nodeDOM(5), "its dom") as HTMLElement
+			vi.spyOn(document, "elementFromPoint").mockReturnValue(secondDom)
+			vi.mocked(findDraggableNodeAtCoords).mockReturnValue({
+				node: second,
+				pos: 5,
+				depth: 1,
+				dom: secondDom,
+			})
+			document.dispatchEvent(
+				new MouseEvent("mousemove", { clientX: 30, clientY: 40 }),
+			)
+
+			editor.view.dispatch(editor.state.tr.setMeta("lockDragHandle", false))
+
+			expect(findDraggableNodeAtCoords).toHaveBeenLastCalledWith(editor, 30, 40)
+			expect(onNodeChange).toHaveBeenLastCalledWith({
+				editor,
+				node: second,
+				pos: 5,
+				depth: 1,
+			})
+			expect(element.style.visibility).toBe("")
+		})
+
+		it("hides the handle when unlocked with the pointer off the editor", ({
+			expect,
+		}) => {
+			const { editor, element, handle, onNodeChange } = setup()
+			hover(editor, handle.plugin, 0)
+			editor.view.dispatch(editor.state.tr.setMeta("lockDragHandle", true))
+			vi.spyOn(document, "elementFromPoint").mockReturnValue(document.body)
+			document.dispatchEvent(
+				new MouseEvent("mousemove", { clientX: 30, clientY: 40 }),
+			)
+
+			editor.view.dispatch(editor.state.tr.setMeta("lockDragHandle", false))
+
+			expect(element.style.visibility).toBe("hidden")
+			expect(onNodeChange).toHaveBeenLastCalledWith({
+				editor,
+				node: null,
+				pos: -1,
+				depth: 0,
+			})
+		})
+
+		it("leaves the handle alone when unlocked before the pointer ever moved", ({
+			expect,
+		}) => {
+			const { editor, element, handle, onNodeChange } = setup()
+			hover(editor, handle.plugin, 0)
+			editor.view.dispatch(editor.state.tr.setMeta("lockDragHandle", true))
+
+			editor.view.dispatch(editor.state.tr.setMeta("lockDragHandle", false))
+
+			expect(onNodeChange).toHaveBeenCalledTimes(1)
+			expect(element.style.visibility).toBe("")
+		})
+
 		it("hides the handle and forgets the node on the hide meta", ({
 			expect,
 		}) => {
@@ -1093,6 +1179,19 @@ describe("DragHandlePlugin", { concurrent: false }, () => {
 				null,
 			)
 			expect(wrapper.parentElement).toBeNull()
+		})
+
+		it("stops following the pointer when destroyed", ({ expect }) => {
+			const pluginKey = new PluginKey("dragHandlePointer")
+			const { editor } = setup({ pluginKey })
+			const removeEventListener = vi.spyOn(document, "removeEventListener")
+
+			editor.unregisterPlugin(pluginKey)
+
+			expect(removeEventListener).toHaveBeenCalledWith(
+				"mousemove",
+				expect.any(Function),
+			)
 		})
 
 		it("drops a pending hover frame when destroyed", ({ expect }) => {
