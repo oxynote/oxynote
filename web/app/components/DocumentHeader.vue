@@ -84,6 +84,37 @@ if (import.meta.client) {
 	})
 }
 
+const disableReviewModalOpen = ref(false)
+
+async function performDisableReviewability() {
+	if (!editorStore.activeDocumentId || !editorStore.mappedDefaultBranchId) {
+		return
+	}
+
+	try {
+		const docId = editorStore.activeDocumentId
+
+		await Promise.all(
+			fetchBranches.state.value.data
+				?.filter((b) => !b.default)
+				.map((b) =>
+					deleteDocumentBranch.mutateAsync({
+						docId,
+						branchId: b.branchId,
+					}),
+				) ?? [],
+		)
+
+		await updateDocumentBranch.mutateAsync({
+			id: editorStore.activeDocumentId,
+			branchId: editorStore.mappedDefaultBranchId,
+			protectedMode: false,
+		})
+	} catch {
+		showToastMessage("error", t("editor.errors.reviewability-update-failed"))
+	}
+}
+
 async function toggleReviewability() {
 	if (!editorStore.activeDocumentId || !editorStore.mappedDefaultBranchId) {
 		return
@@ -106,26 +137,7 @@ async function toggleReviewability() {
 				protectedMode: true,
 			})
 		} else {
-			// read once here: the narrowing from the guard above does not reach
-			// inside the map callback
-			const docId = editorStore.activeDocumentId
-
-			await Promise.all(
-				fetchBranches.state.value.data
-					?.filter((b) => !b.default)
-					.map((b) =>
-						deleteDocumentBranch.mutateAsync({
-							docId,
-							branchId: b.branchId,
-						}),
-					) ?? [],
-			)
-
-			await updateDocumentBranch.mutateAsync({
-				id: editorStore.activeDocumentId,
-				branchId: editorStore.mappedDefaultBranchId,
-				protectedMode: false,
-			})
+			disableReviewModalOpen.value = true
 		}
 	} catch {
 		showToastMessage("error", t("editor.errors.reviewability-update-failed"))
@@ -435,5 +447,62 @@ function activateBranch(branch: "default" | "draft") {
 				</div>
 			</div>
 		</Transition>
+		<ShadcnUiDialog v-model:open="disableReviewModalOpen">
+			<ShadcnUiDialogContent
+				class="max-h-[90dvh] w-[85dvw] overflow-y-auto p-0 text-foreground sm:w-110 md:max-h-[80dvh]"
+			>
+				<div class="flex flex-col gap-8 p-6">
+					<div class="flex min-h-0 flex-col gap-3">
+						<ShadcnUiDialogHeader>
+							<ShadcnUiDialogTitle class="text-base">
+								{{ $t("editor.disable-review-modal.title") }}
+							</ShadcnUiDialogTitle>
+							<ShadcnUiButton
+								variant="ghost-plain"
+								class="absolute top-1/2 right-0 shrink-0 -translate-y-1/2 p-0"
+								@click="disableReviewModalOpen = false"
+							>
+								<Icon name="lucide:x" size="1rem" />
+								<span class="sr-only">
+									{{ $t("general.modal-close-screen-reader-hint") }}
+								</span>
+							</ShadcnUiButton>
+						</ShadcnUiDialogHeader>
+						<div class="flex flex-col gap-2 self-stretch">
+							<ShadcnUiDialogDescription as-child class="text-2sm">
+								<p>
+									{{ $t("editor.disable-review-modal.description") }}
+								</p>
+							</ShadcnUiDialogDescription>
+						</div>
+						<div class="flex gap-2 self-stretch">
+							<ShadcnUiButton
+								type="button"
+								variant="destructive"
+								size="sm"
+								class="text-2sm"
+								@click="
+									() => {
+										disableReviewModalOpen = false
+										performDisableReviewability()
+									}
+								"
+							>
+								{{ $t("editor.disable-review-modal.confirm-button") }}
+							</ShadcnUiButton>
+							<ShadcnUiButton
+								type="button"
+								size="sm"
+								variant="secondary"
+								class="text-2sm"
+								@click="disableReviewModalOpen = false"
+							>
+								{{ $t("editor.disable-review-modal.cancel-button") }}
+							</ShadcnUiButton>
+						</div>
+					</div>
+				</div>
+			</ShadcnUiDialogContent>
+		</ShadcnUiDialog>
 	</header>
 </template>
