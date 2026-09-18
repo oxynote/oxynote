@@ -187,6 +187,7 @@ describe("<DocumentContainer>", { concurrent: false }, () => {
 		clearQueryCache()
 		useEditorMeta().setEditable(true)
 		seedPersistentState("editor-compact-view", true)
+		useEditorStore().updateMainAreaWidth(1400)
 		useEditorStore().updateActiveDocumentId(DOCUMENT_ID)
 		useEditorStore().updateActiveBranchId(BRANCH_ID)
 		useEditorStore().updateTargetBranchId(null)
@@ -531,6 +532,19 @@ describe("<DocumentContainer>", { concurrent: false }, () => {
 		expect(column.classes()).toContain("max-w-320")
 		expect(column.classes()).toContain("mx-auto")
 		expect(column.attributes("data-compact-view")).toBe("")
+	})
+
+	it("lets the editor column fill a main area narrower than the cap", async ({
+		expect,
+	}) => {
+		useEditorStore().updateMainAreaWidth(1000)
+		const wrapper = await mountContainer()
+
+		await sync(BRANCH_ID)
+
+		const column = wrapper.find(".editor-scroll-highlight-container")
+		expect(column.classes()).not.toContain("max-w-320")
+		expect(column.attributes("data-compact-view")).toBeUndefined()
 	})
 
 	it("lets the editor column fill the page in full view", async ({

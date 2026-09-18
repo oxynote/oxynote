@@ -8,6 +8,7 @@ import useEditorMeta from "./useEditorMeta"
 describe("useEditorMeta", { concurrent: false }, () => {
 	beforeEach(() => {
 		useEditorStore().setActiveBranchProtected(false)
+		useEditorStore().updateMainAreaWidth(1400)
 	})
 
 	it("toggles the editable flag", ({ expect }) => {
@@ -77,6 +78,27 @@ describe("useEditorMeta", { concurrent: false }, () => {
 
 	it("starts in compact view", ({ expect }) => {
 		const meta = useEditorMeta()
+
+		expect(meta.isCompactView.value).toBe(true)
+	})
+
+	it("reads full view while the main area is narrower than the cap", ({
+		expect,
+	}) => {
+		const meta = useEditorMeta()
+
+		useEditorStore().updateMainAreaWidth(1000)
+
+		expect(meta.isCompactView.value).toBe(false)
+	})
+
+	it("returns to compact view once the main area is wide again", ({
+		expect,
+	}) => {
+		const meta = useEditorMeta()
+		useEditorStore().updateMainAreaWidth(1000)
+
+		useEditorStore().updateMainAreaWidth(1400)
 
 		expect(meta.isCompactView.value).toBe(true)
 	})

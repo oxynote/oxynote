@@ -26,10 +26,7 @@ const fetchBranches = useFetchDocumentBranchesByDocId(
 	() => editorStore.activeDocumentId,
 )
 const header = useTemplateRef("header")
-const { height, width } = useElementSize(header)
-const viewToggleVisible = computed(
-	() => width.value > EDITOR_COMPACT_MAX_WIDTH_PX,
-)
+const { height } = useElementSize(header)
 const { t } = useI18n({ useScope: "global" })
 const { updateDocumentBranch, createDocumentBranch, deleteDocumentBranch } =
 	useDocumentAPI()
@@ -345,7 +342,7 @@ function activateBranch(branch: "default" | "draft") {
 							</ShadcnUiDropdownMenuTrigger>
 							<ShadcnUiDropdownMenuContent side="bottom" align="end" loop>
 								<ShadcnUiDropdownMenuItem
-									v-if="viewToggleVisible"
+									v-if="editorStore.compactViewAvailable"
 									@click="toggleCompactView"
 								>
 									<Icon

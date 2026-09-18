@@ -80,37 +80,6 @@ function menuItemTexts() {
 	).map((el) => el.textContent.trim())
 }
 
-// happy-dom lays nothing out, so useElementSize reports 0 until a resize
-// observer hands it a size; this one answers every observe with the given
-// width. Restored by hand: vi.unstubAllGlobals would also undo the globals
-// the nuxt runtime stubbed for the whole suite
-const realResizeObserver = window.ResizeObserver
-
-function stubMainWidth(width: number) {
-	window.ResizeObserver = class {
-		constructor(private callback: ResizeObserverCallback) {}
-
-		observe(target: Element) {
-			const size = { inlineSize: width, blockSize: 40 }
-			this.callback(
-				[
-					{
-						target,
-						contentRect: { width, height: 40 },
-						contentBoxSize: [size],
-						borderBoxSize: [size],
-					} as unknown as ResizeObserverEntry,
-				],
-				this,
-			)
-		}
-
-		unobserve = vi.fn()
-
-		disconnect = vi.fn()
-	}
-}
-
 // the editor store, the query cache and the vue-sonner module mock are all
 // app-wide singletons every mount in the file shares, and the menus are
 // teleported into the shared <body>
@@ -128,12 +97,12 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 		editorStore.aiAssistantOpen = false
 		useEditorMeta().setEditable(true)
 		seedPersistentState("editor-compact-view", true)
+		editorStore.updateMainAreaWidth(0)
 		editorStore.setActiveBranchProtected(false)
 	})
 
 	afterEach(() => {
 		disposeMockEndpoints()
-		window.ResizeObserver = realResizeObserver
 		// the options menus teleport into the shared <body> and their ids
 		// repeat across mounts, so a leftover would answer the next lookup
 		clearTeleportedOverlays()
@@ -338,7 +307,7 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 	it("offers the full view first once the main area is wider than the compact column", async ({
 		expect,
 	}) => {
-		stubMainWidth(1400)
+		useEditorStore().updateMainAreaWidth(1400)
 		mainOnly()
 		const wrapper = await mountHeader()
 
@@ -350,7 +319,7 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 	})
 
 	it("switches to the full view from the options menu", async ({ expect }) => {
-		stubMainWidth(1400)
+		useEditorStore().updateMainAreaWidth(1400)
 		mainOnly()
 		const wrapper = await mountHeader()
 		await openOptionsMenu(wrapper)
@@ -364,7 +333,7 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 	it("offers the compact view while the full view is active", async ({
 		expect,
 	}) => {
-		stubMainWidth(1400)
+		useEditorStore().updateMainAreaWidth(1400)
 		mainOnly()
 		useEditorMeta().toggleCompactView()
 		const wrapper = await mountHeader()

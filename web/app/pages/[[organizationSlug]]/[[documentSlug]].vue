@@ -159,6 +159,9 @@ const notificationSidebarOpen = ref(false)
 const contentEditorRef = shallowRef<Editor | null>(null)
 const nameEditorRef = shallowRef<Editor | null>(null)
 const editorStore = useEditorStore()
+const mainArea = useTemplateRef("main")
+const { width: mainAreaWidth } = useElementSize(mainArea)
+watchImmediate(mainAreaWidth, editorStore.updateMainAreaWidth)
 const pageReady = usePageReady()
 const activeDocMetadata = computed(() => {
 	const docInfo = extractDocInfoFromSlug(
@@ -659,7 +662,7 @@ function clearLinkHighlightNodeOnce() {
 				v-model="pendingDocDeletion"
 			/>
 			<TagDeletionModal v-model="pendingTagDeletion" />
-			<main class="w-full min-w-0 bg-background">
+			<main ref="main" class="w-full min-w-0 bg-background">
 				<EditorIconPickerProvider>
 					<DocumentHeader
 						:all-initial-sections-loaded="allSectionsLoaded"

@@ -585,6 +585,27 @@ describe("useEditorStore", () => {
 		})
 	})
 
+	describe("updateMainAreaWidth", () => {
+		it("makes compact view available once the main area exceeds the cap", ({
+			expect,
+		}) => {
+			const store = makeStore()
+
+			store.updateMainAreaWidth(1281)
+
+			expect(store.mainAreaWidth).toBe(1281)
+			expect(store.compactViewAvailable).toBe(true)
+		})
+
+		it("keeps compact view unavailable at the cap", ({ expect }) => {
+			const store = makeStore()
+
+			store.updateMainAreaWidth(1280)
+
+			expect(store.compactViewAvailable).toBe(false)
+		})
+	})
+
 	describe("toggleAiAssistantOpen", () => {
 		it("opens the assistant when closed", ({ expect }) => {
 			const store = makeStore()

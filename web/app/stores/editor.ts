@@ -6,6 +6,8 @@ type DocumentId = string
 type BranchId = string
 type BlockId = string
 
+export const EDITOR_COMPACT_MAX_WIDTH_PX = 1280
+
 export const useEditorStore = defineStore("editor", () => {
 	const locked = ref(false)
 	const activeBranchProtected = ref(false) // the active branch refuses edits from everyone; the container sets it from the branch metadata
@@ -31,6 +33,12 @@ export const useEditorStore = defineStore("editor", () => {
 	const lastDragDropTimestamp = ref<Date | null>(null)
 	const reviewableDiffActive = ref(false)
 	const aiAssistantOpen = ref(false)
+	// the width of the document's main area, measured by the page; compact
+	// view only makes a difference once it exceeds the column cap
+	const mainAreaWidth = ref(0)
+	const compactViewAvailable = computed(
+		() => mainAreaWidth.value > EDITOR_COMPACT_MAX_WIDTH_PX,
+	)
 	// tracks which mermaid blocks have their code visible, synced
 	// across branches and diff editors.
 	const mermaidBlockShowCode = ref<Record<BlockId, boolean>>({})
@@ -279,6 +287,10 @@ export const useEditorStore = defineStore("editor", () => {
 		aiAssistantOpen.value = !aiAssistantOpen.value
 	}
 
+	function updateMainAreaWidth(v: number) {
+		mainAreaWidth.value = v
+	}
+
 	function setMermaidBlockShowCode(id: string, show: boolean) {
 		mermaidBlockShowCode.value[id] = show
 	}
@@ -346,6 +358,9 @@ export const useEditorStore = defineStore("editor", () => {
 		isLastDragDropRecent,
 		aiAssistantOpen,
 		toggleAiAssistantOpen,
+		mainAreaWidth,
+		updateMainAreaWidth,
+		compactViewAvailable,
 		mermaidBlockShowCode,
 		setMermaidBlockShowCode,
 		settledBlockRenders,
