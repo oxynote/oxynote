@@ -805,6 +805,12 @@
 			"cancel-button": "Cancel",
 			"deletion-success": "{name} was successfully deleted"
 		},
+		"disable-review-modal": {
+			"title": "Make Document Non-Reviewable",
+			"description": "Making this document non-reviewable will discard the draft branch and all unmerged changes. Are you sure you want to continue?",
+			"confirm-button": "Discard draft & disable",
+			"cancel-button": "Cancel"
+		},
 		"errors": {
 			"deletion-failed": "Failed to delete the page. Please try again",
 			"duplication-failed": "Failed to duplicate the page. Please try again",

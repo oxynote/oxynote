@@ -425,6 +425,13 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 		menuItem(
 			t("editor.navbar.document-options.review-workflow.disable-title"),
 		).click()
+		await nextTick()
+
+		// Click confirm button in warning modal
+		const confirmBtn = document.body.querySelector(
+			"button.bg-destructive",
+		) as HTMLButtonElement | null
+		confirmBtn?.click()
 		await settleMutations()
 
 		expect(deleted).toHaveLength(1)
