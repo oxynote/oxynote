@@ -1,6 +1,6 @@
 import { mockNuxtImport } from "@nuxt/test-utils/runtime"
 import { beforeEach, describe, it, vi } from "vitest"
-import { nextTick, reactive, toValue } from "vue"
+import { nextTick, ref, toValue } from "vue"
 import plugin from "./websocket.client"
 
 interface WsControlArgs {
@@ -20,6 +20,7 @@ const {
 		useAuthSessionMock: vi.fn((): any => ({
 			fetchAuthSession: {
 				refresh: () => Promise.resolve({ data: undefined }),
+				state: ref({ data: undefined }),
 			},
 			fetchOrganization: {
 				refresh: () => Promise.resolve({ data: undefined }),
@@ -37,10 +38,18 @@ mockNuxtImport("useAuthSession", () => useAuthSessionMock)
 mockNuxtImport("useWebSocketState", () => useWebSocketStateMock)
 mockNuxtImport("useWebSocketStateStore", () => useWebSocketStateStoreMock)
 
+const ACTIVE_SESSION = { id: "s1", activeOrganizationId: "org1" }
+
+// a signed-out response carries no data object at all, so that is the
+// shape the plugin sees rather than a null session inside one
 function arrange(sessionValue: object | null) {
-	const session = reactive({ data: { data: { session: sessionValue } } })
-	const refresh = vi.fn().mockResolvedValue(session)
-	useAuthSessionMock.mockReturnValue({ fetchAuthSession: { refresh } })
+	const session = ref<{ data: { data: { session: object } | null } }>({
+		data: { data: sessionValue ? { session: sessionValue } : null },
+	})
+	const refresh = vi.fn().mockResolvedValue(session.value)
+	useAuthSessionMock.mockReturnValue({
+		fetchAuthSession: { refresh, state: session },
+	})
 
 	const wsControl = { openConn: vi.fn(), closeConn: vi.fn() }
 	useWebSocketStateMock.mockReturnValue(wsControl)
@@ -86,17 +95,31 @@ describe("websocket.client", { concurrent: false }, () => {
 		const { session, wsControl } = arrange(null)
 		await plugin(useNuxtApp())
 
-		session.data.data.session = { id: "s1" }
+		session.value.data.data = { session: ACTIVE_SESSION }
 		await nextTick()
 
 		expect(wsControl.openConn).toHaveBeenCalledTimes(1)
 		expect(wsControl.closeConn).toHaveBeenCalledTimes(0)
 	})
 
+	it("keeps the connection closed until the session has an active organization", async ({
+		expect,
+	}) => {
+		const { session, wsControl } = arrange({ id: "s1" })
+		await plugin(useNuxtApp())
+
+		expect(wsControl.openConn).toHaveBeenCalledTimes(0)
+
+		session.value.data.data = { session: ACTIVE_SESSION }
+		await nextTick()
+
+		expect(wsControl.openConn).toHaveBeenCalledTimes(1)
+	})
+
 	it("opens the connection immediately when already authenticated", async ({
 		expect,
 	}) => {
-		const { wsControl } = arrange({ id: "s1" })
+		const { wsControl } = arrange(ACTIVE_SESSION)
 
 		await plugin(useNuxtApp())
 
@@ -105,10 +128,10 @@ describe("websocket.client", { concurrent: false }, () => {
 	})
 
 	it("closes the connection when the session is lost", async ({ expect }) => {
-		const { session, wsControl } = arrange({ id: "s1" })
+		const { session, wsControl } = arrange(ACTIVE_SESSION)
 		await plugin(useNuxtApp())
 
-		session.data.data.session = null
+		session.value.data.data = null
 		await nextTick()
 
 		expect(wsControl.closeConn).toHaveBeenCalledTimes(1)
@@ -116,7 +139,7 @@ describe("websocket.client", { concurrent: false }, () => {
 	})
 
 	it("closes the connection when the window unloads", async ({ expect }) => {
-		const { wsControl } = arrange({ id: "s1" })
+		const { wsControl } = arrange(ACTIVE_SESSION)
 		await plugin(useNuxtApp())
 
 		window.dispatchEvent(new Event("beforeunload"))
