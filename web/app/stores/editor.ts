@@ -63,6 +63,11 @@ export const useEditorStore = defineStore("editor", () => {
 		if (activeDocumentId.value !== id) {
 			clearMetricBlockData()
 			setReviewableDiffActive(false)
+			// reset the branch ids, the new document load renews them
+			activeBranchId.value = null
+			targetBranchId.value = null
+			mappedDefaultBranchId.value = null
+			preloadedBranchIds.value = []
 		}
 
 		activeDocumentId.value = id

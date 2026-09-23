@@ -110,6 +110,20 @@ describe("useEditorStore", () => {
 			expect(store.reviewableDiffActive).toBe(false)
 		})
 
+		it("clears the branch ids when the document changes", ({ expect }) => {
+			const store = makeActiveStore()
+			store.updateTargetBranchId("branch2")
+			store.updateMappedDefaultBranchId("branch1")
+			store.updatePreloadedBranchIds(["branch1", "branch2"])
+
+			store.updateActiveDocumentId("doc2")
+
+			expect(store.activeBranchId).toBeNull()
+			expect(store.targetBranchId).toBeNull()
+			expect(store.mappedDefaultBranchId).toBeNull()
+			expect(store.preloadedBranchIds).toEqual([])
+		})
+
 		it("keeps metric block state when the id is unchanged", ({ expect }) => {
 			const store = makeActiveStore()
 			store.setMetricBlockConfig("block1", metricConfig("cfg"))
@@ -121,6 +135,7 @@ describe("useEditorStore", () => {
 				doc1: { branch1: { block1: metricConfig("cfg") } },
 			})
 			expect(store.reviewableDiffActive).toBe(true)
+			expect(store.activeBranchId).toBe("branch1")
 		})
 	})
 
