@@ -21,19 +21,19 @@ const form = useForm({
 })
 const { fetchAuthSession, fetchOrganization, inviteOrganizationMember } =
 	useAuthSession()
-const { isEmailEnabled } = useAuthAPI()
+const { isEmailEnabled, maxOrganizationMembers } = useAuthAPI()
 const { t } = useI18n({ useScope: "global" })
 const loading = ref(false)
 const isMaxMembersReached = computed(() => {
 	const org = fetchOrganization.state.value.data?.data
-	if (!org) {
+	if (!org || maxOrganizationMembers.value === null) {
 		return false
 	}
 
 	return (
 		org.members.length +
 			org.invitations.filter((inv) => inv.status === "pending").length >=
-		ORGANIZATION_MAX_MEMBERS
+		maxOrganizationMembers.value
 	)
 })
 

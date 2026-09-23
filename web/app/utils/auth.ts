@@ -41,6 +41,21 @@ export function acceptInvitationUrl(
 	return `${baseUrl || ""}/accept-invite?${query.toString()}`
 }
 
+// whether a login or signup page was opened on the way to accepting an
+// invitation. The next path arrives URI-encoded, and a malformed one is no
+// invitation.
+export function isInvitationRedirect(next: unknown): boolean {
+	if (typeof next !== "string") {
+		return false
+	}
+
+	try {
+		return decodeURIComponent(next).startsWith("/accept-invite")
+	} catch {
+		return false
+	}
+}
+
 export function postEmailVerificationUrl(
 	baseUrl: string | undefined,
 	email: string,

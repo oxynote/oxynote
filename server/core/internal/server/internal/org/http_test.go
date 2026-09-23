@@ -653,6 +653,278 @@ func Test_Handler_UploadOrganizationLogo(t *testing.T) {
 	}
 }
 
+func Test_Handler_SetDefaultOrganizationLogo(t *testing.T) {
+	type check func(*testing.T, *DBMock, *StorerMock, *httptest.ResponseRecorder)
+
+	checks := func(cc ...check) []check { return cc }
+
+	hasResp := func(code int, body string) check {
+		return func(t *testing.T, _ *DBMock, _ *StorerMock, rec *httptest.ResponseRecorder) {
+			assert.Equal(t, code, rec.Code)
+
+			if body == "" {
+				assert.Zero(t, rec.Body.Len(), rec.Body.String())
+				return
+			}
+
+			assert.JSONEq(t, body, rec.Body.String())
+		}
+	}
+
+	wasUploadCalled := func(count int) check {
+		return func(t *testing.T, _ *DBMock, storer *StorerMock, _ *httptest.ResponseRecorder) {
+			ff := storer.UploadCalls()
+			require.Len(t, ff, count)
+
+			if count == 0 {
+				return
+			}
+
+			assert.Equal(t, "organizations/org2/logo", ff[0].Folder)
+			assert.Equal(t, "org2", ff[0].ID)
+			assert.Equal(t, _defaultLogo, ff[0].Data)
+			assert.Equal(t, "image/png", ff[0].ContentType)
+		}
+	}
+
+	wasUpdateLogoCalled := func(count int) check {
+		return func(t *testing.T, db *DBMock, _ *StorerMock, _ *httptest.ResponseRecorder) {
+			ff := db.UpdateOrganizationLogoCalls()
+			require.Len(t, ff, count)
+
+			if count == 0 {
+				return
+			}
+
+			assert.Equal(t, "org2", ff[0].OrganizationID)
+			assert.Regexp(t, `^loc/api/organizations/logo\?v=\d{14}$`, ff[0].Logo)
+		}
+	}
+
+	cc := map[string]struct {
+		DB     *DBMock
+		Storer *StorerMock
+		OmitID bool
+		Checks []check
+	}{
+		"Missing organization ID parameter": {
+			DB:     &DBMock{},
+			Storer: &StorerMock{},
+			OmitID: true,
+			Checks: checks(
+				hasResp(http.StatusNotFound, `{"code":"general","message":"not found"}`),
+				wasUploadCalled(0),
+				wasUpdateLogoCalled(0),
+			),
+		},
+		"Error returned by Storer.Upload": {
+			DB: &DBMock{},
+			Storer: &StorerMock{
+				UploadFunc: func(context.Context, string, string, []byte, string) error {
+					return assert.AnError
+				},
+			},
+			Checks: checks(
+				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				wasUploadCalled(1),
+				wasUpdateLogoCalled(0),
+			),
+		},
+		"Successful update": {
+			DB:     &DBMock{},
+			Storer: &StorerMock{},
+			Checks: checks(
+				hasResp(http.StatusNoContent, ""),
+				wasUploadCalled(1),
+				wasUpdateLogoCalled(1),
+			),
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			hdl := Handler{
+				log:       slog.New(slog.DiscardHandler),
+				db:        c.DB,
+				storer:    c.Storer,
+				publicURL: "loc",
+			}
+
+			req := httptest.NewRequest(http.MethodPut, "http://test.com/", http.NoBody)
+
+			ctx := req.Context()
+
+			if !c.OmitID {
+				ctx = testutil.AddChiCtx(ctx, "organizationId", "org2")
+			}
+
+			rec := httptest.NewRecorder()
+
+			hdl.SetDefaultOrganizationLogo(rec, req.WithContext(ctx))
+
+			for _, ch := range c.Checks {
+				ch(t, c.DB, c.Storer, rec)
+			}
+		})
+	}
+}
+
+func Test_Handler_storeLogo(t *testing.T) {
+	type check func(*testing.T, *DBMock, *StorerMock, string, *bytes.Buffer)
+
+	checks := func(cc ...check) []check { return cc }
+
+	hasLocation := func(pattern string) check {
+		return func(t *testing.T, _ *DBMock, _ *StorerMock, location string, _ *bytes.Buffer) {
+			assert.Regexp(t, pattern, location)
+		}
+	}
+
+	hasLog := func(line string) check {
+		return func(t *testing.T, _ *DBMock, _ *StorerMock, _ string, buf *bytes.Buffer) {
+			if line == "" {
+				assert.Empty(t, buf.String())
+				return
+			}
+
+			assert.Contains(t, buf.String(), line)
+		}
+	}
+
+	wasUploadCalled := func(count int) check {
+		return func(t *testing.T, _ *DBMock, storer *StorerMock, _ string, _ *bytes.Buffer) {
+			ff := storer.UploadCalls()
+			require.Len(t, ff, count)
+
+			if count == 0 {
+				return
+			}
+
+			assert.Equal(t, "organizations/org1/logo", ff[0].Folder)
+			assert.Equal(t, "org1", ff[0].ID)
+			assert.Equal(t, _testPNG, ff[0].Data)
+			assert.Equal(t, "image/png", ff[0].ContentType)
+		}
+	}
+
+	wasUpdateLogoCalled := func(count int) check {
+		return func(t *testing.T, db *DBMock, _ *StorerMock, _ string, _ *bytes.Buffer) {
+			ff := db.UpdateOrganizationLogoCalls()
+			require.Len(t, ff, count)
+
+			if count == 0 {
+				return
+			}
+
+			assert.Equal(t, "org1", ff[0].OrganizationID)
+			assert.Regexp(t, `^loc/api/organizations/logo\?v=\d{14}$`, ff[0].Logo)
+		}
+	}
+
+	wasDeleteCalled := func(count int) check {
+		return func(t *testing.T, _ *DBMock, storer *StorerMock, _ string, _ *bytes.Buffer) {
+			ff := storer.DeleteCalls()
+			require.Len(t, ff, count)
+
+			if count == 0 {
+				return
+			}
+
+			assert.Equal(t, "organizations/org1/logo", ff[0].Folder)
+			assert.Equal(t, "org1", ff[0].ID)
+		}
+	}
+
+	cc := map[string]struct {
+		DB     *DBMock
+		Storer *StorerMock
+		Err    error
+		Checks []check
+	}{
+		"Error returned by Storer.Upload": {
+			DB: &DBMock{},
+			Storer: &StorerMock{
+				UploadFunc: func(context.Context, string, string, []byte, string) error {
+					return assert.AnError
+				},
+			},
+			Err: assert.AnError,
+			Checks: checks(
+				wasUploadCalled(1),
+				wasUpdateLogoCalled(0),
+				wasDeleteCalled(0),
+			),
+		},
+		"Error returned by DB.UpdateOrganizationLogo": {
+			DB: &DBMock{
+				UpdateOrganizationLogoFunc: func(context.Context, string, string) error {
+					return assert.AnError
+				},
+			},
+			Storer: &StorerMock{},
+			Err:    assert.AnError,
+			Checks: checks(
+				hasLog(""),
+				wasUploadCalled(1),
+				wasUpdateLogoCalled(1),
+				wasDeleteCalled(1),
+			),
+		},
+		"Error returned by Storer.Delete after DB.UpdateOrganizationLogo": {
+			DB: &DBMock{
+				UpdateOrganizationLogoFunc: func(context.Context, string, string) error {
+					return assert.AnError
+				},
+			},
+			Storer: &StorerMock{
+				DeleteFunc: func(context.Context, string, string) error {
+					return assert.AnError
+				},
+			},
+			Err: assert.AnError,
+			Checks: checks(
+				hasLog("deleting object after DB failure"),
+				wasDeleteCalled(1),
+			),
+		},
+		"Successful store": {
+			DB:     &DBMock{},
+			Storer: &StorerMock{},
+			Checks: checks(
+				hasLocation(`^loc/api/organizations/logo\?v=\d{14}$`),
+				hasLog(""),
+				wasUploadCalled(1),
+				wasUpdateLogoCalled(1),
+				wasDeleteCalled(0),
+			),
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			var buf bytes.Buffer
+
+			hdl := Handler{
+				log:       slog.New(slog.NewTextHandler(&buf, nil)),
+				db:        c.DB,
+				storer:    c.Storer,
+				publicURL: "loc",
+			}
+
+			location, err := hdl.storeLogo(context.Background(), "org1", _testPNG, "image/png")
+			testutil.AssertEqualError(t, c.Err, err)
+
+			for _, ch := range c.Checks {
+				ch(t, c.DB, c.Storer, location, &buf)
+			}
+		})
+	}
+}
+
 func Test_Handler_RetrieveOrganizationLogo(t *testing.T) {
 	type check func(*testing.T, *StorerMock, *httptest.ResponseRecorder)
 

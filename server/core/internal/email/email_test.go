@@ -25,11 +25,24 @@ func Test_NewSender(t *testing.T) {
 		NilClient bool
 		Err       error
 	}{
+		"Error returned by invalid public url": {
+			Cfg: Config{
+				PublicURL: "::not-a-url",
+			},
+			Err: assert.AnError,
+		},
+		"Error returned by public url without a host": {
+			Cfg: Config{
+				PublicURL: "/core",
+			},
+			Err: assert.AnError,
+		},
 		"Error returned by invalid port": {
 			Cfg: Config{
-				Host: "localhost",
-				Port: "not-a-port",
-				TLS:  TLSModeNone,
+				Host:      "localhost",
+				Port:      "not-a-port",
+				TLS:       TLSModeNone,
+				PublicURL: "https://notes.example.com/core",
 			},
 			Err: assert.AnError,
 		},
@@ -38,22 +51,25 @@ func Test_NewSender(t *testing.T) {
 				Host: "localhost",
 				// out of the valid port range, so the client option
 				// fails inside mail.NewClient rather than in Atoi.
-				Port: "99999",
-				TLS:  TLSModeNone,
+				Port:      "99999",
+				TLS:       TLSModeNone,
+				PublicURL: "https://notes.example.com/core",
 			},
 			Err: assert.AnError,
 		},
 		"Error returned by invalid tls mode": {
 			Cfg: Config{
-				Host: "localhost",
-				Port: "1025",
-				TLS:  "ssl3",
+				Host:      "localhost",
+				Port:      "1025",
+				TLS:       "ssl3",
+				PublicURL: "https://notes.example.com/core",
 			},
 			Err: assert.AnError,
 		},
 		"Successful creation without a host": {
 			Cfg: Config{
 				FromAddress: "Oxynote <team@oxynote.io>",
+				PublicURL:   "https://notes.example.com/core",
 			},
 			NilClient: true,
 		},
@@ -63,6 +79,7 @@ func Test_NewSender(t *testing.T) {
 				Port:        "1025",
 				TLS:         TLSModeNone,
 				FromAddress: "Oxynote <team@oxynote.io>",
+				PublicURL:   "https://notes.example.com/core",
 			},
 		},
 		"Successful creation with starttls config and auth": {
@@ -73,6 +90,7 @@ func Test_NewSender(t *testing.T) {
 				Password:    "pass",
 				TLS:         TLSModeStartTLS,
 				FromAddress: "team@oxynote.io",
+				PublicURL:   "https://notes.example.com/core",
 			},
 		},
 		"Successful creation with implicit tls config": {
@@ -81,6 +99,7 @@ func Test_NewSender(t *testing.T) {
 				Port:        "465",
 				TLS:         TLSModeTLS,
 				FromAddress: "team@oxynote.io",
+				PublicURL:   "https://notes.example.com/core",
 			},
 		},
 	}
@@ -102,6 +121,7 @@ func Test_NewSender(t *testing.T) {
 			assert.Equal(t, log, sender.log)
 			assert.NotNil(t, sender.backoffStrategy)
 			assert.Equal(t, c.Cfg.FromAddress, sender.fromEmail)
+			assert.Equal(t, "notes.example.com", sender.publicHost)
 
 			if c.NilClient {
 				assert.Nil(t, sender.client)
@@ -249,8 +269,8 @@ func Test_Sender_Send(t *testing.T) {
 		"Organization invitation": {
 			Template: TemplateOrganizationInvitation,
 			Data:     Data{Email: "user@example.com", Organization: "Acme", Link: "https://example.com/join"},
-			Subject:  "Join Acme on Oxynote",
-			Contains: []string{"https://example.com/join", "Acme"},
+			Subject:  "You're invited to the Acme workspace",
+			Contains: []string{"https://example.com/join", "Acme", "Sent by Oxynote at notes.example.com"},
 		},
 		"User deletion confirmation": {
 			Template: TemplateUserDeletion,
@@ -341,6 +361,7 @@ func stubSender(client *clientMock) *Sender {
 		backoffStrategy: func() backoff.BackOff { return &backoff.ZeroBackOff{} },
 		supv:            xync.NewSupervisor(),
 		fromEmail:       "Oxynote <team@oxynote.io>",
+		publicHost:      "notes.example.com",
 	}
 }
 

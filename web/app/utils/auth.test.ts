@@ -1,6 +1,7 @@
 import { describe, it } from "vitest"
 import {
 	acceptInvitationUrl,
+	isInvitationRedirect,
 	postAuthDocumentUrl,
 	postEmailVerificationUrl,
 } from "./auth"
@@ -55,6 +56,22 @@ describe("acceptInvitationUrl", () => {
 		).toBe(
 			"https://app.test/accept-invite?id=inv-1&email=a%2Bb%40test.io&inviter=Ada+Lovelace&orgName=Acme+%26+Co&orgId=org-1",
 		)
+	})
+})
+
+describe("isInvitationRedirect", () => {
+	it.for([
+		{
+			name: "an encoded accept-invite path",
+			input: encodeURIComponent("/accept-invite?id=inv-1"),
+			expected: true,
+		},
+		{ name: "another page", input: "%2Fdocs%2Fabc", expected: false },
+		{ name: "a malformed encoding", input: "%E0%A4%A", expected: false },
+		{ name: "no next path", input: undefined, expected: false },
+		{ name: "a repeated query parameter", input: ["a", "b"], expected: false },
+	])("answers $expected for $name", ({ input, expected }, { expect }) => {
+		expect(isInvitationRedirect(input)).toBe(expected)
 	})
 })
 

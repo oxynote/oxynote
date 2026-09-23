@@ -6,14 +6,22 @@ import { Kysely, PostgresDialect } from "kysely"
 // query below touches.
 export interface Database {
 	users: UsersTable
+	user_accounts: UserAccountsTable
 	organizations: OrganizationsTable
 	organization_members: OrganizationMembersTable
+	organization_invitations: OrganizationInvitationsTable
 	oauth_consents: OAuthConsentsTable
 }
 
 export interface UsersTable {
 	id: string
 	email: string
+}
+
+export interface UserAccountsTable {
+	fk_user_id: string
+	provider_id: string
+	password: string | null
 }
 
 export interface OrganizationsTable {
@@ -23,6 +31,13 @@ export interface OrganizationsTable {
 export interface OrganizationMembersTable {
 	fk_user_id: string
 	fk_organization_id: string
+}
+
+export interface OrganizationInvitationsTable {
+	id: string
+	email: string
+	status: string
+	expires_at: Date
 }
 
 export interface OAuthConsentsTable {
@@ -36,6 +51,9 @@ export interface OAuthConsentsTable {
 // tested against four stubbed methods instead of a mocked chain.
 export interface Store {
 	totalOrganizationCount(): Promise<number>
+	organizationMemberCount(organizationId: string): Promise<number>
+	hasPendingInvitation(email: string): Promise<boolean>
+	credentialPasswordHash(email: string): Promise<string | null>
 	userOrganizationId(userId: string): Promise<string | null>
 	hasOAuthConsent(clientId: string, userId: string): Promise<boolean>
 	isOrganizationMember(
@@ -58,10 +76,62 @@ export function createStore(db: Kysely<Database>): Store {
 		async totalOrganizationCount() {
 			const res = await db
 				.selectFrom("organizations")
-				.select(db.fn.countAll<number>().as("count"))
+				.select(db.fn.countAll<string>().as("count"))
 				.executeTakeFirstOrThrow()
 
-			return res.count
+			// pg hands a bigint count back as a string.
+			return Number(res.count)
+		},
+
+		async organizationMemberCount(organizationId) {
+			const res = await db
+				.selectFrom("organization_members")
+				.where(
+					"fk_organization_id",
+					"=",
+					organizationId,
+				)
+				.select(db.fn.countAll<string>().as("count"))
+				.executeTakeFirstOrThrow()
+
+			// pg hands a bigint count back as a string.
+			return Number(res.count)
+		},
+
+		// better-auth stores both invitation and user addresses
+		// lowercased.
+		async hasPendingInvitation(email) {
+			const res = await db
+				.selectFrom("organization_invitations")
+				.where("email", "=", email.toLowerCase())
+				.where("status", "=", "pending")
+				.where("expires_at", ">", new Date())
+				.select("id")
+				.executeTakeFirst()
+
+			return res !== undefined
+		},
+
+		// the user's stored password hash. Null when the user does not
+		// exist or has no password, like a social login.
+		async credentialPasswordHash(email) {
+			const res = await db
+				.selectFrom("users")
+				.innerJoin(
+					"user_accounts",
+					"user_accounts.fk_user_id",
+					"users.id",
+				)
+				.where("users.email", "=", email)
+				.where(
+					"user_accounts.provider_id",
+					"=",
+					"credential",
+				)
+				.select("user_accounts.password")
+				.executeTakeFirst()
+
+			return res?.password ?? null
 		},
 
 		// a user belongs to at most one organization, which is what

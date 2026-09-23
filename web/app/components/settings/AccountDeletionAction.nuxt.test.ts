@@ -292,4 +292,109 @@ describe("<AccountDeletionAction>", { concurrent: false }, () => {
 			expect(wrapper.emitted("close")).toBeUndefined()
 		})
 	})
+	describe("in a single-workspace instance", { concurrent: false }, () => {
+		beforeEach(() => {
+			seedAuthConfig({ singleOrganization: true })
+		})
+
+		it("offers the last member only a way to close the modal", async ({
+			expect,
+		}) => {
+			seedAuthOrganization({ members: [{ id: "m1" }] })
+
+			const wrapper = await mountAction()
+
+			expect(wrapper.text()).toContain(
+				t(
+					"settings.action-modals.account-deletion.description-last-member-kept",
+				),
+			)
+			expect(wrapper.text()).not.toContain(
+				t(
+					"settings.action-modals.account-deletion.description-last-org-member",
+				),
+			)
+			expect(wrapper.findAll("button").map((b) => b.text())).toEqual([
+				t("settings.action-modals.account-deletion.close-button"),
+			])
+		})
+
+		it("deletes nothing when the last member's form is submitted anyway", async ({
+			expect,
+		}) => {
+			seedAuthOrganization({ members: [{ id: "m1" }] })
+			const calls = mockAuthEndpoint("delete-user", () => ({
+				success: true,
+			}))
+			const wrapper = await mountAction()
+
+			await confirmDeletion(wrapper)
+
+			expect(calls).toHaveLength(0)
+			expect(wrapper.emitted("close")).toBeUndefined()
+		})
+
+		it("asks the last member for no password when the server sends no email", async ({
+			expect,
+		}) => {
+			seedAuthConfig({ singleOrganization: true, emailEnabled: false })
+			seedAuthAccounts(["credential"])
+			seedAuthOrganization({ members: [{ id: "m1" }] })
+
+			const wrapper = await mountAction()
+
+			expect(wrapper.find("input[type='password']").exists()).toBe(false)
+			expect(wrapper.findAll("button").map((b) => b.text())).toEqual([
+				t("settings.action-modals.account-deletion.close-button"),
+			])
+		})
+
+		it("lets a member of a shared workspace delete their account", async ({
+			expect,
+		}) => {
+			seedAuthOrganization({ members: [{ id: "m1" }, { id: "m2" }] })
+			const calls = mockAuthEndpoint("delete-user", () => ({
+				success: true,
+			}))
+			const wrapper = await mountAction()
+
+			await confirmDeletion(wrapper)
+
+			expect(wrapper.text()).not.toContain(
+				t(
+					"settings.action-modals.account-deletion.description-last-member-kept",
+				),
+			)
+			expect(calls).toHaveLength(1)
+			expect(wrapper.emitted("close")).toHaveLength(1)
+		})
+
+		it("explains a refusal for the last member and stays open", async ({
+			expect,
+		}) => {
+			seedAuthOrganization({ members: [{ id: "m1" }, { id: "m2" }] })
+			mockAuthEndpoint("delete-user", (_call, event) => {
+				setResponseStatus(event, 403)
+
+				return {
+					code: "LAST_ORGANIZATION_MEMBER",
+					message: "The last member of the organization cannot be deleted",
+				}
+			})
+			const wrapper = await mountAction()
+
+			await confirmDeletion(wrapper)
+
+			expect(raisedToasts()).toMatchObject([
+				{
+					type: "error",
+					description: t(
+						"settings.action-modals.account-deletion.errors.last-member.description",
+					),
+				},
+			])
+			expect(navigateToMock).not.toHaveBeenCalled()
+			expect(wrapper.emitted("close")).toBeUndefined()
+		})
+	})
 })

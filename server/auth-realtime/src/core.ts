@@ -93,6 +93,7 @@ export interface CoreClient {
 	): Promise<void>
 	initializeOrganization(organizationId: string): Promise<void>
 	teardownOrganization(organizationId: string): Promise<void>
+	setDefaultOrganizationLogo(organizationId: string): Promise<void>
 	fetchBranches(documentId: string): Promise<BranchSummary[]>
 	fetchBranchContent(
 		documentId: string,
@@ -154,6 +155,12 @@ export function createCoreClient(
 		async teardownOrganization(organizationId) {
 			await http.post(
 				`${internal}/organizations/${organizationId}/teardown`,
+			)
+		},
+
+		async setDefaultOrganizationLogo(organizationId) {
+			await http.put(
+				`${internal}/organizations/${organizationId}/logo/default`,
 			)
 		},
 

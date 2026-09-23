@@ -1,5 +1,4 @@
-export const ORGANIZATION_MAX_MEMBERS = 5
-
 export interface OrganizationStats {
-	availableSlots: number
+	// null when any number of workspaces may be created.
+	availableSlots: number | null
 }

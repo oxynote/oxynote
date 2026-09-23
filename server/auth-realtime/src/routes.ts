@@ -13,6 +13,7 @@ import type {
 } from "./core.js"
 import type { Env } from "./env.js"
 import { authMethods } from "./auth.js"
+import { bootstrapAdmin, type DefaultAdmin } from "./bootstrap.js"
 import { toAxiosHeaders } from "./headers.js"
 import { bestEffort } from "./reporting.js"
 import { replaceYdocContent, systemOrigin } from "./ydocument.js"
@@ -54,6 +55,8 @@ export interface RouteDeps {
 	// drops every client's socket to a document so each reconnects and
 	// authenticates again.
 	resetConnections: (documentName: string) => void
+	// the bootstrap admin, while it still has its default email.
+	findDefaultAdmin: () => Promise<DefaultAdmin | null>
 	core: CoreClient
 }
 
@@ -113,6 +116,7 @@ export function createRoutes({
 	hocuspocus,
 	flushDocument,
 	resetConnections,
+	findDefaultAdmin,
 	core,
 }: RouteDeps): Hono {
 	const app = new Hono()
@@ -223,16 +227,55 @@ export function createRoutes({
 	})
 
 	// public auth configuration for the login/signup pages: which social
-	// providers are configured, and whether emailed links can arrive at
-	// all. Lives outside the better-auth /auth/** namespace.
-	app.get("/auth-config", (c) => {
+	// providers are configured, whether emailed links can arrive at all,
+	// and the organization limits. Null is no member limit. defaultAdmin
+	// is set while the bootstrap admin keeps its default email. Its
+	// password is set only while that still works, so the login page can
+	// show it. Lives outside the better-auth /auth/** namespace.
+	app.get("/auth-config", async (c) => {
+		let defaultAdmin: {
+			email: string
+			password: string | null
+		} | null = null
+
+		// if the lookup fails, leave the admin out. The login page still
+		// needs the rest of this answer.
+		if (env.maxOrganizations === 1) {
+			try {
+				const admin = await findDefaultAdmin()
+
+				if (admin) {
+					defaultAdmin = {
+						email: bootstrapAdmin.email,
+						password: admin.defaultPassword
+							? bootstrapAdmin.password
+							: null,
+					}
+				}
+			} catch (error) {
+				Sentry.captureException(error)
+			}
+		}
+
 		return c.json({
 			methods: authMethods(env),
 			emailEnabled: env.emailEnabled,
+			singleOrganization: env.maxOrganizations === 1,
+			maxOrganizationMembers: Number.isFinite(
+				env.maxOrganizationMembers,
+			)
+				? env.maxOrganizationMembers
+				: null,
+			defaultAdmin,
 		})
 	})
 
+	// null slots is no organization limit.
 	app.get("/organizations/stats", async (c) => {
+		if (!Number.isFinite(env.maxOrganizations)) {
+			return c.json({ availableSlots: null })
+		}
+
 		const count = await store.totalOrganizationCount()
 		return c.json({ availableSlots: env.maxOrganizations - count })
 	})

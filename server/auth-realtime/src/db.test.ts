@@ -9,6 +9,7 @@ function stubDb(row: unknown) {
 	const chain = {
 		select: vi.fn(() => chain),
 		where: vi.fn(() => chain),
+		innerJoin: vi.fn(() => chain),
 		executeTakeFirst: vi.fn().mockResolvedValue(row),
 		executeTakeFirstOrThrow: vi.fn().mockResolvedValue(row),
 	}
@@ -24,10 +25,10 @@ function stubDb(row: unknown) {
 
 describe("createStore", () => {
 	describe("totalOrganizationCount", () => {
-		it("returns the count the query answered with", async ({
+		it("returns the count the query answered with as a number", async ({
 			expect,
 		}) => {
-			const { store, selectFrom } = stubDb({ count: 7 })
+			const { store, selectFrom } = stubDb({ count: "7" })
 
 			expect(await store.totalOrganizationCount()).toBe(7)
 			expect(selectFrom).toHaveBeenCalledWith("organizations")
@@ -42,6 +43,154 @@ describe("createStore", () => {
 
 			await expect(
 				store.totalOrganizationCount(),
+			).rejects.toBe(failure)
+		})
+	})
+
+	describe("organizationMemberCount", () => {
+		it("counts the organization's members as a number", async ({
+			expect,
+		}) => {
+			const { store, chain, selectFrom } = stubDb({
+				count: "3",
+			})
+
+			expect(
+				await store.organizationMemberCount("org-1"),
+			).toBe(3)
+			expect(selectFrom).toHaveBeenCalledWith(
+				"organization_members",
+			)
+			expect(chain.where).toHaveBeenCalledWith(
+				"fk_organization_id",
+				"=",
+				"org-1",
+			)
+		})
+
+		it("propagates a failed query", async ({ expect }) => {
+			const failure = new Error("connection terminated")
+			const { store, chain } = stubDb(null)
+			chain.executeTakeFirstOrThrow.mockRejectedValue(failure)
+
+			await expect(
+				store.organizationMemberCount("org-1"),
+			).rejects.toBe(failure)
+		})
+	})
+
+	describe("hasPendingInvitation", () => {
+		it("matches a pending, unexpired invitation on the lowercased address", async ({
+			expect,
+		}) => {
+			const { store, chain, selectFrom } = stubDb({
+				id: "inv-1",
+			})
+
+			expect(
+				await store.hasPendingInvitation(
+					"Jane@Example.com",
+				),
+			).toBe(true)
+			expect(selectFrom).toHaveBeenCalledWith(
+				"organization_invitations",
+			)
+			expect(chain.where).toHaveBeenCalledWith(
+				"email",
+				"=",
+				"jane@example.com",
+			)
+			expect(chain.where).toHaveBeenCalledWith(
+				"status",
+				"=",
+				"pending",
+			)
+			expect(chain.where).toHaveBeenCalledWith(
+				"expires_at",
+				">",
+				expect.any(Date),
+			)
+		})
+
+		it("reports no invitation when none matches", async ({
+			expect,
+		}) => {
+			const { store } = stubDb(undefined)
+
+			expect(
+				await store.hasPendingInvitation(
+					"jane@example.com",
+				),
+			).toBe(false)
+		})
+
+		it("propagates a failed query", async ({ expect }) => {
+			const failure = new Error("connection terminated")
+			const { store, chain } = stubDb(undefined)
+			chain.executeTakeFirst.mockRejectedValue(failure)
+
+			await expect(
+				store.hasPendingInvitation("jane@example.com"),
+			).rejects.toBe(failure)
+		})
+	})
+
+	describe("credentialPasswordHash", () => {
+		it("returns the hash of the user's password account", async ({
+			expect,
+		}) => {
+			const { store, chain, selectFrom } = stubDb({
+				password: "salt:hash",
+			})
+
+			expect(
+				await store.credentialPasswordHash(
+					"admin@example.com",
+				),
+			).toBe("salt:hash")
+			expect(selectFrom).toHaveBeenCalledWith("users")
+			expect(chain.innerJoin).toHaveBeenCalledWith(
+				"user_accounts",
+				"user_accounts.fk_user_id",
+				"users.id",
+			)
+			expect(chain.where).toHaveBeenCalledWith(
+				"users.email",
+				"=",
+				"admin@example.com",
+			)
+			expect(chain.where).toHaveBeenCalledWith(
+				"user_accounts.provider_id",
+				"=",
+				"credential",
+			)
+		})
+
+		it.for([
+			{ name: "no such user", input: undefined },
+			{
+				name: "an account without a password",
+				input: { password: null },
+			},
+		])("returns null for $name", async ({ input }, { expect }) => {
+			const { store } = stubDb(input)
+
+			expect(
+				await store.credentialPasswordHash(
+					"admin@example.com",
+				),
+			).toBeNull()
+		})
+
+		it("propagates a failed query", async ({ expect }) => {
+			const failure = new Error("connection terminated")
+			const { store, chain } = stubDb(undefined)
+			chain.executeTakeFirst.mockRejectedValue(failure)
+
+			await expect(
+				store.credentialPasswordHash(
+					"admin@example.com",
+				),
 			).rejects.toBe(failure)
 		})
 	})

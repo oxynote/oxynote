@@ -58,7 +58,7 @@ var _specs = map[Template]spec{
 		args:    linkArgs,
 	},
 	TemplateOrganizationInvitation: {
-		subjectFrom: func(d Data) string { return fmt.Sprintf("Join %s on Oxynote", d.Organization) },
+		subjectFrom: func(d Data) string { return fmt.Sprintf("You're invited to the %s workspace", d.Organization) },
 		args: func(d Data) map[string]string {
 			return map[string]string{
 				_linkKey:       d.Link,

@@ -1,6 +1,7 @@
 package email
 
 import (
+	"maps"
 	"testing"
 
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
@@ -109,7 +110,10 @@ func Test_render(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			res, err := render(c.Template, c.Args)
+			args := map[string]string{"host": "notes.example.com"}
+			maps.Copy(args, c.Args)
+
+			res, err := render(c.Template, args)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {
@@ -127,6 +131,7 @@ func Test_render(t *testing.T) {
 
 			assert.Contains(t, res, `src="cid:logo.png"`, "rendered body must reference the embedded logo")
 			assert.NotContains(t, res, "cdn.prod.website-files.com", "rendered body references a remote CDN image")
+			assert.Contains(t, res, "Sent by Oxynote at notes.example.com")
 
 			for _, want := range c.Contains {
 				assert.Contains(t, res, want)

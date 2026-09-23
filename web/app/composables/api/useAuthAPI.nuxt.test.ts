@@ -67,4 +67,62 @@ describe("useAuthAPI", { concurrent: false }, () => {
 			expect(api.isEmailEnabled.value).toBe(false)
 		})
 	})
+	describe("organization limits", () => {
+		it("hides the default admin outside single-workspace mode", async ({
+			expect,
+		}) => {
+			mockEndpoint(
+				"GET",
+				"http://test.local/auth-realtime/api/auth-config",
+				() => ({
+					singleOrganization: false,
+					defaultAdmin: { email: "admin@example.com", password: null },
+				}),
+			)
+			const api = makeAuthAPI()
+
+			await api.fetchAuthConfig.refresh()
+
+			expect(api.defaultAdmin.value).toBeNull()
+		})
+
+		it("assumes open signup and no member limit until the config arrives", async ({
+			expect,
+		}) => {
+			mockEndpoint(
+				"GET",
+				"http://test.local/auth-realtime/api/auth-config",
+				() => ({ singleOrganization: true, maxOrganizationMembers: 5 }),
+			)
+			const api = makeAuthAPI()
+
+			expect(api.isSingleOrganization.value).toBe(false)
+			expect(api.maxOrganizationMembers.value).toBeNull()
+
+			// drains the eager load so it cannot land in the next test
+			await api.fetchAuthConfig.refresh()
+		})
+
+		it("follows the server's answer once it arrives", async ({ expect }) => {
+			mockEndpoint(
+				"GET",
+				"http://test.local/auth-realtime/api/auth-config",
+				() => ({
+					singleOrganization: true,
+					maxOrganizationMembers: 5,
+					defaultAdmin: { email: "admin@example.com", password: null },
+				}),
+			)
+			const api = makeAuthAPI()
+
+			await api.fetchAuthConfig.refresh()
+
+			expect(api.isSingleOrganization.value).toBe(true)
+			expect(api.maxOrganizationMembers.value).toBe(5)
+			expect(api.defaultAdmin.value).toEqual({
+				email: "admin@example.com",
+				password: null,
+			})
+		})
+	})
 })

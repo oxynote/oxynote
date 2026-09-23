@@ -31,7 +31,10 @@ export function newCredentials(): Credentials {
 // bound its handler; visit() waits for the app instance, but under load
 // the handler can still land a beat later, and a click in that window
 // does nothing at all — no request, no error, just the same page.
-async function revealForm(button: Locator, field: Locator): Promise<void> {
+export async function revealForm(
+	button: Locator,
+	field: Locator,
+): Promise<void> {
 	await expect(async () => {
 		await button.click()
 		await expect(field).toBeVisible({ timeout: 1_000 })
@@ -47,7 +50,15 @@ export async function submitSignupForm(
 	origin = BASE_URL,
 ): Promise<void> {
 	await visit(page, `${origin}/signup`)
+	await fillSignupForm(page, credentials)
+}
 
+// fillSignupForm is submitSignupForm for a signup page the browser is
+// already on, such as one opened from an invitation.
+export async function fillSignupForm(
+	page: Page,
+	credentials: Credentials,
+): Promise<void> {
 	const email = page.getByPlaceholder(
 		t("onboarding.signup.email-password-form.email-placeholder"),
 	)

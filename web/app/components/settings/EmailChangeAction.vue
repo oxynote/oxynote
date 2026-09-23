@@ -21,13 +21,23 @@ const form = useForm({
 	validationSchema: formSchema,
 })
 const { fetchAuthSession, hasPassword, changeEmail } = useAuthSession()
-const { isEmailEnabled } = useAuthAPI()
+const { isEmailEnabled, defaultAdmin } = useAuthAPI()
 const config = useRuntimeConfig()
 const { t } = useI18n({ useScope: "global" })
 const loading = ref(false)
+const currentEmail = computed(
+	() => fetchAuthSession.state.value.data?.data?.user.email ?? "",
+)
+// no mail reaches the default admin's email. So its change skips the
+// approval by the current email, and only the new email gets a link.
+const isDefaultAdmin = computed(
+	() =>
+		defaultAdmin.value !== null &&
+		defaultAdmin.value.email === currentEmail.value,
+)
 
 const onSubmit = form.handleSubmit(async (values) => {
-	if (values.email === fetchAuthSession.state.value.data?.data?.user.email) {
+	if (values.email === currentEmail.value) {
 		emit("close")
 		return
 	}
@@ -72,13 +82,29 @@ const onSubmit = form.handleSubmit(async (values) => {
 		return
 	}
 
+	// read before the refetch. The session may already carry the new email.
+	const skippedApproval = isDefaultAdmin.value
+	const previousEmail = currentEmail.value
+
 	await fetchAuthSession.refetch()
 
-	if (isEmailEnabled.value) {
+	if (isEmailEnabled.value && skippedApproval) {
+		showToastMessage(
+			"success",
+			t(
+				"settings.action-modals.email-change.success-message-default-admin.title",
+			),
+			t(
+				"settings.action-modals.email-change.success-message-default-admin.description",
+				{ email: values.email },
+			),
+		)
+	} else if (isEmailEnabled.value) {
 		showToastMessage(
 			"success",
 			t("settings.action-modals.email-change.success-message.title"),
 			t("settings.action-modals.email-change.success-message.description", {
+				current: previousEmail,
 				email: values.email,
 			}),
 		)
@@ -102,9 +128,13 @@ const onSubmit = form.handleSubmit(async (values) => {
 	<div class="flex flex-col">
 		<ShadcnUiDialogDescription class="text-2sm">
 			{{
-				isEmailEnabled
-					? $t("settings.action-modals.email-change.description")
-					: $t("settings.action-modals.email-change.description-without-email")
+				!isEmailEnabled
+					? $t("settings.action-modals.email-change.description-without-email")
+					: isDefaultAdmin
+						? $t(
+								"settings.action-modals.email-change.description-default-admin",
+							)
+						: $t("settings.action-modals.email-change.description")
 			}}
 		</ShadcnUiDialogDescription>
 		<form

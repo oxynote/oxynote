@@ -1,3 +1,5 @@
+import { AUTH_QUERY_KEYS } from "./api/useAuthAPI"
+
 const AUTH_SESSION_QUERY_KEYS = {
 	root: ["auth", "session"] as const,
 	organization: ["auth", "organization"] as const,
@@ -135,6 +137,11 @@ export default function () {
 			.forEach((e) => {
 				queryCache.remove(e)
 			})
+
+		// the login page shows the default admin password from the auth
+		// config. The cached config can be up to five minutes old, so fetch
+		// it again. "all" also refetches it when no page uses it.
+		await queryCache.invalidateQueries({ key: AUTH_QUERY_KEYS.config }, "all")
 
 		return res
 	}

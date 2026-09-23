@@ -170,12 +170,14 @@ describe("loadEnv", () => {
 		})
 	})
 
-	describe("counters", () => {
-		it("falls back to the defaults when unset", ({ expect }) => {
+	describe("limits", () => {
+		it("falls back to one organization with unlimited members when unset", ({
+			expect,
+		}) => {
 			const env = loadEnv(completeEnv())
 
-			expect(env.maxOrganizations).toBe(100)
-			expect(env.maxOrganizationMembers).toBe(5)
+			expect(env.maxOrganizations).toBe(1)
+			expect(env.maxOrganizationMembers).toBe(Infinity)
 		})
 
 		it("reads the configured values", ({ expect }) => {
@@ -192,11 +194,25 @@ describe("loadEnv", () => {
 			expect(env.maxOrganizationMembers).toBe(25)
 		})
 
+		it("reads -1 as no limit", ({ expect }) => {
+			const env = loadEnv(
+				completeEnv({
+					OXYNOTE_AUTH_REALTIME_MAX_ORGANIZATIONS:
+						"-1",
+					OXYNOTE_AUTH_REALTIME_MAX_ORGANIZATION_MEMBERS:
+						"-1",
+				}),
+			)
+
+			expect(env.maxOrganizations).toBe(Infinity)
+			expect(env.maxOrganizationMembers).toBe(Infinity)
+		})
+
 		it.for([
 			{ name: "a word", input: "many" },
 			{ name: "a fraction", input: "2.5" },
 			{ name: "zero", input: "0" },
-			{ name: "a negative count", input: "-1" },
+			{ name: "a negative count other than -1", input: "-2" },
 		])(
 			"rejects $name as an organization limit",
 			({ input }, { expect }) => {

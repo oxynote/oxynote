@@ -90,6 +90,9 @@ export function seedAuthConfig(config: Partial<AuthConfig> = {}) {
 	seedQueryData(["auth", "config"], {
 		methods: ["email-password"],
 		emailEnabled: true,
+		singleOrganization: false,
+		maxOrganizationMembers: 5,
+		defaultAdmin: null,
 		...config,
 	})
 }

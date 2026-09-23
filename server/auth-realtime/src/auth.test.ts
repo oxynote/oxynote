@@ -1,6 +1,7 @@
 import { describe, it, vi } from "vitest"
 import {
 	authMethods,
+	checkSignUpAllowed,
 	confirmWithPassword,
 	createAuth,
 	createOrganizationHooks,
@@ -8,6 +9,8 @@ import {
 	electronCallbackOverride,
 	invitationLink,
 	organizationClaims,
+	refuseLastMemberDeletion,
+	sendChangeEmailConfirmation,
 	toPublicAuthUrl,
 	verificationTemplate,
 	type SecondaryStorageClient,
@@ -617,6 +620,291 @@ describe("confirmWithPassword", () => {
 	)
 })
 
+describe("checkSignUpAllowed", () => {
+	it("allows any signup with more than one organization allowed", async ({
+		expect,
+	}) => {
+		const store = stubStore()
+
+		await expect(
+			checkSignUpAllowed(
+				testEnv({ maxOrganizations: 100 }),
+				store,
+				"a@b.c",
+				true,
+			),
+		).resolves.toBeUndefined()
+		expect.soft(store.hasPendingInvitation).not.toHaveBeenCalled()
+	})
+
+	// the bootstrap creates the admin from the service's own code
+	it("allows a user created outside a request", async ({ expect }) => {
+		const store = stubStore()
+		store.hasPendingInvitation.mockResolvedValue(false)
+
+		await expect(
+			checkSignUpAllowed(
+				testEnv({ maxOrganizations: 1 }),
+				store,
+				"a@b.c",
+				false,
+			),
+		).resolves.toBeUndefined()
+		expect.soft(store.hasPendingInvitation).not.toHaveBeenCalled()
+	})
+
+	it("allows an invited address", async ({ expect }) => {
+		const store = stubStore()
+		store.hasPendingInvitation.mockResolvedValue(true)
+
+		await expect(
+			checkSignUpAllowed(
+				testEnv({ maxOrganizations: 1 }),
+				store,
+				"a@b.c",
+				true,
+			),
+		).resolves.toBeUndefined()
+		expect.soft(store.hasPendingInvitation).toHaveBeenCalledWith(
+			"a@b.c",
+		)
+	})
+
+	it("refuses an uninvited address", async ({ expect }) => {
+		const store = stubStore()
+		store.hasPendingInvitation.mockResolvedValue(false)
+
+		await expect(
+			checkSignUpAllowed(
+				testEnv({ maxOrganizations: 1 }),
+				store,
+				"a@b.c",
+				true,
+			),
+		).rejects.toMatchObject({
+			statusCode: 400,
+			body: { code: "SIGN_UP_DISABLED" },
+		})
+	})
+
+	it("propagates a failed lookup", async ({ expect }) => {
+		const failure = new Error("connection terminated")
+		const store = stubStore()
+		store.hasPendingInvitation.mockRejectedValue(failure)
+
+		await expect(
+			checkSignUpAllowed(
+				testEnv({ maxOrganizations: 1 }),
+				store,
+				"a@b.c",
+				true,
+			),
+		).rejects.toBe(failure)
+	})
+})
+
+describe("refuseLastMemberDeletion", () => {
+	const signedIn = () => Promise.resolve({ id: "u1", email: "a@b.c" })
+
+	it.for([
+		{ name: "the deletion request", input: "/delete-user" },
+		{
+			name: "the emailed callback",
+			input: "/delete-user/callback",
+		},
+	])(
+		"refuses $name from the only member",
+		async ({ input }, { expect }) => {
+			const store = stubStore()
+			store.organizationMemberCount.mockResolvedValue(1)
+
+			await expect(
+				refuseLastMemberDeletion(
+					testEnv({ maxOrganizations: 1 }),
+					store,
+					input,
+					signedIn,
+				),
+			).rejects.toMatchObject({
+				statusCode: 403,
+				body: { code: "LAST_ORGANIZATION_MEMBER" },
+			})
+			expect.soft(
+				store.userOrganizationId,
+			).toHaveBeenCalledWith("u1")
+			expect.soft(
+				store.organizationMemberCount,
+			).toHaveBeenCalledWith("org-1")
+		},
+	)
+
+	it("lets a member go while others remain", async ({ expect }) => {
+		const store = stubStore()
+		store.organizationMemberCount.mockResolvedValue(2)
+
+		await expect(
+			refuseLastMemberDeletion(
+				testEnv({ maxOrganizations: 1 }),
+				store,
+				"/delete-user",
+				signedIn,
+			),
+		).resolves.toBeUndefined()
+	})
+
+	it("lets a user without an organization go", async ({ expect }) => {
+		const store = stubStore()
+		store.userOrganizationId.mockResolvedValue(null)
+
+		await expect(
+			refuseLastMemberDeletion(
+				testEnv({ maxOrganizations: 1 }),
+				store,
+				"/delete-user",
+				signedIn,
+			),
+		).resolves.toBeUndefined()
+		expect.soft(
+			store.organizationMemberCount,
+		).not.toHaveBeenCalled()
+	})
+
+	it("leaves a request without a session to the endpoint", async ({
+		expect,
+	}) => {
+		const store = stubStore()
+
+		await expect(
+			refuseLastMemberDeletion(
+				testEnv({ maxOrganizations: 1 }),
+				store,
+				"/delete-user",
+				() => Promise.resolve(undefined),
+			),
+		).resolves.toBeUndefined()
+		expect.soft(store.userOrganizationId).not.toHaveBeenCalled()
+	})
+
+	it.for([
+		{
+			name: "with more than one organization allowed",
+			input: { maxOrganizations: 100, path: "/delete-user" },
+		},
+		{
+			name: "on every other endpoint",
+			input: { maxOrganizations: 1, path: "/change-email" },
+		},
+	])("checks nothing $name", async ({ input }, { expect }) => {
+		const store = stubStore()
+		const currentUser = vi.fn(signedIn)
+
+		await expect(
+			refuseLastMemberDeletion(
+				testEnv({
+					maxOrganizations:
+						input.maxOrganizations,
+				}),
+				store,
+				input.path,
+				currentUser,
+			),
+		).resolves.toBeUndefined()
+		expect.soft(currentUser).not.toHaveBeenCalled()
+		expect.soft(store.userOrganizationId).not.toHaveBeenCalled()
+	})
+
+	it("propagates a failed lookup", async ({ expect }) => {
+		const failure = new Error("connection terminated")
+		const store = stubStore()
+		store.organizationMemberCount.mockRejectedValue(failure)
+
+		await expect(
+			refuseLastMemberDeletion(
+				testEnv({ maxOrganizations: 1 }),
+				store,
+				"/delete-user",
+				signedIn,
+			),
+		).rejects.toBe(failure)
+	})
+})
+
+describe("sendChangeEmailConfirmation", () => {
+	it("asks the current address to approve the change", async ({
+		expect,
+	}) => {
+		const core = stubCore()
+
+		await sendChangeEmailConfirmation(testEnv(), core, {
+			user: { email: "old@b.c" },
+			newEmail: "new@b.c",
+			url: "http://localhost:8080/api/auth/verify-email?token=tok&callbackURL=%2F",
+		})
+
+		expect(core.sendEmail).toHaveBeenCalledTimes(1)
+		expect(core.sendEmail).toHaveBeenCalledWith(
+			"email_change_confirmation",
+			{
+				email: "old@b.c",
+				link: "http://localhost:8080/auth-realtime/api/auth/verify-email?token=tok&callbackURL=%2F",
+			},
+		)
+	})
+
+	it("sends the bootstrap admin's new address the link that completes the change", async ({
+		expect,
+	}) => {
+		const core = stubCore()
+
+		await sendChangeEmailConfirmation(testEnv(), core, {
+			user: { email: "admin@example.com" },
+			newEmail: "new@b.c",
+			url: "http://localhost:8080/api/auth/verify-email?token=tok&callbackURL=%2F",
+		})
+
+		expect(core.sendEmail).toHaveBeenCalledTimes(1)
+		const [template, data] = core.sendEmail.mock.calls[0] ?? []
+		expect(template).toBe("email_verification")
+		expect(data?.email).toBe("new@b.c")
+
+		const link = new URL(data?.link ?? "")
+		expect(link.origin + link.pathname).toBe(
+			"http://localhost:8080/auth-realtime/api/auth/verify-email",
+		)
+		expect(link.searchParams.get("callbackURL")).toBe("/")
+
+		const payload = (link.searchParams.get("token") ?? "").split(
+			".",
+		)[1]
+		expect(
+			JSON.parse(
+				Buffer.from(
+					payload ?? "",
+					"base64url",
+				).toString(),
+			),
+		).toMatchObject({
+			email: "admin@example.com",
+			updateTo: "new@b.c",
+			requestType: "change-email-verification",
+		})
+	})
+
+	it("propagates a failed send", async ({ expect }) => {
+		const failure = new Error("core unreachable")
+		const core = stubCore()
+		core.sendEmail.mockRejectedValue(failure)
+
+		await expect(
+			sendChangeEmailConfirmation(testEnv(), core, {
+				user: { email: "old@b.c" },
+				newEmail: "new@b.c",
+				url: "http://localhost:8080/api/auth/verify-email?token=tok",
+			}),
+		).rejects.toBe(failure)
+	})
+})
+
 describe("createSecondaryStorage", () => {
 	it("reads through to the redis client", async ({ expect }) => {
 		const redis = stubRedis()
@@ -1219,6 +1507,105 @@ describe("createAuth", () => {
 			expect(answer).toBeUndefined()
 			expect.soft(updateUser).not.toHaveBeenCalled()
 		})
+	})
+
+	describe("single-organization mode", () => {
+		it("refuses an uninvited signup at user creation", async ({
+			expect,
+		}) => {
+			const store = stubStore()
+			store.hasPendingInvitation.mockResolvedValue(false)
+			const { auth } = buildAuth({
+				env: testEnv({ maxOrganizations: 1 }),
+				store,
+			})
+
+			await expect(
+				auth.options.databaseHooks.user.create.before(
+					{ email: "a@b.c" } as never,
+					{} as never,
+				),
+			).rejects.toMatchObject({
+				body: { code: "SIGN_UP_DISABLED" },
+			})
+		})
+
+		it("lets this service create a user outside a request", async ({
+			expect,
+		}) => {
+			const store = stubStore()
+			store.hasPendingInvitation.mockResolvedValue(false)
+			const { auth } = buildAuth({
+				env: testEnv({ maxOrganizations: 1 }),
+				store,
+			})
+
+			await expect(
+				auth.options.databaseHooks.user.create.before(
+					{ email: "admin@example.com" } as never,
+					undefined as never,
+				),
+			).resolves.toBeUndefined()
+			expect.soft(
+				store.hasPendingInvitation,
+			).not.toHaveBeenCalled()
+		})
+
+		it("refuses to delete the last member's account", async ({
+			expect,
+		}) => {
+			const store = stubStore()
+			store.organizationMemberCount.mockResolvedValue(1)
+			const { auth } = buildAuth({
+				env: testEnv({ maxOrganizations: 1 }),
+				store,
+			})
+
+			await expect(
+				auth.options.hooks.before({
+					path: "/delete-user",
+					body: {},
+					context: {
+						session: {
+							user: {
+								id: "u1",
+								email: "a@b.c",
+							},
+						},
+					},
+				} as never),
+			).rejects.toMatchObject({
+				body: { code: "LAST_ORGANIZATION_MEMBER" },
+			})
+		})
+
+		it.for([
+			{ name: "a member limit", input: 25, expected: 25 },
+			// the limit is also a member list's page size in SQL
+			{
+				name: "no member limit",
+				input: Infinity,
+				expected: Number.MAX_SAFE_INTEGER,
+			},
+		])(
+			"hands better-auth $name as a finite number",
+			({ input, expected }, { expect }) => {
+				const { auth } = buildAuth({
+					env: testEnv({
+						maxOrganizationMembers: input,
+					}),
+				})
+				const plugin = auth.options.plugins.find(
+					(p) => p.id === "organization",
+				) as unknown as {
+					options: { membershipLimit: number }
+				}
+
+				expect(plugin.options.membershipLimit).toBe(
+					expected,
+				)
+			},
+		)
 	})
 
 	describe("password policy", () => {

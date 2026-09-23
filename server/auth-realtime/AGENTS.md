@@ -30,13 +30,14 @@ opens the pool, connects to Valkey (only when
 `OXYNOTE_AUTH_REALTIME_VALKEY_DSN` is set; otherwise better-auth runs with
 no secondary storage) and listens. Everything else is a factory taking what
 it needs. Modules: `env.ts` (zod config), `core.ts` (every call into core),
-`db.ts` (the `Store`), `reporting.ts`, `logging.ts`, `headers.ts`, `auth.ts`
-(`createAuth` + better-auth callbacks), `hocuspocus.ts` (`createHocuspocus`,
-`createDocumentHooks`, `flushDocument`), `routes.ts` (`createRoutes` → Hono
-app), `operations.ts` (pure: assistant edit ops on a Y.Doc), `ydocument.ts`
-(pure: replacing Y.Doc content), `schema/` (ProseMirror schema mirroring
-web's tiptap extensions), `sentry.ts` and `bundle.ts` (docker entry: sentry
-+ index in one bundle).
+`db.ts` (the `Store`), `bootstrap.ts` (the single-organization mode's
+organization and admin, created before listening), `reporting.ts`,
+`logging.ts`, `headers.ts`, `auth.ts` (`createAuth` + better-auth
+callbacks), `hocuspocus.ts` (`createHocuspocus`, `createDocumentHooks`,
+`flushDocument`), `routes.ts` (`createRoutes` → Hono app), `operations.ts`
+(pure: assistant edit ops on a Y.Doc), `ydocument.ts` (pure: replacing Y.Doc
+content), `schema/` (ProseMirror schema mirroring web's tiptap extensions),
+`sentry.ts` and `bundle.ts` (docker entry: sentry + index in one bundle).
 
 - A module never reads `process.env`; it takes an `Env`. `loadEnv` runs once
   in `index.ts`. `src/sentry.ts` is the exception: node loads it via
@@ -68,9 +69,10 @@ web's tiptap extensions), `sentry.ts` and `bundle.ts` (docker entry: sentry
 
 Every variable is declared in `src/env.ts` and zod-parsed once at boot. A
 missing, malformed or half-configured value is a boot error: URLs are
-scheme-pinned to http/https (bare `z.url()` accepts `core:8080`), counters
-are positive integers, booleans accept only `"true"`/`"false"`, a social
-provider needs both credential halves or neither. Docker env files deliver
+scheme-pinned to http/https (bare `z.url()` accepts `core:8080`), limits
+are `-1` (read as `Infinity`) or positive integers, booleans accept only
+`"true"`/`"false"`, a social provider needs both credential halves or
+neither. Docker env files deliver
 unset variables as `""`; `loadEnv` drops those before parsing so a required
 one reports as missing.
 

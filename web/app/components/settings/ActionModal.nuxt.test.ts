@@ -13,6 +13,7 @@ import {
 	emitFrom,
 	mockAuthOrganization,
 	seedAuthAccounts,
+	seedAuthConfig,
 	seedAuthSession,
 	t,
 	teleportedButton,
@@ -59,6 +60,7 @@ describe("<ActionModal>", { concurrent: false }, () => {
 		clearQueryCache()
 		seedAuthSession({ id: "u1", email: "ada@oxynote.test", name: "ada" })
 		seedAuthAccounts(["credential"])
+		seedAuthConfig()
 		mockAuthOrganization({
 			id: "org-1",
 			name: "Acme",
@@ -139,6 +141,25 @@ describe("<ActionModal>", { concurrent: false }, () => {
 		await mountModal({ modelValue: "workspace-invitation" })
 
 		expect(dialogText()).toContain(
+			t(
+				"settings.action-modals.workspace-invitation.title-max-members-reached",
+			),
+		)
+	})
+
+	it("keeps the invitation title for any number of members without a limit", async ({
+		expect,
+	}) => {
+		seedAuthConfig({ maxOrganizationMembers: null })
+		mockAuthOrganization({
+			id: "org-1",
+			members: Array.from({ length: 5 }, (_, i) => ({ id: `m${i}` })),
+			invitations: [],
+		})
+
+		await mountModal({ modelValue: "workspace-invitation" })
+
+		expect(dialogText()).not.toContain(
 			t(
 				"settings.action-modals.workspace-invitation.title-max-members-reached",
 			),

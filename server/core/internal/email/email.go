@@ -6,6 +6,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -38,6 +40,9 @@ const _sendTimeout = 30 * time.Second
 // _linkKey is the template argument carrying the action URL.
 const _linkKey = "link"
 
+// _hostKey is the template argument carrying the instance's host.
+const _hostKey = "host"
+
 // Config holds SMTP connection settings for the email sender.
 type Config struct {
 	// Host is the SMTP server host. When empty, email sending is
@@ -61,6 +66,10 @@ type Config struct {
 	// FromAddress is the address emails are sent from, in
 	// "Name <address>" or plain "address" form.
 	FromAddress string
+
+	// PublicURL is the instance's public URL. Its host is named in the
+	// footer of every email.
+	PublicURL string
 }
 
 // _maxSendRetries caps the retries of one delivery.
@@ -75,21 +84,28 @@ type Sender struct {
 	// field so tests can substitute a faster one.
 	backoffStrategy func() backoff.BackOff
 
-	supv      *xync.Supervisor
-	fromEmail string
+	supv       *xync.Supervisor
+	fromEmail  string
+	publicHost string
 }
 
 // NewSender creates a fresh instance of email sender.
 // An empty cfg.Host yields a sender with sending disabled: every email
 // is logged instead of sent.
 func NewSender(log *slog.Logger, cfg Config) (*Sender, error) {
+	publicURL, err := url.Parse(cfg.PublicURL)
+	if err != nil || publicURL.Host == "" {
+		return nil, fmt.Errorf("invalid public url %q", cfg.PublicURL)
+	}
+
 	sender := &Sender{
 		log: log,
 		backoffStrategy: func() backoff.BackOff {
 			return backoff.NewExponentialBackOff()
 		},
-		supv:      xync.NewSupervisor(),
-		fromEmail: cfg.FromAddress,
+		supv:       xync.NewSupervisor(),
+		fromEmail:  cfg.FromAddress,
+		publicHost: publicURL.Host,
 	}
 
 	if cfg.Host == "" {
@@ -151,7 +167,10 @@ func (s *Sender) send(toEmail, subject string, tmpl Template, args map[string]st
 		return
 	}
 
-	body, err := render(tmpl, args)
+	vars := map[string]string{_hostKey: s.publicHost}
+	maps.Copy(vars, args)
+
+	body, err := render(tmpl, vars)
 	if err != nil {
 		s.log.Error(
 			"cannot render email template",

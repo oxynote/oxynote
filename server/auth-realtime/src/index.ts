@@ -7,6 +7,10 @@ import { loadEnv } from "./env.js"
 import { createDatabase } from "./db.js"
 import { createCoreClient } from "./core.js"
 import { createAuth } from "./auth.js"
+import {
+	bootstrapSingleOrganization,
+	createDefaultAdminLookup,
+} from "./bootstrap.js"
 import { createHocuspocus } from "./hocuspocus.js"
 import { createLogger } from "./logging.js"
 import { createRoutes } from "./routes.js"
@@ -38,6 +42,19 @@ if (env.valkeyDsn) {
 }
 
 const auth = createAuth({ env, store, dialect, redis, core, log })
+const authContext = await auth.$context
+
+// before listening, so no signup can race the organization's creation.
+await bootstrapSingleOrganization({
+	env,
+	store,
+	core,
+	log,
+	accounts: authContext.internalAdapter,
+	hashPassword: (password) => authContext.password.hash(password),
+	createOrganization: (organization) =>
+		auth.api.createOrganization({ body: organization }),
+})
 
 const {
 	instance: hocuspocus,
@@ -63,6 +80,11 @@ app.route(
 		hocuspocus,
 		flushDocument,
 		resetConnections,
+		findDefaultAdmin: createDefaultAdminLookup({
+			store,
+			verifyPassword: (data) =>
+				authContext.password.verify(data),
+		}),
 		core,
 	}),
 )

@@ -3,6 +3,8 @@ package org
 
 import (
 	"context"
+	_ "embed"
+	"fmt"
 	"log/slog"
 	"net/http"
 
@@ -22,6 +24,12 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 	"github.com/rs/xid"
 )
+
+// _defaultLogo is the Oxynote logo an organization can be given before it
+// uploads its own.
+//
+//go:embed default_logo.png
+var _defaultLogo []byte
 
 // ErrNoOrganizationMembers is returned when an organization has no members.
 var ErrNoOrganizationMembers = errutil.New(http.StatusBadRequest, "organization.no_members", "organization has no members")
@@ -182,25 +190,9 @@ func (h *Handler) UploadOrganizationLogo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	logoFolder := orgCore.LogoFolder(session.ActiveOrganizationID)
-
-	err = h.storer.Upload(r.Context(), logoFolder, session.ActiveOrganizationID, data, contentType)
+	logoLocation, err := h.storeLogo(r.Context(), session.ActiveOrganizationID, data, contentType)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	logoLocation := httpserver.CacheBust(h.publicURL + orgCore.LogoPath)
-
-	err = h.db.UpdateOrganizationLogo(r.Context(), session.ActiveOrganizationID, logoLocation)
-	if err != nil {
-		derr := h.storer.Delete(r.Context(), logoFolder, session.ActiveOrganizationID)
-		if derr != nil {
-			h.log.Error("deleting object after DB failure", slog.String("error", derr.Error()))
-		}
-
-		httpserver.RespondError(h.log, w, err)
-
 		return
 	}
 
@@ -211,6 +203,51 @@ func (h *Handler) UploadOrganizationLogo(w http.ResponseWriter, r *http.Request)
 		http.StatusCreated,
 		httpserver.LocationHeader(logoLocation),
 	)
+}
+
+// SetDefaultOrganizationLogo gives the organization the Oxynote logo.
+func (h *Handler) SetDefaultOrganizationLogo(w http.ResponseWriter, r *http.Request) {
+	id, err := h.extractOrganizationParameter(r)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if _, err = h.storeLogo(r.Context(), id, _defaultLogo, "image/png"); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	httpserver.Respond(
+		h.log,
+		w,
+		nil,
+		http.StatusNoContent,
+	)
+}
+
+// storeLogo stores the organization's logo and points the organization at
+// it, returning the logo's location. The object is removed again when the
+// organization cannot be updated.
+func (h *Handler) storeLogo(ctx context.Context, organizationID string, data []byte, contentType string) (string, error) {
+	logoFolder := orgCore.LogoFolder(organizationID)
+
+	if err := h.storer.Upload(ctx, logoFolder, organizationID, data, contentType); err != nil {
+		return "", fmt.Errorf("uploading logo: %w", err)
+	}
+
+	logoLocation := httpserver.CacheBust(h.publicURL + orgCore.LogoPath)
+
+	if err := h.db.UpdateOrganizationLogo(ctx, organizationID, logoLocation); err != nil {
+		derr := h.storer.Delete(ctx, logoFolder, organizationID)
+		if derr != nil {
+			h.log.Error("deleting object after DB failure", slog.String("error", derr.Error()))
+		}
+
+		return "", fmt.Errorf("updating organization logo: %w", err)
+	}
+
+	return logoLocation, nil
 }
 
 // RetrieveOrganizationLogo handles the retrieval of an organization's logo.

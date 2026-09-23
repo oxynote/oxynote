@@ -1,4 +1,4 @@
-const AUTH_QUERY_KEYS = {
+export const AUTH_QUERY_KEYS = {
 	config: ["auth", "config"] as const,
 }
 
@@ -24,5 +24,26 @@ export default function () {
 		() => fetchAuthConfig.state.value.data?.emailEnabled ?? true,
 	)
 
-	return { fetchAuthConfig, isEmailEnabled }
+	// until the config arrives the instance is assumed to allow signup and
+	// any number of members; the server enforces its own limits either way.
+	const isSingleOrganization = computed(
+		() => fetchAuthConfig.state.value.data?.singleOrganization ?? false,
+	)
+	const maxOrganizationMembers = computed(
+		() => fetchAuthConfig.state.value.data?.maxOrganizationMembers ?? null,
+	)
+
+	const defaultAdmin = computed(() =>
+		isSingleOrganization.value
+			? (fetchAuthConfig.state.value.data?.defaultAdmin ?? null)
+			: null,
+	)
+
+	return {
+		defaultAdmin,
+		fetchAuthConfig,
+		isEmailEnabled,
+		isSingleOrganization,
+		maxOrganizationMembers,
+	}
 }

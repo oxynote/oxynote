@@ -1,8 +1,13 @@
 import { expect, test } from "@playwright/test"
-import { newCredentials } from "../helpers/auth"
+import { newCredentials, submitLoginForm } from "../helpers/auth"
 import { joinAsSecondUser } from "../helpers/collaboration"
 import { waitForEditor } from "../helpers/editor"
 import { t } from "../helpers/i18n"
+import {
+	deliveredTo,
+	fetchEmailChangeApprovalLink,
+	fetchVerificationLink,
+} from "../helpers/mailpit"
 import { visit } from "../helpers/page"
 import { openSettings } from "../helpers/settings"
 import { signUpWithWorkspace } from "../helpers/workspace"
@@ -59,6 +64,62 @@ test.describe("settings", () => {
 				exact: true,
 			}),
 		).toHaveValue("Fresh-Nickname")
+	})
+
+	test("moves the login to a new address once the old one approves and the new one verifies", async ({
+		page,
+		browser,
+		request,
+	}) => {
+		const { credentials, workspace } = await signUpWithWorkspace(page, request)
+		const newEmail = newCredentials().email
+
+		const settings = await openSettings(page, workspace.name)
+		await settings
+			.getByRole("button", {
+				name: t("settings.profile.email-change-button-screen-reader-hint"),
+			})
+			.click()
+		const action = page.getByRole("dialog", {
+			name: t("settings.action-modals.email-change.title"),
+		})
+		await action
+			.getByPlaceholder(
+				t("settings.action-modals.email-change.new-email-placeholder"),
+			)
+			.fill(newEmail)
+		await action
+			.getByRole("button", {
+				name: t("settings.action-modals.email-change.submit-button"),
+			})
+			.click()
+		await expect(
+			page.getByText(
+				t("settings.action-modals.email-change.success-message.title"),
+			),
+		).toBeVisible()
+
+		// the old address approves first. The new one hears nothing until
+		// then.
+		const approval = await fetchEmailChangeApprovalLink(
+			request,
+			credentials.email,
+		)
+		expect(await deliveredTo(request, newEmail)).toBe(0)
+		await page.goto(approval)
+
+		await page.goto(await fetchVerificationLink(request, newEmail))
+		expect(await deliveredTo(request, newEmail)).toBe(1)
+
+		// a browser of its own proves the server took the new address
+		const context = await browser.newContext()
+		const fresh = await context.newPage()
+		await submitLoginForm(fresh, {
+			email: newEmail,
+			password: credentials.password,
+		})
+		await expect(fresh).toHaveURL(/-[a-z0-9]{20}$/, { timeout: 15_000 })
+		await context.close()
 	})
 
 	test("lists a joined teammate among the members", async ({

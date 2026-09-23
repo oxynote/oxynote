@@ -12,8 +12,9 @@
 #   - no named volumes, so every run starts from an empty database and an
 #     empty data volume (the generated secrets are regenerated per run)
 #   - no container_name, and its own ports (:19080 front door, :19081 the
-#     instance without email, :19025 mailpit), so it coexists with the dev
-#     stack and the e2e dev stack alike
+#     instance without email, :19082 the single-workspace instance, :19025
+#     mailpit), so it coexists with the dev stack and the e2e dev stack
+#     alike
 #   - env is inlined and committed; there is nothing secret to protect
 #   - every image is pinned
 #   - no OXYNOTE_DB_DSN, OXYNOTE_VALKEY_DSN or OXYNOTE_OBJECT_STORAGE_DSN, which
@@ -68,6 +69,23 @@ services:
       - OXYNOTE_MAX_ORGANIZATION_MEMBERS=5
       # the same two allowances as the instance above, for the same reasons.
       - OXYNOTE_MAX_ORGANIZATIONS=100000
+      - OXYNOTE_RATE_LIMIT_DISABLED=true
+    stop_grace_period: 60s
+
+  # the same image with the workspace limits left at their defaults: one
+  # workspace, created with its admin at boot, and signup by invitation
+  # only. tests/prod-single-workspace.test.ts drives it through its own
+  # front door. Its tests share that one workspace, so no other test may
+  # use this instance.
+  oxynote-single-workspace:
+    image: ghcr.io/oxynote/oxynote:e2e-prod
+    ports:
+      - "19082:8080"
+    environment:
+      - OXYNOTE_PUBLIC_URL=http://localhost:19082
+      - OXYNOTE_SMTP_DSN=smtp://mailpit:1025?tls=none
+      - OXYNOTE_EMAIL_FROM_ADDRESS=Oxynote <team@oxynote.io>
+      # the same limiter allowance as the instance above.
       - OXYNOTE_RATE_LIMIT_DISABLED=true
     stop_grace_period: 60s
 

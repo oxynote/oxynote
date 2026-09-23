@@ -95,6 +95,10 @@ sets no `OXYNOTE_DB_DSN`, so the image runs its embedded Postgres. A second
 instance, `oxynote-without-email` (`:19081`), sets no `OXYNOTE_SMTP_DSN`;
 only `prod-without-email.test.ts` drives it, through the origin in
 `helpers/without-email.ts`.
+A third, `oxynote-single-workspace` (`:19082`), keeps the default workspace
+limits; only `prod-single-workspace.test.ts` drives it, through
+`helpers/single-workspace.ts`. Its tests share the one workspace and its
+admin, so the file runs serially, without retries, read-only tests first.
 Compose builds nothing; the image comes from `make prod-build`, tagged
 `:e2e-prod`, and CI's cache reaches it through `PROD_BUILD_EXTRA`. A `probe`
 container (idle alpine on the private network) exists for the

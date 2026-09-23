@@ -2,6 +2,7 @@ import { betterAuth } from "better-auth"
 import {
 	APIError,
 	createAuthMiddleware,
+	createEmailVerificationToken,
 	getSessionFromCtx,
 } from "better-auth/api"
 import { jwt, organization } from "better-auth/plugins"
@@ -9,6 +10,7 @@ import { electron } from "@better-auth/electron"
 import { mcp } from "@better-auth/mcp"
 import type { PostgresDialect } from "kysely"
 import { z } from "zod"
+import { bootstrapAdmin } from "./bootstrap.js"
 import type { Store } from "./db.js"
 import type { CoreClient, EmailTemplate } from "./core.js"
 import type { Env, SocialProviderName } from "./env.js"
@@ -341,6 +343,115 @@ export async function confirmWithPassword(
 	return ctx.json({ status: true })
 }
 
+// a single-organization deployment has no open signup: a request creates
+// an account only for an address with a pending invitation. A user created
+// outside any request is the bootstrap's admin.
+export async function checkSignUpAllowed(
+	env: Env,
+	store: Store,
+	email: string,
+	fromRequest: boolean,
+): Promise<void> {
+	if (env.maxOrganizations !== 1 || !fromRequest) {
+		return
+	}
+
+	const allowed = await reported(() => store.hasPendingInvitation(email))
+	if (allowed) {
+		return
+	}
+
+	// not a 403: better-auth answers that on signup with a fake success.
+	throw APIError.from("BAD_REQUEST", {
+		code: "SIGN_UP_DISABLED",
+		message: "Sign-up is by invitation only",
+	})
+}
+
+// a single-organization deployment keeps at least one member, because
+// nobody can sign up to take over an empty organization. The callback is
+// checked too, since members may leave between the request and the link.
+export async function refuseLastMemberDeletion(
+	env: Env,
+	store: Store,
+	path: string,
+	currentUser: () => Promise<SessionUser | undefined>,
+): Promise<void> {
+	if (
+		env.maxOrganizations !== 1 ||
+		(path !== "/delete-user" && path !== "/delete-user/callback")
+	) {
+		return
+	}
+
+	// the endpoint's own session check answers a caller without one.
+	const user = await currentUser()
+	if (!user) {
+		return
+	}
+
+	const last = await reported(async () => {
+		const organizationId = await store.userOrganizationId(user.id)
+
+		return (
+			organizationId !== null &&
+			(await store.organizationMemberCount(organizationId)) <=
+				1
+		)
+	})
+	if (!last) {
+		return
+	}
+
+	throw APIError.from("FORBIDDEN", {
+		code: "LAST_ORGANIZATION_MEMBER",
+		message: "The last member of the organization cannot be deleted",
+	})
+}
+
+// the first step of a change of address: the current address approves it,
+// and better-auth then emails the new one through sendVerificationEmail.
+// Sending the approval to the new address would ask it to approve its own
+// claim. The bootstrap admin's address receives no mail, so the new
+// address gets the link that completes the change instead, the one
+// better-auth sends when no approval is configured. better-auth signs its
+// tokens with the configured secret, so this one verifies like its own.
+export async function sendChangeEmailConfirmation(
+	env: Env,
+	core: CoreClient,
+	{
+		user,
+		newEmail,
+		url,
+	}: { user: { email: string }; newEmail: string; url: string },
+): Promise<void> {
+	if (user.email !== bootstrapAdmin.email) {
+		await core.sendEmail("email_change_confirmation", {
+			email: user.email,
+			link: toPublicAuthUrl(env, url),
+		})
+
+		return
+	}
+
+	const link = new URL(toPublicAuthUrl(env, url))
+	link.searchParams.set(
+		"token",
+		await createEmailVerificationToken(
+			env.betterAuthSecret,
+			user.email,
+			newEmail,
+			undefined,
+			{ requestType: "change-email-verification" },
+		),
+	)
+
+	await core.sendEmail("email_verification", {
+		email: newEmail,
+		link: link.toString(),
+	})
+}
+
 export function createSecondaryStorage(redis: SecondaryStorageClient) {
 	return {
 		get: (key: string) => reported(() => redis.get(key)),
@@ -556,23 +667,13 @@ export function createAuth({
 			},
 			changeEmail: {
 				enabled: true,
-				// the first step of a change of address: the current
-				// address approves it, and better-auth then emails the
-				// new one through sendVerificationEmail above. Sending
-				// this to the new address instead would ask it to
-				// approve its own claim.
 				sendChangeEmailConfirmation: env.emailEnabled
-					? async ({ user, url }) => {
+					? async (data) => {
 							await reported(() =>
-								core.sendEmail(
-									"email_change_confirmation",
-									{
-										email: user.email,
-										link: toPublicAuthUrl(
-											env,
-											url,
-										),
-									},
+								sendChangeEmailConfirmation(
+									env,
+									core,
+									data,
 								),
 							)
 						}
@@ -647,7 +748,14 @@ export function createAuth({
 					organizationHooks.canCreateOrganization,
 				disableOrganizationDeletion: true, // prevent clients from deleting the org
 				organizationLimit: 1,
-				membershipLimit: env.maxOrganizationMembers,
+				// better-auth also passes the limit to the database
+				// as the page size of a member list, which cannot be
+				// Infinity.
+				membershipLimit: Number.isFinite(
+					env.maxOrganizationMembers,
+				)
+					? env.maxOrganizationMembers
+					: Number.MAX_SAFE_INTEGER,
 				schema: {
 					session: {
 						fields: {
@@ -865,16 +973,21 @@ export function createAuth({
 		],
 		hooks: {
 			before: createAuthMiddleware(async (ctx) => {
+				const currentUser = async () =>
+					(await getSessionFromCtx(ctx))?.user
+
+				await refuseLastMemberDeletion(
+					env,
+					store,
+					ctx.path,
+					currentUser,
+				)
+
 				if (!env.emailEnabled) {
 					const answer =
 						await confirmWithPassword(
 							ctx,
-							async () =>
-								(
-									await getSessionFromCtx(
-										ctx,
-									)
-								)?.user,
+							currentUser,
 						)
 					if (answer !== undefined) {
 						return answer
@@ -888,6 +1001,22 @@ export function createAuth({
 			}),
 		},
 		databaseHooks: {
+			user: {
+				create: {
+					// better-auth hands the hook the
+					// request's context. For a call from
+					// this service's own code it is
+					// undefined, though typed as null.
+					before: async (user, ctx) => {
+						await checkSignUpAllowed(
+							env,
+							store,
+							user.email,
+							Boolean(ctx),
+						)
+					},
+				},
+			},
 			session: {
 				create: {
 					before: async (session) =>

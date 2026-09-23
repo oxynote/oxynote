@@ -1,7 +1,11 @@
 import { describe, it, vi, type Mock } from "vitest"
 import * as Y from "yjs"
 import { SignJWT, exportJWK, generateKeyPair, type JWTPayload } from "jose"
-import { createRoutes, type DocumentRegistry } from "./routes.js"
+import {
+	createRoutes,
+	type DocumentRegistry,
+	type RouteDeps,
+} from "./routes.js"
 import { isSystemContext, replaceYdocContent } from "./ydocument.js"
 import {
 	fragmentXml,
@@ -65,6 +69,7 @@ function build(
 		store?: StubStore
 		hocuspocus?: DocumentRegistry
 		flushDocument?: Mock<(documentName: string) => Promise<void>>
+		findDefaultAdmin?: Mock<RouteDeps["findDefaultAdmin"]>
 		core?: StubCore
 	} = {},
 ) {
@@ -74,6 +79,8 @@ function build(
 	const flushDocument: Mock<(documentName: string) => Promise<void>> =
 		overrides.flushDocument ?? vi.fn().mockResolvedValue(undefined)
 	const resetConnections = vi.fn<(documentName: string) => void>()
+	const findDefaultAdmin: Mock<RouteDeps["findDefaultAdmin"]> =
+		overrides.findDefaultAdmin ?? vi.fn().mockResolvedValue(null)
 	const app = createRoutes({
 		env: overrides.env ?? ENV,
 		auth,
@@ -81,10 +88,19 @@ function build(
 		hocuspocus: overrides.hocuspocus ?? stubRegistry().registry,
 		flushDocument,
 		resetConnections,
+		findDefaultAdmin,
 		core,
 	})
 
-	return { app, auth, core, store, flushDocument, resetConnections }
+	return {
+		app,
+		auth,
+		core,
+		store,
+		flushDocument,
+		resetConnections,
+		findDefaultAdmin,
+	}
 }
 
 // the order in which the flushes and the core call happened, which is
@@ -219,6 +235,9 @@ describe("createRoutes", () => {
 			expect(await res.json()).toEqual({
 				methods: ["email-password", "github"],
 				emailEnabled: true,
+				singleOrganization: false,
+				maxOrganizationMembers: 5,
+				defaultAdmin: null,
 			})
 		})
 
@@ -235,6 +254,107 @@ describe("createRoutes", () => {
 			expect(await res.json()).toEqual({
 				methods: ["email-password"],
 				emailEnabled: false,
+				singleOrganization: false,
+				maxOrganizationMembers: 5,
+				defaultAdmin: null,
+			})
+		})
+
+		it("reports single-organization mode and no member limit as null", async ({
+			expect,
+		}) => {
+			const { app } = build({
+				env: testEnv({
+					maxOrganizations: 1,
+					maxOrganizationMembers: Infinity,
+				}),
+			})
+
+			const res = await app.request("/auth-config")
+
+			expect(await res.json()).toEqual({
+				methods: ["email-password"],
+				emailEnabled: true,
+				singleOrganization: true,
+				maxOrganizationMembers: null,
+				defaultAdmin: null,
+			})
+		})
+
+		it.for([
+			{
+				name: "with the default password",
+				input: true,
+				expected: "oxynote-admin-1234",
+			},
+			{
+				name: "without the default password",
+				input: false,
+				expected: null,
+			},
+		])(
+			"publishes the default admin $name",
+			async ({ input, expected }, { expect }) => {
+				const findDefaultAdmin = vi
+					.fn()
+					.mockResolvedValue({
+						defaultPassword: input,
+					})
+				const { app } = build({
+					env: testEnv({ maxOrganizations: 1 }),
+					findDefaultAdmin,
+				})
+
+				const res = await app.request("/auth-config")
+
+				expect(await res.json()).toMatchObject({
+					defaultAdmin: {
+						email: "admin@example.com",
+						password: expected,
+					},
+				})
+				expect.soft(
+					findDefaultAdmin,
+				).toHaveBeenCalledTimes(1)
+			},
+		)
+
+		it("never looks for the default admin with more than one organization allowed", async ({
+			expect,
+		}) => {
+			const findDefaultAdmin = vi
+				.fn()
+				.mockResolvedValue({ defaultPassword: true })
+			const { app } = build({ findDefaultAdmin })
+
+			const res = await app.request("/auth-config")
+
+			expect(await res.json()).toMatchObject({
+				defaultAdmin: null,
+			})
+			expect.soft(findDefaultAdmin).not.toHaveBeenCalled()
+		})
+
+		it("still answers, without the admin, when the lookup fails", async ({
+			expect,
+		}) => {
+			const { app } = build({
+				env: testEnv({ maxOrganizations: 1 }),
+				findDefaultAdmin: vi
+					.fn()
+					.mockRejectedValue(
+						new Error(
+							"connection terminated",
+						),
+					),
+			})
+
+			const res = await app.request("/auth-config")
+
+			expect(res.status).toBe(200)
+			expect(await res.json()).toMatchObject({
+				methods: ["email-password"],
+				defaultAdmin: null,
 			})
 		})
 	})
@@ -267,6 +387,25 @@ describe("createRoutes", () => {
 			const res = await app.request("/organizations/stats")
 
 			expect(await res.json()).toEqual({ availableSlots: 10 })
+		})
+
+		it("reports null slots without an organization limit", async ({
+			expect,
+		}) => {
+			const store = stubStore()
+			const { app } = build({
+				store,
+				env: testEnv({ maxOrganizations: Infinity }),
+			})
+
+			const res = await app.request("/organizations/stats")
+
+			expect(await res.json()).toEqual({
+				availableSlots: null,
+			})
+			expect.soft(
+				store.totalOrganizationCount,
+			).not.toHaveBeenCalled()
 		})
 	})
 

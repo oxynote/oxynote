@@ -40,16 +40,17 @@ const open = computed({
 })
 const { t } = useI18n({ useScope: "global" })
 const { fetchOrganization, hasPassword } = useAuthSession()
+const { maxOrganizationMembers } = useAuthAPI()
 const isMaxMembersReached = computed(() => {
 	const org = fetchOrganization.state.value.data?.data
-	if (!org) {
+	if (!org || maxOrganizationMembers.value === null) {
 		return false
 	}
 
 	return (
 		org.members.length +
 			org.invitations.filter((inv) => inv.status === "pending").length >=
-		ORGANIZATION_MAX_MEMBERS
+		maxOrganizationMembers.value
 	)
 })
 

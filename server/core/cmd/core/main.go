@@ -276,6 +276,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 			Password:    buildinfo.Getenv("EMAIL_SMTP_PASSWORD"),
 			TLS:         email.TLSMode(buildinfo.Getenv("EMAIL_SMTP_TLS")),
 			FromAddress: buildinfo.Getenv("EMAIL_FROM_ADDRESS"),
+			PublicURL:   buildinfo.Getenv("SERVER_PUBLIC_URL"),
 		},
 	)
 	if err != nil {

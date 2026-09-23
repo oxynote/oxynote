@@ -13,7 +13,7 @@ const emit = defineEmits<{
 
 const { fetchAuthSession, fetchOrganization, hasPassword, deleteUser } =
 	useAuthSession()
-const { isEmailEnabled } = useAuthAPI()
+const { isEmailEnabled, isSingleOrganization } = useAuthAPI()
 const config = useRuntimeConfig()
 const { t } = useI18n({ useScope: "global" })
 
@@ -53,8 +53,17 @@ const lastOrgMemeber = computed(() => {
 
 	return org.members.length <= 1
 })
+// a single-workspace instance has no signup to repopulate an empty
+// workspace, so the server refuses to delete its last member.
+const deletionBlocked = computed(
+	() => isSingleOrganization.value && lastOrgMemeber.value,
+)
 
 const onSubmit = form.handleSubmit(async (values) => {
+	if (deletionBlocked.value) {
+		return
+	}
+
 	loading.value = true
 	await delay(300) // show loading spinner for at least a moment
 
@@ -73,6 +82,18 @@ const onSubmit = form.handleSubmit(async (values) => {
 			form.setFieldError(
 				"password",
 				t("settings.action-modals.account-deletion.errors.invalid-password"),
+			)
+
+			return
+		}
+
+		if (error.code === "LAST_ORGANIZATION_MEMBER") {
+			showToastMessage(
+				"error",
+				t("settings.action-modals.account-deletion.errors.last-member.title"),
+				t(
+					"settings.action-modals.account-deletion.errors.last-member.description",
+				),
 			)
 
 			return
@@ -136,7 +157,17 @@ const onSubmit = form.handleSubmit(async (values) => {
 							)
 				}}
 			</ShadcnUiDialogDescription>
-			<div v-if="lastOrgMemeber" class="text-2sm font-medium text-foreground">
+			<div v-if="deletionBlocked" class="text-2sm font-medium text-foreground">
+				{{
+					$t(
+						"settings.action-modals.account-deletion.description-last-member-kept",
+					)
+				}}
+			</div>
+			<div
+				v-else-if="lastOrgMemeber"
+				class="text-2sm font-medium text-foreground"
+			>
 				{{
 					$t(
 						"settings.action-modals.account-deletion.description-last-org-member",
@@ -146,7 +177,7 @@ const onSubmit = form.handleSubmit(async (values) => {
 		</div>
 		<form class="mt-5 flex flex-col gap-5" @submit="onSubmit">
 			<ShadcnUiFormField
-				v-if="passwordRequired"
+				v-if="passwordRequired && !deletionBlocked"
 				v-slot="{ componentField }"
 				name="password"
 				class="w-full"
@@ -177,6 +208,7 @@ const onSubmit = form.handleSubmit(async (values) => {
 			</ShadcnUiFormField>
 			<div class="flex gap-2 self-stretch">
 				<ShadcnUiButton
+					v-if="!deletionBlocked"
 					type="submit"
 					variant="destructive"
 					size="sm"
@@ -198,7 +230,11 @@ const onSubmit = form.handleSubmit(async (values) => {
 					class="text-2sm"
 					@click="emit('close')"
 				>
-					{{ $t("settings.action-modals.account-deletion.cancel-button") }}
+					{{
+						deletionBlocked
+							? $t("settings.action-modals.account-deletion.close-button")
+							: $t("settings.action-modals.account-deletion.cancel-button")
+					}}
 				</ShadcnUiButton>
 			</div>
 		</form>

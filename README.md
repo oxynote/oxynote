@@ -118,11 +118,10 @@ docker run -d --name oxynote \
   ghcr.io/oxynote/oxynote:latest
 ```
 
-Open http://localhost:8080 and sign up.
+Open http://localhost:8080 and log in with `admin@example.com` and
+`oxynote-admin-1234`.
 
-Everything else is one variable away and listed in
-[docker/prod/README.md](docker/prod/README.md). To run from source, see
-[CONTRIBUTING.md](CONTRIBUTING.md).
+To run from source, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## What is in the box
 

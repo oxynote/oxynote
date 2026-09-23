@@ -1,4 +1,11 @@
-import { beforeEach, describe, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, it, vi } from "vitest"
+import {
+	clearQueryCache,
+	disposeMockEndpoints,
+	mockEndpoint,
+	runInApp,
+} from "./api/test-helpers"
+import useAuthAPI from "./api/useAuthAPI"
 import useAuthSession from "./useAuthSession"
 
 const { authClientStub, createAuthClientMock, allStubFns } = vi.hoisted(() => {
@@ -344,6 +351,8 @@ describe("useAuthSession", { concurrent: false }, () => {
 	})
 
 	describe("safeSignOut", () => {
+		afterEach(disposeMockEndpoints)
+
 		it("returns the auth error without touching the cache", async ({
 			expect,
 		}) => {
@@ -374,6 +383,34 @@ describe("useAuthSession", { concurrent: false }, () => {
 			// a session
 			const fresh = makeAuthSession()
 			expect(fresh.fetchAuthSession.data.value).toBeUndefined()
+		})
+
+		it("fetches the auth config again, with the admin's new password", async ({
+			expect,
+		}) => {
+			clearQueryCache()
+			let defaultAdmin = {
+				email: "admin@example.com",
+				password: "oxynote-admin-1234" as string | null,
+			}
+			const calls = mockEndpoint(
+				"GET",
+				"http://test.local/auth-realtime/api/auth-config",
+				() => ({ singleOrganization: true, defaultAdmin }),
+			)
+			const api = runInApp(() => useAuthAPI())
+			await api.fetchAuthConfig.refresh()
+			defaultAdmin = { email: "admin@example.com", password: null }
+			authClientStub.signOut.mockResolvedValue({ data: {}, error: null })
+			const auth = makeAuthSession()
+
+			await auth.safeSignOut()
+
+			expect(calls).toHaveLength(2)
+			expect(api.defaultAdmin.value).toEqual({
+				email: "admin@example.com",
+				password: null,
+			})
 		})
 	})
 

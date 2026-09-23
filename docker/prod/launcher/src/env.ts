@@ -108,6 +108,15 @@ function count() {
 	return z.string().regex(/^\d+$/, "must be a whole number").optional()
 }
 
+// a limit kept as the string auth-realtime parses itself: -1 for none, or a
+// positive integer.
+function limit() {
+	return z
+		.string()
+		.regex(/^(-1|[1-9]\d*)$/, "must be -1 or a positive integer")
+		.optional()
+}
+
 // what the public origin falls back to. Caddy listens on 8080 inside the
 // container, so a container published as 8080:8080 is reachable here with
 // no variable set; anything else (a domain, another host port) needs
@@ -392,8 +401,8 @@ const baseSchema = z.object({
 	OXYNOTE_AI_ASSISTANT_VERTEX_PROJECT_ID: z.string().optional(),
 	OXYNOTE_AI_ASSISTANT_VERTEX_REGION: z.string().optional(),
 	OXYNOTE_AI_ASSISTANT_VERTEX_SERVICE_ACCOUNT_JSON: z.string().optional(),
-	OXYNOTE_MAX_ORGANIZATIONS: count(),
-	OXYNOTE_MAX_ORGANIZATION_MEMBERS: count(),
+	OXYNOTE_MAX_ORGANIZATIONS: limit(),
+	OXYNOTE_MAX_ORGANIZATION_MEMBERS: limit(),
 	OXYNOTE_RATE_LIMIT_DISABLED: flag(),
 	OXYNOTE_MAX_DOCUMENT_HISTORY_ENTRIES: count(),
 	OXYNOTE_DOCUMENT_HISTORY_RETENTION: goDuration,

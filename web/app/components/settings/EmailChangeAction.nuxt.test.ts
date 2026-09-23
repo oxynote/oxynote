@@ -48,10 +48,14 @@ describe("<EmailChangeAction>", { concurrent: false }, () => {
 
 	afterEach(disposeMockEndpoints)
 
-	it("explains what changing the email does", async ({ expect }) => {
+	it("explains that the current address approves the change first", async ({
+		expect,
+	}) => {
 		const wrapper = await mountAction()
 
-		expect(wrapper.text()).toContain("Changing your email address")
+		expect(wrapper.text()).toContain(
+			t("settings.action-modals.email-change.description"),
+		)
 	})
 
 	it("sends the new address to the server with a verification callback", async ({
@@ -77,7 +81,16 @@ describe("<EmailChangeAction>", { concurrent: false }, () => {
 
 		await submitEmail(wrapper, "new@oxynote.test")
 
-		expect(toast.custom).toHaveBeenCalledTimes(1)
+		expect(raisedToasts()).toMatchObject([
+			{
+				type: "success",
+				title: t("settings.action-modals.email-change.success-message.title"),
+				description: t(
+					"settings.action-modals.email-change.success-message.description",
+					{ current: "ada@oxynote.test", email: "new@oxynote.test" },
+				),
+			},
+		])
 		expect(wrapper.emitted("close")).toHaveLength(1)
 	})
 
@@ -128,6 +141,53 @@ describe("<EmailChangeAction>", { concurrent: false }, () => {
 
 		expect(calls).toHaveLength(0)
 		expect(wrapper.emitted("close")).toHaveLength(1)
+	})
+
+	describe("for the default admin", { concurrent: false }, () => {
+		beforeEach(() => {
+			seedAuthConfig({
+				singleOrganization: true,
+				defaultAdmin: { email: "admin@example.com", password: null },
+			})
+		})
+
+		it("explains that only the new address gets a link", async ({ expect }) => {
+			seedAuthSession({ id: "u1", email: "admin@example.com", name: "Admin" })
+
+			const wrapper = await mountAction()
+
+			expect(wrapper.text()).toContain(
+				t("settings.action-modals.email-change.description-default-admin"),
+			)
+		})
+
+		it("confirms that the verification link went to the new address", async ({
+			expect,
+		}) => {
+			seedAuthSession({ id: "u1", email: "admin@example.com", name: "Admin" })
+			mockAuthEndpoint("change-email", () => ({ status: true }))
+			const wrapper = await mountAction()
+
+			await submitEmail(wrapper, "boss@oxynote.test")
+
+			expect(raisedToasts()).toMatchObject([
+				{
+					type: "success",
+					description: t(
+						"settings.action-modals.email-change.success-message-default-admin.description",
+						{ email: "boss@oxynote.test" },
+					),
+				},
+			])
+		})
+
+		it("keeps the approval step for every other member", async ({ expect }) => {
+			const wrapper = await mountAction()
+
+			expect(wrapper.text()).toContain(
+				t("settings.action-modals.email-change.description"),
+			)
+		})
 	})
 
 	describe("when the server sends no email", { concurrent: false }, () => {

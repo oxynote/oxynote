@@ -63,6 +63,7 @@ describe("<WorkspaceInvitationAction>", { concurrent: false }, () => {
 		clearQueryCache()
 		vi.mocked(toast.custom).mockReset()
 		seedAuthSession({ id: "u1", email: "ada@oxynote.test", name: "Ada" })
+		seedAuthConfig()
 	})
 
 	afterEach(disposeMockEndpoints)
@@ -195,6 +196,16 @@ describe("<WorkspaceInvitationAction>", { concurrent: false }, () => {
 		expect,
 	}) => {
 		seedWorkspace(4)
+
+		const wrapper = await mountAction()
+
+		expect(wrapper.find("input").exists()).toBe(true)
+		expect(wrapper.text()).not.toContain("maximum number of members")
+	})
+
+	it("keeps inviting available without a member limit", async ({ expect }) => {
+		seedAuthConfig({ maxOrganizationMembers: null })
+		seedWorkspace(50)
 
 		const wrapper = await mountAction()
 

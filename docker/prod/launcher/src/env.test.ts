@@ -490,10 +490,34 @@ describe("loadConfig", () => {
 			expect(config.logLevel).toBe("WARN")
 		})
 
+		it("accepts -1 as no limit", ({ expect }) => {
+			const config = loadConfig(
+				completeEnv({
+					OXYNOTE_MAX_ORGANIZATIONS: "-1",
+					OXYNOTE_MAX_ORGANIZATION_MEMBERS: "-1",
+				}),
+			)
+
+			expect(config.maxOrganizations).toBe("-1")
+			expect(config.maxOrganizationMembers).toBe("-1")
+		})
+
 		it.for([
 			{
 				name: "a word as a counter",
 				input: { OXYNOTE_MAX_ORGANIZATIONS: "many" },
+				expected: "OXYNOTE_MAX_ORGANIZATIONS",
+			},
+			{
+				name: "zero as a limit",
+				input: {
+					OXYNOTE_MAX_ORGANIZATION_MEMBERS: "0",
+				},
+				expected: "OXYNOTE_MAX_ORGANIZATION_MEMBERS",
+			},
+			{
+				name: "a negative limit other than -1",
+				input: { OXYNOTE_MAX_ORGANIZATIONS: "-2" },
 				expected: "OXYNOTE_MAX_ORGANIZATIONS",
 			},
 			{

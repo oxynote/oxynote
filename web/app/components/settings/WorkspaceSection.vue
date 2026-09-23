@@ -15,7 +15,7 @@ const emit = defineEmits<{
 
 const { fetchOrganization, fetchAuthSession, updateOrganization } =
 	useAuthSession()
-const { isEmailEnabled } = useAuthAPI()
+const { isEmailEnabled, maxOrganizationMembers } = useAuthAPI()
 const { t } = useI18n({ useScope: "global" })
 const { uploadOrganizationLogo } = useOrganizationAPI()
 const config = useRuntimeConfig()
@@ -324,13 +324,23 @@ async function copyInvitationLink(member: OrganizationMember) {
 		<div class="flex w-full flex-col gap-0.75">
 			<div class="flex items-center justify-between">
 				<i18n-t
+					v-if="maxOrganizationMembers === null"
+					scope="global"
+					keypath="settings.workspace.members-label-unlimited"
+					tag="div"
+					class="text-2base"
+				>
+					<template #current>{{ members.length }}</template>
+				</i18n-t>
+				<i18n-t
+					v-else
 					scope="global"
 					keypath="settings.workspace.members-label"
 					tag="div"
 					class="text-2base"
 				>
 					<template #current>{{ members.length }}</template>
-					<template #max>{{ ORGANIZATION_MAX_MEMBERS }}</template>
+					<template #max>{{ maxOrganizationMembers }}</template>
 				</i18n-t>
 
 				<ShadcnUiButton

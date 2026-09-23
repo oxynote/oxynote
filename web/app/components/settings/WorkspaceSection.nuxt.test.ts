@@ -300,7 +300,10 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 	})
 
 	describe("member list", { concurrent: false }, () => {
-		beforeEach(clearTeleportedOverlays)
+		beforeEach(() => {
+			clearTeleportedOverlays()
+			seedAuthConfig()
+		})
 
 		it("lists the joined members", async ({ expect }) => {
 			seedWorkspace({ members: [member("u1", "ada"), member("u2", "linus")] })
@@ -310,6 +313,19 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 			expect(wrapper.text()).toContain("ada")
 			expect(wrapper.text()).toContain("linus@oxynote.test")
 			expect(wrapper.text()).toContain("Members (2/5)")
+		})
+
+		it("counts the members without a maximum when there is no limit", async ({
+			expect,
+		}) => {
+			seedAuthConfig({ maxOrganizationMembers: null })
+			seedWorkspace({ members: [member("u1", "ada"), member("u2", "linus")] })
+
+			const { wrapper } = await mountSection()
+
+			expect(wrapper.text()).toContain(
+				t("settings.workspace.members-label-unlimited", { current: 2 }),
+			)
 		})
 
 		it("shows when a member joined", async ({ expect }) => {
