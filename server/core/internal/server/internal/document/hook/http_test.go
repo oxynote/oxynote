@@ -1,6 +1,7 @@
 package hook
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"log/slog"
@@ -324,6 +325,7 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusUnauthorized, `{"code":"account.not_authenticated","message":"not authenticated"}`),
 				wasInsertCalled(0),
+				wasRecordCalled(0),
 			),
 		},
 		"Missing document ID parameter": {
@@ -333,6 +335,7 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusNotFound, `{"code":"general","message":"not found"}`),
 				wasInsertCalled(0),
+				wasRecordCalled(0),
 			),
 		},
 		"Invalid JSON body": {
@@ -341,6 +344,7 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"request.invalid_json","message":"invalid JSON body"}`),
 				wasInsertCalled(0),
+				wasRecordCalled(0),
 			),
 		},
 		"Branch document fetch error": {
@@ -353,6 +357,7 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasInsertCalled(0),
+				wasRecordCalled(0),
 			),
 		},
 		"Invalid hook type": {
@@ -361,6 +366,7 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"document_hook.invalid_type","message":"invalid hook type"}`),
 				wasInsertCalled(0),
+				wasRecordCalled(0),
 			),
 		},
 		"Hook insertion error": {
@@ -373,6 +379,7 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasInsertCalled(1),
+				wasRecordCalled(0),
 			),
 		},
 		"Branch belongs to another document": {
@@ -385,6 +392,7 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusNotFound, `{"code":"document.branch_mismatch","message":"branch does not belong to the document"}`),
 				wasInsertCalled(0),
+				wasRecordCalled(0),
 			),
 		},
 		"Block not in the branch": {
@@ -393,6 +401,7 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusNotFound, `{"code":"document.hook_block_not_found","message":"block not found in the branch"}`),
 				wasInsertCalled(0),
+				wasRecordCalled(0),
 			),
 		},
 		"Successful creation on a block": {
@@ -407,6 +416,7 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 					assert.Equal(t, null.StringFrom("b1"), ff[0].Hk.BlockID)
 				},
 				wasInsertCalled(1),
+				wasRecordCalled(1),
 			),
 		},
 		"URL watcher without changedetection": {
@@ -415,6 +425,7 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusConflict, `{"code":"changedetection.not_configured","message":"changedetection is not configured"}`),
 				wasInsertCalled(0),
+				wasRecordCalled(0),
 			),
 		},
 		"Successful creation": {
@@ -426,6 +437,7 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 					assert.Contains(t, rec.Body.String(), `"scheduled-reminder"`)
 				},
 				wasInsertCalled(1),
+				wasRecordCalled(1),
 			),
 		},
 	}
@@ -532,6 +544,7 @@ func Test_Handler_UpdateDocumentHook(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusUnauthorized, `{"code":"account.not_authenticated","message":"not authenticated"}`),
 				wasUpdateCalled(0),
+				wasRecordCalled(0),
 			),
 		},
 		"Missing document ID parameter": {
@@ -541,6 +554,7 @@ func Test_Handler_UpdateDocumentHook(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusNotFound, `{"code":"general","message":"not found"}`),
 				wasUpdateCalled(0),
+				wasRecordCalled(0),
 			),
 		},
 		"Missing hook ID parameter": {
@@ -550,6 +564,7 @@ func Test_Handler_UpdateDocumentHook(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusNotFound, `{"code":"general","message":"not found"}`),
 				wasUpdateCalled(0),
+				wasRecordCalled(0),
 			),
 		},
 		"Hook of another document": {
@@ -565,6 +580,7 @@ func Test_Handler_UpdateDocumentHook(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusNotFound, `{"code":"document.hook_mismatch","message":"hook does not belong to the document"}`),
 				wasUpdateCalled(0),
+				wasRecordCalled(0),
 			),
 		},
 		"Hook fetch error": {
@@ -577,6 +593,7 @@ func Test_Handler_UpdateDocumentHook(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasUpdateCalled(0),
+				wasRecordCalled(0),
 			),
 		},
 		"Invalid JSON body": {
@@ -589,6 +606,7 @@ func Test_Handler_UpdateDocumentHook(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"request.invalid_json","message":"invalid JSON body"}`),
 				wasUpdateCalled(0),
+				wasRecordCalled(0),
 			),
 		},
 		"Update application error": {
@@ -601,6 +619,7 @@ func Test_Handler_UpdateDocumentHook(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasUpdateCalled(0),
+				wasRecordCalled(0),
 			),
 		},
 		"Hook update error": {
@@ -616,6 +635,7 @@ func Test_Handler_UpdateDocumentHook(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
 				wasUpdateCalled(1),
+				wasRecordCalled(0),
 			),
 		},
 		"URL watcher without changedetection": {
@@ -628,6 +648,7 @@ func Test_Handler_UpdateDocumentHook(t *testing.T) {
 			Checks: checks(
 				hasResp(http.StatusConflict, `{"code":"changedetection.not_configured","message":"changedetection is not configured"}`),
 				wasUpdateCalled(0),
+				wasRecordCalled(0),
 			),
 		},
 		"Successful update": {
@@ -643,6 +664,7 @@ func Test_Handler_UpdateDocumentHook(t *testing.T) {
 					assert.Contains(t, rec.Body.String(), _hookID.String())
 				},
 				wasUpdateCalled(1),
+				wasRecordCalled(1),
 			),
 		},
 	}
@@ -718,19 +740,19 @@ func Test_Handler_ResetDocumentHook(t *testing.T) {
 			DB:        &DBMock{},
 			NoSession: true,
 			RespCode:  http.StatusUnauthorized,
-			Checks:    checks(wasUpdateCalled(0)),
+			Checks:    checks(wasUpdateCalled(0), wasRecordCalled(0)),
 		},
 		"Missing document ID parameter": {
 			DB:       &DBMock{},
 			OmitDoc:  true,
 			RespCode: http.StatusNotFound,
-			Checks:   checks(wasUpdateCalled(0)),
+			Checks:   checks(wasUpdateCalled(0), wasRecordCalled(0)),
 		},
 		"Missing hook ID parameter": {
 			DB:       &DBMock{},
 			OmitID:   true,
 			RespCode: http.StatusNotFound,
-			Checks:   checks(wasUpdateCalled(0)),
+			Checks:   checks(wasUpdateCalled(0), wasRecordCalled(0)),
 		},
 		"Hook of another document": {
 			DB: &DBMock{
@@ -742,7 +764,7 @@ func Test_Handler_ResetDocumentHook(t *testing.T) {
 				},
 			},
 			RespCode: http.StatusNotFound,
-			Checks:   checks(wasUpdateCalled(0)),
+			Checks:   checks(wasUpdateCalled(0), wasRecordCalled(0)),
 		},
 		"Hook fetch error": {
 			DB: &DBMock{
@@ -751,7 +773,7 @@ func Test_Handler_ResetDocumentHook(t *testing.T) {
 				},
 			},
 			RespCode: http.StatusInternalServerError,
-			Checks:   checks(wasUpdateCalled(0)),
+			Checks:   checks(wasUpdateCalled(0), wasRecordCalled(0)),
 		},
 		"Reset error": {
 			DB: &DBMock{
@@ -760,7 +782,7 @@ func Test_Handler_ResetDocumentHook(t *testing.T) {
 				},
 			},
 			RespCode: http.StatusInternalServerError,
-			Checks:   checks(wasUpdateCalled(0)),
+			Checks:   checks(wasUpdateCalled(0), wasRecordCalled(0)),
 		},
 		"Hook update error": {
 			DB: &DBMock{
@@ -772,7 +794,7 @@ func Test_Handler_ResetDocumentHook(t *testing.T) {
 				},
 			},
 			RespCode: http.StatusInternalServerError,
-			Checks:   checks(wasUpdateCalled(1)),
+			Checks:   checks(wasUpdateCalled(1), wasRecordCalled(0)),
 		},
 		"URL watcher without changedetection": {
 			DB: &DBMock{
@@ -781,7 +803,7 @@ func Test_Handler_ResetDocumentHook(t *testing.T) {
 				},
 			},
 			RespCode: http.StatusConflict,
-			Checks:   checks(wasUpdateCalled(0)),
+			Checks:   checks(wasUpdateCalled(0), wasRecordCalled(0)),
 		},
 		"Successful reset": {
 			DB: &DBMock{
@@ -790,7 +812,7 @@ func Test_Handler_ResetDocumentHook(t *testing.T) {
 				},
 			},
 			RespCode: http.StatusOK,
-			Checks:   checks(wasUpdateCalled(1)),
+			Checks:   checks(wasUpdateCalled(1), wasRecordCalled(0)),
 		},
 	}
 
@@ -866,19 +888,19 @@ func Test_Handler_DeleteDocumentHook(t *testing.T) {
 			DB:        &DBMock{},
 			NoSession: true,
 			RespCode:  http.StatusUnauthorized,
-			Checks:    checks(wasDeleteCalled(0)),
+			Checks:    checks(wasDeleteCalled(0), wasRecordCalled(0)),
 		},
 		"Missing document ID parameter": {
 			DB:       &DBMock{},
 			OmitDoc:  true,
 			RespCode: http.StatusNotFound,
-			Checks:   checks(wasDeleteCalled(0)),
+			Checks:   checks(wasDeleteCalled(0), wasRecordCalled(0)),
 		},
 		"Missing hook ID parameter": {
 			DB:       &DBMock{},
 			OmitID:   true,
 			RespCode: http.StatusNotFound,
-			Checks:   checks(wasDeleteCalled(0)),
+			Checks:   checks(wasDeleteCalled(0), wasRecordCalled(0)),
 		},
 		"Hook of another document": {
 			DB: &DBMock{
@@ -890,7 +912,7 @@ func Test_Handler_DeleteDocumentHook(t *testing.T) {
 				},
 			},
 			RespCode: http.StatusNotFound,
-			Checks:   checks(wasDeleteCalled(0)),
+			Checks:   checks(wasDeleteCalled(0), wasRecordCalled(0)),
 		},
 		"Hook fetch error": {
 			DB: &DBMock{
@@ -899,7 +921,7 @@ func Test_Handler_DeleteDocumentHook(t *testing.T) {
 				},
 			},
 			RespCode: http.StatusInternalServerError,
-			Checks:   checks(wasDeleteCalled(0)),
+			Checks:   checks(wasDeleteCalled(0), wasRecordCalled(0)),
 		},
 		"External cleanup error": {
 			DB: &DBMock{
@@ -908,7 +930,7 @@ func Test_Handler_DeleteDocumentHook(t *testing.T) {
 				},
 			},
 			RespCode: http.StatusInternalServerError,
-			Checks:   checks(wasDeleteCalled(0)),
+			Checks:   checks(wasDeleteCalled(0), wasRecordCalled(0)),
 		},
 		"Hook deletion error": {
 			DB: &DBMock{
@@ -920,7 +942,7 @@ func Test_Handler_DeleteDocumentHook(t *testing.T) {
 				},
 			},
 			RespCode: http.StatusInternalServerError,
-			Checks:   checks(wasDeleteCalled(1)),
+			Checks:   checks(wasDeleteCalled(1), wasRecordCalled(0)),
 		},
 		"Successful deletion": {
 			DB: &DBMock{
@@ -929,7 +951,7 @@ func Test_Handler_DeleteDocumentHook(t *testing.T) {
 				},
 			},
 			RespCode: http.StatusNoContent,
-			Checks:   checks(wasDeleteCalled(1)),
+			Checks:   checks(wasDeleteCalled(1), wasRecordCalled(1)),
 		},
 
 		// an unconfigured changedetection must not trap the row: the
@@ -941,7 +963,7 @@ func Test_Handler_DeleteDocumentHook(t *testing.T) {
 				},
 			},
 			RespCode: http.StatusNoContent,
-			Checks:   checks(wasDeleteCalled(1)),
+			Checks:   checks(wasDeleteCalled(1), wasRecordCalled(1)),
 		},
 	}
 
@@ -984,5 +1006,93 @@ func Test_Handler_DeleteDocumentHook(t *testing.T) {
 				ch(t, c.DB, rec)
 			}
 		})
+	}
+}
+
+func Test_Handler_recordHistory(t *testing.T) {
+	cc := map[string]struct {
+		Hook    hookCore.Hook
+		Err     error
+		Records int
+		Log     string
+	}{
+		"Hook without a branch": {
+			Hook: func() hookCore.Hook {
+				hk := *urlWatcherHook()
+				hk.BranchID = null.Value[xid.ID]{}
+
+				return hk
+			}(),
+		},
+		// the hook change is already written, so the failure is logged
+		// rather than returned.
+		"Error returned by db.RecordDocumentBranchHistoryEntry": {
+			Hook:    *urlWatcherHook(),
+			Err:     assert.AnError,
+			Records: 1,
+			Log:     "cannot record the hook change in the branch history",
+		},
+		"Successful record": {
+			Hook:    *urlWatcherHook(),
+			Records: 1,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := &DBMock{
+				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) (xid.ID, error) {
+					return xid.New(), c.Err
+				},
+			}
+
+			var buf bytes.Buffer
+
+			hdl := Handler{
+				log: slog.New(slog.NewTextHandler(&buf, nil)),
+				db:  db,
+			}
+
+			hdl.recordHistory(context.Background(), c.Hook, auth.Session{UserID: "u1", ActiveOrganizationID: "org1"})
+
+			ff := db.RecordDocumentBranchHistoryEntryCalls()
+			require.Len(t, ff, c.Records)
+
+			if c.Records > 0 {
+				assert.Equal(t, _branchID, ff[0].BranchID)
+				assert.Equal(t, "org1", ff[0].OrganizationID)
+				assert.Equal(t, null.StringFrom("u1"), ff[0].By)
+				assert.False(t, ff[0].Boundary)
+			}
+
+			if c.Log == "" {
+				assert.Empty(t, buf.String())
+				return
+			}
+
+			assert.Contains(t, buf.String(), c.Log)
+		})
+	}
+}
+
+// wasRecordCalled checks that the handler recorded the hook's branch in its
+// history count times, credited to the session user.
+func wasRecordCalled(count int) func(*testing.T, *DBMock, *httptest.ResponseRecorder) {
+	return func(t *testing.T, db *DBMock, _ *httptest.ResponseRecorder) {
+		t.Helper()
+
+		ff := db.RecordDocumentBranchHistoryEntryCalls()
+		require.Len(t, ff, count)
+
+		if count == 0 {
+			return
+		}
+
+		assert.Equal(t, _branchID, ff[0].BranchID)
+		assert.Equal(t, "org1", ff[0].OrganizationID)
+		assert.Equal(t, null.StringFrom("u1"), ff[0].By)
+		assert.False(t, ff[0].Boundary)
 	}
 }

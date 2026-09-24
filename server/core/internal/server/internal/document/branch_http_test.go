@@ -1,8 +1,10 @@
 package document
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -13,8 +15,6 @@ import (
 	hookCore "github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
 	"github.com/oxynote/oxynote/server/core/internal/search"
-	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
-	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -151,8 +151,8 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 		BranchID    xid.ID
 		// History is how many history entries the persist records.
 		History int
-		// HistoryCheck inspects the recorded entry.
-		HistoryCheck func(t *testing.T, entry history.Entry)
+		// HistoryBy is who the recorded entry is credited to.
+		HistoryBy null.String
 	}{
 		"Unchanged persist writes no history entry": {
 			DB:          &DBMock{FetchDocumentUnsafeByBranchIDFunc: fetchStored},
@@ -164,26 +164,17 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 			Maintainers: 1,
 			SearchJobs:  1,
 		},
-		"History hook fetch error": {
+		"Error returned by Tx.RecordDocumentBranchHistoryEntry": {
 			DB: &DBMock{FetchDocumentUnsafeByBranchIDFunc: fetchStored},
 			Tx: &TxMock{
-				FetchDocumentHooksByBranchIDFunc: func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
-					return nil, errors.New("boom")
+				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) (xid.ID, error) {
+					return xid.ID{}, errors.New("boom")
 				},
 			},
-			Body:     validBody,
-			RespCode: http.StatusInternalServerError,
-		},
-		"History entry insert error": {
-			DB: &DBMock{FetchDocumentUnsafeByBranchIDFunc: fetchStored},
-			Tx: &TxMock{
-				InsertDocumentBranchHistoryEntryFunc: func(context.Context, history.Entry) error {
-					return errors.New("boom")
-				},
-			},
-			Body:     validBody,
-			RespCode: http.StatusInternalServerError,
-			History:  1,
+			Body:      validBody,
+			RespCode:  http.StatusInternalServerError,
+			History:   1,
+			HistoryBy: null.StringFrom("u9"),
 		},
 		"System write records an unattributed entry": {
 			DB: &DBMock{
@@ -195,9 +186,6 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 				},
 			},
 			Tx: &TxMock{
-				FetchDocumentHooksByBranchIDFunc: func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
-					return []hookCore.Hook{storedHook(hookCore.TypeScheduledReminder)}, nil
-				},
 				FetchDocumentMaintainersFunc: func(context.Context, xid.ID, string) ([]string, error) {
 					return []string{"u1", "u9"}, nil
 				},
@@ -208,18 +196,6 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 			Metadata:   1,
 			SearchJobs: 1,
 			History:    1,
-			HistoryCheck: func(t *testing.T, entry history.Entry) {
-				assert.Equal(t, _branchID, entry.BranchID)
-				assert.Equal(t, "Renamed", entry.DocumentName)
-				assert.False(t, entry.LastUpdatedBy.Valid)
-				assert.False(t, entry.Boundary)
-				assert.Equal(t, history.Hooks{
-					{
-						Type:     hookCore.TypeScheduledReminder,
-						Settings: processor.Settings(`{"scale":"linear"}`),
-					},
-				}, entry.Hooks)
-			},
 		},
 		"Missing branch ID parameter": {
 			DB:         &DBMock{},
@@ -281,9 +257,10 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 					return nil, errors.New("boom")
 				},
 			},
-			Body:     validBody,
-			RespCode: http.StatusInternalServerError,
-			History:  1,
+			Body:      validBody,
+			RespCode:  http.StatusInternalServerError,
+			History:   1,
+			HistoryBy: null.StringFrom("u9"),
 		},
 		"Maintainer upsert error": {
 			DB: &DBMock{FetchDocumentUnsafeByBranchIDFunc: fetchStored},
@@ -292,9 +269,10 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 					return errors.New("boom")
 				},
 			},
-			Body:     validBody,
-			RespCode: http.StatusInternalServerError,
-			History:  1,
+			Body:      validBody,
+			RespCode:  http.StatusInternalServerError,
+			History:   1,
+			HistoryBy: null.StringFrom("u9"),
 		},
 		"Search job insertion error on default branch": {
 			DB: &DBMock{FetchDocumentUnsafeByBranchIDFunc: fetchStored},
@@ -310,6 +288,7 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 			RespCode:   http.StatusInternalServerError,
 			SearchJobs: 1,
 			History:    1,
+			HistoryBy:  null.StringFrom("u9"),
 		},
 		"Commit error": {
 			DB: &DBMock{FetchDocumentUnsafeByBranchIDFunc: fetchStored},
@@ -326,6 +305,7 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 			Committed:  1,
 			SearchJobs: 1,
 			History:    1,
+			HistoryBy:  null.StringFrom("u9"),
 		},
 		"Successful update with new maintainers": {
 			DB:          &DBMock{FetchDocumentUnsafeByBranchIDFunc: fetchStored},
@@ -337,6 +317,7 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 			Maintainers: 1,
 			SearchJobs:  1,
 			History:     1,
+			HistoryBy:   null.StringFrom("u9"),
 		},
 		"Successful update without new maintainers": {
 			DB: &DBMock{FetchDocumentUnsafeByBranchIDFunc: fetchStored},
@@ -351,6 +332,7 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 			Metadata:   1,
 			SearchJobs: 1,
 			History:    1,
+			HistoryBy:  null.StringFrom("u9"),
 		},
 		"Non-default branch queues its own search job": {
 			DB: &DBMock{
@@ -370,6 +352,7 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 			SearchJobs: 1,
 			BranchID:   _branchID2,
 			History:    1,
+			HistoryBy:  null.StringFrom("u9"),
 		},
 	}
 
@@ -388,16 +371,23 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 			assert.Equal(t, c.Metadata, cnt.metadata)
 			assert.Equal(t, c.Maintainers, cnt.maintainers)
 			assert.Len(t, c.Tx.InsertSearchJobCalls(), c.SearchJobs)
-			assert.Len(t, c.Tx.InsertDocumentBranchHistoryEntryCalls(), c.History)
 
-			if c.HistoryCheck != nil {
-				c.HistoryCheck(t, c.Tx.InsertDocumentBranchHistoryEntryCalls()[0].Entry)
-			}
+			// the entry is ordinary and records the persisted branch,
+			// credited to the last maintainer. A system write is not
+			// credited to anyone.
+			hh := c.Tx.RecordDocumentBranchHistoryEntryCalls()
+			require.Len(t, hh, c.History)
 
-			if cn == "Successful update with new maintainers" {
-				entry := c.Tx.InsertDocumentBranchHistoryEntryCalls()[0].Entry
-				assert.Equal(t, null.StringFrom("u9"), entry.LastUpdatedBy)
-				assert.Equal(t, history.Hooks{}, entry.Hooks)
+			if c.History > 0 {
+				branchID := c.BranchID
+				if branchID.IsZero() {
+					branchID = _branchID
+				}
+
+				assert.Equal(t, branchID, hh[0].BranchID)
+				assert.Equal(t, "org1", hh[0].OrganizationID)
+				assert.Equal(t, c.HistoryBy, hh[0].By)
+				assert.False(t, hh[0].Boundary)
 			}
 
 			// the job is scoped to the persisted branch, whichever branch
@@ -450,22 +440,14 @@ func Test_Handler_MergeBranches(t *testing.T) {
 		Reviewers int
 		// History is how many history entries the merge records.
 		History int
+		// EntryHooks is how many hooks the merge entry lists afterwards.
+		EntryHooks int
 	}{
-		"History hook fetch error": {
-			DB: &DBMock{FetchDocumentByBranchIDFunc: fetchByBranch},
-			Tx: &TxMock{
-				FetchDocumentHooksByBranchIDFunc: func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
-					return nil, errors.New("boom")
-				},
-			},
-			Body:     validBody,
-			RespCode: http.StatusInternalServerError,
-		},
 		"History entry insert error": {
 			DB: &DBMock{FetchDocumentByBranchIDFunc: fetchByBranch},
 			Tx: &TxMock{
-				InsertDocumentBranchHistoryEntryFunc: func(context.Context, history.Entry) error {
-					return errors.New("boom")
+				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) (xid.ID, error) {
+					return xid.ID{}, errors.New("boom")
 				},
 			},
 			Body:     validBody,
@@ -662,13 +644,14 @@ func Test_Handler_MergeBranches(t *testing.T) {
 					return []hookCore.Hook{storedHook(hookCore.TypeScheduledReminder)}, nil
 				},
 			},
-			Tx:        &TxMock{},
-			Body:      validBody,
-			RespCode:  http.StatusOK,
-			Committed: 1,
-			Metadata:  1,
-			Reviewers: 1,
-			History:   1,
+			Tx:         &TxMock{},
+			Body:       validBody,
+			RespCode:   http.StatusOK,
+			Committed:  1,
+			Metadata:   1,
+			Reviewers:  1,
+			History:    1,
+			EntryHooks: 1,
 		},
 	}
 
@@ -691,19 +674,22 @@ func Test_Handler_MergeBranches(t *testing.T) {
 			assert.Len(t, c.Tx.CommitCalls(), c.Committed)
 			assert.Equal(t, c.Metadata, cnt.metadata)
 			assert.Equal(t, c.Reviewers, cnt.reviewers)
-			assert.Len(t, c.Tx.InsertDocumentBranchHistoryEntryCalls(), c.History)
+			assert.Len(t, c.Tx.RecordDocumentBranchHistoryEntryCalls(), c.History)
 
 			if c.RespCode == http.StatusOK {
-				// the merge is a boundary entry of the target, listing the
-				// source's hooks and attributed to the merging user.
-				entry := c.Tx.InsertDocumentBranchHistoryEntryCalls()[0].Entry
+				// the merge is a boundary entry of the target, attributed to
+				// the merging user. It takes the hooks the copy created once
+				// the merge commits.
+				entry := c.Tx.RecordDocumentBranchHistoryEntryCalls()[0]
 				assert.Equal(t, _branchID, entry.BranchID)
+				assert.Equal(t, "org1", entry.OrganizationID)
 				assert.True(t, entry.Boundary)
-				assert.Equal(t, null.StringFrom("u1"), entry.LastUpdatedBy)
+				assert.Equal(t, null.StringFrom("u1"), entry.By)
 
-				hh := c.Tx.FetchDocumentHooksByBranchIDCalls()
+				hh := c.DB.UpdateDocumentBranchHistoryEntryHooksCalls()
 				require.Len(t, hh, 1)
-				assert.Equal(t, _branchID2, hh[0].BranchID)
+				assert.Equal(t, _entryID, hh[0].ID)
+				assert.Len(t, hh[0].Hooks, c.EntryHooks)
 
 				// hooks are soft-deleted on the target inside the
 				// transaction and re-created from the source branch once it
@@ -803,20 +789,6 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 		// History is how many history entries the fork records.
 		History int
 	}{
-		"History hook fetch error": {
-			DB: &DBMock{
-				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
-					return storedDoc(), nil
-				},
-			},
-			Tx: &TxMock{
-				FetchDocumentHooksByBranchIDFunc: func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
-					return nil, errors.New("boom")
-				},
-			},
-			Body:     validBody,
-			RespCode: http.StatusInternalServerError,
-		},
 		"History entry insert error": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
@@ -824,8 +796,8 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 				},
 			},
 			Tx: &TxMock{
-				InsertDocumentBranchHistoryEntryFunc: func(context.Context, history.Entry) error {
-					return errors.New("boom")
+				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) (xid.ID, error) {
+					return xid.ID{}, errors.New("boom")
 				},
 			},
 			Body:     validBody,
@@ -997,7 +969,7 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 			assert.Equal(t, c.RespCode, rec.Code)
 			assert.Len(t, c.Tx.CommitCalls(), c.Committed)
 			assert.Empty(t, c.Tx.InsertDocumentHookCalls())
-			assert.Len(t, c.Tx.InsertDocumentBranchHistoryEntryCalls(), c.History)
+			assert.Len(t, c.Tx.RecordDocumentBranchHistoryEntryCalls(), c.History)
 
 			if c.RespCode == http.StatusCreated {
 				require.Len(t, c.Tx.InsertDocumentBranchCalls(), 1)
@@ -1007,14 +979,15 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 				assert.False(t, forked.Protected)
 				assert.Nil(t, forked.RawContent)
 
-				// the fork starts with a boundary entry of its own content,
-				// listing the source's hooks.
-				entry := c.Tx.InsertDocumentBranchHistoryEntryCalls()[0].Entry
+				// the fork starts with a boundary entry of its own content.
+				// It takes the hooks the copy created once the fork commits.
+				entry := c.Tx.RecordDocumentBranchHistoryEntryCalls()[0]
 				assert.Equal(t, forked.BranchID, entry.BranchID)
+				assert.Equal(t, "org1", entry.OrganizationID)
 				assert.True(t, entry.Boundary)
-				assert.Equal(t, null.StringFrom("u1"), entry.LastUpdatedBy)
-				require.Len(t, c.Tx.FetchDocumentHooksByBranchIDCalls(), 1)
-				assert.Equal(t, _branchID, c.Tx.FetchDocumentHooksByBranchIDCalls()[0].BranchID)
+				assert.Equal(t, null.StringFrom("u1"), entry.By)
+				require.Len(t, c.DB.UpdateDocumentBranchHistoryEntryHooksCalls(), 1)
+				assert.Equal(t, _entryID, c.DB.UpdateDocumentBranchHistoryEntryHooksCalls()[0].ID)
 
 				// the fork takes the source's tags before the commit.
 				require.Len(t, c.Tx.CopyBranchTagsCalls(), 1)
@@ -1037,6 +1010,10 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 
 			require.Len(t, c.DB.InsertDocumentHookCalls(), 1)
 			assert.Equal(t, null.ValueFrom(forkedID), c.DB.InsertDocumentHookCalls()[0].Hk.BranchID)
+			assert.Equal(t,
+				history.NewHooks([]hookCore.Hook{c.DB.InsertDocumentHookCalls()[0].Hk}),
+				c.DB.UpdateDocumentBranchHistoryEntryHooksCalls()[0].Hooks,
+			)
 		})
 	}
 }
@@ -1225,11 +1202,12 @@ func Test_Handler_copyHooksToBranch(t *testing.T) {
 
 		hdl, _ := newTestHandler(db, &fakePublisher{})
 
-		hdl.copyHooksToBranch(context.Background(), _branchID2, _branchID, _documentID, "org1", nil)
+		created := hdl.copyHooksToBranch(context.Background(), _branchID2, _branchID, _documentID, "org1", nil)
 
 		ff := db.InsertDocumentHookCalls()
 		require.Len(t, ff, 1)
 		assert.Equal(t, hookCore.TypeScheduledReminder, ff[0].Hk.Type)
+		assert.Equal(t, []hookCore.Hook{ff[0].Hk}, created)
 	})
 
 	// a duplicated branch carries fresh block uids, so a hook anchored to a
@@ -1284,11 +1262,12 @@ func Test_Handler_copyHooksToBranch(t *testing.T) {
 
 	hdl, _ := newTestHandler(db, &fakePublisher{})
 
-	hdl.copyHooksToBranch(context.Background(), _branchID2, _branchID, _documentID, "org1", nil)
+	created := hdl.copyHooksToBranch(context.Background(), _branchID2, _branchID, _documentID, "org1", nil)
 
 	// the failure stops the copy rather than working through the rest of
 	// the branch's hooks and creating a watcher for each.
 	require.Len(t, db.InsertDocumentHookCalls(), 1)
+	assert.Empty(t, created)
 }
 
 func Test_Handler_UpdateDocumentBranch(t *testing.T) {
@@ -1455,78 +1434,51 @@ func Test_Handler_UpdateDocumentBranch(t *testing.T) {
 	}
 }
 
-func Test_Handler_insertBoundaryEntry(t *testing.T) {
+func Test_Handler_updateEntryHooks(t *testing.T) {
 	cc := map[string]struct {
-		Tx    *TxMock
-		Err   error
-		Hooks history.Hooks
+		Err error
+		Log string
 	}{
-		"Error returned by Tx.FetchDocumentHooksByBranchID": {
-			Tx: &TxMock{
-				FetchDocumentHooksByBranchIDFunc: func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
-					return nil, assert.AnError
-				},
-			},
+		// the entry's operation has already committed, so the failure
+		// is logged rather than returned.
+		"Error returned by db.UpdateDocumentBranchHistoryEntryHooks": {
 			Err: assert.AnError,
+			Log: "cannot record the copied hooks on the history entry",
 		},
-		"Error returned by Tx.InsertDocumentBranchHistoryEntry": {
-			Tx: &TxMock{
-				InsertDocumentBranchHistoryEntryFunc: func(context.Context, history.Entry) error {
-					return assert.AnError
-				},
-			},
-			Err: assert.AnError,
-		},
-		"Successful insert": {
-			Tx: &TxMock{
-				FetchDocumentHooksByBranchIDFunc: func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
-					return []hookCore.Hook{storedHook(hookCore.TypeScheduledReminder)}, nil
-				},
-			},
-			Hooks: history.Hooks{
-				{
-					Type:     hookCore.TypeScheduledReminder,
-					Settings: processor.Settings(`{"scale":"linear"}`),
-				},
-			},
-		},
+		"Successful update": {},
 	}
 
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			hdl, _ := newTestHandler(&DBMock{}, &fakePublisher{})
-			doc := branchDoc(_branchID2)
+			db := &DBMock{
+				UpdateDocumentBranchHistoryEntryHooksFunc: func(context.Context, xid.ID, history.Hooks) error {
+					return c.Err
+				},
+			}
 
-			err := hdl.insertBoundaryEntry(
-				context.Background(),
-				c.Tx,
-				*doc,
-				_branchID,
-				auth.Session{UserID: "u1", ActiveOrganizationID: "org1"},
-			)
-			testutil.AssertEqualError(t, c.Err, err)
+			var buf bytes.Buffer
 
-			ff := c.Tx.FetchDocumentHooksByBranchIDCalls()
+			hdl, _ := newTestHandler(db, &fakePublisher{})
+			hdl.log = slog.New(slog.NewTextHandler(&buf, nil))
+
+			entryID := xid.New()
+			hk := storedHook(hookCore.TypeScheduledReminder)
+
+			hdl.updateEntryHooks(context.Background(), entryID, []hookCore.Hook{hk})
+
+			ff := db.UpdateDocumentBranchHistoryEntryHooksCalls()
 			require.Len(t, ff, 1)
-			assert.Equal(t, _branchID, ff[0].BranchID)
-			assert.Equal(t, "org1", ff[0].OrganizationID)
+			assert.Equal(t, entryID, ff[0].ID)
+			assert.Equal(t, history.NewHooks([]hookCore.Hook{hk}), ff[0].Hooks)
 
-			if err != nil && len(c.Tx.InsertDocumentBranchHistoryEntryCalls()) == 0 {
+			if c.Log == "" {
+				assert.Empty(t, buf.String())
 				return
 			}
 
-			require.Len(t, c.Tx.InsertDocumentBranchHistoryEntryCalls(), 1)
-			entry := c.Tx.InsertDocumentBranchHistoryEntryCalls()[0].Entry
-			assert.Equal(t, _branchID2, entry.BranchID)
-			assert.Equal(t, doc.DocumentName, entry.DocumentName)
-			assert.True(t, entry.Boundary)
-			assert.Equal(t, null.StringFrom("u1"), entry.LastUpdatedBy)
-
-			if c.Hooks != nil {
-				assert.Equal(t, c.Hooks, entry.Hooks)
-			}
+			assert.Contains(t, buf.String(), c.Log)
 		})
 	}
 }

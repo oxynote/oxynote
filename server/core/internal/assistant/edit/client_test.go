@@ -48,6 +48,7 @@ func Test_Client_Apply(t *testing.T) {
 
 	cc := map[string]struct {
 		Ops             []Operation
+		UserID          string
 		System          bool
 		BaseURL         string
 		CloseEarly      bool
@@ -87,6 +88,17 @@ func Test_Client_Apply(t *testing.T) {
 				Append(paragraph()),
 			},
 			System:          true,
+			StatusCode:      200,
+			ResponseBody:    `{"applied": 1, "errors": []}`,
+			ExpectedApplied: 1,
+			ExpectedErrors:  []OpError{},
+			ExpectedPath:    path,
+		},
+		"An ordinary batch names its user": {
+			Ops: []Operation{
+				Append(paragraph()),
+			},
+			UserID:          "user-1",
 			StatusCode:      200,
 			ResponseBody:    `{"applied": 1, "errors": []}`,
 			ExpectedApplied: 1,
@@ -190,7 +202,7 @@ func Test_Client_Apply(t *testing.T) {
 
 			client := NewClient(srv.Client(), baseURL)
 
-			res, err := client.Apply(context.Background(), docID, branchID, c.Ops, c.System)
+			res, err := client.Apply(context.Background(), docID, branchID, c.Ops, c.UserID, c.System)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if c.NoRequest {
@@ -212,6 +224,12 @@ func Test_Client_Apply(t *testing.T) {
 				require.True(t, ok, "request body should carry operations array")
 				assert.Len(t, ops, len(c.Ops))
 				assert.Equal(t, c.System, captured.body["system"])
+
+				if c.UserID == "" {
+					assert.NotContains(t, captured.body, "userId")
+				} else {
+					assert.Equal(t, c.UserID, captured.body["userId"])
+				}
 			}
 		})
 	}

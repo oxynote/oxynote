@@ -871,7 +871,7 @@ func Test_updateDocument_Execute(t *testing.T) {
 		"Error returned by the edit": {
 			DB: stubDocumentDB(),
 			Applier: &EditApplierMock{
-				ApplyFunc: func(context.Context, xid.ID, xid.ID, []edit.Operation, bool) (edit.Result, error) {
+				ApplyFunc: func(context.Context, xid.ID, xid.ID, []edit.Operation, string, bool) (edit.Result, error) {
 					return edit.Result{}, assert.AnError
 				},
 			},

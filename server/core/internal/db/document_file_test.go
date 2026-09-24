@@ -243,10 +243,7 @@ func Test_agent_CheckDocumentFileReferenced(t *testing.T) {
 			doc := prepDocuments(t, db, 1, nil)[0]
 			doc.Content.Content[0].Attrs = document.Attributes{"uid": "file-ref"}
 
-			require.NoError(t, db.InsertDocumentBranchHistoryEntry(
-				context.Background(),
-				history.NewEntry(*doc, timeutil.Now(), null.String{}, nil, false),
-			))
+			insertHistoryEntry(t, db, history.NewEntry(*doc, timeutil.Now(), null.String{}, nil, false))
 
 			return "file-ref", doc.ID, true
 		},

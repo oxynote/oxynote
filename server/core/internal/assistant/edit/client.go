@@ -63,7 +63,9 @@ func NewClient(httpClient *http.Client, baseURL string) *Client {
 // A system batch is one core originated rather than a person: its persist
 // is allowed onto a protected branch, where the writes an editor or the
 // assistant makes are refused. Only a caller acting for core itself may
-// pass true — nothing reachable from a prompt may.
+// pass true — nothing reachable from a prompt may. The userID is the
+// person an ordinary batch is made for, and its persist credits them. It
+// is empty for a system batch.
 // Any transport-level failure (bad status, malformed response,
 // canonical expansion error) is returned as an error and no
 // operations are considered applied; failures of individual
@@ -73,6 +75,7 @@ func (c *Client) Apply(
 	ctx context.Context,
 	documentID, branchID xid.ID,
 	ops []Operation,
+	userID string,
 	system bool,
 ) (Result, error) {
 	if len(ops) == 0 {
@@ -92,8 +95,9 @@ func (c *Client) Apply(
 
 	body, err := json.Marshal(struct {
 		Operations []wireOp `json:"operations"`
+		UserID     string   `json:"userId,omitempty"`
 		System     bool     `json:"system"`
-	}{Operations: wires, System: system})
+	}{Operations: wires, UserID: userID, System: system})
 	if err != nil {
 		return Result{}, fmt.Errorf("marshaling operations: %w", err)
 	}

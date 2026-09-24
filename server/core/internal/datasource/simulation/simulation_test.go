@@ -461,7 +461,7 @@ func Test_Checker_Check(t *testing.T) {
 				}
 			}
 
-			d.applier.ApplyFunc = func(context.Context, xid.ID, xid.ID, []edit.Operation, bool) (edit.Result, error) {
+			d.applier.ApplyFunc = func(context.Context, xid.ID, xid.ID, []edit.Operation, string, bool) (edit.Result, error) {
 				return c.ApplyResult, c.ApplyErr
 			}
 

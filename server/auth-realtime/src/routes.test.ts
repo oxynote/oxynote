@@ -1578,6 +1578,14 @@ describe("createRoutes", () => {
 				name: "a system field that is a number",
 				input: { system: 1 },
 			},
+			{
+				name: "a userId that is not a string",
+				input: { userId: 1 },
+			},
+			{
+				name: "an empty userId",
+				input: { userId: "" },
+			},
 		])(
 			"opens the connection as an ordinary one given $name",
 			async ({ input }, { expect }) => {
@@ -1617,6 +1625,79 @@ describe("createRoutes", () => {
 				).toHaveBeenCalledWith("doc1-b1", {})
 			},
 		)
+
+		it("opens the connection for the user the batch names", async ({
+			expect,
+		}) => {
+			const doc = new Y.Doc()
+			const { registry, openDirectConnection } = stubRegistry(
+				{
+					documents: new Map([["doc1-b1", doc]]),
+					transact: (fn) => {
+						fn(doc)
+
+						return Promise.resolve()
+					},
+				},
+			)
+			const { app } = build({ hocuspocus: registry })
+
+			await app.request(path, {
+				method: "POST",
+				body: JSON.stringify({
+					userId: "user-1",
+					operations: [
+						{
+							kind: "set_icon",
+							icon: "lucide:siren",
+						},
+					],
+				}),
+				headers: { "Content-Type": "application/json" },
+			})
+
+			expect(openDirectConnection).toHaveBeenCalledWith(
+				"doc1-b1",
+				{ userId: "user-1" },
+			)
+		})
+
+		it("opens a system batch as core's own even when it names a user", async ({
+			expect,
+		}) => {
+			const doc = new Y.Doc()
+			const { registry, openDirectConnection } = stubRegistry(
+				{
+					documents: new Map([["doc1-b1", doc]]),
+					transact: (fn) => {
+						fn(doc)
+
+						return Promise.resolve()
+					},
+				},
+			)
+			const { app } = build({ hocuspocus: registry })
+
+			await app.request(path, {
+				method: "POST",
+				body: JSON.stringify({
+					system: true,
+					userId: "user-1",
+					operations: [
+						{
+							kind: "set_icon",
+							icon: "lucide:siren",
+						},
+					],
+				}),
+				headers: { "Content-Type": "application/json" },
+			})
+
+			expect(openDirectConnection).toHaveBeenCalledWith(
+				"doc1-b1",
+				{ system: true },
+			)
+		})
 
 		it("reports a failing operation without failing the request", async ({
 			expect,

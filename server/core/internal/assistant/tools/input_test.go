@@ -377,7 +377,7 @@ func failingDocumentDB() *DBMock {
 // stubApplier accepts every edit it is handed.
 func stubApplier() *EditApplierMock {
 	return &EditApplierMock{
-		ApplyFunc: func(_ context.Context, _, _ xid.ID, _ []edit.Operation, _ bool) (edit.Result, error) {
+		ApplyFunc: func(_ context.Context, _, _ xid.ID, _ []edit.Operation, _ string, _ bool) (edit.Result, error) {
 			return edit.Result{Applied: 1, Errors: []edit.OpError{}}, nil
 		},
 	}
@@ -851,7 +851,7 @@ func Test_input_ApplyEdit(t *testing.T) {
 		"Error returned by applier.Apply": {
 			DB: stubDocumentDB(),
 			Applier: &EditApplierMock{
-				ApplyFunc: func(context.Context, xid.ID, xid.ID, []edit.Operation, bool) (edit.Result, error) {
+				ApplyFunc: func(context.Context, xid.ID, xid.ID, []edit.Operation, string, bool) (edit.Result, error) {
 					return edit.Result{}, assert.AnError
 				},
 			},
@@ -919,7 +919,7 @@ func Test_input_ApplyEdit(t *testing.T) {
 		"Nothing applied is a failure, not a result": {
 			DB: stubDocumentDB(),
 			Applier: &EditApplierMock{
-				ApplyFunc: func(context.Context, xid.ID, xid.ID, []edit.Operation, bool) (edit.Result, error) {
+				ApplyFunc: func(context.Context, xid.ID, xid.ID, []edit.Operation, string, bool) (edit.Result, error) {
 					return edit.Result{
 						Errors: []edit.OpError{{Index: 0, Message: "block_uid not found: a"}},
 					}, nil
@@ -931,7 +931,7 @@ func Test_input_ApplyEdit(t *testing.T) {
 		"Partial failure still reports the outcome": {
 			DB: stubDocumentDB(),
 			Applier: &EditApplierMock{
-				ApplyFunc: func(context.Context, xid.ID, xid.ID, []edit.Operation, bool) (edit.Result, error) {
+				ApplyFunc: func(context.Context, xid.ID, xid.ID, []edit.Operation, string, bool) (edit.Result, error) {
 					return edit.Result{
 						Applied: 1,
 						Errors:  []edit.OpError{{Index: 1, Message: "uid not found"}},
@@ -978,9 +978,11 @@ func Test_input_ApplyEdit(t *testing.T) {
 			// a tool's write is a person's, never core's own: an
 			// edit asking otherwise would land on a protected
 			// branch, which is the one place a tool may not reach.
+			// The persist credits the user the assistant acts for.
 			if c.Applier != nil {
 				for _, call := range c.Applier.ApplyCalls() {
 					assert.False(t, call.System)
+					assert.Equal(t, inp.UserID(), call.UserID)
 				}
 			}
 		})
@@ -2427,6 +2429,7 @@ func Test_input_CreateHook(t *testing.T) {
 		Settings processor.Settings
 		Inserts  int
 		Notify   int
+		Records  int
 		Touched  []Touched
 		Err      error
 	}{
@@ -2481,6 +2484,7 @@ func Test_input_CreateHook(t *testing.T) {
 			Settings: scheduled,
 			Inserts:  1,
 			Notify:   1,
+			Records:  1,
 			Touched:  []Touched{{DocumentID: _testDocID, BranchID: _stubBranchID}},
 		},
 		"Created on a block": {
@@ -2491,6 +2495,7 @@ func Test_input_CreateHook(t *testing.T) {
 			Settings: scheduled,
 			Inserts:  1,
 			Notify:   1,
+			Records:  1,
 			Touched:  []Touched{{DocumentID: _testDocID, BranchID: _stubBranchID}},
 		},
 	}
@@ -2509,6 +2514,17 @@ func Test_input_CreateHook(t *testing.T) {
 			require.Len(t, ff, c.Inserts)
 			assert.Len(t, hooks.NotifyHooksChangeCalls(), c.Notify)
 			assert.Equal(t, c.Touched, inp.touched)
+
+			// a hook write that landed is recorded in the branch history,
+			// credited to the user the assistant acts for.
+			assert.Len(t, c.DB.RecordDocumentBranchHistoryEntryCalls(), c.Records)
+
+			for _, call := range c.DB.RecordDocumentBranchHistoryEntryCalls() {
+				assert.Equal(t, _stubBranchID, call.BranchID)
+				assert.Equal(t, "org", call.OrganizationID)
+				assert.Equal(t, null.StringFrom(inp.UserID()), call.By)
+				assert.False(t, call.Boundary)
+			}
 
 			if err != nil {
 				assert.Nil(t, hk)
@@ -2541,6 +2557,7 @@ func Test_input_UpdateHook(t *testing.T) {
 		Settings processor.Settings
 		Updates  int
 		Notify   int
+		Records  int
 		Touched  []Touched
 		Err      error
 	}{
@@ -2560,6 +2577,7 @@ func Test_input_UpdateHook(t *testing.T) {
 			Settings: processor.Settings(`{"scale":"linear","duration":"custom","schedule":"2031-01-01T00:00:00Z"}`),
 			Updates:  1,
 			Notify:   1,
+			Records:  1,
 			Touched:  []Touched{{DocumentID: _testDocID, BranchID: _stubBranchID}},
 		},
 	}
@@ -2579,6 +2597,17 @@ func Test_input_UpdateHook(t *testing.T) {
 			require.Len(t, ff, c.Updates)
 			assert.Len(t, hooks.NotifyHooksChangeCalls(), c.Notify)
 			assert.Equal(t, c.Touched, inp.touched)
+
+			// a hook write that landed is recorded in the branch history,
+			// credited to the user the assistant acts for.
+			assert.Len(t, c.DB.RecordDocumentBranchHistoryEntryCalls(), c.Records)
+
+			for _, call := range c.DB.RecordDocumentBranchHistoryEntryCalls() {
+				assert.Equal(t, _stubBranchID, call.BranchID)
+				assert.Equal(t, "org", call.OrganizationID)
+				assert.Equal(t, null.StringFrom(inp.UserID()), call.By)
+				assert.False(t, call.Boundary)
+			}
 
 			if err != nil {
 				return
@@ -2648,6 +2677,10 @@ func Test_input_ResetHook(t *testing.T) {
 			assert.Len(t, hooks.NotifyHooksChangeCalls(), c.Notify)
 			assert.Equal(t, c.Touched, inp.touched)
 
+			// a reset changes only watcher state, which history does not
+			// hold.
+			assert.Empty(t, c.DB.RecordDocumentBranchHistoryEntryCalls())
+
 			if err != nil {
 				return
 			}
@@ -2680,6 +2713,7 @@ func Test_input_DeleteHook(t *testing.T) {
 		Hook    *hook.Hook
 		Deletes int
 		Notify  int
+		Records int
 		Touched []Touched
 		Err     error
 	}{
@@ -2699,6 +2733,7 @@ func Test_input_DeleteHook(t *testing.T) {
 			Hook:    stubHook(),
 			Deletes: 1,
 			Notify:  1,
+			Records: 1,
 			Touched: []Touched{{DocumentID: _testDocID, BranchID: _stubBranchID}},
 		},
 	}
@@ -2718,11 +2753,76 @@ func Test_input_DeleteHook(t *testing.T) {
 			assert.Len(t, hooks.NotifyHooksChangeCalls(), c.Notify)
 			assert.Equal(t, c.Touched, inp.touched)
 
+			// a hook write that landed is recorded in the branch history,
+			// credited to the user the assistant acts for.
+			assert.Len(t, c.DB.RecordDocumentBranchHistoryEntryCalls(), c.Records)
+
+			for _, call := range c.DB.RecordDocumentBranchHistoryEntryCalls() {
+				assert.Equal(t, _stubBranchID, call.BranchID)
+				assert.Equal(t, "org", call.OrganizationID)
+				assert.Equal(t, null.StringFrom(inp.UserID()), call.By)
+				assert.False(t, call.Boundary)
+			}
+
 			if err != nil {
 				return
 			}
 
 			assert.Equal(t, _testHookID, ff[0].ID)
+		})
+	}
+}
+
+func Test_input_recordHookHistory(t *testing.T) {
+	t.Parallel()
+
+	branchless := stubHook()
+	branchless.BranchID = null.Value[xid.ID]{}
+
+	cc := map[string]struct {
+		Hook    *hook.Hook
+		Err     error
+		Records int
+		Log     string
+	}{
+		"Hook whose branch is gone": {Hook: branchless},
+		// the hook write is already done, so the failure is logged
+		// rather than returned.
+		"Error returned by db.RecordDocumentBranchHistoryEntry": {
+			Hook:    stubHook(),
+			Err:     assert.AnError,
+			Records: 1,
+			Log:     "cannot record the hook change in the branch history",
+		},
+		"Successful record": {Hook: stubHook(), Records: 1},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := &DBMock{
+				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) (xid.ID, error) {
+					return xid.New(), c.Err
+				},
+			}
+
+			var buf bytes.Buffer
+
+			d := testDeps(db, nil, nil)
+			d.log = slog.New(slog.NewTextHandler(&buf, nil))
+
+			inp := testInput(d, NameDeleteHook, `{}`)
+			inp.recordHookHistory(c.Hook)
+
+			assert.Len(t, db.RecordDocumentBranchHistoryEntryCalls(), c.Records)
+
+			if c.Log == "" {
+				assert.NotContains(t, buf.String(), "level=ERROR")
+				return
+			}
+
+			assert.Contains(t, buf.String(), c.Log)
 		})
 	}
 }

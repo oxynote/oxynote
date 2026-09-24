@@ -22,16 +22,18 @@ Cross-service storage rules (Hocuspocus, Yjs) live in
 
 `document_branch_history_entries` are restorable snapshots: name, icon,
 content, the branch's live hook definitions (type, block, settings; never
-watcher state) and the author, written in the same transaction as the
-branch update through `InsertDocumentBranchHistoryEntry`. Rules:
+watcher state) and the author. Every write goes through
+`RecordDocumentBranchHistoryEntry`, which locks the branch row and reads
+it, inside the transaction that wrote the branch when there is one.
 
 - Ordinary edits within one 30-minute bucket update the branch's newest
   entry in place. A persist that changes nothing writes no entry; a system
-  write is unattributed (null author) and still takes the time of the
-  write.
-- Merge and fork write a **boundary** entry that never aggregates and closes
-  its bucket: the next edit starts a new entry. The merge entry lists the
-  source's hooks.
+  write has a null author.
+- A hook create, update or delete records an ordinary entry; a reset does
+  not.
+- Create, duplicate, fork and merge write a **boundary** entry that never
+  aggregates and closes its bucket. It starts without hooks and gets the
+  ones `copyHooksToBranch` created after the commit.
 - Entries pin the files they reference, so `DB_MAX_DOCUMENT_HISTORY_ENTRIES`
   and `DB_DOCUMENT_HISTORY_RETENTION` also decide how long a removed image
   survives.

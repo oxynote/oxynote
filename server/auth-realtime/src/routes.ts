@@ -696,6 +696,18 @@ export function createRoutes({
 							.system === true
 					: false
 
+			// the user the batch is made for, such as the one the
+			// assistant acts for. The persist names them as its author.
+			const userId =
+				body && typeof body === "object"
+					? (body as { userId?: unknown }).userId
+					: undefined
+			const context = system
+				? systemOrigin.context
+				: typeof userId === "string" && userId !== ""
+					? { userId }
+					: {}
+
 			const operations =
 				body && typeof body === "object"
 					? (body as { operations?: unknown })
@@ -727,9 +739,7 @@ export function createRoutes({
 				connection =
 					await hocuspocus.openDirectConnection(
 						documentName,
-						system
-							? systemOrigin.context
-							: {},
+						context,
 					)
 			} catch (err) {
 				Sentry.captureException(err)
