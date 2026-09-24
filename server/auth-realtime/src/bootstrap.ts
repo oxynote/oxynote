@@ -1,4 +1,3 @@
-import type { CoreClient } from "./core.js"
 import type { Store } from "./db.js"
 import type { Env } from "./env.js"
 import type { Logger } from "./logging.js"
@@ -35,7 +34,6 @@ export interface AccountAdapter {
 export interface BootstrapDeps {
 	env: Env
 	store: Store
-	core: CoreClient
 	log: Logger
 	accounts: AccountAdapter
 	hashPassword: (password: string) => Promise<string>
@@ -45,7 +43,7 @@ export interface BootstrapDeps {
 		name: string
 		slug: string
 		userId: string
-	}) => Promise<{ id: string }>
+	}) => Promise<unknown>
 }
 
 // bootstrapSingleOrganization creates the organization and its admin when a
@@ -55,7 +53,6 @@ export interface BootstrapDeps {
 export async function bootstrapSingleOrganization({
 	env,
 	store,
-	core,
 	log,
 	accounts,
 	hashPassword,
@@ -94,12 +91,10 @@ export async function bootstrapSingleOrganization({
 		userId = user.id
 	}
 
-	const organization = await createOrganization({
+	await createOrganization({
 		...bootstrapOrganization,
 		userId,
 	})
-
-	await core.setDefaultOrganizationLogo(organization.id)
 
 	log.warn(
 		`created the ${bootstrapOrganization.name} organization. Sign in as ${bootstrapAdmin.email} with the default password and change both.`,

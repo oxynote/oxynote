@@ -42,9 +42,6 @@ export function stubCore(): StubCore {
 		sendEmail: vi.fn().mockResolvedValue(undefined),
 		initializeOrganization: vi.fn().mockResolvedValue(undefined),
 		teardownOrganization: vi.fn().mockResolvedValue(undefined),
-		setDefaultOrganizationLogo: vi
-			.fn()
-			.mockResolvedValue(undefined),
 		fetchBranches: vi.fn().mockResolvedValue([]),
 		fetchBranchContent: vi.fn().mockResolvedValue({
 			documentName: "Doc",

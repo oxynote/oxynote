@@ -80,7 +80,6 @@ func Test_Server_httpRouter(t *testing.T) {
 
 	// the service-to-service surface stays where it is.
 	assert.True(t, routes["POST /api/x/organizations/{organizationId}/teardown"])
-	assert.True(t, routes["PUT /api/x/organizations/{organizationId}/logo/default"])
 	assert.True(t, routes["PUT /api/x/documents/{documentId}/branch/{branchId}/"])
 	assert.True(t, routes["POST /api/x/email"])
 

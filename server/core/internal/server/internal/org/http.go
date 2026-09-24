@@ -25,8 +25,7 @@ import (
 	"github.com/rs/xid"
 )
 
-// _defaultLogo is the Oxynote logo an organization can be given before it
-// uploads its own.
+// _defaultLogo is the Oxynote logo every organization starts with.
 //
 //go:embed default_logo.png
 var _defaultLogo []byte
@@ -84,6 +83,12 @@ func (h *Handler) InitializeOrganization(w http.ResponseWriter, r *http.Request)
 	if len(members) == 0 {
 		httpserver.RespondError(h.log, w, ErrNoOrganizationMembers)
 		return
+	}
+
+	// the default logo is a nicety like the demo content below, so a
+	// failure is logged rather than returned.
+	if _, err = h.storeLogo(r.Context(), id, _defaultLogo, "image/png"); err != nil {
+		h.log.Error("cannot store default logo", slog.String("error", err.Error()))
 	}
 
 	// the demo data source is inserted before the transaction opens: a
@@ -202,27 +207,6 @@ func (h *Handler) UploadOrganizationLogo(w http.ResponseWriter, r *http.Request)
 		nil,
 		http.StatusCreated,
 		httpserver.LocationHeader(logoLocation),
-	)
-}
-
-// SetDefaultOrganizationLogo gives the organization the Oxynote logo.
-func (h *Handler) SetDefaultOrganizationLogo(w http.ResponseWriter, r *http.Request) {
-	id, err := h.extractOrganizationParameter(r)
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	if _, err = h.storeLogo(r.Context(), id, _defaultLogo, "image/png"); err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	httpserver.Respond(
-		h.log,
-		w,
-		nil,
-		http.StatusNoContent,
 	)
 }
 
