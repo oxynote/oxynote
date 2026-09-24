@@ -143,7 +143,6 @@ func (s *Server) internalRouter() chi.Router {
 
 	r.Post("/organizations/{organizationId}/initialize", s.handlers.organization.InitializeOrganization)
 	r.Post("/organizations/{organizationId}/teardown", s.handlers.organization.TeardownOrganization)
-	r.Put("/organizations/{organizationId}/logo/default", s.handlers.organization.SetDefaultOrganizationLogo)
 
 	r.Route("/documents/{documentId}", func(sr chi.Router) {
 		sr.Get("/branches", s.handlers.document.FetchDocumentBranchesUnsafe)

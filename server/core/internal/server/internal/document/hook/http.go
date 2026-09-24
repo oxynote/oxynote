@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/apps/github"
 	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	"github.com/oxynote/oxynote/server/core/internal/document"
@@ -171,6 +172,8 @@ func (h *Handler) CreateDocumentHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.recordHistory(r.Context(), *hk, session)
+
 	h.NotifyHooksChange(session.ActiveOrganizationID, hk.DocumentID, hk.BranchID)
 
 	httpserver.Respond(
@@ -238,6 +241,8 @@ func (h *Handler) UpdateDocumentHook(w http.ResponseWriter, r *http.Request) {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
+
+	h.recordHistory(r.Context(), *hk, session)
 
 	h.NotifyHooksChange(session.ActiveOrganizationID, hk.DocumentID, hk.BranchID)
 
@@ -353,6 +358,8 @@ func (h *Handler) DeleteDocumentHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.recordHistory(r.Context(), *hk, session)
+
 	h.NotifyHooksChange(session.ActiveOrganizationID, hk.DocumentID, hk.BranchID)
 
 	httpserver.Respond(
@@ -361,6 +368,30 @@ func (h *Handler) DeleteDocumentHook(w http.ResponseWriter, r *http.Request) {
 		nil,
 		http.StatusNoContent,
 	)
+}
+
+// recordHistory records the hook's branch in its history, credited to the
+// session user. The hook change is already written, so a failure is logged
+// rather than returned.
+func (h *Handler) recordHistory(ctx context.Context, hk hookCore.Hook, session auth.Session) {
+	if !hk.BranchID.Valid {
+		return
+	}
+
+	_, err := h.db.RecordDocumentBranchHistoryEntry(
+		ctx,
+		hk.BranchID.V,
+		session.ActiveOrganizationID,
+		null.StringFrom(session.UserID),
+		false,
+	)
+	if err != nil {
+		h.log.Error(
+			"cannot record the hook change in the branch history",
+			slog.String("hook_id", hk.ID.String()),
+			slog.String("error", err.Error()),
+		)
+	}
 }
 
 // DB is an interface that handles communication with the document hooks database.
@@ -385,4 +416,14 @@ type DB interface {
 	// DeleteDocumentHook should delete the document hook for the given id.
 	// The caller is expected to have fetched the hook org-scoped first.
 	DeleteDocumentHook(ctx context.Context, id xid.ID) error
+
+	// RecordDocumentBranchHistoryEntry should record the branch as it
+	// stands, with its live hooks, and return the id of the entry.
+	RecordDocumentBranchHistoryEntry(
+		ctx context.Context,
+		branchID xid.ID,
+		organizationID string,
+		by null.String,
+		boundary bool,
+	) (xid.ID, error)
 }

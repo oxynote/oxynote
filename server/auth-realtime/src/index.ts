@@ -48,7 +48,6 @@ const authContext = await auth.$context
 await bootstrapSingleOrganization({
 	env,
 	store,
-	core,
 	log,
 	accounts: authContext.internalAdapter,
 	hashPassword: (password) => authContext.password.hash(password),

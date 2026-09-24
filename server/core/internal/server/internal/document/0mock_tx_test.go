@@ -107,9 +107,6 @@ var _ Tx = &TxMock{}
 //			InsertDocumentBranchFunc: func(ctx context.Context, doc documentCore.Document) error {
 //				panic("mock out the InsertDocumentBranch method")
 //			},
-//			InsertDocumentBranchHistoryEntryFunc: func(ctx context.Context, entry history.Entry) error {
-//				panic("mock out the InsertDocumentBranchHistoryEntry method")
-//			},
 //			InsertDocumentFileFunc: func(ctx context.Context, f file.File) error {
 //				panic("mock out the InsertDocumentFile method")
 //			},
@@ -122,6 +119,9 @@ var _ Tx = &TxMock{}
 //			PromoteBranchApprovalsFunc: func(ctx context.Context, fromBranchID xid.ID, toBranchID xid.ID, organizationID string) error {
 //				panic("mock out the PromoteBranchApprovals method")
 //			},
+//			RecordDocumentBranchHistoryEntryFunc: func(ctx context.Context, branchID xid.ID, organizationID string, by null.String, boundary bool) (xid.ID, error) {
+//				panic("mock out the RecordDocumentBranchHistoryEntry method")
+//			},
 //			ReplaceBranchTagsFunc: func(ctx context.Context, organizationID string, fromBranchID xid.ID, toBranchID xid.ID) error {
 //				panic("mock out the ReplaceBranchTags method")
 //			},
@@ -133,6 +133,9 @@ var _ Tx = &TxMock{}
 //			},
 //			UpdateDocumentFunc: func(ctx context.Context, doc documentCore.Document) error {
 //				panic("mock out the UpdateDocument method")
+//			},
+//			UpdateDocumentBranchHistoryEntryHooksFunc: func(ctx context.Context, id xid.ID, hooks history.Hooks) error {
+//				panic("mock out the UpdateDocumentBranchHistoryEntryHooks method")
 //			},
 //			UpdateDocumentBranchMetadataFunc: func(ctx context.Context, doc documentCore.Document) error {
 //				panic("mock out the UpdateDocumentBranchMetadata method")
@@ -234,9 +237,6 @@ type TxMock struct {
 	// InsertDocumentBranchFunc mocks the InsertDocumentBranch method.
 	InsertDocumentBranchFunc func(ctx context.Context, doc documentCore.Document) error
 
-	// InsertDocumentBranchHistoryEntryFunc mocks the InsertDocumentBranchHistoryEntry method.
-	InsertDocumentBranchHistoryEntryFunc func(ctx context.Context, entry history.Entry) error
-
 	// InsertDocumentFileFunc mocks the InsertDocumentFile method.
 	InsertDocumentFileFunc func(ctx context.Context, f file.File) error
 
@@ -249,6 +249,9 @@ type TxMock struct {
 	// PromoteBranchApprovalsFunc mocks the PromoteBranchApprovals method.
 	PromoteBranchApprovalsFunc func(ctx context.Context, fromBranchID xid.ID, toBranchID xid.ID, organizationID string) error
 
+	// RecordDocumentBranchHistoryEntryFunc mocks the RecordDocumentBranchHistoryEntry method.
+	RecordDocumentBranchHistoryEntryFunc func(ctx context.Context, branchID xid.ID, organizationID string, by null.String, boundary bool) (xid.ID, error)
+
 	// ReplaceBranchTagsFunc mocks the ReplaceBranchTags method.
 	ReplaceBranchTagsFunc func(ctx context.Context, organizationID string, fromBranchID xid.ID, toBranchID xid.ID) error
 
@@ -260,6 +263,9 @@ type TxMock struct {
 
 	// UpdateDocumentFunc mocks the UpdateDocument method.
 	UpdateDocumentFunc func(ctx context.Context, doc documentCore.Document) error
+
+	// UpdateDocumentBranchHistoryEntryHooksFunc mocks the UpdateDocumentBranchHistoryEntryHooks method.
+	UpdateDocumentBranchHistoryEntryHooksFunc func(ctx context.Context, id xid.ID, hooks history.Hooks) error
 
 	// UpdateDocumentBranchMetadataFunc mocks the UpdateDocumentBranchMetadata method.
 	UpdateDocumentBranchMetadataFunc func(ctx context.Context, doc documentCore.Document) error
@@ -510,13 +516,6 @@ type TxMock struct {
 			// Doc is the doc argument value.
 			Doc documentCore.Document
 		}
-		// InsertDocumentBranchHistoryEntry holds details about calls to the InsertDocumentBranchHistoryEntry method.
-		InsertDocumentBranchHistoryEntry []struct {
-			// Ctx is the ctx argument value.
-			Ctx context.Context
-			// Entry is the entry argument value.
-			Entry history.Entry
-		}
 		// InsertDocumentFile holds details about calls to the InsertDocumentFile method.
 		InsertDocumentFile []struct {
 			// Ctx is the ctx argument value.
@@ -549,6 +548,19 @@ type TxMock struct {
 			// OrganizationID is the organizationID argument value.
 			OrganizationID string
 		}
+		// RecordDocumentBranchHistoryEntry holds details about calls to the RecordDocumentBranchHistoryEntry method.
+		RecordDocumentBranchHistoryEntry []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// BranchID is the branchID argument value.
+			BranchID xid.ID
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+			// By is the by argument value.
+			By null.String
+			// Boundary is the boundary argument value.
+			Boundary bool
+		}
 		// ReplaceBranchTags holds details about calls to the ReplaceBranchTags method.
 		ReplaceBranchTags []struct {
 			// Ctx is the ctx argument value.
@@ -576,6 +588,15 @@ type TxMock struct {
 			Ctx context.Context
 			// Doc is the doc argument value.
 			Doc documentCore.Document
+		}
+		// UpdateDocumentBranchHistoryEntryHooks holds details about calls to the UpdateDocumentBranchHistoryEntryHooks method.
+		UpdateDocumentBranchHistoryEntryHooks []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// ID is the id argument value.
+			ID xid.ID
+			// Hooks is the hooks argument value.
+			Hooks history.Hooks
 		}
 		// UpdateDocumentBranchMetadata holds details about calls to the UpdateDocumentBranchMetadata method.
 		UpdateDocumentBranchMetadata []struct {
@@ -616,46 +637,47 @@ type TxMock struct {
 			MaintainerIDs []string
 		}
 	}
-	lockCheckDocumentCycle                  sync.RWMutex
-	lockCheckDocumentExists                 sync.RWMutex
-	lockCheckOrganizationMember             sync.RWMutex
-	lockCommit                              sync.RWMutex
-	lockCopyBranchTags                      sync.RWMutex
-	lockCountDocumentBranches               sync.RWMutex
-	lockDeleteBranchReviewer                sync.RWMutex
-	lockDeleteDocument                      sync.RWMutex
-	lockDeleteDocumentBranchByID            sync.RWMutex
-	lockDeleteDocumentCommentsByBranchID    sync.RWMutex
-	lockDetachDocumentHooksByBranchID       sync.RWMutex
-	lockFetchBranchReviewer                 sync.RWMutex
-	lockFetchBranchReviewers                sync.RWMutex
-	lockFetchDocument                       sync.RWMutex
-	lockFetchDocumentBranches               sync.RWMutex
-	lockFetchDocumentBranchesUnsafe         sync.RWMutex
-	lockFetchDocumentByBranchID             sync.RWMutex
-	lockFetchDocumentFile                   sync.RWMutex
-	lockFetchDocumentHooksByBranchID        sync.RWMutex
-	lockFetchDocumentHooksByDocumentID      sync.RWMutex
-	lockFetchDocumentMaintainers            sync.RWMutex
-	lockFetchDocumentTree                   sync.RWMutex
-	lockFetchDocumentTreeByDocumentParentID sync.RWMutex
-	lockFetchDocumentUnsafeByBranchID       sync.RWMutex
-	lockInsertBranchReviewer                sync.RWMutex
-	lockInsertDocument                      sync.RWMutex
-	lockInsertDocumentBranch                sync.RWMutex
-	lockInsertDocumentBranchHistoryEntry    sync.RWMutex
-	lockInsertDocumentFile                  sync.RWMutex
-	lockInsertDocumentHook                  sync.RWMutex
-	lockInsertSearchJob                     sync.RWMutex
-	lockPromoteBranchApprovals              sync.RWMutex
-	lockReplaceBranchTags                   sync.RWMutex
-	lockRollback                            sync.RWMutex
-	lockUpdateBranchReviewer                sync.RWMutex
-	lockUpdateDocument                      sync.RWMutex
-	lockUpdateDocumentBranchMetadata        sync.RWMutex
-	lockUpdateDocumentParentID              sync.RWMutex
-	lockUpdateDocumentTree                  sync.RWMutex
-	lockUpsertDocumentMaintainers           sync.RWMutex
+	lockCheckDocumentCycle                    sync.RWMutex
+	lockCheckDocumentExists                   sync.RWMutex
+	lockCheckOrganizationMember               sync.RWMutex
+	lockCommit                                sync.RWMutex
+	lockCopyBranchTags                        sync.RWMutex
+	lockCountDocumentBranches                 sync.RWMutex
+	lockDeleteBranchReviewer                  sync.RWMutex
+	lockDeleteDocument                        sync.RWMutex
+	lockDeleteDocumentBranchByID              sync.RWMutex
+	lockDeleteDocumentCommentsByBranchID      sync.RWMutex
+	lockDetachDocumentHooksByBranchID         sync.RWMutex
+	lockFetchBranchReviewer                   sync.RWMutex
+	lockFetchBranchReviewers                  sync.RWMutex
+	lockFetchDocument                         sync.RWMutex
+	lockFetchDocumentBranches                 sync.RWMutex
+	lockFetchDocumentBranchesUnsafe           sync.RWMutex
+	lockFetchDocumentByBranchID               sync.RWMutex
+	lockFetchDocumentFile                     sync.RWMutex
+	lockFetchDocumentHooksByBranchID          sync.RWMutex
+	lockFetchDocumentHooksByDocumentID        sync.RWMutex
+	lockFetchDocumentMaintainers              sync.RWMutex
+	lockFetchDocumentTree                     sync.RWMutex
+	lockFetchDocumentTreeByDocumentParentID   sync.RWMutex
+	lockFetchDocumentUnsafeByBranchID         sync.RWMutex
+	lockInsertBranchReviewer                  sync.RWMutex
+	lockInsertDocument                        sync.RWMutex
+	lockInsertDocumentBranch                  sync.RWMutex
+	lockInsertDocumentFile                    sync.RWMutex
+	lockInsertDocumentHook                    sync.RWMutex
+	lockInsertSearchJob                       sync.RWMutex
+	lockPromoteBranchApprovals                sync.RWMutex
+	lockRecordDocumentBranchHistoryEntry      sync.RWMutex
+	lockReplaceBranchTags                     sync.RWMutex
+	lockRollback                              sync.RWMutex
+	lockUpdateBranchReviewer                  sync.RWMutex
+	lockUpdateDocument                        sync.RWMutex
+	lockUpdateDocumentBranchHistoryEntryHooks sync.RWMutex
+	lockUpdateDocumentBranchMetadata          sync.RWMutex
+	lockUpdateDocumentParentID                sync.RWMutex
+	lockUpdateDocumentTree                    sync.RWMutex
+	lockUpsertDocumentMaintainers             sync.RWMutex
 }
 
 // CheckDocumentCycle calls CheckDocumentCycleFunc.
@@ -1819,45 +1841,6 @@ func (mock *TxMock) InsertDocumentBranchCalls() []struct {
 	return calls
 }
 
-// InsertDocumentBranchHistoryEntry calls InsertDocumentBranchHistoryEntryFunc.
-func (mock *TxMock) InsertDocumentBranchHistoryEntry(ctx context.Context, entry history.Entry) error {
-	callInfo := struct {
-		Ctx   context.Context
-		Entry history.Entry
-	}{
-		Ctx:   ctx,
-		Entry: entry,
-	}
-	mock.lockInsertDocumentBranchHistoryEntry.Lock()
-	mock.calls.InsertDocumentBranchHistoryEntry = append(mock.calls.InsertDocumentBranchHistoryEntry, callInfo)
-	mock.lockInsertDocumentBranchHistoryEntry.Unlock()
-	if mock.InsertDocumentBranchHistoryEntryFunc == nil {
-		var (
-			errOut error
-		)
-		return errOut
-	}
-	return mock.InsertDocumentBranchHistoryEntryFunc(ctx, entry)
-}
-
-// InsertDocumentBranchHistoryEntryCalls gets all the calls that were made to InsertDocumentBranchHistoryEntry.
-// Check the length with:
-//
-//	len(mockedTx.InsertDocumentBranchHistoryEntryCalls())
-func (mock *TxMock) InsertDocumentBranchHistoryEntryCalls() []struct {
-	Ctx   context.Context
-	Entry history.Entry
-} {
-	var calls []struct {
-		Ctx   context.Context
-		Entry history.Entry
-	}
-	mock.lockInsertDocumentBranchHistoryEntry.RLock()
-	calls = mock.calls.InsertDocumentBranchHistoryEntry
-	mock.lockInsertDocumentBranchHistoryEntry.RUnlock()
-	return calls
-}
-
 // InsertDocumentFile calls InsertDocumentFileFunc.
 func (mock *TxMock) InsertDocumentFile(ctx context.Context, f file.File) error {
 	callInfo := struct {
@@ -2022,6 +2005,58 @@ func (mock *TxMock) PromoteBranchApprovalsCalls() []struct {
 	return calls
 }
 
+// RecordDocumentBranchHistoryEntry calls RecordDocumentBranchHistoryEntryFunc.
+func (mock *TxMock) RecordDocumentBranchHistoryEntry(ctx context.Context, branchID xid.ID, organizationID string, by null.String, boundary bool) (xid.ID, error) {
+	callInfo := struct {
+		Ctx            context.Context
+		BranchID       xid.ID
+		OrganizationID string
+		By             null.String
+		Boundary       bool
+	}{
+		Ctx:            ctx,
+		BranchID:       branchID,
+		OrganizationID: organizationID,
+		By:             by,
+		Boundary:       boundary,
+	}
+	mock.lockRecordDocumentBranchHistoryEntry.Lock()
+	mock.calls.RecordDocumentBranchHistoryEntry = append(mock.calls.RecordDocumentBranchHistoryEntry, callInfo)
+	mock.lockRecordDocumentBranchHistoryEntry.Unlock()
+	if mock.RecordDocumentBranchHistoryEntryFunc == nil {
+		var (
+			iDOut  xid.ID
+			errOut error
+		)
+		return iDOut, errOut
+	}
+	return mock.RecordDocumentBranchHistoryEntryFunc(ctx, branchID, organizationID, by, boundary)
+}
+
+// RecordDocumentBranchHistoryEntryCalls gets all the calls that were made to RecordDocumentBranchHistoryEntry.
+// Check the length with:
+//
+//	len(mockedTx.RecordDocumentBranchHistoryEntryCalls())
+func (mock *TxMock) RecordDocumentBranchHistoryEntryCalls() []struct {
+	Ctx            context.Context
+	BranchID       xid.ID
+	OrganizationID string
+	By             null.String
+	Boundary       bool
+} {
+	var calls []struct {
+		Ctx            context.Context
+		BranchID       xid.ID
+		OrganizationID string
+		By             null.String
+		Boundary       bool
+	}
+	mock.lockRecordDocumentBranchHistoryEntry.RLock()
+	calls = mock.calls.RecordDocumentBranchHistoryEntry
+	mock.lockRecordDocumentBranchHistoryEntry.RUnlock()
+	return calls
+}
+
 // ReplaceBranchTags calls ReplaceBranchTagsFunc.
 func (mock *TxMock) ReplaceBranchTags(ctx context.Context, organizationID string, fromBranchID xid.ID, toBranchID xid.ID) error {
 	callInfo := struct {
@@ -2174,6 +2209,49 @@ func (mock *TxMock) UpdateDocumentCalls() []struct {
 	mock.lockUpdateDocument.RLock()
 	calls = mock.calls.UpdateDocument
 	mock.lockUpdateDocument.RUnlock()
+	return calls
+}
+
+// UpdateDocumentBranchHistoryEntryHooks calls UpdateDocumentBranchHistoryEntryHooksFunc.
+func (mock *TxMock) UpdateDocumentBranchHistoryEntryHooks(ctx context.Context, id xid.ID, hooks history.Hooks) error {
+	callInfo := struct {
+		Ctx   context.Context
+		ID    xid.ID
+		Hooks history.Hooks
+	}{
+		Ctx:   ctx,
+		ID:    id,
+		Hooks: hooks,
+	}
+	mock.lockUpdateDocumentBranchHistoryEntryHooks.Lock()
+	mock.calls.UpdateDocumentBranchHistoryEntryHooks = append(mock.calls.UpdateDocumentBranchHistoryEntryHooks, callInfo)
+	mock.lockUpdateDocumentBranchHistoryEntryHooks.Unlock()
+	if mock.UpdateDocumentBranchHistoryEntryHooksFunc == nil {
+		var (
+			errOut error
+		)
+		return errOut
+	}
+	return mock.UpdateDocumentBranchHistoryEntryHooksFunc(ctx, id, hooks)
+}
+
+// UpdateDocumentBranchHistoryEntryHooksCalls gets all the calls that were made to UpdateDocumentBranchHistoryEntryHooks.
+// Check the length with:
+//
+//	len(mockedTx.UpdateDocumentBranchHistoryEntryHooksCalls())
+func (mock *TxMock) UpdateDocumentBranchHistoryEntryHooksCalls() []struct {
+	Ctx   context.Context
+	ID    xid.ID
+	Hooks history.Hooks
+} {
+	var calls []struct {
+		Ctx   context.Context
+		ID    xid.ID
+		Hooks history.Hooks
+	}
+	mock.lockUpdateDocumentBranchHistoryEntryHooks.RLock()
+	calls = mock.calls.UpdateDocumentBranchHistoryEntryHooks
+	mock.lockUpdateDocumentBranchHistoryEntryHooks.RUnlock()
 	return calls
 }
 

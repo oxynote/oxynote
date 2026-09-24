@@ -35,6 +35,7 @@ var (
 	_documentID = xid.New()
 	_branchID   = xid.New()
 	_branchID2  = xid.New()
+	_entryID    = xid.New()
 )
 
 // fakePublisher captures published notifications.
@@ -81,8 +82,15 @@ func newTestHandler(db DB, pub *fakePublisher) (*Handler, *callbackCounts) {
 	return hdl, cnt
 }
 
-// withTx wires the DB mock's BeginTx to hand out the provided Tx mock.
+// withTx wires the DB mock's BeginTx to hand out the provided Tx mock. A
+// history record the Tx mock does not stub returns _entryID.
 func withTx(db *DBMock, tx *TxMock, err error) *DBMock {
+	if tx != nil && tx.RecordDocumentBranchHistoryEntryFunc == nil {
+		tx.RecordDocumentBranchHistoryEntryFunc = func(context.Context, xid.ID, string, null.String, bool) (xid.ID, error) {
+			return _entryID, nil
+		}
+	}
+
 	db.BeginTxFunc = func(_ context.Context, dest any) error {
 		if err != nil {
 			return err
@@ -1298,6 +1306,15 @@ func Test_Handler_CreateDocument(t *testing.T) {
 			Body:     validBody,
 			RespCode: http.StatusInternalServerError,
 		},
+		"History entry insert error": {
+			Tx: &TxMock{
+				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) (xid.ID, error) {
+					return xid.ID{}, errors.New("boom")
+				},
+			},
+			Body:     validBody,
+			RespCode: http.StatusInternalServerError,
+		},
 		"Maintainer upsert error": {
 			Tx: &TxMock{
 				UpsertDocumentMaintainersFunc: func(context.Context, xid.ID, string, []string) error {
@@ -1381,6 +1398,15 @@ func Test_Handler_CreateDocument(t *testing.T) {
 			if c.RespCode == http.StatusCreated {
 				assert.Contains(t, rec.Body.String(), `"New doc"`)
 				assert.Equal(t, []string{"u1"}, c.Tx.UpsertDocumentMaintainersCalls()[0].MaintainerIDs)
+
+				// the first content is a boundary entry, so a later edit
+				// can be rolled back to it.
+				require.Len(t, c.Tx.RecordDocumentBranchHistoryEntryCalls(), 1)
+				entry := c.Tx.RecordDocumentBranchHistoryEntryCalls()[0]
+				assert.Equal(t, c.Tx.InsertDocumentCalls()[0].Doc.BranchID, entry.BranchID)
+				assert.Equal(t, "org1", entry.OrganizationID)
+				assert.True(t, entry.Boundary)
+				assert.Equal(t, null.StringFrom("u1"), entry.By)
 			}
 		})
 	}
@@ -1755,6 +1781,18 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 				// creating one creates its watcher.
 				assert.Empty(t, c.Tx.InsertDocumentHookCalls())
 				require.Len(t, c.DB.InsertDocumentHookCalls(), c.CopiedHooks)
+
+				// the duplicate starts with a boundary entry, which takes
+				// the copied hooks afterwards.
+				require.Len(t, c.Tx.RecordDocumentBranchHistoryEntryCalls(), 1)
+				entry := c.Tx.RecordDocumentBranchHistoryEntryCalls()[0]
+				assert.Equal(t, dupl.BranchID, entry.BranchID)
+				assert.True(t, entry.Boundary)
+
+				hh := c.DB.UpdateDocumentBranchHistoryEntryHooksCalls()
+				require.Len(t, hh, 1)
+				assert.Equal(t, _entryID, hh[0].ID)
+				assert.Len(t, hh[0].Hooks, c.CopiedHooks)
 
 				// a hook anchored to a block follows the block's regenerated
 				// uid rather than pointing at the source's.

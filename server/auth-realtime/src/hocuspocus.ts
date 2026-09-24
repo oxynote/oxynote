@@ -47,14 +47,15 @@ interface FlushableServer {
 	}
 }
 
-// the part a reset reaches into: the socket behind each of a document's
-// client connections.
+// the part a reset reaches into: each of a document's client connections
+// and the socket behind it.
 interface ResettableServer {
 	documents: {
 		get(documentName: string):
 			| {
 					connections: Map<
 						{
+							readOnly: boolean
 							webSocket: {
 								close(
 									code?: number,
@@ -77,6 +78,10 @@ const resetConnection = { code: 4205, reason: "Reset Connection" }
 // only tells the provider the document is closed, and the provider leaves
 // it closed: it reopens a document after losing its socket, not after that
 // message. Direct connections have no socket and are unaffected.
+//
+// each connection turns read-only first. It stays on the document until
+// its socket reports the close, and until then hocuspocus still applies
+// its updates.
 export function resetConnections(
 	server: ResettableServer,
 	documentName: string,
@@ -87,6 +92,7 @@ export function resetConnections(
 	}
 
 	for (const [connection] of document.connections) {
+		connection.readOnly = true
 		connection.webSocket.close(
 			resetConnection.code,
 			resetConnection.reason,
@@ -284,6 +290,7 @@ export function createDocumentHooks({ auth, core }: DocumentHookDeps) {
 			context?: {
 				session?: AuthSession | null
 				system?: boolean
+				userId?: string
 			} | null
 			documentName: string
 		}) {
@@ -294,7 +301,8 @@ export function createDocumentHooks({ auth, core }: DocumentHookDeps) {
 					isSystemContext(context),
 			)
 
-			const userId = context?.session?.user.id
+			const userId =
+				context?.session?.user.id ?? context?.userId
 			if (!userId) {
 				return Promise.resolve()
 			}
@@ -305,6 +313,9 @@ export function createDocumentHooks({ auth, core }: DocumentHookDeps) {
 				documentMaintainers.set(documentName, set)
 			}
 
+			// core takes the last maintainer as the author, so the
+			// latest editor moves to the end.
+			set.delete(userId)
 			set.add(userId)
 
 			return Promise.resolve()
@@ -389,6 +400,7 @@ export function createDocumentHooks({ auth, core }: DocumentHookDeps) {
 		async onStoreDocument(data: {
 			documentName: string
 			document: ConnectedDocument
+			lastContext?: { system?: boolean } | null
 		}) {
 			// both maps describe the window this persist closes, so
 			// they are drained before anything that can fail: a
@@ -403,10 +415,12 @@ export function createDocumentHooks({ auth, core }: DocumentHookDeps) {
 			// nothing but core changed the document, so the persist
 			// carries core's own permission and a protected branch
 			// accepts it. One edit in the window is enough to make
-			// it an ordinary write.
+			// it an ordinary write. A window with no change at all,
+			// such as a core batch whose operations all failed, takes
+			// the permission of the connection that stores it.
 			const system =
 				documentSystemOnly.get(data.documentName) ??
-				false
+				isSystemContext(data.lastContext)
 
 			documentSystemOnly.delete(data.documentName)
 

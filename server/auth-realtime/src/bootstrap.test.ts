@@ -3,7 +3,7 @@ import {
 	bootstrapSingleOrganization,
 	createDefaultAdminLookup,
 } from "./bootstrap.js"
-import { stubCore, stubLog, stubStore, testEnv } from "./test-helpers.js"
+import { stubLog, stubStore, testEnv } from "./test-helpers.js"
 
 // a single-organization deployment with no organization and no admin yet,
 // unless a test says otherwise.
@@ -38,11 +38,10 @@ function deps(
 			maxOrganizations: overrides.maxOrganizations ?? 1,
 		}),
 		store,
-		core: stubCore(),
 		log: stubLog(),
 		accounts,
 		hashPassword: vi.fn().mockResolvedValue("hashed"),
-		createOrganization: vi.fn().mockResolvedValue({ id: "org-1" }),
+		createOrganization: vi.fn().mockResolvedValue({}),
 	}
 }
 
@@ -76,9 +75,6 @@ describe("bootstrapSingleOrganization", () => {
 			slug: "oxynote",
 			userId: "admin-1",
 		})
-		expect(d.core.setDefaultOrganizationLogo).toHaveBeenCalledWith(
-			"org-1",
-		)
 		expect.soft(d.log.warn).toHaveBeenCalledTimes(1)
 	})
 
@@ -115,32 +111,13 @@ describe("bootstrapSingleOrganization", () => {
 
 		expect.soft(d.accounts.findUserByEmail).not.toHaveBeenCalled()
 		expect.soft(d.createOrganization).not.toHaveBeenCalled()
-		expect.soft(
-			d.core.setDefaultOrganizationLogo,
-		).not.toHaveBeenCalled()
 		expect.soft(d.log.warn).not.toHaveBeenCalled()
 	})
 
-	it("propagates a failed organization creation before setting a logo", async ({
-		expect,
-	}) => {
+	it("propagates a failed organization creation", async ({ expect }) => {
 		const failure = new Error("core unreachable")
 		const d = deps()
 		d.createOrganization.mockRejectedValue(failure)
-
-		await expect(bootstrapSingleOrganization(d)).rejects.toBe(
-			failure,
-		)
-		expect.soft(
-			d.core.setDefaultOrganizationLogo,
-		).not.toHaveBeenCalled()
-		expect.soft(d.log.warn).not.toHaveBeenCalled()
-	})
-
-	it("propagates a failed logo upload", async ({ expect }) => {
-		const failure = new Error("core unreachable")
-		const d = deps()
-		d.core.setDefaultOrganizationLogo.mockRejectedValue(failure)
 
 		await expect(bootstrapSingleOrganization(d)).rejects.toBe(
 			failure,

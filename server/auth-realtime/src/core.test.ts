@@ -108,24 +108,6 @@ describe("createCoreClient", () => {
 		})
 	})
 
-	describe("setDefaultOrganizationLogo", () => {
-		it("puts to the organization's default logo endpoint", async ({
-			expect,
-		}) => {
-			const http = stubHttp()
-
-			await createCoreClient(
-				BASE_URL,
-				http,
-			).setDefaultOrganizationLogo("org-1")
-
-			expect(http.put).toHaveBeenCalledTimes(1)
-			expect(http.put).toHaveBeenCalledWith(
-				"http://core:8080/api/x/organizations/org-1/logo/default",
-			)
-		})
-	})
-
 	describe("fetchBranches", () => {
 		it("returns the branch list core responded with", async ({
 			expect,

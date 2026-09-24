@@ -259,11 +259,18 @@ func (c *Checker) clear(
 	documentID, branchID xid.ID,
 	blockUID string,
 ) error {
-	res, err := c.applier.Apply(ctx, documentID, branchID, []edit.Operation{
-		edit.UpdateAttrs(blockUID, map[string]any{
-			document.AttrSimulationActive: false,
-		}),
-	}, true)
+	res, err := c.applier.Apply(
+		ctx,
+		documentID,
+		branchID,
+		[]edit.Operation{
+			edit.UpdateAttrs(blockUID, map[string]any{
+				document.AttrSimulationActive: false,
+			}),
+		},
+		"",
+		true,
+	)
 	if err != nil {
 		return err
 	}
@@ -382,5 +389,5 @@ type Applier interface {
 	// the (documentID, branchID) document and return the per-op
 	// outcome. The clear is core's own write, so this package always
 	// asks for a system one.
-	Apply(ctx context.Context, documentID, branchID xid.ID, ops []edit.Operation, system bool) (edit.Result, error)
+	Apply(ctx context.Context, documentID, branchID xid.ID, ops []edit.Operation, userID string, system bool) (edit.Result, error)
 }

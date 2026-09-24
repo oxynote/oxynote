@@ -661,7 +661,14 @@ func (i *input) ApplyEdit(documentID, branchID xid.ID, ops []edit.Operation) err
 		return err
 	}
 
-	res, err := i.applier.Apply(i.ctx, ref.DocumentID, ref.BranchID, ops, false)
+	res, err := i.applier.Apply(
+		i.ctx,
+		ref.DocumentID,
+		ref.BranchID,
+		ops,
+		i.userID,
+		false,
+	)
 	if err != nil {
 		i.log.Error(
 			"edit apply failed",
@@ -1093,6 +1100,7 @@ func (i *input) CreateHook(documentID, branchID xid.ID, blockUID string, tp hook
 		return nil, fmt.Errorf("insert: %w", err)
 	}
 
+	i.recordHookHistory(hk)
 	i.hookChanged(hk)
 
 	return hk, nil
@@ -1109,6 +1117,7 @@ func (i *input) UpdateHook(hk *hook.Hook, settings processor.Settings) error {
 		return fmt.Errorf("update: %w", err)
 	}
 
+	i.recordHookHistory(hk)
 	i.hookChanged(hk)
 
 	return nil
@@ -1141,9 +1150,34 @@ func (i *input) DeleteHook(hk *hook.Hook) error {
 		return fmt.Errorf("delete: %w", err)
 	}
 
+	i.recordHookHistory(hk)
 	i.hookChanged(hk)
 
 	return nil
+}
+
+// recordHookHistory records the hook's branch in its history, credited to
+// the user the assistant acts for. The hook write is already done, so a
+// failure is logged rather than returned.
+func (i *input) recordHookHistory(hk *hook.Hook) {
+	if !hk.BranchID.Valid {
+		return
+	}
+
+	_, err := i.db.RecordDocumentBranchHistoryEntry(
+		i.ctx,
+		hk.BranchID.V,
+		i.orgID,
+		null.StringFrom(i.userID),
+		false,
+	)
+	if err != nil {
+		i.log.Error(
+			"cannot record the hook change in the branch history",
+			slog.String("hook_id", hk.ID.String()),
+			slog.String("error", err.Error()),
+		)
+	}
 }
 
 // hookChanged records the branch a hook write changed and announces it
@@ -1307,6 +1341,17 @@ type HookDB interface {
 	// DeleteDocumentHook should remove a hook the caller has already
 	// fetched org-scoped. Used by delete_hook.
 	DeleteDocumentHook(ctx context.Context, id xid.ID) error
+
+	// RecordDocumentBranchHistoryEntry should record the branch as it
+	// stands, with its live hooks, and return the id of the entry. Used
+	// by every hook write that changes what the branch carries.
+	RecordDocumentBranchHistoryEntry(
+		ctx context.Context,
+		branchID xid.ID,
+		organizationID string,
+		by null.String,
+		boundary bool,
+	) (xid.ID, error)
 }
 
 // Tx is the transactional half of DB, so a tool whose write spans
@@ -1407,5 +1452,5 @@ type EditApplier interface {
 	// for the (documentID, branchID) document and return the per-op
 	// outcome. A tool's writes are a person's, never core's own, so
 	// this package always asks for an ordinary one.
-	Apply(ctx context.Context, documentID, branchID xid.ID, ops []edit.Operation, system bool) (edit.Result, error)
+	Apply(ctx context.Context, documentID, branchID xid.ID, ops []edit.Operation, userID string, system bool) (edit.Result, error)
 }

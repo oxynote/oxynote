@@ -7,6 +7,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	hookCore "github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/rs/xid"
@@ -37,6 +38,9 @@ var _ DB = &DBMock{}
 //			InsertDocumentHookFunc: func(ctx context.Context, hk hookCore.Hook) error {
 //				panic("mock out the InsertDocumentHook method")
 //			},
+//			RecordDocumentBranchHistoryEntryFunc: func(ctx context.Context, branchID xid.ID, organizationID string, by null.String, boundary bool) (xid.ID, error) {
+//				panic("mock out the RecordDocumentBranchHistoryEntry method")
+//			},
 //			UpdateDocumentHookFunc: func(ctx context.Context, hk hookCore.Hook) error {
 //				panic("mock out the UpdateDocumentHook method")
 //			},
@@ -61,6 +65,9 @@ type DBMock struct {
 
 	// InsertDocumentHookFunc mocks the InsertDocumentHook method.
 	InsertDocumentHookFunc func(ctx context.Context, hk hookCore.Hook) error
+
+	// RecordDocumentBranchHistoryEntryFunc mocks the RecordDocumentBranchHistoryEntry method.
+	RecordDocumentBranchHistoryEntryFunc func(ctx context.Context, branchID xid.ID, organizationID string, by null.String, boundary bool) (xid.ID, error)
 
 	// UpdateDocumentHookFunc mocks the UpdateDocumentHook method.
 	UpdateDocumentHookFunc func(ctx context.Context, hk hookCore.Hook) error
@@ -108,6 +115,19 @@ type DBMock struct {
 			// Hk is the hk argument value.
 			Hk hookCore.Hook
 		}
+		// RecordDocumentBranchHistoryEntry holds details about calls to the RecordDocumentBranchHistoryEntry method.
+		RecordDocumentBranchHistoryEntry []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// BranchID is the branchID argument value.
+			BranchID xid.ID
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+			// By is the by argument value.
+			By null.String
+			// Boundary is the boundary argument value.
+			Boundary bool
+		}
 		// UpdateDocumentHook holds details about calls to the UpdateDocumentHook method.
 		UpdateDocumentHook []struct {
 			// Ctx is the ctx argument value.
@@ -116,12 +136,13 @@ type DBMock struct {
 			Hk hookCore.Hook
 		}
 	}
-	lockDeleteDocumentHook           sync.RWMutex
-	lockFetchDocumentByBranchID      sync.RWMutex
-	lockFetchDocumentHook            sync.RWMutex
-	lockFetchDocumentHooksByBranchID sync.RWMutex
-	lockInsertDocumentHook           sync.RWMutex
-	lockUpdateDocumentHook           sync.RWMutex
+	lockDeleteDocumentHook               sync.RWMutex
+	lockFetchDocumentByBranchID          sync.RWMutex
+	lockFetchDocumentHook                sync.RWMutex
+	lockFetchDocumentHooksByBranchID     sync.RWMutex
+	lockInsertDocumentHook               sync.RWMutex
+	lockRecordDocumentBranchHistoryEntry sync.RWMutex
+	lockUpdateDocumentHook               sync.RWMutex
 }
 
 // DeleteDocumentHook calls DeleteDocumentHookFunc.
@@ -331,6 +352,58 @@ func (mock *DBMock) InsertDocumentHookCalls() []struct {
 	mock.lockInsertDocumentHook.RLock()
 	calls = mock.calls.InsertDocumentHook
 	mock.lockInsertDocumentHook.RUnlock()
+	return calls
+}
+
+// RecordDocumentBranchHistoryEntry calls RecordDocumentBranchHistoryEntryFunc.
+func (mock *DBMock) RecordDocumentBranchHistoryEntry(ctx context.Context, branchID xid.ID, organizationID string, by null.String, boundary bool) (xid.ID, error) {
+	callInfo := struct {
+		Ctx            context.Context
+		BranchID       xid.ID
+		OrganizationID string
+		By             null.String
+		Boundary       bool
+	}{
+		Ctx:            ctx,
+		BranchID:       branchID,
+		OrganizationID: organizationID,
+		By:             by,
+		Boundary:       boundary,
+	}
+	mock.lockRecordDocumentBranchHistoryEntry.Lock()
+	mock.calls.RecordDocumentBranchHistoryEntry = append(mock.calls.RecordDocumentBranchHistoryEntry, callInfo)
+	mock.lockRecordDocumentBranchHistoryEntry.Unlock()
+	if mock.RecordDocumentBranchHistoryEntryFunc == nil {
+		var (
+			iDOut  xid.ID
+			errOut error
+		)
+		return iDOut, errOut
+	}
+	return mock.RecordDocumentBranchHistoryEntryFunc(ctx, branchID, organizationID, by, boundary)
+}
+
+// RecordDocumentBranchHistoryEntryCalls gets all the calls that were made to RecordDocumentBranchHistoryEntry.
+// Check the length with:
+//
+//	len(mockedDB.RecordDocumentBranchHistoryEntryCalls())
+func (mock *DBMock) RecordDocumentBranchHistoryEntryCalls() []struct {
+	Ctx            context.Context
+	BranchID       xid.ID
+	OrganizationID string
+	By             null.String
+	Boundary       bool
+} {
+	var calls []struct {
+		Ctx            context.Context
+		BranchID       xid.ID
+		OrganizationID string
+		By             null.String
+		Boundary       bool
+	}
+	mock.lockRecordDocumentBranchHistoryEntry.RLock()
+	calls = mock.calls.RecordDocumentBranchHistoryEntry
+	mock.lockRecordDocumentBranchHistoryEntry.RUnlock()
 	return calls
 }
 
