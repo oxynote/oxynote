@@ -14,6 +14,7 @@ import (
 	ggcrregistry "github.com/google/go-containerregistry/pkg/registry"
 	"github.com/google/go-containerregistry/pkg/v1/random"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/oxynote/oxynote/server/core/internal/apps/registry"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -64,13 +65,17 @@ func newFakeRegistryImage(t *testing.T, unauthorized bool) (string, string) {
 func imageWatcherState(t *testing.T, digest string) State {
 	t.Helper()
 
-	raw, err := json.Marshal(ContainerImageWatcherState{
-		Status: ContainerImageWatcherStatusActive,
-		Digest: digest,
-	})
+	raw, err := json.Marshal(ContainerImageWatcherState{Digest: digest})
 	require.NoError(t, err)
 
 	return State(raw)
+}
+
+func Test_ContainerImageWatcher_Validate(t *testing.T) {
+	t.Parallel()
+
+	assert.NoError(t, (&ContainerImageWatcher{Image: "nginx:1.27"}).Validate())
+	assert.ErrorIs(t, (&ContainerImageWatcher{Image: "INVALID image ref"}).Validate(), registry.ErrInvalidReference)
 }
 
 func Test_ContainerImageWatcher_Process(t *testing.T) {
@@ -83,17 +88,17 @@ func Test_ContainerImageWatcher_Process(t *testing.T) {
 
 		ciw := ContainerImageWatcher{Image: image}
 
-		score, state, err := ciw.Process(context.Background(), stubInput{
+		res, err := ciw.Process(context.Background(), stubInput{
 			state: imageWatcherState(t, digest),
 		})
 		require.NoError(t, err)
 
-		assert.True(t, score.Equal(decimal.NewFromInt(100)))
+		assert.Equal(t, StatusActive, res.Status)
+		assert.True(t, res.Score.Equal(decimal.NewFromInt(100)))
 
 		var ciws ContainerImageWatcherState
 
-		require.NoError(t, json.Unmarshal(state, &ciws))
-		assert.Equal(t, ContainerImageWatcherStatusActive, ciws.Status)
+		require.NoError(t, json.Unmarshal(res.State, &ciws))
 		assert.Equal(t, digest, ciws.Digest)
 	})
 
@@ -104,34 +109,43 @@ func Test_ContainerImageWatcher_Process(t *testing.T) {
 
 		ciw := ContainerImageWatcher{Image: image}
 
-		score, _, err := ciw.Process(context.Background(), stubInput{
+		res, err := ciw.Process(context.Background(), stubInput{
 			state: imageWatcherState(t, "sha256:old"),
 		})
 		require.NoError(t, err)
 
-		assert.True(t, score.Equal(decimal.Zero))
+		assert.True(t, res.Score.Equal(decimal.Zero))
 	})
 
-	t.Run("Unauthorized registry reports the status and scores zero", func(t *testing.T) {
+	t.Run("Unauthorized registry is a status", func(t *testing.T) {
 		t.Parallel()
 
 		image, _ := newFakeRegistryImage(t, true)
 
 		ciw := ContainerImageWatcher{Image: image}
 
-		// an empty baseline digest — a hook created or reset while
-		// unauthorized — must not match the empty digest of a failed fetch.
-		score, state, err := ciw.Process(context.Background(), stubInput{
-			state: imageWatcherState(t, ""),
+		res, err := ciw.Process(context.Background(), stubInput{
+			state: imageWatcherState(t, "sha256:old"),
 		})
 		require.NoError(t, err)
 
-		assert.True(t, score.Equal(decimal.Zero))
+		assert.Equal(t, ContainerImageWatcherStatusUnauthorized, res.Status)
+		assert.Nil(t, res.State)
+	})
 
-		var ciws ContainerImageWatcherState
+	t.Run("Missing image is a status", func(t *testing.T) {
+		t.Parallel()
 
-		require.NoError(t, json.Unmarshal(state, &ciws))
-		assert.Equal(t, ContainerImageWatcherStatusUnauthorized, ciws.Status)
+		image, _ := newFakeRegistryImage(t, false)
+
+		ciw := ContainerImageWatcher{Image: strings.Replace(image, ":v1", ":v2", 1)}
+
+		res, err := ciw.Process(context.Background(), stubInput{
+			state: imageWatcherState(t, "sha256:old"),
+		})
+		require.NoError(t, err)
+
+		assert.Equal(t, ContainerImageWatcherStatusImageNotFound, res.Status)
 	})
 
 	t.Run("Invalid image reference fails", func(t *testing.T) {
@@ -139,7 +153,7 @@ func Test_ContainerImageWatcher_Process(t *testing.T) {
 
 		ciw := ContainerImageWatcher{Image: "INVALID image ref"}
 
-		_, _, err := ciw.Process(context.Background(), stubInput{
+		_, err := ciw.Process(context.Background(), stubInput{
 			state: imageWatcherState(t, ""),
 		})
 		require.Error(t, err)
@@ -150,7 +164,7 @@ func Test_ContainerImageWatcher_Process(t *testing.T) {
 
 		ciw := ContainerImageWatcher{}
 
-		_, _, err := ciw.Process(context.Background(), stubInput{state: State(`{not json`)})
+		_, err := ciw.Process(context.Background(), stubInput{state: State(`{not json`)})
 		require.Error(t, err)
 	})
 }
@@ -165,44 +179,29 @@ func Test_ContainerImageWatcher_Reset(t *testing.T) {
 
 		ciw := ContainerImageWatcher{Image: image}
 
-		score, state, err := ciw.Reset(context.Background(), stubInput{})
+		res, err := ciw.Reset(context.Background(), stubInput{})
 		require.NoError(t, err)
 
-		assert.True(t, score.Equal(decimal.NewFromInt(100)))
+		assert.Equal(t, StatusActive, res.Status)
+		assert.True(t, res.Score.Equal(decimal.NewFromInt(100)))
 
 		var ciws ContainerImageWatcherState
 
-		require.NoError(t, json.Unmarshal(state, &ciws))
-		assert.Equal(t, ContainerImageWatcherStatusActive, ciws.Status)
+		require.NoError(t, json.Unmarshal(res.State, &ciws))
 		assert.Equal(t, digest, ciws.Digest)
 	})
 
-	// Process records an unauthorized registry as a status; the reset does
-	// the same, or a hook for an image whose credentials are currently wrong
-	// could never be created or updated at all.
-	t.Run("Unauthorized registry resets to a status", func(t *testing.T) {
+	t.Run("Unauthorized registry is a status", func(t *testing.T) {
 		t.Parallel()
 
 		image, _ := newFakeRegistryImage(t, true)
 
 		ciw := ContainerImageWatcher{Image: image}
 
-		score, state, err := ciw.Reset(context.Background(), stubInput{})
+		res, err := ciw.Reset(context.Background(), stubInput{})
 		require.NoError(t, err)
-		assert.True(t, score.IsZero())
 
-		var ciws ContainerImageWatcherState
-
-		require.NoError(t, json.Unmarshal(state, &ciws))
-		assert.Equal(t, ContainerImageWatcherStatusUnauthorized, ciws.Status)
-	})
-
-	t.Run("Malformed state fails", func(t *testing.T) {
-		t.Parallel()
-
-		ciw := ContainerImageWatcher{}
-
-		_, _, err := ciw.Reset(context.Background(), stubInput{state: State(`{not json`)})
-		require.Error(t, err)
+		assert.Equal(t, ContainerImageWatcherStatusUnauthorized, res.Status)
+		assert.Nil(t, res.State)
 	})
 }

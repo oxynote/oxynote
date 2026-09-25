@@ -22,6 +22,7 @@ export interface Notification {
 export enum NotificationCode {
 	DocumentReviewRequest = "notification.document.review_request",
 	DocumentHookTrigerred = "notification.document.hook_triggered",
+	DocumentHookNeedsAttention = "notification.document.hook_needs_attention",
 	DocumentNewComment = "notification.document.new_comment",
 	DocumentNewCommentReply = "notification.document.new_comment_reply",
 }
@@ -29,6 +30,7 @@ export enum NotificationCode {
 export type NotificationMetadata =
 	| NotificationMetadataDocumentReviewRequest
 	| NotificationMetadataDocumentHookTriggered
+	| NotificationMetadataDocumentHookNeedsAttention
 	| NotificationMetadataDocumentNewComment
 	| NotificationMetadataDocumentNewCommentReply
 
@@ -42,6 +44,10 @@ export interface NotificationMetadataDocumentHookTriggered {
 	branchId: string
 	blockId: string | null
 	type: DocumentHookType
+}
+
+export interface NotificationMetadataDocumentHookNeedsAttention extends NotificationMetadataDocumentHookTriggered {
+	status: DocumentHookStatus
 }
 
 export interface NotificationMetadataDocumentNewComment {

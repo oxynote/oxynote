@@ -23,6 +23,9 @@ const ORG_ID = makeXid("org1")
 const NON_XID = "nano-id"
 const HOOKS_KEY = ["documents", "hooks", DOC_ID, BRANCH_ID] as const
 const LIST_URL = `/api/documents/${DOC_ID}/hooks`
+// writes go through the realtime service, which stores the branch's
+// pending edits before core records them.
+const WRITE_URL = `http://test.local/auth-realtime/api/documents/${DOC_ID}/hooks`
 
 const CREATE_REQ: DocumentHookCreateRequest = {
 	type: DocumentHookType.GitHubTracking,
@@ -51,7 +54,8 @@ function makeHook(id: string): DocumentHook {
 		branchId: BRANCH_ID,
 		blockId: "block1",
 		settings: { repository: "acme/docs", branch: "main", paths: ["a.md"] },
-		state: { pathsChecksums: { "a.md": "sum-a" }, status: "missing_branch" },
+		state: { pathsChecksums: { "a.md": "sum-a" } },
+		status: "missing_branch",
 		score: "100",
 		createdAt: "2024-01-01T00:00:00.000Z",
 		updatedAt: "2024-01-01T00:00:00.000Z",
@@ -136,7 +140,7 @@ describe("useDocumentHookAPI", { concurrent: false }, () => {
 			seedOrganization()
 			seedHooks([makeHook(HOOK_ID)])
 			const listCalls = mockEndpoint("GET", LIST_URL, () => [])
-			const createCalls = mockEndpoint("POST", LIST_URL, () => ({}))
+			const createCalls = mockEndpoint("POST", WRITE_URL, () => ({}))
 			const api = makeDocumentHookAPI()
 
 			await api.createDocumentHookByDocID.mutateAsync({
@@ -156,7 +160,7 @@ describe("useDocumentHookAPI", { concurrent: false }, () => {
 			seedHooks([makeHook(HOOK_ID)])
 			const listCalls = mockEndpoint("GET", LIST_URL, () => serverHooks)
 			let hooksAtRequest: unknown
-			const createCalls = mockEndpoint("POST", LIST_URL, () => {
+			const createCalls = mockEndpoint("POST", WRITE_URL, () => {
 				hooksAtRequest = getHooks()
 
 				return makeHook(OTHER_HOOK_ID)
@@ -190,7 +194,7 @@ describe("useDocumentHookAPI", { concurrent: false }, () => {
 			seedOrganization()
 			seedHooks([makeHook(HOOK_ID)])
 			const listCalls = mockEndpoint("GET", LIST_URL, () => serverHooks)
-			const create = mockDeferredEndpoint("POST", LIST_URL)
+			const create = mockDeferredEndpoint("POST", WRITE_URL)
 			const api = makeDocumentHookAPI()
 			const hooks = runInApp(() =>
 				api.useFetchDocumentHooksByDocID(DOC_ID, BRANCH_ID),
@@ -212,7 +216,8 @@ describe("useDocumentHookAPI", { concurrent: false }, () => {
 					organizationId: ORG_ID,
 					blockId: "block1",
 					settings: CREATE_REQ.settings,
-					state: { pathsChecksums: {}, status: "active" },
+					state: { pathsChecksums: {} },
+					status: "active",
 					score: "100",
 					createdAt: ANY_DATE,
 					updatedAt: ANY_DATE,
@@ -235,7 +240,7 @@ describe("useDocumentHookAPI", { concurrent: false }, () => {
 			seedOrganization()
 			seedHooks([makeHook(HOOK_ID)])
 			const listCalls = mockEndpoint("GET", LIST_URL, () => [])
-			const createCalls = mockEndpoint("POST", LIST_URL, () => {
+			const createCalls = mockEndpoint("POST", WRITE_URL, () => {
 				throw createError({ statusCode: 500 })
 			})
 			const api = makeDocumentHookAPI()
@@ -258,7 +263,7 @@ describe("useDocumentHookAPI", { concurrent: false }, () => {
 			seedOrganization()
 			seedHooks([makeHook(HOOK_ID)])
 			const listCalls = mockEndpoint("GET", LIST_URL, () => [])
-			const create = mockDeferredEndpoint("POST", LIST_URL)
+			const create = mockDeferredEndpoint("POST", WRITE_URL)
 			const api = makeDocumentHookAPI()
 
 			const pending = api.createDocumentHookByDocID.mutateAsync({
@@ -304,7 +309,7 @@ describe("useDocumentHookAPI", { concurrent: false }, () => {
 			const listCalls = mockEndpoint("GET", LIST_URL, () => [])
 			const updateCalls = mockEndpoint(
 				"PUT",
-				`${LIST_URL}/${HOOK_ID}`,
+				`${WRITE_URL}/${HOOK_ID}`,
 				() => ({}),
 			)
 			const api = makeDocumentHookAPI()
@@ -333,7 +338,7 @@ describe("useDocumentHookAPI", { concurrent: false }, () => {
 
 			seedHooks([makeHook(HOOK_ID), makeHook(OTHER_HOOK_ID)])
 			const listCalls = mockEndpoint("GET", LIST_URL, () => serverHooks)
-			const update = mockDeferredEndpoint("PUT", `${LIST_URL}/${HOOK_ID}`)
+			const update = mockDeferredEndpoint("PUT", `${WRITE_URL}/${HOOK_ID}`)
 			const api = makeDocumentHookAPI()
 			const hooks = runInApp(() =>
 				api.useFetchDocumentHooksByDocID(DOC_ID, BRANCH_ID),
@@ -362,6 +367,7 @@ describe("useDocumentHookAPI", { concurrent: false }, () => {
 			await pending
 			expect(update.calls).toHaveLength(1)
 			expect(update.calls[0]?.body).toEqual(UPDATE_REQ)
+			expect(update.calls[0]?.query).toEqual({ branchId: BRANCH_ID })
 			// the success invalidation refetches the active hooks query
 			expect(listCalls).toHaveLength(1)
 			expect(hooks.data.value).toEqual(serverHooks)
@@ -372,7 +378,7 @@ describe("useDocumentHookAPI", { concurrent: false }, () => {
 		}) => {
 			seedHooks([makeHook(HOOK_ID)])
 			const listCalls = mockEndpoint("GET", LIST_URL, () => [])
-			const updateCalls = mockEndpoint("PUT", `${LIST_URL}/${HOOK_ID}`, () => {
+			const updateCalls = mockEndpoint("PUT", `${WRITE_URL}/${HOOK_ID}`, () => {
 				throw createError({ statusCode: 500 })
 			})
 			const api = makeDocumentHookAPI()
@@ -396,7 +402,7 @@ describe("useDocumentHookAPI", { concurrent: false }, () => {
 		}) => {
 			seedHooks([makeHook(HOOK_ID)])
 			const listCalls = mockEndpoint("GET", LIST_URL, () => [])
-			const update = mockDeferredEndpoint("PUT", `${LIST_URL}/${HOOK_ID}`)
+			const update = mockDeferredEndpoint("PUT", `${WRITE_URL}/${HOOK_ID}`)
 			const api = makeDocumentHookAPI()
 
 			const pending = api.updateDocumentHookByDocID.mutateAsync({
@@ -444,7 +450,7 @@ describe("useDocumentHookAPI", { concurrent: false }, () => {
 			const listCalls = mockEndpoint("GET", LIST_URL, () => [])
 			const deleteCalls = mockEndpoint(
 				"DELETE",
-				`${LIST_URL}/${HOOK_ID}`,
+				`${WRITE_URL}/${HOOK_ID}`,
 				() => ({}),
 			)
 			const api = makeDocumentHookAPI()
@@ -467,7 +473,7 @@ describe("useDocumentHookAPI", { concurrent: false }, () => {
 
 			seedHooks([makeHook(HOOK_ID), makeHook(OTHER_HOOK_ID)])
 			const listCalls = mockEndpoint("GET", LIST_URL, () => serverHooks)
-			const remove = mockDeferredEndpoint("DELETE", `${LIST_URL}/${HOOK_ID}`)
+			const remove = mockDeferredEndpoint("DELETE", `${WRITE_URL}/${HOOK_ID}`)
 			const api = makeDocumentHookAPI()
 			const hooks = runInApp(() =>
 				api.useFetchDocumentHooksByDocID(DOC_ID, BRANCH_ID),
@@ -485,6 +491,7 @@ describe("useDocumentHookAPI", { concurrent: false }, () => {
 
 			await pending
 			expect(remove.calls).toHaveLength(1)
+			expect(remove.calls[0]?.query).toEqual({ branchId: BRANCH_ID })
 			// the success invalidation refetches the active hooks query
 			expect(listCalls).toHaveLength(1)
 			expect(hooks.data.value).toEqual(serverHooks)
@@ -497,7 +504,7 @@ describe("useDocumentHookAPI", { concurrent: false }, () => {
 			const listCalls = mockEndpoint("GET", LIST_URL, () => [])
 			const deleteCalls = mockEndpoint(
 				"DELETE",
-				`${LIST_URL}/${MISSING_HOOK_ID}`,
+				`${WRITE_URL}/${MISSING_HOOK_ID}`,
 				() => ({}),
 			)
 			const api = makeDocumentHookAPI()
@@ -520,7 +527,7 @@ describe("useDocumentHookAPI", { concurrent: false }, () => {
 			const listCalls = mockEndpoint("GET", LIST_URL, () => [])
 			const deleteCalls = mockEndpoint(
 				"DELETE",
-				`${LIST_URL}/${HOOK_ID}`,
+				`${WRITE_URL}/${HOOK_ID}`,
 				() => {
 					throw createError({ statusCode: 500 })
 				},
@@ -545,7 +552,7 @@ describe("useDocumentHookAPI", { concurrent: false }, () => {
 		}) => {
 			seedHooks([makeHook(HOOK_ID)])
 			const listCalls = mockEndpoint("GET", LIST_URL, () => [])
-			const remove = mockDeferredEndpoint("DELETE", `${LIST_URL}/${HOOK_ID}`)
+			const remove = mockDeferredEndpoint("DELETE", `${WRITE_URL}/${HOOK_ID}`)
 			const api = makeDocumentHookAPI()
 
 			const pending = api.deleteDocumentHookByDocID.mutateAsync({
@@ -613,7 +620,7 @@ describe("useDocumentHookAPI", { concurrent: false }, () => {
 		}) => {
 			const resetHook = {
 				...makeHook(HOOK_ID),
-				state: { pathsChecksums: {}, status: "active" },
+				state: { pathsChecksums: {} },
 			}
 			const serverHooks = [resetHook, makeHook(OTHER_HOOK_ID)]
 
@@ -637,7 +644,7 @@ describe("useDocumentHookAPI", { concurrent: false }, () => {
 			expect(getHooks()).toEqual([
 				{
 					...makeHook(HOOK_ID),
-					state: { pathsChecksums: {}, status: "active" },
+					state: { pathsChecksums: {} },
 					updatedAt: ANY_DATE,
 				},
 				makeHook(OTHER_HOOK_ID),

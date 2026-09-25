@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import HookInitializing from "../HookInitializing.vue"
+import { hookErrorKey } from "../hook-errors"
 import { showToastMessage } from "~/components/toast"
 import FileSelectInput from "./FileSelectInput.vue"
 import { cn } from "~/lib/utils"
@@ -20,7 +22,7 @@ const hookData = computed(() => {
 
 	return {
 		score: Number(props.hook.score),
-		state: props.hook.state as DocumentHookStateGitHubTracking,
+		status: props.hook.status,
 		settings: props.hook.settings as DocumentHookSettingsGitHubTracking,
 	}
 })
@@ -105,8 +107,12 @@ async function upsertHook() {
 					},
 				},
 			})
-		} catch {
-			showToastMessage("error", t("editor.hooks.errors.create-failed"))
+		} catch (err) {
+			const key = hookErrorKey(err)
+			showToastMessage(
+				"error",
+				key ? t(key) : t("editor.hooks.errors.create-failed"),
+			)
 			return
 		}
 
@@ -135,8 +141,12 @@ async function upsertHook() {
 				},
 			},
 		})
-	} catch {
-		showToastMessage("error", t("editor.hooks.errors.update-failed"))
+	} catch (err) {
+		const key = hookErrorKey(err)
+		showToastMessage(
+			"error",
+			key ? t(key) : t("editor.hooks.errors.update-failed"),
+		)
 		return
 	}
 
@@ -238,8 +248,17 @@ async function resetHook() {
 			<div class="flex w-[14rem] flex-col">
 				<template
 					v-if="
+						props.hook && !props.hook.state && props.hook.status === 'active'
+					"
+				>
+					<HookInitializing />
+					<ShadcnUiDropdownMenuSeparator />
+				</template>
+				<template
+					v-if="
 						!fetchGitHubConnectionStatus.data.value?.connected ||
-						hookData?.state.status === 'missing_installation'
+						hookData?.status === 'missing_installation' ||
+						hookData?.status === 'unconfigured'
 					"
 				>
 					<i18n-t
@@ -286,7 +305,7 @@ async function resetHook() {
 					</i18n-t>
 					<ShadcnUiDropdownMenuSeparator />
 				</template>
-				<template v-else-if="hookData?.state.status === 'missing_repository'">
+				<template v-else-if="hookData?.status === 'missing_repository'">
 					<i18n-t
 						scope="global"
 						keypath="editor.hooks.github-tracking.missing-target-repository"
@@ -302,10 +321,26 @@ async function resetHook() {
 					</i18n-t>
 					<ShadcnUiDropdownMenuSeparator />
 				</template>
-				<template v-else-if="hookData?.state.status === 'missing_branch'">
+				<template v-else-if="hookData?.status === 'missing_branch'">
 					<i18n-t
 						scope="global"
 						keypath="editor.hooks.github-tracking.missing-target-branch"
+						tag="div"
+						class="px-0.75 pb-0.75 text-center text-2sm"
+					>
+						<template #icon>
+							<Icon
+								name="mingcute:alert-fill"
+								class="mr-0.5 inline-block -translate-y-px align-middle text-status-warning"
+							/>
+						</template>
+					</i18n-t>
+					<ShadcnUiDropdownMenuSeparator />
+				</template>
+				<template v-else-if="hookData?.status === 'tree_truncated'">
+					<i18n-t
+						scope="global"
+						keypath="editor.hooks.github-tracking.tree-truncated"
 						tag="div"
 						class="px-0.75 pb-0.75 text-center text-2sm"
 					>
@@ -323,16 +358,15 @@ async function resetHook() {
 						cn(
 							'flex flex-col opacity-100 transition-opacity duration-200',
 							(!fetchGitHubConnectionStatus.data.value?.connected ||
-								hookData?.state.status === 'missing_installation') &&
+								hookData?.status === 'missing_installation' ||
+								hookData?.status === 'unconfigured') &&
 								'pointer-events-none opacity-60',
 						)
 					"
 				>
 					<template
 						v-if="
-							hookData &&
-							hookData.score !== 0 &&
-							hookData.state.status === 'active'
+							hookData && hookData.score !== 0 && hookData.status === 'active'
 						"
 					>
 						<div class="flex flex-col gap-1 px-0.75 pb-0.75 text-2sm">
@@ -357,9 +391,9 @@ async function resetHook() {
 								fetchGitHubRepositories.isLoading.value ||
 								fetchGitHubRepositories.state.value.data?.length === 0 ||
 								(!!hookData &&
-									hookData.state.status !== 'active' &&
-									hookData.state.status !== 'missing_repository' &&
-									hookData.state.status !== 'missing_branch')
+									hookData.status !== 'active' &&
+									hookData.status !== 'missing_repository' &&
+									hookData.status !== 'missing_branch')
 							"
 						>
 							<ShadcnUiSelectLabel>
@@ -407,8 +441,8 @@ async function resetHook() {
 								!selectedRepository ||
 								fetchGitHubBranches.isLoading.value ||
 								(!!hookData &&
-									hookData.state.status !== 'active' &&
-									hookData.state.status !== 'missing_branch')
+									hookData.status !== 'active' &&
+									hookData.status !== 'missing_branch')
 							"
 						>
 							<ShadcnUiSelectLabel>
@@ -458,7 +492,7 @@ async function resetHook() {
 								!selectedRepository ||
 								!selectedBranch ||
 								fetchGitHubPaths.isLoading.value ||
-								(!!hookData && hookData.state.status !== 'active')
+								(!!hookData && hookData.status !== 'active')
 							"
 							:options="fetchGitHubPaths.state.value.data || []"
 							:placeholder="
@@ -531,7 +565,7 @@ async function resetHook() {
 							</ShadcnUiButton>
 						</div>
 						<ShadcnUiButton
-							v-if="hookData?.score === 0 && hookData.state.status === 'active'"
+							v-if="hookData?.score === 0 && hookData.status === 'active'"
 							class="gap-1"
 							size="2sm"
 							@click.stop="resetHook"

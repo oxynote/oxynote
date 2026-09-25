@@ -59,6 +59,7 @@ type Manager struct {
 
 	githubMan       *github.Manager
 	webchangeClient *webchange.Client
+	hookMan         tools.HookManager
 
 	history     *persist.History
 	checkpoints *persist.Checkpoints
@@ -90,8 +91,8 @@ type Manager struct {
 // backs the search_documents tool and searchTrigger runs the search-job
 // worker once a document write has committed; providerName labels token metrics so
 // usage stays readable across a provider change; githubMan and
-// webchangeClient are the integrations the hook tools create watchers
-// through; the tree notifier broadcasts sidebar refresh events after
+// webchangeClient are the integrations the hook tools check for; hookMan
+// runs the hook writes; the tree notifier broadcasts sidebar refresh events after
 // document tree mutations and is wired post-construction via
 // SetTreeNotifier because the document handler that satisfies it is
 // built later, inside server.NewServer.
@@ -108,6 +109,7 @@ func NewManager(
 	runners tools.DataSourceRunners,
 	githubMan *github.Manager,
 	webchangeClient *webchange.Client,
+	hookMan tools.HookManager,
 	providerName string,
 ) *Manager {
 	if summaryModel == nil {
@@ -147,6 +149,7 @@ func NewManager(
 
 		githubMan:       githubMan,
 		webchangeClient: webchangeClient,
+		hookMan:         hookMan,
 
 		history:     persist.NewHistory(log, history),
 		checkpoints: persist.NewCheckpoints(log, blobs),
@@ -220,6 +223,7 @@ func (m *Manager) ToolSet(orgID, userID string) *tools.Set {
 		m.runners,
 		m.githubMan,
 		m.webchangeClient,
+		m.hookMan,
 		m.applier,
 		m.tree,
 		m.tags,

@@ -15,8 +15,16 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 )
 
-// ErrUnauthorized is returned when access to the container registry is unauthorized.
-var ErrUnauthorized = errutil.New(http.StatusBadRequest, "registry.unauthorized", "unauthorized access to the container registry")
+var (
+	// ErrUnauthorized is returned when access to the container registry is unauthorized.
+	ErrUnauthorized = errutil.New(http.StatusBadRequest, "registry.unauthorized", "unauthorized access to the container registry")
+
+	// ErrNotFound is returned when the registry has no such image or tag.
+	ErrNotFound = errutil.New(http.StatusNotFound, "registry.not_found", "container image not found")
+
+	// ErrInvalidReference is returned when an image reference cannot be parsed.
+	ErrInvalidReference = errutil.New(http.StatusBadRequest, "registry.invalid_reference", "invalid container image reference")
+)
 
 // digestOptions holds options for configuring the Digest function.
 type digestOptions struct {
@@ -34,13 +42,9 @@ func Digest(
 	image string,
 	digOpts ...DigestOption,
 ) (string, error) {
-	ref, err := name.ParseReference(
-		image,
-		name.WithDefaultRegistry("index.docker.io"),
-		name.WithDefaultTag("latest"),
-	)
+	ref, err := parseReference(image)
 	if err != nil {
-		return "", fmt.Errorf("parsing image reference %q: %w", image, err)
+		return "", err
 	}
 
 	remoteOpts := []remote.Option{
@@ -74,20 +78,21 @@ func Digest(
 
 	desc, err := remote.Head(ref, remoteOpts...)
 	if err != nil {
-		if terr, ok := errors.AsType[*transport.Error](err); ok {
-			if terr.StatusCode == http.StatusUnauthorized ||
-				terr.StatusCode == http.StatusForbidden ||
-				slices.ContainsFunc(terr.Errors, func(diag transport.Diagnostic) bool {
-					return diag.Code == transport.UnauthorizedErrorCode || diag.Code == transport.DeniedErrorCode
-				}) {
-				return "", ErrUnauthorized
-			}
+		if serr := statusError(err); serr != nil {
+			return "", serr
 		}
 
 		return "", fmt.Errorf("getting remote head for %q: %w", ref.Name(), err)
 	}
 
 	return desc.Digest.String(), nil
+}
+
+// ValidateReference checks that the image reference can be parsed.
+func ValidateReference(image string) error {
+	_, err := parseReference(image)
+
+	return err
 }
 
 // WithBasicAuth sets the username and password for basic authentication.
@@ -103,4 +108,44 @@ func WithBearerToken(token string) DigestOption {
 	return func(o *digestOptions) {
 		o.token = token
 	}
+}
+
+// statusError maps a registry response the caller acts on to its error,
+// or returns nil for any other failure.
+func statusError(err error) error {
+	terr, ok := errors.AsType[*transport.Error](err)
+	if !ok {
+		return nil
+	}
+
+	if terr.StatusCode == http.StatusUnauthorized ||
+		terr.StatusCode == http.StatusForbidden ||
+		slices.ContainsFunc(terr.Errors, func(diag transport.Diagnostic) bool {
+			return diag.Code == transport.UnauthorizedErrorCode || diag.Code == transport.DeniedErrorCode
+		}) {
+		return ErrUnauthorized
+	}
+
+	// a HEAD response carries no body, so a missing image or tag shows
+	// only as the status code.
+	if terr.StatusCode == http.StatusNotFound {
+		return ErrNotFound
+	}
+
+	return nil
+}
+
+// parseReference parses an image reference, defaulting to Docker Hub and the
+// latest tag.
+func parseReference(image string) (name.Reference, error) {
+	ref, err := name.ParseReference(
+		image,
+		name.WithDefaultRegistry("index.docker.io"),
+		name.WithDefaultTag("latest"),
+	)
+	if err != nil {
+		return nil, ErrInvalidReference
+	}
+
+	return ref, nil
 }

@@ -15,6 +15,7 @@ import (
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/document/file"
 	hookCore "github.com/oxynote/oxynote/server/core/internal/document/hook"
+	"github.com/oxynote/oxynote/server/core/internal/document/hook/manager"
 	"github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
@@ -71,6 +72,7 @@ func newTestHandler(db DB, pub *fakePublisher) (*Handler, *callbackCounts) {
 		notifPub:        pub,
 		storer:          &StorerMock{},
 		webchangeClient: webchange.NewClient("", ""),
+		hookMan:         &HookManagerMock{},
 		searchTrigger:   &SearchTriggerMock{},
 	}
 
@@ -164,11 +166,13 @@ func Test_NewHandler(t *testing.T) {
 	trigger := &SearchTriggerMock{}
 	pub := &fakePublisher{}
 	st := &StorerMock{}
+	man := &HookManagerMock{}
 
-	hdl := NewHandler(slog.New(slog.DiscardHandler), db, nil, nil, searcher, trigger, pub, st)
+	hdl := NewHandler(slog.New(slog.DiscardHandler), db, nil, nil, man, searcher, trigger, pub, st)
 	require.NotNil(t, hdl)
 	assert.NotNil(t, hdl.log)
 	assert.Same(t, db, hdl.db)
+	assert.Same(t, man, hdl.hookMan)
 	assert.Same(t, searcher, hdl.searcher)
 	assert.Same(t, trigger, hdl.searchTrigger)
 	assert.Same(t, pub, hdl.notifPub)
@@ -1601,17 +1605,20 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 	}
 
 	cc := map[string]struct {
-		DB          *DBMock
-		Tx          *TxMock
-		Storer      *StorerMock
-		BeginErr    error
-		NoSession   bool
-		OmitDoc     bool
-		RespCode    int
-		Committed   int
-		TreeCbs     int
-		Copies      int
-		CopiedHooks int
+		DB        *DBMock
+		Tx        *TxMock
+		Storer    *StorerMock
+		BeginErr  error
+		NoSession bool
+		OmitDoc   bool
+		RespCode  int
+		Committed int
+		TreeCbs   int
+		Copies    int
+		Man       *HookManagerMock
+		// CopiedUID is a source block uid the hook copy is told to
+		// re-anchor.
+		CopiedUID string
 	}{
 		"No session in context": {
 			DB:        &DBMock{},
@@ -1705,39 +1712,25 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 			TreeCbs:   1,
 			Copies:    1,
 		},
-		"Hooks are copied along with the document": {
-			DB: func() *DBMock {
-				blockHook := storedHook(hookCore.TypeScheduledReminder)
-				blockHook.BlockID = null.StringFrom("img-1-aaaaaaaaaaaaaaa")
-
-				db := imageDB()
-				db.FetchDocumentHooksByBranchIDFunc = func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
-					return []hookCore.Hook{blockHook}, nil
-				}
-
-				return db
-			}(),
-			Tx:          insertAwareTx(),
-			Storer:      &StorerMock{},
-			RespCode:    http.StatusCreated,
-			Committed:   1,
-			TreeCbs:     1,
-			Copies:      1,
-			CopiedHooks: 1,
-		},
-		"Failing hook copy still yields the duplicate": {
-			DB: func() *DBMock {
-				db := &DBMock{FetchDocumentFunc: fetchStored}
-				db.FetchDocumentHooksByBranchIDFunc = func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
-					return nil, errors.New("boom")
-				}
-
-				return db
-			}(),
+		"Hooks follow the regenerated block uids": {
+			DB:        imageDB(),
 			Tx:        insertAwareTx(),
+			Storer:    &StorerMock{},
 			RespCode:  http.StatusCreated,
 			Committed: 1,
 			TreeCbs:   1,
+			Copies:    1,
+			CopiedUID: "img-1-aaaaaaaaaaaaaaa",
+		},
+		"Error returned by hookMan.CopyHooks": {
+			DB: &DBMock{FetchDocumentFunc: fetchStored},
+			Tx: insertAwareTx(),
+			Man: &HookManagerMock{
+				CopyHooksFunc: func(context.Context, manager.CopyTx, xid.ID, xid.ID, xid.ID, string, map[string]string) error {
+					return errors.New("boom")
+				},
+			},
+			RespCode: http.StatusInternalServerError,
 		},
 	}
 
@@ -1750,6 +1743,13 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 			if c.Storer != nil {
 				hdl.storer = c.Storer
 			}
+
+			man := c.Man
+			if man == nil {
+				man = &HookManagerMock{}
+			}
+
+			hdl.hookMan = man
 
 			rec := httptest.NewRecorder()
 
@@ -1777,30 +1777,32 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 				assert.Equal(t, _branchID, c.Tx.CopyBranchTagsCalls()[0].FromBranchID)
 				assert.Equal(t, dupl.BranchID, c.Tx.CopyBranchTagsCalls()[0].ToBranchID)
 
-				// the hooks are copied once the commit is through, since
-				// creating one creates its watcher.
-				assert.Empty(t, c.Tx.InsertDocumentHookCalls())
-				require.Len(t, c.DB.InsertDocumentHookCalls(), c.CopiedHooks)
+				// the hooks are copied inside the transaction, re-anchored
+				// to the duplicate's regenerated block uids, and set up once
+				// it commits.
+				hh := man.CopyHooksCalls()
+				require.Len(t, hh, 1)
+				assert.Same(t, c.Tx, hh[0].Tx)
+				assert.Equal(t, _branchID, hh[0].FromBranchID)
+				assert.Equal(t, dupl.BranchID, hh[0].ToBranchID)
+				assert.Equal(t, dupl.ID, hh[0].DocumentID)
+				assert.Equal(t, "org1", hh[0].OrganizationID)
 
-				// the duplicate starts with a boundary entry, which takes
-				// the copied hooks afterwards.
+				pp := man.ProcessBranchCalls()
+				require.Len(t, pp, 1)
+				assert.Equal(t, dupl.BranchID, pp[0].BranchID)
+
+				if c.CopiedUID != "" {
+					uid, ok := hh[0].Uids[c.CopiedUID]
+					require.True(t, ok)
+					assert.NotEqual(t, c.CopiedUID, uid)
+				}
+
+				// the duplicate starts with a boundary entry.
 				require.Len(t, c.Tx.RecordDocumentBranchHistoryEntryCalls(), 1)
 				entry := c.Tx.RecordDocumentBranchHistoryEntryCalls()[0]
 				assert.Equal(t, dupl.BranchID, entry.BranchID)
 				assert.True(t, entry.Boundary)
-
-				hh := c.DB.UpdateDocumentBranchHistoryEntryHooksCalls()
-				require.Len(t, hh, 1)
-				assert.Equal(t, _entryID, hh[0].ID)
-				assert.Len(t, hh[0].Hooks, c.CopiedHooks)
-
-				// a hook anchored to a block follows the block's regenerated
-				// uid rather than pointing at the source's.
-				for _, call := range c.DB.InsertDocumentHookCalls() {
-					assert.Equal(t, null.ValueFrom(dupl.BranchID), call.Hk.BranchID)
-					assert.NotEqual(t, null.StringFrom("img-1-aaaaaaaaaaaaaaa"), call.Hk.BlockID)
-					assert.True(t, call.Hk.BlockID.Valid)
-				}
 			}
 		})
 	}

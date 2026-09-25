@@ -128,13 +128,13 @@ Component commands are in the nested files.
 - **Trust boundary**: `/api/...` needs a session. Core's `/api/x/...` and
   auth-realtime's `/api/internal/...` have no auth, exist for
   service-to-service calls, and are blocked by the Caddyfile; never expose
-  them. Fork, branch update, merge and branch delete are `/api/x` routes
-  that are also session-authed and reachable only through auth-realtime
-  (see [server/AGENTS.md](server/AGENTS.md)). `/api/apps/...` is public and
-  sessionless (GitHub/Slack webhooks and OAuth callbacks, proven by
-  signature or encrypted state). `/api/mcp` takes OAuth 2.1 bearer tokens
-  issued by auth-realtime and validated against its internal MCP session
-  endpoint.
+  them. Branch fork, update, merge, delete and hook writes are `/api/x`
+  routes that are also session-authed and reachable only through
+  auth-realtime (see [server/AGENTS.md](server/AGENTS.md)). `/api/apps/...`
+  is public and sessionless (GitHub/Slack webhooks and OAuth callbacks,
+  proven by signature or encrypted state). `/api/mcp` takes OAuth 2.1 bearer
+  tokens issued by auth-realtime and validated against its internal MCP
+  session endpoint.
 - **Session validation**: core calls auth-realtime's `/api/auth/get-session`;
   auth-realtime owns the Better Auth schema.
 - **Yjs invariant**: the Hocuspocus `documentName` is

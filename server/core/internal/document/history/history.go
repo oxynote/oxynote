@@ -47,6 +47,9 @@ type Entry struct {
 
 	// CreatedAt is the timestamp when the entry was taken.
 	CreatedAt time.Time `json:"createdAt" db:"created_at"`
+
+	// UpdatedAt is the timestamp of the last edit folded into the entry.
+	UpdatedAt time.Time `json:"updatedAt" db:"updated_at"`
 }
 
 // NewEntry takes a snapshot of the branch as it is now, at the given time.
@@ -66,7 +69,25 @@ func NewEntry(doc document.Document, at time.Time, by null.String, hooks Hooks, 
 		LastUpdatedBy: by,
 		Boundary:      boundary,
 		CreatedAt:     at,
+		UpdatedAt:     at,
 	}
+}
+
+// Head is what placing a new entry needs to know about the branch's
+// newest one.
+type Head struct {
+	// ID is the unique identifier for the entry.
+	ID xid.ID `db:"id"`
+
+	// Boundary indicates whether the entry closes its bucket.
+	Boundary bool `db:"boundary"`
+
+	// CreatedAt is the timestamp when the entry was taken.
+	CreatedAt time.Time `db:"created_at"`
+
+	// Same reports whether the entry records the same name, icon, content
+	// and hooks as the one being placed.
+	Same bool `db:"same"`
 }
 
 // Hook is what it takes to re-create a hook: its type, the block it is
@@ -86,11 +107,20 @@ type Hook struct {
 // Hooks is the list of hooks stored on a history entry.
 type Hooks []Hook
 
-// NewHooks reduces hooks to what a history entry records of them.
-func NewHooks(hooks []hook.Hook) Hooks {
+// NewHooks reduces hooks to what a history entry of the content records
+// of them. A hook anchored to a block the content does not hold is left
+// out, and one whose block is back is kept even while still soft-deleted.
+// The hook sweep catches up with the content only on its next run.
+func NewHooks(content document.RootBlock, hooks []hook.Hook) Hooks {
 	res := make(Hooks, 0, len(hooks))
 
 	for _, hk := range hooks {
+		if hk.BlockID.Valid {
+			if _, ok := content.FindByUID(hk.BlockID.String); !ok {
+				continue
+			}
+		}
+
 		res = append(res, Hook{
 			Type:     hk.Type,
 			BlockID:  hk.BlockID,

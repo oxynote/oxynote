@@ -60,6 +60,19 @@ export interface RouteDeps {
 	core: CoreClient
 }
 
+// _xid matches the ids core mints. Path ids go into core's own paths, so
+// anything else is refused before it reaches the flush or core.
+const _xid = /^[0-9a-v]{20}$/
+
+// refusedIds answers a request whose path ids are not all xids.
+function refusedIds(c: Context, ...ids: string[]): Response | undefined {
+	if (ids.every((id) => _xid.test(id))) {
+		return undefined
+	}
+
+	return c.json({ error: "invalid id" }, 400)
+}
+
 // request bodies arrive as unvalidated JSON, so every field a route reads
 // is taken through a narrowing read rather than trusted from a type
 // annotation.
@@ -292,6 +305,11 @@ export function createRoutes({
 	app.post("/documents/:documentId/branches", async (c) => {
 		const documentId = c.req.param("documentId")
 
+		const refused = refusedIds(c, documentId)
+		if (refused) {
+			return refused
+		}
+
 		let body: unknown
 		try {
 			body = await c.req.json()
@@ -346,6 +364,11 @@ export function createRoutes({
 	app.put("/documents/:documentId/branches/:branchId", async (c) => {
 		const documentId = c.req.param("documentId")
 		const branchId = c.req.param("branchId")
+
+		const refused = refusedIds(c, documentId, branchId)
+		if (refused) {
+			return refused
+		}
 
 		let body: unknown
 		try {
@@ -410,6 +433,11 @@ export function createRoutes({
 		const documentId = c.req.param("documentId")
 		const branchId = c.req.param("branchId")
 
+		const refused = refusedIds(c, documentId, branchId)
+		if (refused) {
+			return refused
+		}
+
 		const response = await calledCore(
 			c,
 			"failed to delete branch",
@@ -442,6 +470,11 @@ export function createRoutes({
 	// so an unauthenticated caller changes nothing.
 	app.put("/documents/:documentId/merge", async (c) => {
 		const documentId = c.req.param("documentId")
+
+		const refused = refusedIds(c, documentId)
+		if (refused) {
+			return refused
+		}
 
 		let body: unknown
 		try {
@@ -492,6 +525,158 @@ export function createRoutes({
 				toBranchId,
 				response.data as MergedDocument,
 			)
+		}
+
+		return c.json(
+			response.data,
+			response.status as ContentfulStatusCode,
+		)
+	})
+
+	// a hook write records the branch's stored row in its history, with
+	// the hooks it now carries.
+	app.post("/documents/:documentId/hooks", async (c) => {
+		const documentId = c.req.param("documentId")
+
+		const refused = refusedIds(c, documentId)
+		if (refused) {
+			return refused
+		}
+
+		let body: unknown
+		try {
+			body = await c.req.json()
+		} catch {
+			return c.json({ error: "invalid request body" }, 400)
+		}
+
+		const branchId = readString(body, "branchId")
+		if (!branchId) {
+			return c.json({ error: "branchId is required" }, 400)
+		}
+
+		const branch = await flushed(c, () =>
+			flushBranch(documentId, branchId),
+		)
+		if (branch instanceof Response) {
+			return branch
+		}
+
+		const response = await calledCore(
+			c,
+			"failed to create hook",
+			() =>
+				core.createHook(
+					documentId,
+					{ body },
+					{
+						headers: toAxiosHeaders(
+							c.req.raw.headers,
+						),
+					},
+				),
+		)
+		if (response instanceof Response) {
+			return response
+		}
+
+		return c.json(
+			response.data,
+			response.status as ContentfulStatusCode,
+		)
+	})
+
+	app.put("/documents/:documentId/hooks/:hookId", async (c) => {
+		const documentId = c.req.param("documentId")
+		const hookId = c.req.param("hookId")
+
+		const refused = refusedIds(c, documentId, hookId)
+		if (refused) {
+			return refused
+		}
+
+		const branchId = c.req.query("branchId")
+		if (!branchId) {
+			return c.json({ error: "branchId is required" }, 400)
+		}
+
+		let body: unknown
+		try {
+			body = await c.req.json()
+		} catch {
+			return c.json({ error: "invalid request body" }, 400)
+		}
+
+		const branch = await flushed(c, () =>
+			flushBranch(documentId, branchId),
+		)
+		if (branch instanceof Response) {
+			return branch
+		}
+
+		const response = await calledCore(
+			c,
+			"failed to update hook",
+			() =>
+				core.updateHook(
+					documentId,
+					hookId,
+					branchId,
+					{ body },
+					{
+						headers: toAxiosHeaders(
+							c.req.raw.headers,
+						),
+					},
+				),
+		)
+		if (response instanceof Response) {
+			return response
+		}
+
+		return c.json(
+			response.data,
+			response.status as ContentfulStatusCode,
+		)
+	})
+
+	app.delete("/documents/:documentId/hooks/:hookId", async (c) => {
+		const documentId = c.req.param("documentId")
+		const hookId = c.req.param("hookId")
+
+		const refused = refusedIds(c, documentId, hookId)
+		if (refused) {
+			return refused
+		}
+
+		const branchId = c.req.query("branchId")
+		if (!branchId) {
+			return c.json({ error: "branchId is required" }, 400)
+		}
+
+		const branch = await flushed(c, () =>
+			flushBranch(documentId, branchId),
+		)
+		if (branch instanceof Response) {
+			return branch
+		}
+
+		const response = await calledCore(
+			c,
+			"failed to delete hook",
+			() =>
+				core.deleteHook(documentId, hookId, branchId, {
+					headers: toAxiosHeaders(
+						c.req.raw.headers,
+					),
+				}),
+		)
+		if (response instanceof Response) {
+			return response
+		}
+
+		if (response.status === 204) {
+			return c.body(null, 204)
 		}
 
 		return c.json(
@@ -657,6 +842,27 @@ export function createRoutes({
 			expiresAt: payload.exp,
 		})
 	})
+
+	// server-to-server endpoint core calls before it records a branch's
+	// stored row in its history on a person's behalf, such as a hook
+	// write the assistant makes. Internal like the operations endpoint
+	// below.
+	app.post(
+		"/internal/documents/:documentId/branches/:branchId/flush",
+		async (c) => {
+			const branch = await flushed(c, () =>
+				flushBranch(
+					c.req.param("documentId"),
+					c.req.param("branchId"),
+				),
+			)
+			if (branch instanceof Response) {
+				return branch
+			}
+
+			return c.body(null, 204)
+		},
+	)
 
 	// Server-to-server endpoint called by the Go assistant to apply
 	// edit operations to a live Y.Doc. Each request opens (or reuses) a

@@ -24,6 +24,9 @@ var _ EditApplier = &EditApplierMock{}
 //			ApplyFunc: func(ctx context.Context, documentID xid.ID, branchID xid.ID, ops []edit.Operation, userID string, system bool) (edit.Result, error) {
 //				panic("mock out the Apply method")
 //			},
+//			FlushFunc: func(ctx context.Context, documentID xid.ID, branchID xid.ID) error {
+//				panic("mock out the Flush method")
+//			},
 //		}
 //
 //		// use mockedEditApplier in code that requires EditApplier
@@ -33,6 +36,9 @@ var _ EditApplier = &EditApplierMock{}
 type EditApplierMock struct {
 	// ApplyFunc mocks the Apply method.
 	ApplyFunc func(ctx context.Context, documentID xid.ID, branchID xid.ID, ops []edit.Operation, userID string, system bool) (edit.Result, error)
+
+	// FlushFunc mocks the Flush method.
+	FlushFunc func(ctx context.Context, documentID xid.ID, branchID xid.ID) error
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -51,8 +57,18 @@ type EditApplierMock struct {
 			// System is the system argument value.
 			System bool
 		}
+		// Flush holds details about calls to the Flush method.
+		Flush []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// DocumentID is the documentID argument value.
+			DocumentID xid.ID
+			// BranchID is the branchID argument value.
+			BranchID xid.ID
+		}
 	}
 	lockApply sync.RWMutex
+	lockFlush sync.RWMutex
 }
 
 // Apply calls ApplyFunc.
@@ -108,5 +124,48 @@ func (mock *EditApplierMock) ApplyCalls() []struct {
 	mock.lockApply.RLock()
 	calls = mock.calls.Apply
 	mock.lockApply.RUnlock()
+	return calls
+}
+
+// Flush calls FlushFunc.
+func (mock *EditApplierMock) Flush(ctx context.Context, documentID xid.ID, branchID xid.ID) error {
+	callInfo := struct {
+		Ctx        context.Context
+		DocumentID xid.ID
+		BranchID   xid.ID
+	}{
+		Ctx:        ctx,
+		DocumentID: documentID,
+		BranchID:   branchID,
+	}
+	mock.lockFlush.Lock()
+	mock.calls.Flush = append(mock.calls.Flush, callInfo)
+	mock.lockFlush.Unlock()
+	if mock.FlushFunc == nil {
+		var (
+			errOut error
+		)
+		return errOut
+	}
+	return mock.FlushFunc(ctx, documentID, branchID)
+}
+
+// FlushCalls gets all the calls that were made to Flush.
+// Check the length with:
+//
+//	len(mockedEditApplier.FlushCalls())
+func (mock *EditApplierMock) FlushCalls() []struct {
+	Ctx        context.Context
+	DocumentID xid.ID
+	BranchID   xid.ID
+} {
+	var calls []struct {
+		Ctx        context.Context
+		DocumentID xid.ID
+		BranchID   xid.ID
+	}
+	mock.lockFlush.RLock()
+	calls = mock.calls.Flush
+	mock.lockFlush.RUnlock()
 	return calls
 }

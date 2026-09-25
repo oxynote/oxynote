@@ -39,7 +39,7 @@ func hookSettingsSchema() map[string]any {
 				"type":  "object",
 				"properties": map[string]any{
 					"type":       map[string]any{"const": string(hook.TypeGithubTracking)},
-					"repository": map[string]any{"type": "string", "description": "The repository to follow, as owner/name."},
+					"repository": map[string]any{"type": "string", "description": "The repository to follow, by its name alone; the connected GitHub account is its owner."},
 					"branch":     map[string]any{"type": "string", "description": "The repository branch to follow."},
 					"paths": map[string]any{
 						"type":        "array",
@@ -286,8 +286,12 @@ type hookRow struct {
 	Score decimal.Decimal `json:"score"`
 
 	// State is what the hook has recorded so far, in its type's own
-	// shape.
+	// shape, or null for a hook not set up yet.
 	State json.RawMessage `json:"state"`
+
+	// Status tells whether the hook could check its target on its last
+	// run. Score and state are left as they were while it is not active.
+	Status processor.Status `json:"status"`
 
 	// CreatedAt is when the hook was created.
 	CreatedAt time.Time `json:"created_at"`
@@ -304,7 +308,8 @@ func newHookRow(hk *hook.Hook) hookRow {
 		BlockUID:  hk.BlockID,
 		Settings:  json.RawMessage(hk.Settings),
 		Score:     hk.Score,
-		State:     json.RawMessage(hk.State),
+		State:     json.RawMessage(hk.State.V),
+		Status:    hk.Status,
 		CreatedAt: hk.CreatedAt,
 		UpdatedAt: hk.UpdatedAt,
 	}

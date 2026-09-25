@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import HookInitializing from "../HookInitializing.vue"
+import { hookErrorKey } from "../hook-errors"
 import { showToastMessage } from "~/components/toast"
 import HookInputField from "./HookInputField.vue"
 
@@ -19,7 +21,7 @@ const hookData = computed(() => {
 
 	return {
 		score: Number(props.hook.score),
-		state: props.hook.state as DocumentHookStateURLWatcher,
+		status: props.hook.status,
 		settings: props.hook.settings as DocumentHookSettingsURLWatcher,
 	}
 })
@@ -57,8 +59,12 @@ async function upsertHook() {
 					},
 				},
 			})
-		} catch {
-			showToastMessage("error", t("editor.hooks.errors.create-failed"))
+		} catch (err) {
+			const key = hookErrorKey(err)
+			showToastMessage(
+				"error",
+				key ? t(key) : t("editor.hooks.errors.create-failed"),
+			)
 			return
 		}
 
@@ -81,8 +87,12 @@ async function upsertHook() {
 				},
 			},
 		})
-	} catch {
-		showToastMessage("error", t("editor.hooks.errors.update-failed"))
+	} catch (err) {
+		const key = hookErrorKey(err)
+		showToastMessage(
+			"error",
+			key ? t(key) : t("editor.hooks.errors.update-failed"),
+		)
 		return
 	}
 
@@ -185,7 +195,15 @@ async function resetHook() {
 			]"
 		>
 			<div class="flex w-[14rem] flex-col">
-				<template v-if="hookData?.state.status === 'unreachable_url'">
+				<template
+					v-if="
+						props.hook && !props.hook.state && props.hook.status === 'active'
+					"
+				>
+					<HookInitializing />
+					<ShadcnUiDropdownMenuSeparator />
+				</template>
+				<template v-if="hookData?.status === 'unreachable_url'">
 					<i18n-t
 						scope="global"
 						keypath="editor.hooks.url-watcher.unreachable-url"
@@ -201,11 +219,25 @@ async function resetHook() {
 					</i18n-t>
 					<ShadcnUiDropdownMenuSeparator />
 				</template>
+				<template v-else-if="hookData?.status === 'unconfigured'">
+					<i18n-t
+						scope="global"
+						keypath="editor.hooks.url-watcher.unconfigured"
+						tag="div"
+						class="px-0.75 pb-0.75 text-center text-2sm"
+					>
+						<template #icon>
+							<Icon
+								name="mingcute:alert-fill"
+								class="mr-0.5 inline-block -translate-y-px align-middle text-status-warning"
+							/>
+						</template>
+					</i18n-t>
+					<ShadcnUiDropdownMenuSeparator />
+				</template>
 				<template
 					v-if="
-						hookData &&
-						hookData.score !== 0 &&
-						hookData.state.status === 'active'
+						hookData && hookData.score !== 0 && hookData.status === 'active'
 					"
 				>
 					<div class="flex flex-col gap-1 px-0.75 pb-0.75 text-2sm">

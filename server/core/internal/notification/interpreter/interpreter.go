@@ -29,6 +29,14 @@ const (
 	// _commentReplyVerb names what the commenter did in a comment reply
 	// message.
 	_commentReplyVerb = "replied to a comment on"
+
+	// _hookTriggeredFormat is the hook triggered message, taking the
+	// linked subject and the hook type.
+	_hookTriggeredFormat = "%s may be outdated — %s"
+
+	// _hookNeedsAttentionFormat is the hook needs attention message,
+	// taking the linked subject and the hook type.
+	_hookNeedsAttentionFormat = "%s can no longer be checked — %s"
 )
 
 // Interpreter is the notification interpreter.
@@ -53,7 +61,9 @@ func (i *Interpreter) InterpretNotification(ctx context.Context, n notification.
 	case notification.NotificationDocumentReviewRequest:
 		return i.interpretDocumentReviewRequestNotification(ctx, n)
 	case notification.NotificationDocumentHookTriggered:
-		return i.interpretDocumentHookTriggeredNotification(ctx, n)
+		return i.interpretDocumentHookNotification(ctx, n, _hookTriggeredFormat)
+	case notification.NotificationDocumentHookNeedsAttention:
+		return i.interpretDocumentHookNotification(ctx, n, _hookNeedsAttentionFormat)
 	case notification.NotificationDocumentNewComment:
 		return i.interpretDocumentCommentNotification(ctx, n, _commentVerb)
 	case notification.NotificationDocumentNewCommentReply:
@@ -79,8 +89,13 @@ func (i *Interpreter) interpretDocumentReviewRequestNotification(ctx context.Con
 	}, nil
 }
 
-// interpretDocumentHookTriggeredNotification interprets a document hook triggered notification.
-func (i *Interpreter) interpretDocumentHookTriggeredNotification(ctx context.Context, n notification.Notification) (*Message, error) {
+// interpretDocumentHookNotification interprets both hook notifications:
+// they differ only in the format naming what happened to the hook.
+func (i *Interpreter) interpretDocumentHookNotification(
+	ctx context.Context,
+	n notification.Notification,
+	format string,
+) (*Message, error) {
 	tp, ok := metaHookType(n)
 	if !ok {
 		return nil, ErrInvalidNotificationMetadata
@@ -103,7 +118,7 @@ func (i *Interpreter) interpretDocumentHookTriggeredNotification(ctx context.Con
 
 	return &Message{
 		Text: fmt.Sprintf(
-			"%s may be outdated — %s",
+			format,
 			i.fm.Link(i.documentURL(doc, orgSlug, blockID), subject),
 			tp.HumanizedString(),
 		),

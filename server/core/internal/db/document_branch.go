@@ -11,6 +11,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/document/history"
+	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
@@ -261,17 +262,9 @@ func (a *agent) selectBranchSummary(b sq.SelectBuilder) sq.SelectBuilder {
 	).From("document_branches")
 }
 
-// RecordDocumentBranchHistoryEntry records the branch as it stands, with
-// its live hooks, and returns the id of the entry it wrote. It locks the
-// branch row before reading it, so two writers cannot race on the newest
-// entry. Called inside the transaction that wrote the branch, it records
-// what that transaction wrote.
-//
-// Ordinary entries aggregate: an edit in the same 30-minute bucket as the
-// branch's newest ordinary entry updates that entry in place. A boundary
-// entry (create, duplicate, fork, merge) is always its own row and closes
-// the bucket. The count trim runs afterwards; age trimming lives in the
-// file manager, since it has to reach branches that stopped writing.
+// RecordDocumentBranchHistoryEntry records the branch and its hooks and
+// returns the id of the entry that holds them. It locks the branch row, so
+// writers cannot race on the newest entry.
 func (a *agent) RecordDocumentBranchHistoryEntry(
 	ctx context.Context,
 	branchID xid.ID,
@@ -279,37 +272,26 @@ func (a *agent) RecordDocumentBranchHistoryEntry(
 	by null.String,
 	boundary bool,
 ) (xid.ID, error) {
-	hooks, err := a.FetchDocumentHooksByBranchID(ctx, branchID, organizationID)
-	if err != nil {
-		return xid.ID{}, err
-	}
-
 	var id xid.ID
 
 	if err := sqlutil.WrapTx(ctx, a.sql, func(tx *sqlx.Tx) error {
-		q, args := a.selectDocumentBranch(a.builder.Select()).
-			Where(sq.Eq{
-				"db.id":                        branchID,
-				"documents.fk_organization_id": organizationID,
-			}).
-			Suffix("FOR UPDATE OF db").
-			MustSql()
+		doc, err := a.lockDocumentBranch(ctx, tx, branchID, organizationID)
+		if err != nil {
+			return err
+		}
 
-		var doc document.Document
-
-		if err := sqlx.GetContext(ctx, tx, &doc, q, args...); err != nil {
+		hooks, err := a.fetchDocumentBranchHistoryHooks(ctx, tx, branchID)
+		if err != nil {
 			return err
 		}
 
 		entry := history.NewEntry(
-			doc,
+			*doc,
 			timeutil.Now(),
 			by,
-			history.NewHooks(hooks),
+			history.NewHooks(doc.Content, hooks),
 			boundary,
 		)
-
-		var err error
 
 		id, err = a.insertDocumentBranchHistoryEntry(ctx, tx, entry)
 
@@ -321,13 +303,18 @@ func (a *agent) RecordDocumentBranchHistoryEntry(
 	return id, nil
 }
 
-// insertDocumentBranchHistoryEntry writes the entry, or folds it into the
-// branch's newest one, and returns the id of the row it wrote. The caller
-// holds the branch row lock.
+// insertDocumentBranchHistoryEntry writes the entry, folds it into the
+// branch's newest one, or skips it when it matches the newest one, and
+// returns the id of the row that holds it. The caller holds the branch row
+// lock.
 func (a *agent) insertDocumentBranchHistoryEntry(ctx context.Context, tx *sqlx.Tx, entry history.Entry) (xid.ID, error) {
-	newest, err := a.fetchNewestDocumentBranchHistoryEntry(ctx, tx, entry.BranchID)
+	newest, err := a.fetchNewestDocumentBranchHistoryEntry(ctx, tx, entry)
 	if err != nil {
 		return xid.ID{}, err
+	}
+
+	if newest != nil && newest.Same && !entry.Boundary {
+		return newest.ID, nil
 	}
 
 	aggregates := newest != nil &&
@@ -336,15 +323,22 @@ func (a *agent) insertDocumentBranchHistoryEntry(ctx context.Context, tx *sqlx.T
 		newest.CreatedAt.Truncate(_historyAggregationDuration).Equal(entry.CreatedAt.Truncate(_historyAggregationDuration))
 
 	if aggregates {
+		set := map[string]any{
+			"document_name": entry.DocumentName,
+			"icon":          entry.Icon,
+			"content":       entry.Content,
+			"hooks":         entry.Hooks,
+			"updated_at":    entry.UpdatedAt,
+		}
+
+		// a system write has no author, and the entry still holds the
+		// edits of the one it has.
+		if entry.LastUpdatedBy.Valid {
+			set["fk_last_updated_by"] = entry.LastUpdatedBy
+		}
+
 		q, args := a.builder.Update("document_branch_history_entries").
-			SetMap(map[string]any{
-				"document_name":      entry.DocumentName,
-				"icon":               entry.Icon,
-				"content":            entry.Content,
-				"hooks":              entry.Hooks,
-				"fk_last_updated_by": entry.LastUpdatedBy,
-				"created_at":         entry.CreatedAt,
-			}).
+			SetMap(set).
 			Where(sq.Eq{"id": newest.ID}).
 			MustSql()
 
@@ -367,6 +361,7 @@ func (a *agent) insertDocumentBranchHistoryEntry(ctx context.Context, tx *sqlx.T
 			"fk_last_updated_by": entry.LastUpdatedBy,
 			"boundary":           entry.Boundary,
 			"created_at":         entry.CreatedAt,
+			"updated_at":         entry.UpdatedAt,
 		}).
 		MustSql()
 
@@ -381,32 +376,67 @@ func (a *agent) insertDocumentBranchHistoryEntry(ctx context.Context, tx *sqlx.T
 	return entry.ID, nil
 }
 
-// UpdateDocumentBranchHistoryEntryHooks replaces the hooks an entry lists.
-// A boundary entry is written before its branch's hooks are copied, so it
-// gets the copied ones afterwards.
-func (a *agent) UpdateDocumentBranchHistoryEntryHooks(ctx context.Context, id xid.ID, hooks history.Hooks) error {
-	q, args := a.builder.Update("document_branch_history_entries").
-		Set("hooks", hooks).
-		Where(sq.Eq{"id": id}).
+// lockDocumentBranch reads the branch joined against its document and
+// locks the branch row until the transaction ends.
+func (a *agent) lockDocumentBranch(ctx context.Context, tx *sqlx.Tx, branchID xid.ID, organizationID string) (*document.Document, error) {
+	q, args := a.selectDocumentBranch(a.builder.Select()).
+		Where(sq.Eq{
+			"db.id":                        branchID,
+			"documents.fk_organization_id": organizationID,
+		}).
+		Suffix("FOR UPDATE OF db").
 		MustSql()
 
-	_, err := a.sql.ExecContext(ctx, q, args...)
+	doc := &document.Document{}
 
-	return err
+	if err := sqlx.GetContext(ctx, tx, doc, q, args...); err != nil {
+		return nil, err
+	}
+
+	return doc, nil
 }
 
-// fetchNewestDocumentBranchHistoryEntry retrieves the branch's newest
-// history entry, or nil when the branch has none.
-func (a *agent) fetchNewestDocumentBranchHistoryEntry(ctx context.Context, q sqlx.QueryerContext, branchID xid.ID) (*history.Entry, error) {
-	sqlq, args := a.selectDocumentBranchHistoryEntry(a.builder.Select()).
-		Where(sq.Eq{"fk_branch_id": branchID}).
+// fetchDocumentBranchHistoryHooks fetches every hook of the branch a
+// history entry may list, soft-deleted ones included, in a stable order so
+// equal hook sets compare equal. history.NewHooks picks the ones the
+// entry's content holds.
+func (a *agent) fetchDocumentBranchHistoryHooks(ctx context.Context, q sqlx.QueryerContext, branchID xid.ID) ([]hook.Hook, error) {
+	sqlq, args := a.selectDocumentHook(a.builder.Select()).
+		Where(sq.Eq{"document_hooks.fk_branch_id": branchID}).
+		OrderBy("document_hooks.created_at ASC", "document_hooks.id ASC").
+		MustSql()
+
+	hooks := []hook.Hook{}
+
+	if err := sqlx.SelectContext(ctx, q, &hooks, sqlq, args...); err != nil {
+		return nil, err
+	}
+
+	return hooks, nil
+}
+
+// fetchNewestDocumentBranchHistoryEntry retrieves the newest history entry
+// of the given entry's branch, or nil when the branch has none. The
+// comparison with the entry runs in Postgres, so the stored content never
+// leaves it.
+func (a *agent) fetchNewestDocumentBranchHistoryEntry(ctx context.Context, q sqlx.QueryerContext, entry history.Entry) (*history.Head, error) {
+	sqlq, args := a.builder.Select("id", "boundary", "created_at").
+		Column(sq.Alias(sq.Expr(
+			"document_name = ? AND icon = ? AND content = ?::jsonb AND hooks = ?::jsonb",
+			entry.DocumentName,
+			entry.Icon,
+			entry.Content,
+			entry.Hooks,
+		), "same")).
+		From("document_branch_history_entries").
+		Where(sq.Eq{"fk_branch_id": entry.BranchID}).
 		OrderBy("created_at DESC", "id DESC").
 		Limit(1).
 		MustSql()
 
-	var entry history.Entry
+	var newest history.Head
 
-	err := sqlx.GetContext(ctx, q, &entry, sqlq, args...)
+	err := sqlx.GetContext(ctx, q, &newest, sqlq, args...)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil //nolint:nilnil // no entry is a regular outcome, not an error
@@ -415,7 +445,7 @@ func (a *agent) fetchNewestDocumentBranchHistoryEntry(ctx context.Context, q sql
 		return nil, err
 	}
 
-	return &entry, nil
+	return &newest, nil
 }
 
 // trimDocumentBranchHistoryEntries keeps only the newest entries of a branch.
@@ -443,23 +473,6 @@ func (a *agent) trimDocumentBranchHistoryEntries(ctx context.Context, ex sqlx.Ex
 	_, err := ex.ExecContext(ctx, q, args...)
 
 	return err
-}
-
-// selectDocumentBranchHistoryEntry prepares a sql select statement for
-// fetching history entries.
-func (a *agent) selectDocumentBranchHistoryEntry(b sq.SelectBuilder) sq.SelectBuilder {
-	return b.Columns(
-		`id AS "id"`,
-		`fk_document_id AS "fk_document_id"`,
-		`fk_branch_id AS "fk_branch_id"`,
-		`document_name AS "document_name"`,
-		`icon AS "icon"`,
-		`content AS "content"`,
-		`hooks AS "hooks"`,
-		`fk_last_updated_by AS "fk_last_updated_by"`,
-		`boundary AS "boundary"`,
-		`created_at AS "created_at"`,
-	).From("document_branch_history_entries")
 }
 
 // documentBranchRow maps a document's branch onto the document_branches

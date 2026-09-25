@@ -62,12 +62,28 @@ export interface DocumentHook {
 	branchId: string
 	blockId: string | null
 	settings: DocumentHookSettings
-	state: DocumentHookState
+	// null until the server sets the hook up, as for a copy a fork, merge or
+	// duplicate made.
+	state: DocumentHookState | null
+	// whether the hook could check its target on its last run. Score and
+	// state keep their last values while it is not active.
+	status: DocumentHookStatus
 	score: string // decimal; between 0 and 100 (default: 100)
 	createdAt: Date | string
 	updatedAt?: Date | string | null
 	softDeletedAt?: Date | string | null
 }
+
+export type DocumentHookStatus =
+	| "active"
+	| "unconfigured"
+	| "missing_installation"
+	| "missing_repository"
+	| "missing_branch"
+	| "tree_truncated"
+	| "unreachable_url"
+	| "unauthorized"
+	| "image_not_found"
 
 export enum DocumentFileLocation {
 	Document = "document",
@@ -115,7 +131,7 @@ export interface DocumentHookSettingsScheduledReminder {
 }
 
 export interface DocumentHookStateScheduledReminder {
-	lastActiveAt: Date | string
+	startedAt: Date | string
 }
 
 export interface DocumentHookSettingsGitHubTracking {
@@ -126,8 +142,6 @@ export interface DocumentHookSettingsGitHubTracking {
 
 export interface DocumentHookStateGitHubTracking {
 	pathsChecksums: Record<string, string>
-	status:
-		"active" | "missing_installation" | "missing_repository" | "missing_branch"
 }
 
 export interface DocumentHookSettingsURLWatcher {
@@ -139,13 +153,12 @@ export interface DocumentHookSettingsContainerImageWatcher {
 }
 
 export interface DocumentHookStateURLWatcher {
-	lastCheckedAt?: Date | string
-	status: "active" | "unreachable_url"
+	watcherId: string
+	lastChangedAt: Date | string | null
 }
 
 export interface DocumentHookStateContainerImageWatcher {
 	digest: string
-	status: "active" | "unauthorized"
 }
 
 export type DocumentTreeResponse = DocumentTreeElement[]
@@ -233,21 +246,19 @@ export function defaultDocumentHookState(
 	switch (type) {
 		case DocumentHookType.ScheduledReminder:
 			return {
-				lastActiveAt: new Date(),
+				startedAt: new Date(),
 			}
 		case DocumentHookType.GitHubTracking:
 			return {
 				pathsChecksums: {},
-				status: "active",
 			}
 		case DocumentHookType.URLWatcher:
 			return {
-				lastCheckedAt: new Date(),
-				status: "active",
+				watcherId: "",
+				lastChangedAt: null,
 			}
 		case DocumentHookType.ContainerImageWatcher:
 			return {
-				status: "active",
 				digest: "",
 			}
 	}

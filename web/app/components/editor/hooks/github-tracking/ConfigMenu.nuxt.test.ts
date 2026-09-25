@@ -33,6 +33,9 @@ vi.mock("vue-sonner", () => ({
 const DOCUMENT_ID = makeXid("doc")
 const BRANCH_ID = makeXid("branch")
 const HOOK_ID = makeXid("hook")
+// hook writes go through the realtime service, which stores the branch's
+// pending edits before core records them.
+const HOOKS_WRITE_URL = `http://test.local/auth-realtime/api/documents/${DOCUMENT_ID}/hooks`
 
 const NEW_HOOK_LABEL = "editor.hooks.github-tracking.title"
 const REPOSITORY = "runbooks"
@@ -48,7 +51,7 @@ function githubHook(overrides: Partial<DocumentHook> = {}) {
 			branch: "main",
 			paths: ["docs/readme.md"],
 		},
-		state: { pathsChecksums: {}, status: "active" },
+		state: { pathsChecksums: {} },
 		...overrides,
 	})
 }
@@ -167,9 +170,7 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 	it("warns about a repository it can no longer reach", async ({ expect }) => {
 		mockGitHub()
 		await mountMenu({
-			hook: githubHook({
-				state: { pathsChecksums: {}, status: "missing_repository" },
-			}),
+			hook: githubHook({ status: "missing_repository" }),
 		})
 
 		await openHookSubMenu(`Watching ${REPOSITORY}`)
@@ -184,9 +185,7 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 	it("warns about a branch it can no longer reach", async ({ expect }) => {
 		mockGitHub()
 		await mountMenu({
-			hook: githubHook({
-				state: { pathsChecksums: {}, status: "missing_branch" },
-			}),
+			hook: githubHook({ status: "missing_branch" }),
 		})
 
 		await openHookSubMenu(`Watching ${REPOSITORY}`)
@@ -195,6 +194,17 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 			expect(menuText()).toContain(
 				"The selected GitHub branch cannot be accessed",
 			)
+		}, WAIT_FOR_OPTIONS)
+	})
+
+	it("warns about a repository too large to compare", async ({ expect }) => {
+		mockGitHub()
+		await mountMenu({ hook: githubHook({ status: "tree_truncated" }) })
+
+		await openHookSubMenu(`Watching ${REPOSITORY}`)
+
+		await vi.waitFor(() => {
+			expect(menuText()).toContain("too large to compare")
 		}, WAIT_FOR_OPTIONS)
 	})
 
@@ -239,11 +249,7 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 		expect,
 	}) => {
 		mockGitHub()
-		const calls = mockEndpoint(
-			"POST",
-			`/api/documents/${DOCUMENT_ID}/hooks`,
-			() => ({ id: HOOK_ID }),
-		)
+		const calls = mockEndpoint("POST", HOOKS_WRITE_URL, () => ({ id: HOOK_ID }))
 		const wrapper = await mountMenu()
 		await openHookSubMenu(t(NEW_HOOK_LABEL))
 		await pickRepository(wrapper, REPOSITORY)
@@ -272,7 +278,7 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 
 	it("warns when the hook cannot be created", async ({ expect }) => {
 		mockGitHub()
-		mockEndpoint("POST", `/api/documents/${DOCUMENT_ID}/hooks`, (_c, event) => {
+		mockEndpoint("POST", HOOKS_WRITE_URL, (_c, event) => {
 			setResponseStatus(event, 500)
 
 			return { message: "boom" }
@@ -292,11 +298,9 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 
 	it("updates what an existing hook watches", async ({ expect }) => {
 		mockGitHub()
-		const calls = mockEndpoint(
-			"PUT",
-			`/api/documents/${DOCUMENT_ID}/hooks/${HOOK_ID}`,
-			() => ({ id: HOOK_ID }),
-		)
+		const calls = mockEndpoint("PUT", `${HOOKS_WRITE_URL}/${HOOK_ID}`, () => ({
+			id: HOOK_ID,
+		}))
 		const wrapper = await mountMenu({ hook: githubHook() })
 		await openHookSubMenu(`Watching ${REPOSITORY}`)
 		await pickBranch(wrapper, "next")
@@ -317,15 +321,11 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 
 	it("warns when the hook cannot be updated", async ({ expect }) => {
 		mockGitHub()
-		mockEndpoint(
-			"PUT",
-			`/api/documents/${DOCUMENT_ID}/hooks/${HOOK_ID}`,
-			(_c, event) => {
-				setResponseStatus(event, 500)
+		mockEndpoint("PUT", `${HOOKS_WRITE_URL}/${HOOK_ID}`, (_c, event) => {
+			setResponseStatus(event, 500)
 
-				return { message: "boom" }
-			},
-		)
+			return { message: "boom" }
+		})
 		const wrapper = await mountMenu({ hook: githubHook() })
 		await openHookSubMenu(`Watching ${REPOSITORY}`)
 		await pickBranch(wrapper, "next")
@@ -341,7 +341,7 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 		mockGitHub()
 		const calls = mockEndpoint(
 			"DELETE",
-			`/api/documents/${DOCUMENT_ID}/hooks/${HOOK_ID}`,
+			`${HOOKS_WRITE_URL}/${HOOK_ID}`,
 			() => null,
 		)
 		await mountMenu({ hook: githubHook() })
@@ -356,15 +356,11 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 
 	it("warns when the hook cannot be deleted", async ({ expect }) => {
 		mockGitHub()
-		mockEndpoint(
-			"DELETE",
-			`/api/documents/${DOCUMENT_ID}/hooks/${HOOK_ID}`,
-			(_c, event) => {
-				setResponseStatus(event, 500)
+		mockEndpoint("DELETE", `${HOOKS_WRITE_URL}/${HOOK_ID}`, (_c, event) => {
+			setResponseStatus(event, 500)
 
-				return { message: "boom" }
-			},
-		)
+			return { message: "boom" }
+		})
 		await mountMenu({ hook: githubHook() })
 		await openHookSubMenu(`Watching ${REPOSITORY}`)
 
@@ -416,11 +412,7 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 	it("creates nothing while no page is open", async ({ expect }) => {
 		mockGitHub()
 		useEditorStore().updateActiveDocumentId(null)
-		const calls = mockEndpoint(
-			"POST",
-			`/api/documents/${DOCUMENT_ID}/hooks`,
-			() => ({ id: HOOK_ID }),
-		)
+		const calls = mockEndpoint("POST", HOOKS_WRITE_URL, () => ({ id: HOOK_ID }))
 		const wrapper = await mountMenu()
 		await openHookSubMenu(t(NEW_HOOK_LABEL))
 		await pickRepository(wrapper, REPOSITORY)

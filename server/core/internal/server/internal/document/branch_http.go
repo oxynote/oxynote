@@ -1,20 +1,13 @@
 package document
 
 import (
-	"context"
-	"errors"
-	"log/slog"
 	"net/http"
 
 	"github.com/guregu/null/v5"
-	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
-	"github.com/oxynote/oxynote/server/core/internal/document/history"
-	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
-	"github.com/oxynote/oxynote/server/core/pkg/logutil"
 	"github.com/rs/xid"
 )
 
@@ -198,11 +191,12 @@ func (h *Handler) UpdateDocumentBranchByIDUnsafe(w http.ResponseWriter, r *http.
 	}
 
 	// a persist that changes nothing, such as the Yjs seed Hocuspocus
-	// sends on first load, leaves history alone. A system write is not
-	// attributed: no user made that change.
+	// sends on first load, leaves history alone. Only a persist that names
+	// its editors is attributed. A system write has no user, and without
+	// maintainers the branch's author is whoever edited before.
 	if !doc.SnapshotEqual(ndoc) {
 		var lastUpdatedBy null.String
-		if !ui.System {
+		if !ui.System && len(ui.Maintainers) > 0 {
 			lastUpdatedBy = ndoc.LastUpdatedBy
 		}
 
@@ -342,9 +336,22 @@ func (h *Handler) MergeBranches(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// the target's hooks were just detached, so the entry starts without
-	// any. updateEntryHooks adds the copies after the commit.
-	entryID, err := tx.RecordDocumentBranchHistoryEntry(
+	// the copies go in before the entry is recorded, so it lists them.
+	err = h.hookMan.CopyHooks(
+		r.Context(),
+		tx,
+		fromDoc.BranchID,
+		toDoc.BranchID,
+		toDoc.ID,
+		session.ActiveOrganizationID,
+		nil,
+	)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	_, err = tx.RecordDocumentBranchHistoryEntry(
 		r.Context(),
 		toDoc.BranchID,
 		session.ActiveOrganizationID,
@@ -377,17 +384,7 @@ func (h *Handler) MergeBranches(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.searchTrigger.Trigger()
-
-	hooks := h.copyHooksToBranch(
-		r.Context(),
-		fromDoc.BranchID,
-		toDoc.BranchID,
-		toDoc.ID,
-		session.ActiveOrganizationID,
-		nil,
-	)
-
-	h.updateEntryHooks(r.Context(), entryID, hooks)
+	h.hookMan.ProcessBranch(toDoc.BranchID, session.ActiveOrganizationID)
 
 	if h.metadata.changeCallback != nil {
 		h.metadata.changeCallback(session.ActiveOrganizationID, ndoc)
@@ -488,9 +485,22 @@ func (h *Handler) CreateDocumentBranch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// the fork has no hooks yet. updateEntryHooks adds the copies after
-	// the commit.
-	entryID, err := tx.RecordDocumentBranchHistoryEntry(
+	// the copies go in before the entry is recorded, so it lists them.
+	err = h.hookMan.CopyHooks(
+		r.Context(),
+		tx,
+		sourceDoc.BranchID,
+		newDoc.BranchID,
+		sourceDoc.ID,
+		session.ActiveOrganizationID,
+		nil,
+	)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	_, err = tx.RecordDocumentBranchHistoryEntry(
 		r.Context(),
 		newDoc.BranchID,
 		session.ActiveOrganizationID,
@@ -518,17 +528,7 @@ func (h *Handler) CreateDocumentBranch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.searchTrigger.Trigger()
-
-	hooks := h.copyHooksToBranch(
-		r.Context(),
-		sourceDoc.BranchID,
-		newDoc.BranchID,
-		sourceDoc.ID,
-		session.ActiveOrganizationID,
-		nil,
-	)
-
-	h.updateEntryHooks(r.Context(), entryID, hooks)
+	h.hookMan.ProcessBranch(newDoc.BranchID, session.ActiveOrganizationID)
 
 	httpserver.Respond(
 		h.log,
@@ -617,114 +617,4 @@ func (h *Handler) DeleteDocumentBranch(w http.ResponseWriter, r *http.Request) {
 		nil,
 		http.StatusNoContent,
 	)
-}
-
-// copyHooksToBranch fetches all hooks from fromBranchID and re-creates them on
-// toBranchID with fresh state, once the target is committed. Creating a hook
-// creates its external resource as a side effect, so the copy cannot run
-// inside the caller's transaction: a rollback cannot take a changedetection.io
-// watcher back, and the row that would have pointed at it is gone. A failed
-// insert tears the just-created resource down again for the same reason. A
-// failure stops the copy and leaves the target standing with fewer hooks than
-// its source, which the critical log reports. The hooks created up to that
-// point are returned either way.
-//
-// A branch whose content was duplicated carries fresh block uids, so the
-// caller passes the old-to-new uid map and a hook anchored to a block is
-// re-anchored through it; a hook whose block the map does not name has
-// nothing to point at on the target and is dropped. A nil map keeps every
-// block id as it is, which is right for a fork or a merge.
-func (h *Handler) copyHooksToBranch(
-	ctx context.Context,
-	fromBranchID, toBranchID, documentID xid.ID,
-	organizationID string,
-	uids map[string]string,
-) []hook.Hook {
-	hooks, err := h.db.FetchDocumentHooksByBranchID(ctx, fromBranchID, organizationID)
-	if err != nil {
-		logutil.Critical(h.log, err).Error(
-			"cannot fetch the hooks to copy",
-			slog.String("branch_id", fromBranchID.String()),
-		)
-
-		return nil
-	}
-
-	inp := hook.NewInput(organizationID, h.githubMan, h.webchangeClient)
-
-	created := make([]hook.Hook, 0, len(hooks))
-
-	for _, hk := range hooks {
-		blockID := hk.BlockID
-
-		if uids != nil && blockID.Valid {
-			uid, ok := uids[blockID.String]
-			if !ok {
-				continue
-			}
-
-			blockID = null.StringFrom(uid)
-		}
-
-		newHk, err := hook.NewHook(ctx, hook.CreateInput{
-			Type:     hk.Type,
-			BranchID: toBranchID,
-			BlockID:  blockID,
-			Settings: hk.Settings,
-		}, documentID, toBranchID, organizationID, inp)
-		if err != nil {
-			// a hook whose integration is not configured cannot get its
-			// external resource; dropping it from the copy beats failing
-			// the whole fork or merge over it.
-			if errors.Is(err, webchange.ErrNotConfigured) {
-				h.log.With("hook_id", hk.ID).
-					Warn("skipping hook copy: its integration is not configured")
-
-				continue
-			}
-
-			logutil.Critical(h.log, err).Error(
-				"cannot re-create the hook on the target branch",
-				slog.String("hook_id", hk.ID.String()),
-				slog.String("branch_id", toBranchID.String()),
-			)
-
-			return created
-		}
-
-		if err := h.db.InsertDocumentHook(ctx, *newHk); err != nil {
-			if derr := newHk.Delete(ctx, inp); derr != nil {
-				logutil.Critical(h.log, derr).Error(
-					"cannot delete the hook external resource after a failed insert",
-					slog.String("hook_id", newHk.ID.String()),
-				)
-			}
-
-			logutil.Critical(h.log, err).Error(
-				"cannot insert the copied hook",
-				slog.String("hook_id", newHk.ID.String()),
-				slog.String("branch_id", toBranchID.String()),
-			)
-
-			return created
-		}
-
-		created = append(created, *newHk)
-	}
-
-	return created
-}
-
-// updateEntryHooks sets the hooks of a boundary entry to the ones
-// copyHooksToBranch created. The entry's operation has already committed,
-// so a failure is logged rather than returned.
-func (h *Handler) updateEntryHooks(ctx context.Context, entryID xid.ID, hooks []hook.Hook) {
-	err := h.db.UpdateDocumentBranchHistoryEntryHooks(ctx, entryID, history.NewHooks(hooks))
-	if err != nil {
-		h.log.Error(
-			"cannot record the copied hooks on the history entry",
-			slog.String("entry_id", entryID.String()),
-			slog.String("error", err.Error()),
-		)
-	}
 }

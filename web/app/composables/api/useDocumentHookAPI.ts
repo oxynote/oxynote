@@ -7,7 +7,7 @@ export const DOCUMENT_HOOK_QUERY_KEYS = {
 }
 
 export default function () {
-	const { $coreAPIClient } = useNuxtApp()
+	const { $coreAPIClient, $authRealtimeAPIClient } = useNuxtApp()
 	const queryCache = useQueryCache()
 	const { fetchOrganization } = useAuthSession()
 
@@ -75,6 +75,7 @@ export default function () {
 				blockId: req.blockId,
 				settings: req.settings,
 				state: defaultDocumentHookState(req.type),
+				status: "active",
 				score: "100",
 				createdAt: new Date(),
 				updatedAt: new Date(),
@@ -98,7 +99,9 @@ export default function () {
 				return
 			}
 
-			return await $coreAPIClient<DocumentHookCreateResponse>(
+			// the realtime service stores the branch's pending edits first,
+			// so the history entry of the change holds them.
+			return await $authRealtimeAPIClient<DocumentHookCreateResponse>(
 				`/api/documents/${docId}/hooks`,
 				{
 					method: "POST",
@@ -189,8 +192,8 @@ export default function () {
 				return
 			}
 
-			return await $coreAPIClient<DocumentHookUpdateResponse>(
-				`/api/documents/${docId}/hooks/${hookId}`,
+			return await $authRealtimeAPIClient<DocumentHookUpdateResponse>(
+				`/api/documents/${docId}/hooks/${hookId}?branchId=${encodeURIComponent(branchId)}`,
 				{
 					method: "PUT",
 					body: req,
@@ -267,9 +270,10 @@ export default function () {
 				return
 			}
 
-			await $coreAPIClient(`/api/documents/${docId}/hooks/${hookId}`, {
-				method: "DELETE",
-			})
+			await $authRealtimeAPIClient(
+				`/api/documents/${docId}/hooks/${hookId}?branchId=${encodeURIComponent(branchId)}`,
+				{ method: "DELETE" },
+			)
 		},
 		async onSuccess(_data, { docId, branchId, hookId }) {
 			if (!isXid(docId) || !isXid(branchId) || !isXid(hookId)) {

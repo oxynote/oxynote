@@ -235,6 +235,78 @@ func Test_Client_Apply(t *testing.T) {
 	}
 }
 
+func Test_Client_Flush(t *testing.T) {
+	t.Parallel()
+
+	docID, branchID := xid.New(), xid.New()
+	path := "/api/internal/documents/" + docID.String() + "/branches/" + branchID.String() + "/flush"
+
+	cc := map[string]struct {
+		BaseURL    string
+		CloseEarly bool
+		StatusCode int
+		Body       string
+		Err        error
+	}{
+		"Invalid base URL": {
+			BaseURL: "://bad",
+			Err:     assert.AnError,
+		},
+		"Transport error": {
+			CloseEarly: true,
+			Err:        assert.AnError,
+		},
+		"Non-204 status surfaces the body": {
+			StatusCode: http.StatusInternalServerError,
+			Body:       `{"error":"pending changes could not be stored"}`,
+			Err:        assert.AnError,
+		},
+		"Successful flush": {
+			StatusCode: http.StatusNoContent,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			var gotPath, gotMethod string
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotPath, gotMethod = r.URL.Path, r.Method
+
+				w.WriteHeader(c.StatusCode)
+				_, err := w.Write([]byte(c.Body))
+				assert.NoError(t, err)
+			}))
+			defer srv.Close()
+
+			base := srv.URL
+			if c.BaseURL != "" {
+				base = c.BaseURL
+			}
+
+			if c.CloseEarly {
+				srv.Close()
+			}
+
+			err := NewClient(srv.Client(), base).Flush(context.Background(), docID, branchID)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if c.StatusCode == 0 {
+				return
+			}
+
+			assert.Equal(t, path, gotPath)
+			assert.Equal(t, http.MethodPost, gotMethod)
+
+			if c.Body != "" {
+				assert.Contains(t, err.Error(), c.Body)
+			}
+		})
+	}
+}
+
 func Test_Client_endpoint(t *testing.T) {
 	t.Parallel()
 
@@ -259,7 +331,7 @@ func Test_Client_endpoint(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := NewClient(nil, c.BaseURL).endpoint(docID, branchID)
+			got, err := NewClient(nil, c.BaseURL).endpoint(docID, branchID, "operations")
 			testutil.AssertEqualError(t, c.Err, err)
 			assert.Equal(t, c.Expected, got)
 		})

@@ -102,7 +102,7 @@ func (c *Client) Apply(
 		return Result{}, fmt.Errorf("marshaling operations: %w", err)
 	}
 
-	endpoint, err := c.endpoint(documentID, branchID)
+	endpoint, err := c.endpoint(documentID, branchID, "operations")
 	if err != nil {
 		return Result{}, err
 	}
@@ -142,16 +142,50 @@ func (c *Client) Apply(
 	return out, nil
 }
 
-// endpoint builds the per-document operations URL.
-func (c *Client) endpoint(documentID, branchID xid.ID) (string, error) {
+// Flush has the Node service store what the editors of the
+// (documentID, branchID) document hold and returns once core has it.
+func (c *Client) Flush(ctx context.Context, documentID, branchID xid.ID) error {
+	endpoint, err := c.endpoint(documentID, branchID, "flush")
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, http.NoBody)
+	if err != nil {
+		// NOCOV: the URL is pre-validated by endpoint, so the only
+		// remaining failure is a nil context.
+		return fmt.Errorf("building request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("posting flush: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck // error provides no meaningful info
+
+	if resp.StatusCode != http.StatusNoContent {
+		preview, err := io.ReadAll(io.LimitReader(resp.Body, _maxErrorPreviewBytes))
+		if err != nil {
+			return fmt.Errorf("node flush endpoint: status %d: reading response body: %w", resp.StatusCode, err)
+		}
+
+		return fmt.Errorf("node flush endpoint: status %d: %s", resp.StatusCode, string(preview))
+	}
+
+	return nil
+}
+
+// endpoint builds the URL of a per-document internal action.
+func (c *Client) endpoint(documentID, branchID xid.ID, action string) (string, error) {
 	base, err := url.Parse(c.baseURL)
 	if err != nil {
 		return "", fmt.Errorf("parsing base url: %w", err)
 	}
 
-	base.Path = fmt.Sprintf("/api/internal/documents/%s/branches/%s/operations",
+	base.Path = fmt.Sprintf("/api/internal/documents/%s/branches/%s/%s",
 		documentID,
 		branchID,
+		action,
 	)
 
 	return base.String(), nil

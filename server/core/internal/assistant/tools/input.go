@@ -75,6 +75,10 @@ type Deps struct {
 	// deployment without it.
 	webchangeClient *webchange.Client
 
+	// hookMan runs the hook writes: the external side effect, the row and
+	// the branch's history entry.
+	hookMan HookManager
+
 	// applier is the edit client for content mutations and the
 	// rename/set-icon ops that must propagate to connected editors.
 	applier EditApplier
@@ -115,6 +119,7 @@ func NewDeps(
 	runners DataSourceRunners,
 	githubMan *github.Manager,
 	webchangeClient *webchange.Client,
+	hookMan HookManager,
 	applier EditApplier,
 	tree TreeNotifier,
 	tags TagNotifier,
@@ -134,6 +139,7 @@ func NewDeps(
 		runners:         runners,
 		githubMan:       githubMan,
 		webchangeClient: webchangeClient,
+		hookMan:         hookMan,
 		applier:         applier,
 		tree:            tree,
 		tags:            tags,
@@ -990,12 +996,6 @@ func (i *input) NotifyBranchTagsChange(documentID, branchID xid.ID) {
 	i.tags.NotifyBranchTagsChange(i.orgID, documentID, branchID)
 }
 
-// hookInput builds the dependencies a hook's processor reaches through,
-// scoped to the session's organisation.
-func (i *input) hookInput() *hook.Input {
-	return hook.NewInput(i.orgID, i.githubMan, i.webchangeClient)
-}
-
 // FetchHooks returns every hook on the branch branchID names, refusing a
 // branch the document does not have.
 func (i *input) FetchHooks(documentID, branchID xid.ID) ([]hook.Hook, error) {
@@ -1046,6 +1046,11 @@ func (i *input) unknownHook(documentID, hookID xid.ID) error {
 // type whose integration the deployment lacks is refused before anything
 // is created.
 func (i *input) CreateHook(documentID, branchID xid.ID, blockUID string, tp hook.Type, settings processor.Settings) (*hook.Hook, error) {
+	// the block may be one an editor has not stored yet.
+	if err := i.applier.Flush(i.ctx, documentID, branchID); err != nil {
+		return nil, fmt.Errorf("storing the branch's pending edits: %w", err)
+	}
+
 	doc, err := i.FetchBranch(documentID, branchID)
 	if err != nil {
 		return nil, err
@@ -1061,8 +1066,8 @@ func (i *input) CreateHook(documentID, branchID xid.ID, blockUID string, tp hook
 		blockID = null.StringFrom(blockUID)
 	}
 
-	// the github processor records a missing app as a status rather than
-	// an error, so a hook created here would sit silently unable to work.
+	// a hook whose integration is missing is refused anyway. Naming the
+	// integration's own error tells the model what is missing.
 	switch tp {
 	case hook.TypeGithubTracking:
 		if !i.githubMan.Configured() {
@@ -1076,31 +1081,16 @@ func (i *input) CreateHook(documentID, branchID xid.ID, blockUID string, tp hook
 		// nothing outside the deployment to check.
 	}
 
-	hk, err := hook.NewHook(i.ctx, hook.CreateInput{
+	hk, err := i.hookMan.CreateHook(i.ctx, hook.CreateInput{
 		Type:     tp,
 		BranchID: doc.BranchID,
 		BlockID:  blockID,
 		Settings: settings,
-	}, doc.ID, doc.BranchID, i.orgID, i.hookInput())
+	}, doc.ID, i.orgID, i.userID)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := i.db.InsertDocumentHook(i.ctx, *hk); err != nil {
-		// NewHook created the watcher as a side effect, and without a row
-		// nothing would ever tear it down.
-		if derr := hk.Delete(i.ctx, i.hookInput()); derr != nil {
-			i.log.Error(
-				"tearing down the hook of a failed insert",
-				slog.String("hook_id", hk.ID.String()),
-				slog.String("error", derr.Error()),
-			)
-		}
-
-		return nil, fmt.Errorf("insert: %w", err)
-	}
-
-	i.recordHookHistory(hk)
 	i.hookChanged(hk)
 
 	return hk, nil
@@ -1109,15 +1099,19 @@ func (i *input) CreateHook(documentID, branchID xid.ID, blockUID string, tp hook
 // UpdateHook replaces the hook's settings and resets its score and state,
 // as a fresh hook with those settings would have them.
 func (i *input) UpdateHook(hk *hook.Hook, settings processor.Settings) error {
-	if err := hk.ApplyUpdate(i.ctx, hook.UpdateInput{Settings: settings}, i.hookInput()); err != nil {
+	if hk.BranchID.Valid {
+		if err := i.applier.Flush(i.ctx, hk.DocumentID.V, hk.BranchID.V); err != nil {
+			return fmt.Errorf("storing the branch's pending edits: %w", err)
+		}
+	}
+
+	updated, err := i.hookMan.UpdateHook(i.ctx, hk.ID, i.orgID, hook.UpdateInput{Settings: settings}, i.userID)
+	if err != nil {
 		return err
 	}
 
-	if err := i.db.UpdateDocumentHook(i.ctx, *hk); err != nil {
-		return fmt.Errorf("update: %w", err)
-	}
+	*hk = *updated
 
-	i.recordHookHistory(hk)
 	i.hookChanged(hk)
 
 	return nil
@@ -1125,13 +1119,12 @@ func (i *input) UpdateHook(hk *hook.Hook, settings processor.Settings) error {
 
 // ResetHook restores the hook's score and state, keeping its settings.
 func (i *input) ResetHook(hk *hook.Hook) error {
-	if err := hk.Reset(i.ctx, i.hookInput()); err != nil {
+	reset, err := i.hookMan.ResetHook(i.ctx, hk.ID, i.orgID)
+	if err != nil {
 		return err
 	}
 
-	if err := i.db.UpdateDocumentHook(i.ctx, *hk); err != nil {
-		return fmt.Errorf("update: %w", err)
-	}
+	*hk = *reset
 
 	i.hookChanged(hk)
 
@@ -1142,42 +1135,19 @@ func (i *input) ResetHook(hk *hook.Hook) error {
 // removes its row. The branch stays, and the editor showing it has to
 // redraw, so the delete records the branch as touched.
 func (i *input) DeleteHook(hk *hook.Hook) error {
-	if err := hk.Delete(i.ctx, i.hookInput()); err != nil {
+	if hk.BranchID.Valid {
+		if err := i.applier.Flush(i.ctx, hk.DocumentID.V, hk.BranchID.V); err != nil {
+			return fmt.Errorf("storing the branch's pending edits: %w", err)
+		}
+	}
+
+	if err := i.hookMan.DeleteHook(i.ctx, hk.ID, i.orgID, i.userID); err != nil {
 		return err
 	}
 
-	if err := i.db.DeleteDocumentHook(i.ctx, hk.ID); err != nil {
-		return fmt.Errorf("delete: %w", err)
-	}
-
-	i.recordHookHistory(hk)
 	i.hookChanged(hk)
 
 	return nil
-}
-
-// recordHookHistory records the hook's branch in its history, credited to
-// the user the assistant acts for. The hook write is already done, so a
-// failure is logged rather than returned.
-func (i *input) recordHookHistory(hk *hook.Hook) {
-	if !hk.BranchID.Valid {
-		return
-	}
-
-	_, err := i.db.RecordDocumentBranchHistoryEntry(
-		i.ctx,
-		hk.BranchID.V,
-		i.orgID,
-		null.StringFrom(i.userID),
-		false,
-	)
-	if err != nil {
-		i.log.Error(
-			"cannot record the hook change in the branch history",
-			slog.String("hook_id", hk.ID.String()),
-			slog.String("error", err.Error()),
-		)
-	}
 }
 
 // hookChanged records the branch a hook write changed and announces it
@@ -1330,28 +1300,6 @@ type HookDB interface {
 	// FetchDocumentHook should return a hook by id within the org. Used
 	// by every hook write to resolve what it was asked about.
 	FetchDocumentHook(ctx context.Context, id xid.ID, organizationID string) (*hook.Hook, error)
-
-	// InsertDocumentHook should store a new hook. Used by create_hook.
-	InsertDocumentHook(ctx context.Context, hk hook.Hook) error
-
-	// UpdateDocumentHook should store a hook's changed settings, score
-	// and state. Used by update_hook and reset_hook.
-	UpdateDocumentHook(ctx context.Context, hk hook.Hook) error
-
-	// DeleteDocumentHook should remove a hook the caller has already
-	// fetched org-scoped. Used by delete_hook.
-	DeleteDocumentHook(ctx context.Context, id xid.ID) error
-
-	// RecordDocumentBranchHistoryEntry should record the branch as it
-	// stands, with its live hooks, and return the id of the entry. Used
-	// by every hook write that changes what the branch carries.
-	RecordDocumentBranchHistoryEntry(
-		ctx context.Context,
-		branchID xid.ID,
-		organizationID string,
-		by null.String,
-		boundary bool,
-	) (xid.ID, error)
 }
 
 // Tx is the transactional half of DB, so a tool whose write spans
@@ -1376,6 +1324,28 @@ type Tx interface {
 	// document and of every cascade-deleted descendant. Used by
 	// delete_document.
 	DeleteDocument(ctx context.Context, id xid.ID, organizationID string) ([]xid.ID, error)
+}
+
+// HookManager runs hook writes: the external side effect, the row and
+// the branch's history entry.
+//
+//go:generate ../../../scripts/codegen/mock -t internal HookManager hook_manager
+type HookManager interface {
+	// CreateHook should create the hook on the branch of the document,
+	// credited to updatedBy.
+	CreateHook(ctx context.Context, ci hook.CreateInput, documentID xid.ID, organizationID, updatedBy string) (*hook.Hook, error)
+
+	// UpdateHook should replace the hook's settings, credited to
+	// updatedBy, and return the stored hook.
+	UpdateHook(ctx context.Context, id xid.ID, organizationID string, ui hook.UpdateInput, updatedBy string) (*hook.Hook, error)
+
+	// DeleteHook should tear the hook down and remove it, credited to
+	// updatedBy.
+	DeleteHook(ctx context.Context, id xid.ID, organizationID, updatedBy string) error
+
+	// ResetHook should restore the hook's score and state and return the
+	// stored hook.
+	ResetHook(ctx context.Context, id xid.ID, organizationID string) (*hook.Hook, error)
 }
 
 // SearchTrigger runs the search-job worker once a job has committed.
@@ -1453,4 +1423,9 @@ type EditApplier interface {
 	// outcome. A tool's writes are a person's, never core's own, so
 	// this package always asks for an ordinary one.
 	Apply(ctx context.Context, documentID, branchID xid.ID, ops []edit.Operation, userID string, system bool) (edit.Result, error)
+
+	// Flush should have the realtime service store what the editors of
+	// the (documentID, branchID) document hold, returning once core has
+	// it. Hook writes call it before they record the branch's history.
+	Flush(ctx context.Context, documentID, branchID xid.ID) error
 }

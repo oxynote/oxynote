@@ -30,6 +30,9 @@ vi.mock("vue-sonner", () => ({
 const DOCUMENT_ID = makeXid("doc")
 const BRANCH_ID = makeXid("branch")
 const HOOK_ID = makeXid("hook")
+// hook writes go through the realtime service, which stores the branch's
+// pending edits before core records them.
+const HOOKS_WRITE_URL = `http://test.local/auth-realtime/api/documents/${DOCUMENT_ID}/hooks`
 
 const NEW_HOOK_LABEL = "editor.hooks.url-watcher.title"
 
@@ -107,14 +110,41 @@ describe("<URLWatcherConfigMenu>", { concurrent: false }, () => {
 		expect(menuText()).toContain("the relevant sections will be highlighted")
 	})
 
+	it("waits for a copied hook to be initialized", async ({ expect }) => {
+		await mountMenu({ hook: urlHook({ state: null }) })
+
+		await openHookSubMenu("Watching oxynote.test")
+
+		expect(menuText()).toContain(t("editor.hooks.initializing"))
+		// a setup that keeps failing must not lock the reader out of it.
+		expect(menuText()).toContain(t("editor.hooks.delete"))
+	})
+
 	it("warns about a site it cannot reach", async ({ expect }) => {
 		await mountMenu({
-			hook: urlHook({ state: { status: "unreachable_url" } }),
+			hook: urlHook({ status: "unreachable_url" }),
 		})
 
 		await openHookSubMenu("Watching oxynote.test")
 
 		expect(menuText()).toContain("cannot be reached")
+	})
+
+	it("shows why a copy could not be initialized", async ({ expect }) => {
+		await mountMenu({ hook: urlHook({ state: null, status: "unconfigured" }) })
+
+		await openHookSubMenu("Watching oxynote.test")
+
+		expect(menuText()).toContain("not set up on this server")
+		expect(menuText()).toContain(t("editor.hooks.delete"))
+	})
+
+	it("warns that change detection is not set up", async ({ expect }) => {
+		await mountMenu({ hook: urlHook({ status: "unconfigured" }) })
+
+		await openHookSubMenu("Watching oxynote.test")
+
+		expect(menuText()).toContain("not set up on this server")
 	})
 
 	it("keeps the create button out of reach until an address is typed", async ({
@@ -127,11 +157,7 @@ describe("<URLWatcherConfigMenu>", { concurrent: false }, () => {
 	})
 
 	it("creates a hook for the address the reader typed", async ({ expect }) => {
-		const calls = mockEndpoint(
-			"POST",
-			`/api/documents/${DOCUMENT_ID}/hooks`,
-			() => ({ id: HOOK_ID }),
-		)
+		const calls = mockEndpoint("POST", HOOKS_WRITE_URL, () => ({ id: HOOK_ID }))
 		const wrapper = await mountMenu()
 		await openHookSubMenu(t(NEW_HOOK_LABEL))
 		await typeInMenu("oxynote.test/docs")
@@ -154,7 +180,7 @@ describe("<URLWatcherConfigMenu>", { concurrent: false }, () => {
 	})
 
 	it("warns when the hook cannot be created", async ({ expect }) => {
-		mockEndpoint("POST", `/api/documents/${DOCUMENT_ID}/hooks`, (_c, event) => {
+		mockEndpoint("POST", HOOKS_WRITE_URL, (_c, event) => {
 			setResponseStatus(event, 500)
 
 			return { message: "boom" }
@@ -171,11 +197,9 @@ describe("<URLWatcherConfigMenu>", { concurrent: false }, () => {
 	})
 
 	it("updates the address an existing hook watches", async ({ expect }) => {
-		const calls = mockEndpoint(
-			"PUT",
-			`/api/documents/${DOCUMENT_ID}/hooks/${HOOK_ID}`,
-			() => ({ id: HOOK_ID }),
-		)
+		const calls = mockEndpoint("PUT", `${HOOKS_WRITE_URL}/${HOOK_ID}`, () => ({
+			id: HOOK_ID,
+		}))
 		await mountMenu({ hook: urlHook() })
 		await openHookSubMenu("Watching oxynote.test")
 		await typeInMenu("https://other.test")
@@ -191,15 +215,11 @@ describe("<URLWatcherConfigMenu>", { concurrent: false }, () => {
 	})
 
 	it("warns when the hook cannot be updated", async ({ expect }) => {
-		mockEndpoint(
-			"PUT",
-			`/api/documents/${DOCUMENT_ID}/hooks/${HOOK_ID}`,
-			(_c, event) => {
-				setResponseStatus(event, 500)
+		mockEndpoint("PUT", `${HOOKS_WRITE_URL}/${HOOK_ID}`, (_c, event) => {
+			setResponseStatus(event, 500)
 
-				return { message: "boom" }
-			},
-		)
+			return { message: "boom" }
+		})
 		await mountMenu({ hook: urlHook() })
 		await openHookSubMenu("Watching oxynote.test")
 		await typeInMenu("https://other.test")
@@ -214,7 +234,7 @@ describe("<URLWatcherConfigMenu>", { concurrent: false }, () => {
 	it("deletes the hook", async ({ expect }) => {
 		const calls = mockEndpoint(
 			"DELETE",
-			`/api/documents/${DOCUMENT_ID}/hooks/${HOOK_ID}`,
+			`${HOOKS_WRITE_URL}/${HOOK_ID}`,
 			() => null,
 		)
 		await mountMenu({ hook: urlHook() })
@@ -228,15 +248,11 @@ describe("<URLWatcherConfigMenu>", { concurrent: false }, () => {
 	})
 
 	it("warns when the hook cannot be deleted", async ({ expect }) => {
-		mockEndpoint(
-			"DELETE",
-			`/api/documents/${DOCUMENT_ID}/hooks/${HOOK_ID}`,
-			(_c, event) => {
-				setResponseStatus(event, 500)
+		mockEndpoint("DELETE", `${HOOKS_WRITE_URL}/${HOOK_ID}`, (_c, event) => {
+			setResponseStatus(event, 500)
 
-				return { message: "boom" }
-			},
-		)
+			return { message: "boom" }
+		})
 		await mountMenu({ hook: urlHook() })
 		await openHookSubMenu("Watching oxynote.test")
 
@@ -293,11 +309,7 @@ describe("<URLWatcherConfigMenu>", { concurrent: false }, () => {
 
 	it("creates nothing while no page is open", async ({ expect }) => {
 		useEditorStore().updateActiveDocumentId(null)
-		const calls = mockEndpoint(
-			"POST",
-			`/api/documents/${DOCUMENT_ID}/hooks`,
-			() => ({ id: HOOK_ID }),
-		)
+		const calls = mockEndpoint("POST", HOOKS_WRITE_URL, () => ({ id: HOOK_ID }))
 		await mountMenu()
 		await openHookSubMenu(t(NEW_HOOK_LABEL))
 		await typeInMenu("oxynote.test")

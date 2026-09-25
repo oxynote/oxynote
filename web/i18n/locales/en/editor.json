@@ -336,7 +336,22 @@
 			"renew": "Renew",
 			"delete": "Delete",
 			"reset": "Approve & Continue",
+			"initializing": "Initializing this hook. It will be ready in a moment.",
 			"errors": {
+				"codes": {
+					"upstream-unavailable": "The service this hook checks could not be reached. Please try again.",
+					"unconfigured": "This hook needs an integration that is not set up on this server.",
+					"missing-installation": "Connect your GitHub organization or personal account in the settings first.",
+					"missing-repository": "The selected GitHub repository cannot be accessed.",
+					"missing-branch": "The selected GitHub branch cannot be accessed.",
+					"tree-truncated": "The selected GitHub repository is too large to track.",
+					"unauthorized": "The selected Docker image needs authentication.",
+					"image-not-found": "The selected Docker image or tag does not exist.",
+					"invalid-url": "Enter a full website address starting with http:// or https://.",
+					"invalid-repository": "Select a GitHub repository.",
+					"missing-paths": "Select at least one file to track.",
+					"invalid-image": "The Docker image reference is not valid."
+				},
 				"create-failed": "Failed to create the hook. Please try again.",
 				"update-failed": "Failed to update the hook. Please try again.",
 				"delete-failed": "Failed to delete the hook. Please try again.",
@@ -379,6 +394,7 @@
 				"no-repositories": "{icon}You have no accessible repositories in the connected GitHub organization or personal account.",
 				"missing-target-repository": "{icon}The selected GitHub repository cannot be accessed.",
 				"missing-target-branch": "{icon}The selected GitHub branch cannot be accessed.",
+				"tree-truncated": "{icon}The selected GitHub repository is too large to compare, so changes cannot be detected.",
 				"repository-select-label": "Repository",
 				"repository-select-placeholder": "Select repository",
 				"repository-select-loading-placeholder": "Loading...",
@@ -404,6 +420,7 @@
 				"existing-item-block-explanation": "When the selected website changes, a reminder will be sent to the maintainers of the page and the block will be highlighted.",
 				"existing-item-full-document-explanation": "When the selected website changes, a reminder will be sent to the maintainers of the page and the relevant sections will be highlighted.",
 				"unreachable-url": "{icon}The selected website cannot be reached. They may be temporarily down, no longer exist, or have anti-scraping measures in place.",
+				"unconfigured": "{icon}Website change detection is not set up on this server, so changes cannot be detected.",
 				"url-input-label": "Link to Website",
 				"url-input-placeholder": "https://example.com"
 			},
@@ -414,6 +431,7 @@
 				"existing-item-block-explanation": "When the selected Docker image changes, a reminder will be sent to the maintainers of the page and the block will be highlighted.",
 				"existing-item-full-document-explanation": "When the selected Docker image changes, a reminder will be sent to the maintainers of the page and the relevant sections will be highlighted.",
 				"unreachable-image": "{icon}The selected Docker image cannot be reached. They may be temporarily down, no longer exist, or have authentication.",
+				"missing-image": "{icon}The selected Docker image or tag no longer exists.",
 				"image-input-label": "Image Reference",
 				"image-input-placeholder": "postgres:16.4-alpine"
 			}

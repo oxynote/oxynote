@@ -38,7 +38,8 @@ func prepDocumentHooks(t *testing.T, db *DB, count int, fn func(int, *hook.Hook)
 			// JSONB round-trips in canonical form (space after the
 			// colon), so the fixture uses that form for comparisons.
 			Settings:  processor.Settings(`{"url": "http://watched.test"}`),
-			State:     processor.State(`{"status":"ok"}`),
+			State:     null.ValueFrom(processor.State(`{"watcherId":"w1"}`)),
+			Status:    processor.StatusActive,
 			Score:     decimal.NewFromInt(50),
 			CreatedAt: now,
 		}
@@ -69,6 +70,7 @@ func prepDocumentHooks(t *testing.T, db *DB, count int, fn func(int, *hook.Hook)
 				"block_id":           hk.BlockID,
 				"settings":           hk.Settings,
 				"state":              hk.State,
+				"status":             hk.Status,
 				"score":              hk.Score,
 				"created_at":         hk.CreatedAt,
 				"updated_at":         hk.UpdatedAt,
@@ -108,7 +110,7 @@ func Test_agent_InsertDocumentHook(t *testing.T) {
 					OrganizationID: null.StringFrom(branch.OrganizationID),
 					BranchID:       null.ValueFrom(branch.BranchID),
 					Settings:       processor.Settings(`{"schedule": "0 0 * * * *"}`),
-					State:          processor.State(`{}`),
+					Status:         processor.StatusActive,
 					Score:          decimal.NewFromInt(100),
 					CreatedAt:      timeutil.Now().Truncate(time.Second),
 					UpdatedAt:      null.TimeFrom(timeutil.Now().Truncate(time.Second)),
@@ -222,7 +224,7 @@ func Test_agent_FetchPaginatedDocumentHooks(t *testing.T) {
 
 	for _, hk := range res {
 		assert.False(t, hk.OrganizationID.Valid)
-		assert.NotEmpty(t, hk.State, "the watcher stays addressable without its organization")
+		assert.True(t, hk.State.Valid, "the watcher stays addressable without its organization")
 	}
 }
 
@@ -246,7 +248,8 @@ func Test_agent_UpdateDocumentHook(t *testing.T) {
 		"Successful update": func(t *testing.T, db *DB) tcase {
 			hk := prepDocumentHooks(t, db, 1, nil)[0]
 			hk.Settings = processor.Settings(`{"url": "http://updated.test"}`)
-			hk.State = processor.State(`{"status":"failing"}`)
+			hk.State = null.ValueFrom(processor.State(`{"watcherId":"w2"}`))
+			hk.Status = processor.URLWatcherStatusUnreachableURL
 			hk.Score = decimal.NewFromInt(10)
 			hk.UpdatedAt = null.TimeFrom(timeutil.Now().Truncate(time.Second))
 			hk.SoftDeletedAt = null.TimeFrom(timeutil.Now().Truncate(time.Second))

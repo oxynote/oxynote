@@ -81,7 +81,8 @@ function hook(blockId: string | null, score = "0"): DocumentHook {
 			duration: null,
 			schedule: "2026-01-01T00:00:00Z",
 		},
-		state: { lastActiveAt: "2026-01-01T00:00:00Z" },
+		state: { startedAt: "2026-01-01T00:00:00Z" },
+		status: "active",
 		score,
 		createdAt: "2026-01-01T00:00:00Z",
 	}

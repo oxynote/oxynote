@@ -13,7 +13,6 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/document/comment"
 	"github.com/oxynote/oxynote/server/core/internal/document/file"
-	"github.com/oxynote/oxynote/server/core/internal/document/history"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	notificationCore "github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/internal/search"
@@ -76,9 +75,6 @@ var _ DB = &DBMock{}
 //			},
 //			DeleteDocumentFileFunc: func(ctx context.Context, id string) error {
 //				panic("mock out the DeleteDocumentFile method")
-//			},
-//			DeleteDocumentHookFunc: func(ctx context.Context, id xid.ID) error {
-//				panic("mock out the DeleteDocumentHook method")
 //			},
 //			DeleteGithubInstallationFunc: func(ctx context.Context, installationID int64) error {
 //				panic("mock out the DeleteGithubInstallation method")
@@ -275,9 +271,6 @@ var _ DB = &DBMock{}
 //			UpdateDocumentFunc: func(ctx context.Context, doc document.Document) error {
 //				panic("mock out the UpdateDocument method")
 //			},
-//			UpdateDocumentBranchHistoryEntryHooksFunc: func(ctx context.Context, id xid.ID, hooks history.Hooks) error {
-//				panic("mock out the UpdateDocumentBranchHistoryEntryHooks method")
-//			},
 //			UpdateDocumentBranchMetadataFunc: func(ctx context.Context, doc document.Document) error {
 //				panic("mock out the UpdateDocumentBranchMetadata method")
 //			},
@@ -286,9 +279,6 @@ var _ DB = &DBMock{}
 //			},
 //			UpdateDocumentCommentReplyFunc: func(ctx context.Context, r comment.Reply) error {
 //				panic("mock out the UpdateDocumentCommentReply method")
-//			},
-//			UpdateDocumentHookFunc: func(ctx context.Context, hk hook.Hook) error {
-//				panic("mock out the UpdateDocumentHook method")
 //			},
 //			UpdateDocumentParentIDFunc: func(ctx context.Context, id xid.ID, parentID null.Value[xid.ID], organizationID string) error {
 //				panic("mock out the UpdateDocumentParentID method")
@@ -368,9 +358,6 @@ type DBMock struct {
 
 	// DeleteDocumentFileFunc mocks the DeleteDocumentFile method.
 	DeleteDocumentFileFunc func(ctx context.Context, id string) error
-
-	// DeleteDocumentHookFunc mocks the DeleteDocumentHook method.
-	DeleteDocumentHookFunc func(ctx context.Context, id xid.ID) error
 
 	// DeleteGithubInstallationFunc mocks the DeleteGithubInstallation method.
 	DeleteGithubInstallationFunc func(ctx context.Context, installationID int64) error
@@ -567,9 +554,6 @@ type DBMock struct {
 	// UpdateDocumentFunc mocks the UpdateDocument method.
 	UpdateDocumentFunc func(ctx context.Context, doc document.Document) error
 
-	// UpdateDocumentBranchHistoryEntryHooksFunc mocks the UpdateDocumentBranchHistoryEntryHooks method.
-	UpdateDocumentBranchHistoryEntryHooksFunc func(ctx context.Context, id xid.ID, hooks history.Hooks) error
-
 	// UpdateDocumentBranchMetadataFunc mocks the UpdateDocumentBranchMetadata method.
 	UpdateDocumentBranchMetadataFunc func(ctx context.Context, doc document.Document) error
 
@@ -578,9 +562,6 @@ type DBMock struct {
 
 	// UpdateDocumentCommentReplyFunc mocks the UpdateDocumentCommentReply method.
 	UpdateDocumentCommentReplyFunc func(ctx context.Context, r comment.Reply) error
-
-	// UpdateDocumentHookFunc mocks the UpdateDocumentHook method.
-	UpdateDocumentHookFunc func(ctx context.Context, hk hook.Hook) error
 
 	// UpdateDocumentParentIDFunc mocks the UpdateDocumentParentID method.
 	UpdateDocumentParentIDFunc func(ctx context.Context, id xid.ID, parentID null.Value[xid.ID], organizationID string) error
@@ -755,13 +736,6 @@ type DBMock struct {
 			Ctx context.Context
 			// ID is the id argument value.
 			ID string
-		}
-		// DeleteDocumentHook holds details about calls to the DeleteDocumentHook method.
-		DeleteDocumentHook []struct {
-			// Ctx is the ctx argument value.
-			Ctx context.Context
-			// ID is the id argument value.
-			ID xid.ID
 		}
 		// DeleteGithubInstallation holds details about calls to the DeleteGithubInstallation method.
 		DeleteGithubInstallation []struct {
@@ -1312,15 +1286,6 @@ type DBMock struct {
 			// Doc is the doc argument value.
 			Doc document.Document
 		}
-		// UpdateDocumentBranchHistoryEntryHooks holds details about calls to the UpdateDocumentBranchHistoryEntryHooks method.
-		UpdateDocumentBranchHistoryEntryHooks []struct {
-			// Ctx is the ctx argument value.
-			Ctx context.Context
-			// ID is the id argument value.
-			ID xid.ID
-			// Hooks is the hooks argument value.
-			Hooks history.Hooks
-		}
 		// UpdateDocumentBranchMetadata holds details about calls to the UpdateDocumentBranchMetadata method.
 		UpdateDocumentBranchMetadata []struct {
 			// Ctx is the ctx argument value.
@@ -1341,13 +1306,6 @@ type DBMock struct {
 			Ctx context.Context
 			// R is the r argument value.
 			R comment.Reply
-		}
-		// UpdateDocumentHook holds details about calls to the UpdateDocumentHook method.
-		UpdateDocumentHook []struct {
-			// Ctx is the ctx argument value.
-			Ctx context.Context
-			// Hk is the hk argument value.
-			Hk hook.Hook
 		}
 		// UpdateDocumentParentID holds details about calls to the UpdateDocumentParentID method.
 		UpdateDocumentParentID []struct {
@@ -1448,7 +1406,6 @@ type DBMock struct {
 	lockDeleteDocumentCommentReply                sync.RWMutex
 	lockDeleteDocumentCommentsByBranchID          sync.RWMutex
 	lockDeleteDocumentFile                        sync.RWMutex
-	lockDeleteDocumentHook                        sync.RWMutex
 	lockDeleteGithubInstallation                  sync.RWMutex
 	lockDeleteGithubInstallationsByOrganizationID sync.RWMutex
 	lockDeleteSlackApp                            sync.RWMutex
@@ -1514,11 +1471,9 @@ type DBMock struct {
 	lockUpdateBranchReviewer                      sync.RWMutex
 	lockUpdateDataSource                          sync.RWMutex
 	lockUpdateDocument                            sync.RWMutex
-	lockUpdateDocumentBranchHistoryEntryHooks     sync.RWMutex
 	lockUpdateDocumentBranchMetadata              sync.RWMutex
 	lockUpdateDocumentComment                     sync.RWMutex
 	lockUpdateDocumentCommentReply                sync.RWMutex
-	lockUpdateDocumentHook                        sync.RWMutex
 	lockUpdateDocumentParentID                    sync.RWMutex
 	lockUpdateDocumentTree                        sync.RWMutex
 	lockUpdateGithubInstallationOrganizationID    sync.RWMutex
@@ -2196,45 +2151,6 @@ func (mock *DBMock) DeleteDocumentFileCalls() []struct {
 	mock.lockDeleteDocumentFile.RLock()
 	calls = mock.calls.DeleteDocumentFile
 	mock.lockDeleteDocumentFile.RUnlock()
-	return calls
-}
-
-// DeleteDocumentHook calls DeleteDocumentHookFunc.
-func (mock *DBMock) DeleteDocumentHook(ctx context.Context, id xid.ID) error {
-	callInfo := struct {
-		Ctx context.Context
-		ID  xid.ID
-	}{
-		Ctx: ctx,
-		ID:  id,
-	}
-	mock.lockDeleteDocumentHook.Lock()
-	mock.calls.DeleteDocumentHook = append(mock.calls.DeleteDocumentHook, callInfo)
-	mock.lockDeleteDocumentHook.Unlock()
-	if mock.DeleteDocumentHookFunc == nil {
-		var (
-			errOut error
-		)
-		return errOut
-	}
-	return mock.DeleteDocumentHookFunc(ctx, id)
-}
-
-// DeleteDocumentHookCalls gets all the calls that were made to DeleteDocumentHook.
-// Check the length with:
-//
-//	len(mockedDB.DeleteDocumentHookCalls())
-func (mock *DBMock) DeleteDocumentHookCalls() []struct {
-	Ctx context.Context
-	ID  xid.ID
-} {
-	var calls []struct {
-		Ctx context.Context
-		ID  xid.ID
-	}
-	mock.lockDeleteDocumentHook.RLock()
-	calls = mock.calls.DeleteDocumentHook
-	mock.lockDeleteDocumentHook.RUnlock()
 	return calls
 }
 
@@ -4995,49 +4911,6 @@ func (mock *DBMock) UpdateDocumentCalls() []struct {
 	return calls
 }
 
-// UpdateDocumentBranchHistoryEntryHooks calls UpdateDocumentBranchHistoryEntryHooksFunc.
-func (mock *DBMock) UpdateDocumentBranchHistoryEntryHooks(ctx context.Context, id xid.ID, hooks history.Hooks) error {
-	callInfo := struct {
-		Ctx   context.Context
-		ID    xid.ID
-		Hooks history.Hooks
-	}{
-		Ctx:   ctx,
-		ID:    id,
-		Hooks: hooks,
-	}
-	mock.lockUpdateDocumentBranchHistoryEntryHooks.Lock()
-	mock.calls.UpdateDocumentBranchHistoryEntryHooks = append(mock.calls.UpdateDocumentBranchHistoryEntryHooks, callInfo)
-	mock.lockUpdateDocumentBranchHistoryEntryHooks.Unlock()
-	if mock.UpdateDocumentBranchHistoryEntryHooksFunc == nil {
-		var (
-			errOut error
-		)
-		return errOut
-	}
-	return mock.UpdateDocumentBranchHistoryEntryHooksFunc(ctx, id, hooks)
-}
-
-// UpdateDocumentBranchHistoryEntryHooksCalls gets all the calls that were made to UpdateDocumentBranchHistoryEntryHooks.
-// Check the length with:
-//
-//	len(mockedDB.UpdateDocumentBranchHistoryEntryHooksCalls())
-func (mock *DBMock) UpdateDocumentBranchHistoryEntryHooksCalls() []struct {
-	Ctx   context.Context
-	ID    xid.ID
-	Hooks history.Hooks
-} {
-	var calls []struct {
-		Ctx   context.Context
-		ID    xid.ID
-		Hooks history.Hooks
-	}
-	mock.lockUpdateDocumentBranchHistoryEntryHooks.RLock()
-	calls = mock.calls.UpdateDocumentBranchHistoryEntryHooks
-	mock.lockUpdateDocumentBranchHistoryEntryHooks.RUnlock()
-	return calls
-}
-
 // UpdateDocumentBranchMetadata calls UpdateDocumentBranchMetadataFunc.
 func (mock *DBMock) UpdateDocumentBranchMetadata(ctx context.Context, doc document.Document) error {
 	callInfo := struct {
@@ -5152,45 +5025,6 @@ func (mock *DBMock) UpdateDocumentCommentReplyCalls() []struct {
 	mock.lockUpdateDocumentCommentReply.RLock()
 	calls = mock.calls.UpdateDocumentCommentReply
 	mock.lockUpdateDocumentCommentReply.RUnlock()
-	return calls
-}
-
-// UpdateDocumentHook calls UpdateDocumentHookFunc.
-func (mock *DBMock) UpdateDocumentHook(ctx context.Context, hk hook.Hook) error {
-	callInfo := struct {
-		Ctx context.Context
-		Hk  hook.Hook
-	}{
-		Ctx: ctx,
-		Hk:  hk,
-	}
-	mock.lockUpdateDocumentHook.Lock()
-	mock.calls.UpdateDocumentHook = append(mock.calls.UpdateDocumentHook, callInfo)
-	mock.lockUpdateDocumentHook.Unlock()
-	if mock.UpdateDocumentHookFunc == nil {
-		var (
-			errOut error
-		)
-		return errOut
-	}
-	return mock.UpdateDocumentHookFunc(ctx, hk)
-}
-
-// UpdateDocumentHookCalls gets all the calls that were made to UpdateDocumentHook.
-// Check the length with:
-//
-//	len(mockedDB.UpdateDocumentHookCalls())
-func (mock *DBMock) UpdateDocumentHookCalls() []struct {
-	Ctx context.Context
-	Hk  hook.Hook
-} {
-	var calls []struct {
-		Ctx context.Context
-		Hk  hook.Hook
-	}
-	mock.lockUpdateDocumentHook.RLock()
-	calls = mock.calls.UpdateDocumentHook
-	mock.lockUpdateDocumentHook.RUnlock()
 	return calls
 }
 

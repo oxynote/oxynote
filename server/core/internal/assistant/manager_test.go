@@ -240,7 +240,7 @@ func Test_NewManager(t *testing.T) {
 			fc := metricutil.NewFactory("test", prometheus.NewRegistry())
 			gh := &github.Manager{}
 			wc := &webchange.Client{}
-			m := NewManager(discardLog(), nil, c.Pool, nil, nil, fc, nil, nil, &stubSearchTrigger{}, nil, gh, wc, "claude")
+			m := NewManager(discardLog(), nil, c.Pool, nil, nil, fc, nil, nil, &stubSearchTrigger{}, nil, gh, wc, nil, "claude")
 
 			require.NotNil(t, m)
 			assert.NotNil(t, m.log)

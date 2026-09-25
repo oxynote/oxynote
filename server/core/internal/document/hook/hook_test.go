@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/guregu/null/v5"
+	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
@@ -78,7 +79,8 @@ func Test_NewHook(t *testing.T) {
 
 		// the reset scored the fresh future schedule at full.
 		assert.True(t, h.Score.Equal(decimal.NewFromInt(100)))
-		assert.NotEmpty(t, h.State)
+		assert.True(t, h.State.Valid)
+		assert.Equal(t, processor.StatusActive, h.Status)
 	})
 
 	t.Run("Malformed settings fail", func(t *testing.T) {
@@ -88,7 +90,17 @@ func Test_NewHook(t *testing.T) {
 			Type:     TypeScheduledReminder,
 			Settings: processor.Settings(`{not json`),
 		}, documentID, branchID, "org-1", nil)
-		require.Error(t, err)
+		assert.Equal(t, ErrInvalidSettings, err)
+	})
+
+	t.Run("Invalid settings fail", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := NewHook(context.Background(), CreateInput{
+			Type:     TypeScheduledReminder,
+			Settings: processor.Settings(`{"scale":"bogus","schedule":"2030-01-01T00:00:00Z"}`),
+		}, documentID, branchID, "org-1", nil)
+		assert.Equal(t, processor.ErrInvalidScaleType, err)
 	})
 
 	t.Run("Unknown type fails", func(t *testing.T) {
@@ -98,7 +110,19 @@ func Test_NewHook(t *testing.T) {
 			Type:     Type("bogus"),
 			Settings: processor.Settings(`{}`),
 		}, documentID, branchID, "org-1", nil)
-		assert.EqualError(t, err, "invalid processor type")
+		assert.Equal(t, ErrInvalidType, err)
+	})
+
+	t.Run("A hook that cannot check its target is refused", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := NewHook(context.Background(), CreateInput{
+			Type:     TypeURLWatcher,
+			Settings: processor.Settings(`{"url":"https://example.com"}`),
+		}, documentID, branchID, "org-1", NewInput("org-1", nil, webchange.NewClient("", "")))
+		require.Error(t, err)
+		assert.Equal(t, http.StatusUnprocessableEntity, errutil.StatusCode(err, false))
+		assert.EqualError(t, err, "the hook cannot check its target: unconfigured")
 	})
 }
 
@@ -119,6 +143,10 @@ func Test_Hook_ApplyUpdate(t *testing.T) {
 	assert.Equal(t, newSettings, h.Settings)
 	assert.True(t, h.UpdatedAt.Valid)
 	assert.True(t, h.Score.Equal(decimal.Zero))
+
+	assert.Equal(t, ErrInvalidSettings, h.ApplyUpdate(context.Background(), UpdateInput{
+		Settings: processor.Settings(`{not json`),
+	}, nil))
 }
 
 func Test_Hook_Process(t *testing.T) {
@@ -139,10 +167,41 @@ func Test_Hook_Process(t *testing.T) {
 		})
 		require.NoError(t, merr)
 
-		h.State = processor.State(state)
+		h.State = null.ValueFrom(processor.State(state))
 
 		require.NoError(t, h.Process(context.Background(), nil))
 		assert.True(t, h.Score.Equal(decimal.Zero))
+	})
+
+	t.Run("A hook never set up is reset", func(t *testing.T) {
+		t.Parallel()
+
+		h := &Hook{
+			Type:     TypeScheduledReminder,
+			Settings: reminderSettings(t, time.Now().Add(time.Hour)),
+			Status:   processor.StatusActive,
+		}
+
+		require.NoError(t, h.Process(context.Background(), nil))
+		assert.True(t, h.State.Valid)
+		assert.True(t, h.Score.Equal(decimal.NewFromInt(100)))
+	})
+
+	t.Run("A run that cannot check keeps score and state", func(t *testing.T) {
+		t.Parallel()
+
+		h := &Hook{
+			Type:     TypeURLWatcher,
+			Settings: processor.Settings(`{"url":"https://example.com"}`),
+			State:    null.ValueFrom(processor.State(`{"watcherId":"w1"}`)),
+			Score:    decimal.NewFromInt(40),
+			Status:   processor.StatusActive,
+		}
+
+		require.NoError(t, h.Process(context.Background(), NewInput("org-1", nil, webchange.NewClient("", ""))))
+		assert.Equal(t, processor.StatusUnconfigured, h.Status)
+		assert.True(t, h.Score.Equal(decimal.NewFromInt(40)))
+		assert.Equal(t, processor.State(`{"watcherId":"w1"}`), h.State.V)
 	})
 
 	t.Run("Malformed settings fail", func(t *testing.T) {
@@ -151,6 +210,7 @@ func Test_Hook_Process(t *testing.T) {
 		h := &Hook{
 			Type:     TypeScheduledReminder,
 			Settings: processor.Settings(`{not json`),
+			State:    null.ValueFrom(processor.State(`{}`)),
 		}
 
 		require.Error(t, h.Process(context.Background(), nil))
@@ -168,6 +228,50 @@ func Test_Hook_Delete(t *testing.T) {
 
 	// scheduled reminders have no external resources; delete is a no-op.
 	assert.NoError(t, h.Delete(context.Background(), nil))
+
+	// a url watcher never set up has no watcher yet, so its teardown
+	// reaches nothing outside.
+	unset := Hook{
+		Type:     TypeURLWatcher,
+		Settings: processor.Settings(`{"url":"https://example.com"}`),
+	}
+	assert.NoError(t, unset.Delete(context.Background(), nil))
+}
+
+func Test_Hook_NewCopy(t *testing.T) {
+	t.Parallel()
+
+	src := Hook{
+		ID:             xid.New(),
+		Type:           TypeURLWatcher,
+		DocumentID:     null.ValueFrom(xid.New()),
+		OrganizationID: null.StringFrom("org-1"),
+		BranchID:       null.ValueFrom(xid.New()),
+		BlockID:        null.StringFrom("b1"),
+		Settings:       processor.Settings(`{"url":"https://example.com"}`),
+		State:          null.ValueFrom(processor.State(`{"watcherId":"w1"}`)),
+		Status:         processor.URLWatcherStatusUnreachableURL,
+		Score:          decimal.NewFromInt(10),
+	}
+
+	documentID, branchID := xid.New(), xid.New()
+
+	cp := src.NewCopy(documentID, branchID, null.StringFrom("b2"))
+
+	assert.NotEqual(t, src.ID, cp.ID)
+	assert.Equal(t, src.Type, cp.Type)
+	assert.Equal(t, null.ValueFrom(documentID), cp.DocumentID)
+	assert.Equal(t, src.OrganizationID, cp.OrganizationID)
+	assert.Equal(t, null.ValueFrom(branchID), cp.BranchID)
+	assert.Equal(t, null.StringFrom("b2"), cp.BlockID)
+	assert.Equal(t, src.Settings, cp.Settings)
+	assert.Equal(t, src.Status, cp.Status)
+	assert.Equal(t, "10", cp.Score.String())
+	assert.False(t, cp.CreatedAt.IsZero())
+
+	// the source's state names its own watcher, which the copy must never
+	// reach.
+	assert.False(t, cp.State.Valid)
 }
 
 func Test_Hook_ensurePrepared(t *testing.T) {

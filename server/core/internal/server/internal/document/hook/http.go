@@ -6,9 +6,6 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/guregu/null/v5"
-	"github.com/oxynote/oxynote/server/core/internal/apps/github"
-	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	hookCore "github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
@@ -31,28 +28,22 @@ var ErrBlockNotFound = errutil.New(http.StatusNotFound, "document.hook_block_not
 
 // Handler holds dependencies required for document hook operations.
 type Handler struct {
-	log             *slog.Logger
-	db              DB
-	githubMan       *github.Manager
-	webchangeClient *webchange.Client
+	log *slog.Logger
+	db  DB
+	man Manager
 
 	hooks struct {
 		changeCallback func(organizationID string, documentID, branchID xid.ID)
 	}
 }
 
-// NewHandler creates a new handler instance with the provided logger and database.
-func NewHandler(
-	log *slog.Logger,
-	db DB,
-	githubMan *github.Manager,
-	webchangeClient *webchange.Client,
-) *Handler {
+// NewHandler creates a new handler instance with the provided logger,
+// database and hook manager.
+func NewHandler(log *slog.Logger, db DB, man Manager) *Handler {
 	return &Handler{
-		log:             log,
-		db:              db,
-		githubMan:       githubMan,
-		webchangeClient: webchangeClient,
+		log: log,
+		db:  db,
+		man: man,
 	}
 }
 
@@ -150,29 +141,11 @@ func (h *Handler) CreateDocumentHook(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	hk, err := hookCore.NewHook(
-		r.Context(),
-		hi,
-		branchDoc.ID,
-		hi.BranchID,
-		session.ActiveOrganizationID,
-		hookCore.NewInput(
-			session.ActiveOrganizationID,
-			h.githubMan,
-			h.webchangeClient,
-		),
-	)
+	hk, err := h.man.CreateHook(r.Context(), hi, branchDoc.ID, session.ActiveOrganizationID, session.UserID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
-
-	if err := h.db.InsertDocumentHook(r.Context(), *hk); err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	h.recordHistory(r.Context(), *hk, session)
 
 	h.NotifyHooksChange(session.ActiveOrganizationID, hk.DocumentID, hk.BranchID)
 
@@ -203,6 +176,12 @@ func (h *Handler) UpdateDocumentHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	branchID, err := httpserver.ExtractQueryID(r, "branchId")
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
 	hk, err := h.db.FetchDocumentHook(r.Context(), id, session.ActiveOrganizationID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
@@ -210,8 +189,10 @@ func (h *Handler) UpdateDocumentHook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// a row whose document was deleted carries no document id at all and is
-	// not addressable through any document path.
-	if !hk.DocumentID.Valid || hk.DocumentID.V != documentID {
+	// not addressable through any document path. The branch is the one
+	// whose pending edits were stored before this request reached core.
+	if !hk.DocumentID.Valid || hk.DocumentID.V != documentID ||
+		!hk.BranchID.Valid || hk.BranchID.V != branchID {
 		httpserver.RespondError(h.log, w, ErrHookMismatch)
 		return
 	}
@@ -223,26 +204,11 @@ func (h *Handler) UpdateDocumentHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = hk.ApplyUpdate(
-		r.Context(),
-		ui,
-		hookCore.NewInput(
-			session.ActiveOrganizationID,
-			h.githubMan,
-			h.webchangeClient,
-		),
-	)
+	hk, err = h.man.UpdateHook(r.Context(), hk.ID, session.ActiveOrganizationID, ui, session.UserID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
-
-	if err := h.db.UpdateDocumentHook(r.Context(), *hk); err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	h.recordHistory(r.Context(), *hk, session)
 
 	h.NotifyHooksChange(session.ActiveOrganizationID, hk.DocumentID, hk.BranchID)
 
@@ -286,17 +252,8 @@ func (h *Handler) ResetDocumentHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = hk.Reset(r.Context(), hookCore.NewInput(
-		session.ActiveOrganizationID,
-		h.githubMan,
-		h.webchangeClient,
-	))
+	hk, err = h.man.ResetHook(r.Context(), hk.ID, session.ActiveOrganizationID)
 	if err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	if err := h.db.UpdateDocumentHook(r.Context(), *hk); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -330,6 +287,12 @@ func (h *Handler) DeleteDocumentHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	branchID, err := httpserver.ExtractQueryID(r, "branchId")
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
 	hk, err := h.db.FetchDocumentHook(r.Context(), id, session.ActiveOrganizationID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
@@ -337,28 +300,18 @@ func (h *Handler) DeleteDocumentHook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// a row whose document was deleted carries no document id at all and is
-	// not addressable through any document path.
-	if !hk.DocumentID.Valid || hk.DocumentID.V != documentID {
+	// not addressable through any document path. The branch is the one
+	// whose pending edits were stored before this request reached core.
+	if !hk.DocumentID.Valid || hk.DocumentID.V != documentID ||
+		!hk.BranchID.Valid || hk.BranchID.V != branchID {
 		httpserver.RespondError(h.log, w, ErrHookMismatch)
 		return
 	}
 
-	err = hk.Delete(r.Context(), hookCore.NewInput(
-		session.ActiveOrganizationID,
-		h.githubMan,
-		h.webchangeClient,
-	))
-	if err != nil {
+	if err = h.man.DeleteHook(r.Context(), hk.ID, session.ActiveOrganizationID, session.UserID); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
-
-	if err := h.db.DeleteDocumentHook(r.Context(), hk.ID); err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	h.recordHistory(r.Context(), *hk, session)
 
 	h.NotifyHooksChange(session.ActiveOrganizationID, hk.DocumentID, hk.BranchID)
 
@@ -370,60 +323,39 @@ func (h *Handler) DeleteDocumentHook(w http.ResponseWriter, r *http.Request) {
 	)
 }
 
-// recordHistory records the hook's branch in its history, credited to the
-// session user. The hook change is already written, so a failure is logged
-// rather than returned.
-func (h *Handler) recordHistory(ctx context.Context, hk hookCore.Hook, session auth.Session) {
-	if !hk.BranchID.Valid {
-		return
-	}
-
-	_, err := h.db.RecordDocumentBranchHistoryEntry(
-		ctx,
-		hk.BranchID.V,
-		session.ActiveOrganizationID,
-		null.StringFrom(session.UserID),
-		false,
-	)
-	if err != nil {
-		h.log.Error(
-			"cannot record the hook change in the branch history",
-			slog.String("hook_id", hk.ID.String()),
-			slog.String("error", err.Error()),
-		)
-	}
-}
-
-// DB is an interface that handles communication with the document hooks database.
+// DB is an interface that handles communication with the document hooks
+// database.
 //
 //go:generate ../../../../../scripts/codegen/mock -t internal DB db
 type DB interface {
 	// FetchDocumentByBranchID should fetch the document joined against the branch identified by branchID.
 	FetchDocumentByBranchID(ctx context.Context, branchID xid.ID, organizationID string) (*document.Document, error)
 
-	// InsertDocumentHook should insert the document hook.
-	InsertDocumentHook(ctx context.Context, hk hookCore.Hook) error
-
 	// FetchDocumentHook should fetch the document hook for the given id.
 	FetchDocumentHook(ctx context.Context, id xid.ID, organizationID string) (*hookCore.Hook, error)
 
 	// FetchDocumentHooksByBranchID should fetch all hooks for a specific branch.
 	FetchDocumentHooksByBranchID(ctx context.Context, branchID xid.ID, organizationID string) ([]hookCore.Hook, error)
+}
 
-	// UpdateDocumentHook should update the document hook.
-	UpdateDocumentHook(ctx context.Context, hk hookCore.Hook) error
+// Manager runs the hook writes: the external side effect, the row and the
+// branch's history entry.
+//
+//go:generate ../../../../../scripts/codegen/mock -t internal Manager manager
+type Manager interface {
+	// CreateHook should create the hook on the branch of the document,
+	// credited to updatedBy.
+	CreateHook(ctx context.Context, ci hookCore.CreateInput, documentID xid.ID, organizationID, updatedBy string) (*hookCore.Hook, error)
 
-	// DeleteDocumentHook should delete the document hook for the given id.
-	// The caller is expected to have fetched the hook org-scoped first.
-	DeleteDocumentHook(ctx context.Context, id xid.ID) error
+	// UpdateHook should replace the hook's settings, credited to
+	// updatedBy, and return the stored hook.
+	UpdateHook(ctx context.Context, id xid.ID, organizationID string, ui hookCore.UpdateInput, updatedBy string) (*hookCore.Hook, error)
 
-	// RecordDocumentBranchHistoryEntry should record the branch as it
-	// stands, with its live hooks, and return the id of the entry.
-	RecordDocumentBranchHistoryEntry(
-		ctx context.Context,
-		branchID xid.ID,
-		organizationID string,
-		by null.String,
-		boundary bool,
-	) (xid.ID, error)
+	// DeleteHook should tear the hook down and remove it, credited to
+	// updatedBy.
+	DeleteHook(ctx context.Context, id xid.ID, organizationID, updatedBy string) error
+
+	// ResetHook should restore the hook's score and state and return the
+	// stored hook.
+	ResetHook(ctx context.Context, id xid.ID, organizationID string) (*hookCore.Hook, error)
 }

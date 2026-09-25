@@ -8,6 +8,7 @@ import (
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
+	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
 	"github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
@@ -105,6 +106,18 @@ func Test_Interpreter_InterpretNotification(t *testing.T) {
 			)),
 			Result: &Message{
 				Text: fmt.Sprintf("<%s|My Doc> may be outdated — Scheduled Reminder", _testDocURL),
+			},
+		},
+		"Document hook needs attention": {
+			N: stubNotification(notification.NewDocumentHookNeedsAttentionNotification(
+				_testDocID,
+				hook.TypeGithubTracking,
+				null.String{},
+				_testBranchID,
+				processor.GithubTrackingStatusRepositoryNotFound,
+			)),
+			Result: &Message{
+				Text: fmt.Sprintf("<%s|My Doc> can no longer be checked — GitHub Tracking", _testDocURL),
 			},
 		},
 		"Document new comment": {
@@ -235,7 +248,7 @@ func Test_Interpreter_interpretDocumentReviewRequestNotification(t *testing.T) {
 	}
 }
 
-func Test_Interpreter_interpretDocumentHookTriggeredNotification(t *testing.T) {
+func Test_Interpreter_interpretDocumentHookNotification(t *testing.T) {
 	cc := map[string]struct {
 		DB     *DBMock
 		N      notification.Notification
@@ -357,7 +370,7 @@ func Test_Interpreter_interpretDocumentHookTriggeredNotification(t *testing.T) {
 
 			i := NewInterpreter(c.DB, NewSlackFormatter(), "https://app.test")
 
-			res, err := i.interpretDocumentHookTriggeredNotification(context.Background(), c.N)
+			res, err := i.interpretDocumentHookNotification(context.Background(), c.N, _hookTriggeredFormat)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {

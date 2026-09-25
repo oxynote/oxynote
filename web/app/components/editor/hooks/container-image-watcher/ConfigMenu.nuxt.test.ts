@@ -30,6 +30,9 @@ vi.mock("vue-sonner", () => ({
 const DOCUMENT_ID = makeXid("doc")
 const BRANCH_ID = makeXid("branch")
 const HOOK_ID = makeXid("hook")
+// hook writes go through the realtime service, which stores the branch's
+// pending edits before core records them.
+const HOOKS_WRITE_URL = `http://test.local/auth-realtime/api/documents/${DOCUMENT_ID}/hooks`
 
 const NEW_HOOK_LABEL = "editor.hooks.container-image-watcher.title"
 
@@ -113,14 +116,20 @@ describe("<ContainerImageWatcherConfigMenu>", { concurrent: false }, () => {
 
 	it("warns about an image it cannot reach", async ({ expect }) => {
 		await mountMenu({
-			hook: imageHook({
-				state: { digest: "sha256:old", status: "unauthorized" },
-			}),
+			hook: imageHook({ status: "unauthorized" }),
 		})
 
 		await openHookSubMenu("Watching postgres:16.4-alpine")
 
 		expect(menuText()).toContain("cannot be reached")
+	})
+
+	it("warns about an image that no longer exists", async ({ expect }) => {
+		await mountMenu({ hook: imageHook({ status: "image_not_found" }) })
+
+		await openHookSubMenu("Watching postgres:16.4-alpine")
+
+		expect(menuText()).toContain("no longer exists")
 	})
 
 	it("keeps the create button out of reach until an image is typed", async ({
@@ -133,11 +142,7 @@ describe("<ContainerImageWatcherConfigMenu>", { concurrent: false }, () => {
 	})
 
 	it("creates a hook for the image the reader typed", async ({ expect }) => {
-		const calls = mockEndpoint(
-			"POST",
-			`/api/documents/${DOCUMENT_ID}/hooks`,
-			() => ({ id: HOOK_ID }),
-		)
+		const calls = mockEndpoint("POST", HOOKS_WRITE_URL, () => ({ id: HOOK_ID }))
 		const wrapper = await mountMenu()
 		await openHookSubMenu(t(NEW_HOOK_LABEL))
 		await typeInMenu("redis:7")
@@ -160,7 +165,7 @@ describe("<ContainerImageWatcherConfigMenu>", { concurrent: false }, () => {
 	})
 
 	it("warns when the hook cannot be created", async ({ expect }) => {
-		mockEndpoint("POST", `/api/documents/${DOCUMENT_ID}/hooks`, (_c, event) => {
+		mockEndpoint("POST", HOOKS_WRITE_URL, (_c, event) => {
 			setResponseStatus(event, 500)
 
 			return { message: "boom" }
@@ -177,11 +182,9 @@ describe("<ContainerImageWatcherConfigMenu>", { concurrent: false }, () => {
 	})
 
 	it("updates the image an existing hook watches", async ({ expect }) => {
-		const calls = mockEndpoint(
-			"PUT",
-			`/api/documents/${DOCUMENT_ID}/hooks/${HOOK_ID}`,
-			() => ({ id: HOOK_ID }),
-		)
+		const calls = mockEndpoint("PUT", `${HOOKS_WRITE_URL}/${HOOK_ID}`, () => ({
+			id: HOOK_ID,
+		}))
 		await mountMenu({ hook: imageHook() })
 		await openHookSubMenu("Watching postgres:16.4-alpine")
 		await typeInMenu("redis:8")
@@ -197,15 +200,11 @@ describe("<ContainerImageWatcherConfigMenu>", { concurrent: false }, () => {
 	})
 
 	it("warns when the hook cannot be updated", async ({ expect }) => {
-		mockEndpoint(
-			"PUT",
-			`/api/documents/${DOCUMENT_ID}/hooks/${HOOK_ID}`,
-			(_c, event) => {
-				setResponseStatus(event, 500)
+		mockEndpoint("PUT", `${HOOKS_WRITE_URL}/${HOOK_ID}`, (_c, event) => {
+			setResponseStatus(event, 500)
 
-				return { message: "boom" }
-			},
-		)
+			return { message: "boom" }
+		})
 		await mountMenu({ hook: imageHook() })
 		await openHookSubMenu("Watching postgres:16.4-alpine")
 		await typeInMenu("redis:8")
@@ -220,7 +219,7 @@ describe("<ContainerImageWatcherConfigMenu>", { concurrent: false }, () => {
 	it("deletes the hook", async ({ expect }) => {
 		const calls = mockEndpoint(
 			"DELETE",
-			`/api/documents/${DOCUMENT_ID}/hooks/${HOOK_ID}`,
+			`${HOOKS_WRITE_URL}/${HOOK_ID}`,
 			() => null,
 		)
 		await mountMenu({ hook: imageHook() })
@@ -234,15 +233,11 @@ describe("<ContainerImageWatcherConfigMenu>", { concurrent: false }, () => {
 	})
 
 	it("warns when the hook cannot be deleted", async ({ expect }) => {
-		mockEndpoint(
-			"DELETE",
-			`/api/documents/${DOCUMENT_ID}/hooks/${HOOK_ID}`,
-			(_c, event) => {
-				setResponseStatus(event, 500)
+		mockEndpoint("DELETE", `${HOOKS_WRITE_URL}/${HOOK_ID}`, (_c, event) => {
+			setResponseStatus(event, 500)
 
-				return { message: "boom" }
-			},
-		)
+			return { message: "boom" }
+		})
 		await mountMenu({ hook: imageHook() })
 		await openHookSubMenu("Watching postgres:16.4-alpine")
 
@@ -299,11 +294,7 @@ describe("<ContainerImageWatcherConfigMenu>", { concurrent: false }, () => {
 
 	it("creates nothing while no page is open", async ({ expect }) => {
 		useEditorStore().updateActiveDocumentId(null)
-		const calls = mockEndpoint(
-			"POST",
-			`/api/documents/${DOCUMENT_ID}/hooks`,
-			() => ({ id: HOOK_ID }),
-		)
+		const calls = mockEndpoint("POST", HOOKS_WRITE_URL, () => ({ id: HOOK_ID }))
 		await mountMenu()
 		await openHookSubMenu(t(NEW_HOOK_LABEL))
 		await typeInMenu("redis:7")

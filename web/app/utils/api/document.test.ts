@@ -99,30 +99,22 @@ describe("defaultDocumentHookState", () => {
 		try {
 			expect(
 				defaultDocumentHookState(DocumentHookType.ScheduledReminder),
-			).toEqual({ lastActiveAt: new Date("2024-06-15T12:00:00Z") })
+			).toEqual({ startedAt: new Date("2024-06-15T12:00:00Z") })
 		} finally {
 			vi.useRealTimers()
 		}
 	})
 
-	it("stamps the url watcher state with the current time", ({ expect }) => {
-		vi.useFakeTimers()
-		vi.setSystemTime(new Date("2024-06-15T12:00:00Z"))
-
-		try {
-			expect(defaultDocumentHookState(DocumentHookType.URLWatcher)).toEqual({
-				lastCheckedAt: new Date("2024-06-15T12:00:00Z"),
-				status: "active",
-			})
-		} finally {
-			vi.useRealTimers()
-		}
+	it("returns a url watcher state with no watcher yet", ({ expect }) => {
+		expect(defaultDocumentHookState(DocumentHookType.URLWatcher)).toEqual({
+			watcherId: "",
+			lastChangedAt: null,
+		})
 	})
 
 	it("returns an empty checksum state for github tracking", ({ expect }) => {
 		expect(defaultDocumentHookState(DocumentHookType.GitHubTracking)).toEqual({
 			pathsChecksums: {},
-			status: "active",
 		})
 	})
 
@@ -132,7 +124,6 @@ describe("defaultDocumentHookState", () => {
 		expect(
 			defaultDocumentHookState(DocumentHookType.ContainerImageWatcher),
 		).toEqual({
-			status: "active",
 			digest: "",
 		})
 	})

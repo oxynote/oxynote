@@ -424,7 +424,7 @@ describe("createRoutes", () => {
 			const { app, core, flushDocument } = build()
 
 			const res = await app.request(
-				"/documents/doc1/branches",
+				"/documents/docdocdocdocdocdoc01/branches",
 				{
 					...json(null),
 					method: "POST",
@@ -443,12 +443,13 @@ describe("createRoutes", () => {
 			const { app, core, flushDocument } = build()
 
 			const res = await app.request(
-				"/documents/doc1/branches",
+				"/documents/docdocdocdocdocdoc01/branches",
 				{
 					...json(
 						{
 							branch: "draft",
-							sourceBranchId: "b1",
+							sourceBranchId:
+								"branchbranchbranch01",
 						},
 						"auth.session=abc",
 					),
@@ -462,13 +463,16 @@ describe("createRoutes", () => {
 			})
 			expect(
 				callOrder(flushDocument, core.createBranch),
-			).toEqual(["flush doc1-b1", "core"])
+			).toEqual([
+				"flush docdocdocdocdocdoc01-branchbranchbranch01",
+				"core",
+			])
 			const [documentId, request, options] =
 				core.createBranch.mock.calls[0] ?? []
-			expect(documentId).toBe("doc1")
+			expect(documentId).toBe("docdocdocdocdocdoc01")
 			expect(request?.body).toEqual({
 				branch: "draft",
-				sourceBranchId: "b1",
+				sourceBranchId: "branchbranchbranch01",
 			})
 			expect(options?.headers?.get("cookie")).toBe(
 				"auth.session=abc",
@@ -483,24 +487,31 @@ describe("createRoutes", () => {
 			const core = stubCore()
 			core.fetchBranches.mockResolvedValue([
 				{
-					branchId: "b1",
+					branchId: "branchbranchbranch01",
 					default: true,
 					protected: false,
 				},
 			])
 			const { app, flushDocument } = build({ core })
 
-			await app.request("/documents/doc1/branches", {
-				...json({
-					branch: "draft",
-					sourceBranchId: "b1",
-				}),
-				method: "POST",
-			})
+			await app.request(
+				"/documents/docdocdocdocdocdoc01/branches",
+				{
+					...json({
+						branch: "draft",
+						sourceBranchId:
+							"branchbranchbranch01",
+					}),
+					method: "POST",
+				},
+			)
 
 			expect(
 				flushDocument.mock.calls.map((call) => call[0]),
-			).toEqual(["doc1-b1", "doc1-default"])
+			).toEqual([
+				"docdocdocdocdocdoc01-branchbranchbranch01",
+				"docdocdocdocdocdoc01-default",
+			])
 		})
 
 		it("refuses the fork when the flush fails", async ({
@@ -514,11 +525,12 @@ describe("createRoutes", () => {
 			const { app, core } = build({ flushDocument })
 
 			const res = await app.request(
-				"/documents/doc1/branches",
+				"/documents/docdocdocdocdocdoc01/branches",
 				{
 					...json({
 						branch: "draft",
-						sourceBranchId: "b1",
+						sourceBranchId:
+							"branchbranchbranch01",
 					}),
 					method: "POST",
 				},
@@ -542,11 +554,12 @@ describe("createRoutes", () => {
 			const { app } = build({ core })
 
 			const res = await app.request(
-				"/documents/doc1/branches",
+				"/documents/docdocdocdocdocdoc01/branches",
 				{
 					...json({
 						branch: "draft",
-						sourceBranchId: "b1",
+						sourceBranchId:
+							"branchbranchbranch01",
 					}),
 					method: "POST",
 				},
@@ -564,7 +577,7 @@ describe("createRoutes", () => {
 			const { app, core, flushDocument } = build()
 
 			const res = await app.request(
-				"/documents/doc1/branches/b1",
+				"/documents/docdocdocdocdocdoc01/branches/branchbranchbranch01",
 				{
 					...json(null),
 					body: "not json",
@@ -585,18 +598,21 @@ describe("createRoutes", () => {
 			const { app, core, flushDocument } = build()
 
 			const res = await app.request(
-				"/documents/doc1/branches/b1",
+				"/documents/docdocdocdocdocdoc01/branches/branchbranchbranch01",
 				json({ protected: true }, "auth.session=abc"),
 			)
 
 			expect(res.status).toBe(200)
 			expect(
 				callOrder(flushDocument, core.updateBranch),
-			).toEqual(["flush doc1-b1", "core"])
+			).toEqual([
+				"flush docdocdocdocdocdoc01-branchbranchbranch01",
+				"core",
+			])
 			const [documentId, branchId, request, options] =
 				core.updateBranch.mock.calls[0] ?? []
-			expect(documentId).toBe("doc1")
-			expect(branchId).toBe("b1")
+			expect(documentId).toBe("docdocdocdocdocdoc01")
+			expect(branchId).toBe("branchbranchbranch01")
 			expect(request?.body).toEqual({ protected: true })
 			expect(options?.headers?.get("cookie")).toBe(
 				"auth.session=abc",
@@ -620,7 +636,7 @@ describe("createRoutes", () => {
 				const core = stubCore()
 				core.fetchBranches.mockResolvedValue([
 					{
-						branchId: "b1",
+						branchId: "branchbranchbranch01",
 						default: true,
 						protected: before,
 					},
@@ -630,7 +646,7 @@ describe("createRoutes", () => {
 				})
 
 				await app.request(
-					"/documents/doc1/branches/b1",
+					"/documents/docdocdocdocdocdoc01/branches/branchbranchbranch01",
 					json(body),
 				)
 
@@ -638,7 +654,10 @@ describe("createRoutes", () => {
 					resetConnections.mock.calls.map(
 						(call) => call[0],
 					),
-				).toEqual(["doc1-b1", "doc1-default"])
+				).toEqual([
+					"docdocdocdocdocdoc01-branchbranchbranch01",
+					"docdocdocdocdocdoc01-default",
+				])
 			},
 		)
 
@@ -657,7 +676,7 @@ describe("createRoutes", () => {
 				const core = stubCore()
 				core.fetchBranches.mockResolvedValue([
 					{
-						branchId: "b1",
+						branchId: "branchbranchbranch01",
 						default: false,
 						protected: false,
 					},
@@ -667,7 +686,7 @@ describe("createRoutes", () => {
 				})
 
 				const res = await app.request(
-					"/documents/doc1/branches/b1",
+					"/documents/docdocdocdocdocdoc01/branches/branchbranchbranch01",
 					json(body),
 				)
 
@@ -689,7 +708,7 @@ describe("createRoutes", () => {
 			const { app, resetConnections } = build({ core })
 
 			const res = await app.request(
-				"/documents/doc1/branches/b1",
+				"/documents/docdocdocdocdocdoc01/branches/branchbranchbranch01",
 				json({ protected: true }),
 			)
 
@@ -710,7 +729,7 @@ describe("createRoutes", () => {
 			})
 
 			const res = await app.request(
-				"/documents/doc1/branches/b1",
+				"/documents/docdocdocdocdocdoc01/branches/branchbranchbranch01",
 				json({ protected: true }),
 			)
 
@@ -729,7 +748,7 @@ describe("createRoutes", () => {
 			const { app, resetConnections } = build({ core })
 
 			const res = await app.request(
-				"/documents/doc1/branches/b1",
+				"/documents/docdocdocdocdocdoc01/branches/branchbranchbranch01",
 				json({ protected: true }),
 			)
 
@@ -748,7 +767,7 @@ describe("createRoutes", () => {
 			const { app, core, flushDocument } = build()
 
 			const res = await app.request(
-				"/documents/doc1/branches/b1",
+				"/documents/docdocdocdocdocdoc01/branches/branchbranchbranch01",
 				{
 					method: "DELETE",
 					headers: { Cookie: "auth.session=abc" },
@@ -759,8 +778,8 @@ describe("createRoutes", () => {
 			expect(flushDocument).toHaveBeenCalledTimes(0)
 			const [documentId, branchId, options] =
 				core.deleteBranch.mock.calls[0] ?? []
-			expect(documentId).toBe("doc1")
-			expect(branchId).toBe("b1")
+			expect(documentId).toBe("docdocdocdocdocdoc01")
+			expect(branchId).toBe("branchbranchbranch01")
 			expect(options?.headers?.get("cookie")).toBe(
 				"auth.session=abc",
 			)
@@ -771,15 +790,18 @@ describe("createRoutes", () => {
 		}) => {
 			const { app, resetConnections } = build()
 
-			await app.request("/documents/doc1/branches/b1", {
-				method: "DELETE",
-			})
+			await app.request(
+				"/documents/docdocdocdocdocdoc01/branches/branchbranchbranch01",
+				{
+					method: "DELETE",
+				},
+			)
 
 			expect(
 				resetConnections.mock.calls.map(
 					(call) => call[0],
 				),
-			).toEqual(["doc1-b1"])
+			).toEqual(["docdocdocdocdocdoc01-branchbranchbranch01"])
 		})
 
 		it("keeps the connections when core refuses the deletion", async ({
@@ -793,7 +815,7 @@ describe("createRoutes", () => {
 			const { app, resetConnections } = build({ core })
 
 			const res = await app.request(
-				"/documents/doc1/branches/b1",
+				"/documents/docdocdocdocdocdoc01/branches/branchbranchbranch01",
 				{ method: "DELETE" },
 			)
 
@@ -814,7 +836,7 @@ describe("createRoutes", () => {
 			const { app, resetConnections } = build({ core })
 
 			const res = await app.request(
-				"/documents/doc1/branches/b1",
+				"/documents/docdocdocdocdocdoc01/branches/branchbranchbranch01",
 				{ method: "DELETE" },
 			)
 
@@ -826,6 +848,253 @@ describe("createRoutes", () => {
 		})
 	})
 
+	describe("POST /documents/:documentId/hooks", () => {
+		it.for([
+			{ name: "a body that is not JSON", input: "not json" },
+			{ name: "a body missing branchId", input: "{}" },
+		])("rejects $name", async ({ input }, { expect }) => {
+			const { app, core, flushDocument } = build()
+
+			const res = await app.request(
+				"/documents/docdocdocdocdocdoc01/hooks",
+				{
+					...json(null),
+					method: "POST",
+					body: input,
+				},
+			)
+
+			expect(res.status).toBe(400)
+			expect(flushDocument).toHaveBeenCalledTimes(0)
+			expect(core.createHook).toHaveBeenCalledTimes(0)
+		})
+
+		it("flushes the branch before core records it", async ({
+			expect,
+		}) => {
+			const { app, core, flushDocument } = build()
+
+			const res = await app.request(
+				"/documents/docdocdocdocdocdoc01/hooks",
+				{
+					...json(
+						{
+							type: "scheduled-reminder",
+							branchId: "branchbranchbranch01",
+						},
+						"auth.session=abc",
+					),
+					method: "POST",
+				},
+			)
+
+			expect(res.status).toBe(201)
+			expect(await res.json()).toEqual({ id: "hook-1" })
+			expect(
+				callOrder(flushDocument, core.createHook),
+			).toEqual([
+				"flush docdocdocdocdocdoc01-branchbranchbranch01",
+				"core",
+			])
+			const [documentId, request, options] =
+				core.createHook.mock.calls[0] ?? []
+			expect(documentId).toBe("docdocdocdocdocdoc01")
+			expect(request?.body).toEqual({
+				type: "scheduled-reminder",
+				branchId: "branchbranchbranch01",
+			})
+			expect(options?.headers?.get("cookie")).toBe(
+				"auth.session=abc",
+			)
+		})
+
+		it("refuses the write when the flush fails", async ({
+			expect,
+		}) => {
+			const flushDocument = vi
+				.fn()
+				.mockRejectedValue(
+					new Error("core unreachable"),
+				)
+			const { app, core } = build({ flushDocument })
+
+			const res = await app.request(
+				"/documents/docdocdocdocdocdoc01/hooks",
+				{
+					...json({
+						branchId: "branchbranchbranch01",
+					}),
+					method: "POST",
+				},
+			)
+
+			expect(res.status).toBe(500)
+			expect(core.createHook).toHaveBeenCalledTimes(0)
+		})
+
+		it("answers with core's refusal", async ({ expect }) => {
+			const core = stubCore()
+			core.createHook.mockRejectedValue({
+				response: {
+					status: 404,
+					data: {
+						code: "document.hook_block_not_found",
+					},
+				},
+			})
+			const { app } = build({ core })
+
+			const res = await app.request(
+				"/documents/docdocdocdocdocdoc01/hooks",
+				{
+					...json({
+						branchId: "branchbranchbranch01",
+					}),
+					method: "POST",
+				},
+			)
+
+			expect(res.status).toBe(404)
+			expect(await res.json()).toEqual({
+				code: "document.hook_block_not_found",
+			})
+		})
+	})
+
+	describe("PUT /documents/:documentId/hooks/:hookId", () => {
+		it.for([
+			{
+				name: "a request missing branchId",
+				path: "/documents/docdocdocdocdocdoc01/hooks/hookhookhookhookho01",
+				input: "{}",
+			},
+			{
+				name: "a body that is not JSON",
+				path: "/documents/docdocdocdocdocdoc01/hooks/hookhookhookhookho01?branchId=branchbranchbranch01",
+				input: "not json",
+			},
+			// the hook id would otherwise walk the core path onto the
+			// unauthenticated branch write.
+			{
+				name: "a hook id that is not an xid",
+				path: "/documents/docdocdocdocdocdoc01/hooks/..%2Fbranch%2Fbranchbranchbranch01?branchId=branchbranchbranch01",
+				input: "{}",
+			},
+		])("rejects $name", async ({ path, input }, { expect }) => {
+			const { app, core, flushDocument } = build()
+
+			const res = await app.request(path, {
+				...json(null),
+				method: "PUT",
+				body: input,
+			})
+
+			expect(res.status).toBe(400)
+			expect(flushDocument).toHaveBeenCalledTimes(0)
+			expect(core.updateHook).toHaveBeenCalledTimes(0)
+		})
+
+		it("flushes the branch before core records it", async ({
+			expect,
+		}) => {
+			const { app, core, flushDocument } = build()
+
+			const res = await app.request(
+				"/documents/docdocdocdocdocdoc01/hooks/hookhookhookhookho01?branchId=branchbranchbranch01",
+				{
+					...json(
+						{ settings: {} },
+						"auth.session=abc",
+					),
+					method: "PUT",
+				},
+			)
+
+			expect(res.status).toBe(200)
+			expect(
+				callOrder(flushDocument, core.updateHook),
+			).toEqual([
+				"flush docdocdocdocdocdoc01-branchbranchbranch01",
+				"core",
+			])
+			const [documentId, hookId, branchId, request, options] =
+				core.updateHook.mock.calls[0] ?? []
+			expect(documentId).toBe("docdocdocdocdocdoc01")
+			expect(hookId).toBe("hookhookhookhookho01")
+			expect(branchId).toBe("branchbranchbranch01")
+			expect(request?.body).toEqual({ settings: {} })
+			expect(options?.headers?.get("cookie")).toBe(
+				"auth.session=abc",
+			)
+		})
+	})
+
+	describe("DELETE /documents/:documentId/hooks/:hookId", () => {
+		it("rejects a request missing branchId", async ({ expect }) => {
+			const { app, core, flushDocument } = build()
+
+			const res = await app.request(
+				"/documents/docdocdocdocdocdoc01/hooks/hookhookhookhookho01",
+				{
+					method: "DELETE",
+				},
+			)
+
+			expect(res.status).toBe(400)
+			expect(flushDocument).toHaveBeenCalledTimes(0)
+			expect(core.deleteHook).toHaveBeenCalledTimes(0)
+		})
+
+		it("flushes the branch before core records it", async ({
+			expect,
+		}) => {
+			const { app, core, flushDocument } = build()
+
+			const res = await app.request(
+				"/documents/docdocdocdocdocdoc01/hooks/hookhookhookhookho01?branchId=branchbranchbranch01",
+				{
+					method: "DELETE",
+					headers: { Cookie: "auth.session=abc" },
+				},
+			)
+
+			expect(res.status).toBe(204)
+			expect(
+				callOrder(flushDocument, core.deleteHook),
+			).toEqual([
+				"flush docdocdocdocdocdoc01-branchbranchbranch01",
+				"core",
+			])
+			const [documentId, hookId, branchId, options] =
+				core.deleteHook.mock.calls[0] ?? []
+			expect(documentId).toBe("docdocdocdocdocdoc01")
+			expect(hookId).toBe("hookhookhookhookho01")
+			expect(branchId).toBe("branchbranchbranch01")
+			expect(options?.headers?.get("cookie")).toBe(
+				"auth.session=abc",
+			)
+		})
+
+		it("answers with core's refusal", async ({ expect }) => {
+			const core = stubCore()
+			core.deleteHook.mockResolvedValue({
+				status: 404,
+				data: { code: "document.hook_mismatch" },
+			})
+			const { app } = build({ core })
+
+			const res = await app.request(
+				"/documents/docdocdocdocdocdoc01/hooks/hookhookhookhookho01?branchId=branchbranchbranch01",
+				{ method: "DELETE" },
+			)
+
+			expect(res.status).toBe(404)
+			expect(await res.json()).toEqual({
+				code: "document.hook_mismatch",
+			})
+		})
+	})
+
 	describe("PUT /documents/:documentId/merge", () => {
 		it("flushes the source and then the target before core merges", async ({
 			expect,
@@ -833,13 +1102,20 @@ describe("createRoutes", () => {
 			const { app, core, flushDocument } = build()
 
 			await app.request(
-				"/documents/doc1/merge",
-				json({ fromBranchId: "b2", toBranchId: "b1" }),
+				"/documents/docdocdocdocdocdoc01/merge",
+				json({
+					fromBranchId: "b2",
+					toBranchId: "branchbranchbranch01",
+				}),
 			)
 
 			expect(
 				callOrder(flushDocument, core.mergeBranches),
-			).toEqual(["flush doc1-b2", "flush doc1-b1", "core"])
+			).toEqual([
+				"flush docdocdocdocdocdoc01-b2",
+				"flush docdocdocdocdocdoc01-branchbranchbranch01",
+				"core",
+			])
 		})
 
 		it("refuses the merge when a flush fails", async ({
@@ -853,8 +1129,11 @@ describe("createRoutes", () => {
 			const { app, core } = build({ flushDocument })
 
 			const res = await app.request(
-				"/documents/doc1/merge",
-				json({ fromBranchId: "b2", toBranchId: "b1" }),
+				"/documents/docdocdocdocdocdoc01/merge",
+				json({
+					fromBranchId: "b2",
+					toBranchId: "branchbranchbranch01",
+				}),
 			)
 
 			expect(res.status).toBe(500)
@@ -866,7 +1145,7 @@ describe("createRoutes", () => {
 			{ name: "a body that is not an object", input: "null" },
 			{
 				name: "a body missing fromBranchId",
-				input: '{"toBranchId":"b1"}',
+				input: '{"toBranchId":"branchbranchbranch01"}',
 			},
 			{
 				name: "a body missing toBranchId",
@@ -879,11 +1158,17 @@ describe("createRoutes", () => {
 		])("rejects $name", async ({ input }, { expect }) => {
 			const { app, core } = build()
 
-			const res = await app.request("/documents/doc1/merge", {
-				method: "PUT",
-				body: input,
-				headers: { "Content-Type": "application/json" },
-			})
+			const res = await app.request(
+				"/documents/docdocdocdocdocdoc01/merge",
+				{
+					method: "PUT",
+					body: input,
+					headers: {
+						"Content-Type":
+							"application/json",
+					},
+				},
+			)
 
 			expect(res.status).toBe(400)
 			expect(core.mergeBranches).toHaveBeenCalledTimes(0)
@@ -896,24 +1181,28 @@ describe("createRoutes", () => {
 		}) => {
 			const { app, core } = build()
 
-			await app.request("/documents/doc1/merge", {
-				method: "PUT",
-				body: JSON.stringify({
-					fromBranchId: "b2",
-					toBranchId: "b1",
-				}),
-				headers: {
-					"Content-Type": "application/json",
-					Cookie: "auth.session=abc",
+			await app.request(
+				"/documents/docdocdocdocdocdoc01/merge",
+				{
+					method: "PUT",
+					body: JSON.stringify({
+						fromBranchId: "b2",
+						toBranchId: "branchbranchbranch01",
+					}),
+					headers: {
+						"Content-Type":
+							"application/json",
+						Cookie: "auth.session=abc",
+					},
 				},
-			})
+			)
 
 			expect(core.mergeBranches).toHaveBeenCalledTimes(1)
 			const [documentId, from, to, options] =
 				core.mergeBranches.mock.calls[0] ?? []
-			expect(documentId).toBe("doc1")
+			expect(documentId).toBe("docdocdocdocdocdoc01")
 			expect(from).toBe("b2")
-			expect(to).toBe("b1")
+			expect(to).toBe("branchbranchbranch01")
 			expect(options?.headers?.get("cookie")).toBe(
 				"auth.session=abc",
 			)
@@ -924,7 +1213,12 @@ describe("createRoutes", () => {
 		}) => {
 			const target = seededDocument("Before the merge")
 			const { registry } = stubRegistry({
-				documents: new Map([["doc1-b1", target]]),
+				documents: new Map([
+					[
+						"docdocdocdocdocdoc01-branchbranchbranch01",
+						target,
+					],
+				]),
 			})
 			const core = stubCore()
 			core.mergeBranches.mockResolvedValue({
@@ -953,14 +1247,20 @@ describe("createRoutes", () => {
 			})
 			const { app } = build({ hocuspocus: registry, core })
 
-			await app.request("/documents/doc1/merge", {
-				method: "PUT",
-				body: JSON.stringify({
-					fromBranchId: "b2",
-					toBranchId: "b1",
-				}),
-				headers: { "Content-Type": "application/json" },
-			})
+			await app.request(
+				"/documents/docdocdocdocdocdoc01/merge",
+				{
+					method: "PUT",
+					body: JSON.stringify({
+						fromBranchId: "b2",
+						toBranchId: "branchbranchbranch01",
+					}),
+					headers: {
+						"Content-Type":
+							"application/json",
+					},
+				},
+			)
 
 			const content = fragmentXml(target, "content")
 			expect(content).toContain("After the merge")
@@ -974,7 +1274,12 @@ describe("createRoutes", () => {
 		}) => {
 			const target = seededDocument("Before the merge")
 			const { registry } = stubRegistry({
-				documents: new Map([["doc1-b1", target]]),
+				documents: new Map([
+					[
+						"docdocdocdocdocdoc01-branchbranchbranch01",
+						target,
+					],
+				]),
 			})
 			const core = stubCore()
 			core.mergeBranches.mockResolvedValue({
@@ -995,14 +1300,20 @@ describe("createRoutes", () => {
 				},
 			)
 
-			await app.request("/documents/doc1/merge", {
-				method: "PUT",
-				body: JSON.stringify({
-					fromBranchId: "b2",
-					toBranchId: "b1",
-				}),
-				headers: { "Content-Type": "application/json" },
-			})
+			await app.request(
+				"/documents/docdocdocdocdocdoc01/merge",
+				{
+					method: "PUT",
+					body: JSON.stringify({
+						fromBranchId: "b2",
+						toBranchId: "branchbranchbranch01",
+					}),
+					headers: {
+						"Content-Type":
+							"application/json",
+					},
+				},
+			)
 
 			expect(origins).toHaveLength(1)
 			expect(
@@ -1021,24 +1332,35 @@ describe("createRoutes", () => {
 		}) => {
 			const target = seededDocument("Before the merge")
 			const { registry } = stubRegistry({
-				documents: new Map([["doc1-b1", target]]),
+				documents: new Map([
+					[
+						"docdocdocdocdocdoc01-branchbranchbranch01",
+						target,
+					],
+				]),
 			})
 			const { app, core } = build({ hocuspocus: registry })
 
-			await app.request("/documents/doc1/merge", {
-				method: "PUT",
-				body: JSON.stringify({
-					fromBranchId: "b2",
-					toBranchId: "b1",
-				}),
-				headers: { "Content-Type": "application/json" },
-			})
+			await app.request(
+				"/documents/docdocdocdocdocdoc01/merge",
+				{
+					method: "PUT",
+					body: JSON.stringify({
+						fromBranchId: "b2",
+						toBranchId: "branchbranchbranch01",
+					}),
+					headers: {
+						"Content-Type":
+							"application/json",
+					},
+				},
+			)
 
 			expect(core.storeBranchContent).toHaveBeenCalledTimes(1)
 			const [documentId, branchId, update] =
 				core.storeBranchContent.mock.calls[0] ?? []
-			expect(documentId).toBe("doc1")
-			expect(branchId).toBe("b1")
+			expect(documentId).toBe("docdocdocdocdocdoc01")
+			expect(branchId).toBe("branchbranchbranch01")
 			expect(update?.system).toBe(true)
 			expect(update?.maintainers).toEqual([])
 		})
@@ -1048,14 +1370,20 @@ describe("createRoutes", () => {
 		}) => {
 			const { app, core } = build()
 
-			const res = await app.request("/documents/doc1/merge", {
-				method: "PUT",
-				body: JSON.stringify({
-					fromBranchId: "b2",
-					toBranchId: "b1",
-				}),
-				headers: { "Content-Type": "application/json" },
-			})
+			const res = await app.request(
+				"/documents/docdocdocdocdocdoc01/merge",
+				{
+					method: "PUT",
+					body: JSON.stringify({
+						fromBranchId: "b2",
+						toBranchId: "branchbranchbranch01",
+					}),
+					headers: {
+						"Content-Type":
+							"application/json",
+					},
+				},
+			)
 
 			expect(res.status).toBe(200)
 			expect(core.storeBranchContent).toHaveBeenCalledTimes(0)
@@ -1066,7 +1394,12 @@ describe("createRoutes", () => {
 		}) => {
 			const target = seededDocument("Before the merge")
 			const { registry } = stubRegistry({
-				documents: new Map([["doc1-b1", target]]),
+				documents: new Map([
+					[
+						"docdocdocdocdocdoc01-branchbranchbranch01",
+						target,
+					],
+				]),
 			})
 			const core = stubCore()
 			core.mergeBranches.mockResolvedValue({
@@ -1079,14 +1412,20 @@ describe("createRoutes", () => {
 			})
 			const { app } = build({ hocuspocus: registry, core })
 
-			const res = await app.request("/documents/doc1/merge", {
-				method: "PUT",
-				body: JSON.stringify({
-					fromBranchId: "b2",
-					toBranchId: "b1",
-				}),
-				headers: { "Content-Type": "application/json" },
-			})
+			const res = await app.request(
+				"/documents/docdocdocdocdocdoc01/merge",
+				{
+					method: "PUT",
+					body: JSON.stringify({
+						fromBranchId: "b2",
+						toBranchId: "branchbranchbranch01",
+					}),
+					headers: {
+						"Content-Type":
+							"application/json",
+					},
+				},
+			)
 
 			expect(res.status).toBe(409)
 			expect(fragmentXml(target, "content")).toContain(
@@ -1100,7 +1439,12 @@ describe("createRoutes", () => {
 		}) => {
 			const target = seededDocument("Before the merge")
 			const { registry } = stubRegistry({
-				documents: new Map([["doc1-b1", target]]),
+				documents: new Map([
+					[
+						"docdocdocdocdocdoc01-branchbranchbranch01",
+						target,
+					],
+				]),
 			})
 			const core = stubCore()
 			core.storeBranchContent.mockRejectedValue(
@@ -1108,14 +1452,20 @@ describe("createRoutes", () => {
 			)
 			const { app } = build({ hocuspocus: registry, core })
 
-			const res = await app.request("/documents/doc1/merge", {
-				method: "PUT",
-				body: JSON.stringify({
-					fromBranchId: "b2",
-					toBranchId: "b1",
-				}),
-				headers: { "Content-Type": "application/json" },
-			})
+			const res = await app.request(
+				"/documents/docdocdocdocdocdoc01/merge",
+				{
+					method: "PUT",
+					body: JSON.stringify({
+						fromBranchId: "b2",
+						toBranchId: "branchbranchbranch01",
+					}),
+					headers: {
+						"Content-Type":
+							"application/json",
+					},
+				},
+			)
 
 			expect(res.status).toBe(200)
 		})
@@ -1135,14 +1485,20 @@ describe("createRoutes", () => {
 			})
 			const { app } = build({ core })
 
-			const res = await app.request("/documents/doc1/merge", {
-				method: "PUT",
-				body: JSON.stringify({
-					fromBranchId: "b2",
-					toBranchId: "b1",
-				}),
-				headers: { "Content-Type": "application/json" },
-			})
+			const res = await app.request(
+				"/documents/docdocdocdocdocdoc01/merge",
+				{
+					method: "PUT",
+					body: JSON.stringify({
+						fromBranchId: "b2",
+						toBranchId: "branchbranchbranch01",
+					}),
+					headers: {
+						"Content-Type":
+							"application/json",
+					},
+				},
+			)
 
 			expect(res.status).toBe(403)
 			expect(await res.json()).toEqual({
@@ -1174,16 +1530,20 @@ describe("createRoutes", () => {
 			core.mergeBranches.mockRejectedValue(input)
 			const { app } = build({ core })
 
-			const res = await app.request("/documents/doc1/merge", {
-				method: "PUT",
-				body: JSON.stringify({
-					fromBranchId: "b2",
-					toBranchId: "b1",
-				}),
-				headers: {
-					"Content-Type": "application/json",
+			const res = await app.request(
+				"/documents/docdocdocdocdocdoc01/merge",
+				{
+					method: "PUT",
+					body: JSON.stringify({
+						fromBranchId: "b2",
+						toBranchId: "branchbranchbranch01",
+					}),
+					headers: {
+						"Content-Type":
+							"application/json",
+					},
 				},
-			})
+			)
 
 			expect(res.status).toBe(500)
 			expect(await res.json()).toEqual({
@@ -1457,8 +1817,43 @@ describe("createRoutes", () => {
 		})
 	})
 
+	describe("POST /internal/documents/:documentId/branches/:branchId/flush", () => {
+		it("flushes the branch and answers once core has it", async ({
+			expect,
+		}) => {
+			const { app, flushDocument } = build()
+
+			const res = await app.request(
+				"/internal/documents/docdocdocdocdocdoc01/branches/branchbranchbranch01/flush",
+				{ method: "POST" },
+			)
+
+			expect(res.status).toBe(204)
+			expect(
+				flushDocument.mock.calls.map((call) => call[0]),
+			).toEqual(["docdocdocdocdocdoc01-branchbranchbranch01"])
+		})
+
+		it("reports a flush that failed", async ({ expect }) => {
+			const flushDocument = vi
+				.fn()
+				.mockRejectedValue(
+					new Error("core unreachable"),
+				)
+			const { app } = build({ flushDocument })
+
+			const res = await app.request(
+				"/internal/documents/docdocdocdocdocdoc01/branches/branchbranchbranch01/flush",
+				{ method: "POST" },
+			)
+
+			expect(res.status).toBe(500)
+		})
+	})
+
 	describe("POST /internal/documents/:documentId/branches/:branchId/operations", () => {
-		const path = "/internal/documents/doc1/branches/b1/operations"
+		const path =
+			"/internal/documents/docdocdocdocdocdoc01/branches/branchbranchbranch01/operations"
 
 		it.for([
 			{ name: "a body that is not JSON", input: "not json" },
@@ -1516,7 +1911,7 @@ describe("createRoutes", () => {
 				errors: [],
 			})
 			expect(openDirectConnection).toHaveBeenCalledWith(
-				"doc1-b1",
+				"docdocdocdocdocdoc01-branchbranchbranch01",
 				{},
 			)
 			expect(doc.getText("icon").toJSON()).toBe(
@@ -1531,7 +1926,12 @@ describe("createRoutes", () => {
 			const doc = new Y.Doc()
 			const { registry, openDirectConnection } = stubRegistry(
 				{
-					documents: new Map([["doc1-b1", doc]]),
+					documents: new Map([
+						[
+							"docdocdocdocdocdoc01-branchbranchbranch01",
+							doc,
+						],
+					]),
 					transact: (fn) => {
 						fn(doc)
 
@@ -1557,7 +1957,7 @@ describe("createRoutes", () => {
 
 			expect(res.status).toBe(200)
 			expect(openDirectConnection).toHaveBeenCalledWith(
-				"doc1-b1",
+				"docdocdocdocdocdoc01-branchbranchbranch01",
 				{ system: true },
 			)
 		})
@@ -1593,7 +1993,10 @@ describe("createRoutes", () => {
 				const { registry, openDirectConnection } =
 					stubRegistry({
 						documents: new Map([
-							["doc1-b1", doc],
+							[
+								"docdocdocdocdocdoc01-branchbranchbranch01",
+								doc,
+							],
 						]),
 						transact: (fn) => {
 							fn(doc)
@@ -1622,7 +2025,10 @@ describe("createRoutes", () => {
 
 				expect(
 					openDirectConnection,
-				).toHaveBeenCalledWith("doc1-b1", {})
+				).toHaveBeenCalledWith(
+					"docdocdocdocdocdoc01-branchbranchbranch01",
+					{},
+				)
 			},
 		)
 
@@ -1632,7 +2038,12 @@ describe("createRoutes", () => {
 			const doc = new Y.Doc()
 			const { registry, openDirectConnection } = stubRegistry(
 				{
-					documents: new Map([["doc1-b1", doc]]),
+					documents: new Map([
+						[
+							"docdocdocdocdocdoc01-branchbranchbranch01",
+							doc,
+						],
+					]),
 					transact: (fn) => {
 						fn(doc)
 
@@ -1657,7 +2068,7 @@ describe("createRoutes", () => {
 			})
 
 			expect(openDirectConnection).toHaveBeenCalledWith(
-				"doc1-b1",
+				"docdocdocdocdocdoc01-branchbranchbranch01",
 				{ userId: "user-1" },
 			)
 		})
@@ -1668,7 +2079,12 @@ describe("createRoutes", () => {
 			const doc = new Y.Doc()
 			const { registry, openDirectConnection } = stubRegistry(
 				{
-					documents: new Map([["doc1-b1", doc]]),
+					documents: new Map([
+						[
+							"docdocdocdocdocdoc01-branchbranchbranch01",
+							doc,
+						],
+					]),
 					transact: (fn) => {
 						fn(doc)
 
@@ -1694,7 +2110,7 @@ describe("createRoutes", () => {
 			})
 
 			expect(openDirectConnection).toHaveBeenCalledWith(
-				"doc1-b1",
+				"docdocdocdocdocdoc01-branchbranchbranch01",
 				{ system: true },
 			)
 		})

@@ -46,9 +46,9 @@ export interface MergedDocument {
 	icon: string
 }
 
-// the branch requests this service forwards for the web client. Their
-// bodies are core's to validate, so they travel through untyped.
-interface BranchRequest {
+// the branch and hook requests this service forwards for the web client.
+// Their bodies are core's to validate, so they travel through untyped.
+interface ForwardedRequest {
 	body: unknown
 }
 
@@ -115,17 +115,35 @@ export interface CoreClient {
 	): Promise<{ status: number; data: MergedDocument }>
 	createBranch(
 		documentId: string,
-		request: BranchRequest,
+		request: ForwardedRequest,
 		options: RequestOptions,
 	): Promise<HttpResponse>
 	updateBranch(
 		documentId: string,
 		branchId: string,
-		request: BranchRequest,
+		request: ForwardedRequest,
 		options: RequestOptions,
 	): Promise<HttpResponse>
 	deleteBranch(
 		documentId: string,
+		branchId: string,
+		options: RequestOptions,
+	): Promise<HttpResponse>
+	createHook(
+		documentId: string,
+		request: ForwardedRequest,
+		options: RequestOptions,
+	): Promise<HttpResponse>
+	updateHook(
+		documentId: string,
+		hookId: string,
+		branchId: string,
+		request: ForwardedRequest,
+		options: RequestOptions,
+	): Promise<HttpResponse>
+	deleteHook(
+		documentId: string,
+		hookId: string,
 		branchId: string,
 		options: RequestOptions,
 	): Promise<HttpResponse>
@@ -147,19 +165,19 @@ export function createCoreClient(
 
 		async initializeOrganization(organizationId) {
 			await http.post(
-				`${internal}/organizations/${organizationId}/initialize`,
+				`${internal}/organizations/${encodeURIComponent(organizationId)}/initialize`,
 			)
 		},
 
 		async teardownOrganization(organizationId) {
 			await http.post(
-				`${internal}/organizations/${organizationId}/teardown`,
+				`${internal}/organizations/${encodeURIComponent(organizationId)}/teardown`,
 			)
 		},
 
 		async fetchBranches(documentId) {
 			const response = await http.get(
-				`${internal}/documents/${documentId}/branches`,
+				`${internal}/documents/${encodeURIComponent(documentId)}/branches`,
 			)
 
 			return response.data as BranchSummary[]
@@ -167,7 +185,7 @@ export function createCoreClient(
 
 		async fetchBranchContent(documentId, branchId) {
 			const response = await http.get(
-				`${internal}/documents/${documentId}/branch/${branchId}`,
+				`${internal}/documents/${encodeURIComponent(documentId)}/branch/${encodeURIComponent(branchId)}`,
 			)
 
 			return response.data as BranchContent
@@ -175,7 +193,7 @@ export function createCoreClient(
 
 		async storeBranchContent(documentId, branchId, update) {
 			await http.put(
-				`${internal}/documents/${documentId}/branch/${branchId}`,
+				`${internal}/documents/${encodeURIComponent(documentId)}/branch/${encodeURIComponent(branchId)}`,
 				update,
 			)
 		},
@@ -186,7 +204,7 @@ export function createCoreClient(
 		// with core's status when they may not.
 		async verifyDocumentAccess(documentId, options) {
 			await http.get(
-				`${baseUrl}/api/documents/${documentId}/access`,
+				`${baseUrl}/api/documents/${encodeURIComponent(documentId)}/access`,
 				options,
 			)
 		},
@@ -201,7 +219,7 @@ export function createCoreClient(
 			options,
 		) {
 			const response = await http.put(
-				`${internal}/documents/${documentId}/merge`,
+				`${internal}/documents/${encodeURIComponent(documentId)}/merge`,
 				{ fromBranchId, toBranchId },
 				options,
 			)
@@ -214,7 +232,7 @@ export function createCoreClient(
 
 		async createBranch(documentId, request, options) {
 			return http.post(
-				`${internal}/documents/${documentId}/branches`,
+				`${internal}/documents/${encodeURIComponent(documentId)}/branches`,
 				request.body,
 				options,
 			)
@@ -222,7 +240,7 @@ export function createCoreClient(
 
 		async updateBranch(documentId, branchId, request, options) {
 			return http.put(
-				`${internal}/documents/${documentId}/branches/${branchId}`,
+				`${internal}/documents/${encodeURIComponent(documentId)}/branches/${encodeURIComponent(branchId)}`,
 				request.body,
 				options,
 			)
@@ -230,7 +248,36 @@ export function createCoreClient(
 
 		async deleteBranch(documentId, branchId, options) {
 			return http.delete(
-				`${internal}/documents/${documentId}/branches/${branchId}`,
+				`${internal}/documents/${encodeURIComponent(documentId)}/branches/${encodeURIComponent(branchId)}`,
+				options,
+			)
+		},
+
+		async createHook(documentId, request, options) {
+			return http.post(
+				`${internal}/documents/${encodeURIComponent(documentId)}/hooks`,
+				request.body,
+				options,
+			)
+		},
+
+		async updateHook(
+			documentId,
+			hookId,
+			branchId,
+			request,
+			options,
+		) {
+			return http.put(
+				`${internal}/documents/${encodeURIComponent(documentId)}/hooks/${encodeURIComponent(hookId)}?branchId=${encodeURIComponent(branchId)}`,
+				request.body,
+				options,
+			)
+		},
+
+		async deleteHook(documentId, hookId, branchId, options) {
+			return http.delete(
+				`${internal}/documents/${encodeURIComponent(documentId)}/hooks/${encodeURIComponent(hookId)}?branchId=${encodeURIComponent(branchId)}`,
 				options,
 			)
 		},

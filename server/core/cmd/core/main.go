@@ -302,6 +302,8 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 	simulationChecker := simulation.NewChecker(log, dbc, datasourceMan, editClient)
 	blockRunner := blockrun.NewRunner(dbc, simulationChecker)
 
+	hooksMan := hookMan.NewManager(log, dbc, githubMan, webchangeClient, notifMan)
+
 	assistantMan := assistant.NewManager(
 		log,
 		dbc,
@@ -315,6 +317,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 		datasourceMan,
 		githubMan,
 		webchangeClient,
+		hooksMan,
 		string(assistantOpts.Provider),
 	)
 
@@ -360,6 +363,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 		githubMan,
 		slackMan,
 		webchangeClient,
+		hooksMan,
 		searchIndex,
 		searchJobMan,
 		notifMan,
@@ -371,7 +375,6 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 		return
 	}
 
-	hooksMan := hookMan.NewManager(log, dbc, githubMan, webchangeClient, notifMan)
 	filesMan := fileMan.NewManager(log, dbc, storageClient, fileMan.Options{
 		HistoryRetention: documentHistoryRetention,
 	})

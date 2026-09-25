@@ -5,6 +5,7 @@ import (
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
+	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 )
@@ -45,6 +46,31 @@ func Test_NewDocumentHookTriggeredNotification(t *testing.T) {
 			MetaKeyBlockID:    null.StringFrom("blk1"),
 			MetaKeyType:       hook.TypeScheduledReminder,
 			MetaKeyBranchID:   branchID,
+		},
+	}, nc)
+}
+
+func Test_NewDocumentHookNeedsAttentionNotification(t *testing.T) {
+	t.Parallel()
+
+	documentID, branchID := xid.New(), xid.New()
+
+	nc := NewDocumentHookNeedsAttentionNotification(
+		documentID,
+		hook.TypeGithubTracking,
+		null.StringFrom("blk1"),
+		branchID,
+		processor.GithubTrackingStatusRepositoryNotFound,
+	)
+
+	assert.Equal(t, Core{
+		Code: NotificationDocumentHookNeedsAttention,
+		Metadata: Metadata{
+			MetaKeyDocumentID: documentID,
+			MetaKeyBlockID:    null.StringFrom("blk1"),
+			MetaKeyType:       hook.TypeGithubTracking,
+			MetaKeyBranchID:   branchID,
+			MetaKeyStatus:     processor.GithubTrackingStatusRepositoryNotFound,
 		},
 	}, nc)
 }

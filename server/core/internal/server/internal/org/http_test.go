@@ -1005,6 +1005,7 @@ func teardownHook(typ hook.Type) hook.Hook {
 		OrganizationID: null.StringFrom("org2"),
 		BranchID:       null.ValueFrom(xid.New()),
 		Settings:       processor.Settings(`{"scale":"linear"}`),
+		State:          null.ValueFrom(processor.State(`{}`)),
 	}
 }
 

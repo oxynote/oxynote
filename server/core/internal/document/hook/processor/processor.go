@@ -5,15 +5,63 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/oxynote/oxynote/server/core/internal/apps/github"
 	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
+	"github.com/shopspring/decimal"
 )
+
+// Status tells whether a processor could check what it watches. Only an
+// active result carries a score and a state.
+type Status string
+
+const (
+	// StatusActive indicates that the processor checked what it watches.
+	StatusActive Status = "active"
+
+	// StatusUnconfigured indicates that the integration the processor needs
+	// is not configured on this deployment.
+	StatusUnconfigured Status = "unconfigured"
+)
+
+// Result is the outcome of a processor run.
+type Result struct {
+	// Score is the freshness score. It is meaningful only when active.
+	Score decimal.Decimal
+
+	// State is the processor's new state. It is meaningful only when
+	// active.
+	State State
+
+	// Status tells whether the check could run.
+	Status Status
+}
+
+// inactive returns the result of a run that could not check its target.
+func inactive(status Status) Result {
+	return Result{Status: status}
+}
+
+// active returns the result of a run that checked its target.
+func active(score decimal.Decimal, state any) (Result, error) {
+	raw, err := json.Marshal(state)
+	if err != nil {
+		return Result{}, fmt.Errorf("marshaling state: %w", err)
+	}
+
+	return Result{
+		Score:  score,
+		State:  raw,
+		Status: StatusActive,
+	}, nil
+}
 
 // Input represents an input that provides state information
 // for processing freshness hooks.
 type Input interface {
-	// State returns the state of the input in JSON format.
+	// State should return the state of the input in JSON format, or nil
+	// for a hook that was never set up.
 	State() State
 
 	// Github should return a GitHub client interface.

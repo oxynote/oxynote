@@ -18,6 +18,7 @@ import (
 	assistantCore "github.com/oxynote/oxynote/server/core/internal/assistant"
 	"github.com/oxynote/oxynote/server/core/internal/buildinfo"
 	datasourceCore "github.com/oxynote/oxynote/server/core/internal/datasource"
+	hookCore "github.com/oxynote/oxynote/server/core/internal/document/hook"
 	notificationCore "github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/assistant"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
@@ -142,6 +143,7 @@ func NewServer(
 	githubMan *githubCore.Manager,
 	slackMan *slackCore.Manager,
 	webchangeClient *webchange.Client,
+	hookMan HookManager,
 	searcher document.Searcher,
 	searchTrigger SearchTrigger,
 	notifier Notifier,
@@ -175,11 +177,11 @@ func NewServer(
 		searchTrigger,
 		opts.PublicURL,
 	)
-	srv.handlers.document = document.NewHandler(log, db, githubMan, webchangeClient, searcher, searchTrigger, notifier, storageClient)
+	srv.handlers.document = document.NewHandler(log, db, githubMan, webchangeClient, hookMan, searcher, searchTrigger, notifier, storageClient)
 	srv.handlers.tag = tag.NewHandler(log, db)
 	srv.handlers.comment = comment.NewHandler(log, db, notifier)
 	srv.handlers.files = files.NewHandler(log, db, storageClient, opts.PublicURL)
-	srv.handlers.hook = hook.NewHandler(log, db, githubMan, webchangeClient)
+	srv.handlers.hook = hook.NewHandler(log, db, hookMan)
 
 	// The assistant's CRUD tools mutate the document tree directly
 	// via the DB layer, bypassing the HTTP handlers that normally
@@ -189,6 +191,9 @@ func NewServer(
 	assistantMan.SetTreeNotifier(srv.handlers.document)
 	assistantMan.SetTagNotifier(srv.handlers.tag)
 	assistantMan.SetHookNotifier(srv.handlers.hook)
+	hookMan.OnHookChange(func(h hookCore.Hook) {
+		srv.handlers.hook.NotifyHooksChange(h.OrganizationID.String, h.DocumentID, h.BranchID)
+	})
 
 	// the MCP handler serves the assistant's tool registry over the
 	// Model Context Protocol; it must be built after the tree notifier
@@ -359,6 +364,19 @@ type DB interface {
 	datasource.DB
 	mcp.DB
 	tag.DB
+}
+
+// HookManager runs the hook writes and sets up the hooks a branch operation
+// copied. The hook manager satisfies it.
+//
+//go:generate ../../scripts/codegen/mock -t internal HookManager hook_manager
+type HookManager interface {
+	hook.Manager
+	document.HookManager
+
+	// OnHookChange should subscribe fn to the hooks a background run
+	// changed or deleted, and return the function that unsubscribes it.
+	OnHookChange(fn func(hookCore.Hook)) func()
 }
 
 // Storer is an interface that defines methods for uploading and retrieving objects.

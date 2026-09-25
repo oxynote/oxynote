@@ -91,6 +91,21 @@ const CORE_INTERNAL_ENDPOINTS = [
 		method: "DELETE",
 		path: "/core/api/x/documents/doc-e2e/branches/branch-e2e",
 	},
+	{
+		name: "a hook creation",
+		method: "POST",
+		path: "/core/api/x/documents/doc-e2e/hooks",
+	},
+	{
+		name: "a hook update",
+		method: "PUT",
+		path: "/core/api/x/documents/doc-e2e/hooks/hook-e2e?branchId=branch-e2e",
+	},
+	{
+		name: "a hook deletion",
+		method: "DELETE",
+		path: "/core/api/x/documents/doc-e2e/hooks/hook-e2e?branchId=branch-e2e",
+	},
 ] as const
 
 const AUTH_REALTIME_INTERNAL_ENDPOINTS = [
@@ -103,6 +118,11 @@ const AUTH_REALTIME_INTERNAL_ENDPOINTS = [
 		name: "direct document operations",
 		method: "POST",
 		path: "/auth-realtime/api/internal/documents/doc-e2e/branches/branch-e2e/operations",
+	},
+	{
+		name: "a branch flush",
+		method: "POST",
+		path: "/auth-realtime/api/internal/documents/doc-e2e/branches/branch-e2e/flush",
 	},
 ] as const
 

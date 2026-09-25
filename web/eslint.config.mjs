@@ -160,6 +160,7 @@ export default withNuxt([
 						// literal keys kept in data structures and passed to
 						// t() later (the rule only tracks direct call sites)
 						"/^editor\\.ai-chat\\.tool-status\\./",
+						"/^editor\\.hooks\\.errors\\.codes\\./",
 						"/^editor\\.hooks\\.[a-z-]+\\.existing-item-(block|full-document)-explanation$/",
 						"/^editor\\.slash-commands\\.items\\./",
 						"/^onboarding\\.signup\\.conditions\\.(main|terms-only|privacy-only)$/",

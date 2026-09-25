@@ -63,6 +63,30 @@ func watcherState(t *testing.T, lastChangedAt null.Time) State {
 	return State(raw)
 }
 
+func Test_URLWatcher_Validate(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		URL         string
+		ExpectedErr error
+	}{
+		"Https URL is valid":         {URL: "https://example.com/page"},
+		"Http URL is valid":          {URL: "http://example.com"},
+		"Other scheme is rejected":   {URL: "ftp://example.com", ExpectedErr: ErrInvalidURL},
+		"Relative URL is rejected":   {URL: "/page", ExpectedErr: ErrInvalidURL},
+		"Missing host is rejected":   {URL: "https://", ExpectedErr: ErrInvalidURL},
+		"Unparsable URL is rejected": {URL: "https://exa mple.com/%zz", ExpectedErr: ErrInvalidURL},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.ExpectedErr, (&URLWatcher{URL: tc.URL}).Validate())
+		})
+	}
+}
+
 func Test_URLWatcher_Process(t *testing.T) {
 	t.Parallel()
 
@@ -73,39 +97,62 @@ func Test_URLWatcher_Process(t *testing.T) {
 		State          State
 		ExpectErr      bool
 		ExpectedScore  decimal.Decimal
-		ExpectedStatus URLWatcherStatus
+		ExpectedStatus Status
+		Updated        [][2]string
 	}{
 		"Unchanged watch keeps the full score": {
 			CD: &fakeChangeDetection{
-				watch: &webchange.Watch{LastChangedAt: changed},
+				watch: &webchange.Watch{URL: "https://example.com", LastChangedAt: changed},
 			},
 			State:          watcherState(t, null.TimeFrom(changed)),
 			ExpectedScore:  decimal.NewFromInt(100),
-			ExpectedStatus: URLWatcherStatusActive,
+			ExpectedStatus: StatusActive,
 		},
 		"Newer change drops the score to zero": {
 			CD: &fakeChangeDetection{
-				watch: &webchange.Watch{LastChangedAt: changed.Add(time.Hour)},
+				watch: &webchange.Watch{URL: "https://example.com", LastChangedAt: changed.Add(time.Hour)},
 			},
 			State:          watcherState(t, null.TimeFrom(changed)),
 			ExpectedScore:  decimal.Zero,
-			ExpectedStatus: URLWatcherStatusActive,
+			ExpectedStatus: StatusActive,
 		},
 		"Missing baseline adopts the watch timestamp": {
 			CD: &fakeChangeDetection{
-				watch: &webchange.Watch{LastChangedAt: changed},
+				watch: &webchange.Watch{URL: "https://example.com", LastChangedAt: changed},
 			},
 			State:          watcherState(t, null.Time{}),
 			ExpectedScore:  decimal.NewFromInt(100),
-			ExpectedStatus: URLWatcherStatusActive,
+			ExpectedStatus: StatusActive,
 		},
-		"Unreachable watch scores zero": {
+		"Unreachable watch is a status": {
 			CD: &fakeChangeDetection{
-				watch: &webchange.Watch{Unreachable: true},
+				watch: &webchange.Watch{URL: "https://example.com", Unreachable: true},
 			},
 			State:          watcherState(t, null.Time{}),
-			ExpectedScore:  decimal.Zero,
 			ExpectedStatus: URLWatcherStatusUnreachableURL,
+		},
+		"Watcher on another URL is pointed back": {
+			CD: &fakeChangeDetection{
+				watch: &webchange.Watch{URL: "https://old.example.com", LastChangedAt: changed},
+			},
+			State:          watcherState(t, null.TimeFrom(changed)),
+			ExpectedScore:  decimal.NewFromInt(100),
+			ExpectedStatus: StatusActive,
+			Updated:        [][2]string{{"w-1", "https://example.com"}},
+		},
+		"Removed watcher is created again": {
+			CD: &fakeChangeDetection{
+				fetchErr:  webchange.ErrWatcherNotFound,
+				createdID: "w-new",
+			},
+			State:          watcherState(t, null.Time{}),
+			ExpectedScore:  decimal.NewFromInt(100),
+			ExpectedStatus: StatusActive,
+		},
+		"Unconfigured changedetection is a status": {
+			CD:             &fakeChangeDetection{fetchErr: webchange.ErrNotConfigured},
+			State:          watcherState(t, null.Time{}),
+			ExpectedStatus: StatusUnconfigured,
 		},
 		"Fetch failure is propagated": {
 			CD:        &fakeChangeDetection{fetchErr: assert.AnError},
@@ -125,7 +172,7 @@ func Test_URLWatcher_Process(t *testing.T) {
 
 			uw := URLWatcher{URL: "https://example.com"}
 
-			score, state, err := uw.Process(context.Background(), stubInput{state: tc.State, cd: tc.CD})
+			res, err := uw.Process(context.Background(), stubInput{state: tc.State, cd: tc.CD})
 
 			if tc.ExpectErr {
 				require.Error(t, err)
@@ -134,12 +181,14 @@ func Test_URLWatcher_Process(t *testing.T) {
 			}
 
 			require.NoError(t, err)
-			assert.True(t, score.Equal(tc.ExpectedScore), "score %s", score)
+			assert.Equal(t, tc.ExpectedStatus, res.Status)
+			assert.True(t, res.Score.Equal(tc.ExpectedScore), "score %s", res.Score)
 
-			var uws URLWatcherState
+			if tc.ExpectedStatus != StatusActive {
+				assert.Nil(t, res.State)
+			}
 
-			require.NoError(t, json.Unmarshal(state, &uws))
-			assert.Equal(t, tc.ExpectedStatus, uws.Status)
+			assert.Equal(t, tc.Updated, tc.CD.updated)
 		})
 	}
 }
@@ -155,17 +204,17 @@ func Test_URLWatcher_Reset(t *testing.T) {
 		cd := &fakeChangeDetection{createdID: "w-new"}
 		uw := URLWatcher{URL: "https://example.com"}
 
-		score, state, err := uw.Reset(context.Background(), stubInput{cd: cd})
+		res, err := uw.Reset(context.Background(), stubInput{cd: cd})
 		require.NoError(t, err)
 
-		assert.True(t, score.Equal(decimal.NewFromInt(100)))
+		assert.Equal(t, StatusActive, res.Status)
+		assert.True(t, res.Score.Equal(decimal.NewFromInt(100)))
 		assert.Equal(t, []string{"https://example.com"}, cd.createdURLs)
 
 		var uws URLWatcherState
 
-		require.NoError(t, json.Unmarshal(state, &uws))
+		require.NoError(t, json.Unmarshal(res.State, &uws))
 		assert.Equal(t, "w-new", uws.WatcherID)
-		assert.Equal(t, URLWatcherStatusActive, uws.Status)
 		assert.False(t, uws.LastChangedAt.Valid)
 	})
 
@@ -177,7 +226,7 @@ func Test_URLWatcher_Reset(t *testing.T) {
 		}
 		uw := URLWatcher{URL: "https://example.com"}
 
-		_, state, err := uw.Reset(context.Background(), stubInput{
+		res, err := uw.Reset(context.Background(), stubInput{
 			state: watcherState(t, null.Time{}),
 			cd:    cd,
 		})
@@ -185,7 +234,7 @@ func Test_URLWatcher_Reset(t *testing.T) {
 
 		var uws URLWatcherState
 
-		require.NoError(t, json.Unmarshal(state, &uws))
+		require.NoError(t, json.Unmarshal(res.State, &uws))
 		assert.Equal(t, null.TimeFrom(changed), uws.LastChangedAt)
 		assert.Empty(t, cd.updated)
 	})
@@ -198,7 +247,7 @@ func Test_URLWatcher_Reset(t *testing.T) {
 		}
 		uw := URLWatcher{URL: "https://example.com"}
 
-		_, state, err := uw.Reset(context.Background(), stubInput{
+		res, err := uw.Reset(context.Background(), stubInput{
 			state: watcherState(t, null.Time{}),
 			cd:    cd,
 		})
@@ -208,8 +257,56 @@ func Test_URLWatcher_Reset(t *testing.T) {
 
 		var uws URLWatcherState
 
-		require.NoError(t, json.Unmarshal(state, &uws))
+		require.NoError(t, json.Unmarshal(res.State, &uws))
+		assert.Equal(t, "w-1", uws.WatcherID)
 		assert.False(t, uws.LastChangedAt.Valid)
+	})
+
+	t.Run("Removed watcher is created again", func(t *testing.T) {
+		t.Parallel()
+
+		cd := &fakeChangeDetection{
+			fetchErr:  webchange.ErrWatcherNotFound,
+			createdID: "w-new",
+		}
+
+		res, err := (&URLWatcher{URL: "https://example.com"}).Reset(context.Background(), stubInput{
+			state: watcherState(t, null.Time{}),
+			cd:    cd,
+		})
+		require.NoError(t, err)
+
+		var uws URLWatcherState
+
+		require.NoError(t, json.Unmarshal(res.State, &uws))
+		assert.Equal(t, "w-new", uws.WatcherID)
+	})
+
+	t.Run("Unconfigured changedetection is a status", func(t *testing.T) {
+		t.Parallel()
+
+		cd := &fakeChangeDetection{createErr: webchange.ErrNotConfigured}
+
+		res, err := (&URLWatcher{URL: "https://example.com"}).Reset(context.Background(), stubInput{cd: cd})
+		require.NoError(t, err)
+
+		assert.Equal(t, StatusUnconfigured, res.Status)
+		assert.Nil(t, res.State)
+	})
+
+	t.Run("Update failure is propagated", func(t *testing.T) {
+		t.Parallel()
+
+		cd := &fakeChangeDetection{
+			watch:     &webchange.Watch{URL: "https://old.example.com"},
+			updateErr: assert.AnError,
+		}
+
+		_, err := (&URLWatcher{URL: "https://example.com"}).Reset(context.Background(), stubInput{
+			state: watcherState(t, null.Time{}),
+			cd:    cd,
+		})
+		require.Error(t, err)
 	})
 
 	t.Run("Create failure is propagated", func(t *testing.T) {
@@ -217,7 +314,17 @@ func Test_URLWatcher_Reset(t *testing.T) {
 
 		cd := &fakeChangeDetection{createErr: assert.AnError}
 
-		_, _, err := (&URLWatcher{URL: "https://example.com"}).Reset(context.Background(), stubInput{cd: cd})
+		_, err := (&URLWatcher{URL: "https://example.com"}).Reset(context.Background(), stubInput{cd: cd})
+		require.Error(t, err)
+	})
+
+	t.Run("Malformed state fails", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := (&URLWatcher{}).Reset(context.Background(), stubInput{
+			state: State(`{not json`),
+			cd:    &fakeChangeDetection{},
+		})
 		require.Error(t, err)
 	})
 }
@@ -244,6 +351,18 @@ func Test_URLWatcher_Delete(t *testing.T) {
 		cd := &fakeChangeDetection{}
 
 		require.NoError(t, (&URLWatcher{}).Delete(context.Background(), stubInput{cd: cd}))
+		assert.Empty(t, cd.deletedIDs)
+	})
+
+	t.Run("State without a watcher is a no-op", func(t *testing.T) {
+		t.Parallel()
+
+		cd := &fakeChangeDetection{}
+
+		require.NoError(t, (&URLWatcher{}).Delete(context.Background(), stubInput{
+			state: State(`{}`),
+			cd:    cd,
+		}))
 		assert.Empty(t, cd.deletedIDs)
 	})
 

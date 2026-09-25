@@ -12,6 +12,7 @@
 			"document-new-comment-reply-description": "{user} has posted a reply to a comment",
 			"document-review-request-description": "Review requested for the draft version",
 			"document-hook-triggered-description": "{hook} hook was triggered",
+			"document-hook-needs-attention-description": "{hook} hook can no longer check its target",
 			"default-description": "You have a new notification"
 		},
 		"actions": {

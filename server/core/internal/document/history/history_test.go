@@ -57,6 +57,7 @@ func Test_NewEntry(t *testing.T) {
 	assert.Equal(t, null.StringFrom("user-1"), entry.LastUpdatedBy)
 	assert.True(t, entry.Boundary)
 	assert.Equal(t, at, entry.CreatedAt)
+	assert.Equal(t, at, entry.UpdatedAt)
 
 	// every call mints its own id.
 	assert.NotEqual(t, entry.ID, NewEntry(doc, at, null.String{}, nil, false).ID)
@@ -65,7 +66,14 @@ func Test_NewEntry(t *testing.T) {
 func Test_NewHooks(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, Hooks{}, NewHooks(nil))
+	content := document.RootBlock{
+		Type: "doc",
+		Content: []document.Block{
+			{Type: document.BlockNodeParagraph, Attrs: document.Attributes{document.AttrUID: "b1"}},
+		},
+	}
+
+	assert.Equal(t, Hooks{}, NewHooks(content, nil))
 	assert.Equal(t, Hooks{
 		{
 			Type:     hook.TypeURLWatcher,
@@ -76,13 +84,22 @@ func Test_NewHooks(t *testing.T) {
 			Type:     hook.TypeScheduledReminder,
 			Settings: processor.Settings(`{"cron":"0 9 * * 1"}`),
 		},
-	}, NewHooks([]hook.Hook{
+	}, NewHooks(content, []hook.Hook{
 		{
 			ID:       xid.New(),
 			Type:     hook.TypeURLWatcher,
 			BlockID:  null.StringFrom("b1"),
 			Settings: processor.Settings(`{"url":"https://example.com"}`),
-			State:    processor.State(`{"watcher":"w1"}`),
+			State:    null.ValueFrom(processor.State(`{"watcher":"w1"}`)),
+			// the block is back, so the sweep lifts the mark on its next
+			// run.
+			SoftDeletedAt: null.TimeFrom(time.Now()),
+		},
+		{
+			ID:       xid.New(),
+			Type:     hook.TypeURLWatcher,
+			BlockID:  null.StringFrom("removed"),
+			Settings: processor.Settings(`{"url":"https://example.org"}`),
 		},
 		{
 			ID:       xid.New(),

@@ -79,15 +79,15 @@ The README lists the public routes; update it when changing handlers.
   `Y.XmlElement`s preserving the non-string attrs `clone()` drops. Read the
   comments on `onLoadDocument` and on `applyMergeToOpenDocument`
   (`routes.ts`) first.
-- **Fork, branch update, merge and branch delete go through auth-realtime**,
-  which flushes the affected branch's pending store (both sides for a merge,
-  the `-default` alias too), refuses the operation if the flush fails, then
-  proxies to core's session-authed `/api/x` group with the caller's headers.
-  After a protection change or a delete it drops every client socket on the
-  document (`resetConnections`; hocuspocus's `closeConnections` is not
-  that), since read-only is decided per connection in `onAuthenticate`. A
-  merge mutates the in-memory target Y.Doc via `replaceYdocContent` and
-  persists `rawContent` immediately.
+- **Branch fork, update, merge, delete and hook writes go through
+  auth-realtime**, which flushes the affected branch's pending store (both
+  sides for a merge, the `-default` alias too), refuses the operation if the
+  flush fails, then proxies to core's session-authed `/api/x` group with the
+  caller's headers. After a protection change or a delete it drops every
+  client socket on the document (`resetConnections`; hocuspocus's
+  `closeConnections` is not that), since read-only is decided per connection
+  in `onAuthenticate`. A merge mutates the in-memory target Y.Doc via
+  `replaceYdocContent` and persists `rawContent` immediately.
 - The ProseMirror schema is `auth-realtime/src/schema/`; its Go mirror is
   `core/internal/document/node.go`.
 

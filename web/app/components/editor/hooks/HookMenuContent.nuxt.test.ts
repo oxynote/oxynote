@@ -33,7 +33,7 @@ function reminder(overrides: Partial<DocumentHook> = {}) {
 			duration: "24h",
 			schedule: new Date("2026-09-01T10:00:00Z"),
 		},
-		state: { status: "active" },
+		state: { startedAt: "2026-01-01T00:00:00Z" },
 		...overrides,
 	})
 }
@@ -43,7 +43,6 @@ function urlWatcher(overrides: Partial<DocumentHook> = {}) {
 		id: "url-1",
 		type: DocumentHookType.URLWatcher,
 		settings: { url: "https://oxynote.test" },
-		state: { status: "active" },
 		...overrides,
 	})
 }
