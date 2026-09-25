@@ -2,8 +2,11 @@ export default defineNuxtPlugin({
 	parallel: true,
 	setup: async (nuxtApp) => {
 		const { fetchAuthSession } = useAuthSession()
-		const sessionReq = await fetchAuthSession.refresh()
-		const sessionActive = computed(() => !!sessionReq.data?.data?.session)
+		await fetchAuthSession.refresh()
+		const sessionActive = computed(
+			() =>
+				!!fetchAuthSession.state.value.data?.data?.session.activeOrganizationId,
+		)
 
 		const { init } = useWebSocketStateStore()
 		init()
