@@ -14,6 +14,8 @@ const emit = defineEmits<{
 	(e: "button-click", id: T): void
 }>()
 
+const { t } = useI18n({ useScope: "global" })
+
 function handleClick(id: T) {
 	emit("button-click", id)
 }
@@ -36,22 +38,42 @@ function handleClick(id: T) {
 			}
 		"
 	>
-		<template v-for="(button, index) in props.buttons" :key="button.id">
-			<div
-				v-if="index > 0"
-				class="h-4 w-px bg-accent-foreground/10 opacity-0 transition-opacity group-hover/right-side-extra-action:opacity-100 supports-[hover:none]:opacity-100"
-			/>
-			<ShortcutTooltip side="bottom" :shortcut="button.shortcut">
+		<ShortcutTooltip
+			v-if="props.buttons.length === 1"
+			side="bottom"
+			:shortcut="props.buttons[0]?.shortcut"
+		>
+			<ShadcnUiButton
+				variant="dim"
+				size="custom"
+				class="gap-1 text-2sm opacity-0 transition-opacity group-hover/right-side-extra-action:opacity-100 supports-[hover:none]:opacity-100"
+				@click="handleClick(props.buttons[0]!.id)"
+			>
+				<Icon :name="props.buttons[0]?.icon ?? 'lucide:circle-plus'" />
+				{{ props.buttons[0]?.text }}
+			</ShadcnUiButton>
+		</ShortcutTooltip>
+		<ShadcnUiDropdownMenu v-else>
+			<ShadcnUiDropdownMenuTrigger as-child>
 				<ShadcnUiButton
 					variant="dim"
 					size="custom"
 					class="gap-1 text-2sm opacity-0 transition-opacity group-hover/right-side-extra-action:opacity-100 supports-[hover:none]:opacity-100"
+				>
+					<Icon name="lucide:circle-plus" />
+					{{ t("editor.split-documentation.bottom-action-trigger-label") }}
+				</ShadcnUiButton>
+			</ShadcnUiDropdownMenuTrigger>
+			<ShadcnUiDropdownMenuContent side="bottom" align="center">
+				<ShadcnUiDropdownMenuItem
+					v-for="button in props.buttons"
+					:key="button.id"
 					@click="handleClick(button.id)"
 				>
 					<Icon :name="button.icon ?? 'lucide:circle-plus'" />
-					{{ button.text }}
-				</ShadcnUiButton>
-			</ShortcutTooltip>
-		</template>
+					<span>{{ button.text }}</span>
+				</ShadcnUiDropdownMenuItem>
+			</ShadcnUiDropdownMenuContent>
+		</ShadcnUiDropdownMenu>
 	</div>
 </template>
