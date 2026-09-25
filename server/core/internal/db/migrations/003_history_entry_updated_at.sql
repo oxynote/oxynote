@@ -1,7 +1,9 @@
 -- +migrate Up
 
 -- an edit folded into an entry moves updated_at and leaves created_at at
--- the time the entry was taken, which retention counts from.
+-- the time the entry was taken, which retention counts from. A new entry
+-- is compared with the newest by name and icon, and NULL = NULL is not
+-- true, so both become NOT NULL.
 ALTER TABLE document_branch_history_entries ADD COLUMN updated_at TIMESTAMP NULL;
 
 UPDATE document_branch_history_entries SET

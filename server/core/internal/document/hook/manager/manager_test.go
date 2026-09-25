@@ -20,6 +20,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
 	"github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/pkg/mathutil"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
@@ -746,7 +747,7 @@ func Test_Manager_processHooks(t *testing.T) {
 			Hooks: func(t *testing.T) []hook.Hook {
 				h := stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
 				h.BlockID = null.StringFrom("missing-block")
-				h.SoftDeletedAt = null.TimeFrom(time.Now().Add(-_hookRetentionDuration - time.Hour))
+				h.SoftDeletedAt = null.TimeFrom(time.Now().Add(-_softDeleteRetention - time.Hour))
 
 				return []hook.Hook{h}
 			},
@@ -823,4 +824,20 @@ func Test_Manager_processHooks(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_Manager_input(t *testing.T) {
+	t.Parallel()
+
+	man := newTestManager(t, &DBMock{}, &fakePublisher{}, nil)
+
+	got := man.input("org-1")
+	require.NotNil(t, got)
+
+	// the deployment has neither integration, and the input says so the
+	// way the processors ask.
+	assert.Same(t, man.webchangeClient, got.ChangeDetection())
+
+	_, err := got.Github(context.Background())
+	testutil.AssertEqualError(t, github.ErrNotConfigured, err)
 }

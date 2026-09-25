@@ -64,9 +64,10 @@ func Test_NewHook(t *testing.T) {
 
 		h, err := NewHook(context.Background(), CreateInput{
 			Type:     TypeScheduledReminder,
+			BranchID: branchID,
 			BlockID:  null.StringFrom("block-1"),
 			Settings: reminderSettings(t, time.Now().Add(time.Hour)),
-		}, documentID, branchID, "org-1", nil)
+		}, documentID, "org-1", nil)
 		require.NoError(t, err)
 
 		assert.False(t, h.ID.IsZero())
@@ -89,7 +90,7 @@ func Test_NewHook(t *testing.T) {
 		_, err := NewHook(context.Background(), CreateInput{
 			Type:     TypeScheduledReminder,
 			Settings: processor.Settings(`{not json`),
-		}, documentID, branchID, "org-1", nil)
+		}, documentID, "org-1", nil)
 		assert.Equal(t, ErrInvalidSettings, err)
 	})
 
@@ -99,7 +100,7 @@ func Test_NewHook(t *testing.T) {
 		_, err := NewHook(context.Background(), CreateInput{
 			Type:     TypeScheduledReminder,
 			Settings: processor.Settings(`{"scale":"bogus","schedule":"2030-01-01T00:00:00Z"}`),
-		}, documentID, branchID, "org-1", nil)
+		}, documentID, "org-1", nil)
 		assert.Equal(t, processor.ErrInvalidScaleType, err)
 	})
 
@@ -109,7 +110,7 @@ func Test_NewHook(t *testing.T) {
 		_, err := NewHook(context.Background(), CreateInput{
 			Type:     Type("bogus"),
 			Settings: processor.Settings(`{}`),
-		}, documentID, branchID, "org-1", nil)
+		}, documentID, "org-1", nil)
 		assert.Equal(t, ErrInvalidType, err)
 	})
 
@@ -119,7 +120,7 @@ func Test_NewHook(t *testing.T) {
 		_, err := NewHook(context.Background(), CreateInput{
 			Type:     TypeURLWatcher,
 			Settings: processor.Settings(`{"url":"https://example.com"}`),
-		}, documentID, branchID, "org-1", NewInput("org-1", nil, webchange.NewClient("", "")))
+		}, documentID, "org-1", NewInput("org-1", nil, webchange.NewClient("", "")))
 		require.Error(t, err)
 		assert.Equal(t, http.StatusUnprocessableEntity, errutil.StatusCode(err, false))
 		assert.EqualError(t, err, "the hook cannot check its target: unconfigured")
@@ -132,7 +133,7 @@ func Test_Hook_ApplyUpdate(t *testing.T) {
 	h, err := NewHook(context.Background(), CreateInput{
 		Type:     TypeScheduledReminder,
 		Settings: reminderSettings(t, time.Now().Add(time.Hour)),
-	}, xid.New(), xid.New(), "org-1", nil)
+	}, xid.New(), "org-1", nil)
 	require.NoError(t, err)
 
 	// an already-elapsed schedule resets the score straight to zero.
@@ -158,7 +159,7 @@ func Test_Hook_Process(t *testing.T) {
 		h, err := NewHook(context.Background(), CreateInput{
 			Type:     TypeScheduledReminder,
 			Settings: reminderSettings(t, time.Now().Add(-time.Hour)),
-		}, xid.New(), xid.New(), "org-1", nil)
+		}, xid.New(), "org-1", nil)
 		require.NoError(t, err)
 
 		// backdate the started-at state so the schedule has elapsed.
@@ -223,7 +224,7 @@ func Test_Hook_Delete(t *testing.T) {
 	h, err := NewHook(context.Background(), CreateInput{
 		Type:     TypeScheduledReminder,
 		Settings: reminderSettings(t, time.Now().Add(time.Hour)),
-	}, xid.New(), xid.New(), "org-1", nil)
+	}, xid.New(), "org-1", nil)
 	require.NoError(t, err)
 
 	// scheduled reminders have no external resources; delete is a no-op.
@@ -301,7 +302,7 @@ func Test_Hook_NewCopy(t *testing.T) {
 		BlockID:        null.StringFrom("b1"),
 		Settings:       processor.Settings(`{"url":"https://example.com"}`),
 		State:          null.ValueFrom(processor.State(`{"watcherId":"w1"}`)),
-		Status:         processor.URLWatcherStatusUnreachableURL,
+		Status:         processor.StatusUnreachableURL,
 		Score:          decimal.NewFromInt(10),
 	}
 

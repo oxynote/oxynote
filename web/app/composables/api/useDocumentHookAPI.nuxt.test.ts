@@ -619,7 +619,7 @@ describe("useDocumentHookAPI", { concurrent: false }, () => {
 			}
 			const serverHooks = [resetHook, makeHook(OTHER_HOOK_ID)]
 
-			seedHooks([makeHook(HOOK_ID), makeHook(OTHER_HOOK_ID)])
+			seedHooks([{ ...makeHook(HOOK_ID), score: "0" }, makeHook(OTHER_HOOK_ID)])
 			const listCalls = mockEndpoint("GET", LIST_URL, () => serverHooks)
 			const reset = mockDeferredEndpoint("PUT", `${LIST_URL}/${HOOK_ID}/reset`)
 			const api = makeDocumentHookAPI()

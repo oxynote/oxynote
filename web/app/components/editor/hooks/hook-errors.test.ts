@@ -8,7 +8,7 @@ describe("hookErrorMessage", () => {
 			expected: "editor.hooks.errors.codes.missing-repository",
 		},
 		{
-			input: "registry.invalid_reference",
+			input: "document_hook.invalid_image",
 			expected: "editor.hooks.errors.codes.invalid-image",
 		},
 		{

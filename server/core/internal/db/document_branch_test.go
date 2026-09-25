@@ -689,9 +689,7 @@ func insertHistoryEntry(t *testing.T, db *DB, entry history.Entry) {
 	t.Helper()
 
 	require.NoError(t, sqlutil.WrapTx(context.Background(), db.sql, func(tx *sqlx.Tx) error {
-		_, err := db.insertDocumentBranchHistoryEntry(context.Background(), tx, entry)
-
-		return err
+		return db.insertDocumentBranchHistoryEntry(context.Background(), tx, entry)
 	}))
 }
 
@@ -1028,14 +1026,8 @@ func Test_agent_insertDocumentBranchHistoryEntry(t *testing.T) {
 			db := prepTempDB(t)
 			c := cfn(t, db)
 
-			var id xid.ID
-
 			err := sqlutil.WrapTx(context.Background(), db.sql, func(tx *sqlx.Tx) error {
-				var err error
-
-				id, err = db.insertDocumentBranchHistoryEntry(context.Background(), tx, c.Entry)
-
-				return err
+				return db.insertDocumentBranchHistoryEntry(context.Background(), tx, c.Entry)
 			})
 			testutil.RequireEqualError(t, c.Err, err)
 
@@ -1047,10 +1039,6 @@ func Test_agent_insertDocumentBranchHistoryEntry(t *testing.T) {
 
 			newest := fetchNewestHistoryEntry(t, db, c.Entry.BranchID)
 			assertHistoryEntryEqual(t, c.Newest, newest)
-
-			// the id returned is the row holding the entry, which is the
-			// newest.
-			assert.Equal(t, newest.ID, id)
 		})
 	}
 }
@@ -1192,7 +1180,7 @@ func Test_agent_RecordDocumentBranchHistoryEntry(t *testing.T) {
 
 			before := timeutil.Now().Truncate(time.Microsecond)
 
-			id, err := record(context.Background(), c.BranchID, c.OrganizationID, c.By, c.Boundary)
+			err := record(context.Background(), c.BranchID, c.OrganizationID, c.By, c.Boundary)
 			testutil.RequireEqualError(t, c.Err, err)
 
 			if err != nil {
@@ -1206,7 +1194,6 @@ func Test_agent_RecordDocumentBranchHistoryEntry(t *testing.T) {
 			assert.Equal(t, c.Rows, countHistoryEntries(t, db, c.BranchID))
 
 			newest := fetchNewestHistoryEntry(t, db, c.BranchID)
-			assert.Equal(t, newest.ID, id)
 			assert.False(t, newest.CreatedAt.Before(before))
 
 			exp := c.Newest

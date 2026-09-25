@@ -60,7 +60,7 @@ func Test_NewDocumentHookNeedsAttentionNotification(t *testing.T) {
 		hook.TypeGithubTracking,
 		null.StringFrom("blk1"),
 		branchID,
-		processor.GithubTrackingStatusRepositoryNotFound,
+		processor.StatusMissingRepository,
 	)
 
 	assert.Equal(t, Core{
@@ -70,7 +70,7 @@ func Test_NewDocumentHookNeedsAttentionNotification(t *testing.T) {
 			MetaKeyBlockID:    null.StringFrom("blk1"),
 			MetaKeyType:       hook.TypeGithubTracking,
 			MetaKeyBranchID:   branchID,
-			MetaKeyStatus:     processor.GithubTrackingStatusRepositoryNotFound,
+			MetaKeyStatus:     processor.StatusMissingRepository,
 		},
 	}, nc)
 }

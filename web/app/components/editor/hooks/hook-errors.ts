@@ -13,7 +13,7 @@ const HOOK_ERROR_KEYS: Record<string, string> = {
 	"document_hook.invalid_repository":
 		"editor.hooks.errors.codes.invalid-repository",
 	"document_hook.missing_paths": "editor.hooks.errors.codes.missing-paths",
-	"registry.invalid_reference": "editor.hooks.errors.codes.invalid-image",
+	"document_hook.invalid_image": "editor.hooks.errors.codes.invalid-image",
 	"document_hook.upstream_unavailable":
 		"editor.hooks.errors.codes.upstream-unavailable",
 }

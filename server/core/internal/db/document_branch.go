@@ -248,19 +248,16 @@ func (a *agent) selectBranchSummary(b sq.SelectBuilder) sq.SelectBuilder {
 	).From("document_branches")
 }
 
-// RecordDocumentBranchHistoryEntry records the branch and its hooks and
-// returns the id of the entry that holds them. It locks the branch row, so
-// writers cannot race on the newest entry.
+// RecordDocumentBranchHistoryEntry records the branch and its hooks. It
+// locks the branch row, so writers cannot race on the newest entry.
 func (a *agent) RecordDocumentBranchHistoryEntry(
 	ctx context.Context,
 	branchID xid.ID,
 	organizationID string,
 	by null.String,
 	boundary bool,
-) (xid.ID, error) {
-	var id xid.ID
-
-	if err := sqlutil.WrapTx(ctx, a.sql, func(tx *sqlx.Tx) error {
+) error {
+	return sqlutil.WrapTx(ctx, a.sql, func(tx *sqlx.Tx) error {
 		doc, err := a.fetchDocumentBranchByID(ctx, tx, branchID, organizationID, true)
 		if err != nil {
 			return err
@@ -279,28 +276,21 @@ func (a *agent) RecordDocumentBranchHistoryEntry(
 			boundary,
 		)
 
-		id, err = a.insertDocumentBranchHistoryEntry(ctx, tx, entry)
-
-		return err
-	}); err != nil {
-		return xid.ID{}, err
-	}
-
-	return id, nil
+		return a.insertDocumentBranchHistoryEntry(ctx, tx, entry)
+	})
 }
 
 // insertDocumentBranchHistoryEntry writes the entry, folds it into the
-// branch's newest one, or skips it when it matches the newest one, and
-// returns the id of the row that holds it. The caller holds the branch row
-// lock.
-func (a *agent) insertDocumentBranchHistoryEntry(ctx context.Context, tx *sqlx.Tx, entry history.Entry) (xid.ID, error) {
+// branch's newest one, or skips it when it matches the newest one. The
+// caller holds the branch row lock.
+func (a *agent) insertDocumentBranchHistoryEntry(ctx context.Context, tx *sqlx.Tx, entry history.Entry) error {
 	newest, err := a.fetchNewestDocumentBranchHistoryEntry(ctx, tx, entry)
 	if err != nil {
-		return xid.ID{}, err
+		return err
 	}
 
 	if newest != nil && newest.Same && !entry.Boundary {
-		return newest.ID, nil
+		return nil
 	}
 
 	aggregates := newest != nil &&
@@ -328,11 +318,9 @@ func (a *agent) insertDocumentBranchHistoryEntry(ctx context.Context, tx *sqlx.T
 			Where(sq.Eq{"id": newest.ID}).
 			MustSql()
 
-		if _, err := tx.ExecContext(ctx, q, args...); err != nil {
-			return xid.ID{}, err
-		}
+		_, err = tx.ExecContext(ctx, q, args...)
 
-		return newest.ID, nil
+		return err
 	}
 
 	q, args := a.builder.Insert("document_branch_history_entries").
@@ -352,14 +340,10 @@ func (a *agent) insertDocumentBranchHistoryEntry(ctx context.Context, tx *sqlx.T
 		MustSql()
 
 	if _, err := tx.ExecContext(ctx, q, args...); err != nil {
-		return xid.ID{}, err
+		return err
 	}
 
-	if err := a.trimDocumentBranchHistoryEntries(ctx, tx, entry.BranchID); err != nil {
-		return xid.ID{}, err
-	}
-
-	return entry.ID, nil
+	return a.trimDocumentBranchHistoryEntries(ctx, tx, entry.BranchID)
 }
 
 // fetchDocumentBranchByID reads the branch joined against its document.

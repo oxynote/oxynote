@@ -31,8 +31,8 @@ const (
 	// _processingInterval defines how often to process hooks.
 	_processingInterval = time.Minute * 5
 
-	// _hookRetentionDuration defines how long to retain inactive hooks.
-	_hookRetentionDuration = time.Hour * 24
+	// _softDeleteRetention defines how long a soft-deleted hook is kept.
+	_softDeleteRetention = time.Hour * 24
 
 	// _hookTimeout bounds one hook's run, and with it how long the hook's
 	// lock is held.
@@ -96,7 +96,7 @@ func NewManager(
 }
 
 // BindHookChange sets the function called with every hook the manager
-// stores, changes or deletes. Call it once, before Start.
+// stores, changes or deletes. Call it once, before any hook write.
 func (m *Manager) BindHookChange(fn func(hook.Hook)) {
 	m.changeCallback = fn
 }
@@ -128,8 +128,7 @@ func (m *Manager) Start(ctx context.Context) {
 }
 
 // QueueBranch has the branch's hooks run soon, without waiting for the
-// next pass. Callers use it once hooks copied to the branch are committed,
-// so the copies get set up.
+// next pass.
 func (m *Manager) QueueBranch(branchID xid.ID, organizationID string) {
 	m.branchesMu.Lock()
 	m.branches[branchRef{ID: branchID, OrganizationID: organizationID}] = struct{}{}
@@ -218,41 +217,46 @@ func (m *Manager) processHook(ctx context.Context, docs map[xid.ID]*document.Doc
 		h = *stored
 	}
 
+	// the branch, document or organization of the hook is gone.
+	gone := !h.BranchID.Valid || !h.DocumentID.Valid || !h.OrganizationID.Valid
+
+	var doc *document.Document
+
+	if !gone {
+		doc, ok = m.fetchDocument(ctx, docs, h)
+		if !ok {
+			return
+		}
+
+		gone = doc == nil || (h.SoftDeletedAt.Valid && h.SoftDeletedAt.Time.Before(timeutil.Now().Add(-_softDeleteRetention)))
+	}
+
+	if gone {
+		if m.deleteHook(ctx, h) {
+			m.changeCallback(h)
+		}
+
+		return
+	}
+
 	prev := h
 
-	deleted, stored := m.runHook(ctx, docs, &h)
-	if !stored {
+	if !m.runHook(ctx, doc, &h) {
 		m.undoSetup(ctx, prev, h)
 
 		return
 	}
 
-	if deleted || h.ChangedFrom(prev) {
+	if h.ChangedFrom(prev) {
 		m.changeCallback(h)
 	}
 
-	if !deleted {
-		m.notifyTransition(ctx, prev, h)
-	}
+	m.notifyTransition(ctx, prev, h)
 }
 
-// runHook processes the hook and stores the result, or deletes a hook
-// that has nothing left to describe.
-func (m *Manager) runHook(ctx context.Context, docs map[xid.ID]*document.Document, h *hook.Hook) (deleted, stored bool) {
-	// the branch, document or organization of the hook is gone.
-	if !h.BranchID.Valid || !h.DocumentID.Valid || !h.OrganizationID.Valid {
-		return true, m.deleteHook(ctx, h)
-	}
-
-	doc, ok := m.fetchDocument(ctx, docs, h)
-	if !ok {
-		return false, false
-	}
-
-	if doc == nil || (h.SoftDeletedAt.Valid && h.SoftDeletedAt.Time.Before(timeutil.Now().Add(-_hookRetentionDuration))) {
-		return true, m.deleteHook(ctx, h)
-	}
-
+// runHook marks or lifts the hook's soft deletion, processes the hook and
+// stores the result. It reports whether the result was stored.
+func (m *Manager) runHook(ctx context.Context, doc *document.Document, h *hook.Hook) bool {
 	if h.BlockID.Valid {
 		hasBlock := doc.Content.HasBlock(h.BlockID.String)
 
@@ -279,15 +283,15 @@ func (m *Manager) runHook(ctx context.Context, docs map[xid.ID]*document.Documen
 			With("error", err).
 			Error("updating document hook")
 
-		return false, false
+		return false
 	}
 
-	return false, true
+	return true
 }
 
 // fetchDocument returns the hook's document, cached in docs by branch. A
 // nil document means it is gone; false means it could not be read.
-func (m *Manager) fetchDocument(ctx context.Context, docs map[xid.ID]*document.Document, h *hook.Hook) (*document.Document, bool) {
+func (m *Manager) fetchDocument(ctx context.Context, docs map[xid.ID]*document.Document, h hook.Hook) (*document.Document, bool) {
 	key := h.BranchID.V
 
 	if doc, ok := docs[key]; ok {
@@ -314,7 +318,7 @@ func (m *Manager) fetchDocument(ctx context.Context, docs map[xid.ID]*document.D
 
 // deleteHook tears down the hook's external resource and then removes the
 // row. The row is the only record of the resource, so it goes last.
-func (m *Manager) deleteHook(ctx context.Context, h *hook.Hook) bool {
+func (m *Manager) deleteHook(ctx context.Context, h hook.Hook) bool {
 	if err := h.Delete(ctx, m.input(h.OrganizationID.String)); err != nil {
 		m.log.With("hook_id", h.ID).
 			With("error", err).
@@ -450,14 +454,14 @@ type Tx interface {
 	DeleteDocumentHook(ctx context.Context, id xid.ID) error
 
 	// RecordDocumentBranchHistoryEntry should record the branch as it
-	// stands, with its hooks, and return the id of the entry.
+	// stands, with its hooks.
 	RecordDocumentBranchHistoryEntry(
 		ctx context.Context,
 		branchID xid.ID,
 		organizationID string,
 		by null.String,
 		boundary bool,
-	) (xid.ID, error)
+	) error
 }
 
 // CopyTx is the part of a caller's transaction CopyHooks runs in.

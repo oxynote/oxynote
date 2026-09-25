@@ -74,7 +74,7 @@ func Test_GithubTracking_Process(t *testing.T) {
 	}{
 		"Installation not found is a status": {
 			Inp:        githubErrInput{state: State("{}"), err: github.ErrInstallationNotFound},
-			WantStatus: GithubTrackingStatusMissingInstallation,
+			WantStatus: StatusMissingInstallation,
 		},
 		"Github app not configured is a status": {
 			Inp:        githubErrInput{state: State("{}"), err: github.ErrNotConfigured},
@@ -173,7 +173,7 @@ func Test_GithubTracking_Reset(t *testing.T) {
 		},
 		"Missing installation is a status": {
 			Inp:        githubErrInput{err: github.ErrInstallationNotFound},
-			WantStatus: GithubTrackingStatusMissingInstallation,
+			WantStatus: StatusMissingInstallation,
 		},
 		"Client failure is propagated": {
 			Inp:     githubErrInput{err: assert.AnError},
@@ -254,7 +254,7 @@ func Test_GithubTracking_fetchTree(t *testing.T) {
 		},
 		"Installation not found is reported as state": {
 			Inp:    githubErrInput{err: github.ErrInstallationNotFound},
-			Status: GithubTrackingStatusMissingInstallation,
+			Status: StatusMissingInstallation,
 		},
 		"Github app not configured is reported as state": {
 			Inp:    githubErrInput{err: github.ErrNotConfigured},
@@ -266,15 +266,15 @@ func Test_GithubTracking_fetchTree(t *testing.T) {
 		},
 		"Repository not found is reported as state": {
 			Inp:    githubTreeInput{client: githubTreeClient{err: github.ErrRepositoryNotFound}},
-			Status: GithubTrackingStatusRepositoryNotFound,
+			Status: StatusMissingRepository,
 		},
 		"Branch not found is reported as state": {
 			Inp:    githubTreeInput{client: githubTreeClient{err: github.ErrRepositoryBranchNotFound}},
-			Status: GithubTrackingStatusBranchNotFound,
+			Status: StatusMissingBranch,
 		},
 		"Truncated tree is reported as state": {
 			Inp:    githubTreeInput{client: githubTreeClient{err: github.ErrTreeTruncated}},
-			Status: GithubTrackingStatusTreeTruncated,
+			Status: StatusTreeTruncated,
 		},
 		"Successful fetch": {
 			Inp:    githubTreeInput{client: githubTreeClient{tree: tree}},

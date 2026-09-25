@@ -13,7 +13,8 @@ import (
 
 // CreateHook creates the hook's external resource, then stores the hook
 // and records its branch in history, credited to updatedBy. It fails
-// unless the hook can check its target.
+// unless the branch belongs to the document, holds the hook's block and
+// the hook can check its target.
 func (m *Manager) CreateHook(
 	ctx context.Context,
 	ci hook.CreateInput,
@@ -24,13 +25,30 @@ func (m *Manager) CreateHook(
 	ctx, cancel := context.WithTimeout(ctx, _hookTimeout)
 	defer cancel()
 
-	// the history entry must hold the edits the editors have not stored,
-	// such as the block the hook is anchored to.
+	// the block check and the history entry read the stored content, which
+	// must hold what the editors have, such as a block just typed.
 	if err = m.flusher.Flush(ctx, documentID, ci.BranchID); err != nil {
 		return nil, fmt.Errorf("storing the branch's pending edits: %w", err)
 	}
 
-	hk, err := hook.NewHook(ctx, ci, documentID, ci.BranchID, organizationID, m.input(organizationID))
+	doc, err := m.db.FetchDocumentByBranchID(ctx, ci.BranchID, organizationID)
+	if err != nil {
+		return nil, err
+	}
+
+	// a hook on another document's branch is missed by that document's
+	// cleanup and cites the wrong one in its notifications.
+	if doc.ID != documentID {
+		return nil, hook.ErrBranchMismatch
+	}
+
+	// a hook on a block the branch does not hold would be soft-deleted by
+	// the next sweep.
+	if ci.BlockID.Valid && !doc.Content.HasBlock(ci.BlockID.String) {
+		return nil, hook.ErrBlockNotFound
+	}
+
+	hk, err := hook.NewHook(ctx, ci, documentID, organizationID, m.input(organizationID))
 	if err != nil {
 		// a refusal the hook reports passes through. A service it could
 		// not reach is logged here, since the caller only sees the
@@ -62,8 +80,7 @@ func (m *Manager) CreateHook(
 		return nil, err
 	}
 
-	_, err = tx.RecordDocumentBranchHistoryEntry(ctx, ci.BranchID, organizationID, null.StringFrom(updatedBy), false)
-	if err != nil {
+	if err = tx.RecordDocumentBranchHistoryEntry(ctx, ci.BranchID, organizationID, null.StringFrom(updatedBy), false); err != nil {
 		return nil, err
 	}
 
@@ -143,8 +160,7 @@ func (m *Manager) UpdateHook(
 	}
 
 	if hk.BranchID.Valid {
-		_, err = tx.RecordDocumentBranchHistoryEntry(ctx, hk.BranchID.V, organizationID, null.StringFrom(updatedBy), false)
-		if err != nil {
+		if err = tx.RecordDocumentBranchHistoryEntry(ctx, hk.BranchID.V, organizationID, null.StringFrom(updatedBy), false); err != nil {
 			return nil, err
 		}
 	}
@@ -208,8 +224,7 @@ func (m *Manager) DeleteHook(ctx context.Context, id xid.ID, organizationID, upd
 	}
 
 	if hk.BranchID.Valid {
-		_, err = tx.RecordDocumentBranchHistoryEntry(ctx, hk.BranchID.V, organizationID, null.StringFrom(updatedBy), false)
-		if err != nil {
+		if err = tx.RecordDocumentBranchHistoryEntry(ctx, hk.BranchID.V, organizationID, null.StringFrom(updatedBy), false); err != nil {
 			return err
 		}
 	}

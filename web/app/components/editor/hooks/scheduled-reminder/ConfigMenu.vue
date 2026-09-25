@@ -98,8 +98,11 @@ async function upsertHook() {
 				},
 			},
 		})
-	} catch {
-		showToastMessage("error", t("editor.hooks.errors.renew-failed"))
+	} catch (err) {
+		showToastMessage(
+			"error",
+			hookErrorMessage(err, i18n) ?? t("editor.hooks.errors.renew-failed"),
+		)
 		return
 	}
 
@@ -124,8 +127,11 @@ async function deleteHook() {
 			branchId: editorStore.activeBranchId,
 			hookId: props.hook.id,
 		})
-	} catch {
-		showToastMessage("error", t("editor.hooks.errors.delete-failed"))
+	} catch (err) {
+		showToastMessage(
+			"error",
+			hookErrorMessage(err, i18n) ?? t("editor.hooks.errors.delete-failed"),
+		)
 		return
 	}
 

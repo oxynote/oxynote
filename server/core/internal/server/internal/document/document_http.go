@@ -876,7 +876,7 @@ func (h *Handler) insertDocumentTx(
 		}
 	}
 
-	_, err := tx.RecordDocumentBranchHistoryEntry(
+	err := tx.RecordDocumentBranchHistoryEntry(
 		ctx,
 		doc.BranchID,
 		session.ActiveOrganizationID,
@@ -1023,14 +1023,14 @@ type DocumentsDBAgent interface {
 	UpdateDocument(ctx context.Context, doc documentCore.Document) error
 
 	// RecordDocumentBranchHistoryEntry should record the branch as it
-	// stands, with its live hooks, and return the id of the entry.
+	// stands, with its hooks.
 	RecordDocumentBranchHistoryEntry(
 		ctx context.Context,
 		branchID xid.ID,
 		organizationID string,
 		by null.String,
 		boundary bool,
-	) (xid.ID, error)
+	) error
 
 	// DeleteDocument should delete the document and report the ids of
 	// the document and of every cascade-deleted descendant.

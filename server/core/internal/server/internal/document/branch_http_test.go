@@ -165,8 +165,8 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 		"Error returned by Tx.RecordDocumentBranchHistoryEntry": {
 			DB: &DBMock{FetchDocumentUnsafeByBranchIDFunc: fetchStored},
 			Tx: &TxMock{
-				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) (xid.ID, error) {
-					return xid.ID{}, errors.New("boom")
+				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) error {
+					return errors.New("boom")
 				},
 			},
 			Body:      validBody,
@@ -459,8 +459,8 @@ func Test_Handler_MergeBranches(t *testing.T) {
 		"History entry insert error": {
 			DB: &DBMock{FetchDocumentByBranchIDFunc: fetchByBranch},
 			Tx: &TxMock{
-				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) (xid.ID, error) {
-					return xid.ID{}, errors.New("boom")
+				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) error {
+					return errors.New("boom")
 				},
 			},
 			Body:     validBody,
@@ -808,8 +808,8 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 				},
 			},
 			Tx: &TxMock{
-				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) (xid.ID, error) {
-					return xid.ID{}, errors.New("boom")
+				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) error {
+					return errors.New("boom")
 				},
 			},
 			Body:     validBody,

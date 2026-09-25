@@ -178,8 +178,11 @@ async function deleteHook() {
 			branchId: editorStore.activeBranchId,
 			hookId: props.hook.id,
 		})
-	} catch {
-		showToastMessage("error", t("editor.hooks.errors.delete-failed"))
+	} catch (err) {
+		showToastMessage(
+			"error",
+			hookErrorMessage(err, i18n) ?? t("editor.hooks.errors.delete-failed"),
+		)
 		return
 	}
 
@@ -206,8 +209,11 @@ async function resetHook() {
 			branchId: editorStore.activeBranchId,
 			hookId: props.hook.id,
 		})
-	} catch {
-		showToastMessage("error", t("editor.hooks.errors.reset-failed"))
+	} catch (err) {
+		showToastMessage(
+			"error",
+			hookErrorMessage(err, i18n) ?? t("editor.hooks.errors.reset-failed"),
+		)
 		return
 	}
 }
@@ -371,7 +377,10 @@ async function resetHook() {
 				>
 					<template
 						v-if="
-							hookData && hookData.score !== 0 && hookData.status === 'active'
+							hookData &&
+							hookData.score !== 0 &&
+							hookData.status === 'active' &&
+							props.hook?.state
 						"
 					>
 						<div class="flex flex-col gap-1 px-0.75 pb-0.75 text-2sm">

@@ -2433,6 +2433,7 @@ func Test_input_CreateHook(t *testing.T) {
 			BlockUID: "nope",
 			Type:     hook.TypeScheduledReminder,
 			Settings: scheduled,
+			Inserts:  1,
 			Err:      fmt.Errorf("block %s: %w", "nope", errUnknownBlock),
 		},
 		"GitHub tracking without the app": {

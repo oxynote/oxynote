@@ -51,7 +51,12 @@ func stubHookManager(stored ...*hook.Hook) *HookManagerMock {
 
 	return &HookManagerMock{
 		CreateHookFunc: func(ctx context.Context, ci hook.CreateInput, documentID xid.ID, organizationID, _ string) (*hook.Hook, error) {
-			return hook.NewHook(ctx, ci, documentID, ci.BranchID, organizationID, inp(organizationID))
+			// the manager refuses a block the branch does not hold.
+			if ci.BlockID.Valid && ci.BlockID.String != _stubContentUID {
+				return nil, hook.ErrBlockNotFound
+			}
+
+			return hook.NewHook(ctx, ci, documentID, organizationID, inp(organizationID))
 		},
 		UpdateHookFunc: func(ctx context.Context, _ xid.ID, organizationID string, ui hook.UpdateInput, _ string) (*hook.Hook, error) {
 			hk := lookup()

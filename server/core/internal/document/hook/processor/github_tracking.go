@@ -23,25 +23,6 @@ var (
 	ErrMissingPaths = errutil.New(http.StatusBadRequest, "document_hook.missing_paths", "at least one path is required")
 )
 
-const (
-	// GithubTrackingStatusMissingInstallation indicates that the GitHub
-	// App installation is missing for the organization.
-	GithubTrackingStatusMissingInstallation Status = "missing_installation"
-
-	// GithubTrackingStatusBranchNotFound indicates that the specified branch
-	// was not found in the GitHub repository.
-	GithubTrackingStatusBranchNotFound Status = "missing_branch"
-
-	// GithubTrackingStatusTreeTruncated indicates that the repository tree
-	// is too large for GitHub to return in full, so freshness cannot be
-	// determined from it.
-	GithubTrackingStatusTreeTruncated Status = "tree_truncated"
-
-	// GithubTrackingStatusRepositoryNotFound indicates that the specified
-	// repository was not found on GitHub.
-	GithubTrackingStatusRepositoryNotFound Status = "missing_repository"
-)
-
 // GithubTracking specifies a processor that tracks the
 // changes of files in a GitHub repository.
 type GithubTracking struct {
@@ -148,7 +129,7 @@ func (gt *GithubTracking) fetchTree(ctx context.Context, inp Input) (github.Tree
 	case errors.Is(err, github.ErrNotConfigured):
 		return nil, StatusUnconfigured, nil
 	case errors.Is(err, github.ErrInstallationNotFound):
-		return nil, GithubTrackingStatusMissingInstallation, nil
+		return nil, StatusMissingInstallation, nil
 	default:
 		return nil, "", fmt.Errorf("getting github client: %w", err)
 	}
@@ -159,11 +140,11 @@ func (gt *GithubTracking) fetchTree(ctx context.Context, inp Input) (github.Tree
 	case err == nil:
 		return tree, StatusActive, nil
 	case errors.Is(err, github.ErrRepositoryNotFound):
-		return nil, GithubTrackingStatusRepositoryNotFound, nil
+		return nil, StatusMissingRepository, nil
 	case errors.Is(err, github.ErrRepositoryBranchNotFound):
-		return nil, GithubTrackingStatusBranchNotFound, nil
+		return nil, StatusMissingBranch, nil
 	case errors.Is(err, github.ErrTreeTruncated):
-		return nil, GithubTrackingStatusTreeTruncated, nil
+		return nil, StatusTreeTruncated, nil
 	default:
 		return nil, "", fmt.Errorf("fetching repository tree: %w", err)
 	}

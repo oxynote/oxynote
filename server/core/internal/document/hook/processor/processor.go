@@ -12,10 +12,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// Status tells whether a processor could check what it watches. Only an
-// active result carries a score and a state.
-type Status string
-
+// All available Status constants.
 const (
 	// StatusActive indicates that the processor checked what it watches.
 	StatusActive Status = "active"
@@ -23,7 +20,38 @@ const (
 	// StatusUnconfigured indicates that the integration the processor needs
 	// is not configured on this deployment.
 	StatusUnconfigured Status = "unconfigured"
+
+	// StatusMissingInstallation indicates that the organization has no
+	// GitHub App installation.
+	StatusMissingInstallation Status = "missing_installation"
+
+	// StatusMissingRepository indicates that the tracked GitHub repository
+	// was not found.
+	StatusMissingRepository Status = "missing_repository"
+
+	// StatusMissingBranch indicates that the tracked branch was not found
+	// in the GitHub repository.
+	StatusMissingBranch Status = "missing_branch"
+
+	// StatusTreeTruncated indicates that the repository tree is too large
+	// for GitHub to return in full, so freshness cannot be determined.
+	StatusTreeTruncated Status = "tree_truncated"
+
+	// StatusUnreachableURL indicates that the watched URL is unreachable.
+	StatusUnreachableURL Status = "unreachable_url"
+
+	// StatusUnauthorized indicates that the container registry refused
+	// access to the watched image.
+	StatusUnauthorized Status = "unauthorized"
+
+	// StatusImageNotFound indicates that the registry has no such image or
+	// tag.
+	StatusImageNotFound Status = "image_not_found"
 )
+
+// Status tells whether a processor could check what it watches. Only an
+// active result carries a score and a state.
+type Status string
 
 // Result is the outcome of a processor run.
 type Result struct {

@@ -76,7 +76,7 @@ export default function () {
 				settings: req.settings,
 				// any non-null state, so the optimistic hook does not show as
 				// initializing.
-				state: {} as DocumentHookState,
+				state: {},
 				status: "active",
 				score: "100",
 				createdAt: new Date(),

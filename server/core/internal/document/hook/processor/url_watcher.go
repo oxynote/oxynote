@@ -19,10 +19,6 @@ import (
 // http(s) URL.
 var ErrInvalidURL = errutil.New(http.StatusBadRequest, "document_hook.invalid_url", "invalid url")
 
-// URLWatcherStatusUnreachableURL indicates that the URL being watched is
-// unreachable.
-const URLWatcherStatusUnreachableURL Status = "unreachable_url"
-
 // URLWatcher specifies a processor that watches a URL for changes.
 type URLWatcher struct {
 	// URL is the URL to watch.
@@ -70,7 +66,7 @@ func (uw *URLWatcher) Process(ctx context.Context, inp Input) (Result, error) {
 	}
 
 	if watch.Unreachable {
-		return inactive(URLWatcherStatusUnreachableURL), nil
+		return inactive(StatusUnreachableURL), nil
 	}
 
 	score := mathutil.Hundred

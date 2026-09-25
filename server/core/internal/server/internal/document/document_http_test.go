@@ -35,7 +35,6 @@ var (
 	_documentID = xid.New()
 	_branchID   = xid.New()
 	_branchID2  = xid.New()
-	_entryID    = xid.New()
 )
 
 // fakePublisher captures published notifications.
@@ -83,15 +82,8 @@ func newTestHandler(db DB, pub *fakePublisher) (*Handler, *callbackCounts) {
 	return hdl, cnt
 }
 
-// withTx wires the DB mock's BeginTx to hand out the provided Tx mock. A
-// history record the Tx mock does not stub returns _entryID.
+// withTx wires the DB mock's BeginTx to hand out the provided Tx mock.
 func withTx(db *DBMock, tx *TxMock, err error) *DBMock {
-	if tx != nil && tx.RecordDocumentBranchHistoryEntryFunc == nil {
-		tx.RecordDocumentBranchHistoryEntryFunc = func(context.Context, xid.ID, string, null.String, bool) (xid.ID, error) {
-			return _entryID, nil
-		}
-	}
-
 	db.BeginTxFunc = func(_ context.Context, dest any) error {
 		if err != nil {
 			return err
@@ -1311,8 +1303,8 @@ func Test_Handler_CreateDocument(t *testing.T) {
 		},
 		"History entry insert error": {
 			Tx: &TxMock{
-				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) (xid.ID, error) {
-					return xid.ID{}, errors.New("boom")
+				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) error {
+					return errors.New("boom")
 				},
 			},
 			Body:     validBody,

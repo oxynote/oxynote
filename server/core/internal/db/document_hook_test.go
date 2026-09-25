@@ -249,7 +249,7 @@ func Test_agent_UpdateDocumentHook(t *testing.T) {
 			hk := prepDocumentHooks(t, db, 1, nil)[0]
 			hk.Settings = processor.Settings(`{"url": "http://updated.test"}`)
 			hk.State = null.ValueFrom(processor.State(`{"watcherId":"w2"}`))
-			hk.Status = processor.URLWatcherStatusUnreachableURL
+			hk.Status = processor.StatusUnreachableURL
 			hk.Score = decimal.NewFromInt(10)
 			hk.UpdatedAt = null.TimeFrom(timeutil.Now().Truncate(time.Second))
 			hk.SoftDeletedAt = null.TimeFrom(timeutil.Now().Truncate(time.Second))

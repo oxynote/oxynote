@@ -129,7 +129,7 @@ func Test_URLWatcher_Process(t *testing.T) {
 				watch: &webchange.Watch{URL: "https://example.com", Unreachable: true},
 			},
 			State:          watcherState(t, null.Time{}),
-			ExpectedStatus: URLWatcherStatusUnreachableURL,
+			ExpectedStatus: StatusUnreachableURL,
 		},
 		"Watcher on another URL is pointed back": {
 			CD: &fakeChangeDetection{

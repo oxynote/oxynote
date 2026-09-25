@@ -22,10 +22,6 @@ var ErrBranchMismatch = errutil.New(http.StatusNotFound, "document.branch_mismat
 // document identified by the request path.
 var ErrHookMismatch = errutil.New(http.StatusNotFound, "document.hook_mismatch", "hook does not belong to the document")
 
-// ErrBlockNotFound is returned when a hook is to be anchored to a block the
-// branch's content does not hold.
-var ErrBlockNotFound = errutil.New(http.StatusNotFound, "document.hook_block_not_found", "block not found in the branch")
-
 // Handler holds dependencies required for document hook operations.
 type Handler struct {
 	log     *slog.Logger
@@ -117,31 +113,7 @@ func (h *Handler) CreateDocumentHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	branchDoc, err := h.db.FetchDocumentByBranchID(r.Context(), hi.BranchID, session.ActiveOrganizationID)
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	// a hook addressed under one document but attached to another's branch
-	// is missed by that document's cleanup and cites the wrong one in its
-	// notifications.
-	if branchDoc.ID != documentID {
-		httpserver.RespondError(h.log, w, ErrBranchMismatch)
-		return
-	}
-
-	// a hook anchored to a block the branch does not hold is invisible in
-	// the editor and soft-deleted by the next sweep, so it is refused
-	// rather than created to vanish.
-	if hi.BlockID.Valid {
-		if _, ok := branchDoc.Content.FindByUID(hi.BlockID.String); !ok {
-			httpserver.RespondError(h.log, w, ErrBlockNotFound)
-			return
-		}
-	}
-
-	hk, err := h.hookMan.CreateHook(r.Context(), hi, branchDoc.ID, session.ActiveOrganizationID, session.UserID)
+	hk, err := h.hookMan.CreateHook(r.Context(), hi, documentID, session.ActiveOrganizationID, session.UserID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return

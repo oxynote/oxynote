@@ -1044,16 +1044,6 @@ func (i *input) CreateHook(documentID, branchID xid.ID, blockUID string, tp hook
 		return nil, err
 	}
 
-	var blockID null.String
-
-	if blockUID != "" {
-		if _, ok := doc.Content.FindByUID(blockUID); !ok {
-			return nil, fmt.Errorf("block %s: %w", blockUID, errUnknownBlock)
-		}
-
-		blockID = null.StringFrom(blockUID)
-	}
-
 	// a hook whose integration is missing is refused anyway. Naming the
 	// integration's own error tells the model what is missing.
 	switch tp {
@@ -1072,9 +1062,13 @@ func (i *input) CreateHook(documentID, branchID xid.ID, blockUID string, tp hook
 	hk, err := i.hookMan.CreateHook(i.ctx, hook.CreateInput{
 		Type:     tp,
 		BranchID: doc.BranchID,
-		BlockID:  blockID,
+		BlockID:  null.NewString(blockUID, blockUID != ""),
 		Settings: settings,
 	}, doc.ID, i.orgID, i.userID)
+	if errors.Is(err, hook.ErrBlockNotFound) {
+		return nil, fmt.Errorf("block %s: %w", blockUID, errUnknownBlock)
+	}
+
 	if err != nil {
 		return nil, err
 	}

@@ -6,21 +6,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 
 	"github.com/oxynote/oxynote/server/core/internal/apps/registry"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/mathutil"
 	"github.com/shopspring/decimal"
 )
 
-const (
-	// ContainerImageWatcherStatusUnauthorized indicates that the Container Image
-	// watcher processor is unauthorized to access the container registry.
-	ContainerImageWatcherStatusUnauthorized Status = "unauthorized"
-
-	// ContainerImageWatcherStatusImageNotFound indicates that the registry
-	// has no such image or tag.
-	ContainerImageWatcherStatusImageNotFound Status = "image_not_found"
-)
+// ErrInvalidImage is returned when a container image watcher's image
+// reference cannot be parsed.
+var ErrInvalidImage = errutil.New(http.StatusBadRequest, "document_hook.invalid_image", "invalid container image reference")
 
 // ContainerImageWatcher specifies a processor that watches container images for updates.
 type ContainerImageWatcher struct {
@@ -32,7 +28,11 @@ type ContainerImageWatcher struct {
 
 // Validate checks that the image reference can be parsed.
 func (ciw *ContainerImageWatcher) Validate() error {
-	return registry.ValidateReference(ciw.Image)
+	if err := registry.ValidateReference(ciw.Image); err != nil {
+		return ErrInvalidImage
+	}
+
+	return nil
 }
 
 // Process scores the hook down once the image digest moved since the reset.
@@ -44,8 +44,12 @@ func (ciw *ContainerImageWatcher) Process(ctx context.Context, inp Input) (Resul
 	}
 
 	digest, status, err := ciw.digest(ctx)
-	if err != nil || status != StatusActive {
-		return inactive(status), err
+	if err != nil {
+		return Result{}, err
+	}
+
+	if status != StatusActive {
+		return inactive(status), nil
 	}
 
 	score := mathutil.Hundred
@@ -59,8 +63,12 @@ func (ciw *ContainerImageWatcher) Process(ctx context.Context, inp Input) (Resul
 // Reset records the image's current digest as the baseline.
 func (ciw *ContainerImageWatcher) Reset(ctx context.Context, _ Input) (Result, error) {
 	digest, status, err := ciw.digest(ctx)
-	if err != nil || status != StatusActive {
-		return inactive(status), err
+	if err != nil {
+		return Result{}, err
+	}
+
+	if status != StatusActive {
+		return inactive(status), nil
 	}
 
 	return active(mathutil.Hundred, ContainerImageWatcherState{Digest: digest})
@@ -75,9 +83,9 @@ func (ciw *ContainerImageWatcher) digest(ctx context.Context) (string, Status, e
 	case err == nil:
 		return digest, StatusActive, nil
 	case errors.Is(err, registry.ErrUnauthorized):
-		return "", ContainerImageWatcherStatusUnauthorized, nil
+		return "", StatusUnauthorized, nil
 	case errors.Is(err, registry.ErrNotFound):
-		return "", ContainerImageWatcherStatusImageNotFound, nil
+		return "", StatusImageNotFound, nil
 	default:
 		return "", "", fmt.Errorf("fetching container image digest: %w", err)
 	}

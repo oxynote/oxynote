@@ -201,7 +201,7 @@ func (h *Handler) UpdateDocumentBranchByIDUnsafe(w http.ResponseWriter, r *http.
 			lastUpdatedBy = ndoc.LastUpdatedBy
 		}
 
-		_, err = tx.RecordDocumentBranchHistoryEntry(
+		err = tx.RecordDocumentBranchHistoryEntry(
 			r.Context(),
 			doc.BranchID,
 			doc.OrganizationID,
@@ -352,7 +352,7 @@ func (h *Handler) MergeBranches(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = tx.RecordDocumentBranchHistoryEntry(
+	err = tx.RecordDocumentBranchHistoryEntry(
 		r.Context(),
 		toDoc.BranchID,
 		session.ActiveOrganizationID,
@@ -501,7 +501,7 @@ func (h *Handler) CreateDocumentBranch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = tx.RecordDocumentBranchHistoryEntry(
+	err = tx.RecordDocumentBranchHistoryEntry(
 		r.Context(),
 		newDoc.BranchID,
 		session.ActiveOrganizationID,

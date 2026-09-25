@@ -90,10 +90,8 @@ type Hook struct {
 // Hooks is the list of hooks stored on a history entry.
 type Hooks []Hook
 
-// NewHooks reduces hooks to what a history entry of the content records
-// of them. A hook anchored to a block the content does not hold is left
-// out, and one whose block is back is kept even while still soft-deleted.
-// The hook sweep catches up with the content only on its next run.
+// NewHooks reduces hooks to what a history entry of the content records:
+// those whose block the content holds, soft-deleted or not.
 func NewHooks(content document.RootBlock, hooks []hook.Hook) Hooks {
 	res := make(Hooks, 0, len(hooks))
 

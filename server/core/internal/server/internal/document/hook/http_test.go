@@ -300,30 +300,11 @@ func storedHookDB(hk *hookCore.Hook) *DBMock {
 func Test_Handler_CreateDocumentHook(t *testing.T) {
 	validBody := `{"type":"scheduled-reminder","branchId":"` + _branchID.String() + `","settings":{"scale":"linear"}}`
 
-	// the branch holds one block, so a hook can anchor to it and to nothing
-	// else.
-	branchDB := func() *DBMock {
-		return &DBMock{
-			FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*document.Document, error) {
-				return &document.Document{
-					ID: _documentID,
-					Content: document.RootBlock{
-						Content: []document.Block{{
-							Type:  document.BlockNodeParagraph,
-							Attrs: document.Attributes{document.AttrUID: "b1"},
-						}},
-					},
-				}, nil
-			},
-		}
-	}
-
 	created := func(context.Context, hookCore.CreateInput, xid.ID, string, string) (*hookCore.Hook, error) {
 		return scheduledHook(), nil
 	}
 
 	cc := map[string]struct {
-		DB        *DBMock
 		Man       *ManagerMock
 		NoSession bool
 		OmitDoc   bool
@@ -333,7 +314,6 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 		Creates   int
 	}{
 		"No session in context": {
-			DB:        branchDB(),
 			Man:       &ManagerMock{},
 			NoSession: true,
 			Body:      validBody,
@@ -341,56 +321,24 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 			RespBody:  `{"code":"account.not_authenticated","message":"not authenticated"}`,
 		},
 		"Missing document ID parameter": {
-			DB:       branchDB(),
 			Man:      &ManagerMock{},
 			OmitDoc:  true,
 			Body:     validBody,
 			RespCode: http.StatusNotFound,
 		},
 		"Invalid JSON body": {
-			DB:       branchDB(),
 			Man:      &ManagerMock{},
 			Body:     "{",
 			RespCode: http.StatusBadRequest,
 			RespBody: `{"code":"request.invalid_json","message":"invalid JSON body"}`,
 		},
 		"Invalid hook type": {
-			DB:       branchDB(),
 			Man:      &ManagerMock{},
 			Body:     `{"type":"bogus","branchId":"` + _branchID.String() + `","settings":{}}`,
 			RespCode: http.StatusBadRequest,
 			RespBody: `{"code":"document_hook.invalid_type","message":"invalid hook type"}`,
 		},
-		"Branch document fetch error": {
-			DB: &DBMock{
-				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*document.Document, error) {
-					return nil, errors.New("boom")
-				},
-			},
-			Man:      &ManagerMock{},
-			Body:     validBody,
-			RespCode: http.StatusInternalServerError,
-		},
-		"Branch belongs to another document": {
-			DB: &DBMock{
-				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*document.Document, error) {
-					return &document.Document{ID: xid.New()}, nil
-				},
-			},
-			Man:      &ManagerMock{},
-			Body:     validBody,
-			RespCode: http.StatusNotFound,
-			RespBody: `{"code":"document.branch_mismatch","message":"branch does not belong to the document"}`,
-		},
-		"Block not in the branch": {
-			DB:       branchDB(),
-			Man:      &ManagerMock{},
-			Body:     `{"type":"scheduled-reminder","branchId":"` + _branchID.String() + `","blockId":"nope","settings":{}}`,
-			RespCode: http.StatusNotFound,
-			RespBody: `{"code":"document.hook_block_not_found","message":"block not found in the branch"}`,
-		},
 		"Error returned by man.CreateHook": {
-			DB: branchDB(),
 			Man: &ManagerMock{
 				CreateHookFunc: func(context.Context, hookCore.CreateInput, xid.ID, string, string) (*hookCore.Hook, error) {
 					return nil, errors.New("boom")
@@ -401,14 +349,12 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 			Creates:  1,
 		},
 		"Successful creation on a block": {
-			DB:       branchDB(),
 			Man:      &ManagerMock{CreateHookFunc: created},
 			Body:     `{"type":"scheduled-reminder","branchId":"` + _branchID.String() + `","blockId":"b1","settings":{"scale":"linear"}}`,
 			RespCode: http.StatusCreated,
 			Creates:  1,
 		},
 		"Successful creation": {
-			DB:       branchDB(),
 			Man:      &ManagerMock{CreateHookFunc: created},
 			Body:     validBody,
 			RespCode: http.StatusCreated,
@@ -420,7 +366,7 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			hdl := NewHandler(slog.New(slog.DiscardHandler), c.DB, c.Man)
+			hdl := NewHandler(slog.New(slog.DiscardHandler), &DBMock{}, c.Man)
 			got := recordNotifications(hdl)
 
 			rec := httptest.NewRecorder()

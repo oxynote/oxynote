@@ -14,7 +14,7 @@ import (
 	ggcrregistry "github.com/google/go-containerregistry/pkg/registry"
 	"github.com/google/go-containerregistry/pkg/v1/random"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/oxynote/oxynote/server/core/internal/apps/registry"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -75,7 +75,7 @@ func Test_ContainerImageWatcher_Validate(t *testing.T) {
 	t.Parallel()
 
 	assert.NoError(t, (&ContainerImageWatcher{Image: "nginx:1.27"}).Validate())
-	assert.ErrorIs(t, (&ContainerImageWatcher{Image: "INVALID image ref"}).Validate(), registry.ErrInvalidReference)
+	testutil.AssertEqualError(t, ErrInvalidImage, (&ContainerImageWatcher{Image: "INVALID image ref"}).Validate())
 }
 
 func Test_ContainerImageWatcher_Process(t *testing.T) {
@@ -129,7 +129,7 @@ func Test_ContainerImageWatcher_Process(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		assert.Equal(t, ContainerImageWatcherStatusUnauthorized, res.Status)
+		assert.Equal(t, StatusUnauthorized, res.Status)
 		assert.Nil(t, res.State)
 	})
 
@@ -145,7 +145,7 @@ func Test_ContainerImageWatcher_Process(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		assert.Equal(t, ContainerImageWatcherStatusImageNotFound, res.Status)
+		assert.Equal(t, StatusImageNotFound, res.Status)
 	})
 
 	t.Run("Invalid image reference fails", func(t *testing.T) {
@@ -201,7 +201,7 @@ func Test_ContainerImageWatcher_Reset(t *testing.T) {
 		res, err := ciw.Reset(context.Background(), stubInput{})
 		require.NoError(t, err)
 
-		assert.Equal(t, ContainerImageWatcherStatusUnauthorized, res.Status)
+		assert.Equal(t, StatusUnauthorized, res.Status)
 		assert.Nil(t, res.State)
 	})
 }

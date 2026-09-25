@@ -241,7 +241,7 @@ var _ DB = &DBMock{}
 //			PromoteBranchApprovalsFunc: func(ctx context.Context, fromBranchID xid.ID, toBranchID xid.ID, organizationID string) error {
 //				panic("mock out the PromoteBranchApprovals method")
 //			},
-//			RecordDocumentBranchHistoryEntryFunc: func(ctx context.Context, branchID xid.ID, organizationID string, by null.String, boundary bool) (xid.ID, error) {
+//			RecordDocumentBranchHistoryEntryFunc: func(ctx context.Context, branchID xid.ID, organizationID string, by null.String, boundary bool) error {
 //				panic("mock out the RecordDocumentBranchHistoryEntry method")
 //			},
 //			ReplaceBranchTagsFunc: func(ctx context.Context, organizationID string, fromBranchID xid.ID, toBranchID xid.ID) error {
@@ -525,7 +525,7 @@ type DBMock struct {
 	PromoteBranchApprovalsFunc func(ctx context.Context, fromBranchID xid.ID, toBranchID xid.ID, organizationID string) error
 
 	// RecordDocumentBranchHistoryEntryFunc mocks the RecordDocumentBranchHistoryEntry method.
-	RecordDocumentBranchHistoryEntryFunc func(ctx context.Context, branchID xid.ID, organizationID string, by null.String, boundary bool) (xid.ID, error)
+	RecordDocumentBranchHistoryEntryFunc func(ctx context.Context, branchID xid.ID, organizationID string, by null.String, boundary bool) error
 
 	// ReplaceBranchTagsFunc mocks the ReplaceBranchTags method.
 	ReplaceBranchTagsFunc func(ctx context.Context, organizationID string, fromBranchID xid.ID, toBranchID xid.ID) error
@@ -4477,7 +4477,7 @@ func (mock *DBMock) PromoteBranchApprovalsCalls() []struct {
 }
 
 // RecordDocumentBranchHistoryEntry calls RecordDocumentBranchHistoryEntryFunc.
-func (mock *DBMock) RecordDocumentBranchHistoryEntry(ctx context.Context, branchID xid.ID, organizationID string, by null.String, boundary bool) (xid.ID, error) {
+func (mock *DBMock) RecordDocumentBranchHistoryEntry(ctx context.Context, branchID xid.ID, organizationID string, by null.String, boundary bool) error {
 	callInfo := struct {
 		Ctx            context.Context
 		BranchID       xid.ID
@@ -4496,10 +4496,9 @@ func (mock *DBMock) RecordDocumentBranchHistoryEntry(ctx context.Context, branch
 	mock.lockRecordDocumentBranchHistoryEntry.Unlock()
 	if mock.RecordDocumentBranchHistoryEntryFunc == nil {
 		var (
-			iDOut  xid.ID
 			errOut error
 		)
-		return iDOut, errOut
+		return errOut
 	}
 	return mock.RecordDocumentBranchHistoryEntryFunc(ctx, branchID, organizationID, by, boundary)
 }

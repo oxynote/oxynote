@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/guregu/null/v5"
-	"github.com/oxynote/oxynote/server/core/internal/apps/github"
 	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
+	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
 	"github.com/oxynote/oxynote/server/core/internal/notification"
@@ -57,17 +57,21 @@ func Test_Manager_CreateHook(t *testing.T) {
 
 	cc := map[string]struct {
 		Type     hook.Type
+		BlockID  null.String
 		Settings processor.Settings
 		CD       bool
 		// Unreachable points the changedetection client at a closed port.
 		Unreachable bool
-		FlushErr    error
-		BeginErr    error
-		Tx          *TxMock
-		Inserts     int
-		Commits     int
-		Watchers    []string
-		Err         error
+		// OtherDocument has the branch belong to another document.
+		OtherDocument bool
+		FlushErr      error
+		FetchErr      error
+		BeginErr      error
+		Tx            *TxMock
+		Inserts       int
+		Commits       int
+		Watchers      []string
+		Err           error
 	}{
 		"Error returned by flusher.Flush": {
 			Type:     hook.TypeScheduledReminder,
@@ -75,6 +79,27 @@ func Test_Manager_CreateHook(t *testing.T) {
 			FlushErr: assert.AnError,
 			Tx:       &TxMock{},
 			Err:      assert.AnError,
+		},
+		"Error returned by db.FetchDocumentByBranchID": {
+			Type:     hook.TypeScheduledReminder,
+			Settings: processor.Settings(`{}`),
+			FetchErr: sql.ErrNoRows,
+			Tx:       &TxMock{},
+			Err:      sql.ErrNoRows,
+		},
+		"Branch of another document is refused": {
+			Type:          hook.TypeScheduledReminder,
+			Settings:      processor.Settings(`{}`),
+			OtherDocument: true,
+			Tx:            &TxMock{},
+			Err:           hook.ErrBranchMismatch,
+		},
+		"Block the branch does not hold is refused": {
+			Type:     hook.TypeScheduledReminder,
+			BlockID:  null.StringFrom("nope"),
+			Settings: processor.Settings(`{}`),
+			Tx:       &TxMock{},
+			Err:      hook.ErrBlockNotFound,
 		},
 		"Unknown type is refused": {
 			Type:     "bogus",
@@ -109,8 +134,8 @@ func Test_Manager_CreateHook(t *testing.T) {
 			Settings: processor.Settings(`{"url":"https://example.com"}`),
 			CD:       true,
 			Tx: &TxMock{
-				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) (xid.ID, error) {
-					return xid.ID{}, assert.AnError
+				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) error {
+					return assert.AnError
 				},
 			},
 			Inserts:  1,
@@ -148,6 +173,7 @@ func Test_Manager_CreateHook(t *testing.T) {
 		},
 		"Successful creation": {
 			Type:     hook.TypeURLWatcher,
+			BlockID:  null.StringFrom("b1"),
 			Settings: processor.Settings(`{"url":"https://example.com"}`),
 			CD:       true,
 			Tx:       &TxMock{},
@@ -173,7 +199,19 @@ func Test_Manager_CreateHook(t *testing.T) {
 				wc = webchange.NewClient("http://127.0.0.1:1", "key")
 			}
 
-			man := newTestManager(t, stubDB(&DBMock{}, c.Tx, c.BeginErr), &fakePublisher{}, wc)
+			documentID := xid.New()
+
+			doc := stubDocument()
+			if !c.OtherDocument {
+				doc.ID = documentID
+			}
+
+			dbm := stubDB(&DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*document.Document, error) {
+					return doc, c.FetchErr
+				},
+			}, c.Tx, c.BeginErr)
+			man := newTestManager(t, dbm, &fakePublisher{}, wc)
 
 			if c.FlushErr != nil {
 				man.flusher = &FlusherMock{
@@ -186,11 +224,10 @@ func Test_Manager_CreateHook(t *testing.T) {
 			changes := &changeRecorder{}
 			man.BindHookChange(changes.record)
 
-			documentID := xid.New()
-
 			hk, err := man.CreateHook(context.Background(), hook.CreateInput{
 				Type:     c.Type,
 				BranchID: branchID,
+				BlockID:  c.BlockID,
 				Settings: c.Settings,
 			}, documentID, "org-1", "u1")
 			testutil.AssertEqualError(t, c.Err, err)
@@ -213,18 +250,24 @@ func Test_Manager_CreateHook(t *testing.T) {
 			assert.Equal(t, *hk, c.Tx.InsertDocumentHookCalls()[0].Hk)
 			assert.Equal(t, null.ValueFrom(documentID), hk.DocumentID)
 			assert.Equal(t, null.ValueFrom(branchID), hk.BranchID)
+			assert.Equal(t, c.BlockID, hk.BlockID)
 			assert.Equal(t, null.StringFrom("org-1"), hk.OrganizationID)
 			assert.Equal(t, processor.StatusActive, hk.Status)
 			assert.True(t, hk.State.Valid)
+
+			ff := dbm.FetchDocumentByBranchIDCalls()
+			require.Len(t, ff, 1)
+			assert.Equal(t, branchID, ff[0].BranchID)
+			assert.Equal(t, "org-1", ff[0].OrganizationID)
 
 			flushes := man.flusher.(*FlusherMock).FlushCalls()
 			require.Len(t, flushes, 1)
 			assert.Equal(t, documentID, flushes[0].DocumentID)
 			assert.Equal(t, branchID, flushes[0].BranchID)
 
-			ff := c.Tx.RecordDocumentBranchHistoryEntryCalls()
-			require.Len(t, ff, 1)
-			assert.Equal(t, null.StringFrom("u1"), ff[0].By)
+			rr := c.Tx.RecordDocumentBranchHistoryEntryCalls()
+			require.Len(t, rr, 1)
+			assert.Equal(t, null.StringFrom("u1"), rr[0].By)
 		})
 	}
 }
@@ -340,8 +383,8 @@ func Test_Manager_UpdateHook(t *testing.T) {
 				UpdateDocumentHookFunc: func(context.Context, hook.Hook) error {
 					return c.UpdateErr
 				},
-				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) (xid.ID, error) {
-					return xid.ID{}, c.RecordErr
+				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) error {
+					return c.RecordErr
 				},
 				CommitFunc: func() error {
 					return c.CommitErr
@@ -532,8 +575,8 @@ func Test_Manager_DeleteHook(t *testing.T) {
 				DeleteDocumentHookFunc: func(context.Context, xid.ID) error {
 					return c.DelErr
 				},
-				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) (xid.ID, error) {
-					return xid.ID{}, c.RecordErr
+				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) error {
+					return c.RecordErr
 				},
 				CommitFunc: func() error {
 					return c.CommitErr
@@ -701,20 +744,4 @@ func Test_Manager_ResetHook(t *testing.T) {
 			assert.Equal(t, []hook.Hook{*hk}, changes.hooks)
 		})
 	}
-}
-
-func Test_Manager_input(t *testing.T) {
-	t.Parallel()
-
-	man := newTestManager(t, &DBMock{}, &fakePublisher{}, nil)
-
-	got := man.input("org-1")
-	require.NotNil(t, got)
-
-	// the deployment has neither integration, and the input says so the
-	// way the processors ask.
-	assert.Same(t, man.webchangeClient, got.ChangeDetection())
-
-	_, err := got.Github(context.Background())
-	testutil.AssertEqualError(t, github.ErrNotConfigured, err)
 }

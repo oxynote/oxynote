@@ -63,8 +63,8 @@ export interface DocumentHook {
 	blockId: string | null
 	settings: DocumentHookSettings
 	// null until the server sets the hook up. A copy made by a fork, merge
-	// or duplicate starts out null.
-	state: DocumentHookState | null
+	// or duplicate starts out null. Its shape is the server's own.
+	state: Record<string, unknown> | null
 	// whether the hook could check its target on its last run. Score and
 	// state keep their last values while it is not active.
 	status: DocumentHookStatus
@@ -118,20 +118,10 @@ export type DocumentHookSettings =
 	| DocumentHookSettingsGitHubTracking
 	| DocumentHookSettingsURLWatcher
 	| DocumentHookSettingsContainerImageWatcher
-export type DocumentHookState =
-	| DocumentHookStateScheduledReminder
-	| DocumentHookStateGitHubTracking
-	| DocumentHookStateURLWatcher
-	| DocumentHookStateContainerImageWatcher
-
 export interface DocumentHookSettingsScheduledReminder {
 	scale: "linear"
 	duration: string | null // duration
 	schedule: Date | string
-}
-
-export interface DocumentHookStateScheduledReminder {
-	startedAt: Date | string
 }
 
 export interface DocumentHookSettingsGitHubTracking {
@@ -140,25 +130,12 @@ export interface DocumentHookSettingsGitHubTracking {
 	paths: string[]
 }
 
-export interface DocumentHookStateGitHubTracking {
-	pathsChecksums: Record<string, string>
-}
-
 export interface DocumentHookSettingsURLWatcher {
 	url: string
 }
 
 export interface DocumentHookSettingsContainerImageWatcher {
 	image: string
-}
-
-export interface DocumentHookStateURLWatcher {
-	watcherId: string
-	lastChangedAt: Date | string | null
-}
-
-export interface DocumentHookStateContainerImageWatcher {
-	digest: string
 }
 
 export type DocumentTreeResponse = DocumentTreeElement[]

@@ -23,13 +23,13 @@ func NewKeyedMutex[K comparable]() *KeyedMutex[K] {
 // Lock waits for the key's mutex until the context ends and returns the
 // function that unlocks it.
 func (km *KeyedMutex[K]) Lock(ctx context.Context, key K) (func(), error) {
-	l := km.acquire(key)
+	l := km.ref(key)
 
 	select {
 	case l.ch <- struct{}{}:
 		return km.unlocker(key, l), nil
 	case <-ctx.Done():
-		km.release(key, l)
+		km.unref(key, l)
 
 		return nil, ctx.Err()
 	}
@@ -38,20 +38,20 @@ func (km *KeyedMutex[K]) Lock(ctx context.Context, key K) (func(), error) {
 // TryLock takes the key's mutex when no one holds it and returns the
 // function that unlocks it.
 func (km *KeyedMutex[K]) TryLock(key K) (func(), bool) {
-	l := km.acquire(key)
+	l := km.ref(key)
 
 	select {
 	case l.ch <- struct{}{}:
 		return km.unlocker(key, l), true
 	default:
-		km.release(key, l)
+		km.unref(key, l)
 
 		return nil, false
 	}
 }
 
-// acquire returns the key's lock, counting the caller as its user.
-func (km *KeyedMutex[K]) acquire(key K) *keyedLock {
+// ref returns the key's lock, counting the caller as its user.
+func (km *KeyedMutex[K]) ref(key K) *keyedLock {
 	km.mu.Lock()
 	defer km.mu.Unlock()
 
@@ -66,9 +66,9 @@ func (km *KeyedMutex[K]) acquire(key K) *keyedLock {
 	return l
 }
 
-// release drops the caller as the lock's user, and the lock once no one
+// unref drops the caller as the lock's user, and the lock once no one
 // uses it.
-func (km *KeyedMutex[K]) release(key K, l *keyedLock) {
+func (km *KeyedMutex[K]) unref(key K, l *keyedLock) {
 	km.mu.Lock()
 	defer km.mu.Unlock()
 
@@ -83,7 +83,7 @@ func (km *KeyedMutex[K]) release(key K, l *keyedLock) {
 func (km *KeyedMutex[K]) unlocker(key K, l *keyedLock) func() {
 	return func() {
 		<-l.ch
-		km.release(key, l)
+		km.unref(key, l)
 	}
 }
 

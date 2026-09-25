@@ -114,7 +114,7 @@ func Test_Interpreter_InterpretNotification(t *testing.T) {
 				hook.TypeGithubTracking,
 				null.String{},
 				_testBranchID,
-				processor.GithubTrackingStatusRepositoryNotFound,
+				processor.StatusMissingRepository,
 			)),
 			Result: &Message{
 				Text: fmt.Sprintf("<%s|My Doc> can no longer be checked — GitHub Tracking", _testDocURL),

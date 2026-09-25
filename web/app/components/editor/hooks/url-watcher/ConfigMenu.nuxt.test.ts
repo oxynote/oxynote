@@ -114,6 +114,7 @@ describe("<URLWatcherConfigMenu>", { concurrent: false }, () => {
 		await openHookSubMenu("Watching oxynote.test")
 
 		expect(menuText()).toContain(t("editor.hooks.initializing"))
+		expect(menuText()).not.toContain("the block will be highlighted")
 		// a setup that keeps failing must not lock the reader out of it.
 		expect(menuText()).toContain(t("editor.hooks.delete"))
 	})
@@ -135,14 +136,6 @@ describe("<URLWatcherConfigMenu>", { concurrent: false }, () => {
 
 		expect(menuText()).toContain("not set up on this server")
 		expect(menuText()).toContain(t("editor.hooks.delete"))
-	})
-
-	it("warns that change detection is not set up", async ({ expect }) => {
-		await mountMenu({ hook: urlHook({ status: "unconfigured" }) })
-
-		await openHookSubMenu("Watching oxynote.test")
-
-		expect(menuText()).toContain("not set up on this server")
 	})
 
 	it("keeps the create button out of reach until an address is typed", async ({
