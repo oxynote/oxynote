@@ -59,11 +59,14 @@ func Test_Manager_CreateHook(t *testing.T) {
 		Type     hook.Type
 		Settings processor.Settings
 		CD       bool
-		Tx       *TxMock
-		Inserts  int
-		Commits  int
-		Watchers []string
-		Err      error
+		// Unreachable points the changedetection client at a closed port.
+		Unreachable bool
+		BeginErr    error
+		Tx          *TxMock
+		Inserts     int
+		Commits     int
+		Watchers    []string
+		Err         error
 	}{
 		"Unknown type is refused": {
 			Type:     "bogus",
@@ -76,6 +79,49 @@ func Test_Manager_CreateHook(t *testing.T) {
 			Settings: processor.Settings(`{"url":"https://example.com"}`),
 			Tx:       &TxMock{},
 			Err:      errutil.New(http.StatusUnprocessableEntity, "document_hook.unconfigured", "the hook cannot check its target: %s", processor.StatusUnconfigured),
+		},
+		"Service the hook checks is unreachable": {
+			Type:        hook.TypeURLWatcher,
+			Settings:    processor.Settings(`{"url":"https://example.com"}`),
+			Unreachable: true,
+			Tx:          &TxMock{},
+			Err:         hook.ErrUpstreamUnavailable,
+		},
+		"Error returned by db.BeginTx": {
+			Type:     hook.TypeURLWatcher,
+			Settings: processor.Settings(`{"url":"https://example.com"}`),
+			CD:       true,
+			BeginErr: assert.AnError,
+			Tx:       &TxMock{},
+			Watchers: []string{"w-new"},
+			Err:      assert.AnError,
+		},
+		"Error returned by tx.RecordDocumentBranchHistoryEntry": {
+			Type:     hook.TypeURLWatcher,
+			Settings: processor.Settings(`{"url":"https://example.com"}`),
+			CD:       true,
+			Tx: &TxMock{
+				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) (xid.ID, error) {
+					return xid.ID{}, assert.AnError
+				},
+			},
+			Inserts:  1,
+			Watchers: []string{"w-new"},
+			Err:      assert.AnError,
+		},
+		"Error returned by tx.Commit": {
+			Type:     hook.TypeURLWatcher,
+			Settings: processor.Settings(`{"url":"https://example.com"}`),
+			CD:       true,
+			Tx: &TxMock{
+				CommitFunc: func() error {
+					return assert.AnError
+				},
+			},
+			Inserts:  1,
+			Commits:  1,
+			Watchers: []string{"w-new"},
+			Err:      assert.AnError,
 		},
 		// the insert is rolled back, so the watcher the hook created is torn
 		// down again.
@@ -115,7 +161,11 @@ func Test_Manager_CreateHook(t *testing.T) {
 				cd, wc = newFakeChangeDetection(t)
 			}
 
-			man := newTestManager(t, stubDB(&DBMock{}, c.Tx, nil), &fakePublisher{}, wc)
+			if c.Unreachable {
+				wc = webchange.NewClient("http://127.0.0.1:1", "key")
+			}
+
+			man := newTestManager(t, stubDB(&DBMock{}, c.Tx, c.BeginErr), &fakePublisher{}, wc)
 			changes := &changeRecorder{}
 			man.OnHookChange(changes.record)
 
@@ -161,33 +211,91 @@ func Test_Manager_UpdateHook(t *testing.T) {
 	t.Parallel()
 
 	branchID := xid.New()
-	settings := processor.Settings(`{"scale":"linear","schedule":"2099-01-01T00:00:00Z"}`)
+	settings := processor.Settings(`{"url":"https://example.com"}`)
+
+	// unset is a url watcher copy that the update sets up, so a failure
+	// after it has a watcher to tear down.
+	unset := func() hook.Hook {
+		h := urlWatcherHook(branchID)
+		h.State = null.Value[processor.State]{}
+
+		return h
+	}
 
 	cc := map[string]struct {
-		Settings  processor.Settings
-		FetchErr  error
-		UpdateErr error
-		Updates   int
-		Err       error
+		// Held has another write hold the hook's lock until the update
+		// gives up.
+		Held        bool
+		Branchless  bool
+		Unreachable bool
+		Settings    processor.Settings
+		FetchErr    error
+		BeginErr    error
+		UpdateErr   error
+		RecordErr   error
+		CommitErr   error
+		Updates     int
+		Records     int
+		Watchers    []string
+		Err         error
 	}{
+		"Hook another write holds": {
+			Held:     true,
+			Settings: settings,
+			Err:      context.DeadlineExceeded,
+		},
 		"Error returned by db.FetchDocumentHook": {
 			Settings: settings,
 			FetchErr: sql.ErrNoRows,
 			Err:      sql.ErrNoRows,
 		},
-		"Processor refuses the settings": {
-			Settings: processor.Settings(`{"scale":"bogus","schedule":"2099-01-01T00:00:00Z"}`),
-			Err:      processor.ErrInvalidScaleType,
+		"Settings the processor refuses": {
+			Settings: processor.Settings(`{"url":"ftp://example.com"}`),
+			Err:      processor.ErrInvalidURL,
 		},
-		"Error returned by tx.UpdateDocumentHook": {
+		"Service the hook checks is unreachable": {
+			Settings:    settings,
+			Unreachable: true,
+			Err:         hook.ErrUpstreamUnavailable,
+		},
+		"Error returned by db.BeginTx tears down the setup": {
+			Settings: settings,
+			BeginErr: assert.AnError,
+			Watchers: []string{"w-new"},
+			Err:      assert.AnError,
+		},
+		"Error returned by tx.UpdateDocumentHook tears down the setup": {
 			Settings:  settings,
 			UpdateErr: assert.AnError,
 			Updates:   1,
+			Watchers:  []string{"w-new"},
 			Err:       assert.AnError,
+		},
+		"Error returned by tx.RecordDocumentBranchHistoryEntry tears down the setup": {
+			Settings:  settings,
+			RecordErr: assert.AnError,
+			Updates:   1,
+			Records:   1,
+			Watchers:  []string{"w-new"},
+			Err:       assert.AnError,
+		},
+		"Error returned by tx.Commit tears down the setup": {
+			Settings:  settings,
+			CommitErr: assert.AnError,
+			Updates:   1,
+			Records:   1,
+			Watchers:  []string{"w-new"},
+			Err:       assert.AnError,
+		},
+		"Hook without a branch has no history": {
+			Settings:   settings,
+			Branchless: true,
+			Updates:    1,
 		},
 		"Successful update": {
 			Settings: settings,
 			Updates:  1,
+			Records:  1,
 		},
 	}
 
@@ -195,37 +303,81 @@ func Test_Manager_UpdateHook(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			stored := stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+			stored := unset()
+			if c.Branchless {
+				stored.BranchID = null.Value[xid.ID]{}
+			}
+
 			tx := &TxMock{
 				UpdateDocumentHookFunc: func(context.Context, hook.Hook) error {
 					return c.UpdateErr
 				},
+				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) (xid.ID, error) {
+					return xid.ID{}, c.RecordErr
+				},
+				CommitFunc: func() error {
+					return c.CommitErr
+				},
 			}
-			db := stubStoredHook(stubDB(&DBMock{}, tx, nil), stored, c.FetchErr)
 
-			man := newTestManager(t, db, &fakePublisher{}, nil)
+			cd, wc := newFakeChangeDetection(t)
+			if c.Unreachable {
+				wc = webchange.NewClient("http://127.0.0.1:1", "key")
+			}
 
-			hk, err := man.UpdateHook(context.Background(), stored.ID, "org-1", hook.UpdateInput{Settings: c.Settings}, "u1")
+			dbm := stubStoredHook(stubDB(&DBMock{}, tx, c.BeginErr), stored, c.FetchErr)
+			man := newTestManager(t, dbm, &fakePublisher{}, wc)
+			changes := &changeRecorder{}
+			man.OnHookChange(changes.record)
+
+			ctx := context.Background()
+
+			if c.Held {
+				unlock, err := man.hooks.Lock(ctx, stored.ID)
+				require.NoError(t, err)
+
+				defer unlock()
+
+				var cancel context.CancelFunc
+
+				ctx, cancel = context.WithTimeout(ctx, 50*time.Millisecond)
+				defer cancel()
+			}
+
+			hk, err := man.UpdateHook(ctx, stored.ID, "org-1", hook.UpdateInput{Settings: c.Settings}, "u1")
 			testutil.AssertEqualError(t, c.Err, err)
 
-			ff := tx.UpdateDocumentHookCalls()
-			require.Len(t, ff, c.Updates)
+			assert.Len(t, tx.UpdateDocumentHookCalls(), c.Updates)
+			assert.Equal(t, c.Watchers, cd.deletedWatchers())
 
-			ll := db.FetchDocumentHookCalls()
+			rr := tx.RecordDocumentBranchHistoryEntryCalls()
+			require.Len(t, rr, c.Records)
+
+			for _, r := range rr {
+				assert.Equal(t, branchID, r.BranchID)
+				assert.Equal(t, "org-1", r.OrganizationID)
+				assert.Equal(t, null.StringFrom("u1"), r.By)
+				assert.False(t, r.Boundary)
+			}
+
+			if err != nil {
+				assert.Nil(t, hk)
+				assert.Empty(t, changes.hooks)
+
+				return
+			}
+
+			ll := dbm.FetchDocumentHookCalls()
 			require.Len(t, ll, 1)
 			assert.Equal(t, stored.ID, ll[0].ID)
 			assert.Equal(t, "org-1", ll[0].OrganizationID)
 
-			if err != nil {
-				assert.Nil(t, hk)
-				return
-			}
-
-			assert.Equal(t, *hk, ff[0].Hk)
+			assert.Equal(t, *hk, tx.UpdateDocumentHookCalls()[0].Hk)
 			assert.Equal(t, c.Settings, hk.Settings)
+			assert.True(t, hk.State.Valid)
 			assert.True(t, hk.UpdatedAt.Valid)
-			assert.Len(t, tx.RecordDocumentBranchHistoryEntryCalls(), 1)
 			assert.Len(t, tx.CommitCalls(), 1)
+			assert.Equal(t, []hook.Hook{*hk}, changes.hooks)
 		})
 	}
 }
@@ -236,11 +388,23 @@ func Test_Manager_DeleteHook(t *testing.T) {
 	branchID := xid.New()
 
 	cc := map[string]struct {
-		Hook    func(*testing.T) hook.Hook
-		DelErr  error
-		Deletes int
-		Err     error
+		Hook      func(*testing.T) hook.Hook
+		FetchErr  error
+		BeginErr  error
+		DelErr    error
+		RecordErr error
+		CommitErr error
+		Deletes   int
+		Records   int
+		Err       error
 	}{
+		"Error returned by db.FetchDocumentHook": {
+			Hook: func(t *testing.T) hook.Hook {
+				return stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+			},
+			FetchErr: sql.ErrNoRows,
+			Err:      sql.ErrNoRows,
+		},
 		// the row goes only once the resource it describes is gone, so a
 		// failed teardown keeps it.
 		"External teardown fails": {
@@ -252,6 +416,13 @@ func Test_Manager_DeleteHook(t *testing.T) {
 			},
 			Err: hook.ErrUpstreamUnavailable,
 		},
+		"Error returned by db.BeginTx": {
+			Hook: func(t *testing.T) hook.Hook {
+				return stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+			},
+			BeginErr: assert.AnError,
+			Err:      assert.AnError,
+		},
 		"Error returned by tx.DeleteDocumentHook": {
 			Hook: func(t *testing.T) hook.Hook {
 				return stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
@@ -260,10 +431,38 @@ func Test_Manager_DeleteHook(t *testing.T) {
 			Deletes: 1,
 			Err:     assert.AnError,
 		},
+		"Error returned by tx.RecordDocumentBranchHistoryEntry": {
+			Hook: func(t *testing.T) hook.Hook {
+				return stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+			},
+			RecordErr: assert.AnError,
+			Deletes:   1,
+			Records:   1,
+			Err:       assert.AnError,
+		},
+		"Error returned by tx.Commit": {
+			Hook: func(t *testing.T) hook.Hook {
+				return stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+			},
+			CommitErr: assert.AnError,
+			Deletes:   1,
+			Records:   1,
+			Err:       assert.AnError,
+		},
 		"Hook never set up is deleted": {
 			Hook: func(*testing.T) hook.Hook {
 				hk := urlWatcherHook(branchID)
 				hk.State = null.Value[processor.State]{}
+
+				return hk
+			},
+			Deletes: 1,
+			Records: 1,
+		},
+		"Hook without a branch has no history": {
+			Hook: func(t *testing.T) hook.Hook {
+				hk := stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+				hk.BranchID = null.Value[xid.ID]{}
 
 				return hk
 			},
@@ -274,6 +473,7 @@ func Test_Manager_DeleteHook(t *testing.T) {
 				return stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
 			},
 			Deletes: 1,
+			Records: 1,
 		},
 	}
 
@@ -287,22 +487,33 @@ func Test_Manager_DeleteHook(t *testing.T) {
 				DeleteDocumentHookFunc: func(context.Context, xid.ID) error {
 					return c.DelErr
 				},
+				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) (xid.ID, error) {
+					return xid.ID{}, c.RecordErr
+				},
+				CommitFunc: func() error {
+					return c.CommitErr
+				},
 			}
 
-			man := newTestManager(t, stubStoredHook(stubDB(&DBMock{}, tx, nil), hk, nil), &fakePublisher{}, nil)
+			man := newTestManager(t, stubStoredHook(stubDB(&DBMock{}, tx, c.BeginErr), hk, c.FetchErr), &fakePublisher{}, nil)
+			changes := &changeRecorder{}
+			man.OnHookChange(changes.record)
 
 			err := man.DeleteHook(context.Background(), hk.ID, "org-1", "u1")
 			testutil.AssertEqualError(t, c.Err, err)
 
 			ff := tx.DeleteDocumentHookCalls()
 			require.Len(t, ff, c.Deletes)
+			assert.Len(t, tx.RecordDocumentBranchHistoryEntryCalls(), c.Records)
 
 			if err != nil {
+				assert.Empty(t, changes.hooks)
+
 				return
 			}
 
 			assert.Equal(t, hk.ID, ff[0].ID)
-			assert.Len(t, tx.RecordDocumentBranchHistoryEntryCalls(), 1)
+			assert.Len(t, changes.hooks, 1)
 		})
 	}
 }
@@ -313,19 +524,47 @@ func Test_Manager_ResetHook(t *testing.T) {
 	branchID := xid.New()
 
 	cc := map[string]struct {
-		Hook      func(*testing.T) hook.Hook
-		UpdateErr error
-		Updates   int
-		Status    processor.Status
-		Published []notification.Code
-		Err       error
+		Hook        func(*testing.T) hook.Hook
+		CD          bool
+		Unreachable bool
+		FetchErr    error
+		UpdateErr   error
+		Updates     int
+		Status      processor.Status
+		Published   []notification.Code
+		Watchers    []string
+		Err         error
 	}{
-		"Error returned by tx.UpdateDocumentHook": {
+		"Error returned by db.FetchDocumentHook": {
 			Hook: func(t *testing.T) hook.Hook {
-				return stubHook(t, branchID, time.Now().Add(time.Hour), time.Now().Add(-time.Hour))
+				return stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
 			},
+			FetchErr: sql.ErrNoRows,
+			Err:      sql.ErrNoRows,
+		},
+		"Service the hook checks is unreachable": {
+			Hook: func(*testing.T) hook.Hook {
+				hk := urlWatcherHook(branchID)
+				hk.State = null.Value[processor.State]{}
+
+				return hk
+			},
+			Unreachable: true,
+			Err:         hook.ErrUpstreamUnavailable,
+		},
+		// the reset set the hook up, but the row that would name the new
+		// watcher is not stored.
+		"Error returned by db.UpdateDocumentHook tears down the setup": {
+			Hook: func(*testing.T) hook.Hook {
+				hk := urlWatcherHook(branchID)
+				hk.State = null.Value[processor.State]{}
+
+				return hk
+			},
+			CD:        true,
 			UpdateErr: assert.AnError,
 			Updates:   1,
+			Watchers:  []string{"w-new"},
 			Err:       assert.AnError,
 		},
 		// there is nothing to refuse: the hook is stored with the status
@@ -353,235 +592,55 @@ func Test_Manager_ResetHook(t *testing.T) {
 
 			stored := c.Hook(t)
 
-			tx := &TxMock{
+			db := stubStoredHook(&DBMock{
 				UpdateDocumentHookFunc: func(context.Context, hook.Hook) error {
 					return c.UpdateErr
 				},
-			}
-
-			db := stubStoredHook(stubDB(&DBMock{
 				FetchDocumentMaintainersFunc: func(context.Context, xid.ID, string) ([]string, error) {
 					return []string{"user-1"}, nil
 				},
-			}, tx, nil), stored, nil)
-			pub := &fakePublisher{}
+			}, stored, c.FetchErr)
 
-			man := newTestManager(t, db, pub, nil)
+			var (
+				cd *fakeChangeDetection
+				wc *webchange.Client
+			)
+
+			if c.CD {
+				cd, wc = newFakeChangeDetection(t)
+			}
+
+			if c.Unreachable {
+				wc = webchange.NewClient("http://127.0.0.1:1", "key")
+			}
+
+			pub := &fakePublisher{}
+			man := newTestManager(t, db, pub, wc)
+			changes := &changeRecorder{}
+			man.OnHookChange(changes.record)
 
 			hk, err := man.ResetHook(context.Background(), stored.ID, "org-1")
 			testutil.AssertEqualError(t, c.Err, err)
 
-			ff := tx.UpdateDocumentHookCalls()
+			ff := db.UpdateDocumentHookCalls()
 			require.Len(t, ff, c.Updates)
 
-			// history does not hold watcher state.
-			assert.Empty(t, tx.RecordDocumentBranchHistoryEntryCalls())
+			if cd != nil {
+				assert.Equal(t, c.Watchers, cd.deletedWatchers())
+			}
 
 			if err != nil {
+				assert.Empty(t, changes.hooks)
+
 				return
 			}
 
 			assert.Equal(t, *hk, ff[0].Hk)
 			assert.Equal(t, c.Status, hk.Status)
 			assert.Equal(t, c.Published, pub.codes)
-		})
-	}
-}
-
-func Test_Manager_change(t *testing.T) {
-	t.Parallel()
-
-	branchID := xid.New()
-
-	cc := map[string]struct {
-		// Held has another write hold the hook's lock until the change
-		// gives up.
-		Held      bool
-		BeginErr  error
-		FetchErr  error
-		RunErr    error
-		WriteErr  error
-		CommitErr error
-		// Writes is how many times the write ran; the outside run always
-		// comes first, with no transaction open.
-		Writes   int
-		Watchers []string
-		Err      error
-	}{
-		"Error returned by db.BeginTx tears down the setup": {
-			BeginErr: assert.AnError,
-			Watchers: []string{"w-new"},
-			Err:      assert.AnError,
-		},
-		"Hook another write holds": {
-			Held: true,
-			Err:  context.DeadlineExceeded,
-		},
-		"Error returned by db.FetchDocumentHook": {
-			FetchErr: assert.AnError,
-			Err:      assert.AnError,
-		},
-		"Error returned by the run tears down the setup": {
-			RunErr:   assert.AnError,
-			Watchers: []string{"w-new"},
-			Err:      assert.AnError,
-		},
-		// the run set the hook up, but the row that would name the new
-		// watcher is not stored.
-		"Failed write tears down the setup": {
-			WriteErr: assert.AnError,
-			Writes:   1,
-			Watchers: []string{"w-new"},
-			Err:      assert.AnError,
-		},
-		"Error returned by tx.Commit tears down the setup": {
-			CommitErr: assert.AnError,
-			Writes:    1,
-			Watchers:  []string{"w-new"},
-			Err:       assert.AnError,
-		},
-		"Successful change": {
-			Writes: 1,
-		},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			stored := urlWatcherHook(branchID)
-			stored.State = null.Value[processor.State]{}
-
-			tx := &TxMock{
-				CommitFunc: func() error {
-					return c.CommitErr
-				},
-			}
-
-			cd, wc := newFakeChangeDetection(t)
-			man := newTestManager(t, stubStoredHook(stubDB(&DBMock{}, tx, c.BeginErr), stored, c.FetchErr), &fakePublisher{}, wc)
-			changes := &changeRecorder{}
-			man.OnHookChange(changes.record)
-
-			ctx := context.Background()
-
-			if c.Held {
-				unlock, err := man.hooks.Lock(ctx, stored.ID)
-				require.NoError(t, err)
-
-				defer unlock()
-
-				var cancel context.CancelFunc
-
-				ctx, cancel = context.WithTimeout(ctx, 50*time.Millisecond)
-				defer cancel()
-			}
-
-			var writes int
-
-			hk, err := man.change(
-				ctx,
-				stored.ID,
-				"org-1",
-				func(ctx context.Context, hk *hook.Hook) error {
-					if err := hk.Reset(ctx, man.input("org-1")); err != nil {
-						return err
-					}
-
-					return c.RunErr
-				},
-				func(_ context.Context, wtx Tx, hk hook.Hook) error {
-					writes++
-
-					assert.Same(t, tx, wtx)
-					assert.True(t, hk.State.Valid)
-
-					return c.WriteErr
-				},
-			)
-			testutil.AssertEqualError(t, c.Err, err)
-
-			assert.Equal(t, c.Writes, writes)
-
-			assert.Equal(t, c.Watchers, cd.deletedWatchers())
-
-			if err != nil {
-				assert.Nil(t, hk)
-				assert.Empty(t, changes.hooks)
-
-				return
-			}
-
 			assert.Equal(t, []hook.Hook{*hk}, changes.hooks)
-			assert.True(t, hk.State.Valid)
-			assert.Len(t, tx.CommitCalls(), 1)
 		})
 	}
-}
-
-func Test_Manager_record(t *testing.T) {
-	t.Parallel()
-
-	branchID := xid.New()
-
-	cc := map[string]struct {
-		// Branchless cuts the hook loose from its branch.
-		Branchless bool
-		RecordErr  error
-		Records    int
-		Err        error
-	}{
-		"Error returned by tx.RecordDocumentBranchHistoryEntry": {
-			RecordErr: assert.AnError,
-			Records:   1,
-			Err:       assert.AnError,
-		},
-		"Hook without a branch has no history": {
-			Branchless: true,
-		},
-		"Successful record": {
-			Records: 1,
-		},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			tx := &TxMock{
-				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) (xid.ID, error) {
-					return xid.ID{}, c.RecordErr
-				},
-			}
-
-			hk := stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
-			if c.Branchless {
-				hk.BranchID = null.Value[xid.ID]{}
-			}
-
-			err := newTestManager(t, &DBMock{}, &fakePublisher{}, nil).record(context.Background(), tx, hk, "u1")
-			testutil.AssertEqualError(t, c.Err, err)
-
-			ff := tx.RecordDocumentBranchHistoryEntryCalls()
-			require.Len(t, ff, c.Records)
-
-			for _, f := range ff {
-				assert.Equal(t, branchID, f.BranchID)
-				assert.Equal(t, "org-1", f.OrganizationID)
-				assert.Equal(t, null.StringFrom("u1"), f.By)
-				assert.False(t, f.Boundary)
-			}
-		})
-	}
-}
-
-func Test_Manager_upstream(t *testing.T) {
-	t.Parallel()
-
-	man := newTestManager(t, &DBMock{}, &fakePublisher{}, nil)
-
-	assert.Equal(t, processor.ErrInvalidURL, man.upstream(processor.ErrInvalidURL))
-	assert.Equal(t, hook.ErrUpstreamUnavailable, man.upstream(assert.AnError))
 }
 
 func Test_Manager_input(t *testing.T) {

@@ -240,7 +240,7 @@ func (m *Manager) processHook(ctx context.Context, ps *ProcessingState, h hook.H
 		return
 	}
 
-	if deleted || changed(prev, h) {
+	if deleted || h.ChangedFrom(prev) {
 		m.notifyChange(prev)
 	}
 
@@ -358,7 +358,7 @@ func (m *Manager) deleteHook(ctx context.Context, h *hook.Hook) bool {
 // discardSetup tears down the resource a run created for a hook that was
 // never set up, once the row that would have held it is not stored.
 func (m *Manager) discardSetup(ctx context.Context, prev hook.Hook, h *hook.Hook) {
-	if prev.State.Valid || !h.State.Valid {
+	if prev.State.Valid == h.State.Valid {
 		return
 	}
 
@@ -445,14 +445,6 @@ type ProcessingState struct {
 	// Documents caches documents by branch ID to avoid redundant fetches;
 	// a branch belongs to exactly one document.
 	Documents map[xid.ID]*document.Document
-}
-
-// changed reports whether a run changed what the editors show of a hook.
-func changed(prev, h hook.Hook) bool {
-	return prev.Status != h.Status ||
-		!prev.Score.Equal(h.Score) ||
-		prev.State.Valid != h.State.Valid ||
-		prev.SoftDeletedAt.Valid != h.SoftDeletedAt.Valid
 }
 
 // newProcessingState returns an empty processing state.

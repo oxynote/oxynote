@@ -238,6 +238,57 @@ func Test_Hook_Delete(t *testing.T) {
 	assert.NoError(t, unset.Delete(context.Background(), nil))
 }
 
+func Test_Hook_ChangedFrom(t *testing.T) {
+	t.Parallel()
+
+	base := Hook{
+		Status: processor.StatusActive,
+		Score:  decimal.NewFromInt(100),
+		State:  null.ValueFrom(processor.State(`{}`)),
+	}
+
+	cc := map[string]struct {
+		Change  func(*Hook)
+		Changed bool
+	}{
+		"Same hook": {
+			Change: func(*Hook) {},
+		},
+		"Only the state content moved": {
+			Change: func(h *Hook) {
+				h.State = null.ValueFrom(processor.State(`{"a":1}`))
+			},
+		},
+		"Status": {
+			Change:  func(h *Hook) { h.Status = processor.StatusUnconfigured },
+			Changed: true,
+		},
+		"Score": {
+			Change:  func(h *Hook) { h.Score = decimal.Zero },
+			Changed: true,
+		},
+		"Set up": {
+			Change:  func(h *Hook) { h.State = null.Value[processor.State]{} },
+			Changed: true,
+		},
+		"Soft deletion": {
+			Change:  func(h *Hook) { h.SoftDeletedAt = null.TimeFrom(time.Now()) },
+			Changed: true,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			h := base
+			c.Change(&h)
+
+			assert.Equal(t, c.Changed, h.ChangedFrom(base))
+		})
+	}
+}
+
 func Test_Hook_NewCopy(t *testing.T) {
 	t.Parallel()
 

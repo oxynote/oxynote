@@ -599,7 +599,7 @@ func Test_input_CreateDocument(t *testing.T) {
 
 			inp := testInput(testDeps(c.DB, nil, nil), NameCreateDocument, `{}`)
 
-			doc := document.Document{ID: xid.New(), ParentID: c.Parent}
+			doc := document.Document{ID: xid.New(), BranchID: xid.New(), ParentID: c.Parent}
 
 			err := inp.CreateDocument(doc)
 			testutil.AssertEqualError(t, c.Err, err)
@@ -746,8 +746,10 @@ func Test_input_recordTouched(t *testing.T) {
 	// order the call touched them is preserved.
 	inp.recordTouched(a, branch)
 
-	// nothing to record is not something to record.
+	// nothing to record is not something to record, and neither is a
+	// hook whose branch is gone.
 	inp.recordTouched(xid.NilID(), branch)
+	inp.recordTouched(a, xid.NilID())
 
 	assert.Equal(t, []Touched{{DocumentID: a, BranchID: branch}, {DocumentID: b, BranchID: branch}}, inp.touched)
 }
@@ -2775,36 +2777,6 @@ func Test_input_DeleteHook(t *testing.T) {
 			}
 
 			assert.Equal(t, _testHookID, ff[0].ID)
-		})
-	}
-}
-
-func Test_input_hookChanged(t *testing.T) {
-	t.Parallel()
-
-	branchless := stubHook()
-	branchless.BranchID = null.Value[xid.ID]{}
-
-	cc := map[string]struct {
-		Hook    *hook.Hook
-		Touched []Touched
-	}{
-		// a hook whose branch is gone has no branch to link to.
-		"Hook whose branch is gone": {Hook: branchless},
-		"Hook on a branch": {
-			Hook:    stubHook(),
-			Touched: []Touched{{DocumentID: _testDocID, BranchID: _stubBranchID}},
-		},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			inp := testInput(testDeps(nil, nil, nil), NameResetHook, `{}`)
-			inp.hookChanged(c.Hook)
-
-			assert.Equal(t, c.Touched, inp.touched)
 		})
 	}
 }

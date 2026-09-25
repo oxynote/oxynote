@@ -174,7 +174,7 @@ type input struct {
 // by a convention about argument names.
 func (i *input) recordTouched(documentID, branchID xid.ID) {
 	t := Touched{DocumentID: documentID, BranchID: branchID}
-	if documentID.IsNil() || slices.Contains(i.touched, t) {
+	if documentID.IsNil() || branchID.IsNil() || slices.Contains(i.touched, t) {
 		return
 	}
 
@@ -1085,7 +1085,7 @@ func (i *input) CreateHook(documentID, branchID xid.ID, blockUID string, tp hook
 		return nil, err
 	}
 
-	i.hookChanged(hk)
+	i.recordTouched(hk.DocumentID.V, hk.BranchID.V)
 
 	return hk, nil
 }
@@ -1106,7 +1106,7 @@ func (i *input) UpdateHook(hk *hook.Hook, settings processor.Settings) error {
 
 	*hk = *updated
 
-	i.hookChanged(hk)
+	i.recordTouched(hk.DocumentID.V, hk.BranchID.V)
 
 	return nil
 }
@@ -1120,7 +1120,7 @@ func (i *input) ResetHook(hk *hook.Hook) error {
 
 	*hk = *reset
 
-	i.hookChanged(hk)
+	i.recordTouched(hk.DocumentID.V, hk.BranchID.V)
 
 	return nil
 }
@@ -1139,18 +1139,9 @@ func (i *input) DeleteHook(hk *hook.Hook) error {
 		return err
 	}
 
-	i.hookChanged(hk)
+	i.recordTouched(hk.DocumentID.V, hk.BranchID.V)
 
 	return nil
-}
-
-// hookChanged records the branch a hook write changed. A hook whose
-// branch was deleted, and which the sweep has not yet removed, has no
-// branch to link to.
-func (i *input) hookChanged(hk *hook.Hook) {
-	if hk.BranchID.Valid {
-		i.recordTouched(hk.DocumentID.V, hk.BranchID.V)
-	}
 }
 
 // docRef wraps the (documentID, branchID) pair the edit client needs to

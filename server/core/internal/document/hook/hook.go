@@ -261,6 +261,15 @@ func (h *Hook) Delete(ctx context.Context, inp *Input) error {
 	return nil
 }
 
+// ChangedFrom reports whether the hook differs from prev in what editors
+// show of it.
+func (h *Hook) ChangedFrom(prev Hook) bool {
+	return h.Status != prev.Status ||
+		!h.Score.Equal(prev.Score) ||
+		h.State.Valid != prev.State.Valid ||
+		h.SoftDeletedAt.Valid != prev.SoftDeletedAt.Valid
+}
+
 // apply stores a run's result. A run that could not check its target
 // leaves the score and state as they were.
 func (h *Hook) apply(res processor.Result) {
