@@ -78,8 +78,19 @@ func Digest(
 
 	desc, err := remote.Head(ref, remoteOpts...)
 	if err != nil {
-		if serr := statusError(err); serr != nil {
-			return "", serr
+		if terr, ok := errors.AsType[*transport.Error](err); ok {
+			switch {
+			case terr.StatusCode == http.StatusUnauthorized,
+				terr.StatusCode == http.StatusForbidden,
+				slices.ContainsFunc(terr.Errors, func(diag transport.Diagnostic) bool {
+					return diag.Code == transport.UnauthorizedErrorCode || diag.Code == transport.DeniedErrorCode
+				}):
+				return "", ErrUnauthorized
+			// a HEAD response carries no body, so a missing image or tag
+			// shows only as the status code.
+			case terr.StatusCode == http.StatusNotFound:
+				return "", ErrNotFound
+			}
 		}
 
 		return "", fmt.Errorf("getting remote head for %q: %w", ref.Name(), err)
@@ -108,31 +119,6 @@ func WithBearerToken(token string) DigestOption {
 	return func(o *digestOptions) {
 		o.token = token
 	}
-}
-
-// statusError maps a registry response the caller acts on to its error,
-// or returns nil for any other failure.
-func statusError(err error) error {
-	terr, ok := errors.AsType[*transport.Error](err)
-	if !ok {
-		return nil
-	}
-
-	if terr.StatusCode == http.StatusUnauthorized ||
-		terr.StatusCode == http.StatusForbidden ||
-		slices.ContainsFunc(terr.Errors, func(diag transport.Diagnostic) bool {
-			return diag.Code == transport.UnauthorizedErrorCode || diag.Code == transport.DeniedErrorCode
-		}) {
-		return ErrUnauthorized
-	}
-
-	// a HEAD response carries no body, so a missing image or tag shows
-	// only as the status code.
-	if terr.StatusCode == http.StatusNotFound {
-		return ErrNotFound
-	}
-
-	return nil
 }
 
 // parseReference parses an image reference, defaulting to Docker Hub and the

@@ -1239,7 +1239,7 @@ func Test_agent_fetchNewestDocumentBranchHistoryEntry(t *testing.T) {
 	res, err = db.fetchNewestDocumentBranchHistoryEntry(context.Background(), db.sql, entries[2])
 	require.NoError(t, err)
 	require.NotNil(t, res)
-	assert.Equal(t, &history.Head{
+	assert.Equal(t, &historyHead{
 		ID:        entries[2].ID,
 		CreatedAt: entries[2].CreatedAt,
 		Same:      true,

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import HookInitializing from "../HookInitializing.vue"
-import { hookErrorKey } from "../hook-errors"
+import { hookErrorMessage } from "../hook-errors"
 import { type DateValue, getLocalTimeZone } from "@internationalized/date"
 import { presetDurations } from "./durations"
 import { showToastMessage } from "~/components/toast"
@@ -23,7 +23,8 @@ const hookData = computed(() => {
 		settings: props.hook.settings as DocumentHookSettingsScheduledReminder,
 	}
 })
-const { t } = useI18n({ useScope: "global" })
+const i18n = useI18n({ useScope: "global" })
+const { t } = i18n
 const editorStore = useEditorStore()
 const documentHookAPI = useDocumentHookAPI()
 const selectedDuration = ref<string | undefined>(undefined)
@@ -68,10 +69,9 @@ async function upsertHook() {
 				},
 			})
 		} catch (err) {
-			const key = hookErrorKey(err)
 			showToastMessage(
 				"error",
-				key ? t(key) : t("editor.hooks.errors.create-failed"),
+				hookErrorMessage(err, i18n) ?? t("editor.hooks.errors.create-failed"),
 			)
 			return
 		}
@@ -182,14 +182,7 @@ async function deleteHook() {
 			]"
 		>
 			<div class="flex w-[12rem] flex-col">
-				<template
-					v-if="
-						props.hook && !props.hook.state && props.hook.status === 'active'
-					"
-				>
-					<HookInitializing />
-					<ShadcnUiDropdownMenuSeparator />
-				</template>
+				<HookInitializing :hook="props.hook" />
 				<div class="flex flex-col gap-1 px-0.75 pb-0.75">
 					<template v-if="!hookData || hookData.score === 0">
 						<ShadcnUiSelect v-model="selectedDuration">

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import HookInitializing from "../HookInitializing.vue"
-import { hookErrorKey } from "../hook-errors"
+import { hookErrorMessage } from "../hook-errors"
 import { showToastMessage } from "~/components/toast"
 import HookInputField from "./HookInputField.vue"
 
@@ -12,7 +12,8 @@ const emit = defineEmits<{
 	(e: "force-close"): void
 }>()
 
-const { t } = useI18n({ useScope: "global" })
+const i18n = useI18n({ useScope: "global" })
+const { t } = i18n
 const hookData = computed(() => {
 	if (!props.hook) {
 		return null
@@ -60,10 +61,9 @@ async function upsertHook() {
 				},
 			})
 		} catch (err) {
-			const key = hookErrorKey(err)
 			showToastMessage(
 				"error",
-				key ? t(key) : t("editor.hooks.errors.create-failed"),
+				hookErrorMessage(err, i18n) ?? t("editor.hooks.errors.create-failed"),
 			)
 			return
 		}
@@ -88,10 +88,9 @@ async function upsertHook() {
 			},
 		})
 	} catch (err) {
-		const key = hookErrorKey(err)
 		showToastMessage(
 			"error",
-			key ? t(key) : t("editor.hooks.errors.update-failed"),
+			hookErrorMessage(err, i18n) ?? t("editor.hooks.errors.update-failed"),
 		)
 		return
 	}
@@ -195,14 +194,7 @@ async function resetHook() {
 			]"
 		>
 			<div class="flex w-[14rem] flex-col">
-				<template
-					v-if="
-						props.hook && !props.hook.state && props.hook.status === 'active'
-					"
-				>
-					<HookInitializing />
-					<ShadcnUiDropdownMenuSeparator />
-				</template>
+				<HookInitializing :hook="props.hook" />
 				<template v-if="hookData?.status === 'unauthorized'">
 					<i18n-t
 						scope="global"

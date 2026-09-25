@@ -870,7 +870,7 @@ func (h *Handler) insertDocumentTx(
 
 	// the copies go in before the entry is recorded, so it lists them.
 	if sourceBranchID.Valid {
-		err := h.hookMan.CopyHooks(ctx, tx, sourceBranchID.V, doc.BranchID, doc.ID, session.ActiveOrganizationID, uids)
+		err := manager.CopyHooks(ctx, tx, sourceBranchID.V, doc.BranchID, doc.ID, session.ActiveOrganizationID, uids)
 		if err != nil {
 			return err
 		}
@@ -927,30 +927,19 @@ func (h *Handler) insertDocumentTx(
 	h.searchTrigger.Trigger()
 
 	if sourceBranchID.Valid {
-		h.hookMan.ProcessBranch(doc.BranchID, session.ActiveOrganizationID)
+		h.hookMan.QueueBranch(doc.BranchID, session.ActiveOrganizationID)
 	}
 
 	return nil
 }
 
-// HookManager copies a branch's hooks inside the caller's transaction and
-// sets the copies up once it has committed.
+// HookManager sets up the hooks a branch operation copied.
 //
 //go:generate ../../../../scripts/codegen/mock -t internal HookManager hook_manager
 type HookManager interface {
-	// CopyHooks should insert copies of the hooks of one branch on
-	// another, not set up yet, re-anchored through uids when given.
-	CopyHooks(
-		ctx context.Context,
-		tx manager.CopyTx,
-		fromBranchID, toBranchID, documentID xid.ID,
-		organizationID string,
-		uids map[string]string,
-	) error
-
-	// ProcessBranch should run the branch's hooks right away, which sets
-	// up the copies.
-	ProcessBranch(branchID xid.ID, organizationID string)
+	// QueueBranch should have the branch's hooks run soon, which sets up
+	// the copies.
+	QueueBranch(branchID xid.ID, organizationID string)
 }
 
 // DB is an interface that combines sqlutil.DB and DBAgent.

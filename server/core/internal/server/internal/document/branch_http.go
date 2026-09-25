@@ -5,6 +5,7 @@ import (
 
 	"github.com/guregu/null/v5"
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
+	"github.com/oxynote/oxynote/server/core/internal/document/hook/manager"
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
@@ -337,7 +338,7 @@ func (h *Handler) MergeBranches(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// the copies go in before the entry is recorded, so it lists them.
-	err = h.hookMan.CopyHooks(
+	err = manager.CopyHooks(
 		r.Context(),
 		tx,
 		fromDoc.BranchID,
@@ -384,7 +385,7 @@ func (h *Handler) MergeBranches(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.searchTrigger.Trigger()
-	h.hookMan.ProcessBranch(toDoc.BranchID, session.ActiveOrganizationID)
+	h.hookMan.QueueBranch(toDoc.BranchID, session.ActiveOrganizationID)
 
 	if h.metadata.changeCallback != nil {
 		h.metadata.changeCallback(session.ActiveOrganizationID, ndoc)
@@ -486,7 +487,7 @@ func (h *Handler) CreateDocumentBranch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// the copies go in before the entry is recorded, so it lists them.
-	err = h.hookMan.CopyHooks(
+	err = manager.CopyHooks(
 		r.Context(),
 		tx,
 		sourceDoc.BranchID,
@@ -528,7 +529,7 @@ func (h *Handler) CreateDocumentBranch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.searchTrigger.Trigger()
-	h.hookMan.ProcessBranch(newDoc.BranchID, session.ActiveOrganizationID)
+	h.hookMan.QueueBranch(newDoc.BranchID, session.ActiveOrganizationID)
 
 	httpserver.Respond(
 		h.log,

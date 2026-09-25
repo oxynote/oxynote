@@ -149,15 +149,7 @@ func NewHook(
 		CreatedAt:      timeutil.Now(),
 	}
 
-	if err := h.validate(); err != nil {
-		return nil, err
-	}
-
-	if err := h.Reset(ctx, inp); err != nil {
-		return nil, err
-	}
-
-	if err := h.requireActive(); err != nil {
+	if err := h.setUp(ctx, inp); err != nil {
 		return nil, err
 	}
 
@@ -165,10 +157,9 @@ func NewHook(
 }
 
 // NewCopy returns a copy of the hook for another branch, anchored to the
-// given block. Its state is null, so it holds no external resource until
-// its first run sets it up. The source's state is never copied: it can
-// name the source's own watcher. Score and status are, so the first run
-// does not announce a change the source already had.
+// given block. Its state is null until its first run sets it up, since the
+// source's state can name the source's own watcher. Score and status are
+// copied, so that run does not announce a change the source already had.
 func (h *Hook) NewCopy(documentID, branchID xid.ID, blockID null.String) Hook {
 	return Hook{
 		ID:             xid.New(),
@@ -195,15 +186,7 @@ func (h *Hook) ApplyUpdate(ctx context.Context, ui UpdateInput, inp *Input) erro
 	h.prepared = false
 	h.runner = nil
 
-	if err := h.validate(); err != nil {
-		return err
-	}
-
-	if err := h.Reset(ctx, inp); err != nil {
-		return err
-	}
-
-	return h.requireActive()
+	return h.setUp(ctx, inp)
 }
 
 // Process processes the hook and updates its score and state. A hook that
@@ -283,8 +266,9 @@ func (h *Hook) apply(res processor.Result) {
 	h.State = null.ValueFrom(res.State)
 }
 
-// validate checks the type and the settings before anything runs.
-func (h *Hook) validate() error {
+// setUp checks the type and settings, then resets the hook. It fails
+// unless the hook can check its target.
+func (h *Hook) setUp(ctx context.Context, inp *Input) error {
 	if err := h.Type.Validate(); err != nil {
 		return err
 	}
@@ -293,12 +277,14 @@ func (h *Hook) validate() error {
 		return ErrInvalidSettings
 	}
 
-	return h.runner.Validate()
-}
+	if err := h.runner.Validate(); err != nil {
+		return err
+	}
 
-// requireActive fails with an error named after the status unless the hook
-// could check its target.
-func (h *Hook) requireActive() error {
+	if err := h.Reset(ctx, inp); err != nil {
+		return err
+	}
+
 	if h.Status == processor.StatusActive {
 		return nil
 	}

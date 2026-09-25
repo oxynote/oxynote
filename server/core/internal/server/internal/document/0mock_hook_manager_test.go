@@ -4,10 +4,8 @@
 package document
 
 import (
-	"context"
 	"sync"
 
-	"github.com/oxynote/oxynote/server/core/internal/document/hook/manager"
 	"github.com/rs/xid"
 )
 
@@ -21,11 +19,8 @@ var _ HookManager = &HookManagerMock{}
 //
 //		// make and configure a mocked HookManager
 //		mockedHookManager := &HookManagerMock{
-//			CopyHooksFunc: func(ctx context.Context, tx manager.CopyTx, fromBranchID xid.ID, toBranchID xid.ID, documentID xid.ID, organizationID string, uids map[string]string) error {
-//				panic("mock out the CopyHooks method")
-//			},
-//			ProcessBranchFunc: func(branchID xid.ID, organizationID string)  {
-//				panic("mock out the ProcessBranch method")
+//			QueueBranchFunc: func(branchID xid.ID, organizationID string)  {
+//				panic("mock out the QueueBranch method")
 //			},
 //		}
 //
@@ -34,104 +29,24 @@ var _ HookManager = &HookManagerMock{}
 //
 //	}
 type HookManagerMock struct {
-	// CopyHooksFunc mocks the CopyHooks method.
-	CopyHooksFunc func(ctx context.Context, tx manager.CopyTx, fromBranchID xid.ID, toBranchID xid.ID, documentID xid.ID, organizationID string, uids map[string]string) error
-
-	// ProcessBranchFunc mocks the ProcessBranch method.
-	ProcessBranchFunc func(branchID xid.ID, organizationID string)
+	// QueueBranchFunc mocks the QueueBranch method.
+	QueueBranchFunc func(branchID xid.ID, organizationID string)
 
 	// calls tracks calls to the methods.
 	calls struct {
-		// CopyHooks holds details about calls to the CopyHooks method.
-		CopyHooks []struct {
-			// Ctx is the ctx argument value.
-			Ctx context.Context
-			// Tx is the tx argument value.
-			Tx manager.CopyTx
-			// FromBranchID is the fromBranchID argument value.
-			FromBranchID xid.ID
-			// ToBranchID is the toBranchID argument value.
-			ToBranchID xid.ID
-			// DocumentID is the documentID argument value.
-			DocumentID xid.ID
-			// OrganizationID is the organizationID argument value.
-			OrganizationID string
-			// Uids is the uids argument value.
-			Uids map[string]string
-		}
-		// ProcessBranch holds details about calls to the ProcessBranch method.
-		ProcessBranch []struct {
+		// QueueBranch holds details about calls to the QueueBranch method.
+		QueueBranch []struct {
 			// BranchID is the branchID argument value.
 			BranchID xid.ID
 			// OrganizationID is the organizationID argument value.
 			OrganizationID string
 		}
 	}
-	lockCopyHooks     sync.RWMutex
-	lockProcessBranch sync.RWMutex
+	lockQueueBranch sync.RWMutex
 }
 
-// CopyHooks calls CopyHooksFunc.
-func (mock *HookManagerMock) CopyHooks(ctx context.Context, tx manager.CopyTx, fromBranchID xid.ID, toBranchID xid.ID, documentID xid.ID, organizationID string, uids map[string]string) error {
-	callInfo := struct {
-		Ctx            context.Context
-		Tx             manager.CopyTx
-		FromBranchID   xid.ID
-		ToBranchID     xid.ID
-		DocumentID     xid.ID
-		OrganizationID string
-		Uids           map[string]string
-	}{
-		Ctx:            ctx,
-		Tx:             tx,
-		FromBranchID:   fromBranchID,
-		ToBranchID:     toBranchID,
-		DocumentID:     documentID,
-		OrganizationID: organizationID,
-		Uids:           uids,
-	}
-	mock.lockCopyHooks.Lock()
-	mock.calls.CopyHooks = append(mock.calls.CopyHooks, callInfo)
-	mock.lockCopyHooks.Unlock()
-	if mock.CopyHooksFunc == nil {
-		var (
-			errOut error
-		)
-		return errOut
-	}
-	return mock.CopyHooksFunc(ctx, tx, fromBranchID, toBranchID, documentID, organizationID, uids)
-}
-
-// CopyHooksCalls gets all the calls that were made to CopyHooks.
-// Check the length with:
-//
-//	len(mockedHookManager.CopyHooksCalls())
-func (mock *HookManagerMock) CopyHooksCalls() []struct {
-	Ctx            context.Context
-	Tx             manager.CopyTx
-	FromBranchID   xid.ID
-	ToBranchID     xid.ID
-	DocumentID     xid.ID
-	OrganizationID string
-	Uids           map[string]string
-} {
-	var calls []struct {
-		Ctx            context.Context
-		Tx             manager.CopyTx
-		FromBranchID   xid.ID
-		ToBranchID     xid.ID
-		DocumentID     xid.ID
-		OrganizationID string
-		Uids           map[string]string
-	}
-	mock.lockCopyHooks.RLock()
-	calls = mock.calls.CopyHooks
-	mock.lockCopyHooks.RUnlock()
-	return calls
-}
-
-// ProcessBranch calls ProcessBranchFunc.
-func (mock *HookManagerMock) ProcessBranch(branchID xid.ID, organizationID string) {
+// QueueBranch calls QueueBranchFunc.
+func (mock *HookManagerMock) QueueBranch(branchID xid.ID, organizationID string) {
 	callInfo := struct {
 		BranchID       xid.ID
 		OrganizationID string
@@ -139,20 +54,20 @@ func (mock *HookManagerMock) ProcessBranch(branchID xid.ID, organizationID strin
 		BranchID:       branchID,
 		OrganizationID: organizationID,
 	}
-	mock.lockProcessBranch.Lock()
-	mock.calls.ProcessBranch = append(mock.calls.ProcessBranch, callInfo)
-	mock.lockProcessBranch.Unlock()
-	if mock.ProcessBranchFunc == nil {
+	mock.lockQueueBranch.Lock()
+	mock.calls.QueueBranch = append(mock.calls.QueueBranch, callInfo)
+	mock.lockQueueBranch.Unlock()
+	if mock.QueueBranchFunc == nil {
 		return
 	}
-	mock.ProcessBranchFunc(branchID, organizationID)
+	mock.QueueBranchFunc(branchID, organizationID)
 }
 
-// ProcessBranchCalls gets all the calls that were made to ProcessBranch.
+// QueueBranchCalls gets all the calls that were made to QueueBranch.
 // Check the length with:
 //
-//	len(mockedHookManager.ProcessBranchCalls())
-func (mock *HookManagerMock) ProcessBranchCalls() []struct {
+//	len(mockedHookManager.QueueBranchCalls())
+func (mock *HookManagerMock) QueueBranchCalls() []struct {
 	BranchID       xid.ID
 	OrganizationID string
 } {
@@ -160,8 +75,8 @@ func (mock *HookManagerMock) ProcessBranchCalls() []struct {
 		BranchID       xid.ID
 		OrganizationID string
 	}
-	mock.lockProcessBranch.RLock()
-	calls = mock.calls.ProcessBranch
-	mock.lockProcessBranch.RUnlock()
+	mock.lockQueueBranch.RLock()
+	calls = mock.calls.QueueBranch
+	mock.lockQueueBranch.RUnlock()
 	return calls
 }

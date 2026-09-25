@@ -84,9 +84,8 @@ func (uw *URLWatcher) Process(ctx context.Context, inp Input) (Result, error) {
 	return active(score, uws)
 }
 
-// Reset creates the watcher when the state names none, or points the
-// existing one at the current URL, and takes its last change as the
-// baseline.
+// Reset points the watcher at the current URL and takes its last change
+// as the baseline.
 func (uw *URLWatcher) Reset(ctx context.Context, inp Input) (Result, error) {
 	var uws URLWatcherState
 
@@ -96,13 +95,7 @@ func (uw *URLWatcher) Reset(ctx context.Context, inp Input) (Result, error) {
 		}
 	}
 
-	var err error
-
-	if uws.WatcherID == "" {
-		uws, err = uw.createWatcher(ctx, inp)
-	} else {
-		uws, err = uw.syncWatcher(ctx, inp, uws)
-	}
+	uws, err := uw.syncWatcher(ctx, inp.ChangeDetection(), uws.WatcherID)
 
 	switch {
 	case err == nil:
@@ -114,39 +107,35 @@ func (uw *URLWatcher) Reset(ctx context.Context, inp Input) (Result, error) {
 	}
 }
 
-// createWatcher creates a watcher for the URL.
-func (uw *URLWatcher) createWatcher(ctx context.Context, inp Input) (URLWatcherState, error) {
-	watcherID, err := inp.ChangeDetection().CreateWatcher(ctx, uw.URL)
+// syncWatcher points the watcher at the URL and returns the state to start
+// from. A watcher that is not named or no longer exists is created.
+func (uw *URLWatcher) syncWatcher(ctx context.Context, cd ChangeDetection, watcherID string) (URLWatcherState, error) {
+	if watcherID != "" {
+		watch, err := cd.FetchWatcher(ctx, watcherID)
+
+		switch {
+		case err == nil && watch.URL == uw.URL:
+			return URLWatcherState{
+				WatcherID:     watcherID,
+				LastChangedAt: null.TimeFrom(watch.LastChangedAt),
+			}, nil
+		case err == nil:
+			if err = cd.UpdateWatcher(ctx, watcherID, uw.URL); err != nil {
+				return URLWatcherState{}, fmt.Errorf("updating url watcher: %w", err)
+			}
+
+			return URLWatcherState{WatcherID: watcherID}, nil
+		case !errors.Is(err, webchange.ErrWatcherNotFound):
+			return URLWatcherState{}, fmt.Errorf("fetching url watcher: %w", err)
+		}
+	}
+
+	watcherID, err := cd.CreateWatcher(ctx, uw.URL)
 	if err != nil {
 		return URLWatcherState{}, fmt.Errorf("creating url watcher: %w", err)
 	}
 
 	return URLWatcherState{WatcherID: watcherID}, nil
-}
-
-// syncWatcher points the existing watcher at the URL and reads its last
-// change. A watcher gone on the changedetection.io side is created again.
-func (uw *URLWatcher) syncWatcher(ctx context.Context, inp Input, uws URLWatcherState) (URLWatcherState, error) {
-	watch, err := inp.ChangeDetection().FetchWatcher(ctx, uws.WatcherID)
-	if errors.Is(err, webchange.ErrWatcherNotFound) {
-		return uw.createWatcher(ctx, inp)
-	}
-
-	if err != nil {
-		return URLWatcherState{}, fmt.Errorf("fetching url watcher: %w", err)
-	}
-
-	if watch.URL != uw.URL {
-		if err := inp.ChangeDetection().UpdateWatcher(ctx, uws.WatcherID, uw.URL); err != nil {
-			return URLWatcherState{}, fmt.Errorf("updating url watcher: %w", err)
-		}
-
-		return URLWatcherState{WatcherID: uws.WatcherID}, nil
-	}
-
-	uws.LastChangedAt = null.TimeFrom(watch.LastChangedAt)
-
-	return uws, nil
 }
 
 // Delete deletes the watcher the state names.

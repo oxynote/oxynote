@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"slices"
 	"sync"
 	"time"
 
@@ -52,24 +51,23 @@ const (
 type Manager struct {
 	log             *slog.Logger
 	db              DB
+	flusher         Flusher
 	githubMan       *github.Manager
 	webchangeClient *webchange.Client
 	notifPub        notification.Publisher
 	hooks           *syncutil.KeyedMutex[xid.ID]
 	branchesExec    *timeutil.PeriodicExec
+	changeCallback  func(hook.Hook)
 
 	branchesMu sync.Mutex
 	branches   map[branchRef]struct{}
-
-	subsMu    sync.RWMutex
-	subs      []hookChangeSub
-	nextSubID uint64
 }
 
 // NewManager creates a new Manager with the given database interface.
 func NewManager(
 	log *slog.Logger,
 	db DB,
+	flusher Flusher,
 	githubMan *github.Manager,
 	webchangeClient *webchange.Client,
 	notifPub notification.Publisher,
@@ -77,10 +75,12 @@ func NewManager(
 	m := &Manager{
 		log:             log.With("component", "document-hooks-manager"),
 		db:              db,
+		flusher:         flusher,
 		githubMan:       githubMan,
 		webchangeClient: webchangeClient,
 		notifPub:        notifPub,
 		hooks:           syncutil.NewKeyedMutex[xid.ID](),
+		changeCallback:  func(hook.Hook) {},
 		branches:        make(map[branchRef]struct{}),
 	}
 
@@ -95,29 +95,14 @@ func NewManager(
 	return m
 }
 
-// OnHookChange subscribes fn to every hook the manager stores, changes or
-// deletes. The returned function unsubscribes it.
-func (m *Manager) OnHookChange(fn func(hook.Hook)) func() {
-	m.subsMu.Lock()
-	defer m.subsMu.Unlock()
-
-	id := m.nextSubID
-	m.nextSubID++
-
-	m.subs = append(m.subs, hookChangeSub{id: id, fn: fn})
-
-	return func() {
-		m.subsMu.Lock()
-		defer m.subsMu.Unlock()
-
-		m.subs = slices.DeleteFunc(m.subs, func(sub hookChangeSub) bool {
-			return sub.id == id
-		})
-	}
+// BindHookChange sets the function called with every hook the manager
+// stores, changes or deletes. Call it once, before Start.
+func (m *Manager) BindHookChange(fn func(hook.Hook)) {
+	m.changeCallback = fn
 }
 
 // Start processes document hooks periodically, and the branches
-// ProcessBranch queues, until the context ends.
+// QueueBranch queues, until the context ends.
 func (m *Manager) Start(ctx context.Context) {
 	m.log.Info("starting")
 	defer m.log.Info("stopped")
@@ -142,10 +127,10 @@ func (m *Manager) Start(ctx context.Context) {
 	supv.Wait()
 }
 
-// ProcessBranch runs the branch's hooks right away, without waiting for
-// the next pass. Callers use it once hooks copied to the branch are
-// committed, so the copies get set up.
-func (m *Manager) ProcessBranch(branchID xid.ID, organizationID string) {
+// QueueBranch has the branch's hooks run soon, without waiting for the
+// next pass. Callers use it once hooks copied to the branch are committed,
+// so the copies get set up.
+func (m *Manager) QueueBranch(branchID xid.ID, organizationID string) {
 	m.branchesMu.Lock()
 	m.branches[branchRef{ID: branchID, OrganizationID: organizationID}] = struct{}{}
 	m.branchesMu.Unlock()
@@ -170,28 +155,30 @@ func (m *Manager) processBranches(ctx context.Context) {
 			continue
 		}
 
-		ps := newProcessingState()
+		docs := make(map[xid.ID]*document.Document)
 
 		for _, h := range hooks {
-			m.processHook(ctx, ps, h)
+			m.processHook(ctx, docs, h)
 		}
 	}
 }
 
 // processHooks processes document hooks in a paginated manner.
 func (m *Manager) processHooks(ctx context.Context) error {
-	ps := newProcessingState()
+	var offsetID xid.ID
+
+	docs := make(map[xid.ID]*document.Document)
 
 	for {
-		hooks, err := m.db.FetchPaginatedDocumentHooks(ctx, ps.OffsetID, _processingBatch)
+		hooks, err := m.db.FetchPaginatedDocumentHooks(ctx, offsetID, _processingBatch)
 		if err != nil {
 			return fmt.Errorf("fetching paginated document hooks: %w", err)
 		}
 
 		for _, h := range hooks {
-			ps.OffsetID = h.ID
+			offsetID = h.ID
 
-			m.processHook(ctx, ps, h)
+			m.processHook(ctx, docs, h)
 		}
 
 		if len(hooks) < _processingBatch {
@@ -201,8 +188,8 @@ func (m *Manager) processHooks(ctx context.Context) error {
 }
 
 // processHook runs one hook, holding its lock. A hook a write holds is
-// skipped until the next pass.
-func (m *Manager) processHook(ctx context.Context, ps *ProcessingState, h hook.Hook) {
+// skipped until the next pass. docs caches documents by branch ID.
+func (m *Manager) processHook(ctx context.Context, docs map[xid.ID]*document.Document, h hook.Hook) {
 	unlock, ok := m.hooks.TryLock(h.ID)
 	if !ok {
 		return
@@ -233,15 +220,15 @@ func (m *Manager) processHook(ctx context.Context, ps *ProcessingState, h hook.H
 
 	prev := h
 
-	deleted, ok := m.runHook(ctx, ps, &h)
-	if !ok {
-		m.discardSetup(ctx, prev, &h)
+	deleted, stored := m.runHook(ctx, docs, &h)
+	if !stored {
+		m.undoSetup(ctx, prev, h)
 
 		return
 	}
 
 	if deleted || h.ChangedFrom(prev) {
-		m.notifyChange(prev)
+		m.changeCallback(h)
 	}
 
 	if !deleted {
@@ -250,18 +237,14 @@ func (m *Manager) processHook(ctx context.Context, ps *ProcessingState, h hook.H
 }
 
 // runHook processes the hook and stores the result, or deletes a hook
-// that has nothing left to describe. It reports whether the hook was
-// deleted and whether anything was stored.
-func (m *Manager) runHook(ctx context.Context, ps *ProcessingState, h *hook.Hook) (bool, bool) {
-	// the hook was cut loose. Its branch, document or whole organization
-	// was deleted, or a merge replaced the branch's hooks. The row is the
-	// only trace left of it, so the external resource it holds is torn
-	// down before the row goes.
+// that has nothing left to describe.
+func (m *Manager) runHook(ctx context.Context, docs map[xid.ID]*document.Document, h *hook.Hook) (deleted, stored bool) {
+	// the branch, document or organization of the hook is gone.
 	if !h.BranchID.Valid || !h.DocumentID.Valid || !h.OrganizationID.Valid {
 		return true, m.deleteHook(ctx, h)
 	}
 
-	doc, ok := m.fetchDocument(ctx, ps, h)
+	doc, ok := m.fetchDocument(ctx, docs, h)
 	if !ok {
 		return false, false
 	}
@@ -280,13 +263,11 @@ func (m *Manager) runHook(ctx context.Context, ps *ProcessingState, h *hook.Hook
 		}
 	}
 
-	// a soft-deleted hook's block is gone from the document, so its score
-	// describes nothing. The mark is still persisted, since it starts the
-	// retention clock, and processing resumes once the block reappears.
+	// a soft-deleted hook's block is gone, so its score describes nothing.
+	// The mark is still stored, since it starts the retention clock.
 	if !h.SoftDeletedAt.Valid {
 		if err := h.Process(ctx, m.input(h.OrganizationID.String)); err != nil {
-			// a transient failure keeps the stored state. The write below
-			// still persists a soft-deletion mark cleared above.
+			// a transient failure keeps the stored state.
 			m.log.With("hook_id", h.ID).
 				With("error", err).
 				Error("processing document hook")
@@ -304,12 +285,12 @@ func (m *Manager) runHook(ctx context.Context, ps *ProcessingState, h *hook.Hook
 	return false, true
 }
 
-// fetchDocument returns the hook's document, cached per branch. A nil
-// document means it is gone; false means it could not be read.
-func (m *Manager) fetchDocument(ctx context.Context, ps *ProcessingState, h *hook.Hook) (*document.Document, bool) {
+// fetchDocument returns the hook's document, cached in docs by branch. A
+// nil document means it is gone; false means it could not be read.
+func (m *Manager) fetchDocument(ctx context.Context, docs map[xid.ID]*document.Document, h *hook.Hook) (*document.Document, bool) {
 	key := h.BranchID.V
 
-	if doc, ok := ps.Documents[key]; ok {
+	if doc, ok := docs[key]; ok {
 		return doc, true
 	}
 
@@ -317,9 +298,9 @@ func (m *Manager) fetchDocument(ctx context.Context, ps *ProcessingState, h *hoo
 
 	switch {
 	case err == nil:
-		ps.Documents[key] = doc
+		docs[key] = doc
 	case errutil.IsNotFound(err):
-		ps.Documents[key] = nil
+		docs[key] = nil
 	default:
 		m.log.With("hook_id", h.ID).
 			With("error", err).
@@ -328,13 +309,11 @@ func (m *Manager) fetchDocument(ctx context.Context, ps *ProcessingState, h *hoo
 		return nil, false
 	}
 
-	return ps.Documents[key], true
+	return docs[key], true
 }
 
 // deleteHook tears down the hook's external resource and then removes the
-// row describing it. The external teardown goes first: the row is the only
-// record of the resource, so dropping it first would strand the watcher
-// with nothing left to find it by.
+// row. The row is the only record of the resource, so it goes last.
 func (m *Manager) deleteHook(ctx context.Context, h *hook.Hook) bool {
 	if err := h.Delete(ctx, m.input(h.OrganizationID.String)); err != nil {
 		m.log.With("hook_id", h.ID).
@@ -355,71 +334,53 @@ func (m *Manager) deleteHook(ctx context.Context, h *hook.Hook) bool {
 	return true
 }
 
-// discardSetup tears down the resource a run created for a hook that was
-// never set up, once the row that would have held it is not stored.
-func (m *Manager) discardSetup(ctx context.Context, prev hook.Hook, h *hook.Hook) {
-	if prev.State.Valid == h.State.Valid {
+// undoSetup tears down the resource h got when it was set up, since its
+// row was not stored. Nothing else points at the resource, so a failure
+// is reported.
+func (m *Manager) undoSetup(ctx context.Context, prev, h hook.Hook) {
+	if prev.State.Valid || !h.State.Valid {
 		return
 	}
 
-	m.teardown(ctx, h, "cannot tear down the resource of a hook setup that was not stored")
-}
-
-// teardown deletes the hook's external resource once its row is not
-// stored. A failure leaves a resource nothing points at, so it is
-// reported.
-func (m *Manager) teardown(ctx context.Context, h *hook.Hook, msg string) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), _teardownTimeout)
 	defer cancel()
 
 	if err := h.Delete(ctx, m.input(h.OrganizationID.String)); err != nil {
 		logutil.Critical(m.log, err).Error(
-			msg,
+			"cannot tear down the resource of a hook that was not stored",
 			slog.String("hook_id", h.ID.String()),
 		)
 	}
 }
 
 // notifyTransition tells the document's maintainers when an active hook
-// ran out of freshness, or when a hook stopped being able to check its
-// target. Both fire on the transition only, so a stored state never
-// repeats them.
+// ran out of freshness, or when a hook can no longer check its target.
+// Both fire on the transition only.
 func (m *Manager) notifyTransition(ctx context.Context, prev, h hook.Hook) {
+	var core notification.Core
+
 	switch {
 	case prev.Status == processor.StatusActive && h.Status != processor.StatusActive:
-		m.notifyMaintainers(ctx, h, notification.NewDocumentHookNeedsAttentionNotification(
+		core = notification.NewDocumentHookNeedsAttentionNotification(
 			h.DocumentID.V,
 			h.Type,
 			h.BlockID,
 			h.BranchID.V,
 			h.Status,
-		))
-	// the score decays gradually, as a scheduled reminder walks down
-	// through 99…1, so the transition to watch for is the arrival at zero,
-	// not a full-to-zero jump within one cycle.
+		)
+	// a scheduled reminder decays through 99…1, so the transition is the
+	// arrival at zero, not a drop from full.
 	case h.Status == processor.StatusActive && !prev.Score.IsZero() && h.Score.IsZero():
-		m.notifyMaintainers(ctx, h, notification.NewDocumentHookTriggeredNotification(
+		core = notification.NewDocumentHookTriggeredNotification(
 			h.DocumentID.V,
 			h.Type,
 			h.BlockID,
 			h.BranchID.V,
-		))
+		)
+	default:
+		return
 	}
-}
 
-// notifyChange hands the hook to every subscriber of hook changes.
-func (m *Manager) notifyChange(h hook.Hook) {
-	m.subsMu.RLock()
-	defer m.subsMu.RUnlock()
-
-	for _, sub := range m.subs {
-		sub.fn(h)
-	}
-}
-
-// notifyMaintainers publishes the notification to the document's
-// maintainers.
-func (m *Manager) notifyMaintainers(ctx context.Context, h hook.Hook, core notification.Core) {
 	maintainers, err := m.db.FetchDocumentMaintainers(ctx, h.DocumentID.V, h.OrganizationID.String)
 	if err != nil {
 		m.log.With("hook_id", h.ID).
@@ -437,30 +398,7 @@ func (m *Manager) input(organizationID string) *hook.Input {
 	return hook.NewInput(organizationID, m.githubMan, m.webchangeClient)
 }
 
-// ProcessingState holds the state during hook processing.
-type ProcessingState struct {
-	// OffsetID is the last processed hook ID.
-	OffsetID xid.ID
-
-	// Documents caches documents by branch ID to avoid redundant fetches;
-	// a branch belongs to exactly one document.
-	Documents map[xid.ID]*document.Document
-}
-
-// newProcessingState returns an empty processing state.
-func newProcessingState() *ProcessingState {
-	return &ProcessingState{
-		Documents: make(map[xid.ID]*document.Document),
-	}
-}
-
-// hookChangeSub is one subscriber of hook changes.
-type hookChangeSub struct {
-	id uint64
-	fn func(hook.Hook)
-}
-
-// branchRef names a branch queued by ProcessBranch.
+// branchRef names a branch queued by QueueBranch.
 type branchRef struct {
 	ID             xid.ID
 	OrganizationID string
@@ -531,4 +469,13 @@ type CopyTx interface {
 
 	// InsertDocumentHook should insert the document hook.
 	InsertDocumentHook(ctx context.Context, hk hook.Hook) error
+}
+
+// Flusher stores what the editors of a branch hold.
+//
+//go:generate ../../../../scripts/codegen/mock -t internal Flusher flusher
+type Flusher interface {
+	// Flush should have the realtime service store what the editors of
+	// the branch hold, returning once core has it.
+	Flush(ctx context.Context, documentID, branchID xid.ID) error
 }

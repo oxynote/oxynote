@@ -73,23 +73,6 @@ func NewEntry(doc document.Document, at time.Time, by null.String, hooks Hooks, 
 	}
 }
 
-// Head is what placing a new entry needs to know about the branch's
-// newest one.
-type Head struct {
-	// ID is the unique identifier for the entry.
-	ID xid.ID `db:"id"`
-
-	// Boundary indicates whether the entry closes its bucket.
-	Boundary bool `db:"boundary"`
-
-	// CreatedAt is the timestamp when the entry was taken.
-	CreatedAt time.Time `db:"created_at"`
-
-	// Same reports whether the entry records the same name, icon, content
-	// and hooks as the one being placed.
-	Same bool `db:"same"`
-}
-
 // Hook is what it takes to re-create a hook: its type, the block it is
 // anchored to and its settings. Watcher state is not part of it.
 type Hook struct {

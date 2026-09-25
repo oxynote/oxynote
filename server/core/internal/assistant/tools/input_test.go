@@ -272,17 +272,6 @@ func stubHook() *hook.Hook {
 	}
 }
 
-// stubFlush makes the deps' edit applier fail every flush with err.
-func stubFlush(d *Deps, err error) {
-	if err == nil {
-		return
-	}
-
-	d.applier.(*EditApplierMock).FlushFunc = func(context.Context, xid.ID, xid.ID) error {
-		return err
-	}
-}
-
 // _testHookID is the hook id the hook tool tests address; _unknownHookID
 // names none.
 var (
@@ -2427,7 +2416,6 @@ func Test_input_CreateHook(t *testing.T) {
 		BlockUID string
 		Type     hook.Type
 		Settings processor.Settings
-		FlushErr error
 		Inserts  int
 		Touched  []Touched
 		Err      error
@@ -2438,14 +2426,6 @@ func Test_input_CreateHook(t *testing.T) {
 			Type:     hook.TypeScheduledReminder,
 			Settings: scheduled,
 			Err:      fmt.Errorf("branch %s: %w; the branches are main (%s), draft (%s)", _unknownBranchID, ErrUnknownBranch, _stubMainBranchID, _stubBranchID),
-		},
-		"Error returned by applier.Flush": {
-			DB:       stubHookDB(),
-			Branch:   _stubBranchID,
-			Type:     hook.TypeScheduledReminder,
-			Settings: scheduled,
-			FlushErr: assert.AnError,
-			Err:      assert.AnError,
 		},
 		"Unknown block": {
 			DB:       stubHookDB(),
@@ -2510,7 +2490,6 @@ func Test_input_CreateHook(t *testing.T) {
 			t.Parallel()
 
 			d := hookDeps(c.DB, c.Man)
-			stubFlush(d, c.FlushErr)
 			inp := testInput(d, NameCreateHook, `{}`)
 
 			hk, err := inp.CreateHook(_testDocID, c.Branch, c.BlockUID, c.Type, c.Settings)
@@ -2519,11 +2498,6 @@ func Test_input_CreateHook(t *testing.T) {
 			ff := d.hookMan.(*HookManagerMock).CreateHookCalls()
 			require.Len(t, ff, c.Inserts)
 
-			// the block check reads the stored content, so the editors'
-			// pending edits are stored before it.
-			flushes := d.applier.(*EditApplierMock).FlushCalls()
-			require.Len(t, flushes, 1)
-			assert.Equal(t, c.Branch, flushes[0].BranchID)
 			assert.Equal(t, c.Touched, inp.touched)
 
 			// the write is credited to the user the assistant acts for.
@@ -2563,7 +2537,6 @@ func Test_input_UpdateHook(t *testing.T) {
 		DB       *DBMock
 		Man      *HookManagerMock
 		Settings processor.Settings
-		FlushErr error
 		Updates  int
 		Touched  []Touched
 		Err      error
@@ -2573,12 +2546,6 @@ func Test_input_UpdateHook(t *testing.T) {
 			Settings: processor.Settings(`{"scale":"bogus"}`),
 			Updates:  1,
 			Err:      processor.ErrInvalidScaleType,
-		},
-		"Error returned by applier.Flush": {
-			DB:       stubHookDB(),
-			Settings: processor.Settings(`{"scale":"linear","duration":"custom","schedule":"2031-01-01T00:00:00Z"}`),
-			FlushErr: assert.AnError,
-			Err:      assert.AnError,
 		},
 		"Error returned by hookMan.UpdateHook": {
 			DB:       stubHookDB(),
@@ -2600,7 +2567,6 @@ func Test_input_UpdateHook(t *testing.T) {
 			t.Parallel()
 
 			d := hookDeps(c.DB, c.Man)
-			stubFlush(d, c.FlushErr)
 			inp := testInput(d, NameUpdateHook, `{}`)
 			hk := stubHook()
 
@@ -2609,7 +2575,6 @@ func Test_input_UpdateHook(t *testing.T) {
 
 			ff := d.hookMan.(*HookManagerMock).UpdateHookCalls()
 			require.Len(t, ff, c.Updates)
-			assert.Len(t, d.applier.(*EditApplierMock).FlushCalls(), 1)
 			assert.Equal(t, c.Touched, inp.touched)
 
 			// the write is credited to the user the assistant acts for.
@@ -2715,13 +2680,12 @@ func Test_input_DeleteHook(t *testing.T) {
 	watcher.State = null.ValueFrom(processor.State(`{`))
 
 	cc := map[string]struct {
-		DB       *DBMock
-		Man      *HookManagerMock
-		Hook     *hook.Hook
-		FlushErr error
-		Deletes  int
-		Touched  []Touched
-		Err      error
+		DB      *DBMock
+		Man     *HookManagerMock
+		Hook    *hook.Hook
+		Deletes int
+		Touched []Touched
+		Err     error
 	}{
 		"External teardown failed": {
 			DB:      stubHookDB(),
@@ -2729,12 +2693,6 @@ func Test_input_DeleteHook(t *testing.T) {
 			Hook:    watcher,
 			Deletes: 1,
 			Err:     assert.AnError,
-		},
-		"Error returned by applier.Flush": {
-			DB:       stubHookDB(),
-			Hook:     stubHook(),
-			FlushErr: assert.AnError,
-			Err:      assert.AnError,
 		},
 		"Error returned by hookMan.DeleteHook": {
 			DB:      stubHookDB(),
@@ -2756,7 +2714,6 @@ func Test_input_DeleteHook(t *testing.T) {
 			t.Parallel()
 
 			d := hookDeps(c.DB, c.Man)
-			stubFlush(d, c.FlushErr)
 			inp := testInput(d, NameDeleteHook, `{}`)
 
 			err := inp.DeleteHook(c.Hook)
@@ -2764,7 +2721,6 @@ func Test_input_DeleteHook(t *testing.T) {
 
 			ff := d.hookMan.(*HookManagerMock).DeleteHookCalls()
 			require.Len(t, ff, c.Deletes)
-			assert.Len(t, d.applier.(*EditApplierMock).FlushCalls(), 1)
 			assert.Equal(t, c.Touched, inp.touched)
 
 			// the write is credited to the user the assistant acts for.

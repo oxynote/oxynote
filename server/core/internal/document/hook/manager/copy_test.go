@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_Manager_CopyHooks(t *testing.T) {
+func Test_CopyHooks(t *testing.T) {
 	t.Parallel()
 
 	fromBranchID, toBranchID, documentID := xid.New(), xid.New(), xid.New()
@@ -68,9 +68,7 @@ func Test_Manager_CopyHooks(t *testing.T) {
 				},
 			}
 
-			man := newTestManager(t, &DBMock{}, &fakePublisher{}, nil)
-
-			err := man.CopyHooks(context.Background(), tx, fromBranchID, toBranchID, documentID, "org-1", c.UIDs)
+			err := CopyHooks(context.Background(), tx, fromBranchID, toBranchID, documentID, "org-1", c.UIDs)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if c.FetchErr == nil {

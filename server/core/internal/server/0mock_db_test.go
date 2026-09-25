@@ -13,7 +13,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/document/comment"
 	"github.com/oxynote/oxynote/server/core/internal/document/file"
-	"github.com/oxynote/oxynote/server/core/internal/document/hook"
+	hookCore "github.com/oxynote/oxynote/server/core/internal/document/hook"
 	notificationCore "github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/internal/tag"
@@ -136,16 +136,16 @@ var _ DB = &DBMock{}
 //			FetchDocumentFileFunc: func(ctx context.Context, id string, organizationID string) (*file.File, error) {
 //				panic("mock out the FetchDocumentFile method")
 //			},
-//			FetchDocumentHookFunc: func(ctx context.Context, id xid.ID, organizationID string) (*hook.Hook, error) {
+//			FetchDocumentHookFunc: func(ctx context.Context, id xid.ID, organizationID string) (*hookCore.Hook, error) {
 //				panic("mock out the FetchDocumentHook method")
 //			},
-//			FetchDocumentHooksByBranchIDFunc: func(ctx context.Context, branchID xid.ID, organizationID string) ([]hook.Hook, error) {
+//			FetchDocumentHooksByBranchIDFunc: func(ctx context.Context, branchID xid.ID, organizationID string) ([]hookCore.Hook, error) {
 //				panic("mock out the FetchDocumentHooksByBranchID method")
 //			},
-//			FetchDocumentHooksByDocumentIDFunc: func(ctx context.Context, documentID xid.ID, organizationID string) ([]hook.Hook, error) {
+//			FetchDocumentHooksByDocumentIDFunc: func(ctx context.Context, documentID xid.ID, organizationID string) ([]hookCore.Hook, error) {
 //				panic("mock out the FetchDocumentHooksByDocumentID method")
 //			},
-//			FetchDocumentHooksByOrganizationIDFunc: func(ctx context.Context, organizationID string) ([]hook.Hook, error) {
+//			FetchDocumentHooksByOrganizationIDFunc: func(ctx context.Context, organizationID string) ([]hookCore.Hook, error) {
 //				panic("mock out the FetchDocumentHooksByOrganizationID method")
 //			},
 //			FetchDocumentMaintainersFunc: func(ctx context.Context, documentID xid.ID, organizationID string) ([]string, error) {
@@ -214,7 +214,7 @@ var _ DB = &DBMock{}
 //			InsertDocumentFileFunc: func(ctx context.Context, f file.File) error {
 //				panic("mock out the InsertDocumentFile method")
 //			},
-//			InsertDocumentHookFunc: func(ctx context.Context, hk hook.Hook) error {
+//			InsertDocumentHookFunc: func(ctx context.Context, hk hookCore.Hook) error {
 //				panic("mock out the InsertDocumentHook method")
 //			},
 //			InsertGithubInstallationFunc: func(ctx context.Context, installationID int64) error {
@@ -420,16 +420,16 @@ type DBMock struct {
 	FetchDocumentFileFunc func(ctx context.Context, id string, organizationID string) (*file.File, error)
 
 	// FetchDocumentHookFunc mocks the FetchDocumentHook method.
-	FetchDocumentHookFunc func(ctx context.Context, id xid.ID, organizationID string) (*hook.Hook, error)
+	FetchDocumentHookFunc func(ctx context.Context, id xid.ID, organizationID string) (*hookCore.Hook, error)
 
 	// FetchDocumentHooksByBranchIDFunc mocks the FetchDocumentHooksByBranchID method.
-	FetchDocumentHooksByBranchIDFunc func(ctx context.Context, branchID xid.ID, organizationID string) ([]hook.Hook, error)
+	FetchDocumentHooksByBranchIDFunc func(ctx context.Context, branchID xid.ID, organizationID string) ([]hookCore.Hook, error)
 
 	// FetchDocumentHooksByDocumentIDFunc mocks the FetchDocumentHooksByDocumentID method.
-	FetchDocumentHooksByDocumentIDFunc func(ctx context.Context, documentID xid.ID, organizationID string) ([]hook.Hook, error)
+	FetchDocumentHooksByDocumentIDFunc func(ctx context.Context, documentID xid.ID, organizationID string) ([]hookCore.Hook, error)
 
 	// FetchDocumentHooksByOrganizationIDFunc mocks the FetchDocumentHooksByOrganizationID method.
-	FetchDocumentHooksByOrganizationIDFunc func(ctx context.Context, organizationID string) ([]hook.Hook, error)
+	FetchDocumentHooksByOrganizationIDFunc func(ctx context.Context, organizationID string) ([]hookCore.Hook, error)
 
 	// FetchDocumentMaintainersFunc mocks the FetchDocumentMaintainers method.
 	FetchDocumentMaintainersFunc func(ctx context.Context, documentID xid.ID, organizationID string) ([]string, error)
@@ -498,7 +498,7 @@ type DBMock struct {
 	InsertDocumentFileFunc func(ctx context.Context, f file.File) error
 
 	// InsertDocumentHookFunc mocks the InsertDocumentHook method.
-	InsertDocumentHookFunc func(ctx context.Context, hk hook.Hook) error
+	InsertDocumentHookFunc func(ctx context.Context, hk hookCore.Hook) error
 
 	// InsertGithubInstallationFunc mocks the InsertGithubInstallation method.
 	InsertGithubInstallationFunc func(ctx context.Context, installationID int64) error
@@ -1128,7 +1128,7 @@ type DBMock struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
 			// Hk is the hk argument value.
-			Hk hook.Hook
+			Hk hookCore.Hook
 		}
 		// InsertGithubInstallation holds details about calls to the InsertGithubInstallation method.
 		InsertGithubInstallation []struct {
@@ -3028,7 +3028,7 @@ func (mock *DBMock) FetchDocumentFileCalls() []struct {
 }
 
 // FetchDocumentHook calls FetchDocumentHookFunc.
-func (mock *DBMock) FetchDocumentHook(ctx context.Context, id xid.ID, organizationID string) (*hook.Hook, error) {
+func (mock *DBMock) FetchDocumentHook(ctx context.Context, id xid.ID, organizationID string) (*hookCore.Hook, error) {
 	callInfo := struct {
 		Ctx            context.Context
 		ID             xid.ID
@@ -3043,7 +3043,7 @@ func (mock *DBMock) FetchDocumentHook(ctx context.Context, id xid.ID, organizati
 	mock.lockFetchDocumentHook.Unlock()
 	if mock.FetchDocumentHookFunc == nil {
 		var (
-			hookOut *hook.Hook
+			hookOut *hookCore.Hook
 			errOut  error
 		)
 		return hookOut, errOut
@@ -3072,7 +3072,7 @@ func (mock *DBMock) FetchDocumentHookCalls() []struct {
 }
 
 // FetchDocumentHooksByBranchID calls FetchDocumentHooksByBranchIDFunc.
-func (mock *DBMock) FetchDocumentHooksByBranchID(ctx context.Context, branchID xid.ID, organizationID string) ([]hook.Hook, error) {
+func (mock *DBMock) FetchDocumentHooksByBranchID(ctx context.Context, branchID xid.ID, organizationID string) ([]hookCore.Hook, error) {
 	callInfo := struct {
 		Ctx            context.Context
 		BranchID       xid.ID
@@ -3087,7 +3087,7 @@ func (mock *DBMock) FetchDocumentHooksByBranchID(ctx context.Context, branchID x
 	mock.lockFetchDocumentHooksByBranchID.Unlock()
 	if mock.FetchDocumentHooksByBranchIDFunc == nil {
 		var (
-			hooksOut []hook.Hook
+			hooksOut []hookCore.Hook
 			errOut   error
 		)
 		return hooksOut, errOut
@@ -3116,7 +3116,7 @@ func (mock *DBMock) FetchDocumentHooksByBranchIDCalls() []struct {
 }
 
 // FetchDocumentHooksByDocumentID calls FetchDocumentHooksByDocumentIDFunc.
-func (mock *DBMock) FetchDocumentHooksByDocumentID(ctx context.Context, documentID xid.ID, organizationID string) ([]hook.Hook, error) {
+func (mock *DBMock) FetchDocumentHooksByDocumentID(ctx context.Context, documentID xid.ID, organizationID string) ([]hookCore.Hook, error) {
 	callInfo := struct {
 		Ctx            context.Context
 		DocumentID     xid.ID
@@ -3131,7 +3131,7 @@ func (mock *DBMock) FetchDocumentHooksByDocumentID(ctx context.Context, document
 	mock.lockFetchDocumentHooksByDocumentID.Unlock()
 	if mock.FetchDocumentHooksByDocumentIDFunc == nil {
 		var (
-			hooksOut []hook.Hook
+			hooksOut []hookCore.Hook
 			errOut   error
 		)
 		return hooksOut, errOut
@@ -3160,7 +3160,7 @@ func (mock *DBMock) FetchDocumentHooksByDocumentIDCalls() []struct {
 }
 
 // FetchDocumentHooksByOrganizationID calls FetchDocumentHooksByOrganizationIDFunc.
-func (mock *DBMock) FetchDocumentHooksByOrganizationID(ctx context.Context, organizationID string) ([]hook.Hook, error) {
+func (mock *DBMock) FetchDocumentHooksByOrganizationID(ctx context.Context, organizationID string) ([]hookCore.Hook, error) {
 	callInfo := struct {
 		Ctx            context.Context
 		OrganizationID string
@@ -3173,7 +3173,7 @@ func (mock *DBMock) FetchDocumentHooksByOrganizationID(ctx context.Context, orga
 	mock.lockFetchDocumentHooksByOrganizationID.Unlock()
 	if mock.FetchDocumentHooksByOrganizationIDFunc == nil {
 		var (
-			hooksOut []hook.Hook
+			hooksOut []hookCore.Hook
 			errOut   error
 		)
 		return hooksOut, errOut
@@ -4110,10 +4110,10 @@ func (mock *DBMock) InsertDocumentFileCalls() []struct {
 }
 
 // InsertDocumentHook calls InsertDocumentHookFunc.
-func (mock *DBMock) InsertDocumentHook(ctx context.Context, hk hook.Hook) error {
+func (mock *DBMock) InsertDocumentHook(ctx context.Context, hk hookCore.Hook) error {
 	callInfo := struct {
 		Ctx context.Context
-		Hk  hook.Hook
+		Hk  hookCore.Hook
 	}{
 		Ctx: ctx,
 		Hk:  hk,
@@ -4136,11 +4136,11 @@ func (mock *DBMock) InsertDocumentHook(ctx context.Context, hk hook.Hook) error 
 //	len(mockedDB.InsertDocumentHookCalls())
 func (mock *DBMock) InsertDocumentHookCalls() []struct {
 	Ctx context.Context
-	Hk  hook.Hook
+	Hk  hookCore.Hook
 } {
 	var calls []struct {
 		Ctx context.Context
-		Hk  hook.Hook
+		Hk  hookCore.Hook
 	}
 	mock.lockInsertDocumentHook.RLock()
 	calls = mock.calls.InsertDocumentHook

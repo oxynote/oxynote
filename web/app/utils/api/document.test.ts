@@ -1,8 +1,6 @@
-import { describe, it, vi } from "vitest"
+import { describe, it } from "vitest"
 import {
-	DocumentHookType,
 	docNameByIdInDocumentTree,
-	defaultDocumentHookState,
 	isIdInDocumentTree,
 	makeWsDocumentMaintainersChangeTopic,
 	makeWsDocumentMetadataChangeTopic,
@@ -86,45 +84,5 @@ describe("docNameByIdInDocumentTree", () => {
 		{ name: "returns null for an unknown id", id: "x", expected: null },
 	])("$name", ({ id, expected }, { expect }) => {
 		expect(docNameByIdInDocumentTree(tree, id)).toBe(expected)
-	})
-})
-
-describe("defaultDocumentHookState", () => {
-	it("stamps the scheduled reminder state with the current time", ({
-		expect,
-	}) => {
-		vi.useFakeTimers()
-		vi.setSystemTime(new Date("2024-06-15T12:00:00Z"))
-
-		try {
-			expect(
-				defaultDocumentHookState(DocumentHookType.ScheduledReminder),
-			).toEqual({ startedAt: new Date("2024-06-15T12:00:00Z") })
-		} finally {
-			vi.useRealTimers()
-		}
-	})
-
-	it("returns a url watcher state with no watcher yet", ({ expect }) => {
-		expect(defaultDocumentHookState(DocumentHookType.URLWatcher)).toEqual({
-			watcherId: "",
-			lastChangedAt: null,
-		})
-	})
-
-	it("returns an empty checksum state for github tracking", ({ expect }) => {
-		expect(defaultDocumentHookState(DocumentHookType.GitHubTracking)).toEqual({
-			pathsChecksums: {},
-		})
-	})
-
-	it("returns an empty digest state for the container image watcher", ({
-		expect,
-	}) => {
-		expect(
-			defaultDocumentHookState(DocumentHookType.ContainerImageWatcher),
-		).toEqual({
-			digest: "",
-		})
 	})
 })

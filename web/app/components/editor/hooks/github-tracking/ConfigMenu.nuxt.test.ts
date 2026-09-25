@@ -33,9 +33,7 @@ vi.mock("vue-sonner", () => ({
 const DOCUMENT_ID = makeXid("doc")
 const BRANCH_ID = makeXid("branch")
 const HOOK_ID = makeXid("hook")
-// hook writes go through the realtime service, which stores the branch's
-// pending edits before core records them.
-const HOOKS_WRITE_URL = `http://test.local/auth-realtime/api/documents/${DOCUMENT_ID}/hooks`
+const HOOKS_URL = `/api/documents/${DOCUMENT_ID}/hooks`
 
 const NEW_HOOK_LABEL = "editor.hooks.github-tracking.title"
 const REPOSITORY = "runbooks"
@@ -208,6 +206,20 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 		}, WAIT_FOR_OPTIONS)
 	})
 
+	it("warns that github is not set up on this server", async ({ expect }) => {
+		mockGitHub()
+		await mountMenu({ hook: githubHook({ status: "unconfigured" }) })
+
+		await openHookSubMenu(`Watching ${REPOSITORY}`)
+
+		await vi.waitFor(() => {
+			expect(menuText()).toContain("not set up on this server")
+		}, WAIT_FOR_OPTIONS)
+		expect(menuText()).not.toContain(
+			t("editor.hooks.github-tracking.not-connected.placeholder"),
+		)
+	})
+
 	it("explains what an active block hook will do", async ({ expect }) => {
 		mockGitHub()
 		await mountMenu({ hook: githubHook() })
@@ -249,7 +261,7 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 		expect,
 	}) => {
 		mockGitHub()
-		const calls = mockEndpoint("POST", HOOKS_WRITE_URL, () => ({ id: HOOK_ID }))
+		const calls = mockEndpoint("POST", HOOKS_URL, () => ({ id: HOOK_ID }))
 		const wrapper = await mountMenu()
 		await openHookSubMenu(t(NEW_HOOK_LABEL))
 		await pickRepository(wrapper, REPOSITORY)
@@ -278,7 +290,7 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 
 	it("warns when the hook cannot be created", async ({ expect }) => {
 		mockGitHub()
-		mockEndpoint("POST", HOOKS_WRITE_URL, (_c, event) => {
+		mockEndpoint("POST", HOOKS_URL, (_c, event) => {
 			setResponseStatus(event, 500)
 
 			return { message: "boom" }
@@ -298,7 +310,7 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 
 	it("updates what an existing hook watches", async ({ expect }) => {
 		mockGitHub()
-		const calls = mockEndpoint("PUT", `${HOOKS_WRITE_URL}/${HOOK_ID}`, () => ({
+		const calls = mockEndpoint("PUT", `${HOOKS_URL}/${HOOK_ID}`, () => ({
 			id: HOOK_ID,
 		}))
 		const wrapper = await mountMenu({ hook: githubHook() })
@@ -321,7 +333,7 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 
 	it("warns when the hook cannot be updated", async ({ expect }) => {
 		mockGitHub()
-		mockEndpoint("PUT", `${HOOKS_WRITE_URL}/${HOOK_ID}`, (_c, event) => {
+		mockEndpoint("PUT", `${HOOKS_URL}/${HOOK_ID}`, (_c, event) => {
 			setResponseStatus(event, 500)
 
 			return { message: "boom" }
@@ -339,11 +351,7 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 
 	it("deletes the hook", async ({ expect }) => {
 		mockGitHub()
-		const calls = mockEndpoint(
-			"DELETE",
-			`${HOOKS_WRITE_URL}/${HOOK_ID}`,
-			() => null,
-		)
+		const calls = mockEndpoint("DELETE", `${HOOKS_URL}/${HOOK_ID}`, () => null)
 		await mountMenu({ hook: githubHook() })
 		await openHookSubMenu(`Watching ${REPOSITORY}`)
 
@@ -356,7 +364,7 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 
 	it("warns when the hook cannot be deleted", async ({ expect }) => {
 		mockGitHub()
-		mockEndpoint("DELETE", `${HOOKS_WRITE_URL}/${HOOK_ID}`, (_c, event) => {
+		mockEndpoint("DELETE", `${HOOKS_URL}/${HOOK_ID}`, (_c, event) => {
 			setResponseStatus(event, 500)
 
 			return { message: "boom" }
@@ -412,7 +420,7 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 	it("creates nothing while no page is open", async ({ expect }) => {
 		mockGitHub()
 		useEditorStore().updateActiveDocumentId(null)
-		const calls = mockEndpoint("POST", HOOKS_WRITE_URL, () => ({ id: HOOK_ID }))
+		const calls = mockEndpoint("POST", HOOKS_URL, () => ({ id: HOOK_ID }))
 		const wrapper = await mountMenu()
 		await openHookSubMenu(t(NEW_HOOK_LABEL))
 		await pickRepository(wrapper, REPOSITORY)

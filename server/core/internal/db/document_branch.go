@@ -415,7 +415,7 @@ func (a *agent) fetchDocumentBranchHistoryHooks(ctx context.Context, q sqlx.Quer
 // of the given entry's branch, or nil when the branch has none. The
 // comparison with the entry runs in Postgres, so the stored content never
 // leaves it.
-func (a *agent) fetchNewestDocumentBranchHistoryEntry(ctx context.Context, q sqlx.QueryerContext, entry history.Entry) (*history.Head, error) {
+func (a *agent) fetchNewestDocumentBranchHistoryEntry(ctx context.Context, q sqlx.QueryerContext, entry history.Entry) (*historyHead, error) {
 	sqlq, args := a.builder.Select("id", "boundary", "created_at").
 		Column(sq.Alias(sq.Expr(
 			"document_name = ? AND icon = ? AND content = ?::jsonb AND hooks = ?::jsonb",
@@ -430,7 +430,7 @@ func (a *agent) fetchNewestDocumentBranchHistoryEntry(ctx context.Context, q sql
 		Limit(1).
 		MustSql()
 
-	var newest history.Head
+	var newest historyHead
 
 	err := sqlx.GetContext(ctx, q, &newest, sqlq, args...)
 	if err != nil {
@@ -469,6 +469,23 @@ func (a *agent) trimDocumentBranchHistoryEntries(ctx context.Context, ex sqlx.Ex
 	_, err := ex.ExecContext(ctx, q, args...)
 
 	return err
+}
+
+// historyHead is what placing a new history entry needs to know about
+// the branch's newest one.
+type historyHead struct {
+	// ID is the unique identifier for the entry.
+	ID xid.ID `db:"id"`
+
+	// Boundary indicates whether the entry closes its bucket.
+	Boundary bool `db:"boundary"`
+
+	// CreatedAt is the timestamp when the entry was taken.
+	CreatedAt time.Time `db:"created_at"`
+
+	// Same reports whether the entry records the same name, icon, content
+	// and hooks as the one being placed.
+	Same bool `db:"same"`
 }
 
 // documentBranchRow maps a document's branch onto the document_branches

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import HookInitializing from "../HookInitializing.vue"
-import { hookErrorKey } from "../hook-errors"
+import { hookErrorMessage } from "../hook-errors"
 import { showToastMessage } from "~/components/toast"
 import FileSelectInput from "./FileSelectInput.vue"
 import { cn } from "~/lib/utils"
@@ -28,7 +28,14 @@ const hookData = computed(() => {
 })
 const documentHookAPI = useDocumentHookAPI()
 const { fetchGitHubConnectionStatus } = useGitHubAPI()
-const { t } = useI18n({ useScope: "global" })
+const needsGitHubSetup = computed(
+	() =>
+		!fetchGitHubConnectionStatus.data.value?.connected ||
+		hookData.value?.status === "missing_installation" ||
+		hookData.value?.status === "unconfigured",
+)
+const i18n = useI18n({ useScope: "global" })
+const { t } = i18n
 const confirmedRepository = ref<string | undefined>(
 	hookData.value ? hookData.value.settings.repository : undefined,
 )
@@ -108,10 +115,9 @@ async function upsertHook() {
 				},
 			})
 		} catch (err) {
-			const key = hookErrorKey(err)
 			showToastMessage(
 				"error",
-				key ? t(key) : t("editor.hooks.errors.create-failed"),
+				hookErrorMessage(err, i18n) ?? t("editor.hooks.errors.create-failed"),
 			)
 			return
 		}
@@ -142,10 +148,9 @@ async function upsertHook() {
 			},
 		})
 	} catch (err) {
-		const key = hookErrorKey(err)
 		showToastMessage(
 			"error",
-			key ? t(key) : t("editor.hooks.errors.update-failed"),
+			hookErrorMessage(err, i18n) ?? t("editor.hooks.errors.update-failed"),
 		)
 		return
 	}
@@ -246,21 +251,24 @@ async function resetHook() {
 			]"
 		>
 			<div class="flex w-[14rem] flex-col">
-				<template
-					v-if="
-						props.hook && !props.hook.state && props.hook.status === 'active'
-					"
-				>
-					<HookInitializing />
+				<HookInitializing :hook="props.hook" />
+				<template v-if="hookData?.status === 'unconfigured'">
+					<i18n-t
+						scope="global"
+						keypath="editor.hooks.github-tracking.unconfigured"
+						tag="div"
+						class="px-0.75 pb-0.75 text-center text-2sm"
+					>
+						<template #icon>
+							<Icon
+								name="mingcute:alert-fill"
+								class="mr-0.5 inline-block -translate-y-px align-middle text-status-warning"
+							/>
+						</template>
+					</i18n-t>
 					<ShadcnUiDropdownMenuSeparator />
 				</template>
-				<template
-					v-if="
-						!fetchGitHubConnectionStatus.data.value?.connected ||
-						hookData?.status === 'missing_installation' ||
-						hookData?.status === 'unconfigured'
-					"
-				>
+				<template v-else-if="needsGitHubSetup">
 					<i18n-t
 						scope="global"
 						keypath="editor.hooks.github-tracking.not-connected.main"
@@ -357,10 +365,7 @@ async function resetHook() {
 					:class="
 						cn(
 							'flex flex-col opacity-100 transition-opacity duration-200',
-							(!fetchGitHubConnectionStatus.data.value?.connected ||
-								hookData?.status === 'missing_installation' ||
-								hookData?.status === 'unconfigured') &&
-								'pointer-events-none opacity-60',
+							needsGitHubSetup && 'pointer-events-none opacity-60',
 						)
 					"
 				>

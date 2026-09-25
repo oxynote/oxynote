@@ -343,6 +343,26 @@ describe("createCoreClient", () => {
 			)
 			expect(result.status).toBe(200)
 		})
+
+		it("keeps an id inside its own path segment", async ({
+			expect,
+		}) => {
+			const http = stubHttp({ status: 200, data: {} })
+			const headers = new AxiosHeaders()
+
+			await createCoreClient(BASE_URL, http).updateBranch(
+				"doc-1",
+				"../hooks/h1",
+				{ body: {} },
+				{ headers },
+			)
+
+			expect(http.put).toHaveBeenCalledWith(
+				"http://core:8080/api/x/documents/doc-1/branches/..%2Fhooks%2Fh1",
+				{},
+				{ headers },
+			)
+		})
 	})
 
 	describe("deleteBranch", () => {
@@ -361,109 +381,6 @@ describe("createCoreClient", () => {
 			expect(http.delete).toHaveBeenCalledTimes(1)
 			expect(http.delete).toHaveBeenCalledWith(
 				"http://core:8080/api/x/documents/doc-1/branches/branch-1",
-				{ headers },
-			)
-			expect(result.status).toBe(204)
-		})
-	})
-
-	describe("createHook", () => {
-		it("posts the body untouched to core's internal hooks route with the caller's headers", async ({
-			expect,
-		}) => {
-			const http = stubHttp({
-				status: 201,
-				data: { id: "hook-1" },
-			})
-			const headers = new AxiosHeaders()
-			headers.set("cookie", "auth.session=abc")
-			const body = {
-				type: "scheduled-reminder",
-				branchId: "b1",
-			}
-
-			const result = await createCoreClient(
-				BASE_URL,
-				http,
-			).createHook("doc-1", { body }, { headers })
-
-			expect(http.post).toHaveBeenCalledWith(
-				"http://core:8080/api/x/documents/doc-1/hooks",
-				body,
-				{ headers },
-			)
-			expect(result.status).toBe(201)
-		})
-	})
-
-	describe("updateHook", () => {
-		it("puts the body untouched to core's internal hook route, naming the branch", async ({
-			expect,
-		}) => {
-			const http = stubHttp({
-				status: 200,
-				data: { id: "hook-1" },
-			})
-			const headers = new AxiosHeaders()
-			const body = { settings: {} }
-
-			const result = await createCoreClient(
-				BASE_URL,
-				http,
-			).updateHook(
-				"doc-1",
-				"hook-1",
-				"b1",
-				{ body },
-				{ headers },
-			)
-
-			expect(http.put).toHaveBeenCalledWith(
-				"http://core:8080/api/x/documents/doc-1/hooks/hook-1?branchId=b1",
-				body,
-				{ headers },
-			)
-			expect(result.status).toBe(200)
-		})
-	})
-
-	describe("path encoding", () => {
-		it("keeps an id inside its own path segment", async ({
-			expect,
-		}) => {
-			const http = stubHttp({ status: 200, data: {} })
-			const headers = new AxiosHeaders()
-
-			await createCoreClient(BASE_URL, http).updateHook(
-				"doc-1",
-				"../branch/b2",
-				"b1",
-				{ body: {} },
-				{ headers },
-			)
-
-			expect(http.put).toHaveBeenCalledWith(
-				"http://core:8080/api/x/documents/doc-1/hooks/..%2Fbranch%2Fb2?branchId=b1",
-				{},
-				{ headers },
-			)
-		})
-	})
-
-	describe("deleteHook", () => {
-		it("deletes core's internal hook route, naming the branch", async ({
-			expect,
-		}) => {
-			const http = stubHttp({ status: 204, data: null })
-			const headers = new AxiosHeaders()
-
-			const result = await createCoreClient(
-				BASE_URL,
-				http,
-			).deleteHook("doc-1", "hook-1", "b1", { headers })
-
-			expect(http.delete).toHaveBeenCalledWith(
-				"http://core:8080/api/x/documents/doc-1/hooks/hook-1?branchId=b1",
 				{ headers },
 			)
 			expect(result.status).toBe(204)

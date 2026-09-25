@@ -29,14 +29,14 @@ reads it and its hooks, in the transaction that wrote the change.
 - Edits in one 30-minute bucket (by `created_at`) update the newest
   entry and its `updated_at`. An entry equal to the newest is skipped. A
   null author (system write, no maintainers) never replaces a set one.
-- Listed hooks are those whose block the content holds, soft-deleted or
-  not.
-- Hook writes go through `hook/manager`: create, update and delete record
-  an entry in their transaction, reset does not. Callers flush first.
+- An entry lists the hooks whose block its content holds.
+- `hook/manager` flushes the branch, then create, update and delete
+  record an entry in their transaction; reset does not.
 - Create, duplicate, fork and merge write a **boundary** entry that never
-  aggregates, after `CopyHooks` inserted the copies, so it lists them.
-- Entries pin the files they reference. Retention keeps each branch's
-  newest entry. Entries cascade with their branch.
+  aggregates, written after `CopyHooks` so it lists the copies.
+- Entries pin the files they reference, so the `DB_*HISTORY*` limits
+  decide how long a removed image survives. Retention keeps each branch's
+  newest entry.
 
 ## Files and hooks
 
@@ -69,9 +69,9 @@ request handler:
   while rows still exist and throws if core fails.
 - Create writes the row before the object; delete removes the object before
   the row.
-- **A null hook state means not set up.** Copies get one (never the
-  source's) and `ProcessBranch` sets them up after commit. Hook writes
-  and the sweep go through the manager's per-hook lock.
+- **A null hook state means not set up.** Copied hooks start null, never
+  with the source's state; `QueueBranch` sets them up after commit. Hook
+  writes and the sweep share the manager's per-hook lock.
 
 ## Search
 

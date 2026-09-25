@@ -46,9 +46,9 @@ export interface MergedDocument {
 	icon: string
 }
 
-// the branch and hook requests this service forwards for the web client.
-// Their bodies are core's to validate, so they travel through untyped.
-interface ForwardedRequest {
+// the branch requests this service forwards for the web client. Their
+// bodies are core's to validate, so they travel through untyped.
+interface BranchRequest {
 	body: unknown
 }
 
@@ -115,35 +115,17 @@ export interface CoreClient {
 	): Promise<{ status: number; data: MergedDocument }>
 	createBranch(
 		documentId: string,
-		request: ForwardedRequest,
+		request: BranchRequest,
 		options: RequestOptions,
 	): Promise<HttpResponse>
 	updateBranch(
 		documentId: string,
 		branchId: string,
-		request: ForwardedRequest,
+		request: BranchRequest,
 		options: RequestOptions,
 	): Promise<HttpResponse>
 	deleteBranch(
 		documentId: string,
-		branchId: string,
-		options: RequestOptions,
-	): Promise<HttpResponse>
-	createHook(
-		documentId: string,
-		request: ForwardedRequest,
-		options: RequestOptions,
-	): Promise<HttpResponse>
-	updateHook(
-		documentId: string,
-		hookId: string,
-		branchId: string,
-		request: ForwardedRequest,
-		options: RequestOptions,
-	): Promise<HttpResponse>
-	deleteHook(
-		documentId: string,
-		hookId: string,
 		branchId: string,
 		options: RequestOptions,
 	): Promise<HttpResponse>
@@ -249,35 +231,6 @@ export function createCoreClient(
 		async deleteBranch(documentId, branchId, options) {
 			return http.delete(
 				`${internal}/documents/${encodeURIComponent(documentId)}/branches/${encodeURIComponent(branchId)}`,
-				options,
-			)
-		},
-
-		async createHook(documentId, request, options) {
-			return http.post(
-				`${internal}/documents/${encodeURIComponent(documentId)}/hooks`,
-				request.body,
-				options,
-			)
-		},
-
-		async updateHook(
-			documentId,
-			hookId,
-			branchId,
-			request,
-			options,
-		) {
-			return http.put(
-				`${internal}/documents/${encodeURIComponent(documentId)}/hooks/${encodeURIComponent(hookId)}?branchId=${encodeURIComponent(branchId)}`,
-				request.body,
-				options,
-			)
-		},
-
-		async deleteHook(documentId, hookId, branchId, options) {
-			return http.delete(
-				`${internal}/documents/${encodeURIComponent(documentId)}/hooks/${encodeURIComponent(hookId)}?branchId=${encodeURIComponent(branchId)}`,
 				options,
 			)
 		},

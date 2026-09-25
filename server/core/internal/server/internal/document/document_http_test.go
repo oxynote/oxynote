@@ -15,7 +15,6 @@ import (
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/document/file"
 	hookCore "github.com/oxynote/oxynote/server/core/internal/document/hook"
-	"github.com/oxynote/oxynote/server/core/internal/document/hook/manager"
 	"github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
@@ -1615,7 +1614,6 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 		Committed int
 		TreeCbs   int
 		Copies    int
-		Man       *HookManagerMock
 		// CopiedUID is a source block uid the hook copy is told to
 		// re-anchor.
 		CopiedUID string
@@ -1722,14 +1720,16 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 			Copies:    1,
 			CopiedUID: "img-1-aaaaaaaaaaaaaaa",
 		},
-		"Error returned by hookMan.CopyHooks": {
+		"Error returned by tx.FetchDocumentHooksByBranchID": {
 			DB: &DBMock{FetchDocumentFunc: fetchStored},
-			Tx: insertAwareTx(),
-			Man: &HookManagerMock{
-				CopyHooksFunc: func(context.Context, manager.CopyTx, xid.ID, xid.ID, xid.ID, string, map[string]string) error {
-					return errors.New("boom")
-				},
-			},
+			Tx: func() *TxMock {
+				tx := insertAwareTx()
+				tx.FetchDocumentHooksByBranchIDFunc = func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
+					return nil, errors.New("boom")
+				}
+
+				return tx
+			}(),
 			RespCode: http.StatusInternalServerError,
 		},
 	}
@@ -1744,12 +1744,16 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 				hdl.storer = c.Storer
 			}
 
-			man := c.Man
-			if man == nil {
-				man = &HookManagerMock{}
-			}
-
+			man := &HookManagerMock{}
 			hdl.hookMan = man
+
+			// a hook anchored to the copied block is re-anchored to its new
+			// uid.
+			if c.CopiedUID != "" {
+				c.Tx.FetchDocumentHooksByBranchIDFunc = func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
+					return []hookCore.Hook{{BlockID: null.StringFrom(c.CopiedUID)}}, nil
+				}
+			}
 
 			rec := httptest.NewRecorder()
 
@@ -1780,22 +1784,21 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 				// the hooks are copied inside the transaction, re-anchored
 				// to the duplicate's regenerated block uids, and set up once
 				// it commits.
-				hh := man.CopyHooksCalls()
+				hh := c.Tx.FetchDocumentHooksByBranchIDCalls()
 				require.Len(t, hh, 1)
-				assert.Same(t, c.Tx, hh[0].Tx)
-				assert.Equal(t, _branchID, hh[0].FromBranchID)
-				assert.Equal(t, dupl.BranchID, hh[0].ToBranchID)
-				assert.Equal(t, dupl.ID, hh[0].DocumentID)
+				assert.Equal(t, _branchID, hh[0].BranchID)
 				assert.Equal(t, "org1", hh[0].OrganizationID)
 
-				pp := man.ProcessBranchCalls()
+				pp := man.QueueBranchCalls()
 				require.Len(t, pp, 1)
 				assert.Equal(t, dupl.BranchID, pp[0].BranchID)
 
 				if c.CopiedUID != "" {
-					uid, ok := hh[0].Uids[c.CopiedUID]
-					require.True(t, ok)
-					assert.NotEqual(t, c.CopiedUID, uid)
+					ii := c.Tx.InsertDocumentHookCalls()
+					require.Len(t, ii, 1)
+					assert.Equal(t, null.ValueFrom(dupl.ID), ii[0].Hk.DocumentID)
+					assert.True(t, ii[0].Hk.BlockID.Valid)
+					assert.NotEqual(t, c.CopiedUID, ii[0].Hk.BlockID.String)
 				}
 
 				// the duplicate starts with a boundary entry.

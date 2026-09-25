@@ -75,8 +75,7 @@ type Deps struct {
 	// deployment without it.
 	webchangeClient *webchange.Client
 
-	// hookMan runs the hook writes: the external side effect, the row and
-	// the branch's history entry.
+	// hookMan runs the hook writes.
 	hookMan HookManager
 
 	// applier is the edit client for content mutations and the
@@ -1040,11 +1039,6 @@ func (i *input) unknownHook(documentID, hookID xid.ID) error {
 // type whose integration the deployment lacks is refused before anything
 // is created.
 func (i *input) CreateHook(documentID, branchID xid.ID, blockUID string, tp hook.Type, settings processor.Settings) (*hook.Hook, error) {
-	// the block may be one an editor has not stored yet.
-	if err := i.applier.Flush(i.ctx, documentID, branchID); err != nil {
-		return nil, fmt.Errorf("storing the branch's pending edits: %w", err)
-	}
-
 	doc, err := i.FetchBranch(documentID, branchID)
 	if err != nil {
 		return nil, err
@@ -1093,12 +1087,6 @@ func (i *input) CreateHook(documentID, branchID xid.ID, blockUID string, tp hook
 // UpdateHook replaces the hook's settings and resets its score and state,
 // as a fresh hook with those settings would have them.
 func (i *input) UpdateHook(hk *hook.Hook, settings processor.Settings) error {
-	if hk.BranchID.Valid {
-		if err := i.applier.Flush(i.ctx, hk.DocumentID.V, hk.BranchID.V); err != nil {
-			return fmt.Errorf("storing the branch's pending edits: %w", err)
-		}
-	}
-
 	updated, err := i.hookMan.UpdateHook(i.ctx, hk.ID, i.orgID, hook.UpdateInput{Settings: settings}, i.userID)
 	if err != nil {
 		return err
@@ -1129,12 +1117,6 @@ func (i *input) ResetHook(hk *hook.Hook) error {
 // removes its row. The branch stays, and the editor showing it has to
 // redraw, so the delete records the branch as touched.
 func (i *input) DeleteHook(hk *hook.Hook) error {
-	if hk.BranchID.Valid {
-		if err := i.applier.Flush(i.ctx, hk.DocumentID.V, hk.BranchID.V); err != nil {
-			return fmt.Errorf("storing the branch's pending edits: %w", err)
-		}
-	}
-
 	if err := i.hookMan.DeleteHook(i.ctx, hk.ID, i.orgID, i.userID); err != nil {
 		return err
 	}
@@ -1305,8 +1287,7 @@ type Tx interface {
 	DeleteDocument(ctx context.Context, id xid.ID, organizationID string) ([]xid.ID, error)
 }
 
-// HookManager runs hook writes: the external side effect, the row and
-// the branch's history entry.
+// HookManager runs hook writes.
 //
 //go:generate ../../../scripts/codegen/mock -t internal HookManager hook_manager
 type HookManager interface {
@@ -1388,9 +1369,4 @@ type EditApplier interface {
 	// outcome. A tool's writes are a person's, never core's own, so
 	// this package always asks for an ordinary one.
 	Apply(ctx context.Context, documentID, branchID xid.ID, ops []edit.Operation, userID string, system bool) (edit.Result, error)
-
-	// Flush should have the realtime service store what the editors of
-	// the (documentID, branchID) document hold, returning once core has
-	// it. Hook writes call it before they record the branch's history.
-	Flush(ctx context.Context, documentID, branchID xid.ID) error
 }

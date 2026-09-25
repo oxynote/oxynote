@@ -61,6 +61,7 @@ func Test_Manager_CreateHook(t *testing.T) {
 		CD       bool
 		// Unreachable points the changedetection client at a closed port.
 		Unreachable bool
+		FlushErr    error
 		BeginErr    error
 		Tx          *TxMock
 		Inserts     int
@@ -68,6 +69,13 @@ func Test_Manager_CreateHook(t *testing.T) {
 		Watchers    []string
 		Err         error
 	}{
+		"Error returned by flusher.Flush": {
+			Type:     hook.TypeScheduledReminder,
+			Settings: processor.Settings(`{}`),
+			FlushErr: assert.AnError,
+			Tx:       &TxMock{},
+			Err:      assert.AnError,
+		},
 		"Unknown type is refused": {
 			Type:     "bogus",
 			Settings: processor.Settings(`{}`),
@@ -166,8 +174,17 @@ func Test_Manager_CreateHook(t *testing.T) {
 			}
 
 			man := newTestManager(t, stubDB(&DBMock{}, c.Tx, c.BeginErr), &fakePublisher{}, wc)
+
+			if c.FlushErr != nil {
+				man.flusher = &FlusherMock{
+					FlushFunc: func(context.Context, xid.ID, xid.ID) error {
+						return c.FlushErr
+					},
+				}
+			}
+
 			changes := &changeRecorder{}
-			man.OnHookChange(changes.record)
+			man.BindHookChange(changes.record)
 
 			documentID := xid.New()
 
@@ -200,6 +217,11 @@ func Test_Manager_CreateHook(t *testing.T) {
 			assert.Equal(t, processor.StatusActive, hk.Status)
 			assert.True(t, hk.State.Valid)
 
+			flushes := man.flusher.(*FlusherMock).FlushCalls()
+			require.Len(t, flushes, 1)
+			assert.Equal(t, documentID, flushes[0].DocumentID)
+			assert.Equal(t, branchID, flushes[0].BranchID)
+
 			ff := c.Tx.RecordDocumentBranchHistoryEntryCalls()
 			require.Len(t, ff, 1)
 			assert.Equal(t, null.StringFrom("u1"), ff[0].By)
@@ -230,6 +252,7 @@ func Test_Manager_UpdateHook(t *testing.T) {
 		Unreachable bool
 		Settings    processor.Settings
 		FetchErr    error
+		FlushErr    error
 		BeginErr    error
 		UpdateErr   error
 		RecordErr   error
@@ -248,6 +271,11 @@ func Test_Manager_UpdateHook(t *testing.T) {
 			Settings: settings,
 			FetchErr: sql.ErrNoRows,
 			Err:      sql.ErrNoRows,
+		},
+		"Error returned by flusher.Flush": {
+			Settings: settings,
+			FlushErr: assert.AnError,
+			Err:      assert.AnError,
 		},
 		"Settings the processor refuses": {
 			Settings: processor.Settings(`{"url":"ftp://example.com"}`),
@@ -327,8 +355,17 @@ func Test_Manager_UpdateHook(t *testing.T) {
 
 			dbm := stubStoredHook(stubDB(&DBMock{}, tx, c.BeginErr), stored, c.FetchErr)
 			man := newTestManager(t, dbm, &fakePublisher{}, wc)
+
+			if c.FlushErr != nil {
+				man.flusher = &FlusherMock{
+					FlushFunc: func(context.Context, xid.ID, xid.ID) error {
+						return c.FlushErr
+					},
+				}
+			}
+
 			changes := &changeRecorder{}
-			man.OnHookChange(changes.record)
+			man.BindHookChange(changes.record)
 
 			ctx := context.Background()
 
@@ -390,6 +427,7 @@ func Test_Manager_DeleteHook(t *testing.T) {
 	cc := map[string]struct {
 		Hook      func(*testing.T) hook.Hook
 		FetchErr  error
+		FlushErr  error
 		BeginErr  error
 		DelErr    error
 		RecordErr error
@@ -404,6 +442,13 @@ func Test_Manager_DeleteHook(t *testing.T) {
 			},
 			FetchErr: sql.ErrNoRows,
 			Err:      sql.ErrNoRows,
+		},
+		"Error returned by flusher.Flush": {
+			Hook: func(t *testing.T) hook.Hook {
+				return stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+			},
+			FlushErr: assert.AnError,
+			Err:      assert.AnError,
 		},
 		// the row goes only once the resource it describes is gone, so a
 		// failed teardown keeps it.
@@ -496,8 +541,17 @@ func Test_Manager_DeleteHook(t *testing.T) {
 			}
 
 			man := newTestManager(t, stubStoredHook(stubDB(&DBMock{}, tx, c.BeginErr), hk, c.FetchErr), &fakePublisher{}, nil)
+
+			if c.FlushErr != nil {
+				man.flusher = &FlusherMock{
+					FlushFunc: func(context.Context, xid.ID, xid.ID) error {
+						return c.FlushErr
+					},
+				}
+			}
+
 			changes := &changeRecorder{}
-			man.OnHookChange(changes.record)
+			man.BindHookChange(changes.record)
 
 			err := man.DeleteHook(context.Background(), hk.ID, "org-1", "u1")
 			testutil.AssertEqualError(t, c.Err, err)
@@ -514,6 +568,12 @@ func Test_Manager_DeleteHook(t *testing.T) {
 
 			assert.Equal(t, hk.ID, ff[0].ID)
 			assert.Len(t, changes.hooks, 1)
+
+			if hk.BranchID.Valid {
+				flushes := man.flusher.(*FlusherMock).FlushCalls()
+				require.Len(t, flushes, 1)
+				assert.Equal(t, hk.BranchID.V, flushes[0].BranchID)
+			}
 		})
 	}
 }
@@ -617,7 +677,7 @@ func Test_Manager_ResetHook(t *testing.T) {
 			pub := &fakePublisher{}
 			man := newTestManager(t, db, pub, wc)
 			changes := &changeRecorder{}
-			man.OnHookChange(changes.record)
+			man.BindHookChange(changes.record)
 
 			hk, err := man.ResetHook(context.Background(), stored.ID, "org-1")
 			testutil.AssertEqualError(t, c.Err, err)

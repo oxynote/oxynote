@@ -156,7 +156,7 @@ func newTestManager(t *testing.T, db *DBMock, pub *fakePublisher, wc *webchange.
 		wc = webchange.NewClient("", "")
 	}
 
-	return NewManager(slog.New(slog.DiscardHandler), db, githubMan, wc, pub)
+	return NewManager(slog.New(slog.DiscardHandler), db, &FlusherMock{}, githubMan, wc, pub)
 }
 
 // urlWatcherHook builds a url-watcher hook that already holds a
@@ -191,30 +191,6 @@ func stubStoredHooks(db *DBMock, hooks []hook.Hook) *DBMock {
 	return db
 }
 
-func Test_Manager_OnHookChange(t *testing.T) {
-	t.Parallel()
-
-	man := newTestManager(t, &DBMock{}, &fakePublisher{}, nil)
-
-	var first, second []xid.ID
-
-	unsubscribe := man.OnHookChange(func(h hook.Hook) {
-		first = append(first, h.ID)
-	})
-	man.OnHookChange(func(h hook.Hook) {
-		second = append(second, h.ID)
-	})
-
-	h := hook.Hook{ID: xid.New()}
-
-	man.notifyChange(h)
-	unsubscribe()
-	man.notifyChange(h)
-
-	assert.Equal(t, []xid.ID{h.ID}, first)
-	assert.Equal(t, []xid.ID{h.ID, h.ID}, second)
-}
-
 func Test_Manager_Start(t *testing.T) {
 	t.Parallel()
 
@@ -235,7 +211,7 @@ func Test_Manager_Start(t *testing.T) {
 
 	// the trigger is pending before Start, so the branch loop serves it
 	// on its first turn, while the pass runs once on start.
-	man.ProcessBranch(branchID, "org-1")
+	man.QueueBranch(branchID, "org-1")
 	man.Start(ctx)
 
 	assert.Len(t, db.FetchPaginatedDocumentHooksCalls(), 1)
@@ -279,7 +255,7 @@ func Test_Manager_processBranches(t *testing.T) {
 			}, hooks)
 
 			man := newTestManager(t, db, &fakePublisher{}, nil)
-			man.ProcessBranch(branchID, "org-1")
+			man.QueueBranch(branchID, "org-1")
 			man.processBranches(context.Background())
 
 			assert.Len(t, db.UpdateDocumentHookCalls(), c.Updates)
@@ -827,7 +803,7 @@ func Test_Manager_processHooks(t *testing.T) {
 			notifier := &changeRecorder{}
 
 			man := newTestManager(t, db, pub, wc)
-			man.OnHookChange(notifier.record)
+			man.BindHookChange(notifier.record)
 
 			if c.Held {
 				unlock, err := man.hooks.Lock(context.Background(), hooks[0].ID)

@@ -7,7 +7,7 @@ export const DOCUMENT_HOOK_QUERY_KEYS = {
 }
 
 export default function () {
-	const { $coreAPIClient, $authRealtimeAPIClient } = useNuxtApp()
+	const { $coreAPIClient } = useNuxtApp()
 	const queryCache = useQueryCache()
 	const { fetchOrganization } = useAuthSession()
 
@@ -74,7 +74,9 @@ export default function () {
 				organizationId: organizationId,
 				blockId: req.blockId,
 				settings: req.settings,
-				state: defaultDocumentHookState(req.type),
+				// any non-null state, so the optimistic hook does not show as
+				// initializing.
+				state: {} as DocumentHookState,
 				status: "active",
 				score: "100",
 				createdAt: new Date(),
@@ -99,9 +101,7 @@ export default function () {
 				return
 			}
 
-			// the realtime service stores the branch's pending edits first,
-			// so the history entry of the change holds them.
-			return await $authRealtimeAPIClient<DocumentHookCreateResponse>(
+			return await $coreAPIClient<DocumentHookCreateResponse>(
 				`/api/documents/${docId}/hooks`,
 				{
 					method: "POST",
@@ -192,8 +192,8 @@ export default function () {
 				return
 			}
 
-			return await $authRealtimeAPIClient<DocumentHookUpdateResponse>(
-				`/api/documents/${docId}/hooks/${hookId}?branchId=${encodeURIComponent(branchId)}`,
+			return await $coreAPIClient<DocumentHookUpdateResponse>(
+				`/api/documents/${docId}/hooks/${hookId}`,
 				{
 					method: "PUT",
 					body: req,
@@ -270,10 +270,9 @@ export default function () {
 				return
 			}
 
-			await $authRealtimeAPIClient(
-				`/api/documents/${docId}/hooks/${hookId}?branchId=${encodeURIComponent(branchId)}`,
-				{ method: "DELETE" },
-			)
+			await $coreAPIClient(`/api/documents/${docId}/hooks/${hookId}`, {
+				method: "DELETE",
+			})
 		},
 		async onSuccess(_data, { docId, branchId, hookId }) {
 			if (!isXid(docId) || !isXid(branchId) || !isXid(hookId)) {
@@ -323,7 +322,8 @@ export default function () {
 
 			for (const h of newHooks) {
 				if (h.id === hookId) {
-					h.state = defaultDocumentHookState(h.type)
+					h.status = "active"
+					h.score = "100"
 					h.updatedAt = new Date()
 
 					break

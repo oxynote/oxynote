@@ -103,7 +103,7 @@ func Test_NewHandler(t *testing.T) {
 	require.NotNil(t, hdl)
 	assert.NotNil(t, hdl.log)
 	assert.Same(t, db, hdl.db)
-	assert.Same(t, man, hdl.man)
+	assert.Same(t, man, hdl.hookMan)
 }
 
 func Test_Handler_FetchDocumentHooks(t *testing.T) {
@@ -266,15 +266,10 @@ func Test_Handler_FetchDocumentHooks(t *testing.T) {
 	}
 }
 
-// hookRequest builds a request carrying a session and the path and query
-// parameters a hook route reads, unless the respective omit flags are set.
-func hookRequest(method, body string, noSession, omitDoc, omitHook, omitBranch bool) *http.Request {
-	target := "http://test.com/"
-	if !omitBranch {
-		target += "?branchId=" + _branchID.String()
-	}
-
-	req := httptest.NewRequest(method, target, strings.NewReader(body))
+// hookRequest builds a request carrying a session and the path parameters
+// a hook route reads, unless the respective omit flags are set.
+func hookRequest(method, body string, noSession, omitDoc, omitHook bool) *http.Request {
+	req := httptest.NewRequest(method, "http://test.com/", strings.NewReader(body))
 
 	ctx := req.Context()
 
@@ -430,7 +425,7 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 
 			rec := httptest.NewRecorder()
 
-			hdl.CreateDocumentHook(rec, hookRequest(http.MethodPost, c.Body, c.NoSession, c.OmitDoc, true, true))
+			hdl.CreateDocumentHook(rec, hookRequest(http.MethodPost, c.Body, c.NoSession, c.OmitDoc, true))
 
 			assert.Equal(t, c.RespCode, rec.Code)
 			assertNotified(t, *got)
@@ -456,23 +451,19 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 func Test_Handler_UpdateDocumentHook(t *testing.T) {
 	validBody := `{"settings":{"scale":"linear","duration":"48h"}}`
 
-	otherBranch := scheduledHook()
-	otherBranch.BranchID = null.ValueFrom(xid.New())
-
 	otherDocument := scheduledHook()
 	otherDocument.DocumentID = null.ValueFrom(xid.New())
 
 	cc := map[string]struct {
-		DB         *DBMock
-		Man        *ManagerMock
-		NoSession  bool
-		OmitDoc    bool
-		OmitHook   bool
-		OmitBranch bool
-		Body       string
-		RespCode   int
-		RespBody   string
-		Updates    int
+		DB        *DBMock
+		Man       *ManagerMock
+		NoSession bool
+		OmitDoc   bool
+		OmitHook  bool
+		Body      string
+		RespCode  int
+		RespBody  string
+		Updates   int
 	}{
 		"No session in context": {
 			DB:        storedHookDB(scheduledHook()),
@@ -495,14 +486,6 @@ func Test_Handler_UpdateDocumentHook(t *testing.T) {
 			Body:     validBody,
 			RespCode: http.StatusNotFound,
 		},
-		"Missing branch ID query parameter": {
-			DB:         storedHookDB(scheduledHook()),
-			Man:        &ManagerMock{},
-			OmitBranch: true,
-			Body:       validBody,
-			RespCode:   http.StatusBadRequest,
-			RespBody:   `{"code":"request.invalid_form","message":"invalid form data"}`,
-		},
 		"Hook fetch error": {
 			DB: &DBMock{
 				FetchDocumentHookFunc: func(context.Context, xid.ID, string) (*hookCore.Hook, error) {
@@ -515,13 +498,6 @@ func Test_Handler_UpdateDocumentHook(t *testing.T) {
 		},
 		"Hook of another document": {
 			DB:       storedHookDB(otherDocument),
-			Man:      &ManagerMock{},
-			Body:     validBody,
-			RespCode: http.StatusNotFound,
-			RespBody: `{"code":"document.hook_mismatch","message":"hook does not belong to the document"}`,
-		},
-		"Hook of another branch": {
-			DB:       storedHookDB(otherBranch),
 			Man:      &ManagerMock{},
 			Body:     validBody,
 			RespCode: http.StatusNotFound,
@@ -563,7 +539,7 @@ func Test_Handler_UpdateDocumentHook(t *testing.T) {
 
 			rec := httptest.NewRecorder()
 
-			hdl.UpdateDocumentHook(rec, hookRequest(http.MethodPut, c.Body, c.NoSession, c.OmitDoc, c.OmitHook, c.OmitBranch))
+			hdl.UpdateDocumentHook(rec, hookRequest(http.MethodPut, c.Body, c.NoSession, c.OmitDoc, c.OmitHook))
 
 			assert.Equal(t, c.RespCode, rec.Code)
 			assertNotified(t, *got)
@@ -657,8 +633,7 @@ func Test_Handler_ResetDocumentHook(t *testing.T) {
 
 			rec := httptest.NewRecorder()
 
-			// a reset stays on the public route, which names no branch.
-			hdl.ResetDocumentHook(rec, hookRequest(http.MethodPut, "", c.NoSession, c.OmitDoc, c.OmitHook, true))
+			hdl.ResetDocumentHook(rec, hookRequest(http.MethodPut, "", c.NoSession, c.OmitDoc, c.OmitHook))
 
 			assert.Equal(t, c.RespCode, rec.Code)
 			assertNotified(t, *got)
@@ -675,21 +650,17 @@ func Test_Handler_ResetDocumentHook(t *testing.T) {
 }
 
 func Test_Handler_DeleteDocumentHook(t *testing.T) {
-	otherBranch := scheduledHook()
-	otherBranch.BranchID = null.ValueFrom(xid.New())
-
 	otherDocument := scheduledHook()
 	otherDocument.DocumentID = null.ValueFrom(xid.New())
 
 	cc := map[string]struct {
-		DB         *DBMock
-		Man        *ManagerMock
-		NoSession  bool
-		OmitDoc    bool
-		OmitHook   bool
-		OmitBranch bool
-		RespCode   int
-		Deletes    int
+		DB        *DBMock
+		Man       *ManagerMock
+		NoSession bool
+		OmitDoc   bool
+		OmitHook  bool
+		RespCode  int
+		Deletes   int
 	}{
 		"No session in context": {
 			DB:        storedHookDB(scheduledHook()),
@@ -709,12 +680,6 @@ func Test_Handler_DeleteDocumentHook(t *testing.T) {
 			OmitHook: true,
 			RespCode: http.StatusNotFound,
 		},
-		"Missing branch ID query parameter": {
-			DB:         storedHookDB(scheduledHook()),
-			Man:        &ManagerMock{},
-			OmitBranch: true,
-			RespCode:   http.StatusBadRequest,
-		},
 		"Hook fetch error": {
 			DB: &DBMock{
 				FetchDocumentHookFunc: func(context.Context, xid.ID, string) (*hookCore.Hook, error) {
@@ -726,11 +691,6 @@ func Test_Handler_DeleteDocumentHook(t *testing.T) {
 		},
 		"Hook of another document": {
 			DB:       storedHookDB(otherDocument),
-			Man:      &ManagerMock{},
-			RespCode: http.StatusNotFound,
-		},
-		"Hook of another branch": {
-			DB:       storedHookDB(otherBranch),
 			Man:      &ManagerMock{},
 			RespCode: http.StatusNotFound,
 		},
@@ -761,7 +721,7 @@ func Test_Handler_DeleteDocumentHook(t *testing.T) {
 
 			rec := httptest.NewRecorder()
 
-			hdl.DeleteDocumentHook(rec, hookRequest(http.MethodDelete, "", c.NoSession, c.OmitDoc, c.OmitHook, c.OmitBranch))
+			hdl.DeleteDocumentHook(rec, hookRequest(http.MethodDelete, "", c.NoSession, c.OmitDoc, c.OmitHook))
 
 			assert.Equal(t, c.RespCode, rec.Code)
 			assertNotified(t, *got)

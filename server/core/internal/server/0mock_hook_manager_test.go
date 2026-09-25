@@ -8,7 +8,6 @@ import (
 	"sync"
 
 	hookCore "github.com/oxynote/oxynote/server/core/internal/document/hook"
-	"github.com/oxynote/oxynote/server/core/internal/document/hook/manager"
 	"github.com/rs/xid"
 )
 
@@ -22,8 +21,8 @@ var _ HookManager = &HookManagerMock{}
 //
 //		// make and configure a mocked HookManager
 //		mockedHookManager := &HookManagerMock{
-//			CopyHooksFunc: func(ctx context.Context, tx manager.CopyTx, fromBranchID xid.ID, toBranchID xid.ID, documentID xid.ID, organizationID string, uids map[string]string) error {
-//				panic("mock out the CopyHooks method")
+//			BindHookChangeFunc: func(fn func(hookCore.Hook))  {
+//				panic("mock out the BindHookChange method")
 //			},
 //			CreateHookFunc: func(ctx context.Context, ci hookCore.CreateInput, documentID xid.ID, organizationID string, updatedBy string) (*hookCore.Hook, error) {
 //				panic("mock out the CreateHook method")
@@ -31,11 +30,8 @@ var _ HookManager = &HookManagerMock{}
 //			DeleteHookFunc: func(ctx context.Context, id xid.ID, organizationID string, updatedBy string) error {
 //				panic("mock out the DeleteHook method")
 //			},
-//			OnHookChangeFunc: func(fn func(hookCore.Hook)) func() {
-//				panic("mock out the OnHookChange method")
-//			},
-//			ProcessBranchFunc: func(branchID xid.ID, organizationID string)  {
-//				panic("mock out the ProcessBranch method")
+//			QueueBranchFunc: func(branchID xid.ID, organizationID string)  {
+//				panic("mock out the QueueBranch method")
 //			},
 //			ResetHookFunc: func(ctx context.Context, id xid.ID, organizationID string) (*hookCore.Hook, error) {
 //				panic("mock out the ResetHook method")
@@ -50,8 +46,8 @@ var _ HookManager = &HookManagerMock{}
 //
 //	}
 type HookManagerMock struct {
-	// CopyHooksFunc mocks the CopyHooks method.
-	CopyHooksFunc func(ctx context.Context, tx manager.CopyTx, fromBranchID xid.ID, toBranchID xid.ID, documentID xid.ID, organizationID string, uids map[string]string) error
+	// BindHookChangeFunc mocks the BindHookChange method.
+	BindHookChangeFunc func(fn func(hookCore.Hook))
 
 	// CreateHookFunc mocks the CreateHook method.
 	CreateHookFunc func(ctx context.Context, ci hookCore.CreateInput, documentID xid.ID, organizationID string, updatedBy string) (*hookCore.Hook, error)
@@ -59,11 +55,8 @@ type HookManagerMock struct {
 	// DeleteHookFunc mocks the DeleteHook method.
 	DeleteHookFunc func(ctx context.Context, id xid.ID, organizationID string, updatedBy string) error
 
-	// OnHookChangeFunc mocks the OnHookChange method.
-	OnHookChangeFunc func(fn func(hookCore.Hook)) func()
-
-	// ProcessBranchFunc mocks the ProcessBranch method.
-	ProcessBranchFunc func(branchID xid.ID, organizationID string)
+	// QueueBranchFunc mocks the QueueBranch method.
+	QueueBranchFunc func(branchID xid.ID, organizationID string)
 
 	// ResetHookFunc mocks the ResetHook method.
 	ResetHookFunc func(ctx context.Context, id xid.ID, organizationID string) (*hookCore.Hook, error)
@@ -73,22 +66,10 @@ type HookManagerMock struct {
 
 	// calls tracks calls to the methods.
 	calls struct {
-		// CopyHooks holds details about calls to the CopyHooks method.
-		CopyHooks []struct {
-			// Ctx is the ctx argument value.
-			Ctx context.Context
-			// Tx is the tx argument value.
-			Tx manager.CopyTx
-			// FromBranchID is the fromBranchID argument value.
-			FromBranchID xid.ID
-			// ToBranchID is the toBranchID argument value.
-			ToBranchID xid.ID
-			// DocumentID is the documentID argument value.
-			DocumentID xid.ID
-			// OrganizationID is the organizationID argument value.
-			OrganizationID string
-			// Uids is the uids argument value.
-			Uids map[string]string
+		// BindHookChange holds details about calls to the BindHookChange method.
+		BindHookChange []struct {
+			// Fn is the fn argument value.
+			Fn func(hookCore.Hook)
 		}
 		// CreateHook holds details about calls to the CreateHook method.
 		CreateHook []struct {
@@ -114,13 +95,8 @@ type HookManagerMock struct {
 			// UpdatedBy is the updatedBy argument value.
 			UpdatedBy string
 		}
-		// OnHookChange holds details about calls to the OnHookChange method.
-		OnHookChange []struct {
-			// Fn is the fn argument value.
-			Fn func(hookCore.Hook)
-		}
-		// ProcessBranch holds details about calls to the ProcessBranch method.
-		ProcessBranch []struct {
+		// QueueBranch holds details about calls to the QueueBranch method.
+		QueueBranch []struct {
 			// BranchID is the branchID argument value.
 			BranchID xid.ID
 			// OrganizationID is the organizationID argument value.
@@ -149,71 +125,43 @@ type HookManagerMock struct {
 			UpdatedBy string
 		}
 	}
-	lockCopyHooks     sync.RWMutex
-	lockCreateHook    sync.RWMutex
-	lockDeleteHook    sync.RWMutex
-	lockOnHookChange  sync.RWMutex
-	lockProcessBranch sync.RWMutex
-	lockResetHook     sync.RWMutex
-	lockUpdateHook    sync.RWMutex
+	lockBindHookChange sync.RWMutex
+	lockCreateHook     sync.RWMutex
+	lockDeleteHook     sync.RWMutex
+	lockQueueBranch    sync.RWMutex
+	lockResetHook      sync.RWMutex
+	lockUpdateHook     sync.RWMutex
 }
 
-// CopyHooks calls CopyHooksFunc.
-func (mock *HookManagerMock) CopyHooks(ctx context.Context, tx manager.CopyTx, fromBranchID xid.ID, toBranchID xid.ID, documentID xid.ID, organizationID string, uids map[string]string) error {
+// BindHookChange calls BindHookChangeFunc.
+func (mock *HookManagerMock) BindHookChange(fn func(hookCore.Hook)) {
 	callInfo := struct {
-		Ctx            context.Context
-		Tx             manager.CopyTx
-		FromBranchID   xid.ID
-		ToBranchID     xid.ID
-		DocumentID     xid.ID
-		OrganizationID string
-		Uids           map[string]string
+		Fn func(hookCore.Hook)
 	}{
-		Ctx:            ctx,
-		Tx:             tx,
-		FromBranchID:   fromBranchID,
-		ToBranchID:     toBranchID,
-		DocumentID:     documentID,
-		OrganizationID: organizationID,
-		Uids:           uids,
+		Fn: fn,
 	}
-	mock.lockCopyHooks.Lock()
-	mock.calls.CopyHooks = append(mock.calls.CopyHooks, callInfo)
-	mock.lockCopyHooks.Unlock()
-	if mock.CopyHooksFunc == nil {
-		var (
-			errOut error
-		)
-		return errOut
+	mock.lockBindHookChange.Lock()
+	mock.calls.BindHookChange = append(mock.calls.BindHookChange, callInfo)
+	mock.lockBindHookChange.Unlock()
+	if mock.BindHookChangeFunc == nil {
+		return
 	}
-	return mock.CopyHooksFunc(ctx, tx, fromBranchID, toBranchID, documentID, organizationID, uids)
+	mock.BindHookChangeFunc(fn)
 }
 
-// CopyHooksCalls gets all the calls that were made to CopyHooks.
+// BindHookChangeCalls gets all the calls that were made to BindHookChange.
 // Check the length with:
 //
-//	len(mockedHookManager.CopyHooksCalls())
-func (mock *HookManagerMock) CopyHooksCalls() []struct {
-	Ctx            context.Context
-	Tx             manager.CopyTx
-	FromBranchID   xid.ID
-	ToBranchID     xid.ID
-	DocumentID     xid.ID
-	OrganizationID string
-	Uids           map[string]string
+//	len(mockedHookManager.BindHookChangeCalls())
+func (mock *HookManagerMock) BindHookChangeCalls() []struct {
+	Fn func(hookCore.Hook)
 } {
 	var calls []struct {
-		Ctx            context.Context
-		Tx             manager.CopyTx
-		FromBranchID   xid.ID
-		ToBranchID     xid.ID
-		DocumentID     xid.ID
-		OrganizationID string
-		Uids           map[string]string
+		Fn func(hookCore.Hook)
 	}
-	mock.lockCopyHooks.RLock()
-	calls = mock.calls.CopyHooks
-	mock.lockCopyHooks.RUnlock()
+	mock.lockBindHookChange.RLock()
+	calls = mock.calls.BindHookChange
+	mock.lockBindHookChange.RUnlock()
 	return calls
 }
 
@@ -316,43 +264,8 @@ func (mock *HookManagerMock) DeleteHookCalls() []struct {
 	return calls
 }
 
-// OnHookChange calls OnHookChangeFunc.
-func (mock *HookManagerMock) OnHookChange(fn func(hookCore.Hook)) func() {
-	callInfo := struct {
-		Fn func(hookCore.Hook)
-	}{
-		Fn: fn,
-	}
-	mock.lockOnHookChange.Lock()
-	mock.calls.OnHookChange = append(mock.calls.OnHookChange, callInfo)
-	mock.lockOnHookChange.Unlock()
-	if mock.OnHookChangeFunc == nil {
-		var (
-			fnOut func()
-		)
-		return fnOut
-	}
-	return mock.OnHookChangeFunc(fn)
-}
-
-// OnHookChangeCalls gets all the calls that were made to OnHookChange.
-// Check the length with:
-//
-//	len(mockedHookManager.OnHookChangeCalls())
-func (mock *HookManagerMock) OnHookChangeCalls() []struct {
-	Fn func(hookCore.Hook)
-} {
-	var calls []struct {
-		Fn func(hookCore.Hook)
-	}
-	mock.lockOnHookChange.RLock()
-	calls = mock.calls.OnHookChange
-	mock.lockOnHookChange.RUnlock()
-	return calls
-}
-
-// ProcessBranch calls ProcessBranchFunc.
-func (mock *HookManagerMock) ProcessBranch(branchID xid.ID, organizationID string) {
+// QueueBranch calls QueueBranchFunc.
+func (mock *HookManagerMock) QueueBranch(branchID xid.ID, organizationID string) {
 	callInfo := struct {
 		BranchID       xid.ID
 		OrganizationID string
@@ -360,20 +273,20 @@ func (mock *HookManagerMock) ProcessBranch(branchID xid.ID, organizationID strin
 		BranchID:       branchID,
 		OrganizationID: organizationID,
 	}
-	mock.lockProcessBranch.Lock()
-	mock.calls.ProcessBranch = append(mock.calls.ProcessBranch, callInfo)
-	mock.lockProcessBranch.Unlock()
-	if mock.ProcessBranchFunc == nil {
+	mock.lockQueueBranch.Lock()
+	mock.calls.QueueBranch = append(mock.calls.QueueBranch, callInfo)
+	mock.lockQueueBranch.Unlock()
+	if mock.QueueBranchFunc == nil {
 		return
 	}
-	mock.ProcessBranchFunc(branchID, organizationID)
+	mock.QueueBranchFunc(branchID, organizationID)
 }
 
-// ProcessBranchCalls gets all the calls that were made to ProcessBranch.
+// QueueBranchCalls gets all the calls that were made to QueueBranch.
 // Check the length with:
 //
-//	len(mockedHookManager.ProcessBranchCalls())
-func (mock *HookManagerMock) ProcessBranchCalls() []struct {
+//	len(mockedHookManager.QueueBranchCalls())
+func (mock *HookManagerMock) QueueBranchCalls() []struct {
 	BranchID       xid.ID
 	OrganizationID string
 } {
@@ -381,9 +294,9 @@ func (mock *HookManagerMock) ProcessBranchCalls() []struct {
 		BranchID       xid.ID
 		OrganizationID string
 	}
-	mock.lockProcessBranch.RLock()
-	calls = mock.calls.ProcessBranch
-	mock.lockProcessBranch.RUnlock()
+	mock.lockQueueBranch.RLock()
+	calls = mock.calls.QueueBranch
+	mock.lockQueueBranch.RUnlock()
 	return calls
 }
 

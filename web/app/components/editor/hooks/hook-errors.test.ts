@@ -1,42 +1,40 @@
 import { describe, it } from "vitest"
-import { hookErrorKey } from "./hook-errors"
+import { hookErrorMessage } from "./hook-errors"
 
-describe("hookErrorKey", () => {
-	it("names the status a refused hook would start in", ({ expect }) => {
-		expect(
-			hookErrorKey({
-				statusCode: 422,
-				data: { code: "document_hook.missing_repository" },
-			}),
-		).toBe("editor.hooks.errors.codes.missing-repository")
-	})
-
-	it("names the setting core rejects", ({ expect }) => {
-		expect(
-			hookErrorKey({
-				statusCode: 400,
-				data: { code: "registry.invalid_reference" },
-			}),
-		).toBe("editor.hooks.errors.codes.invalid-image")
-	})
-
-	it("tells an unreachable service apart", ({ expect }) => {
-		expect(
-			hookErrorKey({
-				statusCode: 424,
-				data: { code: "document_hook.upstream_unavailable" },
-			}),
-		).toBe("editor.hooks.errors.codes.upstream-unavailable")
+describe("hookErrorMessage", () => {
+	it.for([
+		{
+			input: "document_hook.missing_repository",
+			expected: "editor.hooks.errors.codes.missing-repository",
+		},
+		{
+			input: "registry.invalid_reference",
+			expected: "editor.hooks.errors.codes.invalid-image",
+		},
+		{
+			input: "document_hook.upstream_unavailable",
+			expected: "editor.hooks.errors.codes.upstream-unavailable",
+		},
+	])("names the message of $input", ({ input, expected }, { expect }) => {
+		expect(hookErrorMessage({ data: { code: input } }, i18n())).toBe(
+			`message:${expected}`,
+		)
 	})
 
 	it("names nothing for an unknown code", ({ expect }) => {
 		expect(
-			hookErrorKey({ statusCode: 500, data: { code: "general" } }),
+			hookErrorMessage({ data: { code: "general" } }, i18n()),
 		).toBeUndefined()
 	})
 
 	it("names nothing for an error without a body", ({ expect }) => {
-		expect(hookErrorKey(new Error("boom"))).toBeUndefined()
-		expect(hookErrorKey(undefined)).toBeUndefined()
+		expect(hookErrorMessage(new Error("boom"), i18n())).toBeUndefined()
+		expect(hookErrorMessage(undefined, i18n())).toBeUndefined()
 	})
 })
+
+function i18n() {
+	return {
+		t: (key: string) => `message:${key}`,
+	} as unknown as Parameters<typeof hookErrorMessage>[1]
+}

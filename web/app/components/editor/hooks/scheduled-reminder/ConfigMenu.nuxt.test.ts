@@ -32,9 +32,7 @@ vi.mock("vue-sonner", () => ({
 const DOCUMENT_ID = makeXid("doc")
 const BRANCH_ID = makeXid("branch")
 const HOOK_ID = makeXid("hook")
-// hook writes go through the realtime service, which stores the branch's
-// pending edits before core records them.
-const HOOKS_WRITE_URL = `http://test.local/auth-realtime/api/documents/${DOCUMENT_ID}/hooks`
+const HOOKS_URL = `/api/documents/${DOCUMENT_ID}/hooks`
 
 const NEW_HOOK_LABEL = "editor.hooks.time-expiration.title"
 const SCHEDULE = new Date("2026-09-01T10:00:00Z")
@@ -116,7 +114,7 @@ describe("<ScheduledReminderConfigMenu>", { concurrent: false }, () => {
 	it("creates a reminder for the duration the reader picked", async ({
 		expect,
 	}) => {
-		const calls = mockEndpoint("POST", HOOKS_WRITE_URL, () => ({ id: HOOK_ID }))
+		const calls = mockEndpoint("POST", HOOKS_URL, () => ({ id: HOOK_ID }))
 		const wrapper = await mountMenu()
 		await openHookSubMenu(t(NEW_HOOK_LABEL))
 		await pickDuration(wrapper, "24h")
@@ -152,7 +150,7 @@ describe("<ScheduledReminderConfigMenu>", { concurrent: false }, () => {
 	})
 
 	it("warns when the reminder cannot be created", async ({ expect }) => {
-		mockEndpoint("POST", HOOKS_WRITE_URL, (_c, event) => {
+		mockEndpoint("POST", HOOKS_URL, (_c, event) => {
 			setResponseStatus(event, 500)
 
 			return { message: "boom" }
@@ -197,7 +195,7 @@ describe("<ScheduledReminderConfigMenu>", { concurrent: false }, () => {
 	})
 
 	it("renews a reminder that has fired", async ({ expect }) => {
-		const calls = mockEndpoint("PUT", `${HOOKS_WRITE_URL}/${HOOK_ID}`, () => ({
+		const calls = mockEndpoint("PUT", `${HOOKS_URL}/${HOOK_ID}`, () => ({
 			id: HOOK_ID,
 		}))
 		const wrapper = await mountMenu({ hook: reminderHook({ score: "0" }) })
@@ -215,7 +213,7 @@ describe("<ScheduledReminderConfigMenu>", { concurrent: false }, () => {
 	})
 
 	it("warns when the reminder cannot be renewed", async ({ expect }) => {
-		mockEndpoint("PUT", `${HOOKS_WRITE_URL}/${HOOK_ID}`, (_c, event) => {
+		mockEndpoint("PUT", `${HOOKS_URL}/${HOOK_ID}`, (_c, event) => {
 			setResponseStatus(event, 500)
 
 			return { message: "boom" }
@@ -232,11 +230,7 @@ describe("<ScheduledReminderConfigMenu>", { concurrent: false }, () => {
 	})
 
 	it("deletes the reminder", async ({ expect }) => {
-		const calls = mockEndpoint(
-			"DELETE",
-			`${HOOKS_WRITE_URL}/${HOOK_ID}`,
-			() => null,
-		)
+		const calls = mockEndpoint("DELETE", `${HOOKS_URL}/${HOOK_ID}`, () => null)
 		await mountMenu({ hook: reminderHook() })
 		await openHookSubMenu("Remind on")
 
@@ -248,7 +242,7 @@ describe("<ScheduledReminderConfigMenu>", { concurrent: false }, () => {
 	})
 
 	it("warns when the reminder cannot be deleted", async ({ expect }) => {
-		mockEndpoint("DELETE", `${HOOKS_WRITE_URL}/${HOOK_ID}`, (_c, event) => {
+		mockEndpoint("DELETE", `${HOOKS_URL}/${HOOK_ID}`, (_c, event) => {
 			setResponseStatus(event, 500)
 
 			return { message: "boom" }
@@ -265,7 +259,7 @@ describe("<ScheduledReminderConfigMenu>", { concurrent: false }, () => {
 
 	it("creates nothing while no page is open", async ({ expect }) => {
 		useEditorStore().updateActiveDocumentId(null)
-		const calls = mockEndpoint("POST", HOOKS_WRITE_URL, () => ({ id: HOOK_ID }))
+		const calls = mockEndpoint("POST", HOOKS_URL, () => ({ id: HOOK_ID }))
 		const wrapper = await mountMenu()
 		await openHookSubMenu(t(NEW_HOOK_LABEL))
 		await pickDuration(wrapper, "24h")

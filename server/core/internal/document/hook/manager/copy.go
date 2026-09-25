@@ -10,7 +10,7 @@ import (
 // CopyHooks copies the branch's hooks to another in the caller's
 // transaction, not set up yet. A non-nil uids map re-anchors block hooks
 // and drops those whose block it does not name.
-func (m *Manager) CopyHooks(
+func CopyHooks(
 	ctx context.Context,
 	tx CopyTx,
 	fromBranchID, toBranchID, documentID xid.ID,

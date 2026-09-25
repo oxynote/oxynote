@@ -62,8 +62,8 @@ export interface DocumentHook {
 	branchId: string
 	blockId: string | null
 	settings: DocumentHookSettings
-	// null until the server sets the hook up, as for a copy a fork, merge or
-	// duplicate made.
+	// null until the server sets the hook up. A copy made by a fork, merge
+	// or duplicate starts out null.
 	state: DocumentHookState | null
 	// whether the hook could check its target on its last run. Score and
 	// state keep their last values while it is not active.
@@ -238,30 +238,6 @@ export function docNameByIdInDocumentTree(
 	}
 
 	return null
-}
-
-export function defaultDocumentHookState(
-	type: DocumentHookType,
-): DocumentHookState {
-	switch (type) {
-		case DocumentHookType.ScheduledReminder:
-			return {
-				startedAt: new Date(),
-			}
-		case DocumentHookType.GitHubTracking:
-			return {
-				pathsChecksums: {},
-			}
-		case DocumentHookType.URLWatcher:
-			return {
-				watcherId: "",
-				lastChangedAt: null,
-			}
-		case DocumentHookType.ContainerImageWatcher:
-			return {
-				digest: "",
-			}
-	}
 }
 
 export interface DocumentSearchResult {

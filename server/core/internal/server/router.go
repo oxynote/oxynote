@@ -152,13 +152,12 @@ func (s *Server) internalRouter() chi.Router {
 		})
 
 		// the branch operations that read or rewrite a branch's stored
-		// content, or remove a branch editors may still be connected to,
-		// and the hook writes, which record the stored content in the
-		// branch's history. They are internal so that only auth-realtime,
-		// which first stores what the editors still hold and afterwards
-		// drops the connections a change invalidated, can start one — yet
-		// they act for a person, so the session it forwards is required and
-		// authorizes the change exactly as on the public surface.
+		// content, or remove a branch editors may still be connected to.
+		// They are internal so that only auth-realtime, which first stores
+		// what the editors still hold and afterwards drops the connections
+		// a change invalidated, can start one — yet they act for a person,
+		// so the session it forwards is required and authorizes the change
+		// exactly as on the public surface.
 		sr.Group(func(ssr chi.Router) {
 			ssr.Use(auth.Middleware(s.log, s.opts.Auth, s.client))
 			ssr.Use(s.handlers.document.RequireDocumentAccess)
@@ -166,9 +165,6 @@ func (s *Server) internalRouter() chi.Router {
 			ssr.Post("/branches", s.handlers.document.CreateDocumentBranch)
 			ssr.Put("/branches/{branchId}", s.handlers.document.UpdateDocumentBranch)
 			ssr.Delete("/branches/{branchId}", s.handlers.document.DeleteDocumentBranch)
-			ssr.Post("/hooks", s.handlers.hook.CreateDocumentHook)
-			ssr.Put("/hooks/{hookId}", s.handlers.hook.UpdateDocumentHook)
-			ssr.Delete("/hooks/{hookId}", s.handlers.hook.DeleteDocumentHook)
 		})
 	})
 
@@ -330,7 +326,12 @@ func (s *Server) router() chi.Router {
 			})
 			ssr.Route("/hooks", func(sssr chi.Router) {
 				sssr.Get("/", s.handlers.hook.FetchDocumentHooks)
-				sssr.Put("/{hookId}/reset", s.handlers.hook.ResetDocumentHook)
+				sssr.Post("/", s.handlers.hook.CreateDocumentHook)
+				sssr.Route("/{hookId}", func(ssssr chi.Router) {
+					ssssr.Put("/", s.handlers.hook.UpdateDocumentHook)
+					ssssr.Delete("/", s.handlers.hook.DeleteDocumentHook)
+					ssssr.Put("/reset", s.handlers.hook.ResetDocumentHook)
+				})
 			})
 			ssr.Route("/files", func(sssr chi.Router) {
 				sssr.Post("/", s.handlers.files.UploadDocumentFile)

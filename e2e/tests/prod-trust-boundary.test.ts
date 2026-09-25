@@ -91,21 +91,6 @@ const CORE_INTERNAL_ENDPOINTS = [
 		method: "DELETE",
 		path: "/core/api/x/documents/doc-e2e/branches/branch-e2e",
 	},
-	{
-		name: "a hook creation",
-		method: "POST",
-		path: "/core/api/x/documents/doc-e2e/hooks",
-	},
-	{
-		name: "a hook update",
-		method: "PUT",
-		path: "/core/api/x/documents/doc-e2e/hooks/hook-e2e?branchId=branch-e2e",
-	},
-	{
-		name: "a hook deletion",
-		method: "DELETE",
-		path: "/core/api/x/documents/doc-e2e/hooks/hook-e2e?branchId=branch-e2e",
-	},
 ] as const
 
 const AUTH_REALTIME_INTERNAL_ENDPOINTS = [

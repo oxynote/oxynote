@@ -10,7 +10,6 @@ import (
 	"github.com/guregu/null/v5"
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
 	hookCore "github.com/oxynote/oxynote/server/core/internal/document/hook"
-	"github.com/oxynote/oxynote/server/core/internal/document/hook/manager"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/rs/xid"
@@ -445,7 +444,6 @@ func Test_Handler_MergeBranches(t *testing.T) {
 	cc := map[string]struct {
 		DB        *DBMock
 		Tx        *TxMock
-		Man       *HookManagerMock
 		BeginErr  error
 		NoSession bool
 		OmitDoc   bool
@@ -640,12 +638,11 @@ func Test_Handler_MergeBranches(t *testing.T) {
 			RespCode: http.StatusInternalServerError,
 			History:  1,
 		},
-		"Error returned by hookMan.CopyHooks": {
+		"Error returned by tx.FetchDocumentHooksByBranchID": {
 			DB: &DBMock{FetchDocumentByBranchIDFunc: fetchByBranch},
-			Tx: &TxMock{},
-			Man: &HookManagerMock{
-				CopyHooksFunc: func(context.Context, manager.CopyTx, xid.ID, xid.ID, xid.ID, string, map[string]string) error {
-					return errors.New("boom")
+			Tx: &TxMock{
+				FetchDocumentHooksByBranchIDFunc: func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
+					return nil, errors.New("boom")
 				},
 			},
 			Body:     validBody,
@@ -681,11 +678,7 @@ func Test_Handler_MergeBranches(t *testing.T) {
 
 			hdl, cnt := newTestHandler(withTx(c.DB, c.Tx, c.BeginErr), &fakePublisher{})
 
-			man := c.Man
-			if man == nil {
-				man = &HookManagerMock{}
-			}
-
+			man := &HookManagerMock{}
 			hdl.hookMan = man
 
 			rec := httptest.NewRecorder()
@@ -718,18 +711,14 @@ func Test_Handler_MergeBranches(t *testing.T) {
 				require.Len(t, c.Tx.DetachDocumentHooksByBranchIDCalls(), 1)
 				assert.Equal(t, _branchID, c.Tx.DetachDocumentHooksByBranchIDCalls()[0].BranchID)
 
-				hh := man.CopyHooksCalls()
+				hh := c.Tx.FetchDocumentHooksByBranchIDCalls()
 				require.Len(t, hh, 1)
-				assert.Same(t, c.Tx, hh[0].Tx)
-				assert.Equal(t, _branchID2, hh[0].FromBranchID)
-				assert.Equal(t, _branchID, hh[0].ToBranchID)
-				assert.Equal(t, _documentID, hh[0].DocumentID)
+				assert.Equal(t, _branchID2, hh[0].BranchID)
 				assert.Equal(t, "org1", hh[0].OrganizationID)
-				assert.Nil(t, hh[0].Uids)
 
-				pp := man.ProcessBranchCalls()
+				pp := man.QueueBranchCalls()
 				require.Len(t, pp, 1)
-				assert.Equal(t, hh[0].ToBranchID, pp[0].BranchID)
+				assert.Equal(t, _branchID, pp[0].BranchID)
 				assert.Equal(t, "org1", pp[0].OrganizationID)
 				require.Len(t, c.Tx.PromoteBranchApprovalsCalls(), 1)
 
@@ -807,7 +796,6 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 		NoSession bool
 		OmitDoc   bool
 		Body      string
-		Man       *HookManagerMock
 		RespCode  int
 		Committed int
 		// History is how many history entries the fork records.
@@ -902,16 +890,15 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 			Body:     validBody,
 			RespCode: http.StatusInternalServerError,
 		},
-		"Hook copy error": {
+		"Error returned by tx.FetchDocumentHooksByBranchID": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
 					return storedDoc(), nil
 				},
 			},
-			Tx: &TxMock{},
-			Man: &HookManagerMock{
-				CopyHooksFunc: func(context.Context, manager.CopyTx, xid.ID, xid.ID, xid.ID, string, map[string]string) error {
-					return errors.New("boom")
+			Tx: &TxMock{
+				FetchDocumentHooksByBranchIDFunc: func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
+					return nil, errors.New("boom")
 				},
 			},
 			Body:     validBody,
@@ -981,11 +968,7 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 
 			hdl, _ := newTestHandler(withTx(c.DB, c.Tx, c.BeginErr), &fakePublisher{})
 
-			man := c.Man
-			if man == nil {
-				man = &HookManagerMock{}
-			}
-
+			man := &HookManagerMock{}
 			hdl.hookMan = man
 
 			rec := httptest.NewRecorder()
@@ -1013,18 +996,14 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 
 				// the source's hooks are copied inside the transaction and
 				// set up once it commits.
-				hh := man.CopyHooksCalls()
+				hh := c.Tx.FetchDocumentHooksByBranchIDCalls()
 				require.Len(t, hh, 1)
-				assert.Same(t, c.Tx, hh[0].Tx)
-				assert.Equal(t, _branchID, hh[0].FromBranchID)
-				assert.Equal(t, forked.BranchID, hh[0].ToBranchID)
-				assert.Equal(t, _documentID, hh[0].DocumentID)
+				assert.Equal(t, _branchID, hh[0].BranchID)
 				assert.Equal(t, "org1", hh[0].OrganizationID)
-				assert.Nil(t, hh[0].Uids)
 
-				pp := man.ProcessBranchCalls()
+				pp := man.QueueBranchCalls()
 				require.Len(t, pp, 1)
-				assert.Equal(t, hh[0].ToBranchID, pp[0].BranchID)
+				assert.Equal(t, forked.BranchID, pp[0].BranchID)
 				assert.Equal(t, "org1", pp[0].OrganizationID)
 
 				// the fork takes the source's tags before the commit.

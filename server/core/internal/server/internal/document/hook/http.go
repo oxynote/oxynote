@@ -28,9 +28,9 @@ var ErrBlockNotFound = errutil.New(http.StatusNotFound, "document.hook_block_not
 
 // Handler holds dependencies required for document hook operations.
 type Handler struct {
-	log *slog.Logger
-	db  DB
-	man Manager
+	log     *slog.Logger
+	db      DB
+	hookMan Manager
 
 	hooks struct {
 		changeCallback func(organizationID string, documentID, branchID xid.ID)
@@ -39,11 +39,11 @@ type Handler struct {
 
 // NewHandler creates a new handler instance with the provided logger,
 // database and hook manager.
-func NewHandler(log *slog.Logger, db DB, man Manager) *Handler {
+func NewHandler(log *slog.Logger, db DB, hookMan Manager) *Handler {
 	return &Handler{
-		log: log,
-		db:  db,
-		man: man,
+		log:     log,
+		db:      db,
+		hookMan: hookMan,
 	}
 }
 
@@ -141,7 +141,7 @@ func (h *Handler) CreateDocumentHook(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	hk, err := h.man.CreateHook(r.Context(), hi, branchDoc.ID, session.ActiveOrganizationID, session.UserID)
+	hk, err := h.hookMan.CreateHook(r.Context(), hi, branchDoc.ID, session.ActiveOrganizationID, session.UserID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -174,12 +174,6 @@ func (h *Handler) UpdateDocumentHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	branchID, err := httpserver.ExtractQueryID(r, "branchId")
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
 	hk, err := h.db.FetchDocumentHook(r.Context(), id, session.ActiveOrganizationID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
@@ -187,10 +181,8 @@ func (h *Handler) UpdateDocumentHook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// a row whose document was deleted carries no document id at all and is
-	// not addressable through any document path. The branch is the one
-	// whose pending edits were stored before this request reached core.
-	if !hk.DocumentID.Valid || hk.DocumentID.V != documentID ||
-		!hk.BranchID.Valid || hk.BranchID.V != branchID {
+	// not addressable through any document path.
+	if !hk.DocumentID.Valid || hk.DocumentID.V != documentID {
 		httpserver.RespondError(h.log, w, ErrHookMismatch)
 		return
 	}
@@ -202,7 +194,7 @@ func (h *Handler) UpdateDocumentHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hk, err = h.man.UpdateHook(r.Context(), hk.ID, session.ActiveOrganizationID, ui, session.UserID)
+	hk, err = h.hookMan.UpdateHook(r.Context(), hk.ID, session.ActiveOrganizationID, ui, session.UserID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -248,7 +240,7 @@ func (h *Handler) ResetDocumentHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hk, err = h.man.ResetHook(r.Context(), hk.ID, session.ActiveOrganizationID)
+	hk, err = h.hookMan.ResetHook(r.Context(), hk.ID, session.ActiveOrganizationID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -281,12 +273,6 @@ func (h *Handler) DeleteDocumentHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	branchID, err := httpserver.ExtractQueryID(r, "branchId")
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
 	hk, err := h.db.FetchDocumentHook(r.Context(), id, session.ActiveOrganizationID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
@@ -294,15 +280,13 @@ func (h *Handler) DeleteDocumentHook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// a row whose document was deleted carries no document id at all and is
-	// not addressable through any document path. The branch is the one
-	// whose pending edits were stored before this request reached core.
-	if !hk.DocumentID.Valid || hk.DocumentID.V != documentID ||
-		!hk.BranchID.Valid || hk.BranchID.V != branchID {
+	// not addressable through any document path.
+	if !hk.DocumentID.Valid || hk.DocumentID.V != documentID {
 		httpserver.RespondError(h.log, w, ErrHookMismatch)
 		return
 	}
 
-	if err = h.man.DeleteHook(r.Context(), hk.ID, session.ActiveOrganizationID, session.UserID); err != nil {
+	if err = h.hookMan.DeleteHook(r.Context(), hk.ID, session.ActiveOrganizationID, session.UserID); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -330,8 +314,7 @@ type DB interface {
 	FetchDocumentHooksByBranchID(ctx context.Context, branchID xid.ID, organizationID string) ([]hookCore.Hook, error)
 }
 
-// Manager runs the hook writes: the external side effect, the row and the
-// branch's history entry.
+// Manager runs hook writes.
 //
 //go:generate ../../../../../scripts/codegen/mock -t internal Manager manager
 type Manager interface {

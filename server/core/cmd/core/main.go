@@ -302,7 +302,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 	simulationChecker := simulation.NewChecker(log, dbc, datasourceMan, editClient)
 	blockRunner := blockrun.NewRunner(dbc, simulationChecker)
 
-	hooksMan := hookMan.NewManager(log, dbc, githubMan, webchangeClient, notifMan)
+	hooksMan := hookMan.NewManager(log, dbc, editClient, githubMan, webchangeClient, notifMan)
 
 	assistantMan := assistant.NewManager(
 		log,

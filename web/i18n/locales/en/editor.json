@@ -395,6 +395,7 @@
 				"missing-target-repository": "{icon}The selected GitHub repository cannot be accessed.",
 				"missing-target-branch": "{icon}The selected GitHub branch cannot be accessed.",
 				"tree-truncated": "{icon}The selected GitHub repository is too large to compare, so changes cannot be detected.",
+				"unconfigured": "{icon}GitHub is not set up on this server, so changes cannot be tracked.",
 				"repository-select-label": "Repository",
 				"repository-select-placeholder": "Select repository",
 				"repository-select-loading-placeholder": "Loading...",

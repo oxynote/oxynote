@@ -190,7 +190,7 @@ func NewServer(
 	// rename/set-icon.
 	assistantMan.SetTreeNotifier(srv.handlers.document)
 	assistantMan.SetTagNotifier(srv.handlers.tag)
-	hookMan.OnHookChange(func(h hookCore.Hook) {
+	hookMan.BindHookChange(func(h hookCore.Hook) {
 		srv.handlers.hook.NotifyHooksChange(h.OrganizationID.String, h.DocumentID, h.BranchID)
 	})
 
@@ -366,16 +366,16 @@ type DB interface {
 }
 
 // HookManager runs the hook writes and sets up the hooks a branch operation
-// copied. The hook manager satisfies it.
+// copied.
 //
 //go:generate ../../scripts/codegen/mock -t internal HookManager hook_manager
 type HookManager interface {
 	hook.Manager
 	document.HookManager
 
-	// OnHookChange should subscribe fn to every hook the manager stores,
-	// changes or deletes, and return the function that unsubscribes it.
-	OnHookChange(fn func(hookCore.Hook)) func()
+	// BindHookChange should set the function called with every hook the
+	// manager stores, changes or deletes.
+	BindHookChange(fn func(hookCore.Hook))
 }
 
 // Storer is an interface that defines methods for uploading and retrieving objects.

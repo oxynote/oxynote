@@ -1,6 +1,4 @@
-// the refusals core answers a hook write with, keyed by error code. A 422
-// names the status the hook would start in, a 400 the setting it rejects,
-// a 424 a service the hook could not reach.
+// the refusals core answers a hook write with, keyed by error code.
 const HOOK_ERROR_KEYS: Record<string, string> = {
 	"document_hook.unconfigured": "editor.hooks.errors.codes.unconfigured",
 	"document_hook.missing_installation":
@@ -20,21 +18,14 @@ const HOOK_ERROR_KEYS: Record<string, string> = {
 		"editor.hooks.errors.codes.upstream-unavailable",
 }
 
-// hookErrorKey returns the i18n key describing why a hook write failed,
-// or undefined when the error names no known reason.
-export function hookErrorKey(err: unknown): string | undefined {
-	if (!err || typeof err !== "object") {
-		return undefined
-	}
+// hookErrorMessage returns the message for the code core refused a hook
+// write with, or undefined when the code names no known reason.
+export function hookErrorMessage(
+	err: unknown,
+	i18n: Pick<ReturnType<typeof useI18n>, "t">,
+): string | undefined {
+	const code = (err as { data?: { code?: string } } | undefined)?.data?.code
+	const key = code ? HOOK_ERROR_KEYS[code] : undefined
 
-	const code =
-		"data" in err &&
-		err.data &&
-		typeof err.data === "object" &&
-		"code" in err.data &&
-		typeof err.data.code === "string"
-			? err.data.code
-			: undefined
-
-	return code ? HOOK_ERROR_KEYS[code] : undefined
+	return key ? i18n.t(key) : undefined
 }

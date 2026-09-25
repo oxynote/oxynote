@@ -13,7 +13,6 @@ import (
 	"github.com/google/go-containerregistry/pkg/registry"
 	"github.com/google/go-containerregistry/pkg/v1/random"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -158,40 +157,4 @@ func Test_ValidateReference(t *testing.T) {
 	assert.NoError(t, ValidateReference("nginx"))
 	assert.NoError(t, ValidateReference("ghcr.io/owner/image:v1"))
 	assert.ErrorIs(t, ValidateReference("UPPERCASE not allowed"), ErrInvalidReference)
-}
-
-func Test_statusError(t *testing.T) {
-	t.Parallel()
-
-	cc := map[string]struct {
-		Err    error
-		Result error
-	}{
-		"Other failure is left to the caller": {
-			Err: assert.AnError,
-		},
-		"Forbidden maps to ErrUnauthorized": {
-			Err:    &transport.Error{StatusCode: http.StatusForbidden},
-			Result: ErrUnauthorized,
-		},
-		"Denied diagnostic maps to ErrUnauthorized": {
-			Err:    &transport.Error{StatusCode: http.StatusBadRequest, Errors: []transport.Diagnostic{{Code: transport.DeniedErrorCode}}},
-			Result: ErrUnauthorized,
-		},
-		"Not found maps to ErrNotFound": {
-			Err:    &transport.Error{StatusCode: http.StatusNotFound},
-			Result: ErrNotFound,
-		},
-		"Other status is left to the caller": {
-			Err: &transport.Error{StatusCode: http.StatusInternalServerError},
-		},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			assert.Equal(t, c.Result, statusError(c.Err))
-		})
-	}
 }

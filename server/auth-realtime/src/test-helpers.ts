@@ -71,18 +71,6 @@ export function stubCore(): StubCore {
 			status: 204,
 			data: null,
 		}),
-		createHook: vi.fn().mockResolvedValue({
-			status: 201,
-			data: { id: "hook-1" },
-		}),
-		updateHook: vi.fn().mockResolvedValue({
-			status: 200,
-			data: { id: "hook-1" },
-		}),
-		deleteHook: vi.fn().mockResolvedValue({
-			status: 204,
-			data: null,
-		}),
 	}
 }
 
