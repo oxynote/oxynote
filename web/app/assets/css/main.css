@@ -68,7 +68,8 @@
 
 	--diff-added: oklch(53.282% 0.16399 143.531 / 0.3);
 	--diff-removed: oklch(57.909% 0.23191 28.689 / 0.3);
-	--diff-modified: oklch(70% 0.12 270 / 0.2);
+	--diff-added-foreground: oklch(42% 0.13 143.5);
+	--diff-removed-foreground: oklch(45% 0.18 28.7);
 	--diff-text-added: oklch(53.282% 0.16399 143.531 / 0.3);
 	--diff-text-removed: oklch(57.909% 0.23191 28.689 / 0.3);
 	--diff-field-added: oklch(53.282% 0.16399 143.531 / 0.2);
@@ -238,7 +239,8 @@
 
 	--diff-added: oklch(64.522% 0.20475 143.722 / 0.25);
 	--diff-removed: oklch(49.991% 0.1933 29.256 / 0.25);
-	--diff-modified: oklch(70% 0.12 270 / 0.3);
+	--diff-added-foreground: oklch(82% 0.15 143.7);
+	--diff-removed-foreground: oklch(80% 0.1 29.3);
 	--diff-text-added: oklch(64.522% 0.20475 143.722 / 0.25);
 	--diff-text-removed: oklch(49.991% 0.1933 29.256 / 0.25);
 	--diff-field-added: oklch(64.522% 0.20475 143.722 / 0.2);
@@ -350,7 +352,8 @@
 
 	--color-diff-added: var(--diff-added);
 	--color-diff-removed: var(--diff-removed);
-	--color-diff-modified: var(--diff-modified);
+	--color-diff-added-foreground: var(--diff-added-foreground);
+	--color-diff-removed-foreground: var(--diff-removed-foreground);
 	--color-diff-text-added: var(--diff-text-added);
 	--color-diff-text-removed: var(--diff-text-removed);
 	--color-diff-field-added: var(--diff-field-added);
@@ -664,10 +667,6 @@
 	@apply bg-diff-removed;
 }
 
-.diff-modified {
-	@apply bg-diff-modified;
-}
-
 .diff-overlay-anchor {
 	@apply relative;
 }
@@ -684,8 +683,8 @@
 	@apply rounded-md bg-diff-removed;
 }
 
-.diff-overlay.diff-modified {
-	@apply rounded-md bg-diff-modified;
+li.diff-checkbox-changed > label {
+	@apply rounded-sm bg-diff-added outline-[0.15em] outline-diff-added;
 }
 
 .diff-text-added {
@@ -698,15 +697,13 @@
 
 /* horizontal rules: pseudo-element overlay around the thin line */
 hr.diff-added,
-hr.diff-removed,
-hr.diff-modified {
+hr.diff-removed {
 	@apply relative overflow-visible;
 	background: none;
 }
 
 hr.diff-added::before,
-hr.diff-removed::before,
-hr.diff-modified::before {
+hr.diff-removed::before {
 	@apply pointer-events-none absolute rounded-md;
 	content: "";
 	inset: -0.5em -0.2em -0.4em -0.2em;
@@ -718,8 +715,4 @@ hr.diff-added::before {
 
 hr.diff-removed::before {
 	@apply bg-diff-removed;
-}
-
-hr.diff-modified::before {
-	@apply bg-diff-modified;
 }

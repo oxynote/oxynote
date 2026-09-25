@@ -137,7 +137,6 @@ describe("<FigmaBlock>", { concurrent: false }, () => {
 	it.for([
 		{ status: "added", expected: "diff-added" },
 		{ status: "removed", expected: "diff-removed" },
-		{ status: "modified", expected: "diff-modified" },
 	])(
 		"marks a $status embed with its diff overlay",
 		async ({ status, expected }, { expect }) => {
@@ -146,6 +145,21 @@ describe("<FigmaBlock>", { concurrent: false }, () => {
 			expect(wrapper.get(".diff-overlay").classes()).toContain(expected)
 		},
 	)
+
+	it("counts a modified embed's changes instead of tinting it", async ({
+		expect,
+	}) => {
+		const wrapper = await mountFigma({
+			src: FIGMA_URL,
+			diffStatus: "modified",
+			oldNode: { attrs: { uid: "figma-1", src: OTHER_FIGMA_URL } },
+		})
+
+		expect(wrapper.find(".diff-overlay").exists()).toBe(false)
+		expect(wrapper.text()).toContain(
+			t("editor.diff-change-marker.label", { removed: 1, added: 1 }),
+		)
+	})
 
 	it("shows no diff overlay on an unchanged embed", async ({ expect }) => {
 		const wrapper = await mountFigma({

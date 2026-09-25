@@ -4,6 +4,7 @@ import { nanoid } from "nanoid"
 import { showToastMessage } from "~/components/toast"
 import { cn } from "~/lib/utils"
 import { DiffStatus } from "~/components/editor/diff/position-map"
+import DiffChangeMarker from "~/components/editor/diff/DiffChangeMarker.vue"
 
 const MIN_WIDTH = 128
 
@@ -37,8 +38,6 @@ const diffClass = computed(() => {
 			return "diff-added"
 		case DiffStatus.Removed:
 			return "diff-removed"
-		case DiffStatus.Modified:
-			return "diff-modified"
 		default:
 			return null
 	}
@@ -249,6 +248,7 @@ onBeforeUnmount(() => {
 				]"
 				draggable="false"
 			/>
+			<DiffChangeMarker :node="props.node" class="absolute top-1.5 right-1.5" />
 			<div
 				v-if="showResizeHandle"
 				aria-hidden="true"
@@ -272,6 +272,10 @@ onBeforeUnmount(() => {
 			@click="openFilePicker"
 		>
 			<Icon name="lucide:image" class="size-4.5 text-foreground" />
+			<DiffChangeMarker
+				:node="props.node"
+				class="absolute top-1/2 right-2 -translate-y-1/2"
+			/>
 			<div class="mt-0.25 text-2sm text-muted-foreground">
 				{{
 					uploading

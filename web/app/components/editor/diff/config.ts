@@ -3,7 +3,6 @@ import {
 	FILE_BLOCK_NAME,
 	IMAGE_BLOCK_NAME,
 	MERMAID_BLOCK_NAME,
-	METRIC_BLOCK_NAME,
 	METRIC_GRID_NAME,
 	TITLED_CODE_BLOCK_NAME,
 	SPLIT_DOCUMENTATION_NAME,
@@ -14,9 +13,8 @@ import {
 	SPLIT_DOCUMENTATION_PARAMETER_LIST_ITEM_HEADER_NAME,
 } from "~/components/editor/blocks/node-names"
 import Paragraph from "@tiptap/extension-paragraph"
-import HorizontalRule from "@tiptap/extension-horizontal-rule"
 import { COMMENT_MARK_NAME } from "~/components/editor/mark-names"
-import { NODE_COMMENT_ID_ATTR } from "~/components/editor/comments/node-comment-extension"
+import { NODE_COMMENT_ID_ATTR } from "~/components/editor/attribute-names"
 import { SIMULATION_ACTIVE_ATTR } from "~/components/editor/blocks/metrics/simulation"
 import {
 	BulletList,
@@ -27,17 +25,6 @@ import {
 } from "@tiptap/extension-list"
 import type { MergeOptions } from "./compute-merged-document"
 import type { OverlayPadding } from "./diff-decorations"
-
-/**
- * node types treated as opaque — when modified, the whole node gets
- * a diff-modified class instead of character-level inline diffs.
- */
-export const DEFAULT_OPAQUE_TYPES: string[] = [
-	IMAGE_BLOCK_NAME,
-	FILE_BLOCK_NAME,
-	METRIC_BLOCK_NAME,
-	HorizontalRule.name,
-]
 
 /**
  * node types that handle diff styling inside their node-view component

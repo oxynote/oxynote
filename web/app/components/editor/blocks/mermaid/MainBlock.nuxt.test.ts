@@ -2,6 +2,7 @@ import type { VueWrapper } from "@vue/test-utils"
 import { beforeEach, describe, it, vi } from "vitest"
 import MainBlock from "./MainBlock.vue"
 import MermaidPreview from "./MermaidPreview.vue"
+import DiffChangeMarker from "../../diff/DiffChangeMarker.vue"
 import {
 	makeEditor,
 	makeNode,
@@ -260,7 +261,7 @@ describe("<MermaidMainBlock>", { concurrent: false }, () => {
 		},
 	)
 
-	it("marks a modified block only while its code is hidden", async ({
+	it("counts a modified block's changes instead of tinting it", async ({
 		expect,
 	}) => {
 		const wrapper = await mountMermaid({
@@ -268,21 +269,10 @@ describe("<MermaidMainBlock>", { concurrent: false }, () => {
 			attrs: { diffStatus: DiffStatus.Modified },
 		})
 
-		expect(wrapper.get("[data-node-view-wrapper]").classes()).toContain(
-			"diff-modified",
-		)
-	})
-
-	it("leaves a modified block's colour to the inline diff while its code shows", async ({
-		expect,
-	}) => {
-		const wrapper = await mountMermaid({
-			attrs: { diffStatus: DiffStatus.Modified },
-		})
-
 		expect(wrapper.get("[data-node-view-wrapper]").classes()).not.toContain(
 			"diff-modified",
 		)
+		expect(wrapper.findComponent(DiffChangeMarker).exists()).toBe(true)
 	})
 
 	it("shows no diff colour on an unchanged block", async ({ expect }) => {

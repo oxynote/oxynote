@@ -839,6 +839,11 @@
 				"decline": "Decline"
 			}
 		},
+		"diff-change-marker": {
+			"label": "{removed} removed, {added} added",
+			"removed": "−{count}",
+			"added": "+{count}"
+		},
 		"tags": {
 			"label": "Tags",
 			"trigger-title": "Manage Tags",

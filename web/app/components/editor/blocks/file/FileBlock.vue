@@ -5,6 +5,7 @@ import { showProgressToast, showToastMessage } from "~/components/toast"
 import type { ProgressToast } from "~/components/toast"
 import { cn } from "~/lib/utils"
 import { DiffStatus } from "~/components/editor/diff/position-map"
+import DiffChangeMarker from "~/components/editor/diff/DiffChangeMarker.vue"
 import {
 	fileKind,
 	fileKindStyle,
@@ -57,8 +58,6 @@ const diffClass = computed(() => {
 			return "diff-added"
 		case DiffStatus.Removed:
 			return "diff-removed"
-		case DiffStatus.Modified:
-			return "diff-modified"
 		default:
 			return null
 	}
@@ -234,6 +233,10 @@ async function downloadOnDesktop() {
 					{{ size }}
 				</span>
 			</span>
+			<DiffChangeMarker
+				:node="props.node"
+				class="absolute top-1/2 right-2 -translate-y-1/2"
+			/>
 		</component>
 		<button
 			v-else
@@ -249,6 +252,10 @@ async function downloadOnDesktop() {
 			@click="openFilePicker"
 		>
 			<Icon name="mingcute:attachment-line" class="size-4 text-foreground" />
+			<DiffChangeMarker
+				:node="props.node"
+				class="absolute top-1/2 right-2 -translate-y-1/2"
+			/>
 			<div class="mt-0.25 text-2sm text-muted-foreground">
 				{{
 					uploading

@@ -13,19 +13,7 @@ import Italic from "@tiptap/extension-italic"
 import Strike from "@tiptap/extension-strike"
 import Underline from "@tiptap/extension-underline"
 import { TaskItem } from "@tiptap/extension-list"
-import {
-	DEFAULT_OPAQUE_TYPES,
-	OVERLAY_NODES,
-	SELF_DECORATED_TYPES,
-} from "./config"
-
-export interface DiffDecorationsOptions {
-	/**
-	 * node types treated as opaque — when modified, the whole node gets
-	 * a diff-modified class instead of character-level inline diffs.
-	 */
-	opaqueTypes: string[]
-}
+import { OVERLAY_NODES, SELF_DECORATED_TYPES } from "./config"
 
 const pluginKey = new PluginKey("diffDecorations")
 
@@ -40,18 +28,10 @@ export interface OverlayPadding {
 	left?: string
 }
 
-export const DiffDecorations = Extension.create<DiffDecorationsOptions>({
+export const DiffDecorations = Extension.create({
 	name: "diffDecorations",
 
-	addOptions() {
-		return {
-			opaqueTypes: DEFAULT_OPAQUE_TYPES,
-		}
-	},
-
 	addProseMirrorPlugins() {
-		const opaqueTypes = new Set(this.options.opaqueTypes)
-
 		return [
 			new Plugin({
 				key: pluginKey,
@@ -68,7 +48,7 @@ export const DiffDecorations = Extension.create<DiffDecorationsOptions>({
 						// always rebuild: comment transactions use setNodeMarkup
 						// which replaces nodes, causing DecorationSet.map() to
 						// drop decorations spanning the replaced range
-						return buildDiffDecorations(tr.doc, opaqueTypes)
+						return buildDiffDecorations(tr.doc)
 					},
 				},
 
@@ -82,10 +62,7 @@ export const DiffDecorations = Extension.create<DiffDecorationsOptions>({
 	},
 })
 
-function buildDiffDecorations(
-	doc: PMNode,
-	opaqueTypes: Set<string>,
-): DecorationSet {
+function buildDiffDecorations(doc: PMNode): DecorationSet {
 	const decorations: Decoration[] = []
 
 	doc.descendants((node, pos) => {
@@ -110,17 +87,17 @@ function buildDiffDecorations(
 		}
 
 		// status === DiffStatus.Modified
-		if (opaqueTypes.has(node.type.name)) {
-			pushDiffDecoration(decorations, node, pos, "diff-modified", false)
-			return false
-		}
-
-		// task items with a changed checked status get whole-item highlight
+		// a task item whose checkbox changed tints only the checkbox, then
+		// its content is diffed as usual
 		if (
 			node.type.name === TaskItem.name &&
 			hasTaskListItemCheckedChanged(node)
 		) {
-			pushDiffDecoration(decorations, node, pos, "diff-modified", true)
+			decorations.push(
+				Decoration.node(pos, pos + node.nodeSize, {
+					class: "diff-checkbox-changed",
+				}),
+			)
 			return true
 		}
 

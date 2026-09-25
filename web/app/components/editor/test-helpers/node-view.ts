@@ -27,8 +27,9 @@ export interface ChainedCall {
 	args: unknown[]
 }
 
-// only attrs, textContent, nodeSize and the type name are read by a node
-// view rendering on its own, so a stand-in spares every suite a schema
+// only attrs, textContent, nodeSize, the type name and a walk over no
+// children are read by a node view rendering on its own, so a stand-in
+// spares every suite a schema
 export function makeNode(
 	attrs: Record<string, unknown> = {},
 	options: { typeName?: string; textContent?: string; nodeSize?: number } = {},
@@ -38,6 +39,7 @@ export function makeNode(
 		textContent: options.textContent ?? "",
 		nodeSize: options.nodeSize ?? 2,
 		type: { name: options.typeName ?? "testNode" },
+		descendants: () => undefined,
 	} as unknown as PMNode
 }
 

@@ -230,7 +230,6 @@ describe("<ImageBlock>", { concurrent: false }, () => {
 	it.for([
 		{ status: "added", expected: "diff-added" },
 		{ status: "removed", expected: "diff-removed" },
-		{ status: "modified", expected: "diff-modified" },
 	])(
 		"marks a $status image with its diff overlay",
 		async ({ status, expected }, { expect }) => {
@@ -242,6 +241,21 @@ describe("<ImageBlock>", { concurrent: false }, () => {
 			expect(wrapper.get(".diff-overlay").classes()).toContain(expected)
 		},
 	)
+
+	it("counts a modified image's changes instead of tinting it", async ({
+		expect,
+	}) => {
+		const wrapper = await mountImage({
+			src: "https://cdn.test/b.png",
+			diffStatus: "modified",
+			oldNode: { attrs: { uid: "image-1", src: "https://cdn.test/a.png" } },
+		})
+
+		expect(wrapper.find(".diff-overlay").exists()).toBe(false)
+		expect(wrapper.text()).toContain(
+			t("editor.diff-change-marker.label", { removed: 1, added: 1 }),
+		)
+	})
 
 	it("shows no diff overlay on an unchanged image", async ({ expect }) => {
 		const wrapper = await mountImage({

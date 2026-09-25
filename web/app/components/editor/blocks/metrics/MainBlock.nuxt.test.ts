@@ -21,7 +21,7 @@ import {
 	disposeMockEndpoints,
 	makeXid,
 } from "~/composables/api/test-helpers"
-import { emitFrom, renderedIconNames } from "~/components/test-helpers"
+import { emitFrom, renderedIconNames, t } from "~/components/test-helpers"
 
 // echarts measures text on a canvas, which happy-dom does not implement
 vi.mock("./visualizations/LineChart.vue", () => ({
@@ -262,6 +262,23 @@ describe("<MetricMainBlock>", { concurrent: false }, () => {
 		expect(
 			useEditorStore().metricBlockOldConfigs[DOCUMENT_ID]?.[BRANCH_ID]?.[uid],
 		).toEqual(expect.objectContaining({ title: "Before" }))
+	})
+
+	it("counts a modified block's changes", async ({ expect }) => {
+		const uid = nextUid()
+
+		const wrapper = await mountBlock({
+			uid: uid,
+			attrs: {
+				title: "After",
+				diffStatus: DiffStatus.Modified,
+				oldNode: { attrs: { uid: uid, title: "Before" } },
+			},
+		})
+
+		expect(wrapper.text()).toContain(
+			t("editor.diff-change-marker.label", { removed: 1, added: 1 }),
+		)
 	})
 
 	it("publishes no previous config for an added block", async ({ expect }) => {

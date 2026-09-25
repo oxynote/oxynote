@@ -361,7 +361,6 @@ describe("<FileBlock>", { concurrent: false }, () => {
 	it.for([
 		{ status: "added", expected: "diff-added" },
 		{ status: "removed", expected: "diff-removed" },
-		{ status: "modified", expected: "diff-modified" },
 	])(
 		"marks a $status file with its diff overlay",
 		async ({ status, expected }, { expect }) => {
@@ -371,6 +370,22 @@ describe("<FileBlock>", { concurrent: false }, () => {
 			expect(wrapper.get("a").classes()).toContain("diff-overlay-anchor")
 		},
 	)
+
+	it("counts a modified file's changes instead of tinting it", async ({
+		expect,
+	}) => {
+		const wrapper = await mountFile(
+			storedZip({
+				diffStatus: "modified",
+				oldNode: { attrs: storedZip({ uid: "file-1", size: 1 }) },
+			}),
+		)
+
+		expect(wrapper.find(".diff-overlay").exists()).toBe(false)
+		expect(wrapper.text()).toContain(
+			t("editor.diff-change-marker.label", { removed: 1, added: 1 }),
+		)
+	})
 
 	it("shows no diff overlay on an unchanged file", async ({ expect }) => {
 		const wrapper = await mountFile(storedZip({ diffStatus: "unchanged" }))
