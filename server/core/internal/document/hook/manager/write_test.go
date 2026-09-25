@@ -116,6 +116,8 @@ func Test_Manager_CreateHook(t *testing.T) {
 			}
 
 			man := newTestManager(t, stubDB(&DBMock{}, c.Tx, nil), &fakePublisher{}, wc)
+			changes := &changeRecorder{}
+			man.OnHookChange(changes.record)
 
 			documentID := xid.New()
 
@@ -135,9 +137,12 @@ func Test_Manager_CreateHook(t *testing.T) {
 
 			if err != nil {
 				assert.Nil(t, hk)
+				assert.Empty(t, changes.hooks)
+
 				return
 			}
 
+			assert.Equal(t, []hook.Hook{*hk}, changes.hooks)
 			assert.Equal(t, *hk, c.Tx.InsertDocumentHookCalls()[0].Hk)
 			assert.Equal(t, null.ValueFrom(documentID), hk.DocumentID)
 			assert.Equal(t, null.ValueFrom(branchID), hk.BranchID)
@@ -455,6 +460,8 @@ func Test_Manager_change(t *testing.T) {
 
 			cd, wc := newFakeChangeDetection(t)
 			man := newTestManager(t, stubStoredHook(stubDB(&DBMock{}, tx, c.BeginErr), stored, c.FetchErr), &fakePublisher{}, wc)
+			changes := &changeRecorder{}
+			man.OnHookChange(changes.record)
 
 			ctx := context.Background()
 
@@ -500,9 +507,12 @@ func Test_Manager_change(t *testing.T) {
 
 			if err != nil {
 				assert.Nil(t, hk)
+				assert.Empty(t, changes.hooks)
+
 				return
 			}
 
+			assert.Equal(t, []hook.Hook{*hk}, changes.hooks)
 			assert.True(t, hk.State.Valid)
 			assert.Len(t, tx.CommitCalls(), 1)
 		})

@@ -61,7 +61,6 @@ func stubSet(db *toolsMock.DB) *tools.Set {
 		nil,
 		nil,
 		nil,
-		nil,
 		"org1",
 		"user1",
 	))

@@ -95,8 +95,8 @@ func NewManager(
 	return m
 }
 
-// OnHookChange subscribes fn to the hooks a background run changed or
-// deleted. The returned function unsubscribes it.
+// OnHookChange subscribes fn to every hook the manager stores, changes or
+// deletes. The returned function unsubscribes it.
 func (m *Manager) OnHookChange(fn func(hook.Hook)) func() {
 	m.subsMu.Lock()
 	defer m.subsMu.Unlock()

@@ -84,17 +84,12 @@ func recordNotifications(hdl *Handler) *[]notified {
 	return &out
 }
 
-// assertNotified checks that a write that succeeded announced the branch
-// once and one that failed announced nothing.
-func assertNotified(t *testing.T, got []notified, code int) {
+// assertNotified checks that a write announced nothing: the hook manager
+// announces the hooks it changes.
+func assertNotified(t *testing.T, got []notified) {
 	t.Helper()
 
-	if code >= http.StatusBadRequest {
-		assert.Empty(t, got)
-		return
-	}
-
-	assert.Equal(t, []notified{{"org1", _documentID, _branchID}}, got)
+	assert.Empty(t, got)
 }
 
 func Test_NewHandler(t *testing.T) {
@@ -438,7 +433,7 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 			hdl.CreateDocumentHook(rec, hookRequest(http.MethodPost, c.Body, c.NoSession, c.OmitDoc, true, true))
 
 			assert.Equal(t, c.RespCode, rec.Code)
-			assertNotified(t, *got, rec.Code)
+			assertNotified(t, *got)
 
 			if c.RespBody != "" {
 				assert.JSONEq(t, c.RespBody, rec.Body.String())
@@ -571,7 +566,7 @@ func Test_Handler_UpdateDocumentHook(t *testing.T) {
 			hdl.UpdateDocumentHook(rec, hookRequest(http.MethodPut, c.Body, c.NoSession, c.OmitDoc, c.OmitHook, c.OmitBranch))
 
 			assert.Equal(t, c.RespCode, rec.Code)
-			assertNotified(t, *got, rec.Code)
+			assertNotified(t, *got)
 
 			if c.RespBody != "" {
 				assert.JSONEq(t, c.RespBody, rec.Body.String())
@@ -666,7 +661,7 @@ func Test_Handler_ResetDocumentHook(t *testing.T) {
 			hdl.ResetDocumentHook(rec, hookRequest(http.MethodPut, "", c.NoSession, c.OmitDoc, c.OmitHook, true))
 
 			assert.Equal(t, c.RespCode, rec.Code)
-			assertNotified(t, *got, rec.Code)
+			assertNotified(t, *got)
 
 			ff := c.Man.ResetHookCalls()
 			require.Len(t, ff, c.Resets)
@@ -769,7 +764,7 @@ func Test_Handler_DeleteDocumentHook(t *testing.T) {
 			hdl.DeleteDocumentHook(rec, hookRequest(http.MethodDelete, "", c.NoSession, c.OmitDoc, c.OmitHook, c.OmitBranch))
 
 			assert.Equal(t, c.RespCode, rec.Code)
-			assertNotified(t, *got, rec.Code)
+			assertNotified(t, *got)
 
 			ff := c.Man.DeleteHookCalls()
 			require.Len(t, ff, c.Deletes)

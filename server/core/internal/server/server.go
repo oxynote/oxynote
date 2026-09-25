@@ -190,7 +190,6 @@ func NewServer(
 	// rename/set-icon.
 	assistantMan.SetTreeNotifier(srv.handlers.document)
 	assistantMan.SetTagNotifier(srv.handlers.tag)
-	assistantMan.SetHookNotifier(srv.handlers.hook)
 	hookMan.OnHookChange(func(h hookCore.Hook) {
 		srv.handlers.hook.NotifyHooksChange(h.OrganizationID.String, h.DocumentID, h.BranchID)
 	})
@@ -374,8 +373,8 @@ type HookManager interface {
 	hook.Manager
 	document.HookManager
 
-	// OnHookChange should subscribe fn to the hooks a background run
-	// changed or deleted, and return the function that unsubscribes it.
+	// OnHookChange should subscribe fn to every hook the manager stores,
+	// changes or deletes, and return the function that unsubscribes it.
 	OnHookChange(fn func(hookCore.Hook)) func()
 }
 

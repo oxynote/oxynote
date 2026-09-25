@@ -7,16 +7,9 @@ import (
 	"github.com/rs/xid"
 )
 
-// CopyHooks copies the hooks of one branch to another inside the caller's
-// transaction, so the branch's history entry lists them at commit. The
-// copies are not set up: the caller runs ProcessBranch on the target once
-// its transaction has committed, which creates their external resources.
-//
-// A branch whose content was duplicated carries fresh block uids, so the
-// caller passes the old-to-new uid map and a hook anchored to a block is
-// re-anchored through it; a hook whose block the map does not name has
-// nothing to point at on the target and is dropped. A nil map keeps every
-// block id as it is, which is right for a fork or a merge.
+// CopyHooks copies the branch's hooks to another in the caller's
+// transaction, not set up yet. A non-nil uids map re-anchors block hooks
+// and drops those whose block it does not name.
 func (m *Manager) CopyHooks(
 	ctx context.Context,
 	tx CopyTx,

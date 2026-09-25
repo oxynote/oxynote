@@ -42,6 +42,8 @@ func (m *Manager) CreateHook(
 		return nil, err
 	}
 
+	m.notifyChange(*hk)
+
 	return hk, nil
 }
 
@@ -127,7 +129,8 @@ func (m *Manager) ResetHook(ctx context.Context, id xid.ID, organizationID strin
 // change takes the hook's lock and reads the hook. It then runs the
 // hook's outside calls, and only then writes the row in a transaction, so
 // no connection waits on an outside service. A change that set up a hook
-// never set up before and then fails tears down what the setup created.
+// never set up before and then fails tears down what the setup created. A
+// stored change is announced to the subscribers.
 func (m *Manager) change(
 	ctx context.Context,
 	id xid.ID,
@@ -164,6 +167,8 @@ func (m *Manager) change(
 
 		return nil, err
 	}
+
+	m.notifyChange(*hk)
 
 	return hk, nil
 }

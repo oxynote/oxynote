@@ -147,8 +147,6 @@ func (h *Handler) CreateDocumentHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.NotifyHooksChange(session.ActiveOrganizationID, hk.DocumentID, hk.BranchID)
-
 	httpserver.Respond(
 		h.log,
 		w,
@@ -210,8 +208,6 @@ func (h *Handler) UpdateDocumentHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.NotifyHooksChange(session.ActiveOrganizationID, hk.DocumentID, hk.BranchID)
-
 	httpserver.Respond(
 		h.log,
 		w,
@@ -257,8 +253,6 @@ func (h *Handler) ResetDocumentHook(w http.ResponseWriter, r *http.Request) {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
-
-	h.NotifyHooksChange(session.ActiveOrganizationID, hk.DocumentID, hk.BranchID)
 
 	httpserver.Respond(
 		h.log,
@@ -312,8 +306,6 @@ func (h *Handler) DeleteDocumentHook(w http.ResponseWriter, r *http.Request) {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
-
-	h.NotifyHooksChange(session.ActiveOrganizationID, hk.DocumentID, hk.BranchID)
 
 	httpserver.Respond(
 		h.log,

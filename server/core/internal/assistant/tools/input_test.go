@@ -406,7 +406,6 @@ func Test_NewDeps(t *testing.T) {
 		applier  = &EditApplierMock{}
 		tree     = &TreeNotifierMock{}
 		tags     = &TagNotifierMock{}
-		hooks    = &HookNotifierMock{}
 		offload  = &offloadReaderMock{}
 		gh       = unconfiguredGithub()
 		wc       = webchange.NewClient("", "")
@@ -419,7 +418,7 @@ func Test_NewDeps(t *testing.T) {
 
 	trigger := &SearchTriggerMock{}
 
-	d := NewDeps(discardLog(), db, searcher, trigger, runners, gh, wc, hookMan, applier, tree, tags, hooks, offload, "org", "user")
+	d := NewDeps(discardLog(), db, searcher, trigger, runners, gh, wc, hookMan, applier, tree, tags, offload, "org", "user")
 	require.NotNil(t, d)
 
 	assert.NotNil(t, d.log)
@@ -433,7 +432,6 @@ func Test_NewDeps(t *testing.T) {
 	assert.Same(t, applier, d.applier)
 	assert.Same(t, tree, d.tree)
 	assert.Same(t, tags, d.tags)
-	assert.Same(t, hooks, d.hooks)
 	assert.Same(t, offload, d.offload)
 	assert.Equal(t, "org", d.orgID)
 	assert.Equal(t, "user", d.userID)
@@ -2429,7 +2427,6 @@ func Test_input_CreateHook(t *testing.T) {
 		Settings processor.Settings
 		FlushErr error
 		Inserts  int
-		Notify   int
 		Touched  []Touched
 		Err      error
 	}{
@@ -2493,7 +2490,6 @@ func Test_input_CreateHook(t *testing.T) {
 			Type:     hook.TypeScheduledReminder,
 			Settings: scheduled,
 			Inserts:  1,
-			Notify:   1,
 			Touched:  []Touched{{DocumentID: _testDocID, BranchID: _stubBranchID}},
 		},
 		"Created on a block": {
@@ -2503,7 +2499,6 @@ func Test_input_CreateHook(t *testing.T) {
 			Type:     hook.TypeScheduledReminder,
 			Settings: scheduled,
 			Inserts:  1,
-			Notify:   1,
 			Touched:  []Touched{{DocumentID: _testDocID, BranchID: _stubBranchID}},
 		},
 	}
@@ -2512,7 +2507,7 @@ func Test_input_CreateHook(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			d, hooks := hookDeps(c.DB, c.Man)
+			d := hookDeps(c.DB, c.Man)
 			stubFlush(d, c.FlushErr)
 			inp := testInput(d, NameCreateHook, `{}`)
 
@@ -2527,7 +2522,6 @@ func Test_input_CreateHook(t *testing.T) {
 			flushes := d.applier.(*EditApplierMock).FlushCalls()
 			require.Len(t, flushes, 1)
 			assert.Equal(t, c.Branch, flushes[0].BranchID)
-			assert.Len(t, hooks.NotifyHooksChangeCalls(), c.Notify)
 			assert.Equal(t, c.Touched, inp.touched)
 
 			// the write is credited to the user the assistant acts for.
@@ -2569,7 +2563,6 @@ func Test_input_UpdateHook(t *testing.T) {
 		Settings processor.Settings
 		FlushErr error
 		Updates  int
-		Notify   int
 		Touched  []Touched
 		Err      error
 	}{
@@ -2596,7 +2589,6 @@ func Test_input_UpdateHook(t *testing.T) {
 			DB:       stubHookDB(),
 			Settings: processor.Settings(`{"scale":"linear","duration":"custom","schedule":"2031-01-01T00:00:00Z"}`),
 			Updates:  1,
-			Notify:   1,
 			Touched:  []Touched{{DocumentID: _testDocID, BranchID: _stubBranchID}},
 		},
 	}
@@ -2605,7 +2597,7 @@ func Test_input_UpdateHook(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			d, hooks := hookDeps(c.DB, c.Man)
+			d := hookDeps(c.DB, c.Man)
 			stubFlush(d, c.FlushErr)
 			inp := testInput(d, NameUpdateHook, `{}`)
 			hk := stubHook()
@@ -2616,7 +2608,6 @@ func Test_input_UpdateHook(t *testing.T) {
 			ff := d.hookMan.(*HookManagerMock).UpdateHookCalls()
 			require.Len(t, ff, c.Updates)
 			assert.Len(t, d.applier.(*EditApplierMock).FlushCalls(), 1)
-			assert.Len(t, hooks.NotifyHooksChangeCalls(), c.Notify)
 			assert.Equal(t, c.Touched, inp.touched)
 
 			// the write is credited to the user the assistant acts for.
@@ -2655,7 +2646,6 @@ func Test_input_ResetHook(t *testing.T) {
 		Man     *HookManagerMock
 		Hook    *hook.Hook
 		Updates int
-		Notify  int
 		Touched []Touched
 		Err     error
 	}{
@@ -2677,7 +2667,6 @@ func Test_input_ResetHook(t *testing.T) {
 			DB:      stubHookDB(),
 			Hook:    stubHook(),
 			Updates: 1,
-			Notify:  1,
 			Touched: []Touched{{DocumentID: _testDocID, BranchID: _stubBranchID}},
 		},
 	}
@@ -2686,7 +2675,7 @@ func Test_input_ResetHook(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			d, hooks := hookDeps(c.DB, c.Man)
+			d := hookDeps(c.DB, c.Man)
 			inp := testInput(d, NameResetHook, `{}`)
 
 			err := inp.ResetHook(c.Hook)
@@ -2694,7 +2683,6 @@ func Test_input_ResetHook(t *testing.T) {
 
 			ff := d.hookMan.(*HookManagerMock).ResetHookCalls()
 			require.Len(t, ff, c.Updates)
-			assert.Len(t, hooks.NotifyHooksChangeCalls(), c.Notify)
 			assert.Equal(t, c.Touched, inp.touched)
 
 			if err != nil {
@@ -2730,7 +2718,6 @@ func Test_input_DeleteHook(t *testing.T) {
 		Hook     *hook.Hook
 		FlushErr error
 		Deletes  int
-		Notify   int
 		Touched  []Touched
 		Err      error
 	}{
@@ -2758,7 +2745,6 @@ func Test_input_DeleteHook(t *testing.T) {
 			DB:      stubHookDB(),
 			Hook:    stubHook(),
 			Deletes: 1,
-			Notify:  1,
 			Touched: []Touched{{DocumentID: _testDocID, BranchID: _stubBranchID}},
 		},
 	}
@@ -2767,7 +2753,7 @@ func Test_input_DeleteHook(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			d, hooks := hookDeps(c.DB, c.Man)
+			d := hookDeps(c.DB, c.Man)
 			stubFlush(d, c.FlushErr)
 			inp := testInput(d, NameDeleteHook, `{}`)
 
@@ -2777,7 +2763,6 @@ func Test_input_DeleteHook(t *testing.T) {
 			ff := d.hookMan.(*HookManagerMock).DeleteHookCalls()
 			require.Len(t, ff, c.Deletes)
 			assert.Len(t, d.applier.(*EditApplierMock).FlushCalls(), 1)
-			assert.Len(t, hooks.NotifyHooksChangeCalls(), c.Notify)
 			assert.Equal(t, c.Touched, inp.touched)
 
 			// the write is credited to the user the assistant acts for.
@@ -2801,20 +2786,14 @@ func Test_input_hookChanged(t *testing.T) {
 	branchless.BranchID = null.Value[xid.ID]{}
 
 	cc := map[string]struct {
-		Hook     *hook.Hook
-		Notifier bool
-		Notify   int
-		Touched  []Touched
+		Hook    *hook.Hook
+		Touched []Touched
 	}{
-		// a hook whose branch is gone has no branch to link to; the
-		// notifier is told and decides for itself.
-		"Hook whose branch is gone": {Hook: branchless, Notifier: true, Notify: 1},
-		"Without a notifier":        {Hook: stubHook(), Touched: []Touched{{DocumentID: _testDocID, BranchID: _stubBranchID}}},
-		"With a notifier": {
-			Hook:     stubHook(),
-			Notifier: true,
-			Notify:   1,
-			Touched:  []Touched{{DocumentID: _testDocID, BranchID: _stubBranchID}},
+		// a hook whose branch is gone has no branch to link to.
+		"Hook whose branch is gone": {Hook: branchless},
+		"Hook on a branch": {
+			Hook:    stubHook(),
+			Touched: []Touched{{DocumentID: _testDocID, BranchID: _stubBranchID}},
 		},
 	}
 
@@ -2822,28 +2801,10 @@ func Test_input_hookChanged(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			d := testDeps(nil, nil, nil)
-			hooks := &HookNotifierMock{}
-
-			if c.Notifier {
-				d.hooks = hooks
-			}
-
-			inp := testInput(d, NameResetHook, `{}`)
+			inp := testInput(testDeps(nil, nil, nil), NameResetHook, `{}`)
 			inp.hookChanged(c.Hook)
 
 			assert.Equal(t, c.Touched, inp.touched)
-
-			ff := hooks.NotifyHooksChangeCalls()
-			require.Len(t, ff, c.Notify)
-
-			if c.Notify == 0 {
-				return
-			}
-
-			assert.Equal(t, "org", ff[0].OrganizationID)
-			assert.Equal(t, c.Hook.DocumentID, ff[0].DocumentID)
-			assert.Equal(t, c.Hook.BranchID, ff[0].BranchID)
 		})
 	}
 }

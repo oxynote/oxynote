@@ -91,10 +91,6 @@ type Deps struct {
 	// a tag or what carries it.
 	tags TagNotifier
 
-	// hooks notifies a document's subscribers after the assistant
-	// changes the hooks on one of its branches.
-	hooks HookNotifier
-
 	// offload retrieves results parked outside the conversation.
 	offload OffloadReader
 
@@ -123,7 +119,6 @@ func NewDeps(
 	applier EditApplier,
 	tree TreeNotifier,
 	tags TagNotifier,
-	hooks HookNotifier,
 	offload OffloadReader,
 	orgID, userID string,
 ) *Deps {
@@ -143,7 +138,6 @@ func NewDeps(
 		applier:         applier,
 		tree:            tree,
 		tags:            tags,
-		hooks:           hooks,
 		offload:         offload,
 		orgID:           orgID,
 		userID:          userID,
@@ -1150,19 +1144,13 @@ func (i *input) DeleteHook(hk *hook.Hook) error {
 	return nil
 }
 
-// hookChanged records the branch a hook write changed and announces it
-// to the document's subscribers. A hook whose branch was deleted, and
-// which the sweep has not yet removed, has no branch to link to.
+// hookChanged records the branch a hook write changed. A hook whose
+// branch was deleted, and which the sweep has not yet removed, has no
+// branch to link to.
 func (i *input) hookChanged(hk *hook.Hook) {
 	if hk.BranchID.Valid {
 		i.recordTouched(hk.DocumentID.V, hk.BranchID.V)
 	}
-
-	if i.hooks == nil {
-		return
-	}
-
-	i.hooks.NotifyHooksChange(i.orgID, hk.DocumentID, hk.BranchID)
 }
 
 // docRef wraps the (documentID, branchID) pair the edit client needs to
@@ -1396,20 +1384,6 @@ type TagNotifier interface {
 	// that the tags its branch branchID carries changed. Implementations
 	// must be safe to call concurrently.
 	NotifyBranchTagsChange(organizationID string, documentID, branchID xid.ID)
-}
-
-// HookNotifier publishes hook-change events so an open editor redraws
-// its hook indicators after assistant-driven hook writes. The server
-// hook handler satisfies this interface via its NotifyHooksChange
-// method.
-//
-//go:generate ../../../scripts/codegen/mock -t internal HookNotifier hook_notifier
-type HookNotifier interface {
-	// NotifyHooksChange should tell the subscribers of the document that
-	// the hooks on its branch branchID changed, and do nothing for a hook
-	// whose document or branch is gone. Implementations must be safe to
-	// call concurrently.
-	NotifyHooksChange(organizationID string, documentID, branchID null.Value[xid.ID])
 }
 
 // EditApplier is the live-document mutation surface the write tools

@@ -143,21 +143,7 @@ func (a *agent) UpdateDocumentBranchMetadata(ctx context.Context, doc document.D
 
 // FetchDocumentByBranchID fetches a document joined against the branch identified by branchID.
 func (a *agent) FetchDocumentByBranchID(ctx context.Context, branchID xid.ID, organizationID string) (*document.Document, error) {
-	q, args := a.selectDocumentBranch(a.builder.Select()).
-		Where(sq.Eq{
-			"db.id":                        branchID,
-			"documents.fk_organization_id": organizationID,
-		}).
-		Limit(1).
-		MustSql()
-
-	doc := &document.Document{}
-
-	if err := sqlx.GetContext(ctx, a.sql, doc, q, args...); err != nil {
-		return nil, err
-	}
-
-	return doc, nil
+	return a.fetchDocumentBranchByID(ctx, a.sql, branchID, organizationID, false)
 }
 
 // FetchDocumentBranchesUnsafe fetches all branches for a document as lightweight
@@ -275,7 +261,7 @@ func (a *agent) RecordDocumentBranchHistoryEntry(
 	var id xid.ID
 
 	if err := sqlutil.WrapTx(ctx, a.sql, func(tx *sqlx.Tx) error {
-		doc, err := a.lockDocumentBranch(ctx, tx, branchID, organizationID)
+		doc, err := a.fetchDocumentBranchByID(ctx, tx, branchID, organizationID, true)
 		if err != nil {
 			return err
 		}
@@ -376,20 +362,30 @@ func (a *agent) insertDocumentBranchHistoryEntry(ctx context.Context, tx *sqlx.T
 	return entry.ID, nil
 }
 
-// lockDocumentBranch reads the branch joined against its document and
-// locks the branch row until the transaction ends.
-func (a *agent) lockDocumentBranch(ctx context.Context, tx *sqlx.Tx, branchID xid.ID, organizationID string) (*document.Document, error) {
-	q, args := a.selectDocumentBranch(a.builder.Select()).
+// fetchDocumentBranchByID reads the branch joined against its document.
+// With lock, it also locks the branch row until the transaction ends.
+func (a *agent) fetchDocumentBranchByID(
+	ctx context.Context,
+	q sqlx.QueryerContext,
+	branchID xid.ID,
+	organizationID string,
+	lock bool,
+) (*document.Document, error) {
+	b := a.selectDocumentBranch(a.builder.Select()).
 		Where(sq.Eq{
 			"db.id":                        branchID,
 			"documents.fk_organization_id": organizationID,
-		}).
-		Suffix("FOR UPDATE OF db").
-		MustSql()
+		})
+
+	if lock {
+		b = b.Suffix("FOR UPDATE OF db")
+	}
+
+	sqlq, args := b.MustSql()
 
 	doc := &document.Document{}
 
-	if err := sqlx.GetContext(ctx, tx, doc, q, args...); err != nil {
+	if err := sqlx.GetContext(ctx, q, doc, sqlq, args...); err != nil {
 		return nil, err
 	}
 

@@ -254,7 +254,6 @@ func Test_NewManager(t *testing.T) {
 			assert.Same(t, wc, m.webchangeClient)
 			assert.Nil(t, m.tree)
 			assert.Nil(t, m.tags)
-			assert.Nil(t, m.hooks)
 
 			// the checkpoint and the offloaded results share one byte
 			// store, so three stores back the four persist types and
@@ -339,16 +338,6 @@ func Test_Manager_SetTagNotifier(t *testing.T) {
 
 	m.SetTagNotifier(nil)
 	assert.Nil(t, m.tags)
-}
-
-func Test_Manager_SetHookNotifier(t *testing.T) {
-	t.Parallel()
-
-	m := testManager()
-	require.Nil(t, m.hooks)
-
-	m.SetHookNotifier(nil)
-	assert.Nil(t, m.hooks)
 }
 
 func Test_Manager_ToolSet(t *testing.T) {

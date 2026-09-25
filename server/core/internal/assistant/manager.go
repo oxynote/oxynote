@@ -55,7 +55,6 @@ type Manager struct {
 	applier       tools.EditApplier
 	tree          tools.TreeNotifier
 	tags          tools.TagNotifier
-	hooks         tools.HookNotifier
 
 	githubMan       *github.Manager
 	webchangeClient *webchange.Client
@@ -203,14 +202,6 @@ func (m *Manager) SetTagNotifier(tags tools.TagNotifier) {
 	m.tags = tags
 }
 
-// SetHookNotifier wires the hook-change notifier the assistant uses to
-// tell an open editor its hook indicators changed after hook mutations.
-// Like SetTagNotifier, call it once during startup, before serving
-// traffic.
-func (m *Manager) SetHookNotifier(hooks tools.HookNotifier) {
-	m.hooks = hooks
-}
-
 // ToolSet builds the tool registry for one (organization, user) pair
 // from the manager's shared wiring. The MCP surface uses it to serve
 // the same tools the assistant's sessions get, scoped the same way.
@@ -227,7 +218,6 @@ func (m *Manager) ToolSet(orgID, userID string) *tools.Set {
 		m.applier,
 		m.tree,
 		m.tags,
-		m.hooks,
 		m.offload,
 		orgID,
 		userID,
