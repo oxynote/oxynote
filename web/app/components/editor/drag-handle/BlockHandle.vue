@@ -188,7 +188,7 @@ function dragEnd() {
 		:provider="props.dataSyncProvider"
 		:locked="isLocked"
 		:on-drag-cancel="dragEnd"
-		class="z-drag-handle pr-1.5"
+		class="z-drag-handle pr-1.5 transition-[opacity,visibility] duration-100"
 		@node-change="handleNodeHover"
 		@mouseenter="handleDragHoverEnter"
 		@mouseleave="handleDragHoverLeave"

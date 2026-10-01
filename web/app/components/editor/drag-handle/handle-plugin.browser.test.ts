@@ -834,6 +834,7 @@ describe("DragHandlePlugin", { concurrent: false }, () => {
 			const { editor, element, handle, onNodeChange } = setup({
 				content: [paragraph("one"), paragraph("two")],
 			})
+			element.style.transition = "opacity 100ms"
 			hover(editor, handle.plugin, 0)
 			onNodeChange.mockClear()
 			vi.mocked(computePosition).mockClear()
@@ -859,6 +860,23 @@ describe("DragHandlePlugin", { concurrent: false }, () => {
 			expect(computePosition).toHaveBeenCalledTimes(1)
 			expect(element.style.visibility).toBe("")
 			expect(element.style.pointerEvents).toBe("auto")
+			// the handle left the first paragraph, so a copy fades out there
+			expect(element.parentElement?.children).toHaveLength(2)
+		})
+
+		it("leaves no copy when the drop lands back on the same node", async ({
+			expect,
+		}) => {
+			const { editor, element, handle } = setup()
+			element.style.transition = "opacity 100ms"
+			hover(editor, handle.plugin, 0)
+
+			endDrag(element, 11, 13)
+			vi.advanceTimersByTime(20)
+			await flushMicrotasks()
+
+			expect(element.style.visibility).toBe("")
+			expect(element.parentElement?.children).toHaveLength(1)
 		})
 	})
 
@@ -1445,6 +1463,54 @@ describe("DragHandlePlugin", { concurrent: false }, () => {
 			hover(editor, handle.plugin, 0)
 
 			expect(onNodeChange).toHaveBeenCalledTimes(1)
+		})
+
+		it("leaves a fading copy on the old node when the pointer moves to another", ({
+			expect,
+		}) => {
+			const { editor, element, handle } = setup({
+				content: [paragraph("one"), paragraph("two")],
+			})
+			element.style.transition = "opacity 100ms"
+			hover(editor, handle.plugin, 0)
+
+			hover(editor, handle.plugin, 5)
+
+			const copy = must(element.nextElementSibling, "a copy") as HTMLElement
+			expect(element.parentElement?.children).toHaveLength(2)
+			expect(element.style.opacity).toBe("")
+			expect(element.style.transition).toBe("opacity 100ms")
+			expect(copy.inert).toBe(true)
+			expect(copy.getAttribute("aria-hidden")).toBe("true")
+			expect(copy.style.pointerEvents).toBe("none")
+			expect(copy.style.opacity).toBe("0")
+		})
+
+		it("removes the copy once its fade has run", async ({ expect }) => {
+			const { editor, element, handle } = setup({
+				content: [paragraph("one"), paragraph("two")],
+			})
+			element.style.transition = "opacity 100ms"
+			hover(editor, handle.plugin, 0)
+			hover(editor, handle.plugin, 5)
+			const copy = must(element.nextElementSibling, "a copy") as HTMLElement
+
+			copy.getAnimations().forEach((animation) => {
+				animation.finish()
+			})
+			await flushMicrotasks()
+
+			expect(copy.isConnected).toBe(false)
+			expect(element.parentElement?.children).toHaveLength(1)
+		})
+
+		it("leaves no copy when the handle was hidden", ({ expect }) => {
+			const { editor, element, handle } = setup()
+			element.style.transition = "opacity 100ms"
+
+			hover(editor, handle.plugin, 0)
+
+			expect(element.parentElement?.children).toHaveLength(1)
 		})
 
 		it("does nothing while the handle is locked", ({ expect }) => {
