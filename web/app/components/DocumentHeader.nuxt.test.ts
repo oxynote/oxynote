@@ -17,6 +17,7 @@ import {
 	seedPersistentState,
 	settleMutations,
 	t,
+	teleportedButton,
 } from "./test-helpers"
 
 vi.mock("vue-sonner", () => ({
@@ -405,9 +406,10 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 		expect(updated[0]?.body).toEqual({ protected: true })
 	})
 
-	it("closes the review workflow by dropping every draft and unprotecting main", async ({
+	it("asks for confirmation before dropping every draft and unprotecting main", async ({
 		expect,
 	}) => {
+		vi.useFakeTimers()
 		mainAndDraft()
 		const deleted = mockEndpoint(
 			"DELETE",
@@ -425,10 +427,47 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 		menuItem(
 			t("editor.navbar.document-options.review-workflow.disable-title"),
 		).click()
+		await nextTick()
+
+		expect(deleted).toHaveLength(0)
+
+		teleportedButton(
+			t(
+				"editor.navbar.document-options.review-workflow.disable-confirm-modal.confirm-button",
+			),
+		).click()
+		await vi.advanceTimersByTimeAsync(300)
 		await settleMutations()
 
 		expect(deleted).toHaveLength(1)
 		expect(updated[0]?.body).toEqual({ protected: false })
+	})
+
+	it("leaves every branch alone when the confirmation is cancelled", async ({
+		expect,
+	}) => {
+		mainAndDraft()
+		const deleted = mockEndpoint(
+			"DELETE",
+			`http://test.local/auth-realtime/api/documents/${DOC_ID}/branches/${DRAFT_BRANCH}`,
+			() => ({}),
+		)
+		const wrapper = await mountHeader()
+		await openOptionsMenu(wrapper)
+
+		menuItem(
+			t("editor.navbar.document-options.review-workflow.disable-title"),
+		).click()
+		await nextTick()
+
+		teleportedButton(
+			t(
+				"editor.navbar.document-options.review-workflow.disable-confirm-modal.cancel-button",
+			),
+		).click()
+		await nextTick()
+
+		expect(deleted).toHaveLength(0)
 	})
 
 	it("warns when the reviewability change fails", async ({ expect }) => {
