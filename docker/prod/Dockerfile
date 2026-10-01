@@ -21,7 +21,7 @@
 # in its output.
 
 # mirrors web/Dockerfile.dev (the dev/e2e image); change them together.
-FROM --platform=$BUILDPLATFORM node:24.20.0-bookworm-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e AS web-builder
+FROM --platform=$BUILDPLATFORM node:24.21.0-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6 AS web-builder
 
 RUN npm install -g pnpm@11.1.3
 
@@ -48,7 +48,7 @@ RUN pnpm install --frozen-lockfile \
 # the runtime ships the package's own single-file esbuild bundle (see
 # build:bundle and src/bundle.ts — the same artifact Dockerfile.dev and
 # the e2e stack run) instead of the ~83MB production node_modules tree.
-FROM --platform=$BUILDPLATFORM node:24.20.0-bookworm-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e AS auth-realtime-builder
+FROM --platform=$BUILDPLATFORM node:24.21.0-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6 AS auth-realtime-builder
 
 RUN npm install -g pnpm@11.1.3
 
@@ -64,7 +64,7 @@ COPY server/auth-realtime/src ./src
 RUN pnpm install --frozen-lockfile && pnpm run check-types && pnpm run build:bundle \
 	&& node -e "import('/server/dist/bundle.mjs').then(() => { console.error('bundle skipped env validation'); process.exit(1) }, (err) => { if (!String(err).includes('invalid environment')) { console.error(err); process.exit(1) } })"
 
-FROM --platform=$BUILDPLATFORM node:24.20.0-bookworm-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e AS launcher-builder
+FROM --platform=$BUILDPLATFORM node:24.21.0-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6 AS launcher-builder
 
 RUN npm install -g pnpm@11.1.3
 
@@ -92,7 +92,7 @@ RUN pnpm run check-types && pnpm run build:bundle
 # tarball, tini's MIT is fetched from the same tag as its binary. The name
 # "Caddy" is trademarked; the binary is bundled unmodified and unrebranded.
 # Each architecture pins its own checksums; a version bump updates them all.
-FROM --platform=$BUILDPLATFORM node:24.20.0-bookworm-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e AS fetch
+FROM --platform=$BUILDPLATFORM node:24.21.0-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6 AS fetch
 
 ARG CADDY_VERSION=2.11.4
 ARG CADDY_SHA512_AMD64=8220d1f013b6f27510247b2360c9e0ca9f018feebd82515f07635318b34ff9777ccc8fd0b6e6f2486ce3a33fe389fbb7db12d05baa474f4587509fb4f5ebf1c9
