@@ -114,6 +114,11 @@ const addedTags = computed(() => {
 const removedTags = computed(
 	() => targetTags.value?.filter((tag) => !carriesTag(tag.id)) ?? [],
 )
+// a sign marks a tag added or removed, so without one the rows need no
+// room for it
+const hasSigns = computed(
+	() => addedTags.value.length > 0 || removedTags.value.length > 0,
+)
 
 const rowElem = useTemplateRef<HTMLElement>("tag-row")
 const triggerElem = useTemplateRef<HTMLElement>("tag-trigger")
@@ -461,15 +466,7 @@ function handleSearchEnter() {
 				/>
 				<ShadcnUiDropdownMenuSeparator />
 				<template v-if="matchingTags.length">
-					<!--
-						the diff tints run edge to edge, so the list takes back the
-						menu's padding and each row adds it to its own
-					-->
-					<div
-						ref="tag-list"
-						class="max-h-47.5 overflow-y-auto"
-						:class="{ '-mx-1': targetTags }"
-					>
+					<div ref="tag-list" class="max-h-47.5 overflow-y-auto">
 						<ShadcnUiDropdownMenuItem
 							v-for="tag in matchingTags"
 							:key="tag.id"
@@ -480,7 +477,6 @@ function handleSearchEnter() {
 									// a row that toggles nothing does not react to the pointer
 									!canEdit &&
 										'cursor-default focus:bg-transparent focus:text-inherit active:bg-transparent active:text-inherit',
-									targetTags && 'rounded-none px-3',
 									tagDiffStatus(tag.id) === DiffStatus.Added &&
 										'bg-diff-added/30 focus:bg-diff-added/30 active:bg-diff-added/30',
 									tagDiffStatus(tag.id) === DiffStatus.Removed &&
@@ -493,7 +489,7 @@ function handleSearchEnter() {
 							<div class="flex min-w-0 flex-1 items-center gap-2">
 								<!-- every row keeps the sign's column so the dots line up -->
 								<span
-									v-if="targetTags"
+									v-if="hasSigns"
 									aria-hidden="true"
 									class="w-2 shrink-0 text-center font-semibold"
 									:class="{

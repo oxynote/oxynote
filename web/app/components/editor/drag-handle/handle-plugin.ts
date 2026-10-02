@@ -595,12 +595,32 @@ export const DragHandlePlugin = ({
 		forgetNode()
 	}
 
+	// the handle sits in the margin, outside the editor, so the editor's own
+	// mouseleave keeps it when the pointer moves onto it. Leaving the handle
+	// for anywhere but the editor has to take it away instead
+	function onHandleMouseLeave(e: MouseEvent) {
+		if (locked) {
+			return
+		}
+
+		const target = e.relatedTarget as globalThis.Node | null
+		if (
+			target &&
+			(editor.view.dom.contains(target) || wrapper.contains(target))
+		) {
+			return
+		}
+
+		forgetNode()
+	}
+
 	function trackMouse(e: MouseEvent) {
 		lastMouseCoords = { x: e.clientX, y: e.clientY }
 	}
 
 	element.addEventListener("dragstart", onDragStart)
 	element.addEventListener("dragend", onDragEnd)
+	element.addEventListener("mouseleave", onHandleMouseLeave)
 
 	wrapper.appendChild(element)
 	hideHandle()
@@ -609,6 +629,7 @@ export const DragHandlePlugin = ({
 		unbind() {
 			element.removeEventListener("dragstart", onDragStart)
 			element.removeEventListener("dragend", onDragEnd)
+			element.removeEventListener("mouseleave", onHandleMouseLeave)
 
 			if (animationFrameId) {
 				cancelAnimationFrame(animationFrameId)

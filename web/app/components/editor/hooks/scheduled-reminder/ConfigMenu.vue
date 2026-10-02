@@ -2,9 +2,15 @@
 import { type DateValue, getLocalTimeZone } from "@internationalized/date"
 import { presetDurations } from "./durations"
 import { showToastMessage } from "~/components/toast"
+import HookReadonlyField from "../HookReadonlyField.vue"
+import HookSubTrigger from "../HookSubTrigger.vue"
+import HookExplanation from "../HookExplanation.vue"
+import { scalarFieldRows, type HookDiffContext } from "../hook-diff"
 
 const props = defineProps<{
 	hook?: DocumentHook | null | undefined // null/undefined means creating new
+	// set only while the diff is shown
+	diff?: HookDiffContext | null
 	nodeId: string | null // null means global
 }>()
 const emit = defineEmits<{
@@ -25,6 +31,12 @@ const hookData = computed(() => {
 const { t } = useI18n({ useScope: "global" })
 const editorStore = useEditorStore()
 const documentHookAPI = useDocumentHookAPI()
+const { isReadOnlyOrDiff } = useEditorMeta()
+const targetSettings = computed(
+	() =>
+		props.diff?.targetHook?.settings as
+			DocumentHookSettingsScheduledReminder | undefined,
+)
 const selectedDuration = ref<string | undefined>(undefined)
 const selectedSchedule = ref<DateValue | undefined>(undefined)
 const confirmedSchedule = ref<DateValue | undefined>(
@@ -131,7 +143,7 @@ async function deleteHook() {
 </script>
 <template>
 	<ShadcnUiDropdownMenuSub v-model:open="isSubOpen">
-		<ShadcnUiDropdownMenuSubTrigger>
+		<HookSubTrigger :hook="props.hook" :diff="props.diff">
 			<div class="relative h-[0.8125rem] w-[0.8125rem] shrink-0">
 				<Icon
 					class="absolute top-1/2 left-1/2 size-3.75 -translate-x-1/2 -translate-y-1/2"
@@ -143,31 +155,31 @@ async function deleteHook() {
 				/>
 			</div>
 			<span v-if="!hookData">
-				{{ $t("editor.hooks.time-expiration.title") }}
+				{{ $t("editor.hooks.scheduled-reminder.title") }}
 			</span>
 			<i18n-t
 				v-else-if="Number(hookData.score) !== 0"
 				scope="global"
-				keypath="editor.hooks.time-expiration.existing-item"
+				keypath="editor.hooks.scheduled-reminder.existing-item"
 				tag="span"
 				class="truncate"
 			>
 				<template #value>
-					{{ $d(new Date(hookData.settings.schedule), "short") }}
+					{{ $d(new Date(hookData.settings.schedule), "short-with-time") }}
 				</template>
 			</i18n-t>
 			<i18n-t
 				v-else
 				scope="global"
-				keypath="editor.hooks.time-expiration.triggered-item"
+				keypath="editor.hooks.scheduled-reminder.triggered-item"
 				tag="span"
 				class="truncate"
 			>
 				<template #value>
-					{{ $d(new Date(hookData.settings.schedule), "short") }}
+					{{ $d(new Date(hookData.settings.schedule), "short-with-time") }}
 				</template>
 			</i18n-t>
-		</ShadcnUiDropdownMenuSubTrigger>
+		</HookSubTrigger>
 		<ShadcnUiDropdownMenuSubContent
 			side="right"
 			align="start"
@@ -177,76 +189,95 @@ async function deleteHook() {
 			]"
 		>
 			<div class="flex w-[12rem] flex-col">
-				<div class="flex flex-col gap-1 px-0.75 pb-0.75">
-					<template v-if="!hookData || hookData.score === 0">
-						<ShadcnUiSelect v-model="selectedDuration">
-							<ShadcnUiSelectLabel>
-								<span class="text-2sm">
-									{{
-										!hookData || hookData.score !== 0
-											? $t("editor.hooks.time-expiration.duration-label")
-											: $t(
-													"editor.hooks.time-expiration.duration-label-triggered",
-												)
-									}}
-								</span>
-							</ShadcnUiSelectLabel>
-							<ShadcnUiSelectTrigger class="w-full" size="custom">
-								<ShadcnUiSelectValue
-									class="text-2sm"
-									:placeholder="
-										$t(`editor.hooks.time-expiration.select-placeholder`)
-									"
-								/>
-							</ShadcnUiSelectTrigger>
-							<ShadcnUiSelectContent
-								class="max-h-[40dvh]"
-								side="bottom"
-								align="start"
-							>
-								<ShadcnUiSelectItem
-									v-for="durationKey in presetDurations"
-									:key="durationKey"
-									:value="durationKey"
-									class="text-2sm"
-								>
-									{{
-										$t(
-											`editor.hooks.time-expiration.duration-options.${durationKey}`,
-										)
-									}}
-								</ShadcnUiSelectItem>
-							</ShadcnUiSelectContent>
-						</ShadcnUiSelect>
-						<CalendarInput
-							v-if="selectedDuration === 'custom'"
-							v-model="selectedSchedule"
-							:placeholder="
-								$t('editor.hooks.time-expiration.calendar-placeholder')
-							"
-							class="w-full"
-							available-from-tomorrow
-						/>
-					</template>
-					<template v-else>
-						<i18n-t
-							scope="global"
-							:keypath="
-								props.nodeId
-									? 'editor.hooks.time-expiration.existing-item-block-explanation'
-									: 'editor.hooks.time-expiration.existing-item-full-document-explanation'
-							"
-							tag="div"
-							class="w-full text-center text-xs text-muted-foreground"
+				<template v-if="hookData">
+					<HookExplanation
+						:type="DocumentHookType.ScheduledReminder"
+						:triggered="hookData.score === 0"
+						:node-id="props.nodeId"
+					>
+						<template #value>
+							{{ $d(new Date(hookData.settings.schedule), "short-with-time") }}
+						</template>
+					</HookExplanation>
+					<ShadcnUiDropdownMenuSeparator
+						v-if="!isReadOnlyOrDiff && hookData.score === 0"
+					/>
+				</template>
+				<div
+					v-if="!isReadOnlyOrDiff && (!hookData || hookData.score === 0)"
+					class="flex flex-col gap-1 px-0.75 pb-0.75"
+				>
+					<ShadcnUiSelect v-model="selectedDuration">
+						<ShadcnUiSelectLabel>
+							<span class="text-2sm">
+								{{
+									!hookData || hookData.score !== 0
+										? $t("editor.hooks.scheduled-reminder.duration-label")
+										: $t(
+												"editor.hooks.scheduled-reminder.duration-label-triggered",
+											)
+								}}
+							</span>
+						</ShadcnUiSelectLabel>
+						<ShadcnUiSelectTrigger class="w-full" size="custom">
+							<ShadcnUiSelectValue
+								class="text-2sm"
+								:placeholder="
+									$t(`editor.hooks.scheduled-reminder.select-placeholder`)
+								"
+							/>
+						</ShadcnUiSelectTrigger>
+						<ShadcnUiSelectContent
+							class="max-h-[40dvh]"
+							side="bottom"
+							align="start"
 						>
-							<template #value>
-								{{ $d(new Date(hookData.settings.schedule), "short") }}
-							</template>
-						</i18n-t>
-					</template>
+							<ShadcnUiSelectItem
+								v-for="durationKey in presetDurations"
+								:key="durationKey"
+								:value="durationKey"
+								class="text-2sm"
+							>
+								{{
+									$t(
+										`editor.hooks.scheduled-reminder.duration-options.${durationKey}`,
+									)
+								}}
+							</ShadcnUiSelectItem>
+						</ShadcnUiSelectContent>
+					</ShadcnUiSelect>
+					<CalendarInput
+						v-if="selectedDuration === 'custom'"
+						v-model="selectedSchedule"
+						:placeholder="
+							$t('editor.hooks.scheduled-reminder.calendar-placeholder')
+						"
+						class="w-full"
+						available-from-tomorrow
+					/>
 				</div>
-				<ShadcnUiDropdownMenuSeparator />
-				<div class="p-0.75">
+				<!--
+					the diff compares the dates as fields. The time shows too, so a
+					reminder moved within a day differs
+				-->
+				<template v-if="props.diff && hookData">
+					<ShadcnUiDropdownMenuSeparator />
+					<div class="flex flex-col gap-1 px-0.75 pb-0.75">
+						<HookReadonlyField
+							:label="$t('editor.hooks.scheduled-reminder.schedule-label')"
+							:rows="
+								scalarFieldRows(
+									$d(new Date(hookData.settings.schedule), 'short-with-time'),
+									targetSettings
+										? $d(new Date(targetSettings.schedule), 'short-with-time')
+										: null,
+								)
+							"
+						/>
+					</div>
+				</template>
+				<ShadcnUiDropdownMenuSeparator v-if="!isReadOnlyOrDiff" />
+				<div v-if="!isReadOnlyOrDiff" class="p-0.75">
 					<div v-if="hookData" class="flex gap-1">
 						<ShadcnUiButton
 							v-if="hookData.score === 0"

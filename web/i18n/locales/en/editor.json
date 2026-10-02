@@ -342,6 +342,14 @@
 		},
 		"hooks": {
 			"add-new": "New freshness hook",
+			"empty-block": "This block has no freshness hooks",
+			"empty-document": "There are no page-wide freshness hooks",
+			"diff": {
+				"added": "added",
+				"removed": "removed",
+				"added-sign": "+",
+				"removed-sign": "−"
+			},
 			"create": "Confirm",
 			"update": "Update",
 			"renew": "Renew",
@@ -354,16 +362,19 @@
 				"reset-failed": "Failed to approve the hook. Please try again.",
 				"renew-failed": "Failed to renew the hook. Please try again."
 			},
-			"time-expiration": {
+			"scheduled-reminder": {
 				"title": "Scheduled Reminder",
 				"select-placeholder": "Choose when",
 				"calendar-placeholder": "Pick a date",
 				"duration-label": "Remind",
 				"duration-label-triggered": "Remind again",
+				"schedule-label": "Reminder Date",
 				"existing-item": "Remind on {value}",
 				"triggered-item": "Reminded on {value}",
 				"existing-item-block-explanation": "A reminder will be sent on {value} to the maintainers of the page and the block will be highlighted.",
 				"existing-item-full-document-explanation": "A reminder will be sent on {value} to the maintainers of the page and the relevant sections will be highlighted.",
+				"triggered-item-block-explanation": "A reminder was sent on {value} to the maintainers of the page and the block was highlighted.",
+				"triggered-item-full-document-explanation": "A reminder was sent on {value} to the maintainers of the page and the relevant sections were highlighted.",
 				"duration-options": {
 					"0": "Instant (dev)",
 					"1m": "In 1 minute (dev)",
@@ -383,6 +394,8 @@
 				"triggered-item": "Changes in {repository}",
 				"existing-item-block-explanation": "When the selected GitHub repository changes, a reminder will be sent to the maintainers of the page and the block will be highlighted.",
 				"existing-item-full-document-explanation": "When the selected GitHub repository changes, a reminder will be sent to the maintainers of the page and the relevant sections will be highlighted.",
+				"triggered-item-block-explanation": "The selected GitHub repository changed, so a reminder was sent to the maintainers of the page and the block was highlighted.",
+				"triggered-item-full-document-explanation": "The selected GitHub repository changed, so a reminder was sent to the maintainers of the page and the relevant sections were highlighted.",
 				"not-connected": {
 					"main": "{icon}To use this hook, connect your GitHub organization or personal account in the {placeholder}.",
 					"placeholder": "settings"
@@ -414,6 +427,8 @@
 				"triggered-item": "Changes in {url}",
 				"existing-item-block-explanation": "When the selected website changes, a reminder will be sent to the maintainers of the page and the block will be highlighted.",
 				"existing-item-full-document-explanation": "When the selected website changes, a reminder will be sent to the maintainers of the page and the relevant sections will be highlighted.",
+				"triggered-item-block-explanation": "The selected website changed, so a reminder was sent to the maintainers of the page and the block was highlighted.",
+				"triggered-item-full-document-explanation": "The selected website changed, so a reminder was sent to the maintainers of the page and the relevant sections were highlighted.",
 				"unreachable-url": "{icon}The selected website cannot be reached. They may be temporarily down, no longer exist, or have anti-scraping measures in place.",
 				"url-input-label": "Link to Website",
 				"url-input-placeholder": "https://example.com"
@@ -424,6 +439,8 @@
 				"triggered-item": "Updates in {image}",
 				"existing-item-block-explanation": "When the selected Docker image changes, a reminder will be sent to the maintainers of the page and the block will be highlighted.",
 				"existing-item-full-document-explanation": "When the selected Docker image changes, a reminder will be sent to the maintainers of the page and the relevant sections will be highlighted.",
+				"triggered-item-block-explanation": "The selected Docker image changed, so a reminder was sent to the maintainers of the page and the block was highlighted.",
+				"triggered-item-full-document-explanation": "The selected Docker image changed, so a reminder was sent to the maintainers of the page and the relevant sections were highlighted.",
 				"unreachable-image": "{icon}The selected Docker image cannot be reached. They may be temporarily down, no longer exist, or have authentication.",
 				"image-input-label": "Image Reference",
 				"image-input-placeholder": "postgres:16.4-alpine"

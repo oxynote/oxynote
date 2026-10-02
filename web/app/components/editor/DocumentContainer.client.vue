@@ -44,9 +44,15 @@ const fetchBranches = useFetchDocumentBranchesByDocId(
 const { isEditable, isCompactView } = useEditorMeta()
 const route = useRoute()
 const nuxtApp = useNuxtApp()
-const fetchDocumentHooks = documentHookAPI.useFetchDocumentHooksByDocID(
+const fetchActiveBranchHooks = documentHookAPI.useFetchDocumentHooksByDocID(
 	() => editorStore.activeDocumentId,
 	() => editorStore.activeBranchId,
+)
+// the target's hooks load alongside the active ones, like its provider,
+// so turning the diff on shows them without waiting on a request
+const fetchTargetBranchHooks = documentHookAPI.useFetchDocumentHooksByDocID(
+	() => editorStore.activeDocumentId,
+	() => editorStore.targetBranchId,
 )
 const queryCache = useQueryCache()
 const wsState = useWebSocketStateStore()
@@ -380,7 +386,8 @@ function showSettings(target: "github") {
 			@transitionend.self="emit('fade-in-complete')"
 		>
 			<NameEditor
-				:document-hooks="fetchDocumentHooks.state.value.data || []"
+				:active-branch-hooks="fetchActiveBranchHooks.state.value.data || []"
+				:target-branch-hooks="fetchTargetBranchHooks.state.value.data || []"
 				:timestamps="props.timestamps"
 				:active-branch-ydoc="activeBranchProvider.ydoc"
 				:active-branch-provider="activeBranchProvider.provider"
@@ -397,7 +404,7 @@ function showSettings(target: "github") {
 				v-show="!editorStore.reviewableDiffActive"
 				:active-branch-provider="activeBranchProvider.provider"
 				:active-branch-ydoc="activeBranchProvider.ydoc"
-				:document-hooks="fetchDocumentHooks.state.value.data || []"
+				:active-branch-hooks="fetchActiveBranchHooks.state.value.data || []"
 				:name-editor="nameEditor as Editor"
 				:user-caret-details="userCaretDetails"
 				@editor-ready="(v) => updateEditor(v)"
@@ -412,6 +419,8 @@ function showSettings(target: "github") {
 				"
 				:target-branch-ydoc="targetBranchProvider.ydoc"
 				:active-branch-ydoc="activeBranchProvider.ydoc"
+				:active-branch-hooks="fetchActiveBranchHooks.state.value.data || []"
+				:target-branch-hooks="fetchTargetBranchHooks.state.value.data || []"
 				:content-editor="contentEditor as Editor"
 				@diff-mode-changed="handleDiffModeChange"
 			/>

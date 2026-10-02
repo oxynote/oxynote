@@ -899,12 +899,12 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 				`${t("editor.tags.diff.added-sign")}Staging${t("editor.tags.diff.added")}`,
 				`${t("editor.tags.diff.removed-sign")}Incidents${t("editor.tags.diff.removed")}`,
 			])
-			// the tints run edge to edge rather than as rounded insets
-			expect(items[0]?.parentElement?.classList).toContain("-mx-1")
+			// the tints fill the menu's usual inset rounded rows
+			expect(items[0]?.parentElement?.classList).not.toContain("-mx-1")
 			expect(items.map((el) => el.classList.contains("rounded-none"))).toEqual([
-				true,
-				true,
-				true,
+				false,
+				false,
+				false,
 			])
 			// a row keeps its tint under the pointer, since it toggles nothing
 			expect(
@@ -915,6 +915,21 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 				["focus:bg-transparent", "active:bg-transparent"],
 				["focus:bg-diff-added/30", "active:bg-diff-added/30"],
 				["focus:bg-diff-removed/30", "active:bg-diff-removed/30"],
+			])
+		})
+
+		it("keeps no sign column when no tag was added or removed", async ({
+			expect,
+		}) => {
+			mockEndpoint("GET", TARGET_TAGS_URL, () => [TAG_A, TAG_B])
+			const wrapper = await mountTags()
+
+			await openPicker(wrapper)
+
+			expect(pickerRows()).toEqual(["Production", "Staging"])
+			expect(pickerItems().map((el) => !!el.querySelector(".w-2"))).toEqual([
+				false,
+				false,
 			])
 		})
 

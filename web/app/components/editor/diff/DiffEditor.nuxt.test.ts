@@ -44,6 +44,8 @@ function mountDiff(target: Y.Doc, active: Y.Doc) {
 		props: {
 			targetBranchYdoc: target,
 			activeBranchYdoc: active,
+			activeBranchHooks: [],
+			targetBranchHooks: [],
 			contentEditor: {} as unknown as Editor,
 		},
 		global: { stubs: childStubs },

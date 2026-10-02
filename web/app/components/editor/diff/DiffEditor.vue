@@ -9,10 +9,13 @@ import CommentIndicatorContainer from "../comments/CommentIndicatorContainer.vue
 import type { NodeCommentOverlayState } from "../comments/node-comment-extension"
 import type { TextCommentIndicatorState } from "../comments/comment-mark"
 import BlockHandle from "../drag-handle/BlockHandle.vue"
+import BlockHookDiffMarkers from "../hooks/BlockHookDiffMarkers.vue"
 
 const props = defineProps<{
 	targetBranchYdoc: Y.Doc
 	activeBranchYdoc: Y.Doc
+	activeBranchHooks: DocumentHook[]
+	targetBranchHooks: DocumentHook[]
 	contentEditor: Editor
 }>()
 
@@ -22,6 +25,7 @@ const commentRendererElem = useTemplateRef("diff-comment-renderer")
 
 const nodeCommentState = ref<NodeCommentOverlayState | null>(null)
 const textCommentState = ref<TextCommentIndicatorState | null>(null)
+const hoveredBlockId = ref<string | null>(null)
 
 const { editor, positionMap, destroy, suppressNextRecompute } = useDiffEditor(
 	() => props.targetBranchYdoc,
@@ -64,6 +68,9 @@ onBeforeUnmount(() => {
 			/>
 			<BlockHandle
 				:editor="editor"
+				:active-branch-hooks="props.activeBranchHooks"
+				:target-branch-hooks="props.targetBranchHooks"
+				@hovered-block-change="(id: string | null) => (hoveredBlockId = id)"
 				@add-node-comment="
 					(pos: number) => commentRendererElem?.addNewComment(pos)
 				"
@@ -104,6 +111,12 @@ onBeforeUnmount(() => {
 						}
 					}
 				"
+			/>
+			<BlockHookDiffMarkers
+				:editor="editor"
+				:active-branch-hooks="props.activeBranchHooks"
+				:target-branch-hooks="props.targetBranchHooks"
+				:hovered-block-id="hoveredBlockId"
 			/>
 			<EditorContent :editor="editor" />
 		</template>

@@ -268,6 +268,50 @@ describe("<DocumentContainer>", { concurrent: false }, () => {
 		expect(calls.length).toBe(before)
 	})
 
+	it("loads the target's hooks before the diff is turned on", async ({
+		expect,
+	}) => {
+		useEditorStore().updateTargetBranchId(TARGET_BRANCH_ID)
+		const calls = mockEndpoint(
+			"GET",
+			`/api/documents/${DOCUMENT_ID}/hooks`,
+			() => [],
+		)
+
+		await mountContainer()
+
+		// the query fires from a watcher once the container has mounted
+		await vi.waitFor(() => {
+			expect(calls.map((call) => call.query.branchId)).toEqual([
+				TARGET_BRANCH_ID,
+			])
+		}, WAIT_FOR_OPTIONS)
+	})
+
+	it("refetches the target's hooks when the server says they changed", async ({
+		expect,
+	}) => {
+		useEditorStore().updateTargetBranchId(TARGET_BRANCH_ID)
+		seedQueryData(["documents", "hooks", DOCUMENT_ID, TARGET_BRANCH_ID], [])
+		const calls = mockEndpoint(
+			"GET",
+			`/api/documents/${DOCUMENT_ID}/hooks`,
+			() => [],
+		)
+		const { handlers } = stubSocket()
+		await mountContainer()
+
+		handlers.forEach((handler) => {
+			handler({ branchId: TARGET_BRANCH_ID })
+		})
+
+		await vi.waitFor(() => {
+			expect(calls.map((call) => call.query.branchId)).toEqual([
+				TARGET_BRANCH_ID,
+			])
+		}, WAIT_FOR_OPTIONS)
+	})
+
 	it("subscribes to no hooks topic while no page is open", async ({
 		expect,
 	}) => {

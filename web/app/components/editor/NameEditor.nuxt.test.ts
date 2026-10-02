@@ -13,6 +13,7 @@ import * as Y from "yjs"
 import NameEditor from "./NameEditor.vue"
 import IconPicker from "./IconPicker.vue"
 import DiffTitle from "./diff/DiffTitle.vue"
+import HookDiffMarker from "./hooks/HookDiffMarker.vue"
 import ReviewerList from "./ReviewerList.vue"
 import {
 	clearQueryCache,
@@ -101,7 +102,8 @@ function mountEditor(
 	options: {
 		active?: Branch
 		target?: Branch | null
-		documentHooks?: DocumentHook[]
+		activeBranchHooks?: DocumentHook[]
+		targetBranchHooks?: DocumentHook[]
 		contentEditor?: unknown
 	} = {},
 ) {
@@ -111,7 +113,8 @@ function mountEditor(
 	// once at page level
 	return mountUnderTooltipProvider(NameEditor, {
 		props: {
-			documentHooks: options.documentHooks ?? [],
+			activeBranchHooks: options.activeBranchHooks ?? [],
+			targetBranchHooks: options.targetBranchHooks ?? [],
 			activeBranchYdoc: active.ydoc,
 			activeBranchProvider: active.provider,
 			targetBranchProvider: options.target?.provider ?? null,
@@ -296,7 +299,7 @@ describe("<NameEditor>", { concurrent: false }, () => {
 
 	it("shows the page's own hooks", async ({ expect }) => {
 		const wrapper = await mountEditor({
-			documentHooks: [
+			activeBranchHooks: [
 				{
 					id: "hook-1",
 					type: DocumentHookType.URLWatcher,
@@ -323,6 +326,38 @@ describe("<NameEditor>", { concurrent: false }, () => {
 		expect(wrapper.find(".bg-hook-decoration").attributes("style")).toContain(
 			"display: none",
 		)
+	})
+
+	it("reaches into both page margins for the hook handle's hover", async ({
+		expect,
+	}) => {
+		const wrapper = await mountEditor()
+
+		expect(wrapper.get(".group\\/name-line").classes()).toEqual(
+			expect.arrayContaining([
+				"before:right-full",
+				"before:w-5",
+				"lg:before:w-12.5",
+				"after:left-full",
+				"after:w-5",
+				"lg:after:w-12.5",
+			]),
+		)
+	})
+
+	it("tints the hook icon alone and backs the narrow dots", async ({
+		expect,
+	}) => {
+		const wrapper = await mountEditor({
+			activeBranchHooks: [pageHook("https://oxynote.test")],
+		})
+
+		expect(
+			wrapper.get(".i-mingcute\\:leaf-line").attributes("data-hook-status"),
+		).toBe("fresh")
+		const dots = wrapper.get(".i-mingcute\\:dots-line").element
+		expect(dots.closest("[data-hook-status]")).toBeNull()
+		expect(dots.parentElement?.classList).toContain("bg-background-translucent")
 	})
 
 	it("leaves the hook handle untinted on a page with no hooks", async ({
@@ -468,20 +503,82 @@ describe("<NameEditor>", { concurrent: false }, () => {
 		)
 	})
 
-	it("takes the hook handle away while a diff is on", async ({ expect }) => {
+	it("keeps the hook handle while a diff is on", async ({ expect }) => {
 		const wrapper = await mountEditor({ target: makeBranch() })
 
 		useEditorStore().setReviewableDiffActive(true)
 		await nextTick()
 
-		expect(wrapper.text()).not.toContain(
-			t("editor.hook-handle.screen-reader-hint"),
+		expect(wrapper.text()).toContain(t("editor.hook-handle.screen-reader-hint"))
+	})
+
+	it("marks the changes to the page's own hooks while a diff is on", async ({
+		expect,
+	}) => {
+		const wrapper = await mountEditor({
+			target: makeBranch(),
+			activeBranchHooks: [pageHook("https://new.test")],
+			targetBranchHooks: [pageHook("https://old.test")],
+		})
+
+		useEditorStore().setReviewableDiffActive(true)
+		await nextTick()
+
+		expect(wrapper.getComponent(HookDiffMarker).props()).toEqual(
+			expect.objectContaining({
+				count: { removed: 1, added: 1 },
+				hookStatus: "fresh",
+				lifted: false,
+			}),
 		)
+		// the gap centres the pill under the 1.375rem hook button
+		expect(wrapper.getComponent(HookDiffMarker).classes()).toContain(
+			"lg:pr-1.75",
+		)
+	})
+
+	it("leaves the page unmarked while the diff is off", async ({ expect }) => {
+		const wrapper = await mountEditor({
+			target: makeBranch(),
+			activeBranchHooks: [pageHook("https://new.test")],
+		})
+
+		expect(wrapper.findComponent(HookDiffMarker).exists()).toBe(false)
+	})
+
+	it("leaves the page unmarked when its hooks did not change", async ({
+		expect,
+	}) => {
+		const wrapper = await mountEditor({
+			target: makeBranch(),
+			activeBranchHooks: [pageHook("https://same.test")],
+			targetBranchHooks: [pageHook("https://same.test")],
+		})
+
+		useEditorStore().setReviewableDiffActive(true)
+		await nextTick()
+
+		expect(wrapper.findComponent(HookDiffMarker).exists()).toBe(false)
+	})
+
+	it("moves the page marker below the hook handle while the title is hovered", async ({
+		expect,
+	}) => {
+		const wrapper = await mountEditor({
+			target: makeBranch(),
+			activeBranchHooks: [pageHook("https://new.test")],
+		})
+		useEditorStore().setReviewableDiffActive(true)
+		await nextTick()
+
+		await wrapper.get(".group\\/name-line").trigger("mouseenter")
+
+		expect(wrapper.getComponent(HookDiffMarker).props("lifted")).toBe(true)
 	})
 
 	it("marks the page when one of its hooks has fired", async ({ expect }) => {
 		const wrapper = await mountEditor({
-			documentHooks: [
+			activeBranchHooks: [
 				{
 					id: "hook-1",
 					type: DocumentHookType.URLWatcher,
@@ -694,3 +791,15 @@ describe("<NameEditor>", { concurrent: false }, () => {
 		expect(wrapper.findComponent(ReviewerList).exists()).toBe(false)
 	})
 })
+
+function pageHook(url: string): DocumentHook {
+	return {
+		id: url,
+		type: DocumentHookType.URLWatcher,
+		blockId: null,
+		score: "100",
+		settings: { url: url },
+		state: { status: "active" },
+		createdAt: "2026-01-01",
+	} as unknown as DocumentHook
+}

@@ -3,6 +3,7 @@ import type { VueWrapper } from "@vue/test-utils"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import { toast } from "vue-sonner"
 import ConfigMenu from "./ConfigMenu.vue"
+import { DiffStatus } from "../../diff/position-map"
 import FileSelectInput from "./FileSelectInput.vue"
 import {
 	makeHook,
@@ -10,6 +11,7 @@ import {
 	menuText,
 	mountHookMenu,
 	openHookSubMenu,
+	readonlyFields,
 } from "../test-helpers"
 import {
 	clearQueryCache,
@@ -104,6 +106,8 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 		vi.mocked(toast.custom).mockReset()
 		useEditorStore().updateActiveDocumentId(DOCUMENT_ID)
 		useEditorStore().updateActiveBranchId(BRANCH_ID)
+		useEditorStore().setReviewableDiffActive(false)
+		useEditorMeta().setEditable(true)
 	})
 
 	afterEach(disposeMockEndpoints)
@@ -431,5 +435,104 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 		await nextTick()
 
 		expect(calls).toHaveLength(0)
+	})
+
+	it("says what a triggered hook did while editing too", async ({ expect }) => {
+		mockGitHub()
+		await mountMenu({ hook: githubHook({ score: "0" }) })
+
+		await openHookSubMenu(`Changes in ${REPOSITORY}`)
+
+		expect(menuText()).toContain(
+			t("editor.hooks.github-tracking.triggered-item-block-explanation"),
+		)
+		expect(menuText()).toContain(t("editor.hooks.reset"))
+	})
+
+	describe("when the page is read only", { concurrent: false }, () => {
+		beforeEach(() => {
+			useEditorMeta().setEditable(false)
+		})
+
+		it("shows the settings without a way to change them", async ({
+			expect,
+		}) => {
+			mockGitHub({ connected: false })
+			await mountMenu({ hook: githubHook() })
+
+			await openHookSubMenu(`Watching ${REPOSITORY}`)
+
+			expect(readonlyFields()).toEqual([
+				[REPOSITORY, "unchanged"],
+				["main", "unchanged"],
+				["docs/readme.md", "unchanged"],
+			])
+			expect(menuText()).not.toContain(t("editor.hooks.update"))
+			expect(menuText()).not.toContain(t("editor.hooks.delete"))
+			// the setup banner is for someone who can connect github
+			expect(menuText()).not.toContain(
+				t("editor.hooks.github-tracking.not-connected.placeholder"),
+			)
+		})
+
+		it.for([
+			{
+				name: "a block",
+				nodeId: "block-1",
+				key: "editor.hooks.github-tracking.triggered-item-block-explanation",
+			},
+			{
+				name: "the page",
+				nodeId: null,
+				key: "editor.hooks.github-tracking.triggered-item-full-document-explanation",
+			},
+		])(
+			"says what a triggered hook on $name did",
+			async ({ nodeId, key }, { expect }) => {
+				mockGitHub()
+				await mountMenu({ hook: githubHook({ score: "0" }), nodeId: nodeId })
+
+				await openHookSubMenu(`Changes in ${REPOSITORY}`)
+
+				expect(menuText()).toContain(t(key))
+			},
+		)
+	})
+
+	describe("when the diff is shown", { concurrent: false }, () => {
+		beforeEach(() => {
+			useEditorStore().setReviewableDiffActive(true)
+		})
+
+		it("shows what changed in each setting", async ({ expect }) => {
+			mockGitHub()
+			await mountMenu({
+				hook: githubHook(),
+				diff: {
+					status: DiffStatus.Modified,
+					targetHook: githubHook({
+						settings: {
+							repository: REPOSITORY,
+							branch: "next",
+							paths: ["docs/readme.md", "docs/old.md"],
+						},
+					}),
+					signColumn: false,
+				},
+			})
+
+			await openHookSubMenu(`Watching ${REPOSITORY}`)
+
+			expect(menuText()).toContain(
+				t("editor.hooks.github-tracking.existing-item-block-explanation"),
+			)
+			expect(readonlyFields()).toEqual([
+				[REPOSITORY, "unchanged"],
+				["main", "added"],
+				["next", "removed"],
+				["docs/readme.md", "unchanged"],
+				["docs/old.md", "removed"],
+			])
+		})
 	})
 })

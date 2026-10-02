@@ -9,6 +9,7 @@ describe("useEditorMeta", { concurrent: false }, () => {
 	beforeEach(() => {
 		useEditorStore().setActiveBranchProtected(false)
 		useEditorStore().updateMainAreaWidth(1400)
+		useEditorStore().setReviewableDiffActive(false)
 	})
 
 	it("toggles the editable flag", ({ expect }) => {
@@ -50,6 +51,27 @@ describe("useEditorMeta", { concurrent: false }, () => {
 		expect(meta.isEditable.value).toBe(true)
 		expect(meta.isBranchProtected.value).toBe(false)
 	})
+
+	it.for([
+		{
+			name: "editable outside the diff",
+			editable: true,
+			diff: false,
+			expected: false,
+		},
+		{ name: "read only", editable: false, diff: false, expected: true },
+		{ name: "showing the diff", editable: true, diff: true, expected: true },
+	])(
+		"disables editing when $name is $expected",
+		({ editable, diff, expected }, { expect }) => {
+			const meta = useEditorMeta()
+			meta.setEditable(editable)
+
+			useEditorStore().setReviewableDiffActive(diff)
+
+			expect(meta.isReadOnlyOrDiff.value).toBe(expected)
+		},
+	)
 
 	it("locks the editor through the store", ({ expect }) => {
 		const meta = useEditorMeta()

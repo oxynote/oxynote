@@ -1,9 +1,15 @@
 <script setup lang="ts">
 import { showToastMessage } from "~/components/toast"
 import HookInputField from "./HookInputField.vue"
+import HookReadonlyField from "../HookReadonlyField.vue"
+import HookSubTrigger from "../HookSubTrigger.vue"
+import HookExplanation from "../HookExplanation.vue"
+import { scalarFieldRows, type HookDiffContext } from "../hook-diff"
 
 const props = defineProps<{
 	hook?: DocumentHook | null | undefined // null/undefined means creating new
+	// set only while the diff is shown
+	diff?: HookDiffContext | null
 	nodeId: string | null // null means global
 }>()
 const emit = defineEmits<{
@@ -25,6 +31,12 @@ const hookData = computed(() => {
 
 const documentHookAPI = useDocumentHookAPI()
 const editorStore = useEditorStore()
+const { isReadOnlyOrDiff } = useEditorMeta()
+const targetSettings = computed(
+	() =>
+		props.diff?.targetHook?.settings as
+			DocumentHookSettingsContainerImageWatcher | undefined,
+)
 const confirmedImage = ref<string | undefined>(
 	hookData.value ? hookData.value.settings.image : undefined,
 )
@@ -143,7 +155,7 @@ async function resetHook() {
 </script>
 <template>
 	<ShadcnUiDropdownMenuSub v-model:open="isSubOpen">
-		<ShadcnUiDropdownMenuSubTrigger>
+		<HookSubTrigger :hook="props.hook" :diff="props.diff">
 			<div class="relative h-[0.8125rem] w-[0.8125rem] shrink-0">
 				<Icon
 					name="simple-icons:docker"
@@ -175,7 +187,7 @@ async function resetHook() {
 					{{ confirmedImage || "" }}
 				</template>
 			</i18n-t>
-		</ShadcnUiDropdownMenuSubTrigger>
+		</HookSubTrigger>
 		<ShadcnUiDropdownMenuSubContent
 			side="right"
 			align="start"
@@ -201,29 +213,29 @@ async function resetHook() {
 					</i18n-t>
 					<ShadcnUiDropdownMenuSeparator />
 				</template>
-				<template
-					v-if="
-						hookData &&
-						hookData.score !== 0 &&
-						hookData.state.status === 'active'
-					"
-				>
-					<div class="flex flex-col gap-1 px-0.75 pb-0.75 text-2sm">
-						<i18n-t
-							scope="global"
-							:keypath="
-								props.nodeId
-									? 'editor.hooks.container-image-watcher.existing-item-block-explanation'
-									: 'editor.hooks.container-image-watcher.existing-item-full-document-explanation'
-							"
-							tag="div"
-							class="w-full text-center text-xs break-words text-muted-foreground"
-						/>
-					</div>
+				<template v-if="hookData && hookData.state.status === 'active'">
+					<HookExplanation
+						:type="DocumentHookType.ContainerImageWatcher"
+						:triggered="hookData.score === 0"
+						:node-id="props.nodeId"
+					/>
 					<ShadcnUiDropdownMenuSeparator />
 				</template>
 				<div class="flex flex-col gap-1 px-0.75 pb-0.75">
+					<HookReadonlyField
+						v-if="isReadOnlyOrDiff && hookData"
+						:label="
+							$t('editor.hooks.container-image-watcher.image-input-label')
+						"
+						:rows="
+							scalarFieldRows(
+								hookData.settings.image,
+								targetSettings?.image ?? null,
+							)
+						"
+					/>
 					<HookInputField
+						v-else
 						v-model="selectedImage"
 						:placeholder="
 							$t('editor.hooks.container-image-watcher.image-input-placeholder')
@@ -238,8 +250,8 @@ async function resetHook() {
 						</template>
 					</HookInputField>
 				</div>
-				<ShadcnUiDropdownMenuSeparator />
-				<div class="p-0.75">
+				<ShadcnUiDropdownMenuSeparator v-if="!isReadOnlyOrDiff" />
+				<div v-if="!isReadOnlyOrDiff" class="p-0.75">
 					<div v-if="hookData" class="flex flex-col gap-1">
 						<div class="flex gap-1">
 							<ShadcnUiButton

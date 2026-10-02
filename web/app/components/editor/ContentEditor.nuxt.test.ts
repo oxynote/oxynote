@@ -70,7 +70,7 @@ function paragraph(text: string, uid: string) {
 }
 
 function mountEditor(
-	options: { branch?: Branch; documentHooks?: DocumentHook[] } = {},
+	options: { branch?: Branch; activeBranchHooks?: DocumentHook[] } = {},
 ) {
 	const branch = options.branch ?? makeBranch()
 
@@ -78,7 +78,7 @@ function mountEditor(
 		props: {
 			activeBranchProvider: branch.provider,
 			activeBranchYdoc: branch.ydoc,
-			documentHooks: options.documentHooks ?? [],
+			activeBranchHooks: options.activeBranchHooks ?? [],
 			nameEditor: null,
 			userCaretDetails: { name: "Me", color: "#ff0000" },
 		},
@@ -300,7 +300,7 @@ describe("<ContentEditor>", { concurrent: false }, () => {
 		const called = watchCommands(editorOf(wrapper))
 
 		await wrapper.setProps({
-			documentHooks: [
+			activeBranchHooks: [
 				{
 					id: "hook-1",
 					blockId: "block-1",

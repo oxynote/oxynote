@@ -38,6 +38,11 @@ export default function () {
 
 	return {
 		isEditable,
+		// read only, or showing the diff, where two branches render at once
+		// and neither can be edited
+		isReadOnlyOrDiff: computed(
+			() => !isEditable.value || editorStore.reviewableDiffActive,
+		),
 		toggleIsEditable,
 		setEditable,
 		isCompactView: computed(

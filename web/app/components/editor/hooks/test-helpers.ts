@@ -86,3 +86,21 @@ export async function typeInMenu(value: string, index = 0) {
 	input.dispatchEvent(new Event("input", { bubbles: true }))
 	await nextTick()
 }
+
+// the read only fields in the menu bodies, each with the side of the diff
+// its tint marks
+export function readonlyFields(): [
+	string,
+	"added" | "removed" | "unchanged",
+][] {
+	return Array.from(
+		document.body.querySelectorAll<HTMLInputElement>("input[readonly]"),
+	).map((input) => [
+		input.value,
+		input.classList.contains("bg-diff-field-added")
+			? "added"
+			: input.classList.contains("bg-diff-field-removed")
+				? "removed"
+				: "unchanged",
+	])
+}

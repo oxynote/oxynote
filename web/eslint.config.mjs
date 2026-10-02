@@ -146,7 +146,8 @@ export default withNuxt([
 					// never reported unused.
 					ignores: [
 						// dynamically built keys: t(`ns.${x}`)
-						"/^editor\\.hooks\\.time-expiration\\.duration-options\\./",
+						"/^editor\\.hooks\\.[a-z-]+\\.(existing|triggered)-item-(block|full-document)-explanation$/",
+						"/^editor\\.hooks\\.scheduled-reminder\\.duration-options\\./",
 						"/^editor\\.metrics\\.config\\.modal-title-diff-/",
 						"/^editor\\.metrics\\.config\\.query-placeholder\\./",
 						"/^editor\\.metrics\\.config\\.refresh-interval-options(-short)?\\./",
@@ -160,7 +161,6 @@ export default withNuxt([
 						// literal keys kept in data structures and passed to
 						// t() later (the rule only tracks direct call sites)
 						"/^editor\\.ai-chat\\.tool-status\\./",
-						"/^editor\\.hooks\\.[a-z-]+\\.existing-item-(block|full-document)-explanation$/",
 						"/^editor\\.slash-commands\\.items\\./",
 						"/^onboarding\\.signup\\.conditions\\.(main|terms-only|privacy-only)$/",
 						"/^shortcuts\\.groups\\./",

@@ -59,7 +59,7 @@ function mockGitHub(configured: boolean) {
 
 function mountContent(props: Record<string, unknown> = {}) {
 	return mountHookMenu(HookMenuContent, {
-		documentHooks: [],
+		activeBranchHooks: [],
 		nodeId: "block-1",
 		...props,
 	})
@@ -73,6 +73,8 @@ describe("<HookMenuContent>", { concurrent: false }, () => {
 		clearQueryCache()
 		useEditorStore().updateActiveDocumentId(DOCUMENT_ID)
 		useEditorStore().updateActiveBranchId(BRANCH_ID)
+		useEditorStore().setReviewableDiffActive(false)
+		useEditorMeta().setEditable(true)
 	})
 
 	afterEach(disposeMockEndpoints)
@@ -94,7 +96,7 @@ describe("<HookMenuContent>", { concurrent: false }, () => {
 		await vi.waitFor(() => {
 			expect(menuText()).toContain(t("editor.hooks.github-tracking.title"))
 		}, WAIT_FOR_OPTIONS)
-		expect(menuText()).toContain(t("editor.hooks.time-expiration.title"))
+		expect(menuText()).toContain(t("editor.hooks.scheduled-reminder.title"))
 		expect(menuText()).toContain(t("editor.hooks.url-watcher.title"))
 		expect(menuText()).toContain(
 			t("editor.hooks.container-image-watcher.title"),
@@ -112,7 +114,7 @@ describe("<HookMenuContent>", { concurrent: false }, () => {
 		await vi.waitFor(() => {
 			expect(menuText()).not.toContain(t("editor.hooks.github-tracking.title"))
 		}, WAIT_FOR_OPTIONS)
-		expect(menuText()).toContain(t("editor.hooks.time-expiration.title"))
+		expect(menuText()).toContain(t("editor.hooks.scheduled-reminder.title"))
 	})
 
 	it("leaves website changes out when the server has no changedetection", async ({
@@ -128,13 +130,13 @@ describe("<HookMenuContent>", { concurrent: false }, () => {
 			expect(menuText()).toContain(t("editor.hooks.github-tracking.title"))
 		}, WAIT_FOR_OPTIONS)
 		expect(menuText()).not.toContain(t("editor.hooks.url-watcher.title"))
-		expect(menuText()).toContain(t("editor.hooks.time-expiration.title"))
+		expect(menuText()).toContain(t("editor.hooks.scheduled-reminder.title"))
 	})
 
 	it("lists the hooks already on the block", async ({ expect }) => {
 		mockGitHub(true)
 
-		await mountContent({ documentHooks: [reminder(), urlWatcher()] })
+		await mountContent({ activeBranchHooks: [reminder(), urlWatcher()] })
 
 		expect(menuText()).toContain("Remind on")
 		expect(menuText()).toContain("Watching oxynote.test")
@@ -144,7 +146,7 @@ describe("<HookMenuContent>", { concurrent: false }, () => {
 		mockGitHub(true)
 
 		await mountContent({
-			documentHooks: [urlWatcher({ blockId: "block-2" })],
+			activeBranchHooks: [urlWatcher({ blockId: "block-2" })],
 		})
 
 		expect(menuText()).not.toContain("Watching oxynote.test")
@@ -156,7 +158,7 @@ describe("<HookMenuContent>", { concurrent: false }, () => {
 		mockGitHub(true)
 
 		await mountContent({
-			documentHooks: [reminder(), urlWatcher({ score: "0" })],
+			activeBranchHooks: [reminder(), urlWatcher({ score: "0" })],
 		})
 
 		const labels = Array.from(
@@ -173,7 +175,7 @@ describe("<HookMenuContent>", { concurrent: false }, () => {
 		mockGitHub(true)
 
 		await mountContent({
-			documentHooks: [
+			activeBranchHooks: [
 				urlWatcher({
 					id: "url-newer",
 					settings: { url: "https://newer.test" },
@@ -204,4 +206,146 @@ describe("<HookMenuContent>", { concurrent: false }, () => {
 
 		expect(document.body.querySelectorAll("[role^='menuitem']")).toHaveLength(1)
 	})
+
+	it("offers no add action on a read only page", async ({ expect }) => {
+		mockGitHub(true)
+		useEditorMeta().setEditable(false)
+
+		await mountContent({ activeBranchHooks: [urlWatcher()] })
+
+		expect(menuText()).toContain("Watching oxynote.test")
+		expect(menuText()).not.toContain(t(ADD_NEW))
+	})
+
+	it.for([
+		{ name: "block", nodeId: "block-1", key: "editor.hooks.empty-block" },
+		{ name: "page", nodeId: null, key: "editor.hooks.empty-document" },
+	])(
+		"says a $name has no hooks on a read only page",
+		async ({ nodeId, key }, { expect }) => {
+			mockGitHub(true)
+			useEditorMeta().setEditable(false)
+
+			await mountContent({ nodeId: nodeId })
+
+			expect(menuText()).toContain(t(key))
+			expect(document.body.querySelectorAll("[role^='menuitem']")).toHaveLength(
+				0,
+			)
+		},
+	)
+
+	it("lists the active hooks alone while the diff is off", async ({
+		expect,
+	}) => {
+		mockGitHub(true)
+
+		await mountContent({ targetBranchHooks: [urlWatcher()] })
+
+		expect(menuText()).not.toContain("Watching oxynote.test")
+		expect(menuText()).toContain(t(ADD_NEW))
+	})
+
+	describe("when the diff is shown", { concurrent: false }, () => {
+		beforeEach(() => {
+			mockGitHub(true)
+			useEditorStore().setReviewableDiffActive(true)
+		})
+
+		it("offers no add action", async ({ expect }) => {
+			await mountContent({ activeBranchHooks: [urlWatcher()] })
+
+			expect(menuText()).not.toContain(t(ADD_NEW))
+		})
+
+		it("lists a hook the active branch added", async ({ expect }) => {
+			await mountContent({
+				activeBranchHooks: [urlWatcher()],
+				targetBranchHooks: [],
+			})
+
+			const row = hookRows()[0]
+			expect(row?.textContent).toContain("Watching oxynote.test")
+			expect(row?.textContent).toContain(t("editor.hooks.diff.added"))
+			expect(row?.classList).toContain("bg-diff-added/30")
+		})
+
+		it("lists a hook the active branch removed", async ({ expect }) => {
+			await mountContent({
+				activeBranchHooks: [],
+				targetBranchHooks: [urlWatcher()],
+			})
+
+			const row = hookRows()[0]
+			expect(row?.textContent).toContain("Watching oxynote.test")
+			expect(row?.textContent).toContain(t("editor.hooks.diff.removed"))
+			expect(row?.classList).toContain("bg-diff-removed/30")
+		})
+
+		it("counts the changed settings of a modified hook", async ({ expect }) => {
+			await mountContent({
+				activeBranchHooks: [urlWatcher()],
+				targetBranchHooks: [
+					urlWatcher({ id: "url-old", settings: { url: "https://old.test" } }),
+				],
+			})
+
+			const row = hookRows()[0]
+			expect(row?.textContent).toContain(
+				t("editor.diff-change-marker.removed", { count: 1 }),
+			)
+			expect(row?.textContent).toContain(
+				t("editor.diff-change-marker.added", { count: 1 }),
+			)
+		})
+
+		it("keeps a sign column on every row once a hook was added", async ({
+			expect,
+		}) => {
+			await mountContent({
+				activeBranchHooks: [urlWatcher(), reminder()],
+				targetBranchHooks: [reminder({ id: "reminder-target" })],
+			})
+
+			expect(hookRows().map((row) => !!row.querySelector(".w-2"))).toEqual([
+				true,
+				true,
+			])
+		})
+
+		it("keeps no sign column when no hook was added or removed", async ({
+			expect,
+		}) => {
+			await mountContent({
+				activeBranchHooks: [urlWatcher()],
+				targetBranchHooks: [
+					urlWatcher({ id: "url-old", settings: { url: "https://old.test" } }),
+				],
+			})
+
+			expect(hookRows().map((row) => !!row.querySelector(".w-2"))).toEqual([
+				false,
+			])
+		})
+
+		it("leaves an unchanged hook unmarked", async ({ expect }) => {
+			await mountContent({
+				activeBranchHooks: [urlWatcher()],
+				targetBranchHooks: [urlWatcher({ id: "url-target" })],
+			})
+
+			const row = hookRows()[0]
+			expect(row?.textContent).not.toContain(t("editor.hooks.diff.added"))
+			expect(row?.textContent).not.toContain(t("editor.hooks.diff.removed"))
+			expect(row?.classList).not.toContain("bg-diff-added/30")
+			expect(row?.classList).not.toContain("bg-diff-removed/30")
+		})
+	})
 })
+
+// the rows are teleported with the menu, out of the wrapper's reach
+function hookRows(): HTMLElement[] {
+	return Array.from(
+		document.body.querySelectorAll<HTMLElement>("[role^='menuitem']"),
+	)
+}

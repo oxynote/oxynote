@@ -2,9 +2,19 @@
 import { showToastMessage } from "~/components/toast"
 import FileSelectInput from "./FileSelectInput.vue"
 import { cn } from "~/lib/utils"
+import HookReadonlyField from "../HookReadonlyField.vue"
+import HookSubTrigger from "../HookSubTrigger.vue"
+import HookExplanation from "../HookExplanation.vue"
+import {
+	listFieldRows,
+	scalarFieldRows,
+	type HookDiffContext,
+} from "../hook-diff"
 
 const props = defineProps<{
 	hook?: DocumentHook | null | undefined // null/undefined means creating new
+	// set only while the diff is shown
+	diff?: HookDiffContext | null
 	nodeId: string | null // null means global
 }>()
 const emit = defineEmits<{
@@ -13,6 +23,12 @@ const emit = defineEmits<{
 }>()
 
 const editorStore = useEditorStore()
+const { isReadOnlyOrDiff } = useEditorMeta()
+const targetSettings = computed(
+	() =>
+		props.diff?.targetHook?.settings as
+			DocumentHookSettingsGitHubTracking | undefined,
+)
 const hookData = computed(() => {
 	if (!props.hook) {
 		return null
@@ -199,7 +215,7 @@ async function resetHook() {
 </script>
 <template>
 	<ShadcnUiDropdownMenuSub v-model:open="isSubOpen">
-		<ShadcnUiDropdownMenuSubTrigger>
+		<HookSubTrigger :hook="props.hook" :diff="props.diff">
 			<Icon name="simple-icons:github" class="shrink-0" />
 			<span v-if="!hookData">
 				{{ $t("editor.hooks.github-tracking.title") }}
@@ -226,7 +242,7 @@ async function resetHook() {
 					{{ confirmedRepository }}
 				</template>
 			</i18n-t>
-		</ShadcnUiDropdownMenuSubTrigger>
+		</HookSubTrigger>
 		<ShadcnUiDropdownMenuSubContent
 			side="right"
 			align="start"
@@ -236,10 +252,12 @@ async function resetHook() {
 			]"
 		>
 			<div class="flex w-[14rem] flex-col">
+				<!-- the setup banners tell an editor what to connect -->
 				<template
 					v-if="
-						!fetchGitHubConnectionStatus.data.value?.connected ||
-						hookData?.state.status === 'missing_installation'
+						!isReadOnlyOrDiff &&
+						(!fetchGitHubConnectionStatus.data.value?.connected ||
+							hookData?.state.status === 'missing_installation')
 					"
 				>
 					<i18n-t
@@ -270,7 +288,12 @@ async function resetHook() {
 					</i18n-t>
 					<ShadcnUiDropdownMenuSeparator />
 				</template>
-				<template v-else-if="!fetchGitHubRepositories.state.value.data?.length">
+				<template
+					v-else-if="
+						!isReadOnlyOrDiff &&
+						!fetchGitHubRepositories.state.value.data?.length
+					"
+				>
 					<i18n-t
 						scope="global"
 						keypath="editor.hooks.github-tracking.no-repositories"
@@ -322,35 +345,55 @@ async function resetHook() {
 					:class="
 						cn(
 							'flex flex-col opacity-100 transition-opacity duration-200',
-							(!fetchGitHubConnectionStatus.data.value?.connected ||
-								hookData?.state.status === 'missing_installation') &&
+							!isReadOnlyOrDiff &&
+								(!fetchGitHubConnectionStatus.data.value?.connected ||
+									hookData?.state.status === 'missing_installation') &&
 								'pointer-events-none opacity-60',
 						)
 					"
 				>
-					<template
-						v-if="
-							hookData &&
-							hookData.score !== 0 &&
-							hookData.state.status === 'active'
-						"
-					>
-						<div class="flex flex-col gap-1 px-0.75 pb-0.75 text-2sm">
-							<i18n-t
-								scope="global"
-								:keypath="
-									props.nodeId
-										? 'editor.hooks.github-tracking.existing-item-block-explanation'
-										: 'editor.hooks.github-tracking.existing-item-full-document-explanation'
-								"
-								tag="div"
-								class="w-full text-center text-xs break-words text-muted-foreground"
-							/>
-						</div>
+					<template v-if="hookData && hookData.state.status === 'active'">
+						<HookExplanation
+							:type="DocumentHookType.GitHubTracking"
+							:triggered="hookData.score === 0"
+							:node-id="props.nodeId"
+						/>
 						<ShadcnUiDropdownMenuSeparator />
 					</template>
 					<div class="flex flex-col gap-1 px-0.75 pb-0.75">
+						<template v-if="isReadOnlyOrDiff && hookData">
+							<HookReadonlyField
+								:label="
+									$t('editor.hooks.github-tracking.repository-select-label')
+								"
+								:rows="
+									scalarFieldRows(
+										hookData.settings.repository,
+										targetSettings?.repository ?? null,
+									)
+								"
+							/>
+							<HookReadonlyField
+								:label="$t('editor.hooks.github-tracking.branch-select-label')"
+								:rows="
+									scalarFieldRows(
+										hookData.settings.branch,
+										targetSettings?.branch ?? null,
+									)
+								"
+							/>
+							<HookReadonlyField
+								:label="$t('editor.hooks.github-tracking.path-select-label')"
+								:rows="
+									listFieldRows(
+										hookData.settings.paths,
+										targetSettings?.paths ?? null,
+									)
+								"
+							/>
+						</template>
 						<ShadcnUiSelect
+							v-if="!isReadOnlyOrDiff"
 							v-model="selectedRepository"
 							:disabled="
 								!fetchGitHubConnectionStatus.data.value?.connected ||
@@ -402,6 +445,7 @@ async function resetHook() {
 							</ShadcnUiSelectContent>
 						</ShadcnUiSelect>
 						<ShadcnUiSelect
+							v-if="!isReadOnlyOrDiff"
 							v-model="selectedBranch"
 							:disabled="
 								!selectedRepository ||
@@ -452,6 +496,7 @@ async function resetHook() {
 							</ShadcnUiSelectContent>
 						</ShadcnUiSelect>
 						<FileSelectInput
+							v-if="!isReadOnlyOrDiff"
 							v-model="selectedPaths"
 							class="w-full"
 							:disabled="
@@ -505,9 +550,9 @@ async function resetHook() {
 							</template>
 						</FileSelectInput>
 					</div>
-					<ShadcnUiDropdownMenuSeparator />
+					<ShadcnUiDropdownMenuSeparator v-if="!isReadOnlyOrDiff" />
 				</div>
-				<div class="p-0.75">
+				<div v-if="!isReadOnlyOrDiff" class="p-0.75">
 					<div v-if="hookData" class="flex flex-col gap-1">
 						<div class="flex gap-1">
 							<ShadcnUiButton

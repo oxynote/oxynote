@@ -2,12 +2,14 @@ import { setResponseStatus } from "h3"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import { toast } from "vue-sonner"
 import ConfigMenu from "./ConfigMenu.vue"
+import { DiffStatus } from "../../diff/position-map"
 import {
 	makeHook,
 	menuButton,
 	menuText,
 	mountHookMenu,
 	openHookSubMenu,
+	readonlyFields,
 	typeInMenu,
 } from "../test-helpers"
 import {
@@ -59,6 +61,8 @@ describe("<ContainerImageWatcherConfigMenu>", { concurrent: false }, () => {
 		vi.mocked(toast.custom).mockReset()
 		useEditorStore().updateActiveDocumentId(DOCUMENT_ID)
 		useEditorStore().updateActiveBranchId(BRANCH_ID)
+		useEditorStore().setReviewableDiffActive(false)
+		useEditorMeta().setEditable(true)
 	})
 
 	afterEach(disposeMockEndpoints)
@@ -312,5 +316,86 @@ describe("<ContainerImageWatcherConfigMenu>", { concurrent: false }, () => {
 		await settleMutations()
 
 		expect(calls).toHaveLength(0)
+	})
+
+	it("says what a triggered hook did while editing too", async ({ expect }) => {
+		await mountMenu({ hook: imageHook({ score: "0" }) })
+
+		await openHookSubMenu("Updates in postgres:16.4-alpine")
+
+		expect(menuText()).toContain(
+			t(
+				"editor.hooks.container-image-watcher.triggered-item-block-explanation",
+			),
+		)
+		expect(menuText()).toContain(t("editor.hooks.reset"))
+	})
+
+	describe("when the page is read only", { concurrent: false }, () => {
+		beforeEach(() => {
+			useEditorMeta().setEditable(false)
+		})
+
+		it("shows the image without a way to change it", async ({ expect }) => {
+			await mountMenu({ hook: imageHook() })
+
+			await openHookSubMenu("Watching postgres:16.4-alpine")
+
+			expect(readonlyFields()).toEqual([["postgres:16.4-alpine", "unchanged"]])
+			expect(menuText()).not.toContain(t("editor.hooks.update"))
+			expect(menuText()).not.toContain(t("editor.hooks.delete"))
+		})
+
+		it.for([
+			{
+				name: "a block",
+				nodeId: "block-1",
+				key: "editor.hooks.container-image-watcher.triggered-item-block-explanation",
+			},
+			{
+				name: "the page",
+				nodeId: null,
+				key: "editor.hooks.container-image-watcher.triggered-item-full-document-explanation",
+			},
+		])(
+			"says what a triggered hook on $name did",
+			async ({ nodeId, key }, { expect }) => {
+				await mountMenu({ hook: imageHook({ score: "0" }), nodeId: nodeId })
+
+				await openHookSubMenu("Updates in postgres:16.4-alpine")
+
+				expect(menuText()).toContain(t(key))
+			},
+		)
+	})
+
+	describe("when the diff is shown", { concurrent: false }, () => {
+		beforeEach(() => {
+			useEditorStore().setReviewableDiffActive(true)
+		})
+
+		it("shows the new image over the old one", async ({ expect }) => {
+			await mountMenu({
+				hook: imageHook(),
+				diff: {
+					status: DiffStatus.Modified,
+					targetHook: imageHook({ settings: { image: "redis:7" } }),
+					signColumn: false,
+				},
+			})
+
+			await openHookSubMenu("Watching postgres:16.4-alpine")
+
+			expect(menuText()).toContain(
+				t(
+					"editor.hooks.container-image-watcher.existing-item-block-explanation",
+				),
+			)
+			expect(readonlyFields()).toEqual([
+				["postgres:16.4-alpine", "added"],
+				["redis:7", "removed"],
+			])
+			expect(menuText()).not.toContain(t("editor.hooks.update"))
+		})
 	})
 })

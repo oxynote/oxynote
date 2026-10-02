@@ -178,7 +178,7 @@ function buildNotificationDescription(notification: Notification) {
 					hook = t("editor.hooks.github-tracking.title")
 					break
 				case DocumentHookType.ScheduledReminder:
-					hook = t("editor.hooks.time-expiration.title")
+					hook = t("editor.hooks.scheduled-reminder.title")
 					break
 				case DocumentHookType.ContainerImageWatcher:
 					hook = t("editor.hooks.container-image-watcher.title")

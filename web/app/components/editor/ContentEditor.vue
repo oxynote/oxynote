@@ -48,7 +48,7 @@ import { SUPPRESS_SCROLL_TO_SELECTION_META } from "./scroll-control"
 const props = defineProps<{
 	activeBranchProvider: HocuspocusProvider
 	activeBranchYdoc: Y.Doc
-	documentHooks: DocumentHook[]
+	activeBranchHooks: DocumentHook[]
 	nameEditor: Editor | null | undefined
 	userCaretDetails: { name: string; color: string }
 }>()
@@ -66,13 +66,10 @@ const linkBubbleMenuElem = useTemplateRef("link-bubble-menu")
 const editorStore = useEditorStore()
 const { uploadDocumentFile } = useDocumentFileAPI()
 const suppressNextSelectionScroll = ref(false)
-const { isEditable } = useEditorMeta()
-const isEditingDisabled = computed(() => {
-	return !isEditable.value || editorStore.reviewableDiffActive
-})
+const { isReadOnlyOrDiff } = useEditorMeta()
 
 const textCommentState = ref<TextCommentIndicatorState | null>(null)
-const editorExtensions = contentExtensionsWithIDs(t, isEditingDisabled, {
+const editorExtensions = contentExtensionsWithIDs(t, isReadOnlyOrDiff, {
 	onIndicatorStateChange: (v) => {
 		textCommentState.value = v
 	},
@@ -174,7 +171,7 @@ const contentEditor = useEditor({
 		}),
 		HookDecorator.configure({
 			attributeName: "uid",
-			getHooks: () => props.documentHooks,
+			getHooks: () => props.activeBranchHooks,
 		}),
 		Typography,
 		Collaboration.configure({
@@ -308,7 +305,7 @@ watch(
 )
 
 watchDeep(
-	() => props.documentHooks,
+	() => props.activeBranchHooks,
 	() => {
 		contentEditor.value?.commands.refreshHookDecorations()
 	},
@@ -375,7 +372,7 @@ function setTextCommentIndicatorHoverChange(
 		ref="editor-container"
 		:class="[
 			'group/content-editor content-editor relative z-editor-content w-full min-w-0 flex-1 bg-transparent',
-			{ 'editor-not-editable': isEditingDisabled },
+			{ 'editor-not-editable': isReadOnlyOrDiff },
 		]"
 	>
 		<template v-if="contentEditor">
@@ -391,7 +388,7 @@ function setTextCommentIndicatorHoverChange(
 				:container="containerElem"
 			/>
 			<BlockHandle
-				:document-hooks="documentHooks"
+				:active-branch-hooks="activeBranchHooks"
 				:editor="contentEditor"
 				:data-sync-provider="activeBranchProvider"
 				@add-node-comment="
