@@ -90,7 +90,7 @@ describe("<NotificationSidebar>", { concurrent: false }, () => {
 
 		const wrapper = await mountSidebar(true)
 
-		expect(panel(wrapper).getAttribute("style")).toContain("left: 224px")
+		expect(panel(wrapper).getAttribute("style")).toContain("left: 232px")
 	})
 
 	it("keeps the inbox box mounted on wide viewports", async ({ expect }) => {
