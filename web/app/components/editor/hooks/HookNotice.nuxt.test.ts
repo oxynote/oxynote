@@ -24,7 +24,10 @@ describe("<HookNotice>", () => {
 			name: "triggered",
 			input: "triggered",
 			expected: {
-				box: ["bg-hook-status-triggered/10", "text-status-info-foreground"],
+				box: [
+					"bg-hook-status-triggered/10",
+					"text-hook-status-triggered-foreground",
+				],
 				icon: "text-hook-status-triggered",
 			},
 		},
@@ -34,7 +37,7 @@ describe("<HookNotice>", () => {
 			expected: {
 				box: [
 					"bg-hook-status-needs-attention/15",
-					"text-status-warning-foreground",
+					"text-hook-status-needs-attention-foreground",
 				],
 				icon: "text-hook-status-needs-attention",
 			},
@@ -79,7 +82,7 @@ describe("<HookNotice>", () => {
 				"w-full",
 				"border-t",
 				"rounded-none",
-				"text-status-info-foreground",
+				"text-hook-status-triggered-foreground",
 			]),
 		)
 	})

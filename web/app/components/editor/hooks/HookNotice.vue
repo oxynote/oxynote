@@ -24,16 +24,16 @@ const STATUS_CLASSES: Record<
 			"border-border bg-accent/40 text-foreground [&:not(:disabled):hover:not(:active)]:bg-accent/70 [&:not(:disabled):active]:bg-accent",
 	},
 	triggered: {
-		box: "bg-hook-status-triggered/10 text-status-info-foreground",
+		box: "bg-hook-status-triggered/10 text-hook-status-triggered-foreground",
 		icon: "text-hook-status-triggered",
 		action:
-			"border-hook-status-triggered/20 bg-hook-status-triggered/5 text-status-info-foreground [&:not(:disabled):hover:not(:active)]:bg-hook-status-triggered/15 [&:not(:disabled):active]:bg-hook-status-triggered/25",
+			"border-hook-status-triggered/20 bg-hook-status-triggered/5 text-hook-status-triggered-foreground [&:not(:disabled):hover:not(:active)]:bg-hook-status-triggered/15 [&:not(:disabled):active]:bg-hook-status-triggered/25",
 	},
 	"needs-attention": {
-		box: "bg-hook-status-needs-attention/15 text-status-warning-foreground",
+		box: "bg-hook-status-needs-attention/15 text-hook-status-needs-attention-foreground",
 		icon: "text-hook-status-needs-attention",
 		action:
-			"border-hook-status-needs-attention/30 bg-hook-status-needs-attention/5 text-status-warning-foreground [&:not(:disabled):hover:not(:active)]:bg-hook-status-needs-attention/15 [&:not(:disabled):active]:bg-hook-status-needs-attention/30",
+			"border-hook-status-needs-attention/30 bg-hook-status-needs-attention/5 text-hook-status-needs-attention-foreground [&:not(:disabled):hover:not(:active)]:bg-hook-status-needs-attention/15 [&:not(:disabled):active]:bg-hook-status-needs-attention/30",
 	},
 }
 </script>

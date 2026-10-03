@@ -26,7 +26,7 @@ describe("<HookMenuHeader>", { concurrent: false }, () => {
 			t("editor.hooks.status.fresh"),
 		])
 		expect(pillColours()).toEqual([
-			["bg-hook-status-fresh/15", "text-status-success-foreground"],
+			["bg-hook-status-fresh/15", "text-hook-status-fresh-foreground"],
 		])
 	})
 
@@ -40,7 +40,10 @@ describe("<HookMenuHeader>", { concurrent: false }, () => {
 			input: ["triggered", "fresh", "triggered"],
 			expected: {
 				label: () => t("editor.hooks.status.triggered", { count: 2 }),
-				colours: ["bg-hook-status-triggered/15", "text-status-info-foreground"],
+				colours: [
+					"bg-hook-status-triggered/15",
+					"text-hook-status-triggered-foreground",
+				],
 			},
 		},
 		{
@@ -50,7 +53,7 @@ describe("<HookMenuHeader>", { concurrent: false }, () => {
 				label: () => t("editor.hooks.status.needs-attention.one", { count: 1 }),
 				colours: [
 					"bg-hook-status-needs-attention/25",
-					"text-status-warning-foreground",
+					"text-hook-status-needs-attention-foreground",
 				],
 			},
 		},
@@ -62,7 +65,7 @@ describe("<HookMenuHeader>", { concurrent: false }, () => {
 					t("editor.hooks.status.needs-attention.other", { count: 2 }),
 				colours: [
 					"bg-hook-status-needs-attention/25",
-					"text-status-warning-foreground",
+					"text-hook-status-needs-attention-foreground",
 				],
 			},
 		},
@@ -104,8 +107,11 @@ describe("<HookMenuHeader>", { concurrent: false }, () => {
 			shown.map((pill) => pill.getAttribute("data-slot") === "tooltip-trigger"),
 		).toEqual([true, true])
 		expect(pillColours()).toEqual([
-			["bg-hook-status-needs-attention/25", "text-status-warning-foreground"],
-			["bg-hook-status-triggered/15", "text-status-info-foreground"],
+			[
+				"bg-hook-status-needs-attention/25",
+				"text-hook-status-needs-attention-foreground",
+			],
+			["bg-hook-status-triggered/15", "text-hook-status-triggered-foreground"],
 		])
 		expect(dotColours()).toEqual([
 			["bg-hook-status-needs-attention"],
@@ -153,7 +159,7 @@ function pills(): HTMLElement[] {
 function pillColours(): string[][] {
 	return pills().map((pill) =>
 		Array.from(pill.classList).filter(
-			(c) => c.startsWith("bg-") || c.startsWith("text-status"),
+			(c) => c.startsWith("bg-") || c.startsWith("text-hook-status"),
 		),
 	)
 }

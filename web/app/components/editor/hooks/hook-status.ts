@@ -11,10 +11,11 @@ export const HOOK_STATUS_DOT_CLASS: Record<HookStatus, string> = {
 
 // a pill tints its ground with the status colour and darkens its text
 export const HOOK_STATUS_PILL_CLASS: Record<HookStatus, string> = {
-	fresh: "bg-hook-status-fresh/15 text-status-success-foreground",
-	triggered: "bg-hook-status-triggered/15 text-status-info-foreground",
+	fresh: "bg-hook-status-fresh/15 text-hook-status-fresh-foreground",
+	triggered:
+		"bg-hook-status-triggered/15 text-hook-status-triggered-foreground",
 	"needs-attention":
-		"bg-hook-status-needs-attention/25 text-status-warning-foreground",
+		"bg-hook-status-needs-attention/25 text-hook-status-needs-attention-foreground",
 }
 
 // HookGroupStatus sums up the hooks of one block, or the page's own. It is
