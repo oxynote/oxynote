@@ -105,16 +105,16 @@ describe("<IconStack>", { concurrent: false }, () => {
 		expect(renderedIconNames(wrapper)).toEqual(["lucide:check"])
 	})
 
-	it("puts stale hooks first", async ({ expect }) => {
+	it("puts triggered hooks first", async ({ expect }) => {
 		const wrapper = await mountStack({
 			icons: [
 				person("Fresh", { icon: "lucide:bell" }),
-				person("Stale", { icon: "lucide:bell", staleHook: true }),
+				person("Triggered", { icon: "lucide:bell", triggeredHook: true }),
 			],
 		})
 
 		expect(avatarLabels(wrapper).at(0)).toBe("")
-		expect(wrapper.findAll("[data-hook-stale]")).toHaveLength(1)
+		expect(wrapper.findAll("[data-hook-triggered]")).toHaveLength(1)
 	})
 
 	it("orders hooks of equal freshness by when they last ran", async ({

@@ -14,6 +14,7 @@ import NameEditor from "./NameEditor.vue"
 import IconPicker from "./IconPicker.vue"
 import DiffTitle from "./diff/DiffTitle.vue"
 import HookDiffMarker from "./hooks/HookDiffMarker.vue"
+import { HOOK_BAR_STATUS_CLASS } from "./hooks/hook-status"
 import ReviewerList from "./ReviewerList.vue"
 import {
 	clearQueryCache,
@@ -47,6 +48,8 @@ const TARGET_BRANCH_ID = makeXid("branchb")
 const ME = makeXid("usme")
 
 const REVIEWABLE_ACTION_DELAY_MS = 300
+// the stored state of a website hook whose last check failed
+const FAILED_STATE: DocumentHookStateURLWatcher = { status: "unreachable_url" }
 
 interface Branch {
 	ydoc: Y.Doc
@@ -323,9 +326,11 @@ describe("<NameEditor>", { concurrent: false }, () => {
 		expect(
 			wrapper.find("[data-hook-status]").attributes("data-hook-status"),
 		).toBe("fresh")
-		expect(wrapper.find(".bg-hook-decoration").attributes("style")).toContain(
-			"display: none",
-		)
+		expect(
+			Object.values(HOOK_BAR_STATUS_CLASS).some((c) =>
+				wrapper.find(`.${c}`).exists(),
+			),
+		).toBe(false)
 	})
 
 	it("reaches into both page margins for the hook handle's hover", async ({
@@ -592,10 +597,50 @@ describe("<NameEditor>", { concurrent: false }, () => {
 
 		expect(
 			wrapper.find("[data-hook-status]").attributes("data-hook-status"),
-		).toBe("stale")
+		).toBe("triggered")
 		expect(
-			wrapper.find(".bg-hook-decoration").attributes("style"),
+			wrapper.find(".bg-hook-status-triggered").attributes("style"),
 		).toBeUndefined()
+	})
+
+	it.for([
+		{
+			name: "colours the page's hook icon and bar as a warning when a hook's check failed",
+			input: () => [{ ...pageHook("a.test"), state: FAILED_STATE }],
+			expected: {
+				status: "needs-attention",
+				bar: "bg-hook-status-needs-attention",
+			},
+		},
+		{
+			name: "stripes the page's hook icon and bar when one hook triggered and another failed",
+			input: () => [
+				{ ...pageHook("a.test"), score: "0" },
+				{ ...pageHook("b.test"), state: FAILED_STATE },
+			],
+			expected: { status: "mixed", bar: "bg-hook-status-mixed" },
+		},
+		{
+			name: "ignores the hooks of blocks when it colours the page's hook icon and bar",
+			input: () => [
+				{ ...pageHook("a.test"), score: "0" },
+				{ ...pageHook("b.test"), blockId: "block-1", state: FAILED_STATE },
+			],
+			expected: { status: "triggered", bar: "bg-hook-status-triggered" },
+		},
+	])("$name", async ({ input, expected }, { expect }) => {
+		const wrapper = await mountEditor({ activeBranchHooks: input() })
+		const bar = wrapper.get(`.${expected.bar}`)
+
+		expect(
+			wrapper.find("[data-hook-status]").attributes("data-hook-status"),
+		).toBe(expected.status)
+		expect(bar.attributes("style")).toBeUndefined()
+		expect(
+			bar
+				.classes()
+				.filter((c) => Object.values(HOOK_BAR_STATUS_CLASS).includes(c)),
+		).toEqual([expected.bar])
 	})
 
 	it("offers no review actions while the branch has none", async ({

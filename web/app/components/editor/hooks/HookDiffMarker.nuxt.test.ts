@@ -22,7 +22,7 @@ describe("<HookDiffMarker>", { concurrent: false }, () => {
 	})
 
 	it("shows the hook icon in the hook's colour at rest", async ({ expect }) => {
-		const wrapper = await mountMarker({ hookStatus: "stale" })
+		const wrapper = await mountMarker({ hookStatus: "triggered" })
 
 		expect(hookIconSlot(wrapper).classes()).toContain("h-3.75")
 		expect(hookIconSlot(wrapper).classes()).not.toContain("h-0")
@@ -30,7 +30,7 @@ describe("<HookDiffMarker>", { concurrent: false }, () => {
 			hookIconSlot(wrapper)
 				.get(".i-mingcute\\:leaf-line")
 				.attributes("data-hook-status"),
-		).toBe("stale")
+		).toBe("triggered")
 		expect(wrapper.classes()).not.toContain("translate-y-5.5")
 	})
 

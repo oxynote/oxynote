@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+import type { HookGroupStatus } from "../../hooks/hook-status"
 import type { Node } from "@tiptap/pm/model"
 import type { Editor } from "@tiptap/vue-3"
 import type { JSONContent } from "@tiptap/core"
@@ -31,7 +32,7 @@ const props = defineProps<{
 		nodePos: number
 		nodeId: string
 		nodeHooks: DocumentHook[] | null
-		nodeHookStatus: "stale" | "fresh" | null
+		nodeHookStatus: HookGroupStatus | null
 	} | null
 }>()
 const emit = defineEmits<{

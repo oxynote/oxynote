@@ -146,8 +146,8 @@ export default withNuxt([
 					// never reported unused.
 					ignores: [
 						// dynamically built keys: t(`ns.${x}`)
-						"/^editor\\.hooks\\.[a-z-]+\\.(existing|triggered)-item-(block|full-document)-explanation$/",
-						"/^editor\\.hooks\\.scheduled-reminder\\.duration-options\\./",
+						"/^editor\\.hooks\\.[a-z-]+\\.(new|fresh|triggered)-notice$/",
+						"/^editor\\.hooks\\.scheduled-reminder\\.(duration|when|remind-again)-options\\./",
 						"/^editor\\.metrics\\.config\\.modal-title-diff-/",
 						"/^editor\\.metrics\\.config\\.query-placeholder\\./",
 						"/^editor\\.metrics\\.config\\.refresh-interval-options(-short)?\\./",

@@ -4,9 +4,11 @@ const props = withDefaults(
 		disabled?: boolean
 		placeholder: string
 		inputClass?: string
+		type?: string
 	}>(),
 	{
 		inputClass: "text-2sm md:text-2sm px-2 h-[1.775rem]",
+		type: "text",
 	},
 )
 const value = defineModel<string | undefined>()
@@ -19,6 +21,7 @@ const value = defineModel<string | undefined>()
 		<ShadcnUiInput
 			v-model="value"
 			:class="props.inputClass"
+			:type="props.type"
 			:placeholder="props.placeholder"
 			:disabled="props.disabled"
 			disable-focus-effect

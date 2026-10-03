@@ -3,11 +3,15 @@ import type { VueWrapper } from "@vue/test-utils"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import { toast } from "vue-sonner"
 import ConfigMenu from "./ConfigMenu.vue"
+import HookConfigPanel from "../HookConfigPanel.vue"
 import { DiffStatus } from "../../diff/position-map"
 import FileSelectInput from "./FileSelectInput.vue"
 import {
+	hookNotice,
+	iconNames,
 	makeHook,
 	menuButton,
+	menuButtonLabels,
 	menuText,
 	mountHookMenu,
 	openHookSubMenu,
@@ -23,6 +27,7 @@ import {
 	clearTeleportedOverlays,
 	emitFrom,
 	emitFromNth,
+	settleMutations,
 	t,
 	WAIT_FOR_OPTIONS,
 } from "~/components/test-helpers"
@@ -35,8 +40,9 @@ vi.mock("vue-sonner", () => ({
 const DOCUMENT_ID = makeXid("doc")
 const BRANCH_ID = makeXid("branch")
 const HOOK_ID = makeXid("hook")
+const HOOK_PATH = `/api/documents/${DOCUMENT_ID}/hooks/${HOOK_ID}`
 
-const NEW_HOOK_LABEL = "editor.hooks.github-tracking.title"
+const TITLE = "editor.hooks.github-tracking.title"
 const REPOSITORY = "runbooks"
 
 function githubHook(overrides: Partial<DocumentHook> = {}) {
@@ -53,6 +59,12 @@ function githubHook(overrides: Partial<DocumentHook> = {}) {
 		state: { pathsChecksums: {}, status: "active" },
 		...overrides,
 	})
+}
+
+function failingGithubHook(
+	status: "missing_installation" | "missing_repository" | "missing_branch",
+) {
+	return githubHook({ state: { pathsChecksums: {}, status: status } })
 }
 
 function mockGitHub(
@@ -107,6 +119,7 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 		useEditorStore().updateActiveDocumentId(DOCUMENT_ID)
 		useEditorStore().updateActiveBranchId(BRANCH_ID)
 		useEditorStore().setReviewableDiffActive(false)
+		useEditorStore().setActiveBranchProtected(false)
 		useEditorMeta().setEditable(true)
 	})
 
@@ -117,34 +130,77 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 
 		await mountMenu()
 
-		expect(menuText()).toContain(t(NEW_HOOK_LABEL))
+		expect(menuText()).toContain(t(TITLE))
+		expect(menuText()).toContain(t("editor.hooks.github-tracking.description"))
 	})
 
-	it("names the repository an active hook watches", async ({ expect }) => {
+	it("names the repository, branch and file count an active hook watches", async ({
+		expect,
+	}) => {
 		mockGitHub()
 
 		await mountMenu({ hook: githubHook() })
 
-		expect(menuText()).toContain(`Watching ${REPOSITORY}`)
+		const detail = t("editor.hooks.github-tracking.file-count.one")
+		expect(menuText()).toContain(
+			t("editor.hooks.subtext-detail", {
+				subtext: t("editor.hooks.github-tracking.subtext", {
+					repository: REPOSITORY,
+					branch: "main",
+				}),
+				detail: detail,
+			}),
+		)
 	})
 
-	it("reports a hook that has already fired", async ({ expect }) => {
-		mockGitHub()
+	it.for([
+		{
+			name: "a missing installation",
+			status: "missing_installation" as const,
+			problem: "editor.hooks.github-tracking.problems.missing-installation",
+		},
+		{
+			name: "a missing repository",
+			status: "missing_repository" as const,
+			problem: "editor.hooks.github-tracking.problems.missing-repository",
+		},
+		{
+			name: "a missing branch",
+			status: "missing_branch" as const,
+			problem: "editor.hooks.github-tracking.problems.missing-branch",
+		},
+	])(
+		"names $name on the hook's row",
+		async ({ status, problem }, { expect }) => {
+			mockGitHub()
 
-		await mountMenu({ hook: githubHook({ score: "0" }) })
+			await mountMenu({ hook: failingGithubHook(status) })
 
-		expect(menuText()).toContain(`Changes in ${REPOSITORY}`)
-	})
+			expect(menuText()).toContain(
+				t("editor.hooks.subtext-detail", {
+					subtext: t("editor.hooks.github-tracking.subtext", {
+						repository: REPOSITORY,
+						branch: "main",
+					}),
+					detail: t(problem),
+				}),
+			)
+		},
+	)
 
 	it("asks the reader to connect github first", async ({ expect }) => {
 		mockGitHub({ connected: false })
 		const wrapper = await mountMenu()
 
-		await openHookSubMenu(t(NEW_HOOK_LABEL))
+		await openHookSubMenu(t(TITLE))
 
 		await vi.waitFor(() => {
-			expect(menuText()).toContain("connect your GitHub organization")
+			expect(hookNotice().textContent).toContain(
+				"connect your GitHub organization",
+			)
 		}, WAIT_FOR_OPTIONS)
+		expect(hookNotice().dataset.hookStatus).toBe("fresh")
+		expect(iconNames(hookNotice())).toEqual(["mingcute:information-fill"])
 		menuButton(
 			t("editor.hooks.github-tracking.not-connected.placeholder"),
 		).click()
@@ -155,74 +211,128 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 		])
 	})
 
+	it("warns that a hook lost its github connection", async ({ expect }) => {
+		mockGitHub()
+		await mountMenu({ hook: failingGithubHook("missing_installation") })
+
+		await openHookSubMenu(t(TITLE))
+
+		expect(hookNotice().dataset.hookStatus).toBe("needs-attention")
+		expect(hookNotice().textContent).toContain(
+			"connect your GitHub organization",
+		)
+		expect(iconNames(hookNotice())).toEqual(["mingcute:alert-fill"])
+	})
+
 	it("says so when the connected account has no repositories", async ({
 		expect,
 	}) => {
 		mockGitHub({ repositories: [] })
 		await mountMenu()
 
-		await openHookSubMenu(t(NEW_HOOK_LABEL))
+		await openHookSubMenu(t(TITLE))
 
 		await vi.waitFor(() => {
-			expect(menuText()).toContain("no accessible repositories")
-		}, WAIT_FOR_OPTIONS)
-	})
-
-	it("warns about a repository it can no longer reach", async ({ expect }) => {
-		mockGitHub()
-		await mountMenu({
-			hook: githubHook({
-				state: { pathsChecksums: {}, status: "missing_repository" },
-			}),
-		})
-
-		await openHookSubMenu(`Watching ${REPOSITORY}`)
-
-		await vi.waitFor(() => {
-			expect(menuText()).toContain(
-				"The selected GitHub repository cannot be accessed",
+			expect(hookNotice().textContent.trim()).toBe(
+				t("editor.hooks.github-tracking.no-repositories"),
 			)
 		}, WAIT_FOR_OPTIONS)
+		expect(hookNotice().dataset.hookStatus).toBe("fresh")
 	})
 
-	it("warns about a branch it can no longer reach", async ({ expect }) => {
-		mockGitHub()
-		await mountMenu({
-			hook: githubHook({
-				state: { pathsChecksums: {}, status: "missing_branch" },
-			}),
-		})
+	it.for([
+		{
+			name: "a repository",
+			status: "missing_repository" as const,
+			key: "editor.hooks.github-tracking.missing-target-repository",
+		},
+		{
+			name: "a branch",
+			status: "missing_branch" as const,
+			key: "editor.hooks.github-tracking.missing-target-branch",
+		},
+	])(
+		"warns about $name it can no longer reach",
+		async ({ status, key }, { expect }) => {
+			mockGitHub()
+			await mountMenu({ hook: failingGithubHook(status) })
 
-		await openHookSubMenu(`Watching ${REPOSITORY}`)
+			await openHookSubMenu(t(TITLE))
 
-		await vi.waitFor(() => {
-			expect(menuText()).toContain(
-				"The selected GitHub branch cannot be accessed",
-			)
-		}, WAIT_FOR_OPTIONS)
-	})
+			await vi.waitFor(() => {
+				expect(hookNotice().textContent.trim()).toBe(t(key))
+			}, WAIT_FOR_OPTIONS)
+			expect(hookNotice().dataset.hookStatus).toBe("needs-attention")
+		},
+	)
 
-	it("explains what an active block hook will do", async ({ expect }) => {
-		mockGitHub()
-		await mountMenu({ hook: githubHook() })
+	it.for([
+		{
+			name: "block",
+			nodeId: "block-1",
+			key: "editor.hooks.github-tracking.fresh-notice",
+		},
+		{
+			name: "page",
+			nodeId: null,
+			key: "editor.hooks.github-tracking.fresh-notice",
+		},
+	])(
+		"explains what a $name hook will do",
+		async ({ nodeId, key }, { expect }) => {
+			mockGitHub()
+			await mountMenu({ hook: githubHook(), nodeId: nodeId })
 
-		await openHookSubMenu(`Watching ${REPOSITORY}`)
+			await openHookSubMenu(t(TITLE))
 
-		await vi.waitFor(() => {
-			expect(menuText()).toContain("the block will be highlighted")
-		}, WAIT_FOR_OPTIONS)
-	})
+			await vi.waitFor(() => {
+				expect(hookNotice().textContent.trim()).toBe(
+					t(key, { files: "docs/readme.md", branch: "main" }),
+				)
+			}, WAIT_FOR_OPTIONS)
+			expect(hookNotice().dataset.hookStatus).toBe("fresh")
+		},
+	)
 
-	it("explains what an active document-wide hook will do", async ({
+	it("names nothing in its notice before anything is picked", async ({
 		expect,
 	}) => {
 		mockGitHub()
-		await mountMenu({ hook: githubHook(), nodeId: null })
+		await mountMenu()
 
-		await openHookSubMenu(`Watching ${REPOSITORY}`)
+		await openHookSubMenu(t(TITLE))
 
 		await vi.waitFor(() => {
-			expect(menuText()).toContain("the relevant sections will be highlighted")
+			expect(hookNotice().textContent.trim()).toBe(
+				t("editor.hooks.github-tracking.new-notice", {
+					files: t("editor.hooks.github-tracking.files-fallback"),
+					branch: t("editor.hooks.github-tracking.branch-fallback"),
+				}),
+			)
+		}, WAIT_FOR_OPTIONS)
+		expect(hookNotice().querySelector(".font-semibold")).toBeNull()
+	})
+
+	it("counts the picked files in its notice once there are many", async ({
+		expect,
+	}) => {
+		mockGitHub()
+		const wrapper = await mountMenu()
+		await openHookSubMenu(t(TITLE))
+		await pickRepository(wrapper, REPOSITORY)
+		await pickBranch(wrapper, "next")
+
+		await pickPaths(wrapper, ["a.md", "b.md", "c.md"])
+
+		await vi.waitFor(() => {
+			expect(hookNotice().textContent.trim()).toBe(
+				t("editor.hooks.github-tracking.new-notice", {
+					files: t("editor.hooks.github-tracking.file-count.other", {
+						count: 3,
+					}),
+					branch: "next",
+				}),
+			)
 		}, WAIT_FOR_OPTIONS)
 	})
 
@@ -231,7 +341,7 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 	}) => {
 		mockGitHub()
 		const wrapper = await mountMenu()
-		await openHookSubMenu(t(NEW_HOOK_LABEL))
+		await openHookSubMenu(t(TITLE))
 
 		await pickRepository(wrapper, REPOSITORY)
 		await pickBranch(wrapper, "main")
@@ -249,7 +359,7 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 			() => ({ id: HOOK_ID }),
 		)
 		const wrapper = await mountMenu()
-		await openHookSubMenu(t(NEW_HOOK_LABEL))
+		await openHookSubMenu(t(TITLE))
 		await pickRepository(wrapper, REPOSITORY)
 		await pickBranch(wrapper, "main")
 		await pickPaths(wrapper, ["docs/readme.md"])
@@ -274,7 +384,30 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 		).toHaveLength(1)
 	})
 
-	it("warns when the hook cannot be created", async ({ expect }) => {
+	it("starts empty again once a hook is created", async ({ expect }) => {
+		mockGitHub()
+		mockEndpoint("POST", `/api/documents/${DOCUMENT_ID}/hooks`, () => ({
+			id: HOOK_ID,
+		}))
+		const wrapper = await mountMenu()
+		await openHookSubMenu(t(TITLE))
+		await pickRepository(wrapper, REPOSITORY)
+		await pickBranch(wrapper, "main")
+		await pickPaths(wrapper, ["docs/readme.md"])
+
+		menuButton(t("editor.hooks.create")).click()
+		await settleMutations()
+
+		await openHookSubMenu(t(TITLE))
+		const [repositorySelect, branchSelect] = wrapper.findAllComponents(Select)
+		expect(repositorySelect?.props("modelValue")).toBeUndefined()
+		expect(branchSelect?.props("modelValue")).toBeUndefined()
+		expect(
+			wrapper.findComponent(FileSelectInput).props("modelValue"),
+		).toBeUndefined()
+	})
+
+	it("keeps the picks when the hook cannot be created", async ({ expect }) => {
 		mockGitHub()
 		mockEndpoint("POST", `/api/documents/${DOCUMENT_ID}/hooks`, (_c, event) => {
 			setResponseStatus(event, 500)
@@ -282,27 +415,59 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 			return { message: "boom" }
 		})
 		const wrapper = await mountMenu()
-		await openHookSubMenu(t(NEW_HOOK_LABEL))
+		await openHookSubMenu(t(TITLE))
 		await pickRepository(wrapper, REPOSITORY)
 		await pickBranch(wrapper, "main")
 		await pickPaths(wrapper, ["docs/readme.md"])
 
 		menuButton(t("editor.hooks.create")).click()
-
 		await vi.waitFor(() => {
 			expect(toast.custom).toHaveBeenCalledTimes(1)
 		}, WAIT_FOR_OPTIONS)
+
+		await openHookSubMenu(t(TITLE))
+		const [repositorySelect, branchSelect] = wrapper.findAllComponents(Select)
+		expect(repositorySelect?.props("modelValue")).toBe(REPOSITORY)
+		expect(branchSelect?.props("modelValue")).toBe("main")
+	})
+
+	it("keeps the update button out of reach until a pick changes", async ({
+		expect,
+	}) => {
+		mockGitHub()
+		await mountMenu({ hook: githubHook() })
+
+		await openHookSubMenu(t(TITLE))
+
+		expect(menuButton(t("editor.hooks.update")).disabled).toBe(true)
+	})
+
+	it("sends nothing while no files are picked", async ({ expect }) => {
+		const calls = mockEndpoint(
+			"POST",
+			`/api/documents/${DOCUMENT_ID}/hooks`,
+			() => ({ id: HOOK_ID }),
+		)
+		mockGitHub()
+		const wrapper = await mountMenu()
+		await openHookSubMenu(t(TITLE))
+		await pickRepository(wrapper, REPOSITORY)
+		await pickBranch(wrapper, "main")
+
+		emitFrom(wrapper, HookConfigPanel, "submit")
+		await settleMutations()
+
+		expect(calls).toHaveLength(0)
+		expect(
+			wrapper.findComponent(ConfigMenu).emitted("force-close"),
+		).toBeUndefined()
 	})
 
 	it("updates what an existing hook watches", async ({ expect }) => {
 		mockGitHub()
-		const calls = mockEndpoint(
-			"PUT",
-			`/api/documents/${DOCUMENT_ID}/hooks/${HOOK_ID}`,
-			() => ({ id: HOOK_ID }),
-		)
+		const calls = mockEndpoint("PUT", HOOK_PATH, () => ({ id: HOOK_ID }))
 		const wrapper = await mountMenu({ hook: githubHook() })
-		await openHookSubMenu(`Watching ${REPOSITORY}`)
+		await openHookSubMenu(t(TITLE))
 		await pickBranch(wrapper, "next")
 
 		menuButton(t("editor.hooks.update")).click()
@@ -319,37 +484,11 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 		})
 	})
 
-	it("warns when the hook cannot be updated", async ({ expect }) => {
-		mockGitHub()
-		mockEndpoint(
-			"PUT",
-			`/api/documents/${DOCUMENT_ID}/hooks/${HOOK_ID}`,
-			(_c, event) => {
-				setResponseStatus(event, 500)
-
-				return { message: "boom" }
-			},
-		)
-		const wrapper = await mountMenu({ hook: githubHook() })
-		await openHookSubMenu(`Watching ${REPOSITORY}`)
-		await pickBranch(wrapper, "next")
-
-		menuButton(t("editor.hooks.update")).click()
-
-		await vi.waitFor(() => {
-			expect(toast.custom).toHaveBeenCalledTimes(1)
-		}, WAIT_FOR_OPTIONS)
-	})
-
 	it("deletes the hook", async ({ expect }) => {
 		mockGitHub()
-		const calls = mockEndpoint(
-			"DELETE",
-			`/api/documents/${DOCUMENT_ID}/hooks/${HOOK_ID}`,
-			() => null,
-		)
+		const calls = mockEndpoint("DELETE", HOOK_PATH, () => null)
 		await mountMenu({ hook: githubHook() })
-		await openHookSubMenu(`Watching ${REPOSITORY}`)
+		await openHookSubMenu(t(TITLE))
 
 		menuButton(t("editor.hooks.delete")).click()
 
@@ -358,37 +497,22 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 		}, WAIT_FOR_OPTIONS)
 	})
 
-	it("warns when the hook cannot be deleted", async ({ expect }) => {
+	it("dismisses a triggered hook from its notice", async ({ expect }) => {
 		mockGitHub()
-		mockEndpoint(
-			"DELETE",
-			`/api/documents/${DOCUMENT_ID}/hooks/${HOOK_ID}`,
-			(_c, event) => {
-				setResponseStatus(event, 500)
-
-				return { message: "boom" }
-			},
-		)
-		await mountMenu({ hook: githubHook() })
-		await openHookSubMenu(`Watching ${REPOSITORY}`)
-
-		menuButton(t("editor.hooks.delete")).click()
+		const calls = mockEndpoint("PUT", `${HOOK_PATH}/reset`, () => ({
+			id: HOOK_ID,
+		}))
+		await mountMenu({ hook: githubHook({ score: "0" }) })
+		await openHookSubMenu(t(TITLE))
 
 		await vi.waitFor(() => {
-			expect(toast.custom).toHaveBeenCalledTimes(1)
+			expect(hookNotice().textContent).toContain(
+				t("editor.hooks.github-tracking.triggered-notice", {
+					branch: "main",
+				}),
+			)
 		}, WAIT_FOR_OPTIONS)
-	})
-
-	it("offers to approve a hook that has fired", async ({ expect }) => {
-		mockGitHub()
-		const calls = mockEndpoint(
-			"PUT",
-			`/api/documents/${DOCUMENT_ID}/hooks/${HOOK_ID}/reset`,
-			() => ({ id: HOOK_ID }),
-		)
-		await mountMenu({ hook: githubHook({ score: "0" }) })
-		await openHookSubMenu(`Changes in ${REPOSITORY}`)
-
+		expect(hookNotice().dataset.hookStatus).toBe("triggered")
 		menuButton(t("editor.hooks.reset")).click()
 
 		await vi.waitFor(() => {
@@ -396,57 +520,20 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 		}, WAIT_FOR_OPTIONS)
 	})
 
-	it("warns when the hook cannot be approved", async ({ expect }) => {
+	it("offers no dismissal while the hook cannot check its files", async ({
+		expect,
+	}) => {
 		mockGitHub()
-		mockEndpoint(
-			"PUT",
-			`/api/documents/${DOCUMENT_ID}/hooks/${HOOK_ID}/reset`,
-			(_c, event) => {
-				setResponseStatus(event, 500)
+		await mountMenu({
+			hook: githubHook({
+				score: "0",
+				state: { pathsChecksums: {}, status: "missing_branch" },
+			}),
+		})
 
-				return { message: "boom" }
-			},
-		)
-		await mountMenu({ hook: githubHook({ score: "0" }) })
-		await openHookSubMenu(`Changes in ${REPOSITORY}`)
+		await openHookSubMenu(t(TITLE))
 
-		menuButton(t("editor.hooks.reset")).click()
-
-		await vi.waitFor(() => {
-			expect(toast.custom).toHaveBeenCalledTimes(1)
-		}, WAIT_FOR_OPTIONS)
-	})
-
-	it("creates nothing while no page is open", async ({ expect }) => {
-		mockGitHub()
-		useEditorStore().updateActiveDocumentId(null)
-		const calls = mockEndpoint(
-			"POST",
-			`/api/documents/${DOCUMENT_ID}/hooks`,
-			() => ({ id: HOOK_ID }),
-		)
-		const wrapper = await mountMenu()
-		await openHookSubMenu(t(NEW_HOOK_LABEL))
-		await pickRepository(wrapper, REPOSITORY)
-		await pickBranch(wrapper, "main")
-		await pickPaths(wrapper, ["docs/readme.md"])
-
-		menuButton(t("editor.hooks.create")).click()
-		await nextTick()
-
-		expect(calls).toHaveLength(0)
-	})
-
-	it("says what a triggered hook did while editing too", async ({ expect }) => {
-		mockGitHub()
-		await mountMenu({ hook: githubHook({ score: "0" }) })
-
-		await openHookSubMenu(`Changes in ${REPOSITORY}`)
-
-		expect(menuText()).toContain(
-			t("editor.hooks.github-tracking.triggered-item-block-explanation"),
-		)
-		expect(menuText()).toContain(t("editor.hooks.reset"))
+		expect(menuButtonLabels()).not.toContain(t("editor.hooks.reset"))
 	})
 
 	describe("when the page is read only", { concurrent: false }, () => {
@@ -460,31 +547,50 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 			mockGitHub({ connected: false })
 			await mountMenu({ hook: githubHook() })
 
-			await openHookSubMenu(`Watching ${REPOSITORY}`)
+			await openHookSubMenu(t(TITLE))
 
 			expect(readonlyFields()).toEqual([
 				[REPOSITORY, "unchanged"],
 				["main", "unchanged"],
 				["docs/readme.md", "unchanged"],
 			])
-			expect(menuText()).not.toContain(t("editor.hooks.update"))
-			expect(menuText()).not.toContain(t("editor.hooks.delete"))
-			// the setup banner is for someone who can connect github
-			expect(menuText()).not.toContain(
-				t("editor.hooks.github-tracking.not-connected.placeholder"),
+			expect(menuText()).toContain(t("editor.hooks.read-only-mode"))
+			expect(menuButtonLabels()).toEqual([])
+			// connecting github is setup for an editor, so a working hook
+			// says what it will do instead
+			expect(hookNotice().textContent.trim()).toBe(
+				t("editor.hooks.github-tracking.fresh-notice", {
+					files: "docs/readme.md",
+					branch: "main",
+				}),
 			)
+		})
+
+		it("still dismisses a triggered hook", async ({ expect }) => {
+			mockGitHub()
+			const calls = mockEndpoint("PUT", `${HOOK_PATH}/reset`, () => ({
+				id: HOOK_ID,
+			}))
+			await mountMenu({ hook: githubHook({ score: "0" }) })
+			await openHookSubMenu(t(TITLE))
+
+			menuButton(t("editor.hooks.reset")).click()
+
+			await vi.waitFor(() => {
+				expect(calls).toHaveLength(1)
+			}, WAIT_FOR_OPTIONS)
 		})
 
 		it.for([
 			{
 				name: "a block",
 				nodeId: "block-1",
-				key: "editor.hooks.github-tracking.triggered-item-block-explanation",
+				key: "editor.hooks.github-tracking.triggered-notice",
 			},
 			{
 				name: "the page",
 				nodeId: null,
-				key: "editor.hooks.github-tracking.triggered-item-full-document-explanation",
+				key: "editor.hooks.github-tracking.triggered-notice",
 			},
 		])(
 			"says what a triggered hook on $name did",
@@ -492,9 +598,9 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 				mockGitHub()
 				await mountMenu({ hook: githubHook({ score: "0" }), nodeId: nodeId })
 
-				await openHookSubMenu(`Changes in ${REPOSITORY}`)
+				await openHookSubMenu(t(TITLE))
 
-				expect(menuText()).toContain(t(key))
+				expect(hookNotice().textContent).toContain(t(key, { branch: "main" }))
 			},
 		)
 	})
@@ -521,11 +627,8 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 				},
 			})
 
-			await openHookSubMenu(`Watching ${REPOSITORY}`)
+			await openHookSubMenu(t(TITLE))
 
-			expect(menuText()).toContain(
-				t("editor.hooks.github-tracking.existing-item-block-explanation"),
-			)
 			expect(readonlyFields()).toEqual([
 				[REPOSITORY, "unchanged"],
 				["main", "added"],
@@ -533,6 +636,29 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 				["docs/readme.md", "unchanged"],
 				["docs/old.md", "removed"],
 			])
+			expect(menuButtonLabels()).toEqual([])
 		})
+
+		it.for([
+			{ name: "added", status: DiffStatus.Added },
+			{ name: "removed", status: DiffStatus.Removed },
+		])(
+			"marks every field of an $name hook",
+			async ({ status, name }, { expect }) => {
+				mockGitHub()
+				await mountMenu({
+					hook: githubHook(),
+					diff: { status: status, targetHook: null, signColumn: true },
+				})
+
+				await openHookSubMenu(t(TITLE))
+
+				expect(readonlyFields()).toEqual([
+					[REPOSITORY, name],
+					["main", name],
+					["docs/readme.md", name],
+				])
+			},
+		)
 	})
 })

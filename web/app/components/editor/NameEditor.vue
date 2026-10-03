@@ -20,6 +20,11 @@ import DocumentTagList from "./DocumentTagList.vue"
 import ReviewerList from "./ReviewerList.vue"
 import HookDiffMarker from "./hooks/HookDiffMarker.vue"
 import { blockChangeCount, diffHooks } from "./hooks/hook-diff"
+import {
+	HOOK_BAR_STATUS_CLASS,
+	HOOK_ICON_STATUS_CLASS,
+	hookGroupStatus,
+} from "./hooks/hook-status"
 import { showToastMessage } from "../toast"
 import {
 	DEFAULT_HIGHLIGHT_OVERLAY_PADDING,
@@ -88,14 +93,15 @@ const showTitleDiff = computed(
 
 // a page with no hooks of its own has no status to show, which leaves the
 // handle its neutral colour rather than tinting it as healthy
-const hookStatus = computed(() => {
-	const hooks = props.activeBranchHooks.filter((h) => h.blockId === null)
-	if (!hooks.length) {
-		return null
-	}
-
-	return hooks.some((h) => Number(h.score) === 0) ? "stale" : "fresh"
-})
+const hookStatus = computed(() =>
+	hookGroupStatus(props.activeBranchHooks.filter((h) => h.blockId === null)),
+)
+// the bar beside the title takes the same status as the hook icon
+const hookBarClass = computed(() =>
+	hookStatus.value && hookStatus.value !== "fresh"
+		? HOOK_BAR_STATUS_CLASS[hookStatus.value]
+		: null,
+)
 const hookMenuOpen = ref(false)
 const rootElem = useTemplateRef<HTMLElement>("name-editor-root")
 const nameLineElem = useTemplateRef<HTMLElement>("name-line")
@@ -408,8 +414,13 @@ async function executeReviewableAction() {
 		class="relative mt-[0.8rem] mb-2 w-[calc(100%-2.5rem)] lg:mt-8 lg:mb-5 lg:w-[calc(100%-6.25rem)]"
 	>
 		<div
-			v-show="hookStatus === 'stale'"
-			class="pointer-events-none absolute top-1/2 -left-5 h-full w-1.25 -translate-y-1/2 rounded-r-lg bg-hook-decoration in-data-compact-view:rounded-full lg:-left-12.5 lg:h-[calc(100%+2rem)]"
+			v-show="hookBarClass"
+			:class="
+				cn(
+					'pointer-events-none absolute top-1/2 -left-5 h-full w-1.25 -translate-y-1/2 rounded-r-lg in-data-compact-view:rounded-full lg:-left-12.5 lg:h-[calc(100%+2rem)]',
+					hookBarClass,
+				)
+			"
 		/>
 		<!--
 			the line reaches into the page margins on both sides, so hovering
@@ -460,7 +471,7 @@ async function executeReviewableAction() {
 									title takes the same handle at the same width there and
 									keeps the hook button where the block ones do. The
 									dots take the block handles' backdrop too, since they
-									sit over the page's stale hook bar
+									sit over the page's triggered hook bar
 								-->
 								<span
 									class="relative h-5 w-3 overflow-hidden rounded-sm bg-background-translucent lg:hidden"
@@ -473,7 +484,12 @@ async function executeReviewableAction() {
 								<Icon
 									name="mingcute:leaf-line"
 									:data-hook-status="hookStatus"
-									class="mt-0.25 hidden size-4.5 data-[hook-status=fresh]:text-hook-status-fresh data-[hook-status=stale]:text-hook-status-stale lg:block"
+									:class="
+										cn(
+											'mt-0.25 hidden size-4.5 lg:block',
+											HOOK_ICON_STATUS_CLASS,
+										)
+									"
 								/>
 							</span>
 							<span class="sr-only">

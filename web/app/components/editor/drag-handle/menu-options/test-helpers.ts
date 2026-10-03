@@ -1,3 +1,4 @@
+import type { HookGroupStatus } from "../../hooks/hook-status"
 // shared helpers for the drag-handle menu option suites. Test-only: the
 // app/**/test-helpers.ts coverage exclude keeps this out of the
 // denominator, and nothing here is imported by app code.
@@ -18,7 +19,7 @@ export interface HoveredBlock {
 	nodePos: number
 	nodeId: string
 	nodeHooks: DocumentHook[] | null
-	nodeHookStatus: "stale" | "fresh" | null
+	nodeHookStatus: HookGroupStatus | null
 }
 
 // the block the drag handle is pointing at, reduced to what the option

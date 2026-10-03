@@ -6,48 +6,44 @@ import { t } from "~/components/test-helpers"
 function mountField(props: Record<string, unknown> = {}) {
 	return mountSuspended(HookInputField, {
 		props: {
-			placeholder: t(
-				"editor.hooks.container-image-watcher.image-input-placeholder",
-			),
+			placeholder: t("editor.hooks.url-watcher.url-input-placeholder"),
 			...props,
 		},
-		slots: {
-			label: () => t("editor.hooks.container-image-watcher.image-input-label"),
-		},
+		slots: { label: () => t("editor.hooks.url-watcher.url-input-label") },
 	})
 }
 
-describe("<ContainerImageWatcherHookInputField>", () => {
+describe("<HookInputField>", () => {
 	it("labels the field", async ({ expect }) => {
 		const wrapper = await mountField()
 
-		expect(wrapper.text()).toBe(
-			t("editor.hooks.container-image-watcher.image-input-label"),
-		)
+		expect(wrapper.text()).toBe(t("editor.hooks.url-watcher.url-input-label"))
 	})
 
 	it("prompts with the placeholder it was given", async ({ expect }) => {
 		const wrapper = await mountField()
 
 		expect(wrapper.get("input").attributes("placeholder")).toBe(
-			t("editor.hooks.container-image-watcher.image-input-placeholder"),
+			t("editor.hooks.url-watcher.url-input-placeholder"),
 		)
 	})
 
 	it("shows the value it was given", async ({ expect }) => {
-		const wrapper = await mountField({ modelValue: "redis:7" })
+		const wrapper = await mountField({ modelValue: "https://oxynote.test" })
 
 		expect((wrapper.get("input").element as HTMLInputElement).value).toBe(
-			"redis:7",
+			"https://oxynote.test",
 		)
 	})
 
 	it("reports what the reader typed", async ({ expect }) => {
 		const wrapper = await mountField()
 
-		await wrapper.get("input").setValue("redis:7")
+		await wrapper.get("input").setValue("https://oxynote.test")
 
-		expect(wrapper.emitted("update:modelValue")).toEqual([["redis:7"]])
+		expect(wrapper.emitted("update:modelValue")).toEqual([
+			["https://oxynote.test"],
+		])
 	})
 
 	it("stays editable by default", async ({ expect }) => {
@@ -75,9 +71,15 @@ describe("<ContainerImageWatcherHookInputField>", () => {
 		expect(wrapper.get("input").classes()).not.toContain("text-2sm")
 	})
 
-	it("takes any text as an image reference", async ({ expect }) => {
+	it("is a plain text field by default", async ({ expect }) => {
 		const wrapper = await mountField()
 
-		expect(wrapper.get("input").attributes("type")).toBeUndefined()
+		expect(wrapper.get("input").attributes("type")).toBe("text")
+	})
+
+	it("takes the input type the host asks for", async ({ expect }) => {
+		const wrapper = await mountField({ type: "url" })
+
+		expect(wrapper.get("input").attributes("type")).toBe("url")
 	})
 })

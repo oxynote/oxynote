@@ -3,6 +3,7 @@ import {
 	addDeletionSuccessStatusToUrl,
 	createNameSlug,
 	createNameSlugWithId,
+	displayURL,
 	ensureHttps,
 	equalNameSlugs,
 	extractDocInfoFromSlug,
@@ -187,6 +188,28 @@ describe("extractDomain", () => {
 		{ name: "returns unparseable input unchanged", input: "", expected: "" },
 	])("$name", ({ input, expected }, { expect }) => {
 		expect(extractDomain(input)).toBe(expected)
+	})
+})
+
+describe("displayURL", () => {
+	it.for([
+		{
+			name: "drops the scheme and keeps the path",
+			input: "https://docs.example.com/guide?x=1",
+			expected: "docs.example.com/guide?x=1",
+		},
+		{
+			name: "drops a trailing slash",
+			input: "HTTP://example.com/",
+			expected: "example.com",
+		},
+		{
+			name: "keeps a url without a scheme as it is",
+			input: "example.com/guide",
+			expected: "example.com/guide",
+		},
+	])("$name", ({ input, expected }, { expect }) => {
+		expect(displayURL(input)).toBe(expected)
 	})
 })
 

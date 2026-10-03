@@ -2,11 +2,12 @@
 import { cn } from "~/lib/utils"
 import DiffCountPill from "../diff/DiffCountPill.vue"
 import type { HookChangeCount } from "./hook-diff"
+import { HOOK_ICON_STATUS_CLASS, type HookGroupStatus } from "./hook-status"
 
 const props = defineProps<{
 	count: HookChangeCount
 	// the hook icon takes the colour the hook button would have
-	hookStatus: "fresh" | "stale" | null
+	hookStatus: HookGroupStatus | null
 	// the handle shows in the marker's spot, so the marker moves below it
 	lifted: boolean
 }>()
@@ -55,7 +56,12 @@ const showHookIcon = computed(() => !props.lifted || !isMinWidth1024px.value)
 				<Icon
 					name="mingcute:leaf-line"
 					:data-hook-status="props.hookStatus"
-					class="mt-0.75 size-2.5 shrink-0 text-foreground/50 data-[hook-status=fresh]:text-hook-status-fresh data-[hook-status=stale]:text-hook-status-stale lg:size-3"
+					:class="
+						cn(
+							'mt-0.75 size-2.5 shrink-0 text-foreground/50 lg:size-3',
+							HOOK_ICON_STATUS_CLASS,
+						)
+					"
 				/>
 			</span>
 		</DiffCountPill>

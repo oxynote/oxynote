@@ -2,6 +2,7 @@
 import type { Editor } from "@tiptap/core"
 import HookDiffMarker from "./HookDiffMarker.vue"
 import { blockChangeCount, diffHooks, type HookChangeCount } from "./hook-diff"
+import { hookGroupStatus, type HookGroupStatus } from "./hook-status"
 import { handlePositionByNodeType } from "../drag-handle/config"
 
 // the height of the hook button on a wide screen. A block whose handle is
@@ -11,7 +12,7 @@ const HANDLE_HEIGHT_REM = 1.375
 interface MarkerPlacement {
 	blockId: string
 	count: HookChangeCount
-	hookStatus: "fresh" | "stale" | null
+	hookStatus: HookGroupStatus | null
 	top: number
 	right: number
 }
@@ -104,22 +105,15 @@ function placeMarkers() {
 			{
 				blockId: block.id,
 				count: block.count,
-				hookStatus: hookStatus(block.id),
+				// the marker's hook icon is coloured as the hook button would be
+				hookStatus: hookGroupStatus(
+					props.activeBranchHooks.filter((h) => h.blockId === block.id),
+				),
 				top: Math.round(top - rootRect.top),
 				right: Math.round(rootRect.width - anchor),
 			},
 		]
 	})
-}
-
-// hookStatus colours the marker's hook icon as the hook button would be
-function hookStatus(blockId: string): "fresh" | "stale" | null {
-	const hooks = props.activeBranchHooks.filter((h) => h.blockId === blockId)
-	if (!hooks.length) {
-		return null
-	}
-
-	return hooks.some((h) => Number(h.score) === 0) ? "stale" : "fresh"
 }
 </script>
 

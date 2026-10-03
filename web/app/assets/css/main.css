@@ -36,14 +36,17 @@
 	--radius: 0.35rem;
 
 	--status-info: oklch(0.5309 0.1628 244.25);
+	--status-info-foreground: oklch(0.42 0.13 244.25);
 	--status-success: oklch(0.6371 0.1749 146.7);
+	--status-success-foreground: oklch(0.42 0.13 146.7);
 	--status-warning: oklch(0.7074 0.1455 95.22);
+	--status-warning-foreground: oklch(0.45 0.095 85);
 	--status-error: oklch(0.577 0.245 27.325);
 
 	--drag-target: oklch(0.8985 0.0419 244.63);
-	--hook-decoration: oklch(67.323% 0.14096 75.998);
-	--hook-status-fresh: oklch(0.6 0.118 184.704);
-	--hook-status-stale: oklch(67.323% 0.14096 75.998);
+	--hook-status-fresh: var(--status-success);
+	--hook-status-triggered: var(--status-info);
+	--hook-status-needs-attention: var(--status-warning);
 	--comment-highlight: oklch(0.8633 0.1764 89.91);
 
 	--http-method-get: oklch(0.5002 0.1962 259.56);
@@ -213,9 +216,12 @@
 	--ring: oklch(0.439 0 0);
 
 	--drag-target: oklch(0.6603 0.1406 244.63 / 35.99%);
-	--hook-decoration: oklch(68.662% 0.1396 91.469);
-	--hook-status-fresh: oklch(0.696 0.17 162.48);
-	--hook-status-stale: oklch(68.662% 0.1396 91.469);
+	--status-info-foreground: oklch(0.8 0.1 244.25);
+	--status-success-foreground: oklch(0.82 0.15 146.7);
+	--status-warning-foreground: oklch(0.85 0.13 95.22);
+	--hook-status-fresh: var(--status-success);
+	--hook-status-triggered: var(--status-info);
+	--hook-status-needs-attention: var(--status-warning);
 
 	--http-method-get: oklch(0.6773 0.1637 247.59);
 	--http-method-post: oklch(0.6613 0.1999 140.25);
@@ -320,14 +326,17 @@
 	--radius-xl: calc(var(--radius) + 4px);
 
 	--color-status-info: var(--status-info);
+	--color-status-info-foreground: var(--status-info-foreground);
 	--color-status-success: var(--status-success);
+	--color-status-success-foreground: var(--status-success-foreground);
 	--color-status-warning: var(--status-warning);
+	--color-status-warning-foreground: var(--status-warning-foreground);
 	--color-status-error: var(--status-error);
 
 	--color-drag-target: var(--drag-target);
-	--color-hook-decoration: var(--hook-decoration);
 	--color-hook-status-fresh: var(--hook-status-fresh);
-	--color-hook-status-stale: var(--hook-status-stale);
+	--color-hook-status-triggered: var(--hook-status-triggered);
+	--color-hook-status-needs-attention: var(--hook-status-needs-attention);
 	--color-comment-highlight: var(--comment-highlight);
 
 	--color-http-method-get: var(--http-method-get);
@@ -657,6 +666,17 @@
 /* disable task list checkboxes when the editor is not editable */
 .editor-not-editable li[data-checked] > label {
 	@apply pointer-events-none;
+}
+
+/* the hook bar decoration and the hook icon of a block that has a triggered
+   hook and one that needs attention. They are striped in both status
+   colours. */
+@utility bg-hook-status-mixed {
+	background-image: repeating-linear-gradient(
+		-45deg,
+		var(--hook-status-triggered) 0 0.25rem,
+		var(--hook-status-needs-attention) 0.25rem 0.5rem
+	);
 }
 
 .diff-added {

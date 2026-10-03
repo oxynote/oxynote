@@ -6,6 +6,7 @@ import {
 	DropdownMenu,
 	DropdownMenuContent,
 } from "~/components/shadcn/ui/dropdown-menu"
+import { TooltipProvider } from "~/components/shadcn/ui/tooltip"
 
 // eslint's ts program resolves .vue imports as error typed, so a
 // component handed to mountHookMenu looks unsafe to it while vue-tsc
@@ -29,18 +30,25 @@ export function makeHook(overrides: Partial<DocumentHook> = {}): DocumentHook {
 }
 
 // the hook menus render a dropdown sub-menu, which reka-ui only lets
-// mount inside an open menu — and teleports into <body> from there
+// mount inside an open menu — and teleports into <body> from there. The
+// menu header's tooltips need the provider the page installs
 export function mountHookMenu(
 	component: TestComponent,
 	props: Record<string, unknown>,
 ) {
-	return mountSuspended(DropdownMenu, {
-		props: { open: true },
+	return mountSuspended(TooltipProvider, {
 		slots: {
 			default: () =>
-				h(DropdownMenuContent, null, {
-					default: () => h(component, props),
-				}),
+				h(
+					DropdownMenu,
+					{ open: true },
+					{
+						default: () =>
+							h(DropdownMenuContent, null, {
+								default: () => h(component, props),
+							}),
+					},
+				),
 		},
 	})
 }
@@ -94,13 +102,43 @@ export function readonlyFields(): [
 	"added" | "removed" | "unchanged",
 ][] {
 	return Array.from(
-		document.body.querySelectorAll<HTMLInputElement>("input[readonly]"),
-	).map((input) => [
-		input.value,
-		input.classList.contains("bg-diff-field-added")
+		document.body.querySelectorAll<HTMLElement>(
+			"[role='textbox'][aria-readonly='true']",
+		),
+	).map((field) => [
+		field.textContent.trim(),
+		field.classList.contains("bg-diff-field-added")
 			? "added"
-			: input.classList.contains("bg-diff-field-removed")
+			: field.classList.contains("bg-diff-field-removed")
 				? "removed"
 				: "unchanged",
 	])
+}
+
+// @nuxt/icon's css mode renders an icon as <span class="iconify i-<name>">,
+// so the class is the only trace of which icon a menu picked
+export function iconNames(root: Element): string[] {
+	return Array.from(root.querySelectorAll(".iconify")).flatMap((icon) => {
+		const name = Array.from(icon.classList).find((c) => c.startsWith("i-"))
+
+		return name ? [name.slice("i-".length)] : []
+	})
+}
+
+// the notice of the open hook menu, with the status its tint shows
+export function hookNotice(): HTMLElement {
+	const notice = document.body.querySelector<HTMLElement>("[data-hook-status]")
+	if (!notice) {
+		throw new Error("no hook notice is rendered")
+	}
+
+	return notice
+}
+
+// the labels of every button in the menu bodies, for when a label also
+// shows up in other text
+export function menuButtonLabels(): string[] {
+	return Array.from(document.body.querySelectorAll("button")).map((button) =>
+		button.textContent.trim(),
+	)
 }

@@ -18,7 +18,20 @@ import {
 const MENU_CLOSE_ANIMATION_MS = 150
 
 function hook(blockId: string, score: number): DocumentHook {
-	return { blockId: blockId, score: score } as unknown as DocumentHook
+	return {
+		blockId: blockId,
+		score: score,
+		state: { status: "active" },
+	} as unknown as DocumentHook
+}
+
+// a hook whose last check failed
+function failedHook(blockId: string): DocumentHook {
+	return {
+		blockId: blockId,
+		score: 0,
+		state: { status: "unreachable_url" },
+	} as unknown as DocumentHook
 }
 
 // the editor the handle reads the hovered node through
@@ -176,7 +189,7 @@ describe("<BlockHandle>", { concurrent: false }, () => {
 		).toBe("fresh")
 	})
 
-	it("marks the hook icon stale when a hook has run out", async ({
+	it("marks the hook icon triggered when a hook has run out", async ({
 		expect,
 	}) => {
 		const wrapper = await mountHandle({
@@ -187,7 +200,35 @@ describe("<BlockHandle>", { concurrent: false }, () => {
 
 		expect(
 			wrapper.get(".i-mingcute\\:leaf-line").attributes("data-hook-status"),
-		).toBe("stale")
+		).toBe("triggered")
+	})
+
+	it("marks the hook icon as needing attention when a hook's check failed", async ({
+		expect,
+	}) => {
+		const wrapper = await mountHandle({
+			activeBranchHooks: [hook("block-1", 1), failedHook("block-1")],
+		})
+		hoverNode(wrapper, 10)
+		await nextTick()
+
+		expect(
+			wrapper.get(".i-mingcute\\:leaf-line").attributes("data-hook-status"),
+		).toBe("needs-attention")
+	})
+
+	it("marks the hook icon mixed when one hook triggered and another failed", async ({
+		expect,
+	}) => {
+		const wrapper = await mountHandle({
+			activeBranchHooks: [hook("block-1", 0), failedHook("block-1")],
+		})
+		hoverNode(wrapper, 10)
+		await nextTick()
+
+		expect(
+			wrapper.get(".i-mingcute\\:leaf-line").attributes("data-hook-status"),
+		).toBe("mixed")
 	})
 
 	it("ignores hooks belonging to other blocks", async ({ expect }) => {

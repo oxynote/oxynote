@@ -1,15 +1,17 @@
 <script setup lang="ts">
-import { showToastMessage } from "~/components/toast"
 import FileSelectInput from "./FileSelectInput.vue"
 import { cn } from "~/lib/utils"
+import HookConfigPanel from "../HookConfigPanel.vue"
+import HookNoticeValue from "../HookNoticeValue.vue"
 import HookReadonlyField from "../HookReadonlyField.vue"
-import HookSubTrigger from "../HookSubTrigger.vue"
-import HookExplanation from "../HookExplanation.vue"
+import { useHookActions } from "../hook-actions"
 import {
 	listFieldRows,
 	scalarFieldRows,
 	type HookDiffContext,
 } from "../hook-diff"
+import { hookNoticeKeypath, type HookSubtitle } from "../hook-menu"
+import { hookStatus, type HookStatus } from "../hook-status"
 
 const props = defineProps<{
 	hook?: DocumentHook | null | undefined // null/undefined means creating new
@@ -22,62 +24,122 @@ const emit = defineEmits<{
 	(e: "open-settings", target: "github"): void
 }>()
 
-const editorStore = useEditorStore()
-const { isReadOnlyOrDiff } = useEditorMeta()
-const targetSettings = computed(
-	() =>
-		props.diff?.targetHook?.settings as
-			DocumentHookSettingsGitHubTracking | undefined,
-)
-const hookData = computed(() => {
-	if (!props.hook) {
-		return null
-	}
-
-	return {
-		score: Number(props.hook.score),
-		state: props.hook.state as DocumentHookStateGitHubTracking,
-		settings: props.hook.settings as DocumentHookSettingsGitHubTracking,
-	}
-})
-const documentHookAPI = useDocumentHookAPI()
-const { fetchGitHubConnectionStatus } = useGitHubAPI()
 const { t } = useI18n({ useScope: "global" })
-const confirmedRepository = ref<string | undefined>(
-	hookData.value ? hookData.value.settings.repository : undefined,
-)
-const selectedRepository = ref<string | undefined>(confirmedRepository.value)
-const confirmedBranch = ref<string | undefined>(
-	hookData.value ? hookData.value.settings.branch : undefined,
-)
-const selectedBranch = ref<string | undefined>(confirmedBranch.value)
-const confirmedPaths = ref<string[] | undefined>(
-	hookData.value ? hookData.value.settings.paths : undefined,
-)
-const selectedPaths = ref<string[] | undefined>(confirmedPaths.value)
-const invalidData = computed(() => {
-	return (
-		!selectedRepository.value ||
-		!selectedBranch.value ||
-		!selectedPaths.value?.length ||
-		(selectedRepository.value === confirmedRepository.value &&
-			selectedBranch.value === confirmedBranch.value &&
-			arraysEqual(selectedPaths.value, confirmedPaths.value))
-	)
+const { isReadOnlyOrDiff } = useEditorMeta()
+const actions = useHookActions({
+	type: DocumentHookType.GitHubTracking,
+	nodeId: () => props.nodeId,
+	hook: () => props.hook,
+	close: close,
 })
 const {
+	fetchGitHubConnectionStatus,
 	fetchGitHubRepositories,
 	useFetchGitHubBranchesByRepositoryName,
 	useFetchGitHubFileTreeByRepositoryNameAndBranch,
 } = useGitHubAPI()
+
+const activeBranchSettings = computed(
+	() => props.hook?.settings as DocumentHookSettingsGitHubTracking | undefined,
+)
+const targetBranchSettings = computed(
+	() =>
+		props.diff?.targetHook?.settings as
+			DocumentHookSettingsGitHubTracking | undefined,
+)
+const state = computed(
+	() => props.hook?.state as DocumentHookStateGitHubTracking | undefined,
+)
+const status = computed(() => (props.hook ? hookStatus(props.hook) : null))
+const selectedRepository = ref<string | undefined>(
+	activeBranchSettings.value?.repository,
+)
+const selectedBranch = ref<string | undefined>(
+	activeBranchSettings.value?.branch,
+)
+const selectedPaths = ref<string[] | undefined>(
+	activeBranchSettings.value?.paths,
+)
 const fetchGitHubBranches =
 	useFetchGitHubBranchesByRepositoryName(selectedRepository)
 const fetchGitHubPaths = useFetchGitHubFileTreeByRepositoryNameAndBranch(
 	selectedRepository,
 	selectedBranch,
 )
-
 const isSubOpen = ref(false)
+const invalidData = computed(() => {
+	return (
+		!selectedRepository.value ||
+		!selectedBranch.value ||
+		!selectedPaths.value?.length ||
+		(selectedRepository.value === activeBranchSettings.value?.repository &&
+			selectedBranch.value === activeBranchSettings.value.branch &&
+			arraysEqual(selectedPaths.value, activeBranchSettings.value.paths))
+	)
+})
+const failure = computed(() =>
+	state.value ? checkFailure(state.value.status) : null,
+)
+// the setup an editor still has to do comes first, then what the last
+// check found
+const notice = computed(() => {
+	if (
+		failure.value?.notice === "not-connected" ||
+		(!isReadOnlyOrDiff.value &&
+			!fetchGitHubConnectionStatus.data.value?.connected)
+	) {
+		return "not-connected"
+	}
+
+	if (
+		!isReadOnlyOrDiff.value &&
+		!fetchGitHubRepositories.state.value.data?.length
+	) {
+		return "no-repositories"
+	}
+
+	return failure.value?.notice ?? "summary"
+})
+// setup is not the hook's own state, so it shows plain unless the last
+// check failed over it
+const noticeStatus = computed<HookStatus | undefined>(() =>
+	(notice.value === "not-connected" || notice.value === "no-repositories") &&
+	status.value !== "needs-attention"
+		? "fresh"
+		: undefined,
+)
+const subtitle = computed<HookSubtitle>(() => {
+	if (!activeBranchSettings.value) {
+		return { text: t("editor.hooks.github-tracking.description") }
+	}
+
+	return {
+		text: t("editor.hooks.github-tracking.subtext", {
+			repository: activeBranchSettings.value.repository,
+			branch: activeBranchSettings.value.branch,
+		}),
+		detail:
+			failure.value?.detail ??
+			fileCount(activeBranchSettings.value.paths.length),
+	}
+})
+// the notice names the picks as they are made, and the stored ones where
+// they cannot be changed
+const noticeFiles = computed(() => {
+	const paths = isReadOnlyOrDiff.value
+		? activeBranchSettings.value?.paths
+		: selectedPaths.value
+	if (!paths?.length) {
+		return null
+	}
+
+	return paths.length > 2 ? fileCount(paths.length) : paths.join(", ")
+})
+const noticeBranch = computed(() =>
+	isReadOnlyOrDiff.value
+		? activeBranchSettings.value?.branch
+		: selectedBranch.value,
+)
 
 onMounted(async () => {
 	await Promise.all([
@@ -86,518 +148,338 @@ onMounted(async () => {
 	])
 })
 
-async function upsertHook() {
-	if (
-		invalidData.value ||
-		!editorStore.activeDocumentId ||
-		!editorStore.activeBranchId
-	) {
-		return
-	}
-
-	isSubOpen.value = false
-	emit("force-close")
-
+async function submit() {
 	const repository = selectedRepository.value
 	const branch = selectedBranch.value
 	const paths = selectedPaths.value
-
-	if (!repository || !branch || !paths) {
+	if (invalidData.value || !repository || !branch || !paths) {
 		return
 	}
 
-	if (!props.hook) {
-		try {
-			await documentHookAPI.createDocumentHookByDocID.mutateAsync({
-				docId: editorStore.activeDocumentId,
-				req: {
-					type: DocumentHookType.GitHubTracking,
-					branchId: editorStore.activeBranchId,
-					blockId: props.nodeId,
-					settings: {
-						repository,
-						branch,
-						paths,
-					},
-				},
-			})
-		} catch {
-			showToastMessage("error", t("editor.hooks.errors.create-failed"))
-			return
-		}
+	const next = { repository: repository, branch: branch, paths: paths }
+	if (props.hook) {
+		await actions.update(next)
+		return
+	}
 
-		confirmedRepository.value = selectedRepository.value
-		confirmedBranch.value = selectedBranch.value
-		confirmedPaths.value = selectedPaths.value
-
-		// since "create new" is reused, reset the state
+	// the same form creates the next hook, so it is emptied once a hook is
+	// created
+	if (await actions.create(next)) {
 		selectedRepository.value = undefined
 		selectedBranch.value = undefined
 		selectedPaths.value = undefined
-
-		return
 	}
-
-	try {
-		await documentHookAPI.updateDocumentHookByDocID.mutateAsync({
-			docId: editorStore.activeDocumentId,
-			branchId: editorStore.activeBranchId,
-			hookId: props.hook.id,
-			req: {
-				settings: {
-					repository,
-					branch,
-					paths,
-				},
-			},
-		})
-	} catch {
-		showToastMessage("error", t("editor.hooks.errors.update-failed"))
-		return
-	}
-
-	confirmedRepository.value = selectedRepository.value
-	confirmedBranch.value = selectedBranch.value
-	confirmedPaths.value = selectedPaths.value
 }
 
-async function deleteHook() {
-	if (
-		!props.hook ||
-		!editorStore.activeDocumentId ||
-		!editorStore.activeBranchId
-	) {
-		return
-	}
-
-	isSubOpen.value = false
-	emit("force-close")
-
-	try {
-		await documentHookAPI.deleteDocumentHookByDocID.mutateAsync({
-			docId: editorStore.activeDocumentId,
-			branchId: editorStore.activeBranchId,
-			hookId: props.hook.id,
-		})
-	} catch {
-		showToastMessage("error", t("editor.hooks.errors.delete-failed"))
-		return
-	}
-
-	selectedRepository.value = undefined
-	selectedBranch.value = undefined
-	selectedPaths.value = undefined
+function fileCount(count: number): string {
+	return count === 1
+		? t("editor.hooks.github-tracking.file-count.one")
+		: t("editor.hooks.github-tracking.file-count.other", { count: count })
 }
 
-async function resetHook() {
-	if (
-		!props.hook ||
-		!editorStore.activeDocumentId ||
-		!editorStore.activeBranchId
-	) {
-		return
+// checkFailure says what the row and the notice show for a failed check,
+// and is null while the check works. It has a case for every status and no
+// default, so a status added later fails to compile until it is handled.
+function checkFailure(checkStatus: DocumentHookStateGitHubTracking["status"]): {
+	detail: string
+	notice: "not-connected" | "missing-repository" | "missing-branch"
+} | null {
+	switch (checkStatus) {
+		case "active":
+			return null
+		case "missing_installation":
+			return {
+				detail: t("editor.hooks.github-tracking.problems.missing-installation"),
+				notice: "not-connected",
+			}
+		case "missing_repository":
+			return {
+				detail: t("editor.hooks.github-tracking.problems.missing-repository"),
+				notice: "missing-repository",
+			}
+		case "missing_branch":
+			return {
+				detail: t("editor.hooks.github-tracking.problems.missing-branch"),
+				notice: "missing-branch",
+			}
 	}
+}
 
+function close() {
 	isSubOpen.value = false
 	emit("force-close")
-
-	try {
-		await documentHookAPI.resetDocumentHookByDocID.mutateAsync({
-			docId: editorStore.activeDocumentId,
-			branchId: editorStore.activeBranchId,
-			hookId: props.hook.id,
-		})
-	} catch {
-		showToastMessage("error", t("editor.hooks.errors.reset-failed"))
-		return
-	}
 }
 </script>
+
 <template>
-	<ShadcnUiDropdownMenuSub v-model:open="isSubOpen">
-		<HookSubTrigger :hook="props.hook" :diff="props.diff">
-			<Icon name="simple-icons:github" class="shrink-0" />
-			<span v-if="!hookData">
-				{{ $t("editor.hooks.github-tracking.title") }}
-			</span>
+	<HookConfigPanel
+		v-model:open="isSubOpen"
+		:hook="props.hook"
+		:diff="props.diff"
+		icon="simple-icons:github"
+		:notice-status="noticeStatus"
+		:notice-icon="noticeStatus ? 'mingcute:information-fill' : undefined"
+		:acknowledge-label="
+			status === 'triggered' && state?.status === 'active'
+				? $t('editor.hooks.reset')
+				: undefined
+		"
+		:submit-disabled="invalidData"
+		@submit="submit"
+		@delete="actions.remove"
+		@acknowledge="actions.reset"
+	>
+		<template #title>
+			{{ $t("editor.hooks.github-tracking.title") }}
+		</template>
+		<template #subtitle>
+			{{ subtitle.text }}
+		</template>
+		<template v-if="subtitle.detail" #subtitle-detail>
+			{{ subtitle.detail }}
+		</template>
+		<template #notice>
 			<i18n-t
-				v-else-if="Number(hookData.score) !== 0"
+				v-if="notice === 'not-connected'"
 				scope="global"
-				keypath="editor.hooks.github-tracking.existing-item"
+				keypath="editor.hooks.github-tracking.not-connected.main"
 				tag="span"
-				class="truncate"
 			>
-				<template #repository>
-					{{ confirmedRepository }}
+				<template #placeholder>
+					<ShadcnUiButton
+						type="button"
+						variant="link"
+						size="custom"
+						class="h-fit p-0 text-xs"
+						@click="emit('open-settings', 'github')"
+					>
+						{{ $t("editor.hooks.github-tracking.not-connected.placeholder") }}
+					</ShadcnUiButton>
 				</template>
 			</i18n-t>
+			<template v-else-if="notice === 'no-repositories'">
+				{{ $t("editor.hooks.github-tracking.no-repositories") }}
+			</template>
+			<template v-else-if="notice === 'missing-repository'">
+				{{ $t("editor.hooks.github-tracking.missing-target-repository") }}
+			</template>
+			<template v-else-if="notice === 'missing-branch'">
+				{{ $t("editor.hooks.github-tracking.missing-target-branch") }}
+			</template>
 			<i18n-t
 				v-else
 				scope="global"
-				keypath="editor.hooks.github-tracking.triggered-item"
+				:keypath="hookNoticeKeypath(DocumentHookType.GitHubTracking, status)"
 				tag="span"
-				class="truncate"
 			>
-				<template #repository>
-					{{ confirmedRepository }}
+				<template #files>
+					<HookNoticeValue
+						:value="noticeFiles"
+						:fallback="$t('editor.hooks.github-tracking.files-fallback')"
+					/>
+				</template>
+				<template #branch>
+					<HookNoticeValue
+						:value="noticeBranch"
+						:fallback="$t('editor.hooks.github-tracking.branch-fallback')"
+					/>
 				</template>
 			</i18n-t>
-		</HookSubTrigger>
-		<ShadcnUiDropdownMenuSubContent
-			side="right"
-			align="start"
-			loop
-			:class="[
-				'pointer-events-auto!' /* for some reason ShadcnUiSelect disables pointer events, which closes the whole sub menu when the select is closed, so we must override this */,
-			]"
+		</template>
+		<div
+			v-if="isReadOnlyOrDiff && activeBranchSettings"
+			class="flex flex-col gap-1"
 		>
-			<div class="flex w-[14rem] flex-col">
-				<!-- the setup banners tell an editor what to connect -->
-				<template
-					v-if="
-						!isReadOnlyOrDiff &&
-						(!fetchGitHubConnectionStatus.data.value?.connected ||
-							hookData?.state.status === 'missing_installation')
-					"
-				>
-					<i18n-t
-						scope="global"
-						keypath="editor.hooks.github-tracking.not-connected.main"
-						tag="div"
-						class="px-0.75 pb-0.75 text-center text-2sm"
-					>
-						<template #icon>
-							<Icon
-								name="mingcute:information-fill"
-								class="mr-0.5 inline-block -translate-y-px align-middle text-status-info"
-							/>
-						</template>
-						<template #placeholder>
-							<ShadcnUiButton
-								type="button"
-								variant="link"
-								size="custom"
-								class="h-fit p-0 text-2sm"
-								@click="emit('open-settings', 'github')"
-							>
-								{{
-									$t("editor.hooks.github-tracking.not-connected.placeholder")
-								}}
-							</ShadcnUiButton>
-						</template>
-					</i18n-t>
-					<ShadcnUiDropdownMenuSeparator />
-				</template>
-				<template
-					v-else-if="
-						!isReadOnlyOrDiff &&
-						!fetchGitHubRepositories.state.value.data?.length
-					"
-				>
-					<i18n-t
-						scope="global"
-						keypath="editor.hooks.github-tracking.no-repositories"
-						tag="div"
-						class="px-0.75 pb-0.75 text-center text-2sm"
-					>
-						<template #icon>
-							<Icon
-								name="mingcute:information-fill"
-								class="mr-0.5 inline-block -translate-y-px align-middle text-status-info"
-							/>
-						</template>
-					</i18n-t>
-					<ShadcnUiDropdownMenuSeparator />
-				</template>
-				<template v-else-if="hookData?.state.status === 'missing_repository'">
-					<i18n-t
-						scope="global"
-						keypath="editor.hooks.github-tracking.missing-target-repository"
-						tag="div"
-						class="px-0.75 pb-0.75 text-center text-2sm"
-					>
-						<template #icon>
-							<Icon
-								name="mingcute:alert-fill"
-								class="mr-0.5 inline-block -translate-y-px align-middle text-status-warning"
-							/>
-						</template>
-					</i18n-t>
-					<ShadcnUiDropdownMenuSeparator />
-				</template>
-				<template v-else-if="hookData?.state.status === 'missing_branch'">
-					<i18n-t
-						scope="global"
-						keypath="editor.hooks.github-tracking.missing-target-branch"
-						tag="div"
-						class="px-0.75 pb-0.75 text-center text-2sm"
-					>
-						<template #icon>
-							<Icon
-								name="mingcute:alert-fill"
-								class="mr-0.5 inline-block -translate-y-px align-middle text-status-warning"
-							/>
-						</template>
-					</i18n-t>
-					<ShadcnUiDropdownMenuSeparator />
-				</template>
-				<div
-					:class="
-						cn(
-							'flex flex-col opacity-100 transition-opacity duration-200',
-							!isReadOnlyOrDiff &&
-								(!fetchGitHubConnectionStatus.data.value?.connected ||
-									hookData?.state.status === 'missing_installation') &&
-								'pointer-events-none opacity-60',
-						)
-					"
-				>
-					<template v-if="hookData && hookData.state.status === 'active'">
-						<HookExplanation
-							:type="DocumentHookType.GitHubTracking"
-							:triggered="hookData.score === 0"
-							:node-id="props.nodeId"
-						/>
-						<ShadcnUiDropdownMenuSeparator />
-					</template>
-					<div class="flex flex-col gap-1 px-0.75 pb-0.75">
-						<template v-if="isReadOnlyOrDiff && hookData">
-							<HookReadonlyField
-								:label="
-									$t('editor.hooks.github-tracking.repository-select-label')
-								"
-								:rows="
-									scalarFieldRows(
-										hookData.settings.repository,
-										targetSettings?.repository ?? null,
+			<HookReadonlyField
+				:label="$t('editor.hooks.github-tracking.repository-select-label')"
+				:rows="
+					scalarFieldRows(
+						activeBranchSettings.repository,
+						targetBranchSettings?.repository ?? null,
+					)
+				"
+				:diff-status="props.diff?.status"
+			/>
+			<HookReadonlyField
+				:label="$t('editor.hooks.github-tracking.branch-select-label')"
+				:rows="
+					scalarFieldRows(
+						activeBranchSettings.branch,
+						targetBranchSettings?.branch ?? null,
+					)
+				"
+				:diff-status="props.diff?.status"
+			/>
+			<HookReadonlyField
+				:label="$t('editor.hooks.github-tracking.path-select-label')"
+				:rows="
+					listFieldRows(
+						activeBranchSettings.paths,
+						targetBranchSettings?.paths ?? null,
+					)
+				"
+				:diff-status="props.diff?.status"
+			/>
+		</div>
+		<div
+			v-else
+			:class="
+				cn(
+					'flex flex-col gap-1 opacity-100 transition-opacity duration-200',
+					(!fetchGitHubConnectionStatus.data.value?.connected ||
+						state?.status === 'missing_installation') &&
+						'pointer-events-none opacity-60',
+				)
+			"
+		>
+			<ShadcnUiSelect
+				v-model="selectedRepository"
+				:disabled="
+					!fetchGitHubConnectionStatus.data.value?.connected ||
+					fetchGitHubRepositories.isLoading.value ||
+					fetchGitHubRepositories.state.value.data?.length === 0 ||
+					(!!state &&
+						state.status !== 'active' &&
+						state.status !== 'missing_repository' &&
+						state.status !== 'missing_branch')
+				"
+			>
+				<ShadcnUiSelectLabel>
+					<span class="text-2sm">
+						{{ $t("editor.hooks.github-tracking.repository-select-label") }}
+					</span>
+				</ShadcnUiSelectLabel>
+				<ShadcnUiSelectTrigger class="w-full" size="custom">
+					<ShadcnUiSelectValue
+						class="text-2sm"
+						:placeholder="
+							fetchGitHubRepositories.isLoading.value
+								? $t(
+										'editor.hooks.github-tracking.repository-select-loading-placeholder',
 									)
-								"
-							/>
-							<HookReadonlyField
-								:label="$t('editor.hooks.github-tracking.branch-select-label')"
-								:rows="
-									scalarFieldRows(
-										hookData.settings.branch,
-										targetSettings?.branch ?? null,
+								: $t(
+										'editor.hooks.github-tracking.repository-select-placeholder',
 									)
-								"
-							/>
-							<HookReadonlyField
-								:label="$t('editor.hooks.github-tracking.path-select-label')"
-								:rows="
-									listFieldRows(
-										hookData.settings.paths,
-										targetSettings?.paths ?? null,
-									)
-								"
-							/>
-						</template>
-						<ShadcnUiSelect
-							v-if="!isReadOnlyOrDiff"
-							v-model="selectedRepository"
-							:disabled="
-								!fetchGitHubConnectionStatus.data.value?.connected ||
-								fetchGitHubRepositories.isLoading.value ||
-								fetchGitHubRepositories.state.value.data?.length === 0 ||
-								(!!hookData &&
-									hookData.state.status !== 'active' &&
-									hookData.state.status !== 'missing_repository' &&
-									hookData.state.status !== 'missing_branch')
-							"
-						>
-							<ShadcnUiSelectLabel>
-								<span class="text-2sm">
-									{{
-										$t("editor.hooks.github-tracking.repository-select-label")
-									}}
-								</span>
-							</ShadcnUiSelectLabel>
-							<ShadcnUiSelectTrigger class="w-full" size="custom">
-								<ShadcnUiSelectValue
-									class="text-2sm"
-									:placeholder="
-										fetchGitHubRepositories.isLoading.value
-											? $t(
-													'editor.hooks.github-tracking.repository-select-loading-placeholder',
-												)
-											: $t(
-													'editor.hooks.github-tracking.repository-select-placeholder',
-												)
-									"
-								/>
-							</ShadcnUiSelectTrigger>
-							<ShadcnUiSelectContent
-								class="max-h-[40dvh] max-w-[15rem]"
-								side="bottom"
-								align="start"
-								body-lock
-							>
-								<ShadcnUiSelectItem
-									v-for="item in fetchGitHubRepositories.state.value.data"
-									:key="item.name"
-									:value="item.name"
-									class="text-2sm"
-								>
-									<div class="flex-1 truncate">
-										{{ item.name }}
-									</div>
-								</ShadcnUiSelectItem>
-							</ShadcnUiSelectContent>
-						</ShadcnUiSelect>
-						<ShadcnUiSelect
-							v-if="!isReadOnlyOrDiff"
-							v-model="selectedBranch"
-							:disabled="
-								!selectedRepository ||
-								fetchGitHubBranches.isLoading.value ||
-								(!!hookData &&
-									hookData.state.status !== 'active' &&
-									hookData.state.status !== 'missing_branch')
-							"
-						>
-							<ShadcnUiSelectLabel>
-								<span class="text-2sm">
-									{{ $t("editor.hooks.github-tracking.branch-select-label") }}
-								</span>
-							</ShadcnUiSelectLabel>
-							<ShadcnUiSelectTrigger class="w-full" size="custom">
-								<ShadcnUiSelectValue
-									class="text-2sm"
-									:placeholder="
-										!selectedRepository
-											? $t(
-													'editor.hooks.github-tracking.branch-select-repository-placeholder',
-												)
-											: fetchGitHubBranches.isLoading.value
-												? $t(
-														'editor.hooks.github-tracking.branch-select-loading-placeholder',
-													)
-												: $t(
-														'editor.hooks.github-tracking.branch-select-placeholder',
-													)
-									"
-								/>
-							</ShadcnUiSelectTrigger>
-							<ShadcnUiSelectContent
-								class="max-h-[40dvh] max-w-[15rem]"
-								side="bottom"
-								align="start"
-							>
-								<ShadcnUiSelectItem
-									v-for="branch in fetchGitHubBranches.state.value.data"
-									:key="branch"
-									:value="branch"
-									class="text-2sm"
-								>
-									<div class="flex-1 truncate">
-										{{ branch }}
-									</div>
-								</ShadcnUiSelectItem>
-							</ShadcnUiSelectContent>
-						</ShadcnUiSelect>
-						<FileSelectInput
-							v-if="!isReadOnlyOrDiff"
-							v-model="selectedPaths"
-							class="w-full"
-							:disabled="
-								!selectedRepository ||
-								!selectedBranch ||
-								fetchGitHubPaths.isLoading.value ||
-								(!!hookData && hookData.state.status !== 'active')
-							"
-							:options="fetchGitHubPaths.state.value.data || []"
-							:placeholder="
-								!selectedRepository
-									? $t(
-											'editor.hooks.github-tracking.path-select-repository-placeholder',
-										)
-									: !selectedBranch
-										? $t(
-												'editor.hooks.github-tracking.path-select-branch-placeholder',
-											)
-										: fetchGitHubPaths.isLoading.value
-											? $t(
-													'editor.hooks.github-tracking.path-select-loading-placeholder',
-												)
-											: $t(
-													'editor.hooks.github-tracking.path-select-placeholder',
-												)
-							"
-							:empty-folder-placeholder="
-								$t('editor.hooks.github-tracking.empty-folder-placeholder')
-							"
-						>
-							<template #label>
-								<span>
-									{{ $t("editor.hooks.github-tracking.path-select-label") }}
-								</span>
-							</template>
-							<template #selection-text="{ count }">
-								<i18n-t
-									v-if="count > 1"
-									scope="global"
-									keypath="editor.hooks.github-tracking.selection-text.other"
-									tag="span"
-								>
-									<template #count>{{ count }}</template>
-								</i18n-t>
-								<i18n-t
-									v-if="count === 1"
-									scope="global"
-									keypath="editor.hooks.github-tracking.selection-text.one"
-									tag="span"
-								/>
-							</template>
-						</FileSelectInput>
-					</div>
-					<ShadcnUiDropdownMenuSeparator v-if="!isReadOnlyOrDiff" />
-				</div>
-				<div v-if="!isReadOnlyOrDiff" class="p-0.75">
-					<div v-if="hookData" class="flex flex-col gap-1">
-						<div class="flex gap-1">
-							<ShadcnUiButton
-								class="flex-1 gap-1"
-								:variant="hookData?.score === 0 ? 'outline' : 'default'"
-								size="2sm"
-								:disabled="invalidData"
-								@click.stop="upsertHook"
-							>
-								<Icon name="mingcute:save-2-line" />
-								{{ $t("editor.hooks.update") }}
-							</ShadcnUiButton>
-							<ShadcnUiButton
-								class="flex-1 gap-1"
-								variant="secondary"
-								size="2sm"
-								@click.stop="deleteHook"
-							>
-								<Icon name="mingcute:delete-2-line" />
-								{{ $t("editor.hooks.delete") }}
-							</ShadcnUiButton>
+						"
+					/>
+				</ShadcnUiSelectTrigger>
+				<ShadcnUiSelectContent
+					class="max-h-[40dvh] max-w-[15rem]"
+					side="bottom"
+					align="start"
+					body-lock
+				>
+					<ShadcnUiSelectItem
+						v-for="item in fetchGitHubRepositories.state.value.data"
+						:key="item.name"
+						:value="item.name"
+						class="text-2sm"
+					>
+						<div class="flex-1 truncate">
+							{{ item.name }}
 						</div>
-						<ShadcnUiButton
-							v-if="hookData?.score === 0 && hookData.state.status === 'active'"
-							class="gap-1"
-							size="2sm"
-							@click.stop="resetHook"
-						>
-							<Icon name="mingcute:check-fill" />
-							{{ $t("editor.hooks.reset") }}
-						</ShadcnUiButton>
-					</div>
-					<template v-else>
-						<ShadcnUiButton
-							class="w-full gap-1"
-							size="2sm"
-							:disabled="invalidData"
-							@click.stop="upsertHook"
-						>
-							<Icon name="mingcute:check-fill" />
-							{{ $t("editor.hooks.create") }}
-						</ShadcnUiButton>
-					</template>
-				</div>
-			</div>
-		</ShadcnUiDropdownMenuSubContent>
-	</ShadcnUiDropdownMenuSub>
+					</ShadcnUiSelectItem>
+				</ShadcnUiSelectContent>
+			</ShadcnUiSelect>
+			<ShadcnUiSelect
+				v-model="selectedBranch"
+				:disabled="
+					!selectedRepository ||
+					fetchGitHubBranches.isLoading.value ||
+					(!!state &&
+						state.status !== 'active' &&
+						state.status !== 'missing_branch')
+				"
+			>
+				<ShadcnUiSelectLabel>
+					<span class="text-2sm">
+						{{ $t("editor.hooks.github-tracking.branch-select-label") }}
+					</span>
+				</ShadcnUiSelectLabel>
+				<ShadcnUiSelectTrigger class="w-full" size="custom">
+					<ShadcnUiSelectValue
+						class="text-2sm"
+						:placeholder="
+							!selectedRepository
+								? $t(
+										'editor.hooks.github-tracking.branch-select-repository-placeholder',
+									)
+								: fetchGitHubBranches.isLoading.value
+									? $t(
+											'editor.hooks.github-tracking.branch-select-loading-placeholder',
+										)
+									: $t('editor.hooks.github-tracking.branch-select-placeholder')
+						"
+					/>
+				</ShadcnUiSelectTrigger>
+				<ShadcnUiSelectContent
+					class="max-h-[40dvh] max-w-[15rem]"
+					side="bottom"
+					align="start"
+				>
+					<ShadcnUiSelectItem
+						v-for="branch in fetchGitHubBranches.state.value.data"
+						:key="branch"
+						:value="branch"
+						class="text-2sm"
+					>
+						<div class="flex-1 truncate">
+							{{ branch }}
+						</div>
+					</ShadcnUiSelectItem>
+				</ShadcnUiSelectContent>
+			</ShadcnUiSelect>
+			<FileSelectInput
+				v-model="selectedPaths"
+				class="w-full"
+				:disabled="
+					!selectedRepository ||
+					!selectedBranch ||
+					fetchGitHubPaths.isLoading.value ||
+					(!!state && state.status !== 'active')
+				"
+				:options="fetchGitHubPaths.state.value.data || []"
+				:placeholder="
+					!selectedRepository
+						? $t(
+								'editor.hooks.github-tracking.path-select-repository-placeholder',
+							)
+						: !selectedBranch
+							? $t(
+									'editor.hooks.github-tracking.path-select-branch-placeholder',
+								)
+							: fetchGitHubPaths.isLoading.value
+								? $t(
+										'editor.hooks.github-tracking.path-select-loading-placeholder',
+									)
+								: $t('editor.hooks.github-tracking.path-select-placeholder')
+				"
+				:empty-folder-placeholder="
+					$t('editor.hooks.github-tracking.empty-folder-placeholder')
+				"
+			>
+				<template #label>
+					<span>
+						{{ $t("editor.hooks.github-tracking.path-select-label") }}
+					</span>
+				</template>
+				<template #selection-text="{ count }">
+					<i18n-t
+						v-if="count > 1"
+						scope="global"
+						keypath="editor.hooks.github-tracking.selection-text.other"
+						tag="span"
+					>
+						<template #count>{{ count }}</template>
+					</i18n-t>
+					<i18n-t
+						v-if="count === 1"
+						scope="global"
+						keypath="editor.hooks.github-tracking.selection-text.one"
+						tag="span"
+					/>
+				</template>
+			</FileSelectInput>
+		</div>
+	</HookConfigPanel>
 </template>

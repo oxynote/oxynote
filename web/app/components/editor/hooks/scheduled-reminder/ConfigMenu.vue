@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { type DateValue, getLocalTimeZone } from "@internationalized/date"
+import { formatDistanceToNowStrict } from "date-fns"
 import { presetDurations } from "./durations"
-import { showToastMessage } from "~/components/toast"
+import HookConfigPanel from "../HookConfigPanel.vue"
+import HookNoticeValue from "../HookNoticeValue.vue"
 import HookReadonlyField from "../HookReadonlyField.vue"
-import HookSubTrigger from "../HookSubTrigger.vue"
-import HookExplanation from "../HookExplanation.vue"
+import { useHookActions } from "../hook-actions"
 import { scalarFieldRows, type HookDiffContext } from "../hook-diff"
+import { hookNoticeKeypath, type HookSubtitle } from "../hook-menu"
+import { hookStatus } from "../hook-status"
 
 const props = defineProps<{
 	hook?: DocumentHook | null | undefined // null/undefined means creating new
@@ -17,307 +20,320 @@ const emit = defineEmits<{
 	(e: "force-close"): void
 }>()
 
-const hookData = computed(() => {
-	if (!props.hook) {
-		return null
-	}
-
-	return {
-		score: Number(props.hook.score),
-		state: props.hook.state as DocumentHookStateScheduledReminder,
-		settings: props.hook.settings as DocumentHookSettingsScheduledReminder,
-	}
+const { t, d, locale } = useI18n({ useScope: "global" })
+const { isEditable, isReadOnlyOrDiff } = useEditorMeta()
+const actions = useHookActions({
+	type: DocumentHookType.ScheduledReminder,
+	nodeId: () => props.nodeId,
+	hook: () => props.hook,
+	close: close,
 })
-const { t } = useI18n({ useScope: "global" })
-const editorStore = useEditorStore()
-const documentHookAPI = useDocumentHookAPI()
-const { isReadOnlyOrDiff } = useEditorMeta()
-const targetSettings = computed(
+
+const activeBranchSettings = computed(
+	() =>
+		props.hook?.settings as DocumentHookSettingsScheduledReminder | undefined,
+)
+const targetBranchSettings = computed(
 	() =>
 		props.diff?.targetHook?.settings as
 			DocumentHookSettingsScheduledReminder | undefined,
 )
-const selectedDuration = ref<string | undefined>(undefined)
-const selectedSchedule = ref<DateValue | undefined>(undefined)
-const confirmedSchedule = ref<DateValue | undefined>(
-	hookData.value
-		? dateToCalendarDate(hookData.value.settings.schedule)
+const status = computed(() => (props.hook ? hookStatus(props.hook) : null))
+const isTriggered = computed(() => status.value === "triggered")
+const storedPreset = computed(() => presetOf(activeBranchSettings.value))
+const selectedDuration = ref<string | undefined>(initialDuration())
+const selectedSchedule = ref<DateValue | undefined>(initialSchedule())
+const isSubOpen = ref(false)
+const isComplete = computed(
+	() =>
+		!!selectedDuration.value &&
+		(selectedDuration.value !== "custom" || !!selectedSchedule.value),
+)
+// a waiting reminder starts on its own setting, so it saves once that
+// changes
+const isChanged = computed(() => {
+	if (!isComplete.value || !activeBranchSettings.value) {
+		return false
+	}
+
+	if (selectedDuration.value !== "custom") {
+		return selectedDuration.value !== storedPreset.value
+	}
+
+	return (
+		storedPreset.value !== null ||
+		selectedSchedule.value?.toString() !==
+			dateToCalendarDate(activeBranchSettings.value.schedule).toString()
+	)
+})
+const submitDisabled = computed(() =>
+	props.hook && !isTriggered.value ? !isChanged.value : !isComplete.value,
+)
+const subtitle = computed<HookSubtitle>(() => {
+	if (!activeBranchSettings.value) {
+		return { text: t("editor.hooks.scheduled-reminder.description") }
+	}
+
+	const schedule = new Date(activeBranchSettings.value.schedule)
+	const date = d(schedule, "short-with-time")
+
+	return {
+		text: isTriggered.value
+			? t("editor.hooks.scheduled-reminder.subtext-triggered", { date: date })
+			: date,
+		detail: formatDistanceToNowStrict(schedule, {
+			addSuffix: true,
+			locale: convertDateFnsLocale(locale.value),
+		}),
+	}
+})
+// the notice follows the pick while one is being made, and the stored
+// date otherwise. It is null until there is either
+const noticeWhen = computed(() => {
+	const picking = !isReadOnlyOrDiff.value && (!props.hook || isChanged.value)
+	if (picking && selectedDuration.value === "custom") {
+		return selectedSchedule.value
+			? t("editor.hooks.scheduled-reminder.when-on-date", {
+					date: d(selectedSchedule.value.toDate(getLocalTimeZone()), "long"),
+				})
+			: null
+	}
+
+	if (picking && selectedDuration.value) {
+		return t(
+			`editor.hooks.scheduled-reminder.when-options.${selectedDuration.value}`,
+		)
+	}
+
+	if (activeBranchSettings.value) {
+		return t("editor.hooks.scheduled-reminder.when-on-date", {
+			date: d(new Date(activeBranchSettings.value.schedule), "short-with-time"),
+		})
+	}
+
+	return null
+})
+// a reader who cannot pick a new date renews a triggered reminder by its
+// own preset. A custom date has no preset to renew by
+const remindAgainLabel = computed(() =>
+	isTriggered.value && storedPreset.value && !isEditable.value
+		? t(
+				`editor.hooks.scheduled-reminder.remind-again-options.${storedPreset.value}`,
+			)
 		: undefined,
 )
-const isSubOpen = ref(false)
 
-async function upsertHook() {
-	if (
-		!selectedDuration.value ||
-		!editorStore.activeDocumentId ||
-		!editorStore.activeBranchId
-	) {
+// a reminder that triggers while its menu exists asks for a new pick
+watch(isTriggered, () => {
+	selectedDuration.value = initialDuration()
+	selectedSchedule.value = initialSchedule()
+})
+
+async function submit() {
+	const duration = selectedDuration.value
+	if (!duration || !isComplete.value) {
 		return
 	}
 
-	const newSchedule =
-		selectedDuration.value === "custom" && selectedSchedule.value
-			? selectedSchedule.value.toDate(getLocalTimeZone())
-			: addDurationToDate(new Date(), selectedDuration.value)
+	const next = {
+		scale: "linear" as const,
+		duration: duration,
+		schedule:
+			duration === "custom" && selectedSchedule.value
+				? selectedSchedule.value.toDate(getLocalTimeZone())
+				: addDurationToDate(new Date(), duration),
+	}
+	if (props.hook) {
+		await actions.update(next, isTriggered.value)
+		return
+	}
 
-	isSubOpen.value = false
-	emit("force-close")
-
-	if (!props.hook) {
-		try {
-			await documentHookAPI.createDocumentHookByDocID.mutateAsync({
-				docId: editorStore.activeDocumentId,
-				req: {
-					type: DocumentHookType.ScheduledReminder,
-					branchId: editorStore.activeBranchId,
-					blockId: props.nodeId,
-					settings: {
-						scale: "linear",
-						duration: selectedDuration.value,
-						schedule: newSchedule,
-					},
-				},
-			})
-		} catch {
-			showToastMessage("error", t("editor.hooks.errors.create-failed"))
-			return
-		}
-
-		confirmedSchedule.value = dateToCalendarDate(newSchedule)
-
-		// since "create new" is reused, reset the state
+	// the same form creates the next hook, so it is emptied once a hook is
+	// created
+	if (await actions.create(next)) {
 		selectedDuration.value = undefined
 		selectedSchedule.value = undefined
-
-		return
 	}
-
-	try {
-		await documentHookAPI.updateDocumentHookByDocID.mutateAsync({
-			docId: editorStore.activeDocumentId,
-			branchId: editorStore.activeBranchId,
-			hookId: props.hook.id,
-			req: {
-				settings: {
-					scale: "linear",
-					duration: selectedDuration.value,
-					schedule: newSchedule,
-				},
-			},
-		})
-	} catch {
-		showToastMessage("error", t("editor.hooks.errors.renew-failed"))
-		return
-	}
-
-	confirmedSchedule.value = dateToCalendarDate(newSchedule)
 }
 
-async function deleteHook() {
-	if (
-		!props.hook ||
-		!editorStore.activeDocumentId ||
-		!editorStore.activeBranchId
-	) {
+async function remindAgain() {
+	const preset = storedPreset.value
+	if (!preset) {
 		return
 	}
 
+	await actions.update(
+		{
+			scale: "linear",
+			duration: preset,
+			schedule: addDurationToDate(new Date(), preset),
+		},
+		true,
+	)
+}
+
+// a waiting reminder shows its own setting. A new or triggered one waits
+// for a pick
+function initialDuration(): string | undefined {
+	if (!activeBranchSettings.value || isTriggered.value) {
+		return undefined
+	}
+
+	return storedPreset.value ?? "custom"
+}
+
+function initialSchedule(): DateValue | undefined {
+	if (!activeBranchSettings.value || isTriggered.value || storedPreset.value) {
+		return undefined
+	}
+
+	return dateToCalendarDate(activeBranchSettings.value.schedule)
+}
+
+function presetOf(
+	reminder: DocumentHookSettingsScheduledReminder | undefined,
+): string | null {
+	return reminder?.duration && reminder.duration !== "custom"
+		? reminder.duration
+		: null
+}
+
+function fieldValue(reminder: DocumentHookSettingsScheduledReminder): string {
+	const date = d(new Date(reminder.schedule), "short-with-time")
+	const preset = presetOf(reminder)
+
+	return preset
+		? t("editor.hooks.scheduled-reminder.field-value", {
+				duration: t(
+					`editor.hooks.scheduled-reminder.duration-options.${preset}`,
+				),
+				date: date,
+			})
+		: t("editor.hooks.scheduled-reminder.field-value-custom", { date: date })
+}
+
+function close() {
 	isSubOpen.value = false
 	emit("force-close")
-
-	try {
-		await documentHookAPI.deleteDocumentHookByDocID.mutateAsync({
-			docId: editorStore.activeDocumentId,
-			branchId: editorStore.activeBranchId,
-			hookId: props.hook.id,
-		})
-	} catch {
-		showToastMessage("error", t("editor.hooks.errors.delete-failed"))
-		return
-	}
-
-	selectedDuration.value = undefined
-	selectedSchedule.value = undefined
-	confirmedSchedule.value = undefined
 }
 </script>
+
 <template>
-	<ShadcnUiDropdownMenuSub v-model:open="isSubOpen">
-		<HookSubTrigger :hook="props.hook" :diff="props.diff">
-			<div class="relative h-[0.8125rem] w-[0.8125rem] shrink-0">
-				<Icon
-					class="absolute top-1/2 left-1/2 size-3.75 -translate-x-1/2 -translate-y-1/2"
-					:name="
-						!hookData || hookData.score !== 0
-							? 'lucide:timer'
-							: 'lucide:timer-reset'
+	<HookConfigPanel
+		v-model:open="isSubOpen"
+		:hook="props.hook"
+		:diff="props.diff"
+		icon="lucide:timer"
+		:acknowledge-label="remindAgainLabel"
+		:submit-label="isTriggered ? $t('editor.hooks.renew') : undefined"
+		:submit-icon="isTriggered ? 'mingcute:check-fill' : undefined"
+		:submit-disabled="submitDisabled"
+		@submit="submit"
+		@delete="actions.remove"
+		@acknowledge="remindAgain"
+	>
+		<template #title>
+			{{ $t("editor.hooks.scheduled-reminder.title") }}
+		</template>
+		<template #subtitle>
+			{{ subtitle.text }}
+		</template>
+		<template v-if="subtitle.detail" #subtitle-detail>
+			{{ subtitle.detail }}
+		</template>
+		<template #notice>
+			<template v-if="isTriggered && activeBranchSettings">
+				<i18n-t
+					scope="global"
+					:keypath="
+						hookNoticeKeypath(DocumentHookType.ScheduledReminder, status)
 					"
-				/>
-			</div>
-			<span v-if="!hookData">
-				{{ $t("editor.hooks.scheduled-reminder.title") }}
-			</span>
-			<i18n-t
-				v-else-if="Number(hookData.score) !== 0"
-				scope="global"
-				keypath="editor.hooks.scheduled-reminder.existing-item"
-				tag="span"
-				class="truncate"
-			>
-				<template #value>
-					{{ $d(new Date(hookData.settings.schedule), "short-with-time") }}
-				</template>
-			</i18n-t>
+					tag="span"
+				>
+					<template #date>
+						<HookNoticeValue
+							:value="
+								$d(new Date(activeBranchSettings.schedule), 'short-with-time')
+							"
+						/>
+					</template>
+				</i18n-t>
+				<p v-if="isReadOnlyOrDiff && !storedPreset" class="mt-1">
+					{{ $t("editor.hooks.scheduled-reminder.one-off-note") }}
+				</p>
+			</template>
 			<i18n-t
 				v-else
 				scope="global"
-				keypath="editor.hooks.scheduled-reminder.triggered-item"
+				:keypath="hookNoticeKeypath(DocumentHookType.ScheduledReminder, status)"
 				tag="span"
-				class="truncate"
 			>
-				<template #value>
-					{{ $d(new Date(hookData.settings.schedule), "short-with-time") }}
+				<template #when>
+					<HookNoticeValue
+						:value="noticeWhen"
+						:fallback="$t('editor.hooks.scheduled-reminder.when-unset')"
+					/>
 				</template>
 			</i18n-t>
-		</HookSubTrigger>
-		<ShadcnUiDropdownMenuSubContent
-			side="right"
-			align="start"
-			loop
-			:class="[
-				'pointer-events-auto!' /* for some reason ShadcnUiSelect disables pointer events, which closes the whole sub menu when the select is closed, so we must override this */,
-			]"
-		>
-			<div class="flex w-[12rem] flex-col">
-				<template v-if="hookData">
-					<HookExplanation
-						:type="DocumentHookType.ScheduledReminder"
-						:triggered="hookData.score === 0"
-						:node-id="props.nodeId"
-					>
-						<template #value>
-							{{ $d(new Date(hookData.settings.schedule), "short-with-time") }}
-						</template>
-					</HookExplanation>
-					<ShadcnUiDropdownMenuSeparator
-						v-if="!isReadOnlyOrDiff && hookData.score === 0"
-					/>
-				</template>
-				<div
-					v-if="!isReadOnlyOrDiff && (!hookData || hookData.score === 0)"
-					class="flex flex-col gap-1 px-0.75 pb-0.75"
-				>
-					<ShadcnUiSelect v-model="selectedDuration">
-						<ShadcnUiSelectLabel>
-							<span class="text-2sm">
-								{{
-									!hookData || hookData.score !== 0
-										? $t("editor.hooks.scheduled-reminder.duration-label")
-										: $t(
-												"editor.hooks.scheduled-reminder.duration-label-triggered",
-											)
-								}}
-							</span>
-						</ShadcnUiSelectLabel>
-						<ShadcnUiSelectTrigger class="w-full" size="custom">
-							<ShadcnUiSelectValue
-								class="text-2sm"
-								:placeholder="
-									$t(`editor.hooks.scheduled-reminder.select-placeholder`)
-								"
-							/>
-						</ShadcnUiSelectTrigger>
-						<ShadcnUiSelectContent
-							class="max-h-[40dvh]"
-							side="bottom"
-							align="start"
-						>
-							<ShadcnUiSelectItem
-								v-for="durationKey in presetDurations"
-								:key="durationKey"
-								:value="durationKey"
-								class="text-2sm"
-							>
-								{{
-									$t(
-										`editor.hooks.scheduled-reminder.duration-options.${durationKey}`,
-									)
-								}}
-							</ShadcnUiSelectItem>
-						</ShadcnUiSelectContent>
-					</ShadcnUiSelect>
-					<CalendarInput
-						v-if="selectedDuration === 'custom'"
-						v-model="selectedSchedule"
+		</template>
+		<HookReadonlyField
+			v-if="isReadOnlyOrDiff && activeBranchSettings"
+			:label="$t('editor.hooks.scheduled-reminder.duration-label')"
+			:rows="
+				scalarFieldRows(
+					fieldValue(activeBranchSettings),
+					targetBranchSettings ? fieldValue(targetBranchSettings) : null,
+				)
+			"
+			:diff-status="props.diff?.status"
+		/>
+		<div v-else class="flex flex-col gap-1">
+			<ShadcnUiSelect v-model="selectedDuration">
+				<ShadcnUiSelectLabel>
+					<span class="text-2sm">
+						{{
+							isTriggered
+								? $t("editor.hooks.scheduled-reminder.duration-label-triggered")
+								: $t("editor.hooks.scheduled-reminder.duration-label")
+						}}
+					</span>
+				</ShadcnUiSelectLabel>
+				<ShadcnUiSelectTrigger class="w-full" size="custom">
+					<ShadcnUiSelectValue
+						class="text-2sm"
 						:placeholder="
-							$t('editor.hooks.scheduled-reminder.calendar-placeholder')
+							$t('editor.hooks.scheduled-reminder.select-placeholder')
 						"
-						class="w-full"
-						available-from-tomorrow
 					/>
-				</div>
-				<!--
-					the diff compares the dates as fields. The time shows too, so a
-					reminder moved within a day differs
-				-->
-				<template v-if="props.diff && hookData">
-					<ShadcnUiDropdownMenuSeparator />
-					<div class="flex flex-col gap-1 px-0.75 pb-0.75">
-						<HookReadonlyField
-							:label="$t('editor.hooks.scheduled-reminder.schedule-label')"
-							:rows="
-								scalarFieldRows(
-									$d(new Date(hookData.settings.schedule), 'short-with-time'),
-									targetSettings
-										? $d(new Date(targetSettings.schedule), 'short-with-time')
-										: null,
-								)
-							"
-						/>
-					</div>
-				</template>
-				<ShadcnUiDropdownMenuSeparator v-if="!isReadOnlyOrDiff" />
-				<div v-if="!isReadOnlyOrDiff" class="p-0.75">
-					<div v-if="hookData" class="flex gap-1">
-						<ShadcnUiButton
-							v-if="hookData.score === 0"
-							class="flex-1 gap-1"
-							size="2sm"
-							:disabled="
-								!selectedDuration ||
-								(selectedDuration === 'custom' && !selectedSchedule)
-							"
-							@click.stop="upsertHook"
-						>
-							<Icon name="mingcute:check-fill" />
-							{{ $t("editor.hooks.renew") }}
-						</ShadcnUiButton>
-						<ShadcnUiButton
-							class="flex-1 gap-1"
-							variant="secondary"
-							size="2sm"
-							@click.stop="deleteHook"
-						>
-							<Icon name="mingcute:delete-2-line" />
-							{{ $t("editor.hooks.delete") }}
-						</ShadcnUiButton>
-					</div>
-					<template v-else>
-						<ShadcnUiButton
-							class="w-full gap-1"
-							size="2sm"
-							:disabled="
-								!selectedDuration ||
-								(selectedDuration === 'custom' && !selectedSchedule)
-							"
-							@click.stop="upsertHook"
-						>
-							<Icon name="mingcute:check-fill" />
-							{{ $t("editor.hooks.create") }}
-						</ShadcnUiButton>
-					</template>
-				</div>
-			</div>
-		</ShadcnUiDropdownMenuSubContent>
-	</ShadcnUiDropdownMenuSub>
+				</ShadcnUiSelectTrigger>
+				<ShadcnUiSelectContent
+					class="max-h-[40dvh]"
+					side="bottom"
+					align="start"
+				>
+					<ShadcnUiSelectItem
+						v-for="durationKey in presetDurations"
+						:key="durationKey"
+						:value="durationKey"
+						class="text-2sm"
+					>
+						{{
+							$t(
+								`editor.hooks.scheduled-reminder.duration-options.${durationKey}`,
+							)
+						}}
+					</ShadcnUiSelectItem>
+				</ShadcnUiSelectContent>
+			</ShadcnUiSelect>
+			<CalendarInput
+				v-if="selectedDuration === 'custom'"
+				v-model="selectedSchedule"
+				:placeholder="
+					$t('editor.hooks.scheduled-reminder.calendar-placeholder')
+				"
+				class="w-full"
+				available-from-tomorrow
+			/>
+		</div>
+	</HookConfigPanel>
 </template>

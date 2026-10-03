@@ -124,6 +124,10 @@ export function extractDomain(url: string): string {
 	}
 }
 
+export function displayURL(url: string): string {
+	return url.replace(/^https?:\/\//i, "").replace(/\/$/, "")
+}
+
 export function addDeletionSuccessStatusToUrl(url: string): string {
 	const urlObj = new URL(url)
 	urlObj.searchParams.set("deletion", "success")

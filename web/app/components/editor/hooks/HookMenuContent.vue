@@ -4,9 +4,13 @@ import GitHubTrackingConfigMenu from "./github-tracking/ConfigMenu.vue"
 import ScheduledReminderConfigMenu from "./scheduled-reminder/ConfigMenu.vue"
 import URLWatcherConfigMenu from "./url-watcher/ConfigMenu.vue"
 import ContainerImageWatcherConfigMenu from "./container-image-watcher/ConfigMenu.vue"
+import HookMenuFooter from "./HookMenuFooter.vue"
+import HookMenuHeader from "./HookMenuHeader.vue"
 import { compareAsc } from "date-fns"
 import { DiffStatus } from "../diff/position-map"
 import { diffHooks, type HookDiffEntry } from "./hook-diff"
+import { HOOK_MENU_WIDTH_CLASS, HOOK_SUBMENU_WIDTH_CLASS } from "./hook-menu"
+import { hookStatus } from "./hook-status"
 
 const props = defineProps<{
 	activeBranchHooks: DocumentHook[]
@@ -55,30 +59,28 @@ const entries = computed<HookDiffEntry[]>(() => {
 		targetHooks.filter((h) => h.blockId === props.nodeId),
 	)
 })
-
-const matchingActiveHooks = computed(() =>
-	listedHooks(entries.value.filter((e) => Number(e.hook.score) !== 0)),
+// a removed hook is gone from the branch, so it adds nothing to its status
+const statuses = computed(() =>
+	entries.value
+		.filter((e) => e.status !== DiffStatus.Removed)
+		.map((e) => hookStatus(e.hook)),
 )
-const matchingTriggeredHooks = computed(() =>
-	listedHooks(entries.value.filter((e) => Number(e.hook.score) === 0)),
-)
 
-function listedHooks(matching: HookDiffEntry[]) {
-	return matching
-		.sort((a, b) =>
-			compareAsc(
-				a.hook.updatedAt ?? new Date(0),
-				b.hook.updatedAt ?? new Date(0),
-			),
+// rows keep the order their hooks were made in, and hooks made at the same
+// moment go by id. Neither changes later, so a row never moves.
+const listed = computed(() =>
+	[...entries.value]
+		.sort(
+			(a, b) =>
+				compareAsc(a.hook.createdAt, b.hook.createdAt) ||
+				a.hook.id.localeCompare(b.hook.id),
 		)
-		.map((e) => {
-			return {
-				id: e.hook.id,
-				comp: hookComponent(e.hook.type),
-				props: hookProps(e),
-			}
-		})
-}
+		.map((e) => ({
+			id: e.hook.id,
+			comp: hookComponent(e.hook.type),
+			props: hookProps(e),
+		})),
+)
 
 function hookComponent(type: DocumentHookType): Component | null {
 	switch (type) {
@@ -120,65 +122,86 @@ function hookProps(entry: HookDiffEntry): ComputedRef<Record<string, unknown>> {
 }
 </script>
 <template>
-	<div class="max-w-[18rem]">
-		<template v-if="matchingTriggeredHooks.length">
-			<component
-				:is="h.comp"
-				v-for="h in matchingTriggeredHooks"
-				:key="h.id"
-				v-bind="h.props.value"
-			/>
-			<ShadcnUiDropdownMenuSeparator
-				v-if="matchingActiveHooks.length || !isReadOnlyOrDiff"
-			/>
+	<div :class="HOOK_MENU_WIDTH_CLASS">
+		<HookMenuHeader :statuses="statuses" />
+		<ShadcnUiDropdownMenuSeparator />
+		<component
+			:is="h.comp"
+			v-for="h in listed"
+			:key="h.id"
+			v-bind="h.props.value"
+		/>
+		<ShadcnUiEmpty v-if="!entries.length" class="gap-0 p-3 md:p-3">
+			<ShadcnUiEmptyHeader class="gap-1">
+				<ShadcnUiEmptyMedia class="mb-1">
+					<Icon
+						name="mingcute:leaf-line"
+						class="size-5 text-muted-foreground"
+					/>
+				</ShadcnUiEmptyMedia>
+				<ShadcnUiEmptyTitle class="text-2sm">
+					{{
+						props.nodeId
+							? $t("editor.hooks.empty-block")
+							: $t("editor.hooks.empty-document")
+					}}
+				</ShadcnUiEmptyTitle>
+				<!--
+					the description ignores a class passed to it. So the text
+					takes its size from a child
+				-->
+				<ShadcnUiEmptyDescription>
+					<span class="block text-xs leading-4">
+						{{
+							props.nodeId
+								? $t("editor.hooks.empty-block-description")
+								: $t("editor.hooks.empty-document-description")
+						}}
+					</span>
+				</ShadcnUiEmptyDescription>
+			</ShadcnUiEmptyHeader>
+		</ShadcnUiEmpty>
+		<template v-if="!isReadOnlyOrDiff">
+			<ShadcnUiDropdownMenuSeparator />
+			<ShadcnUiDropdownMenuSub v-model:open="isSubOpen">
+				<ShadcnUiDropdownMenuSubTrigger>
+					<Icon name="mingcute:leaf-line" class="shrink-0" />
+					<span>
+						{{ $t("editor.hooks.add-new") }}
+					</span>
+				</ShadcnUiDropdownMenuSubTrigger>
+				<ShadcnUiDropdownMenuSubContent
+					side="right"
+					align="start"
+					loop
+					:collision-padding="8"
+					:class="HOOK_SUBMENU_WIDTH_CLASS"
+				>
+					<ScheduledReminderConfigMenu
+						:node-id="nodeId"
+						@force-close="isSubOpen = false"
+					/>
+					<GitHubTrackingConfigMenu
+						v-if="gitHubConfigured"
+						:node-id="nodeId"
+						@force-close="isSubOpen = false"
+						@open-settings="(target: 'github') => emit('open-settings', target)"
+					/>
+					<URLWatcherConfigMenu
+						v-if="isChangeDetectionEnabled"
+						:node-id="nodeId"
+						@force-close="isSubOpen = false"
+					/>
+					<ContainerImageWatcherConfigMenu
+						:node-id="nodeId"
+						@force-close="isSubOpen = false"
+					/>
+				</ShadcnUiDropdownMenuSubContent>
+			</ShadcnUiDropdownMenuSub>
 		</template>
-		<template v-if="matchingActiveHooks.length">
-			<component
-				:is="h.comp"
-				v-for="h in matchingActiveHooks"
-				:key="h.id"
-				v-bind="h.props.value"
-			/>
-			<ShadcnUiDropdownMenuSeparator v-if="!isReadOnlyOrDiff" />
+		<template v-else-if="editorStore.reviewableDiffActive">
+			<ShadcnUiDropdownMenuSeparator />
+			<HookMenuFooter mode="diff" />
 		</template>
-		<div
-			v-if="isReadOnlyOrDiff && !entries.length"
-			class="px-2 py-1.25 text-xs text-muted-foreground"
-		>
-			{{
-				props.nodeId
-					? $t("editor.hooks.empty-block")
-					: $t("editor.hooks.empty-document")
-			}}
-		</div>
-		<ShadcnUiDropdownMenuSub v-if="!isReadOnlyOrDiff" v-model:open="isSubOpen">
-			<ShadcnUiDropdownMenuSubTrigger>
-				<Icon name="mingcute:leaf-line" class="shrink-0" />
-				<span>
-					{{ $t("editor.hooks.add-new") }}
-				</span>
-			</ShadcnUiDropdownMenuSubTrigger>
-			<ShadcnUiDropdownMenuSubContent side="right" align="start" loop>
-				<ScheduledReminderConfigMenu
-					:node-id="nodeId"
-					@force-close="isSubOpen = false"
-				/>
-				<GitHubTrackingConfigMenu
-					v-if="gitHubConfigured"
-					:node-id="nodeId"
-					@force-close="isSubOpen = false"
-					@open-settings="(target: 'github') => emit('open-settings', target)"
-				/>
-				<URLWatcherConfigMenu
-					v-if="isChangeDetectionEnabled"
-					:node-id="nodeId"
-					@force-close="isSubOpen = false"
-				/>
-				<ContainerImageWatcherConfigMenu
-					:node-id="nodeId"
-					@force-close="isSubOpen = false"
-				/>
-			</ShadcnUiDropdownMenuSubContent>
-		</ShadcnUiDropdownMenuSub>
 	</div>
 </template>

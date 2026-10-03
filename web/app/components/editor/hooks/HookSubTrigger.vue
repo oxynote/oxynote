@@ -3,11 +3,15 @@ import { cn } from "~/lib/utils"
 import DiffCountPill from "../diff/DiffCountPill.vue"
 import { DiffStatus } from "../diff/position-map"
 import { hookChangeCount, type HookDiffContext } from "./hook-diff"
+import { HOOK_STATUS_DOT_CLASS, type HookStatus } from "./hook-status"
 
 const props = defineProps<{
 	hook?: DocumentHook | null
 	// set only while the diff is shown
 	diff?: HookDiffContext | null
+	// null on a row that offers a new hook
+	status?: HookStatus | null
+	icon: string
 }>()
 
 const diffStatus = computed(() => props.diff?.status ?? null)
@@ -19,9 +23,7 @@ const count = computed(() =>
 
 const rowClass = computed(() =>
 	cn(
-		// the label's line is taller than the menu's text, so truncating it
-		// does not clip the descenders. The row's padding gives that back
-		"py-1",
+		"gap-2.5 py-1.5",
 		// a tinted row deepens its own tint on hover, rather than taking the
 		// grey the other rows use
 		diffStatus.value === DiffStatus.Added &&
@@ -53,15 +55,56 @@ const rowClass = computed(() =>
 				{{ $t("editor.hooks.diff.removed-sign") }}
 			</template>
 		</span>
-		<span
-			:class="
-				cn(
-					'flex min-w-0 flex-1 items-center gap-1.5 leading-4.25',
-					diffStatus === DiffStatus.Removed && 'line-through',
-				)
-			"
-		>
-			<slot />
+		<Icon :name="props.icon" class="size-3.75 shrink-0" />
+		<span class="flex min-w-0 flex-1 flex-col">
+			<span class="flex min-w-0 items-center gap-1.5 leading-4.25 font-medium">
+				<span
+					:class="
+						cn(
+							'truncate',
+							diffStatus === DiffStatus.Removed &&
+								'text-muted-foreground line-through',
+						)
+					"
+				>
+					<slot name="title" />
+				</span>
+				<span
+					v-if="props.status"
+					aria-hidden="true"
+					:class="
+						cn(
+							'size-1.75 shrink-0 rounded-full',
+							HOOK_STATUS_DOT_CLASS[props.status],
+						)
+					"
+				/>
+			</span>
+			<span
+				v-if="$slots.subtitle"
+				class="text-xs leading-4 break-words text-muted-foreground"
+			>
+				<i18n-t
+					v-if="$slots['subtitle-detail']"
+					scope="global"
+					keypath="editor.hooks.subtext-detail"
+					tag="span"
+				>
+					<template #subtext>
+						<slot name="subtitle" />
+					</template>
+					<template #detail>
+						<slot name="subtitle-detail" />
+					</template>
+				</i18n-t>
+				<slot v-else name="subtitle" />
+			</span>
+		</span>
+		<span v-if="props.status === 'triggered'" class="sr-only">
+			{{ $t("editor.hooks.row-status.triggered") }}
+		</span>
+		<span v-else-if="props.status === 'needs-attention'" class="sr-only">
+			{{ $t("editor.hooks.row-status.needs-attention") }}
 		</span>
 		<span v-if="diffStatus === DiffStatus.Added" class="sr-only">
 			{{ $t("editor.hooks.diff.added") }}

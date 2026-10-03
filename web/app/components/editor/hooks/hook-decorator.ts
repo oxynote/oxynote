@@ -10,6 +10,11 @@ import {
 	IMAGE_BLOCK_NAME,
 	METRIC_BLOCK_NAME,
 } from "../blocks/node-names"
+import {
+	HOOK_BAR_STATUS_CLASS,
+	hookGroupStatus,
+	type HookGroupStatus,
+} from "./hook-status"
 
 /** block types that use node views and need the decoration widget placed
  * outside the node (at `pos`) rather than inside (at `pos + 1`) */
@@ -34,14 +39,36 @@ interface Options {
 	getHooks: () => DocumentHook[]
 }
 
+type BarStatus = Exclude<HookGroupStatus, "fresh">
+
 const key = new PluginKey("hook-decorator")
 
-function toAvailableIDs(hooks: DocumentHook[]): Set<string> {
-	return new Set(
-		hooks
-			.filter((h) => h.blockId !== null && Number(h.score) === 0)
-			.map((h) => String(h.blockId)),
-	)
+// barStatusByBlock sums up the hooks of each block into what its bar
+// shows. A block whose hooks are all fresh is left out.
+function barStatusByBlock(hooks: DocumentHook[]): Map<string, BarStatus> {
+	const hooksByBlock = new Map<string, DocumentHook[]>()
+
+	for (const hook of hooks) {
+		if (hook.blockId === null) {
+			continue
+		}
+
+		hooksByBlock.set(hook.blockId, [
+			...(hooksByBlock.get(hook.blockId) ?? []),
+			hook,
+		])
+	}
+
+	const statuses = new Map<string, BarStatus>()
+
+	for (const [blockId, blockHooks] of hooksByBlock) {
+		const status = hookGroupStatus(blockHooks)
+		if (status && status !== "fresh") {
+			statuses.set(blockId, status)
+		}
+	}
+
+	return statuses
 }
 
 const HOOK_DECORATION_ATTR = "data-hook-decoration"
@@ -56,7 +83,7 @@ interface HookDecorationElement extends HTMLElement {
 function buildDecorations(
 	doc: PMNode,
 	opt: Options,
-	ids: Set<string>,
+	statuses: Map<string, BarStatus>,
 ): DecorationSet {
 	const decorations: Decoration[] = []
 
@@ -67,8 +94,8 @@ function buildDecorations(
 
 		const val = node.attrs[opt.attributeName] as string | null | undefined
 		const hasAttr = val != null && val !== ""
-
-		if (!hasAttr || !ids.has(val)) {
+		const status = hasAttr ? statuses.get(val) : undefined
+		if (!status) {
 			return true
 		}
 
@@ -145,7 +172,8 @@ function buildDecorations(
 
 					el.className = cn(
 						"pointer-events-none absolute top-0",
-						"w-1.25 bg-hook-decoration block rounded-r-lg",
+						"block w-1.25 rounded-r-lg",
+						HOOK_BAR_STATUS_CLASS[status],
 						// the bar hugs the page edge in full view; in compact view the
 						// column floats, so it becomes a pill
 						"in-data-compact-view:rounded-full",
@@ -156,7 +184,9 @@ function buildDecorations(
 				},
 				{
 					side: -1,
-					key: `hook-decoration-${pos}`,
+					// the key carries the status, so a bar whose status changes
+					// is drawn again
+					key: `hook-decoration-${pos}-${status}`,
 					ignoreSelection: true,
 				},
 			),
@@ -200,10 +230,10 @@ export const HookDecorator = Extension.create<Partial<Options>>({
 				key,
 				state: {
 					init: (_cfg, { doc }) => {
-						const ids = toAvailableIDs(opt.getHooks())
+						const statuses = barStatusByBlock(opt.getHooks())
 						return {
-							ids,
-							decos: buildDecorations(doc, opt, ids),
+							statuses,
+							decos: buildDecorations(doc, opt, statuses),
 						}
 					},
 					apply(tr, old, _oldState, newState) {
@@ -211,15 +241,15 @@ export const HookDecorator = Extension.create<Partial<Options>>({
 							{ hooksChanged?: boolean } | undefined
 
 						if (tr.docChanged || meta?.hooksChanged) {
-							const ids = toAvailableIDs(opt.getHooks())
+							const statuses = barStatusByBlock(opt.getHooks())
 							return {
-								ids,
-								decos: buildDecorations(newState.doc, opt, ids),
+								statuses,
+								decos: buildDecorations(newState.doc, opt, statuses),
 							}
 						}
 
 						return {
-							ids: old.ids,
+							statuses: old.statuses,
 							decos: old.decos.map(tr.mapping, tr.doc),
 						}
 					},

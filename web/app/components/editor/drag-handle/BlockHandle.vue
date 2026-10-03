@@ -6,6 +6,7 @@ import type { Node } from "@tiptap/pm/model"
 import type { HocuspocusProvider } from "@hocuspocus/provider"
 import { cn } from "~/lib/utils"
 import HookMenuContent from "../hooks/HookMenuContent.vue"
+import { HOOK_ICON_STATUS_CLASS, hookGroupStatus } from "../hooks/hook-status"
 import CoreMenu from "./menu-options/CoreMenu.vue"
 import { useHighlightOverlay } from "../highlight-overlay"
 
@@ -63,11 +64,7 @@ const hoveredMetadata = computed(() => {
 		nodePos: hoveredNodePos.value,
 		nodeId: nodeId,
 		nodeHooks: hooks.length ? hooks : null,
-		nodeHookStatus: hooks.length
-			? hooks.some((h) => Number(h.score) === 0)
-				? ("stale" as const)
-				: ("fresh" as const)
-			: null,
+		nodeHookStatus: hookGroupStatus(hooks),
 	}
 })
 const compactHandles = computed(() => {
@@ -229,12 +226,7 @@ function dragEnd() {
 						<Icon
 							:data-hook-status="hoveredMetadata?.nodeHookStatus"
 							name="mingcute:leaf-line"
-							:class="
-								cn(
-									'mt-0.25 size-4.5',
-									'data-[hook-status=fresh]:text-hook-status-fresh data-[hook-status=stale]:text-hook-status-stale',
-								)
-							"
+							:class="cn('mt-0.25 size-4.5', HOOK_ICON_STATUS_CLASS)"
 						/>
 					</div>
 					<span class="sr-only">
