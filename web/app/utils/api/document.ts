@@ -56,6 +56,9 @@ export interface Document {
 
 export interface DocumentHook {
 	id: string
+	// the id a hook shares with its copies on the document's other branches.
+	// A new hook's crossBranchId is its own id.
+	crossBranchId: string
 	type: DocumentHookType
 	documentId: string
 	organizationId: string

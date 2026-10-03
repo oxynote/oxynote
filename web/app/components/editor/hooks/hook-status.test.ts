@@ -114,6 +114,7 @@ function makeHook(input: {
 }): DocumentHook {
 	return {
 		id: "hook-1",
+		crossBranchId: "hook-1",
 		type: DocumentHookType.URLWatcher,
 		documentId: "doc-1",
 		organizationId: "org-1",

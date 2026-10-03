@@ -32,9 +32,10 @@ func prepDocumentHooks(t *testing.T, db *DB, count int, fn func(int, *hook.Hook)
 
 	for i := range count {
 		hk := hook.Hook{
-			ID:      xid.New(),
-			Type:    hook.TypeURLWatcher,
-			BlockID: null.StringFrom("block-" + xid.New().String()),
+			ID:            xid.New(),
+			CrossBranchID: xid.New(),
+			Type:          hook.TypeURLWatcher,
+			BlockID:       null.StringFrom("block-" + xid.New().String()),
 			// JSONB round-trips in canonical form (space after the
 			// colon), so the fixture uses that form for comparisons.
 			Settings:  processor.Settings(`{"url": "http://watched.test"}`),
@@ -62,6 +63,7 @@ func prepDocumentHooks(t *testing.T, db *DB, count int, fn func(int, *hook.Hook)
 		q, args := db.builder.Insert("document_hooks").
 			SetMap(map[string]any{
 				"id":                 hk.ID,
+				"cross_branch_id":    hk.CrossBranchID,
 				"type":               hk.Type,
 				"fk_document_id":     hk.DocumentID.V,
 				"fk_organization_id": hk.OrganizationID,
@@ -103,6 +105,7 @@ func Test_agent_InsertDocumentHook(t *testing.T) {
 			return tcase{
 				Hook: hook.Hook{
 					ID:             xid.New(),
+					CrossBranchID:  xid.New(),
 					Type:           hook.TypeScheduledReminder,
 					DocumentID:     null.ValueFrom(branch.ID),
 					OrganizationID: null.StringFrom(branch.OrganizationID),

@@ -16,89 +16,102 @@ import {
 } from "~/utils/api/document"
 
 describe("diffHooks", () => {
-	it("pairs hooks with identical settings as unchanged", ({ expect }) => {
-		const active = urlHook("a1", "block-1", "https://a.com")
-		const target = urlHook("t1", "block-1", "https://a.com")
-
-		const entries = diffHooks([active], [target])
-
-		expect(entries).toEqual([
-			{ status: DiffStatus.Unchanged, hook: active, targetHook: target },
-		])
-	})
-
-	it("pairs hooks of the same block and type as modified", ({ expect }) => {
-		const active = urlHook("a1", "block-1", "https://b.com")
-		const target = urlHook("t1", "block-1", "https://a.com")
-
-		const entries = diffHooks([active], [target])
-
-		expect(entries).toEqual([
-			{ status: DiffStatus.Modified, hook: active, targetHook: target },
-		])
-	})
-
-	it("prefers an identical hook over an earlier changed one", ({ expect }) => {
-		const changed = urlHook("t1", "block-1", "https://old.com", "2026-01-01")
-		const same = urlHook("t2", "block-1", "https://a.com", "2026-01-02")
-		const active = urlHook("a1", "block-1", "https://a.com")
-
-		const entries = diffHooks([active], [changed, same])
-
-		expect(entries).toEqual([
-			{ status: DiffStatus.Unchanged, hook: active, targetHook: same },
-			{ status: DiffStatus.Removed, hook: changed, targetHook: null },
-		])
-	})
-
-	it("pairs the leftovers in creation order", ({ expect }) => {
-		const firstTarget = urlHook("t1", "block-1", "https://1.com", "2026-01-01")
-		const secondTarget = urlHook("t2", "block-1", "https://2.com", "2026-01-02")
-		const firstActive = urlHook("a1", "block-1", "https://3.com", "2026-02-01")
-		const secondActive = urlHook("a2", "block-1", "https://4.com", "2026-02-02")
-
-		const entries = diffHooks(
-			[secondActive, firstActive],
-			[secondTarget, firstTarget],
-		)
-
-		expect(entries).toEqual([
-			{
-				status: DiffStatus.Modified,
-				hook: firstActive,
-				targetHook: firstTarget,
-			},
-			{
-				status: DiffStatus.Modified,
-				hook: secondActive,
-				targetHook: secondTarget,
-			},
-		])
-	})
-
 	it.for([
 		{
-			name: "a different block",
-			target: () => urlHook("t1", "block-2", "https://a.com"),
+			name: "unchanged while their settings match",
+			input: "https://a.com",
+			expected: DiffStatus.Unchanged,
 		},
 		{
-			name: "a different type",
-			target: () => imageHook("t1", "block-1", "postgres:16"),
+			name: "modified once their settings differ",
+			input: "https://b.com",
+			expected: DiffStatus.Modified,
 		},
 	])(
-		"keeps a hook on $name apart as added and removed",
-		({ target }, { expect }) => {
-			const active = urlHook("a1", "block-1", "https://a.com")
-			const targetHook = target()
+		"pairs hooks sharing a cross-branch id as $name",
+		({ input, expected }, { expect }) => {
+			const active = linked(urlHook("a1", "block-1", input), "x1")
+			const target = linked(urlHook("t1", "block-1", "https://a.com"), "x1")
 
-			const entries = diffHooks([active], [targetHook])
+			const entries = diffHooks([active], [target])
 
 			expect(entries).toEqual([
-				{ status: DiffStatus.Added, hook: active, targetHook: null },
-				{ status: DiffStatus.Removed, hook: targetHook, targetHook: null },
+				{ status: expected, hook: active, targetHook: target },
 			])
 		},
 	)
+
+	it.for([
+		{
+			name: "a hook with identical settings",
+			input: () => ({
+				active: urlHook("a1", "block-1", "https://a.com"),
+				target: urlHook("t1", "block-1", "https://a.com"),
+			}),
+		},
+		{
+			name: "a website hook with another address",
+			input: () => ({
+				active: urlHook("a1", "block-1", "https://b.com"),
+				target: urlHook("t1", "block-1", "https://a.com"),
+			}),
+		},
+		{
+			name: "a reminder with another date",
+			input: () => ({
+				active: {
+					...reminderHook("2026-03-01T00:00:00Z"),
+					id: "r2",
+					crossBranchId: "r2",
+				},
+				target: reminderHook("2026-02-01T00:00:00Z"),
+			}),
+		},
+	])(
+		"shows $name that replaced a removed one as added and removed",
+		({ input }, { expect }) => {
+			const { active, target } = input()
+
+			const entries = diffHooks([active], [target])
+
+			expect(entries).toEqual([
+				{ status: DiffStatus.Added, hook: active, targetHook: null },
+				{ status: DiffStatus.Removed, hook: target, targetHook: null },
+			])
+		},
+	)
+
+	it("pairs a hook with its linked one, not with an identical unlinked one", ({
+		expect,
+	}) => {
+		const active = linked(urlHook("a1", "block-1", "https://b.com"), "x1")
+		const identical = urlHook("t1", "block-1", "https://b.com")
+		const source = linked(urlHook("t2", "block-1", "https://a.com"), "x1")
+
+		const entries = diffHooks([active], [identical, source])
+
+		expect(entries).toEqual([
+			{ status: DiffStatus.Modified, hook: active, targetHook: source },
+			{ status: DiffStatus.Removed, hook: identical, targetHook: null },
+		])
+	})
+
+	it("lists the active branch's hooks in their order, then the removed ones", ({
+		expect,
+	}) => {
+		const added = urlHook("a1", "block-1", "https://new.com")
+		const kept = linked(urlHook("a2", "block-1", "https://a.com"), "x1")
+		const source = linked(urlHook("t1", "block-1", "https://a.com"), "x1")
+		const removed = urlHook("t2", "block-1", "https://old.com")
+
+		const entries = diffHooks([added, kept], [removed, source])
+
+		expect(entries).toEqual([
+			{ status: DiffStatus.Added, hook: added, targetHook: null },
+			{ status: DiffStatus.Unchanged, hook: kept, targetHook: source },
+			{ status: DiffStatus.Removed, hook: removed, targetHook: null },
+		])
+	})
 
 	it("returns nothing when neither branch has hooks", ({ expect }) => {
 		expect(diffHooks([], [])).toEqual([])
@@ -292,10 +305,10 @@ function makeHook(
 	type: DocumentHookType,
 	blockId: string | null,
 	settings: DocumentHookSettings,
-	createdAt = "2026-01-01",
 ): DocumentHook {
 	return {
 		id: id,
+		crossBranchId: id,
 		type: type,
 		documentId: "doc-1",
 		organizationId: "org-1",
@@ -304,23 +317,22 @@ function makeHook(
 		settings: settings,
 		state: { status: "active" },
 		score: "100",
-		createdAt: createdAt,
+		createdAt: "2026-01-01",
 	}
+}
+
+// linked marks a hook as the copy, or the source, of every other hook
+// carrying the same cross-branch id
+function linked(hook: DocumentHook, crossBranchId: string): DocumentHook {
+	return { ...hook, crossBranchId: crossBranchId }
 }
 
 function urlHook(
 	id: string,
 	blockId: string | null,
 	url: string,
-	createdAt?: string,
 ): DocumentHook {
-	return makeHook(
-		id,
-		DocumentHookType.URLWatcher,
-		blockId,
-		{ url: url },
-		createdAt,
-	)
+	return makeHook(id, DocumentHookType.URLWatcher, blockId, { url: url })
 }
 
 function imageHook(id: string, blockId: string, image: string): DocumentHook {

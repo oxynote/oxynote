@@ -25,6 +25,7 @@ import (
 func storedHook(typ hookCore.Type) hookCore.Hook {
 	return hookCore.Hook{
 		ID:             xid.New(),
+		CrossBranchID:  xid.New(),
 		Type:           typ,
 		DocumentID:     null.ValueFrom(_documentID),
 		OrganizationID: null.StringFrom("org1"),
@@ -1208,6 +1209,32 @@ func Test_Handler_copyHooksToBranch(t *testing.T) {
 		require.Len(t, ff, 1)
 		assert.Equal(t, hookCore.TypeScheduledReminder, ff[0].Hk.Type)
 		assert.Equal(t, []hookCore.Hook{ff[0].Hk}, created)
+	})
+
+	// a fork or a merge stays within the document, so the copy is the same
+	// hook on another branch; a duplicate is another document, whose hooks
+	// are their own.
+	t.Run("Cross-branch ID is kept within the document only", func(t *testing.T) {
+		t.Parallel()
+
+		src := storedHook(hookCore.TypeScheduledReminder)
+
+		db := &DBMock{
+			FetchDocumentHooksByBranchIDFunc: func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
+				return []hookCore.Hook{src}, nil
+			},
+		}
+
+		hdl, _ := newTestHandler(db, &fakePublisher{})
+
+		hdl.copyHooksToBranch(context.Background(), _branchID, _branchID2, _documentID, "org1", nil)
+		hdl.copyHooksToBranch(context.Background(), _branchID, _branchID2, xid.New(), "org1", nil)
+
+		ff := db.InsertDocumentHookCalls()
+		require.Len(t, ff, 2)
+		assert.Equal(t, src.CrossBranchID, ff[0].Hk.CrossBranchID)
+		assert.NotEqual(t, src.ID, ff[0].Hk.ID)
+		assert.Equal(t, ff[1].Hk.ID, ff[1].Hk.CrossBranchID)
 	})
 
 	// a duplicated branch carries fresh block uids, so a hook anchored to a

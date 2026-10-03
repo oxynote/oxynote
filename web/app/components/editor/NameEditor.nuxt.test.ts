@@ -840,6 +840,7 @@ describe("<NameEditor>", { concurrent: false }, () => {
 function pageHook(url: string): DocumentHook {
 	return {
 		id: url,
+		crossBranchId: url,
 		type: DocumentHookType.URLWatcher,
 		blockId: null,
 		score: "100",

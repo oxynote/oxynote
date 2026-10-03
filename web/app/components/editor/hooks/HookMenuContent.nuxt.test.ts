@@ -450,7 +450,11 @@ describe("<HookMenuContent>", { concurrent: false }, () => {
 			await mountContent({
 				activeBranchHooks: [urlWatcher()],
 				targetBranchHooks: [
-					urlWatcher({ id: "url-old", settings: { url: "https://old.test" } }),
+					urlWatcher({
+						id: "url-old",
+						crossBranchId: "url-1",
+						settings: { url: "https://old.test" },
+					}),
 				],
 			})
 
@@ -463,12 +467,37 @@ describe("<HookMenuContent>", { concurrent: false }, () => {
 			)
 		})
 
+		it("lists a hook that replaced a removed one of its type as one removed and one added", async ({
+			expect,
+		}) => {
+			await mountContent({
+				activeBranchHooks: [
+					urlWatcher({
+						id: "url-new",
+						createdAt: new Date("2026-02-01T00:00:00Z"),
+					}),
+				],
+				targetBranchHooks: [
+					urlWatcher({ id: "url-old", settings: { url: "https://old.test" } }),
+				],
+			})
+
+			const rows = hookRows()
+			expect(rows).toHaveLength(2)
+			expect(rows[0]?.textContent).toContain("old.test")
+			expect(rows[0]?.textContent).toContain(t("editor.hooks.diff.removed"))
+			expect(rows[1]?.textContent).toContain("oxynote.test")
+			expect(rows[1]?.textContent).toContain(t("editor.hooks.diff.added"))
+		})
+
 		it("keeps a sign column on every row once a hook was added", async ({
 			expect,
 		}) => {
 			await mountContent({
 				activeBranchHooks: [urlWatcher(), reminder()],
-				targetBranchHooks: [reminder({ id: "reminder-target" })],
+				targetBranchHooks: [
+					reminder({ id: "reminder-target", crossBranchId: "reminder-100" }),
+				],
 			})
 
 			expect(hookRows().map((row) => !!row.querySelector(".w-2"))).toEqual([
@@ -483,7 +512,11 @@ describe("<HookMenuContent>", { concurrent: false }, () => {
 			await mountContent({
 				activeBranchHooks: [urlWatcher()],
 				targetBranchHooks: [
-					urlWatcher({ id: "url-old", settings: { url: "https://old.test" } }),
+					urlWatcher({
+						id: "url-old",
+						crossBranchId: "url-1",
+						settings: { url: "https://old.test" },
+					}),
 				],
 			})
 
@@ -495,7 +528,9 @@ describe("<HookMenuContent>", { concurrent: false }, () => {
 		it("leaves an unchanged hook unmarked", async ({ expect }) => {
 			await mountContent({
 				activeBranchHooks: [urlWatcher()],
-				targetBranchHooks: [urlWatcher({ id: "url-target" })],
+				targetBranchHooks: [
+					urlWatcher({ id: "url-target", crossBranchId: "url-1" }),
+				],
 			})
 
 			const row = hookRows()[0]

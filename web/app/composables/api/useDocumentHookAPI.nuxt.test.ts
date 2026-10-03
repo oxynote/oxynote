@@ -45,6 +45,7 @@ function makeDocumentHookAPI() {
 function makeHook(id: string): DocumentHook {
 	return {
 		id,
+		crossBranchId: id,
 		type: DocumentHookType.GitHubTracking,
 		documentId: DOC_ID,
 		organizationId: ORG_ID,
@@ -202,10 +203,14 @@ describe("useDocumentHookAPI", { concurrent: false }, () => {
 			})
 			await create.reached
 
-			// the optimistic insert stamps a nanoid id and fresh dates
+			// the optimistic insert stamps a nanoid id and fresh dates. A new
+			// hook is its own across branches
+			const [inserted] = getHooks() as DocumentHook[]
+			expect(inserted?.crossBranchId).toBe(inserted?.id)
 			expect(getHooks()).toEqual([
 				{
 					id: ANY_STRING,
+					crossBranchId: ANY_STRING,
 					type: DocumentHookType.GitHubTracking,
 					documentId: DOC_ID,
 					branchId: BRANCH_ID,

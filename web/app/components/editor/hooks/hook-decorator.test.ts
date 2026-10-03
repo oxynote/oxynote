@@ -81,6 +81,7 @@ function failedHook(blockId: string): DocumentHook {
 function hook(blockId: string | null, score = "0"): DocumentHook {
 	return {
 		id: `hook-${blockId ?? "none"}`,
+		crossBranchId: `hook-${blockId ?? "none"}`,
 		type: DocumentHookType.ScheduledReminder,
 		documentId: "doc-1",
 		organizationId: "org-1",

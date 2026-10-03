@@ -69,6 +69,7 @@ func Test_NewHook(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.False(t, h.ID.IsZero())
+		assert.Equal(t, h.ID, h.CrossBranchID)
 		assert.Equal(t, TypeScheduledReminder, h.Type)
 		assert.Equal(t, null.ValueFrom(documentID), h.DocumentID)
 		assert.Equal(t, null.ValueFrom(branchID), h.BranchID)
@@ -100,6 +101,82 @@ func Test_NewHook(t *testing.T) {
 		}, documentID, branchID, "org-1", nil)
 		assert.EqualError(t, err, "invalid processor type")
 	})
+}
+
+func Test_Hook_CopyTo(t *testing.T) {
+	t.Parallel()
+
+	documentID := xid.New()
+
+	src, err := NewHook(context.Background(), CreateInput{
+		Type:     TypeScheduledReminder,
+		BlockID:  null.StringFrom("block-1"),
+		Settings: reminderSettings(t, time.Now().Add(time.Hour)),
+	}, documentID, xid.New(), "org-1", nil)
+	require.NoError(t, err)
+
+	cc := map[string]struct {
+		Hook             Hook
+		DocumentID       xid.ID
+		KeepsCrossBranch bool
+		Err              error
+	}{
+		"Malformed settings fail": {
+			Hook: Hook{
+				Type:     TypeScheduledReminder,
+				Settings: processor.Settings(`{not json`),
+			},
+			DocumentID: documentID,
+			Err:        assert.AnError,
+		},
+		"Copy within the document keeps the cross-branch ID": {
+			Hook:             *src,
+			DocumentID:       documentID,
+			KeepsCrossBranch: true,
+		},
+		"Copy into another document is a hook of its own": {
+			Hook:       *src,
+			DocumentID: xid.New(),
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			branchID := xid.New()
+
+			cp, err := c.Hook.CopyTo(
+				context.Background(),
+				c.DocumentID,
+				branchID,
+				null.StringFrom("block-2"),
+				"org-2",
+				nil,
+			)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.NotEqual(t, c.Hook.ID, cp.ID)
+			assert.Equal(t, c.Hook.Type, cp.Type)
+			assert.Equal(t, c.Hook.Settings, cp.Settings)
+			assert.Equal(t, null.ValueFrom(c.DocumentID), cp.DocumentID)
+			assert.Equal(t, null.ValueFrom(branchID), cp.BranchID)
+			assert.Equal(t, null.StringFrom("org-2"), cp.OrganizationID)
+			assert.Equal(t, null.StringFrom("block-2"), cp.BlockID)
+
+			if c.KeepsCrossBranch {
+				assert.Equal(t, c.Hook.CrossBranchID, cp.CrossBranchID)
+
+				return
+			}
+
+			assert.Equal(t, cp.ID, cp.CrossBranchID)
+		})
+	}
 }
 
 func Test_Hook_ApplyUpdate(t *testing.T) {

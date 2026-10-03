@@ -666,12 +666,14 @@ func (h *Handler) copyHooksToBranch(
 			blockID = null.StringFrom(uid)
 		}
 
-		newHk, err := hook.NewHook(ctx, hook.CreateInput{
-			Type:     hk.Type,
-			BranchID: toBranchID,
-			BlockID:  blockID,
-			Settings: hk.Settings,
-		}, documentID, toBranchID, organizationID, inp)
+		newHk, err := hk.CopyTo(
+			ctx,
+			documentID,
+			toBranchID,
+			blockID,
+			organizationID,
+			inp,
+		)
 		if err != nil {
 			// a hook whose integration is not configured cannot get its
 			// external resource; dropping it from the copy beats failing

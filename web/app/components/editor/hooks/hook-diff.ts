@@ -31,53 +31,37 @@ export interface HookDiffEntry {
 }
 
 // diffHooks pairs the active branch's hooks with the target's. A fork or
-// a merge copies hooks under new ids, so nothing links a hook to its copy.
-// Hooks pair up by block and type instead: identical settings first, then
-// the rest in creation order, which makes them modified. Whatever is left
-// over was added or removed.
+// a merge copies a hook under a new id but keeps its cross-branch id, so
+// two hooks sharing one are the same hook: unchanged, or modified when
+// their settings differ. A hook whose cross-branch id the other branch
+// lacks was added or removed.
 export function diffHooks(
 	activeHooks: DocumentHook[],
 	targetHooks: DocumentHook[],
 ): HookDiffEntry[] {
+	const unpairedTarget = new Map(
+		targetHooks.map((target) => [target.crossBranchId, target]),
+	)
 	const entries: HookDiffEntry[] = []
-	const unpairedTarget = byCreation(targetHooks)
-	const unpairedActive: DocumentHook[] = []
 
 	for (const hook of activeHooks) {
-		const index = unpairedTarget.findIndex(
-			(target) => sameSlot(hook, target) && !hasChanges(hook, target),
-		)
-		const target = unpairedTarget[index]
-		if (!target) {
-			unpairedActive.push(hook)
-			continue
-		}
-
-		unpairedTarget.splice(index, 1)
-		entries.push({
-			status: DiffStatus.Unchanged,
-			hook: hook,
-			targetHook: target,
-		})
-	}
-
-	for (const hook of byCreation(unpairedActive)) {
-		const index = unpairedTarget.findIndex((target) => sameSlot(hook, target))
-		const target = unpairedTarget[index]
+		const target = unpairedTarget.get(hook.crossBranchId)
 		if (!target) {
 			entries.push({ status: DiffStatus.Added, hook: hook, targetHook: null })
 			continue
 		}
 
-		unpairedTarget.splice(index, 1)
+		unpairedTarget.delete(hook.crossBranchId)
 		entries.push({
-			status: DiffStatus.Modified,
+			status: hasChanges(hook, target)
+				? DiffStatus.Modified
+				: DiffStatus.Unchanged,
 			hook: hook,
 			targetHook: target,
 		})
 	}
 
-	for (const target of unpairedTarget) {
+	for (const target of unpairedTarget.values()) {
 		entries.push({ status: DiffStatus.Removed, hook: target, targetHook: null })
 	}
 
@@ -214,20 +198,10 @@ export function listFieldRows(
 	]
 }
 
-function sameSlot(hook: DocumentHook, other: DocumentHook): boolean {
-	return hook.blockId === other.blockId && hook.type === other.type
-}
-
 function hasChanges(hook: DocumentHook, targetHook: DocumentHook): boolean {
 	const count = hookChangeCount(hook, targetHook)
 
 	return count.removed > 0 || count.added > 0
-}
-
-function byCreation(hooks: DocumentHook[]): DocumentHook[] {
-	return [...hooks].sort(
-		(a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-	)
 }
 
 function fieldCount(changed: boolean): HookChangeCount {

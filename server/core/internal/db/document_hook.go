@@ -14,6 +14,7 @@ func (a *agent) InsertDocumentHook(ctx context.Context, hk hook.Hook) error {
 	q, args := a.builder.Insert("document_hooks").
 		SetMap(map[string]any{
 			"id":                 hk.ID,
+			"cross_branch_id":    hk.CrossBranchID,
 			"type":               hk.Type,
 			"fk_document_id":     hk.DocumentID,
 			"fk_organization_id": hk.OrganizationID,
@@ -186,6 +187,7 @@ func (a *agent) DetachDocumentHooksByBranchID(ctx context.Context, branchID xid.
 func (a *agent) selectDocumentHook(b sq.SelectBuilder) sq.SelectBuilder {
 	return b.Columns(
 		`document_hooks.id AS "id"`,
+		`document_hooks.cross_branch_id AS "cross_branch_id"`,
 		`document_hooks.type AS "type"`,
 		`document_hooks.fk_document_id AS "fk_document_id"`,
 		`document_hooks.fk_organization_id AS "fk_organization_id"`,

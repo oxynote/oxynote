@@ -71,6 +71,11 @@ type Hook struct {
 	// ID is the unique identifier for the hook.
 	ID xid.ID `json:"id" db:"id"`
 
+	// CrossBranchID identifies the hook across the branches of its
+	// document. A new hook takes its own ID, and a copy on another branch
+	// keeps the one of the hook it was copied from.
+	CrossBranchID xid.ID `json:"crossBranchId" db:"cross_branch_id"`
+
 	// Type is the type of the hook.
 	Type Type `json:"type" db:"type"`
 
@@ -125,8 +130,11 @@ func NewHook(
 	organizationID string,
 	inp *Input,
 ) (*Hook, error) {
+	id := xid.New()
+
 	h := Hook{
-		ID:             xid.New(),
+		ID:             id,
+		CrossBranchID:  id,
 		Type:           ci.Type,
 		DocumentID:     null.ValueFrom(documentID),
 		OrganizationID: null.StringFrom(organizationID),
@@ -141,6 +149,34 @@ func NewHook(
 	}
 
 	return &h, nil
+}
+
+// CopyTo re-creates the hook on another branch with fresh state, anchored
+// to the given block. A copy within the hook's document keeps its
+// cross-branch ID; a copy into another document is a hook of its own.
+func (h *Hook) CopyTo(
+	ctx context.Context,
+	documentID xid.ID,
+	branchID xid.ID,
+	blockID null.String,
+	organizationID string,
+	inp *Input,
+) (*Hook, error) {
+	cp, err := NewHook(ctx, CreateInput{
+		Type:     h.Type,
+		BranchID: branchID,
+		BlockID:  blockID,
+		Settings: h.Settings,
+	}, documentID, branchID, organizationID, inp)
+	if err != nil {
+		return nil, err
+	}
+
+	if h.DocumentID.Valid && h.DocumentID.V == documentID {
+		cp.CrossBranchID = h.CrossBranchID
+	}
+
+	return cp, nil
 }
 
 // ApplyUpdate updates the freshness hook with the given input.

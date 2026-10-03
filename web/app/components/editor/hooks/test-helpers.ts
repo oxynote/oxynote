@@ -16,6 +16,8 @@ type TestComponent = any
 export function makeHook(overrides: Partial<DocumentHook> = {}): DocumentHook {
 	return {
 		id: "hook-1",
+		// a hook is its own until a test links it to another branch's
+		crossBranchId: overrides.id ?? "hook-1",
 		type: DocumentHookType.URLWatcher,
 		documentId: "doc-1",
 		organizationId: "org-1",

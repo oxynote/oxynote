@@ -66,8 +66,10 @@ export default function () {
 			const oldHooks = clone(
 				queryCache.getQueryData<DocumentHooksResponse>(key),
 			)
+			const id = nanoid()
 			const newHook: DocumentHook = {
-				id: nanoid(),
+				id: id,
+				crossBranchId: id,
 				type: req.type,
 				documentId: docId,
 				branchId: req.branchId,
