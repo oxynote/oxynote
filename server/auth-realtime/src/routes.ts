@@ -663,14 +663,14 @@ export function createRoutes({
 	app.post(
 		"/internal/documents/:documentId/branches/:branchId/flush",
 		async (c) => {
-			const branch = await flushed(c, () =>
+			const flush = await flushed(c, () =>
 				flushBranch(
 					c.req.param("documentId"),
 					c.req.param("branchId"),
 				),
 			)
-			if (branch instanceof Response) {
-				return branch
+			if (flush instanceof Response) {
+				return flush
 			}
 
 			return c.body(null, 204)

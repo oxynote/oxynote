@@ -131,7 +131,7 @@ func (gt *GithubTracking) fetchTree(ctx context.Context, inp Input) (github.Tree
 	case errors.Is(err, github.ErrInstallationNotFound):
 		return nil, StatusMissingInstallation, nil
 	default:
-		return nil, "", fmt.Errorf("getting github client: %w", err)
+		return nil, "", unreachable(fmt.Errorf("getting github client: %w", err))
 	}
 
 	tree, err := client.FetchRepositoryTree(ctx, gt.Repository, gt.Branch)
@@ -146,7 +146,7 @@ func (gt *GithubTracking) fetchTree(ctx context.Context, inp Input) (github.Tree
 	case errors.Is(err, github.ErrTreeTruncated):
 		return nil, StatusTreeTruncated, nil
 	default:
-		return nil, "", fmt.Errorf("fetching repository tree: %w", err)
+		return nil, "", unreachable(fmt.Errorf("fetching repository tree: %w", err))
 	}
 }
 

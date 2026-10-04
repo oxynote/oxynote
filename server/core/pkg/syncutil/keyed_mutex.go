@@ -27,7 +27,10 @@ func (km *KeyedMutex[K]) Lock(ctx context.Context, key K) (func(), error) {
 
 	select {
 	case l.ch <- struct{}{}:
-		return km.unlocker(key, l), nil
+		return func() {
+			<-l.ch
+			km.unref(key, l)
+		}, nil
 	case <-ctx.Done():
 		km.unref(key, l)
 
@@ -61,14 +64,6 @@ func (km *KeyedMutex[K]) unref(key K, l *keyedLock) {
 
 	if l.users == 0 {
 		delete(km.locks, key)
-	}
-}
-
-// unlocker returns the function that unlocks a held lock.
-func (km *KeyedMutex[K]) unlocker(key K, l *keyedLock) func() {
-	return func() {
-		<-l.ch
-		km.unref(key, l)
 	}
 }
 

@@ -12,6 +12,10 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+// ErrUnreachable is returned when a processor cannot reach the service it
+// checks.
+var ErrUnreachable = errors.New("cannot reach the service the hook checks")
+
 // All available Status constants.
 const (
 	// StatusActive indicates that the processor checked what it watches.
@@ -210,4 +214,9 @@ type ChangeDetection interface {
 
 	// DeleteWatcher deletes the watcher with the given watch ID.
 	DeleteWatcher(ctx context.Context, watchID string) error
+}
+
+// unreachable marks err, a failed call to the service a processor checks.
+func unreachable(err error) error {
+	return fmt.Errorf("%w: %w", ErrUnreachable, err)
 }

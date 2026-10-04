@@ -36,11 +36,9 @@ for free.
   tag-only writes record none).
 - **Tag and hook writes notify**: tag tools end with
   `Input.NotifyTagTreeChange` (`assign_tag`/`unassign_tag` also
-  `NotifyBranchTagsChange`), hook writes call `NotifyHooksChange`, wired in
-  `server.NewServer` beside the tree notifier. Hook writes drive the same
-  `hook.NewHook`/`ApplyUpdate`/`Reset`/`Delete` lifecycle as the HTTP
-  handler; `decodeHookSettings` switches on type into the processor's own
-  struct.
+  `NotifyBranchTagsChange`). Hook writes go through `HookManager`, which
+  records history and announces the change, as for the HTTP handler;
+  `decodeHookSettings` switches on type into the processor's own struct.
 - **A block write reports from the operation, never a re-read** (the
   realtime service persists on a debounce): `sanitizeBlock` once, ship the
   canonical uids, return `blockRows` of the expanded tree.

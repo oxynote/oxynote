@@ -21,9 +21,6 @@ var (
 
 	// ErrNotFound is returned when the registry has no such image or tag.
 	ErrNotFound = errutil.New(http.StatusNotFound, "registry.not_found", "container image not found")
-
-	// ErrInvalidReference is returned when an image reference cannot be parsed.
-	ErrInvalidReference = errutil.New(http.StatusBadRequest, "registry.invalid_reference", "invalid container image reference")
 )
 
 // digestOptions holds options for configuring the Digest function.
@@ -130,7 +127,7 @@ func parseReference(image string) (name.Reference, error) {
 		name.WithDefaultTag("latest"),
 	)
 	if err != nil {
-		return nil, ErrInvalidReference
+		return nil, fmt.Errorf("parsing image reference %q: %w", image, err)
 	}
 
 	return ref, nil

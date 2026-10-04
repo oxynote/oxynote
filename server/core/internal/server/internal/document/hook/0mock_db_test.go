@@ -25,9 +25,6 @@ var _ DB = &DBMock{}
 //			FetchDocumentByBranchIDFunc: func(ctx context.Context, branchID xid.ID, organizationID string) (*document.Document, error) {
 //				panic("mock out the FetchDocumentByBranchID method")
 //			},
-//			FetchDocumentHookFunc: func(ctx context.Context, id xid.ID, organizationID string) (*hookCore.Hook, error) {
-//				panic("mock out the FetchDocumentHook method")
-//			},
 //			FetchDocumentHooksByBranchIDFunc: func(ctx context.Context, branchID xid.ID, organizationID string) ([]hookCore.Hook, error) {
 //				panic("mock out the FetchDocumentHooksByBranchID method")
 //			},
@@ -40,9 +37,6 @@ var _ DB = &DBMock{}
 type DBMock struct {
 	// FetchDocumentByBranchIDFunc mocks the FetchDocumentByBranchID method.
 	FetchDocumentByBranchIDFunc func(ctx context.Context, branchID xid.ID, organizationID string) (*document.Document, error)
-
-	// FetchDocumentHookFunc mocks the FetchDocumentHook method.
-	FetchDocumentHookFunc func(ctx context.Context, id xid.ID, organizationID string) (*hookCore.Hook, error)
 
 	// FetchDocumentHooksByBranchIDFunc mocks the FetchDocumentHooksByBranchID method.
 	FetchDocumentHooksByBranchIDFunc func(ctx context.Context, branchID xid.ID, organizationID string) ([]hookCore.Hook, error)
@@ -58,15 +52,6 @@ type DBMock struct {
 			// OrganizationID is the organizationID argument value.
 			OrganizationID string
 		}
-		// FetchDocumentHook holds details about calls to the FetchDocumentHook method.
-		FetchDocumentHook []struct {
-			// Ctx is the ctx argument value.
-			Ctx context.Context
-			// ID is the id argument value.
-			ID xid.ID
-			// OrganizationID is the organizationID argument value.
-			OrganizationID string
-		}
 		// FetchDocumentHooksByBranchID holds details about calls to the FetchDocumentHooksByBranchID method.
 		FetchDocumentHooksByBranchID []struct {
 			// Ctx is the ctx argument value.
@@ -78,7 +63,6 @@ type DBMock struct {
 		}
 	}
 	lockFetchDocumentByBranchID      sync.RWMutex
-	lockFetchDocumentHook            sync.RWMutex
 	lockFetchDocumentHooksByBranchID sync.RWMutex
 }
 
@@ -123,50 +107,6 @@ func (mock *DBMock) FetchDocumentByBranchIDCalls() []struct {
 	mock.lockFetchDocumentByBranchID.RLock()
 	calls = mock.calls.FetchDocumentByBranchID
 	mock.lockFetchDocumentByBranchID.RUnlock()
-	return calls
-}
-
-// FetchDocumentHook calls FetchDocumentHookFunc.
-func (mock *DBMock) FetchDocumentHook(ctx context.Context, id xid.ID, organizationID string) (*hookCore.Hook, error) {
-	callInfo := struct {
-		Ctx            context.Context
-		ID             xid.ID
-		OrganizationID string
-	}{
-		Ctx:            ctx,
-		ID:             id,
-		OrganizationID: organizationID,
-	}
-	mock.lockFetchDocumentHook.Lock()
-	mock.calls.FetchDocumentHook = append(mock.calls.FetchDocumentHook, callInfo)
-	mock.lockFetchDocumentHook.Unlock()
-	if mock.FetchDocumentHookFunc == nil {
-		var (
-			hookOut *hookCore.Hook
-			errOut  error
-		)
-		return hookOut, errOut
-	}
-	return mock.FetchDocumentHookFunc(ctx, id, organizationID)
-}
-
-// FetchDocumentHookCalls gets all the calls that were made to FetchDocumentHook.
-// Check the length with:
-//
-//	len(mockedDB.FetchDocumentHookCalls())
-func (mock *DBMock) FetchDocumentHookCalls() []struct {
-	Ctx            context.Context
-	ID             xid.ID
-	OrganizationID string
-} {
-	var calls []struct {
-		Ctx            context.Context
-		ID             xid.ID
-		OrganizationID string
-	}
-	mock.lockFetchDocumentHook.RLock()
-	calls = mock.calls.FetchDocumentHook
-	mock.lockFetchDocumentHook.RUnlock()
 	return calls
 }
 

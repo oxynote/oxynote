@@ -58,7 +58,7 @@ func stubHookManager(stored ...*hook.Hook) *HookManagerMock {
 
 			return hook.NewHook(ctx, ci, documentID, ci.BranchID, organizationID, inp(organizationID))
 		},
-		UpdateHookFunc: func(ctx context.Context, _ xid.ID, organizationID string, ui hook.UpdateInput, _ string) (*hook.Hook, error) {
+		UpdateHookFunc: func(ctx context.Context, _, _ xid.ID, organizationID string, ui hook.UpdateInput, _ string) (*hook.Hook, error) {
 			hk := lookup()
 			if err := hk.ApplyUpdate(ctx, ui, inp(organizationID)); err != nil {
 				return nil, err
@@ -66,10 +66,10 @@ func stubHookManager(stored ...*hook.Hook) *HookManagerMock {
 
 			return hk, nil
 		},
-		DeleteHookFunc: func(ctx context.Context, _ xid.ID, organizationID, _ string) error {
+		DeleteHookFunc: func(ctx context.Context, _, _ xid.ID, organizationID, _ string) error {
 			return lookup().Delete(ctx, inp(organizationID))
 		},
-		ResetHookFunc: func(ctx context.Context, _ xid.ID, organizationID string) (*hook.Hook, error) {
+		ResetHookFunc: func(ctx context.Context, _, _ xid.ID, organizationID string) (*hook.Hook, error) {
 			hk := lookup()
 			if err := hk.Reset(ctx, inp(organizationID)); err != nil {
 				return nil, err
@@ -703,7 +703,7 @@ func Test_updateHook_Execute(t *testing.T) {
 	t.Parallel()
 
 	failing := stubHookManager()
-	failing.UpdateHookFunc = func(context.Context, xid.ID, string, hook.UpdateInput, string) (*hook.Hook, error) {
+	failing.UpdateHookFunc = func(context.Context, xid.ID, xid.ID, string, hook.UpdateInput, string) (*hook.Hook, error) {
 		return nil, assert.AnError
 	}
 
@@ -863,7 +863,7 @@ func Test_resetHook_Execute(t *testing.T) {
 	t.Parallel()
 
 	failing := stubHookManager()
-	failing.ResetHookFunc = func(context.Context, xid.ID, string) (*hook.Hook, error) {
+	failing.ResetHookFunc = func(context.Context, xid.ID, xid.ID, string) (*hook.Hook, error) {
 		return nil, assert.AnError
 	}
 
@@ -976,7 +976,7 @@ func Test_deleteHook_Execute(t *testing.T) {
 	t.Parallel()
 
 	failing := stubHookManager()
-	failing.DeleteHookFunc = func(context.Context, xid.ID, string, string) error {
+	failing.DeleteHookFunc = func(context.Context, xid.ID, xid.ID, string, string) error {
 		return assert.AnError
 	}
 

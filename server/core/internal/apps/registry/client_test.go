@@ -13,6 +13,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/registry"
 	"github.com/google/go-containerregistry/pkg/v1/random"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -82,11 +83,12 @@ func Test_Digest(t *testing.T) {
 		Path          string
 		Opts          []DigestOption
 		ExpectedErr   string
+		ErrContains   string
 	}{
 		"Anonymous fetch returns the seeded digest": {},
 		"Invalid image reference": {
 			Reference:   "UPPERCASE not allowed",
-			ExpectedErr: ErrInvalidReference.Error(),
+			ErrContains: "parsing image reference",
 		},
 		"Missing tag maps to ErrNotFound": {
 			Path:        "/test/img:v2",
@@ -138,6 +140,13 @@ func Test_Digest(t *testing.T) {
 
 			digest, err := Digest(context.Background(), reference, tc.Opts...)
 
+			if tc.ErrContains != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.ErrContains)
+
+				return
+			}
+
 			if tc.ExpectedErr != "" {
 				require.Error(t, err)
 				assert.EqualError(t, err, tc.ExpectedErr)
@@ -154,7 +163,27 @@ func Test_Digest(t *testing.T) {
 func Test_ValidateReference(t *testing.T) {
 	t.Parallel()
 
-	assert.NoError(t, ValidateReference("nginx"))
-	assert.NoError(t, ValidateReference("ghcr.io/owner/image:v1"))
-	assert.ErrorIs(t, ValidateReference("UPPERCASE not allowed"), ErrInvalidReference)
+	cc := map[string]struct {
+		Image string
+		Err   error
+	}{
+		"Invalid reference": {
+			Image: "UPPERCASE not allowed",
+			Err:   assert.AnError,
+		},
+		"Docker Hub image": {
+			Image: "nginx",
+		},
+		"Image of another registry": {
+			Image: "ghcr.io/owner/image:v1",
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			testutil.AssertEqualError(t, c.Err, ValidateReference(c.Image))
+		})
+	}
 }

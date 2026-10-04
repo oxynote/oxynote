@@ -1033,11 +1033,9 @@ func (i *input) unknownHook(documentID, hookID xid.ID) error {
 }
 
 // CreateHook creates a hook on the branch branchID names, anchored to the
-// block blockUID names when one is given. The branch and block are
-// checked here rather than by the caller, so a hook cannot land on a
-// branch of another document or on a block the branch does not hold. A
-// type whose integration the deployment lacks is refused before anything
-// is created.
+// block blockUID names when one is given. The branch is checked here, so
+// a hook cannot land on a branch of another document. A type whose
+// integration the deployment lacks is refused before anything is created.
 func (i *input) CreateHook(documentID, branchID xid.ID, blockUID string, tp hook.Type, settings processor.Settings) (*hook.Hook, error) {
 	doc, err := i.FetchBranch(documentID, branchID)
 	if err != nil {
@@ -1081,7 +1079,7 @@ func (i *input) CreateHook(documentID, branchID xid.ID, blockUID string, tp hook
 // UpdateHook replaces the hook's settings and resets its score and state,
 // as a fresh hook with those settings would have them.
 func (i *input) UpdateHook(hk *hook.Hook, settings processor.Settings) error {
-	updated, err := i.hookMan.UpdateHook(i.ctx, hk.ID, i.orgID, hook.UpdateInput{Settings: settings}, i.userID)
+	updated, err := i.hookMan.UpdateHook(i.ctx, hk.ID, hk.DocumentID.V, i.orgID, hook.UpdateInput{Settings: settings}, i.userID)
 	if err != nil {
 		return err
 	}
@@ -1095,7 +1093,7 @@ func (i *input) UpdateHook(hk *hook.Hook, settings processor.Settings) error {
 
 // ResetHook restores the hook's score and state, keeping its settings.
 func (i *input) ResetHook(hk *hook.Hook) error {
-	reset, err := i.hookMan.ResetHook(i.ctx, hk.ID, i.orgID)
+	reset, err := i.hookMan.ResetHook(i.ctx, hk.ID, hk.DocumentID.V, i.orgID)
 	if err != nil {
 		return err
 	}
@@ -1111,7 +1109,7 @@ func (i *input) ResetHook(hk *hook.Hook) error {
 // removes its row. The branch stays, and the editor showing it has to
 // redraw, so the delete records the branch as touched.
 func (i *input) DeleteHook(hk *hook.Hook) error {
-	if err := i.hookMan.DeleteHook(i.ctx, hk.ID, i.orgID, i.userID); err != nil {
+	if err := i.hookMan.DeleteHook(i.ctx, hk.ID, hk.DocumentID.V, i.orgID, i.userID); err != nil {
 		return err
 	}
 
@@ -1289,17 +1287,17 @@ type HookManager interface {
 	// credited to updatedBy.
 	CreateHook(ctx context.Context, ci hook.CreateInput, documentID xid.ID, organizationID, updatedBy string) (*hook.Hook, error)
 
-	// UpdateHook should replace the hook's settings, credited to
-	// updatedBy, and return the stored hook.
-	UpdateHook(ctx context.Context, id xid.ID, organizationID string, ui hook.UpdateInput, updatedBy string) (*hook.Hook, error)
+	// UpdateHook should replace the settings of the document's hook,
+	// credited to updatedBy, and return the stored hook.
+	UpdateHook(ctx context.Context, id, documentID xid.ID, organizationID string, ui hook.UpdateInput, updatedBy string) (*hook.Hook, error)
 
-	// DeleteHook should tear the hook down and remove it, credited to
-	// updatedBy.
-	DeleteHook(ctx context.Context, id xid.ID, organizationID, updatedBy string) error
+	// DeleteHook should tear the document's hook down and remove it,
+	// credited to updatedBy.
+	DeleteHook(ctx context.Context, id, documentID xid.ID, organizationID, updatedBy string) error
 
-	// ResetHook should restore the hook's score and state and return the
-	// stored hook.
-	ResetHook(ctx context.Context, id xid.ID, organizationID string) (*hook.Hook, error)
+	// ResetHook should reset the document's hook and return the stored
+	// hook.
+	ResetHook(ctx context.Context, id, documentID xid.ID, organizationID string) (*hook.Hook, error)
 }
 
 // SearchTrigger runs the search-job worker once a job has committed.

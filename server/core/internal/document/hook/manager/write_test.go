@@ -111,7 +111,7 @@ func Test_Manager_CreateHook(t *testing.T) {
 			Type:     hook.TypeURLWatcher,
 			Settings: processor.Settings(`{"url":"https://example.com"}`),
 			Tx:       &TxMock{},
-			Err:      errutil.New(http.StatusUnprocessableEntity, "document_hook.unconfigured", "the hook cannot check its target: %s", processor.StatusUnconfigured),
+			Err:      errutil.New(http.StatusUnprocessableEntity, "document_hook.unconfigured", "the integration the hook needs is not configured"),
 		},
 		"Service the hook checks is unreachable": {
 			Type:        hook.TypeURLWatcher,
@@ -156,8 +156,7 @@ func Test_Manager_CreateHook(t *testing.T) {
 			Watchers: []string{"w-new"},
 			Err:      assert.AnError,
 		},
-		// the insert is rolled back, so the watcher the hook created is torn
-		// down again.
+		// the hook was not stored, so the watcher it created is torn down.
 		"Error returned by tx.InsertDocumentHook": {
 			Type:     hook.TypeURLWatcher,
 			Settings: processor.Settings(`{"url":"https://example.com"}`),
@@ -290,20 +289,21 @@ func Test_Manager_UpdateHook(t *testing.T) {
 	cc := map[string]struct {
 		// Held has another write hold the hook's lock until the update
 		// gives up.
-		Held        bool
-		Branchless  bool
-		Unreachable bool
-		Settings    processor.Settings
-		FetchErr    error
-		FlushErr    error
-		BeginErr    error
-		UpdateErr   error
-		RecordErr   error
-		CommitErr   error
-		Updates     int
-		Records     int
-		Watchers    []string
-		Err         error
+		Held          bool
+		Branchless    bool
+		OtherDocument bool
+		Unreachable   bool
+		Settings      processor.Settings
+		FetchErr      error
+		FlushErr      error
+		BeginErr      error
+		UpdateErr     error
+		RecordErr     error
+		CommitErr     error
+		Updates       int
+		Records       int
+		Watchers      []string
+		Err           error
 	}{
 		"Hook another write holds": {
 			Held:     true,
@@ -314,6 +314,11 @@ func Test_Manager_UpdateHook(t *testing.T) {
 			Settings: settings,
 			FetchErr: sql.ErrNoRows,
 			Err:      sql.ErrNoRows,
+		},
+		"Hook of another document": {
+			Settings:      settings,
+			OtherDocument: true,
+			Err:           hook.ErrHookMismatch,
 		},
 		"Error returned by flusher.Flush": {
 			Settings: settings,
@@ -424,7 +429,12 @@ func Test_Manager_UpdateHook(t *testing.T) {
 				defer cancel()
 			}
 
-			hk, err := man.UpdateHook(ctx, stored.ID, "org-1", hook.UpdateInput{Settings: c.Settings}, "u1")
+			documentID := stored.DocumentID.V
+			if c.OtherDocument {
+				documentID = xid.New()
+			}
+
+			hk, err := man.UpdateHook(ctx, stored.ID, documentID, "org-1", hook.UpdateInput{Settings: c.Settings}, "u1")
 			testutil.AssertEqualError(t, c.Err, err)
 
 			assert.Len(t, tx.UpdateDocumentHookCalls(), c.Updates)
@@ -468,7 +478,10 @@ func Test_Manager_DeleteHook(t *testing.T) {
 	branchID := xid.New()
 
 	cc := map[string]struct {
-		Hook      func(*testing.T) hook.Hook
+		Hook          func(*testing.T) hook.Hook
+		OtherDocument bool
+		// CDURL points changedetection at this address.
+		CDURL     string
 		FetchErr  error
 		FlushErr  error
 		BeginErr  error
@@ -486,6 +499,13 @@ func Test_Manager_DeleteHook(t *testing.T) {
 			FetchErr: sql.ErrNoRows,
 			Err:      sql.ErrNoRows,
 		},
+		"Hook of another document": {
+			Hook: func(t *testing.T) hook.Hook {
+				return stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+			},
+			OtherDocument: true,
+			Err:           hook.ErrHookMismatch,
+		},
 		"Error returned by flusher.Flush": {
 			Hook: func(t *testing.T) hook.Hook {
 				return stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
@@ -495,14 +515,22 @@ func Test_Manager_DeleteHook(t *testing.T) {
 		},
 		// the row goes only once the resource it describes is gone, so a
 		// failed teardown keeps it.
-		"External teardown fails": {
+		"Unreachable changedetection keeps the hook": {
+			Hook: func(*testing.T) hook.Hook {
+				return urlWatcherHook(branchID)
+			},
+			CDURL: "http://127.0.0.1:1",
+			Err:   hook.ErrUpstreamUnavailable,
+		},
+		// a stored state that does not decode is no service's failure.
+		"Malformed state keeps the hook": {
 			Hook: func(*testing.T) hook.Hook {
 				hk := urlWatcherHook(branchID)
 				hk.State = null.ValueFrom(processor.State(`{`))
 
 				return hk
 			},
-			Err: hook.ErrUpstreamUnavailable,
+			Err: assert.AnError,
 		},
 		"Error returned by db.BeginTx": {
 			Hook: func(t *testing.T) hook.Hook {
@@ -583,7 +611,13 @@ func Test_Manager_DeleteHook(t *testing.T) {
 				},
 			}
 
-			man := newTestManager(t, stubStoredHook(stubDB(&DBMock{}, tx, c.BeginErr), hk, c.FetchErr), &fakePublisher{}, nil)
+			var wc *webchange.Client
+
+			if c.CDURL != "" {
+				wc = webchange.NewClient(c.CDURL, "key")
+			}
+
+			man := newTestManager(t, stubStoredHook(stubDB(&DBMock{}, tx, c.BeginErr), hk, c.FetchErr), &fakePublisher{}, wc)
 
 			if c.FlushErr != nil {
 				man.flusher = &FlusherMock{
@@ -596,8 +630,18 @@ func Test_Manager_DeleteHook(t *testing.T) {
 			changes := &changeRecorder{}
 			man.BindHookChange(changes.record)
 
-			err := man.DeleteHook(context.Background(), hk.ID, "org-1", "u1")
+			documentID := hk.DocumentID.V
+			if c.OtherDocument {
+				documentID = xid.New()
+			}
+
+			err := man.DeleteHook(context.Background(), hk.ID, documentID, "org-1", "u1")
 			testutil.AssertEqualError(t, c.Err, err)
+
+			// only a service the hook could not reach is reported as one.
+			if c.Err != hook.ErrUpstreamUnavailable { //nolint:err113,errorlint // the sentinel is returned as is
+				assert.NotEqual(t, hook.ErrUpstreamUnavailable, err)
+			}
 
 			ff := tx.DeleteDocumentHookCalls()
 			require.Len(t, ff, c.Deletes)
@@ -627,16 +671,17 @@ func Test_Manager_ResetHook(t *testing.T) {
 	branchID := xid.New()
 
 	cc := map[string]struct {
-		Hook        func(*testing.T) hook.Hook
-		CD          bool
-		Unreachable bool
-		FetchErr    error
-		UpdateErr   error
-		Updates     int
-		Status      processor.Status
-		Published   []notification.Code
-		Watchers    []string
-		Err         error
+		Hook          func(*testing.T) hook.Hook
+		OtherDocument bool
+		CD            bool
+		Unreachable   bool
+		FetchErr      error
+		UpdateErr     error
+		Updates       int
+		Status        processor.Status
+		Published     []notification.Code
+		Watchers      []string
+		Err           error
 	}{
 		"Error returned by db.FetchDocumentHook": {
 			Hook: func(t *testing.T) hook.Hook {
@@ -644,6 +689,13 @@ func Test_Manager_ResetHook(t *testing.T) {
 			},
 			FetchErr: sql.ErrNoRows,
 			Err:      sql.ErrNoRows,
+		},
+		"Hook of another document": {
+			Hook: func(t *testing.T) hook.Hook {
+				return stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+			},
+			OtherDocument: true,
+			Err:           hook.ErrHookMismatch,
 		},
 		"Service the hook checks is unreachable": {
 			Hook: func(*testing.T) hook.Hook {
@@ -722,7 +774,12 @@ func Test_Manager_ResetHook(t *testing.T) {
 			changes := &changeRecorder{}
 			man.BindHookChange(changes.record)
 
-			hk, err := man.ResetHook(context.Background(), stored.ID, "org-1")
+			documentID := stored.DocumentID.V
+			if c.OtherDocument {
+				documentID = xid.New()
+			}
+
+			hk, err := man.ResetHook(context.Background(), stored.ID, documentID, "org-1")
 			testutil.AssertEqualError(t, c.Err, err)
 
 			ff := db.UpdateDocumentHookCalls()

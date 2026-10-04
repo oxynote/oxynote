@@ -62,10 +62,6 @@ function githubHook(overrides: Partial<DocumentHook> = {}) {
 	})
 }
 
-function failingGithubHook(status: DocumentHookStatusGitHubTracking) {
-	return githubHook({ status: status })
-}
-
 function mockGitHub(
 	options: { connected?: boolean; repositories?: string[] } = {},
 ) {
@@ -183,7 +179,7 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 		async ({ status, problem }, { expect }) => {
 			mockGitHub()
 
-			await mountMenu({ hook: failingGithubHook(status) })
+			await mountMenu({ hook: githubHook({ status: status }) })
 
 			expect(menuText()).toContain(
 				t("editor.hooks.subtext-detail", {
@@ -222,7 +218,7 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 
 	it("warns that a hook lost its github connection", async ({ expect }) => {
 		mockGitHub()
-		await mountMenu({ hook: failingGithubHook("missing_installation") })
+		await mountMenu({ hook: githubHook({ status: "missing_installation" }) })
 
 		await openHookSubMenu(t(TITLE))
 
@@ -269,7 +265,7 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 		"warns about $name it can no longer reach",
 		async ({ status, key }, { expect }) => {
 			mockGitHub()
-			await mountMenu({ hook: failingGithubHook(status) })
+			await mountMenu({ hook: githubHook({ status: status }) })
 
 			await openHookSubMenu(t(TITLE))
 
@@ -284,7 +280,7 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 	// notice does not send the reader there
 	it("warns that github is not set up on this server", async ({ expect }) => {
 		mockGitHub({ connected: false })
-		await mountMenu({ hook: failingGithubHook("unconfigured") })
+		await mountMenu({ hook: githubHook({ status: "unconfigured" }) })
 
 		await openHookSubMenu(t(TITLE))
 

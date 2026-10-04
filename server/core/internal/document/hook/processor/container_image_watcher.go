@@ -87,7 +87,7 @@ func (ciw *ContainerImageWatcher) digest(ctx context.Context) (string, Status, e
 	case errors.Is(err, registry.ErrNotFound):
 		return "", StatusImageNotFound, nil
 	default:
-		return "", "", fmt.Errorf("fetching container image digest: %w", err)
+		return "", "", unreachable(fmt.Errorf("fetching container image digest: %w", err))
 	}
 }
 

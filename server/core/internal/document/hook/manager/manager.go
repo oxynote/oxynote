@@ -251,7 +251,7 @@ func (m *Manager) runHook(ctx context.Context, doc *document.Document, h *hook.H
 	// The mark is still stored, since it starts the retention clock.
 	if !h.SoftDeletedAt.Valid {
 		if err := h.Process(ctx, m.input(h.OrganizationID.String)); err != nil {
-			// a transient failure keeps the stored state.
+			// a failed run keeps the stored score and state.
 			m.log.With("hook_id", h.ID).
 				With("error", err).
 				Error("processing document hook")

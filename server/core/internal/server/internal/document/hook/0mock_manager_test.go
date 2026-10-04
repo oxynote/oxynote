@@ -24,13 +24,13 @@ var _ Manager = &ManagerMock{}
 //			CreateHookFunc: func(ctx context.Context, ci hookCore.CreateInput, documentID xid.ID, organizationID string, updatedBy string) (*hookCore.Hook, error) {
 //				panic("mock out the CreateHook method")
 //			},
-//			DeleteHookFunc: func(ctx context.Context, id xid.ID, organizationID string, updatedBy string) error {
+//			DeleteHookFunc: func(ctx context.Context, id xid.ID, documentID xid.ID, organizationID string, updatedBy string) error {
 //				panic("mock out the DeleteHook method")
 //			},
-//			ResetHookFunc: func(ctx context.Context, id xid.ID, organizationID string) (*hookCore.Hook, error) {
+//			ResetHookFunc: func(ctx context.Context, id xid.ID, documentID xid.ID, organizationID string) (*hookCore.Hook, error) {
 //				panic("mock out the ResetHook method")
 //			},
-//			UpdateHookFunc: func(ctx context.Context, id xid.ID, organizationID string, ui hookCore.UpdateInput, updatedBy string) (*hookCore.Hook, error) {
+//			UpdateHookFunc: func(ctx context.Context, id xid.ID, documentID xid.ID, organizationID string, ui hookCore.UpdateInput, updatedBy string) (*hookCore.Hook, error) {
 //				panic("mock out the UpdateHook method")
 //			},
 //		}
@@ -44,13 +44,13 @@ type ManagerMock struct {
 	CreateHookFunc func(ctx context.Context, ci hookCore.CreateInput, documentID xid.ID, organizationID string, updatedBy string) (*hookCore.Hook, error)
 
 	// DeleteHookFunc mocks the DeleteHook method.
-	DeleteHookFunc func(ctx context.Context, id xid.ID, organizationID string, updatedBy string) error
+	DeleteHookFunc func(ctx context.Context, id xid.ID, documentID xid.ID, organizationID string, updatedBy string) error
 
 	// ResetHookFunc mocks the ResetHook method.
-	ResetHookFunc func(ctx context.Context, id xid.ID, organizationID string) (*hookCore.Hook, error)
+	ResetHookFunc func(ctx context.Context, id xid.ID, documentID xid.ID, organizationID string) (*hookCore.Hook, error)
 
 	// UpdateHookFunc mocks the UpdateHook method.
-	UpdateHookFunc func(ctx context.Context, id xid.ID, organizationID string, ui hookCore.UpdateInput, updatedBy string) (*hookCore.Hook, error)
+	UpdateHookFunc func(ctx context.Context, id xid.ID, documentID xid.ID, organizationID string, ui hookCore.UpdateInput, updatedBy string) (*hookCore.Hook, error)
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -73,6 +73,8 @@ type ManagerMock struct {
 			Ctx context.Context
 			// ID is the id argument value.
 			ID xid.ID
+			// DocumentID is the documentID argument value.
+			DocumentID xid.ID
 			// OrganizationID is the organizationID argument value.
 			OrganizationID string
 			// UpdatedBy is the updatedBy argument value.
@@ -84,6 +86,8 @@ type ManagerMock struct {
 			Ctx context.Context
 			// ID is the id argument value.
 			ID xid.ID
+			// DocumentID is the documentID argument value.
+			DocumentID xid.ID
 			// OrganizationID is the organizationID argument value.
 			OrganizationID string
 		}
@@ -93,6 +97,8 @@ type ManagerMock struct {
 			Ctx context.Context
 			// ID is the id argument value.
 			ID xid.ID
+			// DocumentID is the documentID argument value.
+			DocumentID xid.ID
 			// OrganizationID is the organizationID argument value.
 			OrganizationID string
 			// UI is the ui argument value.
@@ -160,15 +166,17 @@ func (mock *ManagerMock) CreateHookCalls() []struct {
 }
 
 // DeleteHook calls DeleteHookFunc.
-func (mock *ManagerMock) DeleteHook(ctx context.Context, id xid.ID, organizationID string, updatedBy string) error {
+func (mock *ManagerMock) DeleteHook(ctx context.Context, id xid.ID, documentID xid.ID, organizationID string, updatedBy string) error {
 	callInfo := struct {
 		Ctx            context.Context
 		ID             xid.ID
+		DocumentID     xid.ID
 		OrganizationID string
 		UpdatedBy      string
 	}{
 		Ctx:            ctx,
 		ID:             id,
+		DocumentID:     documentID,
 		OrganizationID: organizationID,
 		UpdatedBy:      updatedBy,
 	}
@@ -181,7 +189,7 @@ func (mock *ManagerMock) DeleteHook(ctx context.Context, id xid.ID, organization
 		)
 		return errOut
 	}
-	return mock.DeleteHookFunc(ctx, id, organizationID, updatedBy)
+	return mock.DeleteHookFunc(ctx, id, documentID, organizationID, updatedBy)
 }
 
 // DeleteHookCalls gets all the calls that were made to DeleteHook.
@@ -191,12 +199,14 @@ func (mock *ManagerMock) DeleteHook(ctx context.Context, id xid.ID, organization
 func (mock *ManagerMock) DeleteHookCalls() []struct {
 	Ctx            context.Context
 	ID             xid.ID
+	DocumentID     xid.ID
 	OrganizationID string
 	UpdatedBy      string
 } {
 	var calls []struct {
 		Ctx            context.Context
 		ID             xid.ID
+		DocumentID     xid.ID
 		OrganizationID string
 		UpdatedBy      string
 	}
@@ -207,14 +217,16 @@ func (mock *ManagerMock) DeleteHookCalls() []struct {
 }
 
 // ResetHook calls ResetHookFunc.
-func (mock *ManagerMock) ResetHook(ctx context.Context, id xid.ID, organizationID string) (*hookCore.Hook, error) {
+func (mock *ManagerMock) ResetHook(ctx context.Context, id xid.ID, documentID xid.ID, organizationID string) (*hookCore.Hook, error) {
 	callInfo := struct {
 		Ctx            context.Context
 		ID             xid.ID
+		DocumentID     xid.ID
 		OrganizationID string
 	}{
 		Ctx:            ctx,
 		ID:             id,
+		DocumentID:     documentID,
 		OrganizationID: organizationID,
 	}
 	mock.lockResetHook.Lock()
@@ -227,7 +239,7 @@ func (mock *ManagerMock) ResetHook(ctx context.Context, id xid.ID, organizationI
 		)
 		return hookOut, errOut
 	}
-	return mock.ResetHookFunc(ctx, id, organizationID)
+	return mock.ResetHookFunc(ctx, id, documentID, organizationID)
 }
 
 // ResetHookCalls gets all the calls that were made to ResetHook.
@@ -237,11 +249,13 @@ func (mock *ManagerMock) ResetHook(ctx context.Context, id xid.ID, organizationI
 func (mock *ManagerMock) ResetHookCalls() []struct {
 	Ctx            context.Context
 	ID             xid.ID
+	DocumentID     xid.ID
 	OrganizationID string
 } {
 	var calls []struct {
 		Ctx            context.Context
 		ID             xid.ID
+		DocumentID     xid.ID
 		OrganizationID string
 	}
 	mock.lockResetHook.RLock()
@@ -251,16 +265,18 @@ func (mock *ManagerMock) ResetHookCalls() []struct {
 }
 
 // UpdateHook calls UpdateHookFunc.
-func (mock *ManagerMock) UpdateHook(ctx context.Context, id xid.ID, organizationID string, ui hookCore.UpdateInput, updatedBy string) (*hookCore.Hook, error) {
+func (mock *ManagerMock) UpdateHook(ctx context.Context, id xid.ID, documentID xid.ID, organizationID string, ui hookCore.UpdateInput, updatedBy string) (*hookCore.Hook, error) {
 	callInfo := struct {
 		Ctx            context.Context
 		ID             xid.ID
+		DocumentID     xid.ID
 		OrganizationID string
 		UI             hookCore.UpdateInput
 		UpdatedBy      string
 	}{
 		Ctx:            ctx,
 		ID:             id,
+		DocumentID:     documentID,
 		OrganizationID: organizationID,
 		UI:             ui,
 		UpdatedBy:      updatedBy,
@@ -275,7 +291,7 @@ func (mock *ManagerMock) UpdateHook(ctx context.Context, id xid.ID, organization
 		)
 		return hookOut, errOut
 	}
-	return mock.UpdateHookFunc(ctx, id, organizationID, ui, updatedBy)
+	return mock.UpdateHookFunc(ctx, id, documentID, organizationID, ui, updatedBy)
 }
 
 // UpdateHookCalls gets all the calls that were made to UpdateHook.
@@ -285,6 +301,7 @@ func (mock *ManagerMock) UpdateHook(ctx context.Context, id xid.ID, organization
 func (mock *ManagerMock) UpdateHookCalls() []struct {
 	Ctx            context.Context
 	ID             xid.ID
+	DocumentID     xid.ID
 	OrganizationID string
 	UI             hookCore.UpdateInput
 	UpdatedBy      string
@@ -292,6 +309,7 @@ func (mock *ManagerMock) UpdateHookCalls() []struct {
 	var calls []struct {
 		Ctx            context.Context
 		ID             xid.ID
+		DocumentID     xid.ID
 		OrganizationID string
 		UI             hookCore.UpdateInput
 		UpdatedBy      string

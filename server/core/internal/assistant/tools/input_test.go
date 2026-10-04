@@ -2530,7 +2530,7 @@ func Test_input_UpdateHook(t *testing.T) {
 	t.Parallel()
 
 	failing := stubHookManager()
-	failing.UpdateHookFunc = func(context.Context, xid.ID, string, hook.UpdateInput, string) (*hook.Hook, error) {
+	failing.UpdateHookFunc = func(context.Context, xid.ID, xid.ID, string, hook.UpdateInput, string) (*hook.Hook, error) {
 		return nil, assert.AnError
 	}
 
@@ -2602,7 +2602,7 @@ func Test_input_ResetHook(t *testing.T) {
 	t.Parallel()
 
 	failing := stubHookManager()
-	failing.ResetHookFunc = func(context.Context, xid.ID, string) (*hook.Hook, error) {
+	failing.ResetHookFunc = func(context.Context, xid.ID, xid.ID, string) (*hook.Hook, error) {
 		return nil, assert.AnError
 	}
 
@@ -2669,7 +2669,7 @@ func Test_input_DeleteHook(t *testing.T) {
 	t.Parallel()
 
 	failing := stubHookManager()
-	failing.DeleteHookFunc = func(context.Context, xid.ID, string, string) error {
+	failing.DeleteHookFunc = func(context.Context, xid.ID, xid.ID, string, string) error {
 		return assert.AnError
 	}
 

@@ -9,18 +9,9 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	hookCore "github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
-	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
 	"github.com/rs/xid"
 )
-
-// ErrBranchMismatch is returned when the requested branch does not belong to
-// the document identified by the request path.
-var ErrBranchMismatch = errutil.New(http.StatusNotFound, "document.branch_mismatch", "branch does not belong to the document")
-
-// ErrHookMismatch is returned when the requested hook does not belong to the
-// document identified by the request path.
-var ErrHookMismatch = errutil.New(http.StatusNotFound, "document.hook_mismatch", "hook does not belong to the document")
 
 // Handler holds dependencies required for document hook operations.
 type Handler struct {
@@ -70,7 +61,7 @@ func (h *Handler) FetchDocumentHooks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if branchDoc.ID != documentID {
-		httpserver.RespondError(h.log, w, ErrBranchMismatch)
+		httpserver.RespondError(h.log, w, hookCore.ErrBranchMismatch)
 		return
 	}
 
@@ -146,19 +137,6 @@ func (h *Handler) UpdateDocumentHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hk, err := h.db.FetchDocumentHook(r.Context(), id, session.ActiveOrganizationID)
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	// a row whose document was deleted carries no document id at all and is
-	// not addressable through any document path.
-	if !hk.DocumentID.Valid || hk.DocumentID.V != documentID {
-		httpserver.RespondError(h.log, w, ErrHookMismatch)
-		return
-	}
-
 	var ui hookCore.UpdateInput
 
 	if err = httpserver.DecodeJSON(r, &ui); err != nil {
@@ -166,7 +144,7 @@ func (h *Handler) UpdateDocumentHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hk, err = h.hookMan.UpdateHook(r.Context(), hk.ID, session.ActiveOrganizationID, ui, session.UserID)
+	hk, err := h.hookMan.UpdateHook(r.Context(), id, documentID, session.ActiveOrganizationID, ui, session.UserID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -199,20 +177,7 @@ func (h *Handler) ResetDocumentHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hk, err := h.db.FetchDocumentHook(r.Context(), id, session.ActiveOrganizationID)
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	// a row whose document was deleted carries no document id at all and is
-	// not addressable through any document path.
-	if !hk.DocumentID.Valid || hk.DocumentID.V != documentID {
-		httpserver.RespondError(h.log, w, ErrHookMismatch)
-		return
-	}
-
-	hk, err = h.hookMan.ResetHook(r.Context(), hk.ID, session.ActiveOrganizationID)
+	hk, err := h.hookMan.ResetHook(r.Context(), id, documentID, session.ActiveOrganizationID)
 	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
@@ -245,20 +210,7 @@ func (h *Handler) DeleteDocumentHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hk, err := h.db.FetchDocumentHook(r.Context(), id, session.ActiveOrganizationID)
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	// a row whose document was deleted carries no document id at all and is
-	// not addressable through any document path.
-	if !hk.DocumentID.Valid || hk.DocumentID.V != documentID {
-		httpserver.RespondError(h.log, w, ErrHookMismatch)
-		return
-	}
-
-	if err = h.hookMan.DeleteHook(r.Context(), hk.ID, session.ActiveOrganizationID, session.UserID); err != nil {
+	if err = h.hookMan.DeleteHook(r.Context(), id, documentID, session.ActiveOrganizationID, session.UserID); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -279,9 +231,6 @@ type DB interface {
 	// FetchDocumentByBranchID should fetch the document joined against the branch identified by branchID.
 	FetchDocumentByBranchID(ctx context.Context, branchID xid.ID, organizationID string) (*document.Document, error)
 
-	// FetchDocumentHook should fetch the document hook for the given id.
-	FetchDocumentHook(ctx context.Context, id xid.ID, organizationID string) (*hookCore.Hook, error)
-
 	// FetchDocumentHooksByBranchID should fetch all hooks for a specific branch.
 	FetchDocumentHooksByBranchID(ctx context.Context, branchID xid.ID, organizationID string) ([]hookCore.Hook, error)
 }
@@ -294,15 +243,15 @@ type Manager interface {
 	// credited to updatedBy.
 	CreateHook(ctx context.Context, ci hookCore.CreateInput, documentID xid.ID, organizationID, updatedBy string) (*hookCore.Hook, error)
 
-	// UpdateHook should replace the hook's settings, credited to
-	// updatedBy, and return the stored hook.
-	UpdateHook(ctx context.Context, id xid.ID, organizationID string, ui hookCore.UpdateInput, updatedBy string) (*hookCore.Hook, error)
+	// UpdateHook should replace the settings of the document's hook,
+	// credited to updatedBy, and return the stored hook.
+	UpdateHook(ctx context.Context, id, documentID xid.ID, organizationID string, ui hookCore.UpdateInput, updatedBy string) (*hookCore.Hook, error)
 
-	// DeleteHook should tear the hook down and remove it, credited to
-	// updatedBy.
-	DeleteHook(ctx context.Context, id xid.ID, organizationID, updatedBy string) error
+	// DeleteHook should tear the document's hook down and remove it,
+	// credited to updatedBy.
+	DeleteHook(ctx context.Context, id, documentID xid.ID, organizationID, updatedBy string) error
 
-	// ResetHook should restore the hook's score and state and return the
-	// stored hook.
-	ResetHook(ctx context.Context, id xid.ID, organizationID string) (*hookCore.Hook, error)
+	// ResetHook should reset the document's hook and return the stored
+	// hook.
+	ResetHook(ctx context.Context, id, documentID xid.ID, organizationID string) (*hookCore.Hook, error)
 }

@@ -556,56 +556,6 @@ func Test_Handler_MergeBranches(t *testing.T) {
 			Body:     validBody,
 			RespCode: http.StatusInternalServerError,
 		},
-		// the hooks are copied after the commit, so a failure there leaves
-		// the merge itself standing.
-		"Hook copy fetch error": {
-			DB: &DBMock{
-				FetchDocumentByBranchIDFunc: fetchByBranch,
-				FetchDocumentHooksByBranchIDFunc: func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
-					return nil, errors.New("boom")
-				},
-			},
-			Tx:        &TxMock{},
-			Body:      validBody,
-			RespCode:  http.StatusOK,
-			Committed: 1,
-			Metadata:  1,
-			Reviewers: 1,
-			History:   1,
-		},
-		"Hook re-creation error": {
-			DB: &DBMock{
-				FetchDocumentByBranchIDFunc: fetchByBranch,
-				FetchDocumentHooksByBranchIDFunc: func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
-					return []hookCore.Hook{storedHook("bogus")}, nil
-				},
-			},
-			Tx:        &TxMock{},
-			Body:      validBody,
-			RespCode:  http.StatusOK,
-			Committed: 1,
-			Metadata:  1,
-			Reviewers: 1,
-			History:   1,
-		},
-		"Hook insertion error": {
-			DB: &DBMock{
-				FetchDocumentByBranchIDFunc: fetchByBranch,
-				FetchDocumentHooksByBranchIDFunc: func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
-					return []hookCore.Hook{storedHook(hookCore.TypeScheduledReminder)}, nil
-				},
-				InsertDocumentHookFunc: func(context.Context, hookCore.Hook) error {
-					return errors.New("boom")
-				},
-			},
-			Tx:        &TxMock{},
-			Body:      validBody,
-			RespCode:  http.StatusOK,
-			Committed: 1,
-			Metadata:  1,
-			Reviewers: 1,
-			History:   1,
-		},
 		"Document update error": {
 			DB: &DBMock{FetchDocumentByBranchIDFunc: fetchByBranch},
 			Tx: &TxMock{

@@ -56,7 +56,7 @@ func (uw *URLWatcher) Process(ctx context.Context, inp Input) (Result, error) {
 	case errors.Is(err, webchange.ErrNotConfigured):
 		return inactive(StatusUnconfigured), nil
 	default:
-		return Result{}, fmt.Errorf("fetching url watcher: %w", err)
+		return Result{}, unreachable(fmt.Errorf("fetching url watcher: %w", err))
 	}
 
 	// a write that failed after moving the watcher leaves it on a URL the
@@ -117,18 +117,18 @@ func (uw *URLWatcher) syncWatcher(ctx context.Context, cd ChangeDetection, watch
 			}, nil
 		case err == nil:
 			if err = cd.UpdateWatcher(ctx, watcherID, uw.URL); err != nil {
-				return URLWatcherState{}, fmt.Errorf("updating url watcher: %w", err)
+				return URLWatcherState{}, unreachable(fmt.Errorf("updating url watcher: %w", err))
 			}
 
 			return URLWatcherState{WatcherID: watcherID}, nil
 		case !errors.Is(err, webchange.ErrWatcherNotFound):
-			return URLWatcherState{}, fmt.Errorf("fetching url watcher: %w", err)
+			return URLWatcherState{}, unreachable(fmt.Errorf("fetching url watcher: %w", err))
 		}
 	}
 
 	watcherID, err := cd.CreateWatcher(ctx, uw.URL)
 	if err != nil {
-		return URLWatcherState{}, fmt.Errorf("creating url watcher: %w", err)
+		return URLWatcherState{}, unreachable(fmt.Errorf("creating url watcher: %w", err))
 	}
 
 	return URLWatcherState{WatcherID: watcherID}, nil
@@ -152,7 +152,7 @@ func (uw *URLWatcher) Delete(ctx context.Context, inp Input) error {
 
 	err := inp.ChangeDetection().DeleteWatcher(ctx, uws.WatcherID)
 	if err != nil {
-		return fmt.Errorf("deleting url watcher: %w", err)
+		return unreachable(fmt.Errorf("deleting url watcher: %w", err))
 	}
 
 	return nil

@@ -50,6 +50,24 @@ const targetBranchSettings = computed(
 const checkStatus = computed(
 	() => props.hook?.status as DocumentHookStatusGitHubTracking | undefined,
 )
+// how many of the repository, branch and files fields an editor can change.
+// A failed check leaves those up to the one at fault.
+const editableFields = computed(() => {
+	switch (checkStatus.value) {
+		case "unconfigured":
+		case "missing_installation":
+			return 0
+		case "missing_repository":
+			return 1
+		case "missing_branch":
+		case "tree_truncated":
+			return 2
+		case "active":
+		case "initializing":
+		case undefined:
+			return 3
+	}
+})
 const status = computed(() => (props.hook ? hookStatus(props.hook) : null))
 const selectedRepository = ref<string | undefined>(
 	activeBranchSettings.value?.repository,
@@ -354,8 +372,7 @@ function close() {
 				cn(
 					'flex flex-col gap-1 opacity-100 transition-opacity duration-200',
 					(!fetchGitHubConnectionStatus.data.value?.connected ||
-						checkStatus === 'missing_installation' ||
-						checkStatus === 'unconfigured') &&
+						editableFields === 0) &&
 						'pointer-events-none opacity-60',
 				)
 			"
@@ -366,12 +383,7 @@ function close() {
 					!fetchGitHubConnectionStatus.data.value?.connected ||
 					fetchGitHubRepositories.isLoading.value ||
 					fetchGitHubRepositories.state.value.data?.length === 0 ||
-					(!!checkStatus &&
-						checkStatus !== 'active' &&
-						checkStatus !== 'initializing' &&
-						checkStatus !== 'missing_repository' &&
-						checkStatus !== 'missing_branch' &&
-						checkStatus !== 'tree_truncated')
+					editableFields < 1
 				"
 			>
 				<ShadcnUiSelectLabel>
@@ -416,11 +428,7 @@ function close() {
 				:disabled="
 					!selectedRepository ||
 					fetchGitHubBranches.isLoading.value ||
-					(!!checkStatus &&
-						checkStatus !== 'active' &&
-						checkStatus !== 'initializing' &&
-						checkStatus !== 'missing_branch' &&
-						checkStatus !== 'tree_truncated')
+					editableFields < 2
 				"
 			>
 				<ShadcnUiSelectLabel>
@@ -468,9 +476,7 @@ function close() {
 					!selectedRepository ||
 					!selectedBranch ||
 					fetchGitHubPaths.isLoading.value ||
-					(!!checkStatus &&
-						checkStatus !== 'active' &&
-						checkStatus !== 'initializing')
+					editableFields < 3
 				"
 				:options="fetchGitHubPaths.state.value.data || []"
 				:placeholder="

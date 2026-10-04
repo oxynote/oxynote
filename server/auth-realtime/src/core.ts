@@ -238,10 +238,24 @@ export function createCoreClient(
 	}
 }
 
-// urlOn returns a template tag that appends a path to base, encoding each
-// interpolated id so one holding "/" or ".." stays in its own segment.
+// urlOn returns a template tag that appends a path to base. Each
+// interpolated id is encoded, so one holding "/" stays in its own segment.
+// Encoding keeps dots, so an id of "." or ".." would name another path and
+// is refused.
 function urlOn(base: string) {
-	return (strings: TemplateStringsArray, ...ids: string[]): string =>
-		base +
-		String.raw({ raw: strings }, ...ids.map(encodeURIComponent))
+	return (strings: TemplateStringsArray, ...ids: string[]): string => {
+		for (const id of ids) {
+			if (id === "." || id === "..") {
+				throw new Error(`invalid path id "${id}"`)
+			}
+		}
+
+		return (
+			base +
+			String.raw(
+				{ raw: strings },
+				...ids.map(encodeURIComponent),
+			)
+		)
+	}
 }

@@ -123,7 +123,7 @@ func Test_NewHook(t *testing.T) {
 		}, documentID, branchID, "org-1", NewInput("org-1", nil, webchange.NewClient("", "")))
 		require.Error(t, err)
 		assert.Equal(t, http.StatusUnprocessableEntity, errutil.StatusCode(err, false))
-		assert.EqualError(t, err, "the hook cannot check its target: unconfigured")
+		assert.EqualError(t, err, "the integration the hook needs is not configured")
 	})
 }
 
@@ -413,6 +413,60 @@ func Test_Hook_ensurePrepared(t *testing.T) {
 			runner := h.runner
 			require.NoError(t, h.ensurePrepared())
 			assert.Same(t, runner, h.runner)
+		})
+	}
+}
+
+func Test_newStatusError(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Status processor.Status
+		Err    error
+	}{
+		"Unconfigured": {
+			Status: processor.StatusUnconfigured,
+			Err:    errutil.New(http.StatusUnprocessableEntity, "document_hook.unconfigured", "the integration the hook needs is not configured"),
+		},
+		"Missing installation": {
+			Status: processor.StatusMissingInstallation,
+			Err:    errutil.New(http.StatusUnprocessableEntity, "document_hook.missing_installation", "the organization has no github app installation"),
+		},
+		"Missing repository": {
+			Status: processor.StatusMissingRepository,
+			Err:    errutil.New(http.StatusUnprocessableEntity, "document_hook.missing_repository", "the github repository was not found"),
+		},
+		"Missing branch": {
+			Status: processor.StatusMissingBranch,
+			Err:    errutil.New(http.StatusUnprocessableEntity, "document_hook.missing_branch", "the github branch was not found"),
+		},
+		"Tree truncated": {
+			Status: processor.StatusTreeTruncated,
+			Err:    errutil.New(http.StatusUnprocessableEntity, "document_hook.tree_truncated", "the github repository is too large to compare"),
+		},
+		"Unreachable url": {
+			Status: processor.StatusUnreachableURL,
+			Err:    errutil.New(http.StatusUnprocessableEntity, "document_hook.unreachable_url", "the url cannot be reached"),
+		},
+		"Unauthorized": {
+			Status: processor.StatusUnauthorized,
+			Err:    errutil.New(http.StatusUnprocessableEntity, "document_hook.unauthorized", "the container registry refused access"),
+		},
+		"Image not found": {
+			Status: processor.StatusImageNotFound,
+			Err:    errutil.New(http.StatusUnprocessableEntity, "document_hook.image_not_found", "the container image was not found"),
+		},
+		"Unknown status": {
+			Status: processor.Status("bogus"),
+			Err:    errutil.New(http.StatusUnprocessableEntity, "document_hook.cannot_check", "the hook cannot check its target"),
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			testutil.AssertEqualError(t, c.Err, newStatusError(c.Status))
 		})
 	}
 }

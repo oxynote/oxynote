@@ -363,6 +363,30 @@ describe("createCoreClient", () => {
 				{ headers },
 			)
 		})
+
+		it.for([
+			{ name: "the current", input: "." },
+			{ name: "the parent", input: ".." },
+		])(
+			"refuses an id naming $name path",
+			async ({ input }, { expect }) => {
+				const http = stubHttp({ status: 200, data: {} })
+
+				await expect(
+					createCoreClient(
+						BASE_URL,
+						http,
+					).updateBranch(
+						"doc-1",
+						input,
+						{ body: {} },
+						{ headers: new AxiosHeaders() },
+					),
+				).rejects.toThrow(`invalid path id "${input}"`)
+
+				expect(http.put).not.toHaveBeenCalled()
+			},
+		)
 	})
 
 	describe("deleteBranch", () => {

@@ -31,6 +31,10 @@ var ErrUpstreamUnavailable = errutil.New(http.StatusFailedDependency, "document_
 // another document.
 var ErrBranchMismatch = errutil.New(http.StatusNotFound, "document.branch_mismatch", "branch does not belong to the document")
 
+// ErrHookMismatch is returned when a hook is addressed under a document it
+// does not belong to.
+var ErrHookMismatch = errutil.New(http.StatusNotFound, "document.hook_mismatch", "hook does not belong to the document")
+
 // ErrBlockNotFound is returned when a hook is to be anchored to a block the
 // branch's content does not hold.
 var ErrBlockNotFound = errutil.New(http.StatusNotFound, "document.hook_block_not_found", "block not found in the branch")
@@ -317,12 +321,7 @@ func (h *Hook) setUp(ctx context.Context, inp *Input) error {
 		return nil
 	}
 
-	return errutil.New(
-		http.StatusUnprocessableEntity,
-		"document_hook."+string(h.Status),
-		"the hook cannot check its target: %s",
-		h.Status,
-	)
+	return newStatusError(h.Status)
 }
 
 // ensurePrepared prepares the hook for processing.
@@ -401,6 +400,31 @@ type CreateInput struct {
 type UpdateInput struct {
 	// Settings contains the settings for the hook in JSON format.
 	Settings processor.Settings `json:"settings"`
+}
+
+// newStatusError returns the error a hook is refused with when its check
+// failed with the given status.
+func newStatusError(status processor.Status) error {
+	switch status {
+	case processor.StatusUnconfigured:
+		return errutil.New(http.StatusUnprocessableEntity, "document_hook.unconfigured", "the integration the hook needs is not configured")
+	case processor.StatusMissingInstallation:
+		return errutil.New(http.StatusUnprocessableEntity, "document_hook.missing_installation", "the organization has no github app installation")
+	case processor.StatusMissingRepository:
+		return errutil.New(http.StatusUnprocessableEntity, "document_hook.missing_repository", "the github repository was not found")
+	case processor.StatusMissingBranch:
+		return errutil.New(http.StatusUnprocessableEntity, "document_hook.missing_branch", "the github branch was not found")
+	case processor.StatusTreeTruncated:
+		return errutil.New(http.StatusUnprocessableEntity, "document_hook.tree_truncated", "the github repository is too large to compare")
+	case processor.StatusUnreachableURL:
+		return errutil.New(http.StatusUnprocessableEntity, "document_hook.unreachable_url", "the url cannot be reached")
+	case processor.StatusUnauthorized:
+		return errutil.New(http.StatusUnprocessableEntity, "document_hook.unauthorized", "the container registry refused access")
+	case processor.StatusImageNotFound:
+		return errutil.New(http.StatusUnprocessableEntity, "document_hook.image_not_found", "the container image was not found")
+	default:
+		return errutil.New(http.StatusUnprocessableEntity, "document_hook.cannot_check", "the hook cannot check its target")
+	}
 }
 
 // runner is an interface that defines the methods for applying a freshness hook.
