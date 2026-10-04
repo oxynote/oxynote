@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { defaultBranchId, documentId } from "../helpers/api"
 import { joinAsSecondUser } from "../helpers/collaboration"
 import {
 	contentEditor,
@@ -726,5 +727,35 @@ test.describe("review workflow", () => {
 
 		await expect(branchSwitcher(page)).toContainText(branchLabel("main"))
 		await expect(page).toHaveURL(/New-Page-[a-z0-9]{20}$/)
+	})
+
+	test("opens a block link naming the main branch at that block", async ({
+		page,
+		request,
+	}) => {
+		await signUpWithWorkspace(page, request)
+		await createDocument(page)
+		// the linked block sits more than a screen down, so only a scroll to
+		// it brings it into view
+		await contentEditor(page).click()
+		for (let line = 0; line < 40; line += 1) {
+			await page.keyboard.press("Enter")
+		}
+		await page.keyboard.type("Linked block")
+		const block = contentEditor(page).getByText("Linked block", { exact: true })
+		await expect(block).toHaveAttribute("id", /.+/)
+		const uid = (await block.getAttribute("id")) ?? ""
+		const url = page.url()
+		const branch = await defaultBranchId(page, documentId(page))
+		await documentPersisted(page)
+		await makeReviewable(page)
+
+		const fresh = await page.context().newPage()
+		await visit(fresh, `${url}?branch=${branch}#${uid}`)
+
+		// a link that names the main branch keeps naming it
+		await expect(fresh).toHaveURL(`${url}?branch=${branch}#${uid}`)
+		await waitForEditor(fresh)
+		await expect(fresh.locator(`[id="${uid}"]`)).toBeInViewport()
 	})
 })

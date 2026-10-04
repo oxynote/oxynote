@@ -276,8 +276,8 @@ watchImmediate(
 		const branch =
 			branches.find((b) => b.branchId === queryBranch) ?? defaultBranch
 
-		// a query naming the default branch, or none the document has, is
-		// rewritten here. The watcher below only runs when the branch changes
+		// a query naming no branch of the document is rewritten here. The
+		// watcher below only runs when the branch changes
 		if (!branch || branch.branchId === editorStore.activeBranchId) {
 			syncBranchQuery()
 			return
@@ -362,11 +362,15 @@ watchImmediate(
 	},
 )
 
+// sync, so the hash is already current when a watcher above rewrites the
+// url in the same flush. A navigation to ?branch=<default>#<block> would
+// otherwise be rewritten with the hash of the route before it
 watch(
 	() => pageRoute.hash,
 	(hash) => {
 		linkedBlockHash.value = hash
 	},
+	{ flush: "sync" },
 )
 
 if (import.meta.client) {
@@ -441,14 +445,15 @@ function toggleNotificationSidebar() {
 }
 
 // the query of this page's url with ?branch= naming the active branch.
-// The default branch is left unnamed. Every replace of the url must take
+// The default branch is left unnamed, unless the url already names it.
+// Every replace of the url must take
 // its query from here. A replace with the route's old query would cancel
 // one that syncBranchQuery started in the same tick
 function branchQuery() {
 	const activeBranch = fetchBranches.state.value.data?.find(
 		(b) => b.branchId === editorStore.activeBranchId,
 	)
-	if (!activeBranch) {
+	if (!activeBranch || pageRoute.query.branch === activeBranch.branchId) {
 		return pageRoute.query
 	}
 

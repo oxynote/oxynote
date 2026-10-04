@@ -3,15 +3,18 @@ import { joinAsSecondUser } from "../helpers/collaboration"
 import {
 	addComment,
 	commentComposer,
+	commentOnBlock,
 	commentPopover,
 } from "../helpers/comments"
 import {
 	contentEditor,
+	contentPane,
 	createDocument,
 	documentPersisted,
 	waitForEditor,
 } from "../helpers/editor"
 import { t } from "../helpers/i18n"
+import { openInbox } from "../helpers/inbox"
 import { visit } from "../helpers/page"
 import { signUpWithWorkspace } from "../helpers/workspace"
 
@@ -79,6 +82,62 @@ test.describe("comments", () => {
 				credentials.email.split("@")[0] ?? "",
 			),
 		).toBeVisible()
+
+		await other.context.close()
+	})
+
+	test("opens a teammate's comment from the inbox at the commented block", async ({
+		page,
+		request,
+		browser,
+	}) => {
+		// two signups, a verification each, an invitation and its
+		// acceptance run before the first assertion
+		test.slow()
+
+		await signUpWithWorkspace(page, request)
+		await createDocument(page)
+		const url = page.url()
+		// the commented block sits more than a screen down, so only a scroll
+		// to it brings it into view
+		await contentEditor(page).click()
+		for (let line = 0; line < 40; line += 1) {
+			await page.keyboard.press("Enter")
+		}
+		await page.keyboard.type("Block under discussion")
+		const other = await joinAsSecondUser(browser, page, request)
+		// the owner's member list predates the teammate, so a reload picks
+		// them up before the notification names them. It also leaves the
+		// owner at the top of the page
+		await visit(page, url)
+		await waitForEditor(page)
+		const block = contentEditor(other.page).getByText(
+			"Block under discussion",
+			{ exact: true },
+		)
+		const uid = (await block.getAttribute("id")) ?? ""
+		await commentOnBlock(
+			other.page,
+			contentPane(other.page),
+			block,
+			"Worth a second look",
+		)
+		const linked = page.locator(`[id="${uid}"]`)
+		await expect(linked).not.toBeInViewport()
+
+		await openInbox(page)
+		await page
+			.getByRole("link", {
+				name: t("notification.messages.document-new-comment-description", {
+					user: other.credentials.email.split("@")[0] ?? "",
+				}),
+			})
+			.click()
+
+		await expect(page).toHaveURL(
+			new RegExp(`^${url}\\?branch=[a-z0-9]{20}#${uid}$`),
+		)
+		await expect(linked).toBeInViewport()
 
 		await other.context.close()
 	})
