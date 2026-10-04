@@ -39,11 +39,9 @@ export const HOOK_BAR_STATUS_CLASS: Record<
 }
 
 // hookStatus puts a failed check first. A hook that cannot check what it
-// watches needs fixing before its trigger means anything. A stored status
-// is "active" or the reason the last check failed, and a reminder stores
-// none.
+// watches needs fixing before its trigger means anything.
 export function hookStatus(hook: DocumentHook): HookStatus {
-	if ("status" in hook.state && hook.state.status !== "active") {
+	if (hook.status !== "active") {
 		return "needs-attention"
 	}
 

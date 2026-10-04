@@ -96,10 +96,21 @@ describe("<URLWatcherConfigMenu>", { concurrent: false }, () => {
 
 	it("says the page of a failing hook is unreachable", async ({ expect }) => {
 		await mountMenu({
-			hook: urlHook({ state: { status: "unreachable_url" } }),
+			hook: urlHook({ state: {}, status: "unreachable_url" }),
 		})
 
 		const detail = t("editor.hooks.url-watcher.detail-unreachable")
+		expect(menuText()).toContain(
+			t("editor.hooks.subtext-detail", { subtext: SHOWN_URL, detail: detail }),
+		)
+	})
+
+	it("says change detection is not set up for a hook that needs it", async ({
+		expect,
+	}) => {
+		await mountMenu({ hook: urlHook({ status: "unconfigured" }) })
+
+		const detail = t("editor.hooks.url-watcher.detail-unconfigured")
 		expect(menuText()).toContain(
 			t("editor.hooks.subtext-detail", { subtext: SHOWN_URL, detail: detail }),
 		)
@@ -171,7 +182,7 @@ describe("<URLWatcherConfigMenu>", { concurrent: false }, () => {
 
 	it("warns about a site it cannot reach", async ({ expect }) => {
 		await mountMenu({
-			hook: urlHook({ state: { status: "unreachable_url" } }),
+			hook: urlHook({ state: {}, status: "unreachable_url" }),
 		})
 
 		await openHookSubMenu(t(TITLE))

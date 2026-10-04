@@ -79,14 +79,22 @@ func Test_Digest(t *testing.T) {
 	tests := map[string]struct {
 		Authorization string
 		Reference     string
+		Path          string
 		Opts          []DigestOption
 		ExpectedErr   string
-		ErrContains   string
 	}{
 		"Anonymous fetch returns the seeded digest": {},
 		"Invalid image reference": {
 			Reference:   "UPPERCASE not allowed",
-			ErrContains: "parsing image reference",
+			ExpectedErr: ErrInvalidReference.Error(),
+		},
+		"Missing tag maps to ErrNotFound": {
+			Path:        "/test/img:v2",
+			ExpectedErr: ErrNotFound.Error(),
+		},
+		"Missing repository maps to ErrNotFound": {
+			Path:        "/test/other:v1",
+			ExpectedErr: ErrNotFound.Error(),
 		},
 		"Basic auth credentials are attached": {
 			Authorization: basicAuthorization,
@@ -118,19 +126,17 @@ func Test_Digest(t *testing.T) {
 
 			host, seeded := newFakeRegistry(t, tc.Authorization)
 
+			path := tc.Path
+			if path == "" {
+				path = "/test/img:v1"
+			}
+
 			reference := tc.Reference
 			if reference == "" {
-				reference = host + "/test/img:v1"
+				reference = host + path
 			}
 
 			digest, err := Digest(context.Background(), reference, tc.Opts...)
-
-			if tc.ErrContains != "" {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tc.ErrContains)
-
-				return
-			}
 
 			if tc.ExpectedErr != "" {
 				require.Error(t, err)
@@ -143,4 +149,12 @@ func Test_Digest(t *testing.T) {
 			assert.Equal(t, seeded, digest)
 		})
 	}
+}
+
+func Test_ValidateReference(t *testing.T) {
+	t.Parallel()
+
+	assert.NoError(t, ValidateReference("nginx"))
+	assert.NoError(t, ValidateReference("ghcr.io/owner/image:v1"))
+	assert.ErrorIs(t, ValidateReference("UPPERCASE not allowed"), ErrInvalidReference)
 }

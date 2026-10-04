@@ -77,6 +77,7 @@ export default function () {
 				blockId: req.blockId,
 				settings: req.settings,
 				state: defaultDocumentHookState(req.type),
+				status: "active",
 				score: "100",
 				createdAt: new Date(),
 				updatedAt: new Date(),
@@ -322,6 +323,7 @@ export default function () {
 			for (const h of newHooks) {
 				if (h.id === hookId) {
 					h.state = defaultDocumentHookState(h.type)
+					h.status = "active"
 					h.updatedAt = new Date()
 
 					break

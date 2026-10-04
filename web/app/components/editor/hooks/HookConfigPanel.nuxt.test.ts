@@ -141,17 +141,17 @@ describe("<HookConfigPanel>", { concurrent: false }, () => {
 	}>([
 		{
 			name: "a fresh hook plainly",
-			input: { score: "100", state: { status: "active" } },
+			input: { score: "100", state: {}, status: "active" },
 			expected: { status: "fresh", icon: "mingcute:earth-2-line" },
 		},
 		{
 			name: "a triggered hook in its colour",
-			input: { score: "0", state: { status: "active" } },
+			input: { score: "0", state: {}, status: "active" },
 			expected: { status: "triggered", icon: "mingcute:earth-2-line" },
 		},
 		{
 			name: "a failed check as a warning",
-			input: { score: "100", state: { status: "unreachable_url" } },
+			input: { score: "100", state: {}, status: "unreachable_url" },
 			expected: { status: "needs-attention", icon: "mingcute:alert-fill" },
 		},
 	])("shows $name", async ({ input, expected }, { expect }) => {

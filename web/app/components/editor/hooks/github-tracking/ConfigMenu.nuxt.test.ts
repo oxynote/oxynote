@@ -56,15 +56,14 @@ function githubHook(overrides: Partial<DocumentHook> = {}) {
 			branch: "main",
 			paths: ["docs/readme.md"],
 		},
-		state: { pathsChecksums: {}, status: "active" },
+		state: { pathsChecksums: {} },
+		status: "active",
 		...overrides,
 	})
 }
 
-function failingGithubHook(
-	status: "missing_installation" | "missing_repository" | "missing_branch",
-) {
-	return githubHook({ state: { pathsChecksums: {}, status: status } })
+function failingGithubHook(status: DocumentHookStatusGitHubTracking) {
+	return githubHook({ status: status })
 }
 
 function mockGitHub(
@@ -169,6 +168,16 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 			status: "missing_branch" as const,
 			problem: "editor.hooks.github-tracking.problems.missing-branch",
 		},
+		{
+			name: "a repository too large to compare",
+			status: "tree_truncated" as const,
+			problem: "editor.hooks.github-tracking.problems.tree-truncated",
+		},
+		{
+			name: "github missing on the server",
+			status: "unconfigured" as const,
+			problem: "editor.hooks.github-tracking.problems.unconfigured",
+		},
 	])(
 		"names $name on the hook's row",
 		async ({ status, problem }, { expect }) => {
@@ -251,6 +260,11 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 			status: "missing_branch" as const,
 			key: "editor.hooks.github-tracking.missing-target-branch",
 		},
+		{
+			name: "a repository too large to compare",
+			status: "tree_truncated" as const,
+			key: "editor.hooks.github-tracking.tree-truncated",
+		},
 	])(
 		"warns about $name it can no longer reach",
 		async ({ status, key }, { expect }) => {
@@ -265,6 +279,22 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 			expect(hookNotice().dataset.hookStatus).toBe("needs-attention")
 		},
 	)
+
+	// a server without github cannot be fixed from the settings, so the
+	// notice does not send the reader there
+	it("warns that github is not set up on this server", async ({ expect }) => {
+		mockGitHub({ connected: false })
+		await mountMenu({ hook: failingGithubHook("unconfigured") })
+
+		await openHookSubMenu(t(TITLE))
+
+		await vi.waitFor(() => {
+			expect(hookNotice().textContent.trim()).toBe(
+				t("editor.hooks.github-tracking.unconfigured"),
+			)
+		}, WAIT_FOR_OPTIONS)
+		expect(hookNotice().dataset.hookStatus).toBe("needs-attention")
+	})
 
 	it.for([
 		{
@@ -527,7 +557,7 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 		await mountMenu({
 			hook: githubHook({
 				score: "0",
-				state: { pathsChecksums: {}, status: "missing_branch" },
+				status: "missing_branch",
 			}),
 		})
 

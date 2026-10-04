@@ -74,7 +74,8 @@ function failedHook(blockId: string): DocumentHook {
 		...hook(blockId, "100"),
 		type: DocumentHookType.URLWatcher,
 		settings: { url: "https://example.com" },
-		state: { lastCheckedAt: "2026-01-01T00:00:00Z", status: "unreachable_url" },
+		state: { lastCheckedAt: "2026-01-01T00:00:00Z" },
+		status: "unreachable_url",
 	}
 }
 
@@ -93,6 +94,7 @@ function hook(blockId: string | null, score = "0"): DocumentHook {
 			schedule: "2026-01-01T00:00:00Z",
 		},
 		state: { lastActiveAt: "2026-01-01T00:00:00Z" },
+		status: "active",
 		score,
 		createdAt: "2026-01-01T00:00:00Z",
 	}

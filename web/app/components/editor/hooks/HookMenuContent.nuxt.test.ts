@@ -36,7 +36,8 @@ function reminder(overrides: Partial<DocumentHook> = {}) {
 			duration: "24h",
 			schedule: new Date("2026-09-01T10:00:00Z"),
 		},
-		state: { status: "active" },
+		state: {},
+		status: "active",
 		...overrides,
 	})
 }
@@ -46,7 +47,8 @@ function urlWatcher(overrides: Partial<DocumentHook> = {}) {
 		id: "url-1",
 		type: DocumentHookType.URLWatcher,
 		settings: { url: "https://oxynote.test" },
-		state: { status: "active" },
+		state: {},
+		status: "active",
 		...overrides,
 	})
 }
@@ -56,7 +58,8 @@ function githubHook(overrides: Partial<DocumentHook> = {}) {
 		id: "github-1",
 		type: DocumentHookType.GitHubTracking,
 		settings: { repository: "runbooks", branch: "main", paths: ["a.md"] },
-		state: { pathsChecksums: {}, status: "active" },
+		state: { pathsChecksums: {} },
+		status: "active",
 		...overrides,
 	})
 }
@@ -283,7 +286,7 @@ describe("<HookMenuContent>", { concurrent: false }, () => {
 		{ name: "a triggered hook", input: { score: "0" } },
 		{
 			name: "a hook that needs attention",
-			input: { score: "0", state: { status: "unreachable_url" as const } },
+			input: { score: "0", state: {}, status: "unreachable_url" as const },
 		},
 	])("keeps $name in its place", async ({ input }, { expect }) => {
 		mockGitHub(true)

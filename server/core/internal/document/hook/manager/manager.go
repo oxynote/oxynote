@@ -12,6 +12,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
+	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
 	"github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/logutil"
@@ -111,11 +112,7 @@ func (m *Manager) processHooks(ctx context.Context) error {
 				continue
 			}
 
-			if m.skipsUnconfigured(&h) {
-				continue
-			}
-
-			previousScore := h.Score
+			prev := h
 
 			ok := m.ensureHook(ctx, ps, &h)
 			if !ok {
@@ -159,12 +156,7 @@ func (m *Manager) processHooks(ctx context.Context) error {
 				continue
 			}
 
-			// the score decays gradually — a scheduled reminder walks down
-			// through 99…1 — so the transition to watch for is the arrival
-			// at zero, not an exact full-to-zero jump within one cycle.
-			if !previousScore.IsZero() && h.Score.IsZero() {
-				m.notifyMaintainers(ctx, h)
-			}
+			m.notifyTransition(ctx, prev, h)
 		}
 
 		if len(hooks) < _processingBatch {
@@ -175,9 +167,34 @@ func (m *Manager) processHooks(ctx context.Context) error {
 	return nil
 }
 
-// notifyMaintainers tells the document's maintainers that the hook ran out of
-// freshness.
-func (m *Manager) notifyMaintainers(ctx context.Context, h hook.Hook) {
+// notifyTransition tells the document's maintainers when an active hook
+// ran out of freshness, or when a hook can no longer check its target.
+// Both fire on the transition only.
+func (m *Manager) notifyTransition(ctx context.Context, prev, h hook.Hook) {
+	var core notification.Core
+
+	switch {
+	case prev.Status == processor.StatusActive && h.Status != processor.StatusActive:
+		core = notification.NewDocumentHookNeedsAttentionNotification(
+			h.DocumentID.V,
+			h.Type,
+			h.BlockID,
+			h.BranchID.V,
+			h.Status,
+		)
+	// a scheduled reminder decays through 99…1, so the transition is the
+	// arrival at zero, not a drop from full.
+	case h.Status == processor.StatusActive && !prev.Score.IsZero() && h.Score.IsZero():
+		core = notification.NewDocumentHookTriggeredNotification(
+			h.DocumentID.V,
+			h.Type,
+			h.BlockID,
+			h.BranchID.V,
+		)
+	default:
+		return
+	}
+
 	maintainers, err := m.db.FetchDocumentMaintainers(ctx, h.DocumentID.V, h.OrganizationID.String)
 	if err != nil {
 		m.log.With("hook_id", h.ID).
@@ -187,16 +204,7 @@ func (m *Manager) notifyMaintainers(ctx context.Context, h hook.Hook) {
 		return
 	}
 
-	m.notifPub.PublishNotifications(
-		h.OrganizationID.String,
-		notification.NewDocumentHookTriggeredNotification(
-			h.DocumentID.V,
-			h.Type,
-			h.BlockID,
-			h.BranchID.V,
-		),
-		maintainers...,
-	)
+	m.notifPub.PublishNotifications(h.OrganizationID.String, core, maintainers...)
 }
 
 // ensureHook ensures the hook is valid and handles deletions if necessary.
@@ -244,26 +252,6 @@ func (m *Manager) ensureHook(
 	}
 
 	return true
-}
-
-// skipsUnconfigured reports whether the hook depends on an integration
-// this deployment does not have. Such a hook cannot make progress, so
-// the processing pass skips it and leaves its state untouched.
-func (m *Manager) skipsUnconfigured(h *hook.Hook) bool {
-	switch {
-	case h.Type == hook.TypeGithubTracking && !m.githubMan.Configured():
-		m.log.With("hook_id", h.ID).
-			Warn("skipping github-tracking hook: github app is not configured")
-
-		return true
-	case h.Type == hook.TypeURLWatcher && !m.webchangeClient.Configured():
-		m.log.With("hook_id", h.ID).
-			Warn("skipping url-watcher hook: changedetection is not configured")
-
-		return true
-	default:
-		return false
-	}
 }
 
 // deleteHook tears down the hook's external resource and then removes the

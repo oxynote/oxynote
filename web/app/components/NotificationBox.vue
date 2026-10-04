@@ -83,7 +83,8 @@ async function buildNotificationHref(notification: Notification) {
 
 			return `/${orgRealName}/${docSlug}`
 		}
-		case NotificationCode.DocumentHookTrigerred: {
+		case NotificationCode.DocumentHookTrigerred:
+		case NotificationCode.DocumentHookNeedsAttention: {
 			const metadata =
 				notification.metadata as NotificationMetadataDocumentHookTriggered
 
@@ -134,6 +135,7 @@ function findNotificationIcon(notification: Notification) {
 		case NotificationCode.DocumentReviewRequest:
 			return "lucide:file-user"
 		case NotificationCode.DocumentHookTrigerred:
+		case NotificationCode.DocumentHookNeedsAttention:
 			switch (
 				(notification.metadata as NotificationMetadataDocumentHookTriggered)
 					.type
@@ -165,7 +167,8 @@ function buildNotificationDescription(notification: Notification) {
 		case NotificationCode.DocumentReviewRequest: {
 			return t("notification.messages.document-review-request-description")
 		}
-		case NotificationCode.DocumentHookTrigerred: {
+		case NotificationCode.DocumentHookTrigerred:
+		case NotificationCode.DocumentHookNeedsAttention: {
 			const metadata =
 				notification.metadata as NotificationMetadataDocumentHookTriggered
 			let hook = t("notification.hook-fallback")
@@ -183,6 +186,13 @@ function buildNotificationDescription(notification: Notification) {
 				case DocumentHookType.ContainerImageWatcher:
 					hook = t("editor.hooks.container-image-watcher.title")
 					break
+			}
+
+			if (notification.code === NotificationCode.DocumentHookNeedsAttention) {
+				return t(
+					"notification.messages.document-hook-needs-attention-description",
+					{ hook: hook },
+				)
 			}
 
 			return t("notification.messages.document-hook-triggered-description", {

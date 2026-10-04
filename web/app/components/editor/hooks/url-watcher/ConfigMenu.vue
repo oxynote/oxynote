@@ -36,9 +36,6 @@ const targetBranchSettings = computed(
 		props.diff?.targetHook?.settings as
 			DocumentHookSettingsURLWatcher | undefined,
 )
-const state = computed(
-	() => props.hook?.state as DocumentHookStateURLWatcher | undefined,
-)
 const status = computed(() => (props.hook ? hookStatus(props.hook) : null))
 const selectedURL = ref<string | undefined>(activeBranchSettings.value?.url)
 const isSubOpen = ref(false)
@@ -48,7 +45,9 @@ const isUnchanged = computed(
 		ensureHttps(selectedURL.value) === activeBranchSettings.value?.url,
 )
 const failure = computed(() =>
-	state.value ? checkFailure(state.value.status) : null,
+	props.hook
+		? checkFailure(props.hook.status as DocumentHookStatusURLWatcher)
+		: null,
 )
 const subtitle = computed<HookSubtitle>(() => {
 	if (!activeBranchSettings.value) {
@@ -112,11 +111,16 @@ async function submit() {
 // and is null while the check works. It has a case for every status and no
 // default, so a status added later fails to compile until it is handled.
 function checkFailure(
-	checkStatus: DocumentHookStateURLWatcher["status"],
+	checkStatus: DocumentHookStatusURLWatcher,
 ): { detail: string; notice: string } | null {
 	switch (checkStatus) {
 		case "active":
 			return null
+		case "unconfigured":
+			return {
+				detail: t("editor.hooks.url-watcher.detail-unconfigured"),
+				notice: t("editor.hooks.url-watcher.unconfigured"),
+			}
 		case "unreachable_url":
 			return {
 				detail: t("editor.hooks.url-watcher.detail-unreachable"),

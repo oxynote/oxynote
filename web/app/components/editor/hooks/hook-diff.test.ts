@@ -315,7 +315,8 @@ function makeHook(
 		branchId: "branch-1",
 		blockId: blockId,
 		settings: settings,
-		state: { status: "active" },
+		state: {},
+		status: "active",
 		score: "100",
 		createdAt: "2026-01-01",
 	}

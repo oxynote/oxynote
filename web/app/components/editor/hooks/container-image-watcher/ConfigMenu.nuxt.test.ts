@@ -48,7 +48,8 @@ function imageHook(overrides: Partial<DocumentHook> = {}) {
 		documentId: DOCUMENT_ID,
 		branchId: BRANCH_ID,
 		settings: { image: IMAGE },
-		state: { digest: "sha256:old", status: "active" },
+		state: { digest: "sha256:old" },
+		status: "active",
 		...overrides,
 	})
 }
@@ -91,11 +92,23 @@ describe("<ContainerImageWatcherConfigMenu>", { concurrent: false }, () => {
 	it("says the image of a failing hook is unreachable", async ({ expect }) => {
 		await mountMenu({
 			hook: imageHook({
-				state: { digest: "sha256:old", status: "unauthorized" },
+				state: { digest: "sha256:old" },
+				status: "unauthorized",
 			}),
 		})
 
 		const detail = t("editor.hooks.container-image-watcher.detail-unreachable")
+		expect(menuText()).toContain(
+			t("editor.hooks.subtext-detail", { subtext: IMAGE, detail: detail }),
+		)
+	})
+
+	it("says the image of a hook is gone from its registry", async ({
+		expect,
+	}) => {
+		await mountMenu({ hook: imageHook({ status: "image_not_found" }) })
+
+		const detail = t("editor.hooks.container-image-watcher.detail-missing")
 		expect(menuText()).toContain(
 			t("editor.hooks.subtext-detail", { subtext: IMAGE, detail: detail }),
 		)
@@ -167,7 +180,8 @@ describe("<ContainerImageWatcherConfigMenu>", { concurrent: false }, () => {
 	it("warns about an image it cannot reach", async ({ expect }) => {
 		await mountMenu({
 			hook: imageHook({
-				state: { digest: "sha256:old", status: "unauthorized" },
+				state: { digest: "sha256:old" },
+				status: "unauthorized",
 			}),
 		})
 

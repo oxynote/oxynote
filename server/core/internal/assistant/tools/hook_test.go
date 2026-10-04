@@ -307,7 +307,7 @@ func Test_listHooks_Execute(t *testing.T) {
 			Args: `{` + targetArgs(_stubBranchID) + `}`,
 			Result: `{"hooks":[{"id":"` + _testHookID.String() + `","type":"scheduled-reminder","block_uid":null,` +
 				`"settings":{"scale":"linear","duration":"custom","schedule":"2030-01-01T00:00:00Z"},` +
-				`"score":"100","state":{"startedAt":"2026-01-01T00:00:00Z"},` +
+				`"score":"100","state":{"startedAt":"2026-01-01T00:00:00Z"},"status":"active",` +
 				`"created_at":"2026-01-01T00:00:00Z","updated_at":null}]}`,
 		},
 	}
@@ -341,7 +341,8 @@ func Test_newHookRow(t *testing.T) {
 		BlockUID:  null.StringFrom("b"),
 		Settings:  json.RawMessage(hk.Settings),
 		Score:     hk.Score,
-		State:     json.RawMessage(hk.State),
+		State:     json.RawMessage(hk.State.V),
+		Status:    processor.StatusActive,
 		CreatedAt: hk.CreatedAt,
 		UpdatedAt: null.TimeFrom(_stubScheduleTime),
 	}, newHookRow(hk))
@@ -734,7 +735,7 @@ func Test_updateHook_Execute(t *testing.T) {
 			require.Len(t, ff, 1)
 			assert.Equal(t, _testHookID, ff[0].Hk.ID)
 			assert.JSONEq(t, `{"scale":"linear","duration":"custom","schedule":"2031-06-01T12:00:00Z"}`, string(ff[0].Hk.Settings))
-			assert.NotContains(t, string(ff[0].Hk.State), "2026-01-01")
+			assert.NotContains(t, string(ff[0].Hk.State.V), "2026-01-01")
 			assert.True(t, ff[0].Hk.UpdatedAt.Valid)
 
 			row := decodeHookRow(t, res)
@@ -872,7 +873,7 @@ func Test_resetHook_Execute(t *testing.T) {
 			require.Len(t, ff, 1)
 			assert.Equal(t, _testHookID, ff[0].Hk.ID)
 			assert.JSONEq(t, string(stubHook().Settings), string(ff[0].Hk.Settings))
-			assert.NotContains(t, string(ff[0].Hk.State), "2026-01-01")
+			assert.NotContains(t, string(ff[0].Hk.State.V), "2026-01-01")
 
 			row := decodeHookRow(t, res)
 			assert.Equal(t, _testHookID, row.ID)

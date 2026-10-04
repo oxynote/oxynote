@@ -25,11 +25,13 @@ import (
 // fakePublisher records published notifications.
 type fakePublisher struct {
 	organizationIDs []string
+	codes           []notification.Code
 	userIDs         [][]string
 }
 
-func (f *fakePublisher) PublishNotifications(organizationID string, _ notification.Core, userIDs ...string) {
+func (f *fakePublisher) PublishNotifications(organizationID string, core notification.Core, userIDs ...string) {
 	f.organizationIDs = append(f.organizationIDs, organizationID)
+	f.codes = append(f.codes, core.Code)
 	f.userIDs = append(f.userIDs, userIDs)
 }
 
@@ -54,7 +56,8 @@ func stubHook(t *testing.T, branchID xid.ID, schedule, startedAt time.Time) hook
 		OrganizationID: null.StringFrom("org-1"),
 		BranchID:       null.ValueFrom(branchID),
 		Settings:       processor.Settings(settings),
-		State:          processor.State(state),
+		State:          null.ValueFrom(processor.State(state)),
+		Status:         processor.StatusActive,
 		Score:          mathutil.Hundred,
 	}
 }
@@ -94,7 +97,8 @@ func urlWatcherHook(branchID xid.ID) hook.Hook {
 		OrganizationID: null.StringFrom("org-1"),
 		BranchID:       null.ValueFrom(branchID),
 		Settings:       processor.Settings(`{"url":"https://example.com"}`),
-		State:          processor.State(`{"watcherId":"w1"}`),
+		State:          null.ValueFrom(processor.State(`{"watcherId":"w1"}`)),
+		Status:         processor.StatusActive,
 		Score:          mathutil.Hundred,
 	}
 }
@@ -173,6 +177,20 @@ func Test_Manager_processHooks(t *testing.T) {
 	wasPublished := func(count int) check {
 		return func(t *testing.T, _ *DBMock, pub *fakePublisher, _ error) {
 			require.Len(t, pub.organizationIDs, count)
+		}
+	}
+
+	wasPublishedCode := func(code notification.Code) check {
+		return func(t *testing.T, _ *DBMock, pub *fakePublisher, _ error) {
+			assert.Equal(t, []notification.Code{code}, pub.codes)
+		}
+	}
+
+	hasUpdatedStatus := func(expected processor.Status) check {
+		return func(t *testing.T, db *DBMock, _ *fakePublisher, _ error) {
+			ff := db.UpdateDocumentHookCalls()
+			require.NotEmpty(t, ff)
+			assert.Equal(t, expected, ff[0].Hk.Status)
 		}
 	}
 
@@ -271,27 +289,33 @@ func Test_Manager_processHooks(t *testing.T) {
 				},
 			),
 		},
-		"Github tracking hook is skipped when unconfigured": {
-			Hooks: func(t *testing.T) []hook.Hook {
-				h := stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
-				h.Type = hook.TypeGithubTracking
-
-				return []hook.Hook{h}
-			},
-			Checks: checks(
-				hasError(false),
-				wasFetchDocumentCalled(0),
-				wasUpdateCalled(0),
-			),
-		},
-		"URL watcher hook is skipped when unconfigured": {
+		// the score is kept, so the hook does not also read as outdated.
+		"Hook that can no longer check notifies the maintainers": {
 			Hooks: func(_ *testing.T) []hook.Hook {
 				return []hook.Hook{urlWatcherHook(branchID)}
 			},
+			Doc: stubDocument(),
 			Checks: checks(
 				hasError(false),
-				wasFetchDocumentCalled(0),
-				wasUpdateCalled(0),
+				wasUpdateCalled(1),
+				hasUpdatedStatus(processor.StatusUnconfigured),
+				hasUpdatedScore(mathutil.Hundred),
+				wasPublishedCode(notification.NotificationDocumentHookNeedsAttention),
+			),
+		},
+		"Hook that still cannot check is not re-notified": {
+			Hooks: func(_ *testing.T) []hook.Hook {
+				h := urlWatcherHook(branchID)
+				h.Status = processor.StatusUnconfigured
+
+				return []hook.Hook{h}
+			},
+			Doc: stubDocument(),
+			Checks: checks(
+				hasError(false),
+				wasUpdateCalled(1),
+				hasUpdatedStatus(processor.StatusUnconfigured),
+				wasPublished(0),
 			),
 		},
 
@@ -355,7 +379,7 @@ func Test_Manager_processHooks(t *testing.T) {
 				hasError(false),
 				wasUpdateCalled(1),
 				hasUpdatedScore(decimal.Zero),
-				wasPublished(1),
+				wasPublishedCode(notification.NotificationDocumentHookTriggered),
 			),
 		},
 		// the score decays gradually, so by the time it reaches zero the

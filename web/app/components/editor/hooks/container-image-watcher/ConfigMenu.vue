@@ -38,9 +38,6 @@ const targetBranchSettings = computed(
 		props.diff?.targetHook?.settings as
 			DocumentHookSettingsContainerImageWatcher | undefined,
 )
-const state = computed(
-	() => props.hook?.state as DocumentHookStateContainerImageWatcher | undefined,
-)
 const status = computed(() => (props.hook ? hookStatus(props.hook) : null))
 const selectedImage = ref<string | undefined>(activeBranchSettings.value?.image)
 const isSubOpen = ref(false)
@@ -50,7 +47,9 @@ const isUnchanged = computed(
 		selectedImage.value === activeBranchSettings.value?.image,
 )
 const failure = computed(() =>
-	state.value ? checkFailure(state.value.status) : null,
+	props.hook
+		? checkFailure(props.hook.status as DocumentHookStatusContainerImageWatcher)
+		: null,
 )
 const subtitle = computed<HookSubtitle>(() => {
 	if (!activeBranchSettings.value) {
@@ -104,7 +103,7 @@ async function submit() {
 // and is null while the check works. It has a case for every status and no
 // default, so a status added later fails to compile until it is handled.
 function checkFailure(
-	checkStatus: DocumentHookStateContainerImageWatcher["status"],
+	checkStatus: DocumentHookStatusContainerImageWatcher,
 ): { detail: string; notice: string } | null {
 	switch (checkStatus) {
 		case "active":
@@ -113,6 +112,11 @@ function checkFailure(
 			return {
 				detail: t("editor.hooks.container-image-watcher.detail-unreachable"),
 				notice: t("editor.hooks.container-image-watcher.unreachable-image"),
+			}
+		case "image_not_found":
+			return {
+				detail: t("editor.hooks.container-image-watcher.detail-missing"),
+				notice: t("editor.hooks.container-image-watcher.missing-image"),
 			}
 	}
 }

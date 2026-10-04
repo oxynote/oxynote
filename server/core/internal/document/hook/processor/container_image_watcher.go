@@ -6,25 +6,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 
 	"github.com/oxynote/oxynote/server/core/internal/apps/registry"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/mathutil"
 	"github.com/shopspring/decimal"
 )
 
-// ContainerImageWatcherStatus represents the status of the
-// Container Image watcher processor.
-type ContainerImageWatcherStatus string
-
-const (
-	// ContainerImageWatcherStatusActive indicates that the Container Image watcher
-	// processor is active.
-	ContainerImageWatcherStatusActive ContainerImageWatcherStatus = "active"
-
-	// ContainerImageWatcherStatusUnauthorized indicates that the Container Image
-	// watcher processor is unauthorized to access the container registry.
-	ContainerImageWatcherStatusUnauthorized ContainerImageWatcherStatus = "unauthorized"
-)
+// ErrInvalidImage is returned when a container image watcher's image
+// reference cannot be parsed.
+var ErrInvalidImage = errutil.New(http.StatusBadRequest, "document_hook.invalid_image", "invalid container image reference")
 
 // ContainerImageWatcher specifies a processor that watches container images for updates.
 type ContainerImageWatcher struct {
@@ -34,35 +26,30 @@ type ContainerImageWatcher struct {
 	Image string `json:"image"`
 }
 
-// Process processes the Container Image watcher hook.
-func (ciw *ContainerImageWatcher) Process(ctx context.Context, inp Input) (decimal.Decimal, State, error) {
+// Validate checks that the image reference can be parsed.
+func (ciw *ContainerImageWatcher) Validate() error {
+	if err := registry.ValidateReference(ciw.Image); err != nil {
+		return ErrInvalidImage
+	}
+
+	return nil
+}
+
+// Process scores the hook down once the image digest moved since the reset.
+func (ciw *ContainerImageWatcher) Process(ctx context.Context, inp Input) (Result, error) {
 	var ciws ContainerImageWatcherState
 
 	if err := json.Unmarshal(inp.State(), &ciws); err != nil {
-		return decimal.Zero, nil, fmt.Errorf("unmarshaling container image watcher state: %w", err)
+		return Result{}, fmt.Errorf("unmarshaling container image watcher state: %w", err)
 	}
 
-	digest, err := registry.Digest(
-		ctx,
-		ciw.Image,
-	)
-	switch {
-	case err == nil:
-		ciws.Status = ContainerImageWatcherStatusActive
-	case errors.Is(err, registry.ErrUnauthorized):
-		// an unauthorized fetch yields no digest to compare against, so the
-		// score drops regardless of the stored baseline — which may itself be
-		// empty when the hook was created while unauthorized.
-		ciws.Status = ContainerImageWatcherStatusUnauthorized
+	digest, status, err := ciw.digest(ctx)
+	if err != nil {
+		return Result{}, err
+	}
 
-		state, merr := json.Marshal(ciws)
-		if merr != nil {
-			return decimal.Zero, nil, fmt.Errorf("marshaling container image watcher state: %w", merr)
-		}
-
-		return decimal.Zero, state, nil
-	default:
-		return decimal.Zero, nil, fmt.Errorf("fetching container image digest: %w", err)
+	if status != StatusActive {
+		return inactive(status), nil
 	}
 
 	score := mathutil.Hundred
@@ -70,62 +57,43 @@ func (ciw *ContainerImageWatcher) Process(ctx context.Context, inp Input) (decim
 		score = decimal.Zero
 	}
 
-	state, err := json.Marshal(ciws)
-	if err != nil {
-		return decimal.Zero, nil, fmt.Errorf("marshaling container image watcher state: %w", err)
-	}
-
-	return score, state, nil
+	return active(score, ciws)
 }
 
-// Reset resets the state of the Container Image watcher processor.
-func (ciw *ContainerImageWatcher) Reset(ctx context.Context, inp Input) (decimal.Decimal, State, error) {
-	var ciws ContainerImageWatcherState
-
-	if state := inp.State(); state != nil {
-		if err := json.Unmarshal(state, &ciws); err != nil {
-			return decimal.Zero, nil, fmt.Errorf("unmarshaling container image watcher state: %w", err)
-		}
+// Reset records the image's current digest as the baseline.
+func (ciw *ContainerImageWatcher) Reset(ctx context.Context, _ Input) (Result, error) {
+	digest, status, err := ciw.digest(ctx)
+	if err != nil {
+		return Result{}, err
 	}
 
-	digest, err := registry.Digest(
-		ctx,
-		ciw.Image,
-	)
+	if status != StatusActive {
+		return inactive(status), nil
+	}
+
+	return active(mathutil.Hundred, ContainerImageWatcherState{Digest: digest})
+}
+
+// digest fetches the image digest. A status other than active means the
+// registry answered with a reason the hook reports rather than fails on.
+func (ciw *ContainerImageWatcher) digest(ctx context.Context) (string, Status, error) {
+	digest, err := registry.Digest(ctx, ciw.Image)
 
 	switch {
 	case err == nil:
-		ciws.Status = ContainerImageWatcherStatusActive
+		return digest, StatusActive, nil
 	case errors.Is(err, registry.ErrUnauthorized):
-		// Process records this as a status rather than an error; refusing to
-		// create the hook here would make a currently-unauthorized image
-		// impossible to watch at all, even though the status is exactly what
-		// tells the user why.
-		ciws.Status = ContainerImageWatcherStatusUnauthorized
+		return "", StatusUnauthorized, nil
+	case errors.Is(err, registry.ErrNotFound):
+		return "", StatusImageNotFound, nil
 	default:
-		return decimal.Zero, nil, fmt.Errorf("fetching container image digest: %w", err)
+		return "", "", fmt.Errorf("fetching container image digest: %w", err)
 	}
-
-	ciws.Digest = digest
-
-	state, err := json.Marshal(ciws)
-	if err != nil {
-		return decimal.Zero, nil, fmt.Errorf("marshaling container image watcher state: %w", err)
-	}
-
-	if ciws.Status == ContainerImageWatcherStatusUnauthorized {
-		return decimal.Zero, state, nil
-	}
-
-	return mathutil.Hundred, state, nil
 }
 
 // ContainerImageWatcherState represents the state of the container image
 // watcher processor.
 type ContainerImageWatcherState struct {
-	// Status is the current status of the processor.
-	Status ContainerImageWatcherStatus `json:"status"`
-
 	// Digest is the last known digest of the container image.
 	Digest string `json:"digest"`
 }

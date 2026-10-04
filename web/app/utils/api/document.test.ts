@@ -112,7 +112,6 @@ describe("defaultDocumentHookState", () => {
 		try {
 			expect(defaultDocumentHookState(DocumentHookType.URLWatcher)).toEqual({
 				lastCheckedAt: new Date("2024-06-15T12:00:00Z"),
-				status: "active",
 			})
 		} finally {
 			vi.useRealTimers()
@@ -122,7 +121,6 @@ describe("defaultDocumentHookState", () => {
 	it("returns an empty checksum state for github tracking", ({ expect }) => {
 		expect(defaultDocumentHookState(DocumentHookType.GitHubTracking)).toEqual({
 			pathsChecksums: {},
-			status: "active",
 		})
 	})
 
@@ -132,7 +130,6 @@ describe("defaultDocumentHookState", () => {
 		expect(
 			defaultDocumentHookState(DocumentHookType.ContainerImageWatcher),
 		).toEqual({
-			status: "active",
 			digest: "",
 		})
 	})

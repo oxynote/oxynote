@@ -22,6 +22,7 @@ func (a *agent) InsertDocumentHook(ctx context.Context, hk hook.Hook) error {
 			"block_id":           hk.BlockID,
 			"settings":           hk.Settings,
 			"state":              hk.State,
+			"status":             hk.Status,
 			"score":              hk.Score,
 			"created_at":         hk.CreatedAt,
 			"updated_at":         hk.UpdatedAt,
@@ -112,6 +113,7 @@ func (a *agent) UpdateDocumentHook(ctx context.Context, hk hook.Hook) error {
 		SetMap(map[string]any{
 			"settings":        hk.Settings,
 			"state":           hk.State,
+			"status":          hk.Status,
 			"score":           hk.Score,
 			"updated_at":      hk.UpdatedAt,
 			"soft_deleted_at": hk.SoftDeletedAt,
@@ -199,5 +201,6 @@ func (a *agent) selectDocumentHook(b sq.SelectBuilder) sq.SelectBuilder {
 		`document_hooks.created_at AS "created_at"`,
 		`document_hooks.updated_at AS "updated_at"`,
 		`document_hooks.soft_deleted_at AS "soft_deleted_at"`,
+		`document_hooks.status AS "status"`,
 	).From("document_hooks")
 }

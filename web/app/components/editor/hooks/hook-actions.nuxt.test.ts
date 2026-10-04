@@ -87,6 +87,35 @@ describe("useHookActions", { concurrent: false }, () => {
 		])
 	})
 
+	it.for([
+		{ name: "creating", update: false },
+		{ name: "updating", update: true },
+	])(
+		"names the reason core refused $name the hook for",
+		async ({ update }, { expect }) => {
+			const refused = (_call: RecordedCall, event: H3Event) => {
+				setResponseStatus(event, 422)
+
+				return {
+					code: "document_hook.unconfigured",
+					message: "the hook cannot check its target: unconfigured",
+				}
+			}
+			mockEndpoint("POST", `/api/documents/${DOCUMENT_ID}/hooks`, refused)
+			mockEndpoint("PUT", HOOK_PATH, refused)
+			const { actions } = await mountActions(update ? undefined : null)
+
+			const done = update
+				? await actions.update(SETTINGS)
+				: await actions.create(SETTINGS)
+
+			expect(done).toBe(false)
+			expect(raisedToasts()).toMatchObject([
+				{ type: "error", title: t("editor.hooks.errors.codes.unconfigured") },
+			])
+		},
+	)
+
 	it("updates the hook's settings after closing the menu", async ({
 		expect,
 	}) => {

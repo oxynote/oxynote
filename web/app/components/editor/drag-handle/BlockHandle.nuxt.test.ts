@@ -21,7 +21,8 @@ function hook(blockId: string, score: number): DocumentHook {
 	return {
 		blockId: blockId,
 		score: score,
-		state: { status: "active" },
+		state: {},
+		status: "active",
 	} as unknown as DocumentHook
 }
 
@@ -30,7 +31,8 @@ function failedHook(blockId: string): DocumentHook {
 	return {
 		blockId: blockId,
 		score: 0,
-		state: { status: "unreachable_url" },
+		state: {},
+		status: "unreachable_url",
 	} as unknown as DocumentHook
 }
 

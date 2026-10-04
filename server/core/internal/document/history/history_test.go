@@ -202,7 +202,7 @@ func Test_NewHooks(t *testing.T) {
 			Type:     hook.TypeURLWatcher,
 			BlockID:  null.StringFrom("b1"),
 			Settings: processor.Settings(`{"url":"https://example.com"}`),
-			State:    processor.State(`{"watcher":"w1"}`),
+			State:    null.ValueFrom(processor.State(`{"watcher":"w1"}`)),
 			// the block is back, so the sweep lifts the mark on its next
 			// run.
 			SoftDeletedAt: null.TimeFrom(time.Now()),

@@ -221,6 +221,30 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 			expect(wrapper.text()).toContain("hook was triggered")
 		})
 
+		it("names the hook that can no longer check its target", async ({
+			expect,
+		}) => {
+			seedNotifications([
+				makeNotification({
+					code: NotificationCode.DocumentHookNeedsAttention,
+					metadata: {
+						documentId: DOC_ID,
+						branchId: "b",
+						blockId: null,
+						type: DocumentHookType.GitHubTracking,
+					},
+				}),
+			])
+
+			const wrapper = await mountBox()
+
+			expect(wrapper.text()).toContain(
+				t("notification.messages.document-hook-needs-attention-description", {
+					hook: t("editor.hooks.github-tracking.title"),
+				}),
+			)
+		})
+
 		it("names the commenter on a new comment", async ({ expect }) => {
 			seedAuthOrganization({
 				members: [{ userId: USER_ID, user: { name: "Ada" } }],

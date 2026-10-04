@@ -56,14 +56,6 @@ func Test_ScheduledReminder_Process(t *testing.T) {
 			State:         reminderState(t, now),
 			ExpectedScore: decimal.NewFromInt(100),
 		},
-		"Invalid scale fails": {
-			Reminder: ScheduledReminder{
-				Scale:    ScaleType("exponential"),
-				Schedule: now.Add(time.Hour),
-			},
-			State:     reminderState(t, now),
-			ExpectErr: true,
-		},
 		"Malformed state fails": {
 			Reminder: ScheduledReminder{
 				Scale: ScaleTypeLinear,
@@ -77,7 +69,7 @@ func Test_ScheduledReminder_Process(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			score, state, err := tc.Reminder.Process(context.Background(), stubInput{state: tc.State})
+			res, err := tc.Reminder.Process(context.Background(), stubInput{state: tc.State})
 
 			if tc.ExpectErr {
 				require.Error(t, err)
@@ -86,12 +78,13 @@ func Test_ScheduledReminder_Process(t *testing.T) {
 			}
 
 			require.NoError(t, err)
+			assert.Equal(t, StatusActive, res.Status)
 			assert.True(
 				t,
-				score.Sub(tc.ExpectedScore).Abs().LessThanOrEqual(decimal.NewFromInt(1)),
-				"score %s should be within 1 of %s", score, tc.ExpectedScore,
+				res.Score.Sub(tc.ExpectedScore).Abs().LessThanOrEqual(decimal.NewFromInt(1)),
+				"score %s should be within 1 of %s", res.Score, tc.ExpectedScore,
 			)
-			assert.JSONEq(t, string(tc.State), string(state))
+			assert.JSONEq(t, string(tc.State), string(res.State))
 		})
 	}
 }
@@ -107,14 +100,15 @@ func Test_ScheduledReminder_Reset(t *testing.T) {
 			Schedule: time.Now().Add(time.Hour),
 		}
 
-		score, state, err := sr.Reset(context.Background(), stubInput{})
+		res, err := sr.Reset(context.Background(), stubInput{})
 		require.NoError(t, err)
 
-		assert.True(t, score.Equal(decimal.NewFromInt(100)))
+		assert.Equal(t, StatusActive, res.Status)
+		assert.True(t, res.Score.Equal(decimal.NewFromInt(100)))
 
 		var srs ScheduledReminderState
 
-		require.NoError(t, json.Unmarshal(state, &srs))
+		require.NoError(t, json.Unmarshal(res.State, &srs))
 		assert.False(t, srs.StartedAt.IsZero())
 	})
 
@@ -126,23 +120,46 @@ func Test_ScheduledReminder_Reset(t *testing.T) {
 			Schedule: time.Now().Add(time.Second),
 		}
 
-		score, _, err := sr.Reset(context.Background(), stubInput{})
+		res, err := sr.Reset(context.Background(), stubInput{})
 		require.NoError(t, err)
 
-		assert.True(t, score.Equal(decimal.Zero))
+		assert.True(t, res.Score.Equal(decimal.Zero))
 	})
+}
 
-	t.Run("Unknown scale is rejected", func(t *testing.T) {
-		t.Parallel()
+func Test_ScheduledReminder_Validate(t *testing.T) {
+	t.Parallel()
 
-		// accepting it here would create a hook that fails on every
-		// processing cycle instead of being refused at creation.
-		sr := ScheduledReminder{
-			Scale:    ScaleType("exponential"),
-			Schedule: time.Now().Add(time.Hour),
-		}
+	tests := map[string]struct {
+		Reminder    ScheduledReminder
+		ExpectedErr error
+	}{
+		"Linear scale with a schedule is valid": {
+			Reminder: ScheduledReminder{
+				Scale:    ScaleTypeLinear,
+				Schedule: time.Now().Add(time.Hour),
+			},
+		},
+		"Unknown scale is rejected": {
+			Reminder: ScheduledReminder{
+				Scale:    ScaleType("exponential"),
+				Schedule: time.Now().Add(time.Hour),
+			},
+			ExpectedErr: ErrInvalidScaleType,
+		},
+		"Missing schedule is rejected": {
+			Reminder: ScheduledReminder{
+				Scale: ScaleTypeLinear,
+			},
+			ExpectedErr: ErrMissingSchedule,
+		},
+	}
 
-		_, _, err := sr.Reset(context.Background(), stubInput{})
-		assert.Equal(t, ErrInvalidScaleType, err)
-	})
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.ExpectedErr, tc.Reminder.Validate())
+		})
+	}
 }

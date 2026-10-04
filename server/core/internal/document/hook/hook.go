@@ -20,6 +20,9 @@ import (
 // not implement.
 var ErrInvalidType = errutil.New(http.StatusBadRequest, "document_hook.invalid_type", "invalid hook type")
 
+// ErrInvalidSettings is returned when a hook's settings do not decode.
+var ErrInvalidSettings = errutil.New(http.StatusBadRequest, "document_hook.invalid_settings", "invalid hook settings")
+
 // Type represents the type of a freshness hook.
 type Type string
 
@@ -101,8 +104,13 @@ type Hook struct {
 	// Settings contains the settings for the hook in JSON format.
 	Settings processor.Settings `json:"settings" db:"settings"`
 
-	// State contains the state of the hook in JSON format.
-	State processor.State `json:"state" db:"state"`
+	// State contains the state of the hook in JSON format. Null until the
+	// hook is set up.
+	State null.Value[processor.State] `json:"state" db:"state"`
+
+	// Status tells whether the hook could check its target on its last run.
+	// Score and state are left as they were while it is not active.
+	Status processor.Status `json:"status" db:"status"`
 
 	// Score is the freshness score of the hook.
 	Score decimal.Decimal `json:"score" db:"score"`
@@ -122,6 +130,7 @@ type Hook struct {
 }
 
 // NewHook creates a new freshness hook with the given input and document ID.
+// It fails unless the hook can check its target right away.
 func NewHook(
 	ctx context.Context,
 	ci CreateInput,
@@ -144,7 +153,7 @@ func NewHook(
 		CreatedAt:      timeutil.Now(),
 	}
 
-	if err := h.Reset(ctx, inp); err != nil {
+	if err := h.setUp(ctx, inp); err != nil {
 		return nil, err
 	}
 
@@ -153,7 +162,9 @@ func NewHook(
 
 // CopyTo re-creates the hook on another branch with fresh state, anchored
 // to the given block. A copy within the hook's document keeps its
-// cross-branch ID; a copy into another document is a hook of its own.
+// cross-branch ID; a copy into another document is a hook of its own. A
+// copy that cannot check its target yet is kept without state, and a
+// later run sets it up.
 func (h *Hook) CopyTo(
 	ctx context.Context,
 	documentID xid.ID,
@@ -162,24 +173,33 @@ func (h *Hook) CopyTo(
 	organizationID string,
 	inp *Input,
 ) (*Hook, error) {
-	cp, err := NewHook(ctx, CreateInput{
-		Type:     h.Type,
-		BranchID: branchID,
-		BlockID:  blockID,
-		Settings: h.Settings,
-	}, documentID, branchID, organizationID, inp)
-	if err != nil {
-		return nil, err
+	id := xid.New()
+
+	cp := Hook{
+		ID:             id,
+		CrossBranchID:  id,
+		Type:           h.Type,
+		DocumentID:     null.ValueFrom(documentID),
+		OrganizationID: null.StringFrom(organizationID),
+		BranchID:       null.ValueFrom(branchID),
+		BlockID:        blockID,
+		Settings:       h.Settings,
+		CreatedAt:      timeutil.Now(),
 	}
 
 	if h.DocumentID.Valid && h.DocumentID.V == documentID {
 		cp.CrossBranchID = h.CrossBranchID
 	}
 
-	return cp, nil
+	if err := cp.Reset(ctx, inp); err != nil {
+		return nil, err
+	}
+
+	return &cp, nil
 }
 
-// ApplyUpdate updates the freshness hook with the given input.
+// ApplyUpdate applies the new settings and resets the hook. It fails
+// unless the hook can check its target with them.
 func (h *Hook) ApplyUpdate(ctx context.Context, ui UpdateInput, inp *Input) error {
 	h.Settings = ui.Settings
 	h.UpdatedAt = null.TimeFrom(timeutil.Now())
@@ -189,26 +209,26 @@ func (h *Hook) ApplyUpdate(ctx context.Context, ui UpdateInput, inp *Input) erro
 	h.prepared = false
 	h.runner = nil
 
-	if err := h.Reset(ctx, inp); err != nil {
-		return err
-	}
-
-	return nil
+	return h.setUp(ctx, inp)
 }
 
-// Process processes the hook and updates its score and state.
+// Process processes the hook and updates its score and state. A hook that
+// was never set up is reset instead.
 func (h *Hook) Process(ctx context.Context, inp *Input) error {
+	if !h.State.Valid {
+		return h.Reset(ctx, inp)
+	}
+
 	if err := h.ensurePrepared(); err != nil {
 		return err
 	}
 
-	score, state, err := h.runner.Process(ctx, newStateInput(inp, h.State))
+	res, err := h.runner.Process(ctx, newStateInput(inp, h.State.V))
 	if err != nil {
 		return err
 	}
 
-	h.Score = score
-	h.State = state
+	h.apply(res)
 
 	return nil
 }
@@ -219,28 +239,76 @@ func (h *Hook) Reset(ctx context.Context, inp *Input) error {
 		return err
 	}
 
-	score, state, err := h.runner.Reset(ctx, newStateInput(inp, h.State))
+	res, err := h.runner.Reset(ctx, newStateInput(inp, h.State.V))
 	if err != nil {
 		return err
 	}
 
-	h.Score = score
-	h.State = state
+	h.apply(res)
 
 	return nil
 }
 
-// Delete cleans up any external resources associated with the hook.
+// Delete cleans up any external resources associated with the hook. A hook
+// that was never set up holds none.
 func (h *Hook) Delete(ctx context.Context, inp *Input) error {
+	if !h.State.Valid {
+		return nil
+	}
+
 	if err := h.ensurePrepared(); err != nil {
 		return err
 	}
 
-	if err := h.runner.Delete(ctx, newStateInput(inp, h.State)); err != nil {
+	if err := h.runner.Delete(ctx, newStateInput(inp, h.State.V)); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+// apply stores a run's result. A run that could not check its target
+// leaves the score and state as they were.
+func (h *Hook) apply(res processor.Result) {
+	h.Status = res.Status
+
+	if res.Status != processor.StatusActive {
+		return
+	}
+
+	h.Score = res.Score
+	h.State = null.ValueFrom(res.State)
+}
+
+// setUp checks the type and settings, then resets the hook. It fails
+// unless the hook can check its target.
+func (h *Hook) setUp(ctx context.Context, inp *Input) error {
+	if err := h.Type.Validate(); err != nil {
+		return err
+	}
+
+	if err := h.ensurePrepared(); err != nil {
+		return ErrInvalidSettings
+	}
+
+	if err := h.runner.Validate(); err != nil {
+		return err
+	}
+
+	if err := h.Reset(ctx, inp); err != nil {
+		return err
+	}
+
+	if h.Status == processor.StatusActive {
+		return nil
+	}
+
+	return errutil.New(
+		http.StatusUnprocessableEntity,
+		"document_hook."+string(h.Status),
+		"the hook cannot check its target: %s",
+		h.Status,
+	)
 }
 
 // ensurePrepared prepares the hook for processing.
@@ -323,11 +391,14 @@ type UpdateInput struct {
 
 // runner is an interface that defines the methods for applying a freshness hook.
 type runner interface {
+	// Validate checks the settings without reaching any service.
+	Validate() error
+
 	// Process calculates the freshness score for the hook.
-	Process(ctx context.Context, inp processor.Input) (decimal.Decimal, processor.State, error)
+	Process(ctx context.Context, inp processor.Input) (processor.Result, error)
 
 	// Reset resets the state of the hook to its initial state.
-	Reset(ctx context.Context, inp processor.Input) (decimal.Decimal, processor.State, error)
+	Reset(ctx context.Context, inp processor.Input) (processor.Result, error)
 
 	// Delete cleans up any external resources associated with the hook.
 	Delete(ctx context.Context, inp processor.Input) error

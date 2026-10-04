@@ -52,7 +52,8 @@ function makeHook(id: string): DocumentHook {
 		branchId: BRANCH_ID,
 		blockId: "block1",
 		settings: { repository: "acme/docs", branch: "main", paths: ["a.md"] },
-		state: { pathsChecksums: { "a.md": "sum-a" }, status: "missing_branch" },
+		state: { pathsChecksums: { "a.md": "sum-a" } },
+		status: "missing_branch",
 		score: "100",
 		createdAt: "2024-01-01T00:00:00.000Z",
 		updatedAt: "2024-01-01T00:00:00.000Z",
@@ -217,7 +218,8 @@ describe("useDocumentHookAPI", { concurrent: false }, () => {
 					organizationId: ORG_ID,
 					blockId: "block1",
 					settings: CREATE_REQ.settings,
-					state: { pathsChecksums: {}, status: "active" },
+					state: { pathsChecksums: {} },
+					status: "active",
 					score: "100",
 					createdAt: ANY_DATE,
 					updatedAt: ANY_DATE,
@@ -618,7 +620,8 @@ describe("useDocumentHookAPI", { concurrent: false }, () => {
 		}) => {
 			const resetHook = {
 				...makeHook(HOOK_ID),
-				state: { pathsChecksums: {}, status: "active" },
+				state: { pathsChecksums: {} },
+				status: "active",
 			}
 			const serverHooks = [resetHook, makeHook(OTHER_HOOK_ID)]
 
@@ -642,7 +645,8 @@ describe("useDocumentHookAPI", { concurrent: false }, () => {
 			expect(getHooks()).toEqual([
 				{
 					...makeHook(HOOK_ID),
-					state: { pathsChecksums: {}, status: "active" },
+					state: { pathsChecksums: {} },
+					status: "active",
 					updatedAt: ANY_DATE,
 				},
 				makeHook(OTHER_HOOK_ID),

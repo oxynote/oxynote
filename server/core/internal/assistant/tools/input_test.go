@@ -264,7 +264,8 @@ func stubHook() *hook.Hook {
 		OrganizationID: null.StringFrom("org"),
 		BranchID:       null.ValueFrom(_stubBranchID),
 		Settings:       processor.Settings(`{"scale":"linear","duration":"custom","schedule":"2030-01-01T00:00:00Z"}`),
-		State:          processor.State(`{"startedAt":"2026-01-01T00:00:00Z"}`),
+		State:          null.ValueFrom(processor.State(`{"startedAt":"2026-01-01T00:00:00Z"}`)),
+		Status:         processor.StatusActive,
 		Score:          decimal.NewFromInt(100),
 		CreatedAt:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 	}
@@ -2617,7 +2618,7 @@ func Test_input_UpdateHook(t *testing.T) {
 			// replaced and a fresh state.
 			assert.Equal(t, *hk, ff[0].Hk)
 			assert.Equal(t, c.Settings, hk.Settings)
-			assert.NotContains(t, string(hk.State), "2026-01-01")
+			assert.NotContains(t, string(hk.State.V), "2026-01-01")
 			assert.True(t, hk.UpdatedAt.Valid)
 		})
 	}
@@ -2632,7 +2633,7 @@ func Test_input_ResetHook(t *testing.T) {
 	}
 
 	invalid := stubHook()
-	invalid.Settings = processor.Settings(`{"scale":"bogus"}`)
+	invalid.Settings = processor.Settings(`{"scale":1}`)
 
 	cc := map[string]struct {
 		DB      *DBMock
@@ -2642,10 +2643,10 @@ func Test_input_ResetHook(t *testing.T) {
 		Touched []Touched
 		Err     error
 	}{
-		"Settings the processor refuses": {
+		"Settings that do not decode": {
 			DB:   stubHookDB(),
 			Hook: invalid,
-			Err:  processor.ErrInvalidScaleType,
+			Err:  assert.AnError,
 		},
 		"Error returned by db.UpdateDocumentHook": {
 			DB:      failing,
@@ -2688,7 +2689,7 @@ func Test_input_ResetHook(t *testing.T) {
 			// the settings stay; only the state starts over.
 			assert.Equal(t, *c.Hook, ff[0].Hk)
 			assert.Equal(t, stubHook().Settings, c.Hook.Settings)
-			assert.NotContains(t, string(c.Hook.State), "2026-01-01")
+			assert.NotContains(t, string(c.Hook.State.V), "2026-01-01")
 		})
 	}
 }
@@ -2706,7 +2707,7 @@ func Test_input_DeleteHook(t *testing.T) {
 	watcher := stubHook()
 	watcher.Type = hook.TypeURLWatcher
 	watcher.Settings = processor.Settings(`{"url":"https://example.com"}`)
-	watcher.State = processor.State(`{`)
+	watcher.State = null.ValueFrom(processor.State(`{`))
 
 	cc := map[string]struct {
 		DB      *DBMock

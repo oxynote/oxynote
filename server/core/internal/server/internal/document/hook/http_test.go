@@ -52,7 +52,8 @@ func urlWatcherHook() *hookCore.Hook {
 		OrganizationID: null.StringFrom("org1"),
 		BranchID:       null.ValueFrom(_branchID),
 		Settings:       processor.Settings(`{"url":"https://example.com"}`),
-		State:          processor.State(`{"watcherId":"w1"}`),
+		State:          null.ValueFrom(processor.State(`{"watcherId":"w1"}`)),
+		Status:         processor.StatusActive,
 	}
 }
 
@@ -65,7 +66,9 @@ func scheduledHook(typ hookCore.Type) *hookCore.Hook {
 		DocumentID:     null.ValueFrom(_documentID),
 		OrganizationID: null.StringFrom("org1"),
 		BranchID:       null.ValueFrom(_branchID),
-		Settings:       processor.Settings(`{"scale":"linear"}`),
+		Settings:       processor.Settings(`{"scale":"linear","schedule":"2999-01-01T00:00:00Z"}`),
+		State:          null.ValueFrom(processor.State(`{}`)),
+		Status:         processor.StatusActive,
 	}
 }
 
@@ -309,7 +312,7 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 		}
 	}
 
-	validBody := `{"type":"scheduled-reminder","branchId":"` + _branchID.String() + `","settings":{"scale":"linear"}}`
+	validBody := `{"type":"scheduled-reminder","branchId":"` + _branchID.String() + `","settings":{"scale":"linear","schedule":"2999-01-01T00:00:00Z"}}`
 
 	cc := map[string]struct {
 		DB        *DBMock
@@ -397,7 +400,7 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 		},
 		"Block not in the branch": {
 			DB:   &DBMock{},
-			Body: `{"type":"scheduled-reminder","branchId":"` + _branchID.String() + `","blockId":"nope","settings":{"scale":"linear"}}`,
+			Body: `{"type":"scheduled-reminder","branchId":"` + _branchID.String() + `","blockId":"nope","settings":{"scale":"linear","schedule":"2999-01-01T00:00:00Z"}}`,
 			Checks: checks(
 				hasResp(http.StatusNotFound, `{"code":"document.hook_block_not_found","message":"block not found in the branch"}`),
 				wasInsertCalled(0),
@@ -406,7 +409,7 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 		},
 		"Successful creation on a block": {
 			DB:   &DBMock{},
-			Body: `{"type":"scheduled-reminder","branchId":"` + _branchID.String() + `","blockId":"b1","settings":{"scale":"linear"}}`,
+			Body: `{"type":"scheduled-reminder","branchId":"` + _branchID.String() + `","blockId":"b1","settings":{"scale":"linear","schedule":"2999-01-01T00:00:00Z"}}`,
 			Checks: checks(
 				func(t *testing.T, db *DBMock, rec *httptest.ResponseRecorder) {
 					assert.Equal(t, http.StatusCreated, rec.Code)
@@ -423,7 +426,7 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 			DB:   &DBMock{},
 			Body: `{"type":"url-watcher","branchId":"` + _branchID.String() + `","settings":{"url":"https://example.com"}}`,
 			Checks: checks(
-				hasResp(http.StatusConflict, `{"code":"changedetection.not_configured","message":"changedetection is not configured"}`),
+				hasResp(http.StatusUnprocessableEntity, `{"code":"document_hook.unconfigured","message":"the hook cannot check its target: unconfigured"}`),
 				wasInsertCalled(0),
 				wasRecordCalled(0),
 			),
@@ -522,12 +525,12 @@ func Test_Handler_UpdateDocumentHook(t *testing.T) {
 			}
 
 			assert.Equal(t, _hookID, ff[0].Hk.ID)
-			assert.JSONEq(t, `{"scale":"linear","duration":"48h"}`, string(ff[0].Hk.Settings))
+			assert.JSONEq(t, `{"scale":"linear","schedule":"2999-01-01T00:00:00Z","duration":"48h"}`, string(ff[0].Hk.Settings))
 			assert.True(t, ff[0].Hk.UpdatedAt.Valid)
 		}
 	}
 
-	validBody := `{"settings":{"scale":"linear","duration":"48h"}}`
+	validBody := `{"settings":{"scale":"linear","schedule":"2999-01-01T00:00:00Z","duration":"48h"}}`
 
 	cc := map[string]struct {
 		DB        *DBMock
@@ -617,7 +620,7 @@ func Test_Handler_UpdateDocumentHook(t *testing.T) {
 			},
 			Body: validBody,
 			Checks: checks(
-				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				hasResp(http.StatusBadRequest, `{"code":"document_hook.invalid_type","message":"invalid hook type"}`),
 				wasUpdateCalled(0),
 				wasRecordCalled(0),
 			),
@@ -646,7 +649,7 @@ func Test_Handler_UpdateDocumentHook(t *testing.T) {
 			},
 			Body: `{"settings":{"url":"https://example.com"}}`,
 			Checks: checks(
-				hasResp(http.StatusConflict, `{"code":"changedetection.not_configured","message":"changedetection is not configured"}`),
+				hasResp(http.StatusUnprocessableEntity, `{"code":"document_hook.unconfigured","message":"the hook cannot check its target: unconfigured"}`),
 				wasUpdateCalled(0),
 				wasRecordCalled(0),
 			),
@@ -796,14 +799,25 @@ func Test_Handler_ResetDocumentHook(t *testing.T) {
 			RespCode: http.StatusInternalServerError,
 			Checks:   checks(wasUpdateCalled(1), wasRecordCalled(0)),
 		},
+		// a reset that cannot check stores the status and keeps the state.
 		"URL watcher without changedetection": {
 			DB: &DBMock{
 				FetchDocumentHookFunc: func(context.Context, xid.ID, string) (*hookCore.Hook, error) {
 					return urlWatcherHook(), nil
 				},
 			},
-			RespCode: http.StatusConflict,
-			Checks:   checks(wasUpdateCalled(0), wasRecordCalled(0)),
+			RespCode: http.StatusOK,
+			Checks: checks(
+				wasUpdateCalled(1),
+				wasRecordCalled(0),
+				func(t *testing.T, db *DBMock, _ *httptest.ResponseRecorder) {
+					t.Helper()
+
+					hk := db.UpdateDocumentHookCalls()[0].Hk
+					assert.Equal(t, processor.StatusUnconfigured, hk.Status)
+					assert.Equal(t, urlWatcherHook().State, hk.State)
+				},
+			),
 		},
 		"Successful reset": {
 			DB: &DBMock{

@@ -1061,8 +1061,8 @@ func (i *input) CreateHook(documentID, branchID xid.ID, blockUID string, tp hook
 		blockID = null.StringFrom(blockUID)
 	}
 
-	// the github processor records a missing app as a status rather than
-	// an error, so a hook created here would sit silently unable to work.
+	// a hook whose integration is missing is refused anyway. Naming the
+	// integration's own error tells the model what is missing.
 	switch tp {
 	case hook.TypeGithubTracking:
 		if !i.githubMan.Configured() {

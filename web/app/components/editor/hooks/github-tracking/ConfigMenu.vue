@@ -47,8 +47,8 @@ const targetBranchSettings = computed(
 		props.diff?.targetHook?.settings as
 			DocumentHookSettingsGitHubTracking | undefined,
 )
-const state = computed(
-	() => props.hook?.state as DocumentHookStateGitHubTracking | undefined,
+const checkStatus = computed(
+	() => props.hook?.status as DocumentHookStatusGitHubTracking | undefined,
 )
 const status = computed(() => (props.hook ? hookStatus(props.hook) : null))
 const selectedRepository = ref<string | undefined>(
@@ -78,11 +78,16 @@ const invalidData = computed(() => {
 	)
 })
 const failure = computed(() =>
-	state.value ? checkFailure(state.value.status) : null,
+	checkStatus.value ? checkFailure(checkStatus.value) : null,
 )
-// the setup an editor still has to do comes first, then what the last
-// check found
+// a server without GitHub comes first, since no setup an editor does can
+// fix it. Then the setup an editor still has to do, then what the last
+// check found.
 const notice = computed(() => {
+	if (failure.value?.notice === "unconfigured") {
+		return "unconfigured"
+	}
+
 	if (
 		failure.value?.notice === "not-connected" ||
 		(!isReadOnlyOrDiff.value &&
@@ -180,13 +185,23 @@ function fileCount(count: number): string {
 // checkFailure says what the row and the notice show for a failed check,
 // and is null while the check works. It has a case for every status and no
 // default, so a status added later fails to compile until it is handled.
-function checkFailure(checkStatus: DocumentHookStateGitHubTracking["status"]): {
+function checkFailure(checkStatus: DocumentHookStatusGitHubTracking): {
 	detail: string
-	notice: "not-connected" | "missing-repository" | "missing-branch"
+	notice:
+		| "unconfigured"
+		| "not-connected"
+		| "missing-repository"
+		| "missing-branch"
+		| "tree-truncated"
 } | null {
 	switch (checkStatus) {
 		case "active":
 			return null
+		case "unconfigured":
+			return {
+				detail: t("editor.hooks.github-tracking.problems.unconfigured"),
+				notice: "unconfigured",
+			}
 		case "missing_installation":
 			return {
 				detail: t("editor.hooks.github-tracking.problems.missing-installation"),
@@ -201,6 +216,11 @@ function checkFailure(checkStatus: DocumentHookStateGitHubTracking["status"]): {
 			return {
 				detail: t("editor.hooks.github-tracking.problems.missing-branch"),
 				notice: "missing-branch",
+			}
+		case "tree_truncated":
+			return {
+				detail: t("editor.hooks.github-tracking.problems.tree-truncated"),
+				notice: "tree-truncated",
 			}
 	}
 }
@@ -220,7 +240,7 @@ function close() {
 		:notice-status="noticeStatus"
 		:notice-icon="noticeStatus ? 'mingcute:information-fill' : undefined"
 		:acknowledge-label="
-			status === 'triggered' && state?.status === 'active'
+			status === 'triggered' && checkStatus === 'active'
 				? $t('editor.hooks.reset')
 				: undefined
 		"
@@ -265,6 +285,12 @@ function close() {
 			</template>
 			<template v-else-if="notice === 'missing-branch'">
 				{{ $t("editor.hooks.github-tracking.missing-target-branch") }}
+			</template>
+			<template v-else-if="notice === 'tree-truncated'">
+				{{ $t("editor.hooks.github-tracking.tree-truncated") }}
+			</template>
+			<template v-else-if="notice === 'unconfigured'">
+				{{ $t("editor.hooks.github-tracking.unconfigured") }}
 			</template>
 			<i18n-t
 				v-else
@@ -327,7 +353,8 @@ function close() {
 				cn(
 					'flex flex-col gap-1 opacity-100 transition-opacity duration-200',
 					(!fetchGitHubConnectionStatus.data.value?.connected ||
-						state?.status === 'missing_installation') &&
+						checkStatus === 'missing_installation' ||
+						checkStatus === 'unconfigured') &&
 						'pointer-events-none opacity-60',
 				)
 			"
@@ -338,10 +365,11 @@ function close() {
 					!fetchGitHubConnectionStatus.data.value?.connected ||
 					fetchGitHubRepositories.isLoading.value ||
 					fetchGitHubRepositories.state.value.data?.length === 0 ||
-					(!!state &&
-						state.status !== 'active' &&
-						state.status !== 'missing_repository' &&
-						state.status !== 'missing_branch')
+					(!!checkStatus &&
+						checkStatus !== 'active' &&
+						checkStatus !== 'missing_repository' &&
+						checkStatus !== 'missing_branch' &&
+						checkStatus !== 'tree_truncated')
 				"
 			>
 				<ShadcnUiSelectLabel>
@@ -386,9 +414,10 @@ function close() {
 				:disabled="
 					!selectedRepository ||
 					fetchGitHubBranches.isLoading.value ||
-					(!!state &&
-						state.status !== 'active' &&
-						state.status !== 'missing_branch')
+					(!!checkStatus &&
+						checkStatus !== 'active' &&
+						checkStatus !== 'missing_branch' &&
+						checkStatus !== 'tree_truncated')
 				"
 			>
 				<ShadcnUiSelectLabel>
@@ -436,7 +465,7 @@ function close() {
 					!selectedRepository ||
 					!selectedBranch ||
 					fetchGitHubPaths.isLoading.value ||
-					(!!state && state.status !== 'active')
+					(!!checkStatus && checkStatus !== 'active')
 				"
 				:options="fetchGitHubPaths.state.value.data || []"
 				:placeholder="

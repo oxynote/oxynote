@@ -31,6 +31,8 @@ func storedHook(typ hookCore.Type) hookCore.Hook {
 		OrganizationID: null.StringFrom("org1"),
 		BranchID:       null.ValueFrom(_branchID),
 		Settings:       processor.Settings(`{"scale":"linear"}`),
+		State:          null.ValueFrom(processor.State(`{}`)),
+		Status:         processor.StatusActive,
 	}
 }
 
@@ -1202,8 +1204,8 @@ func Test_Handler_copyHooksToBranch(t *testing.T) {
 	t.Parallel()
 
 	// a url-watcher cannot get its watcher without changedetection
-	// configured, so the copy drops it and still copies the rest.
-	t.Run("URL watcher skipped without changedetection", func(t *testing.T) {
+	// configured, so the copy keeps it unset for a later run to set up.
+	t.Run("URL watcher copied unset without changedetection", func(t *testing.T) {
 		t.Parallel()
 
 		urlHook := storedHook(hookCore.TypeURLWatcher)
@@ -1223,9 +1225,13 @@ func Test_Handler_copyHooksToBranch(t *testing.T) {
 		created := hdl.copyHooksToBranch(context.Background(), _branchID2, _branchID, _documentID, "org1", nil)
 
 		ff := db.InsertDocumentHookCalls()
-		require.Len(t, ff, 1)
-		assert.Equal(t, hookCore.TypeScheduledReminder, ff[0].Hk.Type)
-		assert.Equal(t, []hookCore.Hook{ff[0].Hk}, created)
+		require.Len(t, ff, 2)
+		assert.Equal(t, hookCore.TypeURLWatcher, ff[0].Hk.Type)
+		assert.False(t, ff[0].Hk.State.Valid)
+		assert.Equal(t, processor.StatusUnconfigured, ff[0].Hk.Status)
+		assert.Equal(t, hookCore.TypeScheduledReminder, ff[1].Hk.Type)
+		assert.True(t, ff[1].Hk.State.Valid)
+		assert.Equal(t, []hookCore.Hook{ff[0].Hk, ff[1].Hk}, created)
 	})
 
 	// a fork or a merge stays within the document, so the copy is the same

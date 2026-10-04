@@ -4,6 +4,7 @@ package notification
 import (
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
+	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
 	"github.com/rs/xid"
 )
 
@@ -22,6 +23,7 @@ const (
 	MetaKeyCommentID      = "commentId"
 	MetaKeyCommentReplyID = "commentReplyId"
 	MetaKeyAnchorBlockID  = "anchorBlockId"
+	MetaKeyStatus         = "status"
 )
 
 const (
@@ -30,6 +32,10 @@ const (
 
 	// NotificationDocumentHookTriggered is the notification code for document hook triggers.
 	NotificationDocumentHookTriggered Code = "notification.document.hook_triggered"
+
+	// NotificationDocumentHookNeedsAttention is the notification code for
+	// a document hook that can no longer check its target.
+	NotificationDocumentHookNeedsAttention Code = "notification.document.hook_needs_attention"
 
 	// NotificationDocumentNewComment is the notification code for new document comments.
 	NotificationDocumentNewComment Code = "notification.document.new_comment"
@@ -59,6 +65,27 @@ func NewDocumentHookTriggeredNotification(documentID xid.ID, tp hook.Type, block
 			MetaKeyBlockID:    blockID,
 			MetaKeyType:       tp,
 			MetaKeyBranchID:   branchID,
+		},
+	}
+}
+
+// NewDocumentHookNeedsAttentionNotification creates a new notification
+// core for a document hook that can no longer check its target.
+func NewDocumentHookNeedsAttentionNotification(
+	documentID xid.ID,
+	tp hook.Type,
+	blockID null.String,
+	branchID xid.ID,
+	status processor.Status,
+) Core {
+	return Core{
+		Code: NotificationDocumentHookNeedsAttention,
+		Metadata: map[string]any{
+			MetaKeyDocumentID: documentID,
+			MetaKeyBlockID:    blockID,
+			MetaKeyType:       tp,
+			MetaKeyBranchID:   branchID,
+			MetaKeyStatus:     status,
 		},
 	}
 }

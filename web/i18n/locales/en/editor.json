@@ -378,6 +378,19 @@
 			"value-change": "{old} → {new}",
 			"subtext-detail": "{subtext} · {detail}",
 			"errors": {
+				"codes": {
+					"unconfigured": "This hook needs an integration that is not set up on this server.",
+					"missing-installation": "Connect your GitHub organization or personal account in the settings first.",
+					"missing-repository": "The selected GitHub repository cannot be accessed.",
+					"missing-branch": "The selected GitHub branch cannot be accessed.",
+					"tree-truncated": "The selected GitHub repository is too large to compare.",
+					"unauthorized": "The Docker registry refused access to the image.",
+					"image-not-found": "The Docker image or tag does not exist.",
+					"invalid-url": "Enter a full website address starting with http:// or https://.",
+					"invalid-repository": "Select a GitHub repository.",
+					"missing-paths": "Select at least one file to track.",
+					"invalid-image": "The Docker image reference is not valid."
+				},
 				"create-failed": "Failed to create the hook. Please try again.",
 				"update-failed": "Failed to update the hook. Please try again.",
 				"delete-failed": "Failed to delete the hook. Please try again.",
@@ -440,9 +453,11 @@
 				"description": "Watch files in a repo",
 				"subtext": "{repository} · {branch}",
 				"problems": {
+					"unconfigured": "GitHub not set up",
 					"missing-installation": "GitHub not connected",
 					"missing-repository": "repository inaccessible",
-					"missing-branch": "branch inaccessible"
+					"missing-branch": "branch inaccessible",
+					"tree-truncated": "repository too large"
 				},
 				"file-count": {
 					"one": "1 file",
@@ -460,6 +475,8 @@
 				"no-repositories": "You have no accessible repositories in the connected GitHub organization or personal account.",
 				"missing-target-repository": "The selected GitHub repository cannot be accessed.",
 				"missing-target-branch": "The selected GitHub branch cannot be accessed.",
+				"tree-truncated": "The selected GitHub repository is too large to compare, so changes cannot be detected.",
+				"unconfigured": "GitHub is not set up on this server, so changes cannot be tracked.",
 				"repository-select-label": "Repository",
 				"repository-select-placeholder": "Select repository",
 				"repository-select-loading-placeholder": "Loading...",
@@ -483,11 +500,13 @@
 				"description": "Watch a webpage for changes",
 				"detail-triggered": "webpage changed",
 				"detail-unreachable": "unreachable",
+				"detail-unconfigured": "not set up",
 				"new-notice": "Maintainers are notified when {url} changes.",
 				"fresh-notice": "Maintainers will be notified when {url} changes.",
 				"triggered-notice": "{url} changed, so maintainers were notified.",
 				"url-fallback": "the webpage",
 				"unreachable-url": "The selected webpage cannot be reached. They may be temporarily down, no longer exist, or have anti-scraping measures in place.",
+				"unconfigured": "Website change detection is not set up on this server, so changes cannot be detected.",
 				"url-input-label": "Link to Website",
 				"url-input-placeholder": "https://example.com"
 			},
@@ -495,11 +514,13 @@
 				"title": "Docker Image Updates",
 				"description": "Watch an image:tag",
 				"detail-unreachable": "unreachable",
+				"detail-missing": "image not found",
 				"new-notice": "Maintainers are notified when {image} is updated.",
 				"fresh-notice": "Maintainers will be notified when {image} is updated.",
 				"triggered-notice": "{image} was updated, so maintainers were notified.",
 				"image-fallback": "the image",
 				"unreachable-image": "The selected Docker image cannot be reached. They may be temporarily down, no longer exist, or have authentication.",
+				"missing-image": "The selected Docker image or tag no longer exists in its registry.",
 				"image-input-label": "Image Reference",
 				"image-input-placeholder": "postgres:16.4-alpine"
 			}

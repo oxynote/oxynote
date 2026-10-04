@@ -132,7 +132,8 @@ describe("<BlockHookDiffMarkers>", { concurrent: false }, () => {
 			activeBranchHooks: [
 				{
 					...urlHook("block-1", "https://new.test"),
-					state: { status: "unreachable_url" },
+					state: {},
+					status: "unreachable_url",
 				},
 			],
 		})

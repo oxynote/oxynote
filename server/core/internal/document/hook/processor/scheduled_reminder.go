@@ -18,6 +18,9 @@ import (
 // the processor does not implement.
 var ErrInvalidScaleType = errutil.New(http.StatusBadRequest, "document_hook.invalid_scale_type", "invalid scale type")
 
+// ErrMissingSchedule is returned when a scheduled reminder has no schedule.
+var ErrMissingSchedule = errutil.New(http.StatusBadRequest, "document_hook.missing_schedule", "schedule is required")
+
 // ScaleType represents the type of scale used for scoring.
 type ScaleType string
 
@@ -46,58 +49,49 @@ type ScheduledReminder struct {
 	Schedule time.Time `json:"schedule"`
 }
 
+// Validate checks the reminder's settings.
+func (sr *ScheduledReminder) Validate() error {
+	if sr.Scale != ScaleTypeLinear {
+		return ErrInvalidScaleType
+	}
+
+	if sr.Schedule.IsZero() {
+		return ErrMissingSchedule
+	}
+
+	return nil
+}
+
 // Process calculates the scheduled reminder score.
-func (sr *ScheduledReminder) Process(_ context.Context, inp Input) (decimal.Decimal, State, error) {
+func (sr *ScheduledReminder) Process(_ context.Context, inp Input) (Result, error) {
 	var srs ScheduledReminderState
 
 	if err := json.Unmarshal(inp.State(), &srs); err != nil {
-		return decimal.Zero, nil, fmt.Errorf("unmarshaling scheduled reminder state: %w", err)
+		return Result{}, fmt.Errorf("unmarshaling scheduled reminder state: %w", err)
 	}
 
 	score := mathutil.Hundred
 
-	switch sr.Scale {
-	case ScaleTypeLinear:
-		totalDuration := sr.Schedule.Sub(srs.StartedAt)
-		elapsed := timeutil.Now().Sub(srs.StartedAt)
+	totalDuration := sr.Schedule.Sub(srs.StartedAt)
+	elapsed := timeutil.Now().Sub(srs.StartedAt)
 
-		if elapsed >= totalDuration {
-			score = decimal.Zero
-			break
-		}
-
+	if elapsed >= totalDuration {
+		score = decimal.Zero
+	} else {
 		elapsedPercent := mathutil.SafeDiv(
 			decimal.NewFromInt(elapsed.Nanoseconds()),
 			decimal.NewFromInt(totalDuration.Nanoseconds()),
 		).Mul(mathutil.Hundred)
 		score = score.Sub(elapsedPercent).Round(0)
-	default:
-		return decimal.Zero, nil, ErrInvalidScaleType
 	}
 
-	state, err := json.Marshal(srs)
-	if err != nil {
-		return decimal.Zero, nil, fmt.Errorf("marshaling scheduled reminder state: %w", err)
-	}
-
-	return score, state, nil
+	return active(score, srs)
 }
 
 // Reset resets the state of the scheduled reminder processor.
-func (sr *ScheduledReminder) Reset(_ context.Context, _ Input) (decimal.Decimal, State, error) {
-	// validated here as well as in Process: an unknown scale would otherwise
-	// be accepted at creation and then fail on every processing cycle.
-	if sr.Scale != ScaleTypeLinear {
-		return decimal.Zero, nil, ErrInvalidScaleType
-	}
-
+func (sr *ScheduledReminder) Reset(_ context.Context, _ Input) (Result, error) {
 	srs := ScheduledReminderState{
 		StartedAt: timeutil.Now(),
-	}
-
-	state, err := json.Marshal(srs)
-	if err != nil {
-		return decimal.Zero, nil, fmt.Errorf("marshaling scheduled reminder state: %w", err)
 	}
 
 	score := mathutil.Hundred
@@ -106,7 +100,7 @@ func (sr *ScheduledReminder) Reset(_ context.Context, _ Input) (decimal.Decimal,
 		score = decimal.Zero
 	}
 
-	return score, state, nil
+	return active(score, srs)
 }
 
 // ScheduledReminderState represents the state of

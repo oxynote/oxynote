@@ -1,8 +1,10 @@
 import { showToastMessage } from "~/components/toast"
+import { hookErrorMessage } from "./hook-errors"
 
 // useHookActions sends the requests a hook's menu makes. Each one closes
 // the menu before it goes out, raises a toast when it fails, and resolves
-// to whether it went through.
+// to whether it went through. A refusal core gives a reason for shows that
+// reason.
 export function useHookActions(options: {
 	type: DocumentHookType
 	nodeId: () => string | null
@@ -33,8 +35,11 @@ export function useHookActions(options: {
 					settings: settings,
 				},
 			})
-		} catch {
-			showToastMessage("error", t("editor.hooks.errors.create-failed"))
+		} catch (err) {
+			showToastMessage(
+				"error",
+				hookErrorMessage(err, t) ?? t("editor.hooks.errors.create-failed"),
+			)
 			return false
 		}
 
@@ -64,12 +69,13 @@ export function useHookActions(options: {
 				hookId: hook.id,
 				req: { settings: settings },
 			})
-		} catch {
+		} catch (err) {
 			showToastMessage(
 				"error",
-				renewal
-					? t("editor.hooks.errors.renew-failed")
-					: t("editor.hooks.errors.update-failed"),
+				hookErrorMessage(err, t) ??
+					(renewal
+						? t("editor.hooks.errors.renew-failed")
+						: t("editor.hooks.errors.update-failed")),
 			)
 			return false
 		}

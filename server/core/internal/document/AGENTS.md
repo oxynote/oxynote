@@ -44,8 +44,7 @@ reads it and its hooks, in the transaction that wrote the change.
 Files live at `organizations/{org}/documents/{doc}/files/{fileId}`. The id
 is a nanoid the editor mints per upload, not the block uid, and an id that
 already has a row is refused with 409, so a history entry keeps its object
-when a block's file is replaced. Rows are `document_files` with name, size
-and sniffed content type. `GET
+when a block's file is replaced. `GET
 /api/documents/{id}/files/{fileId}-{fileName}` cuts the 21-char nanoid off
 the front and ignores the name; `Content-Disposition` is `inline` only for
 `file.Viewable`. The key is an S3 object key or a path under the storage
@@ -62,7 +61,7 @@ request handler:
   later; NULL-FK rows skip the wait; files younger than a day are never
   touched.
 - `hook/manager` does the same for hooks, calling `Hook.Delete` before
-  dropping a row whose branch, document or org went NULL. A merge detaches
+  dropping a row with a NULL FK. A merge detaches
   the target's hooks (`DetachDocumentHooksByBranchID`) rather than
   soft-deleting them.
 - **Organization deletion is announced**: auth-realtime's
@@ -70,8 +69,9 @@ request handler:
   while rows still exist and throws if core fails.
 - Create writes the row before the object; delete removes the object before
   the row. `copyHooksToBranch` runs after the fork/merge/duplicate commits,
-  because `hook.NewHook` creates the watcher as a side effect; a failed
-  insert tears it down again.
+  since a copy creates its watcher; a failed insert tears it down.
+- **A null hook state means not set up**, as for a copy that cannot check
+  its target yet. The sweep sets it up.
 
 ## Search
 

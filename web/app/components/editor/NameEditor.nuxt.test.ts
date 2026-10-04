@@ -48,8 +48,8 @@ const TARGET_BRANCH_ID = makeXid("branchb")
 const ME = makeXid("usme")
 
 const REVIEWABLE_ACTION_DELAY_MS = 300
-// the stored state of a website hook whose last check failed
-const FAILED_STATE: DocumentHookStateURLWatcher = { status: "unreachable_url" }
+// the stored status of a website hook whose last check failed
+const FAILED_STATUS: DocumentHookStatus = "unreachable_url"
 
 interface Branch {
 	ydoc: Y.Doc
@@ -309,7 +309,8 @@ describe("<NameEditor>", { concurrent: false }, () => {
 					blockId: null,
 					score: "100",
 					settings: { url: "https://oxynote.test" },
-					state: { status: "active" },
+					state: {},
+					status: "active",
 				} as unknown as DocumentHook,
 				{
 					id: "hook-2",
@@ -317,7 +318,8 @@ describe("<NameEditor>", { concurrent: false }, () => {
 					blockId: "block-1",
 					score: "100",
 					settings: { url: "https://other.test" },
-					state: { status: "active" },
+					state: {},
+					status: "active",
 				} as unknown as DocumentHook,
 			],
 		})
@@ -590,7 +592,8 @@ describe("<NameEditor>", { concurrent: false }, () => {
 					blockId: null,
 					score: "0",
 					settings: { url: "https://oxynote.test" },
-					state: { status: "active" },
+					state: {},
+					status: "active",
 				} as unknown as DocumentHook,
 			],
 		})
@@ -606,7 +609,7 @@ describe("<NameEditor>", { concurrent: false }, () => {
 	it.for([
 		{
 			name: "colours the page's hook icon and bar as a warning when a hook's check failed",
-			input: () => [{ ...pageHook("a.test"), state: FAILED_STATE }],
+			input: () => [{ ...pageHook("a.test"), status: FAILED_STATUS }],
 			expected: {
 				status: "needs-attention",
 				bar: "bg-hook-status-needs-attention",
@@ -616,7 +619,7 @@ describe("<NameEditor>", { concurrent: false }, () => {
 			name: "stripes the page's hook icon and bar when one hook triggered and another failed",
 			input: () => [
 				{ ...pageHook("a.test"), score: "0" },
-				{ ...pageHook("b.test"), state: FAILED_STATE },
+				{ ...pageHook("b.test"), status: FAILED_STATUS },
 			],
 			expected: { status: "mixed", bar: "bg-hook-status-mixed" },
 		},
@@ -624,7 +627,7 @@ describe("<NameEditor>", { concurrent: false }, () => {
 			name: "ignores the hooks of blocks when it colours the page's hook icon and bar",
 			input: () => [
 				{ ...pageHook("a.test"), score: "0" },
-				{ ...pageHook("b.test"), blockId: "block-1", state: FAILED_STATE },
+				{ ...pageHook("b.test"), blockId: "block-1", status: FAILED_STATUS },
 			],
 			expected: { status: "triggered", bar: "bg-hook-status-triggered" },
 		},
@@ -845,7 +848,8 @@ function pageHook(url: string): DocumentHook {
 		blockId: null,
 		score: "100",
 		settings: { url: url },
-		state: { status: "active" },
+		state: {},
+		status: "active",
 		createdAt: "2026-01-01",
 	} as unknown as DocumentHook
 }

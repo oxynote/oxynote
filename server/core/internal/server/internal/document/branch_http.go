@@ -2,12 +2,10 @@ package document
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"net/http"
 
 	"github.com/guregu/null/v5"
-	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/document/history"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
@@ -676,16 +674,6 @@ func (h *Handler) copyHooksToBranch(
 			inp,
 		)
 		if err != nil {
-			// a hook whose integration is not configured cannot get its
-			// external resource; dropping it from the copy beats failing
-			// the whole fork or merge over it.
-			if errors.Is(err, webchange.ErrNotConfigured) {
-				h.log.With("hook_id", hk.ID).
-					Warn("skipping hook copy: its integration is not configured")
-
-				continue
-			}
-
 			logutil.Critical(h.log, err).Error(
 				"cannot re-create the hook on the target branch",
 				slog.String("hook_id", hk.ID.String()),
