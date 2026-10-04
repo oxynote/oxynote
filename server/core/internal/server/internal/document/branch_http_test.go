@@ -198,6 +198,23 @@ func Test_Handler_UpdateDocumentBranchByIDUnsafe(t *testing.T) {
 			SearchJobs: 1,
 			History:    1,
 		},
+		"Edit naming no maintainers records an unattributed entry": {
+			DB: &DBMock{
+				FetchDocumentUnsafeByBranchIDFunc: func(context.Context, xid.ID) (*documentCore.Document, error) {
+					doc := storedDoc()
+					doc.LastUpdatedBy = null.StringFrom("u5")
+
+					return doc, nil
+				},
+			},
+			Tx:         &TxMock{},
+			Body:       `{"name":"Renamed"}`,
+			RespCode:   http.StatusOK,
+			Committed:  1,
+			Metadata:   1,
+			SearchJobs: 1,
+			History:    1,
+		},
 		"Missing branch ID parameter": {
 			DB:         &DBMock{},
 			Tx:         &TxMock{},
@@ -1007,12 +1024,12 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 
 			// hooks are copied from the source to the new branch once the
 			// fork commits, since creating one creates its watcher.
-			forkedID := c.Tx.InsertDocumentBranchCalls()[0].Doc.BranchID
+			forked := c.Tx.InsertDocumentBranchCalls()[0].Doc
 
 			require.Len(t, c.DB.InsertDocumentHookCalls(), 1)
-			assert.Equal(t, null.ValueFrom(forkedID), c.DB.InsertDocumentHookCalls()[0].Hk.BranchID)
+			assert.Equal(t, null.ValueFrom(forked.BranchID), c.DB.InsertDocumentHookCalls()[0].Hk.BranchID)
 			assert.Equal(t,
-				history.NewHooks([]hookCore.Hook{c.DB.InsertDocumentHookCalls()[0].Hk}),
+				history.NewHooks(forked, []hookCore.Hook{c.DB.InsertDocumentHookCalls()[0].Hk}),
 				c.DB.UpdateDocumentBranchHistoryEntryHooksCalls()[0].Hooks,
 			)
 		})
@@ -1493,12 +1510,14 @@ func Test_Handler_updateEntryHooks(t *testing.T) {
 			entryID := xid.New()
 			hk := storedHook(hookCore.TypeScheduledReminder)
 
-			hdl.updateEntryHooks(context.Background(), entryID, []hookCore.Hook{hk})
+			doc := *storedDoc()
+
+			hdl.updateEntryHooks(context.Background(), entryID, doc, []hookCore.Hook{hk})
 
 			ff := db.UpdateDocumentBranchHistoryEntryHooksCalls()
 			require.Len(t, ff, 1)
 			assert.Equal(t, entryID, ff[0].ID)
-			assert.Equal(t, history.NewHooks([]hookCore.Hook{hk}), ff[0].Hooks)
+			assert.Equal(t, history.NewHooks(doc, []hookCore.Hook{hk}), ff[0].Hooks)
 
 			if c.Log == "" {
 				assert.Empty(t, buf.String())

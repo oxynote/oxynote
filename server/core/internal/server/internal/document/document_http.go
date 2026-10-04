@@ -738,7 +738,7 @@ func (h *Handler) DuplicateDocument(w http.ResponseWriter, r *http.Request) {
 		uids,
 	)
 
-	h.updateEntryHooks(r.Context(), entryID, hooks)
+	h.updateEntryHooks(r.Context(), entryID, duplDoc, hooks)
 
 	h.copyDocumentFiles(r.Context(), files, duplDoc.ID, session.ActiveOrganizationID)
 

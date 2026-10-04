@@ -1,6 +1,7 @@
 package history
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -57,15 +58,134 @@ func Test_NewEntry(t *testing.T) {
 	assert.Equal(t, null.StringFrom("user-1"), entry.LastUpdatedBy)
 	assert.True(t, entry.Boundary)
 	assert.Equal(t, at, entry.CreatedAt)
+	assert.Equal(t, at, entry.UpdatedAt)
 
 	// every call mints its own id.
 	assert.NotEqual(t, entry.ID, NewEntry(doc, at, null.String{}, nil, false).ID)
 }
 
+func Test_Entry_Sum(t *testing.T) {
+	base := NewEntry(
+		document.Document{
+			ID:           xid.New(),
+			BranchID:     xid.New(),
+			DocumentName: "Runbook",
+			Icon:         "📘",
+			Content: document.RootBlock{
+				Type: "doc",
+				Content: []document.Block{
+					{Type: document.BlockNodeParagraph, Text: "Hello"},
+				},
+			},
+		},
+		time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC),
+		null.StringFrom("user-1"),
+		Hooks{
+			{
+				Type:     hook.TypeURLWatcher,
+				BlockID:  null.StringFrom("b1"),
+				Settings: processor.Settings(`{"url":"https://example.com"}`),
+			},
+		},
+		false,
+	)
+
+	cc := map[string]struct {
+		Edit func(e *Entry)
+		Same bool
+		Err  error
+	}{
+		"Other name": {
+			Edit: func(e *Entry) { e.DocumentName = "Playbook" },
+		},
+		"Other icon": {
+			Edit: func(e *Entry) { e.Icon = "📕" },
+		},
+		"Other content": {
+			Edit: func(e *Entry) { e.Content.Content = []document.Block{{Type: document.BlockNodeParagraph, Text: "Bye"}} },
+		},
+		"Other hooks": {
+			Edit: func(e *Entry) { e.Hooks = Hooks{} },
+		},
+		"Other id, author, times, boundary and stored checksum": {
+			Edit: func(e *Entry) {
+				e.ID = xid.New()
+				e.Checksum = "stale"
+				e.LastUpdatedBy = null.String{}
+				e.CreatedAt = e.CreatedAt.Add(time.Hour)
+				e.UpdatedAt = e.UpdatedAt.Add(time.Hour)
+				e.Boundary = true
+			},
+			Same: true,
+		},
+		"Spacing in hook settings": {
+			Edit: func(e *Entry) {
+				e.Hooks = Hooks{{
+					Type:     hook.TypeURLWatcher,
+					BlockID:  null.StringFrom("b1"),
+					Settings: processor.Settings(`{ "url": "https://example.com" }`),
+				}}
+			},
+			Same: true,
+		},
+		"Invalid hook settings": {
+			Edit: func(e *Entry) {
+				e.Hooks = Hooks{{Type: hook.TypeURLWatcher, Settings: processor.Settings(`{`)}}
+			},
+			Err: assert.AnError,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			entry := base
+			entry.Content.Content = slices.Clone(base.Content.Content)
+			c.Edit(&entry)
+
+			sum, err := entry.Sum()
+			testutil.RequireEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			baseSum, err := base.Sum()
+			require.NoError(t, err)
+
+			assert.Len(t, sum, 64)
+			assert.Equal(t, c.Same, sum == baseSum)
+		})
+	}
+
+	// nil hooks sum like no hooks, as both are stored as [].
+	empty := base
+	empty.Hooks = Hooks{}
+
+	emptySum, err := empty.Sum()
+	require.NoError(t, err)
+
+	empty.Hooks = nil
+
+	nilSum, err := empty.Sum()
+	require.NoError(t, err)
+	assert.Equal(t, emptySum, nilSum)
+}
+
 func Test_NewHooks(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, Hooks{}, NewHooks(nil))
+	doc := document.Document{
+		Content: document.RootBlock{
+			Type: "doc",
+			Content: []document.Block{
+				{Type: document.BlockNodeParagraph, Attrs: document.Attributes{document.AttrUID: "b1"}},
+			},
+		},
+	}
+
+	assert.Equal(t, Hooks{}, NewHooks(doc, nil))
 	assert.Equal(t, Hooks{
 		{
 			Type:     hook.TypeURLWatcher,
@@ -76,13 +196,22 @@ func Test_NewHooks(t *testing.T) {
 			Type:     hook.TypeScheduledReminder,
 			Settings: processor.Settings(`{"cron":"0 9 * * 1"}`),
 		},
-	}, NewHooks([]hook.Hook{
+	}, NewHooks(doc, []hook.Hook{
 		{
 			ID:       xid.New(),
 			Type:     hook.TypeURLWatcher,
 			BlockID:  null.StringFrom("b1"),
 			Settings: processor.Settings(`{"url":"https://example.com"}`),
 			State:    processor.State(`{"watcher":"w1"}`),
+			// the block is back, so the sweep lifts the mark on its next
+			// run.
+			SoftDeletedAt: null.TimeFrom(time.Now()),
+		},
+		{
+			ID:       xid.New(),
+			Type:     hook.TypeURLWatcher,
+			BlockID:  null.StringFrom("removed"),
+			Settings: processor.Settings(`{"url":"https://example.org"}`),
 		},
 		{
 			ID:       xid.New(),

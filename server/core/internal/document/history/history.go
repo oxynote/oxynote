@@ -2,9 +2,12 @@
 package history
 
 import (
+	"crypto/sha256"
 	"database/sql/driver"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/guregu/null/v5"
@@ -47,6 +50,13 @@ type Entry struct {
 
 	// CreatedAt is the timestamp when the entry was taken.
 	CreatedAt time.Time `json:"createdAt" db:"created_at"`
+
+	// UpdatedAt is the timestamp of the last edit folded into the entry.
+	UpdatedAt time.Time `json:"updatedAt" db:"updated_at"`
+
+	// Checksum is the stored Sum of the entry. Empty until the entry is
+	// stored.
+	Checksum string `json:"-" db:"checksum"`
 }
 
 // NewEntry takes a snapshot of the branch as it is now, at the given time.
@@ -66,7 +76,31 @@ func NewEntry(doc document.Document, at time.Time, by null.String, hooks Hooks, 
 		LastUpdatedBy: by,
 		Boundary:      boundary,
 		CreatedAt:     at,
+		UpdatedAt:     at,
 	}
+}
+
+// Sum sums what the entry records: name, icon, content and hooks. Two
+// entries with the same sum restore the same branch.
+func (e Entry) Sum() (string, error) {
+	hooks := e.Hooks
+	if hooks == nil {
+		hooks = Hooks{}
+	}
+
+	raw, err := json.Marshal(struct {
+		DocumentName string             `json:"documentName"`
+		Icon         string             `json:"icon"`
+		Content      document.RootBlock `json:"content"`
+		Hooks        Hooks              `json:"hooks"`
+	}{e.DocumentName, e.Icon, e.Content, hooks})
+	if err != nil {
+		return "", fmt.Errorf("marshaling history entry: %w", err)
+	}
+
+	sum := sha256.Sum256(raw)
+
+	return hex.EncodeToString(sum[:]), nil
 }
 
 // Hook is what it takes to re-create a hook: its type, the block it is
@@ -86,11 +120,18 @@ type Hook struct {
 // Hooks is the list of hooks stored on a history entry.
 type Hooks []Hook
 
-// NewHooks reduces hooks to what a history entry records of them.
-func NewHooks(hooks []hook.Hook) Hooks {
+// NewHooks reduces hooks to what a history entry of the document records:
+// those whose block its content holds, soft-deleted or not.
+func NewHooks(doc document.Document, hooks []hook.Hook) Hooks {
 	res := make(Hooks, 0, len(hooks))
 
 	for _, hk := range hooks {
+		if hk.BlockID.Valid {
+			if _, ok := doc.Content.FindByUID(hk.BlockID.String); !ok {
+				continue
+			}
+		}
+
 		res = append(res, Hook{
 			Type:     hk.Type,
 			BlockID:  hk.BlockID,

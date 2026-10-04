@@ -198,11 +198,12 @@ func (h *Handler) UpdateDocumentBranchByIDUnsafe(w http.ResponseWriter, r *http.
 	}
 
 	// a persist that changes nothing, such as the Yjs seed Hocuspocus
-	// sends on first load, leaves history alone. A system write is not
-	// attributed: no user made that change.
+	// sends on first load, leaves history alone. Only a persist that names
+	// its editors is attributed. A system write has no user, and without
+	// maintainers the branch's author is whoever edited before.
 	if !doc.SnapshotEqual(ndoc) {
 		var lastUpdatedBy null.String
-		if !ui.System {
+		if !ui.System && len(ui.Maintainers) > 0 {
 			lastUpdatedBy = ndoc.LastUpdatedBy
 		}
 
@@ -387,7 +388,7 @@ func (h *Handler) MergeBranches(w http.ResponseWriter, r *http.Request) {
 		nil,
 	)
 
-	h.updateEntryHooks(r.Context(), entryID, hooks)
+	h.updateEntryHooks(r.Context(), entryID, ndoc, hooks)
 
 	if h.metadata.changeCallback != nil {
 		h.metadata.changeCallback(session.ActiveOrganizationID, ndoc)
@@ -528,7 +529,7 @@ func (h *Handler) CreateDocumentBranch(w http.ResponseWriter, r *http.Request) {
 		nil,
 	)
 
-	h.updateEntryHooks(r.Context(), entryID, hooks)
+	h.updateEntryHooks(r.Context(), entryID, newDoc, hooks)
 
 	httpserver.Respond(
 		h.log,
@@ -718,10 +719,11 @@ func (h *Handler) copyHooksToBranch(
 }
 
 // updateEntryHooks sets the hooks of a boundary entry to the ones
-// copyHooksToBranch created. The entry's operation has already committed,
-// so a failure is logged rather than returned.
-func (h *Handler) updateEntryHooks(ctx context.Context, entryID xid.ID, hooks []hook.Hook) {
-	err := h.db.UpdateDocumentBranchHistoryEntryHooks(ctx, entryID, history.NewHooks(hooks))
+// copyHooksToBranch created, as the entry's document holds them. The
+// entry's operation has already committed, so a failure is logged rather
+// than returned.
+func (h *Handler) updateEntryHooks(ctx context.Context, entryID xid.ID, doc documentCore.Document, hooks []hook.Hook) {
+	err := h.db.UpdateDocumentBranchHistoryEntryHooks(ctx, entryID, history.NewHooks(doc, hooks))
 	if err != nil {
 		h.log.Error(
 			"cannot record the copied hooks on the history entry",

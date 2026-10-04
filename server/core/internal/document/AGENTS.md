@@ -21,22 +21,23 @@ Cross-service storage rules (Hocuspocus, Yjs) live in
 ## History entries
 
 `document_branch_history_entries` are restorable snapshots: name, icon,
-content, the branch's live hook definitions (type, block, settings; never
-watcher state) and the author. Every write goes through
-`RecordDocumentBranchHistoryEntry`, which locks the branch row and reads
-it, inside the transaction that wrote the branch when there is one.
+content, hook definitions (type, block, settings; never watcher state)
+and the author. Every write goes through
+`RecordDocumentBranchHistoryEntry`, which locks the branch row, then
+reads it and its hooks, in the transaction that wrote the change.
 
-- Ordinary edits within one 30-minute bucket update the branch's newest
-  entry in place. A persist that changes nothing writes no entry; a system
-  write has a null author.
+- Edits in one 30-minute bucket (by `created_at`) update the newest
+  entry and its `updated_at`. An entry equal to the newest is skipped. A
+  null author (system write, no maintainers) never replaces a set one.
+- An entry lists the hooks whose block its content holds.
 - A hook create, update or delete records an ordinary entry; a reset does
   not.
 - Create, duplicate, fork and merge write a **boundary** entry that never
   aggregates and closes its bucket. It starts without hooks and gets the
   ones `copyHooksToBranch` created after the commit.
-- Entries pin the files they reference, so `DB_MAX_DOCUMENT_HISTORY_ENTRIES`
-  and `DB_DOCUMENT_HISTORY_RETENTION` also decide how long a removed image
-  survives. Retention keeps each branch's newest entry.
+- Entries pin the files they reference, so the `DB_*HISTORY*` limits
+  decide how long a removed image survives. Retention keeps each branch's
+  newest entry.
 
 ## Files and hooks
 
