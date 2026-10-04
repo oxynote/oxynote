@@ -8,7 +8,7 @@ const props = defineProps<{
 	mobile?: boolean
 }>()
 const emit = defineEmits<{
-	(event: "close-notification-box" | "notification-navigation"): void
+	(event: "close-notification-box"): void
 }>()
 const { t, locale } = useI18n({ useScope: "global" })
 const NOW_TIME_LABEL_THRESHOLD_MS = 1000 * 60 // 1 minute
@@ -223,7 +223,6 @@ function buildNotificationDescription(notification: Notification) {
 async function handleNotificationClick(notification: Notification) {
 	const href = await buildNotificationHref(notification)
 	if (href) {
-		emit("notification-navigation")
 		void handleMarkRead(notification, true) // non blocking
 		await navigateTo(href)
 	}

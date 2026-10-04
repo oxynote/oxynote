@@ -627,6 +627,91 @@ test.describe("review workflow", () => {
 		await expect(linked).toBeInViewport()
 	})
 
+	test("drops the linked block when the document is clicked", async ({
+		page,
+		request,
+	}) => {
+		await page.context().grantPermissions(["clipboard-read", "clipboard-write"])
+		await signUpWithWorkspace(page, request)
+		await createDocument(page)
+		await makeReviewable(page)
+		await switchToBranch(page, "draft")
+		await expect(page).toHaveURL(/New-Page-[a-z0-9]{20}\?branch=[a-z0-9]{20}$/)
+		// the linked block sits more than a screen down, so a jump back to
+		// the top would take it out of view
+		await contentEditor(page).click()
+		for (let line = 0; line < 40; line += 1) {
+			await page.keyboard.press("Enter")
+		}
+		await page.keyboard.type("Only on the draft")
+		const block = contentEditor(page).getByText("Only on the draft", {
+			exact: true,
+		})
+		await openBlockMenu(page, contentPane(page), block)
+		await page
+			.getByRole("menuitem", {
+				name: t("editor.drag-handle.options.copy-link"),
+			})
+			.click()
+		await expect
+			.poll(() => page.evaluate(() => navigator.clipboard.readText()), {
+				message: "the block link reaches the clipboard",
+			})
+			.toContain("?branch=")
+		const link = new URL(
+			await page.evaluate(() => navigator.clipboard.readText()),
+		)
+		await documentPersisted(page)
+		await visit(page, link.href)
+		const highlight = page.locator(".editor-scroll-highlight")
+		await expect(highlight).toBeVisible({ timeout: 15_000 })
+		const linked = page.locator(`[id="${link.hash.slice(1)}"]`)
+
+		await linked.click()
+
+		await expect(page).toHaveURL(link.href.replace(link.hash, ""))
+		await expect(highlight).toHaveCount(0)
+		await expect(linked).toBeInViewport()
+	})
+
+	test("drops the linked block when the branch is switched", async ({
+		page,
+		request,
+	}) => {
+		await page.context().grantPermissions(["clipboard-read", "clipboard-write"])
+		await signUpWithWorkspace(page, request)
+		await createDocument(page)
+		await makeReviewable(page)
+		await switchToBranch(page, "draft")
+		await expect(page).toHaveURL(/New-Page-[a-z0-9]{20}\?branch=[a-z0-9]{20}$/)
+		await contentEditor(page).click()
+		await page.keyboard.type("Only on the draft")
+		const block = contentEditor(page).getByText("Only on the draft", {
+			exact: true,
+		})
+		await openBlockMenu(page, contentPane(page), block)
+		await page
+			.getByRole("menuitem", {
+				name: t("editor.drag-handle.options.copy-link"),
+			})
+			.click()
+		await expect
+			.poll(() => page.evaluate(() => navigator.clipboard.readText()), {
+				message: "the block link reaches the clipboard",
+			})
+			.toContain("?branch=")
+		const link = await page.evaluate(() => navigator.clipboard.readText())
+		await documentPersisted(page)
+		await visit(page, link)
+		const highlight = page.locator(".editor-scroll-highlight")
+		await expect(highlight).toBeVisible({ timeout: 15_000 })
+
+		await switchToBranch(page, "main")
+
+		await expect(page).toHaveURL(/New-Page-[a-z0-9]{20}$/)
+		await expect(highlight).toHaveCount(0)
+	})
+
 	test("opens the main branch when the open page is picked in the sidebar", async ({
 		page,
 		request,

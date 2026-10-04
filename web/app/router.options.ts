@@ -4,9 +4,14 @@ const SCROLL_MAX_WAIT_MS = 4000
 const SCROLL_OFFSET_PX = 150 // approx height of document header + some padding
 
 export default {
-	scrollBehavior: async (to, _from, savedPosition) => {
+	scrollBehavior: async (to, from, savedPosition) => {
 		if (savedPosition) {
 			return savedPosition
+		}
+
+		// the page stays where it is when the url only loses its hash
+		if (from.hash && to.fullPath === from.fullPath.split("#")[0]) {
+			return false
 		}
 
 		if (to.name === "document-editor" && to.hash) {

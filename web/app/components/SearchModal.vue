@@ -7,14 +7,6 @@ const open = defineModel<boolean>({ required: true })
 const { t } = useI18n({ useScope: "global" })
 const { searchDocuments, fetchDocumentTree } = useDocumentAPI()
 const { fetchOrganization } = useAuthSession()
-// only the document page provides this, so every other mount — the
-// component tests included — has no ancestor to inject from. The call
-// site already guards for that; the explicit default is what keeps vue
-// from warning its way to the same undefined
-const resetLinkHighlightClearState = inject<(() => void) | undefined>(
-	"resetLinkHighlightClearState",
-	undefined,
-)
 
 const searchQuery = ref("")
 const trimmedSearchQuery = computed(() => searchQuery.value.trim())
@@ -192,7 +184,7 @@ function resultTypeText(type: string) {
 						:href="resultLink(result)"
 						:prefetch="false"
 						class="flex w-full gap-1 rounded-md py-1 no-underline transition hover:bg-accent/50 active:bg-accent"
-						@click="(resetLinkHighlightClearState?.(), (open = false))"
+						@click="open = false"
 					>
 						<Icon
 							:name="resultIcon(result.type)"

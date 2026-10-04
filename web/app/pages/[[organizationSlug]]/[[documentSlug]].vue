@@ -123,13 +123,6 @@ const { t } = useI18n({ useScope: "global" })
 const { isAssistantEnabled } = useCapabilitiesAPI()
 const wsState = useWebSocketStateStore()
 let unsubWsDocMetadataChange: (() => void) | null | undefined = null
-let lastClearedLinkNodeHighlight: string | null = null
-
-function resetLinkHighlightClearState() {
-	lastClearedLinkNodeHighlight = null
-}
-
-provide("resetLinkHighlightClearState", resetLinkHighlightClearState)
 
 // we use this to track whether all sections have loaded their initial data
 // (only applies to data that is loaded immediately after page load)
@@ -156,6 +149,10 @@ const pendingTagDeletion = ref<{
 	name: string
 } | null>(null)
 const notificationSidebarOpen = ref(false)
+// the url hash that links a block. Every replace of the url takes its hash
+// from here, because the route still holds a dropped hash until the
+// replace that dropped it lands
+const linkedBlockHash = ref(pageRoute.hash)
 const contentEditorRef = shallowRef<Editor | null>(null)
 const nameEditorRef = shallowRef<Editor | null>(null)
 const editorStore = useEditorStore()
@@ -355,8 +352,22 @@ watchImmediate(
 	},
 )
 
-// the address bar names the active branch, so a copied url opens it
-watchImmediate(() => editorStore.activeBranchId, syncBranchQuery)
+// the address bar names the active branch, so a copied url opens it. A
+// switch from one branch to another also drops the linked block, which
+// belongs to the branch being left
+watchImmediate(
+	() => editorStore.activeBranchId,
+	(_branchId, oldBranchId) => {
+		syncBranchQuery(!!oldBranchId)
+	},
+)
+
+watch(
+	() => pageRoute.hash,
+	(hash) => {
+		linkedBlockHash.value = hash
+	},
+)
 
 if (import.meta.client) {
 	watchImmediate(
@@ -447,16 +458,21 @@ function branchQuery() {
 	}
 }
 
-function syncBranchQuery() {
+function syncBranchQuery(dropLinkedBlock = false) {
 	const query = branchQuery()
 	if (query.branch === pageRoute.query.branch) {
 		return
 	}
 
+	if (dropLinkedBlock) {
+		linkedBlockHash.value = ""
+		clearTiptapScrollElementHighlightOverlays()
+	}
+
 	void pageRouter.replace({
 		path: pageRoute.path,
 		query: query,
-		hash: pageRoute.hash,
+		hash: linkedBlockHash.value,
 	})
 }
 
@@ -486,7 +502,7 @@ function applyDocumentNameChange(name: string) {
 			activeDocMetadata.value.id,
 		)}`,
 		query: branchQuery(),
-		hash: pageRoute.hash,
+		hash: linkedBlockHash.value,
 	})
 }
 
@@ -501,7 +517,7 @@ function refreshOrganizationRouteSlug() {
 			activeDocMetadata.value.id,
 		)}`,
 		query: branchQuery(),
-		hash: pageRoute.hash,
+		hash: linkedBlockHash.value,
 	})
 }
 
@@ -664,13 +680,18 @@ function handleBranchMerge() {
 	editorStore.updateTargetBranchId(null)
 }
 
-function clearLinkHighlightNodeOnce() {
-	if (lastClearedLinkNodeHighlight === pageRoute.fullPath) {
+function clearLinkedBlock() {
+	if (!linkedBlockHash.value) {
 		return
 	}
 
-	lastClearedLinkNodeHighlight = pageRoute.fullPath
 	clearTiptapScrollElementHighlightOverlays()
+	linkedBlockHash.value = ""
+	void pageRouter.replace({
+		path: pageRoute.path,
+		query: branchQuery(),
+		hash: "",
+	})
 }
 </script>
 <template>
@@ -689,10 +710,7 @@ function clearLinkHighlightNodeOnce() {
 				@toggle-notifications="toggleNotificationSidebar"
 				@initial-load-complete="loadedSections.sidebar = true"
 			/>
-			<NotificationSidebar
-				v-model="notificationSidebarOpen"
-				@notification-navigation="resetLinkHighlightClearState"
-			/>
+			<NotificationSidebar v-model="notificationSidebarOpen" />
 			<SettingsBaseModal
 				v-model="settingModalOpen"
 				@refresh-organization-slug="refreshOrganizationRouteSlug"
@@ -735,7 +753,7 @@ function clearLinkHighlightNodeOnce() {
 									:key="activeDocMetadata.id"
 									:all-initial-sections-loaded="allSectionsLoaded"
 									:timestamps="timestamps"
-									@click="clearLinkHighlightNodeOnce"
+									@click="clearLinkedBlock"
 									@updated-live-name="applyDocumentNameChange"
 									@updated-live-icon="applyIconChange"
 									@branch-merged="handleBranchMerge"

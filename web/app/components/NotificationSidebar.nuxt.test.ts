@@ -159,20 +159,4 @@ describe("<NotificationSidebar>", { concurrent: false }, () => {
 			wrapper.findComponent(NotificationSidebar).emitted("update:modelValue"),
 		).toEqual([[false]])
 	})
-
-	it("passes a navigation from the inbox box on to its parent", async ({
-		expect,
-	}) => {
-		stubViewport(false)
-		const wrapper = await mountSidebar(true)
-
-		emitFrom(wrapper, "NotificationBox", "notification-navigation")
-		await nextTick()
-
-		expect(
-			wrapper
-				.findComponent(NotificationSidebar)
-				.emitted("notification-navigation"),
-		).toHaveLength(1)
-	})
 })

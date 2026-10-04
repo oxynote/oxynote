@@ -3,9 +3,6 @@ import { cn } from "~/lib/utils"
 import { useSidebar, useSidebarWidth } from "./shadcn/ui/sidebar"
 
 const open = defineModel<boolean>({ default: false })
-const emit = defineEmits<{
-	(event: "notification-navigation"): void
-}>()
 
 const { open: sidebarOpen, state: sidebarState } = useSidebar()
 const { width: sidebarWidth } = useSidebarWidth()
@@ -39,7 +36,6 @@ const leftPosition = computed(() => {
 				class="w-80"
 				mobile
 				@close-notification-box="open = false"
-				@notification-navigation="emit('notification-navigation')"
 			/>
 		</ShadcnUiSheetContent>
 	</ShadcnUiSheet>
@@ -61,11 +57,7 @@ const leftPosition = computed(() => {
 			"
 			:style="{ left: `${leftPosition}px` }"
 		>
-			<NotificationBox
-				v-model="open"
-				class="w-80"
-				@notification-navigation="emit('notification-navigation')"
-			/>
+			<NotificationBox v-model="open" class="w-80" />
 		</div>
 	</div>
 </template>

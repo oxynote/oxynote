@@ -522,25 +522,6 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 	})
 
 	describe("navigation", { concurrent: false }, () => {
-		it("announces the navigation when a notification is opened", async ({
-			expect,
-		}) => {
-			mockEndpoint("PUT", "/api/notifications/read-status", () => ({}))
-			seedAuthOrganization({ slug: "acme" })
-			seedTree()
-			seedNotifications([makeNotification()])
-			const wrapper = await mountBox()
-
-			await at(rows(wrapper), 0).trigger("click")
-			await flushPromises()
-
-			expect(
-				wrapper
-					.findComponent(NotificationBox)
-					.emitted("notification-navigation"),
-			).toHaveLength(1)
-		})
-
 		it.for([
 			{
 				name: "opens a review request at the document",
@@ -684,11 +665,7 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 			await at(rows(wrapper), 0).trigger("click")
 			await flushPromises()
 
-			expect(
-				wrapper
-					.findComponent(NotificationBox)
-					.emitted("notification-navigation"),
-			).toBeUndefined()
+			expect(navigateToMock).toHaveBeenCalledTimes(0)
 		})
 	})
 
