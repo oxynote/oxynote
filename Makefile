@@ -118,6 +118,25 @@ check-lint:
 	@$(QUIET) "checking e2e" sh -c 'cd e2e && pnpm run check-lint'
 	@$(QUIET) "checking launcher" sh -c 'cd docker/prod/launcher && pnpm run check-lint'
 
+# unit tests of every component, with the coverage gates CI applies.
+.PHONY: test
+test:
+	@$(QUIET) "testing web" sh -c 'cd web && pnpm run test'
+	@$(QUIET) "testing auth-realtime" sh -c 'cd server/auth-realtime && pnpm run test'
+	@$(QUIET) "testing core" sh -c 'cd server/core && make check-coverage'
+	@$(QUIET) "testing datagen" sh -c 'cd datagen && make check-coverage'
+	@$(QUIET) "testing launcher" sh -c 'cd docker/prod/launcher && pnpm run test'
+
+# everything CI checks, to run before a commit. The steps must run one
+# after another, because lint rewrites the files the tests read. Listing
+# them as `check-all: lint test ...` would let `make -j` run them at once.
+.PHONY: check-all
+check-all:
+	@$(MAKE) lint
+	@$(MAKE) test
+	@$(MAKE) e2e-dev
+	@$(MAKE) e2e-prod
+
 .PHONY: setup
 setup:
 	cd web && pnpm run setup

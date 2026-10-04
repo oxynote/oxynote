@@ -112,6 +112,8 @@ make run / start / stop           # dev stack foreground / background / stop
 make dev                          # backend containers + web dev server on :3000
 make check-env / sync-env         # report / reconcile *.local.env against templates
 make lint / check-lint            # fix / verify lint, format and types everywhere
+make test                         # unit tests + coverage gates everywhere
+make check-all                    # lint, test, e2e-dev, e2e-prod; run before a commit
 make prod-build / prod-run[-no-email] / prod-stop  # all-in-one image on :8080 (mailpit :8025)
 make e2e-{dev,prod}[-stack-build|-stack-stop]  # dev stack :18080, prod image :19080 (no email :19081)
 ```
