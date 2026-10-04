@@ -398,6 +398,7 @@
 				"reset-failed": "Failed to reset the hook. Please try again.",
 				"renew-failed": "Failed to renew the hook. Please try again."
 			},
+			"initializing": "Initializing this hook. It will be ready in a moment.",
 			"scheduled-reminder": {
 				"title": "Scheduled Reminder",
 				"description": "Nudge maintainers on a date",

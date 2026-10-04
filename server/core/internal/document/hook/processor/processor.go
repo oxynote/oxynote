@@ -17,6 +17,10 @@ const (
 	// StatusActive indicates that the processor checked what it watches.
 	StatusActive Status = "active"
 
+	// StatusInitializing indicates that the hook is a copy whose first run
+	// has not set it up yet.
+	StatusInitializing Status = "initializing"
+
 	// StatusUnconfigured indicates that the integration the processor needs
 	// is not configured on this deployment.
 	StatusUnconfigured Status = "unconfigured"

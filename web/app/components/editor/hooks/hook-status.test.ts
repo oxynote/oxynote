@@ -27,6 +27,11 @@ describe("hookStatus", () => {
 			expected: "triggered",
 		},
 		{
+			name: "shows a copy being set up by its source's score",
+			input: { score: "0", status: "initializing" },
+			expected: "triggered",
+		},
+		{
 			name: "shows an unreachable website as needing attention",
 			input: FAILED,
 			expected: "needs-attention",

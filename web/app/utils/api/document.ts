@@ -120,19 +120,21 @@ export type DocumentHookStatus =
 	| DocumentHookStatusURLWatcher
 	| DocumentHookStatusContainerImageWatcher
 
-// a status other than active names why the last check failed
-export type DocumentHookStatusScheduledReminder = "active"
+// initializing marks a copy its first run has not set up yet. Any other
+// status than active names why the last check failed.
+export type DocumentHookStatusScheduledReminder = "active" | "initializing"
 export type DocumentHookStatusGitHubTracking =
 	| "active"
+	| "initializing"
 	| "unconfigured"
 	| "missing_installation"
 	| "missing_repository"
 	| "missing_branch"
 	| "tree_truncated"
 export type DocumentHookStatusURLWatcher =
-	"active" | "unconfigured" | "unreachable_url"
+	"active" | "initializing" | "unconfigured" | "unreachable_url"
 export type DocumentHookStatusContainerImageWatcher =
-	"active" | "unauthorized" | "image_not_found"
+	"active" | "initializing" | "unauthorized" | "image_not_found"
 
 export interface DocumentHookSettingsScheduledReminder {
 	scale: "linear"

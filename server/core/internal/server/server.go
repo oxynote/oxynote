@@ -177,7 +177,7 @@ func NewServer(
 		searchTrigger,
 		opts.PublicURL,
 	)
-	srv.handlers.document = document.NewHandler(log, db, githubMan, webchangeClient, searcher, searchTrigger, notifier, storageClient)
+	srv.handlers.document = document.NewHandler(log, db, githubMan, webchangeClient, hookMan, searcher, searchTrigger, notifier, storageClient)
 	srv.handlers.tag = tag.NewHandler(log, db)
 	srv.handlers.comment = comment.NewHandler(log, db, notifier)
 	srv.handlers.files = files.NewHandler(log, db, storageClient, opts.PublicURL)
@@ -365,11 +365,13 @@ type DB interface {
 	tag.DB
 }
 
-// HookManager runs the hook writes.
+// HookManager runs the hook writes and sets up the hooks a branch operation
+// copied.
 //
 //go:generate ../../scripts/codegen/mock -t internal HookManager hook_manager
 type HookManager interface {
 	hook.Manager
+	document.HookManager
 
 	// BindHookChange should set the function called with every hook the
 	// manager stores, changes or deletes.

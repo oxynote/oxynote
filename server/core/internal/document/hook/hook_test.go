@@ -127,55 +127,33 @@ func Test_NewHook(t *testing.T) {
 	})
 }
 
-func Test_Hook_CopyTo(t *testing.T) {
+func Test_Hook_NewCopy(t *testing.T) {
 	t.Parallel()
 
-	documentID := xid.New()
-
-	src, err := NewHook(context.Background(), CreateInput{
-		Type:     TypeScheduledReminder,
-		BlockID:  null.StringFrom("block-1"),
-		Settings: reminderSettings(t, time.Now().Add(time.Hour)),
-	}, documentID, xid.New(), "org-1", nil)
-	require.NoError(t, err)
+	src := Hook{
+		ID:             xid.New(),
+		CrossBranchID:  xid.New(),
+		Type:           TypeURLWatcher,
+		DocumentID:     null.ValueFrom(xid.New()),
+		OrganizationID: null.StringFrom("org-1"),
+		BranchID:       null.ValueFrom(xid.New()),
+		BlockID:        null.StringFrom("b1"),
+		Settings:       processor.Settings(`{"url":"https://example.com"}`),
+		State:          null.ValueFrom(processor.State(`{"watcherId":"w1"}`)),
+		Status:         processor.StatusUnreachableURL,
+		Score:          decimal.NewFromInt(10),
+	}
 
 	cc := map[string]struct {
-		Hook             Hook
 		DocumentID       xid.ID
-		Input            *Input
 		KeepsCrossBranch bool
-		Unset            bool
-		Err              error
 	}{
-		"Malformed settings fail": {
-			Hook: Hook{
-				Type:     TypeScheduledReminder,
-				Settings: processor.Settings(`{not json`),
-			},
-			DocumentID: documentID,
-			Err:        assert.AnError,
-		},
 		"Copy within the document keeps the cross-branch ID": {
-			Hook:             *src,
-			DocumentID:       documentID,
+			DocumentID:       src.DocumentID.V,
 			KeepsCrossBranch: true,
 		},
 		"Copy into another document is a hook of its own": {
-			Hook:       *src,
 			DocumentID: xid.New(),
-		},
-		"Copy that cannot check its target is kept without state": {
-			Hook: Hook{
-				ID:            xid.New(),
-				CrossBranchID: xid.New(),
-				Type:          TypeURLWatcher,
-				DocumentID:    null.ValueFrom(documentID),
-				Settings:      processor.Settings(`{"url":"https://example.com"}`),
-			},
-			DocumentID:       documentID,
-			Input:            NewInput("org-2", nil, webchange.NewClient("", "")),
-			KeepsCrossBranch: true,
-			Unset:            true,
 		},
 	}
 
@@ -185,35 +163,25 @@ func Test_Hook_CopyTo(t *testing.T) {
 
 			branchID := xid.New()
 
-			cp, err := c.Hook.CopyTo(
-				context.Background(),
-				c.DocumentID,
-				branchID,
-				null.StringFrom("block-2"),
-				"org-2",
-				c.Input,
-			)
-			testutil.AssertEqualError(t, c.Err, err)
+			cp := src.NewCopy(c.DocumentID, branchID, null.StringFrom("b2"))
 
-			if err != nil {
-				return
-			}
-
-			assert.NotEqual(t, c.Hook.ID, cp.ID)
-			assert.Equal(t, c.Hook.Type, cp.Type)
-			assert.Equal(t, c.Hook.Settings, cp.Settings)
+			assert.NotEqual(t, src.ID, cp.ID)
+			assert.Equal(t, src.Type, cp.Type)
 			assert.Equal(t, null.ValueFrom(c.DocumentID), cp.DocumentID)
+			assert.Equal(t, src.OrganizationID, cp.OrganizationID)
 			assert.Equal(t, null.ValueFrom(branchID), cp.BranchID)
-			assert.Equal(t, null.StringFrom("org-2"), cp.OrganizationID)
-			assert.Equal(t, null.StringFrom("block-2"), cp.BlockID)
-			assert.Equal(t, !c.Unset, cp.State.Valid)
+			assert.Equal(t, null.StringFrom("b2"), cp.BlockID)
+			assert.Equal(t, src.Settings, cp.Settings)
+			assert.Equal(t, processor.StatusInitializing, cp.Status)
+			assert.Equal(t, "10", cp.Score.String())
+			assert.False(t, cp.CreatedAt.IsZero())
 
-			if c.Unset {
-				assert.Equal(t, processor.StatusUnconfigured, cp.Status)
-			}
+			// the source's state names its own watcher, which the copy must
+			// never reach.
+			assert.False(t, cp.State.Valid)
 
 			if c.KeepsCrossBranch {
-				assert.Equal(t, c.Hook.CrossBranchID, cp.CrossBranchID)
+				assert.Equal(t, src.CrossBranchID, cp.CrossBranchID)
 
 				return
 			}

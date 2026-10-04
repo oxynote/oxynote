@@ -33,6 +33,9 @@ var _ HookManager = &HookManagerMock{}
 //			ResetHookFunc: func(ctx context.Context, id xid.ID, organizationID string) (*hookCore.Hook, error) {
 //				panic("mock out the ResetHook method")
 //			},
+//			SetUpBranchFunc: func(ctx context.Context, branchID xid.ID, organizationID string)  {
+//				panic("mock out the SetUpBranch method")
+//			},
 //			UpdateHookFunc: func(ctx context.Context, id xid.ID, organizationID string, ui hookCore.UpdateInput, updatedBy string) (*hookCore.Hook, error) {
 //				panic("mock out the UpdateHook method")
 //			},
@@ -54,6 +57,9 @@ type HookManagerMock struct {
 
 	// ResetHookFunc mocks the ResetHook method.
 	ResetHookFunc func(ctx context.Context, id xid.ID, organizationID string) (*hookCore.Hook, error)
+
+	// SetUpBranchFunc mocks the SetUpBranch method.
+	SetUpBranchFunc func(ctx context.Context, branchID xid.ID, organizationID string)
 
 	// UpdateHookFunc mocks the UpdateHook method.
 	UpdateHookFunc func(ctx context.Context, id xid.ID, organizationID string, ui hookCore.UpdateInput, updatedBy string) (*hookCore.Hook, error)
@@ -98,6 +104,15 @@ type HookManagerMock struct {
 			// OrganizationID is the organizationID argument value.
 			OrganizationID string
 		}
+		// SetUpBranch holds details about calls to the SetUpBranch method.
+		SetUpBranch []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// BranchID is the branchID argument value.
+			BranchID xid.ID
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+		}
 		// UpdateHook holds details about calls to the UpdateHook method.
 		UpdateHook []struct {
 			// Ctx is the ctx argument value.
@@ -116,6 +131,7 @@ type HookManagerMock struct {
 	lockCreateHook     sync.RWMutex
 	lockDeleteHook     sync.RWMutex
 	lockResetHook      sync.RWMutex
+	lockSetUpBranch    sync.RWMutex
 	lockUpdateHook     sync.RWMutex
 }
 
@@ -291,6 +307,46 @@ func (mock *HookManagerMock) ResetHookCalls() []struct {
 	mock.lockResetHook.RLock()
 	calls = mock.calls.ResetHook
 	mock.lockResetHook.RUnlock()
+	return calls
+}
+
+// SetUpBranch calls SetUpBranchFunc.
+func (mock *HookManagerMock) SetUpBranch(ctx context.Context, branchID xid.ID, organizationID string) {
+	callInfo := struct {
+		Ctx            context.Context
+		BranchID       xid.ID
+		OrganizationID string
+	}{
+		Ctx:            ctx,
+		BranchID:       branchID,
+		OrganizationID: organizationID,
+	}
+	mock.lockSetUpBranch.Lock()
+	mock.calls.SetUpBranch = append(mock.calls.SetUpBranch, callInfo)
+	mock.lockSetUpBranch.Unlock()
+	if mock.SetUpBranchFunc == nil {
+		return
+	}
+	mock.SetUpBranchFunc(ctx, branchID, organizationID)
+}
+
+// SetUpBranchCalls gets all the calls that were made to SetUpBranch.
+// Check the length with:
+//
+//	len(mockedHookManager.SetUpBranchCalls())
+func (mock *HookManagerMock) SetUpBranchCalls() []struct {
+	Ctx            context.Context
+	BranchID       xid.ID
+	OrganizationID string
+} {
+	var calls []struct {
+		Ctx            context.Context
+		BranchID       xid.ID
+		OrganizationID string
+	}
+	mock.lockSetUpBranch.RLock()
+	calls = mock.calls.SetUpBranch
+	mock.lockSetUpBranch.RUnlock()
 	return calls
 }
 

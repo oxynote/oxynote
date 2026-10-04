@@ -225,6 +225,66 @@ func Test_Manager_Start(t *testing.T) {
 	assert.Len(t, db.FetchPaginatedDocumentHooksCalls(), 1)
 }
 
+func Test_Manager_SetUpBranch(t *testing.T) {
+	t.Parallel()
+
+	branchID := xid.New()
+
+	cc := map[string]struct {
+		FetchErr error
+		// Updated is the hooks the set up stores, by their place in the
+		// branch.
+		Updated []int
+	}{
+		"Error returned by db.FetchDocumentHooksByBranchID": {
+			FetchErr: assert.AnError,
+		},
+		"Only the hooks not set up yet are set up": {
+			Updated: []int{1},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			set := stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+
+			unset := stubHook(t, branchID, time.Now().Add(time.Hour), time.Now())
+			unset.State = null.Value[processor.State]{}
+
+			hooks := []hook.Hook{set, unset}
+
+			db := stubStoredHooks(&DBMock{
+				FetchDocumentHooksByBranchIDFunc: func(context.Context, xid.ID, string) ([]hook.Hook, error) {
+					return hooks, c.FetchErr
+				},
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*document.Document, error) {
+					return stubDocument(), nil
+				},
+				UpdateDocumentHookFunc: func(context.Context, hook.Hook) error {
+					return nil
+				},
+			}, hooks)
+
+			newTestManager(t, db, &fakePublisher{}, nil).SetUpBranch(context.Background(), branchID, "org-1")
+
+			ff := db.FetchDocumentHooksByBranchIDCalls()
+			require.Len(t, ff, 1)
+			assert.Equal(t, branchID, ff[0].BranchID)
+			assert.Equal(t, "org-1", ff[0].OrganizationID)
+
+			uu := db.UpdateDocumentHookCalls()
+			require.Len(t, uu, len(c.Updated))
+
+			for i, idx := range c.Updated {
+				assert.Equal(t, hooks[idx].ID, uu[i].Hk.ID)
+				assert.True(t, uu[i].Hk.State.Valid)
+			}
+		})
+	}
+}
+
 func Test_Manager_processHooks(t *testing.T) {
 	t.Parallel()
 
@@ -448,6 +508,7 @@ func Test_Manager_processHooks(t *testing.T) {
 			Hooks: func(_ *testing.T) []hook.Hook {
 				h := urlWatcherHook(branchID)
 				h.State = null.Value[processor.State]{}
+				h.Status = processor.StatusInitializing
 
 				return []hook.Hook{h}
 			},
@@ -456,9 +517,31 @@ func Test_Manager_processHooks(t *testing.T) {
 			Checks: checks(
 				hasError(false),
 				wasUpdateCalled(1),
+				hasUpdatedStatus(processor.StatusActive),
 				hasUpdated(func(t *testing.T, h hook.Hook) {
 					require.True(t, h.State.Valid)
 					assert.JSONEq(t, `{"watcherId":"w-new","lastChangedAt":null}`, string(h.State.V))
+				}),
+				wasPublished(),
+			),
+		},
+		// the copy's source may well check its target, so the copy's own
+		// failure is shown on it but not announced.
+		"Copy that cannot be set up takes the failure without a notification": {
+			Hooks: func(_ *testing.T) []hook.Hook {
+				h := urlWatcherHook(branchID)
+				h.State = null.Value[processor.State]{}
+				h.Status = processor.StatusInitializing
+
+				return []hook.Hook{h}
+			},
+			Doc: stubDocument(),
+			Checks: checks(
+				hasError(false),
+				wasUpdateCalled(1),
+				hasUpdatedStatus(processor.StatusUnconfigured),
+				hasUpdated(func(t *testing.T, h hook.Hook) {
+					assert.False(t, h.State.Valid)
 				}),
 				wasPublished(),
 			),

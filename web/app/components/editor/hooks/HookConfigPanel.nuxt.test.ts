@@ -163,6 +163,34 @@ describe("<HookConfigPanel>", { concurrent: false }, () => {
 		expect(iconNames(hookNotice())).toEqual([expected.icon])
 	})
 
+	it.for<{
+		name: string
+		input: Partial<DocumentHook>
+		expected: boolean
+	}>([
+		{
+			name: "says a copy is being set up",
+			input: { state: null, status: "initializing" },
+			expected: true,
+		},
+		{
+			name: "says nothing of setup once the hook is set up",
+			input: { state: {}, status: "active" },
+			expected: false,
+		},
+		{
+			name: "says nothing of setup for a copy that cannot check its target",
+			input: { state: null, status: "unconfigured" },
+			expected: false,
+		},
+	])("$name", async ({ input, expected }, { expect }) => {
+		await mountPanel({ hook: makeHook(input) })
+
+		await openHookSubMenu(TITLE)
+
+		expect(menuText().includes(t("editor.hooks.initializing"))).toBe(expected)
+	})
+
 	it("shows a setup notice plainly over a triggered hook", async ({
 		expect,
 	}) => {

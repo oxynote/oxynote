@@ -80,7 +80,7 @@ func (m *Manager) CreateHook(
 		return nil, err
 	}
 
-	if _, err = tx.RecordDocumentBranchHistoryEntry(ctx, ci.BranchID, organizationID, null.StringFrom(updatedBy), false); err != nil {
+	if err = tx.RecordDocumentBranchHistoryEntry(ctx, ci.BranchID, organizationID, null.StringFrom(updatedBy), false); err != nil {
 		return nil, err
 	}
 
@@ -160,7 +160,7 @@ func (m *Manager) UpdateHook(
 	}
 
 	if hk.BranchID.Valid {
-		if _, err = tx.RecordDocumentBranchHistoryEntry(ctx, hk.BranchID.V, organizationID, null.StringFrom(updatedBy), false); err != nil {
+		if err = tx.RecordDocumentBranchHistoryEntry(ctx, hk.BranchID.V, organizationID, null.StringFrom(updatedBy), false); err != nil {
 			return nil, err
 		}
 	}
@@ -224,7 +224,7 @@ func (m *Manager) DeleteHook(ctx context.Context, id xid.ID, organizationID, upd
 	}
 
 	if hk.BranchID.Valid {
-		if _, err = tx.RecordDocumentBranchHistoryEntry(ctx, hk.BranchID.V, organizationID, null.StringFrom(updatedBy), false); err != nil {
+		if err = tx.RecordDocumentBranchHistoryEntry(ctx, hk.BranchID.V, organizationID, null.StringFrom(updatedBy), false); err != nil {
 			return err
 		}
 	}

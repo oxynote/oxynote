@@ -13,8 +13,8 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/document/file"
-	"github.com/oxynote/oxynote/server/core/internal/document/history"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
+	"github.com/oxynote/oxynote/server/core/internal/document/hook/manager"
 	"github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
@@ -39,6 +39,7 @@ type Handler struct {
 	db              DB
 	githubMan       *github.Manager
 	webchangeClient *webchange.Client
+	hookMan         HookManager
 	searcher        Searcher
 	searchTrigger   SearchTrigger
 	notifPub        notification.Publisher
@@ -67,6 +68,7 @@ func NewHandler(
 	db DB,
 	githubMan *github.Manager,
 	webchangeClient *webchange.Client,
+	hookMan HookManager,
 	searcher Searcher,
 	searchTrigger SearchTrigger,
 	notifPub notification.Publisher,
@@ -77,6 +79,7 @@ func NewHandler(
 		db:              db,
 		githubMan:       githubMan,
 		webchangeClient: webchangeClient,
+		hookMan:         hookMan,
 		searcher:        searcher,
 		searchTrigger:   searchTrigger,
 		notifPub:        notifPub,
@@ -535,7 +538,7 @@ func (h *Handler) CreateDocument(w http.ResponseWriter, r *http.Request) {
 
 	doc := documentCore.NewDocument(di, session.ActiveOrganizationID, session.UserID)
 
-	if _, err := h.insertDocumentTx(r.Context(), doc, null.Value[xid.ID]{}, session); err != nil {
+	if err := h.insertDocumentTx(r.Context(), doc, null.Value[xid.ID]{}, nil, session); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
@@ -721,24 +724,12 @@ func (h *Handler) DuplicateDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	duplDoc, files, uids := doc.Duplicate(session.UserID)
+	duplDoc, files, newBlockIDs := doc.Duplicate(session.UserID)
 
-	entryID, err := h.insertDocumentTx(r.Context(), duplDoc, null.ValueFrom(doc.BranchID), session)
-	if err != nil {
+	if err := h.insertDocumentTx(r.Context(), duplDoc, null.ValueFrom(doc.BranchID), newBlockIDs, session); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
-
-	hooks := h.copyHooksToBranch(
-		r.Context(),
-		doc.BranchID,
-		duplDoc.BranchID,
-		duplDoc.ID,
-		session.ActiveOrganizationID,
-		uids,
-	)
-
-	h.updateEntryHooks(r.Context(), entryID, duplDoc, hooks)
 
 	h.copyDocumentFiles(r.Context(), files, duplDoc.ID, session.ActiveOrganizationID)
 
@@ -848,35 +839,44 @@ func (h *Handler) upsertBranchReviewer(
 
 // insertDocumentTx inserts a new document together with its maintainer,
 // its search job and the boundary history entry of its first content, and
-// slots it at the top of its parent's tree, all in one transaction. It
-// returns the entry's id. A document duplicated from a branch also takes
-// that branch's tags. The tree-change notification is left to the caller,
-// since it must not fire before the commit.
+// slots it at the top of its parent's tree, all in one transaction. A
+// document duplicated from a branch also takes that branch's tags and its
+// hooks, re-anchored through newBlockIDs. The tree-change notification is
+// left to the caller, since it must not fire before the commit.
 func (h *Handler) insertDocumentTx(
 	ctx context.Context,
 	doc documentCore.Document,
 	sourceBranchID null.Value[xid.ID],
+	newBlockIDs map[string]string,
 	session auth.Session,
-) (xid.ID, error) {
+) error {
 	var tx Tx
 
 	if err := h.db.BeginTx(ctx, &tx); err != nil {
-		return xid.ID{}, err
+		return err
 	}
 
 	defer tx.Rollback() //nolint:errcheck // error provides no meaningful info
 
 	if doc.ParentID.Valid {
 		if err := tx.CheckDocumentExists(ctx, doc.ParentID.V, session.ActiveOrganizationID); err != nil {
-			return xid.ID{}, err
+			return err
 		}
 	}
 
 	if err := tx.InsertDocument(ctx, doc); err != nil {
-		return xid.ID{}, err
+		return err
 	}
 
-	entryID, err := tx.RecordDocumentBranchHistoryEntry(
+	// the copies go in before the entry is recorded, so it lists them.
+	if sourceBranchID.Valid {
+		err := manager.CopyHooks(ctx, tx, sourceBranchID.V, doc.BranchID, doc.ID, session.ActiveOrganizationID, newBlockIDs)
+		if err != nil {
+			return err
+		}
+	}
+
+	err := tx.RecordDocumentBranchHistoryEntry(
 		ctx,
 		doc.BranchID,
 		session.ActiveOrganizationID,
@@ -884,12 +884,12 @@ func (h *Handler) insertDocumentTx(
 		true,
 	)
 	if err != nil {
-		return xid.ID{}, err
+		return err
 	}
 
 	if sourceBranchID.Valid {
 		if err = tx.CopyBranchTags(ctx, session.ActiveOrganizationID, sourceBranchID.V, doc.BranchID); err != nil {
-			return xid.ID{}, err
+			return err
 		}
 	}
 
@@ -899,34 +899,47 @@ func (h *Handler) insertDocumentTx(
 		session.ActiveOrganizationID,
 		[]string{session.UserID},
 	); err != nil {
-		return xid.ID{}, err
+		return err
 	}
 
 	if err = tx.InsertSearchJob(ctx, search.BranchScope(session.ActiveOrganizationID, doc.ID, doc.BranchID)); err != nil {
-		return xid.ID{}, err
+		return err
 	}
 
 	tree, err := tx.FetchDocumentTreeByDocumentParentID(ctx, doc.ParentID, session.ActiveOrganizationID)
 	if err != nil {
-		return xid.ID{}, err
+		return err
 	}
 
 	swappedTree, err := tree.Swap(doc.ID, 0)
 	if err != nil {
-		return xid.ID{}, err
+		return err
 	}
 
 	if err = tx.UpdateDocumentTree(ctx, swappedTree, session.ActiveOrganizationID); err != nil {
-		return xid.ID{}, err
+		return err
 	}
 
 	if err = tx.Commit(); err != nil {
-		return xid.ID{}, err
+		return err
 	}
 
 	h.searchTrigger.Trigger()
 
-	return entryID, nil
+	if sourceBranchID.Valid {
+		h.hookMan.SetUpBranch(ctx, doc.BranchID, session.ActiveOrganizationID)
+	}
+
+	return nil
+}
+
+// HookManager sets up the hooks a branch operation copied.
+//
+//go:generate ../../../../scripts/codegen/mock -t internal HookManager hook_manager
+type HookManager interface {
+	// SetUpBranch should set up the branch's hooks that are not set up
+	// yet, leaving any it cannot to a later pass.
+	SetUpBranch(ctx context.Context, branchID xid.ID, organizationID string)
 }
 
 // DB is an interface that combines sqlutil.DB and DBAgent.
@@ -1010,14 +1023,14 @@ type DocumentsDBAgent interface {
 	UpdateDocument(ctx context.Context, doc documentCore.Document) error
 
 	// RecordDocumentBranchHistoryEntry should record the branch as it
-	// stands, with its live hooks, and return the id of the entry.
+	// stands, with its hooks.
 	RecordDocumentBranchHistoryEntry(
 		ctx context.Context,
 		branchID xid.ID,
 		organizationID string,
 		by null.String,
 		boundary bool,
-	) (xid.ID, error)
+	) error
 
 	// DeleteDocument should delete the document and report the ids of
 	// the document and of every cascade-deleted descendant.
@@ -1055,10 +1068,6 @@ type BranchesDBAgent interface {
 	// ReplaceBranchTags should make the target branch carry exactly the
 	// tags the source branch carries.
 	ReplaceBranchTags(ctx context.Context, organizationID string, fromBranchID, toBranchID xid.ID) error
-
-	// UpdateDocumentBranchHistoryEntryHooks should replace the hooks the
-	// history entry lists.
-	UpdateDocumentBranchHistoryEntryHooks(ctx context.Context, id xid.ID, hooks history.Hooks) error
 }
 
 // TreeDBAgent is an interface that handles communication with the document

@@ -31,7 +31,7 @@ var _ Tx = &TxMock{}
 //			InsertDocumentHookFunc: func(ctx context.Context, hk hook.Hook) error {
 //				panic("mock out the InsertDocumentHook method")
 //			},
-//			RecordDocumentBranchHistoryEntryFunc: func(ctx context.Context, branchID xid.ID, organizationID string, by null.String, boundary bool) (xid.ID, error) {
+//			RecordDocumentBranchHistoryEntryFunc: func(ctx context.Context, branchID xid.ID, organizationID string, by null.String, boundary bool) error {
 //				panic("mock out the RecordDocumentBranchHistoryEntry method")
 //			},
 //			RollbackFunc: func() error {
@@ -57,7 +57,7 @@ type TxMock struct {
 	InsertDocumentHookFunc func(ctx context.Context, hk hook.Hook) error
 
 	// RecordDocumentBranchHistoryEntryFunc mocks the RecordDocumentBranchHistoryEntry method.
-	RecordDocumentBranchHistoryEntryFunc func(ctx context.Context, branchID xid.ID, organizationID string, by null.String, boundary bool) (xid.ID, error)
+	RecordDocumentBranchHistoryEntryFunc func(ctx context.Context, branchID xid.ID, organizationID string, by null.String, boundary bool) error
 
 	// RollbackFunc mocks the Rollback method.
 	RollbackFunc func() error
@@ -225,7 +225,7 @@ func (mock *TxMock) InsertDocumentHookCalls() []struct {
 }
 
 // RecordDocumentBranchHistoryEntry calls RecordDocumentBranchHistoryEntryFunc.
-func (mock *TxMock) RecordDocumentBranchHistoryEntry(ctx context.Context, branchID xid.ID, organizationID string, by null.String, boundary bool) (xid.ID, error) {
+func (mock *TxMock) RecordDocumentBranchHistoryEntry(ctx context.Context, branchID xid.ID, organizationID string, by null.String, boundary bool) error {
 	callInfo := struct {
 		Ctx            context.Context
 		BranchID       xid.ID
@@ -244,10 +244,9 @@ func (mock *TxMock) RecordDocumentBranchHistoryEntry(ctx context.Context, branch
 	mock.lockRecordDocumentBranchHistoryEntry.Unlock()
 	if mock.RecordDocumentBranchHistoryEntryFunc == nil {
 		var (
-			iDOut  xid.ID
 			errOut error
 		)
-		return iDOut, errOut
+		return errOut
 	}
 	return mock.RecordDocumentBranchHistoryEntryFunc(ctx, branchID, organizationID, by, boundary)
 }

@@ -196,6 +196,7 @@ function checkFailure(checkStatus: DocumentHookStatusGitHubTracking): {
 } | null {
 	switch (checkStatus) {
 		case "active":
+		case "initializing":
 			return null
 		case "unconfigured":
 			return {
@@ -367,6 +368,7 @@ function close() {
 					fetchGitHubRepositories.state.value.data?.length === 0 ||
 					(!!checkStatus &&
 						checkStatus !== 'active' &&
+						checkStatus !== 'initializing' &&
 						checkStatus !== 'missing_repository' &&
 						checkStatus !== 'missing_branch' &&
 						checkStatus !== 'tree_truncated')
@@ -416,6 +418,7 @@ function close() {
 					fetchGitHubBranches.isLoading.value ||
 					(!!checkStatus &&
 						checkStatus !== 'active' &&
+						checkStatus !== 'initializing' &&
 						checkStatus !== 'missing_branch' &&
 						checkStatus !== 'tree_truncated')
 				"
@@ -465,7 +468,9 @@ function close() {
 					!selectedRepository ||
 					!selectedBranch ||
 					fetchGitHubPaths.isLoading.value ||
-					(!!checkStatus && checkStatus !== 'active')
+					(!!checkStatus &&
+						checkStatus !== 'active' &&
+						checkStatus !== 'initializing')
 				"
 				:options="fetchGitHubPaths.state.value.data || []"
 				:placeholder="

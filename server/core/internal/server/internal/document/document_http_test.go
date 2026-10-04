@@ -35,7 +35,6 @@ var (
 	_documentID = xid.New()
 	_branchID   = xid.New()
 	_branchID2  = xid.New()
-	_entryID    = xid.New()
 )
 
 // fakePublisher captures published notifications.
@@ -71,6 +70,7 @@ func newTestHandler(db DB, pub *fakePublisher) (*Handler, *callbackCounts) {
 		notifPub:        pub,
 		storer:          &StorerMock{},
 		webchangeClient: webchange.NewClient("", ""),
+		hookMan:         &HookManagerMock{},
 		searchTrigger:   &SearchTriggerMock{},
 	}
 
@@ -82,15 +82,8 @@ func newTestHandler(db DB, pub *fakePublisher) (*Handler, *callbackCounts) {
 	return hdl, cnt
 }
 
-// withTx wires the DB mock's BeginTx to hand out the provided Tx mock. A
-// history record the Tx mock does not stub returns _entryID.
+// withTx wires the DB mock's BeginTx to hand out the provided Tx mock.
 func withTx(db *DBMock, tx *TxMock, err error) *DBMock {
-	if tx != nil && tx.RecordDocumentBranchHistoryEntryFunc == nil {
-		tx.RecordDocumentBranchHistoryEntryFunc = func(context.Context, xid.ID, string, null.String, bool) (xid.ID, error) {
-			return _entryID, nil
-		}
-	}
-
 	db.BeginTxFunc = func(_ context.Context, dest any) error {
 		if err != nil {
 			return err
@@ -164,11 +157,13 @@ func Test_NewHandler(t *testing.T) {
 	trigger := &SearchTriggerMock{}
 	pub := &fakePublisher{}
 	st := &StorerMock{}
+	man := &HookManagerMock{}
 
-	hdl := NewHandler(slog.New(slog.DiscardHandler), db, nil, nil, searcher, trigger, pub, st)
+	hdl := NewHandler(slog.New(slog.DiscardHandler), db, nil, nil, man, searcher, trigger, pub, st)
 	require.NotNil(t, hdl)
 	assert.NotNil(t, hdl.log)
 	assert.Same(t, db, hdl.db)
+	assert.Same(t, man, hdl.hookMan)
 	assert.Same(t, searcher, hdl.searcher)
 	assert.Same(t, trigger, hdl.searchTrigger)
 	assert.Same(t, pub, hdl.notifPub)
@@ -1308,8 +1303,8 @@ func Test_Handler_CreateDocument(t *testing.T) {
 		},
 		"History entry insert error": {
 			Tx: &TxMock{
-				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) (xid.ID, error) {
-					return xid.ID{}, errors.New("boom")
+				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) error {
+					return errors.New("boom")
 				},
 			},
 			Body:     validBody,
@@ -1601,17 +1596,19 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 	}
 
 	cc := map[string]struct {
-		DB          *DBMock
-		Tx          *TxMock
-		Storer      *StorerMock
-		BeginErr    error
-		NoSession   bool
-		OmitDoc     bool
-		RespCode    int
-		Committed   int
-		TreeCbs     int
-		Copies      int
-		CopiedHooks int
+		DB        *DBMock
+		Tx        *TxMock
+		Storer    *StorerMock
+		BeginErr  error
+		NoSession bool
+		OmitDoc   bool
+		RespCode  int
+		Committed int
+		TreeCbs   int
+		Copies    int
+		// CopiedUID is a source block uid the hook copy is told to
+		// re-anchor.
+		CopiedUID string
 	}{
 		"No session in context": {
 			DB:        &DBMock{},
@@ -1705,39 +1702,27 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 			TreeCbs:   1,
 			Copies:    1,
 		},
-		"Hooks are copied along with the document": {
-			DB: func() *DBMock {
-				blockHook := storedHook(hookCore.TypeScheduledReminder)
-				blockHook.BlockID = null.StringFrom("img-1-aaaaaaaaaaaaaaa")
-
-				db := imageDB()
-				db.FetchDocumentHooksByBranchIDFunc = func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
-					return []hookCore.Hook{blockHook}, nil
-				}
-
-				return db
-			}(),
-			Tx:          insertAwareTx(),
-			Storer:      &StorerMock{},
-			RespCode:    http.StatusCreated,
-			Committed:   1,
-			TreeCbs:     1,
-			Copies:      1,
-			CopiedHooks: 1,
-		},
-		"Failing hook copy still yields the duplicate": {
-			DB: func() *DBMock {
-				db := &DBMock{FetchDocumentFunc: fetchStored}
-				db.FetchDocumentHooksByBranchIDFunc = func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
-					return nil, errors.New("boom")
-				}
-
-				return db
-			}(),
+		"Hooks follow the regenerated block uids": {
+			DB:        imageDB(),
 			Tx:        insertAwareTx(),
+			Storer:    &StorerMock{},
 			RespCode:  http.StatusCreated,
 			Committed: 1,
 			TreeCbs:   1,
+			Copies:    1,
+			CopiedUID: "img-1-aaaaaaaaaaaaaaa",
+		},
+		"Error returned by tx.FetchDocumentHooksByBranchID": {
+			DB: &DBMock{FetchDocumentFunc: fetchStored},
+			Tx: func() *TxMock {
+				tx := insertAwareTx()
+				tx.FetchDocumentHooksByBranchIDFunc = func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
+					return nil, errors.New("boom")
+				}
+
+				return tx
+			}(),
+			RespCode: http.StatusInternalServerError,
 		},
 	}
 
@@ -1749,6 +1734,17 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 
 			if c.Storer != nil {
 				hdl.storer = c.Storer
+			}
+
+			man := &HookManagerMock{}
+			hdl.hookMan = man
+
+			// a hook anchored to the copied block is re-anchored to its new
+			// uid.
+			if c.CopiedUID != "" {
+				c.Tx.FetchDocumentHooksByBranchIDFunc = func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
+					return []hookCore.Hook{{BlockID: null.StringFrom(c.CopiedUID)}}, nil
+				}
 			}
 
 			rec := httptest.NewRecorder()
@@ -1777,30 +1773,31 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 				assert.Equal(t, _branchID, c.Tx.CopyBranchTagsCalls()[0].FromBranchID)
 				assert.Equal(t, dupl.BranchID, c.Tx.CopyBranchTagsCalls()[0].ToBranchID)
 
-				// the hooks are copied once the commit is through, since
-				// creating one creates its watcher.
-				assert.Empty(t, c.Tx.InsertDocumentHookCalls())
-				require.Len(t, c.DB.InsertDocumentHookCalls(), c.CopiedHooks)
+				// the hooks are copied inside the transaction, re-anchored
+				// to the duplicate's regenerated block uids, and set up once
+				// it commits.
+				hh := c.Tx.FetchDocumentHooksByBranchIDCalls()
+				require.Len(t, hh, 1)
+				assert.Equal(t, _branchID, hh[0].BranchID)
+				assert.Equal(t, "org1", hh[0].OrganizationID)
 
-				// the duplicate starts with a boundary entry, which takes
-				// the copied hooks afterwards.
+				pp := man.SetUpBranchCalls()
+				require.Len(t, pp, 1)
+				assert.Equal(t, dupl.BranchID, pp[0].BranchID)
+
+				if c.CopiedUID != "" {
+					ii := c.Tx.InsertDocumentHookCalls()
+					require.Len(t, ii, 1)
+					assert.Equal(t, null.ValueFrom(dupl.ID), ii[0].Hk.DocumentID)
+					assert.True(t, ii[0].Hk.BlockID.Valid)
+					assert.NotEqual(t, c.CopiedUID, ii[0].Hk.BlockID.String)
+				}
+
+				// the duplicate starts with a boundary entry.
 				require.Len(t, c.Tx.RecordDocumentBranchHistoryEntryCalls(), 1)
 				entry := c.Tx.RecordDocumentBranchHistoryEntryCalls()[0]
 				assert.Equal(t, dupl.BranchID, entry.BranchID)
 				assert.True(t, entry.Boundary)
-
-				hh := c.DB.UpdateDocumentBranchHistoryEntryHooksCalls()
-				require.Len(t, hh, 1)
-				assert.Equal(t, _entryID, hh[0].ID)
-				assert.Len(t, hh[0].Hooks, c.CopiedHooks)
-
-				// a hook anchored to a block follows the block's regenerated
-				// uid rather than pointing at the source's.
-				for _, call := range c.DB.InsertDocumentHookCalls() {
-					assert.Equal(t, null.ValueFrom(dupl.BranchID), call.Hk.BranchID)
-					assert.NotEqual(t, null.StringFrom("img-1-aaaaaaaaaaaaaaa"), call.Hk.BlockID)
-					assert.True(t, call.Hk.BlockID.Valid)
-				}
 			}
 		})
 	}

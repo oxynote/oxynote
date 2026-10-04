@@ -107,6 +107,7 @@ function checkFailure(
 ): { detail: string; notice: string } | null {
 	switch (checkStatus) {
 		case "active":
+		case "initializing":
 			return null
 		case "unauthorized":
 			return {

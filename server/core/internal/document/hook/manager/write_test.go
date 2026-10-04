@@ -134,8 +134,8 @@ func Test_Manager_CreateHook(t *testing.T) {
 			Settings: processor.Settings(`{"url":"https://example.com"}`),
 			CD:       true,
 			Tx: &TxMock{
-				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) (xid.ID, error) {
-					return xid.ID{}, assert.AnError
+				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) error {
+					return assert.AnError
 				},
 			},
 			Inserts:  1,
@@ -383,8 +383,8 @@ func Test_Manager_UpdateHook(t *testing.T) {
 				UpdateDocumentHookFunc: func(context.Context, hook.Hook) error {
 					return c.UpdateErr
 				},
-				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) (xid.ID, error) {
-					return xid.New(), c.RecordErr
+				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) error {
+					return c.RecordErr
 				},
 				CommitFunc: func() error {
 					return c.CommitErr
@@ -575,8 +575,8 @@ func Test_Manager_DeleteHook(t *testing.T) {
 				DeleteDocumentHookFunc: func(context.Context, xid.ID) error {
 					return c.DelErr
 				},
-				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) (xid.ID, error) {
-					return xid.New(), c.RecordErr
+				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) error {
+					return c.RecordErr
 				},
 				CommitFunc: func() error {
 					return c.CommitErr

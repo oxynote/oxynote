@@ -33,8 +33,7 @@ reads it and its hooks, in the transaction that wrote the change.
 - Hook create, update and delete flush the branch, then record an entry
   in their transaction. Reset does not.
 - Create, duplicate, fork and merge write a **boundary** entry that never
-  aggregates and closes its bucket. It starts without hooks and gets the
-  ones `copyHooksToBranch` created after the commit.
+  aggregates, written after `CopyHooks` so it lists the copies.
 - Entries pin the files they reference, so the `DB_*HISTORY*` limits
   decide how long a removed image survives. Retention keeps each branch's
   newest entry.
@@ -68,10 +67,11 @@ request handler:
   `beforeDeleteOrganization` calls `POST /api/x/organizations/{id}/teardown`
   while rows still exist and throws if core fails.
 - Create writes the row before the object; delete removes the object before
-  the row. `copyHooksToBranch` runs after the fork/merge/duplicate commits,
-  since a copy creates its watcher; a failed insert tears it down.
-- **A null hook state means not set up**, as for a copy that cannot check
-  its target yet. The sweep sets it up.
+  the row.
+- **A null hook state means not set up.** Copied hooks start null, never
+  with the source's state; the operation sets them up after commit and
+  the sweep retries what fails. Hook writes and the sweep share the
+  manager's per-hook lock.
 
 ## Search
 

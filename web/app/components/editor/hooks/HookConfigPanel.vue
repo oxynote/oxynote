@@ -34,6 +34,7 @@ const editorStore = useEditorStore()
 const { isEditable } = useEditorMeta()
 
 const status = computed(() => (props.hook ? hookStatus(props.hook) : null))
+const isSettingUp = computed(() => props.hook?.status === "initializing")
 const isRemoved = computed(() => props.diff?.status === DiffStatus.Removed)
 const mode = computed(() => {
 	if (editorStore.reviewableDiffActive) {
@@ -100,6 +101,13 @@ const showsDismissHint = computed(
 		>
 			<div :class="cn('flex flex-col', HOOK_SUBMENU_WIDTH_CLASS)">
 				<div class="flex flex-col gap-1.5 px-2 py-1.5">
+					<p
+						v-if="isSettingUp"
+						class="flex items-center gap-1 text-2sm text-muted-foreground"
+					>
+						<Icon name="mingcute:loading-line" class="shrink-0 animate-spin" />
+						{{ $t("editor.hooks.initializing") }}
+					</p>
 					<HookNotice
 						:status="shownNoticeStatus"
 						:icon="shownNoticeIcon"

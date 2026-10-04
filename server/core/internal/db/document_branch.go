@@ -263,10 +263,10 @@ func (a *agent) selectBranchSummary(b sq.SelectBuilder) sq.SelectBuilder {
 }
 
 // RecordDocumentBranchHistoryEntry records the branch as it stands, with
-// the hooks its content holds, and returns the id of the entry it wrote or
-// matched. It locks the branch row before reading it, so two writers cannot
-// race on the newest entry. Called inside the transaction that wrote the
-// branch, it records what that transaction wrote.
+// the hooks its content holds. It locks the branch row before reading it,
+// so two writers cannot race on the newest entry. Called inside the
+// transaction that wrote the branch, it records what that transaction
+// wrote.
 //
 // Ordinary entries aggregate: an edit in the same 30-minute bucket as the
 // branch's newest ordinary entry updates that entry in place. A boundary
@@ -279,10 +279,8 @@ func (a *agent) RecordDocumentBranchHistoryEntry(
 	organizationID string,
 	by null.String,
 	boundary bool,
-) (xid.ID, error) {
-	var id xid.ID
-
-	if err := sqlutil.WrapTx(ctx, a.sql, func(tx *sqlx.Tx) error {
+) error {
+	return sqlutil.WrapTx(ctx, a.sql, func(tx *sqlx.Tx) error {
 		q, args := a.selectDocumentBranch(a.builder.Select()).
 			Where(sq.Eq{
 				"db.id":                        branchID,
@@ -310,33 +308,26 @@ func (a *agent) RecordDocumentBranchHistoryEntry(
 			boundary,
 		)
 
-		id, err = a.insertDocumentBranchHistoryEntry(ctx, tx, entry)
-
-		return err
-	}); err != nil {
-		return xid.ID{}, err
-	}
-
-	return id, nil
+		return a.insertDocumentBranchHistoryEntry(ctx, tx, entry)
+	})
 }
 
 // insertDocumentBranchHistoryEntry writes the entry, folds it into the
-// branch's newest one, or skips it when it matches the newest one. It
-// returns the id of the row that holds the entry. The caller holds the
-// branch row lock.
-func (a *agent) insertDocumentBranchHistoryEntry(ctx context.Context, tx *sqlx.Tx, entry history.Entry) (xid.ID, error) {
+// branch's newest one, or skips it when it matches the newest one. The
+// caller holds the branch row lock.
+func (a *agent) insertDocumentBranchHistoryEntry(ctx context.Context, tx *sqlx.Tx, entry history.Entry) error {
 	checksum, err := entry.Sum()
 	if err != nil {
-		return xid.ID{}, err
+		return err
 	}
 
 	newest, err := a.fetchNewestDocumentBranchHistoryEntry(ctx, tx, entry.BranchID)
 	if err != nil {
-		return xid.ID{}, err
+		return err
 	}
 
 	if newest != nil && newest.Checksum == checksum && !entry.Boundary {
-		return newest.ID, nil
+		return nil
 	}
 
 	aggregates := newest != nil &&
@@ -365,11 +356,9 @@ func (a *agent) insertDocumentBranchHistoryEntry(ctx context.Context, tx *sqlx.T
 			Where(sq.Eq{"id": newest.ID}).
 			MustSql()
 
-		if _, err := tx.ExecContext(ctx, q, args...); err != nil {
-			return xid.ID{}, err
-		}
+		_, err = tx.ExecContext(ctx, q, args...)
 
-		return newest.ID, nil
+		return err
 	}
 
 	q, args := a.builder.Insert("document_branch_history_entries").
@@ -390,49 +379,10 @@ func (a *agent) insertDocumentBranchHistoryEntry(ctx context.Context, tx *sqlx.T
 		MustSql()
 
 	if _, err := tx.ExecContext(ctx, q, args...); err != nil {
-		return xid.ID{}, err
-	}
-
-	if err := a.trimDocumentBranchHistoryEntries(ctx, tx, entry.BranchID); err != nil {
-		return xid.ID{}, err
-	}
-
-	return entry.ID, nil
-}
-
-// UpdateDocumentBranchHistoryEntryHooks replaces the hooks an entry lists
-// and its checksum. A boundary entry is written before its branch's hooks
-// are copied, so it gets the copied ones afterwards.
-func (a *agent) UpdateDocumentBranchHistoryEntryHooks(ctx context.Context, id xid.ID, hooks history.Hooks) error {
-	return sqlutil.WrapTx(ctx, a.sql, func(tx *sqlx.Tx) error {
-		q, args := a.selectDocumentBranchHistoryEntry(a.builder.Select()).
-			Where(sq.Eq{"id": id}).
-			Suffix("FOR UPDATE").
-			MustSql()
-
-		var entry history.Entry
-
-		if err := sqlx.GetContext(ctx, tx, &entry, q, args...); err != nil {
-			return err
-		}
-
-		entry.Hooks = hooks
-
-		checksum, err := entry.Sum()
-		if err != nil {
-			return err
-		}
-
-		q, args = a.builder.Update("document_branch_history_entries").
-			Set("hooks", hooks).
-			Set("checksum", checksum).
-			Where(sq.Eq{"id": id}).
-			MustSql()
-
-		_, err = tx.ExecContext(ctx, q, args...)
-
 		return err
-	})
+	}
+
+	return a.trimDocumentBranchHistoryEntries(ctx, tx, entry.BranchID)
 }
 
 // fetchDocumentBranchHistoryHooks fetches every hook of the branch a

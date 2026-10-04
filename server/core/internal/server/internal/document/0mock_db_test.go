@@ -10,7 +10,6 @@ import (
 	"github.com/guregu/null/v5"
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/document/file"
-	"github.com/oxynote/oxynote/server/core/internal/document/history"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/rs/xid"
@@ -119,7 +118,7 @@ var _ DB = &DBMock{}
 //			PromoteBranchApprovalsFunc: func(ctx context.Context, fromBranchID xid.ID, toBranchID xid.ID, organizationID string) error {
 //				panic("mock out the PromoteBranchApprovals method")
 //			},
-//			RecordDocumentBranchHistoryEntryFunc: func(ctx context.Context, branchID xid.ID, organizationID string, by null.String, boundary bool) (xid.ID, error) {
+//			RecordDocumentBranchHistoryEntryFunc: func(ctx context.Context, branchID xid.ID, organizationID string, by null.String, boundary bool) error {
 //				panic("mock out the RecordDocumentBranchHistoryEntry method")
 //			},
 //			ReplaceBranchTagsFunc: func(ctx context.Context, organizationID string, fromBranchID xid.ID, toBranchID xid.ID) error {
@@ -130,9 +129,6 @@ var _ DB = &DBMock{}
 //			},
 //			UpdateDocumentFunc: func(ctx context.Context, doc documentCore.Document) error {
 //				panic("mock out the UpdateDocument method")
-//			},
-//			UpdateDocumentBranchHistoryEntryHooksFunc: func(ctx context.Context, id xid.ID, hooks history.Hooks) error {
-//				panic("mock out the UpdateDocumentBranchHistoryEntryHooks method")
 //			},
 //			UpdateDocumentBranchMetadataFunc: func(ctx context.Context, doc documentCore.Document) error {
 //				panic("mock out the UpdateDocumentBranchMetadata method")
@@ -247,7 +243,7 @@ type DBMock struct {
 	PromoteBranchApprovalsFunc func(ctx context.Context, fromBranchID xid.ID, toBranchID xid.ID, organizationID string) error
 
 	// RecordDocumentBranchHistoryEntryFunc mocks the RecordDocumentBranchHistoryEntry method.
-	RecordDocumentBranchHistoryEntryFunc func(ctx context.Context, branchID xid.ID, organizationID string, by null.String, boundary bool) (xid.ID, error)
+	RecordDocumentBranchHistoryEntryFunc func(ctx context.Context, branchID xid.ID, organizationID string, by null.String, boundary bool) error
 
 	// ReplaceBranchTagsFunc mocks the ReplaceBranchTags method.
 	ReplaceBranchTagsFunc func(ctx context.Context, organizationID string, fromBranchID xid.ID, toBranchID xid.ID) error
@@ -257,9 +253,6 @@ type DBMock struct {
 
 	// UpdateDocumentFunc mocks the UpdateDocument method.
 	UpdateDocumentFunc func(ctx context.Context, doc documentCore.Document) error
-
-	// UpdateDocumentBranchHistoryEntryHooksFunc mocks the UpdateDocumentBranchHistoryEntryHooks method.
-	UpdateDocumentBranchHistoryEntryHooksFunc func(ctx context.Context, id xid.ID, hooks history.Hooks) error
 
 	// UpdateDocumentBranchMetadataFunc mocks the UpdateDocumentBranchMetadata method.
 	UpdateDocumentBranchMetadataFunc func(ctx context.Context, doc documentCore.Document) error
@@ -584,15 +577,6 @@ type DBMock struct {
 			// Doc is the doc argument value.
 			Doc documentCore.Document
 		}
-		// UpdateDocumentBranchHistoryEntryHooks holds details about calls to the UpdateDocumentBranchHistoryEntryHooks method.
-		UpdateDocumentBranchHistoryEntryHooks []struct {
-			// Ctx is the ctx argument value.
-			Ctx context.Context
-			// ID is the id argument value.
-			ID xid.ID
-			// Hooks is the hooks argument value.
-			Hooks history.Hooks
-		}
 		// UpdateDocumentBranchMetadata holds details about calls to the UpdateDocumentBranchMetadata method.
 		UpdateDocumentBranchMetadata []struct {
 			// Ctx is the ctx argument value.
@@ -632,46 +616,45 @@ type DBMock struct {
 			MaintainerIDs []string
 		}
 	}
-	lockBeginTx                               sync.RWMutex
-	lockCheckDocumentCycle                    sync.RWMutex
-	lockCheckDocumentExists                   sync.RWMutex
-	lockCheckOrganizationMember               sync.RWMutex
-	lockCopyBranchTags                        sync.RWMutex
-	lockCountDocumentBranches                 sync.RWMutex
-	lockDeleteBranchReviewer                  sync.RWMutex
-	lockDeleteDocument                        sync.RWMutex
-	lockDeleteDocumentBranchByID              sync.RWMutex
-	lockDeleteDocumentCommentsByBranchID      sync.RWMutex
-	lockDetachDocumentHooksByBranchID         sync.RWMutex
-	lockFetchBranchReviewer                   sync.RWMutex
-	lockFetchBranchReviewers                  sync.RWMutex
-	lockFetchDocument                         sync.RWMutex
-	lockFetchDocumentBranches                 sync.RWMutex
-	lockFetchDocumentBranchesUnsafe           sync.RWMutex
-	lockFetchDocumentByBranchID               sync.RWMutex
-	lockFetchDocumentFile                     sync.RWMutex
-	lockFetchDocumentHooksByBranchID          sync.RWMutex
-	lockFetchDocumentHooksByDocumentID        sync.RWMutex
-	lockFetchDocumentMaintainers              sync.RWMutex
-	lockFetchDocumentTree                     sync.RWMutex
-	lockFetchDocumentTreeByDocumentParentID   sync.RWMutex
-	lockFetchDocumentUnsafeByBranchID         sync.RWMutex
-	lockInsertBranchReviewer                  sync.RWMutex
-	lockInsertDocument                        sync.RWMutex
-	lockInsertDocumentBranch                  sync.RWMutex
-	lockInsertDocumentFile                    sync.RWMutex
-	lockInsertDocumentHook                    sync.RWMutex
-	lockInsertSearchJob                       sync.RWMutex
-	lockPromoteBranchApprovals                sync.RWMutex
-	lockRecordDocumentBranchHistoryEntry      sync.RWMutex
-	lockReplaceBranchTags                     sync.RWMutex
-	lockUpdateBranchReviewer                  sync.RWMutex
-	lockUpdateDocument                        sync.RWMutex
-	lockUpdateDocumentBranchHistoryEntryHooks sync.RWMutex
-	lockUpdateDocumentBranchMetadata          sync.RWMutex
-	lockUpdateDocumentParentID                sync.RWMutex
-	lockUpdateDocumentTree                    sync.RWMutex
-	lockUpsertDocumentMaintainers             sync.RWMutex
+	lockBeginTx                             sync.RWMutex
+	lockCheckDocumentCycle                  sync.RWMutex
+	lockCheckDocumentExists                 sync.RWMutex
+	lockCheckOrganizationMember             sync.RWMutex
+	lockCopyBranchTags                      sync.RWMutex
+	lockCountDocumentBranches               sync.RWMutex
+	lockDeleteBranchReviewer                sync.RWMutex
+	lockDeleteDocument                      sync.RWMutex
+	lockDeleteDocumentBranchByID            sync.RWMutex
+	lockDeleteDocumentCommentsByBranchID    sync.RWMutex
+	lockDetachDocumentHooksByBranchID       sync.RWMutex
+	lockFetchBranchReviewer                 sync.RWMutex
+	lockFetchBranchReviewers                sync.RWMutex
+	lockFetchDocument                       sync.RWMutex
+	lockFetchDocumentBranches               sync.RWMutex
+	lockFetchDocumentBranchesUnsafe         sync.RWMutex
+	lockFetchDocumentByBranchID             sync.RWMutex
+	lockFetchDocumentFile                   sync.RWMutex
+	lockFetchDocumentHooksByBranchID        sync.RWMutex
+	lockFetchDocumentHooksByDocumentID      sync.RWMutex
+	lockFetchDocumentMaintainers            sync.RWMutex
+	lockFetchDocumentTree                   sync.RWMutex
+	lockFetchDocumentTreeByDocumentParentID sync.RWMutex
+	lockFetchDocumentUnsafeByBranchID       sync.RWMutex
+	lockInsertBranchReviewer                sync.RWMutex
+	lockInsertDocument                      sync.RWMutex
+	lockInsertDocumentBranch                sync.RWMutex
+	lockInsertDocumentFile                  sync.RWMutex
+	lockInsertDocumentHook                  sync.RWMutex
+	lockInsertSearchJob                     sync.RWMutex
+	lockPromoteBranchApprovals              sync.RWMutex
+	lockRecordDocumentBranchHistoryEntry    sync.RWMutex
+	lockReplaceBranchTags                   sync.RWMutex
+	lockUpdateBranchReviewer                sync.RWMutex
+	lockUpdateDocument                      sync.RWMutex
+	lockUpdateDocumentBranchMetadata        sync.RWMutex
+	lockUpdateDocumentParentID              sync.RWMutex
+	lockUpdateDocumentTree                  sync.RWMutex
+	lockUpsertDocumentMaintainers           sync.RWMutex
 }
 
 // BeginTx calls BeginTxFunc.
@@ -2009,7 +1992,7 @@ func (mock *DBMock) PromoteBranchApprovalsCalls() []struct {
 }
 
 // RecordDocumentBranchHistoryEntry calls RecordDocumentBranchHistoryEntryFunc.
-func (mock *DBMock) RecordDocumentBranchHistoryEntry(ctx context.Context, branchID xid.ID, organizationID string, by null.String, boundary bool) (xid.ID, error) {
+func (mock *DBMock) RecordDocumentBranchHistoryEntry(ctx context.Context, branchID xid.ID, organizationID string, by null.String, boundary bool) error {
 	callInfo := struct {
 		Ctx            context.Context
 		BranchID       xid.ID
@@ -2028,10 +2011,9 @@ func (mock *DBMock) RecordDocumentBranchHistoryEntry(ctx context.Context, branch
 	mock.lockRecordDocumentBranchHistoryEntry.Unlock()
 	if mock.RecordDocumentBranchHistoryEntryFunc == nil {
 		var (
-			iDOut  xid.ID
 			errOut error
 		)
-		return iDOut, errOut
+		return errOut
 	}
 	return mock.RecordDocumentBranchHistoryEntryFunc(ctx, branchID, organizationID, by, boundary)
 }
@@ -2182,49 +2164,6 @@ func (mock *DBMock) UpdateDocumentCalls() []struct {
 	mock.lockUpdateDocument.RLock()
 	calls = mock.calls.UpdateDocument
 	mock.lockUpdateDocument.RUnlock()
-	return calls
-}
-
-// UpdateDocumentBranchHistoryEntryHooks calls UpdateDocumentBranchHistoryEntryHooksFunc.
-func (mock *DBMock) UpdateDocumentBranchHistoryEntryHooks(ctx context.Context, id xid.ID, hooks history.Hooks) error {
-	callInfo := struct {
-		Ctx   context.Context
-		ID    xid.ID
-		Hooks history.Hooks
-	}{
-		Ctx:   ctx,
-		ID:    id,
-		Hooks: hooks,
-	}
-	mock.lockUpdateDocumentBranchHistoryEntryHooks.Lock()
-	mock.calls.UpdateDocumentBranchHistoryEntryHooks = append(mock.calls.UpdateDocumentBranchHistoryEntryHooks, callInfo)
-	mock.lockUpdateDocumentBranchHistoryEntryHooks.Unlock()
-	if mock.UpdateDocumentBranchHistoryEntryHooksFunc == nil {
-		var (
-			errOut error
-		)
-		return errOut
-	}
-	return mock.UpdateDocumentBranchHistoryEntryHooksFunc(ctx, id, hooks)
-}
-
-// UpdateDocumentBranchHistoryEntryHooksCalls gets all the calls that were made to UpdateDocumentBranchHistoryEntryHooks.
-// Check the length with:
-//
-//	len(mockedDB.UpdateDocumentBranchHistoryEntryHooksCalls())
-func (mock *DBMock) UpdateDocumentBranchHistoryEntryHooksCalls() []struct {
-	Ctx   context.Context
-	ID    xid.ID
-	Hooks history.Hooks
-} {
-	var calls []struct {
-		Ctx   context.Context
-		ID    xid.ID
-		Hooks history.Hooks
-	}
-	mock.lockUpdateDocumentBranchHistoryEntryHooks.RLock()
-	calls = mock.calls.UpdateDocumentBranchHistoryEntryHooks
-	mock.lockUpdateDocumentBranchHistoryEntryHooks.RUnlock()
 	return calls
 }
 

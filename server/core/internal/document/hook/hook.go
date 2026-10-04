@@ -172,19 +172,14 @@ func NewHook(
 	return &h, nil
 }
 
-// CopyTo re-creates the hook on another branch with fresh state, anchored
-// to the given block. A copy within the hook's document keeps its
-// cross-branch ID; a copy into another document is a hook of its own. A
-// copy that cannot check its target yet is kept without state, and a
-// later run sets it up.
-func (h *Hook) CopyTo(
-	ctx context.Context,
-	documentID xid.ID,
-	branchID xid.ID,
-	blockID null.String,
-	organizationID string,
-	inp *Input,
-) (*Hook, error) {
+// NewCopy returns a copy of the hook for another branch, anchored to the
+// given block. It is initializing, with a null state, until its first run
+// sets it up, since the source's state can name the source's own watcher.
+// The score is copied, so that run does not announce a change the source
+// already had.
+// A copy within the hook's document keeps its cross-branch ID; a copy into
+// another document is a hook of its own.
+func (h *Hook) NewCopy(documentID, branchID xid.ID, blockID null.String) Hook {
 	id := xid.New()
 
 	cp := Hook{
@@ -192,10 +187,12 @@ func (h *Hook) CopyTo(
 		CrossBranchID:  id,
 		Type:           h.Type,
 		DocumentID:     null.ValueFrom(documentID),
-		OrganizationID: null.StringFrom(organizationID),
+		OrganizationID: h.OrganizationID,
 		BranchID:       null.ValueFrom(branchID),
 		BlockID:        blockID,
 		Settings:       h.Settings,
+		Status:         processor.StatusInitializing,
+		Score:          h.Score,
 		CreatedAt:      timeutil.Now(),
 	}
 
@@ -203,11 +200,7 @@ func (h *Hook) CopyTo(
 		cp.CrossBranchID = h.CrossBranchID
 	}
 
-	if err := cp.Reset(ctx, inp); err != nil {
-		return nil, err
-	}
-
-	return &cp, nil
+	return cp
 }
 
 // ApplyUpdate applies the new settings and resets the hook. It fails

@@ -82,7 +82,8 @@ func (m *Manager) BindHookChange(fn func(hook.Hook)) {
 	m.changeCallback = fn
 }
 
-// Start begins the periodic processing of document hooks.
+// Start begins the periodic processing of document hooks. A pass also sets
+// up the hooks a branch operation could not.
 func (m *Manager) Start(ctx context.Context) {
 	m.log.Info("starting")
 	defer m.log.Info("stopped")
@@ -99,6 +100,30 @@ func (m *Manager) Start(ctx context.Context) {
 		logutil.RecoveryValue(m.log, logutil.NewRecoveryPlan("recovered from a panic while processing document hooks")),
 		true,
 	).Start(ctx)
+}
+
+// SetUpBranch sets up the branch's hooks that are not set up yet, such as
+// the copies a branch operation just stored. A hook it cannot set up waits
+// for the next pass.
+func (m *Manager) SetUpBranch(ctx context.Context, branchID xid.ID, organizationID string) {
+	hooks, err := m.db.FetchDocumentHooksByBranchID(ctx, branchID, organizationID)
+	if err != nil {
+		m.log.With("branch_id", branchID).
+			With("error", err).
+			Error("fetching branch hooks")
+
+		return
+	}
+
+	ps := &ProcessingState{
+		Documents: make(map[xid.ID]*document.Document),
+	}
+
+	for _, h := range hooks {
+		if !h.State.Valid {
+			m.processHook(ctx, ps, h)
+		}
+	}
 }
 
 // ProcessingState holds the state during hook processing.
@@ -370,6 +395,9 @@ type DB interface {
 	// FetchDocumentHook should fetch the hook of the organization.
 	FetchDocumentHook(ctx context.Context, id xid.ID, organizationID string) (*hook.Hook, error)
 
+	// FetchDocumentHooksByBranchID should fetch the hooks of a branch.
+	FetchDocumentHooksByBranchID(ctx context.Context, branchID xid.ID, organizationID string) ([]hook.Hook, error)
+
 	// UpdateDocumentHook should update the given document hook in the database.
 	UpdateDocumentHook(ctx context.Context, hk hook.Hook) error
 
@@ -400,14 +428,25 @@ type Tx interface {
 	DeleteDocumentHook(ctx context.Context, id xid.ID) error
 
 	// RecordDocumentBranchHistoryEntry should record the branch as it
-	// stands, with its hooks, and return the id of the entry.
+	// stands, with its hooks.
 	RecordDocumentBranchHistoryEntry(
 		ctx context.Context,
 		branchID xid.ID,
 		organizationID string,
 		by null.String,
 		boundary bool,
-	) (xid.ID, error)
+	) error
+}
+
+// CopyTx is the part of a caller's transaction CopyHooks runs in.
+//
+//go:generate ../../../../scripts/codegen/mock -t internal CopyTx copy_tx
+type CopyTx interface {
+	// FetchDocumentHooksByBranchID should fetch the hooks of a branch.
+	FetchDocumentHooksByBranchID(ctx context.Context, branchID xid.ID, organizationID string) ([]hook.Hook, error)
+
+	// InsertDocumentHook should insert the document hook.
+	InsertDocumentHook(ctx context.Context, hk hook.Hook) error
 }
 
 // Flusher stores what the editors of a branch hold.
