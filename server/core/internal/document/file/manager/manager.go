@@ -232,7 +232,8 @@ type DB interface {
 	DeleteDocumentFile(ctx context.Context, id string) error
 
 	// DeleteExpiredDocumentBranchHistoryEntries should remove history
-	// entries created before the given time.
+	// entries created before the given time, except the newest entry of
+	// each branch.
 	DeleteExpiredDocumentBranchHistoryEntries(ctx context.Context, before time.Time) error
 }
 

@@ -785,10 +785,14 @@ func Test_agent_DeleteExpiredDocumentBranchHistoryEntries(t *testing.T) {
 	t.Parallel()
 
 	db := prepTempDB(t)
-	doc := prepDocuments(t, db, 1, nil)[0]
+	docs := prepDocuments(t, db, 2, nil)
+	doc, other := docs[0], docs[1]
 
 	entries := prepHistoryEntries(t, db, doc, 4)
 	require.Equal(t, 4, countHistoryEntries(t, db, doc.BranchID))
+
+	otherEntries := prepHistoryEntries(t, db, other, 2)
+	require.Equal(t, 2, countHistoryEntries(t, db, other.BranchID))
 
 	// nothing is old enough yet.
 	require.NoError(t, db.DeleteExpiredDocumentBranchHistoryEntries(
@@ -796,6 +800,7 @@ func Test_agent_DeleteExpiredDocumentBranchHistoryEntries(t *testing.T) {
 		entries[0].CreatedAt.Add(-time.Second),
 	))
 	assert.Equal(t, 4, countHistoryEntries(t, db, doc.BranchID))
+	assert.Equal(t, 2, countHistoryEntries(t, db, other.BranchID))
 
 	// everything created before the newest entry goes.
 	require.NoError(t, db.DeleteExpiredDocumentBranchHistoryEntries(
@@ -803,6 +808,22 @@ func Test_agent_DeleteExpiredDocumentBranchHistoryEntries(t *testing.T) {
 		entries[3].CreatedAt,
 	))
 	assert.Equal(t, 1, countHistoryEntries(t, db, doc.BranchID))
+
+	// each branch keeps its newest entry even once it has expired.
+	require.NoError(t, db.DeleteExpiredDocumentBranchHistoryEntries(
+		context.Background(),
+		entries[3].CreatedAt.Add(time.Hour),
+	))
+
+	var ids []xid.ID
+
+	q, args := db.builder.Select("id").
+		From("document_branch_history_entries").
+		Where(sq.Eq{"fk_branch_id": []xid.ID{doc.BranchID, other.BranchID}}).
+		MustSql()
+
+	require.NoError(t, db.sql.Select(&ids, q, args...))
+	assert.ElementsMatch(t, []xid.ID{entries[3].ID, otherEntries[1].ID}, ids)
 }
 
 func Test_agent_insertDocumentBranchHistoryEntry(t *testing.T) {

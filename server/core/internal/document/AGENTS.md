@@ -36,7 +36,7 @@ it, inside the transaction that wrote the branch when there is one.
   ones `copyHooksToBranch` created after the commit.
 - Entries pin the files they reference, so `DB_MAX_DOCUMENT_HISTORY_ENTRIES`
   and `DB_DOCUMENT_HISTORY_RETENTION` also decide how long a removed image
-  survives.
+  survives. Retention keeps each branch's newest entry.
 
 ## Files and hooks
 
