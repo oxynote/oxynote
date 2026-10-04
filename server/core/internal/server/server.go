@@ -371,8 +371,8 @@ type DB interface {
 type HookManager interface {
 	hook.Manager
 
-	// BindHookChange should set the function called with every hook a
-	// write stores, changes or deletes.
+	// BindHookChange should set the function called with every hook the
+	// manager stores, changes or deletes.
 	BindHookChange(fn func(hookCore.Hook))
 }
 

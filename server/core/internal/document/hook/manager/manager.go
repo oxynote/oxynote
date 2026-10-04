@@ -32,8 +32,8 @@ const (
 	// _hookRetentionDuration defines how long to retain inactive hooks.
 	_hookRetentionDuration = time.Hour * 24
 
-	// _hookTimeout bounds one hook write, and with it how long the hook's
-	// lock is held.
+	// _hookTimeout bounds one hook write or run, and with it how long the
+	// hook's lock is held.
 	_hookTimeout = time.Second * 30
 
 	// _teardownTimeout bounds tearing down a resource whose row was not
@@ -51,7 +51,7 @@ type Manager struct {
 	notifPub        notification.Publisher
 	changeCallback  func(hook.Hook)
 
-	// hookMu holds one lock per hook, taken by every write to it.
+	// hookMu holds one lock per hook, taken by every write and run of it.
 	hookMu *syncutil.KeyedMutex[xid.ID]
 }
 
@@ -76,8 +76,8 @@ func NewManager(
 	}
 }
 
-// BindHookChange sets the function called with every hook a write stores,
-// changes or deletes. Call it once, before any hook write.
+// BindHookChange sets the function called with every hook the manager
+// stores, changes or deletes. Call it once, before any hook write.
 func (m *Manager) BindHookChange(fn func(hook.Hook)) {
 	m.changeCallback = fn
 }
@@ -126,70 +126,171 @@ func (m *Manager) processHooks(ctx context.Context) error {
 		for _, h := range hooks {
 			ps.OffsetID = h.ID
 
-			// The hook was cut loose — its branch, document or whole
-			// organization was deleted, or a merge replaced the branch's
-			// hooks — and the row is the only trace left of it: tear down
-			// the external resource it holds before the row goes away with
-			// the last reference to it.
-			if !h.BranchID.Valid || !h.DocumentID.Valid || !h.OrganizationID.Valid {
-				m.deleteHook(ctx, &h)
-
-				continue
-			}
-
-			prev := h
-
-			ok := m.ensureHook(ctx, ps, &h)
-			if !ok {
-				continue
-			}
-
-			// a soft-deleted hook's block is gone from the document, so its
-			// score describes nothing and a zero-score notification would
-			// point at a block that no longer exists. The mark is still
-			// persisted — it starts the retention clock — and processing
-			// resumes when the block reappears and ensureHook clears it.
-			if h.SoftDeletedAt.Valid {
-				m.updateHook(ctx, h)
-
-				continue
-			}
-
-			err = h.Process(ctx, hook.NewInput(
-				h.OrganizationID.String,
-				m.githubMan,
-				m.webchangeClient,
-			))
-			if err != nil {
-				m.log.With("hook_id", h.ID).
-					With("error", err).
-					Error("processing document hook")
-
-				// a soft-deletion mark ensureHook just cleared for a
-				// reappeared block is persisted even here: leaving it stored
-				// would keep the retention clock running toward deleting a
-				// hook whose block is back.
-				m.updateHook(ctx, h)
-
-				continue
-			}
-
-			// a notification for a score that was not persisted would be
-			// published again on every cycle, since the next one recomputes
-			// the same transition from the same stored score.
-			if !m.updateHook(ctx, h) {
-				continue
-			}
-
-			m.notifyTransition(ctx, prev, h)
+			m.processHook(ctx, ps, h)
 		}
 
 		if len(hooks) < _processingBatch {
-			break
+			return nil
+		}
+	}
+}
+
+// processHook runs one hook, holding its lock. A hook a write holds is
+// waited for, within the hook's timeout.
+func (m *Manager) processHook(ctx context.Context, ps *ProcessingState, h hook.Hook) {
+	ctx, cancel := context.WithTimeout(ctx, _hookTimeout)
+	defer cancel()
+
+	unlock, err := m.hookMu.Lock(ctx, h.ID)
+	if err != nil {
+		m.log.With("hook_id", h.ID).
+			With("error", err).
+			Error("waiting for the hook's lock")
+
+		return
+	}
+
+	defer unlock()
+
+	// the row may have changed between the page read and the lock. A hook
+	// cut loose from its organization is out of any write's reach, so its
+	// row is as it was read.
+	if h.OrganizationID.Valid {
+		stored, err := m.db.FetchDocumentHook(ctx, h.ID, h.OrganizationID.String)
+		if err != nil {
+			if !errutil.IsNotFound(err) {
+				m.log.With("hook_id", h.ID).
+					With("error", err).
+					Error("fetching document hook")
+			}
+
+			return
+		}
+
+		h = *stored
+	}
+
+	// the branch, document or organization of the hook is gone.
+	gone := !h.BranchID.Valid || !h.DocumentID.Valid || !h.OrganizationID.Valid
+
+	var doc *document.Document
+
+	if !gone {
+		var ok bool
+
+		doc, ok = m.fetchDocument(ctx, ps, h)
+		if !ok {
+			return
+		}
+
+		gone = doc == nil || (h.SoftDeletedAt.Valid && h.SoftDeletedAt.Time.Before(timeutil.Now().Add(-_hookRetentionDuration)))
+	}
+
+	if gone {
+		if m.deleteHook(ctx, h) {
+			m.changeCallback(h)
+		}
+
+		return
+	}
+
+	prev := h
+
+	if !m.runHook(ctx, doc, &h) {
+		m.undoSetup(ctx, prev, h)
+
+		return
+	}
+
+	if h.ChangedFrom(prev) {
+		m.changeCallback(h)
+	}
+
+	m.notifyTransition(ctx, prev, h)
+}
+
+// runHook marks or lifts the hook's soft deletion, processes the hook and
+// stores the result. It reports whether the result was stored.
+func (m *Manager) runHook(ctx context.Context, doc *document.Document, h *hook.Hook) bool {
+	if h.BlockID.Valid {
+		hasBlock := doc.Content.HasBlock(h.BlockID.String)
+
+		if !hasBlock && !h.SoftDeletedAt.Valid {
+			h.SoftDeletedAt = null.TimeFrom(timeutil.Now())
+		} else if hasBlock && h.SoftDeletedAt.Valid {
+			h.SoftDeletedAt = null.Time{}
 		}
 	}
 
-	return nil
+	// a soft-deleted hook's block is gone, so its score describes nothing.
+	// The mark is still stored, since it starts the retention clock.
+	if !h.SoftDeletedAt.Valid {
+		if err := h.Process(ctx, m.input(h.OrganizationID.String)); err != nil {
+			// a transient failure keeps the stored state.
+			m.log.With("hook_id", h.ID).
+				With("error", err).
+				Error("processing document hook")
+		}
+	}
+
+	if err := m.db.UpdateDocumentHook(ctx, *h); err != nil {
+		m.log.With("hook_id", h.ID).
+			With("error", err).
+			Error("updating document hook")
+
+		return false
+	}
+
+	return true
+}
+
+// fetchDocument returns the hook's document, cached by branch. A
+// nil document means it is gone; false means it could not be read.
+func (m *Manager) fetchDocument(ctx context.Context, ps *ProcessingState, h hook.Hook) (*document.Document, bool) {
+	key := h.BranchID.V
+
+	if doc, ok := ps.Documents[key]; ok {
+		return doc, true
+	}
+
+	doc, err := m.db.FetchDocumentByBranchID(ctx, h.BranchID.V, h.OrganizationID.String)
+
+	switch {
+	case err == nil:
+		ps.Documents[key] = doc
+	case errutil.IsNotFound(err):
+		ps.Documents[key] = nil
+	default:
+		m.log.With("hook_id", h.ID).
+			With("error", err).
+			Error("fetching document for hook")
+
+		return nil, false
+	}
+
+	return ps.Documents[key], true
+}
+
+// deleteHook tears down the hook's external resource and then removes the
+// row. The row is the only record of the resource, so it goes last.
+func (m *Manager) deleteHook(ctx context.Context, h hook.Hook) bool {
+	if err := h.Delete(ctx, m.input(h.OrganizationID.String)); err != nil {
+		m.log.With("hook_id", h.ID).
+			With("error", err).
+			Error("deleting hook external resource")
+
+		return false
+	}
+
+	if err := m.db.DeleteDocumentHook(ctx, h.ID); err != nil {
+		m.log.With("hook_id", h.ID).
+			With("error", err).
+			Error("deleting hook from db")
+
+		return false
+	}
+
+	return true
 }
 
 // notifyTransition tells the document's maintainers when an active hook
@@ -230,93 +331,6 @@ func (m *Manager) notifyTransition(ctx context.Context, prev, h hook.Hook) {
 	}
 
 	m.notifPub.PublishNotifications(h.OrganizationID.String, core, maintainers...)
-}
-
-// ensureHook ensures the hook is valid and handles deletions if necessary.
-func (m *Manager) ensureHook(
-	ctx context.Context,
-	state *ProcessingState,
-	h *hook.Hook,
-) bool {
-	key := h.BranchID.V
-
-	doc, ok := state.Documents[key]
-	if !ok {
-		var err error
-
-		doc, err = m.db.FetchDocumentByBranchID(ctx, h.BranchID.V, h.OrganizationID.String)
-
-		switch {
-		case err == nil:
-			state.Documents[key] = doc
-		case errutil.IsNotFound(err):
-			state.Documents[key] = nil
-		default:
-			m.log.With("hook_id", h.ID).
-				With("error", err).
-				Error("fetching document for hook")
-
-			return false
-		}
-	}
-
-	if doc == nil || (h.SoftDeletedAt.Valid && h.SoftDeletedAt.Time.Before(timeutil.Now().Add(-_hookRetentionDuration))) {
-		m.deleteHook(ctx, h)
-
-		return false
-	}
-
-	if h.BlockID.Valid {
-		hasBlock := doc.Content.HasBlock(h.BlockID.String)
-
-		if !hasBlock && !h.SoftDeletedAt.Valid {
-			h.SoftDeletedAt = null.TimeFrom(timeutil.Now())
-		} else if hasBlock && h.SoftDeletedAt.Valid {
-			h.SoftDeletedAt = null.Time{}
-		}
-	}
-
-	return true
-}
-
-// deleteHook tears down the hook's external resource and then removes the
-// row describing it. The external teardown goes first: the row is the only
-// record of the resource, so dropping it first would strand the watcher
-// with nothing left to find it by.
-func (m *Manager) deleteHook(ctx context.Context, h *hook.Hook) {
-	err := h.Delete(ctx, hook.NewInput(
-		h.OrganizationID.String,
-		m.githubMan,
-		m.webchangeClient,
-	))
-	if err != nil {
-		m.log.With("hook_id", h.ID).
-			With("error", err).
-			Error("deleting hook external resource")
-
-		return
-	}
-
-	err = m.db.DeleteDocumentHook(ctx, h.ID)
-	if err != nil {
-		m.log.With("hook_id", h.ID).
-			With("error", err).
-			Error("deleting hook from db")
-	}
-}
-
-// updateHook persists the hook's current state and reports whether it stuck.
-func (m *Manager) updateHook(ctx context.Context, h hook.Hook) bool {
-	err := m.db.UpdateDocumentHook(ctx, h)
-	if err != nil {
-		m.log.With("hook_id", h.ID).
-			With("error", err).
-			Error("updating document hook")
-
-		return false
-	}
-
-	return true
 }
 
 // undoSetup tears down the resource h got when it was set up, since its
