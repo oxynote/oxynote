@@ -1,21 +1,16 @@
-// the message key for each code core refuses a hook write with.
+import { CONTAINER_IMAGE_WATCHER_ERROR_KEYS } from "./container-image-watcher/errors"
+import { GITHUB_TRACKING_ERROR_KEYS } from "./github-tracking/errors"
+import { URL_WATCHER_ERROR_KEYS } from "./url-watcher/errors"
+
+// the message key for each code core refuses a hook write with. The codes
+// listed here can come from a hook of any type.
 const HOOK_ERROR_KEYS: Record<string, string> = {
 	"document_hook.unconfigured": "editor.hooks.errors.codes.unconfigured",
-	"document_hook.missing_installation":
-		"editor.hooks.errors.codes.missing-installation",
-	"document_hook.missing_repository":
-		"editor.hooks.errors.codes.missing-repository",
-	"document_hook.missing_branch": "editor.hooks.errors.codes.missing-branch",
-	"document_hook.tree_truncated": "editor.hooks.errors.codes.tree-truncated",
-	"document_hook.unauthorized": "editor.hooks.errors.codes.unauthorized",
-	"document_hook.image_not_found": "editor.hooks.errors.codes.image-not-found",
-	"document_hook.invalid_url": "editor.hooks.errors.codes.invalid-url",
-	"document_hook.invalid_repository":
-		"editor.hooks.errors.codes.invalid-repository",
-	"document_hook.missing_paths": "editor.hooks.errors.codes.missing-paths",
-	"document_hook.invalid_image": "editor.hooks.errors.codes.invalid-image",
 	"document_hook.upstream_unavailable":
 		"editor.hooks.errors.codes.upstream-unavailable",
+	...GITHUB_TRACKING_ERROR_KEYS,
+	...CONTAINER_IMAGE_WATCHER_ERROR_KEYS,
+	...URL_WATCHER_ERROR_KEYS,
 }
 
 // hookErrorMessage returns the message for the code core refused a hook
