@@ -389,7 +389,8 @@
 					"invalid-url": "Enter a full website address starting with http:// or https://.",
 					"invalid-repository": "Select a GitHub repository.",
 					"missing-paths": "Select at least one file to track.",
-					"invalid-image": "The Docker image reference is not valid."
+					"invalid-image": "The Docker image reference is not valid.",
+					"upstream-unavailable": "The service this hook checks could not be reached. Please try again."
 				},
 				"create-failed": "Failed to create the hook. Please try again.",
 				"update-failed": "Failed to update the hook. Please try again.",

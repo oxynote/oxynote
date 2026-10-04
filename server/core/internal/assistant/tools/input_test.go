@@ -83,6 +83,7 @@ func testDeps(db *DBMock, applier *EditApplierMock, tree *TreeNotifierMock) *Dep
 		},
 		githubMan:       unconfiguredGithub(),
 		webchangeClient: webchange.NewClient("", ""),
+		hookMan:         stubHookManager(),
 		applier:         applier,
 		offload:         &offloadReaderMock{},
 		orgID:           "org",
@@ -394,10 +395,10 @@ func Test_NewDeps(t *testing.T) {
 		applier  = &EditApplierMock{}
 		tree     = &TreeNotifierMock{}
 		tags     = &TagNotifierMock{}
-		hooks    = &HookNotifierMock{}
 		offload  = &offloadReaderMock{}
 		gh       = unconfiguredGithub()
 		wc       = webchange.NewClient("", "")
+		hookMan  = &HookManagerMock{}
 	)
 
 	runners := &DataSourceRunnersMock{
@@ -406,7 +407,7 @@ func Test_NewDeps(t *testing.T) {
 
 	trigger := &SearchTriggerMock{}
 
-	d := NewDeps(discardLog(), db, searcher, trigger, runners, gh, wc, applier, tree, tags, hooks, offload, "org", "user")
+	d := NewDeps(discardLog(), db, searcher, trigger, runners, gh, wc, hookMan, applier, tree, tags, offload, "org", "user")
 	require.NotNil(t, d)
 
 	assert.NotNil(t, d.log)
@@ -416,10 +417,10 @@ func Test_NewDeps(t *testing.T) {
 	assert.Same(t, runners, d.runners)
 	assert.Same(t, gh, d.githubMan)
 	assert.Same(t, wc, d.webchangeClient)
+	assert.Same(t, hookMan, d.hookMan)
 	assert.Same(t, applier, d.applier)
 	assert.Same(t, tree, d.tree)
 	assert.Same(t, tags, d.tags)
-	assert.Same(t, hooks, d.hooks)
 	assert.Same(t, offload, d.offload)
 	assert.Equal(t, "org", d.orgID)
 	assert.Equal(t, "user", d.userID)
@@ -587,7 +588,7 @@ func Test_input_CreateDocument(t *testing.T) {
 
 			inp := testInput(testDeps(c.DB, nil, nil), NameCreateDocument, `{}`)
 
-			doc := document.Document{ID: xid.New(), ParentID: c.Parent}
+			doc := document.Document{ID: xid.New(), BranchID: xid.New(), ParentID: c.Parent}
 
 			err := inp.CreateDocument(doc)
 			testutil.AssertEqualError(t, c.Err, err)
@@ -734,8 +735,10 @@ func Test_input_recordTouched(t *testing.T) {
 	// order the call touched them is preserved.
 	inp.recordTouched(a, branch)
 
-	// nothing to record is not something to record.
+	// nothing to record is not something to record, and neither is a
+	// hook whose branch is gone.
 	inp.recordTouched(xid.NilID(), branch)
+	inp.recordTouched(a, xid.NilID())
 
 	assert.Equal(t, []Touched{{DocumentID: a, BranchID: branch}, {DocumentID: b, BranchID: branch}}, inp.touched)
 }
@@ -2242,22 +2245,6 @@ func Test_input_NotifyBranchTagsChange(t *testing.T) {
 	assert.Equal(t, _stubBranchID, ff[0].BranchID)
 }
 
-func Test_input_hookInput(t *testing.T) {
-	t.Parallel()
-
-	inp := testInput(testDeps(nil, nil, nil), NameCreateHook, `{}`)
-
-	got := inp.hookInput()
-	require.NotNil(t, got)
-
-	// the deployment has neither integration, and the input says so
-	// the way the processors ask.
-	assert.Same(t, inp.webchangeClient, got.ChangeDetection())
-
-	_, err := got.Github(context.Background())
-	assert.Equal(t, github.ErrNotConfigured, err)
-}
-
 func Test_input_FetchHooks(t *testing.T) {
 	t.Parallel()
 
@@ -2417,20 +2404,19 @@ func Test_input_CreateHook(t *testing.T) {
 
 	scheduled := processor.Settings(`{"scale":"linear","duration":"custom","schedule":"` + _stubSchedule + `"}`)
 
-	failing := stubHookDB()
-	failing.InsertDocumentHookFunc = func(context.Context, hook.Hook) error {
-		return assert.AnError
+	failing := stubHookManager()
+	failing.CreateHookFunc = func(context.Context, hook.CreateInput, xid.ID, string, string) (*hook.Hook, error) {
+		return nil, assert.AnError
 	}
 
 	cc := map[string]struct {
 		DB       *DBMock
+		Man      *HookManagerMock
 		Branch   xid.ID
 		BlockUID string
 		Type     hook.Type
 		Settings processor.Settings
 		Inserts  int
-		Notify   int
-		Records  int
 		Touched  []Touched
 		Err      error
 	}{
@@ -2447,13 +2433,14 @@ func Test_input_CreateHook(t *testing.T) {
 			BlockUID: "nope",
 			Type:     hook.TypeScheduledReminder,
 			Settings: scheduled,
+			Inserts:  1,
 			Err:      fmt.Errorf("block %s: %w", "nope", errUnknownBlock),
 		},
 		"GitHub tracking without the app": {
 			DB:       stubHookDB(),
 			Branch:   _stubBranchID,
 			Type:     hook.TypeGithubTracking,
-			Settings: processor.Settings(`{"repository":"o/r","branch":"main","paths":["a"]}`),
+			Settings: processor.Settings(`{"repository":"r","branch":"main","paths":["a"]}`),
 			Err:      fmt.Errorf("%s: %w", hook.TypeGithubTracking, github.ErrNotConfigured),
 		},
 		"URL watcher without changedetection": {
@@ -2468,15 +2455,17 @@ func Test_input_CreateHook(t *testing.T) {
 			Branch:   _stubBranchID,
 			Type:     hook.TypeScheduledReminder,
 			Settings: processor.Settings(`{"scale":"bogus"}`),
+			Inserts:  1,
 			Err:      processor.ErrInvalidScaleType,
 		},
-		"Error returned by db.InsertDocumentHook": {
-			DB:       failing,
+		"Error returned by hookMan.CreateHook": {
+			DB:       stubHookDB(),
+			Man:      failing,
 			Branch:   _stubBranchID,
 			Type:     hook.TypeScheduledReminder,
 			Settings: scheduled,
 			Inserts:  1,
-			Err:      fmt.Errorf("insert: %w", assert.AnError),
+			Err:      assert.AnError,
 		},
 		"Created on the document": {
 			DB:       stubHookDB(),
@@ -2484,8 +2473,6 @@ func Test_input_CreateHook(t *testing.T) {
 			Type:     hook.TypeScheduledReminder,
 			Settings: scheduled,
 			Inserts:  1,
-			Notify:   1,
-			Records:  1,
 			Touched:  []Touched{{DocumentID: _testDocID, BranchID: _stubBranchID}},
 		},
 		"Created on a block": {
@@ -2495,8 +2482,6 @@ func Test_input_CreateHook(t *testing.T) {
 			Type:     hook.TypeScheduledReminder,
 			Settings: scheduled,
 			Inserts:  1,
-			Notify:   1,
-			Records:  1,
 			Touched:  []Touched{{DocumentID: _testDocID, BranchID: _stubBranchID}},
 		},
 	}
@@ -2505,26 +2490,20 @@ func Test_input_CreateHook(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			d, hooks := hookDeps(c.DB)
+			d := hookDeps(c.DB, c.Man)
 			inp := testInput(d, NameCreateHook, `{}`)
 
 			hk, err := inp.CreateHook(_testDocID, c.Branch, c.BlockUID, c.Type, c.Settings)
 			testutil.AssertEqualError(t, c.Err, err)
 
-			ff := c.DB.InsertDocumentHookCalls()
+			ff := d.hookMan.(*HookManagerMock).CreateHookCalls()
 			require.Len(t, ff, c.Inserts)
-			assert.Len(t, hooks.NotifyHooksChangeCalls(), c.Notify)
+
 			assert.Equal(t, c.Touched, inp.touched)
 
-			// a hook write that landed is recorded in the branch history,
-			// credited to the user the assistant acts for.
-			assert.Len(t, c.DB.RecordDocumentBranchHistoryEntryCalls(), c.Records)
-
-			for _, call := range c.DB.RecordDocumentBranchHistoryEntryCalls() {
-				assert.Equal(t, _stubBranchID, call.BranchID)
-				assert.Equal(t, "org", call.OrganizationID)
-				assert.Equal(t, null.StringFrom(inp.UserID()), call.By)
-				assert.False(t, call.Boundary)
+			// the write is credited to the user the assistant acts for.
+			for _, call := range ff {
+				assert.Equal(t, inp.UserID(), call.UpdatedBy)
 			}
 
 			if err != nil {
@@ -2532,7 +2511,9 @@ func Test_input_CreateHook(t *testing.T) {
 				return
 			}
 
-			assert.Equal(t, *hk, ff[0].Hk)
+			assert.Equal(t, c.Type, ff[0].Ci.Type)
+			assert.Equal(t, _testDocID, ff[0].DocumentID)
+			assert.Equal(t, "org", ff[0].OrganizationID)
 			assert.Equal(t, c.Type, hk.Type)
 			assert.Equal(t, null.ValueFrom(_testDocID), hk.DocumentID)
 			assert.Equal(t, null.ValueFrom(c.Branch), hk.BranchID)
@@ -2540,7 +2521,7 @@ func Test_input_CreateHook(t *testing.T) {
 			assert.Equal(t, null.NewString(c.BlockUID, c.BlockUID != ""), hk.BlockID)
 			assert.Equal(t, c.Settings, hk.Settings)
 			assert.Equal(t, "100", hk.Score.String())
-			assert.NotEmpty(t, hk.State)
+			assert.True(t, hk.State.Valid)
 		})
 	}
 }
@@ -2548,37 +2529,36 @@ func Test_input_CreateHook(t *testing.T) {
 func Test_input_UpdateHook(t *testing.T) {
 	t.Parallel()
 
-	failing := stubHookDB()
-	failing.UpdateDocumentHookFunc = func(context.Context, hook.Hook) error {
-		return assert.AnError
+	failing := stubHookManager()
+	failing.UpdateHookFunc = func(context.Context, xid.ID, string, hook.UpdateInput, string) (*hook.Hook, error) {
+		return nil, assert.AnError
 	}
 
 	cc := map[string]struct {
 		DB       *DBMock
+		Man      *HookManagerMock
 		Settings processor.Settings
 		Updates  int
-		Notify   int
-		Records  int
 		Touched  []Touched
 		Err      error
 	}{
 		"Settings the processor refuses": {
 			DB:       stubHookDB(),
 			Settings: processor.Settings(`{"scale":"bogus"}`),
+			Updates:  1,
 			Err:      processor.ErrInvalidScaleType,
 		},
-		"Error returned by db.UpdateDocumentHook": {
-			DB:       failing,
+		"Error returned by hookMan.UpdateHook": {
+			DB:       stubHookDB(),
+			Man:      failing,
 			Settings: processor.Settings(`{"scale":"linear","duration":"custom","schedule":"2031-01-01T00:00:00Z"}`),
 			Updates:  1,
-			Err:      fmt.Errorf("update: %w", assert.AnError),
+			Err:      assert.AnError,
 		},
 		"Updated and recorded": {
 			DB:       stubHookDB(),
 			Settings: processor.Settings(`{"scale":"linear","duration":"custom","schedule":"2031-01-01T00:00:00Z"}`),
 			Updates:  1,
-			Notify:   1,
-			Records:  1,
 			Touched:  []Touched{{DocumentID: _testDocID, BranchID: _stubBranchID}},
 		},
 	}
@@ -2587,36 +2567,30 @@ func Test_input_UpdateHook(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			d, hooks := hookDeps(c.DB)
+			d := hookDeps(c.DB, c.Man)
 			inp := testInput(d, NameUpdateHook, `{}`)
 			hk := stubHook()
 
 			err := inp.UpdateHook(hk, c.Settings)
 			testutil.AssertEqualError(t, c.Err, err)
 
-			ff := c.DB.UpdateDocumentHookCalls()
+			ff := d.hookMan.(*HookManagerMock).UpdateHookCalls()
 			require.Len(t, ff, c.Updates)
-			assert.Len(t, hooks.NotifyHooksChangeCalls(), c.Notify)
 			assert.Equal(t, c.Touched, inp.touched)
 
-			// a hook write that landed is recorded in the branch history,
-			// credited to the user the assistant acts for.
-			assert.Len(t, c.DB.RecordDocumentBranchHistoryEntryCalls(), c.Records)
-
-			for _, call := range c.DB.RecordDocumentBranchHistoryEntryCalls() {
-				assert.Equal(t, _stubBranchID, call.BranchID)
-				assert.Equal(t, "org", call.OrganizationID)
-				assert.Equal(t, null.StringFrom(inp.UserID()), call.By)
-				assert.False(t, call.Boundary)
+			// the write is credited to the user the assistant acts for.
+			for _, call := range ff {
+				assert.Equal(t, inp.UserID(), call.UpdatedBy)
 			}
 
 			if err != nil {
 				return
 			}
 
-			// the hook handed in is the one written, with the settings
+			// the hook handed in takes the stored one, with the settings
 			// replaced and a fresh state.
-			assert.Equal(t, *hk, ff[0].Hk)
+			assert.Equal(t, hk.ID, ff[0].ID)
+			assert.Equal(t, "org", ff[0].OrganizationID)
 			assert.Equal(t, c.Settings, hk.Settings)
 			assert.NotContains(t, string(hk.State.V), "2026-01-01")
 			assert.True(t, hk.UpdatedAt.Valid)
@@ -2627,9 +2601,9 @@ func Test_input_UpdateHook(t *testing.T) {
 func Test_input_ResetHook(t *testing.T) {
 	t.Parallel()
 
-	failing := stubHookDB()
-	failing.UpdateDocumentHookFunc = func(context.Context, hook.Hook) error {
-		return assert.AnError
+	failing := stubHookManager()
+	failing.ResetHookFunc = func(context.Context, xid.ID, string) (*hook.Hook, error) {
+		return nil, assert.AnError
 	}
 
 	invalid := stubHook()
@@ -2637,28 +2611,30 @@ func Test_input_ResetHook(t *testing.T) {
 
 	cc := map[string]struct {
 		DB      *DBMock
+		Man     *HookManagerMock
 		Hook    *hook.Hook
 		Updates int
-		Notify  int
 		Touched []Touched
 		Err     error
 	}{
 		"Settings that do not decode": {
-			DB:   stubHookDB(),
-			Hook: invalid,
-			Err:  assert.AnError,
+			DB:      stubHookDB(),
+			Man:     stubHookManager(invalid),
+			Hook:    invalid,
+			Updates: 1,
+			Err:     assert.AnError,
 		},
-		"Error returned by db.UpdateDocumentHook": {
-			DB:      failing,
+		"Error returned by hookMan.ResetHook": {
+			DB:      stubHookDB(),
+			Man:     failing,
 			Hook:    stubHook(),
 			Updates: 1,
-			Err:     fmt.Errorf("update: %w", assert.AnError),
+			Err:     assert.AnError,
 		},
 		"Reset and recorded": {
 			DB:      stubHookDB(),
 			Hook:    stubHook(),
 			Updates: 1,
-			Notify:  1,
 			Touched: []Touched{{DocumentID: _testDocID, BranchID: _stubBranchID}},
 		},
 	}
@@ -2667,27 +2643,22 @@ func Test_input_ResetHook(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			d, hooks := hookDeps(c.DB)
+			d := hookDeps(c.DB, c.Man)
 			inp := testInput(d, NameResetHook, `{}`)
 
 			err := inp.ResetHook(c.Hook)
 			testutil.AssertEqualError(t, c.Err, err)
 
-			ff := c.DB.UpdateDocumentHookCalls()
+			ff := d.hookMan.(*HookManagerMock).ResetHookCalls()
 			require.Len(t, ff, c.Updates)
-			assert.Len(t, hooks.NotifyHooksChangeCalls(), c.Notify)
 			assert.Equal(t, c.Touched, inp.touched)
-
-			// a reset changes only watcher state, which history does not
-			// hold.
-			assert.Empty(t, c.DB.RecordDocumentBranchHistoryEntryCalls())
 
 			if err != nil {
 				return
 			}
 
 			// the settings stay; only the state starts over.
-			assert.Equal(t, *c.Hook, ff[0].Hk)
+			assert.Equal(t, c.Hook.ID, ff[0].ID)
 			assert.Equal(t, stubHook().Settings, c.Hook.Settings)
 			assert.NotContains(t, string(c.Hook.State.V), "2026-01-01")
 		})
@@ -2697,8 +2668,8 @@ func Test_input_ResetHook(t *testing.T) {
 func Test_input_DeleteHook(t *testing.T) {
 	t.Parallel()
 
-	failing := stubHookDB()
-	failing.DeleteDocumentHookFunc = func(context.Context, xid.ID) error {
+	failing := stubHookManager()
+	failing.DeleteHookFunc = func(context.Context, xid.ID, string, string) error {
 		return assert.AnError
 	}
 
@@ -2711,30 +2682,30 @@ func Test_input_DeleteHook(t *testing.T) {
 
 	cc := map[string]struct {
 		DB      *DBMock
+		Man     *HookManagerMock
 		Hook    *hook.Hook
 		Deletes int
-		Notify  int
-		Records int
 		Touched []Touched
 		Err     error
 	}{
 		"External teardown failed": {
-			DB:   stubHookDB(),
-			Hook: watcher,
-			Err:  assert.AnError,
+			DB:      stubHookDB(),
+			Man:     stubHookManager(watcher),
+			Hook:    watcher,
+			Deletes: 1,
+			Err:     assert.AnError,
 		},
-		"Error returned by db.DeleteDocumentHook": {
-			DB:      failing,
+		"Error returned by hookMan.DeleteHook": {
+			DB:      stubHookDB(),
+			Man:     failing,
 			Hook:    stubHook(),
 			Deletes: 1,
-			Err:     fmt.Errorf("delete: %w", assert.AnError),
+			Err:     assert.AnError,
 		},
 		"Deleted and recorded": {
 			DB:      stubHookDB(),
 			Hook:    stubHook(),
 			Deletes: 1,
-			Notify:  1,
-			Records: 1,
 			Touched: []Touched{{DocumentID: _testDocID, BranchID: _stubBranchID}},
 		},
 	}
@@ -2743,26 +2714,19 @@ func Test_input_DeleteHook(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			d, hooks := hookDeps(c.DB)
+			d := hookDeps(c.DB, c.Man)
 			inp := testInput(d, NameDeleteHook, `{}`)
 
 			err := inp.DeleteHook(c.Hook)
 			testutil.AssertEqualError(t, c.Err, err)
 
-			ff := c.DB.DeleteDocumentHookCalls()
+			ff := d.hookMan.(*HookManagerMock).DeleteHookCalls()
 			require.Len(t, ff, c.Deletes)
-			assert.Len(t, hooks.NotifyHooksChangeCalls(), c.Notify)
 			assert.Equal(t, c.Touched, inp.touched)
 
-			// a hook write that landed is recorded in the branch history,
-			// credited to the user the assistant acts for.
-			assert.Len(t, c.DB.RecordDocumentBranchHistoryEntryCalls(), c.Records)
-
-			for _, call := range c.DB.RecordDocumentBranchHistoryEntryCalls() {
-				assert.Equal(t, _stubBranchID, call.BranchID)
-				assert.Equal(t, "org", call.OrganizationID)
-				assert.Equal(t, null.StringFrom(inp.UserID()), call.By)
-				assert.False(t, call.Boundary)
+			// the write is credited to the user the assistant acts for.
+			for _, call := range ff {
+				assert.Equal(t, inp.UserID(), call.UpdatedBy)
 			}
 
 			if err != nil {
@@ -2770,114 +2734,6 @@ func Test_input_DeleteHook(t *testing.T) {
 			}
 
 			assert.Equal(t, _testHookID, ff[0].ID)
-		})
-	}
-}
-
-func Test_input_recordHookHistory(t *testing.T) {
-	t.Parallel()
-
-	branchless := stubHook()
-	branchless.BranchID = null.Value[xid.ID]{}
-
-	cc := map[string]struct {
-		Hook    *hook.Hook
-		Err     error
-		Records int
-		Log     string
-	}{
-		"Hook whose branch is gone": {Hook: branchless},
-		// the hook write is already done, so the failure is logged
-		// rather than returned.
-		"Error returned by db.RecordDocumentBranchHistoryEntry": {
-			Hook:    stubHook(),
-			Err:     assert.AnError,
-			Records: 1,
-			Log:     "cannot record the hook change in the branch history",
-		},
-		"Successful record": {Hook: stubHook(), Records: 1},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			db := &DBMock{
-				RecordDocumentBranchHistoryEntryFunc: func(context.Context, xid.ID, string, null.String, bool) (xid.ID, error) {
-					return xid.New(), c.Err
-				},
-			}
-
-			var buf bytes.Buffer
-
-			d := testDeps(db, nil, nil)
-			d.log = slog.New(slog.NewTextHandler(&buf, nil))
-
-			inp := testInput(d, NameDeleteHook, `{}`)
-			inp.recordHookHistory(c.Hook)
-
-			assert.Len(t, db.RecordDocumentBranchHistoryEntryCalls(), c.Records)
-
-			if c.Log == "" {
-				assert.NotContains(t, buf.String(), "level=ERROR")
-				return
-			}
-
-			assert.Contains(t, buf.String(), c.Log)
-		})
-	}
-}
-
-func Test_input_hookChanged(t *testing.T) {
-	t.Parallel()
-
-	branchless := stubHook()
-	branchless.BranchID = null.Value[xid.ID]{}
-
-	cc := map[string]struct {
-		Hook     *hook.Hook
-		Notifier bool
-		Notify   int
-		Touched  []Touched
-	}{
-		// a hook whose branch is gone has no branch to link to; the
-		// notifier is told and decides for itself.
-		"Hook whose branch is gone": {Hook: branchless, Notifier: true, Notify: 1},
-		"Without a notifier":        {Hook: stubHook(), Touched: []Touched{{DocumentID: _testDocID, BranchID: _stubBranchID}}},
-		"With a notifier": {
-			Hook:     stubHook(),
-			Notifier: true,
-			Notify:   1,
-			Touched:  []Touched{{DocumentID: _testDocID, BranchID: _stubBranchID}},
-		},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			d := testDeps(nil, nil, nil)
-			hooks := &HookNotifierMock{}
-
-			if c.Notifier {
-				d.hooks = hooks
-			}
-
-			inp := testInput(d, NameResetHook, `{}`)
-			inp.hookChanged(c.Hook)
-
-			assert.Equal(t, c.Touched, inp.touched)
-
-			ff := hooks.NotifyHooksChangeCalls()
-			require.Len(t, ff, c.Notify)
-
-			if c.Notify == 0 {
-				return
-			}
-
-			assert.Equal(t, "org", ff[0].OrganizationID)
-			assert.Equal(t, c.Hook.DocumentID, ff[0].DocumentID)
-			assert.Equal(t, c.Hook.BranchID, ff[0].BranchID)
 		})
 	}
 }

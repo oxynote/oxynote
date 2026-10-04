@@ -5,6 +5,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -33,6 +37,60 @@ func (f *fakePublisher) PublishNotifications(organizationID string, core notific
 	f.organizationIDs = append(f.organizationIDs, organizationID)
 	f.codes = append(f.codes, core.Code)
 	f.userIDs = append(f.userIDs, userIDs)
+}
+
+// changeRecorder records the hooks a manager announces as changed.
+type changeRecorder struct {
+	hooks []hook.Hook
+}
+
+func (r *changeRecorder) record(h hook.Hook) {
+	r.hooks = append(r.hooks, h)
+}
+
+// fakeChangeDetection is a changedetection.io server that creates the
+// watcher "w-new" and records the watchers it deletes.
+type fakeChangeDetection struct {
+	mu sync.Mutex
+
+	deleted []string
+}
+
+// newFakeChangeDetection starts a fake changedetection.io server and
+// returns a client for it.
+func newFakeChangeDetection(t *testing.T) (*fakeChangeDetection, *webchange.Client) {
+	t.Helper()
+
+	f := &fakeChangeDetection{}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			w.WriteHeader(http.StatusCreated)
+
+			_, err := w.Write([]byte(`{"uuid":"w-new"}`))
+			assert.NoError(t, err)
+		case http.MethodDelete:
+			f.mu.Lock()
+			f.deleted = append(f.deleted, strings.TrimPrefix(r.URL.Path, "/api/v1/watch/"))
+			f.mu.Unlock()
+
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	return f, webchange.NewClient(srv.URL, "key")
+}
+
+// deletedWatchers returns the watchers the server deleted.
+func (f *fakeChangeDetection) deletedWatchers() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return f.deleted
 }
 
 // stubHook builds a scheduled-reminder hook attached to the given branch,
@@ -78,13 +136,17 @@ func stubDocument() *document.Document {
 
 // newTestManager creates a Manager with unconfigured GitHub and
 // changedetection clients and the given mocks.
-func newTestManager(t *testing.T, db *DBMock, pub *fakePublisher) *Manager {
+func newTestManager(t *testing.T, db *DBMock, pub *fakePublisher, wc *webchange.Client) *Manager {
 	t.Helper()
 
 	githubMan, err := github.NewManager(nil, github.Options{})
 	require.NoError(t, err)
 
-	return NewManager(slog.New(slog.DiscardHandler), db, githubMan, webchange.NewClient("", ""), pub)
+	if wc == nil {
+		wc = webchange.NewClient("", "")
+	}
+
+	return NewManager(slog.New(slog.DiscardHandler), db, &FlusherMock{}, githubMan, wc, pub)
 }
 
 // urlWatcherHook builds a url-watcher hook that already holds a
@@ -120,7 +182,7 @@ func Test_Manager_Start(t *testing.T) {
 		},
 	}
 
-	man := newTestManager(t, db, &fakePublisher{})
+	man := newTestManager(t, db, &fakePublisher{}, nil)
 
 	stopped := make(chan struct{})
 
@@ -557,7 +619,7 @@ func Test_Manager_processHooks(t *testing.T) {
 
 			pub := &fakePublisher{}
 
-			err := newTestManager(t, db, pub).processHooks(context.Background())
+			err := newTestManager(t, db, pub, nil).processHooks(context.Background())
 
 			for _, ch := range tc.Checks {
 				ch(t, db, pub, err)

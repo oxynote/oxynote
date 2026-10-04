@@ -80,7 +80,7 @@ func Test_NewServer(t *testing.T) {
 	githubMan, err := github.NewManager(nil, github.Options{})
 	require.NoError(t, err)
 
-	assistantMan := assistantCore.NewManager(log, nil, &redis.Pool{}, nil, nil, fc, nil, nil, stubSearchTrigger{}, nil, githubMan, nil, "claude")
+	assistantMan := assistantCore.NewManager(log, nil, &redis.Pool{}, nil, nil, fc, nil, nil, stubSearchTrigger{}, nil, githubMan, nil, nil, "claude")
 
 	slackMan, err := slack.NewManager(log, nil, nil, nil, nil, slack.Options{})
 	require.NoError(t, err)
@@ -104,6 +104,7 @@ func Test_NewServer(t *testing.T) {
 			githubMan,
 			slackMan,
 			webchange.NewClient("", ""),
+			&HookManagerMock{},
 			stubSearcher{},
 			stubSearchTrigger{},
 			notifier,
@@ -132,12 +133,13 @@ func Test_NewServer(t *testing.T) {
 			// a manager of this subtest's own: NewServer calls
 			// SetTreeNotifier, which must not race the parallel
 			// success case's identical call on a shared manager.
-			assistantCore.NewManager(log, nil, &redis.Pool{}, nil, nil, fc, nil, nil, stubSearchTrigger{}, nil, githubMan, nil, "claude"),
+			assistantCore.NewManager(log, nil, &redis.Pool{}, nil, nil, fc, nil, nil, stubSearchTrigger{}, nil, githubMan, nil, nil, "claude"),
 			datasourceCore.NewManager(log, nil),
 			nil,
 			githubMan,
 			slackMan,
 			webchange.NewClient("", ""),
+			&HookManagerMock{},
 			stubSearcher{},
 			stubSearchTrigger{},
 			notifier,
@@ -172,6 +174,7 @@ func Test_NewServer(t *testing.T) {
 			githubMan,
 			slackMan,
 			webchange.NewClient("", ""),
+			&HookManagerMock{},
 			stubSearcher{},
 			stubSearchTrigger{},
 			notifier,
@@ -231,12 +234,13 @@ func Test_NewServer(t *testing.T) {
 			db,
 			fc,
 			storer,
-			assistantCore.NewManager(log, nil, &redis.Pool{}, nil, nil, fc, nil, nil, stubSearchTrigger{}, nil, githubMan, nil, "claude"),
+			assistantCore.NewManager(log, nil, &redis.Pool{}, nil, nil, fc, nil, nil, stubSearchTrigger{}, nil, githubMan, nil, nil, "claude"),
 			datasourceCore.NewManager(log, nil),
 			nil,
 			githubMan,
 			slackMan,
 			webchange.NewClient("http://changedetection.test", ""),
+			&HookManagerMock{},
 			stubSearcher{},
 			stubSearchTrigger{},
 			notifier,

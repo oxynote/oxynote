@@ -19,14 +19,65 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// hookDeps builds session wiring over the given DB with a hook notifier
-// attached, so a test can assert the broadcast a hook write ends with.
-func hookDeps(db *DBMock) (*Deps, *HookNotifierMock) {
+// hookDeps builds session wiring over the given DB. A nil man keeps the
+// stub hook manager testDeps wires.
+func hookDeps(db *DBMock, man *HookManagerMock) *Deps {
 	d := testDeps(db, nil, nil)
-	hooks := &HookNotifierMock{}
-	d.hooks = hooks
 
-	return d, hooks
+	if man != nil {
+		d.hookMan = man
+	}
+
+	return d
+}
+
+// stubHookManager runs every hook write the way the hook manager does,
+// leaving out the database: a write reads a copy of the stored hook, which
+// is stored when given and stubHook otherwise.
+func stubHookManager(stored ...*hook.Hook) *HookManagerMock {
+	inp := func(organizationID string) *hook.Input {
+		return hook.NewInput(organizationID, unconfiguredGithub(), webchange.NewClient("", ""))
+	}
+
+	lookup := func() *hook.Hook {
+		if len(stored) > 0 {
+			hk := *stored[0]
+
+			return &hk
+		}
+
+		return stubHook()
+	}
+
+	return &HookManagerMock{
+		CreateHookFunc: func(ctx context.Context, ci hook.CreateInput, documentID xid.ID, organizationID, _ string) (*hook.Hook, error) {
+			// the manager refuses a block the branch does not hold.
+			if ci.BlockID.Valid && ci.BlockID.String != _stubContentUID {
+				return nil, hook.ErrBlockNotFound
+			}
+
+			return hook.NewHook(ctx, ci, documentID, ci.BranchID, organizationID, inp(organizationID))
+		},
+		UpdateHookFunc: func(ctx context.Context, _ xid.ID, organizationID string, ui hook.UpdateInput, _ string) (*hook.Hook, error) {
+			hk := lookup()
+			if err := hk.ApplyUpdate(ctx, ui, inp(organizationID)); err != nil {
+				return nil, err
+			}
+
+			return hk, nil
+		},
+		DeleteHookFunc: func(ctx context.Context, _ xid.ID, organizationID, _ string) error {
+			return lookup().Delete(ctx, inp(organizationID))
+		},
+		ResetHookFunc: func(ctx context.Context, _ xid.ID, organizationID string) (*hook.Hook, error) {
+			hk := lookup()
+			if err := hk.Reset(ctx, inp(organizationID)); err != nil {
+				return nil, err
+			}
+
+			return hk, nil
+		},
+	}
 }
 
 // stubHookDB answers every document and hook lookup: the branch content
@@ -142,20 +193,20 @@ func Test_decodeHookSettings(t *testing.T) {
 			Err: errRequired("schedule"),
 		},
 		"GitHub tracking": {
-			Raw:    `{"type":"github-tracking","repository":"o/r","branch":"main","paths":["a","b"]}`,
+			Raw:    `{"type":"github-tracking","repository":"r","branch":"main","paths":["a","b"]}`,
 			Type:   hook.TypeGithubTracking,
-			Result: `{"repository":"o/r","branch":"main","paths":["a","b"]}`,
+			Result: `{"repository":"r","branch":"main","paths":["a","b"]}`,
 		},
 		"GitHub tracking without a repository": {
 			Raw: `{"type":"github-tracking","branch":"main","paths":["a"]}`,
 			Err: errRequired("repository"),
 		},
 		"GitHub tracking without a branch": {
-			Raw: `{"type":"github-tracking","repository":"o/r","paths":["a"]}`,
+			Raw: `{"type":"github-tracking","repository":"r","paths":["a"]}`,
 			Err: errRequired("branch"),
 		},
 		"GitHub tracking without paths": {
-			Raw: `{"type":"github-tracking","repository":"o/r","branch":"main","paths":[]}`,
+			Raw: `{"type":"github-tracking","repository":"r","branch":"main","paths":[]}`,
 			Err: errRequired("paths"),
 		},
 		"URL watcher": {
@@ -468,16 +519,16 @@ func Test_createHook_Execute(t *testing.T) {
 
 	scheduled := `"settings":{"type":"scheduled-reminder","schedule":"` + _stubSchedule + `"}`
 
-	failing := stubHookDB()
-	failing.InsertDocumentHookFunc = func(context.Context, hook.Hook) error {
-		return assert.AnError
+	failing := stubHookManager()
+	failing.CreateHookFunc = func(context.Context, hook.CreateInput, xid.ID, string, string) (*hook.Hook, error) {
+		return nil, assert.AnError
 	}
 
 	cc := map[string]struct {
 		DB       *DBMock
+		Man      *HookManagerMock
 		Args     string
 		BlockUID null.String
-		Notify   int
 		Err      error
 	}{
 		"Malformed arguments": {DB: stubHookDB(), Args: `{`, Err: assert.AnError},
@@ -504,7 +555,7 @@ func Test_createHook_Execute(t *testing.T) {
 		},
 		"GitHub tracking without the app": {
 			DB:   stubHookDB(),
-			Args: `{` + targetArgs(_stubBranchID) + `,"settings":{"type":"github-tracking","repository":"o/r","branch":"main","paths":["a"]}}`,
+			Args: `{` + targetArgs(_stubBranchID) + `,"settings":{"type":"github-tracking","repository":"r","branch":"main","paths":["a"]}}`,
 			Err:  fmt.Errorf("create_hook: %w", fmt.Errorf("%s: %w", hook.TypeGithubTracking, github.ErrNotConfigured)),
 		},
 		"URL watcher without changedetection": {
@@ -512,21 +563,20 @@ func Test_createHook_Execute(t *testing.T) {
 			Args: `{` + targetArgs(_stubBranchID) + `,"settings":{"type":"url-watcher","url":"https://example.com"}}`,
 			Err:  fmt.Errorf("create_hook: %w", fmt.Errorf("%s: %w", hook.TypeURLWatcher, webchange.ErrNotConfigured)),
 		},
-		"Error returned by db.InsertDocumentHook": {
-			DB:   failing,
+		"Error returned by hookMan.CreateHook": {
+			DB:   stubHookDB(),
+			Man:  failing,
 			Args: `{` + targetArgs(_stubBranchID) + `,` + scheduled + `}`,
 			Err:  assert.AnError,
 		},
 		"Created on the document": {
-			DB:     stubHookDB(),
-			Args:   `{` + targetArgs(_stubBranchID) + `,` + scheduled + `}`,
-			Notify: 1,
+			DB:   stubHookDB(),
+			Args: `{` + targetArgs(_stubBranchID) + `,` + scheduled + `}`,
 		},
 		"Created on a block": {
 			DB:       stubHookDB(),
 			Args:     `{` + targetArgs(_stubBranchID) + `,` + scheduled + `,"block_uid":"` + _stubContentUID + `"}`,
 			BlockUID: null.StringFrom(_stubContentUID),
-			Notify:   1,
 		},
 	}
 
@@ -534,39 +584,32 @@ func Test_createHook_Execute(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			d, hooks := hookDeps(c.DB)
+			d := hookDeps(c.DB, c.Man)
 			inp := testInput(d, NameCreateHook, c.Args)
 
 			res, err := createHook{}.Execute(inp)
 			testutil.AssertEqualError(t, c.Err, err)
 
-			assert.Len(t, hooks.NotifyHooksChangeCalls(), c.Notify)
-
 			if err != nil {
 				return
 			}
 
-			ff := c.DB.InsertDocumentHookCalls()
+			ff := d.hookMan.(*HookManagerMock).CreateHookCalls()
 			require.Len(t, ff, 1)
-			assert.Equal(t, hook.TypeScheduledReminder, ff[0].Hk.Type)
-			assert.Equal(t, null.ValueFrom(_testDocID), ff[0].Hk.DocumentID)
-			assert.Equal(t, null.ValueFrom(_stubBranchID), ff[0].Hk.BranchID)
-			assert.Equal(t, null.StringFrom("org"), ff[0].Hk.OrganizationID)
-			assert.Equal(t, c.BlockUID, ff[0].Hk.BlockID)
+			assert.Equal(t, hook.TypeScheduledReminder, ff[0].Ci.Type)
+			assert.Equal(t, _testDocID, ff[0].DocumentID)
+			assert.Equal(t, _stubBranchID, ff[0].Ci.BranchID)
+			assert.Equal(t, "org", ff[0].OrganizationID)
+			assert.Equal(t, c.BlockUID, ff[0].Ci.BlockID)
+			assert.Equal(t, inp.UserID(), ff[0].UpdatedBy)
 
 			row := decodeHookRow(t, res)
-			assert.Equal(t, ff[0].Hk.ID, row.ID)
+			assert.False(t, row.ID.IsNil())
 			assert.Equal(t, hook.TypeScheduledReminder, row.Type)
 			assert.Equal(t, c.BlockUID, row.BlockUID)
 			assert.JSONEq(t, `{"scale":"linear","duration":"custom","schedule":"`+_stubSchedule+`"}`, string(row.Settings))
 			assert.Equal(t, "100", row.Score.String())
 			assert.Contains(t, string(row.State), "startedAt")
-
-			bf := hooks.NotifyHooksChangeCalls()
-			require.Len(t, bf, 1)
-			assert.Equal(t, "org", bf[0].OrganizationID)
-			assert.Equal(t, null.ValueFrom(_testDocID), bf[0].DocumentID)
-			assert.Equal(t, null.ValueFrom(_stubBranchID), bf[0].BranchID)
 
 			assert.Equal(t, []Touched{{DocumentID: _testDocID, BranchID: _stubBranchID}}, inp.touched)
 		})
@@ -659,18 +702,18 @@ func Test_updateHook_Summary(t *testing.T) {
 func Test_updateHook_Execute(t *testing.T) {
 	t.Parallel()
 
-	failing := stubHookDB()
-	failing.UpdateDocumentHookFunc = func(context.Context, hook.Hook) error {
-		return assert.AnError
+	failing := stubHookManager()
+	failing.UpdateHookFunc = func(context.Context, xid.ID, string, hook.UpdateInput, string) (*hook.Hook, error) {
+		return nil, assert.AnError
 	}
 
 	later := time.Date(2031, 6, 1, 12, 0, 0, 0, time.UTC)
 
 	cc := map[string]struct {
-		DB     *DBMock
-		Args   string
-		Notify int
-		Err    error
+		DB   *DBMock
+		Man  *HookManagerMock
+		Args string
+		Err  error
 	}{
 		"Malformed arguments": {DB: stubHookDB(), Args: `{`, Err: assert.AnError},
 		"Hook id is required": {DB: stubHookDB(), Args: `{"document_id":"` + _testDocID.String() + `"}`, Err: assert.AnError},
@@ -701,15 +744,15 @@ func Test_updateHook_Execute(t *testing.T) {
 			Args: `{` + hookArgs(_testHookID) + `,"settings":{"type":"url-watcher","url":"https://example.com"}}`,
 			Err:  fmt.Errorf("update_hook: %w", errHookTypeMismatch(hook.TypeScheduledReminder, hook.TypeURLWatcher)),
 		},
-		"Error returned by db.UpdateDocumentHook": {
-			DB:   failing,
+		"Error returned by hookMan.UpdateHook": {
+			DB:   stubHookDB(),
+			Man:  failing,
 			Args: `{` + hookArgs(_testHookID) + `,"settings":{"type":"scheduled-reminder","schedule":"` + later.Format(time.RFC3339) + `"}}`,
 			Err:  assert.AnError,
 		},
 		"Updated": {
-			DB:     stubHookDB(),
-			Args:   `{` + hookArgs(_testHookID) + `,"settings":{"type":"scheduled-reminder","schedule":"` + later.Format(time.RFC3339) + `"}}`,
-			Notify: 1,
+			DB:   stubHookDB(),
+			Args: `{` + hookArgs(_testHookID) + `,"settings":{"type":"scheduled-reminder","schedule":"` + later.Format(time.RFC3339) + `"}}`,
 		},
 	}
 
@@ -717,13 +760,11 @@ func Test_updateHook_Execute(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			d, hooks := hookDeps(c.DB)
+			d := hookDeps(c.DB, c.Man)
 			inp := testInput(d, NameUpdateHook, c.Args)
 
 			res, err := updateHook{}.Execute(inp)
 			testutil.AssertEqualError(t, c.Err, err)
-
-			assert.Len(t, hooks.NotifyHooksChangeCalls(), c.Notify)
 
 			if err != nil {
 				return
@@ -731,16 +772,15 @@ func Test_updateHook_Execute(t *testing.T) {
 
 			// the settings are replaced and the state reset: a fresh
 			// start rather than the old one carried over.
-			ff := c.DB.UpdateDocumentHookCalls()
+			ff := d.hookMan.(*HookManagerMock).UpdateHookCalls()
 			require.Len(t, ff, 1)
-			assert.Equal(t, _testHookID, ff[0].Hk.ID)
-			assert.JSONEq(t, `{"scale":"linear","duration":"custom","schedule":"2031-06-01T12:00:00Z"}`, string(ff[0].Hk.Settings))
-			assert.NotContains(t, string(ff[0].Hk.State.V), "2026-01-01")
-			assert.True(t, ff[0].Hk.UpdatedAt.Valid)
+			assert.Equal(t, _testHookID, ff[0].ID)
+			assert.JSONEq(t, `{"scale":"linear","duration":"custom","schedule":"2031-06-01T12:00:00Z"}`, string(ff[0].UI.Settings))
 
 			row := decodeHookRow(t, res)
 			assert.Equal(t, _testHookID, row.ID)
-			assert.JSONEq(t, string(ff[0].Hk.Settings), string(row.Settings))
+			assert.JSONEq(t, string(ff[0].UI.Settings), string(row.Settings))
+			assert.NotContains(t, string(row.State), "2026-01-01")
 			assert.Equal(t, "100", row.Score.String())
 
 			assert.Equal(t, []Touched{{DocumentID: _testDocID, BranchID: _stubBranchID}}, inp.touched)
@@ -822,16 +862,16 @@ func Test_resetHook_Summary(t *testing.T) {
 func Test_resetHook_Execute(t *testing.T) {
 	t.Parallel()
 
-	failing := stubHookDB()
-	failing.UpdateDocumentHookFunc = func(context.Context, hook.Hook) error {
-		return assert.AnError
+	failing := stubHookManager()
+	failing.ResetHookFunc = func(context.Context, xid.ID, string) (*hook.Hook, error) {
+		return nil, assert.AnError
 	}
 
 	cc := map[string]struct {
-		DB     *DBMock
-		Args   string
-		Notify int
-		Err    error
+		DB   *DBMock
+		Man  *HookManagerMock
+		Args string
+		Err  error
 	}{
 		"Malformed arguments": {DB: stubHookDB(), Args: `{`, Err: assert.AnError},
 		"Hook id is required": {DB: stubHookDB(), Args: `{"document_id":"` + _testDocID.String() + `"}`, Err: assert.AnError},
@@ -840,15 +880,15 @@ func Test_resetHook_Execute(t *testing.T) {
 			Args: `{` + hookArgs(_unknownHookID) + `}`,
 			Err:  fmt.Errorf("reset_hook: %w", fmt.Errorf("hook %s on document %s: %w", _unknownHookID, _testDocID, errUnknownHook)),
 		},
-		"Error returned by db.UpdateDocumentHook": {
-			DB:   failing,
+		"Error returned by hookMan.ResetHook": {
+			DB:   stubHookDB(),
+			Man:  failing,
 			Args: `{` + hookArgs(_testHookID) + `}`,
 			Err:  assert.AnError,
 		},
 		"Reset": {
-			DB:     stubHookDB(),
-			Args:   `{` + hookArgs(_testHookID) + `}`,
-			Notify: 1,
+			DB:   stubHookDB(),
+			Args: `{` + hookArgs(_testHookID) + `}`,
 		},
 	}
 
@@ -856,27 +896,25 @@ func Test_resetHook_Execute(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			d, hooks := hookDeps(c.DB)
+			d := hookDeps(c.DB, c.Man)
 			inp := testInput(d, NameResetHook, c.Args)
 
 			res, err := resetHook{}.Execute(inp)
 			testutil.AssertEqualError(t, c.Err, err)
-
-			assert.Len(t, hooks.NotifyHooksChangeCalls(), c.Notify)
 
 			if err != nil {
 				return
 			}
 
 			// the settings stay as they were; only the state starts over.
-			ff := c.DB.UpdateDocumentHookCalls()
+			ff := d.hookMan.(*HookManagerMock).ResetHookCalls()
 			require.Len(t, ff, 1)
-			assert.Equal(t, _testHookID, ff[0].Hk.ID)
-			assert.JSONEq(t, string(stubHook().Settings), string(ff[0].Hk.Settings))
-			assert.NotContains(t, string(ff[0].Hk.State.V), "2026-01-01")
+			assert.Equal(t, _testHookID, ff[0].ID)
 
 			row := decodeHookRow(t, res)
 			assert.Equal(t, _testHookID, row.ID)
+			assert.JSONEq(t, string(stubHook().Settings), string(row.Settings))
+			assert.NotContains(t, string(row.State), "2026-01-01")
 			assert.Equal(t, "100", row.Score.String())
 
 			assert.Equal(t, []Touched{{DocumentID: _testDocID, BranchID: _stubBranchID}}, inp.touched)
@@ -937,16 +975,16 @@ func Test_deleteHook_Summary(t *testing.T) {
 func Test_deleteHook_Execute(t *testing.T) {
 	t.Parallel()
 
-	failing := stubHookDB()
-	failing.DeleteDocumentHookFunc = func(context.Context, xid.ID) error {
+	failing := stubHookManager()
+	failing.DeleteHookFunc = func(context.Context, xid.ID, string, string) error {
 		return assert.AnError
 	}
 
 	cc := map[string]struct {
-		DB     *DBMock
-		Args   string
-		Notify int
-		Err    error
+		DB   *DBMock
+		Man  *HookManagerMock
+		Args string
+		Err  error
 	}{
 		"Malformed arguments": {DB: stubHookDB(), Args: `{`, Err: assert.AnError},
 		"Hook id is required": {DB: stubHookDB(), Args: `{"document_id":"` + _testDocID.String() + `"}`, Err: assert.AnError},
@@ -955,15 +993,15 @@ func Test_deleteHook_Execute(t *testing.T) {
 			Args: `{` + hookArgs(_unknownHookID) + `}`,
 			Err:  fmt.Errorf("delete_hook: %w", fmt.Errorf("hook %s on document %s: %w", _unknownHookID, _testDocID, errUnknownHook)),
 		},
-		"Error returned by db.DeleteDocumentHook": {
-			DB:   failing,
+		"Error returned by hookMan.DeleteHook": {
+			DB:   stubHookDB(),
+			Man:  failing,
 			Args: `{` + hookArgs(_testHookID) + `}`,
 			Err:  assert.AnError,
 		},
 		"Deleted": {
-			DB:     stubHookDB(),
-			Args:   `{` + hookArgs(_testHookID) + `}`,
-			Notify: 1,
+			DB:   stubHookDB(),
+			Args: `{` + hookArgs(_testHookID) + `}`,
 		},
 	}
 
@@ -971,19 +1009,17 @@ func Test_deleteHook_Execute(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			d, hooks := hookDeps(c.DB)
+			d := hookDeps(c.DB, c.Man)
 			inp := testInput(d, NameDeleteHook, c.Args)
 
 			res, err := deleteHook{}.Execute(inp)
 			testutil.AssertEqualError(t, c.Err, err)
 
-			assert.Len(t, hooks.NotifyHooksChangeCalls(), c.Notify)
-
 			if err != nil {
 				return
 			}
 
-			ff := c.DB.DeleteDocumentHookCalls()
+			ff := d.hookMan.(*HookManagerMock).DeleteHookCalls()
 			require.Len(t, ff, 1)
 			assert.Equal(t, _testHookID, ff[0].ID)
 			assert.JSONEq(t, `{"hook_id":"`+_testHookID.String()+`","deleted":true}`, res)

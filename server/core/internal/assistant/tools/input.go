@@ -75,6 +75,9 @@ type Deps struct {
 	// deployment without it.
 	webchangeClient *webchange.Client
 
+	// hookMan runs the hook writes.
+	hookMan HookManager
+
 	// applier is the edit client for content mutations and the
 	// rename/set-icon ops that must propagate to connected editors.
 	applier EditApplier
@@ -86,10 +89,6 @@ type Deps struct {
 	// tags notifies tag-tree subscribers after the assistant changes
 	// a tag or what carries it.
 	tags TagNotifier
-
-	// hooks notifies a document's subscribers after the assistant
-	// changes the hooks on one of its branches.
-	hooks HookNotifier
 
 	// offload retrieves results parked outside the conversation.
 	offload OffloadReader
@@ -115,10 +114,10 @@ func NewDeps(
 	runners DataSourceRunners,
 	githubMan *github.Manager,
 	webchangeClient *webchange.Client,
+	hookMan HookManager,
 	applier EditApplier,
 	tree TreeNotifier,
 	tags TagNotifier,
-	hooks HookNotifier,
 	offload OffloadReader,
 	orgID, userID string,
 ) *Deps {
@@ -134,10 +133,10 @@ func NewDeps(
 		runners:         runners,
 		githubMan:       githubMan,
 		webchangeClient: webchangeClient,
+		hookMan:         hookMan,
 		applier:         applier,
 		tree:            tree,
 		tags:            tags,
-		hooks:           hooks,
 		offload:         offload,
 		orgID:           orgID,
 		userID:          userID,
@@ -174,7 +173,7 @@ type input struct {
 // by a convention about argument names.
 func (i *input) recordTouched(documentID, branchID xid.ID) {
 	t := Touched{DocumentID: documentID, BranchID: branchID}
-	if documentID.IsNil() || slices.Contains(i.touched, t) {
+	if documentID.IsNil() || branchID.IsNil() || slices.Contains(i.touched, t) {
 		return
 	}
 
@@ -990,12 +989,6 @@ func (i *input) NotifyBranchTagsChange(documentID, branchID xid.ID) {
 	i.tags.NotifyBranchTagsChange(i.orgID, documentID, branchID)
 }
 
-// hookInput builds the dependencies a hook's processor reaches through,
-// scoped to the session's organisation.
-func (i *input) hookInput() *hook.Input {
-	return hook.NewInput(i.orgID, i.githubMan, i.webchangeClient)
-}
-
 // FetchHooks returns every hook on the branch branchID names, refusing a
 // branch the document does not have.
 func (i *input) FetchHooks(documentID, branchID xid.ID) ([]hook.Hook, error) {
@@ -1051,16 +1044,6 @@ func (i *input) CreateHook(documentID, branchID xid.ID, blockUID string, tp hook
 		return nil, err
 	}
 
-	var blockID null.String
-
-	if blockUID != "" {
-		if _, ok := doc.Content.FindByUID(blockUID); !ok {
-			return nil, fmt.Errorf("block %s: %w", blockUID, errUnknownBlock)
-		}
-
-		blockID = null.StringFrom(blockUID)
-	}
-
 	// a hook whose integration is missing is refused anyway. Naming the
 	// integration's own error tells the model what is missing.
 	switch tp {
@@ -1076,32 +1059,21 @@ func (i *input) CreateHook(documentID, branchID xid.ID, blockUID string, tp hook
 		// nothing outside the deployment to check.
 	}
 
-	hk, err := hook.NewHook(i.ctx, hook.CreateInput{
+	hk, err := i.hookMan.CreateHook(i.ctx, hook.CreateInput{
 		Type:     tp,
 		BranchID: doc.BranchID,
-		BlockID:  blockID,
+		BlockID:  null.NewString(blockUID, blockUID != ""),
 		Settings: settings,
-	}, doc.ID, doc.BranchID, i.orgID, i.hookInput())
+	}, doc.ID, i.orgID, i.userID)
 	if err != nil {
+		if errors.Is(err, hook.ErrBlockNotFound) {
+			return nil, fmt.Errorf("block %s: %w", blockUID, errUnknownBlock)
+		}
+
 		return nil, err
 	}
 
-	if err := i.db.InsertDocumentHook(i.ctx, *hk); err != nil {
-		// NewHook created the watcher as a side effect, and without a row
-		// nothing would ever tear it down.
-		if derr := hk.Delete(i.ctx, i.hookInput()); derr != nil {
-			i.log.Error(
-				"tearing down the hook of a failed insert",
-				slog.String("hook_id", hk.ID.String()),
-				slog.String("error", derr.Error()),
-			)
-		}
-
-		return nil, fmt.Errorf("insert: %w", err)
-	}
-
-	i.recordHookHistory(hk)
-	i.hookChanged(hk)
+	i.recordTouched(hk.DocumentID.V, hk.BranchID.V)
 
 	return hk, nil
 }
@@ -1109,31 +1081,28 @@ func (i *input) CreateHook(documentID, branchID xid.ID, blockUID string, tp hook
 // UpdateHook replaces the hook's settings and resets its score and state,
 // as a fresh hook with those settings would have them.
 func (i *input) UpdateHook(hk *hook.Hook, settings processor.Settings) error {
-	if err := hk.ApplyUpdate(i.ctx, hook.UpdateInput{Settings: settings}, i.hookInput()); err != nil {
+	updated, err := i.hookMan.UpdateHook(i.ctx, hk.ID, i.orgID, hook.UpdateInput{Settings: settings}, i.userID)
+	if err != nil {
 		return err
 	}
 
-	if err := i.db.UpdateDocumentHook(i.ctx, *hk); err != nil {
-		return fmt.Errorf("update: %w", err)
-	}
+	*hk = *updated
 
-	i.recordHookHistory(hk)
-	i.hookChanged(hk)
+	i.recordTouched(hk.DocumentID.V, hk.BranchID.V)
 
 	return nil
 }
 
 // ResetHook restores the hook's score and state, keeping its settings.
 func (i *input) ResetHook(hk *hook.Hook) error {
-	if err := hk.Reset(i.ctx, i.hookInput()); err != nil {
+	reset, err := i.hookMan.ResetHook(i.ctx, hk.ID, i.orgID)
+	if err != nil {
 		return err
 	}
 
-	if err := i.db.UpdateDocumentHook(i.ctx, *hk); err != nil {
-		return fmt.Errorf("update: %w", err)
-	}
+	*hk = *reset
 
-	i.hookChanged(hk)
+	i.recordTouched(hk.DocumentID.V, hk.BranchID.V)
 
 	return nil
 }
@@ -1142,57 +1111,13 @@ func (i *input) ResetHook(hk *hook.Hook) error {
 // removes its row. The branch stays, and the editor showing it has to
 // redraw, so the delete records the branch as touched.
 func (i *input) DeleteHook(hk *hook.Hook) error {
-	if err := hk.Delete(i.ctx, i.hookInput()); err != nil {
+	if err := i.hookMan.DeleteHook(i.ctx, hk.ID, i.orgID, i.userID); err != nil {
 		return err
 	}
 
-	if err := i.db.DeleteDocumentHook(i.ctx, hk.ID); err != nil {
-		return fmt.Errorf("delete: %w", err)
-	}
-
-	i.recordHookHistory(hk)
-	i.hookChanged(hk)
+	i.recordTouched(hk.DocumentID.V, hk.BranchID.V)
 
 	return nil
-}
-
-// recordHookHistory records the hook's branch in its history, credited to
-// the user the assistant acts for. The hook write is already done, so a
-// failure is logged rather than returned.
-func (i *input) recordHookHistory(hk *hook.Hook) {
-	if !hk.BranchID.Valid {
-		return
-	}
-
-	_, err := i.db.RecordDocumentBranchHistoryEntry(
-		i.ctx,
-		hk.BranchID.V,
-		i.orgID,
-		null.StringFrom(i.userID),
-		false,
-	)
-	if err != nil {
-		i.log.Error(
-			"cannot record the hook change in the branch history",
-			slog.String("hook_id", hk.ID.String()),
-			slog.String("error", err.Error()),
-		)
-	}
-}
-
-// hookChanged records the branch a hook write changed and announces it
-// to the document's subscribers. A hook whose branch was deleted, and
-// which the sweep has not yet removed, has no branch to link to.
-func (i *input) hookChanged(hk *hook.Hook) {
-	if hk.BranchID.Valid {
-		i.recordTouched(hk.DocumentID.V, hk.BranchID.V)
-	}
-
-	if i.hooks == nil {
-		return
-	}
-
-	i.hooks.NotifyHooksChange(i.orgID, hk.DocumentID, hk.BranchID)
 }
 
 // docRef wraps the (documentID, branchID) pair the edit client needs to
@@ -1330,28 +1255,6 @@ type HookDB interface {
 	// FetchDocumentHook should return a hook by id within the org. Used
 	// by every hook write to resolve what it was asked about.
 	FetchDocumentHook(ctx context.Context, id xid.ID, organizationID string) (*hook.Hook, error)
-
-	// InsertDocumentHook should store a new hook. Used by create_hook.
-	InsertDocumentHook(ctx context.Context, hk hook.Hook) error
-
-	// UpdateDocumentHook should store a hook's changed settings, score
-	// and state. Used by update_hook and reset_hook.
-	UpdateDocumentHook(ctx context.Context, hk hook.Hook) error
-
-	// DeleteDocumentHook should remove a hook the caller has already
-	// fetched org-scoped. Used by delete_hook.
-	DeleteDocumentHook(ctx context.Context, id xid.ID) error
-
-	// RecordDocumentBranchHistoryEntry should record the branch as it
-	// stands, with its live hooks, and return the id of the entry. Used
-	// by every hook write that changes what the branch carries.
-	RecordDocumentBranchHistoryEntry(
-		ctx context.Context,
-		branchID xid.ID,
-		organizationID string,
-		by null.String,
-		boundary bool,
-	) (xid.ID, error)
 }
 
 // Tx is the transactional half of DB, so a tool whose write spans
@@ -1376,6 +1279,27 @@ type Tx interface {
 	// document and of every cascade-deleted descendant. Used by
 	// delete_document.
 	DeleteDocument(ctx context.Context, id xid.ID, organizationID string) ([]xid.ID, error)
+}
+
+// HookManager runs hook writes.
+//
+//go:generate ../../../scripts/codegen/mock -t internal HookManager hook_manager
+type HookManager interface {
+	// CreateHook should create the hook on the branch of the document,
+	// credited to updatedBy.
+	CreateHook(ctx context.Context, ci hook.CreateInput, documentID xid.ID, organizationID, updatedBy string) (*hook.Hook, error)
+
+	// UpdateHook should replace the hook's settings, credited to
+	// updatedBy, and return the stored hook.
+	UpdateHook(ctx context.Context, id xid.ID, organizationID string, ui hook.UpdateInput, updatedBy string) (*hook.Hook, error)
+
+	// DeleteHook should tear the hook down and remove it, credited to
+	// updatedBy.
+	DeleteHook(ctx context.Context, id xid.ID, organizationID, updatedBy string) error
+
+	// ResetHook should restore the hook's score and state and return the
+	// stored hook.
+	ResetHook(ctx context.Context, id xid.ID, organizationID string) (*hook.Hook, error)
 }
 
 // SearchTrigger runs the search-job worker once a job has committed.
@@ -1426,20 +1350,6 @@ type TagNotifier interface {
 	// that the tags its branch branchID carries changed. Implementations
 	// must be safe to call concurrently.
 	NotifyBranchTagsChange(organizationID string, documentID, branchID xid.ID)
-}
-
-// HookNotifier publishes hook-change events so an open editor redraws
-// its hook indicators after assistant-driven hook writes. The server
-// hook handler satisfies this interface via its NotifyHooksChange
-// method.
-//
-//go:generate ../../../scripts/codegen/mock -t internal HookNotifier hook_notifier
-type HookNotifier interface {
-	// NotifyHooksChange should tell the subscribers of the document that
-	// the hooks on its branch branchID changed, and do nothing for a hook
-	// whose document or branch is gone. Implementations must be safe to
-	// call concurrently.
-	NotifyHooksChange(organizationID string, documentID, branchID null.Value[xid.ID])
 }
 
 // EditApplier is the live-document mutation surface the write tools

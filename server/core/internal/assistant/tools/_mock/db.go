@@ -38,9 +38,6 @@ var _ tools.DB = &DB{}
 //			CheckDocumentExistsFunc: func(ctx context.Context, id xid.ID, organizationID string) error {
 //				panic("mock out the CheckDocumentExists method")
 //			},
-//			DeleteDocumentHookFunc: func(ctx context.Context, id xid.ID) error {
-//				panic("mock out the DeleteDocumentHook method")
-//			},
 //			DeleteTagFunc: func(ctx context.Context, id xid.ID, organizationID string) error {
 //				panic("mock out the DeleteTag method")
 //			},
@@ -77,20 +74,11 @@ var _ tools.DB = &DB{}
 //			FetchTagTreeFunc: func(ctx context.Context, organizationID string, userID string) (tag.Summaries, error) {
 //				panic("mock out the FetchTagTree method")
 //			},
-//			InsertDocumentHookFunc: func(ctx context.Context, hk hook.Hook) error {
-//				panic("mock out the InsertDocumentHook method")
-//			},
 //			InsertTagFunc: func(ctx context.Context, t tag.Tag) error {
 //				panic("mock out the InsertTag method")
 //			},
-//			RecordDocumentBranchHistoryEntryFunc: func(ctx context.Context, branchID xid.ID, organizationID string, by null.String, boundary bool) (xid.ID, error) {
-//				panic("mock out the RecordDocumentBranchHistoryEntry method")
-//			},
 //			UnassignBranchTagFunc: func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error {
 //				panic("mock out the UnassignBranchTag method")
-//			},
-//			UpdateDocumentHookFunc: func(ctx context.Context, hk hook.Hook) error {
-//				panic("mock out the UpdateDocumentHook method")
 //			},
 //			UpdateDocumentParentIDFunc: func(ctx context.Context, id xid.ID, parentID null.Value[xid.ID], organizationID string) error {
 //				panic("mock out the UpdateDocumentParentID method")
@@ -119,9 +107,6 @@ type DB struct {
 
 	// CheckDocumentExistsFunc mocks the CheckDocumentExists method.
 	CheckDocumentExistsFunc func(ctx context.Context, id xid.ID, organizationID string) error
-
-	// DeleteDocumentHookFunc mocks the DeleteDocumentHook method.
-	DeleteDocumentHookFunc func(ctx context.Context, id xid.ID) error
 
 	// DeleteTagFunc mocks the DeleteTag method.
 	DeleteTagFunc func(ctx context.Context, id xid.ID, organizationID string) error
@@ -159,20 +144,11 @@ type DB struct {
 	// FetchTagTreeFunc mocks the FetchTagTree method.
 	FetchTagTreeFunc func(ctx context.Context, organizationID string, userID string) (tag.Summaries, error)
 
-	// InsertDocumentHookFunc mocks the InsertDocumentHook method.
-	InsertDocumentHookFunc func(ctx context.Context, hk hook.Hook) error
-
 	// InsertTagFunc mocks the InsertTag method.
 	InsertTagFunc func(ctx context.Context, t tag.Tag) error
 
-	// RecordDocumentBranchHistoryEntryFunc mocks the RecordDocumentBranchHistoryEntry method.
-	RecordDocumentBranchHistoryEntryFunc func(ctx context.Context, branchID xid.ID, organizationID string, by null.String, boundary bool) (xid.ID, error)
-
 	// UnassignBranchTagFunc mocks the UnassignBranchTag method.
 	UnassignBranchTagFunc func(ctx context.Context, organizationID string, documentID xid.ID, branchID xid.ID, tagID xid.ID) error
-
-	// UpdateDocumentHookFunc mocks the UpdateDocumentHook method.
-	UpdateDocumentHookFunc func(ctx context.Context, hk hook.Hook) error
 
 	// UpdateDocumentParentIDFunc mocks the UpdateDocumentParentID method.
 	UpdateDocumentParentIDFunc func(ctx context.Context, id xid.ID, parentID null.Value[xid.ID], organizationID string) error
@@ -224,13 +200,6 @@ type DB struct {
 			ID xid.ID
 			// OrganizationID is the organizationID argument value.
 			OrganizationID string
-		}
-		// DeleteDocumentHook holds details about calls to the DeleteDocumentHook method.
-		DeleteDocumentHook []struct {
-			// Ctx is the ctx argument value.
-			Ctx context.Context
-			// ID is the id argument value.
-			ID xid.ID
 		}
 		// DeleteTag holds details about calls to the DeleteTag method.
 		DeleteTag []struct {
@@ -340,32 +309,12 @@ type DB struct {
 			// UserID is the userID argument value.
 			UserID string
 		}
-		// InsertDocumentHook holds details about calls to the InsertDocumentHook method.
-		InsertDocumentHook []struct {
-			// Ctx is the ctx argument value.
-			Ctx context.Context
-			// Hk is the hk argument value.
-			Hk hook.Hook
-		}
 		// InsertTag holds details about calls to the InsertTag method.
 		InsertTag []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
 			// T is the t argument value.
 			T tag.Tag
-		}
-		// RecordDocumentBranchHistoryEntry holds details about calls to the RecordDocumentBranchHistoryEntry method.
-		RecordDocumentBranchHistoryEntry []struct {
-			// Ctx is the ctx argument value.
-			Ctx context.Context
-			// BranchID is the branchID argument value.
-			BranchID xid.ID
-			// OrganizationID is the organizationID argument value.
-			OrganizationID string
-			// By is the by argument value.
-			By null.String
-			// Boundary is the boundary argument value.
-			Boundary bool
 		}
 		// UnassignBranchTag holds details about calls to the UnassignBranchTag method.
 		UnassignBranchTag []struct {
@@ -379,13 +328,6 @@ type DB struct {
 			BranchID xid.ID
 			// TagID is the tagID argument value.
 			TagID xid.ID
-		}
-		// UpdateDocumentHook holds details about calls to the UpdateDocumentHook method.
-		UpdateDocumentHook []struct {
-			// Ctx is the ctx argument value.
-			Ctx context.Context
-			// Hk is the hk argument value.
-			Hk hook.Hook
 		}
 		// UpdateDocumentParentID holds details about calls to the UpdateDocumentParentID method.
 		UpdateDocumentParentID []struct {
@@ -423,7 +365,6 @@ type DB struct {
 	lockBeginTx                             sync.RWMutex
 	lockCheckDocumentCycle                  sync.RWMutex
 	lockCheckDocumentExists                 sync.RWMutex
-	lockDeleteDocumentHook                  sync.RWMutex
 	lockDeleteTag                           sync.RWMutex
 	lockFetchBranchTags                     sync.RWMutex
 	lockFetchDataSource                     sync.RWMutex
@@ -436,11 +377,8 @@ type DB struct {
 	lockFetchDocumentTree                   sync.RWMutex
 	lockFetchDocumentTreeByDocumentParentID sync.RWMutex
 	lockFetchTagTree                        sync.RWMutex
-	lockInsertDocumentHook                  sync.RWMutex
 	lockInsertTag                           sync.RWMutex
-	lockRecordDocumentBranchHistoryEntry    sync.RWMutex
 	lockUnassignBranchTag                   sync.RWMutex
-	lockUpdateDocumentHook                  sync.RWMutex
 	lockUpdateDocumentParentID              sync.RWMutex
 	lockUpdateTag                           sync.RWMutex
 	lockUpdateTagTree                       sync.RWMutex
@@ -624,45 +562,6 @@ func (mock *DB) CheckDocumentExistsCalls() []struct {
 	mock.lockCheckDocumentExists.RLock()
 	calls = mock.calls.CheckDocumentExists
 	mock.lockCheckDocumentExists.RUnlock()
-	return calls
-}
-
-// DeleteDocumentHook calls DeleteDocumentHookFunc.
-func (mock *DB) DeleteDocumentHook(ctx context.Context, id xid.ID) error {
-	callInfo := struct {
-		Ctx context.Context
-		ID  xid.ID
-	}{
-		Ctx: ctx,
-		ID:  id,
-	}
-	mock.lockDeleteDocumentHook.Lock()
-	mock.calls.DeleteDocumentHook = append(mock.calls.DeleteDocumentHook, callInfo)
-	mock.lockDeleteDocumentHook.Unlock()
-	if mock.DeleteDocumentHookFunc == nil {
-		var (
-			errOut error
-		)
-		return errOut
-	}
-	return mock.DeleteDocumentHookFunc(ctx, id)
-}
-
-// DeleteDocumentHookCalls gets all the calls that were made to DeleteDocumentHook.
-// Check the length with:
-//
-//	len(mockedDB.DeleteDocumentHookCalls())
-func (mock *DB) DeleteDocumentHookCalls() []struct {
-	Ctx context.Context
-	ID  xid.ID
-} {
-	var calls []struct {
-		Ctx context.Context
-		ID  xid.ID
-	}
-	mock.lockDeleteDocumentHook.RLock()
-	calls = mock.calls.DeleteDocumentHook
-	mock.lockDeleteDocumentHook.RUnlock()
 	return calls
 }
 
@@ -1193,45 +1092,6 @@ func (mock *DB) FetchTagTreeCalls() []struct {
 	return calls
 }
 
-// InsertDocumentHook calls InsertDocumentHookFunc.
-func (mock *DB) InsertDocumentHook(ctx context.Context, hk hook.Hook) error {
-	callInfo := struct {
-		Ctx context.Context
-		Hk  hook.Hook
-	}{
-		Ctx: ctx,
-		Hk:  hk,
-	}
-	mock.lockInsertDocumentHook.Lock()
-	mock.calls.InsertDocumentHook = append(mock.calls.InsertDocumentHook, callInfo)
-	mock.lockInsertDocumentHook.Unlock()
-	if mock.InsertDocumentHookFunc == nil {
-		var (
-			errOut error
-		)
-		return errOut
-	}
-	return mock.InsertDocumentHookFunc(ctx, hk)
-}
-
-// InsertDocumentHookCalls gets all the calls that were made to InsertDocumentHook.
-// Check the length with:
-//
-//	len(mockedDB.InsertDocumentHookCalls())
-func (mock *DB) InsertDocumentHookCalls() []struct {
-	Ctx context.Context
-	Hk  hook.Hook
-} {
-	var calls []struct {
-		Ctx context.Context
-		Hk  hook.Hook
-	}
-	mock.lockInsertDocumentHook.RLock()
-	calls = mock.calls.InsertDocumentHook
-	mock.lockInsertDocumentHook.RUnlock()
-	return calls
-}
-
 // InsertTag calls InsertTagFunc.
 func (mock *DB) InsertTag(ctx context.Context, t tag.Tag) error {
 	callInfo := struct {
@@ -1268,58 +1128,6 @@ func (mock *DB) InsertTagCalls() []struct {
 	mock.lockInsertTag.RLock()
 	calls = mock.calls.InsertTag
 	mock.lockInsertTag.RUnlock()
-	return calls
-}
-
-// RecordDocumentBranchHistoryEntry calls RecordDocumentBranchHistoryEntryFunc.
-func (mock *DB) RecordDocumentBranchHistoryEntry(ctx context.Context, branchID xid.ID, organizationID string, by null.String, boundary bool) (xid.ID, error) {
-	callInfo := struct {
-		Ctx            context.Context
-		BranchID       xid.ID
-		OrganizationID string
-		By             null.String
-		Boundary       bool
-	}{
-		Ctx:            ctx,
-		BranchID:       branchID,
-		OrganizationID: organizationID,
-		By:             by,
-		Boundary:       boundary,
-	}
-	mock.lockRecordDocumentBranchHistoryEntry.Lock()
-	mock.calls.RecordDocumentBranchHistoryEntry = append(mock.calls.RecordDocumentBranchHistoryEntry, callInfo)
-	mock.lockRecordDocumentBranchHistoryEntry.Unlock()
-	if mock.RecordDocumentBranchHistoryEntryFunc == nil {
-		var (
-			iDOut  xid.ID
-			errOut error
-		)
-		return iDOut, errOut
-	}
-	return mock.RecordDocumentBranchHistoryEntryFunc(ctx, branchID, organizationID, by, boundary)
-}
-
-// RecordDocumentBranchHistoryEntryCalls gets all the calls that were made to RecordDocumentBranchHistoryEntry.
-// Check the length with:
-//
-//	len(mockedDB.RecordDocumentBranchHistoryEntryCalls())
-func (mock *DB) RecordDocumentBranchHistoryEntryCalls() []struct {
-	Ctx            context.Context
-	BranchID       xid.ID
-	OrganizationID string
-	By             null.String
-	Boundary       bool
-} {
-	var calls []struct {
-		Ctx            context.Context
-		BranchID       xid.ID
-		OrganizationID string
-		By             null.String
-		Boundary       bool
-	}
-	mock.lockRecordDocumentBranchHistoryEntry.RLock()
-	calls = mock.calls.RecordDocumentBranchHistoryEntry
-	mock.lockRecordDocumentBranchHistoryEntry.RUnlock()
 	return calls
 }
 
@@ -1371,45 +1179,6 @@ func (mock *DB) UnassignBranchTagCalls() []struct {
 	mock.lockUnassignBranchTag.RLock()
 	calls = mock.calls.UnassignBranchTag
 	mock.lockUnassignBranchTag.RUnlock()
-	return calls
-}
-
-// UpdateDocumentHook calls UpdateDocumentHookFunc.
-func (mock *DB) UpdateDocumentHook(ctx context.Context, hk hook.Hook) error {
-	callInfo := struct {
-		Ctx context.Context
-		Hk  hook.Hook
-	}{
-		Ctx: ctx,
-		Hk:  hk,
-	}
-	mock.lockUpdateDocumentHook.Lock()
-	mock.calls.UpdateDocumentHook = append(mock.calls.UpdateDocumentHook, callInfo)
-	mock.lockUpdateDocumentHook.Unlock()
-	if mock.UpdateDocumentHookFunc == nil {
-		var (
-			errOut error
-		)
-		return errOut
-	}
-	return mock.UpdateDocumentHookFunc(ctx, hk)
-}
-
-// UpdateDocumentHookCalls gets all the calls that were made to UpdateDocumentHook.
-// Check the length with:
-//
-//	len(mockedDB.UpdateDocumentHookCalls())
-func (mock *DB) UpdateDocumentHookCalls() []struct {
-	Ctx context.Context
-	Hk  hook.Hook
-} {
-	var calls []struct {
-		Ctx context.Context
-		Hk  hook.Hook
-	}
-	mock.lockUpdateDocumentHook.RLock()
-	calls = mock.calls.UpdateDocumentHook
-	mock.lockUpdateDocumentHook.RUnlock()
 	return calls
 }
 

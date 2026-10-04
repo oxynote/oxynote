@@ -23,6 +23,18 @@ var ErrInvalidType = errutil.New(http.StatusBadRequest, "document_hook.invalid_t
 // ErrInvalidSettings is returned when a hook's settings do not decode.
 var ErrInvalidSettings = errutil.New(http.StatusBadRequest, "document_hook.invalid_settings", "invalid hook settings")
 
+// ErrUpstreamUnavailable is returned when the service a hook checks could
+// not be reached during a hook write.
+var ErrUpstreamUnavailable = errutil.New(http.StatusFailedDependency, "document_hook.upstream_unavailable", "the service the hook checks is unavailable")
+
+// ErrBranchMismatch is returned when a hook is to be created on a branch of
+// another document.
+var ErrBranchMismatch = errutil.New(http.StatusNotFound, "document.branch_mismatch", "branch does not belong to the document")
+
+// ErrBlockNotFound is returned when a hook is to be anchored to a block the
+// branch's content does not hold.
+var ErrBlockNotFound = errutil.New(http.StatusNotFound, "document.hook_block_not_found", "block not found in the branch")
+
 // Type represents the type of a freshness hook.
 type Type string
 

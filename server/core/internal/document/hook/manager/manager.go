@@ -16,6 +16,8 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/notification"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/logutil"
+	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
+	"github.com/oxynote/oxynote/server/core/pkg/syncutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
 )
@@ -29,21 +31,35 @@ const (
 
 	// _hookRetentionDuration defines how long to retain inactive hooks.
 	_hookRetentionDuration = time.Hour * 24
+
+	// _hookTimeout bounds one hook write, and with it how long the hook's
+	// lock is held.
+	_hookTimeout = time.Second * 30
+
+	// _teardownTimeout bounds tearing down a resource whose row was not
+	// stored. It runs on its own clock, since the write's may be spent.
+	_teardownTimeout = time.Second * 10
 )
 
 // Manager manages document freshness hooks.
 type Manager struct {
 	log             *slog.Logger
 	db              DB
+	flusher         Flusher
 	githubMan       *github.Manager
 	webchangeClient *webchange.Client
 	notifPub        notification.Publisher
+	changeCallback  func(hook.Hook)
+
+	// hookMu holds one lock per hook, taken by every write to it.
+	hookMu *syncutil.KeyedMutex[xid.ID]
 }
 
 // NewManager creates a new Manager with the given database interface.
 func NewManager(
 	log *slog.Logger,
 	db DB,
+	flusher Flusher,
 	githubMan *github.Manager,
 	webchangeClient *webchange.Client,
 	notifPub notification.Publisher,
@@ -51,10 +67,19 @@ func NewManager(
 	return &Manager{
 		log:             log.With("component", "document-hooks-manager"),
 		db:              db,
+		flusher:         flusher,
 		githubMan:       githubMan,
 		webchangeClient: webchangeClient,
 		notifPub:        notifPub,
+		changeCallback:  func(hook.Hook) {},
+		hookMu:          syncutil.NewKeyedMutex[xid.ID](),
 	}
+}
+
+// BindHookChange sets the function called with every hook a write stores,
+// changes or deletes. Call it once, before any hook write.
+func (m *Manager) BindHookChange(fn func(hook.Hook)) {
+	m.changeCallback = fn
 }
 
 // Start begins the periodic processing of document hooks.
@@ -294,13 +319,42 @@ func (m *Manager) updateHook(ctx context.Context, h hook.Hook) bool {
 	return true
 }
 
+// undoSetup tears down the resource h got when it was set up, since its
+// row was not stored. Nothing else points at the resource, so a failure
+// is reported.
+func (m *Manager) undoSetup(ctx context.Context, prev, h hook.Hook) {
+	if prev.State.Valid || !h.State.Valid {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), _teardownTimeout)
+	defer cancel()
+
+	if err := h.Delete(ctx, m.input(h.OrganizationID.String)); err != nil {
+		logutil.Critical(m.log, err).Error(
+			"cannot tear down the resource of a hook that was not stored",
+			slog.String("hook_id", h.ID.String()),
+		)
+	}
+}
+
+// input builds the processor input for the organization's hooks.
+func (m *Manager) input(organizationID string) *hook.Input {
+	return hook.NewInput(organizationID, m.githubMan, m.webchangeClient)
+}
+
 // DB defines the database operations required by the Manager.
 //
 //go:generate ../../../../scripts/codegen/mock -t internal DB db
 type DB interface {
+	sqlutil.DB
+
 	// FetchPaginatedDocumentHooks should retrieve a paginated list of document hooks
 	// starting after the given offset ID, limited to the specified number of hooks.
 	FetchPaginatedDocumentHooks(ctx context.Context, offsetID xid.ID, limit int64) ([]hook.Hook, error)
+
+	// FetchDocumentHook should fetch the hook of the organization.
+	FetchDocumentHook(ctx context.Context, id xid.ID, organizationID string) (*hook.Hook, error)
 
 	// UpdateDocumentHook should update the given document hook in the database.
 	UpdateDocumentHook(ctx context.Context, hk hook.Hook) error
@@ -314,4 +368,39 @@ type DB interface {
 
 	// FetchDocumentMaintainers should fetch the document maintainers.
 	FetchDocumentMaintainers(ctx context.Context, documentID xid.ID, organizationID string) ([]string, error)
+}
+
+// Tx is the transaction a hook write runs in, with its history record.
+//
+//go:generate ../../../../scripts/codegen/mock -t internal Tx tx
+type Tx interface {
+	sqlutil.Tx
+
+	// InsertDocumentHook should insert the document hook.
+	InsertDocumentHook(ctx context.Context, hk hook.Hook) error
+
+	// UpdateDocumentHook should update the document hook.
+	UpdateDocumentHook(ctx context.Context, hk hook.Hook) error
+
+	// DeleteDocumentHook should delete the document hook for the given id.
+	DeleteDocumentHook(ctx context.Context, id xid.ID) error
+
+	// RecordDocumentBranchHistoryEntry should record the branch as it
+	// stands, with its hooks, and return the id of the entry.
+	RecordDocumentBranchHistoryEntry(
+		ctx context.Context,
+		branchID xid.ID,
+		organizationID string,
+		by null.String,
+		boundary bool,
+	) (xid.ID, error)
+}
+
+// Flusher stores what the editors of a branch hold.
+//
+//go:generate ../../../../scripts/codegen/mock -t internal Flusher flusher
+type Flusher interface {
+	// Flush should have the realtime service store what the editors of
+	// the branch hold, returning once core has it.
+	Flush(ctx context.Context, documentID, branchID xid.ID) error
 }

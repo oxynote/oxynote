@@ -30,8 +30,8 @@ reads it and its hooks, in the transaction that wrote the change.
   entry and its `updated_at`. An entry equal to the newest is skipped. A
   null author (system write, no maintainers) never replaces a set one.
 - An entry lists the hooks whose block its content holds.
-- A hook create, update or delete records an ordinary entry; a reset does
-  not.
+- Hook create, update and delete flush the branch, then record an entry
+  in their transaction. Reset does not.
 - Create, duplicate, fork and merge write a **boundary** entry that never
   aggregates and closes its bucket. It starts without hooks and gets the
   ones `copyHooksToBranch` created after the commit.

@@ -14,6 +14,8 @@ const HOOK_ERROR_KEYS: Record<string, string> = {
 		"editor.hooks.errors.codes.invalid-repository",
 	"document_hook.missing_paths": "editor.hooks.errors.codes.missing-paths",
 	"document_hook.invalid_image": "editor.hooks.errors.codes.invalid-image",
+	"document_hook.upstream_unavailable":
+		"editor.hooks.errors.codes.upstream-unavailable",
 }
 
 // hookErrorMessage returns the message for the code core refused a hook

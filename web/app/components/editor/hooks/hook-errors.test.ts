@@ -13,6 +13,11 @@ describe("hookErrorMessage", () => {
 			input: "document_hook.invalid_image",
 			expected: "editor.hooks.errors.codes.invalid-image",
 		},
+		{
+			name: "a service the hook could not reach",
+			input: "document_hook.upstream_unavailable",
+			expected: "editor.hooks.errors.codes.upstream-unavailable",
+		},
 	])("names the message of $name", ({ input, expected }, { expect }) => {
 		expect(hookErrorMessage({ data: { code: input } }, t)).toBe(
 			`message:${expected}`,
