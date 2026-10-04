@@ -159,30 +159,6 @@ func Test_agent_FetchDocumentHook(t *testing.T) {
 	testutil.AssertFilterEqual(t, &hk, res)
 }
 
-func Test_agent_FetchDocumentHooksByDocumentID(t *testing.T) {
-	db := prepTempDB(t)
-
-	// error - cancelled context
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	res, err := db.FetchDocumentHooksByDocumentID(ctx, xid.New(), "org-id")
-	require.Error(t, err)
-	assert.Nil(t, res)
-
-	// success - no hooks
-	res, err = db.FetchDocumentHooksByDocumentID(context.Background(), xid.New(), "non-existent-org-id")
-	require.NoError(t, err)
-	assert.Empty(t, res)
-
-	// success
-	hooks := prepDocumentHooks(t, db, 2, nil)
-
-	res, err = db.FetchDocumentHooksByDocumentID(context.Background(), hooks[0].DocumentID.V, hooks[0].OrganizationID.String)
-	assert.NoError(t, err)
-	testutil.AssertFilterEqual(t, hooks, res)
-}
-
 func Test_agent_FetchPaginatedDocumentHooks(t *testing.T) {
 	db := prepTempDB(t)
 

@@ -335,8 +335,8 @@ func Test_Interpreter_interpretDocumentHookNotification(t *testing.T) {
 				Text: fmt.Sprintf("<%s|My Doc> may be outdated — Scheduled Reminder", _testDocURL),
 			},
 		},
-		// a stored notification decodes into plain strings; before the
-		// readers tolerated both forms, every one of these failed.
+		// a stored notification decodes into plain strings, which the
+		// readers must accept as well as typed values.
 		"Successful interpretation of a stored notification": {
 			DB: stubDB(),
 			N: stubNotification(notification.Core{

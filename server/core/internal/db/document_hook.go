@@ -52,24 +52,6 @@ func (a *agent) FetchDocumentHook(ctx context.Context, id xid.ID, organizationID
 	return hk, nil
 }
 
-// FetchDocumentHooksByDocumentID retrieves all document hooks associated
-// with a specific document ID from the database.
-func (a *agent) FetchDocumentHooksByDocumentID(ctx context.Context, documentID xid.ID, organizationID string) ([]hook.Hook, error) {
-	q, args := a.selectDocumentHook(a.builder.Select()).
-		Where(sq.Eq{
-			"document_hooks.fk_document_id":     documentID,
-			"document_hooks.fk_organization_id": organizationID,
-		}).
-		MustSql()
-
-	hooks := []hook.Hook{}
-	if err := sqlx.SelectContext(ctx, a.sql, &hooks, q, args...); err != nil {
-		return nil, err
-	}
-
-	return hooks, nil
-}
-
 // FetchDocumentHooksByOrganizationID retrieves every hook of an organization.
 func (a *agent) FetchDocumentHooksByOrganizationID(ctx context.Context, organizationID string) ([]hook.Hook, error) {
 	q, args := a.selectDocumentHook(a.builder.Select()).

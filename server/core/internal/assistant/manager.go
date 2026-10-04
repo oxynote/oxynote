@@ -73,8 +73,8 @@ type Manager struct {
 	// turns tracks the conversation keys with a turn in flight. The
 	// claim lives here rather than on the session because every
 	// connection of the same (org, user) shares one history, pending
-	// record and checkpoint: two turns running at once — even from
-	// different connections — would overwrite each other's state.
+	// record and checkpoint. Two turns running at once, even from
+	// different connections, would overwrite each other's state.
 	turns struct {
 		mu sync.Mutex
 		m  map[string]struct{}
@@ -226,8 +226,8 @@ func (m *Manager) ToolSet(orgID, userID string) *tools.Set {
 }
 
 // claimTurn claims the conversation key for one turn, reporting whether
-// the claim succeeded. It fails while any session of the same key — the
-// same (org, user) on any connection — is already running one.
+// the claim succeeded. It fails while a turn of the same (org, user) runs
+// on any connection.
 func (m *Manager) claimTurn(key string) bool {
 	m.turns.mu.Lock()
 	defer m.turns.mu.Unlock()

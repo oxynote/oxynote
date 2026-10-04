@@ -18,10 +18,10 @@ import (
 )
 
 // storedHook builds a stored hook on the document's main branch.
-func storedHook(typ hookCore.Type) hookCore.Hook {
+func storedHook() hookCore.Hook {
 	return hookCore.Hook{
 		ID:             xid.New(),
-		Type:           typ,
+		Type:           hookCore.TypeScheduledReminder,
 		DocumentID:     null.ValueFrom(_documentID),
 		OrganizationID: null.StringFrom("org1"),
 		BranchID:       null.ValueFrom(_branchID),
@@ -601,7 +601,7 @@ func Test_Handler_MergeBranches(t *testing.T) {
 			DB: &DBMock{FetchDocumentByBranchIDFunc: fetchByBranch},
 			Tx: &TxMock{
 				FetchDocumentHooksByBranchIDFunc: func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
-					return []hookCore.Hook{storedHook(hookCore.TypeScheduledReminder)}, nil
+					return []hookCore.Hook{storedHook()}, nil
 				},
 				InsertDocumentHookFunc: func(context.Context, hookCore.Hook) error {
 					return errors.New("boom")
@@ -626,7 +626,7 @@ func Test_Handler_MergeBranches(t *testing.T) {
 			DB: &DBMock{FetchDocumentByBranchIDFunc: fetchByBranch},
 			Tx: &TxMock{
 				FetchDocumentHooksByBranchIDFunc: func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
-					hk := storedHook(hookCore.TypeScheduledReminder)
+					hk := storedHook()
 					hk.BranchID = null.ValueFrom(_branchID2)
 
 					return []hookCore.Hook{hk}, nil
@@ -888,7 +888,7 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 			},
 			Tx: &TxMock{
 				FetchDocumentHooksByBranchIDFunc: func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
-					return []hookCore.Hook{storedHook(hookCore.TypeScheduledReminder)}, nil
+					return []hookCore.Hook{storedHook()}, nil
 				},
 				InsertDocumentHookFunc: func(context.Context, hookCore.Hook) error {
 					return errors.New("boom")
@@ -936,7 +936,7 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 			},
 			Tx: &TxMock{
 				FetchDocumentHooksByBranchIDFunc: func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
-					return []hookCore.Hook{storedHook(hookCore.TypeScheduledReminder)}, nil
+					return []hookCore.Hook{storedHook()}, nil
 				},
 			},
 			Body:      validBody,

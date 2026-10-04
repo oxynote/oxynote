@@ -82,9 +82,6 @@ var _ Tx = &TxMock{}
 //			FetchDocumentHooksByBranchIDFunc: func(ctx context.Context, branchID xid.ID, organizationID string) ([]hook.Hook, error) {
 //				panic("mock out the FetchDocumentHooksByBranchID method")
 //			},
-//			FetchDocumentHooksByDocumentIDFunc: func(ctx context.Context, documentID xid.ID, organizationID string) ([]hook.Hook, error) {
-//				panic("mock out the FetchDocumentHooksByDocumentID method")
-//			},
 //			FetchDocumentMaintainersFunc: func(ctx context.Context, documentID xid.ID, organizationID string) ([]string, error) {
 //				panic("mock out the FetchDocumentMaintainers method")
 //			},
@@ -208,9 +205,6 @@ type TxMock struct {
 
 	// FetchDocumentHooksByBranchIDFunc mocks the FetchDocumentHooksByBranchID method.
 	FetchDocumentHooksByBranchIDFunc func(ctx context.Context, branchID xid.ID, organizationID string) ([]hook.Hook, error)
-
-	// FetchDocumentHooksByDocumentIDFunc mocks the FetchDocumentHooksByDocumentID method.
-	FetchDocumentHooksByDocumentIDFunc func(ctx context.Context, documentID xid.ID, organizationID string) ([]hook.Hook, error)
 
 	// FetchDocumentMaintainersFunc mocks the FetchDocumentMaintainers method.
 	FetchDocumentMaintainersFunc func(ctx context.Context, documentID xid.ID, organizationID string) ([]string, error)
@@ -447,15 +441,6 @@ type TxMock struct {
 			// OrganizationID is the organizationID argument value.
 			OrganizationID string
 		}
-		// FetchDocumentHooksByDocumentID holds details about calls to the FetchDocumentHooksByDocumentID method.
-		FetchDocumentHooksByDocumentID []struct {
-			// Ctx is the ctx argument value.
-			Ctx context.Context
-			// DocumentID is the documentID argument value.
-			DocumentID xid.ID
-			// OrganizationID is the organizationID argument value.
-			OrganizationID string
-		}
 		// FetchDocumentMaintainers holds details about calls to the FetchDocumentMaintainers method.
 		FetchDocumentMaintainers []struct {
 			// Ctx is the ctx argument value.
@@ -640,7 +625,6 @@ type TxMock struct {
 	lockFetchDocumentByBranchID             sync.RWMutex
 	lockFetchDocumentFile                   sync.RWMutex
 	lockFetchDocumentHooksByBranchID        sync.RWMutex
-	lockFetchDocumentHooksByDocumentID      sync.RWMutex
 	lockFetchDocumentMaintainers            sync.RWMutex
 	lockFetchDocumentTree                   sync.RWMutex
 	lockFetchDocumentTreeByDocumentParentID sync.RWMutex
@@ -1492,50 +1476,6 @@ func (mock *TxMock) FetchDocumentHooksByBranchIDCalls() []struct {
 	mock.lockFetchDocumentHooksByBranchID.RLock()
 	calls = mock.calls.FetchDocumentHooksByBranchID
 	mock.lockFetchDocumentHooksByBranchID.RUnlock()
-	return calls
-}
-
-// FetchDocumentHooksByDocumentID calls FetchDocumentHooksByDocumentIDFunc.
-func (mock *TxMock) FetchDocumentHooksByDocumentID(ctx context.Context, documentID xid.ID, organizationID string) ([]hook.Hook, error) {
-	callInfo := struct {
-		Ctx            context.Context
-		DocumentID     xid.ID
-		OrganizationID string
-	}{
-		Ctx:            ctx,
-		DocumentID:     documentID,
-		OrganizationID: organizationID,
-	}
-	mock.lockFetchDocumentHooksByDocumentID.Lock()
-	mock.calls.FetchDocumentHooksByDocumentID = append(mock.calls.FetchDocumentHooksByDocumentID, callInfo)
-	mock.lockFetchDocumentHooksByDocumentID.Unlock()
-	if mock.FetchDocumentHooksByDocumentIDFunc == nil {
-		var (
-			hooksOut []hook.Hook
-			errOut   error
-		)
-		return hooksOut, errOut
-	}
-	return mock.FetchDocumentHooksByDocumentIDFunc(ctx, documentID, organizationID)
-}
-
-// FetchDocumentHooksByDocumentIDCalls gets all the calls that were made to FetchDocumentHooksByDocumentID.
-// Check the length with:
-//
-//	len(mockedTx.FetchDocumentHooksByDocumentIDCalls())
-func (mock *TxMock) FetchDocumentHooksByDocumentIDCalls() []struct {
-	Ctx            context.Context
-	DocumentID     xid.ID
-	OrganizationID string
-} {
-	var calls []struct {
-		Ctx            context.Context
-		DocumentID     xid.ID
-		OrganizationID string
-	}
-	mock.lockFetchDocumentHooksByDocumentID.RLock()
-	calls = mock.calls.FetchDocumentHooksByDocumentID
-	mock.lockFetchDocumentHooksByDocumentID.RUnlock()
 	return calls
 }
 

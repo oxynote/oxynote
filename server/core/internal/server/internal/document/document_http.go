@@ -9,8 +9,6 @@ import (
 	"path"
 
 	"github.com/guregu/null/v5"
-	"github.com/oxynote/oxynote/server/core/internal/apps/github"
-	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/document/file"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
@@ -35,15 +33,13 @@ var ErrInvalidDocumentParent = errutil.New(http.StatusBadRequest, "document.inva
 
 // Handler holds dependencies required for tenant app-related operations.
 type Handler struct {
-	log             *slog.Logger
-	db              DB
-	githubMan       *github.Manager
-	webchangeClient *webchange.Client
-	hookMan         HookManager
-	searcher        Searcher
-	searchTrigger   SearchTrigger
-	notifPub        notification.Publisher
-	storer          Storer
+	log           *slog.Logger
+	db            DB
+	hookMan       HookManager
+	searcher      Searcher
+	searchTrigger SearchTrigger
+	notifPub      notification.Publisher
+	storer        Storer
 
 	tree struct {
 		changeCallback func(organizationID string, parentId null.Value[xid.ID])
@@ -66,8 +62,6 @@ type Handler struct {
 func NewHandler(
 	log *slog.Logger,
 	db DB,
-	githubMan *github.Manager,
-	webchangeClient *webchange.Client,
 	hookMan HookManager,
 	searcher Searcher,
 	searchTrigger SearchTrigger,
@@ -75,15 +69,13 @@ func NewHandler(
 	storer Storer,
 ) *Handler {
 	return &Handler{
-		log:             log,
-		db:              db,
-		githubMan:       githubMan,
-		webchangeClient: webchangeClient,
-		hookMan:         hookMan,
-		searcher:        searcher,
-		searchTrigger:   searchTrigger,
-		notifPub:        notifPub,
-		storer:          storer,
+		log:           log,
+		db:            db,
+		hookMan:       hookMan,
+		searcher:      searcher,
+		searchTrigger: searchTrigger,
+		notifPub:      notifPub,
+		storer:        storer,
 	}
 }
 
@@ -640,24 +632,8 @@ func (h *Handler) DeleteDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hooks, err := h.db.FetchDocumentHooksByDocumentID(r.Context(), id, session.ActiveOrganizationID)
-	if err != nil {
-		httpserver.RespondError(h.log, w, err)
-		return
-	}
-
-	for _, hk := range hooks {
-		err = hk.Delete(r.Context(), hook.NewInput(
-			session.ActiveOrganizationID,
-			h.githubMan,
-			h.webchangeClient,
-		))
-		if err != nil {
-			httpserver.RespondError(h.log, w, err)
-			return
-		}
-	}
-
+	// the document's hooks, and those of its descendants, lose their
+	// document with it. The hook manager tears down what they hold.
 	var tx Tx
 
 	err = h.db.BeginTx(r.Context(), &tx)
@@ -975,14 +951,10 @@ type DBAgent interface {
 
 // HooksDBAgent is an interface that handles communication with the document
 // hooks database, covering the hook operations needed by document and branch
-// lifecycle handlers (branch forking, merging, and document deletion).
+// lifecycle handlers (forking, merging and duplicating).
 type HooksDBAgent interface {
 	// InsertDocumentHook should insert the document hook.
 	InsertDocumentHook(ctx context.Context, hk hook.Hook) error
-
-	// FetchDocumentHooksByDocumentID should fetch all hooks for a document across all branches.
-	// Used for full document cleanup (e.g. on document deletion).
-	FetchDocumentHooksByDocumentID(ctx context.Context, documentID xid.ID, organizationID string) ([]hook.Hook, error)
 
 	// FetchDocumentHooksByBranchID should fetch all hooks for a specific branch.
 	FetchDocumentHooksByBranchID(ctx context.Context, branchID xid.ID, organizationID string) ([]hook.Hook, error)

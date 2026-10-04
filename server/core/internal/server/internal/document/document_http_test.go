@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/guregu/null/v5"
-	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/document/file"
 	hookCore "github.com/oxynote/oxynote/server/core/internal/document/hook"
@@ -65,13 +64,12 @@ func newTestHandler(db DB, pub *fakePublisher) (*Handler, *callbackCounts) {
 	cnt := &callbackCounts{}
 
 	hdl := &Handler{
-		log:             slog.New(slog.DiscardHandler),
-		db:              db,
-		notifPub:        pub,
-		storer:          &StorerMock{},
-		webchangeClient: webchange.NewClient("", ""),
-		hookMan:         &HookManagerMock{},
-		searchTrigger:   &SearchTriggerMock{},
+		log:           slog.New(slog.DiscardHandler),
+		db:            db,
+		notifPub:      pub,
+		storer:        &StorerMock{},
+		hookMan:       &HookManagerMock{},
+		searchTrigger: &SearchTriggerMock{},
 	}
 
 	hdl.tree.changeCallback = func(string, null.Value[xid.ID]) { cnt.tree++ }
@@ -159,7 +157,7 @@ func Test_NewHandler(t *testing.T) {
 	st := &StorerMock{}
 	man := &HookManagerMock{}
 
-	hdl := NewHandler(slog.New(slog.DiscardHandler), db, nil, nil, man, searcher, trigger, pub, st)
+	hdl := NewHandler(slog.New(slog.DiscardHandler), db, man, searcher, trigger, pub, st)
 	require.NotNil(t, hdl)
 	assert.NotNil(t, hdl.log)
 	assert.Same(t, db, hdl.db)
@@ -168,8 +166,6 @@ func Test_NewHandler(t *testing.T) {
 	assert.Same(t, trigger, hdl.searchTrigger)
 	assert.Same(t, pub, hdl.notifPub)
 	assert.Same(t, st, hdl.storer)
-	assert.Nil(t, hdl.githubMan)
-	assert.Nil(t, hdl.webchangeClient)
 }
 
 func Test_Handler_RequireDocumentAccess(t *testing.T) {
@@ -1447,26 +1443,6 @@ func Test_Handler_DeleteDocument(t *testing.T) {
 			Tx:       &TxMock{},
 			RespCode: http.StatusInternalServerError,
 		},
-		"Hook fetch error": {
-			DB: &DBMock{
-				FetchDocumentFunc: fetchStored,
-				FetchDocumentHooksByDocumentIDFunc: func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
-					return nil, errors.New("boom")
-				},
-			},
-			Tx:       &TxMock{},
-			RespCode: http.StatusInternalServerError,
-		},
-		"Hook cleanup error": {
-			DB: &DBMock{
-				FetchDocumentFunc: fetchStored,
-				FetchDocumentHooksByDocumentIDFunc: func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
-					return []hookCore.Hook{storedHook("bogus")}, nil
-				},
-			},
-			Tx:       &TxMock{},
-			RespCode: http.StatusInternalServerError,
-		},
 		"Transaction start error": {
 			DB:       &DBMock{FetchDocumentFunc: fetchStored},
 			Tx:       &TxMock{},
@@ -1504,12 +1480,9 @@ func Test_Handler_DeleteDocument(t *testing.T) {
 			RespCode:  http.StatusInternalServerError,
 			Committed: 1,
 		},
-		"Successful deletion with hook cleanup": {
+		"Successful deletion": {
 			DB: &DBMock{
 				FetchDocumentFunc: fetchStored,
-				FetchDocumentHooksByDocumentIDFunc: func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
-					return []hookCore.Hook{storedHook(hookCore.TypeScheduledReminder)}, nil
-				},
 			},
 			Tx: &TxMock{
 				DeleteDocumentFunc: func(_ context.Context, id xid.ID, _ string) ([]xid.ID, error) {

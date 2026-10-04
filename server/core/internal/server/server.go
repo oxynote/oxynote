@@ -177,7 +177,7 @@ func NewServer(
 		searchTrigger,
 		opts.PublicURL,
 	)
-	srv.handlers.document = document.NewHandler(log, db, githubMan, webchangeClient, hookMan, searcher, searchTrigger, notifier, storageClient)
+	srv.handlers.document = document.NewHandler(log, db, hookMan, searcher, searchTrigger, notifier, storageClient)
 	srv.handlers.tag = tag.NewHandler(log, db)
 	srv.handlers.comment = comment.NewHandler(log, db, notifier)
 	srv.handlers.files = files.NewHandler(log, db, storageClient, opts.PublicURL)

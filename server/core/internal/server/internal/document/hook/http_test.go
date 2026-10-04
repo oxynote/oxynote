@@ -169,6 +169,9 @@ func Test_Handler_FetchDocumentHooks(t *testing.T) {
 		},
 		"Hook fetch error": {
 			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*document.Document, error) {
+					return &document.Document{ID: _documentID}, nil
+				},
 				FetchDocumentHooksByBranchIDFunc: func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
 					return nil, errors.New("boom")
 				},
@@ -181,6 +184,9 @@ func Test_Handler_FetchDocumentHooks(t *testing.T) {
 		},
 		"Successful fetch": {
 			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*document.Document, error) {
+					return &document.Document{ID: _documentID}, nil
+				},
 				FetchDocumentHooksByBranchIDFunc: func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
 					return []hookCore.Hook{*scheduledHook()}, nil
 				},
@@ -199,12 +205,6 @@ func Test_Handler_FetchDocumentHooks(t *testing.T) {
 	for cn, c := range cc {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
-
-			if c.DB.FetchDocumentByBranchIDFunc == nil {
-				c.DB.FetchDocumentByBranchIDFunc = func(context.Context, xid.ID, string) (*document.Document, error) {
-					return &document.Document{ID: _documentID}, nil
-				}
-			}
 
 			hdl := Handler{
 				log: slog.New(slog.DiscardHandler),
