@@ -104,6 +104,11 @@ const AUTH_REALTIME_INTERNAL_ENDPOINTS = [
 		method: "POST",
 		path: "/auth-realtime/api/internal/documents/doc-e2e/branches/branch-e2e/operations",
 	},
+	{
+		name: "a branch flush",
+		method: "POST",
+		path: "/auth-realtime/api/internal/documents/doc-e2e/branches/branch-e2e/flush",
+	},
 ] as const
 
 // spellings of a blocked path that a proxy is expected to still recognise.

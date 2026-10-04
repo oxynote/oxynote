@@ -1457,6 +1457,40 @@ describe("createRoutes", () => {
 		})
 	})
 
+	describe("POST /internal/documents/:documentId/branches/:branchId/flush", () => {
+		it("flushes the branch and answers once core has it", async ({
+			expect,
+		}) => {
+			const { app, flushDocument } = build()
+
+			const res = await app.request(
+				"/internal/documents/doc1/branches/b1/flush",
+				{ method: "POST" },
+			)
+
+			expect(res.status).toBe(204)
+			expect(
+				flushDocument.mock.calls.map((call) => call[0]),
+			).toEqual(["doc1-b1"])
+		})
+
+		it("reports a flush that failed", async ({ expect }) => {
+			const flushDocument = vi
+				.fn()
+				.mockRejectedValue(
+					new Error("core unreachable"),
+				)
+			const { app } = build({ flushDocument })
+
+			const res = await app.request(
+				"/internal/documents/doc1/branches/b1/flush",
+				{ method: "POST" },
+			)
+
+			expect(res.status).toBe(500)
+		})
+	})
+
 	describe("POST /internal/documents/:documentId/branches/:branchId/operations", () => {
 		const path = "/internal/documents/doc1/branches/b1/operations"
 

@@ -658,6 +658,25 @@ export function createRoutes({
 		})
 	})
 
+	// core calls this before it reads a branch it is about to change, so
+	// it reads what the editors hold.
+	app.post(
+		"/internal/documents/:documentId/branches/:branchId/flush",
+		async (c) => {
+			const branch = await flushed(c, () =>
+				flushBranch(
+					c.req.param("documentId"),
+					c.req.param("branchId"),
+				),
+			)
+			if (branch instanceof Response) {
+				return branch
+			}
+
+			return c.body(null, 204)
+		},
+	)
+
 	// Server-to-server endpoint called by the Go assistant to apply
 	// edit operations to a live Y.Doc. Each request opens (or reuses) a
 	// direct connection to the document, runs the batch inside a single
