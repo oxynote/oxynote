@@ -124,7 +124,7 @@ function resultTypeText(type: string) {
 <template>
 	<ShadcnUiDialog v-model:open="open">
 		<ShadcnUiDialogContent
-			class="top-[30%] flex max-h-[90dvh] w-150 max-w-[90dvw] translate-y-[-70%] flex-col overflow-hidden p-0"
+			class="top-[15dvh] flex max-h-[70dvh] w-150 max-w-[90dvw] translate-y-0 flex-col overflow-hidden p-0"
 			@interact-outside="open = false"
 		>
 			<ShadcnUiDialogTitle class="sr-only">
