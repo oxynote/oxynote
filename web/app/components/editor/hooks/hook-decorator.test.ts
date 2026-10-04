@@ -5,7 +5,11 @@ import type { DecorationSet } from "@tiptap/pm/view"
 import { describe, it } from "vitest"
 import { HookDecorator } from "./hook-decorator"
 import { docBuilder } from "../test-helpers"
-import { CODE_BLOCK_NAME, METRIC_BLOCK_NAME } from "../blocks/node-names"
+import {
+	CODE_BLOCK_NAME,
+	MERMAID_BLOCK_NAME,
+	METRIC_BLOCK_NAME,
+} from "../blocks/node-names"
 import { DocumentHookType, type DocumentHook } from "~/utils/api/document"
 
 // minimal schema covering every placement rule: a plain block, a
@@ -17,6 +21,7 @@ const schema = new Schema<
 	| "atomBlock"
 	| "metricGrid"
 	| typeof CODE_BLOCK_NAME
+	| typeof MERMAID_BLOCK_NAME
 	| typeof METRIC_BLOCK_NAME
 	| "text"
 >({
@@ -38,6 +43,11 @@ const schema = new Schema<
 			content: "text*",
 			attrs: { uid: { default: null } },
 		},
+		[MERMAID_BLOCK_NAME]: {
+			group: "block",
+			content: "text*",
+			attrs: { uid: { default: null } },
+		},
 		[METRIC_BLOCK_NAME]: {
 			content: "inline*",
 			attrs: { uid: { default: null } },
@@ -54,6 +64,10 @@ function para(uid: string | null, str: string): PMNode {
 
 function codeBlock(uid: string | null, str: string): PMNode {
 	return schema.nodes[CODE_BLOCK_NAME].create({ uid }, schema.text(str))
+}
+
+function mermaidBlock(uid: string | null, str: string): PMNode {
+	return schema.nodes[MERMAID_BLOCK_NAME].create({ uid }, schema.text(str))
 }
 
 function atomBlock(uid: string | null): PMNode {
@@ -261,6 +275,20 @@ describe("HookDecorator", () => {
 		const { plugin, state } = makeState(
 			docOf(para(null, "x"), codeBlock("cb", "code")),
 			() => [hook("cb")],
+		)
+
+		expect(decorationShape(plugin, state)).toEqual([
+			[3, 3, "widget"],
+			[3, 9, "node"],
+		])
+	})
+
+	it("places the widget at the node position for mermaid blocks", ({
+		expect,
+	}) => {
+		const { plugin, state } = makeState(
+			docOf(para(null, "x"), mermaidBlock("mb", "code")),
+			() => [hook("mb")],
 		)
 
 		expect(decorationShape(plugin, state)).toEqual([
