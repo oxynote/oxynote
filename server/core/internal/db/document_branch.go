@@ -345,8 +345,8 @@ func (a *agent) insertDocumentBranchHistoryEntry(ctx context.Context, tx *sqlx.T
 			"updated_at":    entry.UpdatedAt,
 		}
 
-		// a system write has no author, and the entry still holds the
-		// edits of the one it has.
+		// a system write has no author. Keep the user whose edits the
+		// entry still holds.
 		if entry.LastUpdatedBy.Valid {
 			set["fk_last_updated_by"] = entry.LastUpdatedBy
 		}
@@ -385,10 +385,9 @@ func (a *agent) insertDocumentBranchHistoryEntry(ctx context.Context, tx *sqlx.T
 	return a.trimDocumentBranchHistoryEntries(ctx, tx, entry.BranchID)
 }
 
-// fetchDocumentBranchHistoryHooks fetches every hook of the branch a
-// history entry may list, soft-deleted ones included, in a stable order so
-// equal hook sets compare equal. history.NewHooks picks the ones the
-// entry's content holds.
+// fetchDocumentBranchHistoryHooks fetches every hook of the branch,
+// soft-deleted ones included. The fixed order keeps the entry checksum
+// stable.
 func (a *agent) fetchDocumentBranchHistoryHooks(ctx context.Context, q sqlx.QueryerContext, branchID xid.ID) ([]hook.Hook, error) {
 	sqlq, args := a.selectDocumentHook(a.builder.Select()).
 		Where(sq.Eq{"document_hooks.fk_branch_id": branchID}).

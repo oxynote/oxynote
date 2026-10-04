@@ -1,5 +1,10 @@
 import { describe, it } from "vitest"
-import { hookGroupStatus, hookStatus } from "./hook-status"
+import {
+	hookGroupStatus,
+	hookStatus,
+	type HookGroupStatus,
+	type HookStatus,
+} from "./hook-status"
 import {
 	DocumentHookType,
 	type DocumentHook,
@@ -14,7 +19,7 @@ describe("hookStatus", () => {
 	it.for<{
 		name: string
 		input: { score: string; status: DocumentHookStatus }
-		expected: string
+		expected: HookStatus
 	}>([
 		{
 			name: "shows a waiting hook as fresh",
@@ -75,7 +80,7 @@ describe("hookGroupStatus", () => {
 	it.for<{
 		name: string
 		input: { score: string; status: DocumentHookStatus }[]
-		expected: string | null
+		expected: HookGroupStatus | null
 	}>([
 		{
 			name: "has no status without hooks",

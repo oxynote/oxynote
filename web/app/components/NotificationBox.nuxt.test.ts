@@ -203,35 +203,33 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 			)
 		})
 
-		it("names the hook that fired", async ({ expect }) => {
-			seedNotifications([
-				makeNotification({
+		it.for([
+			{
+				name: "names the hook that fired",
+				input: {
 					code: NotificationCode.DocumentHookTrigerred,
-					metadata: {
-						documentId: DOC_ID,
-						branchId: "b",
-						blockId: null,
-						type: DocumentHookType.URLWatcher,
-					},
-				}),
-			])
-
-			const wrapper = await mountBox()
-
-			expect(wrapper.text()).toContain("hook was triggered")
-		})
-
-		it("names the hook that can no longer check its target", async ({
-			expect,
-		}) => {
+					type: DocumentHookType.URLWatcher,
+				},
+				expected: "notification.messages.document-hook-triggered-description",
+			},
+			{
+				name: "names the hook that needs attention",
+				input: {
+					code: NotificationCode.DocumentHookNeedsAttention,
+					type: DocumentHookType.GitHubTracking,
+				},
+				expected:
+					"notification.messages.document-hook-needs-attention-description",
+			},
+		])("$name", async ({ input, expected }, { expect }) => {
 			seedNotifications([
 				makeNotification({
-					code: NotificationCode.DocumentHookNeedsAttention,
+					code: input.code,
 					metadata: {
 						documentId: DOC_ID,
 						branchId: "b",
 						blockId: null,
-						type: DocumentHookType.GitHubTracking,
+						type: input.type,
 					},
 				}),
 			])
@@ -239,9 +237,7 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 			const wrapper = await mountBox()
 
 			expect(wrapper.text()).toContain(
-				t("notification.messages.document-hook-needs-attention-description", {
-					hook: t("editor.hooks.github-tracking.title"),
-				}),
+				t(expected, { hook: t(`editor.hooks.${input.type}.title`) }),
 			)
 		})
 
@@ -333,36 +329,63 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 		})
 
 		it.for([
-			{ type: DocumentHookType.URLWatcher, expected: "mingcute:earth-2-line" },
 			{
-				type: DocumentHookType.GitHubTracking,
+				name: "marks a url watcher trigger with a globe icon",
+				input: {
+					code: NotificationCode.DocumentHookTrigerred,
+					type: DocumentHookType.URLWatcher,
+				},
+				expected: "mingcute:earth-2-line",
+			},
+			{
+				name: "marks a github tracking trigger with a github icon",
+				input: {
+					code: NotificationCode.DocumentHookTrigerred,
+					type: DocumentHookType.GitHubTracking,
+				},
 				expected: "simple-icons:github",
 			},
-			{ type: DocumentHookType.ScheduledReminder, expected: "lucide:timer" },
 			{
-				type: DocumentHookType.ContainerImageWatcher,
+				name: "marks a scheduled reminder trigger with a timer icon",
+				input: {
+					code: NotificationCode.DocumentHookTrigerred,
+					type: DocumentHookType.ScheduledReminder,
+				},
+				expected: "lucide:timer",
+			},
+			{
+				name: "marks a container image watcher trigger with a container icon",
+				input: {
+					code: NotificationCode.DocumentHookTrigerred,
+					type: DocumentHookType.ContainerImageWatcher,
+				},
 				expected: "lucide:container",
 			},
-		])(
-			"marks a $type hook trigger with its own icon",
-			async ({ type, expected }, { expect }) => {
-				seedNotifications([
-					makeNotification({
-						code: NotificationCode.DocumentHookTrigerred,
-						metadata: {
-							documentId: DOC_ID,
-							branchId: "b",
-							blockId: null,
-							type: type,
-						},
-					}),
-				])
-
-				const wrapper = await mountBox()
-
-				expect(renderedIconNames(wrapper)).toContain(expected)
+			{
+				name: "marks a hook that needs attention with its own icon",
+				input: {
+					code: NotificationCode.DocumentHookNeedsAttention,
+					type: DocumentHookType.ContainerImageWatcher,
+				},
+				expected: "lucide:container",
 			},
-		)
+		])("$name", async ({ input, expected }, { expect }) => {
+			seedNotifications([
+				makeNotification({
+					code: input.code,
+					metadata: {
+						documentId: DOC_ID,
+						branchId: "b",
+						blockId: null,
+						type: input.type,
+					},
+				}),
+			])
+
+			const wrapper = await mountBox()
+
+			expect(renderedIconNames(wrapper)).toContain(expected)
+		})
 
 		it("marks a hook type this build does not know with a warning icon", async ({
 			expect,
@@ -552,6 +575,19 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 					},
 				},
 				expected: `/acme/Runbook-${DOC_ID}`,
+			},
+			{
+				name: "opens a hook that needs attention at the block it watches",
+				notification: {
+					code: NotificationCode.DocumentHookNeedsAttention,
+					metadata: {
+						documentId: DOC_ID,
+						branchId: "b",
+						blockId: "block-7",
+						type: DocumentHookType.URLWatcher,
+					},
+				},
+				expected: `/acme/Runbook-${DOC_ID}#block-7`,
 			},
 			{
 				name: "opens a new comment at the block it is anchored to",

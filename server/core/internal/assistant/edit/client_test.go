@@ -242,11 +242,12 @@ func Test_Client_Flush(t *testing.T) {
 	path := "/api/internal/documents/" + docID.String() + "/branches/" + branchID.String() + "/flush"
 
 	cc := map[string]struct {
-		BaseURL    string
-		CloseEarly bool
-		StatusCode int
-		Body       string
-		Err        error
+		BaseURL      string
+		CloseEarly   bool
+		StatusCode   int
+		Body         string
+		TruncateBody bool
+		Err          error
 	}{
 		"Invalid base URL": {
 			BaseURL: "://bad",
@@ -261,6 +262,11 @@ func Test_Client_Flush(t *testing.T) {
 			Body:       `{"error":"pending changes could not be stored"}`,
 			Err:        assert.AnError,
 		},
+		"Unreadable error body": {
+			StatusCode:   http.StatusInternalServerError,
+			TruncateBody: true,
+			Err:          assert.AnError,
+		},
 		"Successful flush": {
 			StatusCode: http.StatusNoContent,
 		},
@@ -274,6 +280,12 @@ func Test_Client_Flush(t *testing.T) {
 
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				gotPath, gotMethod = r.URL.Path, r.Method
+
+				// declare a longer body than is written, so the client's
+				// read of the error body fails.
+				if c.TruncateBody {
+					w.Header().Set("Content-Length", "100")
+				}
 
 				w.WriteHeader(c.StatusCode)
 				_, err := w.Write([]byte(c.Body))

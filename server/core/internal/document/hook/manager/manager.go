@@ -110,7 +110,7 @@ func (m *Manager) SetUpBranch(ctx context.Context, branchID xid.ID, organization
 	if err != nil {
 		m.log.With("branch_id", branchID).
 			With("error", err).
-			Error("fetching branch hooks")
+			Error("cannot fetch branch hooks")
 
 		return
 	}
@@ -170,23 +170,23 @@ func (m *Manager) processHook(ctx context.Context, ps *ProcessingState, h hook.H
 	if err != nil {
 		m.log.With("hook_id", h.ID).
 			With("error", err).
-			Error("waiting for the hook's lock")
+			Error("cannot lock hook")
 
 		return
 	}
 
 	defer unlock()
 
-	// the row may have changed between the page read and the lock. A hook
-	// cut loose from its organization is out of any write's reach, so its
-	// row is as it was read.
+	// re-read the row, since a write may have changed it before the lock.
+	// A hook without an organization cannot be written, so the row read
+	// stands.
 	if h.OrganizationID.Valid {
 		stored, err := m.db.FetchDocumentHook(ctx, h.ID, h.OrganizationID.String)
 		if err != nil {
 			if !errutil.IsNotFound(err) {
 				m.log.With("hook_id", h.ID).
 					With("error", err).
-					Error("fetching document hook")
+					Error("cannot fetch document hook")
 			}
 
 			return
@@ -358,9 +358,9 @@ func (m *Manager) notifyTransition(ctx context.Context, prev, h hook.Hook) {
 	m.notifPub.PublishNotifications(h.OrganizationID.String, core, maintainers...)
 }
 
-// undoSetup tears down the resource h got when it was set up, since its
-// row was not stored. Nothing else points at the resource, so a failure
-// is reported.
+// undoSetup tears down the resource h got in this run, since the row
+// naming it was not stored. Nothing else names it, so a failure is
+// reported.
 func (m *Manager) undoSetup(ctx context.Context, prev, h hook.Hook) {
 	if prev.State.Valid || !h.State.Valid {
 		return

@@ -276,8 +276,8 @@ describe("<GitHubTrackingConfigMenu>", { concurrent: false }, () => {
 		},
 	)
 
-	// a server without github cannot be fixed from the settings, so the
-	// notice does not send the reader there
+	// github is also disconnected here. The notice still names the server,
+	// because no setting can fix it.
 	it("warns that github is not set up on this server", async ({ expect }) => {
 		mockGitHub({ connected: false })
 		await mountMenu({ hook: githubHook({ status: "unconfigured" }) })

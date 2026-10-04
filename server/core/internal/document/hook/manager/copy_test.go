@@ -26,11 +26,11 @@ func Test_CopyHooks(t *testing.T) {
 		Blocks []null.String
 		Err    error
 	}{
-		"Error returned by tx.FetchDocumentHooksByBranchID": {
+		"Error returned by CopyTx.FetchDocumentHooksByBranchID": {
 			FetchErr: assert.AnError,
 			Err:      assert.AnError,
 		},
-		"Error returned by tx.InsertDocumentHook": {
+		"Error returned by CopyTx.InsertDocumentHook": {
 			InsertErr: assert.AnError,
 			Blocks:    []null.String{null.StringFrom("old-uid")},
 			Err:       assert.AnError,

@@ -54,8 +54,7 @@ type Entry struct {
 	// UpdatedAt is the timestamp of the last edit folded into the entry.
 	UpdatedAt time.Time `json:"updatedAt" db:"updated_at"`
 
-	// Checksum is the stored Sum of the entry. Empty until the entry is
-	// stored.
+	// Checksum is the Sum stored with the entry. Unset on a new entry.
 	Checksum string `json:"-" db:"checksum"`
 }
 
@@ -83,17 +82,12 @@ func NewEntry(doc document.Document, at time.Time, by null.String, hooks Hooks, 
 // Sum sums what the entry records: name, icon, content and hooks. Two
 // entries with the same sum restore the same branch.
 func (e Entry) Sum() (string, error) {
-	hooks := e.Hooks
-	if hooks == nil {
-		hooks = Hooks{}
-	}
-
 	raw, err := json.Marshal(struct {
 		DocumentName string             `json:"documentName"`
 		Icon         string             `json:"icon"`
 		Content      document.RootBlock `json:"content"`
 		Hooks        Hooks              `json:"hooks"`
-	}{e.DocumentName, e.Icon, e.Content, hooks})
+	}{e.DocumentName, e.Icon, e.Content, e.Hooks})
 	if err != nil {
 		return "", fmt.Errorf("marshaling history entry: %w", err)
 	}
@@ -120,8 +114,8 @@ type Hook struct {
 // Hooks is the list of hooks stored on a history entry.
 type Hooks []Hook
 
-// NewHooks reduces hooks to what a history entry of the document records:
-// those whose block its content holds, soft-deleted or not.
+// NewHooks keeps what a history entry of doc records: document-level hooks
+// and those whose block doc's content holds, soft-deleted or not.
 func NewHooks(doc document.Document, hooks []hook.Hook) Hooks {
 	res := make(Hooks, 0, len(hooks))
 

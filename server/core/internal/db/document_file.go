@@ -139,10 +139,9 @@ func (a *agent) CheckDocumentFileReferenced(ctx context.Context, id string, docu
 
 // DeleteExpiredDocumentBranchHistoryEntries removes history entries created
 // before the given time, except the newest entry of each branch. Age
-// trimming happens here rather than on insert because an idle branch never
-// inserts again, and its entries would otherwise pin the files they
-// reference forever. The newest entry pins nothing the live content does
-// not.
+// trimming runs here, not on insert, because an idle branch never inserts
+// again. The newest entry is kept because it pins only files the live
+// content holds.
 func (a *agent) DeleteExpiredDocumentBranchHistoryEntries(ctx context.Context, before time.Time) error {
 	q, args := a.builder.Delete("document_branch_history_entries e").
 		Where(sq.Lt{"e.created_at": before}).

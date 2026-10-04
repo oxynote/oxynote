@@ -74,134 +74,148 @@ func imageWatcherState(t *testing.T, digest string) State {
 func Test_ContainerImageWatcher_Validate(t *testing.T) {
 	t.Parallel()
 
-	assert.NoError(t, (&ContainerImageWatcher{Image: "nginx:1.27"}).Validate())
-	testutil.AssertEqualError(t, ErrInvalidImage, (&ContainerImageWatcher{Image: "INVALID image ref"}).Validate())
+	cc := map[string]struct {
+		Image string
+		Err   error
+	}{
+		"Valid image reference":     {Image: "nginx:1.27"},
+		"Invalid image is rejected": {Image: "INVALID image ref", Err: ErrInvalidImage},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			testutil.AssertEqualError(t, c.Err, (&ContainerImageWatcher{Image: c.Image}).Validate())
+		})
+	}
 }
 
 func Test_ContainerImageWatcher_Process(t *testing.T) {
 	t.Parallel()
 
-	t.Run("Unchanged digest keeps the full score", func(t *testing.T) {
-		t.Parallel()
+	cc := map[string]struct {
+		// Image is watched instead of the fake registry's image.
+		Image        string
+		Unauthorized bool
+		// Missing watches a tag the fake registry does not hold.
+		Missing bool
+		// Stale has the state hold an old digest instead of the current one.
+		Stale bool
+		// State is sent instead of a state built from the digest.
+		State  State
+		Status Status
+		Score  decimal.Decimal
+		Err    error
+	}{
+		"Malformed state": {
+			Image: "INVALID image ref",
+			State: State(`{not json`),
+			Err:   assert.AnError,
+		},
+		"Invalid image reference": {
+			Image: "INVALID image ref",
+			Err:   assert.AnError,
+		},
+		"Unauthorized registry is a status": {
+			Unauthorized: true,
+			Status:       StatusUnauthorized,
+		},
+		"Missing image is a status": {
+			Missing: true,
+			Status:  StatusImageNotFound,
+		},
+		"Changed digest drops the score to zero": {
+			Stale:  true,
+			Status: StatusActive,
+			Score:  decimal.Zero,
+		},
+		"Unchanged digest keeps the full score": {
+			Status: StatusActive,
+			Score:  decimal.NewFromInt(100),
+		},
+	}
 
-		image, digest := newFakeRegistryImage(t, false)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-		ciw := ContainerImageWatcher{Image: image}
+			image, digest := c.Image, "sha256:old"
+			if image == "" {
+				image, digest = newFakeRegistryImage(t, c.Unauthorized)
+			}
 
-		res, err := ciw.Process(context.Background(), stubInput{
-			state: imageWatcherState(t, digest),
+			if c.Missing {
+				image = strings.Replace(image, ":v1", ":v2", 1)
+			}
+
+			if c.Stale {
+				digest = "sha256:old"
+			}
+
+			state := c.State
+			if state == nil {
+				state = imageWatcherState(t, digest)
+			}
+
+			res, err := (&ContainerImageWatcher{Image: image}).Process(context.Background(), stubInput{state: state})
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Status, res.Status)
+			assert.True(t, res.Score.Equal(c.Score), "score %s", res.Score)
+
+			if c.Status != StatusActive {
+				assert.Nil(t, res.State)
+
+				return
+			}
+
+			assert.Equal(t, state, res.State)
 		})
-		require.NoError(t, err)
-
-		assert.Equal(t, StatusActive, res.Status)
-		assert.True(t, res.Score.Equal(decimal.NewFromInt(100)))
-
-		var ciws ContainerImageWatcherState
-
-		require.NoError(t, json.Unmarshal(res.State, &ciws))
-		assert.Equal(t, digest, ciws.Digest)
-	})
-
-	t.Run("Changed digest drops the score to zero", func(t *testing.T) {
-		t.Parallel()
-
-		image, _ := newFakeRegistryImage(t, false)
-
-		ciw := ContainerImageWatcher{Image: image}
-
-		res, err := ciw.Process(context.Background(), stubInput{
-			state: imageWatcherState(t, "sha256:old"),
-		})
-		require.NoError(t, err)
-
-		assert.True(t, res.Score.Equal(decimal.Zero))
-	})
-
-	t.Run("Unauthorized registry is a status", func(t *testing.T) {
-		t.Parallel()
-
-		image, _ := newFakeRegistryImage(t, true)
-
-		ciw := ContainerImageWatcher{Image: image}
-
-		res, err := ciw.Process(context.Background(), stubInput{
-			state: imageWatcherState(t, "sha256:old"),
-		})
-		require.NoError(t, err)
-
-		assert.Equal(t, StatusUnauthorized, res.Status)
-		assert.Nil(t, res.State)
-	})
-
-	t.Run("Missing image is a status", func(t *testing.T) {
-		t.Parallel()
-
-		image, _ := newFakeRegistryImage(t, false)
-
-		ciw := ContainerImageWatcher{Image: strings.Replace(image, ":v1", ":v2", 1)}
-
-		res, err := ciw.Process(context.Background(), stubInput{
-			state: imageWatcherState(t, "sha256:old"),
-		})
-		require.NoError(t, err)
-
-		assert.Equal(t, StatusImageNotFound, res.Status)
-	})
-
-	t.Run("Invalid image reference fails", func(t *testing.T) {
-		t.Parallel()
-
-		ciw := ContainerImageWatcher{Image: "INVALID image ref"}
-
-		_, err := ciw.Process(context.Background(), stubInput{
-			state: imageWatcherState(t, ""),
-		})
-		require.Error(t, err)
-	})
-
-	t.Run("Malformed state fails", func(t *testing.T) {
-		t.Parallel()
-
-		ciw := ContainerImageWatcher{}
-
-		_, err := ciw.Process(context.Background(), stubInput{state: State(`{not json`)})
-		require.Error(t, err)
-	})
+	}
 }
 
 func Test_ContainerImageWatcher_Reset(t *testing.T) {
 	t.Parallel()
 
-	t.Run("Reset adopts the current digest at full score", func(t *testing.T) {
-		t.Parallel()
+	cc := map[string]struct {
+		Unauthorized bool
+		Status       Status
+		Score        decimal.Decimal
+	}{
+		"Unauthorized registry is a status": {
+			Unauthorized: true,
+			Status:       StatusUnauthorized,
+		},
+		"Reset adopts the current digest at full score": {
+			Status: StatusActive,
+			Score:  decimal.NewFromInt(100),
+		},
+	}
 
-		image, digest := newFakeRegistryImage(t, false)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-		ciw := ContainerImageWatcher{Image: image}
+			image, digest := newFakeRegistryImage(t, c.Unauthorized)
 
-		res, err := ciw.Reset(context.Background(), stubInput{})
-		require.NoError(t, err)
+			res, err := (&ContainerImageWatcher{Image: image}).Reset(context.Background(), stubInput{})
+			require.NoError(t, err)
 
-		assert.Equal(t, StatusActive, res.Status)
-		assert.True(t, res.Score.Equal(decimal.NewFromInt(100)))
+			assert.Equal(t, c.Status, res.Status)
+			assert.True(t, res.Score.Equal(c.Score), "score %s", res.Score)
 
-		var ciws ContainerImageWatcherState
+			if c.Status != StatusActive {
+				assert.Nil(t, res.State)
 
-		require.NoError(t, json.Unmarshal(res.State, &ciws))
-		assert.Equal(t, digest, ciws.Digest)
-	})
+				return
+			}
 
-	t.Run("Unauthorized registry is a status", func(t *testing.T) {
-		t.Parallel()
-
-		image, _ := newFakeRegistryImage(t, true)
-
-		ciw := ContainerImageWatcher{Image: image}
-
-		res, err := ciw.Reset(context.Background(), stubInput{})
-		require.NoError(t, err)
-
-		assert.Equal(t, StatusUnauthorized, res.Status)
-		assert.Nil(t, res.State)
-	})
+			assert.Equal(t, imageWatcherState(t, digest), res.State)
+		})
+	}
 }

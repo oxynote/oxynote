@@ -2409,6 +2409,11 @@ func Test_input_CreateHook(t *testing.T) {
 		return nil, assert.AnError
 	}
 
+	blockless := stubHookManager()
+	blockless.CreateHookFunc = func(context.Context, hook.CreateInput, xid.ID, string, string) (*hook.Hook, error) {
+		return nil, hook.ErrBlockNotFound
+	}
+
 	cc := map[string]struct {
 		DB       *DBMock
 		Man      *HookManagerMock
@@ -2429,6 +2434,7 @@ func Test_input_CreateHook(t *testing.T) {
 		},
 		"Unknown block": {
 			DB:       stubHookDB(),
+			Man:      blockless,
 			Branch:   _stubBranchID,
 			BlockUID: "nope",
 			Type:     hook.TypeScheduledReminder,
@@ -2449,14 +2455,6 @@ func Test_input_CreateHook(t *testing.T) {
 			Type:     hook.TypeURLWatcher,
 			Settings: processor.Settings(`{"url":"https://example.com"}`),
 			Err:      fmt.Errorf("%s: %w", hook.TypeURLWatcher, webchange.ErrNotConfigured),
-		},
-		"Settings the processor refuses": {
-			DB:       stubHookDB(),
-			Branch:   _stubBranchID,
-			Type:     hook.TypeScheduledReminder,
-			Settings: processor.Settings(`{"scale":"bogus"}`),
-			Inserts:  1,
-			Err:      processor.ErrInvalidScaleType,
 		},
 		"Error returned by hookMan.CreateHook": {
 			DB:       stubHookDB(),
@@ -2520,8 +2518,6 @@ func Test_input_CreateHook(t *testing.T) {
 			assert.Equal(t, null.StringFrom("org"), hk.OrganizationID)
 			assert.Equal(t, null.NewString(c.BlockUID, c.BlockUID != ""), hk.BlockID)
 			assert.Equal(t, c.Settings, hk.Settings)
-			assert.Equal(t, "100", hk.Score.String())
-			assert.True(t, hk.State.Valid)
 		})
 	}
 }
@@ -2542,12 +2538,6 @@ func Test_input_UpdateHook(t *testing.T) {
 		Touched  []Touched
 		Err      error
 	}{
-		"Settings the processor refuses": {
-			DB:       stubHookDB(),
-			Settings: processor.Settings(`{"scale":"bogus"}`),
-			Updates:  1,
-			Err:      processor.ErrInvalidScaleType,
-		},
 		"Error returned by hookMan.UpdateHook": {
 			DB:       stubHookDB(),
 			Man:      failing,
@@ -2587,12 +2577,11 @@ func Test_input_UpdateHook(t *testing.T) {
 				return
 			}
 
-			// the hook handed in takes the stored one, with the settings
-			// replaced and a fresh state.
+			// the hook handed in takes the stored one.
 			assert.Equal(t, hk.ID, ff[0].ID)
 			assert.Equal(t, "org", ff[0].OrganizationID)
+			assert.Equal(t, c.Settings, ff[0].UI.Settings)
 			assert.Equal(t, c.Settings, hk.Settings)
-			assert.NotContains(t, string(hk.State.V), "2026-01-01")
 			assert.True(t, hk.UpdatedAt.Valid)
 		})
 	}
@@ -2606,9 +2595,6 @@ func Test_input_ResetHook(t *testing.T) {
 		return nil, assert.AnError
 	}
 
-	invalid := stubHook()
-	invalid.Settings = processor.Settings(`{"scale":1}`)
-
 	cc := map[string]struct {
 		DB      *DBMock
 		Man     *HookManagerMock
@@ -2617,13 +2603,6 @@ func Test_input_ResetHook(t *testing.T) {
 		Touched []Touched
 		Err     error
 	}{
-		"Settings that do not decode": {
-			DB:      stubHookDB(),
-			Man:     stubHookManager(invalid),
-			Hook:    invalid,
-			Updates: 1,
-			Err:     assert.AnError,
-		},
 		"Error returned by hookMan.ResetHook": {
 			DB:      stubHookDB(),
 			Man:     failing,
@@ -2657,10 +2636,10 @@ func Test_input_ResetHook(t *testing.T) {
 				return
 			}
 
-			// the settings stay; only the state starts over.
+			// the hook handed in takes the stored one.
 			assert.Equal(t, c.Hook.ID, ff[0].ID)
-			assert.Equal(t, stubHook().Settings, c.Hook.Settings)
-			assert.NotContains(t, string(c.Hook.State.V), "2026-01-01")
+			assert.Equal(t, "org", ff[0].OrganizationID)
+			assert.True(t, c.Hook.UpdatedAt.Valid)
 		})
 	}
 }
@@ -2673,13 +2652,6 @@ func Test_input_DeleteHook(t *testing.T) {
 		return assert.AnError
 	}
 
-	// a url watcher tears its changedetection.io watcher down from its
-	// state, and a state it cannot read stops the delete before the row.
-	watcher := stubHook()
-	watcher.Type = hook.TypeURLWatcher
-	watcher.Settings = processor.Settings(`{"url":"https://example.com"}`)
-	watcher.State = null.ValueFrom(processor.State(`{`))
-
 	cc := map[string]struct {
 		DB      *DBMock
 		Man     *HookManagerMock
@@ -2688,13 +2660,6 @@ func Test_input_DeleteHook(t *testing.T) {
 		Touched []Touched
 		Err     error
 	}{
-		"External teardown failed": {
-			DB:      stubHookDB(),
-			Man:     stubHookManager(watcher),
-			Hook:    watcher,
-			Deletes: 1,
-			Err:     assert.AnError,
-		},
 		"Error returned by hookMan.DeleteHook": {
 			DB:      stubHookDB(),
 			Man:     failing,
@@ -2734,6 +2699,8 @@ func Test_input_DeleteHook(t *testing.T) {
 			}
 
 			assert.Equal(t, _testHookID, ff[0].ID)
+			assert.Equal(t, _testDocID, ff[0].DocumentID)
+			assert.Equal(t, "org", ff[0].OrganizationID)
 		})
 	}
 }

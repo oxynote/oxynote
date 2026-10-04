@@ -28,8 +28,7 @@ reads it and its hooks, in the transaction that wrote the change.
 
 - Edits in one 30-minute bucket (by `created_at`) update the newest
   entry and its `updated_at`. An entry equal to the newest is skipped. A
-  null author (system write, no maintainers) never replaces a set one.
-- An entry lists the hooks whose block its content holds.
+  null author (system write) never replaces a set one.
 - Hook create, update and delete flush the branch, then record an entry
   in their transaction. Reset does not.
 - Create, duplicate, fork and merge write a **boundary** entry that never
@@ -60,9 +59,8 @@ request handler:
   later; NULL-FK rows skip the wait; files younger than a day are never
   touched.
 - `hook/manager` does the same for hooks, calling `Hook.Delete` before
-  dropping a row with a NULL FK. A merge detaches
-  the target's hooks (`DetachDocumentHooksByBranchID`) rather than
-  soft-deleting them.
+  dropping a row with a NULL FK. A merge detaches the target's hooks
+  (`DetachDocumentHooksByBranchID`) rather than soft-deleting them.
 - **Organization deletion is announced**: auth-realtime's
   `beforeDeleteOrganization` calls `POST /api/x/organizations/{id}/teardown`
   while rows still exist and throws if core fails.

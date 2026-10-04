@@ -17,8 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// storedHook builds a stored hook whose processor needs no external
-// dependencies.
+// storedHook builds a stored hook on the document's main branch.
 func storedHook(typ hookCore.Type) hookCore.Hook {
 	return hookCore.Hook{
 		ID:             xid.New(),
@@ -588,11 +587,24 @@ func Test_Handler_MergeBranches(t *testing.T) {
 			RespCode: http.StatusInternalServerError,
 			History:  1,
 		},
-		"Error returned by tx.FetchDocumentHooksByBranchID": {
+		"Error returned by Tx.FetchDocumentHooksByBranchID": {
 			DB: &DBMock{FetchDocumentByBranchIDFunc: fetchByBranch},
 			Tx: &TxMock{
 				FetchDocumentHooksByBranchIDFunc: func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
 					return nil, errors.New("boom")
+				},
+			},
+			Body:     validBody,
+			RespCode: http.StatusInternalServerError,
+		},
+		"Error returned by Tx.InsertDocumentHook": {
+			DB: &DBMock{FetchDocumentByBranchIDFunc: fetchByBranch},
+			Tx: &TxMock{
+				FetchDocumentHooksByBranchIDFunc: func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
+					return []hookCore.Hook{storedHook(hookCore.TypeScheduledReminder)}, nil
+				},
+				InsertDocumentHookFunc: func(context.Context, hookCore.Hook) error {
+					return errors.New("boom")
 				},
 			},
 			Body:     validBody,
@@ -611,8 +623,15 @@ func Test_Handler_MergeBranches(t *testing.T) {
 			History:   1,
 		},
 		"Successful merge": {
-			DB:        &DBMock{FetchDocumentByBranchIDFunc: fetchByBranch},
-			Tx:        &TxMock{},
+			DB: &DBMock{FetchDocumentByBranchIDFunc: fetchByBranch},
+			Tx: &TxMock{
+				FetchDocumentHooksByBranchIDFunc: func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
+					hk := storedHook(hookCore.TypeScheduledReminder)
+					hk.BranchID = null.ValueFrom(_branchID2)
+
+					return []hookCore.Hook{hk}, nil
+				},
+			},
 			Body:      validBody,
 			RespCode:  http.StatusOK,
 			Committed: 1,
@@ -665,6 +684,13 @@ func Test_Handler_MergeBranches(t *testing.T) {
 				require.Len(t, hh, 1)
 				assert.Equal(t, _branchID2, hh[0].BranchID)
 				assert.Equal(t, "org1", hh[0].OrganizationID)
+
+				ii := c.Tx.InsertDocumentHookCalls()
+				require.Len(t, ii, 1)
+				assert.Equal(t, null.ValueFrom(_branchID), ii[0].Hk.BranchID)
+				assert.Equal(t, null.ValueFrom(_documentID), ii[0].Hk.DocumentID)
+				assert.Equal(t, processor.StatusInitializing, ii[0].Hk.Status)
+				assert.False(t, ii[0].Hk.State.Valid)
 
 				pp := man.SetUpBranchCalls()
 				require.Len(t, pp, 1)
@@ -840,7 +866,7 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 			Body:     validBody,
 			RespCode: http.StatusInternalServerError,
 		},
-		"Error returned by tx.FetchDocumentHooksByBranchID": {
+		"Error returned by Tx.FetchDocumentHooksByBranchID": {
 			DB: &DBMock{
 				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
 					return storedDoc(), nil
@@ -849,6 +875,23 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 			Tx: &TxMock{
 				FetchDocumentHooksByBranchIDFunc: func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
 					return nil, errors.New("boom")
+				},
+			},
+			Body:     validBody,
+			RespCode: http.StatusInternalServerError,
+		},
+		"Error returned by Tx.InsertDocumentHook": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return storedDoc(), nil
+				},
+			},
+			Tx: &TxMock{
+				FetchDocumentHooksByBranchIDFunc: func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
+					return []hookCore.Hook{storedHook(hookCore.TypeScheduledReminder)}, nil
+				},
+				InsertDocumentHookFunc: func(context.Context, hookCore.Hook) error {
+					return errors.New("boom")
 				},
 			},
 			Body:     validBody,
@@ -891,7 +934,11 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 					return storedDoc(), nil
 				},
 			},
-			Tx:        &TxMock{},
+			Tx: &TxMock{
+				FetchDocumentHooksByBranchIDFunc: func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
+					return []hookCore.Hook{storedHook(hookCore.TypeScheduledReminder)}, nil
+				},
+			},
 			Body:      validBody,
 			RespCode:  http.StatusCreated,
 			Committed: 1,
@@ -950,6 +997,13 @@ func Test_Handler_CreateDocumentBranch(t *testing.T) {
 				require.Len(t, hh, 1)
 				assert.Equal(t, _branchID, hh[0].BranchID)
 				assert.Equal(t, "org1", hh[0].OrganizationID)
+
+				ii := c.Tx.InsertDocumentHookCalls()
+				require.Len(t, ii, 1)
+				assert.Equal(t, null.ValueFrom(forked.BranchID), ii[0].Hk.BranchID)
+				assert.Equal(t, null.ValueFrom(_documentID), ii[0].Hk.DocumentID)
+				assert.Equal(t, processor.StatusInitializing, ii[0].Hk.Status)
+				assert.False(t, ii[0].Hk.State.Valid)
 
 				pp := man.SetUpBranchCalls()
 				require.Len(t, pp, 1)

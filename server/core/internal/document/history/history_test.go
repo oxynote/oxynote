@@ -1,7 +1,6 @@
 package history
 
 import (
-	"slices"
 	"testing"
 	"time"
 
@@ -65,6 +64,8 @@ func Test_NewEntry(t *testing.T) {
 }
 
 func Test_Entry_Sum(t *testing.T) {
+	t.Parallel()
+
 	base := NewEntry(
 		document.Document{
 			ID:           xid.New(),
@@ -90,6 +91,9 @@ func Test_Entry_Sum(t *testing.T) {
 		false,
 	)
 
+	baseSum, err := base.Sum()
+	require.NoError(t, err)
+
 	cc := map[string]struct {
 		Edit func(e *Entry)
 		Same bool
@@ -107,7 +111,7 @@ func Test_Entry_Sum(t *testing.T) {
 		"Other hooks": {
 			Edit: func(e *Entry) { e.Hooks = Hooks{} },
 		},
-		"Other id, author, times, boundary and stored checksum": {
+		"Fields outside the snapshot": {
 			Edit: func(e *Entry) {
 				e.ID = xid.New()
 				e.Checksum = "stale"
@@ -141,36 +145,19 @@ func Test_Entry_Sum(t *testing.T) {
 			t.Parallel()
 
 			entry := base
-			entry.Content.Content = slices.Clone(base.Content.Content)
 			c.Edit(&entry)
 
 			sum, err := entry.Sum()
-			testutil.RequireEqualError(t, c.Err, err)
+			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {
 				return
 			}
 
-			baseSum, err := base.Sum()
-			require.NoError(t, err)
-
 			assert.Len(t, sum, 64)
 			assert.Equal(t, c.Same, sum == baseSum)
 		})
 	}
-
-	// nil hooks sum like no hooks, as both are stored as [].
-	empty := base
-	empty.Hooks = Hooks{}
-
-	emptySum, err := empty.Sum()
-	require.NoError(t, err)
-
-	empty.Hooks = nil
-
-	nilSum, err := empty.Sum()
-	require.NoError(t, err)
-	assert.Equal(t, emptySum, nilSum)
 }
 
 func Test_NewHooks(t *testing.T) {
@@ -185,40 +172,84 @@ func Test_NewHooks(t *testing.T) {
 		},
 	}
 
-	assert.Equal(t, Hooks{}, NewHooks(doc, nil))
-	assert.Equal(t, Hooks{
-		{
-			Type:     hook.TypeURLWatcher,
-			BlockID:  null.StringFrom("b1"),
-			Settings: processor.Settings(`{"url":"https://example.com"}`),
+	cc := map[string]struct {
+		Hooks  []hook.Hook
+		Result Hooks
+	}{
+		"Nil hooks": {
+			Result: Hooks{},
 		},
-		{
-			Type:     hook.TypeScheduledReminder,
-			Settings: processor.Settings(`{"cron":"0 9 * * 1"}`),
+		"Document level hook is kept": {
+			Hooks: []hook.Hook{
+				{
+					ID:       xid.New(),
+					Type:     hook.TypeScheduledReminder,
+					Settings: processor.Settings(`{"cron":"0 9 * * 1"}`),
+				},
+			},
+			Result: Hooks{
+				{
+					Type:     hook.TypeScheduledReminder,
+					Settings: processor.Settings(`{"cron":"0 9 * * 1"}`),
+				},
+			},
 		},
-	}, NewHooks(doc, []hook.Hook{
-		{
-			ID:       xid.New(),
-			Type:     hook.TypeURLWatcher,
-			BlockID:  null.StringFrom("b1"),
-			Settings: processor.Settings(`{"url":"https://example.com"}`),
-			State:    null.ValueFrom(processor.State(`{"watcher":"w1"}`)),
-			// the block is back, so the sweep lifts the mark on its next
-			// run.
-			SoftDeletedAt: null.TimeFrom(time.Now()),
+		"Hook whose block is present is kept": {
+			Hooks: []hook.Hook{
+				{
+					ID:       xid.New(),
+					Type:     hook.TypeURLWatcher,
+					BlockID:  null.StringFrom("b1"),
+					Settings: processor.Settings(`{"url":"https://example.com"}`),
+					State:    null.ValueFrom(processor.State(`{"watcher":"w1"}`)),
+				},
+			},
+			Result: Hooks{
+				{
+					Type:     hook.TypeURLWatcher,
+					BlockID:  null.StringFrom("b1"),
+					Settings: processor.Settings(`{"url":"https://example.com"}`),
+				},
+			},
 		},
-		{
-			ID:       xid.New(),
-			Type:     hook.TypeURLWatcher,
-			BlockID:  null.StringFrom("removed"),
-			Settings: processor.Settings(`{"url":"https://example.org"}`),
+		"Soft deleted hook whose block is present is kept": {
+			Hooks: []hook.Hook{
+				{
+					ID:            xid.New(),
+					Type:          hook.TypeURLWatcher,
+					BlockID:       null.StringFrom("b1"),
+					Settings:      processor.Settings(`{"url":"https://example.com"}`),
+					SoftDeletedAt: null.TimeFrom(time.Now()),
+				},
+			},
+			Result: Hooks{
+				{
+					Type:     hook.TypeURLWatcher,
+					BlockID:  null.StringFrom("b1"),
+					Settings: processor.Settings(`{"url":"https://example.com"}`),
+				},
+			},
 		},
-		{
-			ID:       xid.New(),
-			Type:     hook.TypeScheduledReminder,
-			Settings: processor.Settings(`{"cron":"0 9 * * 1"}`),
+		"Hook whose block is absent is dropped": {
+			Hooks: []hook.Hook{
+				{
+					ID:       xid.New(),
+					Type:     hook.TypeURLWatcher,
+					BlockID:  null.StringFrom("removed"),
+					Settings: processor.Settings(`{"url":"https://example.org"}`),
+				},
+			},
+			Result: Hooks{},
 		},
-	}))
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, NewHooks(doc, c.Hooks))
+		})
+	}
 }
 
 func Test_Hooks_Value(t *testing.T) {

@@ -24,8 +24,7 @@ type Handler struct {
 	}
 }
 
-// NewHandler creates a new handler instance with the provided logger,
-// database and hook manager.
+// NewHandler creates a hook handler.
 func NewHandler(log *slog.Logger, db DB, hookMan Manager) *Handler {
 	return &Handler{
 		log:     log,

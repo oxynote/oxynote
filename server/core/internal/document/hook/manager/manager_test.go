@@ -317,9 +317,9 @@ func Test_Manager_processHooks(t *testing.T) {
 		}
 	}
 
-	wasNotified := func(count int) check {
-		return func(t *testing.T, _ *DBMock, notifier *changeRecorder, _ *fakePublisher, _ error) {
-			require.Len(t, notifier.hooks, count)
+	wasChangeCalled := func(count int) check {
+		return func(t *testing.T, _ *DBMock, changes *changeRecorder, _ *fakePublisher, _ error) {
+			require.Len(t, changes.hooks, count)
 		}
 	}
 
@@ -384,7 +384,7 @@ func Test_Manager_processHooks(t *testing.T) {
 		Write  func(hook.Hook) hook.Hook
 		Checks []check
 	}{
-		"Hook fetch failure is propagated": {
+		"Error returned by db.FetchPaginatedDocumentHooks": {
 			Hooks:    func(*testing.T) []hook.Hook { return nil },
 			FetchErr: assert.AnError,
 			Checks: checks(
@@ -442,7 +442,7 @@ func Test_Manager_processHooks(t *testing.T) {
 				wasDeleteCalled(1),
 				wasFetchDocumentCalled(0),
 				wasUpdateCalled(0),
-				wasNotified(1),
+				wasChangeCalled(1),
 			),
 		},
 		"Orphaned hook without a document is deleted": {
@@ -640,7 +640,7 @@ func Test_Manager_processHooks(t *testing.T) {
 				wasUpdateCalled(1),
 				hasUpdatedScore(decimal.NewFromInt(100)),
 				wasPublished(),
-				wasNotified(0),
+				wasChangeCalled(0),
 			),
 		},
 		"Full-to-zero score drop notifies the maintainers": {
@@ -653,7 +653,7 @@ func Test_Manager_processHooks(t *testing.T) {
 				wasUpdateCalled(1),
 				hasUpdatedScore(decimal.Zero),
 				wasPublished(notification.NotificationDocumentHookTriggered),
-				wasNotified(1),
+				wasChangeCalled(1),
 			),
 		},
 		// the score decays gradually, so by the time it reaches zero the
@@ -717,7 +717,7 @@ func Test_Manager_processHooks(t *testing.T) {
 				hasUpdatedStatus(processor.StatusActive),
 				hasUpdatedScore(decimal.Zero),
 				wasPublished(notification.NotificationDocumentHookTriggered),
-				wasNotified(1),
+				wasChangeCalled(1),
 			),
 		},
 		"Maintainer fetch failure suppresses the notification": {
@@ -852,10 +852,10 @@ func Test_Manager_processHooks(t *testing.T) {
 			}
 
 			pub := &fakePublisher{}
-			notifier := &changeRecorder{}
+			changes := &changeRecorder{}
 
 			man := newTestManager(t, db, pub, wc)
-			man.BindHookChange(notifier.record)
+			man.BindHookChange(changes.record)
 
 			var err error
 
@@ -866,7 +866,7 @@ func Test_Manager_processHooks(t *testing.T) {
 			}
 
 			for _, ch := range c.Checks {
-				ch(t, db, notifier, pub, err)
+				ch(t, db, changes, pub, err)
 			}
 
 			if cd != nil {

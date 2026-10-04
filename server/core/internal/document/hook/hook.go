@@ -177,12 +177,10 @@ func NewHook(
 }
 
 // NewCopy returns a copy of the hook for another branch, anchored to the
-// given block. It is initializing, with a null state, until its first run
-// sets it up, since the source's state can name the source's own watcher.
-// The score is copied, so that run does not announce a change the source
-// already had.
-// A copy within the hook's document keeps its cross-branch ID; a copy into
-// another document is a hook of its own.
+// given block. The copy is initializing, with no state, since the source's
+// state may name the source's own watcher. It keeps the score, so its
+// first run does not announce a change the source already had. A copy
+// within the document keeps the cross-branch ID.
 func (h *Hook) NewCopy(documentID, branchID xid.ID, blockID null.String) Hook {
 	id := xid.New()
 

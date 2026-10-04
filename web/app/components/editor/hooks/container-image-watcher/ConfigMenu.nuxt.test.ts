@@ -89,30 +89,30 @@ describe("<ContainerImageWatcherConfigMenu>", { concurrent: false }, () => {
 		expect(menuText()).toContain(IMAGE)
 	})
 
-	it("says the image of a failing hook is unreachable", async ({ expect }) => {
-		await mountMenu({
-			hook: imageHook({
-				state: { digest: "sha256:old" },
-				status: "unauthorized",
-			}),
-		})
+	it.for([
+		{
+			name: "an unreachable image",
+			input: "unauthorized",
+			expected: "editor.hooks.container-image-watcher.detail-unreachable",
+		},
+		{
+			name: "an image gone from its registry",
+			input: "image_not_found",
+			expected: "editor.hooks.container-image-watcher.detail-missing",
+		},
+	] as const)(
+		"names $name on the hook's row",
+		async ({ input, expected }, { expect }) => {
+			await mountMenu({ hook: imageHook({ status: input }) })
 
-		const detail = t("editor.hooks.container-image-watcher.detail-unreachable")
-		expect(menuText()).toContain(
-			t("editor.hooks.subtext-detail", { subtext: IMAGE, detail: detail }),
-		)
-	})
-
-	it("says the image of a hook is gone from its registry", async ({
-		expect,
-	}) => {
-		await mountMenu({ hook: imageHook({ status: "image_not_found" }) })
-
-		const detail = t("editor.hooks.container-image-watcher.detail-missing")
-		expect(menuText()).toContain(
-			t("editor.hooks.subtext-detail", { subtext: IMAGE, detail: detail }),
-		)
-	})
+			expect(menuText()).toContain(
+				t("editor.hooks.subtext-detail", {
+					subtext: IMAGE,
+					detail: t(expected),
+				}),
+			)
+		},
+	)
 
 	it("prefills the image reference of the hook it edits", async ({
 		expect,
@@ -177,20 +177,24 @@ describe("<ContainerImageWatcherConfigMenu>", { concurrent: false }, () => {
 		expect(hookNotice().querySelector(".font-semibold")).toBeNull()
 	})
 
-	it("warns about an image it cannot reach", async ({ expect }) => {
-		await mountMenu({
-			hook: imageHook({
-				state: { digest: "sha256:old" },
-				status: "unauthorized",
-			}),
-		})
+	it.for([
+		{
+			name: "an image it cannot reach",
+			input: "unauthorized",
+			expected: "editor.hooks.container-image-watcher.unreachable-image",
+		},
+		{
+			name: "an image gone from its registry",
+			input: "image_not_found",
+			expected: "editor.hooks.container-image-watcher.missing-image",
+		},
+	] as const)("warns about $name", async ({ input, expected }, { expect }) => {
+		await mountMenu({ hook: imageHook({ status: input }) })
 
 		await openHookSubMenu(t(TITLE))
 
 		expect(hookNotice().dataset.hookStatus).toBe("needs-attention")
-		expect(hookNotice().textContent.trim()).toBe(
-			t("editor.hooks.container-image-watcher.unreachable-image"),
-		)
+		expect(hookNotice().textContent.trim()).toBe(t(expected))
 	})
 
 	it("keeps the create button out of reach until an image is typed", async ({

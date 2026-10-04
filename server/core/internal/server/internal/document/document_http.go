@@ -841,8 +841,9 @@ func (h *Handler) upsertBranchReviewer(
 // its search job and the boundary history entry of its first content, and
 // slots it at the top of its parent's tree, all in one transaction. A
 // document duplicated from a branch also takes that branch's tags and its
-// hooks, re-anchored through newBlockIDs. The tree-change notification is
-// left to the caller, since it must not fire before the commit.
+// hooks, re-anchored through newBlockIDs. Copied hooks are set up after
+// the commit. The tree-change notification is left to the caller, since
+// it must not fire before the commit.
 func (h *Handler) insertDocumentTx(
 	ctx context.Context,
 	doc documentCore.Document,

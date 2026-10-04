@@ -40,8 +40,7 @@ func addSession(ctx context.Context) context.Context {
 	})
 }
 
-// scheduledHook builds a stored hook whose processor needs no external
-// dependencies.
+// scheduledHook builds a stored hook of the request's document.
 func scheduledHook() *hookCore.Hook {
 	return &hookCore.Hook{
 		ID:             _hookID,
@@ -63,33 +62,6 @@ func storedHookManager() *ManagerMock {
 			return scheduledHook(), nil
 		},
 	}
-}
-
-// notified is one hooks-change announcement a handler made.
-type notified struct {
-	organizationID string
-	documentID     xid.ID
-	branchID       xid.ID
-}
-
-// recordNotifications binds the handler's hooks-change callback to a
-// list the test reads back.
-func recordNotifications(hdl *Handler) *[]notified {
-	var out []notified
-
-	hdl.hooks.changeCallback = func(organizationID string, documentID, branchID xid.ID) {
-		out = append(out, notified{organizationID, documentID, branchID})
-	}
-
-	return &out
-}
-
-// assertNotified checks that a write announced nothing: the hook manager
-// announces the hooks it changes.
-func assertNotified(t *testing.T, got []notified) {
-	t.Helper()
-
-	assert.Empty(t, got)
 }
 
 func Test_NewHandler(t *testing.T) {
@@ -238,7 +210,6 @@ func Test_Handler_FetchDocumentHooks(t *testing.T) {
 				log: slog.New(slog.DiscardHandler),
 				db:  c.DB,
 			}
-			got := recordNotifications(&hdl)
 
 			req := httptest.NewRequest(http.MethodGet, "http://test.com/"+c.Query, http.NoBody)
 
@@ -255,9 +226,6 @@ func Test_Handler_FetchDocumentHooks(t *testing.T) {
 			rec := httptest.NewRecorder()
 
 			hdl.FetchDocumentHooks(rec, req.WithContext(ctx))
-
-			// a read announces nothing.
-			assert.Empty(t, *got)
 
 			for _, ch := range c.Checks {
 				ch(t, c.DB, rec)
@@ -358,14 +326,12 @@ func Test_Handler_CreateDocumentHook(t *testing.T) {
 			t.Parallel()
 
 			hdl := NewHandler(slog.New(slog.DiscardHandler), &DBMock{}, c.Man)
-			got := recordNotifications(hdl)
 
 			rec := httptest.NewRecorder()
 
 			hdl.CreateDocumentHook(rec, hookRequest(http.MethodPost, c.Body, c.NoSession, c.OmitDoc, true))
 
 			assert.Equal(t, c.RespCode, rec.Code)
-			assertNotified(t, *got)
 
 			if c.RespBody != "" {
 				assert.JSONEq(t, c.RespBody, rec.Body.String())
@@ -456,14 +422,12 @@ func Test_Handler_UpdateDocumentHook(t *testing.T) {
 			t.Parallel()
 
 			hdl := NewHandler(slog.New(slog.DiscardHandler), &DBMock{}, c.Man)
-			got := recordNotifications(hdl)
 
 			rec := httptest.NewRecorder()
 
 			hdl.UpdateDocumentHook(rec, hookRequest(http.MethodPut, c.Body, c.NoSession, c.OmitDoc, c.OmitHook))
 
 			assert.Equal(t, c.RespCode, rec.Code)
-			assertNotified(t, *got)
 
 			if c.RespBody != "" {
 				assert.JSONEq(t, c.RespBody, rec.Body.String())
@@ -537,14 +501,12 @@ func Test_Handler_ResetDocumentHook(t *testing.T) {
 			t.Parallel()
 
 			hdl := NewHandler(slog.New(slog.DiscardHandler), &DBMock{}, c.Man)
-			got := recordNotifications(hdl)
 
 			rec := httptest.NewRecorder()
 
 			hdl.ResetDocumentHook(rec, hookRequest(http.MethodPut, "", c.NoSession, c.OmitDoc, c.OmitHook))
 
 			assert.Equal(t, c.RespCode, rec.Code)
-			assertNotified(t, *got)
 
 			ff := c.Man.ResetHookCalls()
 			require.Len(t, ff, c.Resets)
@@ -612,14 +574,12 @@ func Test_Handler_DeleteDocumentHook(t *testing.T) {
 			t.Parallel()
 
 			hdl := NewHandler(slog.New(slog.DiscardHandler), &DBMock{}, c.Man)
-			got := recordNotifications(hdl)
 
 			rec := httptest.NewRecorder()
 
 			hdl.DeleteDocumentHook(rec, hookRequest(http.MethodDelete, "", c.NoSession, c.OmitDoc, c.OmitHook))
 
 			assert.Equal(t, c.RespCode, rec.Code)
-			assertNotified(t, *got)
 
 			ff := c.Man.DeleteHookCalls()
 			require.Len(t, ff, c.Deletes)

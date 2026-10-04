@@ -88,13 +88,14 @@ type Manager struct {
 // backs context summarisation and may be the same model. The editClient
 // is the edit pipe to the Node hocuspocus service; the search client
 // backs the search_documents tool and searchTrigger runs the search-job
-// worker once a document write has committed; providerName labels token metrics so
-// usage stays readable across a provider change; githubMan and
-// webchangeClient are the integrations the hook tools check for; hookMan
-// runs the hook writes; the tree notifier broadcasts sidebar refresh events after
-// document tree mutations and is wired post-construction via
-// SetTreeNotifier because the document handler that satisfies it is
-// built later, inside server.NewServer.
+// worker once a document write has committed; providerName labels token
+// metrics so usage stays readable across a provider change.
+//
+// githubMan and webchangeClient tell the hook tools which integrations
+// exist; hookMan runs hook writes. The tree notifier broadcasts sidebar
+// refresh events after document tree mutations and is wired
+// post-construction via SetTreeNotifier because the document handler
+// that satisfies it is built later, inside server.NewServer.
 func NewManager(
 	log *slog.Logger,
 	db tools.DB,

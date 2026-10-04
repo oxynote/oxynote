@@ -2,15 +2,16 @@ package manager
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/guregu/null/v5"
 	"github.com/rs/xid"
 )
 
-// CopyHooks copies the branch's hooks to another in the caller's
-// transaction, not set up yet. newBlockIDs maps the source's block ids to
-// the copy's, for a copy whose blocks were given new ids. When set, it
-// re-anchors block hooks and drops those whose block it does not name.
+// CopyHooks inserts copies of the branch's hooks into another branch, in
+// the caller's transaction. The copies are not set up. When newBlockIDs is
+// set, block hooks follow it to their new block and those it does not name
+// are dropped.
 func CopyHooks(
 	ctx context.Context,
 	tx CopyTx,
@@ -20,7 +21,7 @@ func CopyHooks(
 ) error {
 	hooks, err := tx.FetchDocumentHooksByBranchID(ctx, fromBranchID, organizationID)
 	if err != nil {
-		return err
+		return fmt.Errorf("fetching branch hooks: %w", err)
 	}
 
 	for _, hk := range hooks {
@@ -36,7 +37,7 @@ func CopyHooks(
 		}
 
 		if err := tx.InsertDocumentHook(ctx, hk.NewCopy(documentID, toBranchID, blockID)); err != nil {
-			return err
+			return fmt.Errorf("inserting hook copy: %w", err)
 		}
 	}
 

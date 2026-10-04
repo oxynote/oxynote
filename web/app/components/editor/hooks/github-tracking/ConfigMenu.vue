@@ -98,9 +98,8 @@ const invalidData = computed(() => {
 const failure = computed(() =>
 	checkStatus.value ? checkFailure(checkStatus.value) : null,
 )
-// a server without GitHub comes first, since no setup an editor does can
-// fix it. Then the setup an editor still has to do, then what the last
-// check found.
+// a server without GitHub comes first, because no editor can fix it. Then
+// the setup an editor still has to do, then what the last check found.
 const notice = computed(() => {
 	if (failure.value?.notice === "unconfigured") {
 		return "unconfigured"

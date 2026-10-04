@@ -1,4 +1,4 @@
-// the refusals core answers a hook write with, keyed by error code.
+// the message key for each code core refuses a hook write with.
 const HOOK_ERROR_KEYS: Record<string, string> = {
 	"document_hook.unconfigured": "editor.hooks.errors.codes.unconfigured",
 	"document_hook.missing_installation":

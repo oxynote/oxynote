@@ -250,8 +250,10 @@ func Test_Interpreter_interpretDocumentReviewRequestNotification(t *testing.T) {
 
 func Test_Interpreter_interpretDocumentHookNotification(t *testing.T) {
 	cc := map[string]struct {
-		DB     *DBMock
-		N      notification.Notification
+		DB *DBMock
+		N  notification.Notification
+		// Format defaults to _hookTriggeredFormat.
+		Format string
 		Result *Message
 		Err    error
 	}{
@@ -362,6 +364,20 @@ func Test_Interpreter_interpretDocumentHookNotification(t *testing.T) {
 				Text: fmt.Sprintf("<%s#blk1|a block in My Doc> may be outdated — Scheduled Reminder", _testDocURL),
 			},
 		},
+		"Successful interpretation with the needs attention format": {
+			DB: stubDB(),
+			N: stubNotification(notification.NewDocumentHookNeedsAttentionNotification(
+				_testDocID,
+				hook.TypeURLWatcher,
+				null.StringFrom("blk1"),
+				_testBranchID,
+				processor.StatusUnreachableURL,
+			)),
+			Format: _hookNeedsAttentionFormat,
+			Result: &Message{
+				Text: fmt.Sprintf("<%s#blk1|a block in My Doc> can no longer be checked — Website Changes", _testDocURL),
+			},
+		},
 	}
 
 	for cn, c := range cc {
@@ -370,7 +386,12 @@ func Test_Interpreter_interpretDocumentHookNotification(t *testing.T) {
 
 			i := NewInterpreter(c.DB, NewSlackFormatter(), "https://app.test")
 
-			res, err := i.interpretDocumentHookNotification(context.Background(), c.N, _hookTriggeredFormat)
+			format := c.Format
+			if format == "" {
+				format = _hookTriggeredFormat
+			}
+
+			res, err := i.interpretDocumentHookNotification(context.Background(), c.N, format)
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {

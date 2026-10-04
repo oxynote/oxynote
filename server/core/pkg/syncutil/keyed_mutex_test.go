@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -24,30 +25,54 @@ func Test_NewKeyedMutex(t *testing.T) {
 func Test_KeyedMutex_Lock(t *testing.T) {
 	t.Parallel()
 
-	km := NewKeyedMutex[string]()
-
-	unlock, err := km.Lock(context.Background(), "a")
-	require.NoError(t, err)
-
-	// a second caller gives up once its context ends.
-	ctx, cancel := context.WithCancel(context.Background())
+	ended, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err = km.Lock(ctx, "a")
-	assert.Equal(t, context.Canceled, err)
+	cc := map[string]struct {
+		Context context.Context
+		// Held is the key another caller holds during the lock.
+		Held string
+		Err  error
+	}{
+		"Free key is locked": {
+			Context: context.Background(),
+		},
+		"Held key gives up when the context ends": {
+			Context: ended,
+			Held:    "a",
+			Err:     context.Canceled,
+		},
+		"Other key is independent": {
+			Context: context.Background(),
+			Held:    "b",
+		},
+	}
 
-	// another key is not held by the first one's mutex.
-	other, err := km.Lock(context.Background(), "b")
-	require.NoError(t, err)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	other()
-	unlock()
+			km := NewKeyedMutex[string]()
 
-	// every mutex is dropped once no one uses it.
-	assert.Empty(t, km.locks)
+			held := func() {}
 
-	unlock, err = km.Lock(context.Background(), "a")
-	require.NoError(t, err)
+			if c.Held != "" {
+				var err error
 
-	unlock()
+				held, err = km.Lock(context.Background(), c.Held)
+				require.NoError(t, err)
+			}
+
+			unlock, err := km.Lock(c.Context, "a")
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err == nil {
+				unlock()
+			}
+
+			held()
+
+			assert.Empty(t, km.locks)
+		})
+	}
 }

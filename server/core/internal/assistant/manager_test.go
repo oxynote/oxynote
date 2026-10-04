@@ -17,6 +17,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/assistant/persist"
 	persistMock "github.com/oxynote/oxynote/server/core/internal/assistant/persist/_mock"
 	protocolMock "github.com/oxynote/oxynote/server/core/internal/assistant/protocol/_mock"
+	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
 	toolsMock "github.com/oxynote/oxynote/server/core/internal/assistant/tools/_mock"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/oxynote/oxynote/server/core/pkg/memkit"
@@ -42,6 +43,12 @@ func discardLog() *slog.Logger {
 type stubSearchTrigger struct{}
 
 func (*stubSearchTrigger) Trigger() {}
+
+// stubHookManager satisfies the tools' HookManager. Its methods are never
+// called.
+type stubHookManager struct {
+	tools.HookManager
+}
 
 // stubChatModel builds a chat model that answers with the given
 // messages in order. The last one repeats once the script runs out, so
@@ -240,7 +247,8 @@ func Test_NewManager(t *testing.T) {
 			fc := metricutil.NewFactory("test", prometheus.NewRegistry())
 			gh := &github.Manager{}
 			wc := &webchange.Client{}
-			m := NewManager(discardLog(), nil, c.Pool, nil, nil, fc, nil, nil, &stubSearchTrigger{}, nil, gh, wc, nil, "claude")
+			hm := &stubHookManager{}
+			m := NewManager(discardLog(), nil, c.Pool, nil, nil, fc, nil, nil, &stubSearchTrigger{}, nil, gh, wc, hm, "claude")
 
 			require.NotNil(t, m)
 			assert.NotNil(t, m.log)
@@ -252,6 +260,7 @@ func Test_NewManager(t *testing.T) {
 			assert.NotNil(t, m.turns.m)
 			assert.Same(t, gh, m.githubMan)
 			assert.Same(t, wc, m.webchangeClient)
+			assert.Same(t, hm, m.hookMan)
 			assert.Nil(t, m.tree)
 			assert.Nil(t, m.tags)
 

@@ -31,49 +31,34 @@ func hookDeps(db *DBMock, man *HookManagerMock) *Deps {
 	return d
 }
 
-// stubHookManager runs every hook write the way the hook manager does,
-// leaving out the database: a write reads a copy of the stored hook, which
-// is stored when given and stubHook otherwise.
-func stubHookManager(stored ...*hook.Hook) *HookManagerMock {
-	inp := func(organizationID string) *hook.Input {
-		return hook.NewInput(organizationID, unconfiguredGithub(), webchange.NewClient("", ""))
-	}
-
-	lookup := func() *hook.Hook {
-		if len(stored) > 0 {
-			hk := *stored[0]
-
-			return &hk
-		}
-
-		return stubHook()
-	}
-
+// stubHookManager accepts every hook write. A write answers with
+// stubHook changed as the call asks, and an update or reset stamps
+// UpdatedAt so a test can tell the answer from the hook it handed in.
+func stubHookManager() *HookManagerMock {
 	return &HookManagerMock{
-		CreateHookFunc: func(ctx context.Context, ci hook.CreateInput, documentID xid.ID, organizationID, _ string) (*hook.Hook, error) {
-			// the manager refuses a block the branch does not hold.
-			if ci.BlockID.Valid && ci.BlockID.String != _stubContentUID {
-				return nil, hook.ErrBlockNotFound
-			}
-
-			return hook.NewHook(ctx, ci, documentID, ci.BranchID, organizationID, inp(organizationID))
-		},
-		UpdateHookFunc: func(ctx context.Context, _, _ xid.ID, organizationID string, ui hook.UpdateInput, _ string) (*hook.Hook, error) {
-			hk := lookup()
-			if err := hk.ApplyUpdate(ctx, ui, inp(organizationID)); err != nil {
-				return nil, err
-			}
+		CreateHookFunc: func(_ context.Context, ci hook.CreateInput, documentID xid.ID, organizationID, _ string) (*hook.Hook, error) {
+			hk := stubHook()
+			hk.Type = ci.Type
+			hk.DocumentID = null.ValueFrom(documentID)
+			hk.BranchID = null.ValueFrom(ci.BranchID)
+			hk.OrganizationID = null.StringFrom(organizationID)
+			hk.BlockID = ci.BlockID
+			hk.Settings = ci.Settings
 
 			return hk, nil
 		},
-		DeleteHookFunc: func(ctx context.Context, _, _ xid.ID, organizationID, _ string) error {
-			return lookup().Delete(ctx, inp(organizationID))
+		UpdateHookFunc: func(_ context.Context, id, _ xid.ID, _ string, ui hook.UpdateInput, _ string) (*hook.Hook, error) {
+			hk := stubHook()
+			hk.ID = id
+			hk.Settings = ui.Settings
+			hk.UpdatedAt = null.TimeFrom(_stubScheduleTime)
+
+			return hk, nil
 		},
-		ResetHookFunc: func(ctx context.Context, _, _ xid.ID, organizationID string) (*hook.Hook, error) {
-			hk := lookup()
-			if err := hk.Reset(ctx, inp(organizationID)); err != nil {
-				return nil, err
-			}
+		ResetHookFunc: func(_ context.Context, id, _ xid.ID, _ string) (*hook.Hook, error) {
+			hk := stubHook()
+			hk.ID = id
+			hk.UpdatedAt = null.TimeFrom(_stubScheduleTime)
 
 			return hk, nil
 		},
@@ -524,6 +509,11 @@ func Test_createHook_Execute(t *testing.T) {
 		return nil, assert.AnError
 	}
 
+	blockless := stubHookManager()
+	blockless.CreateHookFunc = func(context.Context, hook.CreateInput, xid.ID, string, string) (*hook.Hook, error) {
+		return nil, hook.ErrBlockNotFound
+	}
+
 	cc := map[string]struct {
 		DB       *DBMock
 		Man      *HookManagerMock
@@ -550,6 +540,7 @@ func Test_createHook_Execute(t *testing.T) {
 		},
 		"Unknown block": {
 			DB:   stubHookDB(),
+			Man:  blockless,
 			Args: `{` + targetArgs(_stubBranchID) + `,` + scheduled + `,"block_uid":"nope"}`,
 			Err:  fmt.Errorf("create_hook: %w", fmt.Errorf("block %s: %w", "nope", errUnknownBlock)),
 		},
@@ -770,8 +761,6 @@ func Test_updateHook_Execute(t *testing.T) {
 				return
 			}
 
-			// the settings are replaced and the state reset: a fresh
-			// start rather than the old one carried over.
 			ff := d.hookMan.(*HookManagerMock).UpdateHookCalls()
 			require.Len(t, ff, 1)
 			assert.Equal(t, _testHookID, ff[0].ID)
@@ -780,8 +769,7 @@ func Test_updateHook_Execute(t *testing.T) {
 			row := decodeHookRow(t, res)
 			assert.Equal(t, _testHookID, row.ID)
 			assert.JSONEq(t, string(ff[0].UI.Settings), string(row.Settings))
-			assert.NotContains(t, string(row.State), "2026-01-01")
-			assert.Equal(t, "100", row.Score.String())
+			assert.Equal(t, null.TimeFrom(_stubScheduleTime), row.UpdatedAt)
 
 			assert.Equal(t, []Touched{{DocumentID: _testDocID, BranchID: _stubBranchID}}, inp.touched)
 		})
@@ -906,7 +894,6 @@ func Test_resetHook_Execute(t *testing.T) {
 				return
 			}
 
-			// the settings stay as they were; only the state starts over.
 			ff := d.hookMan.(*HookManagerMock).ResetHookCalls()
 			require.Len(t, ff, 1)
 			assert.Equal(t, _testHookID, ff[0].ID)
@@ -914,8 +901,7 @@ func Test_resetHook_Execute(t *testing.T) {
 			row := decodeHookRow(t, res)
 			assert.Equal(t, _testHookID, row.ID)
 			assert.JSONEq(t, string(stubHook().Settings), string(row.Settings))
-			assert.NotContains(t, string(row.State), "2026-01-01")
-			assert.Equal(t, "100", row.Score.String())
+			assert.Equal(t, null.TimeFrom(_stubScheduleTime), row.UpdatedAt)
 
 			assert.Equal(t, []Touched{{DocumentID: _testDocID, BranchID: _stubBranchID}}, inp.touched)
 		})

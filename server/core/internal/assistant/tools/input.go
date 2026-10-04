@@ -66,13 +66,11 @@ type Deps struct {
 	// runners hands out the runner a data-source tool reads through.
 	runners DataSourceRunners
 
-	// githubMan is the GitHub App integration a github-tracking hook
-	// reads through; unconfigured on a deployment without the app.
+	// githubMan tells create_hook whether the GitHub App is configured.
 	githubMan *github.Manager
 
-	// webchangeClient is the changedetection.io integration a
-	// url-watcher hook holds its watcher in; unconfigured on a
-	// deployment without it.
+	// webchangeClient tells create_hook whether changedetection.io is
+	// configured.
 	webchangeClient *webchange.Client
 
 	// hookMan runs the hook writes.
@@ -1042,8 +1040,8 @@ func (i *input) CreateHook(documentID, branchID xid.ID, blockUID string, tp hook
 		return nil, err
 	}
 
-	// a hook whose integration is missing is refused anyway. Naming the
-	// integration's own error tells the model what is missing.
+	// the manager would refuse this too, but the integration's own error
+	// tells the model what is missing.
 	switch tp {
 	case hook.TypeGithubTracking:
 		if !i.githubMan.Configured() {
@@ -1119,14 +1117,12 @@ func (i *input) DeleteHook(hk *hook.Hook) error {
 }
 
 // docRef wraps the (documentID, branchID) pair the edit client needs to
-// address a live Y.Doc. The branch is resolved to the document's
-// default branch — multi-branch editing is out of scope for the
-// assistant.
+// address a live Y.Doc.
 type docRef struct {
 	// DocumentID is the document's id.
 	DocumentID xid.ID
 
-	// BranchID is the id of the document's default branch.
+	// BranchID is the id of the addressed branch.
 	BranchID xid.ID
 }
 

@@ -1461,7 +1461,7 @@ describe("createRoutes", () => {
 		it("flushes the branch and answers once core has it", async ({
 			expect,
 		}) => {
-			const { app, flushDocument } = build()
+			const { app, core, flushDocument } = build()
 
 			const res = await app.request(
 				"/internal/documents/doc1/branches/b1/flush",
@@ -1469,6 +1469,8 @@ describe("createRoutes", () => {
 			)
 
 			expect(res.status).toBe(204)
+			expect(core.fetchBranches).toHaveBeenCalledTimes(1)
+			expect(core.fetchBranches).toHaveBeenCalledWith("doc1")
 			expect(
 				flushDocument.mock.calls.map((call) => call[0]),
 			).toEqual(["doc1-b1"])
@@ -1480,7 +1482,7 @@ describe("createRoutes", () => {
 				.mockRejectedValue(
 					new Error("core unreachable"),
 				)
-			const { app } = build({ flushDocument })
+			const { app, core } = build({ flushDocument })
 
 			const res = await app.request(
 				"/internal/documents/doc1/branches/b1/flush",
@@ -1488,6 +1490,13 @@ describe("createRoutes", () => {
 			)
 
 			expect(res.status).toBe(500)
+			expect(await res.json()).toEqual({
+				error: "pending changes could not be stored",
+			})
+			expect(core.fetchBranches).toHaveBeenCalledTimes(1)
+			expect(core.fetchBranches).toHaveBeenCalledWith("doc1")
+			expect(flushDocument).toHaveBeenCalledTimes(1)
+			expect(flushDocument).toHaveBeenCalledWith("doc1-b1")
 		})
 	})
 

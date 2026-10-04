@@ -694,8 +694,8 @@ func insertHistoryEntry(t *testing.T, db *DB, entry history.Entry) {
 }
 
 // assertHistoryEntryEqual compares two entries, matching hook settings as
-// JSON since jsonb normalises their spacing. The stored checksum must be
-// the sum of what the expected entry records.
+// JSON since jsonb normalises their spacing. The checksum is expected to
+// be exp.Sum().
 func assertHistoryEntryEqual(t *testing.T, exp, got history.Entry) {
 	t.Helper()
 
@@ -789,48 +789,75 @@ func Test_agent_trimDocumentBranchHistoryEntries(t *testing.T) {
 }
 
 func Test_agent_DeleteExpiredDocumentBranchHistoryEntries(t *testing.T) {
-	t.Parallel()
+	type tcase struct {
+		Before time.Time
+		// Rows maps each branch to how many entries it holds afterwards.
+		Rows map[xid.ID]int
+		// Newest maps each branch to its newest entry afterwards.
+		Newest map[xid.ID]xid.ID
+	}
 
-	db := prepTempDB(t)
-	docs := prepDocuments(t, db, 2, nil)
-	doc, other := docs[0], docs[1]
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Nothing expired": func(t *testing.T, db *DB) tcase {
+			doc := prepDocuments(t, db, 1, nil)[0]
+			entries := prepHistoryEntries(t, db, doc, 4)
 
-	entries := prepHistoryEntries(t, db, doc, 4)
-	require.Equal(t, 4, countHistoryEntries(t, db, doc.BranchID))
+			return tcase{
+				Before: entries[0].CreatedAt.Add(-time.Second),
+				Rows:   map[xid.ID]int{doc.BranchID: 4},
+				Newest: map[xid.ID]xid.ID{doc.BranchID: entries[3].ID},
+			}
+		},
+		"Expired entries go": func(t *testing.T, db *DB) tcase {
+			doc := prepDocuments(t, db, 1, nil)[0]
+			entries := prepHistoryEntries(t, db, doc, 4)
 
-	otherEntries := prepHistoryEntries(t, db, other, 2)
-	require.Equal(t, 2, countHistoryEntries(t, db, other.BranchID))
+			return tcase{
+				Before: entries[2].CreatedAt,
+				Rows:   map[xid.ID]int{doc.BranchID: 2},
+				Newest: map[xid.ID]xid.ID{doc.BranchID: entries[3].ID},
+			}
+		},
+		"Newest entry of each branch stays": func(t *testing.T, db *DB) tcase {
+			docs := prepDocuments(t, db, 2, nil)
+			entries := prepHistoryEntries(t, db, docs[0], 4)
+			other := prepHistoryEntries(t, db, docs[1], 2)
 
-	// nothing is old enough yet.
-	require.NoError(t, db.DeleteExpiredDocumentBranchHistoryEntries(
-		context.Background(),
-		entries[0].CreatedAt.Add(-time.Second),
-	))
-	assert.Equal(t, 4, countHistoryEntries(t, db, doc.BranchID))
-	assert.Equal(t, 2, countHistoryEntries(t, db, other.BranchID))
+			return tcase{
+				Before: entries[3].CreatedAt.Add(time.Hour),
+				Rows: map[xid.ID]int{
+					docs[0].BranchID: 1,
+					docs[1].BranchID: 1,
+				},
+				Newest: map[xid.ID]xid.ID{
+					docs[0].BranchID: entries[3].ID,
+					docs[1].BranchID: other[1].ID,
+				},
+			}
+		},
+	}
 
-	// everything created before the newest entry goes.
-	require.NoError(t, db.DeleteExpiredDocumentBranchHistoryEntries(
-		context.Background(),
-		entries[3].CreatedAt,
-	))
-	assert.Equal(t, 1, countHistoryEntries(t, db, doc.BranchID))
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	// each branch keeps its newest entry even once it has expired.
-	require.NoError(t, db.DeleteExpiredDocumentBranchHistoryEntries(
-		context.Background(),
-		entries[3].CreatedAt.Add(time.Hour),
-	))
+			db := prepTempDB(t)
+			c := cfn(t, db)
 
-	var ids []xid.ID
+			require.NoError(t, db.DeleteExpiredDocumentBranchHistoryEntries(context.Background(), c.Before))
 
-	q, args := db.builder.Select("id").
-		From("document_branch_history_entries").
-		Where(sq.Eq{"fk_branch_id": []xid.ID{doc.BranchID, other.BranchID}}).
-		MustSql()
+			for branchID, rows := range c.Rows {
+				assert.Equal(t, rows, countHistoryEntries(t, db, branchID))
+			}
 
-	require.NoError(t, db.sql.Select(&ids, q, args...))
-	assert.ElementsMatch(t, []xid.ID{entries[3].ID, otherEntries[1].ID}, ids)
+			for branchID, id := range c.Newest {
+				newest, err := db.fetchNewestDocumentBranchHistoryEntry(context.Background(), db.sql, branchID)
+				require.NoError(t, err)
+				require.NotNil(t, newest)
+				assert.Equal(t, id, newest.ID)
+			}
+		})
+	}
 }
 
 func Test_agent_insertDocumentBranchHistoryEntry(t *testing.T) {
@@ -949,6 +976,21 @@ func Test_agent_insertDocumentBranchHistoryEntry(t *testing.T) {
 				Newest: first,
 			}
 		},
+		"Equal entry in the same bucket keeps the newest untouched": func(t *testing.T, db *DB) tcase {
+			doc := prepDocuments(t, db, 1, nil)[0]
+			user := prepUsers(t, db, 1)[0]
+
+			first := history.NewEntry(*doc, base.Add(5*time.Minute), null.StringFrom(user), hooks, false)
+			insertHistoryEntry(t, db, first)
+
+			entry := history.NewEntry(*doc, base.Add(10*time.Minute), null.String{}, hooks, false)
+
+			return tcase{
+				Entry:  entry,
+				Rows:   1,
+				Newest: first,
+			}
+		},
 		"Boundary entry equal to the newest one inserts": func(t *testing.T, db *DB) tcase {
 			doc := prepDocuments(t, db, 1, nil)[0]
 
@@ -1034,34 +1076,6 @@ func Test_agent_insertDocumentBranchHistoryEntry(t *testing.T) {
 	}
 }
 
-// prepHistoryBranch returns a branch whose content holds block "b1" and
-// the hooks fn describes on it, fetched back so they match what a record
-// reads.
-func prepHistoryBranch(t *testing.T, db *DB, count int, fn func(int, *hook.Hook)) (*document.Document, []hook.Hook) {
-	t.Helper()
-
-	branch := prepDocumentBranches(t, db, 1, func(_ int, doc *document.Document) {
-		doc.Content.Content[0].Attrs = document.Attributes{document.AttrUID: "b1"}
-	})[0]
-
-	hooks := prepDocumentHooks(t, db, count, func(i int, hk *hook.Hook) {
-		hk.DocumentID = null.ValueFrom(branch.ID)
-		hk.OrganizationID = null.StringFrom(branch.OrganizationID)
-		hk.BranchID = null.ValueFrom(branch.BranchID)
-		hk.BlockID = null.StringFrom("b1")
-		hk.CreatedAt = hk.CreatedAt.Add(time.Duration(i) * time.Second)
-
-		if fn != nil {
-			fn(i, hk)
-		}
-	})
-
-	doc, err := db.FetchDocumentUnsafeByBranchID(context.Background(), branch.BranchID)
-	require.NoError(t, err)
-
-	return doc, hooks
-}
-
 func Test_agent_RecordDocumentBranchHistoryEntry(t *testing.T) {
 	type tcase struct {
 		// Tx, when set, is the transaction the record runs in. It is
@@ -1079,9 +1093,37 @@ func Test_agent_RecordDocumentBranchHistoryEntry(t *testing.T) {
 		Err    error
 	}
 
+	// prepBranch returns a branch whose content holds block "b1" and the
+	// hooks fn describes on it, fetched back so they match what a record
+	// reads.
+	prepBranch := func(t *testing.T, db *DB, count int, fn func(int, *hook.Hook)) (*document.Document, []hook.Hook) {
+		t.Helper()
+
+		branch := prepDocumentBranches(t, db, 1, func(_ int, doc *document.Document) {
+			doc.Content.Content[0].Attrs = document.Attributes{document.AttrUID: "b1"}
+		})[0]
+
+		hooks := prepDocumentHooks(t, db, count, func(i int, hk *hook.Hook) {
+			hk.DocumentID = null.ValueFrom(branch.ID)
+			hk.OrganizationID = null.StringFrom(branch.OrganizationID)
+			hk.BranchID = null.ValueFrom(branch.BranchID)
+			hk.BlockID = null.StringFrom("b1")
+			hk.CreatedAt = hk.CreatedAt.Add(time.Duration(i) * time.Second)
+
+			if fn != nil {
+				fn(i, hk)
+			}
+		})
+
+		doc, err := db.FetchDocumentUnsafeByBranchID(context.Background(), branch.BranchID)
+		require.NoError(t, err)
+
+		return doc, hooks
+	}
+
 	cc := map[string]func(*testing.T, *DB) tcase{
 		"Branch of another organization": func(t *testing.T, db *DB) tcase {
-			doc, _ := prepHistoryBranch(t, db, 1, nil)
+			doc, _ := prepBranch(t, db, 1, nil)
 
 			return tcase{
 				BranchID:       doc.BranchID,
@@ -1090,13 +1132,14 @@ func Test_agent_RecordDocumentBranchHistoryEntry(t *testing.T) {
 			}
 		},
 		"Ordinary entry lists the hooks its content holds": func(t *testing.T, db *DB) tcase {
-			doc, hooks := prepHistoryBranch(t, db, 4, func(i int, hk *hook.Hook) {
+			doc, hooks := prepBranch(t, db, 4, func(i int, hk *hook.Hook) {
 				switch i {
 				case 1:
-					// the block is back; the sweep lifts the mark later.
+					// soft-deleted, but its block is in the content, so it
+					// is kept.
 					hk.SoftDeletedAt = null.TimeFrom(timeutil.Now())
 				case 2:
-					// the block is gone; the sweep marks it later.
+					// its block is not in the content, so it is left out.
 					hk.BlockID = null.StringFrom("removed")
 				case 3:
 					hk.BlockID = null.String{}
@@ -1119,7 +1162,7 @@ func Test_agent_RecordDocumentBranchHistoryEntry(t *testing.T) {
 			}
 		},
 		"Boundary entry adds its own row": func(t *testing.T, db *DB) tcase {
-			doc, hooks := prepHistoryBranch(t, db, 1, nil)
+			doc, hooks := prepBranch(t, db, 1, nil)
 
 			insertHistoryEntry(t, db, history.NewEntry(*doc, timeutil.Now(), null.String{}, history.Hooks{}, false))
 
@@ -1134,7 +1177,7 @@ func Test_agent_RecordDocumentBranchHistoryEntry(t *testing.T) {
 		// a persist records inside the transaction that wrote the branch,
 		// so the entry has to hold that write.
 		"Inside a transaction the entry holds its write": func(t *testing.T, db *DB) tcase {
-			doc, hooks := prepHistoryBranch(t, db, 1, nil)
+			doc, hooks := prepBranch(t, db, 1, nil)
 
 			var tx *Tx
 
@@ -1194,6 +1237,98 @@ func Test_agent_RecordDocumentBranchHistoryEntry(t *testing.T) {
 			exp.CreatedAt = newest.CreatedAt
 			exp.UpdatedAt = newest.UpdatedAt
 			assertHistoryEntryEqual(t, exp, *newest)
+		})
+	}
+}
+
+func Test_agent_fetchDocumentBranchHistoryHooks(t *testing.T) {
+	type tcase struct {
+		Context  context.Context
+		BranchID xid.ID
+		Result   []hook.Hook
+		Err      error
+	}
+
+	cc := map[string]func(*testing.T, *DB) tcase{
+		"Cancelled context": func(_ *testing.T, _ *DB) tcase {
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+
+			return tcase{
+				Context:  ctx,
+				BranchID: xid.New(),
+				Err:      assert.AnError,
+			}
+		},
+		"Branch without hooks": func(_ *testing.T, _ *DB) tcase {
+			return tcase{
+				Context:  context.Background(),
+				BranchID: xid.New(),
+				Result:   []hook.Hook{},
+			}
+		},
+		"Soft deleted hooks are included": func(t *testing.T, db *DB) tcase {
+			hooks := prepDocumentHooks(t, db, 2, func(i int, hk *hook.Hook) {
+				hk.CreatedAt = hk.CreatedAt.Add(time.Duration(i) * time.Second)
+
+				if i == 1 {
+					hk.SoftDeletedAt = null.TimeFrom(timeutil.Now().Truncate(time.Second))
+				}
+			})
+
+			return tcase{
+				Context:  context.Background(),
+				BranchID: hooks[0].BranchID.V,
+				Result:   hooks,
+			}
+		},
+		"Hooks of another branch are excluded": func(t *testing.T, db *DB) tcase {
+			hooks := prepDocumentHooks(t, db, 1, nil)
+			prepDocumentHooks(t, db, 1, nil)
+
+			return tcase{
+				Context:  context.Background(),
+				BranchID: hooks[0].BranchID.V,
+				Result:   hooks,
+			}
+		},
+		"Ordered by creation time then id": func(t *testing.T, db *DB) tcase {
+			ids := []xid.ID{xid.New(), xid.New()}
+
+			hooks := prepDocumentHooks(t, db, 3, func(i int, hk *hook.Hook) {
+				switch i {
+				case 0:
+					hk.CreatedAt = hk.CreatedAt.Add(time.Second)
+				case 1:
+					hk.ID = ids[1]
+				case 2:
+					hk.ID = ids[0]
+				}
+			})
+
+			return tcase{
+				Context:  context.Background(),
+				BranchID: hooks[0].BranchID.V,
+				Result:   []hook.Hook{hooks[2], hooks[1], hooks[0]},
+			}
+		},
+	}
+
+	for cn, cfn := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			db := prepTempDB(t)
+			c := cfn(t, db)
+
+			res, err := db.fetchDocumentBranchHistoryHooks(c.Context, db.sql, c.BranchID)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			testutil.AssertFilterEqual(t, c.Result, res)
 		})
 	}
 }

@@ -1402,6 +1402,10 @@ func Test_Handler_CreateDocument(t *testing.T) {
 				assert.Equal(t, "org1", entry.OrganizationID)
 				assert.True(t, entry.Boundary)
 				assert.Equal(t, null.StringFrom("u1"), entry.By)
+
+				// a new document has no source branch to copy hooks from.
+				assert.Empty(t, c.Tx.FetchDocumentHooksByBranchIDCalls())
+				assert.Empty(t, hdl.hookMan.(*HookManagerMock).SetUpBranchCalls())
 			}
 		})
 	}
@@ -1606,8 +1610,8 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 		Committed int
 		TreeCbs   int
 		Copies    int
-		// CopiedUID is a source block uid the hook copy is told to
-		// re-anchor.
+		// CopiedUID is the source block uid the case's hook is anchored
+		// to.
 		CopiedUID string
 	}{
 		"No session in context": {
@@ -1703,8 +1707,15 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 			Copies:    1,
 		},
 		"Hooks follow the regenerated block uids": {
-			DB:        imageDB(),
-			Tx:        insertAwareTx(),
+			DB: imageDB(),
+			Tx: func() *TxMock {
+				tx := insertAwareTx()
+				tx.FetchDocumentHooksByBranchIDFunc = func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
+					return []hookCore.Hook{{BlockID: null.StringFrom("img-1-aaaaaaaaaaaaaaa")}}, nil
+				}
+
+				return tx
+			}(),
 			Storer:    &StorerMock{},
 			RespCode:  http.StatusCreated,
 			Committed: 1,
@@ -1712,7 +1723,7 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 			Copies:    1,
 			CopiedUID: "img-1-aaaaaaaaaaaaaaa",
 		},
-		"Error returned by tx.FetchDocumentHooksByBranchID": {
+		"Error returned by Tx.FetchDocumentHooksByBranchID": {
 			DB: &DBMock{FetchDocumentFunc: fetchStored},
 			Tx: func() *TxMock {
 				tx := insertAwareTx()
@@ -1738,14 +1749,6 @@ func Test_Handler_DuplicateDocument(t *testing.T) {
 
 			man := &HookManagerMock{}
 			hdl.hookMan = man
-
-			// a hook anchored to the copied block is re-anchored to its new
-			// uid.
-			if c.CopiedUID != "" {
-				c.Tx.FetchDocumentHooksByBranchIDFunc = func(context.Context, xid.ID, string) ([]hookCore.Hook, error) {
-					return []hookCore.Hook{{BlockID: null.StringFrom(c.CopiedUID)}}, nil
-				}
-			}
 
 			rec := httptest.NewRecorder()
 

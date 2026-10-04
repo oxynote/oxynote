@@ -179,7 +179,7 @@ describe("<HookConfigPanel>", { concurrent: false }, () => {
 			expected: false,
 		},
 		{
-			name: "says nothing of setup for a copy that cannot check its target",
+			name: "says nothing of setup for a copy whose integration is missing",
 			input: { state: null, status: "unconfigured" },
 			expected: false,
 		},

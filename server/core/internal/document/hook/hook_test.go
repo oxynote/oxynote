@@ -59,72 +59,75 @@ func Test_NewHook(t *testing.T) {
 
 	documentID, branchID := xid.New(), xid.New()
 
-	t.Run("Valid settings create a reset hook", func(t *testing.T) {
-		t.Parallel()
+	cc := map[string]struct {
+		Inp   CreateInput
+		Input *Input
+		Err   error
+	}{
+		"Malformed settings": {
+			Inp: CreateInput{
+				Type:     TypeScheduledReminder,
+				Settings: processor.Settings(`{not json`),
+			},
+			Err: ErrInvalidSettings,
+		},
+		"Invalid settings": {
+			Inp: CreateInput{
+				Type:     TypeScheduledReminder,
+				Settings: processor.Settings(`{"scale":"bogus","schedule":"2030-01-01T00:00:00Z"}`),
+			},
+			Err: processor.ErrInvalidScaleType,
+		},
+		"Unknown type": {
+			Inp: CreateInput{
+				Type:     Type("bogus"),
+				Settings: processor.Settings(`{}`),
+			},
+			Err: ErrInvalidType,
+		},
+		"Hook that cannot check its target is refused": {
+			Inp: CreateInput{
+				Type:     TypeURLWatcher,
+				Settings: processor.Settings(`{"url":"https://example.com"}`),
+			},
+			Input: NewInput("org-1", nil, webchange.NewClient("", "")),
+			Err:   errutil.New(http.StatusUnprocessableEntity, "document_hook.unconfigured", "the integration the hook needs is not configured"),
+		},
+		"Successful creation": {
+			Inp: CreateInput{
+				Type:     TypeScheduledReminder,
+				BlockID:  null.StringFrom("block-1"),
+				Settings: reminderSettings(t, time.Now().Add(time.Hour)),
+			},
+		},
+	}
 
-		h, err := NewHook(context.Background(), CreateInput{
-			Type:     TypeScheduledReminder,
-			BlockID:  null.StringFrom("block-1"),
-			Settings: reminderSettings(t, time.Now().Add(time.Hour)),
-		}, documentID, branchID, "org-1", nil)
-		require.NoError(t, err)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-		assert.False(t, h.ID.IsZero())
-		assert.Equal(t, h.ID, h.CrossBranchID)
-		assert.Equal(t, TypeScheduledReminder, h.Type)
-		assert.Equal(t, null.ValueFrom(documentID), h.DocumentID)
-		assert.Equal(t, null.ValueFrom(branchID), h.BranchID)
-		assert.Equal(t, null.StringFrom("org-1"), h.OrganizationID)
-		assert.Equal(t, null.StringFrom("block-1"), h.BlockID)
-		assert.False(t, h.CreatedAt.IsZero())
+			h, err := NewHook(context.Background(), c.Inp, documentID, branchID, "org-1", c.Input)
+			testutil.AssertEqualError(t, c.Err, err)
 
-		// the reset scored the fresh future schedule at full.
-		assert.True(t, h.Score.Equal(decimal.NewFromInt(100)))
-		assert.True(t, h.State.Valid)
-		assert.Equal(t, processor.StatusActive, h.Status)
-	})
+			if err != nil {
+				return
+			}
 
-	t.Run("Malformed settings fail", func(t *testing.T) {
-		t.Parallel()
+			assert.False(t, h.ID.IsZero())
+			assert.Equal(t, h.ID, h.CrossBranchID)
+			assert.Equal(t, c.Inp.Type, h.Type)
+			assert.Equal(t, null.ValueFrom(documentID), h.DocumentID)
+			assert.Equal(t, null.ValueFrom(branchID), h.BranchID)
+			assert.Equal(t, null.StringFrom("org-1"), h.OrganizationID)
+			assert.Equal(t, c.Inp.BlockID, h.BlockID)
+			assert.False(t, h.CreatedAt.IsZero())
 
-		_, err := NewHook(context.Background(), CreateInput{
-			Type:     TypeScheduledReminder,
-			Settings: processor.Settings(`{not json`),
-		}, documentID, branchID, "org-1", nil)
-		assert.Equal(t, ErrInvalidSettings, err)
-	})
-
-	t.Run("Invalid settings fail", func(t *testing.T) {
-		t.Parallel()
-
-		_, err := NewHook(context.Background(), CreateInput{
-			Type:     TypeScheduledReminder,
-			Settings: processor.Settings(`{"scale":"bogus","schedule":"2030-01-01T00:00:00Z"}`),
-		}, documentID, branchID, "org-1", nil)
-		assert.Equal(t, processor.ErrInvalidScaleType, err)
-	})
-
-	t.Run("Unknown type fails", func(t *testing.T) {
-		t.Parallel()
-
-		_, err := NewHook(context.Background(), CreateInput{
-			Type:     Type("bogus"),
-			Settings: processor.Settings(`{}`),
-		}, documentID, branchID, "org-1", nil)
-		assert.Equal(t, ErrInvalidType, err)
-	})
-
-	t.Run("A hook that cannot check its target is refused", func(t *testing.T) {
-		t.Parallel()
-
-		_, err := NewHook(context.Background(), CreateInput{
-			Type:     TypeURLWatcher,
-			Settings: processor.Settings(`{"url":"https://example.com"}`),
-		}, documentID, branchID, "org-1", NewInput("org-1", nil, webchange.NewClient("", "")))
-		require.Error(t, err)
-		assert.Equal(t, http.StatusUnprocessableEntity, errutil.StatusCode(err, false))
-		assert.EqualError(t, err, "the integration the hook needs is not configured")
-	})
+			// the reset scored the fresh future schedule at full.
+			assert.True(t, h.Score.Equal(decimal.NewFromInt(100)))
+			assert.True(t, h.State.Valid)
+			assert.Equal(t, processor.StatusActive, h.Status)
+		})
+	}
 }
 
 func Test_Hook_NewCopy(t *testing.T) {
@@ -194,113 +197,166 @@ func Test_Hook_NewCopy(t *testing.T) {
 func Test_Hook_ApplyUpdate(t *testing.T) {
 	t.Parallel()
 
-	h, err := NewHook(context.Background(), CreateInput{
-		Type:     TypeScheduledReminder,
-		Settings: reminderSettings(t, time.Now().Add(time.Hour)),
-	}, xid.New(), xid.New(), "org-1", nil)
-	require.NoError(t, err)
+	cc := map[string]struct {
+		Settings processor.Settings
+		Err      error
+	}{
+		"Malformed settings": {
+			Settings: processor.Settings(`{not json`),
+			Err:      ErrInvalidSettings,
+		},
+		// an already elapsed schedule resets the score straight to zero.
+		"Successful update": {
+			Settings: reminderSettings(t, time.Now().Add(time.Second)),
+		},
+	}
 
-	// an already-elapsed schedule resets the score straight to zero.
-	newSettings := reminderSettings(t, time.Now().Add(time.Second))
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	require.NoError(t, h.ApplyUpdate(context.Background(), UpdateInput{Settings: newSettings}, nil))
+			h, err := NewHook(context.Background(), CreateInput{
+				Type:     TypeScheduledReminder,
+				Settings: reminderSettings(t, time.Now().Add(time.Hour)),
+			}, xid.New(), xid.New(), "org-1", nil)
+			require.NoError(t, err)
 
-	assert.Equal(t, newSettings, h.Settings)
-	assert.True(t, h.UpdatedAt.Valid)
-	assert.True(t, h.Score.Equal(decimal.Zero))
+			err = h.ApplyUpdate(context.Background(), UpdateInput{Settings: c.Settings}, nil)
+			testutil.AssertEqualError(t, c.Err, err)
 
-	assert.Equal(t, ErrInvalidSettings, h.ApplyUpdate(context.Background(), UpdateInput{
-		Settings: processor.Settings(`{not json`),
-	}, nil))
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Settings, h.Settings)
+			assert.True(t, h.UpdatedAt.Valid)
+			assert.True(t, h.Score.Equal(decimal.Zero))
+		})
+	}
 }
 
 func Test_Hook_Process(t *testing.T) {
 	t.Parallel()
 
-	t.Run("Elapsed schedule scores zero", func(t *testing.T) {
-		t.Parallel()
+	// the state started two hours ago, so the schedule has elapsed.
+	elapsed, err := json.Marshal(processor.ScheduledReminderState{
+		StartedAt: time.Now().Add(-2 * time.Hour),
+	})
+	require.NoError(t, err)
 
-		h, err := NewHook(context.Background(), CreateInput{
-			Type:     TypeScheduledReminder,
-			Settings: reminderSettings(t, time.Now().Add(-time.Hour)),
-		}, xid.New(), xid.New(), "org-1", nil)
-		require.NoError(t, err)
+	cc := map[string]struct {
+		Hook  Hook
+		Input *Input
+		Err   error
+		Check func(*testing.T, Hook)
+	}{
+		"Malformed settings": {
+			Hook: Hook{
+				Type:     TypeScheduledReminder,
+				Settings: processor.Settings(`{not json`),
+				State:    null.ValueFrom(processor.State(`{}`)),
+			},
+			Err: assert.AnError,
+		},
+		"Elapsed schedule scores zero": {
+			Hook: Hook{
+				Type:     TypeScheduledReminder,
+				Settings: reminderSettings(t, time.Now().Add(-time.Hour)),
+				State:    null.ValueFrom(processor.State(elapsed)),
+				Score:    decimal.NewFromInt(100),
+				Status:   processor.StatusActive,
+			},
+			Check: func(t *testing.T, h Hook) {
+				assert.Equal(t, processor.StatusActive, h.Status)
+				assert.True(t, h.Score.Equal(decimal.Zero))
+			},
+		},
+		"Hook never set up is reset": {
+			Hook: Hook{
+				Type:     TypeScheduledReminder,
+				Settings: reminderSettings(t, time.Now().Add(time.Hour)),
+				Status:   processor.StatusActive,
+			},
+			Check: func(t *testing.T, h Hook) {
+				assert.True(t, h.State.Valid)
+				assert.True(t, h.Score.Equal(decimal.NewFromInt(100)))
+			},
+		},
+		"Run that cannot check keeps score and state": {
+			Hook: Hook{
+				Type:     TypeURLWatcher,
+				Settings: processor.Settings(`{"url":"https://example.com"}`),
+				State:    null.ValueFrom(processor.State(`{"watcherId":"w1"}`)),
+				Score:    decimal.NewFromInt(40),
+				Status:   processor.StatusActive,
+			},
+			Input: NewInput("org-1", nil, webchange.NewClient("", "")),
+			Check: func(t *testing.T, h Hook) {
+				assert.Equal(t, processor.StatusUnconfigured, h.Status)
+				assert.True(t, h.Score.Equal(decimal.NewFromInt(40)))
+				assert.Equal(t, processor.State(`{"watcherId":"w1"}`), h.State.V)
+			},
+		},
+	}
 
-		// backdate the started-at state so the schedule has elapsed.
-		state, merr := json.Marshal(processor.ScheduledReminderState{
-			StartedAt: time.Now().Add(-2 * time.Hour),
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			h := c.Hook
+
+			err := h.Process(context.Background(), c.Input)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			c.Check(t, h)
 		})
-		require.NoError(t, merr)
-
-		h.State = null.ValueFrom(processor.State(state))
-
-		require.NoError(t, h.Process(context.Background(), nil))
-		assert.True(t, h.Score.Equal(decimal.Zero))
-	})
-
-	t.Run("A hook never set up is reset", func(t *testing.T) {
-		t.Parallel()
-
-		h := &Hook{
-			Type:     TypeScheduledReminder,
-			Settings: reminderSettings(t, time.Now().Add(time.Hour)),
-			Status:   processor.StatusActive,
-		}
-
-		require.NoError(t, h.Process(context.Background(), nil))
-		assert.True(t, h.State.Valid)
-		assert.True(t, h.Score.Equal(decimal.NewFromInt(100)))
-	})
-
-	t.Run("A run that cannot check keeps score and state", func(t *testing.T) {
-		t.Parallel()
-
-		h := &Hook{
-			Type:     TypeURLWatcher,
-			Settings: processor.Settings(`{"url":"https://example.com"}`),
-			State:    null.ValueFrom(processor.State(`{"watcherId":"w1"}`)),
-			Score:    decimal.NewFromInt(40),
-			Status:   processor.StatusActive,
-		}
-
-		require.NoError(t, h.Process(context.Background(), NewInput("org-1", nil, webchange.NewClient("", ""))))
-		assert.Equal(t, processor.StatusUnconfigured, h.Status)
-		assert.True(t, h.Score.Equal(decimal.NewFromInt(40)))
-		assert.Equal(t, processor.State(`{"watcherId":"w1"}`), h.State.V)
-	})
-
-	t.Run("Malformed settings fail", func(t *testing.T) {
-		t.Parallel()
-
-		h := &Hook{
-			Type:     TypeScheduledReminder,
-			Settings: processor.Settings(`{not json`),
-			State:    null.ValueFrom(processor.State(`{}`)),
-		}
-
-		require.Error(t, h.Process(context.Background(), nil))
-	})
+	}
 }
 
 func Test_Hook_Delete(t *testing.T) {
 	t.Parallel()
 
-	h, err := NewHook(context.Background(), CreateInput{
-		Type:     TypeScheduledReminder,
-		Settings: reminderSettings(t, time.Now().Add(time.Hour)),
-	}, xid.New(), xid.New(), "org-1", nil)
-	require.NoError(t, err)
-
-	// scheduled reminders have no external resources; delete is a no-op.
-	assert.NoError(t, h.Delete(context.Background(), nil))
-
-	// a url watcher never set up has no watcher yet, so its teardown
-	// reaches nothing outside.
-	unset := Hook{
-		Type:     TypeURLWatcher,
-		Settings: processor.Settings(`{"url":"https://example.com"}`),
+	cc := map[string]struct {
+		Hook Hook
+		Err  error
+	}{
+		"Malformed settings": {
+			Hook: Hook{
+				Type:     TypeScheduledReminder,
+				Settings: processor.Settings(`{not json`),
+				State:    null.ValueFrom(processor.State(`{}`)),
+			},
+			Err: assert.AnError,
+		},
+		// a url watcher never set up has no watcher yet, so its teardown
+		// reaches nothing outside.
+		"Hook never set up holds nothing": {
+			Hook: Hook{
+				Type:     TypeURLWatcher,
+				Settings: processor.Settings(`{"url":"https://example.com"}`),
+			},
+		},
+		// scheduled reminders have no external resources.
+		"Hook without external resources": {
+			Hook: Hook{
+				Type:     TypeScheduledReminder,
+				Settings: reminderSettings(t, time.Now().Add(time.Hour)),
+				State:    null.ValueFrom(processor.State(`{}`)),
+			},
+		},
 	}
-	assert.NoError(t, unset.Delete(context.Background(), nil))
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			testutil.AssertEqualError(t, c.Err, c.Hook.Delete(context.Background(), nil))
+		})
+	}
 }
 
 func Test_Hook_ChangedFrom(t *testing.T) {
@@ -358,9 +414,9 @@ func Test_Hook_ensurePrepared(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		Type      Type
-		Settings  processor.Settings
-		ExpectErr bool
+		Type     Type
+		Settings processor.Settings
+		Err      error
 	}{
 		"Scheduled reminder settings prepare": {
 			Type:     TypeScheduledReminder,
@@ -379,14 +435,14 @@ func Test_Hook_ensurePrepared(t *testing.T) {
 			Settings: processor.Settings(`{"image": "nginx:latest"}`),
 		},
 		"Malformed settings fail": {
-			Type:      TypeScheduledReminder,
-			Settings:  processor.Settings(`{not json`),
-			ExpectErr: true,
+			Type:     TypeScheduledReminder,
+			Settings: processor.Settings(`{not json`),
+			Err:      assert.AnError,
 		},
 		"Unknown type fails": {
-			Type:      Type("bogus"),
-			Settings:  processor.Settings(`{}`),
-			ExpectErr: true,
+			Type:     Type("bogus"),
+			Settings: processor.Settings(`{}`),
+			Err:      assert.AnError,
 		},
 	}
 
@@ -397,16 +453,14 @@ func Test_Hook_ensurePrepared(t *testing.T) {
 			h := &Hook{Type: c.Type, Settings: c.Settings}
 
 			err := h.ensurePrepared()
+			testutil.AssertEqualError(t, c.Err, err)
+			assert.Equal(t, err == nil, h.prepared)
 
-			if c.ExpectErr {
-				require.Error(t, err)
-				assert.False(t, h.prepared)
-
+			if err != nil {
 				return
 			}
 
-			require.NoError(t, err)
-			assert.True(t, h.prepared)
+			assert.NotNil(t, h.runner)
 			assert.NotNil(t, h.runner)
 
 			// preparation is memoized.

@@ -30,10 +30,9 @@ type Result struct {
 	Errors []OpError `json:"errors"`
 }
 
-// Client posts to the Node hocuspocus service's internal per-branch
+// Client calls the Node hocuspocus service's internal per-branch
 // endpoints: batched operations and flushes. The base URL points at the
-// Node service (e.g. http://auth-realtime:8081); endpoint replaces its
-// path with the per-branch action path.
+// Node service (e.g. http://auth-realtime:8081).
 type Client struct {
 	// httpClient is the underlying HTTP client. Callers should
 	// pass one with a reasonable timeout configured.

@@ -153,6 +153,8 @@ func Test_NewServer(t *testing.T) {
 	t.Run("Successful construction", func(t *testing.T) {
 		t.Parallel()
 
+		hookMan := &HookManagerMock{}
+
 		srv, err := NewServer(
 			log,
 			Options{
@@ -174,7 +176,7 @@ func Test_NewServer(t *testing.T) {
 			githubMan,
 			slackMan,
 			webchange.NewClient("", ""),
-			&HookManagerMock{},
+			hookMan,
 			stubSearcher{},
 			stubSearchTrigger{},
 			notifier,
@@ -209,6 +211,7 @@ func Test_NewServer(t *testing.T) {
 		assert.NotNil(t, srv.handlers.email)
 		assert.NotNil(t, srv.handlers.ai)
 		assert.NotNil(t, srv.handlers.mcp)
+		assert.Len(t, hookMan.BindHookChangeCalls(), 1)
 
 		// nothing above is configured, so every capability reports false;
 		// the search gateway mock is the one switched on.

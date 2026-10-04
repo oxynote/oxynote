@@ -58,7 +58,7 @@ func Test_GithubTracking_Validate(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, c.Err, c.Tracking.Validate())
+			testutil.AssertEqualError(t, c.Err, c.Tracking.Validate())
 		})
 	}
 }

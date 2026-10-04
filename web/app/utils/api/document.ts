@@ -67,8 +67,8 @@ export interface DocumentHook {
 	settings: DocumentHookSettings
 	// null until the hook is set up
 	state: DocumentHookState | null
-	// whether the last check of what the hook watches worked. Score and
-	// state keep their last values while it is not active.
+	// active, initializing, or why the last check failed. Score and state
+	// keep their last values while a check fails.
 	status: DocumentHookStatus
 	score: string // decimal; between 0 and 100 (default: 100)
 	createdAt: Date | string
@@ -120,8 +120,7 @@ export type DocumentHookStatus =
 	| DocumentHookStatusURLWatcher
 	| DocumentHookStatusContainerImageWatcher
 
-// initializing marks a copy its first run has not set up yet. Any other
-// status than active names why the last check failed.
+// initializing marks a copied hook before its first run.
 export type DocumentHookStatusScheduledReminder = "active" | "initializing"
 export type DocumentHookStatusGitHubTracking =
 	| "active"

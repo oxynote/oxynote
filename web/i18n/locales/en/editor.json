@@ -398,7 +398,7 @@
 				"reset-failed": "Failed to reset the hook. Please try again.",
 				"renew-failed": "Failed to renew the hook. Please try again."
 			},
-			"initializing": "Initializing this hook. It will be ready in a moment.",
+			"initializing": "Setting up this hook. It will be ready in a moment.",
 			"scheduled-reminder": {
 				"title": "Scheduled Reminder",
 				"description": "Nudge maintainers on a date",
@@ -508,7 +508,7 @@
 				"triggered-notice": "{url} changed, so maintainers were notified.",
 				"url-fallback": "the webpage",
 				"unreachable-url": "The selected webpage cannot be reached. They may be temporarily down, no longer exist, or have anti-scraping measures in place.",
-				"unconfigured": "Website change detection is not set up on this server, so changes cannot be detected.",
+				"unconfigured": "Website change detection is not set up on this server, so this hook cannot check the page.",
 				"url-input-label": "Link to Website",
 				"url-input-placeholder": "https://example.com"
 			},

@@ -3,8 +3,8 @@ import { hookErrorMessage } from "./hook-errors"
 
 // useHookActions sends the requests a hook's menu makes. Each one closes
 // the menu before it goes out, raises a toast when it fails, and resolves
-// to whether it went through. A refusal core gives a reason for shows that
-// reason.
+// to whether it went through. When core names why it refused, the toast
+// shows that reason.
 export function useHookActions(options: {
 	type: DocumentHookType
 	nodeId: () => string | null

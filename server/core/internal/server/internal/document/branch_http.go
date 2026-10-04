@@ -192,9 +192,9 @@ func (h *Handler) UpdateDocumentBranchByIDUnsafe(w http.ResponseWriter, r *http.
 	}
 
 	// a persist that changes nothing, such as the Yjs seed Hocuspocus
-	// sends on first load, leaves history alone. Only a persist that names
-	// its editors is attributed. A system write has no user, and without
-	// maintainers the branch's author is whoever edited before.
+	// sends on first load, leaves history alone. Only a user persist
+	// naming its maintainers is attributed. Otherwise LastUpdatedBy still
+	// names an earlier editor.
 	if !doc.SnapshotEqual(ndoc) {
 		var lastUpdatedBy null.String
 		if !ui.System && len(ui.Maintainers) > 0 {

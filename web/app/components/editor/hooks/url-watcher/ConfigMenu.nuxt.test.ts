@@ -94,27 +94,30 @@ describe("<URLWatcherConfigMenu>", { concurrent: false }, () => {
 		)
 	})
 
-	it("says the page of a failing hook is unreachable", async ({ expect }) => {
-		await mountMenu({
-			hook: urlHook({ state: {}, status: "unreachable_url" }),
-		})
+	it.for([
+		{
+			name: "an unreachable page",
+			input: "unreachable_url",
+			expected: "editor.hooks.url-watcher.detail-unreachable",
+		},
+		{
+			name: "missing change detection",
+			input: "unconfigured",
+			expected: "editor.hooks.url-watcher.detail-unconfigured",
+		},
+	] as const)(
+		"names $name on the hook's row",
+		async ({ input, expected }, { expect }) => {
+			await mountMenu({ hook: urlHook({ state: {}, status: input }) })
 
-		const detail = t("editor.hooks.url-watcher.detail-unreachable")
-		expect(menuText()).toContain(
-			t("editor.hooks.subtext-detail", { subtext: SHOWN_URL, detail: detail }),
-		)
-	})
-
-	it("says change detection is not set up for a hook that needs it", async ({
-		expect,
-	}) => {
-		await mountMenu({ hook: urlHook({ status: "unconfigured" }) })
-
-		const detail = t("editor.hooks.url-watcher.detail-unconfigured")
-		expect(menuText()).toContain(
-			t("editor.hooks.subtext-detail", { subtext: SHOWN_URL, detail: detail }),
-		)
-	})
+			expect(menuText()).toContain(
+				t("editor.hooks.subtext-detail", {
+					subtext: SHOWN_URL,
+					detail: t(expected),
+				}),
+			)
+		},
+	)
 
 	it("prefills the address of the hook it edits", async ({ expect }) => {
 		await mountMenu({ hook: urlHook() })
@@ -180,17 +183,24 @@ describe("<URLWatcherConfigMenu>", { concurrent: false }, () => {
 		expect(hookNotice().querySelector(".font-semibold")).toBeNull()
 	})
 
-	it("warns about a site it cannot reach", async ({ expect }) => {
-		await mountMenu({
-			hook: urlHook({ state: {}, status: "unreachable_url" }),
-		})
+	it.for([
+		{
+			name: "a site it cannot reach",
+			input: "unreachable_url",
+			expected: "editor.hooks.url-watcher.unreachable-url",
+		},
+		{
+			name: "a server without change detection",
+			input: "unconfigured",
+			expected: "editor.hooks.url-watcher.unconfigured",
+		},
+	] as const)("warns about $name", async ({ input, expected }, { expect }) => {
+		await mountMenu({ hook: urlHook({ state: {}, status: input }) })
 
 		await openHookSubMenu(t(TITLE))
 
 		expect(hookNotice().dataset.hookStatus).toBe("needs-attention")
-		expect(hookNotice().textContent.trim()).toBe(
-			t("editor.hooks.url-watcher.unreachable-url"),
-		)
+		expect(hookNotice().textContent.trim()).toBe(t(expected))
 	})
 
 	it("keeps the create button out of reach until an address is typed", async ({

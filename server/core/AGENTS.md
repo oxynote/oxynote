@@ -127,9 +127,9 @@ both**; a swallowed error is logged with a comment saying why.
 - Mutexes named `mu` (or `<thing>Mu`); lock-then-defer-unlock. For
   operations a caller may abandon use a context-aware mutex
   (`syncutil.Mutex`, to be ported into `pkg/` before first use).
-- One consumer: a `Bind*` callback. Registries return an unsubscriber
-  func; dispatch reads under `RLock` and fans out via the supervisor,
-  never under the write lock.
+- A `Bind*` method sets the sole consumer; registries return an unsubscribe
+  func. Dispatch holds `RLock` and fans out via the supervisor, never the
+  write lock.
 - Periodic work: `timeutil.NewPeriodicExec` or `timeutil.NewCron`, never
   hand-rolled tickers. Shutdown via a once-closed `chan struct{}` exposed as
   `ShutDownCh()`. Sleeps `select` on `ctx.Done()`, never bare `time.Sleep`.
