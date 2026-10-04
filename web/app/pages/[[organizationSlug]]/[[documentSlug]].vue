@@ -256,23 +256,33 @@ if (import.meta.dev) {
 	)
 }
 
-// a ?branch=<id> query opens that branch of the document. It keys on the
-// route rather than the store so a later switch through the header is not
-// undone; an id the document does not have is ignored and the watch below
-// falls back to the default branch
+// a document url opens the branch its ?branch=<id> names, or the default
+// branch when it names none the document has. This runs only when the
+// query changes or the branch list loads for the first time. A refetch
+// of the list is skipped. The header switches the branch before the url
+// is updated, so a refetch in between would read the old branch from
+// the url and switch back to it
 watchImmediate(
 	[() => pageRoute.query.branch, fetchBranches.state],
-	([queryBranch, branchState]) => {
+	([queryBranch, branchState], [oldQueryBranch, oldBranchState]) => {
 		const branches = branchState.data
 
-		if (typeof queryBranch !== "string" || !branches?.length) {
+		if (!branches?.length) {
 			return
 		}
 
-		const branch = branches.find((b) => b.branchId === queryBranch)
-		const defaultBranch = branches.find((b) => b.default)
+		if (queryBranch === oldQueryBranch && oldBranchState?.data?.length) {
+			return
+		}
 
+		const defaultBranch = branches.find((b) => b.default)
+		const branch =
+			branches.find((b) => b.branchId === queryBranch) ?? defaultBranch
+
+		// a query naming the default branch, or none the document has, is
+		// rewritten here. The watcher below only runs when the branch changes
 		if (!branch || branch.branchId === editorStore.activeBranchId) {
+			syncBranchQuery()
 			return
 		}
 
@@ -345,6 +355,9 @@ watchImmediate(
 	},
 )
 
+// the address bar names the active branch, so a copied url opens it
+watchImmediate(() => editorStore.activeBranchId, syncBranchQuery)
+
 if (import.meta.client) {
 	watchImmediate(
 		() => activeDocMetadata.value?.id,
@@ -416,6 +429,37 @@ function toggleNotificationSidebar() {
 	notificationSidebarOpen.value = !notificationSidebarOpen.value
 }
 
+// the query of this page's url with ?branch= naming the active branch.
+// The default branch is left unnamed. Every replace of the url must take
+// its query from here. A replace with the route's old query would cancel
+// one that syncBranchQuery started in the same tick
+function branchQuery() {
+	const activeBranch = fetchBranches.state.value.data?.find(
+		(b) => b.branchId === editorStore.activeBranchId,
+	)
+	if (!activeBranch) {
+		return pageRoute.query
+	}
+
+	return {
+		...pageRoute.query,
+		branch: activeBranch.default ? undefined : activeBranch.branchId,
+	}
+}
+
+function syncBranchQuery() {
+	const query = branchQuery()
+	if (query.branch === pageRoute.query.branch) {
+		return
+	}
+
+	void pageRouter.replace({
+		path: pageRoute.path,
+		query: query,
+		hash: pageRoute.hash,
+	})
+}
+
 function applyDocumentNameChange(name: string) {
 	if (!activeDocMetadata.value) {
 		return
@@ -441,7 +485,7 @@ function applyDocumentNameChange(name: string) {
 			name,
 			activeDocMetadata.value.id,
 		)}`,
-		query: pageRoute.query,
+		query: branchQuery(),
 		hash: pageRoute.hash,
 	})
 }
@@ -456,7 +500,7 @@ function refreshOrganizationRouteSlug() {
 			activeDocMetadata.value.name,
 			activeDocMetadata.value.id,
 		)}`,
-		query: pageRoute.query,
+		query: branchQuery(),
 		hash: pageRoute.hash,
 	})
 }

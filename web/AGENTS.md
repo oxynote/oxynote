@@ -105,6 +105,10 @@ there when none exists.
   [app/middleware/01.redirect.global.ts](app/middleware/01.redirect.global.ts)
   handles auth gating, onboarding and the root redirect.
   `definePageMeta({ skipAuth: true })` marks signed-out pages.
+- **Branch links**: a document URL without `?branch=<branchId>` opens the
+  default branch. The page rewrites the address bar to name the active
+  branch, so a link built from the route already carries it; a link built
+  elsewhere adds the param itself.
 - **Page load**: the content container mounts its editors hidden as soon
   as the branch syncs and reports `initial-load-complete` only once every
   asynchronously rendered block has settled (`settledBlockRenders` in the

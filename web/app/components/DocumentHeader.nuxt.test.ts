@@ -26,6 +26,9 @@ vi.mock("vue-sonner", () => ({
 const DOC_ID = "doc1".padEnd(20, "0")
 const MAIN_BRANCH = "main".padEnd(20, "0")
 const DRAFT_BRANCH = "draft".padEnd(20, "0")
+// a branch that is still being created has a temporary id, one character
+// longer than the id the server gives it
+const UNSAVED_DRAFT_BRANCH = "draft".padEnd(21, "0")
 // the divider between the document options and the assistant button is a
 // bare div, and the header draws no other one
 const ASSISTANT_SEPARATOR_SELECTOR = "div.w-px"
@@ -227,6 +230,21 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 		const wrapper = await mountHeader()
 
 		expect(wrapper.text()).toContain(
+			t("editor.navbar.document-modes.main.title"),
+		)
+	})
+
+	it("offers no branch picker while the draft branch is still being created", async ({
+		expect,
+	}) => {
+		seedBranches([
+			{ branchId: MAIN_BRANCH, branch: "main", default: true },
+			{ branchId: UNSAVED_DRAFT_BRANCH, branch: "draft", default: false },
+		])
+
+		const wrapper = await mountHeader()
+
+		expect(wrapper.text()).not.toContain(
 			t("editor.navbar.document-modes.main.title"),
 		)
 	})

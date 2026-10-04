@@ -1,11 +1,12 @@
 import { expect, test } from "@playwright/test"
 import {
+	fillLoginForm,
 	newCredentials,
 	signUpAndVerify,
 	submitLoginForm,
 	submitSignupForm,
 } from "../helpers/auth"
-import { waitForEditor } from "../helpers/editor"
+import { contentEditor, createDocument, waitForEditor } from "../helpers/editor"
 import { t } from "../helpers/i18n"
 import { visit } from "../helpers/page"
 import { signUpWithWorkspace } from "../helpers/workspace"
@@ -123,6 +124,43 @@ test.describe("login", () => {
 
 		await expect(visitor).toHaveURL(/\/login/, { timeout: 15_000 })
 		await expect(visitor.getByText(t("onboarding.login.title"))).toBeVisible()
+
+		await context.close()
+	})
+
+	test("returns a signed-out visitor to the linked block after login", async ({
+		page,
+		request,
+		browser,
+	}) => {
+		// a second login and a second cold document load come on top of the
+		// usual signup-and-workspace setup
+		test.slow()
+
+		const { credentials } = await signUpWithWorkspace(page, request)
+		await createDocument(page)
+		// the linked block sits more than a screen down, so only a scroll to
+		// it brings it into view
+		await contentEditor(page).click()
+		for (let line = 0; line < 40; line += 1) {
+			await page.keyboard.press("Enter")
+		}
+		await page.keyboard.type("Linked block")
+		const block = contentEditor(page).getByText("Linked block", { exact: true })
+		await expect(block).toHaveAttribute("id", /.+/)
+		const uid = (await block.getAttribute("id")) ?? ""
+		const link = `${page.url()}#${uid}`
+
+		const context = await browser.newContext()
+		const visitor = await context.newPage()
+		await visit(visitor, link)
+		await expect(visitor).toHaveURL(/\/login/, { timeout: 15_000 })
+
+		await fillLoginForm(visitor, credentials)
+
+		await expect(visitor).toHaveURL(link, { timeout: 15_000 })
+		await waitForEditor(visitor)
+		await expect(visitor.locator(`[id="${uid}"]`)).toBeInViewport()
 
 		await context.close()
 	})

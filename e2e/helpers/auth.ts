@@ -92,7 +92,15 @@ export async function submitLoginForm(
 	origin = BASE_URL,
 ): Promise<void> {
 	await visit(page, `${origin}/login`)
+	await fillLoginForm(page, credentials)
+}
 
+// fillLoginForm signs in through the login page the browser is already
+// on, so whatever its url carries reaches the sign-in.
+export async function fillLoginForm(
+	page: Page,
+	credentials: Credentials,
+): Promise<void> {
 	const email = page.getByPlaceholder(
 		t("onboarding.login.email-password-form.email-placeholder"),
 	)

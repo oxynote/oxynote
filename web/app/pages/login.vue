@@ -4,7 +4,7 @@ import { useForm } from "vee-validate"
 import * as z from "zod"
 // for some reason this isn't auto imported
 import { FormField as ShadcnUiFormField } from "@/components/shadcn/ui/form"
-import { postAuthDocumentUrl } from "#imports"
+import { nextUrlWithHash, postAuthDocumentUrl } from "#imports"
 import { showToastMessage } from "~/components/toast"
 import { cn } from "~/lib/utils"
 
@@ -97,6 +97,9 @@ const oauthContinueUrl = computed(() => {
 
 	return `${config.public.authRealtimeAPIBaseHttpURL}/api/auth/oauth2/authorize?${params.toString()}`
 })
+const nextUrl = computed(() =>
+	nextUrlWithHash(route.query.next as string | undefined, route.hash),
+)
 
 let redirectTimeout: ReturnType<typeof setTimeout> | undefined
 
@@ -123,13 +126,10 @@ async function logInWithProvider(provider: "github" | "google" | "slack") {
 		provider,
 		callbackURL:
 			oauthContinueUrl.value ??
-			postAuthDocumentUrl(
-				config.public.appBaseURL,
-				route.query.next as string | undefined,
-			),
+			postAuthDocumentUrl(config.public.appBaseURL, nextUrl.value),
 		newUserCallbackURL: postAuthDocumentUrl(
 			config.public.appBaseURL,
-			route.query.next as string | undefined,
+			nextUrl.value,
 			"/welcome",
 		),
 		fetchOptions: { query: route.query },
@@ -152,10 +152,9 @@ const onEmailPasswordSubmit = emailPasswordForm.handleSubmit(async (values) => {
 	// middleware forwards the signed-in visitor to next. Absolute against
 	// the app origin because a relative path would resolve against the auth
 	// server's origin, which does not serve the frontend in host-dev mode.
-	const nextUrl = route.query.next as string | undefined
 	const callbackQuery = new URLSearchParams({ verified: "true" })
-	if (nextUrl) {
-		callbackQuery.set("next", nextUrl)
+	if (nextUrl.value) {
+		callbackQuery.set("next", nextUrl.value)
 	}
 
 	const res = (await signInEmailPassword({
@@ -217,7 +216,7 @@ const onEmailPasswordSubmit = emailPasswordForm.handleSubmit(async (values) => {
 	// /login
 	await fetchAuthSession.refetch()
 
-	void navigateTo(nextUrl ? decodeURIComponent(nextUrl) : "/", {
+	void navigateTo(nextUrl.value ? decodeURIComponent(nextUrl.value) : "/", {
 		replace: true,
 	})
 })

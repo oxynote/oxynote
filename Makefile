@@ -127,12 +127,12 @@ test:
 	@$(QUIET) "testing datagen" sh -c 'cd datagen && make check-coverage'
 	@$(QUIET) "testing launcher" sh -c 'cd docker/prod/launcher && pnpm run test'
 
-# everything CI checks, to run before a commit. The steps must run one
-# after another, because lint rewrites the files the tests read. Listing
-# them as `check-all: lint test ...` would let `make -j` run them at once.
+# everything CI checks, to run before a commit. Nothing here modifies a
+# file. The steps are recipe lines so that `make -j` cannot start both e2e
+# stacks at once.
 .PHONY: check-all
 check-all:
-	@$(MAKE) lint
+	@$(MAKE) check-lint
 	@$(MAKE) test
 	@$(MAKE) e2e-dev
 	@$(MAKE) e2e-prod

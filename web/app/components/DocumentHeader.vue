@@ -32,8 +32,11 @@ const { updateDocumentBranch, createDocumentBranch, deleteDocumentBranch } =
 	useDocumentAPI()
 const isReviewable = computed(() => {
 	// NOTE this will be removed in the future
+	//
+	// a branch that is still being created has a temporary id and does not
+	// count. A switch to it would be undone once the server answers
 	const branches = fetchBranches.state.value.data
-	return !!branches && branches.length > 1
+	return !!branches && branches.filter((b) => isXid(b.branchId)).length > 1
 })
 const modeTooltip = computed(() => {
 	if (isBranchProtected.value) {

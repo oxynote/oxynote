@@ -2,6 +2,7 @@ import { describe, it } from "vitest"
 import {
 	acceptInvitationUrl,
 	isInvitationRedirect,
+	nextUrlWithHash,
 	postAuthDocumentUrl,
 	postEmailVerificationUrl,
 } from "./auth"
@@ -40,6 +41,28 @@ describe("postAuthDocumentUrl", () => {
 		expect(postAuthDocumentUrl("https://app.test", undefined, "/home")).toBe(
 			"https://app.test/home",
 		)
+	})
+})
+
+describe("nextUrlWithHash", () => {
+	it.for([
+		{
+			name: "appends the encoded hash to the next path",
+			input: { next: "%2Fdocs%2Fabc%3Fbranch%3Db", hash: "#block-1" },
+			expected: "%2Fdocs%2Fabc%3Fbranch%3Db%23block-1",
+		},
+		{
+			name: "leaves the next path alone without a hash",
+			input: { next: "%2Fdocs%2Fabc", hash: "" },
+			expected: "%2Fdocs%2Fabc",
+		},
+		{
+			name: "returns nothing without a next path",
+			input: { next: undefined, hash: "#block-1" },
+			expected: undefined,
+		},
+	])("$name", ({ input, expected }, { expect }) => {
+		expect(nextUrlWithHash(input.next, input.hash)).toBe(expected)
 	})
 })
 

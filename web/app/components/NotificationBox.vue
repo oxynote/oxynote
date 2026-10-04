@@ -81,7 +81,7 @@ async function buildNotificationHref(notification: Notification) {
 			const documentName = findDocumentName(metadata.documentId) || ""
 			const docSlug = createNameSlugWithId(documentName, metadata.documentId)
 
-			return `/${orgRealName}/${docSlug}`
+			return `/${orgRealName}/${docSlug}?branch=${encodeURIComponent(metadata.branchId)}`
 		}
 		case NotificationCode.DocumentHookTrigerred:
 		case NotificationCode.DocumentHookNeedsAttention: {
@@ -90,7 +90,7 @@ async function buildNotificationHref(notification: Notification) {
 
 			const documentName = findDocumentName(metadata.documentId) || ""
 			const docSlug = createNameSlugWithId(documentName, metadata.documentId)
-			const baseHref = `/${orgRealName}/${docSlug}`
+			const baseHref = `/${orgRealName}/${docSlug}?branch=${encodeURIComponent(metadata.branchId)}`
 
 			return metadata.blockId ? `${baseHref}#${metadata.blockId}` : baseHref
 		}
@@ -100,7 +100,7 @@ async function buildNotificationHref(notification: Notification) {
 
 			const documentName = findDocumentName(metadata.documentId) || ""
 			const docSlug = createNameSlugWithId(documentName, metadata.documentId)
-			const baseHref = `/${orgRealName}/${docSlug}`
+			const baseHref = `/${orgRealName}/${docSlug}?branch=${encodeURIComponent(metadata.branchId)}`
 
 			return metadata.anchorBlockId
 				? `${baseHref}#${metadata.anchorBlockId}`
@@ -112,7 +112,7 @@ async function buildNotificationHref(notification: Notification) {
 
 			const documentName = findDocumentName(metadata.documentId) || ""
 			const docSlug = createNameSlugWithId(documentName, metadata.documentId)
-			const baseHref = `/${orgRealName}/${docSlug}`
+			const baseHref = `/${orgRealName}/${docSlug}?branch=${encodeURIComponent(metadata.branchId)}`
 
 			return metadata.anchorBlockId
 				? `${baseHref}#${metadata.anchorBlockId}`

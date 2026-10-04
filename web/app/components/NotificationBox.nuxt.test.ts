@@ -548,7 +548,7 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 					code: NotificationCode.DocumentReviewRequest,
 					metadata: { documentId: DOC_ID, branchId: "b" },
 				},
-				expected: `/acme/Runbook-${DOC_ID}`,
+				expected: `/acme/Runbook-${DOC_ID}?branch=b`,
 			},
 			{
 				name: "opens a hook trigger at the block that fired",
@@ -561,7 +561,7 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 						type: DocumentHookType.URLWatcher,
 					},
 				},
-				expected: `/acme/Runbook-${DOC_ID}#block-7`,
+				expected: `/acme/Runbook-${DOC_ID}?branch=b#block-7`,
 			},
 			{
 				name: "opens a document-wide hook trigger at the document",
@@ -574,7 +574,7 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 						type: DocumentHookType.URLWatcher,
 					},
 				},
-				expected: `/acme/Runbook-${DOC_ID}`,
+				expected: `/acme/Runbook-${DOC_ID}?branch=b`,
 			},
 			{
 				name: "opens a hook that needs attention at the block it watches",
@@ -601,7 +601,7 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 						anchorBlockId: "block-3",
 					},
 				},
-				expected: `/acme/Runbook-${DOC_ID}#block-3`,
+				expected: `/acme/Runbook-${DOC_ID}?branch=b#block-3`,
 			},
 			{
 				name: "opens an unanchored comment at the document",
@@ -615,7 +615,7 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 						anchorBlockId: null,
 					},
 				},
-				expected: `/acme/Runbook-${DOC_ID}`,
+				expected: `/acme/Runbook-${DOC_ID}?branch=b`,
 			},
 			{
 				name: "opens a comment reply at the block it is anchored to",
@@ -630,7 +630,7 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 						anchorBlockId: "block-4",
 					},
 				},
-				expected: `/acme/Runbook-${DOC_ID}#block-4`,
+				expected: `/acme/Runbook-${DOC_ID}?branch=b#block-4`,
 			},
 			{
 				name: "opens an unanchored comment reply at the document",
@@ -645,7 +645,7 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 						anchorBlockId: null,
 					},
 				},
-				expected: `/acme/Runbook-${DOC_ID}`,
+				expected: `/acme/Runbook-${DOC_ID}?branch=b`,
 			},
 		])("$name", async ({ notification, expected }, { expect }) => {
 			mockEndpoint("PUT", "/api/notifications/read-status", () => ({}))
