@@ -138,28 +138,29 @@ export function createCoreClient(
 	// /api/x is core's internal, sessionless surface — the reverse proxy
 	// blocks it at the front door, so these calls only work from inside
 	// the container network.
-	const internal = `${baseUrl}/api/x`
+	const internal = urlOn(`${baseUrl}/api/x`)
+	const api = urlOn(`${baseUrl}/api`)
 
 	return {
 		async sendEmail(template, data) {
-			await http.post(`${internal}/email`, { template, data })
+			await http.post(internal`/email`, { template, data })
 		},
 
 		async initializeOrganization(organizationId) {
 			await http.post(
-				`${internal}/organizations/${organizationId}/initialize`,
+				internal`/organizations/${organizationId}/initialize`,
 			)
 		},
 
 		async teardownOrganization(organizationId) {
 			await http.post(
-				`${internal}/organizations/${organizationId}/teardown`,
+				internal`/organizations/${organizationId}/teardown`,
 			)
 		},
 
 		async fetchBranches(documentId) {
 			const response = await http.get(
-				`${internal}/documents/${documentId}/branches`,
+				internal`/documents/${documentId}/branches`,
 			)
 
 			return response.data as BranchSummary[]
@@ -167,7 +168,7 @@ export function createCoreClient(
 
 		async fetchBranchContent(documentId, branchId) {
 			const response = await http.get(
-				`${internal}/documents/${documentId}/branch/${branchId}`,
+				internal`/documents/${documentId}/branch/${branchId}`,
 			)
 
 			return response.data as BranchContent
@@ -175,7 +176,7 @@ export function createCoreClient(
 
 		async storeBranchContent(documentId, branchId, update) {
 			await http.put(
-				`${internal}/documents/${documentId}/branch/${branchId}`,
+				internal`/documents/${documentId}/branch/${branchId}`,
 				update,
 			)
 		},
@@ -186,7 +187,7 @@ export function createCoreClient(
 		// with core's status when they may not.
 		async verifyDocumentAccess(documentId, options) {
 			await http.get(
-				`${baseUrl}/api/documents/${documentId}/access`,
+				api`/documents/${documentId}/access`,
 				options,
 			)
 		},
@@ -201,7 +202,7 @@ export function createCoreClient(
 			options,
 		) {
 			const response = await http.put(
-				`${internal}/documents/${documentId}/merge`,
+				internal`/documents/${documentId}/merge`,
 				{ fromBranchId, toBranchId },
 				options,
 			)
@@ -214,7 +215,7 @@ export function createCoreClient(
 
 		async createBranch(documentId, request, options) {
 			return http.post(
-				`${internal}/documents/${documentId}/branches`,
+				internal`/documents/${documentId}/branches`,
 				request.body,
 				options,
 			)
@@ -222,7 +223,7 @@ export function createCoreClient(
 
 		async updateBranch(documentId, branchId, request, options) {
 			return http.put(
-				`${internal}/documents/${documentId}/branches/${branchId}`,
+				internal`/documents/${documentId}/branches/${branchId}`,
 				request.body,
 				options,
 			)
@@ -230,9 +231,17 @@ export function createCoreClient(
 
 		async deleteBranch(documentId, branchId, options) {
 			return http.delete(
-				`${internal}/documents/${documentId}/branches/${branchId}`,
+				internal`/documents/${documentId}/branches/${branchId}`,
 				options,
 			)
 		},
 	}
+}
+
+// urlOn returns a template tag that appends a path to base, encoding each
+// interpolated id so one holding "/" or ".." stays in its own segment.
+function urlOn(base: string) {
+	return (strings: TemplateStringsArray, ...ids: string[]): string =>
+		base +
+		String.raw({ raw: strings }, ...ids.map(encodeURIComponent))
 }
