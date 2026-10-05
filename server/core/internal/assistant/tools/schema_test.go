@@ -86,7 +86,6 @@ func Test_metricAttrProps(t *testing.T) {
 	// are their own schema, so the name no longer has to mean the same
 	// thing as an image's pixel width.
 	enums := block.MetricEnums()
-	require.Len(t, got, len(enums))
 
 	for attr, values := range enums {
 		prop, pok := got[attr].(map[string]any)
@@ -94,6 +93,30 @@ func Test_metricAttrProps(t *testing.T) {
 
 		assert.Equal(t, "string", prop["type"])
 		assert.Equal(t, values, prop["enum"], "attr %q publishes the wrong values", attr)
+		assert.NotEmpty(t, prop["description"], "attr %q has no description", attr)
+	}
+
+	// the attrs without a fixed value set are published too, typed as
+	// the validator reads them, so a client sees every attr it may send.
+	free := map[string]string{
+		document.AttrDataSourceID:       "string",
+		document.AttrQueries:            "array",
+		document.AttrTitle:              "string",
+		document.AttrUnitCustom:         "string",
+		document.AttrDecimals:           "number",
+		document.AttrThresholds:         "array",
+		document.AttrBaseThresholdColor: "string",
+		document.AttrAxisBoundsMin:      "number",
+		document.AttrAxisBoundsMax:      "number",
+	}
+
+	require.Len(t, got, len(enums)+len(free))
+
+	for attr, typ := range free {
+		prop, pok := got[attr].(map[string]any)
+		require.True(t, pok, "attr %q is missing from the schema", attr)
+
+		assert.Equal(t, typ, prop["type"], "attr %q has the wrong type", attr)
 		assert.NotEmpty(t, prop["description"], "attr %q has no description", attr)
 	}
 }

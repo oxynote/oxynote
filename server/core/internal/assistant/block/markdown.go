@@ -3,6 +3,8 @@ package block
 import (
 	"slices"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/oxynote/oxynote/server/core/internal/document"
 )
@@ -23,6 +25,18 @@ const _escapeGrowHeadroom = 4
 
 // _attrHref is the attribute key carrying a link mark's target URL.
 const _attrHref = "href"
+
+// closeMisses records, for one span, the first start from which an
+// underscore close scan failed. A later scan only covers less of the
+// span, so it is skipped, which keeps the parse from going cubic. Zero
+// means no failure yet, since no scan starts at 0.
+type closeMisses struct {
+	// plain is the miss for an underscore opened outside a word.
+	plain int
+
+	// strict is the miss for one opened inside a word.
+	strict int
+}
 
 // activeMark is one mark in the open-stack used during emit.
 type activeMark struct {
@@ -51,7 +65,8 @@ type inlineAtom struct {
 //
 //	**bold**       → mark bold
 //	*italic*       → mark italic
-//	_underline_    → mark underline
+//	_underline_    → mark underline, unless both ends sit inside a word,
+//	                 so my_var_name is literal
 //	~~strike~~     → mark strike
 //	`code`         → mark code (literal; no inner parsing)
 //	[label](url)   → mark link with href=url; label is recursively parsed
@@ -159,6 +174,8 @@ func parseSpan(s string, outer []activeMark) []inlineAtom { //nolint:gocognit //
 		cur.Reset()
 	}
 
+	var misses closeMisses
+
 	i := 0
 	for i < len(s) {
 		c := s[i]
@@ -216,7 +233,7 @@ func parseSpan(s string, outer []activeMark) []inlineAtom { //nolint:gocognit //
 					mark = _markStrike
 				}
 
-				if end := scanDelimClose(s, i+len(pair), pair); end >= 0 {
+				if end := scanDelimClose(s, i+len(pair), pair, false); end >= 0 {
 					flush()
 
 					inner := parseSpan(s[i+len(pair):end], append(append([]activeMark(nil), outer...), activeMark{kind: mark}))
@@ -241,7 +258,7 @@ func parseSpan(s string, outer []activeMark) []inlineAtom { //nolint:gocognit //
 				mark = _markUnderline
 			}
 
-			if end := scanDelimClose(s, i+1, string(c)); end >= 0 {
+			if end := scanSingleClose(s, i, &misses); end >= 0 {
 				flush()
 
 				inner := parseSpan(s[i+1:end], append(append([]activeMark(nil), outer...), activeMark{kind: mark}))
@@ -327,6 +344,34 @@ func scanHrefClose(s string, start int) int {
 	return -1
 }
 
+// scanSingleClose returns where the * or _ span opening at byte i of s
+// closes, or -1, reading and extending the span's misses.
+func scanSingleClose(s string, i int, misses *closeMisses) int {
+	if s[i] == '*' {
+		return scanDelimClose(s, i+1, "*", false)
+	}
+
+	// an underscore after a word character closes only before a non-word
+	// one, so my_var_name stays literal.
+	strict := wordBefore(s, i)
+
+	miss := &misses.plain
+	if strict {
+		miss = &misses.strict
+	}
+
+	if *miss > 0 && i+1 >= *miss {
+		return -1
+	}
+
+	end := scanDelimClose(s, i+1, "_", strict)
+	if end < 0 {
+		*miss = i + 1
+	}
+
+	return end
+}
+
 // scanDelimClose returns the byte offset of the closing delimiter
 // matching delim starting from byte position start, or -1 if no
 // closing delimiter is found. It skips over escapes, code spans,
@@ -338,7 +383,9 @@ func scanHrefClose(s string, start int) int {
 // (as in "**a*b***" or "***ab***"), the run's first character
 // closes the inner single-character span, so the real close starts
 // one character later.
-func scanDelimClose(s string, start int, delim string) int {
+//
+// strict skips a close followed by a word character.
+func scanDelimClose(s string, start int, delim string, strict bool) int {
 	lone := 0
 	i := start
 
@@ -371,6 +418,12 @@ func scanDelimClose(s string, start int, delim string) int {
 			}
 		}
 
+		if strict && strings.HasPrefix(s[i:], delim) && wordAt(s, i+len(delim)) {
+			i += len(delim)
+
+			continue
+		}
+
 		if strings.HasPrefix(s[i:], delim) {
 			if len(delim) == 2 && lone%2 == 1 && i+len(delim) < len(s) && s[i+len(delim)] == delim[0] {
 				lone--
@@ -390,6 +443,22 @@ func scanDelimClose(s string, start int, delim string) int {
 	}
 
 	return -1
+}
+
+// wordBefore reports whether the character ending at byte i of s is a
+// letter or digit.
+func wordBefore(s string, i int) bool {
+	r, _ := utf8.DecodeLastRuneInString(s[:i])
+
+	return unicode.IsLetter(r) || unicode.IsDigit(r)
+}
+
+// wordAt reports whether the character starting at byte i of s is a
+// letter or digit.
+func wordAt(s string, i int) bool {
+	r, _ := utf8.DecodeRuneInString(s[i:])
+
+	return unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
 // atomsToTextNodes merges adjacent atoms with identical mark sets

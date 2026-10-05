@@ -1,6 +1,7 @@
 package block
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/oxynote/oxynote/server/core/internal/document"
@@ -42,6 +43,64 @@ func Test_ParseInlineMarkdown(t *testing.T) {
 				{Type: "text", Text: "under", Marks: []document.Mark{{Type: "underline"}}},
 				{Type: "text", Text: " x"},
 			},
+		},
+		"Underscores inside a word at both ends are literal": {
+			Input:    "my_var_name and a_b_c",
+			Expected: []document.Block{{Type: "text", Text: "my_var_name and a_b_c"}},
+		},
+		"Underline span ending a word": {
+			Input: "foo_bar_",
+			Expected: []document.Block{
+				{Type: "text", Text: "foo"},
+				{Type: "text", Text: "bar", Marks: []document.Mark{{Type: "underline"}}},
+			},
+		},
+		"Underline span starting a word": {
+			Input: "_foo_bar",
+			Expected: []document.Block{
+				{Type: "text", Text: "foo", Marks: []document.Mark{{Type: "underline"}}},
+				{Type: "text", Text: "bar"},
+			},
+		},
+		"Underline span inside curly quotes": {
+			Input: "“_term_”",
+			Expected: []document.Block{
+				{Type: "text", Text: "“"},
+				{Type: "text", Text: "term", Marks: []document.Mark{{Type: "underline"}}},
+				{Type: "text", Text: "”"},
+			},
+		},
+		"Underline span next to punctuation": {
+			Input: "(_under_).",
+			Expected: []document.Block{
+				{Type: "text", Text: "("},
+				{Type: "text", Text: "under", Marks: []document.Mark{{Type: "underline"}}},
+				{Type: "text", Text: ")."},
+			},
+		},
+		"Underline span opened outside a word closes at the next underscore": {
+			Input: "_snake_case x",
+			Expected: []document.Block{
+				{Type: "text", Text: "snake", Marks: []document.Mark{{Type: "underline"}}},
+				{Type: "text", Text: "case x"},
+			},
+		},
+		"Underline span opened inside a word skips a close inside one": {
+			Input: "my_var_name and_x_",
+			Expected: []document.Block{
+				{Type: "text", Text: "my"},
+				{Type: "text", Text: "var_name and_x", Marks: []document.Mark{{Type: "underline"}}},
+			},
+		},
+		"Underscores inside a word of multi-byte letters are literal": {
+			Input:    "é_x_é",
+			Expected: []document.Block{{Type: "text", Text: "é_x_é"}},
+		},
+		// each opener would rescan to the end without the failed scan
+		// being remembered.
+		"Unclosed underscores inside words are scanned once": {
+			Input:    strings.Repeat("a_a ", 50000),
+			Expected: []document.Block{{Type: "text", Text: strings.Repeat("a_a ", 50000)}},
 		},
 		"Strike span": {
 			Input: "~~gone~~",
@@ -288,6 +347,15 @@ func Test_emitInlineMarkdown(t *testing.T) {
 			},
 			Expected: `use \* carefully`,
 		},
+		"Round trip: underline around a snake case word": {Markdown: "_snake_case_ and my\\_var"},
+		"Underline touching a word survives a round trip": {
+			Input: []document.Block{
+				{Type: "text", Text: "“foo"},
+				{Type: "text", Text: "bar", Marks: []document.Mark{{Type: "underline"}}},
+				{Type: "text", Text: "” my_var"},
+			},
+			Expected: "“foo_bar_” my\\_var",
+		},
 		"Code text with a backtick falls back to escaped plain text": {
 			Input: []document.Block{
 				{Type: "text", Text: "a`b", Marks: []document.Mark{{Type: "code"}}},
@@ -439,4 +507,68 @@ func Test_closeDelim(t *testing.T) {
 			assert.Equal(t, c.Result, closeDelim(c.Mark))
 		})
 	}
+}
+
+func Test_scanSingleClose(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Input    string
+		Misses   closeMisses
+		Expected int
+		Recorded closeMisses
+	}{
+		"Asterisk closes at the next asterisk": {
+			Input:    "*a*",
+			Expected: 2,
+		},
+		"Underscore outside a word closes at the next underscore": {
+			Input:    "_a_b",
+			Expected: 2,
+		},
+		"Underscore inside a word skips a close inside one": {
+			Input:    "a_b_c_",
+			Expected: 5,
+		},
+		"Failed scan is recorded": {
+			Input:    "a_b_c",
+			Expected: -1,
+			Recorded: closeMisses{strict: 2},
+		},
+		"Scan after a recorded failure is skipped": {
+			Input:    "x a_b_",
+			Misses:   closeMisses{strict: 1},
+			Expected: -1,
+			Recorded: closeMisses{strict: 1},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			misses := c.Misses
+
+			start := strings.IndexAny(c.Input, "*_")
+			assert.Equal(t, c.Expected, scanSingleClose(c.Input, start, &misses))
+			assert.Equal(t, c.Recorded, misses)
+		})
+	}
+}
+
+func Test_wordBefore(t *testing.T) {
+	t.Parallel()
+
+	assert.True(t, wordBefore("a_", 1))
+	assert.True(t, wordBefore("é_", len("é")))
+	assert.False(t, wordBefore("“_", len("“")))
+	assert.False(t, wordBefore("_", 0))
+}
+
+func Test_wordAt(t *testing.T) {
+	t.Parallel()
+
+	assert.True(t, wordAt("_7", 1))
+	assert.False(t, wordAt("_”", 1))
+	assert.False(t, wordAt("_", 1))
 }

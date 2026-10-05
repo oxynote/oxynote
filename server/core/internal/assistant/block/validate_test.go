@@ -1,6 +1,7 @@
 package block
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/oxynote/oxynote/server/core/internal/document"
@@ -27,6 +28,28 @@ func Test_Validate(t *testing.T) {
 			Input:        Block{Type: BlockParagraph, TaskItems: []TaskItem{{Block: Block{Type: BlockParagraph}}}},
 			Err:          assert.AnError,
 			ExpectedPath: "",
+		},
+		"Text over the length cap": {
+			Input:        Block{Type: BlockParagraph, Text: strings.Repeat("x", MaxTextLength+1)},
+			Err:          assert.AnError,
+			ExpectedPath: "text",
+		},
+		"Text at the length cap": {
+			Input: Block{Type: BlockParagraph, Text: strings.Repeat("x", MaxTextLength)},
+		},
+		"Nested text over the length cap": {
+			Input: Block{Type: BlockBulletList, Items: []Block{
+				{Type: BlockParagraph, Text: strings.Repeat("x", MaxTextLength+1)},
+			}},
+			Err:          assert.AnError,
+			ExpectedPath: "items[0]/text",
+		},
+		"Param description over the length cap": {
+			Input: Block{Type: BlockParamList, Header: "Body", Params: []ParamItem{
+				{Name: "id", Description: strings.Repeat("x", MaxTextLength+1)},
+			}},
+			Err:          assert.AnError,
+			ExpectedPath: "params[0]/description",
 		},
 		"Heading without level": {
 			Input:        Block{Type: BlockHeading, Text: "x"},
@@ -399,6 +422,11 @@ func Test_Validate(t *testing.T) {
 		"Code passes": {
 			Input: Block{Type: BlockCode, Text: "x := 1"},
 		},
+		"Code with a language that is not a string": {
+			Input:        Block{Type: BlockCode, Text: "x := 1", Attrs: map[string]any{"language": 1}},
+			Err:          assert.AnError,
+			ExpectedPath: "attrs.language",
+		},
 		"Titled code with task_items is rejected": {
 			Input: Block{Type: BlockTitledCode, TaskItems: []TaskItem{{Block: Block{Type: BlockParagraph}}}},
 			Err:   assert.AnError,
@@ -715,6 +743,24 @@ func Test_ValidateAttrs(t *testing.T) {
 		"Titled code with a title passes": {
 			Type:  BlockTitledCode,
 			Attrs: document.Attributes{"title": "ex.go"},
+		},
+		"Titled code with a language that is not a string fails": {
+			Type:  BlockTitledCode,
+			Attrs: document.Attributes{"title": "ex.go", "language": true},
+			Err:   assert.AnError,
+		},
+		"Code with a string language passes": {
+			Type:  BlockCode,
+			Attrs: document.Attributes{"language": "go"},
+		},
+		"Code with a null language passes": {
+			Type:  BlockCode,
+			Attrs: document.Attributes{"language": nil},
+		},
+		"Code with a language that is not a string fails": {
+			Type:  BlockCode,
+			Attrs: document.Attributes{"language": 1},
+			Err:   assert.AnError,
 		},
 		"Image with src passes": {
 			Type:  BlockImage,

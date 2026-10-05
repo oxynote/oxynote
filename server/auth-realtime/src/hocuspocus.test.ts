@@ -59,7 +59,11 @@ function seededDocument(name = "Runbook"): ConnectedDocument {
 }
 
 function hooksWith(core: StubCore, session: AuthSession | null = SESSION) {
-	return createDocumentHooks({ auth: stubAuth(session), core })
+	return createDocumentHooks({
+		auth: stubAuth(session),
+		core,
+		log: stubLog(),
+	})
 }
 
 describe("parseDocumentName", () => {
@@ -168,7 +172,11 @@ describe("createDocumentHooks", () => {
 		}) => {
 			const core = stubCore()
 			const auth = stubAuth()
-			const hooks = createDocumentHooks({ auth, core })
+			const hooks = createDocumentHooks({
+				auth,
+				core,
+				log: stubLog(),
+			})
 
 			const result = await hooks.onAuthenticate({
 				connectionConfig: { readOnly: false },
@@ -938,22 +946,35 @@ describe("createDocumentHooks", () => {
 			).toBe(false)
 		})
 
-		// the editors keep their unsaved work either way; telling them
-		// the persist failed is the only thing left to do
-		it("warns the connected editors instead of throwing when the persist fails", async ({
+		// rethrowing is what makes hocuspocus keep the document, and its
+		// unsaved changes, in memory
+		it("warns the connected editors, logs and rethrows when the persist fails", async ({
 			expect,
 		}) => {
 			const core = stubCore()
 			core.storeBranchContent.mockRejectedValue(
 				new Error("core unreachable"),
 			)
-			const hooks = hooksWith(core)
+			const log = stubLog()
+			const hooks = createDocumentHooks({
+				auth: stubAuth(),
+				core,
+				log,
+			})
 			const document = seededDocument()
 
-			await hooks.onStoreDocument({
-				documentName: "doc1-branch1",
-				document,
-			})
+			await expect(
+				hooks.onStoreDocument({
+					documentName: "doc1-branch1",
+					document,
+				}),
+			).rejects.toThrow("core unreachable")
+
+			expect(log.error.mock.calls).toEqual([
+				[
+					"persisting doc1-branch1 failed: core unreachable",
+				],
+			])
 
 			expect(
 				document.broadcastStateless,
@@ -965,6 +986,30 @@ describe("createDocumentHooks", () => {
 			)
 		})
 
+		it("logs a persist failure that is not an Error by its value", async ({
+			expect,
+		}) => {
+			const core = stubCore()
+			core.storeBranchContent.mockRejectedValue("core gone")
+			const log = stubLog()
+			const hooks = createDocumentHooks({
+				auth: stubAuth(),
+				core,
+				log,
+			})
+
+			await expect(
+				hooks.onStoreDocument({
+					documentName: "doc1-branch1",
+					document: seededDocument(),
+				}),
+			).rejects.toBe("core gone")
+
+			expect(log.error.mock.calls).toEqual([
+				["persisting doc1-branch1 failed: core gone"],
+			])
+		})
+
 		it("warns the connected editors when the branch cannot be resolved", async ({
 			expect,
 		}) => {
@@ -973,10 +1018,12 @@ describe("createDocumentHooks", () => {
 			const hooks = hooksWith(core)
 			const document = seededDocument()
 
-			await hooks.onStoreDocument({
-				documentName: "doc1-default",
-				document,
-			})
+			await expect(
+				hooks.onStoreDocument({
+					documentName: "doc1-default",
+					document,
+				}),
+			).rejects.toThrow()
 
 			expect(
 				document.broadcastStateless,
@@ -988,7 +1035,8 @@ describe("createDocumentHooks", () => {
 	describe("flushDocument", () => {
 		// a server holding one open document whose store may be pending
 		// or running. executeNow stands in for hocuspocus running the
-		// debounced store: it calls the hook the way the server would.
+		// debounced store: it calls the hook the way the server would,
+		// catching what the hook throws.
 		function stubServer(
 			hooks: ReturnType<typeof hooksWith>,
 			document: ConnectedDocument | null,
@@ -1001,11 +1049,13 @@ describe("createDocumentHooks", () => {
 
 			const executeNow = vi.fn(() =>
 				document
-					? hooks.onStoreDocument({
-							documentName:
-								"doc1-branch1",
-							document,
-						})
+					? hooks
+							.onStoreDocument({
+								documentName:
+									"doc1-branch1",
+								document,
+							})
+							.catch(() => undefined)
 					: undefined,
 			)
 
@@ -1159,10 +1209,12 @@ describe("createDocumentHooks", () => {
 			)
 			const hooks = hooksWith(core)
 			const document = seededDocument()
-			await hooks.onStoreDocument({
-				documentName: "doc1-branch1",
-				document,
-			})
+			await expect(
+				hooks.onStoreDocument({
+					documentName: "doc1-branch1",
+					document,
+				}),
+			).rejects.toThrow("core unreachable")
 			const { server } = stubServer(hooks, document, "idle")
 
 			await expect(

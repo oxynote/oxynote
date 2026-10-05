@@ -51,7 +51,7 @@ func blockVariant(t block.Type) (map[string]any, bool) {
 		}
 	case block.BlockHeading:
 		props = map[string]any{
-			"text": map[string]any{"type": "string", "description": "Inline text in minimal markdown. One block is one paragraph; a newline inside text does not start a new one."},
+			"text": map[string]any{"type": "string", "description": "Plain text; a heading takes no formatting, so no markdown is parsed."},
 			"attrs": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -140,7 +140,7 @@ func blockVariant(t block.Type) (map[string]any, bool) {
 		}
 		required = []string{"attrs"}
 	case block.BlockMermaid:
-		props = map[string]any{"text": map[string]any{"type": "string", "description": "Raw source; no markdown."}}
+		props = map[string]any{"text": map[string]any{"type": "string", "description": "Raw Mermaid source; no markdown. Mermaid ends a gantt task name or a timeline period at its first colon, so write any colon inside one as #58; (13#58;00)."}}
 	case block.BlockHorizontalRule:
 		props = map[string]any{}
 	case block.BlockImage:
@@ -262,13 +262,13 @@ var _enumAttrs = []struct {
 	{document.AttrSimulationPreset, "Draws this generated series in place of the query's own result, for a block documenting a metric that has no real data yet. Omit it to chart the query."},
 }
 
-// metricAttrProps builds the metric attrs sub-schema. Only attributes
-// with a fixed value set appear: publishing the set as an enum is what
-// lets a client reject a bad value itself, rather than learning the
-// values from prose it may never have been given.
+// metricAttrProps builds the metric attrs sub-schema. An attribute
+// with a fixed value set is published as an enum, which lets a client
+// reject a bad value itself rather than learning the values from prose
+// it may never have been given.
 func metricAttrProps() map[string]any {
 	enums := block.MetricEnums()
-	out := make(map[string]any, len(_enumAttrs))
+	out := make(map[string]any)
 
 	for _, a := range _enumAttrs {
 		out[a.Name] = map[string]any{
@@ -277,6 +277,39 @@ func metricAttrProps() map[string]any {
 			"enum":        enums[a.Name],
 		}
 	}
+
+	out[document.AttrDataSourceID] = map[string]any{"type": "string", "description": "The data source the chart queries, an id from list_data_sources. Required for the block to render."}
+	out[document.AttrQueries] = map[string]any{
+		"type":        "array",
+		"description": "The queries charted, in PromQL or SQL as the data source takes. A SQL chart selects a time column aliased \"time\" plus one or more numeric columns, and may use the $__ macros.",
+		"items": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"name":         map[string]any{"type": "string", "description": "The query's name."},
+				"query":        map[string]any{"type": "string", "description": "The query itself."},
+				"legendFormat": map[string]any{"type": "string", "description": "Optional series label template; may be empty."},
+			},
+			"required": []string{"name", "query"},
+		},
+	}
+	out[document.AttrTitle] = map[string]any{"type": "string", "description": "Optional chart title."}
+	out[document.AttrUnitCustom] = map[string]any{"type": "string", "description": "The unit label, read when unitType is custom."}
+	out[document.AttrDecimals] = map[string]any{"type": "number", "description": "Optional number of decimals shown."}
+	out[document.AttrThresholds] = map[string]any{
+		"type":        "array",
+		"description": "Optional threshold rows, each colouring the values from its value up.",
+		"items": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"value": map[string]any{"type": "number"},
+				"label": map[string]any{"type": "string"},
+				"color": map[string]any{"type": "string"},
+			},
+		},
+	}
+	out[document.AttrBaseThresholdColor] = map[string]any{"type": "string", "description": "Optional colour of the values below the first threshold."}
+	out[document.AttrAxisBoundsMin] = map[string]any{"type": "number", "description": "Optional fixed lower bound of the value axis."}
+	out[document.AttrAxisBoundsMax] = map[string]any{"type": "number", "description": "Optional fixed upper bound of the value axis."}
 
 	return out
 }

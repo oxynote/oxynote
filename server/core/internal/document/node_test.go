@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -195,15 +196,48 @@ func Test_Block_Flatten(t *testing.T) {
 			Block:    Block{Type: BlockNodeText, Text: "hello"},
 			Expected: "hello",
 		},
-		"Adjacent fragments are space separated": {
+		"Adjacent fragments read as written": {
 			Block: Block{
 				Type: BlockNodeParagraph,
 				Content: []Block{
-					{Type: BlockNodeText, Text: "hello"},
-					{Type: BlockNodeText, Text: "world"},
+					{Type: BlockNodeText, Text: "my"},
+					{Type: BlockNodeText, Text: "_var"},
+					{Type: BlockNodeText, Text: " is "},
+					{Type: BlockNodeText, Text: "set"},
 				},
 			},
-			Expected: "hello world",
+			Expected: "my_var is set",
+		},
+		"Inline atom separates the fragments around it": {
+			Block: Block{
+				Type: BlockNodeParagraph,
+				Content: []Block{
+					{Type: BlockNodeText, Text: "line"},
+					{Type: "hardBreak"},
+					{Type: BlockNodeText, Text: "break"},
+				},
+			},
+			Expected: "line break",
+		},
+		"Sibling blocks are space separated": {
+			Block: Block{
+				Type: BlockNodeBlockquote,
+				Content: []Block{
+					{
+						Type: BlockNodeParagraph,
+						Content: []Block{
+							{Type: BlockNodeText, Text: "first "},
+						},
+					},
+					{
+						Type: BlockNodeParagraph,
+						Content: []Block{
+							{Type: BlockNodeText, Text: "second"},
+						},
+					},
+				},
+			},
+			Expected: "first second",
 		},
 		"Nested subtrees are concatenated": {
 			Block: Block{
@@ -242,6 +276,58 @@ func Test_Block_Flatten(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, c.Expected, c.Block.Flatten())
+		})
+	}
+}
+
+func Test_Mark_UnmarshalJSON(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		JSON   string
+		Result Mark
+		Err    error
+	}{
+		"Mark without attrs": {
+			JSON:   `{"type":"bold"}`,
+			Result: Mark{Type: "bold"},
+		},
+		"Mark with attrs": {
+			JSON:   `{"type":"link","attrs":{"href":"https://oxynote.test"}}`,
+			Result: Mark{Type: "link", Attrs: Attributes{"href": "https://oxynote.test"}},
+		},
+		"Mark with attrs that are not an object": {
+			JSON:   `{"type":"bold","attrs":true}`,
+			Result: Mark{Type: "bold"},
+		},
+		"Mark with null attrs": {
+			JSON:   `{"type":"italic","attrs":null}`,
+			Result: Mark{Type: "italic"},
+		},
+		"Malformed mark": {
+			JSON: `{"type":1}`,
+			Err:  assert.AnError,
+		},
+		"Malformed attrs": {
+			JSON: `{"type":"link","attrs":{"href":}}`,
+			Err:  assert.AnError,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			var m Mark
+
+			err := json.Unmarshal([]byte(c.JSON), &m)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, m)
 		})
 	}
 }

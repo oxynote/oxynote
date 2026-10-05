@@ -28,6 +28,7 @@ export interface SessionResolver {
 export interface DocumentHookDeps {
 	auth: SessionResolver
 	core: CoreClient
+	log: ServiceLogger
 }
 
 // hocuspocus's Document adds the stateless broadcast the store hook uses
@@ -213,7 +214,7 @@ function encodeState(doc: Y.Doc): string {
 	return Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64")
 }
 
-export function createDocumentHooks({ auth, core }: DocumentHookDeps) {
+export function createDocumentHooks({ auth, core, log }: DocumentHookDeps) {
 	// who edited each open document since its last persist. Held per
 	// hooks instance so nothing carries over between servers — or, in a
 	// test, between cases.
@@ -463,12 +464,22 @@ export function createDocumentHooks({ auth, core }: DocumentHookDeps) {
 			} catch (err) {
 				Sentry.captureException(err)
 
+				// changes since the last good persist live only in
+				// memory, so the failure must show without sentry too.
+				log.error(
+					`persisting ${data.documentName} failed: ${err instanceof Error ? err.message : String(err)}`,
+				)
+
 				data.document.broadcastStateless(
 					JSON.stringify({
 						type: "error",
 						code: "hocuspocus.store_failed",
 					}),
 				)
+
+				// hocuspocus keeps a document whose store threw in
+				// memory, rather than unloading the unsaved changes.
+				throw err
 			}
 		},
 
@@ -506,10 +517,8 @@ interface HocuspocusServer {
 	resetConnections: (documentName: string) => void
 }
 
-export function createHocuspocus({
-	log,
-	...deps
-}: DocumentHookDeps & { log: ServiceLogger }): HocuspocusServer {
+export function createHocuspocus(deps: DocumentHookDeps): HocuspocusServer {
+	const { log } = deps
 	const { flushDocument, ...hooks } = createDocumentHooks(deps)
 
 	const instance = new Hocuspocus({

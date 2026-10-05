@@ -10,7 +10,8 @@ import (
 // canonical Block representation surfaced to the AI. Wrapper nodes
 // the AI never authors (listItem, splitDocumentationLeftSide,
 // splitDocumentationParameterListItem, …) are folded into the
-// enclosing macro's typed fields.
+// enclosing macro's typed fields. A listItem or taskItem compacted on
+// its own yields its entry paragraph, as its list would hold it.
 //
 // The returned Block preserves the source block's uid attribute so
 // the AI can refer to it in subsequent edit operations.
@@ -30,6 +31,8 @@ func Compact(b document.Block) (Block, error) {
 		return compactList(b, uid, BlockOrderedList)
 	case document.BlockNodeTaskList:
 		return compactTaskList(b, uid)
+	case document.BlockNodeListItem, document.BlockNodeTaskItem:
+		return compactEntry(b)
 	case document.BlockNodeCalloutBlock:
 		return compactCallout(b, uid)
 	case document.BlockNodeCodeBlock:
@@ -94,7 +97,7 @@ func compactParagraph(b document.Block, uid string) Block {
 }
 
 // compactHeading compacts a heading node, carrying the level attr
-// alongside the inline text.
+// alongside its plain text.
 func compactHeading(b document.Block, uid string) Block {
 	level := 1
 	if a, ok := b.Attrs.Get(document.AttrLevel); ok {
@@ -104,7 +107,7 @@ func compactHeading(b document.Block, uid string) Block {
 	return Block{
 		Type:  BlockHeading,
 		UID:   uid,
-		Text:  emitInlineMarkdown(b.Content),
+		Text:  flattenText(b.Content),
 		Attrs: document.Attributes{document.AttrLevel: level},
 	}
 }
@@ -144,21 +147,7 @@ func compactList(b document.Block, uid string, kind Type) (Block, error) {
 			return Block{}, fmt.Errorf("%s child %d: expected listItem, got %s", kind, i, li.Type)
 		}
 
-		if len(li.Content) == 0 {
-			items = append(items, Block{Type: BlockParagraph})
-
-			continue
-		}
-
-		inner, err := Compact(li.Content[0])
-		if err != nil {
-			return Block{}, fmt.Errorf("%s item %d: %w", kind, i, err)
-		}
-
-		// An item wraps a paragraph plus whatever follows it, typically a
-		// nested list; dropping the rest here would delete it from the
-		// document on the way back through replace_block.
-		inner.Children, err = compactMany(li.Content[1:])
+		inner, err := compactEntry(li)
 		if err != nil {
 			return Block{}, fmt.Errorf("%s item %d: %w", kind, i, err)
 		}
@@ -171,6 +160,29 @@ func compactList(b document.Block, uid string, kind Type) (Block, error) {
 		UID:   uid,
 		Items: items,
 	}, nil
+}
+
+// compactEntry compacts a listItem or taskItem into the canonical list
+// entry: its leading paragraph, with whatever follows that paragraph,
+// typically a nested list, as the paragraph's children. Dropping the
+// rest would delete it from the document on the way back through
+// replace_block.
+func compactEntry(item document.Block) (Block, error) {
+	if len(item.Content) == 0 {
+		return Block{Type: BlockParagraph}, nil
+	}
+
+	inner, err := Compact(item.Content[0])
+	if err != nil {
+		return Block{}, err
+	}
+
+	inner.Children, err = compactMany(item.Content[1:])
+	if err != nil {
+		return Block{}, err
+	}
+
+	return inner, nil
 }
 
 // compactTaskList compacts a taskList by unwrapping each taskItem
@@ -190,22 +202,9 @@ func compactTaskList(b document.Block, uid string) (Block, error) {
 			checked = a.Bool()
 		}
 
-		var inner Block
-
-		if len(ti.Content) > 0 {
-			c, err := Compact(ti.Content[0])
-			if err != nil {
-				return Block{}, fmt.Errorf("task_list item %d: %w", i, err)
-			}
-
-			c.Children, err = compactMany(ti.Content[1:])
-			if err != nil {
-				return Block{}, fmt.Errorf("task_list item %d: %w", i, err)
-			}
-
-			inner = c
-		} else {
-			inner = Block{Type: BlockParagraph}
+		inner, err := compactEntry(ti)
+		if err != nil {
+			return Block{}, fmt.Errorf("task_list item %d: %w", i, err)
 		}
 
 		items = append(items, TaskItem{

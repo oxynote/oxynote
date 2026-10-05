@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/oxynote/oxynote/server/core/internal/assistant/block"
@@ -47,6 +48,69 @@ func stubContentDB(err error) *DBMock {
 			},
 		},
 	}, err)
+}
+
+// stubNestedDB answers content reads with blocks that hold their text
+// or their parts one level down: a code block, a split_doc whose right
+// side holds a titled code block, and a list whose entry holds a
+// nested list.
+func stubNestedDB() *DBMock {
+	text := func(s string) []document.Block {
+		return []document.Block{{Type: document.BlockNodeText, Text: s}}
+	}
+
+	uid := func(id string) document.Attributes {
+		return document.Attributes{document.AttrUID: id}
+	}
+
+	return stubRootDB(document.RootBlock{
+		Content: []document.Block{
+			{Type: document.BlockNodeCodeBlock, Attrs: uid("c"), Content: text("old")},
+			{
+				Type:  document.BlockNodeSplitDoc,
+				Attrs: uid("sd"),
+				Content: []document.Block{
+					{
+						Type:    document.BlockNodeSplitDocLeft,
+						Attrs:   uid("ls"),
+						Content: []document.Block{{Type: document.BlockNodeHeading, Attrs: uid("sh"), Content: text("API")}},
+					},
+					{
+						Type:  document.BlockNodeSplitDocRight,
+						Attrs: uid("rs"),
+						Content: []document.Block{{
+							Type:  document.BlockNodeTitledCodeBlock,
+							Attrs: uid("tc"),
+							Content: []document.Block{
+								{Type: document.BlockNodeCodeBlockTitle, Attrs: uid("tt"), Content: text("GET /x")},
+								{Type: document.BlockNodeCodeBlock, Attrs: document.Attributes{document.AttrUID: "cb", document.AttrLanguage: "go"}, Content: text("old")},
+							},
+						}},
+					},
+				},
+			},
+			{
+				Type:  document.BlockNodeBulletList,
+				Attrs: uid("bl"),
+				Content: []document.Block{{
+					Type:  document.BlockNodeListItem,
+					Attrs: uid("li"),
+					Content: []document.Block{
+						{Type: document.BlockNodeParagraph, Attrs: uid("lp"), Content: text("one")},
+						{
+							Type:  document.BlockNodeBulletList,
+							Attrs: uid("nl"),
+							Content: []document.Block{{
+								Type:    document.BlockNodeListItem,
+								Attrs:   uid("ni"),
+								Content: []document.Block{{Type: document.BlockNodeParagraph, Attrs: uid("np"), Content: text("two")}},
+							}},
+						},
+					},
+				}},
+			},
+		},
+	}, nil)
 }
 
 // stubSimulationDB answers content reads with one metric whose data has
@@ -295,6 +359,21 @@ func Test_readBlock_Execute(t *testing.T) {
 			DB:   stubContentDB(nil),
 			Args: `{` + targetArgs(_unknownBranchID) + `,"block_uid":"a"}`,
 			Err:  assert.AnError,
+		},
+		"List entry is returned as its paragraph with its nested list": {
+			DB:       stubNestedDB(),
+			Args:     `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"li"}`,
+			Contains: `{"type":"paragraph","uid":"lp","text":"one","children":[{"type":"bullet_list","uid":"nl"`,
+		},
+		"Code block title returns the titled code holding it": {
+			DB:       stubNestedDB(),
+			Args:     `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"tt"}`,
+			Contains: `{"type":"titled_code","uid":"tc"`,
+		},
+		"Split doc side returns the split doc": {
+			DB:       stubNestedDB(),
+			Args:     `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"ls"}`,
+			Contains: `{"type":"split_doc","uid":"sd"`,
 		},
 	}
 
@@ -630,6 +709,11 @@ func Test_updateBlockTextArgs_Validate(t *testing.T) {
 		"block_uid":   updateBlockTextArgs{DocumentID: _testDocID, BranchID: _stubMainBranchID, Text: "t"},
 		"text":        updateBlockTextArgs{DocumentID: _testDocID, BranchID: _stubMainBranchID, BlockUID: "b"},
 	})
+
+	// text over the cap is refused before anything parses it.
+	err := updateBlockTextArgs{DocumentID: _testDocID, BranchID: _stubMainBranchID, BlockUID: "b", Text: strings.Repeat("x", block.MaxTextLength+1)}.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "longer than")
 }
 
 func Test_updateBlockText_Info(t *testing.T) {
@@ -719,6 +803,29 @@ func Test_updateBlockText_Execute(t *testing.T) {
 			DB:       stubContentDB(nil),
 			Args:     `{` + targetArgs(_stubBranchID) + `,"block_uid":"a","text":"hi"}`,
 			Contains: []string{`"uid":"a"`, `"text":"hi"`},
+		},
+		"Paragraph text is read as markdown": {
+			DB:       stubContentDB(nil),
+			Args:     `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"a","text":"say **hi**"}`,
+			Contains: []string{`"text":"say hi"`},
+			Op:       `{"kind":"update_text","block_uid":"a","content":[{"type":"text","text":"say "},{"type":"text","text":"hi","marks":[{"type":"bold"}]}]}`,
+		},
+		"Code text is sent raw": {
+			DB:       stubNestedDB(),
+			Args:     `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"c","text":"a_b \\c **1**"}`,
+			Contains: []string{`"uid":"c"`, `"text":"a_b \\c **1**"`},
+			Op:       `{"kind":"update_text","block_uid":"c","content":[{"type":"text","text":"a_b \\c **1**"}]}`,
+		},
+		"Titled code text lands in its code": {
+			DB:       stubNestedDB(),
+			Args:     `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"tc","text":"new_code"}`,
+			Contains: []string{`"kind":"titled_code"`, `"text":"GET /x new_code"`},
+			Op:       `{"kind":"update_text","block_uid":"tc","content":[{"type":"text","text":"new_code"}]}`,
+		},
+		"List entry keeps its nested list": {
+			DB:       stubNestedDB(),
+			Args:     `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"li","text":"uno"}`,
+			Contains: []string{`"uid":"li"`, `"text":"uno two"`, `"has_children":true`},
 		},
 	}
 
@@ -861,6 +968,17 @@ func Test_updateBlockAttrs_Execute(t *testing.T) {
 			Args: `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"` + _stubMetricUID +
 				`","attrs":{"simulationPreset":null}}`,
 			Op: `{"kind":"update_attrs","block_uid":"m","attrs":{"simulationPreset":null,"simulationActive":false}}`,
+		},
+		"Titled code title lands on its title row": {
+			DB:       stubNestedDB(),
+			Args:     `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"tc","attrs":{"title":"POST /y"}}`,
+			Contains: []string{`"uid":"tc"`, `"text":"POST /y old"`},
+			Op:       `{"kind":"update_attrs","block_uid":"tc","attrs":{"title":"POST /y"}}`,
+		},
+		"Titled code language alone is accepted": {
+			DB:   stubNestedDB(),
+			Args: `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"tc","attrs":{"language":"python"}}`,
+			Op:   `{"kind":"update_attrs","block_uid":"tc","attrs":{"language":"python"}}`,
 		},
 		// only metric blocks have the flag, so any other block is sent
 		// unchanged.
@@ -1094,6 +1212,166 @@ func Test_moveBlock_Execute(t *testing.T) {
 			runEdit(t, moveBlock{}, NameMoveBlock, c)
 		})
 	}
+}
+
+func Test_findReadable(t *testing.T) {
+	t.Parallel()
+
+	db := stubNestedDB()
+	doc, err := db.FetchDocumentByBranchIDFunc(context.Background(), _stubMainBranchID, "org")
+	require.NoError(t, err)
+
+	cc := map[string]struct {
+		UID      string
+		Expected string
+		Found    bool
+	}{
+		"Block named by its uid":            {UID: "c", Expected: "c", Found: true},
+		"Nested block named by its uid":     {UID: "np", Expected: "np", Found: true},
+		"List entry named by its uid":       {UID: "li", Expected: "li", Found: true},
+		"Part of a block returns its block": {UID: "tt", Expected: "tc", Found: true},
+		"Part of a macro returns the macro": {UID: "rs", Expected: "sd", Found: true},
+		"Unknown uid":                       {UID: "zzz"},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			got, ok := findReadable(doc.Content.Content, c.UID)
+			assert.Equal(t, c.Found, ok)
+
+			uid, _ := got.UID()
+			assert.Equal(t, c.Expected, uid)
+		})
+	}
+}
+
+func Test_withText(t *testing.T) {
+	t.Parallel()
+
+	content := []document.Block{{Type: document.BlockNodeText, Text: "new"}}
+
+	paragraph := func(uid, text string) document.Block {
+		return document.Block{
+			Type:    document.BlockNodeParagraph,
+			Attrs:   document.Attributes{document.AttrUID: uid},
+			Content: []document.Block{{Type: document.BlockNodeText, Text: text}},
+		}
+	}
+
+	cc := map[string]struct {
+		Block    document.Block
+		Expected string
+	}{
+		"Text leaf takes the text itself": {
+			Block:    paragraph("p", "old"),
+			Expected: "new",
+		},
+		"Titled code takes it in its code": {
+			Block: document.Block{
+				Type: document.BlockNodeTitledCodeBlock,
+				Content: []document.Block{
+					{Type: document.BlockNodeCodeBlockTitle, Content: []document.Block{{Type: document.BlockNodeText, Text: "GET /x"}}},
+					{Type: document.BlockNodeCodeBlock, Content: []document.Block{{Type: document.BlockNodeText, Text: "old"}}},
+				},
+			},
+			Expected: "GET /x new",
+		},
+		"List entry takes it in its paragraph and keeps the rest": {
+			Block: document.Block{
+				Type: document.BlockNodeListItem,
+				Content: []document.Block{
+					paragraph("p", "old"),
+					{Type: document.BlockNodeBulletList, Content: []document.Block{paragraph("q", "kept")}},
+				},
+			},
+			Expected: "new kept",
+		},
+		"Wrapper without a paragraph is left as it is": {
+			Block: document.Block{
+				Type:    document.BlockNodeCalloutBlock,
+				Content: []document.Block{{Type: document.BlockNodeBulletList, Content: []document.Block{paragraph("q", "kept")}}},
+			},
+			Expected: "kept",
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			before := c.Block.Flatten()
+
+			assert.Equal(t, c.Expected, withText(c.Block, content).Flatten())
+
+			// the fetched block is left as it was.
+			assert.Equal(t, before, c.Block.Flatten())
+		})
+	}
+}
+
+func Test_withAttrs(t *testing.T) {
+	t.Parallel()
+
+	titled := document.Block{
+		Type:  document.BlockNodeTitledCodeBlock,
+		Attrs: document.Attributes{document.AttrUID: "tc"},
+		Content: []document.Block{
+			{Type: document.BlockNodeCodeBlockTitle, Content: []document.Block{{Type: document.BlockNodeText, Text: "GET /x"}}},
+			{Type: document.BlockNodeCodeBlock, Attrs: document.Attributes{document.AttrLanguage: "go"}},
+			{Type: "unknownPart"},
+		},
+	}
+
+	cc := map[string]struct {
+		Block    document.Block
+		Attrs    map[string]any
+		Expected document.Block
+	}{
+		"Attrs are laid over the block's own": {
+			Block: document.Block{Type: document.BlockNodeHeading, Attrs: document.Attributes{document.AttrUID: "h", document.AttrLevel: 1}},
+			Attrs: map[string]any{document.AttrLevel: 2},
+			Expected: document.Block{
+				Type:  document.BlockNodeHeading,
+				Attrs: document.Attributes{document.AttrUID: "h", document.AttrLevel: 2},
+			},
+		},
+		"Block without attrs gets them": {
+			Block:    document.Block{Type: document.BlockNodeCalloutBlock},
+			Attrs:    map[string]any{document.AttrIcon: "lucide:info"},
+			Expected: document.Block{Type: document.BlockNodeCalloutBlock, Attrs: document.Attributes{document.AttrIcon: "lucide:info"}},
+		},
+		"Titled code takes its title and language on its children": {
+			Block: titled,
+			Attrs: map[string]any{document.AttrTitle: "POST /y", document.AttrLanguage: "python"},
+			Expected: document.Block{
+				Type:  document.BlockNodeTitledCodeBlock,
+				Attrs: document.Attributes{document.AttrUID: "tc"},
+				Content: []document.Block{
+					{Type: document.BlockNodeCodeBlockTitle, Content: []document.Block{{Type: document.BlockNodeText, Text: "POST /y"}}},
+					{Type: document.BlockNodeCodeBlock, Attrs: document.Attributes{document.AttrLanguage: "python"}},
+					{Type: "unknownPart"},
+				},
+			},
+		},
+		"Titled code keeps what the update does not name": {
+			Block:    titled,
+			Attrs:    map[string]any{},
+			Expected: titled,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Expected, withAttrs(c.Block, c.Attrs))
+		})
+	}
+
+	// the fetched block is left as it was.
+	assert.Equal(t, "go", titled.Content[1].Attrs[document.AttrLanguage])
 }
 
 func Test_sanitizeBlock(t *testing.T) {

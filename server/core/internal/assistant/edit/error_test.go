@@ -27,7 +27,11 @@ func Test_OpError_describe(t *testing.T) {
 		},
 		"Operation kind named as its tool": {
 			Msg:    "update_text does not apply to calloutBlock: use replace_block to rewrite it whole, or update_text on the block holding the text.",
-			Result: "update_block_text does not apply to calloutBlock: use replace_block to rewrite it whole, or update_block_text on the block holding the text.",
+			Result: "update_block_text does not apply to callout: use replace_block to rewrite it whole, or update_block_text on the block holding the text.",
+		},
+		"Node type without a canonical type named by its block": {
+			Msg:    "update_attrs does not apply to codeBlockTitle in nrk_7bSz-mJp",
+			Result: "update_attrs does not apply to a titled_code's title in nrk_7bSz-mJp",
 		},
 		"Unknown message passes through": {
 			Msg:    "cannot move a block relative to itself: a",

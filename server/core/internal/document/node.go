@@ -1,6 +1,7 @@
 package document
 
 import (
+	"bytes"
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
@@ -156,32 +157,52 @@ func (b Block) UID() (string, bool) {
 }
 
 // Flatten returns the concatenated text of the block's entire
-// subtree. Adjacent text fragments are separated by a single space.
-// Used to derive a flat searchable representation from a structured
-// ProseMirror tree.
+// subtree. Text within one block reads as written, and the text of
+// separate blocks is separated by a single space. Used to derive a flat
+// searchable representation from a structured ProseMirror tree.
 func (b Block) Flatten() string {
-	var buf []byte
-	b.flattenInto(&buf)
+	f := flattener{}
+	f.walk(b)
 
-	return string(buf)
+	return string(f.buf)
 }
 
-func (b Block) flattenInto(buf *[]byte) {
-	if b.Type == BlockNodeText {
-		if b.Text != "" {
-			if len(*buf) > 0 && (*buf)[len(*buf)-1] != ' ' {
-				*buf = append(*buf, ' ')
-			}
+// flattener accumulates the text Flatten returns.
+type flattener struct {
+	// buf holds the text written so far.
+	buf []byte
 
-			*buf = append(*buf, []byte(b.Text)...)
+	// apart indicates that a block boundary was crossed since the last
+	// text, so the next text is set apart by a space.
+	apart bool
+}
+
+// walk appends the text of b's subtree. Adjacent text nodes are one run
+// split only by marks, so they join as written; any other node, such as
+// a block or a hard break, sets the text around it apart.
+func (f *flattener) walk(b Block) {
+	if b.Type == BlockNodeText {
+		if b.Text == "" {
+			return
 		}
+
+		if f.apart && len(f.buf) > 0 && f.buf[len(f.buf)-1] != ' ' {
+			f.buf = append(f.buf, ' ')
+		}
+
+		f.apart = false
+		f.buf = append(f.buf, b.Text...)
 
 		return
 	}
 
+	f.apart = true
+
 	for _, c := range b.Content {
-		c.flattenInto(buf)
+		f.walk(c)
 	}
+
+	f.apart = true
 }
 
 // FindByUID recursively searches the block's subtree (self included)
@@ -232,6 +253,33 @@ type Mark struct {
 
 	// Attrs are additional attributes for the mark, such as link URL.
 	Attrs Attributes `json:"attrs,omitempty"`
+}
+
+// UnmarshalJSON decodes the mark, reading attrs that are not an object
+// as none. Older documents hold marks with `true` for attrs, and one
+// failing mark would keep the whole document from being stored.
+func (m *Mark) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Type  string          `json:"type"`
+		Attrs json.RawMessage `json:"attrs"`
+	}
+
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("decoding mark: %w", err)
+	}
+
+	m.Type = raw.Type
+	m.Attrs = nil
+
+	if !bytes.HasPrefix(bytes.TrimSpace(raw.Attrs), []byte("{")) {
+		return nil
+	}
+
+	if err := json.Unmarshal(raw.Attrs, &m.Attrs); err != nil {
+		return fmt.Errorf("decoding mark attrs: %w", err)
+	}
+
+	return nil
 }
 
 // StripCommentMarks returns a copy of the RootBlock with all comment marks

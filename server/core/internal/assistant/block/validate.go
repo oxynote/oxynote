@@ -9,6 +9,10 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/document"
 )
 
+// MaxTextLength caps a block's text, in bytes. Markdown parsing is
+// superlinear on some inputs, so the cap bounds what one write costs.
+const MaxTextLength = 64 << 10
+
 // errFileNotAuthored is returned by every write path handed a file
 // block: one exists only by uploading in the editor, so the AI reads and
 // moves it but never writes it.
@@ -185,6 +189,8 @@ func ValidateAttrs(t Type, attrs document.Attributes) error {
 		return validateHeadingAttrs(attrs, "")
 	case BlockTitledCode:
 		return validateTitledCodeAttrs(attrs, "")
+	case BlockCode:
+		return validateLanguageAttr(attrs, "")
 	case BlockImage, BlockFigma:
 		return validateSrcAttrs(t, attrs, "")
 	case BlockFile:
@@ -197,15 +203,13 @@ func ValidateAttrs(t Type, attrs document.Attributes) error {
 		BlockOrderedList,
 		BlockTaskList,
 		BlockCallout,
-		BlockCode,
 		BlockMermaid,
 		BlockHorizontalRule,
 		BlockMetricGrid,
 		BlockSplitDoc,
 		BlockParamList:
 		// these carry no attribute the canonical model constrains:
-		// callout's icon and code's language are free strings, and the
-		// rest have none at all.
+		// callout's icon is a free string, and the rest have none.
 		return nil
 	}
 
@@ -245,13 +249,13 @@ func AllowedInContainer(container document.BlockNodeType, t Type) error {
 
 	allowed, ok := _allowedInContainer[container]
 	if !ok {
-		return verr("", fmt.Sprintf("blocks cannot be placed directly inside %s", container))
+		return verr("", "blocks cannot be placed directly inside "+DescribeNode(container))
 	}
 
 	if !allowed[t] {
 		return verr("", fmt.Sprintf(
 			"%s is not allowed inside %s, which holds only %s",
-			t, container, listAllowed(allowed),
+			t, DescribeNode(container), listAllowed(allowed),
 		))
 	}
 
@@ -277,11 +281,21 @@ func containerForType(t Type) string {
 // validateBlock dispatches on b.Type. Path is the breadcrumb to b
 // from the validation root (passed in by recursive calls).
 func validateBlock(b Block, path string) error {
+	if len(b.Text) > MaxTextLength {
+		return verr(joinPath(path, "text"), fmt.Sprintf("text is longer than %d bytes; split it across blocks", MaxTextLength))
+	}
+
 	switch b.Type {
 	case "":
 		return verr(path, "block type is required")
-	case BlockParagraph, BlockCode, BlockMermaid:
+	case BlockParagraph, BlockMermaid:
 		return validateTextBearing(b, path)
+	case BlockCode:
+		if err := validateTextBearing(b, path); err != nil {
+			return err
+		}
+
+		return validateLanguageAttr(b.Attrs, path)
 	case BlockHeading:
 		return validateHeading(b, path)
 	case BlockBlockquote:
@@ -460,10 +474,27 @@ func validateTitledCode(b Block, path string) error {
 	return validateTitledCodeAttrs(b.Attrs, path)
 }
 
-// validateTitledCodeAttrs checks that a titled_code carries a title.
+// validateTitledCodeAttrs checks that a titled_code carries a title
+// and a language that is a string, if any.
 func validateTitledCodeAttrs(attrs document.Attributes, path string) error {
 	if a, ok := attrs.Get(document.AttrTitle); !ok || strings.TrimSpace(a.String()) == "" {
 		return verr(joinPath(path, "attrs.title"), "titled_code requires a non-empty title")
+	}
+
+	return validateLanguageAttr(attrs, path)
+}
+
+// validateLanguageAttr checks that a code language, when set, is a
+// string. The editor's highlighter fails on any other value, and the
+// document with it stops rendering.
+func validateLanguageAttr(attrs document.Attributes, path string) error {
+	v, ok := attrs.Value(document.AttrLanguage)
+	if !ok {
+		return nil
+	}
+
+	if _, isString := v.(string); !isString {
+		return verr(joinPath(path, "attrs.language"), "code language must be a string")
 	}
 
 	return nil
@@ -649,6 +680,13 @@ func validateParamList(b Block, path string) error {
 			return verr(
 				joinPath(path, fmt.Sprintf("params[%d]/name", i)),
 				"param row requires a non-empty name",
+			)
+		}
+
+		if len(p.Description) > MaxTextLength {
+			return verr(
+				joinPath(path, fmt.Sprintf("params[%d]/description", i)),
+				fmt.Sprintf("param description is longer than %d bytes", MaxTextLength),
 			)
 		}
 	}

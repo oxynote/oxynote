@@ -761,8 +761,22 @@ func (i *input) ValidateAttrUpdate(documentID, branchID xid.ID, blockUID string,
 		return nil
 	}
 
-	merged := make(document.Attributes, len(target.Attrs)+len(attrs))
-	maps.Copy(merged, target.Attrs)
+	current := target.Attrs
+
+	// a titled code block keeps its title and language on its children
+	// rather than on itself.
+	if target.Type == document.BlockNodeTitledCodeBlock {
+		c, err := block.Compact(target)
+		if err != nil {
+			// NOCOV: compacting a titled code block cannot fail.
+			return fmt.Errorf("compacting block: %w", err)
+		}
+
+		current = c.Attrs
+	}
+
+	merged := make(document.Attributes, len(current)+len(attrs))
+	maps.Copy(merged, current)
 	maps.Copy(merged, attrs)
 
 	return block.ValidateAttrs(t, merged)

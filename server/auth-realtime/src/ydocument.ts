@@ -1,5 +1,6 @@
 import * as Y from "yjs"
 import { TiptapTransformer } from "@hocuspocus/transformer"
+import { getSchema } from "@tiptap/core"
 import { getEditorExtensions } from "./schema/index.js"
 
 export interface DocumentData {
@@ -11,6 +12,10 @@ export interface DocumentData {
 // Create a TiptapTransformer instance with the web editor schema
 const extensions = getEditorExtensions()
 const transformer = TiptapTransformer.extensions(extensions)
+
+// the same schema as a ProseMirror schema, for checks the transformer
+// does not make.
+const schema = getSchema(extensions)
 
 /**
  * Deep-clones a Y.XmlElement, preserving all attribute types (including arrays
@@ -133,4 +138,4 @@ export function replaceYdocContent(ydoc: Y.Doc, data: DocumentData): void {
 	})
 }
 
-export { transformer }
+export { schema, transformer }

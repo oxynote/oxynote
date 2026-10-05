@@ -123,7 +123,7 @@ func expandHeading(b Block) document.Block {
 	return document.Block{
 		Type:    document.BlockNodeHeading,
 		Attrs:   attrs,
-		Content: ParseInlineMarkdown(b.Text),
+		Content: rawTextContent(b.Text),
 	}
 }
 
@@ -488,6 +488,23 @@ func expandParamList(b Block) (document.Block, error) {
 		Attrs:   uidAttrs(resolveUID(b.UID)),
 		Content: children,
 	}, nil
+}
+
+// TextContent returns the inline content a block of type pm holds for
+// text. A heading takes no formatting, and code, mermaid and a code
+// block's title hold raw source, so their text is kept as written; every
+// other type reads text as minimal markdown.
+func TextContent(pm document.BlockNodeType, text string) []document.Block {
+	switch pm {
+	case document.BlockNodeHeading,
+		document.BlockNodeCodeBlock,
+		document.BlockNodeTitledCodeBlock,
+		document.BlockNodeCodeBlockTitle,
+		document.BlockNodeMermaidBlock:
+		return rawTextContent(text)
+	default:
+		return ParseInlineMarkdown(text)
+	}
 }
 
 // rawTextContent returns the inline content slice for a node that

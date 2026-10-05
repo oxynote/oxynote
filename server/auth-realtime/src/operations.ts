@@ -14,7 +14,7 @@
  */
 import * as Y from "yjs"
 import { nanoid } from "nanoid"
-import { transformer, cloneXmlElement } from "./ydocument.js"
+import { schema, transformer, cloneXmlElement } from "./ydocument.js"
 
 /** Canonical attribute name carried on every editor block. */
 const UID_ATTR = "uid"
@@ -71,10 +71,11 @@ export interface ReplaceOp {
 
 /**
  * Replaces the inline content of a text-bearing block in place,
- * preserving the block's type, attrs, and uid. A callout or blockquote
- * is written through to its first paragraph, since their schemas hold
- * blocks rather than text; any other block-carrying target is refused
- * rather than flattened.
+ * preserving the block's type, attrs, and uid. A block holding its text
+ * one level down (a callout or blockquote of one paragraph, a list
+ * entry, a titled code block) is written through to that child; any
+ * other block-carrying target, and a mark the target does not allow, is
+ * refused rather than flattened.
  */
 export interface UpdateTextOp {
 	kind: "update_text"
@@ -85,7 +86,9 @@ export interface UpdateTextOp {
 
 /**
  * Sets/overrides the named attributes on an existing block. Other
- * attributes are preserved. The uid attribute cannot be changed.
+ * attributes are preserved. The uid attribute cannot be changed. A
+ * titled code block takes only title and language, written to its
+ * children.
  */
 export interface UpdateAttrsOp {
 	kind: "update_attrs"
@@ -305,14 +308,26 @@ const TEXT_LEAF_NODES = new Set([
 	"paragraph",
 	"heading",
 	"codeBlock",
+	"codeBlockTitle",
 	"mermaidBlock",
 ])
 
-// the blocks that hold their text one level down, in a first child
-// paragraph. Their schemas admit block children only, so writing a text
+// the blocks that hold their text one level down, each with the child it
+// lives in. Their schemas admit block children only, so writing a text
 // run into them directly produces a node the editor cannot parse and
 // the canonical model cannot read back.
-const TEXT_WRAPPER_NODES = new Set(["calloutBlock", "blockquote"])
+const TEXT_HOLDER_NODES = new Map([
+	["calloutBlock", "paragraph"],
+	["blockquote", "paragraph"],
+	["listItem", "paragraph"],
+	["taskItem", "paragraph"],
+	["titledCodeBlock", "codeBlock"],
+])
+
+// the holders refused when they hold more than one block, since the
+// edit would show only the first. A list entry is not one of them: the
+// lists under its paragraph belong to it.
+const SINGLE_TEXT_HOLDERS = new Set(["calloutBlock", "blockquote"])
 
 function opUpdateText(doc: Y.Doc, op: UpdateTextOp): void {
 	const found = findByUid(doc.getXmlFragment("content"), op.block_uid)
@@ -320,33 +335,9 @@ function opUpdateText(doc: Y.Doc, op: UpdateTextOp): void {
 		throw new Error(`block_uid not found: ${op.block_uid}`)
 	}
 
-	const nodeName = found.element.nodeName
+	const target = textTarget(found.element)
 
-	// the edit replaces everything under the target, so a block holding
-	// other blocks would lose them — and lose the uids comments and
-	// hooks are anchored to — while reporting success. Only the caller
-	// knows that was not meant, so refuse instead of guessing.
-	if (
-		!TEXT_LEAF_NODES.has(nodeName) &&
-		!TEXT_WRAPPER_NODES.has(nodeName)
-	) {
-		throw new Error(
-			`update_text does not apply to ${nodeName}: it carries ` +
-				`blocks rather than text, and the edit would discard ` +
-				`them. Use replace_block to rewrite it whole, or ` +
-				`update_text on the block holding the text.`,
-		)
-	}
-
-	const target = TEXT_WRAPPER_NODES.has(nodeName)
-		? firstParagraph(found.element)
-		: found.element
-
-	if (!target) {
-		throw new Error(
-			`update_text found no paragraph to write in ${nodeName}`,
-		)
-	}
+	checkMarks(target.nodeName, op.content)
 
 	target.delete(0, target.length)
 
@@ -356,14 +347,81 @@ function opUpdateText(doc: Y.Doc, op: UpdateTextOp): void {
 	}
 }
 
-// firstParagraph returns the wrapper's first paragraph child, which is
-// where its text lives.
-function firstParagraph(el: Y.XmlElement): Y.XmlElement | null {
+// textTarget returns the element whose inline content update_text
+// replaces: the block itself, or the child a holder keeps its text in.
+function textTarget(el: Y.XmlElement): Y.XmlElement {
+	const nodeName = el.nodeName
+
+	if (TEXT_LEAF_NODES.has(nodeName)) {
+		return el
+	}
+
+	const holds = TEXT_HOLDER_NODES.get(nodeName)
+
+	// the edit replaces everything under the target, so a block holding
+	// other blocks would lose them — and lose the uids comments and
+	// hooks are anchored to — while reporting success. Only the caller
+	// knows that was not meant, so refuse instead of guessing.
+	if (holds === undefined) {
+		throw new Error(
+			`update_text does not apply to ${nodeName}: it carries ` +
+				`blocks rather than text, and the edit would discard ` +
+				`them. Use replace_block to rewrite it whole, or ` +
+				`update_text on the block holding the text.`,
+		)
+	}
+
+	if (SINGLE_TEXT_HOLDERS.has(nodeName) && el.length > 1) {
+		throw new Error(
+			`update_text does not apply to ${nodeName} holding ` +
+				`${String(el.length)} blocks: its text is not one ` +
+				`paragraph. Use update_text on the paragraph you ` +
+				`mean, or replace_block to rewrite it whole.`,
+		)
+	}
+
+	const target = firstChild(el, holds)
+	if (!target) {
+		throw new Error(
+			`update_text found no ${holds} to write in ${nodeName}`,
+		)
+	}
+
+	return target
+}
+
+// checkMarks refuses a mark the target's schema does not allow. The
+// editor cannot load such a node, so the edit would be lost while
+// reporting success.
+function checkMarks(nodeName: string, content: PMInline[]): void {
+	const nodeType = schema.nodes[nodeName]
+
+	// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- operations arrive as unvalidated JSON, so the declared type is a claim about the caller rather than a guarantee about the value
+	for (const node of content ?? []) {
+		for (const mark of node.marks ?? []) {
+			const markType = schema.marks[mark.type]
+
+			if (
+				!nodeType ||
+				!markType ||
+				!nodeType.allowsMarkType(markType)
+			) {
+				throw new Error(
+					`update_text cannot put the ${mark.type} mark in ` +
+						`${nodeName}: write the text without it`,
+				)
+			}
+		}
+	}
+}
+
+// firstChild returns the element's first child of the named type.
+function firstChild(el: Y.XmlElement, nodeName: string): Y.XmlElement | null {
 	for (let i = 0; i < el.length; i++) {
 		const child = el.get(i)
 		if (
 			child instanceof Y.XmlElement &&
-			child.nodeName === "paragraph"
+			child.nodeName === nodeName
 		) {
 			return child
 		}
@@ -376,6 +434,12 @@ function opUpdateAttrs(doc: Y.Doc, op: UpdateAttrsOp): void {
 	const found = findByUid(doc.getXmlFragment("content"), op.block_uid)
 	if (!found) {
 		throw new Error(`block_uid not found: ${op.block_uid}`)
+	}
+
+	if (found.element.nodeName === "titledCodeBlock") {
+		updateTitledCodeAttrs(found.element, op.attrs)
+
+		return
 	}
 
 	for (const [key, value] of Object.entries(op.attrs)) {
@@ -395,6 +459,66 @@ function opUpdateAttrs(doc: Y.Doc, op: UpdateAttrsOp): void {
 				setAttribute(key: string, value: unknown): void
 			}
 		).setAttribute(key, value)
+	}
+}
+
+// updateTitledCodeAttrs writes the title and language where the editor
+// reads them: the title row's text and the code block's attribute. On
+// the block itself, both would be ignored.
+function updateTitledCodeAttrs(
+	el: Y.XmlElement,
+	attrs: Record<string, unknown>,
+): void {
+	const keys = Object.keys(attrs).filter((key) => key !== UID_ATTR)
+
+	const other = keys.find((key) => key !== "title" && key !== "language")
+	if (other !== undefined) {
+		throw new Error(
+			`titledCodeBlock takes only title and language, not ` +
+				`${other}. Use replace_block to change anything else.`,
+		)
+	}
+
+	// the editor's highlighter fails on a language that is not a string,
+	// and the document stops rendering.
+	const language = attrs.language
+	if (
+		keys.includes("language") &&
+		language !== null &&
+		typeof language !== "string"
+	) {
+		throw new Error(
+			"titledCodeBlock language must be a string or null",
+		)
+	}
+
+	// both are looked up first, so a refusal changes nothing.
+	const title = firstChild(el, "codeBlockTitle")
+	const code = firstChild(el, "codeBlock")
+	if (!title || !code) {
+		throw new Error(
+			"titledCodeBlock is missing its title or code. Use " +
+				"replace_block to rewrite it whole.",
+		)
+	}
+
+	if (keys.includes("title")) {
+		title.delete(0, title.length)
+
+		const text = typeof attrs.title === "string" ? attrs.title : ""
+		if (text) {
+			const run = new Y.XmlText()
+			run.insert(0, text)
+			title.insert(0, [run])
+		}
+	}
+
+	if (keys.includes("language")) {
+		;(
+			code as unknown as {
+				setAttribute(key: string, value: unknown): void
+			}
+		).setAttribute("language", language)
 	}
 }
 
@@ -624,18 +748,16 @@ function buildInlineText(content: PMInline[]): Y.XmlText | null {
 
 /**
  * Translates a ProseMirror mark array into the format-attribute
- * shape Y.XmlText expects: { [markType]: markAttrs | true }.
+ * shape Y.XmlText expects: { [markType]: markAttrs }. Unmarked text
+ * gets an empty object rather than nothing, since Y.Text.insert without
+ * attributes carries over the formatting of the text before it.
  */
-function marksToAttrs(
-	marks: PMMark[] | undefined,
-): Record<string, unknown> | undefined {
-	if (!marks || marks.length === 0) {
-		return undefined
-	}
-
+function marksToAttrs(marks: PMMark[] | undefined): Record<string, unknown> {
 	const out: Record<string, unknown> = {}
-	for (const mark of marks) {
-		out[mark.type] = mark.attrs ?? true
+	for (const mark of marks ?? []) {
+		// an object even without attrs, as y-prosemirror writes it.
+		// Core cannot decode `true`, so the document would not persist.
+		out[mark.type] = mark.attrs ?? {}
 	}
 
 	return out

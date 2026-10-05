@@ -75,3 +75,37 @@ func Test_canonicalTypesCoverExpand(t *testing.T) {
 		assert.True(t, covered[tp], "%s is not reachable from a ProseMirror type", tp)
 	}
 }
+
+func Test_DescribeNode(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		PM     document.BlockNodeType
+		Result string
+	}{
+		"Node type with a canonical type": {
+			PM:     document.BlockNodeCalloutBlock,
+			Result: "callout",
+		},
+		"Node type that is part of a block": {
+			PM:     document.BlockNodeSplitDocLeft,
+			Result: "a split_doc's left side",
+		},
+		"Document root": {
+			PM:     document.BlockNodeDoc,
+			Result: "the document root",
+		},
+		"Unknown node type": {
+			PM:     document.BlockNodeType("nonsense"),
+			Result: "nonsense",
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, DescribeNode(c.PM))
+		})
+	}
+}

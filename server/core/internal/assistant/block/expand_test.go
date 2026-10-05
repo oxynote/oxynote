@@ -226,6 +226,16 @@ func Test_Expand(t *testing.T) {
 				},
 			},
 		},
+		"Heading text is kept as written": {
+			Input: Block{Type: BlockHeading, Text: "The **my_var** flag", Attrs: map[string]any{"level": 2}},
+			Expected: document.Block{
+				Type:  document.BlockNodeHeading,
+				Attrs: map[string]any{"level": 2},
+				Content: []document.Block{
+					{Type: "text", Text: "The **my_var** flag"},
+				},
+			},
+		},
 		"Blockquote wraps paragraph": {
 			Input: Block{Type: BlockBlockquote, Text: "quote"},
 			Expected: document.Block{
@@ -714,6 +724,61 @@ func Test_Expand(t *testing.T) {
 			}
 
 			assert.Equal(t, c.Expected, stripUIDsPM(got))
+		})
+	}
+}
+
+func Test_TextContent(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Type     document.BlockNodeType
+		Text     string
+		Expected []document.Block
+	}{
+		"Paragraph text is read as markdown": {
+			Type: document.BlockNodeParagraph,
+			Text: "say **hi**",
+			Expected: []document.Block{
+				{Type: document.BlockNodeText, Text: "say "},
+				{Type: document.BlockNodeText, Text: "hi", Marks: []document.Mark{{Type: "bold"}}},
+			},
+		},
+		"Heading text is kept raw": {
+			Type:     document.BlockNodeHeading,
+			Text:     "The **my_var** flag",
+			Expected: []document.Block{{Type: document.BlockNodeText, Text: "The **my_var** flag"}},
+		},
+		"Code text is kept raw": {
+			Type:     document.BlockNodeCodeBlock,
+			Text:     `my_var = "a\b" **1**`,
+			Expected: []document.Block{{Type: document.BlockNodeText, Text: `my_var = "a\b" **1**`}},
+		},
+		"Titled code text is kept raw": {
+			Type:     document.BlockNodeTitledCodeBlock,
+			Text:     "a_b_c",
+			Expected: []document.Block{{Type: document.BlockNodeText, Text: "a_b_c"}},
+		},
+		"Code block title is kept raw": {
+			Type:     document.BlockNodeCodeBlockTitle,
+			Text:     "GET /v1/_internal",
+			Expected: []document.Block{{Type: document.BlockNodeText, Text: "GET /v1/_internal"}},
+		},
+		"Mermaid text is kept raw": {
+			Type:     document.BlockNodeMermaidBlock,
+			Text:     "graph TD; A_1-->B_2;",
+			Expected: []document.Block{{Type: document.BlockNodeText, Text: "graph TD; A_1-->B_2;"}},
+		},
+		"Empty raw text has no content": {
+			Type: document.BlockNodeCodeBlock,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Expected, TextContent(c.Type, c.Text))
 		})
 	}
 }

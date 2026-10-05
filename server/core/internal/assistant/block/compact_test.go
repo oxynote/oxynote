@@ -30,6 +30,17 @@ func Test_Compact(t *testing.T) {
 			},
 			Expected: Block{Type: BlockParagraph, UID: "p1", Text: "hi **bold**"},
 		},
+		"Heading text is read plain": {
+			Input: document.Block{
+				Type:  document.BlockNodeHeading,
+				Attrs: map[string]any{"uid": "h1", "level": 2},
+				Content: []document.Block{
+					{Type: "text", Text: "my_var "},
+					{Type: "text", Text: "noted", Marks: []document.Mark{{Type: "comment"}}},
+				},
+			},
+			Expected: Block{Type: BlockHeading, UID: "h1", Text: "my_var noted", Attrs: map[string]any{"level": 2}},
+		},
 		"Callout with single paragraph uses Text shorthand": {
 			Input: document.Block{
 				Type:  document.BlockNodeCalloutBlock,
@@ -479,6 +490,49 @@ func Test_Compact(t *testing.T) {
 				Content: []document.Block{{Type: "weirdSide"}},
 			},
 			Expected: Block{Type: BlockSplitDoc},
+		},
+		"List item compacts to its entry paragraph with its nested blocks": {
+			Input: document.Block{
+				Type:  document.BlockNodeListItem,
+				Attrs: map[string]any{"uid": "li1"},
+				Content: []document.Block{
+					{Type: document.BlockNodeParagraph, Attrs: map[string]any{"uid": "p1"}, Content: []document.Block{{Type: "text", Text: "one"}}},
+					{
+						Type:  document.BlockNodeBulletList,
+						Attrs: map[string]any{"uid": "l2"},
+						Content: []document.Block{
+							{
+								Type: document.BlockNodeListItem,
+								Content: []document.Block{
+									{Type: document.BlockNodeParagraph, Attrs: map[string]any{"uid": "p2"}, Content: []document.Block{{Type: "text", Text: "two"}}},
+								},
+							},
+						},
+					},
+				},
+			},
+			Expected: Block{
+				Type: BlockParagraph,
+				UID:  "p1",
+				Text: "one",
+				Children: []Block{
+					{Type: BlockBulletList, UID: "l2", Items: []Block{{Type: BlockParagraph, UID: "p2", Text: "two"}}},
+				},
+			},
+		},
+		"Task item compacts to its entry paragraph": {
+			Input: document.Block{
+				Type:  document.BlockNodeTaskItem,
+				Attrs: map[string]any{"uid": "t1", "checked": true},
+				Content: []document.Block{
+					{Type: document.BlockNodeParagraph, Attrs: map[string]any{"uid": "p1"}, Content: []document.Block{{Type: "text", Text: "done"}}},
+				},
+			},
+			Expected: Block{Type: BlockParagraph, UID: "p1", Text: "done"},
+		},
+		"Empty list item compacts to an empty paragraph": {
+			Input:    document.Block{Type: document.BlockNodeListItem},
+			Expected: Block{Type: BlockParagraph},
 		},
 		"Unsupported node type fails": {
 			Input: document.Block{Type: "weirdNode"},

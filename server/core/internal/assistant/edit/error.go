@@ -2,8 +2,16 @@ package edit
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
+
+	"github.com/oxynote/oxynote/server/core/internal/assistant/block"
+	"github.com/oxynote/oxynote/server/core/internal/document"
 )
+
+// _nodeName matches a camel-cased word, the shape of the ProseMirror node
+// types the realtime service names in its messages.
+var _nodeName = regexp.MustCompile(`\b[a-z]+[A-Z][A-Za-z]*\b`)
 
 // OpError describes one operation's failure on the Node side.
 type OpError struct {
@@ -18,8 +26,9 @@ type OpError struct {
 // describe rewrites the Node-side message into what the model can act
 // on: a uid it holds no block for points at get_document, a reference
 // inside the moved block says what to pick instead, and an operation
-// kind is named as the tool the model knows it by. A message with no
-// rewrite passes through as it is.
+// kind is named as the tool the model knows it by, and a node type by
+// the canonical name the model knows. A message with no rewrite passes
+// through as it is.
 func (e OpError) describe() string {
 	for _, prefix := range []string{"reference_uid not found: ", "block_uid not found: "} {
 		if uid, ok := strings.CutPrefix(e.Message, prefix); ok {
@@ -31,7 +40,11 @@ func (e OpError) describe() string {
 		return fmt.Sprintf("reference block %s sits inside the block being moved; choose a reference outside it", uid)
 	}
 
-	return strings.ReplaceAll(e.Message, "update_text", "update_block_text")
+	msg := strings.ReplaceAll(e.Message, "update_text", "update_block_text")
+
+	return _nodeName.ReplaceAllStringFunc(msg, func(w string) string {
+		return block.DescribeNode(document.BlockNodeType(w))
+	})
 }
 
 // JoinOpErrors renders per-operation failures as one message. The

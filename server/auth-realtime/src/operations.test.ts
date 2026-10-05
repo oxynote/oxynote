@@ -1,6 +1,6 @@
 import { describe, it } from "vitest"
 import * as Y from "yjs"
-import { replaceYdocContent } from "./ydocument.js"
+import { replaceYdocContent, transformer } from "./ydocument.js"
 import {
 	applyOperations,
 	findByUid,
@@ -57,6 +57,27 @@ function bulletList(listUID: string, itemUID: string, text: string): PMNode {
 				type: "listItem",
 				attrs: { uid: itemUID },
 				content: [textParagraph("text", text)],
+			},
+		],
+	}
+}
+
+// a titled code block with its title row and its code, each with a uid
+// a test can address.
+function titledCode(title: string, code: string): PMNode {
+	return {
+		type: "titledCodeBlock",
+		attrs: { uid: "titled" },
+		content: [
+			{
+				type: "codeBlockTitle",
+				attrs: { uid: "title" },
+				content: [{ type: "text", text: title }],
+			},
+			{
+				type: "codeBlock",
+				attrs: { uid: "code", language: "go" },
+				content: [{ type: "text", text: code }],
 			},
 		],
 	}
@@ -713,7 +734,7 @@ describe("applyOperations", () => {
 
 			expect(inlineDelta(blockByUid(doc, "intro"))).toEqual([
 				{ insert: "plain " },
-				{ insert: "bold", attributes: { bold: true } },
+				{ insert: "bold", attributes: { bold: {} } },
 				{
 					insert: "link",
 					attributes: {
@@ -745,6 +766,23 @@ describe("applyOperations", () => {
 			)
 		})
 
+		// core leaves content out of the payload when it is empty.
+		it("leaves the block without children when the content is left out", ({
+			expect,
+		}) => {
+			const doc = docWith(sampleBlocks())
+
+			const result = applyOperations(doc, [
+				{
+					kind: "update_text",
+					block_uid: "intro",
+				} as unknown as Operation,
+			])
+
+			expect(result.applied).toBe(1)
+			expect(blockByUid(doc, "intro").length).toBe(0)
+		})
+
 		it("leaves the block without children when no inline node carries text", ({
 			expect,
 		}) => {
@@ -766,7 +804,32 @@ describe("applyOperations", () => {
 			expect(blockByUid(doc, "intro").length).toBe(0)
 		})
 
-		it("writes into a callout's first paragraph, keeping its other children", ({
+		it("writes into a callout's only paragraph, keeping its uid", ({
+			expect,
+		}) => {
+			const doc = docWith(sampleBlocks())
+
+			const result = applyOperations(doc, [
+				{
+					kind: "update_text",
+					block_uid: "callout",
+					content: [
+						{
+							type: "text",
+							text: "Rewritten",
+						},
+					],
+				},
+			])
+
+			expect(result.applied).toBe(1)
+			expect(blockByUid(doc, "callout").length).toBe(1)
+			expect(inlineDelta(blockByUid(doc, "nested"))).toEqual([
+				{ insert: "Rewritten" },
+			])
+		})
+
+		it("refuses a callout holding more than one block, keeping them all", ({
 			expect,
 		}) => {
 			const doc = docWith([
@@ -802,14 +865,247 @@ describe("applyOperations", () => {
 				},
 			])
 
-			const callout = blockByUid(doc, "callout")
-			expect(result.applied).toBe(1)
-			expect(callout.length).toBe(2)
+			expect(result.applied).toBe(0)
+			expect(result.errors[0]?.message).toContain(
+				"calloutBlock holding 2 blocks",
+			)
 			expect(inlineDelta(blockByUid(doc, "first"))).toEqual([
-				{ insert: "Rewritten" },
+				{ insert: "First line" },
 			])
 			expect(inlineDelta(blockByUid(doc, "second"))).toEqual([
 				{ insert: "Second line" },
+			])
+		})
+
+		it("writes into a list item's paragraph, keeping the list nested under it", ({
+			expect,
+		}) => {
+			const doc = docWith([
+				{
+					type: "bulletList",
+					attrs: { uid: "list" },
+					content: [
+						{
+							type: "listItem",
+							attrs: { uid: "item" },
+							content: [
+								textParagraph(
+									"text",
+									"Item",
+								),
+								bulletList(
+									"nested",
+									"nested-item",
+									"Nested",
+								),
+							],
+						},
+					],
+				},
+			])
+
+			const result = applyOperations(doc, [
+				{
+					kind: "update_text",
+					block_uid: "item",
+					content: [
+						{
+							type: "text",
+							text: "Rewritten",
+						},
+					],
+				},
+			])
+
+			expect(result.applied).toBe(1)
+			expect(blockByUid(doc, "item").length).toBe(2)
+			expect(blockByUid(doc, "nested").nodeName).toBe(
+				"bulletList",
+			)
+			expect(
+				inlineDelta(
+					blockByUid(doc, "item").get(
+						0,
+					) as Y.XmlElement,
+				),
+			).toEqual([{ insert: "Rewritten" }])
+		})
+
+		it.for([
+			{
+				name: "a titled code block, into its code",
+				input: "titled",
+				expected: { code: "new_code", title: "GET /x" },
+			},
+			{
+				name: "a titled code block's title row",
+				input: "title",
+				expected: { code: "old", title: "POST /y" },
+			},
+		])("writes $name", ({ input, expected }, { expect }) => {
+			const doc = docWith([titledCode("GET /x", "old")])
+
+			const result = applyOperations(doc, [
+				{
+					kind: "update_text",
+					block_uid: input,
+					content: [
+						{
+							type: "text",
+							text:
+								input ===
+								"title"
+									? expected.title
+									: expected.code,
+						},
+					],
+				},
+			])
+
+			expect(result.applied).toBe(1)
+			expect(inlineDelta(blockByUid(doc, "code"))).toEqual([
+				{ insert: expected.code },
+			])
+			expect(inlineDelta(blockByUid(doc, "title"))).toEqual([
+				{ insert: expected.title },
+			])
+		})
+
+		it("refuses a mark the block's schema does not allow, keeping its text", ({
+			expect,
+		}) => {
+			const doc = docWith([titledCode("GET /x", "old")])
+
+			const result = applyOperations(doc, [
+				{
+					kind: "update_text",
+					block_uid: "code",
+					content: [
+						{ type: "text", text: "my" },
+						{
+							type: "text",
+							text: "var",
+							marks: [
+								{
+									type: "underline",
+								},
+							],
+						},
+					],
+				},
+			])
+
+			expect(result.applied).toBe(0)
+			expect(result.errors[0]?.message).toBe(
+				"update_text cannot put the underline mark in codeBlock: write the text without it",
+			)
+			expect(inlineDelta(blockByUid(doc, "code"))).toEqual([
+				{ insert: "old" },
+			])
+		})
+
+		it("refuses a mark the schema does not know", ({ expect }) => {
+			const doc = docWith(sampleBlocks())
+
+			const result = applyOperations(doc, [
+				{
+					kind: "update_text",
+					block_uid: "intro",
+					content: [
+						{
+							type: "text",
+							text: "x",
+							marks: [
+								{
+									type: "sparkle",
+								},
+							],
+						},
+					],
+				},
+			])
+
+			expect(result.applied).toBe(0)
+			expect(result.errors[0]?.message).toContain(
+				"cannot put the sparkle mark in paragraph",
+			)
+		})
+
+		it("keeps a mark to its own run, leaving the text after it plain", ({
+			expect,
+		}) => {
+			const doc = docWith(sampleBlocks())
+
+			applyOperations(doc, [
+				{
+					kind: "update_text",
+					block_uid: "intro",
+					content: [
+						{
+							type: "text",
+							text: "bold",
+							marks: [
+								{
+									type: "bold",
+								},
+							],
+						},
+						{ type: "text", text: " and " },
+						{
+							type: "text",
+							text: "italic",
+							marks: [
+								{
+									type: "italic",
+								},
+							],
+						},
+						{ type: "text", text: " word" },
+					],
+				},
+			])
+
+			expect(inlineDelta(blockByUid(doc, "intro"))).toEqual([
+				{ insert: "bold", attributes: { bold: {} } },
+				{ insert: " and " },
+				{
+					insert: "italic",
+					attributes: { italic: {} },
+				},
+				{ insert: " word" },
+			])
+		})
+
+		// core decodes a mark's attrs as an object and refuses the whole
+		// document otherwise, so every later persist would fail too.
+		it("writes marks the stored content carries as objects", ({
+			expect,
+		}) => {
+			const doc = docWith(sampleBlocks())
+
+			applyOperations(doc, [
+				{
+					kind: "update_text",
+					block_uid: "intro",
+					content: [
+						{
+							type: "text",
+							text: "bold",
+							marks: [
+								{
+									type: "bold",
+								},
+							],
+						},
+					],
+				},
+			])
+
+			const stored = transformer.fromYdoc(doc, "content") as {
+				content: { content?: { marks?: unknown[] }[] }[]
+			}
+			expect(stored.content[0]?.content?.[0]?.marks).toEqual([
+				{ type: "bold", attrs: {} },
 			])
 		})
 
@@ -852,40 +1148,36 @@ describe("applyOperations", () => {
 			)
 		})
 
-		it.for([
-			{ name: "a bullet list", uid: "list" },
-			{ name: "a list item", uid: "item" },
-		])(
-			"refuses to overwrite $name, which carries blocks rather than text",
-			({ uid }, { expect }) => {
-				const doc = docWith([
-					bulletList("list", "item", "Item"),
-				])
+		it("refuses to overwrite a bullet list, which carries blocks rather than text", ({
+			expect,
+		}) => {
+			const doc = docWith([
+				bulletList("list", "item", "Item"),
+			])
 
-				const result = applyOperations(doc, [
-					{
-						kind: "update_text",
-						block_uid: uid,
-						content: [
-							{
-								type: "text",
-								text: "Rewritten",
-							},
-						],
-					},
-				])
+			const result = applyOperations(doc, [
+				{
+					kind: "update_text",
+					block_uid: "list",
+					content: [
+						{
+							type: "text",
+							text: "Rewritten",
+						},
+					],
+				},
+			])
 
-				expect(result.applied).toBe(0)
-				expect(result.errors[0]?.message).toContain(
-					"carries blocks rather than text",
-				)
-				// the item, and the uid any comment or hook hangs off,
-				// both survive the refusal.
-				expect(
-					inlineDelta(blockByUid(doc, "text")),
-				).toEqual([{ insert: "Item" }])
-			},
-		)
+			expect(result.applied).toBe(0)
+			expect(result.errors[0]?.message).toContain(
+				"carries blocks rather than text",
+			)
+			// the item, and the uid any comment or hook hangs off,
+			// both survive the refusal.
+			expect(inlineDelta(blockByUid(doc, "text"))).toEqual([
+				{ insert: "Item" },
+			])
+		})
 
 		it("reports an error when the block is absent", ({
 			expect,
@@ -989,6 +1281,133 @@ describe("applyOperations", () => {
 					},
 				],
 			})
+		})
+
+		it("writes a titled code block's title and language to its children", ({
+			expect,
+		}) => {
+			const doc = docWith([titledCode("GET /x", "old")])
+
+			const result = applyOperations(doc, [
+				{
+					kind: "update_attrs",
+					block_uid: "titled",
+					attrs: {
+						uid: "ignored",
+						title: "POST /y",
+						language: "python",
+					},
+				},
+			])
+
+			expect(result.applied).toBe(1)
+			expect(attrsOf(blockByUid(doc, "titled"))).toEqual({
+				uid: "titled",
+			})
+			expect(inlineDelta(blockByUid(doc, "title"))).toEqual([
+				{ insert: "POST /y" },
+			])
+			expect(attrsOf(blockByUid(doc, "code"))).toEqual({
+				uid: "code",
+				language: "python",
+			})
+		})
+
+		it.for([
+			{ name: "an empty title", input: "" },
+			{ name: "a title that is not a string", input: null },
+		])(
+			"leaves a titled code block's title row empty for $name",
+			({ input }, { expect }) => {
+				const doc = docWith([
+					titledCode("GET /x", "old"),
+				])
+
+				applyOperations(doc, [
+					{
+						kind: "update_attrs",
+						block_uid: "titled",
+						attrs: { title: input },
+					},
+				])
+
+				expect(blockByUid(doc, "title").length).toBe(0)
+				expect(
+					attrsOf(blockByUid(doc, "code")),
+				).toEqual({
+					uid: "code",
+					language: "go",
+				})
+			},
+		)
+
+		it("refuses an attribute a titled code block does not take, writing none", ({
+			expect,
+		}) => {
+			const doc = docWith([titledCode("GET /x", "old")])
+
+			const result = applyOperations(doc, [
+				{
+					kind: "update_attrs",
+					block_uid: "titled",
+					attrs: { title: "POST /y", width: 3 },
+				},
+			])
+
+			expect(result.applied).toBe(0)
+			expect(result.errors[0]?.message).toBe(
+				"titledCodeBlock takes only title and language, not width. Use replace_block to change anything else.",
+			)
+			expect(inlineDelta(blockByUid(doc, "title"))).toEqual([
+				{ insert: "GET /x" },
+			])
+		})
+
+		it("refuses a titled code block language that is not a string, writing none", ({
+			expect,
+		}) => {
+			const doc = docWith([titledCode("GET /x", "old")])
+
+			const result = applyOperations(doc, [
+				{
+					kind: "update_attrs",
+					block_uid: "titled",
+					attrs: {
+						title: "POST /y",
+						language: 1,
+					},
+				},
+			])
+
+			expect(result.applied).toBe(0)
+			expect(result.errors[0]?.message).toBe(
+				"titledCodeBlock language must be a string or null",
+			)
+			expect(inlineDelta(blockByUid(doc, "title"))).toEqual([
+				{ insert: "GET /x" },
+			])
+		})
+
+		it("refuses a titled code block missing its title row", ({
+			expect,
+		}) => {
+			const doc = docWith([])
+			const broken = new Y.XmlElement("titledCodeBlock")
+			broken.setAttribute("uid", "titled")
+			doc.getXmlFragment("content").insert(0, [broken])
+
+			const result = applyOperations(doc, [
+				{
+					kind: "update_attrs",
+					block_uid: "titled",
+					attrs: { language: "python" },
+				},
+			])
+
+			expect(result.applied).toBe(0)
+			expect(result.errors[0]?.message).toBe(
+				"titledCodeBlock is missing its title or code. Use replace_block to rewrite it whole.",
+			)
 		})
 	})
 

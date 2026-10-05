@@ -17,7 +17,6 @@
 package edit
 
 import (
-	"github.com/oxynote/oxynote/server/core/internal/assistant/block"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 )
 
@@ -85,15 +84,14 @@ func Replace(blockUID string, b document.Block) Operation {
 }
 
 // UpdateText builds an operation that replaces the inline text of a
-// text-bearing block, leaving its type and attrs unchanged. text
-// uses the canonical minimal-markdown subset and is parsed at wire
-// time.
-func UpdateText(blockUID, text string) Operation {
+// text-bearing block, leaving its type and attrs unchanged. content
+// is the inline content as block.TextContent parses it for the block.
+func UpdateText(blockUID string, content []document.Block) Operation {
 	return func() (wireOp, error) {
 		return wireOp{
 			Kind:     "update_text",
 			BlockUID: blockUID,
-			Content:  block.ParseInlineMarkdown(text),
+			Content:  content,
 		}, nil
 	}
 }

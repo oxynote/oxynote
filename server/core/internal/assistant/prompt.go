@@ -53,7 +53,7 @@ const _blockModelSection = `## Canonical block model
 
 You read and write blocks in the canonical model below. The editor's own TipTap schema stays hidden behind it, so write these shapes even where you know the editor's. Every block has a type plus that type's own fields. Multi-paragraph content is several blocks, one per paragraph; a newline inside text does not start a new paragraph.
 
-Inline text is a minimal markdown subset: **bold**, *italic*, _underline_, ~~strike~~, backtick code and [label](url) links, with backslash escapes for literal markers (\*, \_, \~, backtick, \[, \\). Inside code, titled_code and mermaid blocks, text is raw and no markdown is parsed.
+Inline text is a minimal markdown subset: **bold**, *italic*, _underline_, ~~strike~~, backtick code and [label](url) links, with backslash escapes for literal markers (\*, \_, \~, backtick, \[, \\). An underscore inside a word, as in my_var, needs no escape. Headings take plain text, and inside code, titled_code and mermaid blocks text is raw, so no markdown is parsed in either.
 
 ### Block types
 

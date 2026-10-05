@@ -101,18 +101,14 @@ func Test_Replace(t *testing.T) {
 func Test_UpdateText(t *testing.T) {
 	t.Parallel()
 
-	w := wire(t, UpdateText("target", "say **hi**"))
+	content := []document.Block{{Type: document.BlockNodeText, Text: "my_var"}}
+
+	w := wire(t, UpdateText("target", content))
 
 	assert.Equal(t, "update_text", w.Kind)
 	assert.Equal(t, "target", w.BlockUID)
 	assert.Nil(t, w.Block)
-
-	// the markdown is parsed into ProseMirror inline content.
-	require.Len(t, w.Content, 2)
-	assert.Equal(t, "say ", w.Content[0].Text)
-	assert.Equal(t, "hi", w.Content[1].Text)
-	require.Len(t, w.Content[1].Marks, 1)
-	assert.Equal(t, "bold", w.Content[1].Marks[0].Type)
+	assert.Equal(t, content, w.Content)
 }
 
 func Test_UpdateAttrs(t *testing.T) {

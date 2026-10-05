@@ -18,6 +18,23 @@ import (
 // _maxPreviewLen caps the quoted text preview shown in the confirm UI.
 const _maxPreviewLen = 60
 
+// _listEntries are the list wrappers read_block returns as their entry.
+var _listEntries = map[document.BlockNodeType]bool{
+	document.BlockNodeListItem: true,
+	document.BlockNodeTaskItem: true,
+}
+
+// _textHolders maps each block holding its text one level down to the
+// child the text lives in, matching the realtime service's update_text.
+// Every other text-bearing block holds it directly.
+var _textHolders = map[document.BlockNodeType]document.BlockNodeType{
+	document.BlockNodeTitledCodeBlock: document.BlockNodeCodeBlock,
+	document.BlockNodeCalloutBlock:    document.BlockNodeParagraph,
+	document.BlockNodeBlockquote:      document.BlockNodeParagraph,
+	document.BlockNodeListItem:        document.BlockNodeParagraph,
+	document.BlockNodeTaskItem:        document.BlockNodeParagraph,
+}
+
 // docTarget names the document, and the branch of it, a content tool
 // reads or writes. Both are required: the default branch is a branch
 // like any other, and its id comes with every document listing.
@@ -73,7 +90,7 @@ type readBlock struct {
 func (readBlock) Info() Info {
 	return Info{
 		Name:        NameReadBlock,
-		Description: "Return the full canonical content of one block by uid, including any nested children. Use it only when get_document's rows are not enough: to edit a split_doc, a nested list or a split_doc_param_list, whose inner structure has to be written back in full. Fails when the uid is not in the document.",
+		Description: "Return the full canonical content of one block by uid, including any nested children. Use it only when get_document's rows are not enough: to edit a split_doc, a nested list or a split_doc_param_list, whose inner structure has to be written back in full. A uid inside a block, such as a search hit on a titled_code's title, returns the block holding it, and a list entry's uid returns the entry. Fails when the uid is not in the document.",
 		Properties: map[string]any{
 			"document_id": map[string]any{"type": "string", "description": "The document id."},
 			"branch_id":   map[string]any{"type": "string", "description": "The id of the branch to read or write: a document's default_branch_id from list_documents, a search hit's branch_id, or any id from the branches get_document lists. A protected branch can be read but refuses every write."},
@@ -116,7 +133,7 @@ func (readBlock) Execute(inp Input) (string, error) {
 		return "", fmt.Errorf("read_block: fetch content: %w", err)
 	}
 
-	blk, ok := content.Content.FindByUID(in.BlockUID)
+	blk, ok := findReadable(content.Content.Content, in.BlockUID)
 	if !ok {
 		return "", fmt.Errorf("read_block: block %q not found: %w", in.BlockUID, errutil.ErrNotFound)
 	}
@@ -137,7 +154,7 @@ type insertBlock struct{}
 func (insertBlock) Info() Info {
 	return Info{
 		Name:        NameInsertBlock,
-		Description: "Insert one canonical block into a document. position start or end puts it at the document's start or end; before or after puts it beside the block reference_block_uid names, which stays in place. The block has to be legal where it lands: the document root takes every type except titled_code, metric and split_doc_param_list, and a reference inside a split_doc or metric_grid takes only what that container holds. Returns the summary rows of the new block and everything nested in it, uids included, with depth counted from the block itself.",
+		Description: "Insert one canonical block into a document. position start or end puts it at the document's start or end; before or after puts it beside the block reference_block_uid names, which stays in place. The block has to be legal where it lands: the document root takes every type except titled_code, metric and split_doc_param_list, and a reference inside a split_doc or metric_grid takes only what that container holds. Returns the summary rows of the new block and the blocks nested in it that get_document lists, uids included, with depth counted from the block itself; a row marked has_children holds more, which read_block returns.",
 		Properties: map[string]any{
 			"document_id":         map[string]any{"type": "string", "description": "The target document id."},
 			"branch_id":           map[string]any{"type": "string", "description": "The id of the branch to read or write: a document's default_branch_id from list_documents, a search hit's branch_id, or any id from the branches get_document lists. A protected branch can be read but refuses every write."},
@@ -385,7 +402,7 @@ type replaceBlock struct{}
 func (replaceBlock) Info() Info {
 	return Info{
 		Name:        NameReplaceBlock,
-		Description: "Replace a block by uid with a new block in the same position. The old block's uid, content and children are all gone unless the new block carries them, so use it to change a block's type or its whole structure. For a wording change use update_block_text, and for an attribute change update_block_attrs; both keep the uid, which comments, hooks and files hang off. Returns the summary rows of the new block and everything nested in it, uids included, with depth counted from the block itself.",
+		Description: "Replace a block by uid with a new block in the same position. The old block's uid, content and children are all gone unless the new block carries them, so use it to change a block's type or its whole structure. For a wording change use update_block_text, and for an attribute change update_block_attrs; both keep the uid, which comments, hooks and files hang off. Returns the summary rows of the new block and the blocks nested in it that get_document lists, uids included, with depth counted from the block itself; a row marked has_children holds more, which read_block returns.",
 		Properties: map[string]any{
 			"document_id": map[string]any{"type": "string", "description": "The target document id."},
 			"branch_id":   map[string]any{"type": "string", "description": "The id of the branch to read or write: a document's default_branch_id from list_documents, a search hit's branch_id, or any id from the branches get_document lists. A protected branch can be read but refuses every write."},
@@ -508,6 +525,10 @@ func (a updateBlockTextArgs) Validate() error {
 		return errRequired("text")
 	}
 
+	if len(a.Text) > block.MaxTextLength {
+		return fmt.Errorf("text is longer than %d bytes; split it across blocks", block.MaxTextLength)
+	}
+
 	return nil
 }
 
@@ -518,7 +539,7 @@ type updateBlockText struct{}
 func (updateBlockText) Info() Info {
 	return Info{
 		Name:        NameUpdateBlockText,
-		Description: "Replace the inline text of one text-bearing block: paragraph, heading, blockquote, code, titled_code, mermaid, or a callout written with text. Type, attrs and uid are kept, so this is the tool for wording changes. Text follows the canonical markdown subset (**bold**, *italic*, _underline_, ~~strike~~, backtick code, [label](url)), and is raw in code, titled_code and mermaid. One block is one paragraph; to add a paragraph, insert a block instead. Returns the block's summary row with the new text.",
+		Description: "Replace the inline text of one text-bearing block: paragraph, heading, code, titled_code, mermaid, a list or task list entry, or a blockquote or callout holding a single paragraph. Type, attrs and uid are kept, so this is the tool for wording changes; an entry keeps the blocks nested under it, and a blockquote or callout holding several blocks is refused, so write to the paragraph you mean. Text follows the canonical markdown subset (**bold**, *italic*, _underline_, ~~strike~~, backtick code, [label](url)), and is plain in a heading and raw in code, titled_code and mermaid. One block is one paragraph; to add a paragraph, insert a block instead. Returns the summary rows of the block as it now stands.",
 		Properties: map[string]any{
 			"document_id": map[string]any{"type": "string", "description": "The target document id."},
 			"branch_id":   map[string]any{"type": "string", "description": "The id of the branch to read or write: a document's default_branch_id from list_documents, a search hit's branch_id, or any id from the branches get_document lists. A protected branch can be read but refuses every write."},
@@ -535,7 +556,7 @@ func (updateBlockText) Info() Info {
 }
 
 // Traits reports a write that overwrites: the new text replaces the
-// block's whole content, nested blocks and their uids included.
+// block's whole text, marks included.
 func (updateBlockText) Traits() Traits {
 	return Traits{Write: true, Overwrites: true}
 }
@@ -597,19 +618,13 @@ func (updateBlockText) Execute(inp Input) (string, error) {
 		return "", fmt.Errorf("update_block_text: %w", err)
 	}
 
-	if err := inp.ApplyEdit(in.DocumentID, in.BranchID, []edit.Operation{edit.UpdateText(in.BlockUID, in.Text)}); err != nil {
+	content := block.TextContent(b.Type, in.Text)
+
+	if err := inp.ApplyEdit(in.DocumentID, in.BranchID, []edit.Operation{edit.UpdateText(in.BlockUID, content)}); err != nil {
 		return "", err
 	}
 
-	// the write replaces the block's whole content with the text, so
-	// the row describes the block as it now stands: the new text, read
-	// the way every row reads (flattened, markers dropped), and nothing
-	// nested under it.
-	rows := blockRows(b)[:1]
-	rows[0].Text = document.Block{Type: document.BlockNodeParagraph, Content: block.ParseInlineMarkdown(in.Text)}.Flatten()
-	rows[0].HasChildren = false
-
-	return result(blockWriteResult{Blocks: rows})
+	return result(blockWriteResult{Blocks: blockRows(withText(b, content))})
 }
 
 // updateBlockAttrsArgs is what update_block_attrs is called with.
@@ -647,7 +662,7 @@ type updateBlockAttrs struct{}
 func (updateBlockAttrs) Info() Info {
 	return Info{
 		Name:        NameUpdateBlockAttrs,
-		Description: "Set or override named attributes on an existing block, such as a heading's level or a callout's icon. Attributes not mentioned are kept and uid cannot change. Values are validated for the block's type, so a level outside 1 to 3 or a metric width other than compact, standard or wide is rejected. Use replace_block when the type itself has to change. Returns the summary rows of the block and everything nested in it, attrs as they now stand.",
+		Description: "Set or override named attributes on an existing block, such as a heading's level, a callout's icon, or a titled_code's title and language. Attributes not mentioned are kept and uid cannot change. Values are validated for the block's type, so a level outside 1 to 3 or a metric width other than compact, standard or wide is rejected. Use replace_block when the type itself has to change. Returns the summary rows of the block and everything nested in it, attrs as they now stand.",
 		Properties: map[string]any{
 			"document_id": map[string]any{"type": "string", "description": "The target document id."},
 			"branch_id":   map[string]any{"type": "string", "description": "The id of the branch to read or write: a document's default_branch_id from list_documents, a search hit's branch_id, or any id from the branches get_document lists. A protected branch can be read but refuses every write."},
@@ -737,17 +752,7 @@ func (updateBlockAttrs) Execute(inp Input) (string, error) {
 		return "", err
 	}
 
-	// the rows describe the block as it now stands: its attrs with the
-	// update laid over them.
-	attrs := maps.Clone(b.Attrs)
-	if attrs == nil {
-		attrs = document.Attributes{}
-	}
-
-	maps.Copy(attrs, in.Attrs)
-	b.Attrs = attrs
-
-	return result(blockWriteResult{Blocks: blockRows(b)})
+	return result(blockWriteResult{Blocks: blockRows(withAttrs(b, in.Attrs))})
 }
 
 // deleteBlockArgs is what delete_block is called with.
@@ -997,6 +1002,90 @@ func (moveBlock) Execute(inp Input) (string, error) {
 	}
 
 	return result(blockWriteResult{Blocks: blockRows(b)})
+}
+
+// findReadable finds the block uid names among blocks, or the nearest
+// block holding it when uid names a part read_block cannot return on its
+// own, such as a code block's title row or a split_doc's side.
+func findReadable(blocks []document.Block, uid string) (document.Block, bool) {
+	for _, b := range blocks {
+		if id, ok := b.UID(); ok && id == uid {
+			return b, true
+		}
+
+		inner, ok := findReadable(b.Content, uid)
+		if !ok {
+			continue
+		}
+
+		if _, canonical := block.CanonicalType(inner.Type); canonical || _listEntries[inner.Type] {
+			return inner, true
+		}
+
+		// b may itself be a part, so the level above checks it again.
+		return b, true
+	}
+
+	return document.Block{}, false
+}
+
+// withText returns b as it stands after update_block_text writes
+// content, which the realtime service puts where _textHolders says.
+func withText(b document.Block, content []document.Block) document.Block {
+	target, nested := _textHolders[b.Type]
+	if !nested {
+		b.Content = content
+
+		return b
+	}
+
+	b.Content = slices.Clone(b.Content)
+
+	for i, c := range b.Content {
+		if c.Type == target {
+			b.Content[i].Content = content
+
+			return b
+		}
+	}
+
+	return b
+}
+
+// withAttrs returns b with attrs laid over its own, which is how the
+// block stands after update_block_attrs. A titled code block keeps its
+// title and language on its two children, so those land there.
+func withAttrs(b document.Block, attrs map[string]any) document.Block {
+	if b.Type != document.BlockNodeTitledCodeBlock {
+		merged := maps.Clone(b.Attrs)
+		if merged == nil {
+			merged = document.Attributes{}
+		}
+
+		maps.Copy(merged, attrs)
+		b.Attrs = merged
+
+		return b
+	}
+
+	b.Content = slices.Clone(b.Content)
+
+	for i, c := range b.Content {
+		switch c.Type {
+		case document.BlockNodeCodeBlockTitle:
+			if title, ok := attrs[document.AttrTitle].(string); ok {
+				b.Content[i].Content = block.TextContent(c.Type, title)
+			}
+		case document.BlockNodeCodeBlock:
+			if lang, ok := attrs[document.AttrLanguage]; ok {
+				b.Content[i].Attrs = maps.Clone(c.Attrs)
+				b.Content[i].Attrs[document.AttrLanguage] = lang
+			}
+		default:
+		}
+	}
+
+	return b
 }
 
 // sanitizeBlock checks a block before a write and expands it. stored is

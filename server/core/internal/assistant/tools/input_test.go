@@ -1039,6 +1039,17 @@ func Test_input_ValidateAttrUpdate(t *testing.T) {
 				Attrs: document.Attributes{document.AttrUID: "task"},
 			}},
 		},
+		document.Block{
+			Type:  document.BlockNodeTitledCodeBlock,
+			Attrs: document.Attributes{document.AttrUID: "titled"},
+			Content: []document.Block{
+				{
+					Type:    document.BlockNodeCodeBlockTitle,
+					Content: []document.Block{{Type: document.BlockNodeText, Text: "GET /x"}},
+				},
+				{Type: document.BlockNodeCodeBlock},
+			},
+		},
 	)
 
 	cc := map[string]struct {
@@ -1093,6 +1104,18 @@ func Test_input_ValidateAttrUpdate(t *testing.T) {
 			DB:    contentDB,
 			UID:   "metric",
 			Attrs: map[string]any{document.AttrSimulationPreset: "error_rate"},
+		},
+		// the title sits on the title row, not on the block itself.
+		"Titled code language keeps the title on its title row": {
+			DB:    contentDB,
+			UID:   "titled",
+			Attrs: map[string]any{document.AttrLanguage: "go"},
+		},
+		"Titled code title emptied": {
+			DB:    contentDB,
+			UID:   "titled",
+			Attrs: map[string]any{document.AttrTitle: " "},
+			Err:   assert.AnError,
 		},
 	}
 
