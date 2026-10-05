@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test"
 import { signUpAndVerify, submitLoginForm } from "../helpers/auth"
 import { editorText, titleEditor, waitForEditor } from "../helpers/editor"
 import { t } from "../helpers/i18n"
-import { visit } from "../helpers/page"
+import { hydrated, visit } from "../helpers/page"
 import {
 	newWorkspace,
 	signUpWithWorkspace,
@@ -84,6 +84,9 @@ test.describe("onboarding", () => {
 		const credentials = await signUpAndVerify(page, request)
 		await submitLoginForm(page, credentials)
 		await expect(page).toHaveURL(/\/welcome$/, { timeout: 15_000 })
+		// the login redirect is a full page load, and a click before
+		// hydration does nothing
+		await hydrated(page)
 
 		await page
 			.getByRole("button", { name: t("onboarding.welcome.login-info.logout") })

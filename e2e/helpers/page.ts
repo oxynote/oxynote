@@ -17,6 +17,13 @@ import { BASE_URL } from "./config"
 // both, leaving an absolute one alone.
 export async function visit(page: Page, path: string): Promise<void> {
 	await page.goto(new URL(path, BASE_URL).href)
+	await hydrated(page)
+}
+
+// hydrated waits until the page the browser is on is interactive. A page
+// reached through a redirect, not through visit, needs it before its
+// first interaction.
+export async function hydrated(page: Page): Promise<void> {
 	await page.waitForFunction(
 		() => "__vue_app__" in (document.getElementById("__nuxt") ?? {}),
 	)

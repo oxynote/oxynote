@@ -568,7 +568,7 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 						type: DocumentHookType.URLWatcher,
 					},
 				},
-				expected: `/acme/Runbook-${DOC_ID}#block-7`,
+				expected: `/acme/Runbook-${DOC_ID}?branch=b#block-7`,
 			},
 			{
 				name: "opens a new comment at the block it is anchored to",

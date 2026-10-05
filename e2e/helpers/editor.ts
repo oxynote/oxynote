@@ -73,16 +73,41 @@ export async function selectText(
 		throw new Error(`"${text}" is not in the block reading "${content}"`)
 	}
 
-	await placeCaret(block, "start")
-	await pressTimes(page, "ArrowRight", start)
-	await pressTimes(page, "Shift+ArrowRight", text.length)
-	await selectionSettled(block)
+	// ProseMirror puts the caret back where a click left it for 50ms after
+	// the click, so arrow keys sent inside that window move nothing. The
+	// walk is repeated until the editor holds the text as its selection.
+	await expect(async () => {
+		await placeCaret(block, "start")
+		await pressTimes(page, "ArrowRight", start)
+		await pressTimes(page, "Shift+ArrowRight", text.length)
+		await selectionSettled(block)
+		expect(await selectedText(block)).toBe(text)
+	}).toPass()
+}
+
+// selectedText is the text the block's editor holds as its selection.
+function selectedText(block: Locator): Promise<string> {
+	return block.evaluate((el) => {
+		const editor = el.closest<Element & { editor?: EditorHandle }>(
+			".ProseMirror",
+		)?.editor
+		if (!editor) {
+			return ""
+		}
+
+		const { from, to } = editor.state.selection
+
+		return editor.state.doc.textBetween(from, to)
+	})
 }
 
 // the slice of tiptap's editor, reachable from its element, that
-// selectionSettled reads
+// selectionSettled and selectedText read
 interface EditorHandle {
-	state: { selection: { from: number; to: number } }
+	state: {
+		selection: { from: number; to: number }
+		doc: { textBetween(from: number, to: number): string }
+	}
 	view: { posAtDOM(node: Node, offset: number): number }
 }
 

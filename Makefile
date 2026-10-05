@@ -111,12 +111,12 @@ lint:
 
 .PHONY: check-lint
 check-lint:
-	@$(QUIET) "checking web" sh -c 'cd web && pnpm run check-lint'
-	@$(QUIET) "checking auth-realtime" sh -c 'cd server/auth-realtime && pnpm run check-lint'
-	@$(QUIET) "checking core" sh -c 'cd server/core && make check-lint'
-	@$(QUIET) "checking datagen" sh -c 'cd datagen && make check-lint'
-	@$(QUIET) "checking e2e" sh -c 'cd e2e && pnpm run check-lint'
-	@$(QUIET) "checking launcher" sh -c 'cd docker/prod/launcher && pnpm run check-lint'
+	@$(QUIET) "lint-checking web" sh -c 'cd web && pnpm run check-lint'
+	@$(QUIET) "lint-checking auth-realtime" sh -c 'cd server/auth-realtime && pnpm run check-lint'
+	@$(QUIET) "lint-checking core" sh -c 'cd server/core && make check-lint'
+	@$(QUIET) "lint-checking datagen" sh -c 'cd datagen && make check-lint'
+	@$(QUIET) "lint-checking e2e" sh -c 'cd e2e && pnpm run check-lint'
+	@$(QUIET) "lint-checking launcher" sh -c 'cd docker/prod/launcher && pnpm run check-lint'
 
 # unit tests of every component, with the coverage gates CI applies.
 .PHONY: test

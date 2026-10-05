@@ -9,6 +9,7 @@ import {
 import { type Credentials, signUpAndVerify, submitLoginForm } from "./auth"
 import { waitForEditor } from "./editor"
 import { t } from "./i18n"
+import { hydrated } from "./page"
 
 export interface Workspace {
 	name: string
@@ -33,6 +34,10 @@ export async function submitWorkspaceForm(
 	page: Page,
 	workspace: Workspace,
 ): Promise<void> {
+	// the form is reached through the login redirect, a full page load. A
+	// submit before hydration is the browser's own, which only reloads the
+	// page with the fields in the url
+	await hydrated(page)
 	await page
 		.getByLabel(t("onboarding.welcome.form.workspace-name.label"))
 		.fill(workspace.name)
