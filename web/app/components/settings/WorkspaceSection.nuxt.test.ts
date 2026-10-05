@@ -153,6 +153,27 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 		})
 	})
 
+	it("saves a name made of several words", async ({ expect }) => {
+		seedWorkspace()
+		const calls = mockAuthEndpoint("organization/update", () => ({
+			id: "org-1",
+		}))
+		const { wrapper } = await mountSection()
+
+		await nameInput(wrapper).setValue("Sea of Clouds")
+		await nameInput(wrapper).trigger("blur")
+
+		// the save chains vee-validate's validation, the update request and
+		// a refetch, none of which the component signals the end of
+		await vi.waitFor(() => {
+			expect(calls).toHaveLength(1)
+		}, WAIT_FOR_OPTIONS)
+		expect(calls[0]?.body).toEqual({
+			data: { name: "Sea of Clouds" },
+			organizationId: "org-1",
+		})
+	})
+
 	it("saves nothing when the name is unchanged", async ({ expect }) => {
 		seedWorkspace()
 		const calls = mockAuthEndpoint("organization/update", () => ({
@@ -179,7 +200,9 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 		await nameInput(wrapper).trigger("blur")
 
 		await vi.waitFor(() => {
-			expect(wrapper.text()).toContain("Only letters, numbers, hyphens")
+			expect(wrapper.text()).toContain(
+				t("settings.workspace.errors.name-regex"),
+			)
 		}, WAIT_FOR_OPTIONS)
 		expect(calls).toHaveLength(0)
 	})

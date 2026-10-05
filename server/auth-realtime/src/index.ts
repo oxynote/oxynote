@@ -53,6 +53,7 @@ await bootstrapSingleOrganization({
 	hashPassword: (password) => authContext.password.hash(password),
 	createOrganization: (organization) =>
 		auth.api.createOrganization({ body: organization }),
+	random: Math.random,
 })
 
 const {

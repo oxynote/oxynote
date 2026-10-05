@@ -42,6 +42,7 @@ function deps(
 		accounts,
 		hashPassword: vi.fn().mockResolvedValue("hashed"),
 		createOrganization: vi.fn().mockResolvedValue({}),
+		random: vi.fn().mockReturnValue(0),
 	}
 }
 
@@ -71,11 +72,14 @@ describe("bootstrapSingleOrganization", () => {
 			password: "hashed",
 		})
 		expect(d.createOrganization).toHaveBeenCalledWith({
-			name: "Oxynote",
-			slug: "oxynote",
+			name: "Sea of Tranquility",
+			slug: "sea-of-tranquility",
 			userId: "admin-1",
 		})
-		expect.soft(d.log.warn).toHaveBeenCalledTimes(1)
+		expect.soft(d.random).toHaveBeenCalledTimes(1)
+		expect.soft(d.log.warn).toHaveBeenCalledExactlyOnceWith(
+			expect.stringContaining("Sea of Tranquility"),
+		)
 	})
 
 	it("reuses an admin left over from a failed run", async ({
@@ -86,8 +90,8 @@ describe("bootstrapSingleOrganization", () => {
 		await bootstrapSingleOrganization(d)
 
 		expect(d.createOrganization).toHaveBeenCalledWith({
-			name: "Oxynote",
-			slug: "oxynote",
+			name: "Sea of Tranquility",
+			slug: "sea-of-tranquility",
 			userId: "admin-0",
 		})
 		expect.soft(d.accounts.createUser).not.toHaveBeenCalled()
@@ -111,6 +115,7 @@ describe("bootstrapSingleOrganization", () => {
 
 		expect.soft(d.accounts.findUserByEmail).not.toHaveBeenCalled()
 		expect.soft(d.createOrganization).not.toHaveBeenCalled()
+		expect.soft(d.random).not.toHaveBeenCalled()
 		expect.soft(d.log.warn).not.toHaveBeenCalled()
 	})
 

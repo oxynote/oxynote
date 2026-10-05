@@ -16,13 +16,12 @@ import { visit } from "./page"
 // Changing the port means changing that service.
 export const SINGLE_WORKSPACE_URL = "http://localhost:19082"
 
-// the admin and workspace the instance creates at its first boot. The
-// operator README documents these values.
+// the admin the instance creates at its first boot. The operator README
+// documents these values.
 export const DEFAULT_ADMIN: Credentials = {
 	email: "admin@example.com",
 	password: "oxynote-admin-1234",
 }
-export const DEFAULT_WORKSPACE_NAME = "Oxynote"
 
 // authPost calls one of better-auth's endpoints on the instance as the
 // context's user. better-auth refuses a request without a trusted origin,
@@ -36,6 +35,26 @@ export function authPost(
 		data,
 		headers: { Origin: SINGLE_WORKSPACE_URL },
 	})
+}
+
+// defaultWorkspaceName reads the name of the instance's one workspace as
+// the context's user. The instance picks the name at its first boot, so a
+// test cannot know it up front.
+export async function defaultWorkspaceName(
+	request: APIRequestContext,
+): Promise<string> {
+	const response = await request.get(
+		`${SINGLE_WORKSPACE_URL}/auth-realtime/api/auth/organization/list`,
+		{ headers: { Origin: SINGLE_WORKSPACE_URL } },
+	)
+	expect(response.ok()).toBe(true)
+
+	const [workspace] = (await response.json()) as { name: string }[]
+	if (!workspace) {
+		throw new Error("the instance has no workspace")
+	}
+
+	return workspace.name
 }
 
 // signedInContext opens a browser context already signed in with the given

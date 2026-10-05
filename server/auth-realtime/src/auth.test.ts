@@ -253,7 +253,20 @@ describe("invitationLink", () => {
 		})
 
 		expect(link).toBe(
-			"http://localhost:8080/accept-invite?id=inv-1&email=a@b.c&inviter=Ada&orgName=Acme&orgId=org-1",
+			"http://localhost:8080/accept-invite?id=inv-1&email=a%40b.c&inviter=Ada&orgName=Acme&orgId=org-1",
+		)
+	})
+
+	it("encodes names that hold spaces", ({ expect }) => {
+		const link = invitationLink(testEnv(), {
+			id: "inv-1",
+			email: "a@b.c",
+			inviter: { user: { name: "Ada Lovelace" } },
+			organization: { id: "org-1", name: "Sea of Clouds" },
+		})
+
+		expect(link).toBe(
+			"http://localhost:8080/accept-invite?id=inv-1&email=a%40b.c&inviter=Ada+Lovelace&orgName=Sea+of+Clouds&orgId=org-1",
 		)
 	})
 })
@@ -400,7 +413,7 @@ describe("createOrganizationHooks", () => {
 				{
 					email: "a@b.c",
 					organization: "Acme",
-					link: "http://localhost:8080/accept-invite?id=inv-1&email=a@b.c&inviter=Ada&orgName=Acme&orgId=org-1",
+					link: "http://localhost:8080/accept-invite?id=inv-1&email=a%40b.c&inviter=Ada&orgName=Acme&orgId=org-1",
 				},
 			)
 		})

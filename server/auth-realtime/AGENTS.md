@@ -31,7 +31,9 @@ opens the pool, connects to Valkey (only when
 no secondary storage) and listens. Everything else is a factory taking what
 it needs. Modules: `env.ts` (zod config), `core.ts` (every call into core),
 `db.ts` (the `Store`), `bootstrap.ts` (the single-organization mode's
-organization and admin, created before listening), `reporting.ts`,
+organization and admin, created before listening),
+`organization-names.ts` (the names that organization can start with),
+`reporting.ts`,
 `logging.ts`, `headers.ts`, `auth.ts` (`createAuth` + better-auth
 callbacks), `hocuspocus.ts` (`createHocuspocus`, `createDocumentHooks`,
 `flushDocument`), `routes.ts` (`createRoutes` → Hono app), `operations.ts`

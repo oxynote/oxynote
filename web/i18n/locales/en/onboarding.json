@@ -160,7 +160,7 @@
 				"logout": "Log out"
 			},
 			"errors": {
-				"workspace-name-regex": "Only letters, numbers, hyphens, and underscores can be used",
+				"workspace-name-regex": "Only letters, numbers, spaces, hyphens, and underscores can be used",
 				"workspace-url-regex": "Only letters, numbers, hyphens, and underscores can be used",
 				"workspace-url-taken": "This workspace URL is already taken",
 				"workspace-url-invalid": "This workspace URL is invalid",

@@ -25,7 +25,7 @@ const formSchema = toTypedSchema(
 			.trim()
 			.min(2)
 			.max(50)
-			.regex(/^[a-zA-Z0-9-_]+$/, {
+			.regex(/^[a-zA-Z0-9-_ ]+$/, {
 				message: t("onboarding.welcome.errors.workspace-name-regex"),
 			}),
 		workspaceSlug: z

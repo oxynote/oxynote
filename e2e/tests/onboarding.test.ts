@@ -29,12 +29,12 @@ test.describe("onboarding", () => {
 		).toBeVisible()
 	})
 
-	test("rejects a workspace name with spaces", async ({ page, request }) => {
+	test("rejects a workspace name with a slash", async ({ page, request }) => {
 		const credentials = await signUpAndVerify(page, request)
 		await submitLoginForm(page, credentials)
 		await expect(page).toHaveURL(/\/welcome$/, { timeout: 15_000 })
 
-		await submitWorkspaceForm(page, { ...newWorkspace(), name: "Acme Corp" })
+		await submitWorkspaceForm(page, { ...newWorkspace(), name: "Acme/Corp" })
 
 		await expect(
 			page.getByText(t("onboarding.welcome.errors.workspace-name-regex")),

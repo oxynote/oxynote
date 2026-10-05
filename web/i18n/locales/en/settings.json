@@ -450,7 +450,7 @@
 				}
 			},
 			"errors": {
-				"name-regex": "Only letters, numbers, hyphens, and underscores can be used",
+				"name-regex": "Only letters, numbers, spaces, hyphens, and underscores can be used",
 				"toasts": {
 					"logo": {
 						"title": "Workspace logo couldn't be changed",

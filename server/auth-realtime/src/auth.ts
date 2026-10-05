@@ -151,16 +151,18 @@ export interface InvitationData {
 
 // the invite link the emailed button points at. Everything the
 // accept-invite page needs to render before the user has a session travels
-// in the query string.
+// in the query string. The values are encoded, because a name can hold
+// spaces.
 export function invitationLink(env: Env, data: InvitationData): string {
-	return (
-		env.organizationInvitationUrl +
-		`?id=${data.id}` +
-		`&email=${data.email}` +
-		`&inviter=${data.inviter.user.name}` +
-		`&orgName=${data.organization.name}` +
-		`&orgId=${data.organization.id}`
-	)
+	const query = new URLSearchParams({
+		id: data.id,
+		email: data.email,
+		inviter: data.inviter.user.name,
+		orgName: data.organization.name,
+		orgId: data.organization.id,
+	})
+
+	return `${env.organizationInvitationUrl}?${query.toString()}`
 }
 
 // bind an MCP token to the user's organization at issuance, the same way

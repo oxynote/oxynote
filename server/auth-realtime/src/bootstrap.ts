@@ -1,6 +1,7 @@
 import type { Store } from "./db.js"
 import type { Env } from "./env.js"
 import type { Logger } from "./logging.js"
+import { pickOrganization } from "./organization-names.js"
 
 // the first account of a single-organization deployment. No mail reaches
 // the address, because example.com is reserved (RFC 2606). The password
@@ -9,11 +10,6 @@ export const bootstrapAdmin = {
 	email: "admin@example.com",
 	password: "oxynote-admin-1234",
 	name: "Admin",
-}
-
-const bootstrapOrganization = {
-	name: "Oxynote",
-	slug: "oxynote",
 }
 
 // the parts of better-auth's internal adapter that the bootstrap uses.
@@ -44,6 +40,8 @@ export interface BootstrapDeps {
 		slug: string
 		userId: string
 	}) => Promise<unknown>
+	// picks the organization's name. Math.random outside tests.
+	random: () => number
 }
 
 // bootstrapSingleOrganization creates the organization and its admin when a
@@ -57,6 +55,7 @@ export async function bootstrapSingleOrganization({
 	accounts,
 	hashPassword,
 	createOrganization,
+	random,
 }: BootstrapDeps): Promise<void> {
 	if (env.maxOrganizations !== 1) {
 		return
@@ -91,13 +90,15 @@ export async function bootstrapSingleOrganization({
 		userId = user.id
 	}
 
+	const organization = pickOrganization(random)
+
 	await createOrganization({
-		...bootstrapOrganization,
+		...organization,
 		userId,
 	})
 
 	log.warn(
-		`created the ${bootstrapOrganization.name} organization. Sign in as ${bootstrapAdmin.email} with the default password and change both.`,
+		`created the ${organization.name} organization. Sign in as ${bootstrapAdmin.email} with the default password and change both.`,
 	)
 }
 

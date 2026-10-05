@@ -12,7 +12,7 @@ import { visit } from "../helpers/page"
 import {
 	authPost,
 	DEFAULT_ADMIN,
-	DEFAULT_WORKSPACE_NAME,
+	defaultWorkspaceName,
 	joinThroughInvitation,
 	signedInContext,
 	SINGLE_WORKSPACE_URL,
@@ -48,7 +48,9 @@ test.describe("a single-workspace instance", () => {
 
 		await expect(page).toHaveURL(/-[a-z0-9]{20}$/, { timeout: 15_000 })
 		await expect(
-			page.getByRole("button", { name: DEFAULT_WORKSPACE_NAME }),
+			page.getByRole("button", {
+				name: await defaultWorkspaceName(page.request),
+			}),
 		).toBeVisible()
 	})
 

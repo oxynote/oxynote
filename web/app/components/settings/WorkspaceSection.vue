@@ -31,7 +31,7 @@ const formSchema = toTypedSchema(
 			.trim()
 			.min(2)
 			.max(50)
-			.regex(/^[a-zA-Z0-9-_]+$/, {
+			.regex(/^[a-zA-Z0-9-_ ]+$/, {
 				message: t("settings.workspace.errors.name-regex"),
 			})
 			.default(fetchOrganization.state.value.data?.data?.name || ""),

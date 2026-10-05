@@ -93,8 +93,9 @@ limit. Members are unlimited by default.
 The workspace limit defaults to `1`, which runs the image as a single
 workspace:
 
-- The first boot creates a workspace named Oxynote and its admin. Sign in as
-  `admin@example.com` with the password `oxynote-admin-1234`, then change
+- The first boot creates a workspace and its admin. The workspace gets the
+  name of a place in space, such as Sea of Clouds, picked at random. Sign in
+  as `admin@example.com` with the password `oxynote-admin-1234`, then change
   the email address, the password and the workspace name in the settings.
   The admin's address receives no email, so a new address is confirmed by a
   link sent to the new address only.

@@ -18,10 +18,11 @@ export interface Workspace {
 
 // newWorkspace mints a workspace nobody else uses. The slug is what the
 // server checks for uniqueness, so it carries the random part; the name
-// only has to pass validation, which allows no spaces.
+// only has to pass validation. It holds a space, which a link has to
+// encode.
 export function newWorkspace(): Workspace {
 	return {
-		name: "Acme-Corp",
+		name: "Acme Corp",
 		slug: `ws-${randomUUID().slice(0, 8)}`,
 	}
 }
