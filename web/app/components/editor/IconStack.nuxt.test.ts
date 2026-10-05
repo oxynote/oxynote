@@ -1,4 +1,4 @@
-import type { VueWrapper } from "@vue/test-utils"
+import { flushPromises, type VueWrapper } from "@vue/test-utils"
 import { beforeEach, describe, it } from "vitest"
 import IconStack, { type IconMetadata } from "./IconStack.vue"
 import {
@@ -21,9 +21,18 @@ function mountStack(props: Record<string, unknown>) {
 	})
 }
 
-// each avatar renders either an image, an icon or the person's initials
-function avatarLabels(wrapper: VueWrapper): string[] {
-	return wrapper.findAll("li").map((item) => item.text())
+// each avatar renders either an image or an icon. The picture of an entry
+// is its image source, and an entry showing an icon has none
+function avatarPictures(wrapper: VueWrapper): (string | undefined)[] {
+	return wrapper.findAll("li").map((item) => {
+		const picture = item.find("img")
+
+		return picture.exists() ? picture.attributes("src") : undefined
+	})
+}
+
+function defaultPicture(name: string): string {
+	return defaultAvatar("user", `id-${name}`)
 }
 
 // the tooltip bodies are teleported into a shared <body>
@@ -51,10 +60,11 @@ describe("<IconStack>", { concurrent: false }, () => {
 		expect(renderedIconNames(wrapper)).toEqual(["lucide:user"])
 	})
 
-	it("falls back to a person's initials", async ({ expect }) => {
+	it("falls back to a person's default avatar", async ({ expect }) => {
 		const wrapper = await mountStack({ icons: [person("Ada Lovelace")] })
+		await flushPromises()
 
-		expect(avatarLabels(wrapper)).toEqual(["AL"])
+		expect(avatarPictures(wrapper)).toEqual([defaultPicture("Ada Lovelace")])
 	})
 
 	it("shows a person's picture when they have one", async ({ expect }) => {
@@ -79,8 +89,13 @@ describe("<IconStack>", { concurrent: false }, () => {
 		const wrapper = await mountStack({
 			icons: [person("A"), person("B"), person("C"), person("D")],
 		})
+		await flushPromises()
 
-		expect(avatarLabels(wrapper).slice(0, 3)).toEqual(["A", "B", "C"])
+		expect(avatarPictures(wrapper).slice(0, 3)).toEqual([
+			defaultPicture("A"),
+			defaultPicture("B"),
+			defaultPicture("C"),
+		])
 	})
 
 	it("counts the entries it could not fit", async ({ expect }) => {
@@ -113,7 +128,7 @@ describe("<IconStack>", { concurrent: false }, () => {
 			],
 		})
 
-		expect(avatarLabels(wrapper).at(0)).toBe("")
+		expect(avatarPictures(wrapper).at(0)).toBeUndefined()
 		expect(wrapper.findAll("[data-hook-triggered]")).toHaveLength(1)
 	})
 
@@ -127,7 +142,12 @@ describe("<IconStack>", { concurrent: false }, () => {
 			],
 		})
 
-		expect(avatarLabels(wrapper)).toEqual(["O", "N"])
+		await flushPromises()
+
+		expect(avatarPictures(wrapper)).toEqual([
+			defaultPicture("Older"),
+			defaultPicture("Newer"),
+		])
 	})
 
 	it("marks itself clickable when the host says so", async ({ expect }) => {

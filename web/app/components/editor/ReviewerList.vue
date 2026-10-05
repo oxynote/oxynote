@@ -243,7 +243,11 @@ async function handleRemoveInvite(reviewer: ReviewerEntry) {
 										:alt="$t('settings.profile.image-alt')"
 									/>
 									<ShadcnUiAvatarFallback class="rounded-md text-2xs">
-										{{ extractInitials(reviewer.name || "", 2) }}
+										<LazyDefaultAvatar
+											kind="user"
+											:seed="reviewer.id"
+											decorative
+										/>
 									</ShadcnUiAvatarFallback>
 								</ShadcnUiAvatar>
 								<span class="truncate text-2sm break-all text-foreground">
@@ -287,7 +291,11 @@ async function handleRemoveInvite(reviewer: ReviewerEntry) {
 										:alt="$t('settings.profile.image-alt')"
 									/>
 									<ShadcnUiAvatarFallback class="rounded-md text-2xs">
-										{{ extractInitials(reviewer.name || "", 2) }}
+										<LazyDefaultAvatar
+											kind="user"
+											:seed="reviewer.id"
+											decorative
+										/>
 									</ShadcnUiAvatarFallback>
 								</ShadcnUiAvatar>
 								<span class="truncate text-2sm text-foreground">
@@ -360,7 +368,11 @@ async function handleRemoveInvite(reviewer: ReviewerEntry) {
 													:alt="$t('settings.profile.image-alt')"
 												/>
 												<ShadcnUiAvatarFallback class="rounded-md text-2xs">
-													{{ extractInitials(reviewer.name || "", 2) }}
+													<LazyDefaultAvatar
+														kind="user"
+														:seed="reviewer.id"
+														decorative
+													/>
 												</ShadcnUiAvatarFallback>
 											</ShadcnUiAvatar>
 											<div class="flex min-w-0 flex-col">
@@ -396,7 +408,11 @@ async function handleRemoveInvite(reviewer: ReviewerEntry) {
 											:alt="$t('settings.profile.image-alt')"
 										/>
 										<ShadcnUiAvatarFallback class="rounded-md text-2xs">
-											{{ extractInitials(member.name || "", 2) }}
+											<LazyDefaultAvatar
+												kind="user"
+												:seed="member.id"
+												decorative
+											/>
 										</ShadcnUiAvatarFallback>
 									</ShadcnUiAvatar>
 									<div class="flex min-w-0 flex-col">

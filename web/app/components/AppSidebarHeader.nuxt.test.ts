@@ -1,3 +1,4 @@
+import { flushPromises } from "@vue/test-utils"
 import { beforeEach, describe, it } from "vitest"
 import AppSidebarHeader from "./AppSidebarHeader.vue"
 import {
@@ -7,7 +8,7 @@ import {
 	t,
 } from "./test-helpers"
 
-const AVATAR = { src: "", alt: "Logo", initials: "AC" }
+const AVATAR = { src: "", alt: "Logo", seed: "org-1" }
 
 function mountHeader(workspaceName: string | null) {
 	return mountUnderSidebarProvider(AppSidebarHeader, {
@@ -37,12 +38,15 @@ describe("<AppSidebarHeader>", { concurrent: false }, () => {
 		expect(wrapper.text()).toContain(t("sidebar.default-workspace-name"))
 	})
 
-	it("shows the workspace initials while the logo has no source", async ({
+	it("shows the workspace's default avatar while the logo has no source", async ({
 		expect,
 	}) => {
 		const wrapper = await mountHeader("Acme Corp")
+		await flushPromises()
 
-		expect(wrapper.text()).toContain("AC")
+		expect(
+			wrapper.get("[data-slot='avatar-fallback'] img").attributes("src"),
+		).toBe(defaultAvatar("organization", "org-1"))
 	})
 
 	it("asks for a new document when the compose action is pressed", async ({

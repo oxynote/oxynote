@@ -3,7 +3,6 @@ package org
 
 import (
 	"context"
-	_ "embed"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -24,11 +23,6 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/sqlutil"
 	"github.com/rs/xid"
 )
-
-// _defaultLogo is the Oxynote logo every organization starts with.
-//
-//go:embed default_logo.png
-var _defaultLogo []byte
 
 // ErrNoOrganizationMembers is returned when an organization has no members.
 var ErrNoOrganizationMembers = errutil.New(http.StatusBadRequest, "organization.no_members", "organization has no members")
@@ -83,12 +77,6 @@ func (h *Handler) InitializeOrganization(w http.ResponseWriter, r *http.Request)
 	if len(members) == 0 {
 		httpserver.RespondError(h.log, w, ErrNoOrganizationMembers)
 		return
-	}
-
-	// the default logo is a nicety like the demo content below, so a
-	// failure is logged rather than returned.
-	if _, err = h.storeLogo(r.Context(), id, _defaultLogo, "image/png"); err != nil {
-		h.log.Error("cannot store default logo", slog.String("error", err.Error()))
 	}
 
 	// the demo data source is inserted before the transaction opens: a

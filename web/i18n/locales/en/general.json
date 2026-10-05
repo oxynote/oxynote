@@ -1,6 +1,15 @@
 {
 	"general": {
 		"default-page-title": "Oxynote",
+		"deleted-user": "Deleted user",
+		"default-avatar": {
+			"user": "Avatar of {name}",
+			"user-unnamed": "User avatar",
+			"organization": "Logo of {name}",
+			"organization-unnamed": "Workspace logo",
+			"deleted-user": "Avatar of a deleted user",
+			"invited-user": "Avatar of an invited user"
+		},
 		"document-page-title": "{suffix} - Oxynote",
 		"login-page-title": "Log in to Oxynote",
 		"signup-page-title": "Sign up to Oxynote",

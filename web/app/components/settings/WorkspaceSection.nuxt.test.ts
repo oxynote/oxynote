@@ -1,3 +1,4 @@
+import { flushPromises } from "@vue/test-utils"
 import { setResponseHeader } from "h3"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import { toast } from "vue-sonner"
@@ -357,6 +358,32 @@ describe("<WorkspaceSection>", { concurrent: false }, () => {
 			expect(wrapper.text()).toContain("grace@oxynote.test")
 			expect(wrapper.text()).toContain(t("settings.workspace.invited-label"))
 			expect(wrapper.text()).toContain("Members (2/5)")
+		})
+
+		it("gives a pending invitation the shared invited-user avatar", async ({
+			expect,
+		}) => {
+			seedWorkspace({
+				invitations: [
+					{
+						id: "inv-1",
+						organizationId: "org-1",
+						status: "pending",
+						email: "grace@oxynote.test",
+						role: "member",
+					},
+				],
+			})
+
+			const { wrapper } = await mountSection()
+			await flushPromises()
+
+			const row = wrapper
+				.findAll("tr")
+				.find((r) => r.text().includes("grace@oxynote.test"))
+			expect(
+				row?.get("[data-slot='avatar-fallback'] img").attributes("src"),
+			).toBe(defaultAvatar("invited-user"))
 		})
 
 		it("leaves an accepted invitation out of the list", async ({ expect }) => {

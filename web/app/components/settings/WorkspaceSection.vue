@@ -225,7 +225,11 @@ async function copyInvitationLink(member: OrganizationMember) {
 							:alt="$t('settings.workspace.logo-alt')"
 						/>
 						<ShadcnUiAvatarFallback class="rounded-md">
-							{{ extractInitials(form.values.name || "", 2) }}
+							<LazyDefaultAvatar
+								kind="organization"
+								:seed="fetchOrganization.state.value.data?.data?.id || ''"
+								:name="fetchOrganization.state.value.data?.data?.name"
+							/>
 						</ShadcnUiAvatarFallback>
 						<div
 							:data-loading="loading === 'logo' ? '' : undefined"
@@ -373,7 +377,13 @@ async function copyInvitationLink(member: OrganizationMember) {
 										:alt="$t('settings.profile.image-alt')"
 									/>
 									<ShadcnUiAvatarFallback>
-										{{ extractInitials(member.user.name || "", 2) }}
+										<LazyDefaultAvatar
+											v-if="member.userId"
+											kind="user"
+											:seed="member.userId"
+											decorative
+										/>
+										<LazyDefaultAvatar v-else kind="invited-user" decorative />
 									</ShadcnUiAvatarFallback>
 								</ShadcnUiAvatar>
 								<div class="flex min-w-0 flex-col">

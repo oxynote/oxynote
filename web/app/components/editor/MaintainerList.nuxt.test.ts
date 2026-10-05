@@ -1,4 +1,4 @@
-import type { VueWrapper } from "@vue/test-utils"
+import { flushPromises, type VueWrapper } from "@vue/test-utils"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import MaintainerList from "./MaintainerList.vue"
 import {
@@ -34,8 +34,12 @@ function mountList() {
 
 // the trigger and the popover both list the maintainers; the trigger is
 // the only part inside the wrapper
-function stackNames(wrapper: VueWrapper): string[] {
-	return wrapper.findAll("li").map((item) => item.text())
+function stackPictures(wrapper: VueWrapper): (string | undefined)[] {
+	return wrapper.findAll("li").map((item) => {
+		const picture = item.find("img")
+
+		return picture.exists() ? picture.attributes("src") : undefined
+	})
 }
 
 // the editor store, the auth cache and the websocket store are shared
@@ -71,22 +75,25 @@ describe("<MaintainerList>", { concurrent: false }, () => {
 		await vi.waitFor(() => {
 			expect(wrapper.text()).toContain(t("editor.name-editor.maintainers"))
 		}, WAIT_FOR_OPTIONS)
-		expect(stackNames(wrapper)).toEqual(["A"])
+		await flushPromises()
+		expect(stackPictures(wrapper)).toEqual([defaultAvatar("user", adaId)])
 	})
 
 	it("leaves out members who do not maintain the page", async ({ expect }) => {
 		const adaId = makeXid("usa")
+		const graceId = makeXid("usb")
 		mockEndpoint("GET", `/api/documents/${DOCUMENT_ID}/maintainers`, () => [
 			adaId,
 		])
-		seedMembers(member(adaId, "Ada"), member(makeXid("usb"), "Grace"))
+		seedMembers(member(adaId, "Ada"), member(graceId, "Grace"))
 
 		const wrapper = await mountList()
 
 		await vi.waitFor(() => {
 			expect(wrapper.text()).toContain(t("editor.name-editor.maintainers"))
 		}, WAIT_FOR_OPTIONS)
-		expect(wrapper.text()).not.toContain("G")
+		await flushPromises()
+		expect(stackPictures(wrapper)).not.toContain(defaultAvatar("user", graceId))
 	})
 
 	it("lists every maintainer in the popover", async ({ expect }) => {

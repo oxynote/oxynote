@@ -50,7 +50,6 @@
 				"full-edited": "Edited by {user} on {time}",
 				"full-created": "Created by {user} on {time}"
 			},
-			"unknown-user": "Unknown User",
 			"toggle-edit-mode": "Toggle Edit Mode",
 			"toggle-read-mode": "Toggle Read Mode",
 			"mode-tooltip": {
@@ -262,7 +261,6 @@
 			"screen-reader-hint": "Open comment"
 		},
 		"comment-thread": {
-			"unknown-author": "Unknown",
 			"comment-header": "{author} {time}",
 			"now-time-label": "now",
 			"edited-comment-header": "{author} {time} (edited)",

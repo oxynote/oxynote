@@ -105,6 +105,7 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 	})
 
 	afterEach(() => {
+		vi.useRealTimers()
 		disposeMockEndpoints()
 		// the options menus teleport into the shared <body> and their ids
 		// repeat across mounts, so a leftover would answer the next lookup
@@ -152,6 +153,30 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 		})
 
 		expect(wrapper.text()).toContain("Edited Mar 14")
+	})
+
+	it("names an editor who is gone as a deleted user", async ({ expect }) => {
+		vi.useFakeTimers()
+		mainOnly()
+		const wrapper = await mountHeader({
+			timestamps: {
+				[MAIN_BRANCH]: {
+					updated: { at: "2026-03-14T12:00:00Z", user: null },
+					created: { at: "2026-03-01T12:00:00Z", user: null },
+				},
+			},
+		})
+		const edited = wrapper
+			.findAll("[data-slot='tooltip-trigger']")
+			.find((trigger) => trigger.text().includes("Edited"))
+
+		await edited?.trigger("pointermove")
+		await vi.advanceTimersByTimeAsync(1000)
+
+		const tooltip = document.getElementById(
+			edited?.attributes("aria-describedby") ?? "",
+		)
+		expect(tooltip?.textContent).toContain(t("general.deleted-user"))
 	})
 
 	it("omits the timestamp when the branch has none", async ({ expect }) => {

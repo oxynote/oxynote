@@ -377,6 +377,29 @@ describe("<CommentRenderer>", { concurrent: false }, () => {
 		)
 	})
 
+	it("shows a comment from someone who is no longer a member as a deleted user", async ({
+		expect,
+	}) => {
+		const editor = textDoc("hello world")
+		editor.commands.addNodeComment(0, { nodeCommentId: COMMENT_ID })
+		seedComments([serverComment({ userId: null })])
+		const wrapper = await mountRenderer(editor)
+
+		await api(wrapper).selectComment({ textComment: false, id: COMMENT_ID })
+
+		// the thread list resolves asynchronously, and the avatar component
+		// loads on demand
+		await vi.waitFor(() => {
+			expect(wrapper.find("[data-slot='avatar-fallback'] img").exists()).toBe(
+				true,
+			)
+		}, WAIT_FOR_OPTIONS)
+		expect(
+			wrapper.get("[data-slot='avatar-fallback'] img").attributes("src"),
+		).toBe(defaultAvatar("deleted-user"))
+		expect(wrapper.text()).toContain(t("general.deleted-user"))
+	})
+
 	it("shows the thread of an existing text comment", async ({ expect }) => {
 		const editor = textDoc("hello world")
 		editor.commands.setTextSelection({ from: 1, to: 6 })

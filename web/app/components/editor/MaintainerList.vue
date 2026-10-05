@@ -75,7 +75,7 @@ const maintainers = computed<IconMetadata[]>(() => {
 							:alt="$t('settings.profile.image-alt')"
 						/>
 						<ShadcnUiAvatarFallback v-else class="rounded-md text-2xs">
-							{{ extractInitials(maintainer.name || "", 2) }}
+							<LazyDefaultAvatar kind="user" :seed="maintainer.id" decorative />
 						</ShadcnUiAvatarFallback>
 					</ShadcnUiAvatar>
 					<span class="truncate text-2sm text-foreground">

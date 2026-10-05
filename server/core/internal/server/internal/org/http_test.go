@@ -157,12 +157,12 @@ func assertWelcomeDocumentTagged(t *testing.T, tx *TxMock, count int) {
 }
 
 func Test_Handler_InitializeOrganization(t *testing.T) {
-	type check func(*testing.T, *DBMock, *TxMock, *StorerMock, *httptest.ResponseRecorder)
+	type check func(*testing.T, *DBMock, *TxMock, *httptest.ResponseRecorder)
 
 	checks := func(cc ...check) []check { return cc }
 
 	hasResp := func(code int, body string) check {
-		return func(t *testing.T, _ *DBMock, _ *TxMock, _ *StorerMock, rec *httptest.ResponseRecorder) {
+		return func(t *testing.T, _ *DBMock, _ *TxMock, rec *httptest.ResponseRecorder) {
 			assert.Equal(t, code, rec.Code)
 
 			if body == "" {
@@ -175,7 +175,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 	}
 
 	wasInsertDataSourceCalled := func(count int) check {
-		return func(t *testing.T, db *DBMock, _ *TxMock, _ *StorerMock, _ *httptest.ResponseRecorder) {
+		return func(t *testing.T, db *DBMock, _ *TxMock, _ *httptest.ResponseRecorder) {
 			ff := db.InsertDataSourceCalls()
 			require.Len(t, ff, count)
 
@@ -190,38 +190,8 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 		}
 	}
 
-	wasUploadCalled := func(count int) check {
-		return func(t *testing.T, _ *DBMock, _ *TxMock, storer *StorerMock, _ *httptest.ResponseRecorder) {
-			ff := storer.UploadCalls()
-			require.Len(t, ff, count)
-
-			if count == 0 {
-				return
-			}
-
-			assert.Equal(t, "organizations/org2/logo", ff[0].Folder)
-			assert.Equal(t, "org2", ff[0].ID)
-			assert.Equal(t, _defaultLogo, ff[0].Data)
-			assert.Equal(t, "image/png", ff[0].ContentType)
-		}
-	}
-
-	wasUpdateLogoCalled := func(count int) check {
-		return func(t *testing.T, db *DBMock, _ *TxMock, _ *StorerMock, _ *httptest.ResponseRecorder) {
-			ff := db.UpdateOrganizationLogoCalls()
-			require.Len(t, ff, count)
-
-			if count == 0 {
-				return
-			}
-
-			assert.Equal(t, "org2", ff[0].OrganizationID)
-			assert.Regexp(t, `^loc/api/organizations/logo\?v=\d{14}$`, ff[0].Logo)
-		}
-	}
-
 	wasInsertDocumentCalled := func(count int) check {
-		return func(t *testing.T, _ *DBMock, tx *TxMock, _ *StorerMock, _ *httptest.ResponseRecorder) {
+		return func(t *testing.T, _ *DBMock, tx *TxMock, _ *httptest.ResponseRecorder) {
 			ff := tx.InsertDocumentCalls()
 			require.Len(t, ff, count)
 
@@ -236,7 +206,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 	}
 
 	wasUpsertMaintainersCalled := func(count int) check {
-		return func(t *testing.T, _ *DBMock, tx *TxMock, _ *StorerMock, _ *httptest.ResponseRecorder) {
+		return func(t *testing.T, _ *DBMock, tx *TxMock, _ *httptest.ResponseRecorder) {
 			ff := tx.UpsertDocumentMaintainersCalls()
 			require.Len(t, ff, count)
 
@@ -250,25 +220,25 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 	}
 
 	wasInsertTagCalled := func(count int) check {
-		return func(t *testing.T, _ *DBMock, tx *TxMock, _ *StorerMock, _ *httptest.ResponseRecorder) {
+		return func(t *testing.T, _ *DBMock, tx *TxMock, _ *httptest.ResponseRecorder) {
 			assertSeededTags(t, tx, count)
 		}
 	}
 
 	wasWelcomeDocumentTagged := func(count int) check {
-		return func(t *testing.T, _ *DBMock, tx *TxMock, _ *StorerMock, _ *httptest.ResponseRecorder) {
+		return func(t *testing.T, _ *DBMock, tx *TxMock, _ *httptest.ResponseRecorder) {
 			assertWelcomeDocumentTagged(t, tx, count)
 		}
 	}
 
 	wasSearchJobInserted := func(count int) check {
-		return func(t *testing.T, _ *DBMock, tx *TxMock, _ *StorerMock, _ *httptest.ResponseRecorder) {
+		return func(t *testing.T, _ *DBMock, tx *TxMock, _ *httptest.ResponseRecorder) {
 			assert.Len(t, tx.InsertSearchJobCalls(), count)
 		}
 	}
 
 	wasCommitCalled := func(count int) check {
-		return func(t *testing.T, _ *DBMock, tx *TxMock, _ *StorerMock, _ *httptest.ResponseRecorder) {
+		return func(t *testing.T, _ *DBMock, tx *TxMock, _ *httptest.ResponseRecorder) {
 			assert.Len(t, tx.CommitCalls(), count)
 			assert.NotEmpty(t, tx.RollbackCalls())
 		}
@@ -288,7 +258,6 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 			OmitID: true,
 			Checks: checks(
 				hasResp(http.StatusNotFound, `{"code":"general","message":"not found"}`),
-				wasUploadCalled(0),
 				wasInsertDataSourceCalled(0),
 				wasInsertDocumentCalled(0),
 			),
@@ -317,27 +286,8 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 			Tx: &TxMock{},
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"organization.no_members","message":"organization has no members"}`),
-				wasUploadCalled(0),
 				wasInsertDataSourceCalled(0),
 				wasInsertDocumentCalled(0),
-			),
-		},
-		"Error returned by DB.UpdateOrganizationLogo is tolerated": {
-			Members: []string{"member1"},
-			DB: &DBMock{
-				UpdateOrganizationLogoFunc: func(context.Context, string, string) error {
-					return assert.AnError
-				},
-			},
-			Tx: &TxMock{},
-			Checks: checks(
-				func(t *testing.T, _ *DBMock, _ *TxMock, _ *StorerMock, rec *httptest.ResponseRecorder) {
-					assert.Equal(t, http.StatusCreated, rec.Code)
-				},
-				wasUploadCalled(1),
-				wasUpdateLogoCalled(1),
-				wasInsertDocumentCalled(1),
-				wasCommitCalled(1),
 			),
 		},
 		"Data source insertion error is tolerated": {
@@ -349,7 +299,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 			},
 			Tx: &TxMock{},
 			Checks: checks(
-				func(t *testing.T, _ *DBMock, _ *TxMock, _ *StorerMock, rec *httptest.ResponseRecorder) {
+				func(t *testing.T, _ *DBMock, _ *TxMock, rec *httptest.ResponseRecorder) {
 					assert.Equal(t, http.StatusCreated, rec.Code)
 				},
 				wasInsertDataSourceCalled(1),
@@ -358,7 +308,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 				// the charts have no data source to read, so the welcome
 				// document ships without them rather than with a dangling
 				// reference.
-				func(t *testing.T, _ *DBMock, tx *TxMock, _ *StorerMock, _ *httptest.ResponseRecorder) {
+				func(t *testing.T, _ *DBMock, tx *TxMock, _ *httptest.ResponseRecorder) {
 					ff := tx.InsertDocumentCalls()
 					require.NotEmpty(t, ff)
 
@@ -454,12 +404,10 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 				},
 			},
 			Checks: checks(
-				func(t *testing.T, _ *DBMock, _ *TxMock, _ *StorerMock, rec *httptest.ResponseRecorder) {
+				func(t *testing.T, _ *DBMock, _ *TxMock, rec *httptest.ResponseRecorder) {
 					assert.Equal(t, http.StatusCreated, rec.Code)
 					assert.Contains(t, rec.Body.String(), "Welcome to Oxynote!")
 				},
-				wasUploadCalled(1),
-				wasUpdateLogoCalled(1),
 				wasInsertDataSourceCalled(1),
 				wasInsertDocumentCalled(1),
 				wasUpsertMaintainersCalled(1),
@@ -484,12 +432,9 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 				return c.Members, c.MembersErr
 			}
 
-			storer := &StorerMock{}
-
 			hdl := Handler{
 				log:           slog.New(slog.DiscardHandler),
 				db:            withTx(db, c.Tx, c.BeginErr),
-				storer:        storer,
 				searchTrigger: &SearchTriggerMock{},
 				publicURL:     "loc",
 			}
@@ -507,7 +452,7 @@ func Test_Handler_InitializeOrganization(t *testing.T) {
 			hdl.InitializeOrganization(rec, req.WithContext(ctx))
 
 			for _, ch := range c.Checks {
-				ch(t, db, c.Tx, storer, rec)
+				ch(t, db, c.Tx, rec)
 			}
 		})
 	}

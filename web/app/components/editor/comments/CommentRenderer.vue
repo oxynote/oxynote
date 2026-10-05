@@ -194,6 +194,8 @@ const loadedCommentThread = computed<
 	{
 		id: string
 		author: {
+			// null for an author who is no longer a member
+			id: string | null
 			name: string
 			self: boolean
 			image?: string | null
@@ -223,8 +225,8 @@ const loadedCommentThread = computed<
 		{
 			id: loadedComment.value.id,
 			author: {
-				name:
-					origAuthor?.user.name || t("editor.comment-thread.unknown-author"),
+				id: origAuthor?.userId ?? null,
+				name: origAuthor?.user.name || t("general.deleted-user"),
 				self: loadedComment.value.userId === user.id,
 				image: origAuthor?.user.image || null,
 			},
@@ -247,8 +249,8 @@ const loadedCommentThread = computed<
 			res.push({
 				id: reply.id,
 				author: {
-					name:
-						replyAuthor?.user.name || t("editor.comment-thread.unknown-author"),
+					id: replyAuthor?.userId ?? null,
+					name: replyAuthor?.user.name || t("general.deleted-user"),
 					self: reply.userId === user.id,
 					image: replyAuthor?.user.image || null,
 				},
@@ -1795,7 +1797,17 @@ function updateNodeCommentIdInEditor(
 												:alt="$t('settings.workspace.logo-alt')"
 											/>
 											<ShadcnUiAvatarFallback class="rounded-md text-2xs">
-												{{ extractInitials(item.author.name || "", 2) }}
+												<LazyDefaultAvatar
+													v-if="item.author.id"
+													kind="user"
+													:seed="item.author.id"
+													decorative
+												/>
+												<LazyDefaultAvatar
+													v-else
+													kind="deleted-user"
+													decorative
+												/>
 											</ShadcnUiAvatarFallback>
 										</ShadcnUiAvatar>
 										<div class="text-2sm opacity-60">

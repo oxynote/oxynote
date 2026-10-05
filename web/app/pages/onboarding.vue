@@ -88,7 +88,6 @@ const onSubmit = form.handleSubmit(async (values) => {
 	const { data: orgData, error: orgError } = (await createOrganization({
 		name: values.workspaceName,
 		slug: values.workspaceSlug,
-		logo: "https://example.com/logo.png", // TODO allow uploading logo later
 	})) as AuthResponse & { data: { id: string; slug: string } }
 	if (orgError) {
 		// reset only on error so that the loading spinner shows while

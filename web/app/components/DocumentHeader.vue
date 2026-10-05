@@ -204,7 +204,7 @@ function activateBranch(branch: "default" | "draft") {
 										<span class="font-bold">
 											{{
 												props.timestamps[editorStore.activeBranchId]!.updated
-													.user?.name || $t("editor.navbar.unknown-user")
+													.user?.name || $t("general.deleted-user")
 											}}
 										</span>
 									</template>
@@ -227,7 +227,7 @@ function activateBranch(branch: "default" | "draft") {
 										<span class="font-bold">
 											{{
 												props.timestamps[editorStore.activeBranchId]!.created
-													.user?.name || $t("editor.navbar.unknown-user")
+													.user?.name || $t("general.deleted-user")
 											}}
 										</span>
 									</template>

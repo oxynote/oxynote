@@ -1,5 +1,4 @@
 <script lang="ts" setup>
-import { extractInitials } from "~/utils/object"
 import {
 	processDocumentTree,
 	processTagTree,
@@ -474,10 +473,7 @@ async function installSlack() {
 							:avatar="{
 								src: fetchOrganization.data?.value?.data?.logo || '',
 								alt: $t('sidebar.logo-alt'),
-								initials: extractInitials(
-									fetchOrganization.data?.value?.data?.name || '',
-									2,
-								),
+								seed: fetchOrganization.data?.value?.data?.id || '',
 							}"
 							@create-new-item="handleCreate({ parentId: null })"
 							@log-out="handleLogout"

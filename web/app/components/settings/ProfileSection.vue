@@ -223,7 +223,11 @@ function handleAvatarClick() {
 							:alt="$t('settings.profile.image-alt')"
 						/>
 						<ShadcnUiAvatarFallback>
-							{{ extractInitials(form.values.username || "", 2) }}
+							<LazyDefaultAvatar
+								kind="user"
+								:seed="sessionUser?.id || ''"
+								:name="sessionUser?.name"
+							/>
 						</ShadcnUiAvatarFallback>
 						<div
 							:data-loading="loading === 'avatar' ? '' : undefined"

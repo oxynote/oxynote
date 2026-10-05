@@ -86,7 +86,11 @@ const extra = computed(() => Math.max(0, props.icons.length - 3))
 									/>
 								</ShadcnUiAvatarFallback>
 								<ShadcnUiAvatarFallback v-else class="rounded-md text-2xs">
-									{{ extractInitials(im.name || "", 2) }}
+									<LazyDefaultAvatar
+										kind="user"
+										:seed="im.id"
+										:name="im.name"
+									/>
 								</ShadcnUiAvatarFallback>
 							</ShadcnUiAvatar>
 						</div>

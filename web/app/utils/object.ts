@@ -58,34 +58,6 @@ export function arraysEqual<T>(
 	return true
 }
 
-export function extractInitials(input: string, max?: number): string {
-	if (!input) return ""
-
-	// normalize whitespace, split by spaces or hyphens
-	const parts = input
-		.trim()
-		.split(/[\s-]+/)
-		.filter(Boolean)
-
-	// take first letter-like char of each part
-	const initials: string[] = []
-	const letterRe = /\p{L}/u // any Unicode letter
-
-	for (const p of parts) {
-		// eslint-disable-next-line @typescript-eslint/no-misused-spread -- code-point iteration is what this needs: it looks for the first Unicode letter, and emoji never match letterRe
-		const firstLetter = [...p].find((ch) => letterRe.test(ch))
-		if (firstLetter) {
-			initials.push(firstLetter.toLocaleUpperCase())
-		}
-
-		if (max && initials.length >= max) {
-			break
-		}
-	}
-
-	return initials.join("")
-}
-
 export function extractNameFromEmail(email: string): string {
 	const e = email.trim()
 

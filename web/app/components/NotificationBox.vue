@@ -57,7 +57,7 @@ function findUserName(userId: string) {
 	return (
 		fetchOrganization.state.value.data?.data?.members.find(
 			(m) => m.userId === userId,
-		)?.user.name || "deleted"
+		)?.user.name || t("general.deleted-user")
 	)
 }
 

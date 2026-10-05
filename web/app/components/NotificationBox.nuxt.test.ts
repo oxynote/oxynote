@@ -286,7 +286,7 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 			expect(wrapper.text()).toContain("Ada has posted a reply to a comment")
 		})
 
-		it("calls an unknown commenter deleted", async ({ expect }) => {
+		it("calls an unknown commenter a deleted user", async ({ expect }) => {
 			seedAuthOrganization({ members: [] })
 			seedNotifications([
 				makeNotification({
@@ -303,7 +303,11 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 
 			const wrapper = await mountBox()
 
-			expect(wrapper.text()).toContain("deleted has posted a new comment")
+			expect(wrapper.text()).toContain(
+				t("notification.messages.document-new-comment-description", {
+					user: t("general.deleted-user"),
+				}),
+			)
 		})
 
 		it("falls back to a generic description for an unknown code", async ({

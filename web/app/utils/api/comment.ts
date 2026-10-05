@@ -10,7 +10,8 @@ export interface DocumentComment {
 	documentId: string
 	branchId: string
 	anchorBlockId: string
-	userId: string
+	// null once the author's account is deleted
+	userId: string | null
 	resolved: boolean
 	resolvedBy?: string | null
 	resolvedAt?: Date | string | null
@@ -27,7 +28,8 @@ export interface DocumentCommentReply {
 	id: string
 	organizationId: string
 	commentId: string
-	userId: string
+	// null once the author's account is deleted
+	userId: string | null
 	content: Record<string, any>
 	createdAt: Date | string
 	updatedAt?: Date | string | null

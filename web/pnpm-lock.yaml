@@ -19,6 +19,12 @@ importers:
       '@codemirror/lang-sql':
         specifier: ^6.10.0
         version: 6.10.0
+      '@dicebear/core':
+        specifier: ^10.7.0
+        version: 10.7.0
+      '@dicebear/styles':
+        specifier: ^10.6.0
+        version: 10.6.0
       '@floating-ui/dom':
         specifier: ^1.8.0
         version: 1.8.0
@@ -697,6 +703,13 @@ packages:
 
   '@colordx/core@5.6.0':
     resolution: {integrity: sha512-EDlcg/Hmlj1WuFh/Os9YhA+A2aasB2XlgwFfGePUDuW7fVHC07HBi5AFIMx0Ct1eM8kHM9NRyOtZ0MuVYa8xvg==}
+
+  '@dicebear/core@10.7.0':
+    resolution: {integrity: sha512-JUOzKOd8RUByJJo8ZL+C7YE/pvEsWewfpbWUmR8OIQZWv/PvUQHnohdevySC3icyyxe6EIU/8B/rQgA42us1QA==}
+    engines: {node: '>=22.0.0'}
+
+  '@dicebear/styles@10.6.0':
+    resolution: {integrity: sha512-KhxbEVI+z8TaenX58+ZhIRFBt7adggu/F+8g6ZYLu43H2/lgLuWA3Kg8vHBrCVWdfTTTt1p2wUhQomIkkypTuQ==}
 
   '@dxup/nuxt@0.5.10':
     resolution: {integrity: sha512-54Vehb7LmR7qYpC6KFwjDTSm6CB1CayBu+JXdHrPLrIjjr5xAgb43jvgOU+mnB+tsRh414fSsEy0QjBMKILQ8g==}
@@ -9649,6 +9662,10 @@ snapshots:
       w3c-keyname: 2.2.8
 
   '@colordx/core@5.6.0': {}
+
+  '@dicebear/core@10.7.0': {}
+
+  '@dicebear/styles@10.6.0': {}
 
   '@dxup/nuxt@0.5.10(esbuild@0.28.2)(magicast@0.5.5)(oxc-parser@0.141.0)(rolldown@1.2.5)(rollup@4.62.5)(vite@8.2.2(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(yaml@2.9.0))(webpack@5.107.1(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.26))':
     dependencies:

@@ -2,7 +2,6 @@ import { describe, it, vi } from "vitest"
 import {
 	arraysEqual,
 	clone,
-	extractInitials,
 	extractNameFromEmail,
 	isValidDescendent,
 	lastFilePathElement,
@@ -156,50 +155,6 @@ describe("arraysEqual", () => {
 
 	it("compares elements by reference, not structurally", ({ expect }) => {
 		expect(arraysEqual([{ x: 1 }], [{ x: 1 }])).toBe(false)
-	})
-})
-
-describe("extractInitials", () => {
-	it.for([
-		{
-			name: "takes the first letter of each word",
-			input: "John Doe",
-			expected: "JD",
-		},
-		{
-			name: "splits on hyphens too",
-			input: "mary-jane watson",
-			expected: "MJW",
-		},
-		{
-			name: "stops at the maximum when given",
-			input: "a b c d",
-			max: 2,
-			expected: "AB",
-		},
-		{
-			name: "skips non-letter characters to the first letter",
-			input: "🎉party time",
-			expected: "PT",
-		},
-		{
-			name: "upper-cases unicode letters",
-			input: "łukasz nowak",
-			expected: "ŁN",
-		},
-		{ name: "ignores extra whitespace", input: "  a   b  ", expected: "AB" },
-		{
-			name: "returns an empty string for empty input",
-			input: "",
-			expected: "",
-		},
-		{
-			name: "returns an empty string without any letters",
-			input: "123 !!!",
-			expected: "",
-		},
-	])("$name", ({ input, max, expected }, { expect }) => {
-		expect(extractInitials(input, max)).toBe(expected)
 	})
 })
 

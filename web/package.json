@@ -43,6 +43,8 @@
 	"dependencies": {
 		"@better-auth/electron": "^1.7.2",
 		"@codemirror/lang-sql": "^6.10.0",
+		"@dicebear/core": "^10.7.0",
+		"@dicebear/styles": "^10.6.0",
 		"@floating-ui/dom": "^1.8.0",
 		"@hocuspocus/provider": "^4.6.0",
 		"@internationalized/date": "^3.12.4",

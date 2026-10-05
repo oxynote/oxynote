@@ -4,7 +4,7 @@ const props = defineProps<{
 	avatar: {
 		src: string
 		alt: string
-		initials: string
+		seed: string
 	}
 }>()
 const emit = defineEmits<{
@@ -27,7 +27,11 @@ const { changeColorTheme, color } = useAppearance()
 							:alt="props.avatar.alt"
 						/>
 						<ShadcnUiAvatarFallback class="rounded-md border">
-							{{ props.avatar.initials }}
+							<LazyDefaultAvatar
+								kind="organization"
+								:seed="props.avatar.seed"
+								decorative
+							/>
 						</ShadcnUiAvatarFallback>
 					</ShadcnUiAvatar>
 					<div class="flex items-center gap-0.5">
