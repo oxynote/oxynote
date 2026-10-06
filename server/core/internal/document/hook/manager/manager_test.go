@@ -1,6 +1,7 @@
 package manager
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -38,6 +39,7 @@ type fakePublisher struct {
 
 	organizationIDs []string
 	codes           []notification.Code
+	cores           []notification.Core
 	userIDs         [][]string
 }
 
@@ -47,6 +49,7 @@ func (f *fakePublisher) PublishNotifications(organizationID string, core notific
 
 	f.organizationIDs = append(f.organizationIDs, organizationID)
 	f.codes = append(f.codes, core.Code)
+	f.cores = append(f.cores, core)
 	f.userIDs = append(f.userIDs, userIDs)
 }
 
@@ -872,6 +875,156 @@ func Test_Manager_processHooks(t *testing.T) {
 			if cd != nil {
 				assert.Equal(t, c.Watchers, cd.deletedWatchers())
 			}
+		})
+	}
+}
+
+func Test_Manager_notifyTransition(t *testing.T) {
+	t.Parallel()
+
+	branchID := xid.New()
+
+	urlHook := urlWatcherHook(branchID)
+
+	failedHook := urlHook
+	failedHook.Status = processor.StatusUnreachableURL
+
+	triggeredHook := urlHook
+	triggeredHook.Score = decimal.Zero
+
+	githubHook := urlHook
+	githubHook.Type = hook.TypeGithubTracking
+	githubHook.Settings = processor.Settings(`{"repository":"repo","branch":"main","paths":["a.md","b.md","c.md"]}`)
+
+	triggeredGithubHook := githubHook
+	triggeredGithubHook.Score = decimal.Zero
+	triggeredGithubHook.State = null.ValueFrom(processor.State(`{"pathsChecksums":{},"changedPaths":2}`))
+
+	cc := map[string]struct {
+		DB    *DBMock
+		Prev  hook.Hook
+		Hook  hook.Hook
+		Cores []notification.Core
+	}{
+		"Hook that keeps its status and score": {
+			DB:   &DBMock{},
+			Prev: urlHook,
+			Hook: urlHook,
+		},
+		"Error returned by DB.FetchDocumentMaintainers": {
+			DB: &DBMock{
+				FetchDocumentMaintainersFunc: func(context.Context, xid.ID, string) ([]string, error) {
+					return nil, assert.AnError
+				},
+			},
+			Prev: urlHook,
+			Hook: triggeredHook,
+		},
+		"Hook that can no longer check its target": {
+			DB:   &DBMock{},
+			Prev: urlHook,
+			Hook: failedHook,
+			Cores: []notification.Core{
+				notification.NewDocumentHookNeedsAttentionNotification(
+					urlHook.DocumentID.V,
+					hook.TypeURLWatcher,
+					null.String{},
+					branchID,
+					processor.StatusUnreachableURL,
+					urlHook.Settings,
+				),
+			},
+		},
+		"Hook that ran out of freshness": {
+			DB:   &DBMock{},
+			Prev: urlHook,
+			Hook: triggeredHook,
+			Cores: []notification.Core{
+				notification.NewDocumentHookTriggeredNotification(
+					urlHook.DocumentID.V,
+					hook.TypeURLWatcher,
+					null.String{},
+					branchID,
+					urlHook.Settings,
+					null.Int{},
+				),
+			},
+		},
+		"GitHub hook that ran out of freshness": {
+			DB:   &DBMock{},
+			Prev: githubHook,
+			Hook: triggeredGithubHook,
+			Cores: []notification.Core{
+				notification.NewDocumentHookTriggeredNotification(
+					urlHook.DocumentID.V,
+					hook.TypeGithubTracking,
+					null.String{},
+					branchID,
+					githubHook.Settings,
+					null.IntFrom(2),
+				),
+			},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			pub := &fakePublisher{}
+
+			newTestManager(t, c.DB, pub, nil).notifyTransition(context.Background(), c.Prev, c.Hook)
+
+			assert.Equal(t, c.Cores, pub.cores)
+		})
+	}
+}
+
+func Test_Manager_changedPaths(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Hook   hook.Hook
+		Result null.Int
+		Log    string
+	}{
+		"Hook of another type": {
+			Hook: urlWatcherHook(xid.New()),
+		},
+		"Malformed state": {
+			Hook: hook.Hook{
+				Type:  hook.TypeGithubTracking,
+				State: null.ValueFrom(processor.State(`{`)),
+			},
+			Log: "cannot decode github tracking state",
+		},
+		"Successful count": {
+			Hook: hook.Hook{
+				Type:  hook.TypeGithubTracking,
+				State: null.ValueFrom(processor.State(`{"changedPaths":2}`)),
+			},
+			Result: null.IntFrom(2),
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			var buf bytes.Buffer
+
+			man := newTestManager(t, &DBMock{}, &fakePublisher{}, nil)
+			man.log = slog.New(slog.NewTextHandler(&buf, nil))
+
+			assert.Equal(t, c.Result, man.changedPaths(c.Hook))
+
+			if c.Log == "" {
+				assert.Empty(t, buf.String())
+
+				return
+			}
+
+			assert.Contains(t, buf.String(), c.Log)
 		})
 	}
 }

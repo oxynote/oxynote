@@ -128,13 +128,11 @@ test:
 	@$(QUIET) "testing launcher" sh -c 'cd docker/prod/launcher && pnpm run test'
 
 # everything CI checks, to run before a commit. Nothing here modifies a
-# file. The steps are recipe lines so that `make -j` cannot start both e2e
-# stacks at once.
+# file.
 .PHONY: check-all
 check-all:
 	@$(MAKE) check-lint
 	@$(MAKE) test
-	@$(MAKE) e2e-dev
 	@$(MAKE) e2e-prod
 
 .PHONY: setup

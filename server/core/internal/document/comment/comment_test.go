@@ -2,6 +2,7 @@ package comment
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -328,4 +329,92 @@ func Test_Content_Value(t *testing.T) {
 		require.NoError(t, err)
 		assert.Nil(t, val)
 	})
+}
+
+func Test_Content_Excerpt(t *testing.T) {
+	t.Parallel()
+
+	paragraph := func(texts ...string) map[string]any {
+		nodes := make([]any, 0, len(texts))
+
+		for _, text := range texts {
+			nodes = append(nodes, map[string]any{"type": "text", "text": text})
+		}
+
+		return map[string]any{"type": "paragraph", "content": nodes}
+	}
+
+	cc := map[string]struct {
+		Content Content
+		Result  string
+	}{
+		"Content without text is empty": {
+			Content: Content{"type": "doc"},
+		},
+		"Marked runs join and blocks are set apart": {
+			Content: Content{
+				"type": "doc",
+				"content": []any{
+					paragraph("Worth a ", "second", " look"),
+					paragraph("before the release"),
+				},
+			},
+			Result: "Worth a second look before the release",
+		},
+		"Nested blocks and breaks are set apart once": {
+			Content: Content{
+				"type": "doc",
+				"content": []any{
+					map[string]any{
+						"type": "bulletList",
+						"content": []any{
+							map[string]any{"type": "listItem", "content": []any{paragraph("first")}},
+							map[string]any{"type": "listItem", "content": []any{paragraph("second")}},
+						},
+					},
+					map[string]any{
+						"type": "paragraph",
+						"content": []any{
+							map[string]any{"type": "text", "text": "third"},
+							map[string]any{"type": "hardBreak"},
+							map[string]any{"type": "text", "text": "fourth"},
+							"stray",
+						},
+					},
+				},
+			},
+			Result: "first second third fourth",
+		},
+		"Long text is cut by runes": {
+			Content: Content{
+				"type":    "doc",
+				"content": []any{paragraph(strings.Repeat("ž", _excerptLength+1))},
+			},
+			Result: strings.Repeat("ž", _excerptLength) + "…",
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, c.Result, c.Content.Excerpt())
+		})
+	}
+}
+
+func Test_writeText(t *testing.T) {
+	t.Parallel()
+
+	var sb strings.Builder
+
+	writeText(&sb, map[string]any{
+		"type": "paragraph",
+		"content": []any{
+			map[string]any{"type": "text", "text": "one"},
+			map[string]any{"type": "text", "text": "two"},
+		},
+	})
+
+	assert.Equal(t, "onetwo ", sb.String())
 }

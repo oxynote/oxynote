@@ -1,19 +1,46 @@
 {
 	"notification": {
 		"inbox": "Inbox",
-		"read-all-button": "Read all",
+		"read-all-button": "Mark all as read",
 		"empty-title": "All caught up",
 		"empty-description": "You'll receive notifications here for page review invitations, triggered hooks, and more",
 		"document-fallback": "Deleted Page",
 		"hook-fallback": "Unknown",
 		"now-time-label": "now",
+		"days": {
+			"today": "Today",
+			"yesterday": "Yesterday",
+			"earlier": "Earlier"
+		},
+		"time": {
+			"minutes": "{count}m",
+			"hours": "{count}h",
+			"days": "{count}d"
+		},
 		"messages": {
-			"document-new-comment-description": "{user} has posted a new comment",
-			"document-new-comment-reply-description": "{user} has posted a reply to a comment",
-			"document-review-request-description": "Review requested for the draft version",
+			"separator": "·",
+			"document-new-comment-description": "{user} commented",
+			"document-new-comment-reply-description": "{user} replied",
+			"document-comment-resolved-description": "{user} resolved",
+			"document-review-request-description": "{user} requested your review",
 			"document-hook-triggered-description": "{hook} hook was triggered",
 			"document-hook-needs-attention-description": "{hook} hook needs attention",
-			"default-description": "You have a new notification"
+			"default-description": "You have a new notification",
+			"hook-triggered": {
+				"url-watcher": "Page changed",
+				"container-image-watcher": "Image updated",
+				"github-tracking": "{changed} of {total} watched files changed",
+				"github-tracking-fallback": "Watched files changed"
+			},
+			"hook-attention": {
+				"unreachable-url": "Couldn't reach {url}",
+				"url-watcher-unconfigured": "Website change detection not set up",
+				"missing-repository": "Repository inaccessible",
+				"missing-branch": "Branch inaccessible",
+				"tree-truncated": "Repository too large",
+				"unauthorized": "Registry refused access",
+				"image-not-found": "Image not found"
+			}
 		},
 		"actions": {
 			"mark-read": "Mark as read",

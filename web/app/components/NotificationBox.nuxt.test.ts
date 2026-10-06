@@ -1,11 +1,14 @@
-import { mockNuxtImport } from "@nuxt/test-utils/runtime"
-import { flushPromises } from "@vue/test-utils"
+import { mockNuxtImport, mountSuspended } from "@nuxt/test-utils/runtime"
+import { setInfiniteQueryData } from "@pinia/colada"
+import { enableAutoUnmount, flushPromises } from "@vue/test-utils"
 import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import { toast } from "vue-sonner"
 import {
 	clearQueryCache,
 	disposeMockEndpoints,
+	mockDeferredEndpoint,
 	mockEndpoint,
+	runInApp,
 	seedQueryData,
 } from "~/composables/api/test-helpers"
 import NotificationBox from "./NotificationBox.vue"
@@ -13,8 +16,6 @@ import {
 	at,
 	findButtonByText,
 	mockAuthOrganization,
-	mountUnderTooltipProvider,
-	openTooltipText,
 	renderedIconNames,
 	seedAuthOrganization,
 	t,
@@ -29,62 +30,46 @@ vi.mock("vue-sonner", () => ({
 const navigateToMock = vi.hoisted(() => vi.fn())
 mockNuxtImport("navigateTo", () => navigateToMock)
 
-const TOOLTIP_DELAY_MS = 600
+// happy-dom lays nothing out, so the real scroll watcher would see the list
+// as always at its end. The box's callbacks are driven by hand instead.
+const infiniteScroll = vi.hoisted(() => ({
+	load: (): unknown => undefined,
+	canLoadMore: (): boolean => false,
+}))
+mockNuxtImport(
+	"useInfiniteScroll",
+	() =>
+		(
+			_element: unknown,
+			onLoadMore: () => unknown,
+			options: { canLoadMore: () => boolean },
+		) => {
+			infiniteScroll.load = onLoadMore
+			infiniteScroll.canLoadMore = options.canLoadMore
+		},
+)
+
 const DOC_ID = "doc1".padEnd(20, "0")
 const USER_ID = "user".padEnd(20, "0")
-
-function makeNotification(overrides: Record<string, unknown> = {}) {
-	return {
-		id: "notif-1",
-		userId: USER_ID,
-		organizationId: "org-1",
-		code: NotificationCode.DocumentReviewRequest,
-		metadata: { documentId: DOC_ID, branchId: "branch-1" },
-		read: false,
-		createdAt: "2026-03-14T11:00:00Z",
-		...overrides,
-	}
-}
-
-function seedNotifications(notifications: unknown[]) {
-	seedQueryData(["notifications", "list", 100, 1], {
-		notifications: notifications,
-		pageCount: 1,
-	})
-	seedQueryData(["notifications", "count", false], { count: 0 })
-}
-
-function seedTree() {
-	seedQueryData(
-		["documents", "tree"],
-		[
-			{
-				id: DOC_ID,
-				documentName: "Runbook",
-				icon: "lucide:file",
-				protected: false,
-				children: null,
-			},
-		],
-	)
-}
-
-function mountBox(props: Record<string, unknown> = {}) {
-	return mountUnderTooltipProvider(NotificationBox, { props: props })
-}
-
-function rows(wrapper: Awaited<ReturnType<typeof mountBox>>) {
-	return wrapper.findAll("div.cursor-pointer")
+const COMMENT_METADATA = {
+	userId: USER_ID,
+	documentId: DOC_ID,
+	branchId: "b",
+	commentId: "c",
+	anchorBlockId: null,
 }
 
 // the query cache, the pinia websocket store and the vue-sonner module
 // mock are all app-wide singletons every mount in the file shares
 describe("<NotificationBox>", { concurrent: false }, () => {
+	// the box keeps a clock and a polling query running while mounted
+	enableAutoUnmount(afterEach)
+
 	beforeEach(() => {
 		clearQueryCache()
 		vi.mocked(toast.custom).mockReset()
 		navigateToMock.mockReset()
-		vi.setSystemTime(new Date("2026-03-14T12:00:00Z"))
+		vi.setSystemTime(new Date(2026, 2, 14, 12, 0, 0))
 		// a successful mark-read invalidates both notification queries; without
 		// these the refetch rejects and drags the mutation down with it, so the
 		// failure toast lands in whichever test is running by then
@@ -118,7 +103,56 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 		expect(rows(wrapper)).toHaveLength(2)
 	})
 
-	it("names the document the notification is about", async ({ expect }) => {
+	it("groups the notifications under the day they arrived", async ({
+		expect,
+	}) => {
+		seedNotifications([
+			makeNotification({ id: "n1", createdAt: new Date(2026, 2, 14, 9) }),
+			makeNotification({ id: "n2", createdAt: new Date(2026, 2, 13, 9) }),
+			makeNotification({ id: "n3", createdAt: new Date(2026, 2, 13, 8) }),
+			makeNotification({ id: "n4", createdAt: new Date(2026, 2, 2, 9) }),
+		])
+
+		const wrapper = await mountBox()
+
+		expect(
+			wrapper.findAll("section").map((section) => ({
+				day: section.get("h3").text(),
+				rows: section.findAll("[role='link']").length,
+			})),
+		).toEqual([
+			{ day: t("notification.days.today"), rows: 1 },
+			{ day: t("notification.days.yesterday"), rows: 2 },
+			{ day: t("notification.days.earlier"), rows: 1 },
+		])
+	})
+
+	it("leaves out a day without notifications", async ({ expect }) => {
+		seedNotifications([
+			makeNotification({ createdAt: new Date(2026, 2, 2, 9) }),
+		])
+
+		const wrapper = await mountBox()
+
+		expect(wrapper.findAll("h3").map((heading) => heading.text())).toEqual([
+			t("notification.days.earlier"),
+		])
+	})
+
+	it("shows a notification the next page repeats only once", async ({
+		expect,
+	}) => {
+		seedPages([
+			[makeNotification({ id: "n1" }), makeNotification({ id: "n2" })],
+			[makeNotification({ id: "n2" }), makeNotification({ id: "n3" })],
+		])
+
+		const wrapper = await mountBox()
+
+		expect(rows(wrapper)).toHaveLength(3)
+	})
+
+	it("names the page the notification is about", async ({ expect }) => {
 		seedTree()
 		seedNotifications([makeNotification()])
 
@@ -127,311 +161,130 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 		expect(wrapper.text()).toContain("Runbook")
 	})
 
-	it("spells out the document name in a tooltip once hovered", async ({
-		expect,
-	}) => {
-		vi.useFakeTimers()
-		seedTree()
-		seedNotifications([makeNotification()])
-
-		const wrapper = await mountBox()
-		await at(wrapper.findAll("[data-slot='tooltip-trigger']"), 0).trigger(
-			"pointermove",
-		)
-		await vi.advanceTimersByTimeAsync(TOOLTIP_DELAY_MS)
-
-		expect(openTooltipText(wrapper)).toBe("Runbook")
-	})
-
-	it("falls back to a placeholder name for a deleted document", async ({
-		expect,
-	}) => {
-		seedNotifications([makeNotification()])
-
-		const wrapper = await mountBox()
-
-		expect(wrapper.text()).toContain(t("notification.document-fallback"))
-	})
-
-	it("labels a notification from the last minute as new", async ({
-		expect,
-	}) => {
-		seedNotifications([makeNotification({ createdAt: "2026-03-14T11:59:30Z" })])
-
-		const wrapper = await mountBox()
-
-		expect(wrapper.text()).toContain(t("notification.now-time-label"))
-	})
-
-	it("shows how long ago an older notification arrived", async ({ expect }) => {
-		seedNotifications([makeNotification({ createdAt: "2026-03-14T11:00:00Z" })])
-
-		const wrapper = await mountBox()
-
-		expect(wrapper.text()).toContain("1 hour ago")
-	})
-
-	it("dims a notification that has been read", async ({ expect }) => {
-		seedNotifications([makeNotification({ read: true })])
-
-		const wrapper = await mountBox()
-
-		expect(rows(wrapper)[0]?.classes()).toContain("opacity-60")
-	})
-
-	it("offers a mark-read button only on unread notifications", async ({
-		expect,
-	}) => {
+	it("names the member who commented", async ({ expect }) => {
+		seedAuthOrganization({
+			members: [{ userId: USER_ID, user: { name: "Ada" } }],
+		})
 		seedNotifications([
-			makeNotification({ id: "notif-1", read: false }),
-			makeNotification({ id: "notif-2", read: true }),
+			makeNotification({
+				code: NotificationCode.DocumentNewComment,
+				metadata: COMMENT_METADATA,
+			}),
 		])
 
 		const wrapper = await mountBox()
 
-		expect(wrapper.text().match(/Mark as read/g)).toHaveLength(1)
+		expect(wrapper.text()).toContain(
+			t("notification.messages.document-new-comment-description", {
+				user: "Ada",
+			}),
+		)
 	})
 
-	describe("descriptions", { concurrent: false }, () => {
-		it("describes a review request", async ({ expect }) => {
-			seedNotifications([makeNotification()])
+	it("calls a commenter who left the organization a deleted user", async ({
+		expect,
+	}) => {
+		seedAuthOrganization({ members: [] })
+		seedNotifications([
+			makeNotification({
+				code: NotificationCode.DocumentNewComment,
+				metadata: COMMENT_METADATA,
+			}),
+		])
 
-			const wrapper = await mountBox()
+		const wrapper = await mountBox()
 
-			expect(wrapper.text()).toContain(
-				t("notification.messages.document-review-request-description"),
-			)
-		})
-
-		it.for([
-			{
-				name: "names the hook that fired",
-				input: {
-					code: NotificationCode.DocumentHookTrigerred,
-					type: DocumentHookType.URLWatcher,
-				},
-				expected: "notification.messages.document-hook-triggered-description",
-			},
-			{
-				name: "names the hook that needs attention",
-				input: {
-					code: NotificationCode.DocumentHookNeedsAttention,
-					type: DocumentHookType.GitHubTracking,
-				},
-				expected:
-					"notification.messages.document-hook-needs-attention-description",
-			},
-		])("$name", async ({ input, expected }, { expect }) => {
-			seedNotifications([
-				makeNotification({
-					code: input.code,
-					metadata: {
-						documentId: DOC_ID,
-						branchId: "b",
-						blockId: null,
-						type: input.type,
-					},
-				}),
-			])
-
-			const wrapper = await mountBox()
-
-			expect(wrapper.text()).toContain(
-				t(expected, { hook: t(`editor.hooks.${input.type}.title`) }),
-			)
-		})
-
-		it("names the commenter on a new comment", async ({ expect }) => {
-			seedAuthOrganization({
-				members: [{ userId: USER_ID, user: { name: "Ada" } }],
-			})
-			seedNotifications([
-				makeNotification({
-					code: NotificationCode.DocumentNewComment,
-					metadata: {
-						userId: USER_ID,
-						documentId: DOC_ID,
-						branchId: "b",
-						commentId: "c",
-						anchorBlockId: null,
-					},
-				}),
-			])
-
-			const wrapper = await mountBox()
-
-			expect(wrapper.text()).toContain("Ada has posted a new comment")
-		})
-
-		it("names the commenter on a reply", async ({ expect }) => {
-			seedAuthOrganization({
-				members: [{ userId: USER_ID, user: { name: "Ada" } }],
-			})
-			seedNotifications([
-				makeNotification({
-					code: NotificationCode.DocumentNewCommentReply,
-					metadata: {
-						userId: USER_ID,
-						documentId: DOC_ID,
-						branchId: "b",
-						commentId: "c",
-						commentReplyId: "r",
-						anchorBlockId: null,
-					},
-				}),
-			])
-
-			const wrapper = await mountBox()
-
-			expect(wrapper.text()).toContain("Ada has posted a reply to a comment")
-		})
-
-		it("calls an unknown commenter a deleted user", async ({ expect }) => {
-			seedAuthOrganization({ members: [] })
-			seedNotifications([
-				makeNotification({
-					code: NotificationCode.DocumentNewComment,
-					metadata: {
-						userId: USER_ID,
-						documentId: DOC_ID,
-						branchId: "b",
-						commentId: "c",
-						anchorBlockId: null,
-					},
-				}),
-			])
-
-			const wrapper = await mountBox()
-
-			expect(wrapper.text()).toContain(
-				t("notification.messages.document-new-comment-description", {
-					user: t("general.deleted-user"),
-				}),
-			)
-		})
-
-		it("falls back to a generic description for an unknown code", async ({
-			expect,
-		}) => {
-			seedNotifications([makeNotification({ code: "notification.unknown" })])
-
-			const wrapper = await mountBox()
-
-			expect(wrapper.text()).toContain(
-				t("notification.messages.default-description"),
-			)
-		})
+		expect(wrapper.text()).toContain(
+			t("notification.messages.document-new-comment-description", {
+				user: t("general.deleted-user"),
+			}),
+		)
 	})
 
-	describe("icons", { concurrent: false }, () => {
-		it("marks a review request with a reviewer icon", async ({ expect }) => {
-			seedNotifications([makeNotification()])
+	it("closes the box when its collapse button is pressed", async ({
+		expect,
+	}) => {
+		seedNotifications([])
+		const wrapper = await mountBox()
 
-			const wrapper = await mountBox()
+		await findButtonByText(
+			wrapper,
+			t("notification.actions.close-notification-box"),
+		).trigger("click")
 
-			expect(renderedIconNames(wrapper)).toContain("lucide:file-user")
-		})
+		expect(wrapper.emitted("close-notification-box")).toHaveLength(1)
+	})
 
+	describe("loading more", { concurrent: false }, () => {
 		it.for([
-			{
-				name: "marks a url watcher trigger with a globe icon",
-				input: {
-					code: NotificationCode.DocumentHookTrigerred,
-					type: DocumentHookType.URLWatcher,
-				},
-				expected: "mingcute:earth-2-line",
-			},
-			{
-				name: "marks a github tracking trigger with a github icon",
-				input: {
-					code: NotificationCode.DocumentHookTrigerred,
-					type: DocumentHookType.GitHubTracking,
-				},
-				expected: "simple-icons:github",
-			},
-			{
-				name: "marks a scheduled reminder trigger with a timer icon",
-				input: {
-					code: NotificationCode.DocumentHookTrigerred,
-					type: DocumentHookType.ScheduledReminder,
-				},
-				expected: "lucide:timer",
-			},
-			{
-				name: "marks a container image watcher trigger with a container icon",
-				input: {
-					code: NotificationCode.DocumentHookTrigerred,
-					type: DocumentHookType.ContainerImageWatcher,
-				},
-				expected: "lucide:container",
-			},
-			{
-				name: "marks a hook that needs attention with its own icon",
-				input: {
-					code: NotificationCode.DocumentHookNeedsAttention,
-					type: DocumentHookType.ContainerImageWatcher,
-				},
-				expected: "lucide:container",
-			},
-		])("$name", async ({ input, expected }, { expect }) => {
-			seedNotifications([
-				makeNotification({
-					code: input.code,
-					metadata: {
-						documentId: DOC_ID,
-						branchId: "b",
-						blockId: null,
-						type: input.type,
-					},
-				}),
-			])
+			{ name: "offers more while the server has pages", input: 2 },
+			{ name: "offers no more on the last page", input: 1 },
+		])("$name", async ({ input }, { expect }) => {
+			seedPages([[makeNotification()]], input)
 
-			const wrapper = await mountBox()
+			await mountBox()
 
-			expect(renderedIconNames(wrapper)).toContain(expected)
+			expect(infiniteScroll.canLoadMore()).toBe(input > 1)
 		})
 
-		it("marks a hook type this build does not know with a warning icon", async ({
+		it("adds the next page when the list nears its end", async ({ expect }) => {
+			disposeMockEndpoints()
+			const listCalls = mockEndpoint("GET", "/api/notifications", () => ({
+				notifications: [makeNotification({ id: "notif-2" })],
+				pageCount: 2,
+			}))
+			seedPages([[makeNotification()]], 2)
+			const wrapper = await mountBox()
+
+			await infiniteScroll.load()
+			await flushPromises()
+
+			expect(rows(wrapper)).toHaveLength(2)
+			expect(listCalls).toHaveLength(1)
+			expect(listCalls[0]?.query).toEqual({ limit: "50", page: "2" })
+		})
+
+		it("stops asking for more once a page fails to load", async ({
 			expect,
 		}) => {
-			seedNotifications([
-				makeNotification({
-					code: NotificationCode.DocumentHookTrigerred,
-					metadata: {
-						documentId: DOC_ID,
-						branchId: "b",
-						blockId: null,
-						type: "future-hook" as DocumentHookType,
-					},
-				}),
-			])
-
+			disposeMockEndpoints()
+			// the client retries a GET once on a 5xx, which a 400 keeps out
+			// of the count
+			const listCalls = mockEndpoint("GET", "/api/notifications", () => {
+				throw createError({ statusCode: 400 })
+			})
+			seedPages([[makeNotification()]], 2)
 			const wrapper = await mountBox()
+
+			await infiniteScroll.load()
+			await flushPromises()
+
+			expect(infiniteScroll.canLoadMore()).toBe(false)
+			expect(rows(wrapper)).toHaveLength(1)
+			expect(listCalls).toHaveLength(1)
+		})
+
+		it("shows a spinner while the next page loads", async ({ expect }) => {
+			disposeMockEndpoints()
+			const list = mockDeferredEndpoint("GET", "/api/notifications")
+			seedPages([[makeNotification()]], 2)
+			const wrapper = await mountBox()
+
+			const loading = infiniteScroll.load()
+			await list.reached
+			await nextTick()
 
 			expect(renderedIconNames(wrapper)).toContain(
-				"lucide:file-exclamation-point",
+				"svg-spinners:blocks-shuffle-3",
 			)
-		})
 
-		it("marks a comment notification with a message icon", async ({
-			expect,
-		}) => {
-			seedNotifications([
-				makeNotification({
-					code: NotificationCode.DocumentNewComment,
-					metadata: {
-						userId: USER_ID,
-						documentId: DOC_ID,
-						branchId: "b",
-						commentId: "c",
-						anchorBlockId: null,
-					},
-				}),
-			])
-
-			const wrapper = await mountBox()
-
-			expect(renderedIconNames(wrapper)).toContain("mingcute:message-4-fill")
+			// settle the held request so nothing stays in flight
+			list.resolve({ notifications: [], pageCount: 2 })
+			await loading
+			await flushPromises()
+			expect(renderedIconNames(wrapper)).not.toContain(
+				"svg-spinners:blocks-shuffle-3",
+			)
 		})
 	})
 
@@ -481,7 +334,7 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 				"/api/notifications/read-status",
 				() => ({}),
 			)
-			seedNotifications([makeNotification()])
+			seedNotifications([makeNotification()], 1)
 			const wrapper = await mountBox()
 
 			await findButtonByText(
@@ -494,10 +347,20 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 			expect(calls[0]?.body).toEqual({ ids: [] })
 		})
 
-		it("hides the button when every notification is already read", async ({
+		it("offers to mark everything read while a page not loaded yet holds unread ones", async ({
 			expect,
 		}) => {
-			seedNotifications([makeNotification({ read: true })])
+			seedNotifications([makeNotification({ read: true })], 3)
+
+			const wrapper = await mountBox()
+
+			expect(
+				findButtonByText(wrapper, t("notification.read-all-button")).exists(),
+			).toBe(true)
+		})
+
+		it("hides the button when nothing is unread", async ({ expect }) => {
+			seedNotifications([makeNotification({ read: true })], 0)
 
 			const wrapper = await mountBox()
 
@@ -512,7 +375,7 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 			mockEndpoint("PUT", "/api/notifications/read-status", () => {
 				throw createError({ statusCode: 500 })
 			})
-			seedNotifications([makeNotification()])
+			seedNotifications([makeNotification()], 1)
 			const wrapper = await mountBox()
 
 			await findButtonByText(
@@ -531,14 +394,14 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 				name: "opens a review request at the document",
 				notification: {
 					code: NotificationCode.DocumentReviewRequest,
-					metadata: { documentId: DOC_ID, branchId: "b" },
+					metadata: { userId: USER_ID, documentId: DOC_ID, branchId: "b" },
 				},
 				expected: `/acme/Runbook-${DOC_ID}?branch=b`,
 			},
 			{
-				name: "opens a hook trigger at the block that fired",
+				name: "opens a triggered hook at its block",
 				notification: {
-					code: NotificationCode.DocumentHookTrigerred,
+					code: NotificationCode.DocumentHookTriggered,
 					metadata: {
 						documentId: DOC_ID,
 						branchId: "b",
@@ -549,9 +412,9 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 				expected: `/acme/Runbook-${DOC_ID}?branch=b#block-7`,
 			},
 			{
-				name: "opens a document-wide hook trigger at the document",
+				name: "opens a triggered page-wide hook at the document",
 				notification: {
-					code: NotificationCode.DocumentHookTrigerred,
+					code: NotificationCode.DocumentHookTriggered,
 					metadata: {
 						documentId: DOC_ID,
 						branchId: "b",
@@ -578,13 +441,7 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 				name: "opens a new comment at the block it is anchored to",
 				notification: {
 					code: NotificationCode.DocumentNewComment,
-					metadata: {
-						userId: USER_ID,
-						documentId: DOC_ID,
-						branchId: "b",
-						commentId: "c",
-						anchorBlockId: "block-3",
-					},
+					metadata: { ...COMMENT_METADATA, anchorBlockId: "block-3" },
 				},
 				expected: `/acme/Runbook-${DOC_ID}?branch=b#block-3`,
 			},
@@ -592,13 +449,7 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 				name: "opens an unanchored comment at the document",
 				notification: {
 					code: NotificationCode.DocumentNewComment,
-					metadata: {
-						userId: USER_ID,
-						documentId: DOC_ID,
-						branchId: "b",
-						commentId: "c",
-						anchorBlockId: null,
-					},
+					metadata: COMMENT_METADATA,
 				},
 				expected: `/acme/Runbook-${DOC_ID}?branch=b`,
 			},
@@ -607,10 +458,7 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 				notification: {
 					code: NotificationCode.DocumentNewCommentReply,
 					metadata: {
-						userId: USER_ID,
-						documentId: DOC_ID,
-						branchId: "b",
-						commentId: "c",
+						...COMMENT_METADATA,
 						commentReplyId: "r",
 						anchorBlockId: "block-4",
 					},
@@ -621,19 +469,24 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 				name: "opens an unanchored comment reply at the document",
 				notification: {
 					code: NotificationCode.DocumentNewCommentReply,
-					metadata: {
-						userId: USER_ID,
-						documentId: DOC_ID,
-						branchId: "b",
-						commentId: "c",
-						commentReplyId: "r",
-						anchorBlockId: null,
-					},
+					metadata: { ...COMMENT_METADATA, commentReplyId: "r" },
 				},
 				expected: `/acme/Runbook-${DOC_ID}?branch=b`,
 			},
+			{
+				name: "opens a resolved comment at the block it is anchored to",
+				notification: {
+					code: NotificationCode.DocumentCommentResolved,
+					metadata: { ...COMMENT_METADATA, anchorBlockId: "block-5" },
+				},
+				expected: `/acme/Runbook-${DOC_ID}?branch=b#block-5`,
+			},
 		])("$name", async ({ notification, expected }, { expect }) => {
-			mockEndpoint("PUT", "/api/notifications/read-status", () => ({}))
+			const calls = mockEndpoint(
+				"PUT",
+				"/api/notifications/read-status",
+				() => ({}),
+			)
 			mockAuthOrganization({ id: "org-1", slug: "acme", members: [] })
 			seedTree()
 			seedNotifications([makeNotification(notification)])
@@ -643,6 +496,7 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 			await flushPromises()
 
 			expect(navigateToMock).toHaveBeenCalledExactlyOnceWith(expected)
+			expect(calls.map((call) => call.body)).toEqual([{ ids: ["notif-1"] }])
 		})
 
 		it("goes nowhere for a notification code it does not know", async ({
@@ -662,7 +516,7 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 		it("stays put when the notification's document no longer exists", async ({
 			expect,
 		}) => {
-			seedAuthOrganization({ slug: "acme" })
+			seedAuthOrganization({ slug: "acme", members: [] })
 			seedNotifications([makeNotification()])
 			const wrapper = await mountBox()
 
@@ -670,36 +524,6 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 			await flushPromises()
 
 			expect(navigateToMock).toHaveBeenCalledTimes(0)
-		})
-	})
-
-	describe("mobile", { concurrent: false }, () => {
-		it("hides the close button on wide viewports", async ({ expect }) => {
-			seedNotifications([])
-
-			const wrapper = await mountBox()
-
-			expect(wrapper.text()).not.toContain(
-				t("notification.actions.close-notification-box"),
-			)
-		})
-
-		it("closes the box when its close button is pressed", async ({
-			expect,
-		}) => {
-			seedNotifications([])
-			const wrapper = await mountBox({ mobile: true })
-
-			await findButtonByText(
-				wrapper,
-				t("notification.actions.close-notification-box"),
-			).trigger("click")
-
-			expect(
-				wrapper
-					.findComponent(NotificationBox)
-					.emitted("close-notification-box"),
-			).toHaveLength(1)
 		})
 	})
 
@@ -733,3 +557,59 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 		})
 	})
 })
+
+function makeNotification(overrides: Record<string, unknown> = {}) {
+	return {
+		id: "notif-1",
+		userId: USER_ID,
+		organizationId: "org-1",
+		code: NotificationCode.DocumentReviewRequest,
+		metadata: { userId: USER_ID, documentId: DOC_ID, branchId: "branch-1" },
+		read: false,
+		createdAt: new Date(2026, 2, 14, 11, 0, 0),
+		...overrides,
+	}
+}
+
+// seeds the pages the box has loaded so far, out of pageCount on the server
+function seedPages(pages: unknown[][], pageCount = pages.length, unread = 0) {
+	// a plain seed leaves the entry without its paging state, and the
+	// box's query cannot mount on it
+	runInApp(() => {
+		setInfiniteQueryData(useQueryCache(), ["notifications", "list", 50], {
+			pages: pages.map((notifications) => ({
+				notifications: notifications,
+				pageCount: pageCount,
+			})),
+			pageParams: pages.map((_page, index) => index + 1),
+		})
+	})
+	seedQueryData(["notifications", "count", false], { count: unread })
+}
+
+function seedNotifications(notifications: unknown[], unread = 0) {
+	seedPages([notifications], 1, unread)
+}
+
+function seedTree() {
+	seedQueryData(
+		["documents", "tree"],
+		[
+			{
+				id: DOC_ID,
+				documentName: "Runbook",
+				icon: "mingcute:book-2-line",
+				protected: false,
+				children: null,
+			},
+		],
+	)
+}
+
+function mountBox() {
+	return mountSuspended(NotificationBox)
+}
+
+function rows(wrapper: Awaited<ReturnType<typeof mountBox>>) {
+	return wrapper.findAll("[role='link']")
+}

@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/strutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
 )
@@ -22,6 +24,9 @@ var (
 	// ErrMissingStatus is returned when a status update carries no resolved flag.
 	ErrMissingStatus = errutil.New(http.StatusBadRequest, "comment.missing_status", "comment resolved status is required")
 )
+
+// _excerptLength is the most runes an excerpt keeps of a comment's text.
+const _excerptLength = 120
 
 // Comment represents a comment on a document.
 type Comment struct {
@@ -135,6 +140,36 @@ func (c *Content) Scan(value any) error {
 	*c = nc
 
 	return nil
+}
+
+// Excerpt returns the start of the content's text on a single line.
+func (c Content) Excerpt() string {
+	var sb strings.Builder
+
+	writeText(&sb, c)
+
+	return strutil.Preview(strings.Join(strings.Fields(sb.String()), " "), _excerptLength)
+}
+
+// writeText appends the text of a node of the content and of its children.
+// Text runs within a node join as written, and a space follows every other
+// node.
+func writeText(sb *strings.Builder, node map[string]any) {
+	if text, ok := node["text"].(string); ok {
+		sb.WriteString(text)
+
+		return
+	}
+
+	children, _ := node["content"].([]any)
+
+	for _, child := range children {
+		if n, ok := child.(map[string]any); ok {
+			writeText(sb, n)
+		}
+	}
+
+	sb.WriteByte(' ')
 }
 
 // NewComment creates a new comment instance with the provided input.

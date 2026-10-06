@@ -126,18 +126,58 @@ test.describe("comments", () => {
 		await expect(linked).not.toBeInViewport()
 
 		await openInbox(page)
-		await page
-			.getByRole("link", {
-				name: t("notification.messages.document-new-comment-description", {
-					user: other.credentials.email.split("@")[0] ?? "",
-				}),
-			})
-			.click()
+		const notification = page.getByRole("link", {
+			name: t("notification.messages.document-new-comment-description", {
+				user: other.credentials.email.split("@")[0] ?? "",
+			}),
+		})
+		await expect(notification).toContainText("Worth a second look")
+		await notification.click()
 
 		await expect(page).toHaveURL(
 			new RegExp(`^${url}\\?branch=[a-z0-9]{20}#${uid}$`),
 		)
 		await expect(linked).toBeInViewport()
+
+		await other.context.close()
+	})
+
+	test("tells the author in the inbox when a teammate resolves their comment", async ({
+		page,
+		request,
+		browser,
+	}) => {
+		// two signups, a verification each, an invitation and its
+		// acceptance run before the first assertion
+		test.slow()
+
+		await signUpWithWorkspace(page, request)
+		await createDocument(page)
+		await contentEditor(page).click()
+		await page.keyboard.type("Soon to be settled")
+		const other = await joinAsSecondUser(browser, page, request)
+		// the owner's member list predates the teammate, so a reload picks
+		// them up before the notification names them
+		await visit(page, page.url())
+		await waitForEditor(page)
+		await addComment(page, "Handled already")
+
+		await contentEditor(other.page).locator(".comment-mark").click()
+		await commentPopover(other.page)
+			.getByRole("button", {
+				name: t("editor.comment-thread.resolve-button"),
+				exact: true,
+			})
+			.click()
+
+		await openInbox(page)
+		await expect(
+			page.getByRole("link", {
+				name: t("notification.messages.document-comment-resolved-description", {
+					user: other.credentials.email.split("@")[0] ?? "",
+				}),
+			}),
+		).toContainText("Handled already")
 
 		await other.context.close()
 	})

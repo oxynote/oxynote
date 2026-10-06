@@ -103,6 +103,8 @@ func Test_Interpreter_InterpretNotification(t *testing.T) {
 				hook.TypeScheduledReminder,
 				null.String{},
 				_testBranchID,
+				nil,
+				null.Int{},
 			)),
 			Result: &Message{
 				Text: fmt.Sprintf("<%s|My Doc> may be outdated — Scheduled Reminder", _testDocURL),
@@ -115,6 +117,7 @@ func Test_Interpreter_InterpretNotification(t *testing.T) {
 				null.String{},
 				_testBranchID,
 				processor.StatusMissingRepository,
+				nil,
 			)),
 			Result: &Message{
 				Text: fmt.Sprintf("<%s|My Doc> can no longer be checked — GitHub Tracking", _testDocURL),
@@ -127,6 +130,7 @@ func Test_Interpreter_InterpretNotification(t *testing.T) {
 				xid.New(),
 				null.String{},
 				_testBranchID,
+				"",
 			)),
 			Result: &Message{
 				Text: fmt.Sprintf("Alice left a comment on <%s|My Doc>", _testDocURL),
@@ -140,9 +144,23 @@ func Test_Interpreter_InterpretNotification(t *testing.T) {
 				xid.New(),
 				null.String{},
 				_testBranchID,
+				"",
 			)),
 			Result: &Message{
 				Text: fmt.Sprintf("Alice replied to a comment on <%s|My Doc>", _testDocURL),
+			},
+		},
+		"Document comment resolved": {
+			N: stubNotification(notification.NewDocumentCommentResolvedNotification(
+				"user1",
+				_testDocID,
+				xid.New(),
+				null.String{},
+				_testBranchID,
+				"",
+			)),
+			Result: &Message{
+				Text: fmt.Sprintf("Alice resolved a comment on <%s|My Doc>", _testDocURL),
 			},
 		},
 	}
@@ -303,6 +321,8 @@ func Test_Interpreter_interpretDocumentHookNotification(t *testing.T) {
 				hook.TypeScheduledReminder,
 				null.String{},
 				_testBranchID,
+				nil,
+				null.Int{},
 			)),
 			Err: assert.AnError,
 		},
@@ -320,6 +340,8 @@ func Test_Interpreter_interpretDocumentHookNotification(t *testing.T) {
 				hook.TypeScheduledReminder,
 				null.String{},
 				_testBranchID,
+				nil,
+				null.Int{},
 			)),
 			Err: assert.AnError,
 		},
@@ -330,6 +352,8 @@ func Test_Interpreter_interpretDocumentHookNotification(t *testing.T) {
 				hook.TypeScheduledReminder,
 				null.String{},
 				_testBranchID,
+				nil,
+				null.Int{},
 			)),
 			Result: &Message{
 				Text: fmt.Sprintf("<%s|My Doc> may be outdated — Scheduled Reminder", _testDocURL),
@@ -359,6 +383,8 @@ func Test_Interpreter_interpretDocumentHookNotification(t *testing.T) {
 				hook.TypeScheduledReminder,
 				null.StringFrom("blk1"),
 				_testBranchID,
+				nil,
+				null.Int{},
 			)),
 			Result: &Message{
 				Text: fmt.Sprintf("<%s#blk1|a block in My Doc> may be outdated — Scheduled Reminder", _testDocURL),
@@ -372,6 +398,7 @@ func Test_Interpreter_interpretDocumentHookNotification(t *testing.T) {
 				null.StringFrom("blk1"),
 				_testBranchID,
 				processor.StatusUnreachableURL,
+				nil,
 			)),
 			Format: _hookNeedsAttentionFormat,
 			Result: &Message{
@@ -459,6 +486,7 @@ func Test_Interpreter_interpretDocumentCommentNotification(t *testing.T) {
 				xid.New(),
 				null.String{},
 				_testBranchID,
+				"",
 			)),
 			Verb: _commentVerb,
 			Err:  assert.AnError,
@@ -478,6 +506,7 @@ func Test_Interpreter_interpretDocumentCommentNotification(t *testing.T) {
 				xid.New(),
 				null.String{},
 				_testBranchID,
+				"",
 			)),
 			Verb: _commentVerb,
 			Err:  assert.AnError,
@@ -497,6 +526,7 @@ func Test_Interpreter_interpretDocumentCommentNotification(t *testing.T) {
 				xid.New(),
 				null.String{},
 				_testBranchID,
+				"",
 			)),
 			Verb: _commentVerb,
 			Err:  assert.AnError,
@@ -509,6 +539,7 @@ func Test_Interpreter_interpretDocumentCommentNotification(t *testing.T) {
 				xid.New(),
 				null.String{},
 				_testBranchID,
+				"",
 			)),
 			Verb: _commentVerb,
 			Result: &Message{
@@ -523,6 +554,7 @@ func Test_Interpreter_interpretDocumentCommentNotification(t *testing.T) {
 				xid.New(),
 				null.StringFrom("blk1"),
 				_testBranchID,
+				"",
 			)),
 			Verb: _commentVerb,
 			Result: &Message{
@@ -538,6 +570,7 @@ func Test_Interpreter_interpretDocumentCommentNotification(t *testing.T) {
 				xid.New(),
 				null.String{},
 				_testBranchID,
+				"",
 			)),
 			Verb: _commentReplyVerb,
 			Result: &Message{
@@ -553,10 +586,26 @@ func Test_Interpreter_interpretDocumentCommentNotification(t *testing.T) {
 				xid.New(),
 				null.StringFrom("blk1"),
 				_testBranchID,
+				"",
 			)),
 			Verb: _commentReplyVerb,
 			Result: &Message{
 				Text: fmt.Sprintf("Alice replied to a comment on <%s#blk1|My Doc>", _testDocURL),
+			},
+		},
+		"Successful resolved interpretation": {
+			DB: stubDB(),
+			N: stubNotification(notification.NewDocumentCommentResolvedNotification(
+				"user1",
+				_testDocID,
+				xid.New(),
+				null.String{},
+				_testBranchID,
+				"",
+			)),
+			Verb: _commentResolvedVerb,
+			Result: &Message{
+				Text: fmt.Sprintf("Alice resolved a comment on <%s|My Doc>", _testDocURL),
 			},
 		},
 	}

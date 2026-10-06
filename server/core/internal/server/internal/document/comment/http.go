@@ -134,6 +134,7 @@ func (h *Handler) CreateDocumentComment(w http.ResponseWriter, r *http.Request) 
 				c.ID,
 				c.AnchorBlockID,
 				c.BranchID,
+				c.Content.Excerpt(),
 			),
 			userIDs...,
 		)
@@ -217,6 +218,7 @@ func (h *Handler) CreateDocumentCommentReply(w http.ResponseWriter, r *http.Requ
 			reply.ID,
 			c.AnchorBlockID,
 			c.BranchID,
+			reply.Content.Excerpt(),
 		),
 		commentCore.Recipients(c.Participants(), session.UserID)...,
 	)
@@ -535,6 +537,21 @@ func (h *Handler) UpdateDocumentCommentStatus(w http.ResponseWriter, r *http.Req
 			Type:      ChangeTypeUpdated,
 			CommentID: commentID,
 		})
+	}
+
+	if nc.Resolved {
+		h.notifPub.PublishNotifications(
+			session.ActiveOrganizationID,
+			notification.NewDocumentCommentResolvedNotification(
+				session.UserID,
+				documentID,
+				nc.ID,
+				nc.AnchorBlockID,
+				nc.BranchID,
+				nc.Content.Excerpt(),
+			),
+			commentCore.Recipients(nc.Participants(), session.UserID)...,
+		)
 	}
 
 	httpserver.Respond(

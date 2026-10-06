@@ -52,7 +52,8 @@ func (gt *GithubTracking) Validate() error {
 	return nil
 }
 
-// Process scores the hook down once a tracked path changed since the reset.
+// Process scores the hook down once a tracked path changed since the reset,
+// and records how many did.
 func (gt *GithubTracking) Process(ctx context.Context, inp Input) (Result, error) {
 	var gts GithubTrackingState
 
@@ -69,7 +70,7 @@ func (gt *GithubTracking) Process(ctx context.Context, inp Input) (Result, error
 		return inactive(status), nil
 	}
 
-	score := mathutil.Hundred
+	gts.ChangedPaths = 0
 
 	for _, path := range gt.Paths {
 		item, ok := tree.GetItem(path)
@@ -79,9 +80,14 @@ func (gt *GithubTracking) Process(ctx context.Context, inp Input) (Result, error
 		// map, so a path missing both then and now is unchanged; only a
 		// presence flip or a differing checksum marks a modification.
 		if ok != tracked || (ok && item.Checksum != checksum) {
-			score = decimal.Zero
-			break
+			gts.ChangedPaths++
 		}
+	}
+
+	score := mathutil.Hundred
+
+	if gts.ChangedPaths > 0 {
+		score = decimal.Zero
 	}
 
 	return active(score, gts)
@@ -155,4 +161,8 @@ func (gt *GithubTracking) fetchTree(ctx context.Context, inp Input) (github.Tree
 type GithubTrackingState struct {
 	// PathsChecksums is a map of file paths to their checksums.
 	PathsChecksums map[string]string `json:"pathsChecksums"`
+
+	// ChangedPaths is the number of tracked paths that differed from the
+	// checksums on the last run.
+	ChangedPaths int `json:"changedPaths"`
 }

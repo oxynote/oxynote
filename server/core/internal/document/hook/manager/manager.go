@@ -3,6 +3,7 @@ package manager
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
@@ -332,6 +333,7 @@ func (m *Manager) notifyTransition(ctx context.Context, prev, h hook.Hook) {
 			h.BlockID,
 			h.BranchID.V,
 			h.Status,
+			h.Settings,
 		)
 	// a scheduled reminder decays through 99…1, so the transition is the
 	// arrival at zero, not a drop from full.
@@ -341,6 +343,8 @@ func (m *Manager) notifyTransition(ctx context.Context, prev, h hook.Hook) {
 			h.Type,
 			h.BlockID,
 			h.BranchID.V,
+			h.Settings,
+			m.changedPaths(h),
 		)
 	default:
 		return
@@ -356,6 +360,30 @@ func (m *Manager) notifyTransition(ctx context.Context, prev, h hook.Hook) {
 	}
 
 	m.notifPub.PublishNotifications(h.OrganizationID.String, core, maintainers...)
+}
+
+// changedPaths returns how many tracked paths a GitHub hook found changed
+// on its last run. It is null for any other hook, and for a state that
+// does not decode.
+func (m *Manager) changedPaths(h hook.Hook) null.Int {
+	if h.Type != hook.TypeGithubTracking {
+		return null.Int{}
+	}
+
+	var gts processor.GithubTrackingState
+
+	// the notification still goes out without the count.
+	if err := json.Unmarshal(h.State.V, &gts); err != nil {
+		m.log.Warn(
+			"cannot decode github tracking state",
+			slog.String("hook_id", h.ID.String()),
+			slog.String("error", err.Error()),
+		)
+
+		return null.Int{}
+	}
+
+	return null.IntFrom(int64(gts.ChangedPaths))
 }
 
 // undoSetup tears down the resource h got in this run, since the row

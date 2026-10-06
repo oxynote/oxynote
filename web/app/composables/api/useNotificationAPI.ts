@@ -1,9 +1,10 @@
-import type { EntryKey } from "@pinia/colada"
+import type { EntryKey, UseInfiniteQueryData } from "@pinia/colada"
 import isDeepEqual from "fast-deep-equal"
 
+type NotificationPages = UseInfiniteQueryData<NotificationsResponse, number>
+
 const NOTIFICATION_QUERY_KEYS = {
-	list: (limit: number, page: number) =>
-		["notifications", "list", limit, page] as const,
+	list: (limit: number) => ["notifications", "list", limit] as const,
 	count: (read: boolean) => ["notifications", "count", read] as const,
 	listRoot: ["notifications", "list"] as const,
 	countRoot: ["notifications", "count"] as const,
@@ -16,19 +17,12 @@ export default function () {
 	function useFetchManyNotifications(
 		paramsRef: MaybeRefOrGetter<NotificationsParams>,
 	) {
-		return useQuery({
-			key: () => {
-				const params = toValue(paramsRef)
-				const { limit, page } = params
-
-				return NOTIFICATION_QUERY_KEYS.list(limit, page)
-			},
-			query: async () => {
-				const params = toValue(paramsRef)
-				const { limit, page } = params
+		return useInfiniteQuery({
+			key: () => NOTIFICATION_QUERY_KEYS.list(toValue(paramsRef).limit),
+			query: async ({ pageParam }) => {
 				const searchParams = new URLSearchParams({
-					limit: String(limit),
-					page: String(page),
+					limit: String(toValue(paramsRef).limit),
+					page: String(pageParam),
 				})
 
 				return await $coreAPIClient<NotificationsResponse>(
@@ -36,6 +30,9 @@ export default function () {
 					{ method: "GET" },
 				)
 			},
+			initialPageParam: 1,
+			getNextPageParam: (lastPage, _pages, lastPageParam) =>
+				lastPageParam < lastPage.pageCount ? lastPageParam + 1 : null,
 			refetchOnMount: false,
 			refetchOnWindowFocus: false,
 			refetchOnReconnect: false,
@@ -80,35 +77,37 @@ export default function () {
 			const entries = queryCache.getEntries({
 				key: NOTIFICATION_QUERY_KEYS.listRoot,
 			})
-			// the key travels next to the page rather than inside it, so the
+			// the key travels next to the data rather than inside it, so the
 			// bookkeeping never ends up in the cached data
-			const oldNotifs: { key: EntryKey; page: NotificationsResponse }[] = []
+			const oldNotifs: { key: EntryKey; data: NotificationPages }[] = []
 
 			entries.forEach((entry) => {
-				const oldNotifPage = clone(
-					queryCache.getQueryData<NotificationsResponse>(entry.key),
+				const oldNotifData = clone(
+					queryCache.getQueryData<NotificationPages>(entry.key),
 				)
 
 				// entries can exist without data (a query that has not
 				// resolved yet); including them would make the update loop
-				// below throw on the missing notifications array and abort
-				// the whole mutation
-				if (!oldNotifPage) {
+				// below throw on the missing pages array and abort the whole
+				// mutation
+				if (!oldNotifData) {
 					return
 				}
 
-				oldNotifs.push({ key: clone(entry.key), page: oldNotifPage })
+				oldNotifs.push({ key: clone(entry.key), data: oldNotifData })
 			})
 
 			const newNotifs = clone(oldNotifs)
-			newNotifs.forEach(({ key, page }) => {
-				page.notifications.forEach((notif) => {
-					if (req.ids.length === 0 || req.ids.includes(notif.id)) {
-						notif.read = true
-					}
+			newNotifs.forEach(({ key, data }) => {
+				data.pages.forEach((page) => {
+					page.notifications.forEach((notif) => {
+						if (req.ids.length === 0 || req.ids.includes(notif.id)) {
+							notif.read = true
+						}
+					})
 				})
 
-				queryCache.setQueryData(key, page)
+				queryCache.setQueryData(key, data)
 				queryCache.cancelQueries({ key })
 			})
 
@@ -132,20 +131,20 @@ export default function () {
 			const entries = queryCache.getEntries({
 				key: NOTIFICATION_QUERY_KEYS.listRoot,
 			})
-			const cachedNotifs: { key: EntryKey; page: NotificationsResponse }[] = []
+			const cachedNotifs: { key: EntryKey; data: NotificationPages }[] = []
 
 			entries.forEach((entry) => {
-				const cachedNotifPage = clone(
-					queryCache.getQueryData<NotificationsResponse>(entry.key),
+				const cachedNotifData = clone(
+					queryCache.getQueryData<NotificationPages>(entry.key),
 				)
 
 				// mirror the onMutate filter so the rollback comparison sees
-				// the same set of pages the optimistic update touched
-				if (!cachedNotifPage) {
+				// the same set of entries the optimistic update touched
+				if (!cachedNotifData) {
 					return
 				}
 
-				cachedNotifs.push({ key: clone(entry.key), page: cachedNotifPage })
+				cachedNotifs.push({ key: clone(entry.key), data: cachedNotifData })
 			})
 
 			if (!isDeepEqual(newNotifs, cachedNotifs)) {
@@ -153,8 +152,8 @@ export default function () {
 			}
 
 			// rollback
-			oldNotifs?.forEach(({ key, page }) => {
-				queryCache.setQueryData(key, page)
+			oldNotifs?.forEach(({ key, data }) => {
+				queryCache.setQueryData(key, data)
 			})
 		},
 	})

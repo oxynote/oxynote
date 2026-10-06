@@ -30,6 +30,10 @@ const (
 	// message.
 	_commentReplyVerb = "replied to a comment on"
 
+	// _commentResolvedVerb names what the resolver did in a comment
+	// resolved message.
+	_commentResolvedVerb = "resolved a comment on"
+
 	// _hookTriggeredFormat is the hook triggered message, taking the
 	// linked subject and the hook type.
 	_hookTriggeredFormat = "%s may be outdated — %s"
@@ -68,6 +72,8 @@ func (i *Interpreter) InterpretNotification(ctx context.Context, n notification.
 		return i.interpretDocumentCommentNotification(ctx, n, _commentVerb)
 	case notification.NotificationDocumentNewCommentReply:
 		return i.interpretDocumentCommentNotification(ctx, n, _commentReplyVerb)
+	case notification.NotificationDocumentCommentResolved:
+		return i.interpretDocumentCommentNotification(ctx, n, _commentResolvedVerb)
 	}
 
 	return nil, ErrUnknownNotificationCode
