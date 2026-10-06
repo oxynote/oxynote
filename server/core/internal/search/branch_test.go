@@ -2,6 +2,7 @@ package search
 
 import (
 	"context"
+	"encoding/base64"
 	"testing"
 
 	"github.com/guregu/null/v5"
@@ -132,6 +133,14 @@ func Test_Index_SearchBranch(t *testing.T) {
 		"Page token of another branch": func() tcase {
 			bq := query
 			bq.PageToken = encodePageToken(1, BranchQuery{BranchID: fork.BranchID, Query: "shipment"}.fingerprint())
+
+			return tcase{Query: bq, Err: ErrInvalidPageToken}
+		}(),
+		"Page token past the offset cap": func() tcase {
+			bq := query
+			bq.PageToken = base64.RawURLEncoding.EncodeToString(
+				[]byte(`{"o":9223372036854775800,"f":"` + query.fingerprint() + `"}`),
+			)
 
 			return tcase{Query: bq, Err: ErrInvalidPageToken}
 		}(),

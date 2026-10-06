@@ -15,7 +15,6 @@ import (
 	bleveSearch "github.com/blevesearch/bleve/v2/search"
 	"github.com/blevesearch/bleve/v2/search/query"
 	"github.com/guregu/null/v5"
-	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	"github.com/rs/xid"
 )
@@ -38,6 +37,11 @@ const (
 	// _groupHitCap caps the hits one grouped search reads. The groups and
 	// totals are built from these hits only.
 	_groupHitCap = 1000
+
+	// _maxPageOffset caps the offset a page token may carry. bleve adds the
+	// offset to the page size unchecked, so a huge one overflows and
+	// panics there.
+	_maxPageOffset = 10_000
 )
 
 // ErrInvalidPageToken is returned when a page token is malformed or was
@@ -125,23 +129,6 @@ func (gp GroupPage) BranchIDs() []xid.ID {
 
 	for _, g := range gp.Groups {
 		ids = append(ids, g.BranchID)
-	}
-
-	return ids
-}
-
-// DataSourceIDs returns the ids of the data sources the page's hits
-// query, without repeats.
-func (gp GroupPage) DataSourceIDs() []string {
-	var ids []string
-
-	for _, g := range gp.Groups {
-		for _, h := range g.Hits {
-			id := h.Attrs[document.AttrDataSourceID]
-			if id != "" && !slices.Contains(ids, id) {
-				ids = append(ids, id)
-			}
-		}
 	}
 
 	return ids
@@ -409,7 +396,7 @@ func decodePageToken(token, fingerprint string) (int, error) {
 		return 0, ErrInvalidPageToken
 	}
 
-	if pt.Offset < 0 || pt.Fingerprint != fingerprint {
+	if pt.Offset < 0 || pt.Offset > _maxPageOffset || pt.Fingerprint != fingerprint {
 		return 0, ErrInvalidPageToken
 	}
 

@@ -6,6 +6,8 @@ package document
 import (
 	"context"
 	"sync"
+
+	"github.com/oxynote/oxynote/server/core/internal/search"
 )
 
 // Ensure, that SearcherMock does implement Searcher.
@@ -18,8 +20,14 @@ var _ Searcher = &SearcherMock{}
 //
 //		// make and configure a mocked Searcher
 //		mockedSearcher := &SearcherMock{
+//			SearchBranchFunc: func(ctx context.Context, bq search.BranchQuery) (search.BranchPage, error) {
+//				panic("mock out the SearchBranch method")
+//			},
 //			SearchDocumentsFunc: func(ctx context.Context, organizationID string, query string) ([]byte, error) {
 //				panic("mock out the SearchDocuments method")
+//			},
+//			SearchGroupsFunc: func(ctx context.Context, gq search.GroupQuery) (search.GroupPage, error) {
+//				panic("mock out the SearchGroups method")
 //			},
 //		}
 //
@@ -28,11 +36,24 @@ var _ Searcher = &SearcherMock{}
 //
 //	}
 type SearcherMock struct {
+	// SearchBranchFunc mocks the SearchBranch method.
+	SearchBranchFunc func(ctx context.Context, bq search.BranchQuery) (search.BranchPage, error)
+
 	// SearchDocumentsFunc mocks the SearchDocuments method.
 	SearchDocumentsFunc func(ctx context.Context, organizationID string, query string) ([]byte, error)
 
+	// SearchGroupsFunc mocks the SearchGroups method.
+	SearchGroupsFunc func(ctx context.Context, gq search.GroupQuery) (search.GroupPage, error)
+
 	// calls tracks calls to the methods.
 	calls struct {
+		// SearchBranch holds details about calls to the SearchBranch method.
+		SearchBranch []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Bq is the bq argument value.
+			Bq search.BranchQuery
+		}
 		// SearchDocuments holds details about calls to the SearchDocuments method.
 		SearchDocuments []struct {
 			// Ctx is the ctx argument value.
@@ -42,8 +63,57 @@ type SearcherMock struct {
 			// Query is the query argument value.
 			Query string
 		}
+		// SearchGroups holds details about calls to the SearchGroups method.
+		SearchGroups []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Gq is the gq argument value.
+			Gq search.GroupQuery
+		}
 	}
+	lockSearchBranch    sync.RWMutex
 	lockSearchDocuments sync.RWMutex
+	lockSearchGroups    sync.RWMutex
+}
+
+// SearchBranch calls SearchBranchFunc.
+func (mock *SearcherMock) SearchBranch(ctx context.Context, bq search.BranchQuery) (search.BranchPage, error) {
+	callInfo := struct {
+		Ctx context.Context
+		Bq  search.BranchQuery
+	}{
+		Ctx: ctx,
+		Bq:  bq,
+	}
+	mock.lockSearchBranch.Lock()
+	mock.calls.SearchBranch = append(mock.calls.SearchBranch, callInfo)
+	mock.lockSearchBranch.Unlock()
+	if mock.SearchBranchFunc == nil {
+		var (
+			branchPageOut search.BranchPage
+			errOut        error
+		)
+		return branchPageOut, errOut
+	}
+	return mock.SearchBranchFunc(ctx, bq)
+}
+
+// SearchBranchCalls gets all the calls that were made to SearchBranch.
+// Check the length with:
+//
+//	len(mockedSearcher.SearchBranchCalls())
+func (mock *SearcherMock) SearchBranchCalls() []struct {
+	Ctx context.Context
+	Bq  search.BranchQuery
+} {
+	var calls []struct {
+		Ctx context.Context
+		Bq  search.BranchQuery
+	}
+	mock.lockSearchBranch.RLock()
+	calls = mock.calls.SearchBranch
+	mock.lockSearchBranch.RUnlock()
+	return calls
 }
 
 // SearchDocuments calls SearchDocumentsFunc.
@@ -87,5 +157,45 @@ func (mock *SearcherMock) SearchDocumentsCalls() []struct {
 	mock.lockSearchDocuments.RLock()
 	calls = mock.calls.SearchDocuments
 	mock.lockSearchDocuments.RUnlock()
+	return calls
+}
+
+// SearchGroups calls SearchGroupsFunc.
+func (mock *SearcherMock) SearchGroups(ctx context.Context, gq search.GroupQuery) (search.GroupPage, error) {
+	callInfo := struct {
+		Ctx context.Context
+		Gq  search.GroupQuery
+	}{
+		Ctx: ctx,
+		Gq:  gq,
+	}
+	mock.lockSearchGroups.Lock()
+	mock.calls.SearchGroups = append(mock.calls.SearchGroups, callInfo)
+	mock.lockSearchGroups.Unlock()
+	if mock.SearchGroupsFunc == nil {
+		var (
+			groupPageOut search.GroupPage
+			errOut       error
+		)
+		return groupPageOut, errOut
+	}
+	return mock.SearchGroupsFunc(ctx, gq)
+}
+
+// SearchGroupsCalls gets all the calls that were made to SearchGroups.
+// Check the length with:
+//
+//	len(mockedSearcher.SearchGroupsCalls())
+func (mock *SearcherMock) SearchGroupsCalls() []struct {
+	Ctx context.Context
+	Gq  search.GroupQuery
+} {
+	var calls []struct {
+		Ctx context.Context
+		Gq  search.GroupQuery
+	}
+	mock.lockSearchGroups.RLock()
+	calls = mock.calls.SearchGroups
+	mock.lockSearchGroups.RUnlock()
 	return calls
 }

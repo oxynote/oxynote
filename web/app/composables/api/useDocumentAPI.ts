@@ -540,7 +540,7 @@ export default function () {
 		// we don't want to use useQuery here as searches are
 		// typically one-off and we don't want to cache them
 		return await $coreAPIClient<DocumentSearchResponse>(
-			`/api/documents/search?q=${encodeURIComponent(q)}`,
+			`/api/documents/search/legacy?q=${encodeURIComponent(q)}`,
 			{
 				method: "GET",
 			},

@@ -300,6 +300,7 @@ func (s *Server) router() chi.Router {
 
 	r.Route("/documents", func(sr chi.Router) {
 		sr.Get("/search", s.handlers.document.SearchDocuments)
+		sr.Get("/search/legacy", s.handlers.document.SearchDocumentsLegacy)
 		sr.Post("/", s.handlers.document.CreateDocument)
 		sr.Route("/{documentId}", func(ssr chi.Router) {
 			ssr.Use(s.handlers.document.RequireDocumentAccess)
@@ -312,6 +313,7 @@ func (s *Server) router() chi.Router {
 				sssr.Route("/{branchId}", func(ssssr chi.Router) {
 					ssssr.Put("/review-approve", s.handlers.document.UpdateBranchReviewApproval)
 					ssssr.Post("/views", s.handlers.document.RecordDocumentBranchView)
+					ssssr.Get("/search", s.handlers.document.SearchDocumentBranch)
 					ssssr.Post("/blocks/{blockUid}/run", s.handlers.block.RunBlock)
 					ssssr.Route("/reviewers", func(sssssr chi.Router) {
 						sssssr.Get("/", s.handlers.document.FetchBranchReviewers)

@@ -155,6 +155,9 @@ var _ DB = &DBMock{}
 //			FetchDocumentUnsafeByBranchIDFunc: func(ctx context.Context, branchID xid.ID) (*document.Document, error) {
 //				panic("mock out the FetchDocumentUnsafeByBranchID method")
 //			},
+//			FetchDocumentsByBranchIDsFunc: func(ctx context.Context, branchIDs []xid.ID, organizationID string) ([]document.Document, error) {
+//				panic("mock out the FetchDocumentsByBranchIDs method")
+//			},
 //			FetchGithubInstallationByOrganizationIDFunc: func(ctx context.Context, organizationID string) (int64, error) {
 //				panic("mock out the FetchGithubInstallationByOrganizationID method")
 //			},
@@ -169,6 +172,9 @@ var _ DB = &DBMock{}
 //			},
 //			FetchOrganizationMembersFunc: func(ctx context.Context, organizationID string) ([]string, error) {
 //				panic("mock out the FetchOrganizationMembers method")
+//			},
+//			FetchRecentlyViewedDocumentsFunc: func(ctx context.Context, userID string, organizationID string, limit int) ([]document.Document, error) {
+//				panic("mock out the FetchRecentlyViewedDocuments method")
 //			},
 //			FetchSlackAppByOrganizationIDFunc: func(ctx context.Context, organizationID string) (*slackCore.App, error) {
 //				panic("mock out the FetchSlackAppByOrganizationID method")
@@ -435,6 +441,9 @@ type DBMock struct {
 	// FetchDocumentUnsafeByBranchIDFunc mocks the FetchDocumentUnsafeByBranchID method.
 	FetchDocumentUnsafeByBranchIDFunc func(ctx context.Context, branchID xid.ID) (*document.Document, error)
 
+	// FetchDocumentsByBranchIDsFunc mocks the FetchDocumentsByBranchIDs method.
+	FetchDocumentsByBranchIDsFunc func(ctx context.Context, branchIDs []xid.ID, organizationID string) ([]document.Document, error)
+
 	// FetchGithubInstallationByOrganizationIDFunc mocks the FetchGithubInstallationByOrganizationID method.
 	FetchGithubInstallationByOrganizationIDFunc func(ctx context.Context, organizationID string) (int64, error)
 
@@ -449,6 +458,9 @@ type DBMock struct {
 
 	// FetchOrganizationMembersFunc mocks the FetchOrganizationMembers method.
 	FetchOrganizationMembersFunc func(ctx context.Context, organizationID string) ([]string, error)
+
+	// FetchRecentlyViewedDocumentsFunc mocks the FetchRecentlyViewedDocuments method.
+	FetchRecentlyViewedDocumentsFunc func(ctx context.Context, userID string, organizationID string, limit int) ([]document.Document, error)
 
 	// FetchSlackAppByOrganizationIDFunc mocks the FetchSlackAppByOrganizationID method.
 	FetchSlackAppByOrganizationIDFunc func(ctx context.Context, organizationID string) (*slackCore.App, error)
@@ -960,6 +972,15 @@ type DBMock struct {
 			// BranchID is the branchID argument value.
 			BranchID xid.ID
 		}
+		// FetchDocumentsByBranchIDs holds details about calls to the FetchDocumentsByBranchIDs method.
+		FetchDocumentsByBranchIDs []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// BranchIDs is the branchIDs argument value.
+			BranchIDs []xid.ID
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+		}
 		// FetchGithubInstallationByOrganizationID holds details about calls to the FetchGithubInstallationByOrganizationID method.
 		FetchGithubInstallationByOrganizationID []struct {
 			// Ctx is the ctx argument value.
@@ -1002,6 +1023,17 @@ type DBMock struct {
 			Ctx context.Context
 			// OrganizationID is the organizationID argument value.
 			OrganizationID string
+		}
+		// FetchRecentlyViewedDocuments holds details about calls to the FetchRecentlyViewedDocuments method.
+		FetchRecentlyViewedDocuments []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// UserID is the userID argument value.
+			UserID string
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+			// Limit is the limit argument value.
+			Limit int
 		}
 		// FetchSlackAppByOrganizationID holds details about calls to the FetchSlackAppByOrganizationID method.
 		FetchSlackAppByOrganizationID []struct {
@@ -1422,11 +1454,13 @@ type DBMock struct {
 	lockFetchDocumentTree                         sync.RWMutex
 	lockFetchDocumentTreeByDocumentParentID       sync.RWMutex
 	lockFetchDocumentUnsafeByBranchID             sync.RWMutex
+	lockFetchDocumentsByBranchIDs                 sync.RWMutex
 	lockFetchGithubInstallationByOrganizationID   sync.RWMutex
 	lockFetchGithubInstallationOrganizationID     sync.RWMutex
 	lockFetchManyNotifications                    sync.RWMutex
 	lockFetchNotificationCount                    sync.RWMutex
 	lockFetchOrganizationMembers                  sync.RWMutex
+	lockFetchRecentlyViewedDocuments              sync.RWMutex
 	lockFetchSlackAppByOrganizationID             sync.RWMutex
 	lockFetchSlackAppByTeamID                     sync.RWMutex
 	lockFetchSlackMessages                        sync.RWMutex
@@ -3268,6 +3302,50 @@ func (mock *DBMock) FetchDocumentUnsafeByBranchIDCalls() []struct {
 	return calls
 }
 
+// FetchDocumentsByBranchIDs calls FetchDocumentsByBranchIDsFunc.
+func (mock *DBMock) FetchDocumentsByBranchIDs(ctx context.Context, branchIDs []xid.ID, organizationID string) ([]document.Document, error) {
+	callInfo := struct {
+		Ctx            context.Context
+		BranchIDs      []xid.ID
+		OrganizationID string
+	}{
+		Ctx:            ctx,
+		BranchIDs:      branchIDs,
+		OrganizationID: organizationID,
+	}
+	mock.lockFetchDocumentsByBranchIDs.Lock()
+	mock.calls.FetchDocumentsByBranchIDs = append(mock.calls.FetchDocumentsByBranchIDs, callInfo)
+	mock.lockFetchDocumentsByBranchIDs.Unlock()
+	if mock.FetchDocumentsByBranchIDsFunc == nil {
+		var (
+			documentsOut []document.Document
+			errOut       error
+		)
+		return documentsOut, errOut
+	}
+	return mock.FetchDocumentsByBranchIDsFunc(ctx, branchIDs, organizationID)
+}
+
+// FetchDocumentsByBranchIDsCalls gets all the calls that were made to FetchDocumentsByBranchIDs.
+// Check the length with:
+//
+//	len(mockedDB.FetchDocumentsByBranchIDsCalls())
+func (mock *DBMock) FetchDocumentsByBranchIDsCalls() []struct {
+	Ctx            context.Context
+	BranchIDs      []xid.ID
+	OrganizationID string
+} {
+	var calls []struct {
+		Ctx            context.Context
+		BranchIDs      []xid.ID
+		OrganizationID string
+	}
+	mock.lockFetchDocumentsByBranchIDs.RLock()
+	calls = mock.calls.FetchDocumentsByBranchIDs
+	mock.lockFetchDocumentsByBranchIDs.RUnlock()
+	return calls
+}
+
 // FetchGithubInstallationByOrganizationID calls FetchGithubInstallationByOrganizationIDFunc.
 func (mock *DBMock) FetchGithubInstallationByOrganizationID(ctx context.Context, organizationID string) (int64, error) {
 	callInfo := struct {
@@ -3482,6 +3560,54 @@ func (mock *DBMock) FetchOrganizationMembersCalls() []struct {
 	mock.lockFetchOrganizationMembers.RLock()
 	calls = mock.calls.FetchOrganizationMembers
 	mock.lockFetchOrganizationMembers.RUnlock()
+	return calls
+}
+
+// FetchRecentlyViewedDocuments calls FetchRecentlyViewedDocumentsFunc.
+func (mock *DBMock) FetchRecentlyViewedDocuments(ctx context.Context, userID string, organizationID string, limit int) ([]document.Document, error) {
+	callInfo := struct {
+		Ctx            context.Context
+		UserID         string
+		OrganizationID string
+		Limit          int
+	}{
+		Ctx:            ctx,
+		UserID:         userID,
+		OrganizationID: organizationID,
+		Limit:          limit,
+	}
+	mock.lockFetchRecentlyViewedDocuments.Lock()
+	mock.calls.FetchRecentlyViewedDocuments = append(mock.calls.FetchRecentlyViewedDocuments, callInfo)
+	mock.lockFetchRecentlyViewedDocuments.Unlock()
+	if mock.FetchRecentlyViewedDocumentsFunc == nil {
+		var (
+			documentsOut []document.Document
+			errOut       error
+		)
+		return documentsOut, errOut
+	}
+	return mock.FetchRecentlyViewedDocumentsFunc(ctx, userID, organizationID, limit)
+}
+
+// FetchRecentlyViewedDocumentsCalls gets all the calls that were made to FetchRecentlyViewedDocuments.
+// Check the length with:
+//
+//	len(mockedDB.FetchRecentlyViewedDocumentsCalls())
+func (mock *DBMock) FetchRecentlyViewedDocumentsCalls() []struct {
+	Ctx            context.Context
+	UserID         string
+	OrganizationID string
+	Limit          int
+} {
+	var calls []struct {
+		Ctx            context.Context
+		UserID         string
+		OrganizationID string
+		Limit          int
+	}
+	mock.lockFetchRecentlyViewedDocuments.RLock()
+	calls = mock.calls.FetchRecentlyViewedDocuments
+	mock.lockFetchRecentlyViewedDocuments.RUnlock()
 	return calls
 }
 

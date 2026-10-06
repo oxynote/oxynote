@@ -17,6 +17,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/assistant/provider"
 	"github.com/oxynote/oxynote/server/core/internal/buildinfo"
 	datasourceCore "github.com/oxynote/oxynote/server/core/internal/datasource"
+	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/pkg/metricutil"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	wsMock "github.com/oxynote/wetsocks/wsserver/_mock"
@@ -69,6 +70,14 @@ func (stubSearchTrigger) Trigger() {}
 
 func (stubSearcher) SearchDocuments(context.Context, string, string) ([]byte, error) {
 	return nil, nil
+}
+
+func (stubSearcher) SearchGroups(context.Context, search.GroupQuery) (search.GroupPage, error) {
+	return search.GroupPage{}, nil
+}
+
+func (stubSearcher) SearchBranch(context.Context, search.BranchQuery) (search.BranchPage, error) {
+	return search.BranchPage{}, nil
 }
 
 func Test_NewServer(t *testing.T) {

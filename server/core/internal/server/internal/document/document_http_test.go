@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/guregu/null/v5"
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
@@ -34,6 +35,8 @@ var (
 	_documentID = xid.New()
 	_branchID   = xid.New()
 	_branchID2  = xid.New()
+
+	_dataSourceID = xid.New()
 )
 
 // fakePublisher captures published notifications.
@@ -1166,6 +1169,284 @@ func Test_Handler_UpdateDocumentTree(t *testing.T) {
 }
 
 func Test_Handler_SearchDocuments(t *testing.T) {
+	updatedAt := time.Date(2026, 10, 4, 9, 12, 41, 0, time.UTC)
+
+	doc := documentCore.Document{
+		ID:             _documentID,
+		OrganizationID: "org1",
+		BranchID:       _branchID,
+		BranchName:     documentCore.DefaultBranch,
+		DocumentName:   "Shipments",
+		Icon:           "truck",
+		Default:        true,
+		UpdatedAt:      updatedAt,
+		LastUpdatedBy:  null.StringFrom("u2"),
+	}
+
+	docJSON := `{
+		"id": "` + _documentID.String() + `",
+		"title": "Shipments",
+		"titleHtml": null,
+		"icon": "truck",
+		"branch": {"id": "` + _branchID.String() + `", "name": "main", "default": true},
+		"updatedAt": "2026-10-04T09:12:41Z",
+		"updatedBy": "u2"
+	}`
+
+	chart := search.Block{
+		ID:       _branchID.String() + "-m1",
+		BranchID: _branchID,
+		Type:     "metricBlock",
+		Text:     "<mark>Shipments</mark> per minute",
+		Attrs: map[string]string{
+			"dataSourceId":      _dataSourceID.String(),
+			"visualizationType": "timeseries",
+		},
+	}
+
+	// stubSearcher answers every search with the page or the error.
+	stubSearcher := func(page search.GroupPage, err error) *SearcherMock {
+		return &SearcherMock{
+			SearchGroupsFunc: func(context.Context, search.GroupQuery) (search.GroupPage, error) {
+				return page, err
+			},
+		}
+	}
+
+	paragraphPage := search.GroupPage{
+		Groups: []search.Group{
+			{
+				DocumentID: _documentID,
+				BranchID:   _branchID,
+				Hits: []search.Block{
+					{
+						ID:       _branchID.String() + "-p1",
+						BranchID: _branchID,
+						Type:     "paragraph",
+						Text:     "<mark>shipment</mark> events",
+					},
+				},
+				TotalHits:     4,
+				NextHitsToken: null.StringFrom("more"),
+			},
+		},
+		TotalHits:      1,
+		TotalDocuments: 1,
+		NextPageToken:  null.StringFrom("next"),
+	}
+
+	chartPage := search.GroupPage{
+		Groups: []search.Group{
+			{
+				DocumentID: _documentID,
+				BranchID:   _branchID,
+				Hits:       []search.Block{chart},
+				TotalHits:  1,
+			},
+		},
+		TotalHits:      1,
+		TotalDocuments: 1,
+	}
+
+	// stubDocs answers the branch lookup with the stored document.
+	stubDocs := func(context.Context, []xid.ID, string) ([]documentCore.Document, error) {
+		return []documentCore.Document{doc}, nil
+	}
+
+	cc := map[string]struct {
+		DB        *DBMock
+		Searcher  *SearcherMock
+		NoSession bool
+		Query     string
+		RespCode  int
+		RespJSON  string
+		Check     func(*testing.T, *DBMock, *SearcherMock)
+	}{
+		"No session in context": {
+			DB:        &DBMock{},
+			Searcher:  &SearcherMock{},
+			NoSession: true,
+			Query:     "?q=shipment",
+			RespCode:  http.StatusUnauthorized,
+		},
+		"Invalid limit": {
+			DB:       &DBMock{},
+			Searcher: &SearcherMock{},
+			Query:    "?q=shipment&limit=abc",
+			RespCode: http.StatusBadRequest,
+		},
+		"Invalid current document id": {
+			DB:       &DBMock{},
+			Searcher: &SearcherMock{},
+			Query:    "?q=shipment&currentDocId=nope",
+			RespCode: http.StatusBadRequest,
+		},
+		"Empty current document id": {
+			DB:       &DBMock{},
+			Searcher: &SearcherMock{},
+			Query:    "?q=shipment&currentDocId=",
+			RespCode: http.StatusBadRequest,
+		},
+		"Error returned by DB.FetchRecentlyViewedDocuments": {
+			DB: &DBMock{
+				FetchRecentlyViewedDocumentsFunc: func(context.Context, string, string, int) ([]documentCore.Document, error) {
+					return nil, assert.AnError
+				},
+			},
+			Searcher: &SearcherMock{},
+			RespCode: http.StatusInternalServerError,
+		},
+		"Successful listing of recent documents": {
+			DB: &DBMock{
+				FetchRecentlyViewedDocumentsFunc: func(context.Context, string, string, int) ([]documentCore.Document, error) {
+					return []documentCore.Document{doc}, nil
+				},
+			},
+			Searcher: &SearcherMock{},
+			Query:    "?limit=5",
+			RespCode: http.StatusOK,
+			RespJSON: `{
+				"total": {"hits": 0, "documents": 1, "capped": false},
+				"nextToken": null,
+				"results": [{"document": ` + docJSON + `, "hits": [], "totalHits": 0, "nextHitsToken": null}]
+			}`,
+			Check: func(t *testing.T, db *DBMock, searcher *SearcherMock) {
+				t.Helper()
+
+				ff := db.FetchRecentlyViewedDocumentsCalls()
+				require.Len(t, ff, 1)
+				assert.Equal(t, "u1", ff[0].UserID)
+				assert.Equal(t, "org1", ff[0].OrganizationID)
+				assert.Equal(t, 5, ff[0].Limit)
+				assert.Empty(t, searcher.SearchGroupsCalls())
+			},
+		},
+		"Error returned by Searcher.SearchGroups": {
+			DB:       &DBMock{},
+			Searcher: stubSearcher(search.GroupPage{}, assert.AnError),
+			Query:    "?q=shipment",
+			RespCode: http.StatusInternalServerError,
+		},
+		"Invalid page token": {
+			DB:       &DBMock{},
+			Searcher: stubSearcher(search.GroupPage{}, search.ErrInvalidPageToken),
+			Query:    "?q=shipment&nextToken=nope",
+			RespCode: http.StatusBadRequest,
+		},
+		"Error returned by DB.FetchDocumentsByBranchIDs": {
+			DB: &DBMock{
+				FetchDocumentsByBranchIDsFunc: func(context.Context, []xid.ID, string) ([]documentCore.Document, error) {
+					return nil, assert.AnError
+				},
+			},
+			Searcher: stubSearcher(paragraphPage, nil),
+			Query:    "?q=shipment",
+			RespCode: http.StatusInternalServerError,
+		},
+		"Successful search": {
+			DB: &DBMock{
+				FetchDocumentsByBranchIDsFunc: stubDocs,
+			},
+			Searcher: stubSearcher(paragraphPage, nil),
+			Query:    "?q=shipment&limit=500&hitsLimit=5&currentDocId=" + _documentID.String() + "&nextToken=token",
+			RespCode: http.StatusOK,
+			RespJSON: `{
+				"total": {"hits": 1, "documents": 1, "capped": false},
+				"nextToken": "next",
+				"results": [{
+					"document": ` + docJSON + `,
+					"hits": [{"id": "p1", "type": "paragraph", "text": "<mark>shipment</mark> events"}],
+					"totalHits": 4,
+					"nextHitsToken": "more"
+				}]
+			}`,
+			Check: func(t *testing.T, db *DBMock, searcher *SearcherMock) {
+				t.Helper()
+
+				sf := searcher.SearchGroupsCalls()
+				require.Len(t, sf, 1)
+				assert.Equal(t, search.GroupQuery{
+					OrganizationID:    "org1",
+					Query:             "shipment",
+					CurrentDocumentID: null.ValueFrom(_documentID),
+					Limit:             search.GroupLimitMax,
+					HitsLimit:         5,
+					PageToken:         "token",
+				}, sf[0].Gq)
+
+				df := db.FetchDocumentsByBranchIDsCalls()
+				require.Len(t, df, 1)
+				assert.Equal(t, []xid.ID{_branchID}, df[0].BranchIDs)
+				assert.Equal(t, "org1", df[0].OrganizationID)
+			},
+		},
+		"Successful search with charts": {
+			DB: &DBMock{
+				FetchDocumentsByBranchIDsFunc: stubDocs,
+			},
+			Searcher: stubSearcher(chartPage, nil),
+			Query:    "?q=shipment",
+			RespCode: http.StatusOK,
+			RespJSON: `{
+				"total": {"hits": 1, "documents": 1, "capped": false},
+				"nextToken": null,
+				"results": [{
+					"document": ` + docJSON + `,
+					"hits": [{
+						"id": "m1",
+						"type": "metricBlock",
+						"text": "<mark>Shipments</mark> per minute",
+						"attrs": {"dataSourceId": "` + _dataSourceID.String() + `", "visualizationType": "timeseries"}
+					}],
+					"totalHits": 1,
+					"nextHitsToken": null
+				}]
+			}`,
+			Check: func(t *testing.T, _ *DBMock, searcher *SearcherMock) {
+				t.Helper()
+
+				sf := searcher.SearchGroupsCalls()
+				require.Len(t, sf, 1)
+				assert.False(t, sf[0].Gq.CurrentDocumentID.Valid)
+				assert.Equal(t, search.GroupLimitDefault, sf[0].Gq.Limit)
+			},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			hdl, _ := newTestHandler(c.DB, &fakePublisher{})
+			hdl.searcher = c.Searcher
+
+			req := httptest.NewRequest(http.MethodGet, "http://test.com/"+c.Query, http.NoBody)
+
+			if !c.NoSession {
+				req = req.WithContext(auth.AddSessionToContext(req.Context(), auth.Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				}))
+			}
+
+			rec := httptest.NewRecorder()
+
+			hdl.SearchDocuments(rec, req)
+
+			assert.Equal(t, c.RespCode, rec.Code)
+
+			if c.RespJSON != "" {
+				assert.JSONEq(t, c.RespJSON, rec.Body.String())
+			}
+
+			if c.Check != nil {
+				c.Check(t, c.DB, c.Searcher)
+			}
+		})
+	}
+}
+
+func Test_Handler_SearchDocumentsLegacy(t *testing.T) {
 	cc := map[string]struct {
 		Searcher  *SearcherMock
 		NoSession bool
@@ -1226,7 +1507,7 @@ func Test_Handler_SearchDocuments(t *testing.T) {
 
 			rec := httptest.NewRecorder()
 
-			hdl.SearchDocuments(rec, req)
+			hdl.SearchDocumentsLegacy(rec, req)
 
 			assert.Equal(t, c.RespCode, rec.Code)
 

@@ -20,6 +20,15 @@ func stubScope() Scope {
 	}
 }
 
+func Test_Block_UID(t *testing.T) {
+	t.Parallel()
+
+	scope := stubScope()
+
+	assert.Equal(t, "p1", scope.Block("p1", "paragraph", "hello").UID())
+	assert.Equal(t, "other-p1", Block{ID: "other-p1", BranchID: scope.BranchID}.UID())
+}
+
 func Test_Scope_Block(t *testing.T) {
 	t.Parallel()
 

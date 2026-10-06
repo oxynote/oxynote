@@ -670,3 +670,60 @@ func (h *Handler) RecordDocumentBranchView(w http.ResponseWriter, r *http.Reques
 		http.StatusNoContent,
 	)
 }
+
+// SearchDocumentBranch handles the search for one page of the blocks
+// matching a query in one document branch.
+func (h *Handler) SearchDocumentBranch(w http.ResponseWriter, r *http.Request) {
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
+		return
+	}
+
+	var inp struct {
+		Query     string `schema:"q"`
+		Limit     int    `schema:"limit"`
+		NextToken string `schema:"nextToken"`
+	}
+
+	if err := httpserver.DecodeForm(r, &inp); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	id, err := httpserver.ExtractNamedID(r, "documentId")
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	branchID, err := httpserver.ExtractNamedID(r, "branchId")
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	doc, err := h.db.FetchDocumentByBranchID(r.Context(), branchID, session.ActiveOrganizationID)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if doc.ID != id {
+		httpserver.RespondError(h.log, w, ErrBranchMismatch)
+		return
+	}
+
+	page, err := h.searcher.SearchBranch(r.Context(), search.BranchQuery{
+		OrganizationID: session.ActiveOrganizationID,
+		BranchID:       branchID,
+		Query:          inp.Query,
+		Limit:          inp.Limit,
+		PageToken:      inp.NextToken,
+	})
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	httpserver.Respond(h.log, w, search.NewBranchResponse(page), http.StatusOK)
+}

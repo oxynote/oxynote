@@ -800,7 +800,7 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 			const results = [{ id: "b1", documentId: DOC_ID }]
 			const searchCalls = mockEndpoint(
 				"GET",
-				"/api/documents/search",
+				"/api/documents/search/legacy",
 				() => results,
 			)
 			const api = makeDocumentAPI()

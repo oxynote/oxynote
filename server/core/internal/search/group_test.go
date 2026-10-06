@@ -57,18 +57,6 @@ func Test_GroupPage_BranchIDs(t *testing.T) {
 	}.BranchIDs())
 }
 
-func Test_GroupPage_DataSourceIDs(t *testing.T) {
-	t.Parallel()
-
-	assert.Empty(t, GroupPage{}.DataSourceIDs())
-	assert.Equal(t, []string{"ds-1", "ds-2"}, GroupPage{
-		Groups: []Group{
-			{Hits: []Block{{Attrs: map[string]string{"dataSourceId": "ds-1"}}, {}, {Attrs: map[string]string{"dataSourceId": "ds-2"}}}},
-			{Hits: []Block{{Attrs: map[string]string{"dataSourceId": "ds-1"}}}},
-		},
-	}.DataSourceIDs())
-}
-
 func Test_Index_SearchGroups(t *testing.T) {
 	t.Parallel()
 
@@ -491,6 +479,8 @@ func Test_decodePageToken(t *testing.T) {
 		"Invalid base64":      {Token: "%%%", Err: ErrInvalidPageToken},
 		"Invalid JSON":        {Token: encode("nope"), Err: ErrInvalidPageToken},
 		"Negative offset":     {Token: encode(`{"o":-1,"f":"fp"}`), Err: ErrInvalidPageToken},
+		"Offset over the cap": {Token: encode(`{"o":9223372036854775800,"f":"fp"}`), Err: ErrInvalidPageToken},
+		"Offset at the cap":   {Token: encodePageToken(_maxPageOffset, "fp"), Result: _maxPageOffset},
 		"Another fingerprint": {Token: encode(`{"o":1,"f":"other"}`), Err: ErrInvalidPageToken},
 		"Valid token":         {Token: encodePageToken(30, "fp"), Result: 30},
 	}

@@ -1447,3 +1447,192 @@ func Test_Handler_RecordDocumentBranchView(t *testing.T) {
 		})
 	}
 }
+
+func Test_Handler_SearchDocumentBranch(t *testing.T) {
+	dataSourceID := xid.New()
+
+	chartPage := search.BranchPage{
+		Hits: []search.Block{
+			{
+				ID:       _branchID.String() + "-p1",
+				BranchID: _branchID,
+				Type:     "paragraph",
+				Text:     "<mark>lag</mark> grows",
+			},
+			{
+				ID:       _branchID.String() + "-m1",
+				BranchID: _branchID,
+				Type:     "metricBlock",
+				Text:     "<mark>Lag</mark>",
+				Attrs: map[string]string{
+					"dataSourceId":      dataSourceID.String(),
+					"visualizationType": "bar",
+				},
+			},
+		},
+		TotalHits:     7,
+		NextPageToken: null.StringFrom("next"),
+	}
+
+	// stubSearcher answers every branch search with the page or the error.
+	stubSearcher := func(page search.BranchPage, err error) *SearcherMock {
+		return &SearcherMock{
+			SearchBranchFunc: func(context.Context, search.BranchQuery) (search.BranchPage, error) {
+				return page, err
+			},
+		}
+	}
+
+	// stubBranch answers the branch lookup with a branch of the document.
+	stubBranch := func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+		return branchDoc(_branchID), nil
+	}
+
+	cc := map[string]struct {
+		DB         *DBMock
+		Searcher   *SearcherMock
+		NoSession  bool
+		OmitDoc    bool
+		OmitBranch bool
+		Query      string
+		RespCode   int
+		RespJSON   string
+		Check      func(*testing.T, *DBMock, *SearcherMock)
+	}{
+		"No session in context": {
+			DB:        &DBMock{},
+			Searcher:  &SearcherMock{},
+			NoSession: true,
+			RespCode:  http.StatusUnauthorized,
+		},
+		"Missing document ID parameter": {
+			DB:       &DBMock{},
+			Searcher: &SearcherMock{},
+			OmitDoc:  true,
+			RespCode: http.StatusNotFound,
+		},
+		"Missing branch ID parameter": {
+			DB:         &DBMock{},
+			Searcher:   &SearcherMock{},
+			OmitBranch: true,
+			RespCode:   http.StatusNotFound,
+		},
+		"Invalid limit": {
+			DB:       &DBMock{},
+			Searcher: &SearcherMock{},
+			Query:    "q=lag&limit=abc",
+			RespCode: http.StatusBadRequest,
+		},
+		"Error returned by DB.FetchDocumentByBranchID": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return nil, assert.AnError
+				},
+			},
+			Searcher: &SearcherMock{},
+			Query:    "q=lag",
+			RespCode: http.StatusInternalServerError,
+		},
+		"Branch of another document": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					doc := branchDoc(_branchID)
+					doc.ID = xid.New()
+
+					return doc, nil
+				},
+			},
+			Searcher: &SearcherMock{},
+			Query:    "q=lag",
+			RespCode: http.StatusNotFound,
+			Check: func(t *testing.T, _ *DBMock, searcher *SearcherMock) {
+				t.Helper()
+
+				assert.Empty(t, searcher.SearchBranchCalls())
+			},
+		},
+		"Error returned by Searcher.SearchBranch": {
+			DB:       &DBMock{FetchDocumentByBranchIDFunc: stubBranch},
+			Searcher: stubSearcher(search.BranchPage{}, assert.AnError),
+			Query:    "q=lag",
+			RespCode: http.StatusInternalServerError,
+		},
+		"Invalid query": {
+			DB:       &DBMock{FetchDocumentByBranchIDFunc: stubBranch},
+			Searcher: stubSearcher(search.BranchPage{}, search.ErrInvalidQuery),
+			RespCode: http.StatusBadRequest,
+		},
+		"Successful search": {
+			DB: &DBMock{FetchDocumentByBranchIDFunc: stubBranch},
+			Searcher: stubSearcher(search.BranchPage{
+				Hits:      []search.Block{chartPage.Hits[0]},
+				TotalHits: 1,
+			}, nil),
+			Query:    "q=lag&limit=5&nextToken=token",
+			RespCode: http.StatusOK,
+			RespJSON: `{
+				"totalHits": 1,
+				"nextToken": null,
+				"hits": [{"id": "p1", "type": "paragraph", "text": "<mark>lag</mark> grows"}]
+			}`,
+			Check: func(t *testing.T, _ *DBMock, searcher *SearcherMock) {
+				t.Helper()
+
+				sf := searcher.SearchBranchCalls()
+				require.Len(t, sf, 1)
+				assert.Equal(t, search.BranchQuery{
+					OrganizationID: "org1",
+					BranchID:       _branchID,
+					Query:          "lag",
+					Limit:          5,
+					PageToken:      "token",
+				}, sf[0].Bq)
+			},
+		},
+		"Successful search with charts": {
+			DB:       &DBMock{FetchDocumentByBranchIDFunc: stubBranch},
+			Searcher: stubSearcher(chartPage, nil),
+			Query:    "q=lag",
+			RespCode: http.StatusOK,
+			RespJSON: `{
+				"totalHits": 7,
+				"nextToken": "next",
+				"hits": [
+					{"id": "p1", "type": "paragraph", "text": "<mark>lag</mark> grows"},
+					{
+						"id": "m1",
+						"type": "metricBlock",
+						"text": "<mark>Lag</mark>",
+						"attrs": {"dataSourceId": "` + dataSourceID.String() + `", "visualizationType": "bar"}
+					}
+				]
+			}`,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			hdl, _ := newTestHandler(c.DB, &fakePublisher{})
+			hdl.searcher = c.Searcher
+
+			req := newRequest(http.MethodGet, "", c.NoSession, c.OmitDoc, c.OmitBranch)
+			req.URL.RawQuery = c.Query
+
+			rec := httptest.NewRecorder()
+
+			hdl.SearchDocumentBranch(rec, req)
+
+			assert.Equal(t, c.RespCode, rec.Code)
+
+			if c.RespJSON != "" {
+				assert.JSONEq(t, c.RespJSON, rec.Body.String())
+			}
+
+			if c.Check != nil {
+				c.Check(t, c.DB, c.Searcher)
+			}
+		})
+	}
+}

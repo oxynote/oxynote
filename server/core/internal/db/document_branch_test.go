@@ -550,6 +550,46 @@ func Test_agent_FetchDocumentByBranchID(t *testing.T) {
 	testutil.AssertFilterEqual(t, branch, res)
 }
 
+func Test_agent_FetchDocumentsByBranchIDs(t *testing.T) {
+	db := prepTempDB(t)
+
+	// error - cancelled context
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	res, err := db.FetchDocumentsByBranchIDs(ctx, []xid.ID{xid.New()}, "org")
+	require.Error(t, err)
+	assert.Nil(t, res)
+
+	// success - no ids
+	res, err = db.FetchDocumentsByBranchIDs(context.Background(), nil, "org")
+	require.NoError(t, err)
+	assert.Empty(t, res)
+	assert.NotNil(t, res)
+
+	// success - other organizations and unknown ids are left out
+	branches := prepDocumentBranches(t, db, 2, nil)
+	other := prepDocuments(t, db, 1, nil)[0]
+
+	res, err = db.FetchDocumentsByBranchIDs(
+		context.Background(),
+		[]xid.ID{
+			branches[0].BranchID,
+			branches[1].BranchID,
+			other.BranchID,
+			xid.New(),
+		},
+		branches[0].OrganizationID,
+	)
+	require.NoError(t, err)
+
+	slices.SortFunc(res, func(a, b document.Document) int {
+		return a.BranchID.Compare(b.BranchID)
+	})
+
+	testutil.AssertFilterEqual(t, []document.Document{*branches[0], *branches[1]}, res)
+}
+
 func Test_agent_FetchDocumentBranchesUnsafe(t *testing.T) {
 	db := prepTempDB(t)
 

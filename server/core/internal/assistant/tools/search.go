@@ -3,7 +3,6 @@ package tools
 import (
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/search"
@@ -141,7 +140,7 @@ func (searchDocuments) Execute(inp *input) (string, error) {
 		}
 
 		out.Documents[at].Hits = append(out.Documents[at].Hits, searchHit{
-			BlockUID: strings.TrimPrefix(b.ID, b.BranchID.String()+"-"),
+			BlockUID: b.UID(),
 			Text:     b.Text,
 		})
 	}

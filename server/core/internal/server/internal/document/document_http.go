@@ -498,8 +498,72 @@ func (h *Handler) FetchDocumentTree(w http.ResponseWriter, r *http.Request) {
 	)
 }
 
-// SearchDocuments handles the search for documents matching a query.
+// SearchDocuments handles the search for document branches matching a
+// query, one page at a time. An empty query lists the branches the user
+// viewed most recently instead.
 func (h *Handler) SearchDocuments(w http.ResponseWriter, r *http.Request) {
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
+		return
+	}
+
+	var inp struct {
+		Query             string `schema:"q"`
+		Limit             int    `schema:"limit"`
+		HitsLimit         int    `schema:"hitsLimit"`
+		CurrentDocumentID xid.ID `schema:"currentDocId"`
+		NextToken         string `schema:"nextToken"`
+	}
+
+	if err := httpserver.DecodeForm(r, &inp); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	limit := search.GroupLimit(inp.Limit)
+
+	if inp.Query == "" {
+		docs, err := h.db.FetchRecentlyViewedDocuments(r.Context(), session.UserID, session.ActiveOrganizationID, limit)
+		if err != nil {
+			httpserver.RespondError(h.log, w, err)
+			return
+		}
+
+		httpserver.Respond(h.log, w, search.NewRecentResponse(docs), http.StatusOK)
+
+		return
+	}
+
+	gq := search.GroupQuery{
+		OrganizationID: session.ActiveOrganizationID,
+		Query:          inp.Query,
+		Limit:          limit,
+		HitsLimit:      inp.HitsLimit,
+		PageToken:      inp.NextToken,
+	}
+
+	if !inp.CurrentDocumentID.IsZero() {
+		gq.CurrentDocumentID = null.ValueFrom(inp.CurrentDocumentID)
+	}
+
+	page, err := h.searcher.SearchGroups(r.Context(), gq)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	docs, err := h.db.FetchDocumentsByBranchIDs(r.Context(), page.BranchIDs(), session.ActiveOrganizationID)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	httpserver.Respond(h.log, w, search.NewResponse(page, docs), http.StatusOK)
+}
+
+// SearchDocumentsLegacy handles the search for blocks matching a query,
+// answered as a flat list.
+func (h *Handler) SearchDocumentsLegacy(w http.ResponseWriter, r *http.Request) {
 	session, ok := auth.RequireSession(h.log, w, r)
 	if !ok {
 		return
@@ -942,6 +1006,7 @@ type DBAgent interface {
 	ReviewersDBAgent
 	DocumentsDBAgent
 	BranchesDBAgent
+	BranchViewsDBAgent
 	TreeDBAgent
 	MaintainersDBAgent
 	FilesDBAgent
@@ -1043,6 +1108,14 @@ type BranchesDBAgent interface {
 	// tags the source branch carries.
 	ReplaceBranchTags(ctx context.Context, organizationID string, fromBranchID, toBranchID xid.ID) error
 
+	// FetchDocumentsByBranchIDs should fetch the documents joined against
+	// each of the given branches within the organization.
+	FetchDocumentsByBranchIDs(ctx context.Context, branchIDs []xid.ID, organizationID string) ([]documentCore.Document, error)
+}
+
+// BranchViewsDBAgent is an interface that handles communication with the
+// document branch views database.
+type BranchViewsDBAgent interface {
 	// UpsertDocumentBranchView should record that the user viewed the
 	// branch at the given time.
 	UpsertDocumentBranchView(
@@ -1052,6 +1125,10 @@ type BranchesDBAgent interface {
 		branchID xid.ID,
 		viewedAt time.Time,
 	) error
+
+	// FetchRecentlyViewedDocuments should fetch up to limit branches the
+	// user viewed in the organization, most recent first.
+	FetchRecentlyViewedDocuments(ctx context.Context, userID, organizationID string, limit int) ([]documentCore.Document, error)
 }
 
 // TreeDBAgent is an interface that handles communication with the document
@@ -1137,6 +1214,14 @@ type SearchTrigger interface {
 //
 //go:generate ../../../../scripts/codegen/mock -t internal Searcher searcher
 type Searcher interface {
-	// SearchDocuments should find the documents matching the query.
+	// SearchDocuments should find the blocks matching the query, as a
+	// flat JSON list.
 	SearchDocuments(ctx context.Context, organizationID, query string) ([]byte, error)
+
+	// SearchGroups should find one page of the branches matching the
+	// query.
+	SearchGroups(ctx context.Context, gq search.GroupQuery) (search.GroupPage, error)
+
+	// SearchBranch should find one page of the hits of one branch.
+	SearchBranch(ctx context.Context, bq search.BranchQuery) (search.BranchPage, error)
 }

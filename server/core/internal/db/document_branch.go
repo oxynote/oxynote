@@ -160,6 +160,30 @@ func (a *agent) FetchDocumentByBranchID(ctx context.Context, branchID xid.ID, or
 	return doc, nil
 }
 
+// FetchDocumentsByBranchIDs fetches the documents joined against each of
+// the given branches within the organization. A branch that does not exist
+// there is left out, and the order is unspecified.
+func (a *agent) FetchDocumentsByBranchIDs(ctx context.Context, branchIDs []xid.ID, organizationID string) ([]document.Document, error) {
+	docs := []document.Document{}
+
+	if len(branchIDs) == 0 {
+		return docs, nil
+	}
+
+	q, args := a.selectDocumentBranch(a.builder.Select()).
+		Where(sq.Eq{
+			"db.id":                        branchIDs,
+			"documents.fk_organization_id": organizationID,
+		}).
+		MustSql()
+
+	if err := sqlx.SelectContext(ctx, a.sql, &docs, q, args...); err != nil {
+		return nil, err
+	}
+
+	return docs, nil
+}
+
 // FetchDocumentBranchesUnsafe fetches all branches for a document as lightweight
 // summaries without checking organization ownership.
 // This is intended only for internal system use cases.

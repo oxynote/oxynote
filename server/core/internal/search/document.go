@@ -87,6 +87,12 @@ func (b Block) record() record {
 	}
 }
 
+// UID returns the uid of the block within its branch, the entry id without
+// the branch prefix Scope.Block adds.
+func (b Block) UID() string {
+	return strings.TrimPrefix(b.ID, b.BranchID.String()+"-")
+}
+
 // Scope is the branch every block of one indexing pass belongs to.
 type Scope struct {
 	// OrganizationID is the organization owning the document.

@@ -46,7 +46,7 @@ function seedTree() {
 }
 
 function mockSearch(results: unknown) {
-	return mockEndpoint("GET", "/api/documents/search", () => results)
+	return mockEndpoint("GET", "/api/documents/search/legacy", () => results)
 }
 
 function mountModal() {
@@ -282,7 +282,7 @@ describe("<SearchModal>", { concurrent: false }, () => {
 	it("keeps the result list empty when the search fails", async ({
 		expect,
 	}) => {
-		mockEndpoint("GET", "/api/documents/search", () => {
+		mockEndpoint("GET", "/api/documents/search/legacy", () => {
 			throw createError({ statusCode: 500 })
 		})
 		await mountModal()
