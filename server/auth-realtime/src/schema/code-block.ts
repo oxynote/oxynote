@@ -11,7 +11,7 @@ export const CodeBlockTitle = Node.create({
 	name: "codeBlockTitle",
 	content: "text*",
 	marks: `${CommentMark.name} ${AddedMark.name} ${DeletedMark.name}`,
-	group: "block",
+	group: "codeBlockTitle",
 	selectable: true,
 	defining: true,
 	isolating: true,
@@ -93,7 +93,7 @@ export const CodeBlock = CodeBlockLowlight.extend<CodeBlockOptions>({
 
 export const TitledCodeBlock = Node.create({
 	name: "titledCodeBlock",
-	group: "block",
+	group: "titledCodeBlock",
 	content: `${CodeBlockTitle.name} ${CodeBlock.name}`,
 	defining: true,
 	isolating: true,

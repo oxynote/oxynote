@@ -312,8 +312,8 @@ describe("useAIChat", { concurrent: false }, () => {
 				type: ServerMessageType.ConfirmRequest,
 				turnId: "t1",
 				actions: [
-					{ tool: "insert_block", summary: "Insert a callout" },
-					{ tool: "update_block_text", summary: "Reword the intro" },
+					{ tool: "insert_blocks", summary: "Insert a callout" },
+					{ tool: "replace_blocks", summary: "Reword the intro" },
 				],
 			})
 

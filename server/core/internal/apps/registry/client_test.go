@@ -81,7 +81,6 @@ func Test_Digest(t *testing.T) {
 		Authorization string
 		Reference     string
 		Path          string
-		Opts          []DigestOption
 		ExpectedErr   string
 		ErrContains   string
 	}{
@@ -98,26 +97,8 @@ func Test_Digest(t *testing.T) {
 			Path:        "/test/other:v1",
 			ExpectedErr: ErrNotFound.Error(),
 		},
-		"Basic auth credentials are attached": {
-			Authorization: basicAuthorization,
-			Opts:          []DigestOption{WithBasicAuth("user", "pass")},
-		},
-		"Bearer token is attached": {
-			Authorization: "Bearer tok-1",
-			Opts:          []DigestOption{WithBearerToken("tok-1")},
-		},
 		"Missing credentials map to ErrUnauthorized": {
 			Authorization: basicAuthorization,
-			ExpectedErr:   ErrUnauthorized.Error(),
-		},
-		"Wrong credentials map to ErrUnauthorized": {
-			Authorization: basicAuthorization,
-			Opts:          []DigestOption{WithBasicAuth("user", "wrong")},
-			ExpectedErr:   ErrUnauthorized.Error(),
-		},
-		"Basic auth without password falls back to anonymous": {
-			Authorization: basicAuthorization,
-			Opts:          []DigestOption{WithBasicAuth("user", "")},
 			ExpectedErr:   ErrUnauthorized.Error(),
 		},
 	}
@@ -138,7 +119,7 @@ func Test_Digest(t *testing.T) {
 				reference = host + path
 			}
 
-			digest, err := Digest(context.Background(), reference, tc.Opts...)
+			digest, err := Digest(context.Background(), reference)
 
 			if tc.ErrContains != "" {
 				require.Error(t, err)

@@ -16,17 +16,11 @@ import (
 // surfaced to callers.
 const _maxErrorPreviewBytes = 1024
 
-// Result is the outcome of an Apply call. Applied counts the
-// operations Node committed to the Y.Doc; Errors lists per-op
-// failures (e.g. uid not found, malformed block). A partial-success
-// response has Applied < len(ops) and at least one entry in Errors.
+// Result is the outcome of an Apply call. A batch applies whole or not
+// at all: Errors is empty only when every operation landed.
 type Result struct {
-	// Applied is the number of operations the Node side committed
-	// to the live Y.Doc.
-	Applied int `json:"applied"`
-
-	// Errors contains one entry per failed operation, in input
-	// order. An empty slice means every operation succeeded.
+	// Errors holds the operation that failed, if any. The batch stops
+	// at the first failure.
 	Errors []OpError `json:"errors"`
 }
 
@@ -57,7 +51,7 @@ func NewClient(httpClient *http.Client, baseURL string) *Client {
 }
 
 // Apply submits the given operations to the Node service for the
-// (documentID, branchID) document and returns the per-op outcome.
+// (documentID, branchID) document and returns the outcome.
 //
 // A system batch is one core originated rather than a person: its persist
 // is allowed onto a protected branch, where the writes an editor or the
@@ -65,11 +59,11 @@ func NewClient(httpClient *http.Client, baseURL string) *Client {
 // pass true — nothing reachable from a prompt may. The userID is the
 // person an ordinary batch is made for, and its persist credits them. It
 // is empty for a system batch.
-// Any transport-level failure (bad status, malformed response,
-// canonical expansion error) is returned as an error and no
-// operations are considered applied; failures of individual
-// operations within an otherwise successful HTTP response are
-// surfaced via Result.Errors.
+// Any transport-level failure (bad status, malformed response) is
+// returned as an error and no
+// operations are considered applied; an operation the service
+// refused within an otherwise successful HTTP response is surfaced
+// via Result.Errors.
 func (c *Client) Apply(
 	ctx context.Context,
 	documentID, branchID xid.ID,
@@ -81,22 +75,11 @@ func (c *Client) Apply(
 		return Result{}, nil
 	}
 
-	wires := make([]wireOp, 0, len(ops))
-
-	for i, op := range ops {
-		w, err := op()
-		if err != nil {
-			return Result{}, fmt.Errorf("operation %d: %w", i, err)
-		}
-
-		wires = append(wires, w)
-	}
-
 	body, err := json.Marshal(struct {
-		Operations []wireOp `json:"operations"`
-		UserID     string   `json:"userId,omitempty"`
-		System     bool     `json:"system"`
-	}{Operations: wires, UserID: userID, System: system})
+		Operations []Operation `json:"operations"`
+		UserID     string      `json:"userId,omitempty"`
+		System     bool        `json:"system"`
+	}{Operations: ops, UserID: userID, System: system})
 	if err != nil {
 		return Result{}, fmt.Errorf("marshaling operations: %w", err)
 	}

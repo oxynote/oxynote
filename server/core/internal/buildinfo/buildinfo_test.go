@@ -52,23 +52,6 @@ func Test_parseBuildValues(t *testing.T) {
 	}
 }
 
-func Test_BuildInfo_String(t *testing.T) {
-	t.Parallel()
-
-	b := BuildInfo{
-		Name:      "oxynote_core",
-		Version:   semver.MustParse("1.2.3"),
-		Commit:    "abc1234",
-		Timestamp: time.Date(2021, 1, 2, 3, 4, 0, 0, time.UTC),
-	}
-
-	assert.Equal(
-		t,
-		"oxynote_core 1.2.3 (abc1234; 2021-01-02 03:04 UTC)",
-		b.String(),
-	)
-}
-
 func Test_BuildInfo_VersionName(t *testing.T) {
 	cc := map[string]struct {
 		Version semver.Version

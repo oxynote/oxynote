@@ -5,7 +5,6 @@ import (
 
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // paragraph is the block every operation that carries one is built with,
@@ -18,168 +17,80 @@ func paragraph() document.Block {
 	}
 }
 
-// wire runs the operation and returns the wire form it produced.
-func wire(t *testing.T, op Operation) wireOp {
-	t.Helper()
-
-	w, err := op()
-	require.NoError(t, err)
-
-	return w
-}
-
 func Test_InsertAfter(t *testing.T) {
 	t.Parallel()
 
-	w := wire(t, InsertAfter("ref-uid", paragraph()))
+	b := paragraph()
 
-	assert.Equal(t, "insert", w.Kind)
-	assert.Equal(t, "after", w.Position)
-	assert.Equal(t, "ref-uid", w.ReferenceUID)
-	require.NotNil(t, w.Block)
-	assert.Equal(t, document.BlockNodeParagraph, w.Block.Type)
+	// the block ships as handed over, uids included, so what the caller
+	// reported is what lands.
+	assert.Equal(t, Operation{Kind: "insert", Position: "after", ReferenceUID: "ref", Block: &b}, InsertAfter("ref", paragraph()))
 }
 
 func Test_InsertBefore(t *testing.T) {
 	t.Parallel()
 
-	w := wire(t, InsertBefore("ref", paragraph()))
+	b := paragraph()
 
-	assert.Equal(t, "insert", w.Kind)
-	assert.Equal(t, "before", w.Position)
-	assert.Equal(t, "ref", w.ReferenceUID)
-}
-
-func Test_insert(t *testing.T) {
-	t.Parallel()
-
-	w := wire(t, insert("before", "ref-uid", paragraph()))
-
-	assert.Equal(t, "insert", w.Kind)
-	assert.Equal(t, "before", w.Position)
-	assert.Equal(t, "ref-uid", w.ReferenceUID)
-	require.NotNil(t, w.Block)
-	assert.Equal(t, document.BlockNodeParagraph, w.Block.Type)
-
-	// the block ships as handed over, uids included, so what the caller
-	// reported is what lands.
-	uid, ok := w.Block.UID()
-	require.True(t, ok)
-	assert.Equal(t, "p", uid)
+	assert.Equal(t, Operation{Kind: "insert", Position: "before", ReferenceUID: "ref", Block: &b}, InsertBefore("ref", paragraph()))
 }
 
 func Test_Append(t *testing.T) {
 	t.Parallel()
 
-	w := wire(t, Append(paragraph()))
+	b := paragraph()
 
-	assert.Equal(t, "append", w.Kind)
-	assert.Empty(t, w.Position)
-	assert.Empty(t, w.ReferenceUID)
-	require.NotNil(t, w.Block)
+	assert.Equal(t, Operation{Kind: "append", Block: &b}, Append(paragraph()))
 }
 
 func Test_Prepend(t *testing.T) {
 	t.Parallel()
 
-	w := wire(t, Prepend(paragraph()))
+	b := paragraph()
 
-	assert.Equal(t, "prepend", w.Kind)
-	require.NotNil(t, w.Block)
+	assert.Equal(t, Operation{Kind: "prepend", Block: &b}, Prepend(paragraph()))
 }
 
 func Test_Replace(t *testing.T) {
 	t.Parallel()
 
-	w := wire(t, Replace("target", paragraph()))
+	b := paragraph()
 
-	assert.Equal(t, "replace", w.Kind)
-	assert.Equal(t, "target", w.BlockUID)
-	require.NotNil(t, w.Block)
-}
-
-func Test_UpdateText(t *testing.T) {
-	t.Parallel()
-
-	content := []document.Block{{Type: document.BlockNodeText, Text: "my_var"}}
-
-	w := wire(t, UpdateText("target", content))
-
-	assert.Equal(t, "update_text", w.Kind)
-	assert.Equal(t, "target", w.BlockUID)
-	assert.Nil(t, w.Block)
-	assert.Equal(t, content, w.Content)
+	assert.Equal(t, Operation{Kind: "replace", BlockUID: "target", Block: &b}, Replace("target", paragraph()))
 }
 
 func Test_UpdateAttrs(t *testing.T) {
 	t.Parallel()
 
-	w := wire(t, UpdateAttrs("target", map[string]any{"level": 3}))
-
-	assert.Equal(t, "update_attrs", w.Kind)
-	assert.Equal(t, "target", w.BlockUID)
-	assert.Equal(t, 3, w.Attrs["level"])
+	assert.Equal(t, Operation{Kind: "update_attrs", BlockUID: "target", Attrs: map[string]any{"level": 3}}, UpdateAttrs("target", map[string]any{"level": 3}))
 }
 
 func Test_Delete(t *testing.T) {
 	t.Parallel()
 
-	w := wire(t, Delete("target"))
-
-	assert.Equal(t, "delete", w.Kind)
-	assert.Equal(t, "target", w.BlockUID)
-	assert.Nil(t, w.Block)
+	assert.Equal(t, Operation{Kind: "delete", BlockUID: "target"}, Delete("target"))
 }
 
 func Test_MoveAfter(t *testing.T) {
 	t.Parallel()
 
-	w := wire(t, MoveAfter("target", "ref-uid"))
-
-	assert.Equal(t, "move", w.Kind)
-	assert.Equal(t, "after", w.Position)
-	assert.Equal(t, "target", w.BlockUID)
-	assert.Equal(t, "ref-uid", w.ReferenceUID)
-	assert.Nil(t, w.Block)
+	assert.Equal(t, Operation{Kind: "move", Position: "after", BlockUID: "target", ReferenceUID: "ref"}, MoveAfter("target", "ref"))
 }
 
 func Test_MoveBefore(t *testing.T) {
 	t.Parallel()
 
-	w := wire(t, MoveBefore("target", "ref-uid"))
-
-	assert.Equal(t, "move", w.Kind)
-	assert.Equal(t, "before", w.Position)
-	assert.Equal(t, "target", w.BlockUID)
-	assert.Equal(t, "ref-uid", w.ReferenceUID)
-}
-
-func Test_move(t *testing.T) {
-	t.Parallel()
-
-	w := wire(t, move("before", "target", "ref-uid"))
-
-	assert.Equal(t, "move", w.Kind)
-	assert.Equal(t, "before", w.Position)
-	assert.Equal(t, "target", w.BlockUID)
-	assert.Equal(t, "ref-uid", w.ReferenceUID)
-	assert.Nil(t, w.Block)
+	assert.Equal(t, Operation{Kind: "move", Position: "before", BlockUID: "target", ReferenceUID: "ref"}, MoveBefore("target", "ref"))
 }
 
 func Test_SetName(t *testing.T) {
 	t.Parallel()
 
-	w := wire(t, SetName("New title"))
-
-	assert.Equal(t, "set_name", w.Kind)
-	assert.Equal(t, "New title", w.Name)
+	assert.Equal(t, Operation{Kind: "set_name", Name: "New title"}, SetName("New title"))
 }
 
 func Test_SetIcon(t *testing.T) {
 	t.Parallel()
 
-	w := wire(t, SetIcon("lucide:file-text"))
-
-	assert.Equal(t, "set_icon", w.Kind)
-	assert.Equal(t, "lucide:file-text", w.Icon)
+	assert.Equal(t, Operation{Kind: "set_icon", Icon: "lucide:file-text"}, SetIcon("lucide:file-text"))
 }

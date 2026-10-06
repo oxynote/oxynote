@@ -8,6 +8,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
+	"github.com/prometheus/common/model"
 	"github.com/rs/xid"
 )
 
@@ -15,6 +16,27 @@ import (
 // model names neither end of the range. An hour is what the metric
 // block's own default preset covers.
 const _defaultQueryWindow = time.Hour
+
+// Caps on a raw query answer. A chart check describes any answer in a
+// few lines; the raw data is for reading values, and past these sizes
+// it costs more than it tells.
+const (
+	// _maxRawSeries caps the series of a raw Prometheus answer.
+	_maxRawSeries = 20
+
+	// _maxRawPoints caps the points of each series in a raw Prometheus
+	// answer, keeping the latest.
+	_maxRawPoints = 100
+
+	// _maxRawRows caps the rows of a raw SQL answer.
+	_maxRawRows = 200
+)
+
+// _maxPreviewSeries caps how many series a chart check describes. A
+// query behind a metric block draws a handful; one answering with more
+// is already the wrong query, and listing them all would cost more than
+// the check saves.
+const _maxPreviewSeries = 10
 
 // errUnknownDataSource is what a lookup reports for an id that names
 // nothing in the session's organisation. Another organisation's id
@@ -25,6 +47,12 @@ var errUnknownDataSource = errors.New("no data source with that id in this organ
 // errInvertedTimeRange reports a range whose start falls after its end,
 // once either absent end has been defaulted.
 var errInvertedTimeRange = errors.New("'from' is after 'to'; the range start must be the earlier timestamp")
+
+// _timeRangeProps are the from and to arguments every ranged read takes.
+var _timeRangeProps = map[string]any{
+	"from": map[string]any{"type": "string", "description": _fromDescription},
+	"to":   map[string]any{"type": "string", "description": _toDescription},
+}
 
 // timeRangeArgs is the range every data-source read can be narrowed
 // with. Both ends are optional: the tools serve a model that usually
@@ -83,38 +111,24 @@ type dataSourcesResult struct {
 	DataSources []dataSourceInfo `json:"data_sources"`
 }
 
-// sqlQueryLabelsResult is what get_sql_query_labels returns.
-type sqlQueryLabelsResult struct {
-	// Labels maps each string column the query returned to an example
-	// value from its first row.
-	Labels map[string]string `json:"labels"`
-}
-
 // listDataSources lists the organisation's data sources.
-type listDataSources struct {
-	plainSummary
-	plainTitle
-}
+type listDataSources struct{}
 
 // Info returns the tool's model-facing description.
 func (listDataSources) Info() Info {
 	return Info{
 		Name:        NameListDataSources,
-		Description: "List the organisation's data sources. Returns id, name, type (prometheus, postgresql, mariadb, mysql) and connection status. Start here: every other data-source tool takes an id from this list, and the type decides which of them serves it.",
+		Traits:      Traits{DataSource: true},
+		Description: "List the organisation's data sources as {id, name, type, status}. type (prometheus, postgresql, mariadb or mysql) decides the query language and which tools serve it. Start here: the other data source tools take an id from this list.",
 		Properties:  map[string]any{},
 	}
 }
 
-// Traits reports a plain read.
-func (listDataSources) Traits() Traits {
-	return Traits{DataSource: true}
-}
-
 // Execute lists the data sources the organisation owns.
-func (listDataSources) Execute(inp Input) (string, error) {
+func (listDataSources) Execute(inp *input) (string, error) {
 	sources, err := inp.FetchDataSources()
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameListDataSources, err)
+		return "", err
 	}
 
 	out := make([]dataSourceInfo, 0, len(sources))
@@ -133,15 +147,14 @@ func (listDataSources) Execute(inp Input) (string, error) {
 	})
 }
 
-// getPrometheusMetadataArgs is what get_prometheus_metadata is called
-// with.
-type getPrometheusMetadataArgs struct {
-	// DataSourceID names the Prometheus data source.
+// dataSourceArgs is what get_data_source_metadata is called with.
+type dataSourceArgs struct {
+	// DataSourceID names the data source.
 	DataSourceID xid.ID `json:"data_source_id"`
 }
 
 // Validate checks the arguments are complete.
-func (a getPrometheusMetadataArgs) Validate() error {
+func (a dataSourceArgs) Validate() error {
 	if a.DataSourceID.IsNil() {
 		return errRequired("data_source_id")
 	}
@@ -149,46 +162,41 @@ func (a getPrometheusMetadataArgs) Validate() error {
 	return nil
 }
 
-// getPrometheusMetadata lists the metrics a Prometheus data source
-// exposes.
-type getPrometheusMetadata struct {
-	plainSummary
-}
+// getDataSourceMetadata describes what a data source holds: the metrics
+// of a Prometheus one, the tables and columns of a SQL one.
+type getDataSourceMetadata struct{}
 
 // Info returns the tool's model-facing description.
-func (getPrometheusMetadata) Info() Info {
+func (getDataSourceMetadata) Info() Info {
 	return Info{
-		Name:        NameGetPrometheusMetadata,
-		Description: "List the metrics a Prometheus data source exposes, with each metric's type, help text and unit. Use it to find the metric names to write a PromQL query against instead of guessing them.",
-		Properties:  map[string]any{"data_source_id": map[string]any{"type": "string", "description": "The data source id, from list_data_sources."}},
+		Name:        NameGetDataSourceMetadata,
+		Traits:      Traits{DataSource: true},
+		Description: "Describe what a data source holds: for Prometheus, each metric with its type, help and unit; for SQL, {default_schema, tables: {table: [columns]}}. Read it before writing a query, so the names in it are real ones.",
+		Properties:  map[string]any{"data_source_id": map[string]any{"type": "string", "description": _dataSourceIDDescription}},
 		Required:    []string{"data_source_id"},
 	}
 }
 
-// Traits reports a plain read.
-func (getPrometheusMetadata) Traits() Traits {
-	return Traits{DataSource: true}
-}
-
 // Title announces the data source being read.
-func (getPrometheusMetadata) Title(inp DescribeInput) (string, error) {
-	var in getPrometheusMetadataArgs
+func (getDataSourceMetadata) Title(inp DescribeInput) string {
+	var in dataSourceArgs
 
 	if err := inp.Decode(&in); err != nil {
-		return "", err
+		return ""
 	}
 
 	ds, err := inp.FetchDataSource(in.DataSourceID)
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameGetPrometheusMetadata, err)
+		return ""
 	}
 
-	return fmt.Sprintf("Reading metric metadata of %q", ds.Name), nil
+	return fmt.Sprintf("Reading what %q holds", ds.Name)
 }
 
-// Execute fetches the data source's metric metadata.
-func (getPrometheusMetadata) Execute(inp Input) (string, error) {
-	var in getPrometheusMetadataArgs
+// Execute fetches the metadata of whichever kind of data source the id
+// names.
+func (getDataSourceMetadata) Execute(inp *input) (string, error) {
+	var in dataSourceArgs
 
 	if err := inp.Decode(&in); err != nil {
 		return "", err
@@ -196,36 +204,78 @@ func (getPrometheusMetadata) Execute(inp Input) (string, error) {
 
 	runner, err := inp.DataSourceRunner(in.DataSourceID)
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameGetPrometheusMetadata, err)
+		return "", err
 	}
 
-	prom, err := runner.Prometheus(inp.Context())
+	if runner.Type() == datasource.TypePrometheus {
+		prom, perr := runner.Prometheus(inp.Context())
+		if perr != nil {
+			return "", perr
+		}
+
+		res, merr := prom.Metadata(inp.Context())
+		if merr != nil {
+			return "", merr
+		}
+
+		return result(res)
+	}
+
+	sql, err := runner.SQL(inp.Context())
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameGetPrometheusMetadata, err)
+		return "", err
 	}
 
-	res, err := prom.Metadata(inp.Context())
+	res, err := sql.Metadata(inp.Context())
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameGetPrometheusMetadata, err)
+		return "", err
 	}
 
-	return result(res)
+	out := sqlMetadataResult{
+		DefaultSchema: res.DefaultSchema,
+		Tables:        make(map[string][]string, len(res.Tables)),
+	}
+
+	for name, table := range res.Tables {
+		columns := make([]string, 0, len(table.Columns))
+
+		for _, c := range table.Columns {
+			columns = append(columns, c.Name)
+		}
+
+		out.Tables[name] = columns
+	}
+
+	return result(out)
 }
 
-// prometheusLabelNamesArgs is what list_prometheus_label_names is
-// called with.
-type prometheusLabelNamesArgs struct {
+// sqlMetadataResult is what get_data_source_metadata returns for a SQL
+// data source.
+type sqlMetadataResult struct {
+	// DefaultSchema is the schema a table name without one resolves to.
+	DefaultSchema string `json:"default_schema"`
+
+	// Tables maps each schema-qualified table name to its column names.
+	Tables map[string][]string `json:"tables"`
+}
+
+// prometheusLabelsArgs is what list_prometheus_labels is called with.
+type prometheusLabelsArgs struct {
 	timeRangeArgs
 
 	// DataSourceID names the Prometheus data source.
 	DataSourceID xid.ID `json:"data_source_id"`
 
-	// Matchers narrows the label names to the series they select.
+	// Label, when set, asks for the values of that label instead of
+	// the label names.
+	Label string `json:"label"`
+
+	// Matchers narrows the answer to the series they select.
 	Matchers []string `json:"matchers"`
 }
 
 // Validate checks the arguments are complete.
-func (a prometheusLabelNamesArgs) Validate() error {
+func (a prometheusLabelsArgs) Validate() error {
 	if a.DataSourceID.IsNil() {
 		return errRequired("data_source_id")
 	}
@@ -233,57 +283,51 @@ func (a prometheusLabelNamesArgs) Validate() error {
 	return nil
 }
 
-// listPrometheusLabelNames lists the label names present in a
-// Prometheus data source.
-type listPrometheusLabelNames struct {
-	plainSummary
-}
+// listPrometheusLabels lists the label names of a Prometheus data
+// source, or the values one label takes.
+type listPrometheusLabels struct{}
 
 // Info returns the tool's model-facing description.
-func (listPrometheusLabelNames) Info() Info {
+func (listPrometheusLabels) Info() Info {
 	return Info{
-		Name:        NameListPrometheusLabelNames,
-		Description: "List the label names present in a Prometheus data source, optionally only those on the series the matchers select. Pair it with list_prometheus_label_values to build a filtered PromQL query.",
+		Name:        NameListPrometheusLabels,
+		Traits:      Traits{DataSource: true},
+		Description: "List the label names of a Prometheus data source or, with label set, the values that label takes. matchers narrows either to the series they select. Use it to find the labels and values a query should filter on.",
 		Properties: map[string]any{
-			"data_source_id": map[string]any{"type": "string", "description": "The data source id, from list_data_sources."},
-			"matchers": map[string]any{
-				"type":        "array",
-				"description": "Optional. PromQL series selectors, e.g. [\"up\", \"{job=\\\"api\\\"}\"].",
-				"items": map[string]any{
-					"type": "string",
-				},
-			},
-			"from": map[string]any{"type": "string", "description": "Optional. Range start as an RFC3339 timestamp. Defaults to an hour before 'to'."},
-			"to":   map[string]any{"type": "string", "description": "Optional. Range end as an RFC3339 timestamp. Defaults to now."},
+			"data_source_id": map[string]any{"type": "string", "description": _dataSourceIDDescription},
+			"label":          map[string]any{"type": "string", "description": "Optional. A label, such as job, whose values to list instead of the names."},
+			"matchers":       map[string]any{"type": "array", "description": "Optional. " + _matchersDescription, "items": map[string]any{"type": "string"}},
+			"from":           _timeRangeProps["from"],
+			"to":             _timeRangeProps["to"],
 		},
 		Required: []string{"data_source_id"},
 	}
 }
 
-// Traits reports a plain read.
-func (listPrometheusLabelNames) Traits() Traits {
-	return Traits{DataSource: true}
-}
-
-// Title announces the data source being read.
-func (listPrometheusLabelNames) Title(inp DescribeInput) (string, error) {
-	var in prometheusLabelNamesArgs
+// Title announces the data source being read, and the label when one
+// was named.
+func (listPrometheusLabels) Title(inp DescribeInput) string {
+	var in prometheusLabelsArgs
 
 	if err := inp.Decode(&in); err != nil {
-		return "", err
+		return ""
 	}
 
 	ds, err := inp.FetchDataSource(in.DataSourceID)
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameListPrometheusLabelNames, err)
+		return ""
 	}
 
-	return fmt.Sprintf("Listing label names of %q", ds.Name), nil
+	if in.Label != "" {
+		return fmt.Sprintf("Listing values of label %q in %q", in.Label, ds.Name)
+	}
+
+	return fmt.Sprintf("Listing labels of %q", ds.Name)
 }
 
-// Execute fetches the data source's label names.
-func (listPrometheusLabelNames) Execute(inp Input) (string, error) {
-	var in prometheusLabelNamesArgs
+// Execute fetches the label names, or the named label's values.
+func (listPrometheusLabels) Execute(inp *input) (string, error) {
+	var in prometheusLabelsArgs
 
 	if err := inp.Decode(&in); err != nil {
 		return "", err
@@ -291,130 +335,31 @@ func (listPrometheusLabelNames) Execute(inp Input) (string, error) {
 
 	tr, err := in.resolve()
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameListPrometheusLabelNames, err)
+		return "", err
 	}
 
 	runner, err := inp.DataSourceRunner(in.DataSourceID)
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameListPrometheusLabelNames, err)
+		return "", err
 	}
 
 	prom, err := runner.Prometheus(inp.Context())
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameListPrometheusLabelNames, err)
+		return "", err
+	}
+
+	if in.Label != "" {
+		res, verr := prom.LabelValues(inp.Context(), in.Label, in.Matchers, tr)
+		if verr != nil {
+			return "", verr
+		}
+
+		return result(res)
 	}
 
 	res, err := prom.LabelNames(inp.Context(), in.Matchers, tr)
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameListPrometheusLabelNames, err)
-	}
-
-	return result(res)
-}
-
-// prometheusLabelValuesArgs is what list_prometheus_label_values is
-// called with.
-type prometheusLabelValuesArgs struct {
-	timeRangeArgs
-
-	// DataSourceID names the Prometheus data source.
-	DataSourceID xid.ID `json:"data_source_id"`
-
-	// Label is the label whose values are being listed. Required.
-	Label string `json:"label"`
-
-	// Matchers narrows the values to the series they select.
-	Matchers []string `json:"matchers"`
-}
-
-// Validate checks the arguments are complete.
-func (a prometheusLabelValuesArgs) Validate() error {
-	if a.DataSourceID.IsNil() {
-		return errRequired("data_source_id")
-	}
-
-	if a.Label == "" {
-		return errRequired("label")
-	}
-
-	return nil
-}
-
-// listPrometheusLabelValues lists the values one label takes in a
-// Prometheus data source.
-type listPrometheusLabelValues struct {
-	plainSummary
-}
-
-// Info returns the tool's model-facing description.
-func (listPrometheusLabelValues) Info() Info {
-	return Info{
-		Name:        NameListPrometheusLabelValues,
-		Description: "List the values a label takes in a Prometheus data source, optionally only on the series the matchers select. Use it to discover the concrete label values a query should filter on.",
-		Properties: map[string]any{
-			"data_source_id": map[string]any{"type": "string", "description": "The data source id, from list_data_sources."},
-			"label":          map[string]any{"type": "string", "description": "The label whose values to list, e.g. \"job\"."},
-			"matchers": map[string]any{
-				"type":        "array",
-				"description": "Optional. PromQL series selectors, e.g. [\"up\", \"{job=\\\"api\\\"}\"].",
-				"items": map[string]any{
-					"type": "string",
-				},
-			},
-			"from": map[string]any{"type": "string", "description": "Optional. Range start as an RFC3339 timestamp. Defaults to an hour before 'to'."},
-			"to":   map[string]any{"type": "string", "description": "Optional. Range end as an RFC3339 timestamp. Defaults to now."},
-		},
-		Required: []string{"data_source_id", "label"},
-	}
-}
-
-// Traits reports a plain read.
-func (listPrometheusLabelValues) Traits() Traits {
-	return Traits{DataSource: true}
-}
-
-// Title announces the label and the data source being read.
-func (listPrometheusLabelValues) Title(inp DescribeInput) (string, error) {
-	var in prometheusLabelValuesArgs
-
-	if err := inp.Decode(&in); err != nil {
 		return "", err
-	}
-
-	ds, err := inp.FetchDataSource(in.DataSourceID)
-	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameListPrometheusLabelValues, err)
-	}
-
-	return fmt.Sprintf("Listing values of label %q in %q", in.Label, ds.Name), nil
-}
-
-// Execute fetches the label's values.
-func (listPrometheusLabelValues) Execute(inp Input) (string, error) {
-	var in prometheusLabelValuesArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return "", err
-	}
-
-	tr, err := in.resolve()
-	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameListPrometheusLabelValues, err)
-	}
-
-	runner, err := inp.DataSourceRunner(in.DataSourceID)
-	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameListPrometheusLabelValues, err)
-	}
-
-	prom, err := runner.Prometheus(inp.Context())
-	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameListPrometheusLabelValues, err)
-	}
-
-	res, err := prom.LabelValues(inp.Context(), in.Label, in.Matchers, tr)
-	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameListPrometheusLabelValues, err)
 	}
 
 	return result(res)
@@ -445,54 +390,42 @@ func (a prometheusSeriesArgs) Validate() error {
 }
 
 // listPrometheusSeries lists the series matching a set of selectors.
-type listPrometheusSeries struct {
-	plainSummary
-}
+type listPrometheusSeries struct{}
 
 // Info returns the tool's model-facing description.
 func (listPrometheusSeries) Info() Info {
 	return Info{
 		Name:        NameListPrometheusSeries,
-		Description: "List the series matching a set of selectors in a Prometheus data source, each as its full label set. Use it to see which label combinations a metric actually has before querying it.",
+		Traits:      Traits{DataSource: true},
+		Description: "List the series that matchers select in a Prometheus data source, each as its full label set. Use it to see which label combinations a metric has before querying it.",
 		Properties: map[string]any{
-			"data_source_id": map[string]any{"type": "string", "description": "The data source id, from list_data_sources."},
-			"matchers": map[string]any{
-				"type":        "array",
-				"description": "PromQL series selectors, e.g. [\"up\", \"{job=\\\"api\\\"}\"].",
-				"items": map[string]any{
-					"type": "string",
-				},
-			},
-			"from": map[string]any{"type": "string", "description": "Optional. Range start as an RFC3339 timestamp. Defaults to an hour before 'to'."},
-			"to":   map[string]any{"type": "string", "description": "Optional. Range end as an RFC3339 timestamp. Defaults to now."},
+			"data_source_id": map[string]any{"type": "string", "description": _dataSourceIDDescription},
+			"matchers":       map[string]any{"type": "array", "description": _matchersDescription, "items": map[string]any{"type": "string"}},
+			"from":           _timeRangeProps["from"],
+			"to":             _timeRangeProps["to"],
 		},
 		Required: []string{"data_source_id", "matchers"},
 	}
 }
 
-// Traits reports a plain read.
-func (listPrometheusSeries) Traits() Traits {
-	return Traits{DataSource: true}
-}
-
 // Title announces the data source being read.
-func (listPrometheusSeries) Title(inp DescribeInput) (string, error) {
+func (listPrometheusSeries) Title(inp DescribeInput) string {
 	var in prometheusSeriesArgs
 
 	if err := inp.Decode(&in); err != nil {
-		return "", err
+		return ""
 	}
 
 	ds, err := inp.FetchDataSource(in.DataSourceID)
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameListPrometheusSeries, err)
+		return ""
 	}
 
-	return fmt.Sprintf("Listing series of %q", ds.Name), nil
+	return fmt.Sprintf("Listing series of %q", ds.Name)
 }
 
 // Execute fetches the matching series.
-func (listPrometheusSeries) Execute(inp Input) (string, error) {
+func (listPrometheusSeries) Execute(inp *input) (string, error) {
 	var in prometheusSeriesArgs
 
 	if err := inp.Decode(&in); err != nil {
@@ -501,44 +434,44 @@ func (listPrometheusSeries) Execute(inp Input) (string, error) {
 
 	tr, err := in.resolve()
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameListPrometheusSeries, err)
+		return "", err
 	}
 
 	runner, err := inp.DataSourceRunner(in.DataSourceID)
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameListPrometheusSeries, err)
+		return "", err
 	}
 
 	prom, err := runner.Prometheus(inp.Context())
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameListPrometheusSeries, err)
+		return "", err
 	}
 
 	res, err := prom.Series(inp.Context(), in.Matchers, tr)
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameListPrometheusSeries, err)
+		return "", err
 	}
 
 	return result(res)
 }
 
-// queryPrometheusArgs is what query_prometheus is called with.
-type queryPrometheusArgs struct {
+// queryDataSourceArgs is what query_data_source is called with.
+type queryDataSourceArgs struct {
 	timeRangeArgs
 
-	// DataSourceID names the Prometheus data source.
+	// DataSourceID names the data source.
 	DataSourceID xid.ID `json:"data_source_id"`
 
-	// Query is the PromQL expression to run. Required.
+	// Query is the PromQL or SQL to run. Required.
 	Query string `json:"query"`
 
-	// ChartType, when set, asks for the transformed series a metric
-	// block of that chart type would render instead of the raw result.
+	// ChartType, when set, asks for what a metric block of that chart
+	// type would draw instead of the raw answer.
 	ChartType processor.ChartType `json:"chart_type"`
 }
 
 // Validate checks the arguments are complete.
-func (a queryPrometheusArgs) Validate() error {
+func (a queryDataSourceArgs) Validate() error {
 	if a.DataSourceID.IsNil() {
 		return errRequired("data_source_id")
 	}
@@ -550,52 +483,52 @@ func (a queryPrometheusArgs) Validate() error {
 	return nil
 }
 
-// queryPrometheus runs a PromQL range query.
-type queryPrometheus struct {
-	plainSummary
-}
+// queryDataSource runs a query against a data source in the language it
+// speaks.
+type queryDataSource struct{}
 
 // Info returns the tool's model-facing description.
-func (queryPrometheus) Info() Info {
+func (queryDataSource) Info() Info {
 	return Info{
-		Name:        NameQueryPrometheus,
-		Description: "Run a PromQL range query against a Prometheus data source over the given window. Returns the raw result by default; with chart_type set it instead describes what a metric block would render, which is how to check a query before writing it into a block.",
+		Name:        NameQueryDataSource,
+		Traits:      Traits{DataSource: true},
+		Description: fmt.Sprintf("Run a query over a time range: PromQL for Prometheus, read-only SQL for the others, where $__ macros such as $__timeFilter expand against the range. Without chart_type it returns the raw answer, capped at %d series of %d points or %d rows. With chart_type it returns what a metric block would draw: status, series count, and each series' labels, point count and endpoints. Check a query that way before putting it in a block.", _maxRawSeries, _maxRawPoints, _maxRawRows),
 		Properties: map[string]any{
-			"data_source_id": map[string]any{"type": "string", "description": "The data source id, from list_data_sources."},
-			"query":          map[string]any{"type": "string", "description": "The PromQL expression to run."},
-			"chart_type":     map[string]any{"type": "string", "description": "Optional. One of line_chart, bar_chart, gauge_chart. When set, the result describes what the metric block would draw (render status, series count, and each series' labels, point count and endpoints) instead of the raw data. Use it to check a query before putting it in a metric block; omit it when you need the values themselves."},
-			"from":           map[string]any{"type": "string", "description": "Optional. Range start as an RFC3339 timestamp. Defaults to an hour before 'to'."},
-			"to":             map[string]any{"type": "string", "description": "Optional. Range end as an RFC3339 timestamp. Defaults to now."},
+			"data_source_id": map[string]any{"type": "string", "description": _dataSourceIDDescription},
+			"query":          map[string]any{"type": "string", "description": "The PromQL or SQL to run. For a SQL chart, select a time column aliased time and one or more numeric columns."},
+			"chart_type": map[string]any{
+				"type":        "string",
+				"enum":        []processor.ChartType{processor.ChartTypeLine, processor.ChartTypeBar, processor.ChartTypeGauge},
+				"description": "Optional. The chart to check the query against; omit it for the values themselves.",
+			},
+			"from": _timeRangeProps["from"],
+			"to":   _timeRangeProps["to"],
 		},
 		Required: []string{"data_source_id", "query"},
 	}
 }
 
-// Traits reports a plain read.
-func (queryPrometheus) Traits() Traits {
-	return Traits{DataSource: true}
-}
-
 // Title announces the data source being queried.
-func (queryPrometheus) Title(inp DescribeInput) (string, error) {
-	var in queryPrometheusArgs
+func (queryDataSource) Title(inp DescribeInput) string {
+	var in queryDataSourceArgs
 
 	if err := inp.Decode(&in); err != nil {
-		return "", err
+		return ""
 	}
 
 	ds, err := inp.FetchDataSource(in.DataSourceID)
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameQueryPrometheus, err)
+		return ""
 	}
 
-	return fmt.Sprintf("Querying %q", ds.Name), nil
+	return fmt.Sprintf("Querying %q", ds.Name)
 }
 
-// Execute runs the query, transforming the result when a chart type
-// was asked for.
-func (queryPrometheus) Execute(inp Input) (string, error) {
-	var in queryPrometheusArgs
+// Execute runs the query in whichever language the data source speaks,
+// answering with the raw data or, when a chart type was named, with what
+// the chart would draw.
+func (queryDataSource) Execute(inp *input) (string, error) {
+	var in queryDataSourceArgs
 
 	if err := inp.Decode(&in); err != nil {
 		return "", err
@@ -603,43 +536,147 @@ func (queryPrometheus) Execute(inp Input) (string, error) {
 
 	tr, err := in.resolve()
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameQueryPrometheus, err)
+		return "", err
 	}
 
 	runner, err := inp.DataSourceRunner(in.DataSourceID)
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameQueryPrometheus, err)
+		return "", err
 	}
 
-	prom, err := runner.Prometheus(inp.Context())
-	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameQueryPrometheus, err)
-	}
+	// each dialect answers in its own shape, so this is the one place a
+	// tool has to know which one it is talking to.
+	switch runner.Type() {
+	case datasource.TypePrometheus:
+		prom, err := runner.Prometheus(inp.Context())
+		if err != nil {
+			return "", err
+		}
 
-	res, err := prom.QueryRange(inp.Context(), in.Query, tr)
-	if err != nil {
-		return "", fmt.Errorf("%s: %w; check the query against get_prometheus_metadata", NameQueryPrometheus, err)
-	}
+		res, err := prom.QueryRange(inp.Context(), in.Query, tr)
+		if err != nil {
+			return "", fmt.Errorf("%w; check the query against get_data_source_metadata", err)
+		}
 
-	if in.ChartType == "" {
-		return result(res)
-	}
+		switch {
+		case res == nil:
+			return result(&processor.QueryResult{Status: processor.QueryStatusNoData})
+		case in.ChartType == "":
+			return result(newRawSeries(res))
+		default:
+			return result(newChartPreview(res.Transform(in.ChartType)))
+		}
+	case datasource.TypePostgreSQL:
+		pg, err := runner.PostgreSQL(inp.Context())
+		if err != nil {
+			return "", err
+		}
 
-	// a query that returned nothing has no result to transform, and the
-	// metric block renders it as no-data — which is the answer the
-	// model asked for by naming a chart type.
-	if res == nil {
-		return result(&processor.QueryResult{Status: processor.QueryStatusNoData})
-	}
+		res, err := pg.Query(inp.Context(), in.Query, tr)
+		if err != nil {
+			return "", fmt.Errorf("%w; check the query against get_data_source_metadata", err)
+		}
 
-	return result(newChartPreview(res.Transform(in.ChartType)))
+		switch {
+		case res == nil:
+			return result(&processor.QueryResult{Status: processor.QueryStatusNoData})
+		case in.ChartType == "":
+			return result(newRawRows(res.Columns, res.Rows))
+		default:
+			return result(newChartPreview(res.Transform(in.ChartType)))
+		}
+	default:
+		my, err := runner.MySQL(inp.Context())
+		if err != nil {
+			return "", err
+		}
+
+		res, err := my.Query(inp.Context(), in.Query, tr)
+		if err != nil {
+			return "", fmt.Errorf("%w; check the query against get_data_source_metadata", err)
+		}
+
+		switch {
+		case res == nil:
+			return result(&processor.QueryResult{Status: processor.QueryStatusNoData})
+		case in.ChartType == "":
+			return result(newRawRows(res.Columns, res.Rows))
+		default:
+			return result(newChartPreview(res.Transform(in.ChartType)))
+		}
+	}
 }
 
-// _maxPreviewSeries caps how many series a chart check describes. A
-// query behind a metric block draws a handful; one answering with more
-// is already the wrong query, and listing them all would cost more than
-// the check saves.
-const _maxPreviewSeries = 10
+// rawSeries is a raw Prometheus answer, cut down to _maxRawSeries series
+// of the latest _maxRawPoints points each.
+type rawSeries struct {
+	// Warnings are what Prometheus warned about while answering.
+	Warnings []string `json:"warnings,omitempty"`
+
+	// Type is the kind of value the query returned.
+	Type model.ValueType `json:"type"`
+
+	// Result is the answer itself.
+	Result any `json:"result,omitempty"`
+
+	// Truncated says what was left out, when anything was.
+	Truncated string `json:"truncated,omitempty"`
+}
+
+// newRawSeries caps a raw Prometheus answer. Only a range of series can
+// grow past the caps; any other answer is returned as it is.
+func newRawSeries(res *processor.PrometheusQueryResult) rawSeries {
+	out := rawSeries{Warnings: res.Warnings, Type: res.Type, Result: res.Result}
+
+	matrix, ok := res.Result.(model.Matrix)
+	if !ok {
+		return out
+	}
+
+	capped := make(model.Matrix, 0, min(len(matrix), _maxRawSeries))
+	cut := len(matrix) > _maxRawSeries
+
+	for _, s := range matrix[:min(len(matrix), _maxRawSeries)] {
+		if len(s.Values) > _maxRawPoints {
+			s = &model.SampleStream{Metric: s.Metric, Values: s.Values[len(s.Values)-_maxRawPoints:]}
+			cut = true
+		}
+
+		capped = append(capped, s)
+	}
+
+	out.Result = capped
+
+	if cut {
+		out.Truncated = fmt.Sprintf("%d of %d series, each its latest %d points at most; set chart_type to describe them all", len(capped), len(matrix), _maxRawPoints)
+	}
+
+	return out
+}
+
+// rawRows is a raw SQL answer, cut down to its first _maxRawRows rows.
+type rawRows struct {
+	// Columns are the column names.
+	Columns []string `json:"columns"`
+
+	// Rows are the rows, each a value per column.
+	Rows [][]any `json:"rows"`
+
+	// TotalRows is how many rows the query returned, set only when more
+	// than the ones listed.
+	TotalRows int `json:"total_rows,omitempty"`
+}
+
+// newRawRows caps a raw SQL answer.
+func newRawRows(columns []string, rows [][]any) rawRows {
+	out := rawRows{Columns: columns, Rows: rows[:min(len(rows), _maxRawRows)]}
+
+	if len(rows) > _maxRawRows {
+		out.TotalRows = len(rows)
+	}
+
+	return out
+}
 
 // chartPreview is what a query answers with when a chart type was
 // named. Naming one asks whether the query renders, not what it
@@ -674,12 +711,6 @@ type chartPreviewSeries struct {
 
 // newChartPreview summarises a transformed result for a chart check.
 func newChartPreview(qr *processor.QueryResult) chartPreview {
-	if qr == nil {
-		// NOCOV: Transform never returns nil; the guard keeps a future
-		// caller from panicking on one.
-		return chartPreview{Status: processor.QueryStatusNoData}
-	}
-
 	out := chartPreview{
 		Status:      qr.Status,
 		SeriesCount: len(qr.Data),
@@ -700,335 +731,4 @@ func newChartPreview(qr *processor.QueryResult) chartPreview {
 	}
 
 	return out
-}
-
-// getSQLMetadataArgs is what get_sql_metadata is called with.
-type getSQLMetadataArgs struct {
-	// DataSourceID names the SQL data source.
-	DataSourceID xid.ID `json:"data_source_id"`
-}
-
-// Validate checks the arguments are complete.
-func (a getSQLMetadataArgs) Validate() error {
-	if a.DataSourceID.IsNil() {
-		return errRequired("data_source_id")
-	}
-
-	return nil
-}
-
-// getSQLMetadata lists the tables and columns of a SQL data source.
-type getSQLMetadata struct {
-	plainSummary
-}
-
-// Info returns the tool's model-facing description.
-func (getSQLMetadata) Info() Info {
-	return Info{
-		Name:        NameGetSQLMetadata,
-		Description: "List the tables and their columns in a PostgreSQL, MariaDB or MySQL data source, plus the default schema. Read it before writing a query so the table and column names are the real ones.",
-		Properties:  map[string]any{"data_source_id": map[string]any{"type": "string", "description": "The data source id, from list_data_sources."}},
-		Required:    []string{"data_source_id"},
-	}
-}
-
-// Traits reports a plain read.
-func (getSQLMetadata) Traits() Traits {
-	return Traits{DataSource: true}
-}
-
-// Title announces the data source being read.
-func (getSQLMetadata) Title(inp DescribeInput) (string, error) {
-	var in getSQLMetadataArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return "", err
-	}
-
-	ds, err := inp.FetchDataSource(in.DataSourceID)
-	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameGetSQLMetadata, err)
-	}
-
-	return fmt.Sprintf("Reading tables of %q", ds.Name), nil
-}
-
-// Execute fetches the data source's tables and columns.
-func (getSQLMetadata) Execute(inp Input) (string, error) {
-	var in getSQLMetadataArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return "", err
-	}
-
-	runner, err := inp.DataSourceRunner(in.DataSourceID)
-	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameGetSQLMetadata, err)
-	}
-
-	sql, err := runner.SQL(inp.Context())
-	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameGetSQLMetadata, err)
-	}
-
-	res, err := sql.Metadata(inp.Context())
-	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameGetSQLMetadata, err)
-	}
-
-	return result(res)
-}
-
-// sqlQueryLabelsArgs is what get_sql_query_labels is called with.
-type sqlQueryLabelsArgs struct {
-	timeRangeArgs
-
-	// DataSourceID names the SQL data source.
-	DataSourceID xid.ID `json:"data_source_id"`
-
-	// Query is the SQL to probe. Required.
-	Query string `json:"query"`
-}
-
-// Validate checks the arguments are complete.
-func (a sqlQueryLabelsArgs) Validate() error {
-	if a.DataSourceID.IsNil() {
-		return errRequired("data_source_id")
-	}
-
-	if a.Query == "" {
-		return errRequired("query")
-	}
-
-	return nil
-}
-
-// getSQLQueryLabels probes a query for its string columns.
-type getSQLQueryLabels struct {
-	plainSummary
-}
-
-// Info returns the tool's model-facing description.
-func (getSQLQueryLabels) Info() Info {
-	return Info{
-		Name:        NameGetSQLQueryLabels,
-		Description: "Run a SQL query limited to one row and return its string columns with an example value each, which are the columns a chart would treat as series labels. Use it to check what a query returns before charting it; it is cheaper than query_sql.",
-		Properties: map[string]any{
-			"data_source_id": map[string]any{"type": "string", "description": "The data source id, from list_data_sources."},
-			"query":          map[string]any{"type": "string", "description": "The SQL query to probe. $__ macros are expanded as they are for a metric block."},
-			"from":           map[string]any{"type": "string", "description": "Optional. Range start as an RFC3339 timestamp. Defaults to an hour before 'to'."},
-			"to":             map[string]any{"type": "string", "description": "Optional. Range end as an RFC3339 timestamp. Defaults to now."},
-		},
-		Required: []string{"data_source_id", "query"},
-	}
-}
-
-// Traits reports a plain read.
-func (getSQLQueryLabels) Traits() Traits {
-	return Traits{DataSource: true}
-}
-
-// Title announces the data source being probed.
-func (getSQLQueryLabels) Title(inp DescribeInput) (string, error) {
-	var in sqlQueryLabelsArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return "", err
-	}
-
-	ds, err := inp.FetchDataSource(in.DataSourceID)
-	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameGetSQLQueryLabels, err)
-	}
-
-	return fmt.Sprintf("Probing query labels of %q", ds.Name), nil
-}
-
-// Execute probes the query for its string columns.
-func (getSQLQueryLabels) Execute(inp Input) (string, error) {
-	var in sqlQueryLabelsArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return "", err
-	}
-
-	tr, err := in.resolve()
-	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameGetSQLQueryLabels, err)
-	}
-
-	runner, err := inp.DataSourceRunner(in.DataSourceID)
-	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameGetSQLQueryLabels, err)
-	}
-
-	sql, err := runner.SQL(inp.Context())
-	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameGetSQLQueryLabels, err)
-	}
-
-	res, err := sql.QueryLabels(inp.Context(), in.Query, tr)
-	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameGetSQLQueryLabels, err)
-	}
-
-	return result(sqlQueryLabelsResult{
-		Labels: res,
-	})
-}
-
-// querySQLArgs is what query_sql is called with.
-type querySQLArgs struct {
-	timeRangeArgs
-
-	// DataSourceID names the SQL data source.
-	DataSourceID xid.ID `json:"data_source_id"`
-
-	// Query is the SQL to run. Required.
-	Query string `json:"query"`
-
-	// ChartType, when set, asks for the transformed series a metric
-	// block of that chart type would render instead of the raw rows.
-	ChartType processor.ChartType `json:"chart_type"`
-}
-
-// Validate checks the arguments are complete.
-func (a querySQLArgs) Validate() error {
-	if a.DataSourceID.IsNil() {
-		return errRequired("data_source_id")
-	}
-
-	if a.Query == "" {
-		return errRequired("query")
-	}
-
-	return nil
-}
-
-// querySQL runs a query against a SQL data source.
-type querySQL struct {
-	plainSummary
-}
-
-// Info returns the tool's model-facing description.
-func (querySQL) Info() Info {
-	return Info{
-		Name:        NameQuerySQL,
-		Description: "Run a read-only query against a PostgreSQL, MariaDB or MySQL data source. Returns columns and rows by default; with chart_type set it instead describes what a metric block would render, which is how to check a query before writing it into a block. $__ macros ($__timeFilter, $__timeGroupAlias and the rest) are expanded against the window.",
-		Properties: map[string]any{
-			"data_source_id": map[string]any{"type": "string", "description": "The data source id, from list_data_sources."},
-			"query":          map[string]any{"type": "string", "description": "The SQL query to run. For a chart, select a time column aliased \"time\" plus one or more numeric columns."},
-			"chart_type":     map[string]any{"type": "string", "description": "Optional. One of line_chart, bar_chart, gauge_chart. When set, the result describes what the metric block would draw (render status, series count, and each series' labels, point count and endpoints) instead of the raw data. Use it to check a query before putting it in a metric block; omit it when you need the values themselves."},
-			"from":           map[string]any{"type": "string", "description": "Optional. Range start as an RFC3339 timestamp. Defaults to an hour before 'to'."},
-			"to":             map[string]any{"type": "string", "description": "Optional. Range end as an RFC3339 timestamp. Defaults to now."},
-		},
-		Required: []string{"data_source_id", "query"},
-	}
-}
-
-// Traits reports a plain read.
-func (querySQL) Traits() Traits {
-	return Traits{DataSource: true}
-}
-
-// Title announces the data source being queried.
-func (querySQL) Title(inp DescribeInput) (string, error) {
-	var in querySQLArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return "", err
-	}
-
-	ds, err := inp.FetchDataSource(in.DataSourceID)
-	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameQuerySQL, err)
-	}
-
-	return fmt.Sprintf("Querying %q", ds.Name), nil
-}
-
-// Execute runs the query against whichever SQL dialect the data source
-// speaks, transforming the result when a chart type was asked for.
-func (querySQL) Execute(inp Input) (string, error) {
-	var in querySQLArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return "", err
-	}
-
-	tr, err := in.resolve()
-	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameQuerySQL, err)
-	}
-
-	runner, err := inp.DataSourceRunner(in.DataSourceID)
-	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameQuerySQL, err)
-	}
-
-	// the two dialects return different result shapes, so this is the
-	// one place a tool has to know which one it is talking to.
-	if runner.Type() == datasource.TypePostgreSQL {
-		return runPostgreSQLQuery(inp, runner, in.Query, tr, in.ChartType)
-	}
-
-	return runMySQLQuery(inp, runner, in.Query, tr, in.ChartType)
-}
-
-// runPostgreSQLQuery serves query_sql for a PostgreSQL data source.
-func runPostgreSQLQuery(
-	inp Input,
-	runner datasource.Runner,
-	query string,
-	tr processor.TimeRange,
-	ct processor.ChartType,
-) (string, error) {
-	pg, err := runner.PostgreSQL(inp.Context())
-	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameQuerySQL, err)
-	}
-
-	res, err := pg.Query(inp.Context(), query, tr)
-	if err != nil {
-		return "", fmt.Errorf("%s: %w; check the query against get_sql_metadata", NameQuerySQL, err)
-	}
-
-	if ct == "" {
-		return result(res)
-	}
-
-	if res == nil {
-		return result(&processor.QueryResult{Status: processor.QueryStatusNoData})
-	}
-
-	return result(newChartPreview(res.Transform(ct)))
-}
-
-// runMySQLQuery serves query_sql for a MySQL or MariaDB data source.
-func runMySQLQuery(
-	inp Input,
-	runner datasource.Runner,
-	query string,
-	tr processor.TimeRange,
-	ct processor.ChartType,
-) (string, error) {
-	my, err := runner.MySQL(inp.Context())
-	if err != nil {
-		return "", fmt.Errorf("%s: %w", NameQuerySQL, err)
-	}
-
-	res, err := my.Query(inp.Context(), query, tr)
-	if err != nil {
-		return "", fmt.Errorf("%s: %w; check the query against get_sql_metadata", NameQuerySQL, err)
-	}
-
-	if ct == "" {
-		return result(res)
-	}
-
-	if res == nil {
-		return result(&processor.QueryResult{Status: processor.QueryStatusNoData})
-	}
-
-	return result(newChartPreview(res.Transform(ct)))
 }

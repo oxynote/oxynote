@@ -11,6 +11,11 @@ import (
 	"github.com/rs/xid"
 )
 
+// _declinedResult is the tool result reported to the model when the user
+// refuses a write. It is a normal result rather than an error so the
+// model can acknowledge the refusal and carry on.
+const _declinedResult = `{"approved":false,"reason":"user declined"}`
+
 // SessionKeyAutoApprove marks a turn in which the user answered a
 // confirmation with "approve all". It lives in the agent session so it
 // survives the checkpoint written when the turn is interrupted.
@@ -122,7 +127,7 @@ func (c *confirming) InvokableRun(
 	}
 
 	if !hasDecision || !decision.Approved {
-		return declinedResult()
+		return _declinedResult, nil
 	}
 
 	return c.einoTool.InvokableRun(ctx, argumentsInJSON, opts...)
@@ -146,20 +151,4 @@ func (c *confirming) interrupt(ctx context.Context, args json.RawMessage) (strin
 	}
 
 	return "", compose.StatefulInterrupt(ctx, summary, confirmState{})
-}
-
-// declinedResult is the tool result reported to the model when the user
-// refuses a write. It is a normal result rather than an error so the
-// model can acknowledge the refusal and carry on.
-func declinedResult() (string, error) {
-	res, err := json.Marshal(map[string]any{
-		"approved": false,
-		"reason":   "user declined",
-	})
-	if err != nil {
-		// NOCOV: the payload is a literal of JSON-encodable types.
-		return "", err
-	}
-
-	return string(res), nil
 }

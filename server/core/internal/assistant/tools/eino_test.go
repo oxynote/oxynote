@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
@@ -48,6 +49,10 @@ func Test_Info_toEino(t *testing.T) {
 	data, err := json.Marshal(got)
 	require.NoError(t, err)
 
+	// every session sends the whole tool list, and an MCP client keeps
+	// it in context, so it stays under about 6k tokens.
+	assert.Less(t, len(data), 22000, "the tool list has grown past its budget")
+
 	// a description change is meant to be reviewed as a golden diff, so
 	// the file is rewritten on request rather than by hand.
 	if os.Getenv("UPDATE_GOLDEN") != "" {
@@ -89,28 +94,18 @@ func Test_einoTool_Info(t *testing.T) {
 func Test_einoTool_Run(t *testing.T) {
 	t.Parallel()
 
-	// error: the arguments never reach a tool that cannot read them
-	res, err := newEinoTool(getDocument{}, testDeps(nil, nil, nil)).
+	// error: the arguments never reach a tool that cannot read them, and
+	// the failure names the tool.
+	_, err := newEinoTool(getDocument{}, testDeps(nil, nil, nil)).
 		Run(context.Background(), json.RawMessage(`{`))
 	require.Error(t, err)
-	assert.Empty(t, res.Documents)
+	assert.True(t, strings.HasPrefix(err.Error(), "get_document: invalid input: "))
 
-	// a read changes nothing, so it has nothing to report changing
-	res, err = newEinoTool(listDocuments{}, testDeps(nil, nil, nil)).
+	// success: the tool's own output comes back as it is
+	out, err := newEinoTool(listDocuments{}, testDeps(nil, nil, nil)).
 		Run(context.Background(), json.RawMessage(`{}`))
 	require.NoError(t, err)
-	assert.JSONEq(t, `{"documents":null}`, res.Output)
-	assert.Empty(t, res.Documents)
-
-	// a write reports the document it changed, taken from the edit it
-	// actually applied rather than from its arguments
-	res, err = newEinoTool(updateBlockText{}, testDeps(stubContentDB(nil), stubApplier(), nil)).
-		Run(context.Background(), json.RawMessage(
-			`{`+targetArgs(_stubMainBranchID)+`,"block_uid":"a","text":"hi"}`,
-		))
-	require.NoError(t, err)
-	assert.JSONEq(t, `{"blocks":[{"uid":"a","kind":"paragraph","text":"hi","depth":0}]}`, res.Output)
-	assert.Equal(t, []Touched{{DocumentID: _testDocID, BranchID: _stubMainBranchID}}, res.Documents)
+	assert.JSONEq(t, `{"documents":[]}`, out)
 }
 
 func Test_einoTool_InvokableRun(t *testing.T) {
@@ -120,7 +115,7 @@ func Test_einoTool_InvokableRun(t *testing.T) {
 	res, err := newEinoTool(listDocuments{}, testDeps(nil, nil, nil)).
 		InvokableRun(context.Background(), `{}`)
 	require.NoError(t, err)
-	assert.JSONEq(t, `{"documents":null}`, res)
+	assert.JSONEq(t, `{"documents":[]}`, res)
 
 	// a failure comes back as the call's result rather than as an
 	// error: the framework would end the whole turn on an error, and
@@ -139,7 +134,7 @@ func Test_einoTool_InvokableRun(t *testing.T) {
 
 	args := `{"data_source_id":"` + _testDataSourceID.String() + `","query":"up)"}`
 
-	res, err = newEinoTool(queryPrometheus{}, failing).InvokableRun(context.Background(), args)
+	res, err = newEinoTool(queryDataSource{}, failing).InvokableRun(context.Background(), args)
 	require.NoError(t, err)
 	assert.Contains(t, res, "parse error")
 }
@@ -147,11 +142,20 @@ func Test_einoTool_InvokableRun(t *testing.T) {
 func Test_einoTool_Title(t *testing.T) {
 	t.Parallel()
 
-	et := newEinoTool(getDocument{}, testDeps(stubDocumentDB(), nil, nil))
+	ctx := context.Background()
+	d := testDeps(stubContentDB(nil), nil, nil)
 
-	got, err := et.Title(context.Background(), json.RawMessage(`{`+targetArgs(_stubMainBranchID)+`}`))
-	require.NoError(t, err)
-	assert.Equal(t, "Reading Runbook", got)
+	// a read announces itself with its own title.
+	assert.Equal(t, "Reading Runbook", newEinoTool(getDocument{}, d).Title(ctx, json.RawMessage(`{`+targetArgs(_stubMainBranchID)+`}`)))
+
+	// a read without one runs silently.
+	assert.Empty(t, newEinoTool(listDocuments{}, d).Title(ctx, json.RawMessage(`{}`)))
+
+	// a write is announced by its summary, and by nothing when its
+	// arguments cannot be read.
+	write := newEinoTool(deleteBlock{}, d)
+	assert.Equal(t, "Delete a block in Runbook", write.Title(ctx, json.RawMessage(`{`+targetArgs(_stubMainBranchID)+`,"block_uid":"a"}`)))
+	assert.Empty(t, write.Title(ctx, json.RawMessage(`{`)))
 }
 
 func Test_einoTool_Summary(t *testing.T) {
@@ -167,16 +171,12 @@ func Test_einoTool_Summary(t *testing.T) {
 
 	// arguments the tool cannot read are refused rather than described:
 	// the same payload would fail on resume anyway.
-	_, err = et.Summary(context.Background(), json.RawMessage(`{`))
+	_, err = et.Summary(context.Background(), json.RawMessage(`{"document_id":null}`))
+	assert.EqualError(t, err, "delete_document: document_id is required")
+
+	// a read proposes nothing, so it has nothing to describe.
+	_, err = newEinoTool(getDocument{}, testDeps(nil, nil, nil)).Summary(context.Background(), json.RawMessage(`{}`))
 	require.Error(t, err)
-
-	// a read proposes nothing and is never gated, so the adapter reaches
-	// its plainSummary and comes back with nothing to show.
-	read := newEinoTool(getDocument{}, testDeps(nil, nil, nil))
-
-	got, err = read.Summary(context.Background(), json.RawMessage(`{}`))
-	require.NoError(t, err)
-	assert.Equal(t, ActionSummary{}, got)
 }
 
 func Test_readToolOutputArgs_Validate(t *testing.T) {
@@ -192,28 +192,16 @@ func Test_readToolOutput_Info(t *testing.T) {
 
 	info := readToolOutput{}.Info()
 
+	// the paths it takes only exist inside a conversation, so it must
+	// never be offered to a client that has none.
+	assert.Equal(t, Traits{Internal: true}, info.Traits)
+
 	// the tool is named for tool output, not files: sitting next to
-	// read_block, a generic read_file would invite the wrong call.
+	// get_document, a generic read_file would invite the wrong call.
 	assert.Equal(t, NameReadToolOutput, info.Name)
 	assert.NotEmpty(t, info.Description)
 	assert.Contains(t, info.Properties, "file_path")
 	assert.Equal(t, []string{"file_path"}, info.Required)
-}
-
-func Test_readToolOutput_Traits(t *testing.T) {
-	t.Parallel()
-
-	// the paths it takes only exist inside a conversation, so it must
-	// never be offered to a client that has none.
-	assert.Equal(t, Traits{Internal: true}, readToolOutput{}.Traits())
-}
-
-func Test_readToolOutput_Title(t *testing.T) {
-	t.Parallel()
-
-	got, err := readToolOutput{}.Title(testInput(testDeps(nil, nil, nil), NameReadToolOutput, `{}`))
-	require.NoError(t, err)
-	assert.Empty(t, got)
 }
 
 func Test_readToolOutput_Execute(t *testing.T) {

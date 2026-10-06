@@ -8,14 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"maps"
 	"slices"
 	"strings"
 
 	"github.com/guregu/null/v5"
 	"github.com/oxynote/oxynote/server/core/internal/apps/github"
 	"github.com/oxynote/oxynote/server/core/internal/apps/webchange"
-	"github.com/oxynote/oxynote/server/core/internal/assistant/block"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
 	"github.com/oxynote/oxynote/server/core/internal/datasource"
 	"github.com/oxynote/oxynote/server/core/internal/document"
@@ -43,7 +41,7 @@ var errUnknownHook = errors.New("no hook with that id on this document; call lis
 // tool reaches through and the (organization, user) pair every call is
 // scoped to.
 //
-// It is built once per session. The per-call Input a tool actually sees
+// It is built once per session. The per-call input a tool actually sees
 // is assembled from it by the eino adapter, which is the only thing
 // that knows a call's context and arguments.
 type Deps struct {
@@ -142,14 +140,13 @@ func NewDeps(
 }
 
 // input is one tool call: the session's wiring plus the context and
-// arguments of the call being served. It satisfies both DescribeInput
-// and Input; which of the two a tool receives is decided by the method
-// being called, not by what is in here.
+// arguments of the call being served. Execute receives it whole; Title
+// and Summary receive it as a DescribeInput, which reaches nothing that
+// writes.
 type input struct {
 	*Deps
 
-	// name is the tool being called, so a rejected argument can say
-	// which tool rejected it.
+	// name is the tool being called, so a warning names it.
 	name Name
 
 	// ctx is the context of this call. It carries the agent session
@@ -160,22 +157,10 @@ type input struct {
 	// args is the raw JSON the model supplied.
 	args json.RawMessage
 
-	// touched lists the branches this call changed, in the order the
-	// writes below recorded them.
-	touched []Touched
-}
-
-// recordTouched notes a branch this call changed. Every write in this
-// package goes through one of the four methods below, so recording it
-// here is what makes Result.Documents right by construction rather than
-// by a convention about argument names.
-func (i *input) recordTouched(documentID, branchID xid.ID) {
-	t := Touched{DocumentID: documentID, BranchID: branchID}
-	if documentID.IsNil() || branchID.IsNil() || slices.Contains(i.touched, t) {
-		return
-	}
-
-	i.touched = append(i.touched, t)
+	// branches holds the branches this call has fetched, by branch id.
+	// A call reads its branch in several steps, and they share one
+	// fetch.
+	branches map[xid.ID]*document.Document
 }
 
 // newInput creates a fresh instance of input for one tool call.
@@ -188,8 +173,7 @@ func (i *input) Context() context.Context {
 	return i.ctx
 }
 
-// Decode decodes the call's arguments into dst and validates them,
-// naming the tool that rejected them.
+// Decode decodes the call's arguments into dst and validates them.
 //
 // Decoding uses json/v2 because its errors name the argument they
 // failed on. A domain type that parses itself — an id, a timestamp, an
@@ -206,24 +190,10 @@ func (i *input) Decode(dst Args) error {
 	}
 
 	if err := jsonv2.Unmarshal(args, dst); err != nil {
-		return fmt.Errorf("%s: invalid input: %w", i.name, err)
+		return fmt.Errorf("invalid input: %w", err)
 	}
 
-	if err := dst.Validate(); err != nil {
-		return fmt.Errorf("%s: %w", i.name, err)
-	}
-
-	return nil
-}
-
-// OrganizationID returns the organisation every call is scoped to.
-func (i *input) OrganizationID() string {
-	return i.orgID
-}
-
-// UserID returns the user the assistant is acting for.
-func (i *input) UserID() string {
-	return i.userID
+	return dst.Validate()
 }
 
 // FetchDataSource returns the data source the id names.
@@ -234,7 +204,11 @@ func (i *input) UserID() string {
 func (i *input) FetchDataSource(dataSourceID xid.ID) (*datasource.DataSource, error) {
 	ds, err := i.db.FetchDataSource(i.ctx, dataSourceID, i.orgID)
 	if err != nil {
-		return nil, errUnknownDataSource
+		if errutil.IsNotFound(err) {
+			return nil, errUnknownDataSource
+		}
+
+		return nil, fmt.Errorf("fetching data source: %w", err)
 	}
 
 	return ds, nil
@@ -245,24 +219,30 @@ func (i *input) FetchDataSources() ([]datasource.DataSource, error) {
 	return i.db.FetchDataSources(i.ctx, i.orgID)
 }
 
-// CheckDataSources refuses a write naming a data source the
-// organisation does not own.
+// CheckDataSources refuses blocks, nested ones included, that name a
+// data source the organisation does not own.
 //
 // It sits with the write rather than with the schema because it is the
-// only check that needs the database: block.Validate can say the id is
+// only check that needs the database: markup.Build can say the id is
 // a string, but only a lookup can say it addresses something, and a
 // metric block pointing at nothing renders as a broken chart the user
-// then has to fix by hand. The ids are block content, not arguments, so
-// they arrive as the strings the document stores and are parsed here.
-func (i *input) CheckDataSources(ids []string) error {
-	for _, raw := range ids {
-		id, err := xid.FromString(raw)
-		if err != nil {
-			return fmt.Errorf("metric %s %q: %w", document.AttrDataSourceID, raw, err)
+// then has to fix by hand. The ids are the strings the blocks store, so
+// they are parsed here.
+func (i *input) CheckDataSources(blocks []document.Block) error {
+	for _, b := range blocks {
+		if raw := b.Attrs.Get(document.AttrDataSourceID).String(); raw != "" {
+			id, err := xid.FromString(raw)
+			if err != nil {
+				return fmt.Errorf("metric %s %q: %w", document.AttrDataSourceID, raw, err)
+			}
+
+			if _, err := i.FetchDataSource(id); err != nil {
+				return fmt.Errorf("metric %s %q: %w", document.AttrDataSourceID, raw, err)
+			}
 		}
 
-		if _, err := i.FetchDataSource(id); err != nil {
-			return fmt.Errorf("metric %s %q: %w", document.AttrDataSourceID, raw, err)
+		if err := i.CheckDataSources(b.Content); err != nil {
+			return err
 		}
 	}
 
@@ -270,15 +250,11 @@ func (i *input) CheckDataSources(ids []string) error {
 }
 
 // DataSourceRunner returns the runner that reads the data source the id
-// names.
-//
-// The lookup is the cross-org safety check: FetchDataSource scopes by
-// organisation, so an id belonging to another one is as absent as an id
-// belonging to nobody, and the model is told the same thing either way.
+// names, looked up through FetchDataSource.
 func (i *input) DataSourceRunner(id xid.ID) (datasource.Runner, error) {
-	ds, err := i.db.FetchDataSource(i.ctx, id, i.orgID)
+	ds, err := i.FetchDataSource(id)
 	if err != nil {
-		return nil, errUnknownDataSource
+		return nil, err
 	}
 
 	return i.runners.Runner(*ds), nil
@@ -306,6 +282,10 @@ func (i *input) FetchDocument(documentID xid.ID) (*document.Document, error) {
 // as unknown to this one, and an unknown branch is reported with the
 // ones the document does have.
 func (i *input) FetchBranch(documentID, branchID xid.ID) (*document.Document, error) {
+	if doc, ok := i.branches[branchID]; ok && doc.ID == documentID {
+		return doc, nil
+	}
+
 	doc, err := i.db.FetchDocumentByBranchID(i.ctx, branchID, i.orgID)
 	if err != nil {
 		if errutil.IsNotFound(err) {
@@ -319,6 +299,12 @@ func (i *input) FetchBranch(documentID, branchID xid.ID) (*document.Document, er
 		return nil, i.unknownBranch(documentID, branchID)
 	}
 
+	if i.branches == nil {
+		i.branches = map[xid.ID]*document.Document{}
+	}
+
+	i.branches[branchID] = doc
+
 	return doc, nil
 }
 
@@ -331,7 +317,7 @@ func (i *input) unknownBranch(documentID, branchID xid.ID) error {
 		return err
 	}
 
-	return fmt.Errorf("branch %s: %w; the branches are %s", branchID, ErrUnknownBranch, strings.Join(branchLabels(branches, nil), ", "))
+	return fmt.Errorf("branch %s: %w; the branches are %s", branchID, ErrUnknownBranch, branchLabels(branches))
 }
 
 // FetchDocumentBranches lists every branch of the document. A document the
@@ -350,33 +336,15 @@ func (i *input) FetchDocumentBranches(documentID xid.ID) ([]document.BranchSumma
 	return branches, nil
 }
 
-// FetchDocumentContent returns the parsed content of the branch branchID
-// names. The branch fetch already carries the content, so this is the
-// same lookup in the shape the block walks take.
-func (i *input) FetchDocumentContent(documentID, branchID xid.ID) (document.Content, error) {
-	doc, err := i.FetchBranch(documentID, branchID)
-	if err != nil {
-		return document.Content{}, err
-	}
-
-	return document.Content{
-		OrganizationID: i.orgID,
-		DocumentID:     doc.ID,
-		DocumentName:   doc.DocumentName,
-		Content:        doc.Content,
-	}, nil
-}
-
-// FetchDocumentBlock finds one block of the branch by uid. It reads the
-// persisted content, which is what every placement check reads too, so
-// a write and its checks see the same document.
+// FetchDocumentBlock finds one block of the branch by uid, in the
+// persisted content.
 func (i *input) FetchDocumentBlock(documentID, branchID xid.ID, blockUID string) (document.Block, error) {
-	content, err := i.FetchDocumentContent(documentID, branchID)
+	doc, err := i.FetchBranch(documentID, branchID)
 	if err != nil {
 		return document.Block{}, fmt.Errorf("fetching content: %w", err)
 	}
 
-	b, ok := content.Content.FindByUID(blockUID)
+	b, ok := doc.Content.FindByUID(blockUID)
 	if !ok {
 		return document.Block{}, fmt.Errorf("block %s: %w", blockUID, errUnknownBlock)
 	}
@@ -423,7 +391,11 @@ func (i *input) FetchDocumentChildren(parentID null.Value[xid.ID]) (document.Sum
 func (i *input) CreateDocument(doc document.Document) error {
 	if doc.ParentID.Valid {
 		if err := i.db.CheckDocumentExists(i.ctx, doc.ParentID.V, i.orgID); err != nil {
-			return fmt.Errorf("parent %s: %w", doc.ParentID.V, errUnknownParent(err))
+			if errutil.IsNotFound(err) {
+				return fmt.Errorf("parent %s: %w", doc.ParentID.V, errUnknownParent)
+			}
+
+			return fmt.Errorf("checking parent: %w", err)
 		}
 	}
 
@@ -456,7 +428,7 @@ func (i *input) CreateDocument(doc document.Document) error {
 	}
 
 	i.searchTrigger.Trigger()
-	i.recordTouched(doc.ID, doc.BranchID)
+	i.notifyTreeChange(doc.ParentID)
 
 	return nil
 }
@@ -470,12 +442,10 @@ var errCyclicParent = errors.New("a document cannot be moved under itself or one
 // current uids, since a stale uid is the usual cause.
 var errUnknownBlock = errors.New("no block with that uid in this document; call get_document for the current uids")
 
-// errUnknownParent wraps a parent lookup failure so the model learns
-// where the ids it may use come from; a missing parent is otherwise a
-// bare not-found.
-func errUnknownParent(err error) error {
-	return fmt.Errorf("no document with that id to use as parent; call list_documents for the ids that exist: %w", err)
-}
+// errUnknownParent is what a create or move reports for a parent id
+// that names no document in the organisation. It says where the ids the
+// model may use come from.
+var errUnknownParent = errors.New("no document with that id to use as parent; call list_documents for the ids that exist")
 
 // ErrUnknownDocument is what a document lookup reports for an id that
 // names nothing in the session's organisation. Another organisation's
@@ -483,14 +453,20 @@ func errUnknownParent(err error) error {
 // discover that a document exists elsewhere.
 var ErrUnknownDocument = errors.New("no document with that id in this organisation; call list_documents for the ids that exist")
 
-// DeleteDocument removes the document. It records nothing as touched:
-// the document is gone, so there is nothing left to point a caller at.
-// The delete reports the ids of the destroyed subtree, and their
-// search-index removal is queued in the same transaction: after the
-// commit nothing else knows what went away. An empty subtree means the
-// delete matched nothing, which is reported as an error rather than a
-// silent success.
+// DeleteDocument removes the document. The delete reports the ids of the
+// destroyed subtree, and their search-index removal is queued in the
+// same transaction: after the commit nothing else knows what went away.
+// An empty subtree means the delete matched nothing, which is reported
+// as an error rather than a silent success.
 func (i *input) DeleteDocument(id xid.ID) error {
+	// the parent is read before the row goes, to tell the subtree that
+	// changed. A document that cannot be read leaves the root's.
+	var parentID null.Value[xid.ID]
+
+	if doc, err := i.FetchDocument(id); err == nil {
+		parentID = doc.ParentID
+	}
+
 	var tx Tx
 
 	if err := i.db.BeginTx(i.ctx, &tx); err != nil {
@@ -519,6 +495,7 @@ func (i *input) DeleteDocument(id xid.ID) error {
 	}
 
 	i.searchTrigger.Trigger()
+	i.notifyTreeChange(parentID)
 
 	return nil
 }
@@ -530,9 +507,13 @@ func (i *input) DeleteDocument(id xid.ID) error {
 // subtree, is a broken tree, and the check belongs with the write that
 // would cause it.
 func (i *input) MoveDocument(doc *document.Document, parentID null.Value[xid.ID]) error {
-	if parentID.Valid {
+	if parentID.Valid { //nolint:nestif // the branching is sequential and readable
 		if err := i.db.CheckDocumentExists(i.ctx, parentID.V, i.orgID); err != nil {
-			return fmt.Errorf("new parent %s: %w", parentID.V, errUnknownParent(err))
+			if errutil.IsNotFound(err) {
+				return fmt.Errorf("new parent %s: %w", parentID.V, errUnknownParent)
+			}
+
+			return fmt.Errorf("checking parent: %w", err)
 		}
 
 		cycle, err := i.db.CheckDocumentCycle(i.ctx, doc.ID, parentID.V, i.orgID)
@@ -549,29 +530,48 @@ func (i *input) MoveDocument(doc *document.Document, parentID null.Value[xid.ID]
 		return fmt.Errorf("update: %w", err)
 	}
 
-	// the parents' own content is unchanged — only the tree shape
-	// around them — so the moved document is the one to record, on the
-	// branch it was fetched on.
-	i.recordTouched(doc.ID, doc.BranchID)
+	// the move changes the shape of both subtrees; when they are the
+	// same one, one notification covers it.
+	if doc.ParentID != parentID {
+		i.notifyTreeChange(doc.ParentID)
+	}
+
+	i.notifyTreeChange(parentID)
 
 	return nil
 }
 
-// SearchBlocks returns blocks whose text matches the query.
-func (i *input) SearchBlocks(query string, limit int) ([]search.Block, error) {
-	return i.search.SearchDocumentBlocks(i.ctx, i.orgID, query, limit)
+// RenameDocument sets the document's name and icon through the realtime
+// service, so an open editor shows them as they land. An empty name or
+// icon stays as it is.
+func (i *input) RenameDocument(doc *document.Document, name, icon string) error {
+	var ops []edit.Operation
+
+	if name != "" {
+		ops = append(ops, edit.SetName(name))
+	}
+
+	if icon != "" {
+		ops = append(ops, edit.SetIcon(icon))
+	}
+
+	if len(ops) == 0 {
+		return nil
+	}
+
+	if err := i.ApplyEdit(doc.ID, doc.BranchID, ops); err != nil {
+		return err
+	}
+
+	i.notifyTreeChange(doc.ParentID)
+
+	return nil
 }
 
 // Warn records something a tool carried on through.
 func (i *input) Warn(msg string, attrs ...slog.Attr) {
 	i.log.LogAttrs(i.ctx, slog.LevelWarn, msg,
 		append([]slog.Attr{slog.String("tool", string(i.name))}, attrs...)...)
-}
-
-// ReadOffloaded returns a tool result that was moved out of the
-// conversation for size.
-func (i *input) ReadOffloaded(path string) (string, error) {
-	return i.offload.Read(i.ctx, path)
 }
 
 // errBranchProtected is what a content write reports for a branch that
@@ -584,28 +584,6 @@ var errBranchProtected = errors.New("this branch is protected and takes no edits
 // a stale or guessed id is the usual cause.
 var ErrUnknownBranch = errors.New("this document has no branch with that id")
 
-// resolveDoc loads the branch branchID names of the given document and
-// returns the ids the edit client needs. The lookup
-// also acts as the cross-org safety check — Document scopes by orgID so
-// a docID from another organisation surfaces as NotFound.
-func (i *input) resolveDoc(documentID, branchID xid.ID) (docRef, error) {
-	doc, err := i.FetchBranch(documentID, branchID)
-	if err != nil {
-		return docRef{}, fmt.Errorf("fetching document: %w", err)
-	}
-
-	// a protected branch takes no write but core's own, and this is not
-	// one: the operations endpoint applies the batch to the live Y.Doc
-	// regardless, and only the persist behind it is refused. Without
-	// this the call reports success, the change shows up in every open
-	// editor, and it is gone at the next load.
-	if doc.Protected {
-		return docRef{}, i.protectedBranch(doc)
-	}
-
-	return docRef{DocumentID: doc.ID, BranchID: doc.BranchID}, nil
-}
-
 // protectedBranch builds the refusal for a write to a protected branch,
 // naming the document's unprotected branches so the caller has
 // somewhere to write, or saying there is none.
@@ -615,239 +593,85 @@ func (i *input) protectedBranch(doc *document.Document) error {
 		return fmt.Errorf("branch %s: %w; %w", doc.BranchName, errBranchProtected, err)
 	}
 
-	open := branchLabels(branches, func(b document.BranchSummary) bool { return !b.Protected })
+	open := slices.DeleteFunc(branches, func(b document.BranchSummary) bool { return b.Protected })
 	if len(open) == 0 {
 		return fmt.Errorf("branch %s: %w; the document has no unprotected branch to write to", doc.BranchName, errBranchProtected)
 	}
 
-	return fmt.Errorf("branch %s: %w; write to one of %s", doc.BranchName, errBranchProtected, strings.Join(open, ", "))
+	return fmt.Errorf("branch %s: %w; write to one of %s", doc.BranchName, errBranchProtected, branchLabels(open))
 }
 
-// branchLabels lists the branches keep accepts, or all of them when keep
-// is nil, each as "name (id)": the name is what a person calls it and
-// the id is what a tool call takes.
-func branchLabels(branches []document.BranchSummary, keep func(document.BranchSummary) bool) []string {
-	out := make([]string, 0, len(branches))
+// branchLabels lists the branches, each as "name (id)": the name is what
+// a person calls it and the id is what a tool call takes.
+func branchLabels(branches []document.BranchSummary) string {
+	labels := make([]string, 0, len(branches))
 
 	for _, b := range branches {
-		if keep == nil || keep(b) {
-			out = append(out, fmt.Sprintf("%s (%s)", b.BranchName, b.BranchID))
-		}
+		labels = append(labels, fmt.Sprintf("%s (%s)", b.BranchName, b.BranchID))
 	}
 
-	return out
+	return strings.Join(labels, ", ")
 }
 
 // ApplyEdit is the shared tail of every content-mutating write tool: it
-// resolves the document and branch to a (documentID, branchID) pair, ships the
-// operation batch to Node, and reports any operation Node refused.
-// Outcomes are logged so partial failures on the Node side (uid not
-// found, malformed block) are visible without re-running the
-// conversation. What the write produced is the tool's own to describe;
-// the persist behind the live document is debounced, so a re-read here
-// would not reliably show it.
+// loads the branch, ships the operation batch to Node, and returns the
+// operation Node refused, if any, in which case nothing was applied. What
+// the write produced is the tool's own to describe, which spares a second
+// fetch of the document. The branch lookup is scoped to the organisation,
+// so a document of another one is refused as unknown.
 func (i *input) ApplyEdit(documentID, branchID xid.ID, ops []edit.Operation) error {
-	ref, err := i.resolveDoc(documentID, branchID)
+	doc, err := i.FetchBranch(documentID, branchID)
 	if err != nil {
-		i.log.Warn(
-			"edit resolve failed",
-			slog.String("document_id", documentID.String()),
-			slog.String("error", err.Error()),
-		)
+		return fmt.Errorf("fetching document: %w", err)
+	}
 
-		return err
+	// a protected branch takes no write but core's own, and this is not
+	// one: the operations endpoint applies the batch to the live Y.Doc
+	// regardless, and only the persist behind it is refused. Without
+	// this the call reports success, the change shows up in every open
+	// editor, and it is gone at the next load.
+	if doc.Protected {
+		return i.protectedBranch(doc)
 	}
 
 	res, err := i.applier.Apply(
 		i.ctx,
-		ref.DocumentID,
-		ref.BranchID,
+		documentID,
+		branchID,
 		ops,
 		i.userID,
 		false,
 	)
 	if err != nil {
-		i.log.Error(
-			"edit apply failed",
-			slog.String("document_id", ref.DocumentID.String()),
-			slog.String("branch_id", ref.BranchID.String()),
-			slog.Int("op_count", len(ops)),
-			slog.String("error", err.Error()),
-		)
-
 		return fmt.Errorf("applying edit: %w", err)
 	}
 
-	// nothing committed and something to say why is a failed call, not
-	// a result describing a no-op: every write tool ships a single
-	// operation, so there is no partial success to report. Returning an
-	// error is what makes the surfaces treat it as one — the MCP bridge
-	// marks the result isError, and the assistant sees a failure it can
-	// correct rather than a success it will summarise.
-	if res.Applied == 0 && len(res.Errors) > 0 {
-		return fmt.Errorf("applying edit: %s", edit.JoinOpErrors(res.Errors))
+	// an operation refused is a failed call: the MCP bridge then marks
+	// the result isError, and the assistant sees a failure it can
+	// correct. A batch applies whole or not at all, so nothing landed.
+	if err := res.Err(len(ops)); err != nil {
+		return fmt.Errorf("applying edit: %w", err)
 	}
 
-	if len(res.Errors) > 0 {
-		i.log.Warn(
-			"edit partial failure",
-			slog.String("document_id", ref.DocumentID.String()),
-			slog.String("branch_id", ref.BranchID.String()),
-			slog.Int("applied", res.Applied),
-			slog.Any("errors", res.Errors),
-		)
-	} else {
-		i.log.Debug(
-			"edit applied",
-			slog.String("document_id", ref.DocumentID.String()),
-			slog.String("branch_id", ref.BranchID.String()),
-			slog.Int("applied", res.Applied),
-		)
-	}
-
-	// the resolved id, not the argument: the caller may have named the
-	// document any way resolveDoc accepts.
-	i.recordTouched(ref.DocumentID, ref.BranchID)
+	i.log.Debug(
+		"edit applied",
+		slog.String("document_id", documentID.String()),
+		slog.String("branch_id", branchID.String()),
+		slog.Int("op_count", len(ops)),
+	)
 
 	return nil
 }
 
-// ValidatePlacement validates a block that is about to land next to, or
-// in place of, the block referenceUID names. The reference's parent is
-// what decides legality — the document root takes the root set, a macro
-// container takes its own — so the check resolves the reference in the
-// fetched content and validates against that container. The edit
-// backend applies no schema of its own, so an illegal type let through
-// here would land in the Y.Doc unchallenged.
-func (i *input) ValidatePlacement(documentID, branchID xid.ID, referenceUID string, b block.Block) error {
-	content, err := i.FetchDocumentContent(documentID, branchID)
-	if err != nil {
-		return fmt.Errorf("fetching content: %w", err)
-	}
-
-	parent, ok := content.Content.FindParentTypeByUID(referenceUID)
-	if !ok {
-		// the reference does not resolve; the edit backend reports
-		// that as the call's result. Still reject a malformed block.
-		return block.Validate(b)
-	}
-
-	return block.ValidateInContainer(parent, b)
-}
-
-// ValidateAttrUpdate checks the attributes an update would leave on the
-// block. The update names some attributes and preserves the rest, so
-// the rules run against the merge rather than the payload — otherwise
-// setting one attribute would be judged as if every other were absent.
-//
-// A block whose ProseMirror type has no canonical counterpart is a
-// wrapper item (a list item, a macro internal). Those carry attributes
-// the canonical model does not describe, so there is nothing to check.
-func (i *input) ValidateAttrUpdate(documentID, branchID xid.ID, blockUID string, attrs map[string]any) error {
-	content, err := i.FetchDocumentContent(documentID, branchID)
-	if err != nil {
-		return fmt.Errorf("fetching content: %w", err)
-	}
-
-	target, ok := content.Content.FindByUID(blockUID)
-	if !ok {
-		// the uid does not resolve; the edit backend reports that as
-		// the call's result.
-		return nil
-	}
-
-	t, ok := block.CanonicalType(target.Type)
-	if !ok {
-		return nil
-	}
-
-	current := target.Attrs
-
-	// a titled code block keeps its title and language on its children
-	// rather than on itself.
-	if target.Type == document.BlockNodeTitledCodeBlock {
-		c, err := block.Compact(target)
-		if err != nil {
-			// NOCOV: compacting a titled code block cannot fail.
-			return fmt.Errorf("compacting block: %w", err)
-		}
-
-		current = c.Attrs
-	}
-
-	merged := make(document.Attributes, len(current)+len(attrs))
-	maps.Copy(merged, current)
-	maps.Copy(merged, attrs)
-
-	return block.ValidateAttrs(t, merged)
-}
-
-// ValidateMove checks that the moved block may live where the move
-// would put it: among the children of whatever holds the reference.
-// Only placement is in question — the block is already in the document,
-// so its content has been through validation once already and may
-// contain shapes this layer can no longer express.
-//
-// A wrapper item (a list item, a macro internal) has no canonical type
-// to check against a container's allowed set, so it is held to a
-// narrower rule instead: it may only land in a container of the kind it
-// already sits in, which permits reordering and moving between two
-// lists while keeping a list item from landing at the document root.
-func (i *input) ValidateMove(documentID, branchID xid.ID, blockUID, referenceUID string) error {
-	content, err := i.FetchDocumentContent(documentID, branchID)
-	if err != nil {
-		return fmt.Errorf("fetching content: %w", err)
-	}
-
-	moved, ok := content.Content.FindByUID(blockUID)
-	if !ok {
-		// neither uid resolving is the edit backend's report to make.
-		return nil
-	}
-
-	target, ok := content.Content.FindParentTypeByUID(referenceUID)
-	if !ok {
-		return nil
-	}
-
-	t, ok := block.CanonicalType(moved.Type)
-	if !ok {
-		source, ok := content.Content.FindParentTypeByUID(blockUID)
-		if !ok || source == target {
-			return nil
-		}
-
-		return fmt.Errorf(
-			"%s cannot move from %s into %s; it belongs to the block that holds it",
-			moved.Type, source, target,
-		)
-	}
-
-	return block.AllowedInContainer(target, t)
-}
-
-// NotifyTreeChange invokes the tree notifier when one is configured.
+// notifyTreeChange invokes the tree notifier when one is configured.
 // Safe to call from any tool — a nil notifier silently no-ops so tests
 // that don't wire one don't trip.
-func (i *input) NotifyTreeChange(parentID null.Value[xid.ID]) {
+func (i *input) notifyTreeChange(parentID null.Value[xid.ID]) {
 	if i.tree == nil {
 		return
 	}
 
 	i.tree.NotifyTreeChange(i.orgID, parentID)
-}
-
-// NotifyTreeChangeForDocument looks up the document's current parent
-// and fires a tree-change for that parent. Used by rename/icon ops
-// which don't carry a parent in their args. Failures (e.g. doc fetched
-// after delete) silently skip the notification.
-func (i *input) NotifyTreeChangeForDocument(documentID xid.ID) {
-	doc, err := i.FetchDocument(documentID)
-	if err != nil || doc == nil {
-		return
-	}
-
-	i.NotifyTreeChange(doc.ParentID)
 }
 
 // FetchTagTree returns every tag in the organisation in display order, each
@@ -885,7 +709,13 @@ func (i *input) FetchBranchTags(documentID, branchID xid.ID) ([]tag.Tag, error) 
 // name the organisation already uses is refused in the repository's own
 // words, which name the clash.
 func (i *input) CreateTag(t tag.Tag) error {
-	return i.db.InsertTag(i.ctx, t)
+	if err := i.db.InsertTag(i.ctx, t); err != nil {
+		return err
+	}
+
+	i.notifyTagTreeChange()
+
+	return nil
 }
 
 // UpdateTag renames and/or recolours the tag the id names.
@@ -897,6 +727,8 @@ func (i *input) UpdateTag(tagID xid.ID, inp tag.UpdateInput) error {
 
 		return err
 	}
+
+	i.notifyTagTreeChange()
 
 	return nil
 }
@@ -911,6 +743,8 @@ func (i *input) DeleteTag(tagID xid.ID) error {
 
 		return err
 	}
+
+	i.notifyTagTreeChange()
 
 	return nil
 }
@@ -932,7 +766,8 @@ func (i *input) AssignTag(documentID, branchID, tagID xid.ID) error {
 		return err
 	}
 
-	i.recordTouched(doc.ID, doc.BranchID)
+	i.notifyTagTreeChange()
+	i.notifyBranchTagsChange(doc.ID, doc.BranchID)
 
 	return nil
 }
@@ -955,7 +790,8 @@ func (i *input) UnassignTag(documentID, branchID, tagID xid.ID) error {
 		return err
 	}
 
-	i.recordTouched(doc.ID, doc.BranchID)
+	i.notifyTagTreeChange()
+	i.notifyBranchTagsChange(doc.ID, doc.BranchID)
 
 	return nil
 }
@@ -978,12 +814,18 @@ func (i *input) MoveTag(tagID xid.ID, sortIndex int) error {
 		return err
 	}
 
-	return i.db.UpdateTagTree(i.ctx, moved, i.orgID)
+	if err := i.db.UpdateTagTree(i.ctx, moved, i.orgID); err != nil {
+		return err
+	}
+
+	i.notifyTagTreeChange()
+
+	return nil
 }
 
-// NotifyTagTreeChange invokes the tag notifier when one is configured.
+// notifyTagTreeChange invokes the tag notifier when one is configured.
 // A nil notifier silently no-ops, like the document tree's.
-func (i *input) NotifyTagTreeChange() {
+func (i *input) notifyTagTreeChange() {
 	if i.tags == nil {
 		return
 	}
@@ -991,9 +833,9 @@ func (i *input) NotifyTagTreeChange() {
 	i.tags.NotifyTreeChange(i.orgID)
 }
 
-// NotifyBranchTagsChange invokes the tag notifier for one branch's tags
+// notifyBranchTagsChange invokes the tag notifier for one branch's tags
 // when one is configured. A nil notifier silently no-ops.
-func (i *input) NotifyBranchTagsChange(documentID, branchID xid.ID) {
+func (i *input) notifyBranchTagsChange(documentID, branchID xid.ID) {
 	if i.tags == nil {
 		return
 	}
@@ -1025,23 +867,17 @@ func (i *input) FetchHook(documentID, hookID xid.ID) (*hook.Hook, error) {
 	hk, err := i.db.FetchDocumentHook(i.ctx, hookID, i.orgID)
 	if err != nil {
 		if errutil.IsNotFound(err) {
-			return nil, i.unknownHook(documentID, hookID)
+			return nil, fmt.Errorf("hook %s on document %s: %w", hookID, documentID, errUnknownHook)
 		}
 
 		return nil, fmt.Errorf("fetching hook: %w", err)
 	}
 
 	if !hk.DocumentID.Valid || hk.DocumentID.V != documentID {
-		return nil, i.unknownHook(documentID, hookID)
+		return nil, fmt.Errorf("hook %s on document %s: %w", hookID, documentID, errUnknownHook)
 	}
 
 	return hk, nil
-}
-
-// unknownHook builds the refusal for a hook the document does not hold,
-// naming the document the call addressed.
-func (i *input) unknownHook(documentID, hookID xid.ID) error {
-	return fmt.Errorf("hook %s on document %s: %w", hookID, documentID, errUnknownHook)
 }
 
 // CreateHook creates a hook on the branch branchID names, anchored to the
@@ -1083,8 +919,6 @@ func (i *input) CreateHook(documentID, branchID xid.ID, blockUID string, tp hook
 		return nil, err
 	}
 
-	i.recordTouched(hk.DocumentID.V, hk.BranchID.V)
-
 	return hk, nil
 }
 
@@ -1098,8 +932,6 @@ func (i *input) UpdateHook(hk *hook.Hook, settings processor.Settings) error {
 
 	*hk = *updated
 
-	i.recordTouched(hk.DocumentID.V, hk.BranchID.V)
-
 	return nil
 }
 
@@ -1112,32 +944,17 @@ func (i *input) ResetHook(hk *hook.Hook) error {
 
 	*hk = *reset
 
-	i.recordTouched(hk.DocumentID.V, hk.BranchID.V)
-
 	return nil
 }
 
 // DeleteHook tears down what the hook holds outside the document and
-// removes its row. The branch stays, and the editor showing it has to
-// redraw, so the delete records the branch as touched.
+// removes its row.
 func (i *input) DeleteHook(hk *hook.Hook) error {
 	if err := i.hookMan.DeleteHook(i.ctx, hk.ID, hk.DocumentID.V, i.orgID, i.userID); err != nil {
 		return err
 	}
 
-	i.recordTouched(hk.DocumentID.V, hk.BranchID.V)
-
 	return nil
-}
-
-// docRef wraps the (documentID, branchID) pair the edit client needs to
-// address a live Y.Doc.
-type docRef struct {
-	// DocumentID is the document's id.
-	DocumentID xid.ID
-
-	// BranchID is the id of the addressed branch.
-	BranchID xid.ID
 }
 
 // DataSourceRunners hands out the runner for a data source. The
@@ -1241,15 +1058,15 @@ type TagDB interface {
 	DeleteTag(ctx context.Context, id xid.ID, organizationID string) error
 
 	// AssignBranchTag should make a document's branch carry a tag,
-	// changing nothing when it already does. Used by assign_tag.
+	// changing nothing when it already does.
 	AssignBranchTag(ctx context.Context, organizationID string, documentID, branchID, tagID xid.ID) error
 
 	// UnassignBranchTag should stop a document's branch carrying a tag,
-	// changing nothing when it does not. Used by unassign_tag.
+	// changing nothing when it does not.
 	UnassignBranchTag(ctx context.Context, organizationID string, documentID, branchID, tagID xid.ID) error
 
 	// UpdateTagTree should rewrite the display order of the org's tags to
-	// the order of the given tree. Used by move_tag.
+	// the order of the given tree.
 	UpdateTagTree(ctx context.Context, tree tag.Summaries, organizationID string) error
 }
 

@@ -2,13 +2,12 @@ package simulation
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"testing"
 	"time"
 
-	"github.com/oxynote/oxynote/server/core/internal/assistant/block"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
+	"github.com/oxynote/oxynote/server/core/internal/assistant/markup"
 	datasourceCore "github.com/oxynote/oxynote/server/core/internal/datasource"
 	datasourceMock "github.com/oxynote/oxynote/server/core/internal/datasource/_mock"
 	"github.com/oxynote/oxynote/server/core/internal/datasource/processor"
@@ -507,17 +506,11 @@ func Test_Checker_Check(t *testing.T) {
 				assert.True(t, call.System)
 				require.Len(t, call.Ops, 1)
 
-				op, opErr := call.Ops[0]()
-				require.NoError(t, opErr)
-
-				raw, jerr := json.Marshal(op)
-				require.NoError(t, jerr)
-
-				assert.JSONEq(
-					t,
-					`{"kind":"update_attrs","block_uid":"block-1","attrs":{"simulationActive":false}}`,
-					string(raw),
-				)
+				assert.Equal(t, edit.Operation{
+					Kind:     "update_attrs",
+					BlockUID: "block-1",
+					Attrs:    map[string]any{"simulationActive": false},
+				}, call.Ops[0])
 			}
 
 			if c.ProbeSpan > 0 {
@@ -543,7 +536,7 @@ func Test_Checker_Check(t *testing.T) {
 func Test_probeSpan(t *testing.T) {
 	t.Parallel()
 
-	known := block.MetricEnums()[document.AttrTimeRange]
+	known := markup.MetricEnums()[document.AttrTimeRange]
 
 	assert.Len(t, _probeSpans, len(known))
 

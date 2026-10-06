@@ -12,7 +12,6 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func Test_searchDocumentsArgs_Validate(t *testing.T) {
@@ -28,15 +27,11 @@ func Test_searchDocuments_Info(t *testing.T) {
 
 	info := searchDocuments{}.Info()
 
+	assert.Equal(t, Traits{}, info.Traits)
+
 	assert.Equal(t, NameSearchDocuments, info.Name)
 	assert.Equal(t, []string{"query"}, info.Required)
 	assert.Contains(t, info.Properties, "limit")
-}
-
-func Test_searchDocuments_Traits(t *testing.T) {
-	t.Parallel()
-
-	assert.Equal(t, Traits{}, searchDocuments{}.Traits())
 }
 
 func Test_searchDocuments_Title(t *testing.T) {
@@ -44,20 +39,17 @@ func Test_searchDocuments_Title(t *testing.T) {
 
 	d := testDeps(nil, nil, nil)
 
-	got, err := searchDocuments{}.Title(testInput(d, NameSearchDocuments, `{"query":"rate limit"}`))
-	require.NoError(t, err)
-	assert.Equal(t, `Searching for "rate limit"`, got)
-
-	_, err = searchDocuments{}.Title(testInput(d, NameSearchDocuments, `{}`))
-	require.Error(t, err)
+	assert.Equal(t, `Searching for "rate limit"`, searchDocuments{}.Title(testInput(d, NameSearchDocuments, `{"query":"rate limit"}`)))
+	assert.Empty(t, searchDocuments{}.Title(testInput(d, NameSearchDocuments, `{}`)))
 }
 
 func Test_searchDocuments_Execute(t *testing.T) {
 	t.Parallel()
 
-	docID, branchID := xid.New(), xid.New()
+	docID, branchID, mainID := xid.New(), xid.New(), xid.New()
 
 	branchFields := `"branch_id":"` + branchID.String() + `","branch_name":"draft","default":false,`
+	hit := `"hits":[{"block_uid":"b1","text":"rate limiting"}]`
 
 	hitSearcher := func(limit *int) *SearcherMock {
 		return &SearcherMock{
@@ -124,7 +116,7 @@ func Test_searchDocuments_Execute(t *testing.T) {
 			DB:     &DBMock{},
 			Args:   `{"query":"rate limit"}`,
 			Limit:  _searchLimitDefault,
-			Result: `{"hits":[]}`,
+			Result: `{"documents":[]}`,
 		},
 		"Names are joined in": {
 			Searcher: hitSearcher(nil),
@@ -133,10 +125,9 @@ func Test_searchDocuments_Execute(t *testing.T) {
 					return document.Summaries{{ID: docID, DocumentName: "Runbook"}}, nil
 				},
 			},
-			Args:  `{"query":"rate limit"}`,
-			Limit: _searchLimitDefault,
-			Result: `{"hits":[{"document_id":"` + docID.String() + `","document_name":"Runbook",` +
-				branchFields + `"block_uid":"b1","text":"rate limiting"}]}`,
+			Args:   `{"query":"rate limit"}`,
+			Limit:  _searchLimitDefault,
+			Result: `{"documents":[{"document_id":"` + docID.String() + `","document_name":"Runbook",` + branchFields + hit + `}]}`,
 		},
 		"Losing the names does not fail the search": {
 			Searcher: hitSearcher(nil),
@@ -147,7 +138,7 @@ func Test_searchDocuments_Execute(t *testing.T) {
 			},
 			Args:   `{"query":"rate limit"}`,
 			Limit:  _searchLimitDefault,
-			Result: `{"hits":[{"document_id":"` + docID.String() + `",` + branchFields + `"block_uid":"b1","text":"rate limiting"}]}`,
+			Result: `{"documents":[{"document_id":"` + docID.String() + `",` + branchFields + hit + `}]}`,
 			Logged: "cannot fetch the document tree for search hit names",
 		},
 		"Requested limit is honoured": {
@@ -155,16 +146,33 @@ func Test_searchDocuments_Execute(t *testing.T) {
 			DB:       &DBMock{},
 			Args:     `{"query":"rate limit","limit":5}`,
 			Limit:    5,
-			Result: `{"hits":[{"document_id":"` + docID.String() + `",` + branchFields + `"block_uid":"b1",` +
-				`"text":"rate limiting"}]}`,
+			Result:   `{"documents":[{"document_id":"` + docID.String() + `",` + branchFields + hit + `}]}`,
+		},
+		// hits of one branch sit under it once, in the order its best hit
+		// ranked; another branch of the same document is its own entry.
+		"Hits are grouped by branch": {
+			Searcher: &SearcherMock{
+				SearchDocumentBlocksFunc: func(context.Context, string, string, int) ([]search.Block, error) {
+					return []search.Block{
+						{DocumentID: docID, BranchID: branchID, BranchName: "draft", ID: branchID.String() + "-b1", Text: "one"},
+						{DocumentID: docID, BranchID: mainID, BranchName: "main", BranchDefault: true, ID: mainID.String() + "-b2", Text: "two"},
+						{DocumentID: docID, BranchID: branchID, BranchName: "draft", ID: branchID.String() + "-b3", Text: "three"},
+					}, nil
+				},
+			},
+			DB:    &DBMock{},
+			Args:  `{"query":"rate limit"}`,
+			Limit: _searchLimitDefault,
+			Result: `{"documents":[` +
+				`{"document_id":"` + docID.String() + `",` + branchFields + `"hits":[{"block_uid":"b1","text":"one"},{"block_uid":"b3","text":"three"}]},` +
+				`{"document_id":"` + docID.String() + `","branch_id":"` + mainID.String() + `","branch_name":"main","default":true,"hits":[{"block_uid":"b2","text":"two"}]}]}`,
 		},
 		"Oversized limit is clipped": {
 			Searcher: hitSearcher(nil),
 			DB:       &DBMock{},
 			Args:     `{"query":"rate limit","limit":5000}`,
 			Limit:    _searchLimitMax,
-			Result: `{"hits":[{"document_id":"` + docID.String() + `",` + branchFields + `"block_uid":"b1",` +
-				`"text":"rate limiting"}]}`,
+			Result:   `{"documents":[{"document_id":"` + docID.String() + `",` + branchFields + hit + `}]}`,
 		},
 	}
 

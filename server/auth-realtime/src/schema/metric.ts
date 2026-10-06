@@ -23,7 +23,7 @@ export const MetricGrid = Node.create({
 
 export const MetricBlock = Node.create({
 	name: "metricBlock",
-	group: "block",
+	group: "metricBlock",
 	atom: true,
 	defining: true,
 	selectable: false,

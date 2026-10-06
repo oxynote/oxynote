@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
+	"reflect"
 	"strings"
 
 	"github.com/oxynote/oxynote/server/core/pkg/strutil"
@@ -71,32 +73,11 @@ func (rb RootBlock) FindByUID(uid string) (Block, bool) {
 	return Block{}, false
 }
 
-// FindParentTypeByUID recursively searches the root's subtree for the
-// block with the given uid and returns the node type of the block that
-// directly holds it. A top-level match reports BlockNodeDoc.
-func (rb RootBlock) FindParentTypeByUID(uid string) (BlockNodeType, bool) {
-	for _, b := range rb.Content {
-		if id, ok := b.UID(); ok && id == uid {
-			return BlockNodeDoc, true
-		}
-
-		if t, ok := b.FindParentTypeByUID(uid); ok {
-			return t, true
-		}
-	}
-
-	return "", false
-}
-
 // HasBlock searches for a block with the given ID in the root block.
 func (rb RootBlock) HasBlock(blockID string) bool {
-	for _, b := range rb.Content {
-		if b.HasBlock(blockID) {
-			return true
-		}
-	}
+	_, ok := rb.FindByUID(blockID)
 
-	return false
+	return ok
 }
 
 // Value transforms stopper type into a database entry.
@@ -156,55 +137,6 @@ func (b Block) UID() (string, bool) {
 	return id, ok
 }
 
-// Flatten returns the concatenated text of the block's entire
-// subtree. Text within one block reads as written, and the text of
-// separate blocks is separated by a single space. Used to derive a flat
-// searchable representation from a structured ProseMirror tree.
-func (b Block) Flatten() string {
-	f := flattener{}
-	f.walk(b)
-
-	return string(f.buf)
-}
-
-// flattener accumulates the text Flatten returns.
-type flattener struct {
-	// buf holds the text written so far.
-	buf []byte
-
-	// apart indicates that a block boundary was crossed since the last
-	// text, so the next text is set apart by a space.
-	apart bool
-}
-
-// walk appends the text of b's subtree. Adjacent text nodes are one run
-// split only by marks, so they join as written; any other node, such as
-// a block or a hard break, sets the text around it apart.
-func (f *flattener) walk(b Block) {
-	if b.Type == BlockNodeText {
-		if b.Text == "" {
-			return
-		}
-
-		if f.apart && len(f.buf) > 0 && f.buf[len(f.buf)-1] != ' ' {
-			f.buf = append(f.buf, ' ')
-		}
-
-		f.apart = false
-		f.buf = append(f.buf, b.Text...)
-
-		return
-	}
-
-	f.apart = true
-
-	for _, c := range b.Content {
-		f.walk(c)
-	}
-
-	f.apart = true
-}
-
 // FindByUID recursively searches the block's subtree (self included)
 // for the block with the given uid and returns it.
 func (b Block) FindByUID(uid string) (Block, bool) {
@@ -221,29 +153,29 @@ func (b Block) FindByUID(uid string) (Block, bool) {
 	return Block{}, false
 }
 
-// FindParentTypeByUID recursively searches the block's children for the
-// block with the given uid and returns the node type of the block that
-// directly holds it — b's own type for a direct child. A match on b
-// itself is not reported, since b's parent is not in view.
-func (b Block) FindParentTypeByUID(uid string) (BlockNodeType, bool) {
-	for _, cb := range b.Content {
-		if id, ok := cb.UID(); ok && id == uid {
-			return b.Type, true
-		}
-
-		if t, ok := cb.FindParentTypeByUID(uid); ok {
-			return t, true
+// FirstChild returns the block's first child of type typ, or the zero
+// block when it has none.
+func (b Block) FirstChild(typ BlockNodeType) Block {
+	for _, c := range b.Content {
+		if c.Type == typ {
+			return c
 		}
 	}
 
-	return "", false
+	return Block{}
 }
 
-// HasBlock recursively searches for a block with the given ID.
-func (b Block) HasBlock(blockID string) bool {
-	_, ok := b.FindByUID(blockID)
+// PlainText returns the text of b's text children, marks dropped.
+func (b Block) PlainText() string {
+	var sb strings.Builder
 
-	return ok
+	for _, c := range b.Content {
+		if c.Type == BlockNodeText {
+			sb.WriteString(c.Text)
+		}
+	}
+
+	return sb.String()
 }
 
 // Mark represents a mark, such as bold or italic.
@@ -253,6 +185,12 @@ type Mark struct {
 
 	// Attrs are additional attributes for the mark, such as link URL.
 	Attrs Attributes `json:"attrs,omitempty"`
+}
+
+// Equal reports whether m and o are the same mark with the same
+// attributes.
+func (m Mark) Equal(o Mark) bool {
+	return m.Type == o.Type && maps.EqualFunc(m.Attrs, o.Attrs, reflect.DeepEqual)
 }
 
 // UnmarshalJSON decodes the mark, reading attrs that are not an object

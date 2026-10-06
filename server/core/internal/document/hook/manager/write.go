@@ -11,6 +11,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/document/hook"
 	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
 	"github.com/oxynote/oxynote/server/core/pkg/errutil"
+	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
 )
 
@@ -265,6 +266,10 @@ func (m *Manager) ResetHook(ctx context.Context, id, documentID xid.ID, organiza
 	if err = hk.Reset(ctx, m.input(organizationID)); err != nil {
 		return nil, m.hookErr(err)
 	}
+
+	// a reset is a change someone made, as a settings update is, unlike
+	// the resets a background check does.
+	hk.UpdatedAt = null.TimeFrom(timeutil.Now())
 
 	if err = m.db.UpdateDocumentHook(ctx, *hk); err != nil {
 		return nil, err

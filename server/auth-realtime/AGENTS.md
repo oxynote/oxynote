@@ -37,7 +37,8 @@ organization and admin, created before listening),
 `logging.ts`, `headers.ts`, `auth.ts` (`createAuth` + better-auth
 callbacks), `hocuspocus.ts` (`createHocuspocus`, `createDocumentHooks`,
 `flushDocument`), `routes.ts` (`createRoutes` → Hono app), `operations.ts`
-(pure: assistant edit ops on a Y.Doc), `ydocument.ts` (pure: replacing Y.Doc
+(pure: assistant edit ops on a Y.Doc), `validate.ts` (pure: checks those ops
+against the editor schema), `ydocument.ts` (pure: replacing Y.Doc
 content), `schema/` (ProseMirror schema mirroring web's tiptap extensions),
 `sentry.ts` and `bundle.ts` (docker entry: sentry + index in one bundle).
 

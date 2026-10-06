@@ -3,37 +3,23 @@ package tools
 import (
 	"errors"
 	"fmt"
-	"maps"
-	"slices"
-	"strings"
 
-	"github.com/oxynote/oxynote/server/core/internal/assistant/block"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
+	"github.com/oxynote/oxynote/server/core/internal/assistant/markup"
 	"github.com/oxynote/oxynote/server/core/internal/document"
-	"github.com/oxynote/oxynote/server/core/pkg/errutil"
-	"github.com/oxynote/oxynote/server/core/pkg/strutil"
 	"github.com/rs/xid"
 )
 
-// _maxPreviewLen caps the quoted text preview shown in the confirm UI.
-const _maxPreviewLen = 60
-
-// _listEntries are the list wrappers read_block returns as their entry.
-var _listEntries = map[document.BlockNodeType]bool{
-	document.BlockNodeListItem: true,
-	document.BlockNodeTaskItem: true,
-}
-
-// _textHolders maps each block holding its text one level down to the
-// child the text lives in, matching the realtime service's update_text.
-// Every other text-bearing block holds it directly.
-var _textHolders = map[document.BlockNodeType]document.BlockNodeType{
-	document.BlockNodeTitledCodeBlock: document.BlockNodeCodeBlock,
-	document.BlockNodeCalloutBlock:    document.BlockNodeParagraph,
-	document.BlockNodeBlockquote:      document.BlockNodeParagraph,
-	document.BlockNodeListItem:        document.BlockNodeParagraph,
-	document.BlockNodeTaskItem:        document.BlockNodeParagraph,
-}
+// _contentDescription describes the XML a block write takes. Only
+// insert_blocks carries it; the others refer to it there.
+var _contentDescription = "The blocks as XML, one element per block. " +
+	"Elements: <p>; <h1> to <h3>, plain text; <ul> and <ol start> of <li>, and <tasks> of <task checked>, where an entry holds its text and then any blocks nested under it; " +
+	"<blockquote> and <callout icon> holding blocks; <pre language> with raw code, or with a title the titled code a split_doc's right side takes; <mermaid> with raw source; " +
+	"<hr/>; <img src alt title width/>; <figma src width height/>; <metrics> of <metric>, which holds a JSON object of its attributes; " +
+	"<split_doc inversed> holding <left>, an <h1> then <p>, lists or <callout> then any <params header> of <param name type>description</param>, and <right>, a titled <pre>, <metric> or <mermaid>. " +
+	"Inline text takes <b>, <i>, <u>, <s>, <code> and <a href>; outside <pre>, <mermaid> and <metric>, whose content is raw, write & as &amp; and < as &lt;. " +
+	"Mermaid ends a gantt task name or timeline period at its first colon, so write a colon inside one as #58;. " +
+	"A metric's attributes: " + markup.MetricReference() + "."
 
 // docTarget names the document, and the branch of it, a content tool
 // reads or writes. Both are required: the default branch is a branch
@@ -46,8 +32,8 @@ type docTarget struct {
 	BranchID xid.ID `json:"branch_id"`
 }
 
-// validate checks the target names a document and a branch.
-func (t docTarget) validate() error {
+// Validate checks the target names a document and a branch.
+func (t docTarget) Validate() error {
 	if t.DocumentID.IsNil() {
 		return errRequired("document_id")
 	}
@@ -57,127 +43,6 @@ func (t docTarget) validate() error {
 	}
 
 	return nil
-}
-
-// readBlockArgs is what read_block is called with.
-type readBlockArgs struct {
-	docTarget
-
-	// BlockUID is the block being read. Required.
-	BlockUID string `json:"block_uid"`
-}
-
-// Validate checks the arguments are complete.
-func (a readBlockArgs) Validate() error {
-	if err := a.validate(); err != nil {
-		return err
-	}
-
-	if a.BlockUID == "" {
-		return errRequired("block_uid")
-	}
-
-	return nil
-}
-
-// readBlock returns the full canonical content of one block.
-type readBlock struct {
-	plainSummary
-	plainTraits
-}
-
-// Info returns the tool's model-facing description.
-func (readBlock) Info() Info {
-	return Info{
-		Name:        NameReadBlock,
-		Description: "Return the full canonical content of one block by uid, including any nested children. Use it only when get_document's rows are not enough: to edit a split_doc, a nested list or a split_doc_param_list, whose inner structure has to be written back in full. A uid inside a block, such as a search hit on a titled_code's title, returns the block holding it, and a list entry's uid returns the entry. Fails when the uid is not in the document.",
-		Properties: map[string]any{
-			"document_id": map[string]any{"type": "string", "description": "The document id."},
-			"branch_id":   map[string]any{"type": "string", "description": "The id of the branch to read or write: a document's default_branch_id from list_documents, a search hit's branch_id, or any id from the branches get_document lists. A protected branch can be read but refuses every write."},
-			"block_uid":   map[string]any{"type": "string", "description": "The block uid to fetch."},
-		},
-		Required: []string{
-			"document_id",
-			"branch_id",
-			"block_uid",
-		},
-	}
-}
-
-// Title announces which document the block is being read from.
-func (readBlock) Title(inp DescribeInput) (string, error) {
-	var in readBlockArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return "", err
-	}
-
-	doc, err := inp.FetchBranch(in.DocumentID, in.BranchID)
-	if err != nil {
-		return "", fmt.Errorf("%s: fetch document: %w", NameReadBlock, err)
-	}
-
-	return "Reading a block in " + doc.DocumentName, nil
-}
-
-// Execute fetches and compacts the named block.
-func (readBlock) Execute(inp Input) (string, error) {
-	var in readBlockArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return "", err
-	}
-
-	content, err := inp.FetchDocumentContent(in.DocumentID, in.BranchID)
-	if err != nil {
-		return "", fmt.Errorf("read_block: fetch content: %w", err)
-	}
-
-	blk, ok := findReadable(content.Content.Content, in.BlockUID)
-	if !ok {
-		return "", fmt.Errorf("read_block: block %q not found: %w", in.BlockUID, errutil.ErrNotFound)
-	}
-
-	canon, err := block.Compact(blk)
-	if err != nil {
-		return "", fmt.Errorf("read_block: compact: %w", err)
-	}
-
-	return result(canon)
-}
-
-// insertBlock places a canonical block in a document: beside a
-// referenced block, or at either end of the document.
-type insertBlock struct{}
-
-// Info returns the tool's model-facing description.
-func (insertBlock) Info() Info {
-	return Info{
-		Name:        NameInsertBlock,
-		Description: "Insert one canonical block into a document. position start or end puts it at the document's start or end; before or after puts it beside the block reference_block_uid names, which stays in place. The block has to be legal where it lands: the document root takes every type except titled_code, metric and split_doc_param_list, and a reference inside a split_doc or metric_grid takes only what that container holds. Returns the summary rows of the new block and the blocks nested in it that get_document lists, uids included, with depth counted from the block itself; a row marked has_children holds more, which read_block returns.",
-		Properties: map[string]any{
-			"document_id":         map[string]any{"type": "string", "description": "The target document id."},
-			"branch_id":           map[string]any{"type": "string", "description": "The id of the branch to read or write: a document's default_branch_id from list_documents, a search hit's branch_id, or any id from the branches get_document lists. A protected branch can be read but refuses every write."},
-			"reference_block_uid": map[string]any{"type": "string", "description": "The uid of the block to insert beside. Required with before and after; leave it out with start and end."},
-			"position": map[string]any{
-				"type": "string",
-				"enum": []string{
-					string(positionBefore),
-					string(positionAfter),
-					string(positionStart),
-					string(positionEnd),
-				},
-				"description": "Where the block lands: before or after the reference block, or at the start or end of the document.",
-			},
-			"block": _blockSchema,
-		},
-		Required: []string{
-			"document_id",
-			"branch_id",
-			"position",
-			"block",
-		},
-	}
 }
 
 const (
@@ -219,24 +84,24 @@ func (p position) relative() bool {
 	return p == positionBefore || p == positionAfter
 }
 
-// insertBlockArgs is what insert_block is called with.
-type insertBlockArgs struct {
+// insertBlocksArgs is what insert_blocks is called with.
+type insertBlocksArgs struct {
 	docTarget
 
 	// ReferenceBlockUID is the block the insertion is positioned
 	// against. Required for before and after, and refused otherwise.
 	ReferenceBlockUID string `json:"reference_block_uid"`
 
-	// Position is where the block lands.
+	// Position is where the blocks land.
 	Position position `json:"position"`
 
-	// Block is the block being inserted.
-	Block block.Block `json:"block"`
+	// Content is the blocks, as markup.
+	Content string `json:"content"`
 }
 
 // Validate checks the arguments are complete and consistent.
-func (a insertBlockArgs) Validate() error {
-	if err := a.validate(); err != nil {
+func (a insertBlocksArgs) Validate() error {
+	if err := a.docTarget.Validate(); err != nil {
 		return err
 	}
 
@@ -252,37 +117,60 @@ func (a insertBlockArgs) Validate() error {
 		return errors.New("reference_block_uid applies to before and after only; use before or after, or leave it out")
 	}
 
-	if a.Block.Type == "" {
-		return errRequired("block")
+	if a.Content == "" {
+		return errRequired("content")
 	}
 
 	return nil
 }
 
-// Traits reports a write.
-func (insertBlock) Traits() Traits {
-	return Traits{Write: true}
+// insertOps returns the operations that insert blocks, at least one, at
+// the position, in order: the first lands at the position and each next
+// one after the one before it.
+func (a insertBlocksArgs) insertOps(blocks []document.Block) []edit.Operation {
+	first := edit.Append(blocks[0])
+
+	switch a.Position {
+	case positionBefore:
+		first = edit.InsertBefore(a.ReferenceBlockUID, blocks[0])
+	case positionAfter:
+		first = edit.InsertAfter(a.ReferenceBlockUID, blocks[0])
+	case positionStart:
+		first = edit.Prepend(blocks[0])
+	default:
+	}
+
+	return insertAfterPrevious(first, blocks)
 }
 
-// Title announces which document is being updated.
-func (insertBlock) Title(inp DescribeInput) (string, error) {
-	var in insertBlockArgs
+// insertBlocks places new blocks in a document: beside a referenced
+// block, or at either end of the document.
+type insertBlocks struct{}
 
-	if err := inp.Decode(&in); err != nil {
-		return "", err
+// Info returns the tool's model-facing description.
+func (insertBlocks) Info() Info {
+	return Info{
+		Name:        NameInsertBlocks,
+		Traits:      Traits{Write: true},
+		Description: "Insert blocks into a document, written as XML, all in one call: at its start or end, or before or after the block reference_block_uid names. Every element is a new block, so leave id out; replace_blocks changes existing ones. A block not allowed where it lands is refused, naming what the place takes. Returns the written blocks as XML with their ids.",
+		Properties: map[string]any{
+			"document_id":         map[string]any{"type": "string", "description": _documentIDDescription},
+			"branch_id":           map[string]any{"type": "string", "description": _branchIDDescription},
+			"reference_block_uid": map[string]any{"type": "string", "description": "The id of the block to insert beside. Required with before and after; leave it out with start and end."},
+			"position": map[string]any{
+				"type":        "string",
+				"enum":        []string{string(positionBefore), string(positionAfter), string(positionStart), string(positionEnd)},
+				"description": "Where the blocks land: before or after the reference block, or at the start or end of the document.",
+			},
+			"content": map[string]any{"type": "string", "description": _contentDescription},
+		},
+		Required: []string{"document_id", "branch_id", "position", "content"},
 	}
-
-	doc, err := inp.FetchBranch(in.DocumentID, in.BranchID)
-	if err != nil {
-		return "", fmt.Errorf("%s: fetch document: %w", NameInsertBlock, err)
-	}
-
-	return "Updating " + doc.Title(), nil
 }
 
 // Summary describes the insertion the model wants to make.
-func (insertBlock) Summary(inp DescribeInput) (ActionSummary, error) {
-	var in insertBlockArgs
+func (insertBlocks) Summary(inp DescribeInput) (ActionSummary, error) {
+	var in insertBlocksArgs
 
 	if err := inp.Decode(&in); err != nil {
 		return ActionSummary{}, err
@@ -290,97 +178,73 @@ func (insertBlock) Summary(inp DescribeInput) (ActionSummary, error) {
 
 	doc, err := inp.FetchBranch(in.DocumentID, in.BranchID)
 	if err != nil {
-		return ActionSummary{}, fmt.Errorf("%s: fetch document: %w", NameInsertBlock, err)
+		return ActionSummary{}, fmt.Errorf("fetch document: %w", err)
 	}
 
-	kind := in.Block.Type.Label()
+	blocks, err := markup.Build(in.Content, document.RootBlock{})
+	if err != nil {
+		return ActionSummary{}, err
+	}
 
 	var summary string
 
-	switch in.Position {
+	switch what := countPhrase(len(blocks), "block"); in.Position {
 	case positionStart:
-		summary = fmt.Sprintf("Prepend %s to %s", kind, doc.Title())
+		summary = fmt.Sprintf("Insert %s at the start of %s", what, doc.Title())
 	case positionEnd:
-		summary = fmt.Sprintf("Append %s to %s", kind, doc.Title())
+		summary = fmt.Sprintf("Insert %s at the end of %s", what, doc.Title())
 	default:
-		summary = fmt.Sprintf("Insert %s %s a block in %s", kind, in.Position, doc.Title())
+		summary = fmt.Sprintf("Insert %s %s a block in %s", what, in.Position, doc.Title())
 	}
 
 	return ActionSummary{
-		Tool:         NameInsertBlock,
+		Tool:         NameInsertBlocks,
 		DocumentID:   doc.ID,
 		DocumentName: doc.DocumentName,
 		Summary:      summary,
 	}, nil
 }
 
-// Execute validates the placement and applies the insertion.
-func (insertBlock) Execute(inp Input) (string, error) {
-	var in insertBlockArgs
+// Execute builds the blocks and inserts them in one batch.
+func (insertBlocks) Execute(inp *input) (string, error) {
+	var in insertBlocksArgs
 
 	if err := inp.Decode(&in); err != nil {
 		return "", err
 	}
 
-	if in.Position.relative() {
-		if err := inp.ValidatePlacement(in.DocumentID, in.BranchID, in.ReferenceBlockUID, in.Block); err != nil {
-			return "", fmt.Errorf("insert_block: %w", err)
-		}
-	} else if err := block.ValidateAsRoot(in.Block); err != nil {
-		return "", fmt.Errorf("insert_block: %w", err)
-	}
-
-	// uids are resolved at expansion, so expanding here rather than at
-	// wire time is what lets the tool report what it wrote without
-	// reading the document back, which the debounced persist would not
-	// reliably show yet.
-	expanded, err := sanitizeBlock(inp, in.Block, document.Block{})
+	// an empty stored document gives no id a block to keep, which is
+	// what makes every element a new block.
+	blocks, err := markup.Build(in.Content, document.RootBlock{})
 	if err != nil {
-		return "", fmt.Errorf("insert_block: %w", err)
-	}
-
-	var op edit.Operation
-
-	switch in.Position {
-	case positionBefore:
-		op = edit.InsertBefore(in.ReferenceBlockUID, expanded)
-	case positionAfter:
-		op = edit.InsertAfter(in.ReferenceBlockUID, expanded)
-	case positionStart:
-		op = edit.Prepend(expanded)
-	default:
-		op = edit.Append(expanded)
-	}
-
-	if err := inp.ApplyEdit(in.DocumentID, in.BranchID, []edit.Operation{op}); err != nil {
 		return "", err
 	}
 
-	return result(blockWriteResult{Blocks: blockRows(expanded)})
+	if err := inp.CheckDataSources(blocks); err != nil {
+		return "", err
+	}
+
+	if err := inp.ApplyEdit(in.DocumentID, in.BranchID, in.insertOps(blocks)); err != nil {
+		return "", err
+	}
+
+	return result(blockWriteResult{Content: markup.Render(blocks)})
 }
 
-// blockWriteResult is what a block write returns: the rows of the block
-// it wrote or touched, in the shape get_document lists them.
-type blockWriteResult struct {
-	// Blocks is the written block and everything nested in it, depth
-	// counted from the block itself.
-	Blocks []docSummaryEntry `json:"blocks"`
-}
-
-// replaceBlockArgs is what replace_block is called with.
-type replaceBlockArgs struct {
+// replaceBlocksArgs is what replace_blocks is called with.
+type replaceBlocksArgs struct {
 	docTarget
 
 	// BlockUID is the block being replaced. Required.
 	BlockUID string `json:"block_uid"`
 
-	// Block is what takes its place.
-	Block block.Block `json:"block"`
+	// Content is what takes its place, as markup.
+	Content string `json:"content"`
 }
 
 // Validate checks the arguments are complete.
-func (a replaceBlockArgs) Validate() error {
-	if err := a.validate(); err != nil {
+func (a replaceBlocksArgs) Validate() error {
+	if err := a.docTarget.Validate(); err != nil {
 		return err
 	}
 
@@ -388,61 +252,35 @@ func (a replaceBlockArgs) Validate() error {
 		return errRequired("block_uid")
 	}
 
-	if a.Block.Type == "" {
-		return errRequired("block")
+	if a.Content == "" {
+		return errRequired("content")
 	}
 
 	return nil
 }
 
-// replaceBlock swaps an existing block for a new one.
-type replaceBlock struct{}
+// replaceBlocks swaps one block for the blocks markup describes.
+type replaceBlocks struct{}
 
 // Info returns the tool's model-facing description.
-func (replaceBlock) Info() Info {
+func (replaceBlocks) Info() Info {
 	return Info{
-		Name:        NameReplaceBlock,
-		Description: "Replace a block by uid with a new block in the same position. The old block's uid, content and children are all gone unless the new block carries them, so use it to change a block's type or its whole structure. For a wording change use update_block_text, and for an attribute change update_block_attrs; both keep the uid, which comments, hooks and files hang off. Returns the summary rows of the new block and the blocks nested in it that get_document lists, uids included, with depth counted from the block itself; a row marked has_children holds more, which read_block returns.",
+		Name:        NameReplaceBlocks,
+		Traits:      Traits{Write: true, Overwrites: true},
+		Description: "Replace one block with the blocks content holds, in the XML insert_blocks describes. To change a block, read it with get_document (block_uid narrows the read), edit the XML and send it back. Keep the id of every element that stays: it keeps its comments, hooks and files, and unchanged content stays exactly as stored. An element without an id is new; an id from outside the replaced block is refused. Returns the written blocks as XML.",
 		Properties: map[string]any{
-			"document_id": map[string]any{"type": "string", "description": "The target document id."},
-			"branch_id":   map[string]any{"type": "string", "description": "The id of the branch to read or write: a document's default_branch_id from list_documents, a search hit's branch_id, or any id from the branches get_document lists. A protected branch can be read but refuses every write."},
-			"block_uid":   map[string]any{"type": "string", "description": "The uid of the block being replaced."},
-			"block":       _blockSchema,
+			"document_id": map[string]any{"type": "string", "description": _documentIDDescription},
+			"branch_id":   map[string]any{"type": "string", "description": _branchIDDescription},
+			"block_uid":   map[string]any{"type": "string", "description": "The id of the block being replaced."},
+			"content":     map[string]any{"type": "string", "description": "The blocks taking its place, as XML in the format insert_blocks describes."},
 		},
-		Required: []string{
-			"document_id",
-			"branch_id",
-			"block_uid",
-			"block",
-		},
+		Required: []string{"document_id", "branch_id", "block_uid", "content"},
 	}
-}
-
-// Traits reports a write that overwrites: the replacement takes the
-// target's place whole, so every nested block and uid under it goes.
-func (replaceBlock) Traits() Traits {
-	return Traits{Write: true, Overwrites: true}
-}
-
-// Title announces which document is being updated.
-func (replaceBlock) Title(inp DescribeInput) (string, error) {
-	var in replaceBlockArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return "", err
-	}
-
-	doc, err := inp.FetchBranch(in.DocumentID, in.BranchID)
-	if err != nil {
-		return "", fmt.Errorf("%s: fetch document: %w", NameReplaceBlock, err)
-	}
-
-	return "Updating " + doc.Title(), nil
 }
 
 // Summary describes the replacement the model wants to make.
-func (replaceBlock) Summary(inp DescribeInput) (ActionSummary, error) {
-	var in replaceBlockArgs
+func (replaceBlocks) Summary(inp DescribeInput) (ActionSummary, error) {
+	var in replaceBlocksArgs
 
 	if err := inp.Decode(&in); err != nil {
 		return ActionSummary{}, err
@@ -450,309 +288,59 @@ func (replaceBlock) Summary(inp DescribeInput) (ActionSummary, error) {
 
 	doc, err := inp.FetchBranch(in.DocumentID, in.BranchID)
 	if err != nil {
-		return ActionSummary{}, fmt.Errorf("%s: fetch document: %w", NameReplaceBlock, err)
+		return ActionSummary{}, fmt.Errorf("fetch document: %w", err)
 	}
 
-	return ActionSummary{
-		Tool:         NameReplaceBlock,
-		DocumentID:   doc.ID,
-		DocumentName: doc.DocumentName,
-		Summary:      fmt.Sprintf("Replace a block in %s with %s", doc.DocumentName, in.Block.Type.Label()),
-	}, nil
-}
-
-// Execute validates the replacement and applies it.
-func (replaceBlock) Execute(inp Input) (string, error) {
-	var in replaceBlockArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return "", err
+	// the markup is built as Execute builds it, against the replaced
+	// block only, so the user is not asked to approve a write that is
+	// then refused.
+	target, ok := doc.Content.FindByUID(in.BlockUID)
+	if !ok {
+		return ActionSummary{}, fmt.Errorf("block %s: %w", in.BlockUID, errUnknownBlock)
 	}
 
-	// the replacement lands where the target sits, so the target is what
-	// decides whether this is a root placement.
-	if err := inp.ValidatePlacement(in.DocumentID, in.BranchID, in.BlockUID, in.Block); err != nil {
-		return "", fmt.Errorf("replace_block: %w", err)
-	}
-
-	content, err := inp.FetchDocumentContent(in.DocumentID, in.BranchID)
+	blocks, err := markup.Build(in.Content, document.RootBlock{Content: []document.Block{target}})
 	if err != nil {
-		return "", fmt.Errorf("replace_block: %w", err)
-	}
-
-	// an unknown uid leaves stored empty, so no flag is kept. ApplyEdit
-	// reports the unknown uid.
-	var stored document.Block
-
-	if b, ok := content.Content.FindByUID(in.BlockUID); ok {
-		stored = b
-	}
-
-	expanded, err := sanitizeBlock(inp, in.Block, stored)
-	if err != nil {
-		return "", fmt.Errorf("replace_block: %w", err)
-	}
-
-	if err := inp.ApplyEdit(in.DocumentID, in.BranchID, []edit.Operation{edit.Replace(in.BlockUID, expanded)}); err != nil {
-		return "", err
-	}
-
-	return result(blockWriteResult{Blocks: blockRows(expanded)})
-}
-
-// updateBlockTextArgs is what update_block_text is called with.
-type updateBlockTextArgs struct {
-	docTarget
-
-	// BlockUID is the block whose text is being written. Required.
-	BlockUID string `json:"block_uid"`
-
-	// Text is the new inline content.
-	Text string `json:"text"`
-}
-
-// Validate checks the arguments are complete.
-func (a updateBlockTextArgs) Validate() error {
-	if err := a.validate(); err != nil {
-		return err
-	}
-
-	if a.BlockUID == "" {
-		return errRequired("block_uid")
-	}
-
-	if a.Text == "" {
-		return errRequired("text")
-	}
-
-	if len(a.Text) > block.MaxTextLength {
-		return fmt.Errorf("text is longer than %d bytes; split it across blocks", block.MaxTextLength)
-	}
-
-	return nil
-}
-
-// updateBlockText replaces the inline text of a text-bearing block.
-type updateBlockText struct{}
-
-// Info returns the tool's model-facing description.
-func (updateBlockText) Info() Info {
-	return Info{
-		Name:        NameUpdateBlockText,
-		Description: "Replace the inline text of one text-bearing block: paragraph, heading, code, titled_code, mermaid, a list or task list entry, or a blockquote or callout holding a single paragraph. Type, attrs and uid are kept, so this is the tool for wording changes; an entry keeps the blocks nested under it, and a blockquote or callout holding several blocks is refused, so write to the paragraph you mean. Text follows the canonical markdown subset (**bold**, *italic*, _underline_, ~~strike~~, backtick code, [label](url)), and is plain in a heading and raw in code, titled_code and mermaid. One block is one paragraph; to add a paragraph, insert a block instead. Returns the summary rows of the block as it now stands.",
-		Properties: map[string]any{
-			"document_id": map[string]any{"type": "string", "description": "The target document id."},
-			"branch_id":   map[string]any{"type": "string", "description": "The id of the branch to read or write: a document's default_branch_id from list_documents, a search hit's branch_id, or any id from the branches get_document lists. A protected branch can be read but refuses every write."},
-			"block_uid":   map[string]any{"type": "string", "description": "The uid of the block whose text should be replaced."},
-			"text":        map[string]any{"type": "string", "description": "New inline text in canonical markdown."},
-		},
-		Required: []string{
-			"document_id",
-			"branch_id",
-			"block_uid",
-			"text",
-		},
-	}
-}
-
-// Traits reports a write that overwrites: the new text replaces the
-// block's whole text, marks included.
-func (updateBlockText) Traits() Traits {
-	return Traits{Write: true, Overwrites: true}
-}
-
-// Title announces which document is being updated.
-func (updateBlockText) Title(inp DescribeInput) (string, error) {
-	var in updateBlockTextArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return "", err
-	}
-
-	doc, err := inp.FetchBranch(in.DocumentID, in.BranchID)
-	if err != nil {
-		return "", fmt.Errorf("%s: fetch document: %w", NameUpdateBlockText, err)
-	}
-
-	return "Updating " + doc.Title(), nil
-}
-
-// Summary previews the text the model wants to write.
-func (updateBlockText) Summary(inp DescribeInput) (ActionSummary, error) {
-	var in updateBlockTextArgs
-
-	if err := inp.Decode(&in); err != nil {
 		return ActionSummary{}, err
 	}
 
-	preview := strutil.Preview(in.Text, _maxPreviewLen)
-
-	doc, err := inp.FetchBranch(in.DocumentID, in.BranchID)
-	if err != nil {
-		return ActionSummary{}, fmt.Errorf("%s: fetch document: %w", NameUpdateBlockText, err)
-	}
-
-	summary := fmt.Sprintf("Update a block in %s: %q", doc.DocumentName, preview)
-	if preview == "" {
-		summary = "Update text of a block in " + doc.Title()
-	}
-
 	return ActionSummary{
-		Tool:         NameUpdateBlockText,
+		Tool:         NameReplaceBlocks,
 		DocumentID:   doc.ID,
 		DocumentName: doc.DocumentName,
-		Summary:      summary,
+		Summary:      fmt.Sprintf("Replace a block in %s with %s", doc.Title(), countPhrase(len(blocks), "block")),
 	}, nil
 }
 
-// Execute writes the new text.
-func (updateBlockText) Execute(inp Input) (string, error) {
-	var in updateBlockTextArgs
+// Execute builds the replacement and writes it where the block was.
+func (replaceBlocks) Execute(inp *input) (string, error) {
+	var in replaceBlocksArgs
 
 	if err := inp.Decode(&in); err != nil {
 		return "", err
 	}
 
-	b, err := inp.FetchDocumentBlock(in.DocumentID, in.BranchID, in.BlockUID)
+	target, err := inp.FetchDocumentBlock(in.DocumentID, in.BranchID, in.BlockUID)
 	if err != nil {
-		return "", fmt.Errorf("update_block_text: %w", err)
-	}
-
-	content := block.TextContent(b.Type, in.Text)
-
-	if err := inp.ApplyEdit(in.DocumentID, in.BranchID, []edit.Operation{edit.UpdateText(in.BlockUID, content)}); err != nil {
 		return "", err
 	}
 
-	return result(blockWriteResult{Blocks: blockRows(withText(b, content))})
-}
-
-// updateBlockAttrsArgs is what update_block_attrs is called with.
-type updateBlockAttrsArgs struct {
-	docTarget
-
-	// BlockUID is the block whose attributes are being set. Required.
-	BlockUID string `json:"block_uid"`
-
-	// Attrs are the attributes to set. Must not be empty.
-	Attrs map[string]any `json:"attrs"`
-}
-
-// Validate checks the arguments are complete.
-func (a updateBlockAttrsArgs) Validate() error {
-	if err := a.validate(); err != nil {
-		return err
-	}
-
-	if a.BlockUID == "" {
-		return errRequired("block_uid")
-	}
-
-	if len(a.Attrs) == 0 {
-		return errRequired("attrs")
-	}
-
-	return nil
-}
-
-// updateBlockAttrs sets named attributes on an existing block.
-type updateBlockAttrs struct{}
-
-// Info returns the tool's model-facing description.
-func (updateBlockAttrs) Info() Info {
-	return Info{
-		Name:        NameUpdateBlockAttrs,
-		Description: "Set or override named attributes on an existing block, such as a heading's level, a callout's icon, or a titled_code's title and language. Attributes not mentioned are kept and uid cannot change. Values are validated for the block's type, so a level outside 1 to 3 or a metric width other than compact, standard or wide is rejected. Use replace_block when the type itself has to change. Returns the summary rows of the block and everything nested in it, attrs as they now stand.",
-		Properties: map[string]any{
-			"document_id": map[string]any{"type": "string", "description": "The target document id."},
-			"branch_id":   map[string]any{"type": "string", "description": "The id of the branch to read or write: a document's default_branch_id from list_documents, a search hit's branch_id, or any id from the branches get_document lists. A protected branch can be read but refuses every write."},
-			"block_uid":   map[string]any{"type": "string", "description": "The uid of the block whose attrs should be updated."},
-			"attrs": map[string]any{
-				"type":        "object",
-				"description": "Attribute keys and values to set (e.g. {\"level\": 2}, {\"icon\": \"lucide:warning\"}).",
-			},
-		},
-		Required: []string{
-			"document_id",
-			"branch_id",
-			"block_uid",
-			"attrs",
-		},
-	}
-}
-
-// Traits reports a write.
-func (updateBlockAttrs) Traits() Traits {
-	return Traits{Write: true}
-}
-
-// Title announces which document is being updated.
-func (updateBlockAttrs) Title(inp DescribeInput) (string, error) {
-	var in updateBlockAttrsArgs
-
-	if err := inp.Decode(&in); err != nil {
+	// only the replaced block's ids can be kept. Another block stays
+	// where it is, so keeping its id would put it in the document twice.
+	blocks, err := markup.Build(in.Content, document.RootBlock{Content: []document.Block{target}})
+	if err != nil {
 		return "", err
 	}
 
-	doc, err := inp.FetchBranch(in.DocumentID, in.BranchID)
-	if err != nil {
-		return "", fmt.Errorf("%s: fetch document: %w", NameUpdateBlockAttrs, err)
-	}
-
-	return "Updating " + doc.Title(), nil
-}
-
-// Summary names the attributes the model wants to set.
-func (updateBlockAttrs) Summary(inp DescribeInput) (ActionSummary, error) {
-	var in updateBlockAttrsArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return ActionSummary{}, err
-	}
-
-	// map iteration order is random, and the confirm card must read
-	// the same every time the same write is proposed.
-	keys := slices.Sorted(maps.Keys(in.Attrs))
-
-	doc, err := inp.FetchBranch(in.DocumentID, in.BranchID)
-	if err != nil {
-		return ActionSummary{}, fmt.Errorf("%s: fetch document: %w", NameUpdateBlockAttrs, err)
-	}
-
-	return ActionSummary{
-		Tool:         NameUpdateBlockAttrs,
-		DocumentID:   doc.ID,
-		DocumentName: doc.DocumentName,
-		Summary:      fmt.Sprintf("Update block %s in %s", strings.Join(keys, ", "), doc.Title()),
-	}, nil
-}
-
-// Execute applies the attribute changes.
-func (updateBlockAttrs) Execute(inp Input) (string, error) {
-	var in updateBlockAttrsArgs
-
-	if err := inp.Decode(&in); err != nil {
+	if err := inp.CheckDataSources(blocks); err != nil {
 		return "", err
 	}
 
-	if err := inp.ValidateAttrUpdate(in.DocumentID, in.BranchID, in.BlockUID, in.Attrs); err != nil {
-		return "", fmt.Errorf("update_block_attrs: %w", err)
-	}
-
-	b, err := inp.FetchDocumentBlock(in.DocumentID, in.BranchID, in.BlockUID)
-	if err != nil {
-		return "", fmt.Errorf("update_block_attrs: %w", err)
-	}
-
-	if err := sanitizeBlockAttrs(inp, in.Attrs, b); err != nil {
-		return "", fmt.Errorf("update_block_attrs: %w", err)
-	}
-
-	if err := inp.ApplyEdit(in.DocumentID, in.BranchID, []edit.Operation{edit.UpdateAttrs(in.BlockUID, in.Attrs)}); err != nil {
+	if err := inp.ApplyEdit(in.DocumentID, in.BranchID, insertAfterPrevious(edit.Replace(in.BlockUID, blocks[0]), blocks)); err != nil {
 		return "", err
 	}
 
-	return result(blockWriteResult{Blocks: blockRows(withAttrs(b, in.Attrs))})
+	return result(blockWriteResult{Content: markup.Render(blocks)})
 }
 
 // deleteBlockArgs is what delete_block is called with.
@@ -765,7 +353,7 @@ type deleteBlockArgs struct {
 
 // Validate checks the arguments are complete.
 func (a deleteBlockArgs) Validate() error {
-	if err := a.validate(); err != nil {
+	if err := a.docTarget.Validate(); err != nil {
 		return err
 	}
 
@@ -783,40 +371,15 @@ type deleteBlock struct{}
 func (deleteBlock) Info() Info {
 	return Info{
 		Name:        NameDeleteBlock,
-		Description: "Delete one block by uid, including anything nested inside it. Its comments, hooks and files go with it and cannot be restored, so use move_block when the aim is to reorder and update_block_text when the aim is new wording. Returns {deleted: uid}.",
+		Traits:      Traits{Write: true, Destructive: true},
+		Description: "Delete one block by id, including anything nested inside it. Its comments, hooks and files go with it and cannot be restored, so use move_block when the aim is to reorder and replace_blocks when the aim is new content. Returns {deleted: id}.",
 		Properties: map[string]any{
-			"document_id": map[string]any{"type": "string", "description": "The target document id."},
-			"branch_id":   map[string]any{"type": "string", "description": "The id of the branch to read or write: a document's default_branch_id from list_documents, a search hit's branch_id, or any id from the branches get_document lists. A protected branch can be read but refuses every write."},
-			"block_uid":   map[string]any{"type": "string", "description": "The uid of the block to delete."},
+			"document_id": map[string]any{"type": "string", "description": _documentIDDescription},
+			"branch_id":   map[string]any{"type": "string", "description": _branchIDDescription},
+			"block_uid":   map[string]any{"type": "string", "description": "The id of the block to delete."},
 		},
-		Required: []string{
-			"document_id",
-			"branch_id",
-			"block_uid",
-		},
+		Required: []string{"document_id", "branch_id", "block_uid"},
 	}
-}
-
-// Traits reports a destructive write, which stays outside any "approve
-// all" answer.
-func (deleteBlock) Traits() Traits {
-	return Traits{Write: true, Destructive: true}
-}
-
-// Title announces which document is being updated.
-func (deleteBlock) Title(inp DescribeInput) (string, error) {
-	var in deleteBlockArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return "", err
-	}
-
-	doc, err := inp.FetchBranch(in.DocumentID, in.BranchID)
-	if err != nil {
-		return "", fmt.Errorf("%s: fetch document: %w", NameDeleteBlock, err)
-	}
-
-	return "Updating " + doc.Title(), nil
 }
 
 // Summary describes the deletion the model wants to make.
@@ -829,7 +392,7 @@ func (deleteBlock) Summary(inp DescribeInput) (ActionSummary, error) {
 
 	doc, err := inp.FetchBranch(in.DocumentID, in.BranchID)
 	if err != nil {
-		return ActionSummary{}, fmt.Errorf("%s: fetch document: %w", NameDeleteBlock, err)
+		return ActionSummary{}, fmt.Errorf("fetch document: %w", err)
 	}
 
 	return ActionSummary{
@@ -841,7 +404,7 @@ func (deleteBlock) Summary(inp DescribeInput) (ActionSummary, error) {
 }
 
 // Execute removes the block.
-func (deleteBlock) Execute(inp Input) (string, error) {
+func (deleteBlock) Execute(inp *input) (string, error) {
 	var in deleteBlockArgs
 
 	if err := inp.Decode(&in); err != nil {
@@ -874,7 +437,7 @@ type moveBlockArgs struct {
 
 // Validate checks the arguments are complete.
 func (a moveBlockArgs) Validate() error {
-	if err := a.validate(); err != nil {
+	if err := a.docTarget.Validate(); err != nil {
 		return err
 	}
 
@@ -908,50 +471,21 @@ type moveBlock struct{}
 func (moveBlock) Info() Info {
 	return Info{
 		Name:        NameMoveBlock,
-		Description: "Move an existing block before or after another block in the same document. The block keeps its uid, attrs and nested content, so comments, hooks and files attached to it stay attached; deleting it and inserting a copy would lose them. The landing spot has to accept the block's type, by the same rule insert_block applies. Returns the summary rows of the moved block and everything nested in it.",
+		Traits:      Traits{Write: true},
+		Description: "Move a block before or after another block of the same document. It keeps its id and nested content, and with them its comments, hooks and files, which a delete and insert would lose. The landing spot has to accept the block. Returns the moved block as XML.",
 		Properties: map[string]any{
-			"document_id": map[string]any{"type": "string", "description": "The target document id."},
-			"branch_id":   map[string]any{"type": "string", "description": "The id of the branch to read or write: a document's default_branch_id from list_documents, a search hit's branch_id, or any id from the branches get_document lists. A protected branch can be read but refuses every write."},
-			"block_uid":   map[string]any{"type": "string", "description": "The uid of the block to move."},
+			"document_id": map[string]any{"type": "string", "description": _documentIDDescription},
+			"branch_id":   map[string]any{"type": "string", "description": _branchIDDescription},
+			"block_uid":   map[string]any{"type": "string", "description": "The id of the block to move."},
 			"position": map[string]any{
-				"type": "string",
-				"enum": []string{
-					string(positionBefore),
-					string(positionAfter),
-				},
-				"description": "Landing side relative to the reference block.",
+				"type":        "string",
+				"enum":        []string{string(positionBefore), string(positionAfter)},
+				"description": "Which side of the reference block it lands on.",
 			},
-			"reference_block_uid": map[string]any{"type": "string", "description": "The uid of the block to move relative to."},
+			"reference_block_uid": map[string]any{"type": "string", "description": "The id of the block it lands beside."},
 		},
-		Required: []string{
-			"document_id",
-			"branch_id",
-			"block_uid",
-			"position",
-			"reference_block_uid",
-		},
+		Required: []string{"document_id", "branch_id", "block_uid", "position", "reference_block_uid"},
 	}
-}
-
-// Traits reports a write.
-func (moveBlock) Traits() Traits {
-	return Traits{Write: true}
-}
-
-// Title announces which document is being updated.
-func (moveBlock) Title(inp DescribeInput) (string, error) {
-	var in moveBlockArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return "", err
-	}
-
-	doc, err := inp.FetchBranch(in.DocumentID, in.BranchID)
-	if err != nil {
-		return "", fmt.Errorf("%s: fetch document: %w", NameMoveBlock, err)
-	}
-
-	return "Updating " + doc.Title(), nil
 }
 
 // Summary describes the move the model wants to make.
@@ -964,7 +498,7 @@ func (moveBlock) Summary(inp DescribeInput) (ActionSummary, error) {
 
 	doc, err := inp.FetchBranch(in.DocumentID, in.BranchID)
 	if err != nil {
-		return ActionSummary{}, fmt.Errorf("%s: fetch document: %w", NameMoveBlock, err)
+		return ActionSummary{}, fmt.Errorf("fetch document: %w", err)
 	}
 
 	return ActionSummary{
@@ -976,7 +510,7 @@ func (moveBlock) Summary(inp DescribeInput) (ActionSummary, error) {
 }
 
 // Execute applies the move.
-func (moveBlock) Execute(inp Input) (string, error) {
+func (moveBlock) Execute(inp *input) (string, error) {
 	var in moveBlockArgs
 
 	if err := inp.Decode(&in); err != nil {
@@ -988,140 +522,36 @@ func (moveBlock) Execute(inp Input) (string, error) {
 		op = edit.MoveBefore(in.BlockUID, in.ReferenceBlockUID)
 	}
 
-	if err := inp.ValidateMove(in.DocumentID, in.BranchID, in.BlockUID, in.ReferenceBlockUID); err != nil {
-		return "", fmt.Errorf("move_block: %w", err)
-	}
-
 	b, err := inp.FetchDocumentBlock(in.DocumentID, in.BranchID, in.BlockUID)
 	if err != nil {
-		return "", fmt.Errorf("move_block: %w", err)
+		return "", err
 	}
 
 	if err := inp.ApplyEdit(in.DocumentID, in.BranchID, []edit.Operation{op}); err != nil {
 		return "", err
 	}
 
-	return result(blockWriteResult{Blocks: blockRows(b)})
+	return result(blockWriteResult{Content: markup.Render([]document.Block{b})})
 }
 
-// findReadable finds the block uid names among blocks, or the nearest
-// block holding it when uid names a part read_block cannot return on its
-// own, such as a code block's title row or a split_doc's side.
-func findReadable(blocks []document.Block, uid string) (document.Block, bool) {
-	for _, b := range blocks {
-		if id, ok := b.UID(); ok && id == uid {
-			return b, true
-		}
-
-		inner, ok := findReadable(b.Content, uid)
-		if !ok {
-			continue
-		}
-
-		if _, canonical := block.CanonicalType(inner.Type); canonical || _listEntries[inner.Type] {
-			return inner, true
-		}
-
-		// b may itself be a part, so the level above checks it again.
-		return b, true
-	}
-
-	return document.Block{}, false
+// blockWriteResult is what a block write returns: the blocks it wrote
+// or moved, as markup.
+type blockWriteResult struct {
+	// Content is the blocks as markup, ids included.
+	Content string `json:"content"`
 }
 
-// withText returns b as it stands after update_block_text writes
-// content, which the realtime service puts where _textHolders says.
-func withText(b document.Block, content []document.Block) document.Block {
-	target, nested := _textHolders[b.Type]
-	if !nested {
-		b.Content = content
+// insertAfterPrevious returns first, the operation that writes the first
+// block, then the operations that insert each later block after the one
+// before it.
+func insertAfterPrevious(first edit.Operation, blocks []document.Block) []edit.Operation {
+	ops := make([]edit.Operation, 0, len(blocks))
+	ops = append(ops, first)
 
-		return b
+	for i := 1; i < len(blocks); i++ {
+		prev, _ := blocks[i-1].UID()
+		ops = append(ops, edit.InsertAfter(prev, blocks[i]))
 	}
 
-	b.Content = slices.Clone(b.Content)
-
-	for i, c := range b.Content {
-		if c.Type == target {
-			b.Content[i].Content = content
-
-			return b
-		}
-	}
-
-	return b
-}
-
-// withAttrs returns b with attrs laid over its own, which is how the
-// block stands after update_block_attrs. A titled code block keeps its
-// title and language on its two children, so those land there.
-func withAttrs(b document.Block, attrs map[string]any) document.Block {
-	if b.Type != document.BlockNodeTitledCodeBlock {
-		merged := maps.Clone(b.Attrs)
-		if merged == nil {
-			merged = document.Attributes{}
-		}
-
-		maps.Copy(merged, attrs)
-		b.Attrs = merged
-
-		return b
-	}
-
-	b.Content = slices.Clone(b.Content)
-
-	for i, c := range b.Content {
-		switch c.Type {
-		case document.BlockNodeCodeBlockTitle:
-			if title, ok := attrs[document.AttrTitle].(string); ok {
-				b.Content[i].Content = block.TextContent(c.Type, title)
-			}
-		case document.BlockNodeCodeBlock:
-			if lang, ok := attrs[document.AttrLanguage]; ok {
-				b.Content[i].Attrs = maps.Clone(c.Attrs)
-				b.Content[i].Attrs[document.AttrLanguage] = lang
-			}
-		default:
-		}
-	}
-
-	return b
-}
-
-// sanitizeBlock checks a block before a write and expands it. stored is
-// the block being replaced, or empty for an insert. A metric that stored
-// already holds keeps its simulation flag.
-func sanitizeBlock(inp Input, b block.Block, stored document.Block) (document.Block, error) {
-	if err := inp.CheckDataSources(b.CollectAttributeValues(document.AttrDataSourceID)); err != nil {
-		return document.Block{}, err
-	}
-
-	expanded, err := block.Expand(b)
-	if err != nil {
-		return document.Block{}, err
-	}
-
-	block.KeepSimulation(expanded, stored)
-
-	return expanded, nil
-}
-
-// sanitizeBlockAttrs checks an attribute update by the type of the
-// stored block. For a metric it checks the data source and sets the
-// simulation flag. It writes to attrs.
-func sanitizeBlockAttrs(inp Input, attrs map[string]any, stored document.Block) error {
-	if stored.Type != document.BlockNodeMetricBlock {
-		return nil
-	}
-
-	// an empty data source means unset, so there is nothing to check.
-	if id, ok := attrs[document.AttrDataSourceID].(string); ok && id != "" {
-		if err := inp.CheckDataSources([]string{id}); err != nil {
-			return err
-		}
-	}
-
-	block.DeriveSimulation(attrs, stored.Attrs)
-
-	return nil
+	return ops
 }

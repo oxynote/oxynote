@@ -17,7 +17,11 @@ import { bootstrapAdmin, type DefaultAdmin } from "./bootstrap.js"
 import { toAxiosHeaders } from "./headers.js"
 import { bestEffort } from "./reporting.js"
 import { replaceYdocContent, systemOrigin } from "./ydocument.js"
-import { applyOperations, type Operation } from "./operations.js"
+import {
+	applyOperations,
+	type ApplyResult,
+	type Operation,
+} from "./operations.js"
 
 // the two things the routes ask of better-auth: the request handler
 // mounted under /auth/**, and the local JWKS the MCP session endpoint
@@ -769,16 +773,7 @@ export function createRoutes({
 			}
 
 			try {
-				let result: {
-					applied: number
-					errors: {
-						index: number
-						message: string
-					}[]
-				} = {
-					applied: 0,
-					errors: [],
-				}
+				let result: ApplyResult = { errors: [] }
 
 				await connection.transact((doc) => {
 					result = applyOperations(doc, ops)

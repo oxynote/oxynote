@@ -78,17 +78,6 @@ type BuildInfo struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
-// String turns build information into a string.
-func (b BuildInfo) String() string {
-	return fmt.Sprintf(
-		"%s %s (%s; %s)",
-		b.Name,
-		b.Version,
-		b.Commit,
-		b.FormattedTimestamp(),
-	)
-}
-
 // VersionName extracts the name of the version from semver build
 // metadata.
 func (b BuildInfo) VersionName() string {

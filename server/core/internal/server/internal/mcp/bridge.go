@@ -13,13 +13,16 @@ import (
 // every tool says whether it reaches outside the organization's own
 // documents.
 func annotations(e tools.Entry) *mcp.ToolAnnotations {
+	tr := e.Info.Traits
+
+	// a data-source tool reaches whatever its connection points at.
 	out := &mcp.ToolAnnotations{
-		ReadOnlyHint:  !e.Write,
-		OpenWorldHint: new(e.OpenWorld()),
+		ReadOnlyHint:  !tr.Write,
+		OpenWorldHint: new(tr.DataSource),
 	}
 
-	if e.Write {
-		out.DestructiveHint = new(e.DestroysContent())
+	if tr.Write {
+		out.DestructiveHint = new(tr.Destructive || tr.Overwrites)
 	}
 
 	return out
@@ -35,7 +38,7 @@ func (h *Handler) toolHandler(e tools.Entry) mcp.ToolHandler {
 			args = json.RawMessage("{}")
 		}
 
-		res, err := e.Tool.Run(ctx, args)
+		out, err := e.Tool.Run(ctx, args)
 		if err != nil {
 			//nolint:nilerr // execution failures are isError results, not protocol errors
 			return &mcp.CallToolResult{
@@ -44,18 +47,6 @@ func (h *Handler) toolHandler(e tools.Entry) mcp.ToolHandler {
 			}, nil
 		}
 
-		content := []mcp.Content{&mcp.TextContent{Text: res.Output}}
-
-		// a call links back to every branch it changed, so the client
-		// can follow the edit straight to its target.
-		for _, t := range res.Documents {
-			content = append(content, &mcp.ResourceLink{
-				URI:      resourceURI(t.DocumentID, t.BranchID),
-				Name:     t.DocumentID.String(),
-				MIMEType: _documentMIMEType,
-			})
-		}
-
-		return &mcp.CallToolResult{Content: content}, nil
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: out}}}, nil
 	}
 }

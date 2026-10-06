@@ -126,16 +126,13 @@ test.describe("search", () => {
 		expect(branchId).toBeDefined()
 
 		const inserted = await client.callTool({
-			name: "insert_block",
+			name: "insert_blocks",
 			arguments: {
 				document_id: id,
 				branch_id: branchId,
 				position: "end",
 				// a metric lives in a grid; the root refuses a bare one
-				block: {
-					type: "metric_grid",
-					items: [{ type: "metric", attrs: { title: title } }],
-				},
+				content: `<metrics><metric>${JSON.stringify({ title })}</metric></metrics>`,
 			},
 		})
 		expect(inserted.isError, JSON.stringify(inserted.content)).toBeFalsy()

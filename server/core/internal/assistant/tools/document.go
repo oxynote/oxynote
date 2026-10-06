@@ -4,11 +4,10 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/guregu/null/v5"
-	"github.com/oxynote/oxynote/server/core/internal/assistant/edit"
+	"github.com/oxynote/oxynote/server/core/internal/assistant/markup"
 	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/tag"
 	"github.com/rs/xid"
@@ -27,25 +26,21 @@ func (listDocumentsArgs) Validate() error {
 }
 
 // listDocuments returns the organisation's document tree.
-type listDocuments struct {
-	plainSummary
-	plainTraits
-	plainTitle
-}
+type listDocuments struct{}
 
 // Info returns the tool's model-facing description.
 func (listDocuments) Info() Info {
 	return Info{
 		Name:        NameListDocuments,
-		Description: "List the organisation's documents as a tree of {id, name, default_branch_id, children}; default_branch_id is what get_document and the block tools take as branch_id for the document's default branch. Use it to find a document by name or to see what sits under a parent; use search_documents when you are looking for content rather than a title. Pass parent_id to get only that document's direct children, or omit it for the whole organisation.",
+		Description: "List the organisation's documents as a tree of {id, name, default_branch_id, children}. Use it to find a document by title; search_documents finds content. parent_id narrows it to that document's children.",
 		Properties: map[string]any{
-			"parent_id": map[string]any{"type": "string", "description": "Optional. Return only the direct children of this document. Omit for the full tree."},
+			"parent_id": map[string]any{"type": "string", "description": "Optional. A document whose direct children to list; omit it for the whole tree."},
 		},
 	}
 }
 
 // Execute lists the documents the model asked for.
-func (listDocuments) Execute(inp Input) (string, error) {
+func (listDocuments) Execute(inp *input) (string, error) {
 	var in listDocumentsArgs
 
 	if err := inp.Decode(&in); err != nil {
@@ -64,7 +59,7 @@ func (listDocuments) Execute(inp Input) (string, error) {
 	}
 
 	if err != nil {
-		return "", fmt.Errorf("list_documents: fetch tree: %w", err)
+		return "", fmt.Errorf("fetch tree: %w", err)
 	}
 
 	return result(documentTreeResult{
@@ -101,52 +96,48 @@ type deletedDocumentResult struct {
 // getDocumentArgs is what get_document is called with.
 type getDocumentArgs struct {
 	docTarget
+
+	// BlockUID narrows the content to one block. Optional.
+	BlockUID string `json:"block_uid"`
 }
 
-// Validate checks the arguments are complete.
-func (a getDocumentArgs) Validate() error {
-	return a.validate()
-}
-
-// getDocument returns one document: its metadata and the ordered rows
-// of its content.
-type getDocument struct {
-	plainSummary
-	plainTraits
-}
+// getDocument returns one document: its metadata and its content as
+// markup.
+type getDocument struct{}
 
 // Info returns the tool's model-facing description.
 func (getDocument) Info() Info {
 	return Info{
 		Name:        NameGetDocument,
-		Description: "Read one document on one branch: its name, icon, parent_id, protected flag and updated_at, the branch read and every branch the document has (each with the id a branch_id argument takes), the tags the branch carries as [{id, name, color}] with color a palette name as list_tags reports it, followed by one row per block with the block's uid, kind, flattened text, depth, parent_uid and the few attrs that matter for reading (heading level, callout icon, code language, task checked). Use it as the way to read a document before editing it; branch_id is the default_branch_id a listing or search hit carries, or any id from branches. A protected branch can be read but refuses every write, so pick an unprotected branch id from branches to write to. Rows marked has_children hold nested blocks the rows do not list, and read_block returns those when you need them.",
+		Description: "Read one document on one branch: its name, icon, parent_id and updated_at, every branch it has as {id, name, protected, default, updated_at}, the tags on the branch read, and content: its blocks as XML, one element per block with its id, in the format insert_blocks describes. Read a document this way before editing it. A protected branch refuses writes, so write to an unprotected one.",
 		Properties: map[string]any{
-			"document_id": map[string]any{"type": "string", "description": "The document id."},
-			"branch_id":   map[string]any{"type": "string", "description": "The id of the branch to read or write: a document's default_branch_id from list_documents, a search hit's branch_id, or any id from the branches get_document lists. A protected branch can be read but refuses every write."},
+			"document_id": map[string]any{"type": "string", "description": _documentIDDescription},
+			"branch_id":   map[string]any{"type": "string", "description": _branchIDDescription},
+			"block_uid":   map[string]any{"type": "string", "description": "Optional. Narrows content to this block and what it holds; an id inside a block, such as a search hit's, reads the block holding it."},
 		},
 		Required: []string{"document_id", "branch_id"},
 	}
 }
 
 // Title announces which document is being read.
-func (getDocument) Title(inp DescribeInput) (string, error) {
+func (getDocument) Title(inp DescribeInput) string {
 	var in getDocumentArgs
 
 	if err := inp.Decode(&in); err != nil {
-		return "", err
+		return ""
 	}
 
 	doc, err := inp.FetchBranch(in.DocumentID, in.BranchID)
 	if err != nil {
-		return "", fmt.Errorf("%s: fetch document: %w", NameGetDocument, err)
+		return ""
 	}
 
-	return "Reading " + doc.Title(), nil
+	return "Reading " + doc.Title()
 }
 
 // Execute fetches the branch and summarises its content. The document
 // fetch carries the branch's content, so no second read is needed.
-func (getDocument) Execute(inp Input) (string, error) {
+func (getDocument) Execute(inp *input) (string, error) {
 	var in getDocumentArgs
 
 	if err := inp.Decode(&in); err != nil {
@@ -155,17 +146,28 @@ func (getDocument) Execute(inp Input) (string, error) {
 
 	doc, err := inp.FetchBranch(in.DocumentID, in.BranchID)
 	if err != nil {
-		return "", fmt.Errorf("get_document: fetch: %w", err)
+		return "", fmt.Errorf("fetch: %w", err)
 	}
 
 	branches, err := inp.FetchDocumentBranches(in.DocumentID)
 	if err != nil {
-		return "", fmt.Errorf("get_document: %w", err)
+		return "", err
 	}
 
 	tags, err := inp.FetchBranchTags(in.DocumentID, in.BranchID)
 	if err != nil {
-		return "", fmt.Errorf("get_document: fetch tags: %w", err)
+		return "", fmt.Errorf("fetch tags: %w", err)
+	}
+
+	blocks := doc.Content.Content
+
+	if in.BlockUID != "" {
+		b, ok := markup.Readable(blocks, in.BlockUID)
+		if !ok {
+			return "", fmt.Errorf("block %s: %w", in.BlockUID, errUnknownBlock)
+		}
+
+		blocks = []document.Block{b}
 	}
 
 	out := documentResult{
@@ -173,12 +175,10 @@ func (getDocument) Execute(inp Input) (string, error) {
 		Name:       doc.DocumentName,
 		Icon:       doc.Icon,
 		ParentID:   doc.ParentID,
-		Protected:  doc.Protected,
 		UpdatedAt:  doc.UpdatedAt.UTC().Format(time.RFC3339),
-		Branch:     branchInfo{ID: doc.BranchID, Name: doc.BranchName, Protected: doc.Protected, Default: doc.Default},
 		Branches:   make([]branchInfo, 0, len(branches)),
 		Tags:       make([]documentTag, 0, len(tags)),
-		Blocks:     walkDocForAssistant(doc.Content.Content),
+		Content:    markup.Render(blocks),
 	}
 
 	for _, tg := range tags {
@@ -212,23 +212,18 @@ type documentResult struct {
 	// ParentID is the document's parent, absent at the root.
 	ParentID null.Value[xid.ID] `json:"parent_id,omitzero"`
 
-	// Protected indicates the branch read refuses every write.
-	Protected bool `json:"protected"`
-
-	// UpdatedAt is when the branch last changed, as RFC3339.
+	// UpdatedAt is when the branch read last changed, as RFC3339.
 	UpdatedAt string `json:"updated_at"`
 
-	// Branch is the branch the rows were read from.
-	Branch branchInfo `json:"branch"`
-
-	// Branches is every branch the document has.
+	// Branches is every branch the document has, the one read among
+	// them.
 	Branches []branchInfo `json:"branches"`
 
 	// Tags is every tag the branch read carries.
 	Tags []documentTag `json:"tags"`
 
-	// Blocks is the branch's content, one row per block.
-	Blocks []docSummaryEntry `json:"blocks"`
+	// Content is the branch's blocks, or the one asked for, as markup.
+	Content string `json:"content"`
 }
 
 // documentTag is one tag row of get_document.
@@ -294,30 +289,15 @@ func (a createDocumentArgs) Validate() error {
 func (createDocument) Info() Info {
 	return Info{
 		Name:        NameCreateDocument,
-		Description: "Create a new document and return {document_id, branch_id}, the branch_id being its default branch. The document starts with a single empty paragraph, so follow up with insert_block calls (position end, that branch_id) in the same turn to fill it. Omit parent_id to create it at the organisation root.",
+		Traits:      Traits{Write: true},
+		Description: "Create a document and return {document_id, branch_id}, the branch_id being its default branch. It starts with one empty paragraph; fill it with insert_blocks at position end on that branch.",
 		Properties: map[string]any{
-			"name":            map[string]any{"type": "string", "description": "Display name for the new document."},
-			document.AttrIcon: map[string]any{"type": "string", "description": "Iconify identifier, as \"collection:name\". The product's own icons are MingCute fills (e.g. \"mingcute:file-code-fill\"); prefer one so the document matches the rest of the sidebar. Defaults to \"mingcute:document-2-fill\" when empty."},
-			"parent_id":       map[string]any{"type": "string", "description": "Optional parent document id. Omit to create at the org root."},
+			"name":            map[string]any{"type": "string", "description": "The display name."},
+			document.AttrIcon: map[string]any{"type": "string", "description": "Optional. An Iconify id; the sidebar uses MingCute fills, such as mingcute:file-code-fill. Defaults to mingcute:document-2-fill."},
+			"parent_id":       map[string]any{"type": "string", "description": "Optional. The parent document id; omit it for the organisation root."},
 		},
 		Required: []string{"name"},
 	}
-}
-
-// Traits reports a write.
-func (createDocument) Traits() Traits {
-	return Traits{Write: true}
-}
-
-// Title announces the document being created.
-func (createDocument) Title(inp DescribeInput) (string, error) {
-	var in createDocumentArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return "", err
-	}
-
-	return fmt.Sprintf("Creating %q", in.Name), nil
 }
 
 // Summary describes the document the model wants to create.
@@ -337,7 +317,7 @@ func (createDocument) Summary(inp DescribeInput) (ActionSummary, error) {
 }
 
 // Execute creates the document, its maintainer row and its search job.
-func (createDocument) Execute(inp Input) (string, error) {
+func (createDocument) Execute(inp *input) (string, error) {
 	var in createDocumentArgs
 
 	if err := inp.Decode(&in); err != nil {
@@ -353,13 +333,11 @@ func (createDocument) Execute(inp Input) (string, error) {
 		Name:     in.Name,
 		Icon:     icon,
 		ParentID: in.ParentID,
-	}, inp.OrganizationID(), inp.UserID())
+	}, inp.orgID, inp.userID)
 
 	if err := inp.CreateDocument(doc); err != nil {
-		return "", fmt.Errorf("create_document: %w", err)
+		return "", err
 	}
-
-	inp.NotifyTreeChange(doc.ParentID)
 
 	return result(createdDocumentResult{
 		DocumentID: doc.ID,
@@ -389,32 +367,11 @@ type deleteDocument struct{}
 func (deleteDocument) Info() Info {
 	return Info{
 		Name:        NameDeleteDocument,
+		Traits:      Traits{Write: true, Destructive: true},
 		Description: "Delete a document and every document nested under it. The whole subtree goes and cannot be restored, so check the tree with list_documents first, and use update_document when the aim is to relocate rather than remove. Returns {document_id, deleted}.",
-		Properties:  map[string]any{"document_id": map[string]any{"type": "string", "description": "The document id to delete."}},
+		Properties:  map[string]any{"document_id": map[string]any{"type": "string", "description": _documentIDDescription}},
 		Required:    []string{"document_id"},
 	}
-}
-
-// Traits reports a destructive write, which stays outside any "approve
-// all" answer.
-func (deleteDocument) Traits() Traits {
-	return Traits{Write: true, Destructive: true}
-}
-
-// Title announces which document is being deleted.
-func (deleteDocument) Title(inp DescribeInput) (string, error) {
-	var in deleteDocumentArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return "", err
-	}
-
-	doc, err := inp.FetchDocument(in.DocumentID)
-	if err != nil {
-		return "", fmt.Errorf("%s: fetch document: %w", NameDeleteDocument, err)
-	}
-
-	return "Deleting " + doc.DocumentName, nil
 }
 
 // Summary describes the document the model wants to delete.
@@ -427,7 +384,7 @@ func (deleteDocument) Summary(inp DescribeInput) (ActionSummary, error) {
 
 	doc, err := inp.FetchDocument(in.DocumentID)
 	if err != nil {
-		return ActionSummary{}, fmt.Errorf("%s: fetch document: %w", NameDeleteDocument, err)
+		return ActionSummary{}, fmt.Errorf("fetch document: %w", err)
 	}
 
 	summary := "Delete " + doc.DocumentName
@@ -435,7 +392,7 @@ func (deleteDocument) Summary(inp DescribeInput) (ActionSummary, error) {
 	// the delete cascades, so a card naming only the document would
 	// have the user approve a subtree they were never shown.
 	if n, err := inp.DescendantCount(in.DocumentID); err == nil && n > 0 {
-		summary += fmt.Sprintf(" and the %s nested under it", pluralPages(n))
+		summary += fmt.Sprintf(" and the %s nested under it", countPhrase(n, "page"))
 	}
 
 	return ActionSummary{
@@ -446,36 +403,17 @@ func (deleteDocument) Summary(inp DescribeInput) (ActionSummary, error) {
 	}, nil
 }
 
-// pluralPages renders a nested-document count for the confirm card.
-func pluralPages(n int) string {
-	if n == 1 {
-		return "1 page"
-	}
-
-	return fmt.Sprintf("%d pages", n)
-}
-
 // Execute deletes the document and refreshes the tree.
-func (deleteDocument) Execute(inp Input) (string, error) {
+func (deleteDocument) Execute(inp *input) (string, error) {
 	var in deleteDocumentArgs
 
 	if err := inp.Decode(&in); err != nil {
 		return "", err
 	}
 
-	// capture the parent before the row goes away so we can scope the
-	// tree-change notification to the affected subtree.
-	var parentID null.Value[xid.ID]
-
-	if doc, ferr := inp.FetchDocument(in.DocumentID); ferr == nil && doc != nil {
-		parentID = doc.ParentID
-	}
-
 	if err := inp.DeleteDocument(in.DocumentID); err != nil {
-		return "", fmt.Errorf("delete_document: delete: %w", err)
+		return "", fmt.Errorf("delete: %w", err)
 	}
-
-	inp.NotifyTreeChange(parentID)
 
 	return result(deletedDocumentResult{
 		DocumentID: in.DocumentID,
@@ -507,7 +445,7 @@ func (a updateDocumentArgs) Validate() error {
 	}
 
 	if a.Name == "" && a.Icon == "" && a.ParentID == nil {
-		return errors.New("update_document needs at least one of name, icon or parent_id")
+		return errors.New("give at least one of name, icon or parent_id")
 	}
 
 	if a.ParentID != nil && *a.ParentID != "" {
@@ -568,36 +506,16 @@ type updateDocument struct{}
 func (updateDocument) Info() Info {
 	return Info{
 		Name:        NameUpdateDocument,
-		Description: "Change a document's name, icon or place in the tree, any combination in one call; content is untouched. Give only the fields to change: name is the new display name, icon an Iconify identifier as \"collection:name\" (the product's own icons are MingCute fills, e.g. \"mingcute:rocket-fill\", so prefer one to match the sidebar), and parent_id the new parent, or an empty string for the organisation root. A call with none of the three is refused, and a parent that is the document itself or one of its descendants fails. Returns {document_id} with the fields that changed.",
+		Traits:      Traits{Write: true},
+		Description: "Change a document's name, icon or parent; give only what changes, and a call changing nothing is refused. Content is untouched, and a parent that is the document itself or one of its descendants is refused. Returns {document_id} with what changed.",
 		Properties: map[string]any{
-			"document_id":     map[string]any{"type": "string", "description": "The document id."},
-			"name":            map[string]any{"type": "string", "description": "Optional. The new display name; omit to keep the current one."},
-			document.AttrIcon: map[string]any{"type": "string", "description": "Optional. The new icon identifier; omit to keep the current one."},
-			"parent_id":       map[string]any{"type": "string", "description": "Optional. The new parent document id, or an empty string to move the document to the organisation root; omit to leave it where it is."},
+			"document_id":     map[string]any{"type": "string", "description": _documentIDDescription},
+			"name":            map[string]any{"type": "string", "description": "Optional. The new display name."},
+			document.AttrIcon: map[string]any{"type": "string", "description": "Optional. An Iconify id; the sidebar uses MingCute fills, such as mingcute:rocket-fill."},
+			"parent_id":       map[string]any{"type": "string", "description": "Optional. The new parent document id, or an empty string for the organisation root."},
 		},
 		Required: []string{"document_id"},
 	}
-}
-
-// Traits reports a write.
-func (updateDocument) Traits() Traits {
-	return Traits{Write: true}
-}
-
-// Title announces which document is being updated.
-func (updateDocument) Title(inp DescribeInput) (string, error) {
-	var in updateDocumentArgs
-
-	if err := inp.Decode(&in); err != nil {
-		return "", err
-	}
-
-	doc, err := inp.FetchDocument(in.DocumentID)
-	if err != nil {
-		return "", fmt.Errorf("%s: fetch document: %w", NameUpdateDocument, err)
-	}
-
-	return "Updating " + doc.DocumentName, nil
 }
 
 // Summary lists exactly the changes the model asked for.
@@ -610,28 +528,20 @@ func (updateDocument) Summary(inp DescribeInput) (ActionSummary, error) {
 
 	doc, err := inp.FetchDocument(in.DocumentID)
 	if err != nil {
-		return ActionSummary{}, fmt.Errorf("%s: fetch document: %w", NameUpdateDocument, err)
-	}
-
-	changes := in.changes(doc.DocumentName)
-	summary := strings.ToUpper(changes[0][:1]) + changes[0][1:]
-
-	if len(changes) > 1 {
-		summary = fmt.Sprintf("%s and %s", strings.Join(changes[:len(changes)-1], ", "), changes[len(changes)-1])
-		summary = strings.ToUpper(summary[:1]) + summary[1:]
+		return ActionSummary{}, fmt.Errorf("fetch document: %w", err)
 	}
 
 	return ActionSummary{
 		Tool:         NameUpdateDocument,
 		DocumentID:   doc.ID,
 		DocumentName: doc.DocumentName,
-		Summary:      summary,
+		Summary:      sentence(in.changes(doc.DocumentName)),
 	}, nil
 }
 
 // Execute applies the name and icon through the live document, then
 // re-parents it, and tells the tree subscribers what moved.
-func (updateDocument) Execute(inp Input) (string, error) {
+func (updateDocument) Execute(inp *input) (string, error) {
 	var in updateDocumentArgs
 
 	if err := inp.Decode(&in); err != nil {
@@ -640,43 +550,17 @@ func (updateDocument) Execute(inp Input) (string, error) {
 
 	doc, err := inp.FetchDocument(in.DocumentID)
 	if err != nil {
-		return "", fmt.Errorf("update_document: fetch document: %w", err)
+		return "", fmt.Errorf("fetch document: %w", err)
 	}
 
-	var ops []edit.Operation
-
-	if in.Name != "" {
-		ops = append(ops, edit.SetName(in.Name))
+	if err := inp.RenameDocument(doc, in.Name, in.Icon); err != nil {
+		return "", err
 	}
 
-	if in.Icon != "" {
-		ops = append(ops, edit.SetIcon(in.Icon))
-	}
-
-	if len(ops) > 0 {
-		if err := inp.ApplyEdit(in.DocumentID, doc.BranchID, ops); err != nil {
+	if parent, moved := in.parent(); moved {
+		if err := inp.MoveDocument(doc, parent); err != nil {
 			return "", err
 		}
-	}
-
-	parent, moved := in.parent()
-	if moved {
-		if err := inp.MoveDocument(doc, parent); err != nil {
-			return "", fmt.Errorf("update_document: %w", err)
-		}
-	}
-
-	// a rename or icon change shows in the document's own row; a move
-	// changes the shape of the source and destination subtrees, and
-	// when those are the same parent one notification covers both.
-	switch {
-	case moved && doc.ParentID != parent:
-		inp.NotifyTreeChange(doc.ParentID)
-		inp.NotifyTreeChange(parent)
-	case moved:
-		inp.NotifyTreeChange(parent)
-	default:
-		inp.NotifyTreeChangeForDocument(in.DocumentID)
 	}
 
 	return result(updatedDocumentResult(in))
@@ -711,10 +595,6 @@ type docTreeNode struct {
 // summariesToTree converts the document package's nested Summary tree
 // into the snake_case shape returned by list_documents.
 func summariesToTree(ss document.Summaries) []docTreeNode {
-	if len(ss) == 0 {
-		return nil
-	}
-
 	out := make([]docTreeNode, 0, len(ss))
 
 	for _, s := range ss {

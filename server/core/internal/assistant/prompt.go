@@ -32,131 +32,48 @@ Keep replies focused and brief: lead with the answer, keep caveats short, and us
 
 ## Tool use
 
-Read tools run immediately. Write tools wait for the user's confirmation, and every write in a turn shares one confirmation, so make all the related edits in the same turn. Independent calls also go in one turn. Never invent a uid, document id or parameter value; read it first.
-
-Read before you write: find the document, read it with get_document, and read a block in full only when you are about to edit its inner structure. Documents have branches, and every read or write of content names one by branch_id: list_documents carries each document's default_branch_id, a search hit carries the branch_id it was found on, and get_document lists every branch of a document with its id. A protected branch is read-only, so write to another branch of the document or say there is none rather than retrying.
-
-Tags label documents in the sidebar and attach to one branch of a document, so assign_tag and unassign_tag take a branch_id like the content tools; list_tags shows every tag with its id and the documents carrying it, and get_document shows the tags of the branch it reads.
-
-Hooks are freshness watchers on a branch or on one of its blocks: a scheduled reminder, a GitHub repository, a web page or a container image, each scoring the document down as what it watches changes. list_hooks shows the hooks of a branch with their ids, and create_hook takes the branch_id like the content tools and a block_uid from get_document to anchor to a block.
-
-The data-source tools are read-only. Answer a question about the data from the query results; add a metric block only when the user asks for a chart, a metric or a dashboard in a document. Discover metric, label and table names with the metadata tools instead of guessing them, and run the query with the chart_type you intend before writing a metric block, so you know it renders.
+Read tools run immediately. Write tools wait for the user's confirmation, and every write in a turn shares one confirmation, so make all the related edits in the same turn. Independent calls also go in one turn. Never invent an id or parameter value; read it first. A protected branch is read-only, so write to another branch of the document or say there is none rather than retrying.
 
 `
 
-// _blockModelSection inlines the full canonical block schema, so the
-// model has the per-type rules without needing a discovery tool, and
-// enumerates the minimal-markdown subset used for inline text. Shared
-// verbatim between the chat prompt and the MCP instructions, so the
-// two surfaces cannot drift apart.
-const _blockModelSection = `## Canonical block model
+// _workflowSection is the cross-tool workflow both surfaces follow.
+// Shared verbatim between the chat prompt and the MCP instructions.
+const _workflowSection = `## Workflow
 
-You read and write blocks in the canonical model below. The editor's own TipTap schema stays hidden behind it, so write these shapes even where you know the editor's. Every block has a type plus that type's own fields. Multi-paragraph content is several blocks, one per paragraph; a newline inside text does not start a new paragraph.
+Read before you write: find the document with list_documents or search_documents and read it with get_document. Every content tool names a branch by branch_id: listings and search hits carry one, get_document lists every branch, and a protected branch is read-only. Before adding a metric, find names with get_data_source_metadata and run the query through query_data_source with the chart_type you intend, so you know it renders.
 
-Inline text is a minimal markdown subset: **bold**, *italic*, _underline_, ~~strike~~, backtick code and [label](url) links, with backslash escapes for literal markers (\*, \_, \~, backtick, \[, \\). An underscore inside a word, as in my_var, needs no escape. Headings take plain text, and inside code, titled_code and mermaid blocks text is raw, so no markdown is parsed in either.
+`
 
-### Block types
+// _blockModelSection explains how content is read and written as
+// markup. The elements themselves are in insert_blocks' description,
+// which every client shows in full. Shared verbatim between the chat
+// prompt and the MCP instructions.
+const _blockModelSection = `## Content
 
-| type | content fields | attrs |
-|---|---|---|
-| paragraph | text | - |
-| heading | text | level (1, 2, or 3), required |
-| blockquote | text (single paragraph) | - |
-| bullet_list | items: [Block] | - |
-| ordered_list | items: [Block] | - |
-| task_list | task_items: [{checked, block}] | - |
-| (any list entry) | a paragraph, plus children: [Block] for what is indented under it | - |
-| callout | text (shorthand) **or** items: [Block] | icon (defaults to lucide:text) |
-| code | text (raw) | language (optional, default empty) |
-| titled_code | text (raw code body) | title (required), language (optional) |
-| mermaid | text (raw mermaid source) | - |
-| horizontal_rule | - | - |
-| image | - | src (required), alt, title, width |
-| file | - | name, contentType, size, src; read-only |
-| figma | - | src (required), width, height |
-| metric | - | chart configuration, see "Metric blocks" |
-| metric_grid | items: [metric] | - |
-| split_doc | left: [Block], right: [Block] | inversed (optional) |
-| split_doc_param_list | header (plain text), params: [{name, type, description}] | - |
-
-Three types live only inside a container: titled_code and metric go in split_doc's right side (metric also in a metric_grid), and split_doc_param_list goes in split_doc's left side. mermaid is also welcome on split_doc's right side. Every other type is fine at the document root, and a write that puts a block where its type is not allowed is rejected. A file block is a file someone uploaded in the editor: you can read it and move it, but a write that creates or edits one is rejected.
-
-### Metric blocks
-
-A metric block renders one chart of one data source. Insert it inside a metric_grid, or in a split_doc's right side; it never sits at the document root. Its attrs are:
-
-- dataSourceId, the id from list_data_sources. Required for the block to render.
-- queries, a list of {name, query, legendFormat}. query is PromQL or SQL depending on the data source; legendFormat may be empty. A SQL chart selects a time column aliased "time" plus one or more numeric columns, and may use the $__ macros ($__timeFilter, $__timeGroupAlias).
-- width, one of compact, standard or wide.
-- visualizationType, timeRange, refreshInterval, unitType and simulationPreset, each with a fixed set of values that the block tools' schema lists. With unitType custom, put the label in unitCustom. simulationPreset draws a generated series in place of the query's own result, for a block documenting a metric that has no real data yet; omit it, or set it to null, to chart the query.
-- title, decimals, thresholds ([{value, label, color}]), baseThresholdColor, axisBoundsMin and axisBoundsMax, all optional; omit them to take the block's own defaults.
-
-### Nested lists
-
-items are the list's own entries, and an entry is a paragraph. A list, callout or anything else nested under an entry goes in that entry's children, never in the entry itself and never in a second entry. Reads report existing nesting the same way, so a block read with children has to be written back with them or the nested content is lost.
-
-### Compound blocks
-
-split_doc and split_doc_param_list are macros: express them with simple fields and the server expands them into the full nested editor structure.
-
-A split_doc presents concept and example side by side. left starts with a heading at level 1: the panel provides its own visual emphasis, so the heading keeps level 1 whatever the surrounding outline. The rest of left may be paragraphs, lists, callouts, and split_doc_param_lists at the end. right holds only titled_code, metric or mermaid blocks.
-
-A split_doc_param_list captures a named, typed parameter table: request bodies, function signatures, config keys.
-
-<example>
-{
-  "type": "split_doc",
-  "left":  [
-    {"type": "heading", "text": "POST /api/auth/login", "attrs": {"level": 1}},
-    {"type": "paragraph", "text": "Issues a session JWT."},
-    {
-      "type": "split_doc_param_list",
-      "header": "Request body",
-      "params": [
-        {"name": "email", "type": "string",  "description": "User email"},
-        {"name": "totp",  "type": "string?", "description": "Required when 2FA is enabled"}
-      ]
-    }
-  ],
-  "right": [
-    {"type": "titled_code", "attrs": {"title": "POST /api/auth/login"}, "text": "{\n  \"email\": \"...\",\n  \"password\": \"...\"\n}"}
-  ]
-}
-</example>
+get_document returns a document's blocks as XML, one element per block with its id. To change blocks, edit that XML and send it back with replace_blocks, keeping the id of every element that stays: a kept id keeps the block's comments, hooks and files. insert_blocks adds new blocks, many in one call, and its description lists every element. Inline text takes <b>, <i>, <u>, <s>, <code> and <a href>, and headings take plain text.
 
 `
 
 // _etiquetteSection codifies how edits are shaped. Shared verbatim
 // between the chat prompt and the MCP instructions.
-const _etiquetteSection = `## Edit etiquette
+const _etiquetteSection = `## Editing
 
-Make small, targeted edits with the smallest tool that does the job, and send every independent edit of a turn together. Reorder with move_block: the block keeps its uid, and comments, hooks and files hang off that uid, so a copy inserted elsewhere loses them.
-
-Write each section completely before starting the next. A heading with nothing under it reads as an unfinished document, so add a heading when its content is ready.
-
-A finished document agrees with itself: names, numbers and claims match across sections. That is the standard the work is held to, so resolve any contradiction you notice before reporting.
+Make small, targeted edits and send independent ones together. Reorder with move_block, which keeps a block's id, rather than deleting and inserting. Write each section completely before the next, and keep names, numbers and claims consistent across the document.
 
 `
 
 // _aestheticsSection states what a readable document looks like.
 // Shared verbatim between the chat prompt and the MCP instructions.
-const _aestheticsSection = `## Aesthetics
+const _aestheticsSection = `## Style
 
-Documents are for humans to read. Make them read well.
-
-- The document name is shown above the content, so open with the first real paragraph or section rather than a heading that repeats it.
-- split_doc draws its own dividers, so leave horizontal_rule out next to it.
-- For code and titled_code, write language-agnostic pseudo-code or a natural-language sketch unless the document names a stack, and leave language empty rather than guessing one.
-- A titled_code title names what the code is. For a request or response that is the method and route, such as POST /v1/assets/{id}/due-date/preview, so the body itself does not repeat it.
-- Use callout for a constraint, warning or gotcha the reader must not miss; ordinary emphasis belongs in prose.
-- Keep the outline flat: most documents need two or three sections, and a heading earns its place only when the section under it runs longer than a paragraph or two.
+Documents are for humans to read. Open with the first real paragraph, since the name already shows above the content. Keep the outline flat, with a heading only over more than a paragraph or two. Use a callout for what the reader must not miss. Leave a code language empty unless the document names a stack, and title a titled pre with what the code is, such as POST /v1/assets/{id}.
 
 `
 
 // _reminderSection closes the chat prompt with the rules that matter
 // most, restated in two lines. Models weight the start and the end of
-// a prompt more than its middle, and the reference material above is
-// long, so the behaviour rules get a second showing here.
+// a prompt more than its middle, so the behaviour rules get a second
+// showing here.
 const _reminderSection = `## Before you reply
 
 Read before you write, put every related edit in this turn, ask at most one question, and keep the reply brief.
@@ -166,24 +83,22 @@ Read before you write, put every related edit in this turn, ask at most one ques
 // assistant turn: the Rubber Duck persona and chat tool-use rules,
 // the sections shared with the MCP instructions, and the closing
 // reminder.
-const _basePrompt = _personaSection + _blockModelSection + _etiquetteSection + _aestheticsSection + _reminderSection
+const _basePrompt = _personaSection + _workflowSection + _blockModelSection + _etiquetteSection + _aestheticsSection + _reminderSection
 
 // _mcpIntroSection frames the shared sections for an agent connecting
 // over MCP: unlike the chat model, it knows nothing about Oxynote, and
 // its own client owns the approval story, so writes apply immediately
 // instead of waiting on a confirmation.
-const _mcpIntroSection = `You are connected to Oxynote, a collaborative product for writing technical documentation. The tools operate on the documents of one organisation, which are also listed as resources. Blocks are the unit of content, addressed by uid; comments, hooks and files hang off those uids. Documents are written for humans first, balancing prose with technical detail where it sharpens meaning.
-
-Read before you write: find the document, read it with get_document, and read a block in full only when you are about to edit its inner structure. Documents have branches, and every read or write of content names one by branch_id: list_documents carries each document's default_branch_id, a search hit carries the branch_id it was found on, and get_document lists every branch of a document with its id. Write tools apply immediately, and a protected branch is read-only, so write to another branch of the document. Tags label documents in the sidebar and attach to one branch of a document, so assign_tag and unassign_tag take a branch_id like the content tools; list_tags shows every tag with its id and the documents carrying it, and get_document shows the tags of the branch it reads. Hooks are freshness watchers on a branch or on one of its blocks; list_hooks shows them with their ids, and create_hook takes the branch_id like the content tools and a block_uid from get_document to anchor to a block. The data-source tools are read-only; discover metric, label and table names with the metadata tools instead of guessing them, and run a query with the chart_type you intend before writing a metric block, so you know it renders.
+const _mcpIntroSection = `You are connected to Oxynote, a collaborative product for writing technical documentation, with the documents of one organisation. Documents are written for humans first, balancing prose with technical detail where it sharpens meaning. Write tools apply immediately.
 
 `
 
 // MCPInstructions returns the text the MCP server hands a connecting
 // client in its initialize response: the MCP framing followed by the
-// same block model, edit etiquette, and aesthetics sections the chat
-// prompt carries.
+// sections the chat prompt shares. Claude Code shows only the first 2 KB
+// of it, so it has to stay below that.
 func MCPInstructions() string {
-	return _mcpIntroSection + _blockModelSection + _etiquetteSection + _aestheticsSection
+	return _mcpIntroSection + _workflowSection + _blockModelSection + _etiquetteSection + _aestheticsSection
 }
 
 // buildSystemPrompt assembles the prompt sent on each turn. The

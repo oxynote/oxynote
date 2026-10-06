@@ -47,39 +47,30 @@ func Test_Client_Apply(t *testing.T) {
 	}
 
 	cc := map[string]struct {
-		Ops             []Operation
-		UserID          string
-		System          bool
-		BaseURL         string
-		CloseEarly      bool
-		TruncateBody    bool
-		StatusCode      int
-		ResponseBody    string
-		ExpectedApplied int
-		ExpectedErrors  []OpError
-		ExpectedPath    string
-		Err             error
+		Ops            []Operation
+		UserID         string
+		System         bool
+		BaseURL        string
+		CloseEarly     bool
+		TruncateBody   bool
+		StatusCode     int
+		ResponseBody   string
+		ExpectedErrors []OpError
+		ExpectedPath   string
+		Err            error
 
 		// NoRequest asserts Apply returned before any HTTP round trip.
 		NoRequest bool
 	}{
-		"Operation failure skips the request": {
-			// an operation that cannot produce its wire form fails before
-			// the client builds a request at all.
-			Ops:       []Operation{func() (wireOp, error) { return wireOp{}, assert.AnError }},
-			Err:       assert.AnError,
-			NoRequest: true,
-		},
-		"Successful batch reports applied count": {
+		"Successful batch": {
 			Ops: []Operation{
 				Append(paragraph()),
 				Delete("uid-1"),
 			},
-			StatusCode:      200,
-			ResponseBody:    `{"applied": 2, "errors": []}`,
-			ExpectedApplied: 2,
-			ExpectedErrors:  []OpError{},
-			ExpectedPath:    path,
+			StatusCode:     200,
+			ResponseBody:   `{"errors": []}`,
+			ExpectedErrors: []OpError{},
+			ExpectedPath:   path,
 		},
 		// the mark is what a protected branch accepts a persist on, so
 		// it has to reach the wire rather than stay a caller's intent.
@@ -87,32 +78,29 @@ func Test_Client_Apply(t *testing.T) {
 			Ops: []Operation{
 				Append(paragraph()),
 			},
-			System:          true,
-			StatusCode:      200,
-			ResponseBody:    `{"applied": 1, "errors": []}`,
-			ExpectedApplied: 1,
-			ExpectedErrors:  []OpError{},
-			ExpectedPath:    path,
+			System:         true,
+			StatusCode:     200,
+			ResponseBody:   `{"errors": []}`,
+			ExpectedErrors: []OpError{},
+			ExpectedPath:   path,
 		},
 		"An ordinary batch names its user": {
 			Ops: []Operation{
 				Append(paragraph()),
 			},
-			UserID:          "user-1",
-			StatusCode:      200,
-			ResponseBody:    `{"applied": 1, "errors": []}`,
-			ExpectedApplied: 1,
-			ExpectedErrors:  []OpError{},
-			ExpectedPath:    path,
+			UserID:         "user-1",
+			StatusCode:     200,
+			ResponseBody:   `{"errors": []}`,
+			ExpectedErrors: []OpError{},
+			ExpectedPath:   path,
 		},
 		"Partial failure surfaces per-op errors": {
 			Ops: []Operation{
 				Delete("missing"),
 				Append(paragraph()),
 			},
-			StatusCode:      200,
-			ResponseBody:    `{"applied": 1, "errors": [{"index": 0, "message": "block_uid not found: missing"}]}`,
-			ExpectedApplied: 1,
+			StatusCode:   200,
+			ResponseBody: `{"errors": [{"index": 0, "message": "block_uid not found: missing"}]}`,
 			ExpectedErrors: []OpError{
 				{Index: 0, Message: "block_uid not found: missing"},
 			},
@@ -127,10 +115,9 @@ func Test_Client_Apply(t *testing.T) {
 			Err:          assert.AnError,
 		},
 		"Empty ops returns empty result without HTTP call": {
-			Ops:             nil,
-			StatusCode:      0,
-			ExpectedApplied: 0,
-			NoRequest:       true,
+			Ops:        nil,
+			StatusCode: 0,
+			NoRequest:  true,
 		},
 		"Invalid base URL fails before the request": {
 			Ops:       []Operation{Delete("x")},
@@ -213,7 +200,6 @@ func Test_Client_Apply(t *testing.T) {
 				return
 			}
 
-			assert.Equal(t, c.ExpectedApplied, res.Applied)
 			assert.Equal(t, c.ExpectedErrors, res.Errors)
 
 			if len(c.Ops) > 0 {

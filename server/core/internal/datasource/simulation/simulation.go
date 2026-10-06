@@ -305,12 +305,7 @@ func simulated(block document.Block) bool {
 		return false
 	}
 
-	active, ok := block.Attrs.Get(document.AttrSimulationActive)
-	if !ok {
-		return false
-	}
-
-	return active.Bool()
+	return block.Attrs.Get(document.AttrSimulationActive).Bool()
 }
 
 // probeSpan reads how far back the block's window reaches.

@@ -1,0 +1,632 @@
+{
+ "type": "doc",
+ "content": [
+  {
+   "type": "heading",
+   "attrs": {
+    "uid": "h1",
+    "level": 2
+   },
+   "content": [
+    {
+     "type": "text",
+     "text": "Heading & <stuff>"
+    },
+    {
+     "type": "text",
+     "text": "noted",
+     "marks": [
+      {
+       "type": "comment",
+       "attrs": {
+        "commentId": "c1"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "paragraph",
+   "attrs": {
+    "uid": "p1",
+    "nodeCommentId": "nc-p1"
+   },
+   "content": [
+    {
+     "type": "text",
+     "text": "Plain "
+    },
+    {
+     "type": "text",
+     "text": "bold",
+     "marks": [
+      {
+       "type": "bold"
+      }
+     ]
+    },
+    {
+     "type": "text",
+     "text": " "
+    },
+    {
+     "type": "text",
+     "text": "both",
+     "marks": [
+      {
+       "type": "bold"
+      },
+      {
+       "type": "italic"
+      }
+     ]
+    },
+    {
+     "type": "text",
+     "text": " "
+    },
+    {
+     "type": "text",
+     "text": "under",
+     "marks": [
+      {
+       "type": "underline"
+      }
+     ]
+    },
+    {
+     "type": "text",
+     "text": " "
+    },
+    {
+     "type": "text",
+     "text": "gone",
+     "marks": [
+      {
+       "type": "strike"
+      }
+     ]
+    },
+    {
+     "type": "text",
+     "text": " "
+    },
+    {
+     "type": "text",
+     "text": "code <x>",
+     "marks": [
+      {
+       "type": "code"
+      }
+     ]
+    },
+    {
+     "type": "text",
+     "text": " and a "
+    },
+    {
+     "type": "text",
+     "text": "link",
+     "marks": [
+      {
+       "type": "link",
+       "attrs": {
+        "href": "https://x.test/a?b=1&c=\"2\""
+       }
+      }
+     ]
+    },
+    {
+     "type": "text",
+     "text": " with "
+    },
+    {
+     "type": "text",
+     "text": "a comment",
+     "marks": [
+      {
+       "type": "comment",
+       "attrs": {
+        "commentId": "c1"
+       }
+      }
+     ]
+    },
+    {
+     "type": "text",
+     "text": " & 1 < 2 > 0."
+    }
+   ]
+  },
+  {
+   "type": "paragraph",
+   "attrs": {
+    "uid": "p2"
+   }
+  },
+  {
+   "type": "blockquote",
+   "attrs": {
+    "uid": "q1"
+   },
+   "content": [
+    {
+     "type": "paragraph",
+     "attrs": {
+      "uid": "q1p"
+     },
+     "content": [
+      {
+       "type": "text",
+       "text": "Quoted"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "bulletList",
+   "attrs": {
+    "uid": "l1"
+   },
+   "content": [
+    {
+     "type": "listItem",
+     "attrs": {
+      "uid": "li1"
+     },
+     "content": [
+      {
+       "type": "paragraph",
+       "attrs": {
+        "uid": "li1p"
+       },
+       "content": [
+        {
+         "type": "text",
+         "text": "One"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "type": "listItem",
+     "attrs": {
+      "uid": "li2"
+     },
+     "content": [
+      {
+       "type": "paragraph",
+       "attrs": {
+        "uid": "li2p"
+       },
+       "content": [
+        {
+         "type": "text",
+         "text": "Two"
+        }
+       ]
+      },
+      {
+       "type": "orderedList",
+       "attrs": {
+        "uid": "l2",
+        "start": 3
+       },
+       "content": [
+        {
+         "type": "listItem",
+         "attrs": {
+          "uid": "li3"
+         },
+         "content": [
+          {
+           "type": "paragraph",
+           "attrs": {
+            "uid": "li3p"
+           },
+           "content": [
+            {
+             "type": "text",
+             "text": "Three"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "codeBlock",
+       "attrs": {
+        "uid": "lc",
+        "language": null
+       },
+       "content": [
+        {
+         "type": "text",
+         "text": "nested code"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "taskList",
+   "attrs": {
+    "uid": "t1"
+   },
+   "content": [
+    {
+     "type": "taskItem",
+     "attrs": {
+      "uid": "ti1",
+      "checked": true
+     },
+     "content": [
+      {
+       "type": "paragraph",
+       "attrs": {
+        "uid": "ti1p"
+       },
+       "content": [
+        {
+         "type": "text",
+         "text": "Done"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "type": "taskItem",
+     "attrs": {
+      "uid": "ti2",
+      "checked": false
+     },
+     "content": [
+      {
+       "type": "paragraph",
+       "attrs": {
+        "uid": "ti2p"
+       },
+       "content": [
+        {
+         "type": "text",
+         "text": "Open"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "calloutBlock",
+   "attrs": {
+    "uid": "c1",
+    "icon": "lucide:info"
+   },
+   "content": [
+    {
+     "type": "paragraph",
+     "attrs": {
+      "uid": "c1p"
+     },
+     "content": [
+      {
+       "type": "text",
+       "text": "Callout"
+      }
+     ]
+    },
+    {
+     "type": "bulletList",
+     "attrs": {
+      "uid": "cl"
+     },
+     "content": [
+      {
+       "type": "listItem",
+       "attrs": {
+        "uid": "cli"
+       },
+       "content": [
+        {
+         "type": "paragraph",
+         "attrs": {
+          "uid": "clip"
+         },
+         "content": [
+          {
+           "type": "text",
+           "text": "In callout"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "codeBlock",
+   "attrs": {
+    "uid": "code1",
+    "language": "go"
+   },
+   "content": [
+    {
+     "type": "text",
+     "text": "if a < b && c {\n\treturn \"</pre>\"\n}"
+    }
+   ]
+  },
+  {
+   "type": "mermaidBlock",
+   "attrs": {
+    "uid": "m1"
+   },
+   "content": [
+    {
+     "type": "text",
+     "text": "graph TD; A-->B;"
+    }
+   ]
+  },
+  {
+   "type": "horizontalRule",
+   "attrs": {
+    "uid": "hr1"
+   }
+  },
+  {
+   "type": "imageBlock",
+   "attrs": {
+    "uid": "img1",
+    "src": "https://x.test/i.png",
+    "alt": "An \"image\"",
+    "title": null,
+    "width": 320
+   }
+  },
+  {
+   "type": "figmaBlock",
+   "attrs": {
+    "uid": "fig1",
+    "src": "https://figma.com/x",
+    "width": 800,
+    "height": null
+   }
+  },
+  {
+   "type": "fileBlock",
+   "attrs": {
+    "uid": "file1",
+    "src": "/api/documents/d/files/f",
+    "name": "a.pdf",
+    "size": 1234,
+    "contentType": "application/pdf"
+   }
+  },
+  {
+   "type": "metricGrid",
+   "attrs": {
+    "uid": "g1"
+   },
+   "content": [
+    {
+     "type": "metricBlock",
+     "attrs": {
+      "uid": "mb1",
+      "dataSourceId": "ds1",
+      "visualizationType": "line_chart",
+      "queries": [
+       {
+        "name": "Q",
+        "query": "up",
+        "legendFormat": ""
+       }
+      ],
+      "simulationActive": true,
+      "simulationPreset": "cpu_usage",
+      "width": "standard",
+      "title": null
+     }
+    }
+   ]
+  },
+  {
+   "type": "splitDocumentation",
+   "attrs": {
+    "uid": "sd1",
+    "inversed": true
+   },
+   "content": [
+    {
+     "type": "splitDocumentationLeftSide",
+     "attrs": {
+      "uid": "sl"
+     },
+     "content": [
+      {
+       "type": "heading",
+       "attrs": {
+        "uid": "sh",
+        "level": 1
+       },
+       "content": [
+        {
+         "type": "text",
+         "text": "POST /login"
+        }
+       ]
+      },
+      {
+       "type": "paragraph",
+       "attrs": {
+        "uid": "sp"
+       },
+       "content": [
+        {
+         "type": "text",
+         "text": "Issues a token."
+        }
+       ]
+      },
+      {
+       "type": "splitDocumentationParameterList",
+       "attrs": {
+        "uid": "pl1"
+       },
+       "content": [
+        {
+         "type": "splitDocumentationParameterListHeader",
+         "attrs": {
+          "uid": "plh"
+         },
+         "content": [
+          {
+           "type": "text",
+           "text": "Request body"
+          }
+         ]
+        },
+        {
+         "type": "splitDocumentationParameterListItem",
+         "attrs": {
+          "uid": "pi1"
+         },
+         "content": [
+          {
+           "type": "splitDocumentationParameterListItemHeader",
+           "attrs": {
+            "uid": "pih"
+           },
+           "content": [
+            {
+             "type": "splitDocumentationParameterListItemHeaderTitle",
+             "attrs": {
+              "uid": "pit"
+             },
+             "content": [
+              {
+               "type": "text",
+               "text": "email"
+              }
+             ]
+            },
+            {
+             "type": "splitDocumentationParameterListItemHeaderType",
+             "attrs": {
+              "uid": "pity"
+             },
+             "content": [
+              {
+               "type": "text",
+               "text": "string"
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "type": "paragraph",
+           "attrs": {
+            "uid": "pip"
+           },
+           "content": [
+            {
+             "type": "text",
+             "text": "The "
+            },
+            {
+             "type": "text",
+             "text": "user",
+             "marks": [
+              {
+               "type": "bold"
+              }
+             ]
+            },
+            {
+             "type": "text",
+             "text": " email"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "type": "splitDocumentationRightSide",
+     "attrs": {
+      "uid": "sr"
+     },
+     "content": [
+      {
+       "type": "titledCodeBlock",
+       "attrs": {
+        "uid": "tc1"
+       },
+       "content": [
+        {
+         "type": "codeBlockTitle",
+         "attrs": {
+          "uid": "tct"
+         },
+         "content": [
+          {
+           "type": "text",
+           "text": "POST /login"
+          }
+         ]
+        },
+        {
+         "type": "codeBlock",
+         "attrs": {
+          "uid": "tcc",
+          "language": "json",
+          "nodeCommentId": "nc-tcc"
+         },
+         "content": [
+          {
+           "type": "text",
+           "text": "{\"email\": \"a@b\"}"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "mermaidBlock",
+       "attrs": {
+        "uid": "m2"
+       },
+       "content": [
+        {
+         "type": "text",
+         "text": "graph LR; X-->Y;"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "mysteryBlock",
+   "attrs": {
+    "uid": "u1"
+   }
+  }
+ ]
+}

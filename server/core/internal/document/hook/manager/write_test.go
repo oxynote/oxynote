@@ -866,6 +866,7 @@ func Test_Manager_ResetHook(t *testing.T) {
 
 			assert.Equal(t, *hk, ff[0].Hk)
 			assert.Equal(t, c.Status, hk.Status)
+			assert.True(t, hk.UpdatedAt.Valid)
 			assert.Equal(t, c.Published, pub.codes)
 			assert.Equal(t, []hook.Hook{*hk}, changes.hooks)
 		})

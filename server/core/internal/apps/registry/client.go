@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"slices"
 
-	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
@@ -23,57 +22,14 @@ var (
 	ErrNotFound = errutil.New(http.StatusNotFound, "registry.not_found", "container image not found")
 )
 
-// digestOptions holds options for configuring the Digest function.
-type digestOptions struct {
-	username string
-	password string
-	token    string
-}
-
-// DigestOption is an option for configuring the Digest function.
-type DigestOption func(*digestOptions)
-
 // Digest retrieves the digest of the specified container image.
-func Digest(
-	ctx context.Context,
-	image string,
-	digOpts ...DigestOption,
-) (string, error) {
+func Digest(ctx context.Context, image string) (string, error) {
 	ref, err := parseReference(image)
 	if err != nil {
 		return "", err
 	}
 
-	remoteOpts := []remote.Option{
-		remote.WithContext(ctx),
-	}
-
-	baseOpts := &digestOptions{}
-
-	for _, optFn := range digOpts {
-		optFn(baseOpts)
-	}
-
-	if baseOpts.username != "" && baseOpts.password != "" {
-		remoteOpts = append(remoteOpts,
-			remote.WithAuth(
-				&authn.Basic{
-					Username: baseOpts.username,
-					Password: baseOpts.password,
-				},
-			),
-		)
-	} else if baseOpts.token != "" {
-		remoteOpts = append(remoteOpts,
-			remote.WithAuth(
-				&authn.Bearer{
-					Token: baseOpts.token,
-				},
-			),
-		)
-	}
-
-	desc, err := remote.Head(ref, remoteOpts...)
+	desc, err := remote.Head(ref, remote.WithContext(ctx))
 	if err != nil {
 		if terr, ok := errors.AsType[*transport.Error](err); ok {
 			switch {
@@ -101,21 +57,6 @@ func ValidateReference(image string) error {
 	_, err := parseReference(image)
 
 	return err
-}
-
-// WithBasicAuth sets the username and password for basic authentication.
-func WithBasicAuth(username, password string) DigestOption {
-	return func(o *digestOptions) {
-		o.username = username
-		o.password = password
-	}
-}
-
-// WithBearerToken sets the token for bearer authentication.
-func WithBearerToken(token string) DigestOption {
-	return func(o *digestOptions) {
-		o.token = token
-	}
 }
 
 // parseReference parses an image reference, defaulting to Docker Hub and the

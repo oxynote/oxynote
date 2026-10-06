@@ -1554,10 +1554,7 @@ describe("createRoutes", () => {
 			})
 
 			expect(res.status).toBe(200)
-			expect(await res.json()).toEqual({
-				applied: 1,
-				errors: [],
-			})
+			expect(await res.json()).toEqual({ errors: [] })
 			expect(openDirectConnection).toHaveBeenCalledWith(
 				"doc1-b1",
 				{},
@@ -1763,10 +1760,8 @@ describe("createRoutes", () => {
 
 			expect(res.status).toBe(200)
 			const body = (await res.json()) as {
-				applied: number
 				errors: { index: number }[]
 			}
-			expect(body.applied).toBe(0)
 			expect(body.errors).toHaveLength(1)
 			expect(body.errors[0]?.index).toBe(0)
 		})

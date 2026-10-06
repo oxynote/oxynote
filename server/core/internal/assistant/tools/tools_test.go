@@ -19,37 +19,27 @@ func allToolNames() []Name {
 	return []Name{
 		NameListDocuments,
 		NameGetDocument,
-		NameReadBlock,
 		NameListTags,
 		NameListHooks,
 		NameSearchDocuments,
 		NameListDataSources,
-		NameGetPrometheusMetadata,
-		NameListPrometheusLabelNames,
-		NameListPrometheusLabelValues,
+		NameGetDataSourceMetadata,
+		NameListPrometheusLabels,
 		NameListPrometheusSeries,
-		NameQueryPrometheus,
-		NameGetSQLMetadata,
-		NameGetSQLQueryLabels,
-		NameQuerySQL,
+		NameQueryDataSource,
 		NameCreateDocument,
 		NameDeleteDocument,
 		NameUpdateDocument,
-		NameInsertBlock,
-		NameReplaceBlock,
-		NameUpdateBlockText,
-		NameUpdateBlockAttrs,
+		NameInsertBlocks,
+		NameReplaceBlocks,
 		NameDeleteBlock,
 		NameMoveBlock,
 		NameCreateTag,
 		NameUpdateTag,
 		NameDeleteTag,
-		NameAssignTag,
-		NameUnassignTag,
-		NameMoveTag,
+		NameSetTagAssignment,
 		NameCreateHook,
 		NameUpdateHook,
-		NameResetHook,
 		NameDeleteHook,
 		NameReadToolOutput,
 	}
@@ -89,16 +79,19 @@ func Test_New(t *testing.T) {
 		assert.Equal(t, string(name), info.Name)
 
 		tl := adapter(t, it).tl
-		tr := tl.Traits()
+		tr := tl.Info().Traits
 
 		// a write has to describe what it proposes, and nothing else
-		// has anything to propose. Every tool satisfies the interface,
-		// so this asks what a compiler cannot: that the summary is
-		// actually there.
-		sum, serr := tl.Summary(testInput(testDeps(stubDocumentDB(), nil, nil), name, requiredArgs(t, name)))
-		require.NoError(t, serr)
-		assert.Equal(t, tr.Write, sum.Summary != "",
-			"%s declares Write=%v but Summary=%q", name, tr.Write, sum.Summary)
+		// has anything to propose: this asks what a compiler cannot,
+		// that every write's summary is actually there.
+		s, summarizes := tl.(summarizer)
+		require.Equal(t, tr.Write, summarizes, "%s declares Write=%v but summarizer=%v", name, tr.Write, summarizes)
+
+		if summarizes {
+			sum, serr := s.Summary(testInput(testDeps(stubContentDB(nil), nil, nil), name, requiredArgs(t, name)))
+			require.NoError(t, serr)
+			assert.NotEmpty(t, sum.Summary, "%s has an empty summary", name)
+		}
 
 		// a destructive tool is a write first; nothing else can be
 		// destructive.
@@ -152,11 +145,7 @@ func Test_Set_Entries(t *testing.T) {
 	destructive := []Name{NameDeleteDocument, NameDeleteBlock, NameDeleteTag, NameDeleteHook}
 
 	for i, e := range entries {
-		assert.Equal(t, allToolNames()[i], e.Name)
-
-		// the entry carries the tool's own description, so a surface
-		// outside this package never has to ask the tool for it.
-		assert.Equal(t, e.Name, e.Info.Name)
+		assert.Equal(t, allToolNames()[i], e.Info.Name)
 
 		// every model-facing string follows the rules a description keeps
 		// on both surfaces: it says nothing about a confirmation flow,
@@ -192,26 +181,27 @@ func Test_Set_Entries(t *testing.T) {
 		walk(e.Info.Properties, "")
 
 		for path, text := range texts {
-			assert.NotEmpty(t, text, "%s: %s has no description", e.Name, path)
+			assert.NotEmpty(t, text, "%s: %s has no description", e.Info.Name, path)
 
 			for _, banned := range []string{"confirm", "approv", "\u2014", "organization"} {
-				assert.NotContains(t, strings.ToLower(text), banned, "%s: %s", e.Name, path)
+				assert.NotContains(t, strings.ToLower(text), banned, "%s: %s", e.Info.Name, path)
 			}
 		}
 
 		// the entry carries the tool without its confirmation gate,
 		// while the registry keeps the gated one for the chat loop.
 		_, gated := e.Tool.(*confirming)
-		assert.False(t, gated, "%s entry must be ungated", e.Name)
+		assert.False(t, gated, "%s entry must be ungated", e.Info.Name)
 
-		assert.Equal(t, slices.Contains(s.WriteNames(), string(e.Name)), e.Write, "%s write flag", e.Name)
-		assert.Equal(t, slices.Contains(destructive, e.Name), e.Destructive, "%s destructive flag", e.Name)
-		assert.Equal(t, e.Name == NameReadToolOutput, e.Internal, "%s internal flag", e.Name)
+		tr := e.Info.Traits
+		assert.Equal(t, slices.Contains(s.WriteNames(), string(e.Info.Name)), tr.Write, "%s write flag", e.Info.Name)
+		assert.Equal(t, slices.Contains(destructive, e.Info.Name), tr.Destructive, "%s destructive flag", e.Info.Name)
+		assert.Equal(t, e.Info.Name == NameReadToolOutput, tr.Internal, "%s internal flag", e.Info.Name)
 	}
 
 	// mutating the returned slice must not affect the registry.
-	entries[0].Name = "clobbered"
-	assert.Equal(t, allToolNames()[0], s.Entries()[0].Name)
+	entries[0].Info.Name = "clobbered"
+	assert.Equal(t, allToolNames()[0], s.Entries()[0].Info.Name)
 }
 
 func Test_Set_Entry(t *testing.T) {
@@ -258,10 +248,10 @@ func Test_Set_Entry(t *testing.T) {
 				return
 			}
 
-			assert.Equal(t, c.Result, e.Name)
+			assert.Equal(t, c.Result, e.Info.Name)
 
 			_, gated := e.Tool.(*confirming)
-			assert.False(t, gated, "%s entry must be ungated", e.Name)
+			assert.False(t, gated, "%s entry must be ungated", e.Info.Name)
 		})
 	}
 }
@@ -279,21 +269,16 @@ func Test_Set_WriteNames(t *testing.T) {
 		string(NameCreateDocument),
 		string(NameDeleteDocument),
 		string(NameUpdateDocument),
-		string(NameInsertBlock),
-		string(NameReplaceBlock),
-		string(NameUpdateBlockText),
-		string(NameUpdateBlockAttrs),
+		string(NameInsertBlocks),
+		string(NameReplaceBlocks),
 		string(NameDeleteBlock),
 		string(NameMoveBlock),
 		string(NameCreateTag),
 		string(NameUpdateTag),
 		string(NameDeleteTag),
-		string(NameAssignTag),
-		string(NameUnassignTag),
-		string(NameMoveTag),
+		string(NameSetTagAssignment),
 		string(NameCreateHook),
 		string(NameUpdateHook),
-		string(NameResetHook),
 		string(NameDeleteHook),
 	}, got)
 
@@ -325,15 +310,17 @@ func Test_Set_Label(t *testing.T) {
 			Args:   `{` + targetArgs(_stubMainBranchID) + `}`,
 			Result: "Reading Runbook",
 		},
-		"Write names the document": {
-			Name:   NameUpdateBlockText,
-			Args:   `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"b","text":"t"}`,
-			Result: "Updating Runbook",
+		// a write is announced by the summary its approval card shows.
+		"Write is announced by its summary": {
+			DB:     stubContentDB(nil),
+			Name:   NameReplaceBlocks,
+			Args:   `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"a","content":"<p>t</p>"}`,
+			Result: "Replace a block in Runbook with 1 block",
 		},
-		"Tag write names the tag": {
+		"Tag write is announced by its summary": {
 			Name:   NameDeleteTag,
 			Args:   `{"tag_id":"` + _testTagID.String() + `"}`,
-			Result: "Deleting tag Production",
+			Result: "Delete tag Production and take it off the 1 page carrying it",
 		},
 		"Unresolvable document is not announced": {
 			DB: &DBMock{

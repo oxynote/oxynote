@@ -357,11 +357,11 @@ func Test_Manager_ToolSet(t *testing.T) {
 	s := m.ToolSet("org1", "user1")
 	require.NotNil(t, s)
 
-	// the set carries the full registry — the thirteen document tools,
-	// the seven tag tools, the five hook tools, the nine data-source
+	// the set carries the full registry — the ten document tools,
+	// the five tag tools, the four hook tools, the five data-source
 	// tools and the offloaded-result reader — wired from the manager's
 	// shared dependencies and scoped to the requested pair.
-	assert.Len(t, s.Tools(), 35)
+	assert.Len(t, s.Tools(), 25)
 }
 
 func Test_Manager_claimTurn(t *testing.T) {

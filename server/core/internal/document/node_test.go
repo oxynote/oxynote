@@ -87,52 +87,6 @@ func Test_Block_FindByUID(t *testing.T) {
 	}
 }
 
-func Test_RootBlock_FindParentTypeByUID(t *testing.T) {
-	cc := map[string]struct {
-		UID    string
-		Parent BlockNodeType
-		Found  bool
-	}{
-		"Top-level block":     {UID: "p1", Parent: BlockNodeDoc, Found: true},
-		"Nested block":        {UID: "li1", Parent: BlockNodeBulletList, Found: true},
-		"Deeply nested block": {UID: "lp1", Parent: BlockNodeListItem, Found: true},
-		"Missing uid":         {UID: "nope"},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			parent, ok := stubTree().FindParentTypeByUID(c.UID)
-			assert.Equal(t, c.Found, ok)
-			assert.Equal(t, c.Parent, parent)
-		})
-	}
-}
-
-func Test_Block_FindParentTypeByUID(t *testing.T) {
-	cc := map[string]struct {
-		UID    string
-		Parent BlockNodeType
-		Found  bool
-	}{
-		"Direct child":              {UID: "li1", Parent: BlockNodeBulletList, Found: true},
-		"Grandchild":                {UID: "lp1", Parent: BlockNodeListItem, Found: true},
-		"Self match is not a match": {UID: "l1"},
-		"Missing uid":               {UID: "nope"},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			parent, ok := stubTree().Content[1].FindParentTypeByUID(c.UID)
-			assert.Equal(t, c.Found, ok)
-			assert.Equal(t, c.Parent, parent)
-		})
-	}
-}
-
 func Test_RootBlock_HasBlock(t *testing.T) {
 	t.Parallel()
 
@@ -140,11 +94,40 @@ func Test_RootBlock_HasBlock(t *testing.T) {
 	assert.False(t, stubTree().HasBlock("nope"))
 }
 
-func Test_Block_HasBlock(t *testing.T) {
+func Test_Block_FirstChild(t *testing.T) {
 	t.Parallel()
 
-	assert.True(t, stubTree().Content[1].HasBlock("li1"))
-	assert.False(t, stubTree().Content[1].HasBlock("nope"))
+	item := stubTree().Content[1].Content[0]
+
+	assert.Equal(t, item.Content[0], item.FirstChild(BlockNodeParagraph))
+	assert.Equal(t, Block{}, item.FirstChild(BlockNodeHeading))
+}
+
+func Test_Block_PlainText(t *testing.T) {
+	t.Parallel()
+
+	b := Block{
+		Type: BlockNodeParagraph,
+		Content: []Block{
+			{Type: BlockNodeText, Text: "a "},
+			{Type: BlockNodeImageBlock},
+			{Type: BlockNodeText, Text: "b", Marks: []Mark{{Type: "bold"}}},
+		},
+	}
+
+	assert.Equal(t, "a b", b.PlainText())
+	assert.Empty(t, Block{}.PlainText())
+}
+
+func Test_Mark_Equal(t *testing.T) {
+	t.Parallel()
+
+	link := Mark{Type: "link", Attrs: Attributes{"href": "https://x.test", "title": nil}}
+
+	assert.True(t, link.Equal(Mark{Type: "link", Attrs: Attributes{"href": "https://x.test", "title": nil}}))
+	assert.False(t, link.Equal(Mark{Type: "link", Attrs: Attributes{"href": "https://y.test", "title": nil}}))
+	assert.False(t, link.Equal(Mark{Type: "bold"}))
+	assert.True(t, Mark{Type: "bold"}.Equal(Mark{Type: "bold", Attrs: Attributes{}}))
 }
 
 // stubMarkedTree builds a tree with comment marks, nodeCommentId
@@ -183,101 +166,6 @@ func Test_Block_UID(t *testing.T) {
 
 	_, ok = (Block{Attrs: Attributes{"uid": 42}}).UID()
 	assert.False(t, ok)
-}
-
-func Test_Block_Flatten(t *testing.T) {
-	t.Parallel()
-
-	cc := map[string]struct {
-		Block    Block
-		Expected string
-	}{
-		"Text leaf returns its text": {
-			Block:    Block{Type: BlockNodeText, Text: "hello"},
-			Expected: "hello",
-		},
-		"Adjacent fragments read as written": {
-			Block: Block{
-				Type: BlockNodeParagraph,
-				Content: []Block{
-					{Type: BlockNodeText, Text: "my"},
-					{Type: BlockNodeText, Text: "_var"},
-					{Type: BlockNodeText, Text: " is "},
-					{Type: BlockNodeText, Text: "set"},
-				},
-			},
-			Expected: "my_var is set",
-		},
-		"Inline atom separates the fragments around it": {
-			Block: Block{
-				Type: BlockNodeParagraph,
-				Content: []Block{
-					{Type: BlockNodeText, Text: "line"},
-					{Type: "hardBreak"},
-					{Type: BlockNodeText, Text: "break"},
-				},
-			},
-			Expected: "line break",
-		},
-		"Sibling blocks are space separated": {
-			Block: Block{
-				Type: BlockNodeBlockquote,
-				Content: []Block{
-					{
-						Type: BlockNodeParagraph,
-						Content: []Block{
-							{Type: BlockNodeText, Text: "first "},
-						},
-					},
-					{
-						Type: BlockNodeParagraph,
-						Content: []Block{
-							{Type: BlockNodeText, Text: "second"},
-						},
-					},
-				},
-			},
-			Expected: "first second",
-		},
-		"Nested subtrees are concatenated": {
-			Block: Block{
-				Type: BlockNodeBulletList,
-				Content: []Block{
-					{
-						Type: BlockNodeListItem,
-						Content: []Block{
-							{Type: BlockNodeText, Text: "one"},
-						},
-					},
-					{
-						Type: BlockNodeListItem,
-						Content: []Block{
-							{Type: BlockNodeText, Text: "two"},
-						},
-					},
-				},
-			},
-			Expected: "one two",
-		},
-		"Empty text fragments are skipped": {
-			Block: Block{
-				Type: BlockNodeParagraph,
-				Content: []Block{
-					{Type: BlockNodeText, Text: ""},
-					{Type: BlockNodeText, Text: "solo"},
-				},
-			},
-			Expected: "solo",
-		},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			assert.Equal(t, c.Expected, c.Block.Flatten())
-		})
-	}
 }
 
 func Test_Mark_UnmarshalJSON(t *testing.T) {
