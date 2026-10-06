@@ -232,7 +232,7 @@ func Test_turn_relayMessage(t *testing.T) {
 		},
 		"Narration before a tool call is transient": {
 			Msg: schema.AssistantMessage("let me look", []schema.ToolCall{
-				{ID: "1", Function: schema.FunctionCall{Name: "read_block"}},
+				{ID: "1", Function: schema.FunctionCall{Name: "get_document"}},
 			}),
 			Result: "let me look",
 			Kind:   protocol.TextEndKindStatus,
@@ -287,7 +287,7 @@ func Test_turn_relayStream(t *testing.T) {
 		"Narration before a tool call is transient": {
 			Stream: schema.StreamReaderFromArray([]*schema.Message{
 				schema.AssistantMessage("let me look", []schema.ToolCall{
-					{ID: "1", Function: schema.FunctionCall{Name: "read_block"}},
+					{ID: "1", Function: schema.FunctionCall{Name: "get_document"}},
 				}),
 			}),
 			Result: "let me look",
@@ -379,7 +379,7 @@ func Test_turn_confirmation(t *testing.T) {
 				InterruptContexts: []*adk.InterruptCtx{{
 					ID: "i1",
 					Info: tools.ActionSummary{
-						Tool:         tools.NameUpdateBlockText,
+						Tool:         tools.NameReplaceBlocks,
 						DocumentID:   docID,
 						DocumentName: "Runbook",
 						Summary:      "Reword the intro",
@@ -388,7 +388,7 @@ func Test_turn_confirmation(t *testing.T) {
 			},
 			IDs: []string{"i1"},
 			Actions: []protocol.ConfirmAction{{
-				Tool:         string(tools.NameUpdateBlockText),
+				Tool:         string(tools.NameReplaceBlocks),
 				DocumentID:   docID.String(),
 				DocumentName: "Runbook",
 				Summary:      "Reword the intro",

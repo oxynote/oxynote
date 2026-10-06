@@ -4,7 +4,7 @@ import { CommentMark, AddedMark, DeletedMark } from "./marks.js"
 
 export const ParameterListItemHeaderType = Node.create({
 	name: "splitDocumentationParameterListItemHeaderType",
-	group: "block",
+	group: "splitDocumentationParameterListItemHeaderType",
 	content: `text*`,
 	marks: `${CommentMark.name} ${AddedMark.name} ${DeletedMark.name}`,
 	defining: true,
@@ -31,7 +31,7 @@ export const ParameterListItemHeaderType = Node.create({
 
 export const ParameterListItemHeaderTitle = Node.create({
 	name: "splitDocumentationParameterListItemHeaderTitle",
-	group: "block",
+	group: "splitDocumentationParameterListItemHeaderTitle",
 	content: `text*`,
 	marks: `${CommentMark.name} ${AddedMark.name} ${DeletedMark.name}`,
 	defining: true,
@@ -58,7 +58,7 @@ export const ParameterListItemHeaderTitle = Node.create({
 
 export const ParameterListItemHeader = Node.create({
 	name: "splitDocumentationParameterListItemHeader",
-	group: "block",
+	group: "splitDocumentationParameterListItemHeader",
 	content: `${ParameterListItemHeaderTitle.name} ${ParameterListItemHeaderType.name}`,
 	defining: true,
 	isolating: true,
@@ -84,7 +84,7 @@ export const ParameterListItemHeader = Node.create({
 
 export const ParameterListItem = Node.create({
 	name: "splitDocumentationParameterListItem",
-	group: "block",
+	group: "splitDocumentationParameterListItem",
 	content: `${ParameterListItemHeader.name} ${Paragraph.name}`,
 	defining: true,
 	isolating: true,
@@ -111,7 +111,7 @@ export const ParameterListItem = Node.create({
 export const ParameterListHeader = Node.create({
 	name: "splitDocumentationParameterListHeader",
 	content: `text*`,
-	group: "block",
+	group: "splitDocumentationParameterListHeader",
 	marks: `${CommentMark.name} ${AddedMark.name} ${DeletedMark.name}`,
 	defining: true,
 	isolating: true,
@@ -137,7 +137,7 @@ export const ParameterListHeader = Node.create({
 
 export const ParameterList = Node.create({
 	name: "splitDocumentationParameterList",
-	group: "block",
+	group: "splitDocumentationParameterList",
 	content: `${ParameterListHeader.name} ${ParameterListItem.name}+`,
 	defining: true,
 	isolating: true,

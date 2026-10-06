@@ -3,6 +3,7 @@ package mcp
 import (
 	"testing"
 
+	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -12,7 +13,6 @@ import (
 var _readToolNames = []string{
 	"list_documents",
 	"get_document",
-	"read_block",
 	"list_tags",
 	"list_hooks",
 	"search_documents",
@@ -24,21 +24,16 @@ var _writeToolNames = []string{
 	"create_document",
 	"delete_document",
 	"update_document",
-	"insert_block",
-	"replace_block",
-	"update_block_text",
-	"update_block_attrs",
+	"insert_blocks",
+	"replace_blocks",
 	"delete_block",
 	"move_block",
 	"create_tag",
 	"update_tag",
 	"delete_tag",
-	"assign_tag",
-	"unassign_tag",
-	"move_tag",
+	"set_tag_assignment",
 	"create_hook",
 	"update_hook",
-	"reset_hook",
 	"delete_hook",
 }
 
@@ -46,14 +41,10 @@ var _writeToolNames = []string{
 // to a token holding data-sources:read.
 var _dataSourceToolNames = []string{
 	"list_data_sources",
-	"get_prometheus_metadata",
-	"list_prometheus_label_names",
-	"list_prometheus_label_values",
+	"get_data_source_metadata",
+	"list_prometheus_labels",
 	"list_prometheus_series",
-	"query_prometheus",
-	"get_sql_metadata",
-	"get_sql_query_labels",
-	"query_sql",
+	"query_data_source",
 }
 
 // checkDataSourceToolShape asserts a data-source tool reaches the wire
@@ -61,7 +52,7 @@ var _dataSourceToolNames = []string{
 func checkDataSourceToolShape(t *testing.T, defs map[string]map[string]any) {
 	t.Helper()
 
-	query := defs["query_prometheus"]
+	query := defs["query_data_source"]
 	require.NotNil(t, query)
 
 	assert.NotEmpty(t, query["description"])
@@ -167,6 +158,33 @@ func Test_Handler_server(t *testing.T) {
 			if c.Check != nil {
 				c.Check(t, defs)
 			}
+		})
+	}
+}
+
+func Test_toolScope(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Traits tools.Traits
+		Scope  string
+		Found  bool
+	}{
+		"Read":                   {Scope: ScopeDocumentRead, Found: true},
+		"Write":                  {Traits: tools.Traits{Write: true}, Scope: ScopeDocumentWrite, Found: true},
+		"Data source":            {Traits: tools.Traits{DataSource: true}, Scope: ScopeDataSourceRead, Found: true},
+		"Data source over write": {Traits: tools.Traits{Write: true, DataSource: true}, Scope: ScopeDataSourceRead, Found: true},
+		"Internal":               {Traits: tools.Traits{Internal: true}},
+		"Internal write":         {Traits: tools.Traits{Write: true, Internal: true}},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			scope, found := toolScope(c.Traits)
+			assert.Equal(t, c.Scope, scope)
+			assert.Equal(t, c.Found, found)
 		})
 	}
 }

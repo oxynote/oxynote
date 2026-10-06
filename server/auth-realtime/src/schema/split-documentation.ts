@@ -20,7 +20,7 @@ const extraLeftSideContent = [ParameterList.name]
 
 export const SplitDocumentationLeftSide = Node.create({
 	name: "splitDocumentationLeftSide",
-	group: "block",
+	group: "splitDocumentationLeftSide",
 	isolating: false,
 	defining: true,
 	selectable: false,
@@ -45,7 +45,7 @@ export const SplitDocumentationLeftSide = Node.create({
 
 export const SplitDocumentationRightSide = Node.create({
 	name: "splitDocumentationRightSide",
-	group: "block",
+	group: "splitDocumentationRightSide",
 	isolating: false,
 	defining: true,
 	selectable: false,

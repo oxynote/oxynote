@@ -270,7 +270,7 @@ func Test_Handler_ServeHTTP(t *testing.T) {
 		instructions, ok := result["instructions"].(string)
 		require.True(t, ok, "instructions: %v", result["instructions"])
 		assert.Contains(t, instructions, "Oxynote")
-		assert.Contains(t, instructions, "## Canonical block model")
+		assert.Contains(t, instructions, "## Content")
 	})
 }
 

@@ -10,14 +10,6 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/buildinfo"
 )
 
-// _scopes is the OAuth scope each kind of tool access answers to. An
-// access with no scope here is offered to no client.
-var _scopes = map[tools.Access]string{
-	tools.AccessRead:       ScopeDocumentRead,
-	tools.AccessWrite:      ScopeDocumentWrite,
-	tools.AccessDataSource: ScopeDataSourceRead,
-}
-
 // server builds the MCP server for one request's identity: the tools
 // the token's scopes allow, plus the organization's documents as
 // resources. Stateless transport means every request gets a fresh
@@ -57,7 +49,7 @@ func (h *Handler) server(r *http.Request) *mcp.Server {
 		// a tool no scope grants is not offered: an internal one addresses
 		// conversation state this surface has none of, and the rest answer
 		// to the scope their access maps onto.
-		scope, ok := _scopes[e.Access()]
+		scope, ok := toolScope(e.Info.Traits)
 		if !ok || !slices.Contains(session.Scopes, scope) {
 			continue
 		}
@@ -65,7 +57,7 @@ func (h *Handler) server(r *http.Request) *mcp.Server {
 		// the wire shape is the tool's own description: same name, same
 		// prose, same argument schema the assistant's model sees.
 		srv.AddTool(&mcp.Tool{
-			Name:        string(e.Name),
+			Name:        string(e.Info.Name),
 			Description: e.Info.Description,
 			InputSchema: e.Info.Schema(),
 			Annotations: annotations(e),
@@ -77,4 +69,20 @@ func (h *Handler) server(r *http.Request) *mcp.Server {
 	}
 
 	return srv
+}
+
+// toolScope returns the OAuth scope a token needs to be offered a tool
+// with the given traits. An internal tool answers to no scope: it
+// addresses conversation state only the assistant has.
+func toolScope(tr tools.Traits) (string, bool) {
+	switch {
+	case tr.Internal:
+		return "", false
+	case tr.DataSource:
+		return ScopeDataSourceRead, true
+	case tr.Write:
+		return ScopeDocumentWrite, true
+	default:
+		return ScopeDocumentRead, true
+	}
 }

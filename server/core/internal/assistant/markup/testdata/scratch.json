@@ -1,0 +1,480 @@
+{
+ "type": "doc",
+ "content": [
+  {
+   "type": "heading",
+   "attrs": {
+    "uid": "WOAr8ZaSbaFew7_ugmvxK",
+    "level": 2
+   },
+   "content": [
+    {
+     "text": "The **my_var_name** flag",
+     "type": "text"
+    }
+   ]
+  },
+  {
+   "type": "paragraph",
+   "attrs": {
+    "uid": "HdfMSky3maGyef_T4_Vbi"
+   },
+   "content": [
+    {
+     "text": "Second pass with ",
+     "type": "text"
+    },
+    {
+     "text": "bold_marker",
+     "type": "text",
+     "marks": [
+      {
+       "type": "bold"
+      }
+     ]
+    },
+    {
+     "text": " and ",
+     "type": "text"
+    },
+    {
+     "text": "italic",
+     "type": "text",
+     "marks": [
+      {
+       "type": "italic"
+      }
+     ]
+    },
+    {
+     "text": " word and a ",
+     "type": "text"
+    },
+    {
+     "text": "link",
+     "type": "text",
+     "marks": [
+      {
+       "type": "link",
+       "attrs": {
+        "href": "https://example.com"
+       }
+      }
+     ]
+    },
+    {
+     "text": " end",
+     "type": "text"
+    }
+   ]
+  },
+  {
+   "type": "codeBlock",
+   "attrs": {
+    "uid": "UG8VIL-zNciPGxfp0gPfA",
+    "language": "python"
+   },
+   "content": [
+    {
+     "text": "my_var = \"a\\\\b\"\ny := c\\d **1**",
+     "type": "text"
+    }
+   ]
+  },
+  {
+   "type": "splitDocumentation",
+   "attrs": {
+    "uid": "q_3p-1UdgWnCfyIlv6GA7",
+    "inversed": false
+   },
+   "content": [
+    {
+     "type": "splitDocumentationLeftSide",
+     "attrs": {
+      "uid": "0lPCicY6DRzy6DWCIGiMp"
+     },
+     "content": [
+      {
+       "type": "heading",
+       "attrs": {
+        "uid": "yVBz026-JufM6iiR9TTdW",
+        "level": 1
+       },
+       "content": [
+        {
+         "text": "Endpoint",
+         "type": "text"
+        }
+       ]
+      },
+      {
+       "type": "paragraph",
+       "attrs": {
+        "uid": "zYx2SazSIz7QZyQwddDf_"
+       },
+       "content": [
+        {
+         "text": "Does a thing",
+         "type": "text"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "type": "splitDocumentationRightSide",
+     "attrs": {
+      "uid": "m_iE4spKIzb6lXjxVrs-W"
+     },
+     "content": [
+      {
+       "type": "titledCodeBlock",
+       "attrs": {
+        "uid": "aXFWclOCXyds1ThmflO6M"
+       },
+       "content": [
+        {
+         "type": "codeBlockTitle",
+         "attrs": {
+          "uid": "MWlt_8Fpgpo3Jv97CK6JD"
+         },
+         "content": [
+          {
+           "text": "POST /b",
+           "type": "text"
+          }
+         ]
+        },
+        {
+         "type": "codeBlock",
+         "attrs": {
+          "uid": "ENzCHcOZ4uMSwRF6LF5vE",
+          "language": "shell"
+         },
+         "content": [
+          {
+           "text": "curl -H \"x_api_key: a\\b\" https://example.com/_v1",
+           "type": "text"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "bulletList",
+   "attrs": {
+    "uid": "S8KVkt4dojC640CXXmHl6"
+   },
+   "content": [
+    {
+     "type": "listItem",
+     "attrs": {
+      "uid": "KuWZxVFFOnYCceB4xqSFw"
+     },
+     "content": [
+      {
+       "type": "paragraph",
+       "attrs": {
+        "uid": "uQyJIo3o3o3dXnnixiavX"
+       },
+       "content": [
+        {
+         "text": "Item one edited",
+         "type": "text"
+        }
+       ]
+      },
+      {
+       "type": "bulletList",
+       "attrs": {
+        "uid": "xvL483uqtOrs1tq_KMIV5"
+       },
+       "content": [
+        {
+         "type": "listItem",
+         "attrs": {
+          "uid": "JgTZj0a4e4-BebOkGdx3P"
+         },
+         "content": [
+          {
+           "type": "paragraph",
+           "attrs": {
+            "uid": "24_UMFxVM0aCT7POu_ynY"
+           },
+           "content": [
+            {
+             "text": "Nested",
+             "type": "text"
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "blockquote",
+   "attrs": {
+    "uid": "RuJ2JUhwQkBmncEQcBoCT"
+   },
+   "content": [
+    {
+     "type": "paragraph",
+     "attrs": {
+      "uid": "cEGig7n188sAPxRaWzf50"
+     },
+     "content": [
+      {
+       "text": "Quote p1",
+       "type": "text"
+      }
+     ]
+    },
+    {
+     "type": "paragraph",
+     "attrs": {
+      "uid": "tYzjYlvJFJMHD_IVpQ-KG"
+     },
+     "content": [
+      {
+       "text": "Inserted after bold",
+       "type": "text"
+      }
+     ]
+    },
+    {
+     "type": "paragraph",
+     "attrs": {
+      "uid": "SHFcJ4_F-8MLNnZsXn_Sa"
+     },
+     "content": [
+      {
+       "text": "Quote p2",
+       "type": "text"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "paragraph",
+   "attrs": {
+    "uid": "SGHmcRGGr1bTPIoO9b5Wq"
+   },
+   "content": [
+    {
+     "text": "Set my",
+     "type": "text"
+    },
+    {
+     "text": "var_name, then foo_bar",
+     "type": "text",
+     "marks": [
+      {
+       "type": "underline"
+      }
+     ]
+    },
+    {
+     "text": " and “",
+     "type": "text"
+    },
+    {
+     "text": "term",
+     "type": "text",
+     "marks": [
+      {
+       "type": "underline"
+      }
+     ]
+    },
+    {
+     "text": "” and ",
+     "type": "text"
+    },
+    {
+     "text": "plain",
+     "type": "text",
+     "marks": [
+      {
+       "type": "underline"
+      }
+     ]
+    },
+    {
+     "text": " and ",
+     "type": "text"
+    },
+    {
+     "text": "bold",
+     "type": "text",
+     "marks": [
+      {
+       "type": "bold"
+      }
+     ]
+    },
+    {
+     "text": " end.",
+     "type": "text"
+    }
+   ]
+  },
+  {
+   "type": "paragraph",
+   "attrs": {
+    "uid": "0JjNEqS7SYawYOu0VedqG"
+   },
+   "content": [
+    {
+     "text": "Recheck my_var_name, then foo_bar_ and “",
+     "type": "text"
+    },
+    {
+     "text": "term",
+     "type": "text",
+     "marks": [
+      {
+       "type": "underline"
+      }
+     ]
+    },
+    {
+     "text": "” and ",
+     "type": "text"
+    },
+    {
+     "text": "plain",
+     "type": "text",
+     "marks": [
+      {
+       "type": "underline"
+      }
+     ]
+    },
+    {
+     "text": " and ",
+     "type": "text"
+    },
+    {
+     "text": "bold",
+     "type": "text",
+     "marks": [
+      {
+       "type": "bold"
+      }
+     ]
+    },
+    {
+     "text": " end.",
+     "type": "text"
+    }
+   ]
+  },
+  {
+   "type": "paragraph",
+   "attrs": {
+    "uid": "PdZPH3-weP3SPd1tGKU6K"
+   },
+   "content": [
+    {
+     "text": "Underline foo",
+     "type": "text"
+    },
+    {
+     "text": "bar",
+     "type": "text",
+     "marks": [
+      {
+       "type": "underline"
+      }
+     ]
+    },
+    {
+     "text": "baz, “",
+     "type": "text"
+    },
+    {
+     "text": "quoted",
+     "type": "text",
+     "marks": [
+      {
+       "type": "underline"
+      }
+     ]
+    },
+    {
+     "text": "” and ",
+     "type": "text"
+    },
+    {
+     "text": "plain",
+     "type": "text",
+     "marks": [
+      {
+       "type": "underline"
+      }
+     ]
+    },
+    {
+     "text": " next to my_var_name.",
+     "type": "text"
+    }
+   ]
+  },
+  {
+   "type": "bulletList",
+   "attrs": {
+    "uid": "_zKatPriWHqifKnhtlbuB"
+   },
+   "content": [
+    {
+     "type": "listItem",
+     "attrs": {
+      "uid": "Xag_oG5OM6eKNGGWHDKZo"
+     },
+     "content": [
+      {
+       "type": "paragraph",
+       "attrs": {
+        "uid": "iUjgFmPnMqerJGDu6azsq"
+       },
+       "content": [
+        {
+         "text": "Entry with code",
+         "type": "text"
+        }
+       ]
+      },
+      {
+       "type": "codeBlock",
+       "attrs": {
+        "uid": "OdAG6QSLs4e2EFQS5EqZe"
+       },
+       "content": [
+        {
+         "text": "x := 1",
+         "type": "text"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "paragraph",
+   "attrs": {
+    "uid": "6VRJevl29sBVQgICKHej5"
+   }
+  }
+ ]
+}

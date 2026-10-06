@@ -1,0 +1,50 @@
+<h2 id="h1">Heading &amp; &lt;stuff>noted</h2>
+<p id="p1">Plain <b>bold</b> <b><i>both</i></b> <u>under</u> <s>gone</s> <code>code &lt;x></code> and a <a href="https://x.test/a?b=1&amp;c=&quot;2&quot;">link</a> with a comment &amp; 1 &lt; 2 > 0.</p>
+<p id="p2"></p>
+<blockquote id="q1">
+  <p id="q1p">Quoted</p>
+</blockquote>
+<ul id="l1">
+  <li id="li1">One</li>
+  <li id="li2">Two
+    <ol id="l2" start="3">
+      <li id="li3">Three</li>
+    </ol>
+    <pre id="lc">nested code</pre>
+  </li>
+</ul>
+<tasks id="t1">
+  <task id="ti1" checked="true">Done</task>
+  <task id="ti2">Open</task>
+</tasks>
+<callout id="c1" icon="lucide:info">
+  <p id="c1p">Callout</p>
+  <ul id="cl">
+    <li id="cli">In callout</li>
+  </ul>
+</callout>
+<pre id="code1" language="go">if a < b && c {
+	return "&lt;/pre>"
+}</pre>
+<mermaid id="m1">graph TD; A-->B;</mermaid>
+<hr id="hr1"/>
+<img id="img1" src="https://x.test/i.png" alt="An &quot;image&quot;" width="320"/>
+<figma id="fig1" src="https://figma.com/x" width="800"/>
+<file id="file1" src="/api/documents/d/files/f" name="a.pdf" contentType="application/pdf" size="1234"/>
+<metrics id="g1">
+  <metric id="mb1">{"dataSourceId":"ds1","queries":[{"legendFormat":"","name":"Q","query":"up"}],"simulationPreset":"cpu_usage","visualizationType":"line_chart","width":"standard"}</metric>
+</metrics>
+<split_doc id="sd1" inversed="true">
+  <left>
+    <h1 id="sh">POST /login</h1>
+    <p id="sp">Issues a token.</p>
+    <params id="pl1" header="Request body">
+      <param id="pi1" name="email" type="string">The <b>user</b> email</param>
+    </params>
+  </left>
+  <right>
+    <pre id="tc1" title="POST /login" language="json">{"email": "a@b"}</pre>
+    <mermaid id="m2">graph LR; X-->Y;</mermaid>
+  </right>
+</split_doc>
+<unsupported id="u1" type="mysteryBlock"/>

@@ -1,37 +1,14 @@
 package document
 
-import "maps"
-
 // Attributes is the attribute map carried by document nodes and
 // marks. It behaves as a plain map (range, index, len all work) and
 // adds typed access to individual attributes via Get.
 type Attributes map[string]any
 
-// Copy returns a shallow copy of the attributes. A nil receiver
-// yields an empty, non-nil map, so the result is always safe to
-// mutate.
-func (a Attributes) Copy() Attributes {
-	out := make(Attributes, len(a)+1)
-
-	maps.Copy(out, a)
-
-	return out
-}
-
-// Has reports whether the named attribute is present.
-func (a Attributes) Has(name string) bool {
-	_, ok := a[name]
-
-	return ok
-}
-
-// Get returns the named attribute and whether it is present. The
-// zero Attribute is returned when the name is absent, so its typed
-// accessors yield zero values.
-func (a Attributes) Get(name string) (Attribute, bool) {
-	v, ok := a[name]
-
-	return Attribute{value: v}, ok
+// Get returns the named attribute. The zero Attribute is returned when
+// the name is absent, so its typed accessors yield zero values.
+func (a Attributes) Get(name string) Attribute {
+	return Attribute{value: a[name]}
 }
 
 // Value returns the named attribute's raw value and whether it is set
@@ -40,8 +17,7 @@ func (a Attributes) Get(name string) (Attribute, bool) {
 // It differs from Get in what it calls set: the editor writes null for
 // a field nobody has filled in, and a caller reading one back gets the
 // null with it, so a key present with a null value is as unset here as
-// a key that is absent. Get answers the narrower question of whether
-// the key is there at all.
+// a key that is absent.
 func (a Attributes) Value(name string) (any, bool) {
 	v, ok := a[name]
 	if !ok || v == nil {

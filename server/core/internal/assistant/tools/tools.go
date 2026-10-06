@@ -12,7 +12,6 @@ import (
 	"slices"
 
 	"github.com/cloudwego/eino/components/tool"
-	"github.com/rs/xid"
 )
 
 // Name is the canonical identifier of one tool the assistant
@@ -26,7 +25,6 @@ type Name string
 const (
 	NameListDocuments   Name = "list_documents"
 	NameGetDocument     Name = "get_document"
-	NameReadBlock       Name = "read_block"
 	NameSearchDocuments Name = "search_documents"
 	NameListTags        Name = "list_tags"
 	NameListHooks       Name = "list_hooks"
@@ -37,15 +35,11 @@ const (
 // gates by scope asks Traits.DataSource rather than lumping them in
 // with the document reads.
 const (
-	NameListDataSources           Name = "list_data_sources"
-	NameGetPrometheusMetadata     Name = "get_prometheus_metadata"
-	NameListPrometheusLabelNames  Name = "list_prometheus_label_names"
-	NameListPrometheusLabelValues Name = "list_prometheus_label_values"
-	NameListPrometheusSeries      Name = "list_prometheus_series"
-	NameQueryPrometheus           Name = "query_prometheus"
-	NameGetSQLMetadata            Name = "get_sql_metadata"
-	NameGetSQLQueryLabels         Name = "get_sql_query_labels"
-	NameQuerySQL                  Name = "query_sql"
+	NameListDataSources       Name = "list_data_sources"
+	NameGetDataSourceMetadata Name = "get_data_source_metadata"
+	NameListPrometheusLabels  Name = "list_prometheus_labels"
+	NameListPrometheusSeries  Name = "list_prometheus_series"
+	NameQueryDataSource       Name = "query_data_source"
 )
 
 // Write tools — always confirmed. Deletes are the most
@@ -54,21 +48,16 @@ const (
 	NameCreateDocument   Name = "create_document"
 	NameDeleteDocument   Name = "delete_document"
 	NameUpdateDocument   Name = "update_document"
-	NameInsertBlock      Name = "insert_block"
-	NameReplaceBlock     Name = "replace_block"
-	NameUpdateBlockText  Name = "update_block_text"
-	NameUpdateBlockAttrs Name = "update_block_attrs"
+	NameInsertBlocks     Name = "insert_blocks"
+	NameReplaceBlocks    Name = "replace_blocks"
 	NameDeleteBlock      Name = "delete_block"
 	NameMoveBlock        Name = "move_block"
 	NameCreateTag        Name = "create_tag"
 	NameUpdateTag        Name = "update_tag"
 	NameDeleteTag        Name = "delete_tag"
-	NameAssignTag        Name = "assign_tag"
-	NameUnassignTag      Name = "unassign_tag"
-	NameMoveTag          Name = "move_tag"
+	NameSetTagAssignment Name = "set_tag_assignment"
 	NameCreateHook       Name = "create_hook"
 	NameUpdateHook       Name = "update_hook"
-	NameResetHook        Name = "reset_hook"
 	NameDeleteHook       Name = "delete_hook"
 )
 
@@ -103,38 +92,28 @@ func New(deps *Deps) *Set {
 	all := []Tool{
 		listDocuments{},
 		getDocument{},
-		readBlock{},
 		listTags{},
 		listHooks{},
 		searchDocuments{},
 		listDataSources{},
-		getPrometheusMetadata{},
-		listPrometheusLabelNames{},
-		listPrometheusLabelValues{},
+		getDataSourceMetadata{},
+		listPrometheusLabels{},
 		listPrometheusSeries{},
-		queryPrometheus{},
-		getSQLMetadata{},
-		getSQLQueryLabels{},
-		querySQL{},
+		queryDataSource{},
 
 		createDocument{},
 		deleteDocument{},
 		updateDocument{},
-		insertBlock{},
-		replaceBlock{},
-		updateBlockText{},
-		updateBlockAttrs{},
+		insertBlocks{},
+		replaceBlocks{},
 		deleteBlock{},
 		moveBlock{},
 		createTag{},
 		updateTag{},
 		deleteTag{},
-		assignTag{},
-		unassignTag{},
-		moveTag{},
+		setTagAssignment{},
 		createHook{},
 		updateHook{},
-		resetHook{},
 		deleteHook{},
 
 		readToolOutput{},
@@ -144,13 +123,11 @@ func New(deps *Deps) *Set {
 
 	for _, tl := range all {
 		et := newEinoTool(tl, deps)
-		tr := tl.Traits()
+		tr := et.info.Traits
 
 		s.entries = append(s.entries, Entry{
-			Traits: tr,
-			Name:   et.info.Name,
-			Info:   et.info,
-			Tool:   et,
+			Info: et.info,
+			Tool: et,
 		})
 
 		var it registryTool = et
@@ -171,18 +148,12 @@ func New(deps *Deps) *Set {
 	return s
 }
 
-// Entry describes one registered tool: what kind of tool it is, its
-// name, how it describes itself, and its implementation with no
-// confirmation gate applied.
+// Entry describes one registered tool: how it describes itself, and its
+// implementation with no confirmation gate applied.
 type Entry struct {
-	Traits
-
-	// Name is the tool's canonical identifier.
-	Name Name
-
-	// Info is the tool's own description. A surface that has to
-	// announce the tool builds its description from this, so no surface
-	// has to restate a schema the tool already owns.
+	// Info is the tool's own description and traits. A surface that has
+	// to announce the tool builds its description from this, so no
+	// surface has to restate a schema the tool already owns.
 	Info Info
 
 	// Tool is the tool without its confirmation gate. Running it
@@ -205,7 +176,7 @@ func (s *Set) Entries() []Entry {
 // addressed.
 func (s *Set) Entry(name Name) (Entry, bool) {
 	for _, e := range s.entries {
-		if e.Name == name {
+		if e.Info.Name == name {
 			return e, true
 		}
 	}
@@ -240,12 +211,7 @@ func (s *Set) Label(ctx context.Context, name Name, args json.RawMessage) string
 		return ""
 	}
 
-	label, err := t.Title(ctx, args)
-	if err != nil {
-		return ""
-	}
-
-	return label
+	return t.Title(ctx, args)
 }
 
 // WriteNames returns every tool that mutates a document.
@@ -258,41 +224,14 @@ func (s *Set) WriteNames() []string {
 	return slices.Clone(s.writes)
 }
 
-// Result is one tool call's outcome: the payload the model reads, and
-// the documents the call changed.
-type Result struct {
-	// Output is the tool's result, serialised for the caller.
-	Output string
-
-	// Documents lists the branches this call created or changed, in
-	// the order it touched them.
-	//
-	// It is recorded by the Input as the call mutates rather than read
-	// back out of the arguments, so it is right for a call that changes
-	// several documents and empty for one that changes none — neither
-	// of which an argument can be asked about. A delete records
-	// nothing: the document it names no longer exists to point at.
-	Documents []Touched
-}
-
-// Touched names one branch of a document a call changed, which is what
-// a surface needs to link back to it.
-type Touched struct {
-	// DocumentID is the document changed.
-	DocumentID xid.ID
-
-	// BranchID is the branch of it the change landed on.
-	BranchID xid.ID
-}
-
 // Runner runs one tool call in this package's own vocabulary: the raw
 // JSON arguments in, the outcome out. Surfaces outside this package
 // reach a tool through it, so none of them has to speak the agent
 // framework's interface to run one.
 type Runner interface {
-	// Run should perform the call and report what it produced and what
-	// it changed.
-	Run(ctx context.Context, args json.RawMessage) (Result, error)
+	// Run should perform the call and return its result serialised for
+	// the caller.
+	Run(ctx context.Context, args json.RawMessage) (string, error)
 }
 
 // registryTool is what the registry stores: a tool the agent can invoke
@@ -305,5 +244,5 @@ type registryTool interface {
 	// Title should return a short line describing what the tool is
 	// about to do, or an empty string for tools too noisy or too
 	// generic to announce.
-	Title(ctx context.Context, args json.RawMessage) (string, error)
+	Title(ctx context.Context, args json.RawMessage) string
 }

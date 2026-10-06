@@ -27,7 +27,7 @@ func Test_NewCompaction(t *testing.T) {
 		"Both middlewares are built": {
 			Model:   &mock.ChatModel{},
 			Backend: persist.NewOffload(&persistMock.BlobStore{}),
-			Writes:  []string{"insert_block"},
+			Writes:  []string{"insert_blocks"},
 		},
 		"Summarization needs a model": {
 			Backend: persist.NewOffload(&persistMock.BlobStore{}),
@@ -68,7 +68,7 @@ func Test_newClearRewriter(t *testing.T) {
 		Contains  []string
 	}{
 		"Names the tool whose output was cleared": {
-			Writes: []string{"insert_block"},
+			Writes: []string{"insert_blocks"},
 			Msg: schema.AssistantMessage("", []schema.ToolCall{
 				{Function: schema.FunctionCall{Name: "get_document"}},
 			}),
@@ -86,10 +86,10 @@ func Test_newClearRewriter(t *testing.T) {
 			Contains: []string{"cleared"},
 		},
 		"Round containing a write call is left untouched": {
-			Writes: []string{"insert_block"},
+			Writes: []string{"insert_blocks"},
 			Msg: schema.AssistantMessage("", []schema.ToolCall{
 				{ID: "1", Function: schema.FunctionCall{Name: "read_block"}},
-				{ID: "2", Function: schema.FunctionCall{Name: "insert_block"}},
+				{ID: "2", Function: schema.FunctionCall{Name: "insert_blocks"}},
 			}),
 			Responses: []*schema.Message{
 				schema.ToolMessage("read result", "1"),

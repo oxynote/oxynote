@@ -134,7 +134,8 @@ type Hook struct {
 	// CreatedAt is the time when the hook was created.
 	CreatedAt time.Time `json:"createdAt" db:"created_at"`
 
-	// UpdatedAt is the timestamp when the document was last updated.
+	// UpdatedAt is when someone last changed the hook's settings or reset
+	// it. Null until then.
 	UpdatedAt null.Time `json:"updatedAt" db:"updated_at"`
 
 	// SoftDeletedAt is the time when the hook was soft deleted (not found in the document).

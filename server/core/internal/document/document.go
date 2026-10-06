@@ -190,26 +190,6 @@ func (d Document) ApplyProtection(protected bool, updatedBy string) Document {
 	return nd
 }
 
-// Content is a lightweight view of one document at one branch:
-// just the identity, display name, and parsed content. Used by
-// downstream pipelines that need to walk the content tree without
-// pulling raw_content or other branch metadata.
-type Content struct {
-	// OrganizationID is the identifier of the organization that
-	// owns this document.
-	OrganizationID string `db:"fk_organization_id"`
-
-	// DocumentID is the identifier of the document.
-	DocumentID xid.ID `db:"fk_document_id"`
-
-	// DocumentName is the document's display name on the branch
-	// this content was loaded from.
-	DocumentName string `db:"document_name"`
-
-	// Content is the parsed ProseMirror tree for the branch.
-	Content RootBlock `db:"content"`
-}
-
 // BranchSummary holds summary information for a document branch.
 // It omits content and raw content and is used for listing branches.
 type BranchSummary struct {

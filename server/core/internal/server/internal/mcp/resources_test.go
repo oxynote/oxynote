@@ -219,7 +219,7 @@ func Test_Handler_readDocument(t *testing.T) {
 				FetchDocumentByBranchIDFunc: stubDraftDocument(docID),
 				FetchDocumentBranchesFunc:   stubBranches,
 			},
-			Text: `"branch":{"id":"` + _stubDraftBranchID.String() + `","name":"draft","protected":false,"default":false}`,
+			Text: `{"id":"` + _stubDraftBranchID.String() + `","name":"draft","protected":false,"default":false`,
 		},
 	}
 

@@ -1,3 +1,5 @@
+// Package strutil provides small string helpers shared across the
+// codebase.
 package strutil
 
 import (

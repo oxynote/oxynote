@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 
 	"github.com/cloudwego/eino/adk"
@@ -65,28 +64,28 @@ func Test_confirming_InvokableRun(t *testing.T) {
 	t.Parallel()
 
 	docID := _testDocID
-	writeArgs := `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"a","text":"hi"}`
+	writeArgs := `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"a","content":"<p id=\"a\">hi</p>"}`
 	deleteArgs := `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"a"}`
 
 	// every write tool must ask before it acts. Resuming an approved
 	// turn reruns the tool from the top, so a tool that applied its
 	// edit before interrupting would apply it a second time.
 	cc := map[string]gateCase{
-		"Insert block asks first": {
-			Name:        NameInsertBlock,
-			Args:        `{` + targetArgs(_stubMainBranchID) + `,"reference_block_uid":"b","position":"after","block":{"type":"paragraph"}}`,
+		"Insert blocks asks first": {
+			Name:        NameInsertBlocks,
+			Args:        `{` + targetArgs(_stubMainBranchID) + `,"reference_block_uid":"b","position":"after","content":"<p>x</p>"}`,
 			Interrupted: true,
 		},
-		"Delete block asks first":      {Name: NameDeleteBlock, Args: deleteArgs, Interrupted: true},
-		"Delete document asks first":   {Name: NameDeleteDocument, Args: `{"document_id":"` + docID.String() + `"}`, Interrupted: true},
-		"Update document asks first":   {Name: NameUpdateDocument, Args: `{"document_id":"` + docID.String() + `","name":"n"}`, Interrupted: true},
-		"Create document asks first":   {Name: NameCreateDocument, Args: `{"name":"n"}`, Interrupted: true},
-		"Update block text asks first": {Name: NameUpdateBlockText, Args: writeArgs, Interrupted: true},
+		"Delete block asks first":    {Name: NameDeleteBlock, Args: deleteArgs, Interrupted: true},
+		"Delete document asks first": {Name: NameDeleteDocument, Args: `{"document_id":"` + docID.String() + `"}`, Interrupted: true},
+		"Update document asks first": {Name: NameUpdateDocument, Args: `{"document_id":"` + docID.String() + `","name":"n"}`, Interrupted: true},
+		"Create document asks first": {Name: NameCreateDocument, Args: `{"name":"n"}`, Interrupted: true},
+		"Replace blocks asks first":  {Name: NameReplaceBlocks, Args: writeArgs, Interrupted: true},
 		"Approve-all covers a later non-destructive write": {
-			Name:        NameUpdateBlockText,
+			Name:        NameReplaceBlocks,
 			Args:        writeArgs,
 			AutoApprove: true,
-			RespJSON:    `{"blocks":[{"uid":"a","kind":"paragraph","text":"hi","depth":0}]}`,
+			RespJSON:    `{"content":"<p id=\"a\">hi</p>\n"}`,
 			ApplyCalls:  1,
 		},
 		"Approve-all never covers a destructive write": {
@@ -96,33 +95,33 @@ func Test_confirming_InvokableRun(t *testing.T) {
 			Interrupted: true,
 		},
 		"Approved confirmation reruns the tool": {
-			Name:       NameUpdateBlockText,
+			Name:       NameReplaceBlocks,
 			Args:       writeArgs,
 			Decision:   &Decision{Approved: true},
-			RespJSON:   `{"blocks":[{"uid":"a","kind":"paragraph","text":"hi","depth":0}]}`,
+			RespJSON:   `{"content":"<p id=\"a\">hi</p>\n"}`,
 			ApplyCalls: 1,
 		},
 		"Declined confirmation reports the refusal": {
-			Name:     NameUpdateBlockText,
+			Name:     NameReplaceBlocks,
 			Args:     writeArgs,
 			Decision: &Decision{Approved: false},
 			RespJSON: `{"approved":false,"reason":"user declined"}`,
 		},
 		"Resume of another interrupt point re-interrupts": {
-			Name:        NameUpdateBlockText,
+			Name:        NameReplaceBlocks,
 			Args:        writeArgs,
 			ResumeOther: true,
 			Interrupted: true,
 		},
 		"Unreadable arguments are refused, never confirmed": {
-			Name:     NameUpdateBlockText,
+			Name:     NameReplaceBlocks,
 			Args:     `{`,
-			Rejected: "update_block_text: invalid input",
+			Rejected: "replace_blocks: invalid input",
 		},
 		"Missing arguments are refused, never confirmed": {
-			Name:     NameUpdateBlockText,
+			Name:     NameReplaceBlocks,
 			Args:     `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"b"}`,
-			Rejected: "update_block_text: text is required",
+			Rejected: "replace_blocks: content is required",
 		},
 	}
 
@@ -332,22 +331,6 @@ func (s *memStore) Set(_ context.Context, id string, data []byte) error {
 	s.m[id] = data
 
 	return nil
-}
-
-func Test_declinedResult(t *testing.T) {
-	t.Parallel()
-
-	res, err := declinedResult()
-	require.NoError(t, err)
-
-	var out struct {
-		Approved bool   `json:"approved"`
-		Reason   string `json:"reason"`
-	}
-
-	require.NoError(t, json.Unmarshal([]byte(res), &out))
-	assert.False(t, out.Approved)
-	assert.NotEmpty(t, out.Reason)
 }
 
 func Test_autoApproved(t *testing.T) {

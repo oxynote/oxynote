@@ -44,21 +44,18 @@ func (a searchDocumentsArgs) Validate() error {
 }
 
 // searchDocuments runs a full-text search across the organisation.
-type searchDocuments struct {
-	plainSummary
-	plainTraits
-}
+type searchDocuments struct{}
 
 // Info returns the tool's model-facing description.
 func (searchDocuments) Info() Info {
 	return Info{
 		Name:        NameSearchDocuments,
-		Description: "Full-text search across every branch of every document in the organisation for blocks whose text matches the query. Returns hits with document_id, document_name, branch_id, branch_name, default (whether that branch is the document's default), block_uid and text; branch_id is what a follow-up get_document or read_block takes. A block a fork copied unchanged is found on every branch that holds it. Use it to find where a topic is discussed or which documents the user might mean; use list_documents when you know the title. A hit names the innermost block holding the text, which may sit below anything get_document lists; read_block resolves it.",
+		Description: "Full-text search for blocks whose text matches the query, across every branch of every document. Returns {documents: [{document_id, document_name, branch_id, branch_name, default, hits: [{block_uid, text}]}]}, best match first. A block a fork copied unchanged is found on every branch holding it. A hit is the innermost block holding the text; get_document with its block_uid reads the element holding it. Use list_documents to find a document by title.",
 		Properties: map[string]any{
-			"query": map[string]any{"type": "string", "description": "The full-text search query (typo-tolerant, matches block text)."},
+			"query": map[string]any{"type": "string", "description": "The text to search for; matching is typo-tolerant."},
 			"limit": map[string]any{
 				"type":        "integer",
-				"description": "Maximum number of hits to return. Defaults to 20; cap is 50.",
+				"description": "Optional. The most hits to return: 20 by default, 50 at most.",
 			},
 		},
 		Required: []string{"query"},
@@ -66,18 +63,18 @@ func (searchDocuments) Info() Info {
 }
 
 // Title announces the query being run.
-func (searchDocuments) Title(inp DescribeInput) (string, error) {
+func (searchDocuments) Title(inp DescribeInput) string {
 	var in searchDocumentsArgs
 
 	if err := inp.Decode(&in); err != nil {
-		return "", err
+		return ""
 	}
 
-	return fmt.Sprintf("Searching for %q", in.Query), nil
+	return fmt.Sprintf("Searching for %q", in.Query)
 }
 
 // Execute searches the index and decorates hits with document names.
-func (searchDocuments) Execute(inp Input) (string, error) {
+func (searchDocuments) Execute(inp *input) (string, error) {
 	var in searchDocumentsArgs
 
 	if err := inp.Decode(&in); err != nil {
@@ -93,9 +90,9 @@ func (searchDocuments) Execute(inp Input) (string, error) {
 		limit = _searchLimitMax
 	}
 
-	blocks, err := inp.SearchBlocks(in.Query, limit)
+	blocks, err := inp.search.SearchDocumentBlocks(inp.Context(), inp.orgID, in.Query, limit)
 	if err != nil {
-		return "", fmt.Errorf("search_documents: search: %w", err)
+		return "", fmt.Errorf("search: %w", err)
 	}
 
 	// the index stores block text keyed by (branch, block uid) but not
@@ -121,34 +118,47 @@ func (searchDocuments) Execute(inp Input) (string, error) {
 		}
 	}
 
-	hits := make([]searchHit, 0, len(blocks))
+	// hits of one branch are listed under it once, in the order its
+	// first hit ranked.
+	var (
+		out   = searchResult{Documents: []searchDocument{}}
+		index = map[xid.ID]int{}
+	)
 
 	for _, b := range blocks {
-		hits = append(hits, searchHit{
-			DocumentID:   b.DocumentID,
-			DocumentName: names[b.DocumentID].DocumentName,
-			BranchID:     b.BranchID,
-			BranchName:   b.BranchName,
-			Default:      b.BranchDefault,
-			BlockUID:     strings.TrimPrefix(b.ID, b.BranchID.String()+"-"),
-			Text:         b.Text,
+		at, seen := index[b.BranchID]
+		if !seen {
+			at = len(out.Documents)
+			index[b.BranchID] = at
+
+			out.Documents = append(out.Documents, searchDocument{
+				DocumentID:   b.DocumentID,
+				DocumentName: names[b.DocumentID].DocumentName,
+				BranchID:     b.BranchID,
+				BranchName:   b.BranchName,
+				Default:      b.BranchDefault,
+			})
+		}
+
+		out.Documents[at].Hits = append(out.Documents[at].Hits, searchHit{
+			BlockUID: strings.TrimPrefix(b.ID, b.BranchID.String()+"-"),
+			Text:     b.Text,
 		})
 	}
 
-	return result(searchResult{
-		Hits: hits,
-	})
+	return result(out)
 }
 
 // searchResult is what search_documents returns.
 type searchResult struct {
-	// Hits are the matching blocks, in relevance order.
-	Hits []searchHit `json:"hits"`
+	// Documents are the document branches holding a match, in the order
+	// of their best hit.
+	Documents []searchDocument `json:"documents"`
 }
 
-// searchHit is one search_documents result row.
-type searchHit struct {
-	// DocumentID is the document containing the matching block.
+// searchDocument is one document branch holding search hits.
+type searchDocument struct {
+	// DocumentID is the document containing the matching blocks.
 	DocumentID xid.ID `json:"document_id"`
 
 	// DocumentName is the document's display name, when resolvable from
@@ -156,7 +166,7 @@ type searchHit struct {
 	// and the search.
 	DocumentName string `json:"document_name,omitempty"`
 
-	// BranchID is the branch the hit was indexed from, which is what a
+	// BranchID is the branch the hits were indexed from, which is what a
 	// follow-up read takes.
 	BranchID xid.ID `json:"branch_id"`
 
@@ -166,8 +176,14 @@ type searchHit struct {
 	// Default reports whether that branch is the document's default.
 	Default bool `json:"default"`
 
+	// Hits are the matching blocks of the branch, in relevance order.
+	Hits []searchHit `json:"hits"`
+}
+
+// searchHit is one matching block.
+type searchHit struct {
 	// BlockUID is the matching block's uid attribute, usable with
-	// read_block and the edit tools.
+	// get_document and the edit tools.
 	BlockUID string `json:"block_uid"`
 
 	// Text is the block's indexed text.

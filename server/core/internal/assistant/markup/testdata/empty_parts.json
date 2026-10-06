@@ -1,0 +1,131 @@
+{
+ "type": "doc",
+ "content": [
+  {
+   "type": "splitDocumentation",
+   "attrs": {
+    "uid": "sd",
+    "inversed": false
+   },
+   "content": [
+    {
+     "type": "splitDocumentationLeftSide",
+     "attrs": {
+      "uid": "sl"
+     },
+     "content": [
+      {
+       "type": "heading",
+       "attrs": {
+        "uid": "sh",
+        "level": 1
+       }
+      },
+      {
+       "type": "paragraph",
+       "attrs": {
+        "uid": "sp"
+       }
+      },
+      {
+       "type": "splitDocumentationParameterList",
+       "attrs": {
+        "uid": "pl"
+       },
+       "content": [
+        {
+         "type": "splitDocumentationParameterListHeader",
+         "attrs": {
+          "uid": "plh"
+         }
+        },
+        {
+         "type": "splitDocumentationParameterListItem",
+         "attrs": {
+          "uid": "pi"
+         },
+         "content": [
+          {
+           "type": "splitDocumentationParameterListItemHeader",
+           "attrs": {
+            "uid": "pih"
+           },
+           "content": [
+            {
+             "type": "splitDocumentationParameterListItemHeaderTitle",
+             "attrs": {
+              "uid": "pit"
+             }
+            },
+            {
+             "type": "splitDocumentationParameterListItemHeaderType",
+             "attrs": {
+              "uid": "pity"
+             }
+            }
+           ]
+          },
+          {
+           "type": "paragraph",
+           "attrs": {
+            "uid": "pip"
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "type": "splitDocumentationRightSide",
+     "attrs": {
+      "uid": "sr"
+     },
+     "content": [
+      {
+       "type": "titledCodeBlock",
+       "attrs": {
+        "uid": "tc"
+       },
+       "content": [
+        {
+         "type": "codeBlockTitle",
+         "attrs": {
+          "uid": "tct"
+         }
+        },
+        {
+         "type": "codeBlock",
+         "attrs": {
+          "uid": "tcc",
+          "language": null
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "figmaBlock",
+   "attrs": {
+    "uid": "fg",
+    "src": null,
+    "width": null,
+    "height": null
+   }
+  },
+  {
+   "type": "imageBlock",
+   "attrs": {
+    "uid": "im",
+    "src": null,
+    "alt": null,
+    "title": null,
+    "width": null
+   }
+  }
+ ]
+}

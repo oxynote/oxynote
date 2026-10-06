@@ -188,7 +188,7 @@ var (
 func stubEditApplier() *toolsMock.EditApplier {
 	return &toolsMock.EditApplier{
 		ApplyFunc: func(_ context.Context, _, _ xid.ID, _ []edit.Operation, _ string, _ bool) (edit.Result, error) {
-			return edit.Result{Applied: 1, Errors: []edit.OpError{}}, nil
+			return edit.Result{Errors: []edit.OpError{}}, nil
 		},
 	}
 }
@@ -614,11 +614,11 @@ func Test_session_handleConfirmResponse(t *testing.T) {
 	t.Parallel()
 
 	docID := _stubDocID.String()
-	edit1 := `{"document_id":"` + docID + `","branch_id":"` + _stubBranchID.String() + `","block_uid":"a","text":"one"}`
-	edit2 := `{"document_id":"` + docID + `","branch_id":"` + _stubBranchID.String() + `","block_uid":"b","text":"two"}`
+	edit1 := `{"document_id":"` + docID + `","branch_id":"` + _stubBranchID.String() + `","block_uid":"a","content":"<p id=\"a\">one</p>"}`
+	edit2 := `{"document_id":"` + docID + `","branch_id":"` + _stubBranchID.String() + `","block_uid":"b","content":"<p id=\"b\">two</p>"}`
 
 	oneWrite := []*schema.Message{
-		toolCall("1", string(tools.NameUpdateBlockText), edit1),
+		toolCall("1", string(tools.NameReplaceBlocks), edit1),
 		schema.AssistantMessage("updated the intro", nil),
 	}
 
@@ -664,8 +664,8 @@ func Test_session_handleConfirmResponse(t *testing.T) {
 			// two separate write batches: the first is confirmed, the
 			// second must ride on the same answer.
 			Responses: []*schema.Message{
-				toolCall("1", string(tools.NameUpdateBlockText), edit1),
-				toolCall("2", string(tools.NameUpdateBlockText), edit2),
+				toolCall("1", string(tools.NameReplaceBlocks), edit1),
+				toolCall("2", string(tools.NameReplaceBlocks), edit2),
 				schema.AssistantMessage("both edits applied", nil),
 			},
 			Approved: true,

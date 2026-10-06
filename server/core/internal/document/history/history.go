@@ -121,7 +121,7 @@ func NewHooks(doc document.Document, hooks []hook.Hook) Hooks {
 
 	for _, hk := range hooks {
 		if hk.BlockID.Valid {
-			if _, ok := doc.Content.FindByUID(hk.BlockID.String); !ok {
+			if !doc.Content.HasBlock(hk.BlockID.String) {
 				continue
 			}
 		}

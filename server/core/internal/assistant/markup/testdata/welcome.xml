@@ -1,0 +1,40 @@
+<split_doc id="pDVIfa12tOO7poZBmoKLP">
+  <left>
+    <h1 id="CDR7z6fQNMl6Brvzvyvus">Getting Started</h1>
+    <tasks id="aOB6ca0bN8WZXsRACNBzT">
+      <task id="TD4irKrS-GWLBiFtSkfwt" checked="true">Create your Oxynote account</task>
+      <task id="I_kT5w5JIyTAAu9ow9VZ2">Try the editor
+        <tasks id="gOnQBksnQTGNMcIcoiBu2">
+          <task id="3Uu2wEk6NXhgfKWjRJhlC">Create a new line and and <b>type</b> <code>/</code> to add blocks (headings, code, checklists, etc.)</task>
+          <task id="gnkK1soT9WjwHcxevn7Cy">Use the <b>sidebar</b> to create and organize pages</task>
+        </tasks>
+      </task>
+      <task id="KXs0x_NWUiWq3Km8p7Lf_">Use the <b>Main + Draft</b> workflow (the built-in review process)
+        <tasks id="oAz9cARyIOu8IwLBYLkxF">
+          <task id="RejEnZTe8X2SUpi3TeLWQ">Make a page reviewable: <b>click</b> ⋯ (top right) → <b>Make reviewable</b></task>
+          <task id="KzaOz88xAYAEVjFW3HeEG">Edit in Draft, then merge into Main with <b>Approve</b> and <b>Merge</b> buttons</task>
+        </tasks>
+      </task>
+      <task id="pbzPd-Vdch7jcLypiA9PT">Add <b>power blocks</b> to a page
+        <tasks id="TGtvTcxbLNrqnqOcDVaYd">
+          <task id="QCezsMtxYgYGFlHJ1AEeQ">Type <code>||</code> for a split documentation block (clean, Stripe-style docs layout)</task>
+          <task id="8m71AA9ZVH1ykFuAX7yL0">Type <code>%%</code> for a live metrics block (connects to your Prometheus)</task>
+          <task id="scH2pn8EuPPTEtZzq7frt">Inspect the metric blocks on this page to see a working setup</task>
+          <task id="So-9BWjfxQ_8CWo9MBc_Q">Drag metric blocks around to build a mini dashboard</task>
+        </tasks>
+      </task>
+      <task id="_kqGnHXPkME3EFQRZUcJW">Keep pages trustworthy with <b>freshness hooks</b>
+        <tasks id="woMF0liZNReyTN3Iwh_o8">
+          <task id="JX_PDEYcwMXA7HZYcqvZ7">Add hooks via <b>Hooks</b> at the top of the page or hover on a block and click the <b>leaf icon</b> on the left</task>
+          <task id="yrGnBVBqx9mj92PnSxbd1">Use hooks to track external changes (GitHub pushes, Docker image updates, etc.)</task>
+        </tasks>
+      </task>
+    </tasks>
+  </left>
+  <right>
+    <metric id="iSCnvMtVcU1rBtE3anBP1">{"baseThresholdColor":"oklch(62.7% .194 149.214)","dataSourceId":"daq1invl0rd000d01ra0","queries":[{"legendFormat":"{{confidence}}","name":"Query 1","query":"engineering_prs_merged_friday_afternoon_count"}],"refreshInterval":"30s","timeRange":"last_3_hours","title":"Pull Requests Merged on Friday Afternoon","unitType":"custom","visualizationType":"line_chart","width":"compact"}</metric>
+    <metric id="O9E-oQmk8GWBBlE4udYnF">{"baseThresholdColor":"oklch(62.7% .194 149.214)","dataSourceId":"daq1invl0rd000d01ra0","queries":[{"legendFormat":"{{platform}}","name":"Query 1","query":"engineering_works_on_my_machine_rate"}],"refreshInterval":"30s","timeRange":"last_3_hours","title":"\"Works on My Machine\" Rate","unitType":"custom","visualizationType":"line_chart","width":"compact"}</metric>
+  </right>
+</split_doc>
+<p id="CMUMTue1LmJQELbrD7taL"></p>
+<p id="XMP2zIPCZnRvINIR6iSt0"></p>

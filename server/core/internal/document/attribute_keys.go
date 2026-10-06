@@ -50,6 +50,9 @@ const (
 	// AttrChecked indicates that a task item is done.
 	AttrChecked = "checked"
 
+	// AttrStart is the number an ordered list counts from.
+	AttrStart = "start"
+
 	// AttrDataSourceID is the data source a metric block queries.
 	AttrDataSourceID = "dataSourceId"
 
@@ -65,26 +68,8 @@ const (
 	// AttrRefreshInterval is how often a metric block re-queries.
 	AttrRefreshInterval = "refreshInterval"
 
-	// AttrThresholds holds a metric block's threshold rows.
-	AttrThresholds = "thresholds"
-
-	// AttrBaseThresholdColor is a gauge's base colour.
-	AttrBaseThresholdColor = "baseThresholdColor"
-
-	// AttrDecimals is the number of decimals a metric block shows.
-	AttrDecimals = "decimals"
-
 	// AttrUnitType is the unit a metric block's values carry.
 	AttrUnitType = "unitType"
-
-	// AttrUnitCustom is the unit label when AttrUnitType is custom.
-	AttrUnitCustom = "unitCustom"
-
-	// AttrAxisBoundsMin is a metric block's fixed lower axis bound.
-	AttrAxisBoundsMin = "axisBoundsMin"
-
-	// AttrAxisBoundsMax is a metric block's fixed upper axis bound.
-	AttrAxisBoundsMax = "axisBoundsMax"
 
 	// AttrSimulationPreset names the generated series a metric block
 	// draws while AttrSimulationActive is set. It is unset on a block

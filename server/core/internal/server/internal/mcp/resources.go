@@ -30,7 +30,7 @@ func (h *Handler) addResources(
 	srv.AddResourceTemplate(&mcp.ResourceTemplate{
 		Name:        "document-branch",
 		Title:       "Oxynote document branch",
-		Description: "One branch of an Oxynote document, by document and branch id: its metadata, branches and blocks in canonical JSON form.",
+		Description: "One branch of an Oxynote document, by document and branch id: its metadata, its branches and its content as XML markup, one element per block.",
 		MIMEType:    _documentMIMEType,
 		URITemplate: _resourceURITemplate,
 	}, read)
@@ -84,7 +84,7 @@ func (h *Handler) readDocument(set *tools.Set) mcp.ResourceHandler {
 			return nil, errors.New("get_document tool not registered")
 		}
 
-		res, err := get.Tool.Run(ctx, json.RawMessage(raw))
+		out, err := get.Tool.Run(ctx, json.RawMessage(raw))
 		if err != nil {
 			if errutil.IsNotFound(err) || errors.Is(err, tools.ErrUnknownDocument) || errors.Is(err, tools.ErrUnknownBranch) {
 				return nil, mcp.ResourceNotFoundError(req.Params.URI)
@@ -99,7 +99,7 @@ func (h *Handler) readDocument(set *tools.Set) mcp.ResourceHandler {
 			Contents: []*mcp.ResourceContents{{
 				URI:      req.Params.URI,
 				MIMEType: _documentMIMEType,
-				Text:     res.Output,
+				Text:     out,
 			}},
 		}, nil
 	}

@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -121,7 +122,6 @@ func Test_hookSettingsSchema(t *testing.T) {
 		tp := want[i]
 		require.NoError(t, tp.Validate())
 
-		assert.Equal(t, string(tp), v["title"])
 		assert.Equal(t, false, v["additionalProperties"])
 
 		props, pok := v["properties"].(map[string]any)
@@ -254,36 +254,47 @@ func Test_decodeHookSettings(t *testing.T) {
 func Test_decodeSettings(t *testing.T) {
 	t.Parallel()
 
-	var uw processor.URLWatcher
-
-	// an absent payload decodes as an empty one.
-	require.NoError(t, decodeSettings(hook.TypeURLWatcher, nil, &uw))
-	assert.Empty(t, uw.URL)
-
-	require.NoError(t, decodeSettings(hook.TypeURLWatcher, json.RawMessage(`{"url":"https://example.com"}`), &uw))
-	assert.Equal(t, "https://example.com", uw.URL)
-
-	err := decodeSettings(hook.TypeURLWatcher, json.RawMessage(`{"colour":"red"}`), &uw)
-	assert.Equal(t, fmt.Errorf("%s is not a %s setting", "colour", hook.TypeURLWatcher), err)
-
-	// a value of the wrong shape is reported with its path.
-	err = decodeSettings(hook.TypeURLWatcher, json.RawMessage(`{"url":1}`), &uw)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid settings")
-
-	require.Error(t, decodeSettings(hook.TypeURLWatcher, json.RawMessage(`{`), &uw))
-}
-
-func Test_listHooksArgs_Validate(t *testing.T) {
-	t.Parallel()
-
-	assertValidate(t,
-		listHooksArgs{docTarget{DocumentID: _testDocID, BranchID: _stubMainBranchID}},
-		map[string]Args{
-			"document_id": listHooksArgs{docTarget{BranchID: _stubMainBranchID}},
-			"branch_id":   listHooksArgs{docTarget{DocumentID: _testDocID}},
+	cc := map[string]struct {
+		Raw    string
+		Result processor.URLWatcher
+		Err    error
+	}{
+		"Successful decode": {
+			Raw:    `{"url":"https://example.com"}`,
+			Result: processor.URLWatcher{URL: "https://example.com"},
 		},
-	)
+		"Type beside the settings": {
+			Raw:    `{"type":"url-watcher","url":"https://example.com"}`,
+			Result: processor.URLWatcher{URL: "https://example.com"},
+		},
+		"Unknown field": {
+			Raw: `{"colour":"red"}`,
+			Err: fmt.Errorf("%s is not a %s setting", "colour", hook.TypeURLWatcher),
+		},
+		"Value of the wrong shape": {
+			Raw: `{"url":1}`,
+			Err: assert.AnError,
+		},
+		"Malformed payload": {
+			Raw: `{`,
+			Err: assert.AnError,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := decodeSettings[processor.URLWatcher](hook.TypeURLWatcher, json.RawMessage(c.Raw))
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, got)
+		})
+	}
 }
 
 func Test_listHooks_Info(t *testing.T) {
@@ -291,24 +302,12 @@ func Test_listHooks_Info(t *testing.T) {
 
 	info := listHooks{}.Info()
 
+	assert.Equal(t, Traits{}, info.Traits)
+
 	assert.Equal(t, NameListHooks, info.Name)
 	assert.NotEmpty(t, info.Description)
 	assert.Equal(t, []string{"document_id", "branch_id"}, info.Required)
 	assert.Contains(t, info.Properties, "branch_id")
-}
-
-func Test_listHooks_Traits(t *testing.T) {
-	t.Parallel()
-
-	assert.Equal(t, Traits{}, listHooks{}.Traits())
-}
-
-func Test_listHooks_Title(t *testing.T) {
-	t.Parallel()
-
-	got, err := listHooks{}.Title(testInput(testDeps(nil, nil, nil), NameListHooks, `{}`))
-	require.NoError(t, err)
-	assert.Empty(t, got)
 }
 
 func Test_listHooks_Execute(t *testing.T) {
@@ -429,6 +428,8 @@ func Test_createHook_Info(t *testing.T) {
 
 	info := createHook{}.Info()
 
+	assert.Equal(t, Traits{Write: true}, info.Traits)
+
 	assert.Equal(t, NameCreateHook, info.Name)
 	assert.NotEmpty(t, info.Description)
 	assert.Equal(t, []string{"document_id", "branch_id", "settings"}, info.Required)
@@ -444,32 +445,6 @@ func Test_createHook_Info(t *testing.T) {
 	// the two types that need an integration say so, since a deployment
 	// may lack it.
 	assert.Contains(t, info.Description, "integrations")
-}
-
-func Test_createHook_Traits(t *testing.T) {
-	t.Parallel()
-
-	assert.Equal(t, Traits{Write: true}, createHook{}.Traits())
-}
-
-func Test_createHook_Title(t *testing.T) {
-	t.Parallel()
-
-	scheduled := `,"settings":{"type":"scheduled-reminder","schedule":"` + _stubSchedule + `"}`
-
-	got, err := createHook{}.Title(testInput(testDeps(stubHookDB(), nil, nil), NameCreateHook, `{`+targetArgs(_stubMainBranchID)+scheduled+`}`))
-	require.NoError(t, err)
-	assert.Equal(t, "Adding a hook to Runbook", got)
-
-	got, err = createHook{}.Title(testInput(testDeps(stubHookDB(), nil, nil), NameCreateHook, `{`+targetArgs(_stubBranchID)+scheduled+`}`))
-	require.NoError(t, err)
-	assert.Equal(t, "Adding a hook to Runbook on branch draft", got)
-
-	_, err = createHook{}.Title(testInput(testDeps(failingDocumentDB(), nil, nil), NameCreateHook, requiredArgs(t, NameCreateHook)))
-	require.Error(t, err)
-
-	_, err = createHook{}.Title(testInput(testDeps(stubHookDB(), nil, nil), NameCreateHook, `{`))
-	require.Error(t, err)
 }
 
 func Test_createHook_Summary(t *testing.T) {
@@ -531,7 +506,7 @@ func Test_createHook_Execute(t *testing.T) {
 		"Another type's field is refused": {
 			DB:   stubHookDB(),
 			Args: `{` + targetArgs(_stubBranchID) + `,"settings":{"type":"scheduled-reminder","schedule":"` + _stubSchedule + `","url":"https://example.com"}}`,
-			Err:  fmt.Errorf("%s: %w", NameCreateHook, fmt.Errorf("%s is not a %s setting", "url", hook.TypeScheduledReminder)),
+			Err:  fmt.Errorf("%s is not a %s setting", "url", hook.TypeScheduledReminder),
 		},
 		"Unknown branch": {
 			DB:   stubHookDB(),
@@ -542,17 +517,17 @@ func Test_createHook_Execute(t *testing.T) {
 			DB:   stubHookDB(),
 			Man:  blockless,
 			Args: `{` + targetArgs(_stubBranchID) + `,` + scheduled + `,"block_uid":"nope"}`,
-			Err:  fmt.Errorf("create_hook: %w", fmt.Errorf("block %s: %w", "nope", errUnknownBlock)),
+			Err:  fmt.Errorf("block %s: %w", "nope", errUnknownBlock),
 		},
 		"GitHub tracking without the app": {
 			DB:   stubHookDB(),
 			Args: `{` + targetArgs(_stubBranchID) + `,"settings":{"type":"github-tracking","repository":"r","branch":"main","paths":["a"]}}`,
-			Err:  fmt.Errorf("create_hook: %w", fmt.Errorf("%s: %w", hook.TypeGithubTracking, github.ErrNotConfigured)),
+			Err:  fmt.Errorf("%s: %w", hook.TypeGithubTracking, github.ErrNotConfigured),
 		},
 		"URL watcher without changedetection": {
 			DB:   stubHookDB(),
 			Args: `{` + targetArgs(_stubBranchID) + `,"settings":{"type":"url-watcher","url":"https://example.com"}}`,
-			Err:  fmt.Errorf("create_hook: %w", fmt.Errorf("%s: %w", hook.TypeURLWatcher, webchange.ErrNotConfigured)),
+			Err:  fmt.Errorf("%s: %w", hook.TypeURLWatcher, webchange.ErrNotConfigured),
 		},
 		"Error returned by hookMan.CreateHook": {
 			DB:   stubHookDB(),
@@ -592,7 +567,7 @@ func Test_createHook_Execute(t *testing.T) {
 			assert.Equal(t, _stubBranchID, ff[0].Ci.BranchID)
 			assert.Equal(t, "org", ff[0].OrganizationID)
 			assert.Equal(t, c.BlockUID, ff[0].Ci.BlockID)
-			assert.Equal(t, inp.UserID(), ff[0].UpdatedBy)
+			assert.Equal(t, inp.userID, ff[0].UpdatedBy)
 
 			row := decodeHookRow(t, res)
 			assert.False(t, row.ID.IsNil())
@@ -601,8 +576,6 @@ func Test_createHook_Execute(t *testing.T) {
 			assert.JSONEq(t, `{"scale":"linear","duration":"custom","schedule":"`+_stubSchedule+`"}`, string(row.Settings))
 			assert.Equal(t, "100", row.Score.String())
 			assert.Contains(t, string(row.State), "startedAt")
-
-			assert.Equal(t, []Touched{{DocumentID: _testDocID, BranchID: _stubBranchID}}, inp.touched)
 		})
 	}
 }
@@ -611,18 +584,67 @@ func Test_updateHookArgs_Validate(t *testing.T) {
 	t.Parallel()
 
 	settings := json.RawMessage(`{"type":"url-watcher","url":"https://example.com"}`)
+	ref := hookRefArgs{DocumentID: _testDocID, HookID: _testHookID}
 
 	// the settings are checked against the hook's own type later, so any
-	// type's complete settings pass here.
+	// type's complete settings pass here, and none at all is a reset.
 	assertValidate(t,
-		updateHookArgs{DocumentID: _testDocID, HookID: _testHookID, Settings: settings},
+		updateHookArgs{hookRefArgs: ref, Settings: settings},
 		map[string]Args{
-			"document_id":   updateHookArgs{hookRefArgs: hookRefArgs{HookID: _testHookID}, Settings: settings},
-			"hook_id":       updateHookArgs{hookRefArgs: hookRefArgs{DocumentID: _testDocID}, Settings: settings},
-			"settings.type": updateHookArgs{hookRefArgs: hookRefArgs{DocumentID: _testDocID, HookID: _testHookID}},
-			"url":           updateHookArgs{hookRefArgs: hookRefArgs{DocumentID: _testDocID, HookID: _testHookID}, Settings: json.RawMessage(`{"type":"url-watcher"}`)},
+			"document_id": updateHookArgs{hookRefArgs: hookRefArgs{HookID: _testHookID}, Settings: settings},
+			"hook_id":     updateHookArgs{hookRefArgs: hookRefArgs{DocumentID: _testDocID}, Settings: settings},
+			"url":         updateHookArgs{hookRefArgs: ref, Settings: json.RawMessage(`{"type":"url-watcher"}`)},
 		},
 	)
+
+	require.NoError(t, updateHookArgs{hookRefArgs: ref}.Validate())
+	require.NoError(t, updateHookArgs{hookRefArgs: ref, Settings: json.RawMessage(` null `)}.Validate())
+}
+
+func Test_updateHookArgs_settingsFor(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Settings string
+		Result   string
+		Err      error
+	}{
+		"Invalid settings": {
+			Settings: `{}`,
+			Err:      errRequired("settings.type"),
+		},
+		"Another type's settings": {
+			Settings: `{"type":"url-watcher","url":"https://example.com"}`,
+			Err:      errors.New("the hook is a scheduled-reminder, not a url-watcher; to change the type, delete it and create another"),
+		},
+		"Settings of the hook's type": {
+			Settings: `{"type":"scheduled-reminder","schedule":"` + _stubSchedule + `"}`,
+			Result:   `{"scale":"linear","duration":"custom","schedule":"` + _stubSchedule + `"}`,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := updateHookArgs{Settings: json.RawMessage(c.Settings)}.settingsFor(stubHook())
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.JSONEq(t, c.Result, string(got))
+		})
+	}
+}
+
+func Test_updateHookArgs_replacesSettings(t *testing.T) {
+	t.Parallel()
+
+	assert.False(t, updateHookArgs{}.replacesSettings())
+	assert.False(t, updateHookArgs{Settings: json.RawMessage("null")}.replacesSettings())
+	assert.True(t, updateHookArgs{Settings: json.RawMessage(`{"type":"url-watcher"}`)}.replacesSettings())
 }
 
 func Test_updateHook_Info(t *testing.T) {
@@ -630,120 +652,148 @@ func Test_updateHook_Info(t *testing.T) {
 
 	info := updateHook{}.Info()
 
+	assert.Equal(t, Traits{Write: true}, info.Traits)
+
 	assert.Equal(t, NameUpdateHook, info.Name)
 	assert.NotEmpty(t, info.Description)
-	assert.Equal(t, []string{"document_id", "hook_id", "settings"}, info.Required)
+	assert.Equal(t, []string{"document_id", "hook_id"}, info.Required)
 
 	for _, key := range []string{"document_id", "hook_id", "settings"} {
 		assert.Contains(t, info.Properties, key)
 	}
 
-	assert.Equal(t, hookSettingsSchema(), info.Properties["settings"])
-	assert.NotContains(t, info.Properties, "type")
-
 	// a hook keeps its type, and the description says how to change it.
 	assert.Contains(t, info.Description, "delete the hook and create another")
-}
-
-func Test_updateHook_Traits(t *testing.T) {
-	t.Parallel()
-
-	assert.Equal(t, Traits{Write: true}, updateHook{}.Traits())
-}
-
-func Test_updateHook_Title(t *testing.T) {
-	t.Parallel()
-
-	got, err := updateHook{}.Title(testInput(testDeps(stubHookDB(), nil, nil), NameUpdateHook, `{`+hookArgs(_testHookID)+`,"settings":{"type":"scheduled-reminder","schedule":"`+_stubSchedule+`"}}`))
-	require.NoError(t, err)
-	assert.Equal(t, "Updating a hook on Runbook", got)
-
-	_, err = updateHook{}.Title(testInput(testDeps(failingDocumentDB(), nil, nil), NameUpdateHook, requiredArgs(t, NameUpdateHook)))
-	require.Error(t, err)
-
-	_, err = updateHook{}.Title(testInput(testDeps(stubHookDB(), nil, nil), NameUpdateHook, `{`))
-	require.Error(t, err)
 }
 
 func Test_updateHook_Summary(t *testing.T) {
 	t.Parallel()
 
-	got, err := updateHook{}.Summary(testInput(testDeps(stubHookDB(), nil, nil), NameUpdateHook, `{`+hookArgs(_testHookID)+`,"settings":{"type":"scheduled-reminder","schedule":"`+_stubSchedule+`"}}`))
-	require.NoError(t, err)
-	assert.Equal(t, ActionSummary{
-		Tool:         NameUpdateHook,
-		DocumentID:   _testDocID,
-		DocumentName: "Runbook",
-		Summary:      "Update the Scheduled Reminder hook on Runbook on branch draft",
-	}, got)
+	cc := map[string]struct {
+		Args   string
+		Result string
+		Err    error
+	}{
+		"New settings": {
+			Args:   `{` + hookArgs(_testHookID) + `,"settings":{"type":"scheduled-reminder","schedule":"` + _stubSchedule + `"}}`,
+			Result: "Update the Scheduled Reminder hook on Runbook on branch draft",
+		},
+		"A reset": {
+			Args:   `{` + hookArgs(_testHookID) + `}`,
+			Result: "Reset the Scheduled Reminder hook on Runbook on branch draft",
+		},
+		// settings of another type are refused here, so the user is not
+		// asked to approve a call that cannot run.
+		"Another type's settings": {
+			Args: `{` + hookArgs(_testHookID) + `,"settings":{"type":"url-watcher","url":"https://example.com"}}`,
+			Err:  errors.New("the hook is a scheduled-reminder, not a url-watcher; to change the type, delete it and create another"),
+		},
+		"Unknown hook": {
+			Args: `{` + hookArgs(_unknownHookID) + `}`,
+			Err:  assert.AnError,
+		},
+		"Malformed arguments": {Args: `{`, Err: assert.AnError},
+	}
 
-	// settings of another type are refused here, so the user is not
-	// asked to approve a call that cannot run.
-	_, err = updateHook{}.Summary(testInput(testDeps(stubHookDB(), nil, nil), NameUpdateHook, `{`+hookArgs(_testHookID)+`,"settings":{"type":"url-watcher","url":"https://example.com"}}`))
-	require.Error(t, err)
-	assert.Equal(t, fmt.Errorf("%s: %w", NameUpdateHook, errHookTypeMismatch(hook.TypeScheduledReminder, hook.TypeURLWatcher)), err)
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
 
-	_, err = updateHook{}.Summary(testInput(testDeps(stubHookDB(), nil, nil), NameUpdateHook, `{`+hookArgs(_unknownHookID)+`,"settings":{"type":"scheduled-reminder","schedule":"`+_stubSchedule+`"}}`))
-	require.Error(t, err)
+			got, err := updateHook{}.Summary(testInput(testDeps(stubHookDB(), nil, nil), NameUpdateHook, c.Args))
+			testutil.AssertEqualError(t, c.Err, err)
 
-	_, err = updateHook{}.Summary(testInput(testDeps(stubHookDB(), nil, nil), NameUpdateHook, `{`))
-	require.Error(t, err)
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, ActionSummary{
+				Tool:         NameUpdateHook,
+				DocumentID:   _testDocID,
+				DocumentName: "Runbook",
+				Summary:      c.Result,
+			}, got)
+		})
+	}
 }
 
 func Test_updateHook_Execute(t *testing.T) {
 	t.Parallel()
 
-	failing := stubHookManager()
-	failing.UpdateHookFunc = func(context.Context, xid.ID, xid.ID, string, hook.UpdateInput, string) (*hook.Hook, error) {
+	failingUpdate := stubHookManager()
+	failingUpdate.UpdateHookFunc = func(context.Context, xid.ID, xid.ID, string, hook.UpdateInput, string) (*hook.Hook, error) {
+		return nil, assert.AnError
+	}
+
+	failingReset := stubHookManager()
+	failingReset.ResetHookFunc = func(context.Context, xid.ID, xid.ID, string) (*hook.Hook, error) {
 		return nil, assert.AnError
 	}
 
 	later := time.Date(2031, 6, 1, 12, 0, 0, 0, time.UTC)
 
 	cc := map[string]struct {
-		DB   *DBMock
-		Man  *HookManagerMock
-		Args string
-		Err  error
+		DB       *DBMock
+		Man      *HookManagerMock
+		Args     string
+		Updates  int
+		Resets   int
+		Settings string
+		Err      error
 	}{
 		"Malformed arguments": {DB: stubHookDB(), Args: `{`, Err: assert.AnError},
 		"Hook id is required": {DB: stubHookDB(), Args: `{"document_id":"` + _testDocID.String() + `"}`, Err: assert.AnError},
 		"Unknown hook": {
 			DB:   stubHookDB(),
 			Args: `{` + hookArgs(_unknownHookID) + `,"settings":{"type":"scheduled-reminder","schedule":"` + _stubSchedule + `"}}`,
-			Err:  fmt.Errorf("update_hook: %w", fmt.Errorf("hook %s on document %s: %w", _unknownHookID, _testDocID, errUnknownHook)),
+			Err:  fmt.Errorf("hook %s on document %s: %w", _unknownHookID, _testDocID, errUnknownHook),
 		},
-		"Settings are required": {
+		"Settings without a type": {
 			DB:   stubHookDB(),
-			Args: `{` + hookArgs(_testHookID) + `}`,
-			Err:  fmt.Errorf("%s: %w", NameUpdateHook, errRequired("settings"+"."+"type")),
+			Args: `{` + hookArgs(_testHookID) + `,"settings":{}}`,
+			Err:  errRequired("settings" + "." + "type"),
 		},
 		"Schedule is required for a scheduled reminder": {
 			DB:   stubHookDB(),
 			Args: `{` + hookArgs(_testHookID) + `,"settings":{"type":"scheduled-reminder"}}`,
-			Err:  fmt.Errorf("%s: %w", NameUpdateHook, errRequired("schedule")),
+			Err:  errRequired("schedule"),
 		},
 		"Another type's field is refused": {
 			DB:   stubHookDB(),
 			Args: `{` + hookArgs(_testHookID) + `,"settings":{"type":"scheduled-reminder","schedule":"` + _stubSchedule + `","image":"nginx:1"}}`,
-			Err:  fmt.Errorf("%s: %w", NameUpdateHook, fmt.Errorf("%s is not a %s setting", "image", hook.TypeScheduledReminder)),
+			Err:  fmt.Errorf("%s is not a %s setting", "image", hook.TypeScheduledReminder),
 		},
 		// a hook keeps its type for life, so complete settings of another
 		// type are refused once the hook is known.
 		"Another type's settings are refused": {
 			DB:   stubHookDB(),
 			Args: `{` + hookArgs(_testHookID) + `,"settings":{"type":"url-watcher","url":"https://example.com"}}`,
-			Err:  fmt.Errorf("update_hook: %w", errHookTypeMismatch(hook.TypeScheduledReminder, hook.TypeURLWatcher)),
+			Err:  errors.New("the hook is a scheduled-reminder, not a url-watcher; to change the type, delete it and create another"),
 		},
 		"Error returned by hookMan.UpdateHook": {
-			DB:   stubHookDB(),
-			Man:  failing,
-			Args: `{` + hookArgs(_testHookID) + `,"settings":{"type":"scheduled-reminder","schedule":"` + later.Format(time.RFC3339) + `"}}`,
-			Err:  assert.AnError,
+			DB:      stubHookDB(),
+			Man:     failingUpdate,
+			Args:    `{` + hookArgs(_testHookID) + `,"settings":{"type":"scheduled-reminder","schedule":"` + later.Format(time.RFC3339) + `"}}`,
+			Updates: 1,
+			Err:     assert.AnError,
+		},
+		"Error returned by hookMan.ResetHook": {
+			DB:     stubHookDB(),
+			Man:    failingReset,
+			Args:   `{` + hookArgs(_testHookID) + `}`,
+			Resets: 1,
+			Err:    assert.AnError,
 		},
 		"Updated": {
-			DB:   stubHookDB(),
-			Args: `{` + hookArgs(_testHookID) + `,"settings":{"type":"scheduled-reminder","schedule":"` + later.Format(time.RFC3339) + `"}}`,
+			DB:       stubHookDB(),
+			Args:     `{` + hookArgs(_testHookID) + `,"settings":{"type":"scheduled-reminder","schedule":"` + later.Format(time.RFC3339) + `"}}`,
+			Updates:  1,
+			Settings: `{"scale":"linear","duration":"custom","schedule":"2031-06-01T12:00:00Z"}`,
+		},
+		"Reset, keeping the settings": {
+			DB:       stubHookDB(),
+			Args:     `{` + hookArgs(_testHookID) + `}`,
+			Resets:   1,
+			Settings: string(stubHook().Settings),
 		},
 	}
 
@@ -757,21 +807,18 @@ func Test_updateHook_Execute(t *testing.T) {
 			res, err := updateHook{}.Execute(inp)
 			testutil.AssertEqualError(t, c.Err, err)
 
+			man := d.hookMan.(*HookManagerMock)
+			assert.Len(t, man.UpdateHookCalls(), c.Updates)
+			assert.Len(t, man.ResetHookCalls(), c.Resets)
+
 			if err != nil {
 				return
 			}
 
-			ff := d.hookMan.(*HookManagerMock).UpdateHookCalls()
-			require.Len(t, ff, 1)
-			assert.Equal(t, _testHookID, ff[0].ID)
-			assert.JSONEq(t, `{"scale":"linear","duration":"custom","schedule":"2031-06-01T12:00:00Z"}`, string(ff[0].UI.Settings))
-
 			row := decodeHookRow(t, res)
 			assert.Equal(t, _testHookID, row.ID)
-			assert.JSONEq(t, string(ff[0].UI.Settings), string(row.Settings))
+			assert.JSONEq(t, c.Settings, string(row.Settings))
 			assert.Equal(t, null.TimeFrom(_stubScheduleTime), row.UpdatedAt)
-
-			assert.Equal(t, []Touched{{DocumentID: _testDocID, BranchID: _stubBranchID}}, inp.touched)
 		})
 	}
 }
@@ -788,155 +835,17 @@ func Test_hookRefArgs_Validate(t *testing.T) {
 	)
 }
 
-func Test_hookRefProps(t *testing.T) {
-	t.Parallel()
-
-	got := hookRefProps()
-
-	assert.Contains(t, got, "document_id")
-	assert.Contains(t, got, "hook_id")
-}
-
-func Test_resetHook_Info(t *testing.T) {
-	t.Parallel()
-
-	info := resetHook{}.Info()
-
-	assert.Equal(t, NameResetHook, info.Name)
-	assert.NotEmpty(t, info.Description)
-	assert.Equal(t, []string{"document_id", "hook_id"}, info.Required)
-	assert.Contains(t, info.Properties, "hook_id")
-}
-
-func Test_resetHook_Traits(t *testing.T) {
-	t.Parallel()
-
-	assert.Equal(t, Traits{Write: true}, resetHook{}.Traits())
-}
-
-func Test_resetHook_Title(t *testing.T) {
-	t.Parallel()
-
-	got, err := resetHook{}.Title(testInput(testDeps(stubHookDB(), nil, nil), NameResetHook, `{`+hookArgs(_testHookID)+`}`))
-	require.NoError(t, err)
-	assert.Equal(t, "Resetting a hook on Runbook", got)
-
-	_, err = resetHook{}.Title(testInput(testDeps(failingDocumentDB(), nil, nil), NameResetHook, requiredArgs(t, NameResetHook)))
-	require.Error(t, err)
-
-	_, err = resetHook{}.Title(testInput(testDeps(stubHookDB(), nil, nil), NameResetHook, `{`))
-	require.Error(t, err)
-}
-
-func Test_resetHook_Summary(t *testing.T) {
-	t.Parallel()
-
-	got, err := resetHook{}.Summary(testInput(testDeps(stubHookDB(), nil, nil), NameResetHook, `{`+hookArgs(_testHookID)+`}`))
-	require.NoError(t, err)
-	assert.Equal(t, ActionSummary{
-		Tool:         NameResetHook,
-		DocumentID:   _testDocID,
-		DocumentName: "Runbook",
-		Summary:      "Reset the Scheduled Reminder hook on Runbook on branch draft",
-	}, got)
-
-	_, err = resetHook{}.Summary(testInput(testDeps(stubHookDB(), nil, nil), NameResetHook, `{`+hookArgs(_unknownHookID)+`}`))
-	require.Error(t, err)
-
-	_, err = resetHook{}.Summary(testInput(testDeps(stubHookDB(), nil, nil), NameResetHook, `{`))
-	require.Error(t, err)
-}
-
-func Test_resetHook_Execute(t *testing.T) {
-	t.Parallel()
-
-	failing := stubHookManager()
-	failing.ResetHookFunc = func(context.Context, xid.ID, xid.ID, string) (*hook.Hook, error) {
-		return nil, assert.AnError
-	}
-
-	cc := map[string]struct {
-		DB   *DBMock
-		Man  *HookManagerMock
-		Args string
-		Err  error
-	}{
-		"Malformed arguments": {DB: stubHookDB(), Args: `{`, Err: assert.AnError},
-		"Hook id is required": {DB: stubHookDB(), Args: `{"document_id":"` + _testDocID.String() + `"}`, Err: assert.AnError},
-		"Unknown hook": {
-			DB:   stubHookDB(),
-			Args: `{` + hookArgs(_unknownHookID) + `}`,
-			Err:  fmt.Errorf("reset_hook: %w", fmt.Errorf("hook %s on document %s: %w", _unknownHookID, _testDocID, errUnknownHook)),
-		},
-		"Error returned by hookMan.ResetHook": {
-			DB:   stubHookDB(),
-			Man:  failing,
-			Args: `{` + hookArgs(_testHookID) + `}`,
-			Err:  assert.AnError,
-		},
-		"Reset": {
-			DB:   stubHookDB(),
-			Args: `{` + hookArgs(_testHookID) + `}`,
-		},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			d := hookDeps(c.DB, c.Man)
-			inp := testInput(d, NameResetHook, c.Args)
-
-			res, err := resetHook{}.Execute(inp)
-			testutil.AssertEqualError(t, c.Err, err)
-
-			if err != nil {
-				return
-			}
-
-			ff := d.hookMan.(*HookManagerMock).ResetHookCalls()
-			require.Len(t, ff, 1)
-			assert.Equal(t, _testHookID, ff[0].ID)
-
-			row := decodeHookRow(t, res)
-			assert.Equal(t, _testHookID, row.ID)
-			assert.JSONEq(t, string(stubHook().Settings), string(row.Settings))
-			assert.Equal(t, null.TimeFrom(_stubScheduleTime), row.UpdatedAt)
-
-			assert.Equal(t, []Touched{{DocumentID: _testDocID, BranchID: _stubBranchID}}, inp.touched)
-		})
-	}
-}
-
 func Test_deleteHook_Info(t *testing.T) {
 	t.Parallel()
 
 	info := deleteHook{}.Info()
 
+	assert.Equal(t, Traits{Write: true, Destructive: true}, info.Traits)
+
 	assert.Equal(t, NameDeleteHook, info.Name)
 	assert.NotEmpty(t, info.Description)
 	assert.Equal(t, []string{"document_id", "hook_id"}, info.Required)
 	assert.Contains(t, info.Properties, "hook_id")
-}
-
-func Test_deleteHook_Traits(t *testing.T) {
-	t.Parallel()
-
-	assert.Equal(t, Traits{Write: true, Destructive: true}, deleteHook{}.Traits())
-}
-
-func Test_deleteHook_Title(t *testing.T) {
-	t.Parallel()
-
-	got, err := deleteHook{}.Title(testInput(testDeps(stubHookDB(), nil, nil), NameDeleteHook, `{`+hookArgs(_testHookID)+`}`))
-	require.NoError(t, err)
-	assert.Equal(t, "Deleting a hook on Runbook", got)
-
-	_, err = deleteHook{}.Title(testInput(testDeps(failingDocumentDB(), nil, nil), NameDeleteHook, requiredArgs(t, NameDeleteHook)))
-	require.Error(t, err)
-
-	_, err = deleteHook{}.Title(testInput(testDeps(stubHookDB(), nil, nil), NameDeleteHook, `{`))
-	require.Error(t, err)
 }
 
 func Test_deleteHook_Summary(t *testing.T) {
@@ -977,7 +886,7 @@ func Test_deleteHook_Execute(t *testing.T) {
 		"Unknown hook": {
 			DB:   stubHookDB(),
 			Args: `{` + hookArgs(_unknownHookID) + `}`,
-			Err:  fmt.Errorf("delete_hook: %w", fmt.Errorf("hook %s on document %s: %w", _unknownHookID, _testDocID, errUnknownHook)),
+			Err:  fmt.Errorf("hook %s on document %s: %w", _unknownHookID, _testDocID, errUnknownHook),
 		},
 		"Error returned by hookMan.DeleteHook": {
 			DB:   stubHookDB(),
@@ -1011,12 +920,11 @@ func Test_deleteHook_Execute(t *testing.T) {
 			assert.JSONEq(t, `{"hook_id":"`+_testHookID.String()+`","deleted":true}`, res)
 
 			// the branch stays, and the editor showing it has to redraw.
-			assert.Equal(t, []Touched{{DocumentID: _testDocID, BranchID: _stubBranchID}}, inp.touched)
 		})
 	}
 }
 
-func Test_describeHook(t *testing.T) {
+func Test_hookRefArgs_fetchHookAndBranch(t *testing.T) {
 	t.Parallel()
 
 	branchless := stubHookDB()
@@ -1041,7 +949,7 @@ func Test_describeHook(t *testing.T) {
 		"Unknown hook": {
 			DB:     stubHookDB(),
 			HookID: _unknownHookID,
-			Err:    fmt.Errorf("%s: fetch hook: %w", NameResetHook, fmt.Errorf("hook %s on document %s: %w", _unknownHookID, _testDocID, errUnknownHook)),
+			Err:    fmt.Errorf("fetch hook: %w", fmt.Errorf("hook %s on document %s: %w", _unknownHookID, _testDocID, errUnknownHook)),
 		},
 		"Error returned by the branch fetch": {
 			DB:     failingDoc,
@@ -1066,7 +974,7 @@ func Test_describeHook(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			doc, hk, err := describeHook(testInput(testDeps(c.DB, nil, nil), NameResetHook, `{}`), NameResetHook, hookRefArgs{DocumentID: _testDocID, HookID: c.HookID})
+			doc, hk, err := hookRefArgs{DocumentID: _testDocID, HookID: c.HookID}.fetchHookAndBranch(testInput(testDeps(c.DB, nil, nil), NameUpdateHook, `{}`))
 			testutil.AssertEqualError(t, c.Err, err)
 
 			if err != nil {

@@ -6,8 +6,6 @@ import (
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/schema"
-	"github.com/oxynote/oxynote/server/core/internal/assistant/block"
-	"github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -32,46 +30,9 @@ func Test_buildSystemPrompt(t *testing.T) {
 	assert.Contains(t, branched, "write with branch_id `draft`")
 	assertHouseStyle(t, branched)
 
-	// documents have branches, and the prompt says so.
-	assert.Contains(t, got, "Documents have branches")
-	assert.Contains(t, got, "assign_tag and unassign_tag take a branch_id")
-	assert.Contains(t, got, "create_hook takes the branch_id like the content tools")
-
-	// width is the one metric enum the prompt is still the only source
-	// for: attrs is a single field shared by every block type, and
-	// width means something else on an image, so the tool schema cannot
-	// publish it. The rest moved there, where Test_attrProps pins them.
-	for _, v := range block.MetricEnums()[document.AttrWidth] {
-		assert.Contains(t, got, v, "width value %q is missing from the prompt", v)
-	}
-
-	for _, attr := range []string{
-		document.AttrDataSourceID,
-		document.AttrVisualizationType,
-		document.AttrQueries,
-		document.AttrTimeRange,
-		document.AttrRefreshInterval,
-		document.AttrThresholds,
-		document.AttrBaseThresholdColor,
-		document.AttrDecimals,
-		document.AttrUnitType,
-		document.AttrUnitCustom,
-		document.AttrAxisBoundsMin,
-		document.AttrAxisBoundsMax,
-		document.AttrSimulationPreset,
-	} {
-		assert.Contains(t, got, attr, "attr %q is missing from the prompt", attr)
-	}
-
-	// the model authors metric blocks now, so the prompt must not still
-	// tell it not to.
-	assert.NotContains(t, got, "do not author")
-
-	// the block model is the only schema the chat model sees, so every
-	// type the tools accept has to be in it.
-	for _, bt := range block.Types() {
-		assert.Contains(t, _blockModelSection, "| "+bt+" |", "block type %q is missing from the prompt", bt)
-	}
+	// the model reads and writes content as markup, keeping ids.
+	assert.Contains(t, got, "replace_blocks, keeping the id of every element that stays")
+	assert.Contains(t, got, "branch_id")
 
 	// the rubber duck stance needs its counterweight: an explicit
 	// request for text is written, not interviewed about.
@@ -96,18 +57,18 @@ func Test_MCPInstructions(t *testing.T) {
 	got := MCPInstructions()
 
 	// the shared sections ship verbatim, so the two surfaces describe
-	// the same block model, etiquette, and aesthetics.
+	// the same workflow, content model, etiquette and style.
+	assert.Contains(t, got, _workflowSection)
 	assert.Contains(t, got, _blockModelSection)
 	assert.Contains(t, got, _etiquetteSection)
 	assert.Contains(t, got, _aestheticsSection)
 
-	// reordering is the etiquette rule the surface exists to teach.
-	assert.Contains(t, got, "move_block")
+	// Claude Code shows the first 2 KB of a server's instructions and
+	// drops the rest.
+	assert.Less(t, len(got), 2000)
 
 	// an MCP client learns about branches and the protected rule here.
-	assert.Contains(t, got, "Documents have branches")
-	assert.Contains(t, got, "assign_tag and unassign_tag take a branch_id")
-	assert.Contains(t, got, "create_hook takes the branch_id like the content tools")
+	assert.Contains(t, got, "names a branch by branch_id")
 	assert.Contains(t, got, "protected branch is read-only")
 
 	// the persona and its confirmation flow are the chat surface's;

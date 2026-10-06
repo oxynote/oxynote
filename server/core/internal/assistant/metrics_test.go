@@ -70,12 +70,12 @@ func Test_metrics_observeToolCall(t *testing.T) {
 	rg := prometheus.NewRegistry()
 	m := newMetrics(metricutil.NewFactory("test", rg), "claude")
 
-	m.observeToolCall("read_block", "success", 0.25)
+	m.observeToolCall("get_document", "success", 0.25)
 
 	assert.InEpsilon(t, 1.0, gatherValue(t, rg, "test_assistant_tool_calls_total",
-		map[string]string{"tool": "read_block", "status": "success"}), 0.0001)
+		map[string]string{"tool": "get_document", "status": "success"}), 0.0001)
 	assert.InEpsilon(t, 1.0, gatherValue(t, rg, "test_assistant_tool_call_duration_seconds",
-		map[string]string{"tool": "read_block"}), 0.0001)
+		map[string]string{"tool": "get_document"}), 0.0001)
 }
 
 func Test_metrics_recordToolCall(t *testing.T) {
@@ -84,14 +84,14 @@ func Test_metrics_recordToolCall(t *testing.T) {
 	rg := prometheus.NewRegistry()
 	m := newMetrics(metricutil.NewFactory("test", rg), "claude")
 
-	m.recordToolCall("read_block", "success")
-	m.recordToolCall("read_block", "success")
-	m.recordToolCall("read_block", "error")
+	m.recordToolCall("get_document", "success")
+	m.recordToolCall("get_document", "success")
+	m.recordToolCall("get_document", "error")
 
 	assert.InEpsilon(t, 2.0, gatherValue(t, rg, "test_assistant_tool_calls_total",
-		map[string]string{"tool": "read_block", "status": "success"}), 0.0001)
+		map[string]string{"tool": "get_document", "status": "success"}), 0.0001)
 	assert.InEpsilon(t, 1.0, gatherValue(t, rg, "test_assistant_tool_calls_total",
-		map[string]string{"tool": "read_block", "status": "error"}), 0.0001)
+		map[string]string{"tool": "get_document", "status": "error"}), 0.0001)
 }
 
 func Test_metrics_recordToolDuration(t *testing.T) {
@@ -100,11 +100,11 @@ func Test_metrics_recordToolDuration(t *testing.T) {
 	rg := prometheus.NewRegistry()
 	m := newMetrics(metricutil.NewFactory("test", rg), "claude")
 
-	m.recordToolDuration("read_block", 0.25)
-	m.recordToolDuration("read_block", 0.5)
+	m.recordToolDuration("get_document", 0.25)
+	m.recordToolDuration("get_document", 0.5)
 
 	assert.InEpsilon(t, 2.0, gatherValue(t, rg, "test_assistant_tool_call_duration_seconds",
-		map[string]string{"tool": "read_block"}), 0.0001)
+		map[string]string{"tool": "get_document"}), 0.0001)
 }
 
 func Test_metrics_recordTokenUsage(t *testing.T) {

@@ -50,26 +50,14 @@ func Test_listDocuments_Info(t *testing.T) {
 
 	info := listDocuments{}.Info()
 
+	assert.Equal(t, Traits{}, info.Traits)
+
 	assert.Equal(t, NameListDocuments, info.Name)
 	assert.NotEmpty(t, info.Description)
 	assert.Contains(t, info.Properties, "parent_id")
 
 	// the whole tree is the default, so nothing is required.
 	assert.Empty(t, info.Required)
-}
-
-func Test_listDocuments_Traits(t *testing.T) {
-	t.Parallel()
-
-	assert.Equal(t, Traits{}, listDocuments{}.Traits())
-}
-
-func Test_listDocuments_Title(t *testing.T) {
-	t.Parallel()
-
-	got, err := listDocuments{}.Title(testInput(testDeps(nil, nil, nil), NameListDocuments, `{}`))
-	require.NoError(t, err)
-	assert.Empty(t, got)
 }
 
 func Test_listDocuments_Execute(t *testing.T) {
@@ -162,18 +150,12 @@ func Test_listDocuments_Execute(t *testing.T) {
 	}
 }
 
-func Test_getDocumentArgs_Validate(t *testing.T) {
-	t.Parallel()
-
-	assertValidate(t, getDocumentArgs{DocumentID: _testDocID, BranchID: _stubMainBranchID}, map[string]Args{
-		"document_id": getDocumentArgs{},
-	})
-}
-
 func Test_getDocument_Info(t *testing.T) {
 	t.Parallel()
 
 	info := getDocument{}.Info()
+
+	assert.Equal(t, Traits{}, info.Traits)
 
 	assert.Equal(t, NameGetDocument, info.Name)
 	assert.NotEmpty(t, info.Description)
@@ -181,38 +163,24 @@ func Test_getDocument_Info(t *testing.T) {
 	assert.Contains(t, info.Properties, "branch_id")
 }
 
-func Test_getDocument_Traits(t *testing.T) {
-	t.Parallel()
-
-	assert.Equal(t, Traits{}, getDocument{}.Traits())
-}
-
 func Test_getDocument_Title(t *testing.T) {
 	t.Parallel()
 
-	got, err := getDocument{}.Title(testInput(
+	assert.Equal(t, "Reading Runbook", getDocument{}.Title(testInput(
 		testDeps(stubDocumentDB(), nil, nil), NameGetDocument,
 		`{`+targetArgs(_stubMainBranchID)+`}`,
-	))
-	require.NoError(t, err)
-	assert.Equal(t, "Reading Runbook", got)
+	)))
 
 	// a branch other than the default one is named.
-	got, err = getDocument{}.Title(testInput(
+	assert.Equal(t, "Reading Runbook on branch draft", getDocument{}.Title(testInput(
 		testDeps(stubDocumentDB(), nil, nil), NameGetDocument,
 		`{`+targetArgs(_stubBranchID)+`}`,
-	))
-	require.NoError(t, err)
-	assert.Equal(t, "Reading Runbook on branch draft", got)
+	)))
 
-	// the document it names has to resolve; the failure is passed on
-	// rather than described around.
-	_, err = getDocument{}.Title(testInput(testDeps(failingDocumentDB(), nil, nil), NameGetDocument, requiredArgs(t, NameGetDocument)))
-	require.Error(t, err)
-
-	// unreadable arguments are refused before anything is looked up.
-	_, err = getDocument{}.Title(testInput(testDeps(stubDocumentDB(), nil, nil), NameGetDocument, `{`))
-	require.Error(t, err)
+	// a document that does not resolve, or arguments that cannot be
+	// read, make no line.
+	assert.Empty(t, getDocument{}.Title(testInput(testDeps(failingDocumentDB(), nil, nil), NameGetDocument, requiredArgs(t, NameGetDocument))))
+	assert.Empty(t, getDocument{}.Title(testInput(testDeps(stubDocumentDB(), nil, nil), NameGetDocument, `{`)))
 }
 
 func Test_getDocument_Execute(t *testing.T) {
@@ -283,26 +251,23 @@ func Test_getDocument_Execute(t *testing.T) {
 			Args: `{` + targetArgs(_stubMainBranchID) + `}`,
 			Err:  assert.AnError,
 		},
-		"Metadata, branches and rows are returned": {
+		"Metadata, branches and content are returned": {
 			DB:   nested,
 			Args: `{` + targetArgs(_stubMainBranchID) + `}`,
 			Contains: []string{
 				`"name":"Runbook"`,
 				`"icon":"lucide:rocket"`,
 				`"parent_id":"` + parentID.String() + `"`,
-				`"protected":true`,
-				`"branch":{"id":"` + _stubMainBranchID.String() + `","name":"main","protected":true,"default":true}`,
 				`"branches":[{"id":"` + _stubMainBranchID.String() + `","name":"main","protected":false,"default":true,"updated_at":`,
 				`{"id":"` + _stubBranchID.String() + `","name":"draft","protected":false,"default":false,"updated_at":`,
 				`"tags":[]`,
-				`"uid":"a"`,
-				`"kind":"paragraph"`,
+				`"content":"<p id=\"a\">`,
 			},
 		},
 		"Another branch is read": {
 			DB:       stubContentDB(nil),
 			Args:     `{` + targetArgs(_stubBranchID) + `}`,
-			Contains: []string{`"branch":{"id":"` + _stubBranchID.String() + `","name":"draft","protected":false,"default":false}`, `"uid":"a"`},
+			Contains: []string{`<p id=\"a\">hello</p>`},
 		},
 		"Tags of the branch read are listed": {
 			DB:   tagged,
@@ -311,11 +276,22 @@ func Test_getDocument_Execute(t *testing.T) {
 				`"tags":[{"id":"` + _testTagID.String() + `","name":"Production","color":"green"}]`,
 			},
 		},
+		"Block narrows the content to it": {
+			DB:       stubContentDB(nil),
+			Args:     `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"cp"}`,
+			Contains: []string{`"content":"<p id=\"cp\">inside</p>\n"`},
+			Omits:    []string{`id=\"a\"`},
+		},
+		"Block the document does not hold": {
+			DB:   stubContentDB(nil),
+			Args: `{` + targetArgs(_stubMainBranchID) + `,"block_uid":"zzz"}`,
+			Err:  assert.AnError,
+		},
 		"Root document omits the parent": {
 			DB:       stubContentDB(nil),
 			Args:     `{` + targetArgs(_stubMainBranchID) + `}`,
-			Contains: []string{`"name":"Runbook"`, `"protected":false`},
-			Omits:    []string{`"parent_id"`, `"branch_id"`},
+			Contains: []string{`"name":"Runbook"`},
+			Omits:    []string{`"parent_id"`, `"branch_id"`, `"branch":`},
 		},
 	}
 
@@ -354,28 +330,11 @@ func Test_createDocument_Info(t *testing.T) {
 
 	info := createDocument{}.Info()
 
+	assert.Equal(t, Traits{Write: true}, info.Traits)
+
 	assert.Equal(t, NameCreateDocument, info.Name)
 	assert.Equal(t, []string{"name"}, info.Required)
 	assert.Contains(t, info.Properties, document.AttrIcon)
-}
-
-func Test_createDocument_Traits(t *testing.T) {
-	t.Parallel()
-
-	assert.Equal(t, Traits{Write: true}, createDocument{}.Traits())
-}
-
-func Test_createDocument_Title(t *testing.T) {
-	t.Parallel()
-
-	d := testDeps(nil, nil, nil)
-
-	got, err := createDocument{}.Title(testInput(d, NameCreateDocument, `{"name":"Runbook"}`))
-	require.NoError(t, err)
-	assert.Equal(t, `Creating "Runbook"`, got)
-
-	_, err = createDocument{}.Title(testInput(d, NameCreateDocument, `{}`))
-	require.Error(t, err)
 }
 
 func Test_createDocument_Summary(t *testing.T) {
@@ -477,36 +436,12 @@ func Test_deleteDocument_Info(t *testing.T) {
 
 	info := deleteDocument{}.Info()
 
+	// a delete stays outside any "approve all" answer.
+	assert.Equal(t, Traits{Write: true, Destructive: true}, info.Traits)
+
 	assert.Equal(t, NameDeleteDocument, info.Name)
 	assert.Contains(t, info.Description, "cannot be restored")
 	assert.Equal(t, []string{"document_id"}, info.Required)
-}
-
-func Test_deleteDocument_Traits(t *testing.T) {
-	t.Parallel()
-
-	// a delete stays outside any "approve all" answer.
-	assert.Equal(t, Traits{Write: true, Destructive: true}, deleteDocument{}.Traits())
-}
-
-func Test_deleteDocument_Title(t *testing.T) {
-	t.Parallel()
-
-	got, err := deleteDocument{}.Title(testInput(
-		testDeps(stubDocumentDB(), nil, nil), NameDeleteDocument,
-		`{"document_id":"`+_testDocID.String()+`"}`,
-	))
-	require.NoError(t, err)
-	assert.Equal(t, "Deleting Runbook", got)
-
-	// the document it names has to resolve; the failure is passed on
-	// rather than described around.
-	_, err = deleteDocument{}.Title(testInput(testDeps(failingDocumentDB(), nil, nil), NameDeleteDocument, requiredArgs(t, NameDeleteDocument)))
-	require.Error(t, err)
-
-	// unreadable arguments are refused before anything is looked up.
-	_, err = deleteDocument{}.Title(testInput(testDeps(stubDocumentDB(), nil, nil), NameDeleteDocument, `{`))
-	require.Error(t, err)
 }
 
 func Test_deleteDocument_Summary(t *testing.T) {
@@ -593,7 +528,7 @@ func Test_deleteDocument_Execute(t *testing.T) {
 	// with deleteErr.
 	stubDeleteDB := func(db *DBMock, deleteErr error) *DBMock {
 		if db == nil {
-			db = &DBMock{}
+			db = stubDocumentDB()
 		}
 
 		db.BeginTxFunc = func(_ context.Context, dest any) error {
@@ -751,38 +686,13 @@ func Test_updateDocument_Info(t *testing.T) {
 
 	info := updateDocument{}.Info()
 
+	assert.Equal(t, Traits{Write: true}, info.Traits)
+
 	assert.Equal(t, NameUpdateDocument, info.Name)
 	assert.Equal(t, []string{"document_id"}, info.Required)
 	assert.Contains(t, info.Properties, "name")
 	assert.Contains(t, info.Properties, document.AttrIcon)
 	assert.Contains(t, info.Properties, "parent_id")
-}
-
-func Test_updateDocument_Traits(t *testing.T) {
-	t.Parallel()
-
-	assert.Equal(t, Traits{Write: true}, updateDocument{}.Traits())
-}
-
-func Test_updateDocument_Title(t *testing.T) {
-	t.Parallel()
-
-	got, err := updateDocument{}.Title(testInput(
-		testDeps(stubDocumentDB(), nil, nil), NameUpdateDocument,
-		`{"document_id":"`+_testDocID.String()+`","name":"Playbook"}`,
-	))
-	require.NoError(t, err)
-	assert.Equal(t, "Updating Runbook", got)
-
-	// the document it names has to resolve; the failure is passed on
-	// rather than described around.
-	_, err = updateDocument{}.Title(testInput(testDeps(failingDocumentDB(), nil, nil), NameUpdateDocument,
-		`{"document_id":"`+_testDocID.String()+`","name":"Playbook"}`))
-	require.Error(t, err)
-
-	// unreadable arguments are refused before anything is looked up.
-	_, err = updateDocument{}.Title(testInput(testDeps(stubDocumentDB(), nil, nil), NameUpdateDocument, `{`))
-	require.Error(t, err)
 }
 
 func Test_updateDocument_Summary(t *testing.T) {
@@ -943,7 +853,7 @@ func Test_updateDocument_Execute(t *testing.T) {
 			Applier: stubApplier(),
 			Args:    doc + `,"name":"Playbook","parent_id":"` + parentID.String() + `"}`,
 			Ops:     1,
-			Notify:  2,
+			Notify:  3,
 			Result:  `{"document_id":"` + _testDocID.String() + `","name":"Playbook","parent_id":"` + parentID.String() + `"}`,
 		},
 	}
@@ -982,7 +892,7 @@ func Test_updateDocument_Execute(t *testing.T) {
 func Test_summariesToTree(t *testing.T) {
 	t.Parallel()
 
-	assert.Nil(t, summariesToTree(nil))
+	assert.Equal(t, []docTreeNode{}, summariesToTree(nil))
 
 	id := xid.New()
 	child := xid.New()

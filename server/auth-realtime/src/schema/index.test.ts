@@ -23,7 +23,7 @@ import { ImageBlock } from "./image.js"
 import { FileBlock } from "./file.js"
 import { MermaidBlock } from "./mermaid.js"
 import { MetricBlock, MetricGrid } from "./metric.js"
-import { transformer } from "../ydocument.js"
+import { schema, transformer } from "../ydocument.js"
 
 interface PMNode {
 	type: string
@@ -162,6 +162,31 @@ describe("getEditorExtensions", () => {
 				?.types ?? []
 
 		expect(types.filter((t) => !names.has(t))).toEqual([])
+	})
+
+	// the editor hangs block comments off nodeCommentId, so a write
+	// through this schema has to carry it
+	it("keeps a block's comment through a round trip", ({ expect }) => {
+		const json = {
+			type: "doc",
+			content: [
+				{
+					type: "paragraph",
+					attrs: {
+						uid: "p",
+						nodeCommentId: "c1",
+					},
+					content: [{ type: "text", text: "hi" }],
+				},
+			],
+		}
+
+		const back = transformer.fromYdoc(
+			transformer.toYdoc(json, "content"),
+			"content",
+		) as { content: PMNode[] }
+
+		expect(back.content[0]?.attrs?.nodeCommentId).toBe("c1")
 	})
 })
 
@@ -622,6 +647,88 @@ function attributesOf(node: {
 }): Record<string, AttributeSpec> {
 	return specOf(node).addAttributes?.call({ options: {} }) ?? {}
 }
+
+describe("editor schema placement", () => {
+	// the web editor gives every node that lives only inside a macro a
+	// group of its own, so the document root refuses it. Edits are
+	// checked against this schema, so it has to refuse the same.
+	it.for([
+		{ name: "metricBlock", input: "metricBlock", expected: false },
+		{
+			name: "titledCodeBlock",
+			input: "titledCodeBlock",
+			expected: false,
+		},
+		{
+			name: "codeBlockTitle",
+			input: "codeBlockTitle",
+			expected: false,
+		},
+		{
+			name: "splitDocumentationLeftSide",
+			input: "splitDocumentationLeftSide",
+			expected: false,
+		},
+		{
+			name: "splitDocumentationRightSide",
+			input: "splitDocumentationRightSide",
+			expected: false,
+		},
+		{
+			name: "splitDocumentationParameterList",
+			input: "splitDocumentationParameterList",
+			expected: false,
+		},
+		{
+			name: "splitDocumentationParameterListHeader",
+			input: "splitDocumentationParameterListHeader",
+			expected: false,
+		},
+		{
+			name: "splitDocumentationParameterListItem",
+			input: "splitDocumentationParameterListItem",
+			expected: false,
+		},
+		{
+			name: "splitDocumentationParameterListItemHeader",
+			input: "splitDocumentationParameterListItemHeader",
+			expected: false,
+		},
+		{
+			name: "splitDocumentationParameterListItemHeaderTitle",
+			input: "splitDocumentationParameterListItemHeaderTitle",
+			expected: false,
+		},
+		{
+			name: "splitDocumentationParameterListItemHeaderType",
+			input: "splitDocumentationParameterListItemHeaderType",
+			expected: false,
+		},
+		{ name: "paragraph", input: "paragraph", expected: true },
+		{ name: "metricGrid", input: "metricGrid", expected: true },
+		{
+			name: "splitDocumentation",
+			input: "splitDocumentation",
+			expected: true,
+		},
+		{ name: "mermaidBlock", input: "mermaidBlock", expected: true },
+	])(
+		"decides whether $name sits at the document root",
+		({ input, expected }, { expect }) => {
+			const type = schema.nodes[input]
+
+			expect(type).toBeDefined()
+			expect(
+				Boolean(
+					type &&
+					schema.topNodeType.contentMatch.matchType(
+						type,
+					),
+				),
+			).toBe(expected)
+		},
+	)
+})
 
 describe("schema html contract", () => {
 	it.for([

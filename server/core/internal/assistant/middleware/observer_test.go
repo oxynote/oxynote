@@ -105,14 +105,14 @@ func Test_Observer_WrapInvokableToolCall(t *testing.T) {
 		"Labelled tool is announced before it runs": {
 			Label:     "Reading Runbook",
 			Announced: true,
-			Observed:  string(tools.NameReadBlock) + ":success",
+			Observed:  string(tools.NameGetDocument) + ":success",
 		},
 		"Unlabelled tool runs silently": {
-			Observed: string(tools.NameReadBlock) + ":success",
+			Observed: string(tools.NameGetDocument) + ":success",
 		},
 		"Error returned by the wrapped endpoint": {
 			Err:      errors.New("endpoint failed"),
-			Observed: string(tools.NameReadBlock) + ":error",
+			Observed: string(tools.NameGetDocument) + ":error",
 		},
 		"Interrupted tool is not counted": {
 			Interrupt: true,
@@ -169,7 +169,7 @@ func Test_Observer_WrapInvokableToolCall(t *testing.T) {
 			wrapped, err := o.WrapInvokableToolCall(
 				context.Background(),
 				endpoint,
-				&adk.ToolContext{Name: string(tools.NameReadBlock), CallID: "1"},
+				&adk.ToolContext{Name: string(tools.NameGetDocument), CallID: "1"},
 			)
 			require.NoError(t, err)
 
@@ -191,7 +191,7 @@ func Test_Observer_WrapInvokableToolCall(t *testing.T) {
 			assert.Equal(t, "{}", res)
 
 			require.Len(t, labels.LabelCalls(), 1)
-			assert.Equal(t, tools.NameReadBlock, labels.LabelCalls()[0].Name)
+			assert.Equal(t, tools.NameGetDocument, labels.LabelCalls()[0].Name)
 
 			if !c.Announced {
 				assert.Empty(t, writer.WriteJSONCalls())
@@ -204,7 +204,7 @@ func Test_Observer_WrapInvokableToolCall(t *testing.T) {
 
 			msg, ok := writer.WriteJSONCalls()[0].Msg.(protocol.ToolStatusMessage)
 			require.True(t, ok)
-			assert.Equal(t, string(tools.NameReadBlock), msg.Tool)
+			assert.Equal(t, string(tools.NameGetDocument), msg.Tool)
 			assert.Equal(t, c.Label, msg.Label)
 		})
 	}

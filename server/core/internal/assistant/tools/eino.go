@@ -25,7 +25,7 @@ import (
 //
 // It is deliberately not called read_file: the assistant's vocabulary
 // is documents and blocks, and a generic file tool sitting next to
-// read_block invites the model to reach for the wrong one.
+// get_document invites the model to reach for the wrong one.
 const NameReadToolOutput Name = "read_tool_output"
 
 // readToolOutputArgs is what read_tool_output is called with.
@@ -45,15 +45,13 @@ func (a readToolOutputArgs) Validate() error {
 
 // readToolOutput hands the model back a result the reduction middleware
 // moved out of the conversation.
-type readToolOutput struct {
-	plainSummary
-	plainTitle
-}
+type readToolOutput struct{}
 
 // Info returns the tool's model-facing description.
 func (readToolOutput) Info() Info {
 	return Info{
-		Name: NameReadToolOutput,
+		Name:   NameReadToolOutput,
+		Traits: Traits{Internal: true},
 		Description: "Retrieve the full output of an earlier tool call that was too large to keep in the conversation. " +
 			"Pass the path shown in the truncation notice.",
 		Properties: map[string]any{
@@ -63,22 +61,15 @@ func (readToolOutput) Info() Info {
 	}
 }
 
-// Traits reports an internal read: the paths this takes are minted by
-// the reduction middleware during a chat turn, so a client holding none
-// of that state would be offered a tool it can never call.
-func (readToolOutput) Traits() Traits {
-	return Traits{Internal: true}
-}
-
 // Execute returns the stored output.
-func (readToolOutput) Execute(inp Input) (string, error) {
+func (readToolOutput) Execute(inp *input) (string, error) {
 	var in readToolOutputArgs
 
 	if err := inp.Decode(&in); err != nil {
 		return "", err
 	}
 
-	return inp.ReadOffloaded(in.FilePath)
+	return inp.offload.Read(inp.Context(), in.FilePath)
 }
 
 // einoTool adapts one of this package's tools to the interface the
@@ -87,7 +78,7 @@ type einoTool struct {
 	// tl is the tool being adapted.
 	tl Tool
 
-	// deps is the session wiring each call's Input is built from.
+	// deps is the session wiring each call's input is built from.
 	deps *Deps
 
 	// info is the tool's description, resolved once because it never
@@ -106,22 +97,15 @@ func (et *einoTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return et.info.toEino()
 }
 
-// Run performs the call, handing the tool an Input built from this
-// call's context and arguments, and reports what the call changed
-// alongside what it produced.
-//
-// The documents come back even on failure: a tool that errors partway
-// may already have changed something, and a caller is better told than
-// left to assume otherwise.
-func (et *einoTool) Run(ctx context.Context, args json.RawMessage) (Result, error) {
-	inp := et.input(ctx, string(args))
+// Run performs the call, handing the tool an input built from this
+// call's context and arguments. A failure names the tool.
+func (et *einoTool) Run(ctx context.Context, args json.RawMessage) (string, error) {
+	out, err := et.tl.Execute(et.input(ctx, string(args)))
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", et.info.Name, err)
+	}
 
-	out, err := et.tl.Execute(inp)
-
-	return Result{
-		Output:    out,
-		Documents: inp.touched,
-	}, err
+	return out, nil
 }
 
 // InvokableRun performs the call for the agent framework, which hands
@@ -145,24 +129,50 @@ func (et *einoTool) InvokableRun(
 	argumentsInJSON string,
 	_ ...tool.Option,
 ) (string, error) {
-	res, err := et.Run(ctx, json.RawMessage(argumentsInJSON))
+	out, err := et.Run(ctx, json.RawMessage(argumentsInJSON))
 	if err != nil {
 		//nolint:nilerr // the failure is the call's result here, not the turn's
 		return err.Error(), nil
 	}
 
-	return res.Output, err
+	return out, nil
 }
 
-// Title returns the status line shown while the tool runs.
-func (et *einoTool) Title(ctx context.Context, args json.RawMessage) (string, error) {
-	return et.tl.Title(et.input(ctx, string(args)))
+// Title returns the status line shown while the tool runs: a write's
+// summary, a read's own title, or nothing for a read without one or
+// arguments that cannot be described.
+func (et *einoTool) Title(ctx context.Context, args json.RawMessage) string {
+	if et.info.Traits.Write {
+		sum, err := et.Summary(ctx, args)
+		if err != nil {
+			return ""
+		}
+
+		return sum.Summary
+	}
+
+	if t, ok := et.tl.(titler); ok {
+		return t.Title(et.input(ctx, string(args)))
+	}
+
+	return ""
 }
 
 // Summary describes the pending write for the user. It is only reached
-// for a tool the registry gated, which is only ever a write.
+// for a tool the registry gated, which is only ever a write, and every
+// write describes itself. A failure names the tool.
 func (et *einoTool) Summary(ctx context.Context, args json.RawMessage) (ActionSummary, error) {
-	return et.tl.Summary(et.input(ctx, string(args)))
+	s, ok := et.tl.(summarizer)
+	if !ok {
+		return ActionSummary{}, fmt.Errorf("%s: proposes no change to describe", et.info.Name)
+	}
+
+	sum, err := s.Summary(et.input(ctx, string(args)))
+	if err != nil {
+		return ActionSummary{}, fmt.Errorf("%s: %w", et.info.Name, err)
+	}
+
+	return sum, nil
 }
 
 // input assembles the per-call input the tool is handed.

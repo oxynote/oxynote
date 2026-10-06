@@ -1,38 +1,43 @@
 /**
  * Operation interpreter for the Go-driven edit RPC.
  *
- * The Go assistant builds operations against the canonical block
- * model, expands them into ProseMirror JSON, and posts them to the
+ * The Go assistant builds operations as ProseMirror JSON and posts
+ * them to the
  * /api/x/documents/:docId/branches/:branchId/operations route. This
  * module owns the Y.XmlFragment mutations that apply those
- * operations to a live Y.Doc. Every applied batch runs inside a
- * single `Y.Doc.transact` so subscribers see one update.
- *
- * The operations themselves are intentionally small (single-block
- * atomic) because the AI fires them in parallel within one turn —
- * see docs/assistant-rework.md §2.1 for the schema.
+ * operations to a live Y.Doc. A batch applies whole or not at all,
+ * inside a single `Y.Doc.transact` so subscribers see one update.
  */
 import * as Y from "yjs"
 import { nanoid } from "nanoid"
-import { schema, transformer, cloneXmlElement } from "./ydocument.js"
+import { transformer, cloneXmlElement, cloneXmlFragment } from "./ydocument.js"
+import { checkBlock, checkChildren } from "./validate.js"
 
 /** Canonical attribute name carried on every editor block. */
 const UID_ATTR = "uid"
+
+// what a refused insert or move should try instead.
+const PLACE_ADVICE = "Choose a reference block in a container that takes it."
+
+// what a refused append or prepend should try instead.
+const END_ADVICE =
+	"Insert it before or after a block in a container that takes it."
 
 /** The sides an insert or move may name, as a widened list for validation. */
 const INSERT_POSITIONS: string[] = ["before", "after"]
 
 /**
  * One batched operation against a document. Shapes mirror the Go
- * canonical/op definitions; the Node side only validates the
- * minimum required to apply each op.
+ * edit operations. An op that adds, replaces, moves or deletes a block
+ * is checked against the editor schema (validate.ts). applyOperations
+ * runs the batch on a trial copy first, so a refused op never reaches
+ * the document.
  */
 export type Operation =
 	| InsertOp
 	| AppendOp
 	| PrependOp
 	| ReplaceOp
-	| UpdateTextOp
 	| UpdateAttrsOp
 	| DeleteOp
 	| MoveOp
@@ -70,25 +75,8 @@ export interface ReplaceOp {
 }
 
 /**
- * Replaces the inline content of a text-bearing block in place,
- * preserving the block's type, attrs, and uid. A block holding its text
- * one level down (a callout or blockquote of one paragraph, a list
- * entry, a titled code block) is written through to that child; any
- * other block-carrying target, and a mark the target does not allow, is
- * refused rather than flattened.
- */
-export interface UpdateTextOp {
-	kind: "update_text"
-	block_uid: string
-	/** ProseMirror inline content (text nodes with marks). */
-	content: PMInline[]
-}
-
-/**
  * Sets/overrides the named attributes on an existing block. Other
- * attributes are preserved. The uid attribute cannot be changed. A
- * titled code block takes only title and language, written to its
- * children.
+ * attributes are preserved. The uid attribute cannot be changed.
  */
 export interface UpdateAttrsOp {
 	kind: "update_attrs"
@@ -128,19 +116,12 @@ export interface SetIconOp {
 	icon: string
 }
 
-/** A ProseMirror JSON node. Loose shape; transformer validates. */
+/** A ProseMirror JSON node. Loose shape; validate.ts checks it. */
 export interface PMNode {
 	type: string
 	attrs?: Record<string, unknown>
-	content?: (PMNode | PMInline)[]
+	content?: PMNode[]
 	text?: string
-	marks?: PMMark[]
-}
-
-/** A ProseMirror inline text node fragment. */
-export interface PMInline {
-	type: "text"
-	text: string
 	marks?: PMMark[]
 }
 
@@ -160,39 +141,59 @@ export interface OperationError {
 
 /** Result of applying a batch of operations. */
 export interface ApplyResult {
-	/** Number of operations that were applied successfully. */
-	applied: number
-	/** Per-op errors, one entry per failed op (in input order). */
+	/** The operation that failed, if any; a batch stops at the first. */
 	errors: OperationError[]
 }
 
 /**
  * Applies a batch of operations to the given Y.Doc inside a single
- * transaction. Failures on individual operations are collected but
- * do not abort the batch — applied state is committed for the ops
- * that succeeded. Subscribers see one consolidated update.
+ * transaction, all of them or none. Subscribers see one consolidated
+ * update.
  */
 export function applyOperations(doc: Y.Doc, ops: Operation[]): ApplyResult {
-	const result: ApplyResult = { applied: 0, errors: [] }
+	// a Yjs transaction cannot be rolled back, so the batch first runs
+	// on an exact copy that is then thrown away. Only a batch that
+	// applies whole reaches doc.
+	const trial = new Y.Doc()
+	cloneXmlFragment(
+		doc.getXmlFragment("content"),
+		trial.getXmlFragment("content"),
+	)
+
+	const error = runOperations(trial, ops)
+	if (error) {
+		return { errors: [error] }
+	}
 
 	doc.transact(() => {
-		ops.forEach((op, index) => {
-			try {
-				applyOperation(doc, op)
-				result.applied++
-			} catch (err) {
-				result.errors.push({
-					index,
-					message:
-						err instanceof Error
-							? err.message
-							: String(err),
-				})
-			}
-		})
+		runOperations(doc, ops)
 	})
 
-	return result
+	return { errors: [] }
+}
+
+// runOperations applies each operation in turn and returns the first
+// that fails. The ones after it build on blocks it never wrote, so
+// their errors would only mislead.
+function runOperations(
+	doc: Y.Doc,
+	ops: Operation[],
+): OperationError | undefined {
+	for (const [index, op] of ops.entries()) {
+		try {
+			applyOperation(doc, op)
+		} catch (err) {
+			return {
+				index,
+				message:
+					err instanceof Error
+						? err.message
+						: String(err),
+			}
+		}
+	}
+
+	return undefined
 }
 
 /** Dispatches one operation to its concrete handler. */
@@ -209,9 +210,6 @@ function applyOperation(doc: Y.Doc, op: Operation): void {
 			return
 		case "replace":
 			opReplace(doc, op)
-			return
-		case "update_text":
-			opUpdateText(doc, op)
 			return
 		case "update_attrs":
 			opUpdateAttrs(doc, op)
@@ -255,15 +253,11 @@ function opInsert(doc: Y.Doc, op: InsertOp): void {
 		)
 	}
 
-	const found = findByUid(doc.getXmlFragment("content"), op.reference_uid)
-	if (!found) {
-		throw new Error(`reference_uid not found: ${op.reference_uid}`)
-	}
-
-	const xml = pmBlockToY(op.block)
+	const found = blockByUid(doc, op.reference_uid, "reference_uid")
 	const insertAt =
 		op.position === "before" ? found.index : found.index + 1
-	found.parent.insert(insertAt, [xml])
+
+	insertBlock(found.parent, insertAt, op.block, PLACE_ADVICE)
 }
 
 function opAppend(doc: Y.Doc, op: AppendOp): void {
@@ -276,171 +270,37 @@ function opAppend(doc: Y.Doc, op: AppendOp): void {
 	// stray empty block. Insert before it instead so the trailing
 	// paragraph stays last.
 	let insertAt = frag.length
-	if (insertAt > 0) {
-		const last = frag.get(insertAt - 1)
-		if (last instanceof Y.XmlElement && isEmptyParagraph(last)) {
-			insertAt -= 1
-		}
+	const last = insertAt > 0 ? frag.get(insertAt - 1) : null
+	if (
+		last instanceof Y.XmlElement &&
+		last.nodeName === "paragraph" &&
+		last
+			.toArray()
+			.every(
+				(child) =>
+					child instanceof Y.XmlText &&
+					child.length === 0,
+			)
+	) {
+		insertAt -= 1
 	}
 
-	frag.insert(insertAt, [pmBlockToY(op.block)])
+	insertBlock(frag, insertAt, op.block, END_ADVICE)
 }
 
 function opPrepend(doc: Y.Doc, op: PrependOp): void {
-	const frag = doc.getXmlFragment("content")
-	frag.insert(0, [pmBlockToY(op.block)])
+	insertBlock(doc.getXmlFragment("content"), 0, op.block, END_ADVICE)
 }
 
 function opReplace(doc: Y.Doc, op: ReplaceOp): void {
-	const found = findByUid(doc.getXmlFragment("content"), op.block_uid)
-	if (!found) {
-		throw new Error(`block_uid not found: ${op.block_uid}`)
-	}
+	const found = blockByUid(doc, op.block_uid, "block_uid")
 
-	const xml = pmBlockToY(op.block)
 	found.parent.delete(found.index, 1)
-	found.parent.insert(found.index, [xml])
-}
-
-// the blocks whose children are inline content, so replacing them
-// wholesale with a text run is the whole edit.
-const TEXT_LEAF_NODES = new Set([
-	"paragraph",
-	"heading",
-	"codeBlock",
-	"codeBlockTitle",
-	"mermaidBlock",
-])
-
-// the blocks that hold their text one level down, each with the child it
-// lives in. Their schemas admit block children only, so writing a text
-// run into them directly produces a node the editor cannot parse and
-// the canonical model cannot read back.
-const TEXT_HOLDER_NODES = new Map([
-	["calloutBlock", "paragraph"],
-	["blockquote", "paragraph"],
-	["listItem", "paragraph"],
-	["taskItem", "paragraph"],
-	["titledCodeBlock", "codeBlock"],
-])
-
-// the holders refused when they hold more than one block, since the
-// edit would show only the first. A list entry is not one of them: the
-// lists under its paragraph belong to it.
-const SINGLE_TEXT_HOLDERS = new Set(["calloutBlock", "blockquote"])
-
-function opUpdateText(doc: Y.Doc, op: UpdateTextOp): void {
-	const found = findByUid(doc.getXmlFragment("content"), op.block_uid)
-	if (!found) {
-		throw new Error(`block_uid not found: ${op.block_uid}`)
-	}
-
-	const target = textTarget(found.element)
-
-	checkMarks(target.nodeName, op.content)
-
-	target.delete(0, target.length)
-
-	const text = buildInlineText(op.content)
-	if (text) {
-		target.insert(0, [text])
-	}
-}
-
-// textTarget returns the element whose inline content update_text
-// replaces: the block itself, or the child a holder keeps its text in.
-function textTarget(el: Y.XmlElement): Y.XmlElement {
-	const nodeName = el.nodeName
-
-	if (TEXT_LEAF_NODES.has(nodeName)) {
-		return el
-	}
-
-	const holds = TEXT_HOLDER_NODES.get(nodeName)
-
-	// the edit replaces everything under the target, so a block holding
-	// other blocks would lose them — and lose the uids comments and
-	// hooks are anchored to — while reporting success. Only the caller
-	// knows that was not meant, so refuse instead of guessing.
-	if (holds === undefined) {
-		throw new Error(
-			`update_text does not apply to ${nodeName}: it carries ` +
-				`blocks rather than text, and the edit would discard ` +
-				`them. Use replace_block to rewrite it whole, or ` +
-				`update_text on the block holding the text.`,
-		)
-	}
-
-	if (SINGLE_TEXT_HOLDERS.has(nodeName) && el.length > 1) {
-		throw new Error(
-			`update_text does not apply to ${nodeName} holding ` +
-				`${String(el.length)} blocks: its text is not one ` +
-				`paragraph. Use update_text on the paragraph you ` +
-				`mean, or replace_block to rewrite it whole.`,
-		)
-	}
-
-	const target = firstChild(el, holds)
-	if (!target) {
-		throw new Error(
-			`update_text found no ${holds} to write in ${nodeName}`,
-		)
-	}
-
-	return target
-}
-
-// checkMarks refuses a mark the target's schema does not allow. The
-// editor cannot load such a node, so the edit would be lost while
-// reporting success.
-function checkMarks(nodeName: string, content: PMInline[]): void {
-	const nodeType = schema.nodes[nodeName]
-
-	// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- operations arrive as unvalidated JSON, so the declared type is a claim about the caller rather than a guarantee about the value
-	for (const node of content ?? []) {
-		for (const mark of node.marks ?? []) {
-			const markType = schema.marks[mark.type]
-
-			if (
-				!nodeType ||
-				!markType ||
-				!nodeType.allowsMarkType(markType)
-			) {
-				throw new Error(
-					`update_text cannot put the ${mark.type} mark in ` +
-						`${nodeName}: write the text without it`,
-				)
-			}
-		}
-	}
-}
-
-// firstChild returns the element's first child of the named type.
-function firstChild(el: Y.XmlElement, nodeName: string): Y.XmlElement | null {
-	for (let i = 0; i < el.length; i++) {
-		const child = el.get(i)
-		if (
-			child instanceof Y.XmlElement &&
-			child.nodeName === nodeName
-		) {
-			return child
-		}
-	}
-
-	return null
+	insertBlock(found.parent, found.index, op.block)
 }
 
 function opUpdateAttrs(doc: Y.Doc, op: UpdateAttrsOp): void {
-	const found = findByUid(doc.getXmlFragment("content"), op.block_uid)
-	if (!found) {
-		throw new Error(`block_uid not found: ${op.block_uid}`)
-	}
-
-	if (found.element.nodeName === "titledCodeBlock") {
-		updateTitledCodeAttrs(found.element, op.attrs)
-
-		return
-	}
+	const found = blockByUid(doc, op.block_uid, "block_uid")
 
 	for (const [key, value] of Object.entries(op.attrs)) {
 		if (key === UID_ATTR) {
@@ -449,86 +309,18 @@ function opUpdateAttrs(doc: Y.Doc, op: UpdateAttrsOp): void {
 			continue
 		}
 
-		// Y.XmlElement.setAttribute is typed as accepting strings
-		// only, but the runtime stores arbitrary values, which is
-		// what the editor schema relies on for nested metric
-		// configuration. Cast through unknown to bypass the
-		// declaration's stricter type.
+		// the default attribute type is string, but attrs hold any JSON.
 		;(
-			found.element as unknown as {
-				setAttribute(key: string, value: unknown): void
-			}
+			found.element as Y.XmlElement<Record<string, any>>
 		).setAttribute(key, value)
 	}
 }
 
-// updateTitledCodeAttrs writes the title and language where the editor
-// reads them: the title row's text and the code block's attribute. On
-// the block itself, both would be ignored.
-function updateTitledCodeAttrs(
-	el: Y.XmlElement,
-	attrs: Record<string, unknown>,
-): void {
-	const keys = Object.keys(attrs).filter((key) => key !== UID_ATTR)
-
-	const other = keys.find((key) => key !== "title" && key !== "language")
-	if (other !== undefined) {
-		throw new Error(
-			`titledCodeBlock takes only title and language, not ` +
-				`${other}. Use replace_block to change anything else.`,
-		)
-	}
-
-	// the editor's highlighter fails on a language that is not a string,
-	// and the document stops rendering.
-	const language = attrs.language
-	if (
-		keys.includes("language") &&
-		language !== null &&
-		typeof language !== "string"
-	) {
-		throw new Error(
-			"titledCodeBlock language must be a string or null",
-		)
-	}
-
-	// both are looked up first, so a refusal changes nothing.
-	const title = firstChild(el, "codeBlockTitle")
-	const code = firstChild(el, "codeBlock")
-	if (!title || !code) {
-		throw new Error(
-			"titledCodeBlock is missing its title or code. Use " +
-				"replace_block to rewrite it whole.",
-		)
-	}
-
-	if (keys.includes("title")) {
-		title.delete(0, title.length)
-
-		const text = typeof attrs.title === "string" ? attrs.title : ""
-		if (text) {
-			const run = new Y.XmlText()
-			run.insert(0, text)
-			title.insert(0, [run])
-		}
-	}
-
-	if (keys.includes("language")) {
-		;(
-			code as unknown as {
-				setAttribute(key: string, value: unknown): void
-			}
-		).setAttribute("language", language)
-	}
-}
-
 function opDelete(doc: Y.Doc, op: DeleteOp): void {
-	const found = findByUid(doc.getXmlFragment("content"), op.block_uid)
-	if (!found) {
-		throw new Error(`block_uid not found: ${op.block_uid}`)
-	}
+	const found = blockByUid(doc, op.block_uid, "block_uid")
 
 	found.parent.delete(found.index, 1)
+	checkChildrenOf(found.parent)
 }
 
 function opMove(doc: Y.Doc, op: MoveOp): void {
@@ -545,21 +337,12 @@ function opMove(doc: Y.Doc, op: MoveOp): void {
 		)
 	}
 
-	const frag = doc.getXmlFragment("content")
-
-	const found = findByUid(frag, op.block_uid)
-	if (!found) {
-		throw new Error(`block_uid not found: ${op.block_uid}`)
-	}
-
-	const reference = findByUid(frag, op.reference_uid)
-	if (!reference) {
-		throw new Error(`reference_uid not found: ${op.reference_uid}`)
-	}
+	const found = blockByUid(doc, op.block_uid, "block_uid")
+	const reference = blockByUid(doc, op.reference_uid, "reference_uid")
 
 	// a reference nested inside the moved block is destroyed by the
 	// removal below, leaving the move nowhere to land.
-	if (isInside(reference.element, found.element)) {
+	if (Y.isParentOf(found.element, reference.element._item)) {
 		throw new Error(
 			`reference_uid is inside the moved block: ${op.reference_uid}`,
 		)
@@ -573,7 +356,7 @@ function opMove(doc: Y.Doc, op: MoveOp): void {
 
 	// removing the block shifts its later siblings down by one, so a
 	// reference behind it in the same parent is re-indexed before the
-	// removal invalidates the index findByUid reported.
+	// removal invalidates the index blockByUid reported.
 	let insertAt = reference.index
 	if (reference.parent === found.parent && found.index < insertAt) {
 		insertAt -= 1
@@ -585,6 +368,12 @@ function opMove(doc: Y.Doc, op: MoveOp): void {
 
 	found.parent.delete(found.index, 1)
 	reference.parent.insert(insertAt, [clone])
+
+	if (reference.parent !== found.parent) {
+		checkChildrenOf(found.parent)
+	}
+
+	checkChildrenOf(reference.parent, PLACE_ADVICE)
 }
 
 function opSetName(doc: Y.Doc, op: SetNameOp): void {
@@ -613,152 +402,68 @@ function opSetIcon(doc: Y.Doc, op: SetIconOp): void {
 
 /* ---------------- helpers ---------------- */
 
-/**
- * Locates the first descendant XmlElement whose uid attribute
- * matches the target, returning the element along with its
- * immediate parent fragment and index in that parent. Used by
- * operations that need to mutate a block in place or insert
- * adjacent to it.
- */
-export function findByUid(
-	fragment: Y.XmlFragment,
-	uid: string,
-): {
-	parent: Y.XmlFragment | Y.XmlElement
-	index: number
-	element: Y.XmlElement
-} | null {
-	for (let i = 0; i < fragment.length; i++) {
-		const child = fragment.get(i)
-		if (!(child instanceof Y.XmlElement)) {
-			continue
-		}
-
-		if (child.getAttribute(UID_ATTR) === uid) {
-			return { parent: fragment, index: i, element: child }
-		}
-
-		const inside = findByUid(child, uid)
-		if (inside) {
-			return inside
-		}
-	}
-
-	return null
-}
-
-/**
- * Reports whether el sits anywhere inside ancestor's subtree. Used by
- * opMove to refuse a reference the removal of the moved block would
- * destroy.
- */
-function isInside(el: Y.XmlElement, ancestor: Y.XmlElement): boolean {
-	let parent = el.parent
-
-	while (parent !== null) {
-		if (parent === ancestor) {
-			return true
-		}
-
-		parent = parent.parent
-	}
-
-	return false
-}
-
-/**
- * Reports whether el is a paragraph node with no visible inline
- * content. Used by opAppend to detect TipTap's trailing-paragraph
- * affordance so the new block is inserted before it instead of
- * after.
- */
-function isEmptyParagraph(el: Y.XmlElement): boolean {
-	if (el.nodeName !== "paragraph") {
-		return false
-	}
-
-	for (let i = 0; i < el.length; i++) {
-		const child = el.get(i)
-		if (child instanceof Y.XmlText && child.length > 0) {
-			return false
-		}
-		if (child instanceof Y.XmlElement) {
-			return false
-		}
-	}
-
-	return true
-}
-
-/**
- * Converts a single ProseMirror block (as JSON) into a Y.XmlElement
- * detached from any document so the caller can insert it into a
- * live fragment. Uses the existing TiptapTransformer for the
- * schema-aware conversion and clones the result so we don't leak
- * the temporary Y.Doc.
- */
-export function pmBlockToY(block: PMNode): Y.XmlElement {
-	const tempDoc = transformer.toYdoc(
-		{ type: "doc", content: [block] },
-		"content",
-	)
-
-	const frag = tempDoc.getXmlFragment("content")
-	const first = frag.get(0)
-	if (!(first instanceof Y.XmlElement)) {
-		throw new Error(
-			"pmBlockToY: transformer produced no XmlElement",
+// blockByUid returns the block carrying uid, with its parent and its
+// index there. field names the op field that held uid, for the error.
+function blockByUid(doc: Y.Doc, uid: string, field: string) {
+	const [element] = doc
+		.getXmlFragment("content")
+		.createTreeWalker(
+			(node) =>
+				node instanceof Y.XmlElement &&
+				node.getAttribute(UID_ATTR) === uid,
 		)
+
+	if (!(element instanceof Y.XmlElement)) {
+		throw new Error(`${field} not found: ${uid}`)
 	}
 
-	return cloneXmlElement(first)
+	// the walker only yields nodes inside the fragment.
+	const parent = element.parent as Y.XmlFragment
+	return { parent, index: parent.toArray().indexOf(element), element }
 }
 
-/**
- * Builds a Y.XmlText carrying the supplied ProseMirror inline
- * content (text nodes with optional marks). Returns null when the
- * content is empty so callers can skip the insert.
- */
-function buildInlineText(content: PMInline[]): Y.XmlText | null {
-	// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- operations arrive as unvalidated JSON, so the declared type is a claim about the caller rather than a guarantee about the value
-	if (!content || content.length === 0) {
-		return null
+// insertBlock inserts block into parent at index, after checking the
+// block and then the parent's children against the schema. advice is
+// passed to checkChildren.
+function insertBlock(
+	parent: Y.XmlFragment,
+	index: number,
+	block: PMNode,
+	advice = "",
+): void {
+	checkBlock(block)
+
+	const first = transformer
+		.toYdoc({ type: "doc", content: [block] }, "content")
+		.getXmlFragment("content")
+		.get(0)
+
+	// a bare text node passes checkBlock but becomes a Y.XmlText.
+	if (!(first instanceof Y.XmlElement)) {
+		throw new Error(`${block.type} is not a block`)
 	}
 
-	const text = new Y.XmlText()
-	let cursor = 0
-
-	for (const node of content) {
-		// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- same as above: the node kind is whatever the JSON payload carried, not what the type says
-		if (node.type !== "text" || !node.text) {
-			continue
-		}
-
-		const attrs = marksToAttrs(node.marks)
-		text.insert(cursor, node.text, attrs)
-		cursor += node.text.length
-	}
-
-	if (cursor === 0) {
-		return null
-	}
-
-	return text
+	// the element belongs to the transformer's own Y.Doc.
+	parent.insert(index, [cloneXmlElement(first)])
+	checkChildrenOf(parent, advice)
 }
 
-/**
- * Translates a ProseMirror mark array into the format-attribute
- * shape Y.XmlText expects: { [markType]: markAttrs }. Unmarked text
- * gets an empty object rather than nothing, since Y.Text.insert without
- * attributes carries over the formatting of the text before it.
- */
-function marksToAttrs(marks: PMMark[] | undefined): Record<string, unknown> {
-	const out: Record<string, unknown> = {}
-	for (const mark of marks ?? []) {
-		// an object even without attrs, as y-prosemirror writes it.
-		// Core cannot decode `true`, so the document would not persist.
-		out[mark.type] = mark.attrs ?? {}
-	}
-
-	return out
+// checkChildrenOf refuses parent holding children the schema does not
+// accept. advice is passed to checkChildren.
+function checkChildrenOf(
+	parent: Y.XmlFragment | Y.XmlElement,
+	advice = "",
+): void {
+	// the content fragment is the document root.
+	checkChildren(
+		parent instanceof Y.XmlElement ? parent.nodeName : "doc",
+		parent
+			.toArray()
+			.flatMap((child) =>
+				child instanceof Y.XmlElement
+					? [child.nodeName]
+					: [],
+			),
+		advice,
+	)
 }

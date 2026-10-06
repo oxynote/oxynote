@@ -4,29 +4,11 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 )
 
 func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
-}
-
-func Test_Attributes_Copy(t *testing.T) {
-	// nil receiver
-	out := Attributes(nil).Copy()
-	require.NotNil(t, out)
-	assert.Empty(t, out)
-
-	// populated receiver
-	src := Attributes{"level": 2, "icon": "lucide:text"}
-	out = src.Copy()
-	assert.Equal(t, src, out)
-
-	// mutation independence
-	out["level"] = 3
-
-	assert.Equal(t, 2, src["level"])
 }
 
 func Test_Attributes_Value(t *testing.T) {
@@ -49,25 +31,13 @@ func Test_Attributes_Value(t *testing.T) {
 	assert.Nil(t, v)
 }
 
-func Test_Attributes_Has(t *testing.T) {
-	a := Attributes{"src": "x", "empty": ""}
-
-	assert.True(t, a.Has("src"))
-	assert.True(t, a.Has("empty"))
-	assert.False(t, a.Has("missing"))
-	assert.False(t, Attributes(nil).Has("src"))
-}
-
 func Test_Attributes_Get(t *testing.T) {
+	t.Parallel()
+
 	a := Attributes{"src": "x"}
 
-	got, ok := a.Get("src")
-	assert.True(t, ok)
-	assert.Equal(t, "x", got.String())
-
-	got, ok = a.Get("missing")
-	assert.False(t, ok)
-	assert.Empty(t, got.String())
+	assert.Equal(t, Attribute{value: "x"}, a.Get("src"))
+	assert.Equal(t, Attribute{}, a.Get("missing"))
 }
 
 func Test_Attribute_Int(t *testing.T) {
@@ -86,7 +56,7 @@ func Test_Attribute_Int(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			a, _ := Attributes{"k": c.Value}.Get("k")
+			a := Attributes{"k": c.Value}.Get("k")
 			assert.Equal(t, c.Result, a.Int())
 		})
 	}
@@ -106,7 +76,7 @@ func Test_Attribute_String(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			a, _ := Attributes{"k": c.Value}.Get("k")
+			a := Attributes{"k": c.Value}.Get("k")
 			assert.Equal(t, c.Result, a.String())
 		})
 	}
@@ -126,7 +96,7 @@ func Test_Attribute_Bool(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
-			a, _ := Attributes{"k": c.Value}.Get("k")
+			a := Attributes{"k": c.Value}.Get("k")
 			assert.Equal(t, c.Result, a.Bool())
 		})
 	}

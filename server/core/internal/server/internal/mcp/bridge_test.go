@@ -7,7 +7,6 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
-	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -18,16 +17,13 @@ type stubRunner struct {
 	// out is what Run reports as its output.
 	out string
 
-	// docs is what Run reports as the branches it changed.
-	docs []tools.Touched
-
 	// runErr fails Run when set.
 	runErr error
 }
 
 // Run returns the configured outcome.
-func (s *stubRunner) Run(context.Context, json.RawMessage) (tools.Result, error) {
-	return tools.Result{Output: s.out, Documents: s.docs}, s.runErr
+func (s *stubRunner) Run(context.Context, json.RawMessage) (string, error) {
+	return s.out, s.runErr
 }
 
 func Test_annotations(t *testing.T) {
@@ -44,23 +40,23 @@ func Test_annotations(t *testing.T) {
 			ReadOnly: true,
 		},
 		"Data-source tool reaches an open world": {
-			Entry:     tools.Entry{Traits: tools.Traits{DataSource: true}},
+			Entry:     tools.Entry{Info: tools.Info{Traits: tools.Traits{DataSource: true}}},
 			ReadOnly:  true,
 			OpenWorld: true,
 		},
 		"Additive write tool": {
-			Entry:       tools.Entry{Traits: tools.Traits{Write: true}},
+			Entry:       tools.Entry{Info: tools.Info{Traits: tools.Traits{Write: true}}},
 			Destructive: new(bool),
 		},
 		"Destructive write tool": {
-			Entry: tools.Entry{Traits: tools.Traits{Write: true, Destructive: true}},
+			Entry: tools.Entry{Info: tools.Info{Traits: tools.Traits{Write: true, Destructive: true}}},
 			Destructive: func() *bool {
 				v := true
 				return &v
 			}(),
 		},
 		"Overwriting write tool is destructive to a client": {
-			Entry: tools.Entry{Traits: tools.Traits{Write: true, Overwrites: true}},
+			Entry: tools.Entry{Info: tools.Info{Traits: tools.Traits{Write: true, Overwrites: true}}},
 			Destructive: func() *bool {
 				v := true
 				return &v
@@ -85,9 +81,6 @@ func Test_annotations(t *testing.T) {
 func Test_Handler_toolHandler(t *testing.T) {
 	t.Parallel()
 
-	doc1, doc2 := xid.New(), xid.New()
-	branch1, branch2 := xid.New(), xid.New()
-
 	hdl := &Handler{log: discardLog()}
 
 	req := func(args string) *mcp.CallToolRequest {
@@ -100,11 +93,10 @@ func Test_Handler_toolHandler(t *testing.T) {
 	}
 
 	cc := map[string]struct {
-		Entry    tools.Entry
-		Args     string
-		IsError  bool
-		Text     string
-		LinkURIs []string
+		Entry   tools.Entry
+		Args    string
+		IsError bool
+		Text    string
 	}{
 		"Tool failure becomes an isError result": {
 			Entry:   tools.Entry{Tool: &stubRunner{runErr: assert.AnError}},
@@ -112,25 +104,8 @@ func Test_Handler_toolHandler(t *testing.T) {
 			IsError: true,
 			Text:    assert.AnError.Error(),
 		},
-		"A call that changed nothing carries no link": {
-			Entry: tools.Entry{Tool: &stubRunner{out: `{"ok":true}`}},
-			Args:  `{"document_id":"doc1"}`,
-			Text:  `{"ok":true}`,
-		},
-		"A call links the document it changed": {
-			Entry:    tools.Entry{Tool: &stubRunner{out: `{"ok":true}`, docs: []tools.Touched{{DocumentID: doc1, BranchID: branch1}}}, Traits: tools.Traits{Write: true}},
-			Args:     `{"document_id":"` + doc1.String() + `"}`,
-			Text:     `{"ok":true}`,
-			LinkURIs: []string{resourceURI(doc1, branch1)},
-		},
-		"A call links every document it changed": {
-			Entry:    tools.Entry{Tool: &stubRunner{out: `{"ok":true}`, docs: []tools.Touched{{DocumentID: doc1, BranchID: branch1}, {DocumentID: doc2, BranchID: branch2}}}, Traits: tools.Traits{Write: true}},
-			Args:     `{}`,
-			Text:     `{"ok":true}`,
-			LinkURIs: []string{resourceURI(doc1, branch1), resourceURI(doc2, branch2)},
-		},
-		"A write that changed nothing has no link to offer": {
-			Entry: tools.Entry{Tool: &stubRunner{out: `{"ok":true}`}, Traits: tools.Traits{Write: true}},
+		"A call's output is its text": {
+			Entry: tools.Entry{Tool: &stubRunner{out: `{"ok":true}`}, Info: tools.Info{Traits: tools.Traits{Write: true}}},
 			Args:  `{}`,
 			Text:  `{"ok":true}`,
 		},
@@ -152,13 +127,7 @@ func Test_Handler_toolHandler(t *testing.T) {
 			require.True(t, ok)
 			assert.Equal(t, c.Text, text.Text)
 
-			require.Len(t, res.Content, 1+len(c.LinkURIs))
-
-			for n, want := range c.LinkURIs {
-				link, lok := res.Content[1+n].(*mcp.ResourceLink)
-				require.True(t, lok)
-				assert.Equal(t, want, link.URI)
-			}
+			assert.Len(t, res.Content, 1)
 		})
 	}
 }

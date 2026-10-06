@@ -46,6 +46,7 @@ import {
 
 // Custom marks
 import { AddedMark, DeletedMark, CommentMark } from "./marks.js"
+import { NodeComment } from "./node-comment.js"
 
 const contentExtensionsWithIDs: Extensions = [
 	Paragraph,
@@ -123,6 +124,9 @@ export function getEditorExtensions(): Extensions {
 			// them. Annotated because tiptap declares generateID as
 			// returning any, which propagates to the arrow.
 			generateID: (): string => nanoid(),
+		}),
+		NodeComment.configure({
+			types: contentExtensionsWithIDs.map((v) => v.name),
 		}),
 	]
 }

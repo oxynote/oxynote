@@ -136,7 +136,7 @@ type ToolStatusMessage struct {
 	// Type is always ServerTypeToolStatus.
 	Type ServerMessageType `json:"type"`
 
-	// Tool is the tool name (e.g. "create_document", "read_block").
+	// Tool is the tool name (e.g. "create_document", "get_document").
 	Tool string `json:"tool"`
 
 	// Label is the user-facing description (e.g. "Reading 'Cat
@@ -222,7 +222,7 @@ type ConfirmRequest struct {
 // ConfirmAction summarises one write operation for the confirm UI.
 type ConfirmAction struct {
 	// Tool is the name of the tool the assistant intends to call
-	// (e.g. "insert_block", "delete_document"). The UI uses this
+	// (e.g. "insert_blocks", "delete_document"). The UI uses this
 	// to pick an affordance (e.g. emphasise deletes).
 	Tool string `json:"tool"`
 
