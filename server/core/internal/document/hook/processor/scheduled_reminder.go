@@ -37,6 +37,7 @@ const _scheduleGracePeriod = time.Second * 5
 // score based on a scheduled time.
 type ScheduledReminder struct {
 	PlainDeleter
+	PlainSummarizer
 
 	// Scale is the type of scale used for scoring.
 	Scale ScaleType `json:"scale"`

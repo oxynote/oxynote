@@ -46,7 +46,7 @@ export interface NotificationMetadataDocumentHookTriggered {
 	type: DocumentHookType
 	hookSettings?: DocumentHookSettings | null
 	status?: DocumentHookStatus
-	githubTrackingChangedPaths?: number | null
+	hookSummary?: DocumentHookSummary | null
 }
 
 export interface NotificationMetadataDocumentNewComment {

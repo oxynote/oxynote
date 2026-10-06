@@ -15,18 +15,18 @@ type Code string
 // a stored notification must name keys through these constants too — a raw
 // literal would compile clean and silently drift on a rename.
 const (
-	MetaKeyUserID                     = "userId"
-	MetaKeyDocumentID                 = "documentId"
-	MetaKeyBranchID                   = "branchId"
-	MetaKeyBlockID                    = "blockId"
-	MetaKeyType                       = "type"
-	MetaKeyCommentID                  = "commentId"
-	MetaKeyCommentReplyID             = "commentReplyId"
-	MetaKeyAnchorBlockID              = "anchorBlockId"
-	MetaKeyStatus                     = "status"
-	MetaKeyHookSettings               = "hookSettings"
-	MetaKeyGithubTrackingChangedPaths = "githubTrackingChangedPaths"
-	MetaKeyCommentExcerpt             = "commentExcerpt"
+	MetaKeyUserID         = "userId"
+	MetaKeyDocumentID     = "documentId"
+	MetaKeyBranchID       = "branchId"
+	MetaKeyBlockID        = "blockId"
+	MetaKeyType           = "type"
+	MetaKeyCommentID      = "commentId"
+	MetaKeyCommentReplyID = "commentReplyId"
+	MetaKeyAnchorBlockID  = "anchorBlockId"
+	MetaKeyStatus         = "status"
+	MetaKeyHookSettings   = "hookSettings"
+	MetaKeyHookSummary    = "hookSummary"
+	MetaKeyCommentExcerpt = "commentExcerpt"
 )
 
 const (
@@ -63,25 +63,25 @@ func NewDocumentReviewRequestNotification(userID string, documentID, branchID xi
 }
 
 // NewDocumentHookTriggeredNotification creates a new document hook triggered
-// notification core. It keeps the settings the hook had when it triggered.
-// The changed paths are null for a hook that counts none.
+// notification core. It keeps the settings the hook had when it triggered
+// and what its last run found, in a shape the hook type defines.
 func NewDocumentHookTriggeredNotification(
 	documentID xid.ID,
 	tp hook.Type,
 	blockID null.String,
 	branchID xid.ID,
 	settings processor.Settings,
-	changedPaths null.Int,
+	summary any,
 ) Core {
 	return Core{
 		Code: NotificationDocumentHookTriggered,
 		Metadata: map[string]any{
-			MetaKeyDocumentID:                 documentID,
-			MetaKeyBlockID:                    blockID,
-			MetaKeyType:                       tp,
-			MetaKeyBranchID:                   branchID,
-			MetaKeyHookSettings:               settings,
-			MetaKeyGithubTrackingChangedPaths: changedPaths,
+			MetaKeyDocumentID:   documentID,
+			MetaKeyBlockID:      blockID,
+			MetaKeyType:         tp,
+			MetaKeyBranchID:     branchID,
+			MetaKeyHookSettings: settings,
+			MetaKeyHookSummary:  summary,
 		},
 	}
 }

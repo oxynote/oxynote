@@ -114,6 +114,7 @@ export type DocumentHookState =
 	| DocumentHookStateGitHubTracking
 	| DocumentHookStateURLWatcher
 	| DocumentHookStateContainerImageWatcher
+export type DocumentHookSummary = DocumentHookSummaryGitHubTracking
 export type DocumentHookStatus =
 	| DocumentHookStatusScheduledReminder
 	| DocumentHookStatusGitHubTracking
@@ -153,6 +154,10 @@ export interface DocumentHookSettingsGitHubTracking {
 
 export interface DocumentHookStateGitHubTracking {
 	pathsChecksums: Record<string, string>
+}
+
+export interface DocumentHookSummaryGitHubTracking {
+	changedPaths: number
 }
 
 export interface DocumentHookSettingsURLWatcher {

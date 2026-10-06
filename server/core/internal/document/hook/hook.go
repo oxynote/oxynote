@@ -275,6 +275,16 @@ func (h *Hook) Delete(ctx context.Context, inp *Input) error {
 	return nil
 }
 
+// Summary returns what the hook's last run found, in a shape its type
+// defines. It is nil for a type that records nothing.
+func (h *Hook) Summary() (any, error) {
+	if err := h.ensurePrepared(); err != nil {
+		return nil, err
+	}
+
+	return h.runner.Summary(h.State.V)
+}
+
 // ChangedFrom reports whether the hook differs from prev in what editors
 // show of it.
 func (h *Hook) ChangedFrom(prev Hook) bool {
@@ -439,4 +449,9 @@ type runner interface {
 
 	// Delete cleans up any external resources associated with the hook.
 	Delete(ctx context.Context, inp processor.Input) error
+
+	// Summary should return what the given state records of the last run,
+	// in a shape the hook type defines, or nil for a type that records
+	// nothing.
+	Summary(state processor.State) (any, error)
 }

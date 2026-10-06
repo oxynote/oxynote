@@ -278,6 +278,40 @@ func (i githubTreeInput) ChangeDetection() ChangeDetection {
 	return nil
 }
 
+func Test_GithubTracking_Summary(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		State  State
+		Result any
+		Err    error
+	}{
+		"Malformed state": {
+			State: State(`{`),
+			Err:   assert.AnError,
+		},
+		"Successful summary": {
+			State:  State(`{"pathsChecksums":{"a.md":"x"},"changedPaths":2}`),
+			Result: GithubTrackingSummary{ChangedPaths: 2},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			res, err := (&GithubTracking{}).Summary(c.State)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, res)
+		})
+	}
+}
+
 func Test_GithubTracking_fetchTree(t *testing.T) {
 	tree := github.Tree{{Name: "doc.md", Checksum: "sum"}}
 

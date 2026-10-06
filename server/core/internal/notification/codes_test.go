@@ -38,18 +38,18 @@ func Test_NewDocumentHookTriggeredNotification(t *testing.T) {
 		null.StringFrom("blk1"),
 		branchID,
 		processor.Settings(`{"repository":"repo"}`),
-		null.IntFrom(2),
+		processor.GithubTrackingSummary{ChangedPaths: 2},
 	)
 
 	assert.Equal(t, Core{
 		Code: NotificationDocumentHookTriggered,
 		Metadata: Metadata{
-			MetaKeyDocumentID:                 documentID,
-			MetaKeyBlockID:                    null.StringFrom("blk1"),
-			MetaKeyType:                       hook.TypeGithubTracking,
-			MetaKeyBranchID:                   branchID,
-			MetaKeyHookSettings:               processor.Settings(`{"repository":"repo"}`),
-			MetaKeyGithubTrackingChangedPaths: null.IntFrom(2),
+			MetaKeyDocumentID:   documentID,
+			MetaKeyBlockID:      null.StringFrom("blk1"),
+			MetaKeyType:         hook.TypeGithubTracking,
+			MetaKeyBranchID:     branchID,
+			MetaKeyHookSettings: processor.Settings(`{"repository":"repo"}`),
+			MetaKeyHookSummary:  processor.GithubTrackingSummary{ChangedPaths: 2},
 		},
 	}, nc)
 }

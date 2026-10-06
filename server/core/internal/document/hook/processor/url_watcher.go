@@ -21,6 +21,8 @@ var ErrInvalidURL = errutil.New(http.StatusBadRequest, "document_hook.invalid_ur
 
 // URLWatcher specifies a processor that watches a URL for changes.
 type URLWatcher struct {
+	PlainSummarizer
+
 	// URL is the URL to watch.
 	URL string `json:"url"`
 }

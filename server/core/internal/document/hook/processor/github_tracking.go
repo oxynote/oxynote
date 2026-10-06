@@ -123,6 +123,17 @@ func (gt *GithubTracking) Reset(ctx context.Context, inp Input) (Result, error) 
 	return active(mathutil.Hundred, gts)
 }
 
+// Summary returns how many tracked paths changed on the last run.
+func (gt *GithubTracking) Summary(state State) (any, error) {
+	var gts GithubTrackingState
+
+	if err := json.Unmarshal(state, &gts); err != nil {
+		return nil, fmt.Errorf("unmarshaling github tracking state: %w", err)
+	}
+
+	return GithubTrackingSummary{ChangedPaths: gts.ChangedPaths}, nil
+}
+
 // fetchTree resolves the GitHub client and pulls the tracked repository's
 // tree. A status other than active means the tree could not be read for a
 // reason the hook reports rather than fails on.
@@ -164,5 +175,12 @@ type GithubTrackingState struct {
 
 	// ChangedPaths is the number of tracked paths that differed from the
 	// checksums on the last run.
+	ChangedPaths int `json:"changedPaths"`
+}
+
+// GithubTrackingSummary represents what the GitHub tracking processor
+// found on its last run.
+type GithubTrackingSummary struct {
+	// ChangedPaths specifies the number of tracked paths that changed.
 	ChangedPaths int `json:"changedPaths"`
 }

@@ -161,11 +161,12 @@ func writeText(sb *strings.Builder, node map[string]any) {
 		return
 	}
 
-	children, _ := node["content"].([]any)
-
-	for _, child := range children {
-		if n, ok := child.(map[string]any); ok {
-			writeText(sb, n)
+	children, ok := node["content"].([]any)
+	if ok {
+		for _, child := range children {
+			if n, ok := child.(map[string]any); ok {
+				writeText(sb, n)
+			}
 		}
 	}
 

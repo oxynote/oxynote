@@ -900,11 +900,15 @@ func Test_Manager_notifyTransition(t *testing.T) {
 	triggeredGithubHook.Score = decimal.Zero
 	triggeredGithubHook.State = null.ValueFrom(processor.State(`{"pathsChecksums":{},"changedPaths":2}`))
 
+	malformedGithubHook := triggeredGithubHook
+	malformedGithubHook.State = null.ValueFrom(processor.State(`{`))
+
 	cc := map[string]struct {
 		DB    *DBMock
 		Prev  hook.Hook
 		Hook  hook.Hook
 		Cores []notification.Core
+		Log   string
 	}{
 		"Hook that keeps its status and score": {
 			DB:   &DBMock{},
@@ -946,7 +950,7 @@ func Test_Manager_notifyTransition(t *testing.T) {
 					null.String{},
 					branchID,
 					urlHook.Settings,
-					null.Int{},
+					nil,
 				),
 			},
 		},
@@ -961,49 +965,25 @@ func Test_Manager_notifyTransition(t *testing.T) {
 					null.String{},
 					branchID,
 					githubHook.Settings,
-					null.IntFrom(2),
+					processor.GithubTrackingSummary{ChangedPaths: 2},
 				),
 			},
 		},
-	}
-
-	for cn, c := range cc {
-		t.Run(cn, func(t *testing.T) {
-			t.Parallel()
-
-			pub := &fakePublisher{}
-
-			newTestManager(t, c.DB, pub, nil).notifyTransition(context.Background(), c.Prev, c.Hook)
-
-			assert.Equal(t, c.Cores, pub.cores)
-		})
-	}
-}
-
-func Test_Manager_changedPaths(t *testing.T) {
-	t.Parallel()
-
-	cc := map[string]struct {
-		Hook   hook.Hook
-		Result null.Int
-		Log    string
-	}{
-		"Hook of another type": {
-			Hook: urlWatcherHook(xid.New()),
-		},
-		"Malformed state": {
-			Hook: hook.Hook{
-				Type:  hook.TypeGithubTracking,
-				State: null.ValueFrom(processor.State(`{`)),
+		"GitHub hook that ran out of freshness with a malformed state": {
+			DB:   &DBMock{},
+			Prev: githubHook,
+			Hook: malformedGithubHook,
+			Cores: []notification.Core{
+				notification.NewDocumentHookTriggeredNotification(
+					urlHook.DocumentID.V,
+					hook.TypeGithubTracking,
+					null.String{},
+					branchID,
+					githubHook.Settings,
+					nil,
+				),
 			},
-			Log: "cannot decode github tracking state",
-		},
-		"Successful count": {
-			Hook: hook.Hook{
-				Type:  hook.TypeGithubTracking,
-				State: null.ValueFrom(processor.State(`{"changedPaths":2}`)),
-			},
-			Result: null.IntFrom(2),
+			Log: "cannot summarize hook run",
 		},
 	}
 
@@ -1013,13 +993,17 @@ func Test_Manager_changedPaths(t *testing.T) {
 
 			var buf bytes.Buffer
 
-			man := newTestManager(t, &DBMock{}, &fakePublisher{}, nil)
+			pub := &fakePublisher{}
+
+			man := newTestManager(t, c.DB, pub, nil)
 			man.log = slog.New(slog.NewTextHandler(&buf, nil))
 
-			assert.Equal(t, c.Result, man.changedPaths(c.Hook))
+			man.notifyTransition(context.Background(), c.Prev, c.Hook)
+
+			assert.Equal(t, c.Cores, pub.cores)
 
 			if c.Log == "" {
-				assert.Empty(t, buf.String())
+				assert.NotContains(t, buf.String(), "cannot summarize")
 
 				return
 			}

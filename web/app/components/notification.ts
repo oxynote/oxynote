@@ -125,9 +125,9 @@ function triggeredLine(
 				metadata.hookSettings as DocumentHookSettingsGitHubTracking
 
 			return {
-				text: metadata.githubTrackingChangedPaths
+				text: metadata.hookSummary?.changedPaths
 					? t("notification.messages.hook-triggered.github-tracking", {
-							changed: metadata.githubTrackingChangedPaths,
+							changed: metadata.hookSummary.changedPaths,
 							total: settings.paths.length,
 						})
 					: t("notification.messages.hook-triggered.github-tracking-fallback"),

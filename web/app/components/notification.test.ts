@@ -123,7 +123,7 @@ describe("hookNotificationLine", () => {
 					branch: "main",
 					paths: ["a.md", "b.md", "c.md"],
 				},
-				githubTrackingChangedPaths: 2,
+				hookSummary: { changedPaths: 2 },
 			},
 			expected: {
 				text: 'notification.messages.hook-triggered.github-tracking:{"changed":2,"total":3}',
@@ -139,7 +139,7 @@ describe("hookNotificationLine", () => {
 					branch: "main",
 					paths: ["a.md"],
 				},
-				githubTrackingChangedPaths: null,
+				hookSummary: null,
 			},
 			expected: {
 				text: "notification.messages.hook-triggered.github-tracking-fallback",
