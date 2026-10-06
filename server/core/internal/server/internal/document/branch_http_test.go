@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/guregu/null/v5"
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
@@ -1345,6 +1346,103 @@ func Test_Handler_UpdateDocumentBranch(t *testing.T) {
 			// branch name.
 			if c.Jobs == 1 && c.RespCode == http.StatusOK {
 				assert.Equal(t, search.BranchScope("org1", _documentID, _branchID), tx.InsertSearchJobCalls()[0].Job)
+			}
+		})
+	}
+}
+
+func Test_Handler_RecordDocumentBranchView(t *testing.T) {
+	cc := map[string]struct {
+		DB         *DBMock
+		NoSession  bool
+		OmitDoc    bool
+		OmitBranch bool
+		RespCode   int
+		Upserted   int
+	}{
+		"No session in context": {
+			DB:        &DBMock{},
+			NoSession: true,
+			RespCode:  http.StatusUnauthorized,
+		},
+		"Missing document ID parameter": {
+			DB:       &DBMock{},
+			OmitDoc:  true,
+			RespCode: http.StatusNotFound,
+		},
+		"Missing branch ID parameter": {
+			DB:         &DBMock{},
+			OmitBranch: true,
+			RespCode:   http.StatusNotFound,
+		},
+		"Error returned by DB.FetchDocumentByBranchID": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return nil, assert.AnError
+				},
+			},
+			RespCode: http.StatusInternalServerError,
+		},
+		"Branch of another document": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					doc := branchDoc(_branchID)
+					doc.ID = xid.New()
+
+					return doc, nil
+				},
+			},
+			RespCode: http.StatusNotFound,
+		},
+		"Error returned by DB.UpsertDocumentBranchView": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return branchDoc(_branchID), nil
+				},
+				UpsertDocumentBranchViewFunc: func(context.Context, string, string, xid.ID, time.Time) error {
+					return assert.AnError
+				},
+			},
+			RespCode: http.StatusInternalServerError,
+			Upserted: 1,
+		},
+		"Successful record": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+					return branchDoc(_branchID), nil
+				},
+			},
+			RespCode: http.StatusNoContent,
+			Upserted: 1,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			hdl, _ := newTestHandler(c.DB, &fakePublisher{})
+
+			rec := httptest.NewRecorder()
+
+			hdl.RecordDocumentBranchView(rec, newRequest(http.MethodPost, "", c.NoSession, c.OmitDoc, c.OmitBranch))
+
+			assert.Equal(t, c.RespCode, rec.Code)
+
+			ff := c.DB.UpsertDocumentBranchViewCalls()
+			require.Len(t, ff, c.Upserted)
+
+			if c.Upserted == 0 {
+				return
+			}
+
+			assert.Equal(t, "u1", ff[0].UserID)
+			assert.Equal(t, "org1", ff[0].OrganizationID)
+			assert.Equal(t, _branchID, ff[0].BranchID)
+			assert.False(t, ff[0].ViewedAt.IsZero())
+
+			if c.RespCode == http.StatusNoContent {
+				assert.Empty(t, rec.Body.String())
 			}
 		})
 	}

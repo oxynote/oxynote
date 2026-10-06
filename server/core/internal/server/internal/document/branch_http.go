@@ -9,6 +9,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/internal/search"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	"github.com/oxynote/oxynote/server/core/pkg/httpserver"
+	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/rs/xid"
 )
 
@@ -611,6 +612,56 @@ func (h *Handler) DeleteDocumentBranch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.searchTrigger.Trigger()
+
+	httpserver.Respond(
+		h.log,
+		w,
+		nil,
+		http.StatusNoContent,
+	)
+}
+
+// RecordDocumentBranchView handles recording that the user opened a
+// document branch.
+func (h *Handler) RecordDocumentBranchView(w http.ResponseWriter, r *http.Request) {
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
+		return
+	}
+
+	id, err := httpserver.ExtractNamedID(r, "documentId")
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	branchID, err := httpserver.ExtractNamedID(r, "branchId")
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	doc, err := h.db.FetchDocumentByBranchID(r.Context(), branchID, session.ActiveOrganizationID)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if doc.ID != id {
+		httpserver.RespondError(h.log, w, ErrBranchMismatch)
+		return
+	}
+
+	if err := h.db.UpsertDocumentBranchView(
+		r.Context(),
+		session.UserID,
+		session.ActiveOrganizationID,
+		branchID,
+		timeutil.Now(),
+	); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
 
 	httpserver.Respond(
 		h.log,

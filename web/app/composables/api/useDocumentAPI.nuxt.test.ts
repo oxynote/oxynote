@@ -813,6 +813,36 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 		})
 	})
 
+	describe("recordBranchView", () => {
+		it("posts the view of the branch", async ({ expect }) => {
+			const viewCalls = mockEndpoint(
+				"POST",
+				`/api/documents/${DOC_ID}/branches/${BRANCH_ID}/views`,
+				() => null,
+			)
+			const api = makeDocumentAPI()
+
+			await api.recordBranchView(DOC_ID, BRANCH_ID)
+
+			expect(viewCalls).toHaveLength(1)
+		})
+
+		it("bails out for a non-xid branch id without a request", async ({
+			expect,
+		}) => {
+			const viewCalls = mockEndpoint(
+				"POST",
+				`/api/documents/${DOC_ID}/branches/optimistic/views`,
+				() => null,
+			)
+			const api = makeDocumentAPI()
+
+			await api.recordBranchView(DOC_ID, "optimistic")
+
+			expect(viewCalls).toHaveLength(0)
+		})
+	})
+
 	describe("updateDocumentBranch", () => {
 		it("bails out for a non-xid document id without a request", async ({
 			expect,

@@ -311,6 +311,7 @@ func (s *Server) router() chi.Router {
 				sssr.Get("/", s.handlers.document.FetchDocumentBranches)
 				sssr.Route("/{branchId}", func(ssssr chi.Router) {
 					ssssr.Put("/review-approve", s.handlers.document.UpdateBranchReviewApproval)
+					ssssr.Post("/views", s.handlers.document.RecordDocumentBranchView)
 					ssssr.Post("/blocks/{blockUid}/run", s.handlers.block.RunBlock)
 					ssssr.Route("/reviewers", func(sssssr chi.Router) {
 						sssssr.Get("/", s.handlers.document.FetchBranchReviewers)

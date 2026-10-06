@@ -6,6 +6,7 @@ package document
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/guregu/null/v5"
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
@@ -136,6 +137,9 @@ var _ DB = &DBMock{}
 //			UpdateDocumentTreeFunc: func(ctx context.Context, ss documentCore.Summaries, organizationID string) error {
 //				panic("mock out the UpdateDocumentTree method")
 //			},
+//			UpsertDocumentBranchViewFunc: func(ctx context.Context, userID string, organizationID string, branchID xid.ID, viewedAt time.Time) error {
+//				panic("mock out the UpsertDocumentBranchView method")
+//			},
 //			UpsertDocumentMaintainersFunc: func(ctx context.Context, documentID xid.ID, organizationID string, maintainerIDs []string) error {
 //				panic("mock out the UpsertDocumentMaintainers method")
 //			},
@@ -256,6 +260,9 @@ type DBMock struct {
 
 	// UpdateDocumentTreeFunc mocks the UpdateDocumentTree method.
 	UpdateDocumentTreeFunc func(ctx context.Context, ss documentCore.Summaries, organizationID string) error
+
+	// UpsertDocumentBranchViewFunc mocks the UpsertDocumentBranchView method.
+	UpsertDocumentBranchViewFunc func(ctx context.Context, userID string, organizationID string, branchID xid.ID, viewedAt time.Time) error
 
 	// UpsertDocumentMaintainersFunc mocks the UpsertDocumentMaintainers method.
 	UpsertDocumentMaintainersFunc func(ctx context.Context, documentID xid.ID, organizationID string, maintainerIDs []string) error
@@ -589,6 +596,19 @@ type DBMock struct {
 			// OrganizationID is the organizationID argument value.
 			OrganizationID string
 		}
+		// UpsertDocumentBranchView holds details about calls to the UpsertDocumentBranchView method.
+		UpsertDocumentBranchView []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// UserID is the userID argument value.
+			UserID string
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+			// BranchID is the branchID argument value.
+			BranchID xid.ID
+			// ViewedAt is the viewedAt argument value.
+			ViewedAt time.Time
+		}
 		// UpsertDocumentMaintainers holds details about calls to the UpsertDocumentMaintainers method.
 		UpsertDocumentMaintainers []struct {
 			// Ctx is the ctx argument value.
@@ -638,6 +658,7 @@ type DBMock struct {
 	lockUpdateDocumentBranchMetadata        sync.RWMutex
 	lockUpdateDocumentParentID              sync.RWMutex
 	lockUpdateDocumentTree                  sync.RWMutex
+	lockUpsertDocumentBranchView            sync.RWMutex
 	lockUpsertDocumentMaintainers           sync.RWMutex
 }
 
@@ -2233,6 +2254,57 @@ func (mock *DBMock) UpdateDocumentTreeCalls() []struct {
 	mock.lockUpdateDocumentTree.RLock()
 	calls = mock.calls.UpdateDocumentTree
 	mock.lockUpdateDocumentTree.RUnlock()
+	return calls
+}
+
+// UpsertDocumentBranchView calls UpsertDocumentBranchViewFunc.
+func (mock *DBMock) UpsertDocumentBranchView(ctx context.Context, userID string, organizationID string, branchID xid.ID, viewedAt time.Time) error {
+	callInfo := struct {
+		Ctx            context.Context
+		UserID         string
+		OrganizationID string
+		BranchID       xid.ID
+		ViewedAt       time.Time
+	}{
+		Ctx:            ctx,
+		UserID:         userID,
+		OrganizationID: organizationID,
+		BranchID:       branchID,
+		ViewedAt:       viewedAt,
+	}
+	mock.lockUpsertDocumentBranchView.Lock()
+	mock.calls.UpsertDocumentBranchView = append(mock.calls.UpsertDocumentBranchView, callInfo)
+	mock.lockUpsertDocumentBranchView.Unlock()
+	if mock.UpsertDocumentBranchViewFunc == nil {
+		var (
+			errOut error
+		)
+		return errOut
+	}
+	return mock.UpsertDocumentBranchViewFunc(ctx, userID, organizationID, branchID, viewedAt)
+}
+
+// UpsertDocumentBranchViewCalls gets all the calls that were made to UpsertDocumentBranchView.
+// Check the length with:
+//
+//	len(mockedDB.UpsertDocumentBranchViewCalls())
+func (mock *DBMock) UpsertDocumentBranchViewCalls() []struct {
+	Ctx            context.Context
+	UserID         string
+	OrganizationID string
+	BranchID       xid.ID
+	ViewedAt       time.Time
+} {
+	var calls []struct {
+		Ctx            context.Context
+		UserID         string
+		OrganizationID string
+		BranchID       xid.ID
+		ViewedAt       time.Time
+	}
+	mock.lockUpsertDocumentBranchView.RLock()
+	calls = mock.calls.UpsertDocumentBranchView
+	mock.lockUpsertDocumentBranchView.RUnlock()
 	return calls
 }
 

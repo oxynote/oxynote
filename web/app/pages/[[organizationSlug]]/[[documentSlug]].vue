@@ -116,6 +116,7 @@ const {
 	deleteDocument,
 	duplicateDocument,
 	useFetchDocumentBranchesByDocId,
+	recordBranchView,
 } = useDocumentAPI()
 const { deleteTag, updateTagTreeDocumentCache } = useTagAPI()
 const { fetchOrganization } = useAuthSession()
@@ -200,6 +201,8 @@ const breadcrumbs = computed(() => {
 	)
 })
 
+let recordedBranchView = ""
+
 useHead({
 	title: () =>
 		activeDocMetadata.value
@@ -234,6 +237,34 @@ watchImmediate(
 		if (import.meta.dev) {
 			startLoadProgress()
 		}
+	},
+)
+
+watchImmediate(
+	[
+		() => activeDocMetadata.value?.id,
+		() => editorStore.activeBranchId,
+		() => fetchBranches.data.value,
+	],
+	([docId, branchId, branches]) => {
+		if (
+			!docId ||
+			!branchId ||
+			!branches?.some((b) => b.branchId === branchId)
+		) {
+			return
+		}
+
+		const key = `${docId}-${branchId}`
+		if (key === recordedBranchView) {
+			return
+		}
+
+		recordedBranchView = key
+
+		void recordBranchView(docId, branchId).catch((err: unknown) => {
+			console.error("Failed to record branch view:", err)
+		})
 	},
 )
 

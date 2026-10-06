@@ -547,6 +547,18 @@ export default function () {
 		)
 	}
 
+	// records that the user opened the branch, which search lists as
+	// recently viewed
+	async function recordBranchView(docId: string, branchId: string) {
+		if (!isXid(docId) || !isXid(branchId)) {
+			return
+		}
+
+		await $coreAPIClient(`/api/documents/${docId}/branches/${branchId}/views`, {
+			method: "POST",
+		})
+	}
+
 	// runs a block, which core resolves from the stored branch and
 	// dispatches on its kind. For a metric block that means probing whether
 	// the data it simulates has arrived; core owns the answer because it
@@ -1223,6 +1235,7 @@ export default function () {
 		createDocument,
 		duplicateDocument,
 		searchDocuments,
+		recordBranchView,
 		deleteDocument,
 		updateDocumentTreeElementCache,
 		useFetchDocumentMaintainersByDocId,

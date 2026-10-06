@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"time"
 
 	"github.com/guregu/null/v5"
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
@@ -1041,6 +1042,16 @@ type BranchesDBAgent interface {
 	// ReplaceBranchTags should make the target branch carry exactly the
 	// tags the source branch carries.
 	ReplaceBranchTags(ctx context.Context, organizationID string, fromBranchID, toBranchID xid.ID) error
+
+	// UpsertDocumentBranchView should record that the user viewed the
+	// branch at the given time.
+	UpsertDocumentBranchView(
+		ctx context.Context,
+		userID string,
+		organizationID string,
+		branchID xid.ID,
+		viewedAt time.Time,
+	) error
 }
 
 // TreeDBAgent is an interface that handles communication with the document
