@@ -6,6 +6,7 @@ import (
 
 	"github.com/blevesearch/bleve/v2"
 	"github.com/blevesearch/bleve/v2/analysis/analyzer/custom"
+	"github.com/blevesearch/bleve/v2/analysis/analyzer/keyword"
 	"github.com/blevesearch/bleve/v2/analysis/lang/en"
 	"github.com/blevesearch/bleve/v2/analysis/token/lowercase"
 	"github.com/blevesearch/bleve/v2/analysis/tokenizer/unicode"
@@ -20,7 +21,7 @@ import (
 // whenever the analyzer, the fields, the synonyms file or anything else the
 // index stores changes shape: an index carrying another version is rebuilt
 // at boot.
-const _mappingVersion = "1"
+const _mappingVersion = "2"
 
 // _mappingVersionKey is the index-internal key holding the mapping version.
 const _mappingVersionKey = "mapping-version"
@@ -34,6 +35,7 @@ const (
 	_fieldBranchName     = "branchName"
 	_fieldBranchDefault  = "branchDefault"
 	_fieldType           = "type"
+	_fieldAttrs          = "attrs"
 )
 
 const (
@@ -63,8 +65,8 @@ const (
 var _registerHighlighter sync.Once
 
 // newIndexMapping describes the entries: one text field analyzed for
-// search, keyword fields to filter and boost on, and the branch name kept
-// only for display.
+// search, keyword fields to filter and boost on, the branch name kept
+// only for display, and the kept attributes as keywords under attrs.
 func newIndexMapping() (*mapping.IndexMappingImpl, error) {
 	im := bleve.NewIndexMapping()
 	im.ScoringModel = bleveIndex.BM25Scoring
@@ -101,6 +103,13 @@ func newIndexMapping() (*mapping.IndexMappingImpl, error) {
 	dm.AddFieldMappingsAt(_fieldType, bleve.NewKeywordFieldMapping())
 	dm.AddFieldMappingsAt(_fieldBranchDefault, bleve.NewBooleanFieldMapping())
 	dm.AddFieldMappingsAt(_fieldBranchName, name)
+
+	// every attribute attrKeys returns is mapped dynamically, as a stored
+	// keyword.
+	attrs := bleve.NewDocumentMapping()
+	attrs.DefaultAnalyzer = keyword.Name
+
+	dm.AddSubDocumentMapping(_fieldAttrs, attrs)
 
 	im.DefaultMapping = dm
 

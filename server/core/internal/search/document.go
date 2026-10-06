@@ -38,6 +38,10 @@ type Block struct {
 
 	// Text is the text content of the block, if applicable.
 	Text string `json:"text"`
+
+	// Attrs holds the block's attributes worth keeping for its type, see
+	// attrKeys.
+	Attrs map[string]string `json:"attrs,omitempty"`
 }
 
 // record is the shape a block is written to the index in. bleve walks
@@ -64,6 +68,9 @@ type record struct {
 
 	// Text specifies the searchable text of the block.
 	Text string `json:"text"`
+
+	// Attrs specifies the block's kept attributes, see attrKeys.
+	Attrs map[string]string `json:"attrs,omitempty"`
 }
 
 // record flattens the block for indexing.
@@ -76,6 +83,7 @@ func (b Block) record() record {
 		BranchDefault:  b.BranchDefault,
 		Type:           b.Type,
 		Text:           b.Text,
+		Attrs:          b.Attrs,
 	}
 }
 
@@ -151,8 +159,43 @@ func (s Scope) entries(b document.Block, res map[string]Block) {
 		return
 	}
 
-	if id, ok := b.UID(); ok && id != "" {
-		res[id] = s.Block(id, string(b.Type), text.String())
+	id, ok := b.UID()
+	if !ok || id == "" {
+		return
+	}
+
+	e := s.Block(id, string(b.Type), text.String())
+
+	for _, key := range attrKeys(b.Type) {
+		// an attribute of another type only describes the block, so it is
+		// left out rather than failing the indexing.
+		if v, ok := b.Attrs[key].(string); ok && v != "" {
+			if e.Attrs == nil {
+				e.Attrs = make(map[string]string)
+			}
+
+			e.Attrs[key] = v
+		}
+	}
+
+	res[id] = e
+}
+
+// attrKeys returns the attributes an entry of the block type keeps. They
+// are stored and indexed as keywords under the attrs field, so a hit can be
+// described and filtered without loading its document. Bump
+// _mappingVersion when the keys change, so existing entries are rebuilt.
+func attrKeys(typ document.BlockNodeType) []string {
+	switch typ {
+	case document.BlockNodeCodeBlock:
+		return []string{document.AttrLanguage}
+	case document.BlockNodeMetricBlock:
+		return []string{
+			document.AttrDataSourceID,
+			document.AttrVisualizationType,
+		}
+	default:
+		return nil
 	}
 }
 

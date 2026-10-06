@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -244,6 +245,21 @@ func (i *Index) decodeHit(id string, fields map[string]any) (Block, error) {
 			Warn("search entry field is not a boolean")
 	}
 
+	var attrs map[string]string
+
+	for field := range fields {
+		key, ok := strings.CutPrefix(field, _fieldAttrs+".")
+		if !ok {
+			continue
+		}
+
+		if attrs == nil {
+			attrs = make(map[string]string)
+		}
+
+		attrs[key] = str(field)
+	}
+
 	return Block{
 		ID:             id,
 		OrganizationID: str(_fieldOrganizationID),
@@ -253,5 +269,6 @@ func (i *Index) decodeHit(id string, fields map[string]any) (Block, error) {
 		BranchDefault:  def,
 		Type:           str(_fieldType),
 		Text:           str(_fieldText),
+		Attrs:          attrs,
 	}, nil
 }

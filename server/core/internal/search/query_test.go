@@ -58,11 +58,16 @@ func seedIndex(t *testing.T) (*Index, Scope) {
 		"p3":      main.Block("p3", "paragraph", "production traffic hits the service after we deploy on monday"),
 		"p4":      main.Block("p4", "paragraph", "alpha beta"),
 		"p5":      main.Block("p5", "paragraph", "alpha only"),
-		"p6":      main.Block("p6", "paragraph", "kubernetes clusters"),
-		"p7":      main.Block("p7", "paragraph", "the endpoint answers 404 not found"),
-		"p8":      main.Block("p8", "paragraph", "run an a11y audit before launch"),
-		"p9":      main.Block("p9", "paragraph", "accessibility matters"),
-		"p10":     main.Block("p10", "paragraph", _longText),
+		"p6": func() Block {
+			b := main.Block("p6", "codeBlock", "kubernetes clusters")
+			b.Attrs = map[string]string{"language": "yaml"}
+
+			return b
+		}(),
+		"p7":  main.Block("p7", "paragraph", "the endpoint answers 404 not found"),
+		"p8":  main.Block("p8", "paragraph", "run an a11y audit before launch"),
+		"p9":  main.Block("p9", "paragraph", "accessibility matters"),
+		"p10": main.Block("p10", "paragraph", _longText),
 	}))
 
 	require.NoError(t, idx.ReplaceBranch(context.Background(), fork.BranchID, map[string]Block{
@@ -92,8 +97,9 @@ func Test_Index_SearchDocuments(t *testing.T) {
 			BranchID:       main.BranchID,
 			BranchName:     "main",
 			BranchDefault:  true,
-			Type:           "paragraph",
+			Type:           "codeBlock",
 			Text:           "<mark>kubernetes</mark> clusters",
+			Attrs:          map[string]string{"language": "yaml"},
 		},
 	})
 	require.NoError(t, err)
@@ -123,8 +129,9 @@ func Test_Index_SearchDocumentBlocks(t *testing.T) {
 			BranchID:       main.BranchID,
 			BranchName:     "main",
 			BranchDefault:  true,
-			Type:           "paragraph",
+			Type:           "codeBlock",
 			Text:           "kubernetes clusters",
+			Attrs:          map[string]string{"language": "yaml"},
 		},
 	}, blocks)
 
@@ -545,6 +552,16 @@ func Test_Index_decodeHit(t *testing.T) {
 			Fields: fields(documentID.String(), branchID.String()),
 			Result: block,
 		},
+		"Successful decoding with attributes": func() tcase {
+			ff := fields(documentID.String(), branchID.String())
+			ff[_fieldAttrs+".language"] = "go"
+			ff[_fieldAttrs+".dataSourceId"] = "ds1"
+
+			res := block
+			res.Attrs = map[string]string{"language": "go", "dataSourceId": "ds1"}
+
+			return tcase{Fields: ff, Result: res}
+		}(),
 	}
 
 	for cn, c := range cc {

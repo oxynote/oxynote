@@ -83,8 +83,37 @@ func Test_Scope_entries(t *testing.T) {
 		{Type: document.BlockNodeHorizontalRule, Attrs: document.Attributes{"uid": "hr1"}},
 		// a metric block's title is an attribute, not a text child.
 		{
-			Type:  document.BlockNodeMetricBlock,
-			Attrs: document.Attributes{"uid": "m1", "title": "Pizza Fridays"},
+			Type: document.BlockNodeMetricBlock,
+			Attrs: document.Attributes{
+				"uid":               "m1",
+				"title":             "Pizza Fridays",
+				"dataSourceId":      "ds1",
+				"visualizationType": "line_chart",
+				"timeRange":         "1h",
+			},
+		},
+		// a code block keeps its language. An empty or mistyped kept
+		// attribute is left out.
+		{
+			Type:  document.BlockNodeCodeBlock,
+			Attrs: document.Attributes{"uid": "c1", "language": "go"},
+			Content: []document.Block{
+				{Type: document.BlockNodeText, Text: "func main() {}"},
+			},
+		},
+		{
+			Type:  document.BlockNodeCodeBlock,
+			Attrs: document.Attributes{"uid": "c2", "language": ""},
+			Content: []document.Block{
+				{Type: document.BlockNodeText, Text: "plain"},
+			},
+		},
+		{
+			Type:  document.BlockNodeCodeBlock,
+			Attrs: document.Attributes{"uid": "c3", "language": 42},
+			Content: []document.Block{
+				{Type: document.BlockNodeText, Text: "odd"},
+			},
 		},
 		// an untitled metric block has nothing to index.
 		{
@@ -128,15 +157,35 @@ func Test_Scope_entries(t *testing.T) {
 		scope.entries(b, res)
 	}
 
+	metric := scope.Block("m1", "metricBlock", "Pizza Fridays")
+	metric.Attrs = map[string]string{
+		"dataSourceId":      "ds1",
+		"visualizationType": "line_chart",
+	}
+
+	code := scope.Block("c1", "codeBlock", "func main() {}")
+	code.Attrs = map[string]string{"language": "go"}
+
 	assert.Equal(t, map[string]Block{
 		"p1":  scope.Block("p1", "paragraph", "first"),
 		"li1": scope.Block("li1", "listItem", "nested"),
 		"p2":  scope.Block("p2", "paragraph", "plain bold tail"),
-		"m1":  scope.Block("m1", "metricBlock", "Pizza Fridays"),
+		"m1":  metric,
+		"c1":  code,
+		"c2":  scope.Block("c2", "codeBlock", "plain"),
+		"c3":  scope.Block("c3", "codeBlock", "odd"),
 		"f1":  scope.Block("f1", "fileBlock", "quarterly-report.pdf"),
 		"i1":  scope.Block("i1", "imageBlock", "architecture diagram Overview"),
 		"i2":  scope.Block("i2", "imageBlock", "login flow"),
 	}, res)
+}
+
+func Test_attrKeys(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, []string{"language"}, attrKeys(document.BlockNodeCodeBlock))
+	assert.Equal(t, []string{"dataSourceId", "visualizationType"}, attrKeys(document.BlockNodeMetricBlock))
+	assert.Nil(t, attrKeys(document.BlockNodeParagraph))
 }
 
 func Test_Entries(t *testing.T) {

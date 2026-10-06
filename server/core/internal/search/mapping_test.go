@@ -22,6 +22,8 @@ func Test_newIndexMapping(t *testing.T) {
 	assert.Equal(t, "keyword", im.AnalyzerNameForPath(_fieldDocumentID))
 	assert.Equal(t, "keyword", im.AnalyzerNameForPath(_fieldType))
 
+	assert.Equal(t, "keyword", im.AnalyzerNameForPath(_fieldAttrs+".language"))
+
 	// the analyzer lowercases and stems without dropping stop words.
 	tokens := im.AnalyzerNamed(_analyzerName).Analyze([]byte("Not Deploying"))
 	require.Len(t, tokens, 2)
