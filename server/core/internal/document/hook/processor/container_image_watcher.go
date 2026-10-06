@@ -21,6 +21,7 @@ var ErrInvalidImage = errutil.New(http.StatusBadRequest, "document_hook.invalid_
 // ContainerImageWatcher specifies a processor that watches container images for updates.
 type ContainerImageWatcher struct {
 	PlainDeleter
+	PlainSummarizer
 
 	// Image is the container image to watch.
 	Image string `json:"image"`

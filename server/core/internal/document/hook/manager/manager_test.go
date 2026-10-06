@@ -1,6 +1,7 @@
 package manager
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -38,6 +39,7 @@ type fakePublisher struct {
 
 	organizationIDs []string
 	codes           []notification.Code
+	cores           []notification.Core
 	userIDs         [][]string
 }
 
@@ -47,6 +49,7 @@ func (f *fakePublisher) PublishNotifications(organizationID string, core notific
 
 	f.organizationIDs = append(f.organizationIDs, organizationID)
 	f.codes = append(f.codes, core.Code)
+	f.cores = append(f.cores, core)
 	f.userIDs = append(f.userIDs, userIDs)
 }
 
@@ -872,6 +875,140 @@ func Test_Manager_processHooks(t *testing.T) {
 			if cd != nil {
 				assert.Equal(t, c.Watchers, cd.deletedWatchers())
 			}
+		})
+	}
+}
+
+func Test_Manager_notifyTransition(t *testing.T) {
+	t.Parallel()
+
+	branchID := xid.New()
+
+	urlHook := urlWatcherHook(branchID)
+
+	failedHook := urlHook
+	failedHook.Status = processor.StatusUnreachableURL
+
+	triggeredHook := urlHook
+	triggeredHook.Score = decimal.Zero
+
+	githubHook := urlHook
+	githubHook.Type = hook.TypeGithubTracking
+	githubHook.Settings = processor.Settings(`{"repository":"repo","branch":"main","paths":["a.md","b.md","c.md"]}`)
+
+	triggeredGithubHook := githubHook
+	triggeredGithubHook.Score = decimal.Zero
+	triggeredGithubHook.State = null.ValueFrom(processor.State(`{"pathsChecksums":{},"changedPaths":2}`))
+
+	malformedGithubHook := triggeredGithubHook
+	malformedGithubHook.State = null.ValueFrom(processor.State(`{`))
+
+	cc := map[string]struct {
+		DB    *DBMock
+		Prev  hook.Hook
+		Hook  hook.Hook
+		Cores []notification.Core
+		Log   string
+	}{
+		"Hook that keeps its status and score": {
+			DB:   &DBMock{},
+			Prev: urlHook,
+			Hook: urlHook,
+		},
+		"Error returned by DB.FetchDocumentMaintainers": {
+			DB: &DBMock{
+				FetchDocumentMaintainersFunc: func(context.Context, xid.ID, string) ([]string, error) {
+					return nil, assert.AnError
+				},
+			},
+			Prev: urlHook,
+			Hook: triggeredHook,
+		},
+		"Hook that can no longer check its target": {
+			DB:   &DBMock{},
+			Prev: urlHook,
+			Hook: failedHook,
+			Cores: []notification.Core{
+				notification.NewDocumentHookNeedsAttentionNotification(
+					urlHook.DocumentID.V,
+					hook.TypeURLWatcher,
+					null.String{},
+					branchID,
+					processor.StatusUnreachableURL,
+					urlHook.Settings,
+				),
+			},
+		},
+		"Hook that ran out of freshness": {
+			DB:   &DBMock{},
+			Prev: urlHook,
+			Hook: triggeredHook,
+			Cores: []notification.Core{
+				notification.NewDocumentHookTriggeredNotification(
+					urlHook.DocumentID.V,
+					hook.TypeURLWatcher,
+					null.String{},
+					branchID,
+					urlHook.Settings,
+					nil,
+				),
+			},
+		},
+		"GitHub hook that ran out of freshness": {
+			DB:   &DBMock{},
+			Prev: githubHook,
+			Hook: triggeredGithubHook,
+			Cores: []notification.Core{
+				notification.NewDocumentHookTriggeredNotification(
+					urlHook.DocumentID.V,
+					hook.TypeGithubTracking,
+					null.String{},
+					branchID,
+					githubHook.Settings,
+					processor.GithubTrackingSummary{ChangedPaths: 2},
+				),
+			},
+		},
+		"GitHub hook that ran out of freshness with a malformed state": {
+			DB:   &DBMock{},
+			Prev: githubHook,
+			Hook: malformedGithubHook,
+			Cores: []notification.Core{
+				notification.NewDocumentHookTriggeredNotification(
+					urlHook.DocumentID.V,
+					hook.TypeGithubTracking,
+					null.String{},
+					branchID,
+					githubHook.Settings,
+					nil,
+				),
+			},
+			Log: "cannot summarize hook run",
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			var buf bytes.Buffer
+
+			pub := &fakePublisher{}
+
+			man := newTestManager(t, c.DB, pub, nil)
+			man.log = slog.New(slog.NewTextHandler(&buf, nil))
+
+			man.notifyTransition(context.Background(), c.Prev, c.Hook)
+
+			assert.Equal(t, c.Cores, pub.cores)
+
+			if c.Log == "" {
+				assert.NotContains(t, buf.String(), "cannot summarize")
+
+				return
+			}
+
+			assert.Contains(t, buf.String(), c.Log)
 		})
 	}
 }

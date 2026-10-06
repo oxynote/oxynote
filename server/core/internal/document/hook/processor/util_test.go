@@ -31,3 +31,11 @@ func Test_PlainDeleter_Delete(t *testing.T) {
 
 	assert.NoError(t, (&PlainDeleter{}).Delete(context.Background(), stubInput{}))
 }
+
+func Test_PlainSummarizer_Summary(t *testing.T) {
+	t.Parallel()
+
+	res, err := (&PlainSummarizer{}).Summary(State(`{}`))
+	assert.NoError(t, err)
+	assert.Nil(t, res)
+}

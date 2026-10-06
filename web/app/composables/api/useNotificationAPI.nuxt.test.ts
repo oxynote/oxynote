@@ -1,4 +1,4 @@
-import type { EntryKey } from "@pinia/colada"
+import type { EntryKey, UseInfiniteQueryData } from "@pinia/colada"
 import { afterEach, beforeEach, describe, it } from "vitest"
 import {
 	clearQueryCache,
@@ -10,8 +10,10 @@ import {
 } from "./test-helpers"
 import useNotificationAPI from "./useNotificationAPI"
 
-const LIST_KEY_A = ["notifications", "list", 10, 1] as const
-const LIST_KEY_B = ["notifications", "list", 5, 2] as const
+type NotificationPages = UseInfiniteQueryData<NotificationsResponse, number>
+
+const LIST_KEY_A = ["notifications", "list", 10] as const
+const LIST_KEY_B = ["notifications", "list", 5] as const
 
 function makeNotificationAPI() {
 	return runInApp(() => useNotificationAPI())
@@ -39,16 +41,28 @@ function makeNotification(id: string, read: boolean) {
 
 function makePage(
 	notifications: NotificationsResponse["notifications"],
+	pageCount = 1,
 ): NotificationsResponse {
-	return { notifications, pageCount: 1 }
+	return { notifications, pageCount }
 }
 
-function seedPage(key: EntryKey, page: NotificationsResponse) {
-	seedQueryData(key, page)
+// what the cache holds for the given pages, loaded from the first one on
+function makePages(...pages: NotificationsResponse[]): NotificationPages {
+	return { pages, pageParams: pages.map((_page, index) => index + 1) }
 }
 
-function getPage(key: EntryKey) {
-	return readQueryData(key) as NotificationsResponse | undefined
+function seedPages(key: EntryKey, ...pages: NotificationsResponse[]) {
+	seedQueryData(key, makePages(...pages))
+}
+
+function getPages(key: EntryKey) {
+	return readQueryData(key) as NotificationPages | undefined
+}
+
+function readStates(key: EntryKey) {
+	return getPages(key)?.pages.map((page) =>
+		page.notifications.map((n) => n.read),
+	)
 }
 
 // creating a factory query eagerly loads it once; refresh() joins that
@@ -62,19 +76,61 @@ describe("useNotificationAPI", { concurrent: false }, () => {
 	afterEach(disposeMockEndpoints)
 
 	describe("useFetchManyNotifications", () => {
-		it("fetches the requested notification page", async ({ expect }) => {
+		it("fetches the first notification page", async ({ expect }) => {
 			const page = makePage([makeNotification("n1", false)])
 			const listCalls = mockEndpoint("GET", "/api/notifications", () => page)
 			const api = makeNotificationAPI()
-			const list = runInApp(() =>
-				api.useFetchManyNotifications({ limit: 10, page: 2 }),
-			)
+			const list = runInApp(() => api.useFetchManyNotifications({ limit: 10 }))
 
 			const result = await list.refresh()
 
-			expect(result.data).toEqual(page)
+			expect(result.data).toEqual(makePages(page))
+			expect(list.hasNextPage.value).toBe(false)
 			expect(listCalls).toHaveLength(1)
-			expect(listCalls[0]?.query).toEqual({ limit: "10", page: "2" })
+			expect(listCalls[0]?.query).toEqual({ limit: "10", page: "1" })
+		})
+
+		it("loads the next page while the server reports more", async ({
+			expect,
+		}) => {
+			const listCalls = mockEndpoint("GET", "/api/notifications", (call) =>
+				makePage([makeNotification(`n${String(call.query.page)}`, false)], 2),
+			)
+			const api = makeNotificationAPI()
+			const list = runInApp(() => api.useFetchManyNotifications({ limit: 10 }))
+			await list.refresh()
+			expect(list.hasNextPage.value).toBe(true)
+
+			await list.loadNextPage()
+
+			expect(list.data.value).toEqual(
+				makePages(
+					makePage([makeNotification("n1", false)], 2),
+					makePage([makeNotification("n2", false)], 2),
+				),
+			)
+			expect(list.hasNextPage.value).toBe(false)
+			expect(listCalls.map((call) => call.query.page)).toEqual(["1", "2"])
+		})
+
+		it("refetches every loaded page in order", async ({ expect }) => {
+			const listCalls = mockEndpoint("GET", "/api/notifications", (call) =>
+				makePage([makeNotification(`n${String(call.query.page)}`, false)], 2),
+			)
+			const api = makeNotificationAPI()
+			const list = runInApp(() => api.useFetchManyNotifications({ limit: 10 }))
+			await list.refresh()
+			await list.loadNextPage()
+
+			await list.refetch()
+
+			expect(list.data.value?.pages).toHaveLength(2)
+			expect(listCalls.map((call) => call.query.page)).toEqual([
+				"1",
+				"2",
+				"1",
+				"2",
+			])
 		})
 	})
 
@@ -121,22 +177,18 @@ describe("useNotificationAPI", { concurrent: false }, () => {
 				"/api/notifications/read-status",
 				() => ({}),
 			)
-			seedPage(
+			seedPages(
 				LIST_KEY_A,
 				makePage([makeNotification("n1", false), makeNotification("n2", true)]),
+				makePage([makeNotification("n4", false)]),
 			)
-			seedPage(LIST_KEY_B, makePage([makeNotification("n3", false)]))
+			seedPages(LIST_KEY_B, makePage([makeNotification("n3", false)]))
 			const api = makeNotificationAPI()
 
 			await api.markNotificationsRead.mutateAsync({ ids: [] })
 
-			expect(getPage(LIST_KEY_A)?.notifications.map((n) => n.read)).toEqual([
-				true,
-				true,
-			])
-			expect(getPage(LIST_KEY_B)?.notifications.map((n) => n.read)).toEqual([
-				true,
-			])
+			expect(readStates(LIST_KEY_A)).toEqual([[true, true], [true]])
+			expect(readStates(LIST_KEY_B)).toEqual([[true]])
 			expect(putCalls).toHaveLength(1)
 			expect(putCalls[0]?.body).toEqual({ ids: [] })
 			// the success invalidation only refetches active queries — the
@@ -163,27 +215,29 @@ describe("useNotificationAPI", { concurrent: false }, () => {
 				"/api/notifications/read-status",
 				() => ({}),
 			)
-			seedPage(
+			seedPages(
 				LIST_KEY_A,
 				makePage([
 					makeNotification("n1", false),
 					makeNotification("n2", false),
 				]),
+				makePage([
+					makeNotification("n4", false),
+					makeNotification("n5", false),
+				]),
 			)
-			seedPage(LIST_KEY_B, makePage([makeNotification("n3", false)]))
+			seedPages(LIST_KEY_B, makePage([makeNotification("n3", false)]))
 			const api = makeNotificationAPI()
 
-			await api.markNotificationsRead.mutateAsync({ ids: ["n1", "n3"] })
+			await api.markNotificationsRead.mutateAsync({ ids: ["n1", "n3", "n5"] })
 
-			expect(getPage(LIST_KEY_A)?.notifications.map((n) => n.read)).toEqual([
-				true,
-				false,
+			expect(readStates(LIST_KEY_A)).toEqual([
+				[true, false],
+				[false, true],
 			])
-			expect(getPage(LIST_KEY_B)?.notifications.map((n) => n.read)).toEqual([
-				true,
-			])
+			expect(readStates(LIST_KEY_B)).toEqual([[true]])
 			expect(putCalls).toHaveLength(1)
-			expect(putCalls[0]?.body).toEqual({ ids: ["n1", "n3"] })
+			expect(putCalls[0]?.body).toEqual({ ids: ["n1", "n3", "n5"] })
 			expect(listCalls).toHaveLength(0)
 			expect(countCalls).toHaveLength(0)
 		})
@@ -208,19 +262,26 @@ describe("useNotificationAPI", { concurrent: false }, () => {
 					throw createError({ statusCode: 500 })
 				},
 			)
-			seedPage(LIST_KEY_A, makePage([makeNotification("n1", false)]))
-			seedPage(LIST_KEY_B, makePage([makeNotification("n2", false)]))
+			seedPages(
+				LIST_KEY_A,
+				makePage([makeNotification("n1", false)]),
+				makePage([makeNotification("n3", false)]),
+			)
+			seedPages(LIST_KEY_B, makePage([makeNotification("n2", false)]))
 			const api = makeNotificationAPI()
 
 			await expect(
 				api.markNotificationsRead.mutateAsync({ ids: [] }),
 			).rejects.toThrow()
 
-			expect(getPage(LIST_KEY_A)).toEqual(
-				makePage([makeNotification("n1", false)]),
+			expect(getPages(LIST_KEY_A)).toEqual(
+				makePages(
+					makePage([makeNotification("n1", false)]),
+					makePage([makeNotification("n3", false)]),
+				),
 			)
-			expect(getPage(LIST_KEY_B)).toEqual(
-				makePage([makeNotification("n2", false)]),
+			expect(getPages(LIST_KEY_B)).toEqual(
+				makePages(makePage([makeNotification("n2", false)])),
 			)
 			expect(putCalls).toHaveLength(1)
 			expect(listCalls).toHaveLength(0)
@@ -257,8 +318,8 @@ describe("useNotificationAPI", { concurrent: false }, () => {
 					})
 				},
 			)
-			seedPage(LIST_KEY_A, makePage([makeNotification("n1", false)]))
-			seedPage(LIST_KEY_B, makePage([makeNotification("n2", false)]))
+			seedPages(LIST_KEY_A, makePage([makeNotification("n1", false)]))
+			seedPages(LIST_KEY_B, makePage([makeNotification("n2", false)]))
 			const api = makeNotificationAPI()
 
 			const pending = api.markNotificationsRead.mutateAsync({ ids: [] })
@@ -266,20 +327,16 @@ describe("useNotificationAPI", { concurrent: false }, () => {
 
 			// the optimistic update landed; divergent data written afterwards
 			// must survive the failure
-			expect(getPage(LIST_KEY_A)?.notifications.map((n) => n.read)).toEqual([
-				true,
-			])
+			expect(readStates(LIST_KEY_A)).toEqual([[true]])
 			const divergent = makePage([makeNotification("n9", false)])
-			seedPage(LIST_KEY_A, divergent)
+			seedPages(LIST_KEY_A, divergent)
 			rejectPut(createError({ statusCode: 500 }))
 
 			await expect(pending).rejects.toThrow()
-			expect(getPage(LIST_KEY_A)).toEqual(divergent)
-			// the rollback is all-or-nothing, so the untouched page keeps its
+			expect(getPages(LIST_KEY_A)).toEqual(makePages(divergent))
+			// the rollback is all-or-nothing, so the untouched entry keeps its
 			// optimistic state too
-			expect(getPage(LIST_KEY_B)?.notifications.map((n) => n.read)).toEqual([
-				true,
-			])
+			expect(readStates(LIST_KEY_B)).toEqual([[true]])
 			expect(putCalls).toHaveLength(1)
 			expect(listCalls).toHaveLength(0)
 			expect(countCalls).toHaveLength(0)
@@ -318,28 +375,24 @@ describe("useNotificationAPI", { concurrent: false }, () => {
 					})
 				},
 			)
-			seedPage(LIST_KEY_B, makePage([makeNotification("n1", false)]))
+			seedPages(LIST_KEY_B, makePage([makeNotification("n1", false)]))
 			const api = makeNotificationAPI()
-			const list = runInApp(() =>
-				api.useFetchManyNotifications({ limit: 10, page: 1 }),
-			)
+			const list = runInApp(() => api.useFetchManyNotifications({ limit: 10 }))
 
 			const pending = api.markNotificationsRead.mutateAsync({ ids: [] })
 			await putReachedSignal
 
 			// reaching the request proves the data-less entry did not abort
-			// the optimistic update; only the seeded page was touched
-			expect(getPage(LIST_KEY_A)).toBeUndefined()
-			expect(getPage(LIST_KEY_B)?.notifications.map((n) => n.read)).toEqual([
-				true,
-			])
+			// the optimistic update; only the seeded entry was touched
+			expect(getPages(LIST_KEY_A)).toBeUndefined()
+			expect(readStates(LIST_KEY_B)).toEqual([[true]])
 			rejectPut(createError({ statusCode: 500 }))
 
 			await expect(pending).rejects.toThrow()
 			// the data-less entry is filtered from the rollback comparison
-			// too, so the rollback still restores the seeded page
-			expect(getPage(LIST_KEY_B)).toEqual(
-				makePage([makeNotification("n1", false)]),
+			// too, so the rollback still restores the seeded entry
+			expect(getPages(LIST_KEY_B)).toEqual(
+				makePages(makePage([makeNotification("n1", false)])),
 			)
 			expect(putCalls).toHaveLength(1)
 			expect(listCalls).toHaveLength(1)
@@ -349,7 +402,7 @@ describe("useNotificationAPI", { concurrent: false }, () => {
 			const resolved = makePage([makeNotification("n2", true)])
 			resolveList(resolved)
 			const result = await list.refresh()
-			expect(result.data).toEqual(resolved)
+			expect(result.data).toEqual(makePages(resolved))
 		})
 	})
 })

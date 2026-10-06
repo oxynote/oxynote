@@ -31,12 +31,7 @@ const leftPosition = computed(() => {
 					{{ $t("sidebar.notification-sheet.description") }}
 				</ShadcnUiSheetDescription>
 			</ShadcnUiSheetHeader>
-			<NotificationBox
-				v-model="open"
-				class="w-80"
-				mobile
-				@close-notification-box="open = false"
-			/>
+			<NotificationBox class="w-80" @close-notification-box="open = false" />
 		</ShadcnUiSheetContent>
 	</ShadcnUiSheet>
 	<div
@@ -44,7 +39,9 @@ const leftPosition = computed(() => {
 		:class="
 			cn(
 				'grid transition-[grid-template-columns] duration-200 ease-out',
-				open && sidebarOpen ? 'grid-cols-[20rem]' : 'grid-cols-[0rem]',
+				open && sidebarOpen
+					? 'grid-cols-[clamp(20rem,22dvw,26.25rem)]'
+					: 'grid-cols-[0rem]',
 			)
 		"
 	>
@@ -57,7 +54,10 @@ const leftPosition = computed(() => {
 			"
 			:style="{ left: `${leftPosition}px` }"
 		>
-			<NotificationBox v-model="open" class="w-80" />
+			<NotificationBox
+				class="w-[clamp(20rem,22dvw,26.25rem)]"
+				@close-notification-box="open = false"
+			/>
 		</div>
 	</div>
 </template>

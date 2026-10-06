@@ -234,7 +234,8 @@ gating in step 3.
    `web/app/components/editor/hooks/`, then follow an existing type
    through the menu content beside it (the component and props switches
    and the add-menu entry, gated on the capability when the hook depends
-   on one) and through the notification box in `web/app/components/`.
+   on one) and through `NotificationRow.vue` and `notification.ts` in
+   `web/app/components/`.
    Their strings live in `web/i18n/locales/`.
 6. **Extend the tests.** Every place above that switches on the type has
    a table-driven test with one row per type; extend the tables in the

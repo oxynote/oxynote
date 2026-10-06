@@ -62,7 +62,7 @@ describe("<NotificationSidebar>", { concurrent: false }, () => {
 
 		const wrapper = await mountSidebar(true)
 
-		expect(wrapper.html()).toContain("grid-cols-[20rem]")
+		expect(wrapper.html()).toContain("grid-cols-[clamp(20rem,22dvw,26.25rem)]")
 	})
 
 	it("slides the panel out of view while the inbox is closed", async ({
@@ -148,15 +148,21 @@ describe("<NotificationSidebar>", { concurrent: false }, () => {
 		).toEqual([[false]])
 	})
 
-	it("closes the inbox when the box asks to be closed", async ({ expect }) => {
-		stubViewport(true)
-		const wrapper = await mountSidebar(true)
+	it.for([
+		{ name: "on narrow viewports", input: true },
+		{ name: "on wide viewports", input: false },
+	])(
+		"closes the inbox when the box asks to be closed $name",
+		async ({ input }, { expect }) => {
+			stubViewport(input)
+			const wrapper = await mountSidebar(true)
 
-		emitFrom(wrapper, "NotificationBox", "close-notification-box")
-		await nextTick()
+			emitFrom(wrapper, "NotificationBox", "close-notification-box")
+			await nextTick()
 
-		expect(
-			wrapper.findComponent(NotificationSidebar).emitted("update:modelValue"),
-		).toEqual([[false]])
-	})
+			expect(
+				wrapper.findComponent(NotificationSidebar).emitted("update:modelValue"),
+			).toEqual([[false]])
+		},
+	)
 })

@@ -223,7 +223,7 @@ function close() {
 		v-model:open="isSubOpen"
 		:hook="props.hook"
 		:diff="props.diff"
-		icon="lucide:timer"
+		icon="mingcute:stopwatch-line"
 		:acknowledge-label="remindAgainLabel"
 		:submit-label="isTriggered ? $t('editor.hooks.renew') : undefined"
 		:submit-icon="isTriggered ? 'mingcute:check-fill' : undefined"

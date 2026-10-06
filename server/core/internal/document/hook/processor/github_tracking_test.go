@@ -2,6 +2,7 @@ package processor
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/oxynote/oxynote/server/core/internal/apps/github"
@@ -9,6 +10,7 @@ import (
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // githubErrInput is a test Input whose Github method always fails with the
@@ -67,10 +69,12 @@ func Test_GithubTracking_Process(t *testing.T) {
 	t.Parallel()
 
 	cc := map[string]struct {
-		Inp        Input
-		WantScore  decimal.Decimal
-		WantStatus Status
-		WantErr    bool
+		Inp         Input
+		Paths       []string
+		WantScore   decimal.Decimal
+		WantStatus  Status
+		WantChanged int
+		WantErr     bool
 	}{
 		"Installation not found is a status": {
 			Inp:        githubErrInput{state: State("{}"), err: github.ErrInstallationNotFound},
@@ -101,6 +105,27 @@ func Test_GithubTracking_Process(t *testing.T) {
 				state:  State(`{"pathsChecksums":{"doc.md":"old"}}`),
 				client: githubTreeClient{tree: github.Tree{{Name: "doc.md", Checksum: "sum"}}},
 			},
+			WantStatus:  StatusActive,
+			WantChanged: 1,
+		},
+		"Every changed path is counted": {
+			Inp: githubTreeInput{
+				state: State(`{"pathsChecksums":{"doc.md":"old","api.md":"sum","gone.md":"sum"}}`),
+				client: githubTreeClient{tree: github.Tree{
+					{Name: "doc.md", Checksum: "sum"},
+					{Name: "api.md", Checksum: "sum"},
+				}},
+			},
+			Paths:       []string{"doc.md", "api.md", "gone.md"},
+			WantStatus:  StatusActive,
+			WantChanged: 2,
+		},
+		"Count from the previous run is replaced": {
+			Inp: githubTreeInput{
+				state:  State(`{"pathsChecksums":{"doc.md":"sum"},"changedPaths":3}`),
+				client: githubTreeClient{tree: github.Tree{{Name: "doc.md", Checksum: "sum"}}},
+			},
+			WantScore:  mathutil.Hundred,
 			WantStatus: StatusActive,
 		},
 		"Path deleted since reset scores zero": {
@@ -108,7 +133,8 @@ func Test_GithubTracking_Process(t *testing.T) {
 				state:  State(`{"pathsChecksums":{"doc.md":"sum"}}`),
 				client: githubTreeClient{tree: github.Tree{}},
 			},
-			WantStatus: StatusActive,
+			WantStatus:  StatusActive,
+			WantChanged: 1,
 		},
 		"Path absent since reset scores full": {
 			Inp: githubTreeInput{
@@ -123,7 +149,8 @@ func Test_GithubTracking_Process(t *testing.T) {
 				state:  State(`{"pathsChecksums":{}}`),
 				client: githubTreeClient{tree: github.Tree{{Name: "doc.md", Checksum: "sum"}}},
 			},
-			WantStatus: StatusActive,
+			WantStatus:  StatusActive,
+			WantChanged: 1,
 		},
 	}
 
@@ -131,10 +158,15 @@ func Test_GithubTracking_Process(t *testing.T) {
 		t.Run(cn, func(t *testing.T) {
 			t.Parallel()
 
+			paths := c.Paths
+			if paths == nil {
+				paths = []string{"doc.md"}
+			}
+
 			gt := &GithubTracking{
 				Repository: "repo",
 				Branch:     "main",
-				Paths:      []string{"doc.md"},
+				Paths:      paths,
 			}
 
 			res, err := gt.Process(context.Background(), c.Inp)
@@ -150,7 +182,14 @@ func Test_GithubTracking_Process(t *testing.T) {
 
 			if c.WantStatus != StatusActive {
 				assert.Nil(t, res.State)
+
+				return
 			}
+
+			var gts GithubTrackingState
+
+			require.NoError(t, json.Unmarshal(res.State, &gts))
+			assert.Equal(t, c.WantChanged, gts.ChangedPaths)
 		})
 	}
 }
@@ -169,7 +208,7 @@ func Test_GithubTracking_Reset(t *testing.T) {
 				client: githubTreeClient{tree: github.Tree{{Name: "doc.md", Checksum: "sum"}}},
 			},
 			WantStatus: StatusActive,
-			WantState:  `{"pathsChecksums":{"doc.md":"sum"}}`,
+			WantState:  `{"pathsChecksums":{"doc.md":"sum"},"changedPaths":0}`,
 		},
 		"Missing installation is a status": {
 			Inp:        githubErrInput{err: github.ErrInstallationNotFound},
@@ -237,6 +276,40 @@ func (i githubTreeInput) Github(_ context.Context) (Github, error) {
 
 func (i githubTreeInput) ChangeDetection() ChangeDetection {
 	return nil
+}
+
+func Test_GithubTracking_Summary(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		State  State
+		Result any
+		Err    error
+	}{
+		"Malformed state": {
+			State: State(`{`),
+			Err:   assert.AnError,
+		},
+		"Successful summary": {
+			State:  State(`{"pathsChecksums":{"a.md":"x"},"changedPaths":2}`),
+			Result: GithubTrackingSummary{ChangedPaths: 2},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			res, err := (&GithubTracking{}).Summary(c.State)
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, res)
+		})
+	}
 }
 
 func Test_GithubTracking_fetchTree(t *testing.T) {

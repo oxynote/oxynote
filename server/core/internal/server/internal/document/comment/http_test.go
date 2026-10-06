@@ -2,6 +2,7 @@ package comment
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -121,6 +122,9 @@ func newRequest(method, body string, noSession, omitDoc, omitComment, omitReply 
 	return req.WithContext(ctx)
 }
 
+// _docContent is comment content in the editor's shape, reading "hello".
+const _docContent = `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"hello"}]}]}`
+
 // storedComment builds a stored comment owned by the given user.
 func storedComment(userID string, replies ...commentCore.Reply) *commentCore.Comment {
 	return &commentCore.Comment{
@@ -158,7 +162,7 @@ func Test_NewHandler(t *testing.T) {
 }
 
 func Test_Handler_CreateDocumentComment(t *testing.T) {
-	validBody := `{"content":{"text":"hello"},"branchId":"` + _branchID.String() + `"}`
+	validBody := `{"content":` + _docContent + `,"branchId":"` + _branchID.String() + `"}`
 
 	cc := map[string]struct {
 		DB          *DBMock
@@ -282,13 +286,15 @@ func Test_Handler_CreateDocumentComment(t *testing.T) {
 			for i, users := range c.NotifyUsers {
 				assert.Equal(t, "org1", pub.calls[i].OrganizationID)
 				assert.Equal(t, users, pub.calls[i].UserIDs)
+				assert.Equal(t, notification.NotificationDocumentNewComment, pub.calls[i].Core.Code)
+				assert.Equal(t, "hello", pub.calls[i].Core.Metadata[notification.MetaKeyCommentExcerpt])
 			}
 		})
 	}
 }
 
 func Test_Handler_CreateDocumentCommentReply(t *testing.T) {
-	validBody := `{"content":{"text":"reply"}}`
+	validBody := `{"content":` + _docContent + `}`
 
 	cc := map[string]struct {
 		DB          *DBMock
@@ -398,6 +404,8 @@ func Test_Handler_CreateDocumentCommentReply(t *testing.T) {
 
 			for i, users := range c.NotifyUsers {
 				assert.Equal(t, users, pub.calls[i].UserIDs)
+				assert.Equal(t, notification.NotificationDocumentNewCommentReply, pub.calls[i].Core.Code)
+				assert.Equal(t, "hello", pub.calls[i].Core.Metadata[notification.MetaKeyCommentExcerpt])
 			}
 		})
 	}
@@ -836,14 +844,15 @@ func Test_Handler_UpdateDocumentCommentStatus(t *testing.T) {
 	}
 
 	cc := map[string]struct {
-		DB        *DBMock
-		NoSession bool
-		OmitDoc   bool
-		Body      string
-		RespCode  int
-		Updated   int
-		Changes   int
-		Check     func(t *testing.T, c commentCore.Comment)
+		DB          *DBMock
+		NoSession   bool
+		OmitDoc     bool
+		Body        string
+		RespCode    int
+		Updated     int
+		Changes     int
+		NotifyUsers [][]string
+		Check       func(t *testing.T, c commentCore.Comment)
 	}{
 		"No session in context": {
 			DB:        &DBMock{},
@@ -897,16 +906,23 @@ func Test_Handler_UpdateDocumentCommentStatus(t *testing.T) {
 			RespCode: http.StatusInternalServerError,
 			Updated:  1,
 		},
-		"Successful resolution of another user's comment": {
+		"Successful resolution notifies author and repliers": {
 			DB: &DBMock{
 				FetchDocumentCommentFunc: func(context.Context, xid.ID, xid.ID, string) (*commentCore.Comment, error) {
-					return storedComment("u2"), nil
+					c := storedComment("u2", storedReply("u1"), storedReply("u3"))
+
+					if err := json.Unmarshal([]byte(_docContent), &c.Content); err != nil {
+						return nil, err
+					}
+
+					return c, nil
 				},
 			},
-			Body:     `{"resolved":true}`,
-			RespCode: http.StatusOK,
-			Updated:  1,
-			Changes:  1,
+			Body:        `{"resolved":true}`,
+			RespCode:    http.StatusOK,
+			Updated:     1,
+			Changes:     1,
+			NotifyUsers: [][]string{{"u2", "u3"}},
 			Check: func(t *testing.T, c commentCore.Comment) {
 				assert.True(t, c.Resolved)
 				assert.Equal(t, null.StringFrom("u1"), c.ResolvedBy)
@@ -962,7 +978,15 @@ func Test_Handler_UpdateDocumentCommentStatus(t *testing.T) {
 			hdl.UpdateDocumentCommentStatus(rec, newRequest(http.MethodPut, c.Body, c.NoSession, c.OmitDoc, false, true))
 
 			assert.Equal(t, c.RespCode, rec.Code)
-			assert.Empty(t, pub.calls)
+			require.Len(t, pub.calls, len(c.NotifyUsers))
+
+			for i, users := range c.NotifyUsers {
+				assert.Equal(t, "org1", pub.calls[i].OrganizationID)
+				assert.Equal(t, users, pub.calls[i].UserIDs)
+				assert.Equal(t, notification.NotificationDocumentCommentResolved, pub.calls[i].Core.Code)
+				assert.Equal(t, "u1", pub.calls[i].Core.Metadata[notification.MetaKeyUserID])
+				assert.Equal(t, "hello", pub.calls[i].Core.Metadata[notification.MetaKeyCommentExcerpt])
+			}
 
 			uu := c.DB.UpdateDocumentCommentCalls()
 			require.Len(t, uu, c.Updated)

@@ -19,7 +19,7 @@
 				},
 				"toggle-inbox": {
 					"label": "Toggle inbox",
-					"description": "Opens and closes the inbox on the right. Works anywhere in the workspace."
+					"description": "Opens and closes the inbox beside the sidebar. Works anywhere in the workspace."
 				},
 				"search-for-documents": {
 					"label": "Open search",

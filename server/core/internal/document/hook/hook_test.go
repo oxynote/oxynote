@@ -359,6 +359,62 @@ func Test_Hook_Delete(t *testing.T) {
 	}
 }
 
+func Test_Hook_Summary(t *testing.T) {
+	t.Parallel()
+
+	cc := map[string]struct {
+		Hook   Hook
+		Result any
+		Err    error
+	}{
+		"Malformed settings": {
+			Hook: Hook{
+				Type:     TypeGithubTracking,
+				Settings: processor.Settings(`{not json`),
+			},
+			Err: assert.AnError,
+		},
+		"Malformed state": {
+			Hook: Hook{
+				Type:     TypeGithubTracking,
+				Settings: processor.Settings(`{}`),
+				State:    null.ValueFrom(processor.State(`{`)),
+			},
+			Err: assert.AnError,
+		},
+		"Hook type without a summary": {
+			Hook: Hook{
+				Type:     TypeURLWatcher,
+				Settings: processor.Settings(`{"url":"https://example.com"}`),
+				State:    null.ValueFrom(processor.State(`{}`)),
+			},
+		},
+		"Successful summary": {
+			Hook: Hook{
+				Type:     TypeGithubTracking,
+				Settings: processor.Settings(`{}`),
+				State:    null.ValueFrom(processor.State(`{"changedPaths":2}`)),
+			},
+			Result: processor.GithubTrackingSummary{ChangedPaths: 2},
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			res, err := c.Hook.Summary()
+			testutil.AssertEqualError(t, c.Err, err)
+
+			if err != nil {
+				return
+			}
+
+			assert.Equal(t, c.Result, res)
+		})
+	}
+}
+
 func Test_Hook_ChangedFrom(t *testing.T) {
 	t.Parallel()
 

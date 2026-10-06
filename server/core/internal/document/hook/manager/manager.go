@@ -332,15 +332,28 @@ func (m *Manager) notifyTransition(ctx context.Context, prev, h hook.Hook) {
 			h.BlockID,
 			h.BranchID.V,
 			h.Status,
+			h.Settings,
 		)
 	// a scheduled reminder decays through 99…1, so the transition is the
 	// arrival at zero, not a drop from full.
 	case h.Status == processor.StatusActive && !prev.Score.IsZero() && h.Score.IsZero():
+		summary, err := h.Summary()
+		if err != nil {
+			// the notification still goes out without the summary.
+			m.log.Warn(
+				"cannot summarize hook run",
+				slog.String("hook_id", h.ID.String()),
+				slog.String("error", err.Error()),
+			)
+		}
+
 		core = notification.NewDocumentHookTriggeredNotification(
 			h.DocumentID.V,
 			h.Type,
 			h.BlockID,
 			h.BranchID.V,
+			h.Settings,
+			summary,
 		)
 	default:
 		return

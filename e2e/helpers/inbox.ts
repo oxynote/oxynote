@@ -11,7 +11,11 @@ export async function openInbox(page: Page): Promise<void> {
 		})
 		.click()
 
+	// the closed inbox stays mounted beside the screen, so only its place
+	// tells that it opened
 	await expect(
-		page.getByRole("button", { name: t("notification.read-all-button") }),
-	).toBeVisible()
+		page.getByRole("button", {
+			name: t("notification.actions.close-notification-box"),
+		}),
+	).toBeInViewport()
 }

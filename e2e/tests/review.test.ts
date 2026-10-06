@@ -474,7 +474,7 @@ test.describe("review workflow", () => {
 		request,
 		browser,
 	}) => {
-		await signUpWithWorkspace(page, request)
+		const { credentials } = await signUpWithWorkspace(page, request)
 		await createDocument(page)
 		const other = await joinAsSecondUser(browser, page, request)
 		// the owner's member list predates the teammate, so a reload picks
@@ -489,7 +489,9 @@ test.describe("review workflow", () => {
 
 		await expect(
 			other.page.getByText(
-				t("notification.messages.document-review-request-description"),
+				t("notification.messages.document-review-request-description", {
+					user: credentials.email.split("@")[0] ?? "",
+				}),
 			),
 		).toBeVisible()
 

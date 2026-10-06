@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/oxynote/oxynote/server/core/internal/document/hook/processor"
 	"github.com/oxynote/oxynote/server/core/pkg/testutil"
 	"github.com/oxynote/oxynote/server/core/pkg/timeutil"
 	"github.com/stretchr/testify/assert"
@@ -33,12 +34,20 @@ func Test_newNotification(t *testing.T) {
 func Test_Metadata_Value(t *testing.T) {
 	t.Parallel()
 
-	md := Metadata{MetaKeyUserID: "user1", "read": true}
+	md := Metadata{
+		MetaKeyUserID:       "user1",
+		"read":              true,
+		MetaKeyHookSettings: processor.Settings(`{"url":"https://example.com"}`),
+	}
 
 	v, err := md.Value()
 	require.NoError(t, err)
 
-	assert.JSONEq(t, `{"userId":"user1","read":true}`, string(v.([]byte)))
+	assert.JSONEq(
+		t,
+		`{"userId":"user1","read":true,"hookSettings":{"url":"https://example.com"}}`,
+		string(v.([]byte)),
+	)
 }
 
 func Test_Metadata_Scan(t *testing.T) {
