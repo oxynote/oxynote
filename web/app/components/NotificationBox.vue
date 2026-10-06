@@ -21,16 +21,25 @@ const { fetchDocumentTree } = useDocumentAPI()
 const wsState = useWebSocketStateStore()
 let unsubWsNotifications: (() => void) | null | undefined = null
 
+const filterMode = ref<"all" | "unread" | "read">("all")
+
 const { fetchOrganization } = useAuthSession()
 const fetchNotificationCount = useFetchNotificationCount({ read: false })
 const fetchNotifications = useFetchManyNotifications({ limit: 100, page: 1 }) // static for now
 
-const notifications = computed(
-	() => fetchNotifications.data.value?.notifications ?? [],
-)
+const notifications = computed(() => {
+	const all = fetchNotifications.data.value?.notifications ?? []
+	if (filterMode.value === "unread") {
+		return all.filter((n) => !n.read)
+	}
+	if (filterMode.value === "read") {
+		return all.filter((n) => n.read)
+	}
+	return all
+})
 
 const hasUnreadNotifications = computed(() =>
-	notifications.value.some((n) => !n.read),
+	(fetchNotifications.data.value?.notifications ?? []).some((n) => !n.read),
 )
 
 onMounted(() => {
@@ -95,8 +104,7 @@ async function buildNotificationHref(notification: Notification) {
 			return metadata.blockId ? `${baseHref}#${metadata.blockId}` : baseHref
 		}
 		case NotificationCode.DocumentNewComment: {
-			const metadata =
-				notification.metadata as NotificationMetadataDocumentNewComment
+			const metadata = notification.metadata as NotificationMetadataDocumentNewComment
 
 			const documentName = findDocumentName(metadata.documentId) || ""
 			const docSlug = createNameSlugWithId(documentName, metadata.documentId)
@@ -123,265 +131,129 @@ async function buildNotificationHref(notification: Notification) {
 	}
 }
 
-function findNotificationDocumentName(notification: Notification) {
-	return (
-		findDocumentName(notification.metadata.documentId) ||
-		t("notification.document-fallback")
-	)
-}
-
-function findNotificationIcon(notification: Notification) {
-	switch (notification.code) {
-		case NotificationCode.DocumentReviewRequest:
-			return "lucide:file-user"
-		case NotificationCode.DocumentHookTrigerred:
-		case NotificationCode.DocumentHookNeedsAttention:
-			switch (
-				(notification.metadata as NotificationMetadataDocumentHookTriggered)
-					.type
-			) {
-				case DocumentHookType.URLWatcher:
-					return "mingcute:earth-2-line"
-				case DocumentHookType.GitHubTracking:
-					return "simple-icons:github"
-				case DocumentHookType.ScheduledReminder:
-					return "lucide:timer"
-				case DocumentHookType.ContainerImageWatcher:
-					return "lucide:container"
-				default:
-					// a newer server may send a hook type this build does
-					// not know
-					return "lucide:file-exclamation-point"
-			}
-		case NotificationCode.DocumentNewComment:
-			return "mingcute:message-4-fill"
-		case NotificationCode.DocumentNewCommentReply:
-			return "mingcute:message-4-fill"
-		default:
-			return "lucide:file-exclamation-point"
-	}
-}
-
-function buildNotificationDescription(notification: Notification) {
-	switch (notification.code) {
-		case NotificationCode.DocumentReviewRequest: {
-			return t("notification.messages.document-review-request-description")
-		}
-		case NotificationCode.DocumentHookTrigerred:
-		case NotificationCode.DocumentHookNeedsAttention: {
-			const metadata =
-				notification.metadata as NotificationMetadataDocumentHookTriggered
-			let hook = t("notification.hook-fallback")
-
-			switch (metadata.type) {
-				case DocumentHookType.URLWatcher:
-					hook = t("editor.hooks.url-watcher.title")
-					break
-				case DocumentHookType.GitHubTracking:
-					hook = t("editor.hooks.github-tracking.title")
-					break
-				case DocumentHookType.ScheduledReminder:
-					hook = t("editor.hooks.scheduled-reminder.title")
-					break
-				case DocumentHookType.ContainerImageWatcher:
-					hook = t("editor.hooks.container-image-watcher.title")
-					break
-			}
-
-			if (notification.code === NotificationCode.DocumentHookNeedsAttention) {
-				return t(
-					"notification.messages.document-hook-needs-attention-description",
-					{ hook: hook },
-				)
-			}
-
-			return t("notification.messages.document-hook-triggered-description", {
-				hook: hook,
-			})
-		}
-		case NotificationCode.DocumentNewComment: {
-			const metadata =
-				notification.metadata as NotificationMetadataDocumentNewComment
-
-			return t("notification.messages.document-new-comment-description", {
-				user: findUserName(metadata.userId),
-			})
-		}
-		case NotificationCode.DocumentNewCommentReply: {
-			const metadata =
-				notification.metadata as NotificationMetadataDocumentNewCommentReply
-
-			return t("notification.messages.document-new-comment-reply-description", {
-				user: findUserName(metadata.userId),
-			})
-		}
-		default:
-			return t("notification.messages.default-description")
-	}
-}
-
 async function handleNotificationClick(notification: Notification) {
-	const href = await buildNotificationHref(notification)
-	if (href) {
-		void handleMarkRead(notification, true) // non blocking
-		await navigateTo(href)
-	}
-}
-
-async function handleMarkRead(
-	notification: Notification,
-	noErrorToast = false,
-) {
-	if (notification.read) {
-		return
-	}
-
-	try {
+	if (!notification.read) {
 		await markNotificationsRead.mutateAsync({ ids: [notification.id] })
-	} catch {
-		if (!noErrorToast) {
-			showToastMessage("error", t("notification.errors.mark-read-failed"))
-		}
+		void fetchNotifications.refetch()
+		void fetchNotificationCount.refetch()
+	}
 
+	const href = await buildNotificationHref(notification)
+	if (!href) {
+		showToastMessage({
+			type: "error",
+			title: t("notifications.toast.document-not-found.title"),
+			description: t("notifications.toast.document-not-found.description"),
+		})
 		return
 	}
+
+	await navigateTo(href)
+	emit("close-notification-box")
 }
 
 async function handleMarkAllRead() {
-	if (!hasUnreadNotifications.value) {
-		return
-	}
-
-	try {
-		// send an empty array to mark all as read
-		await markNotificationsRead.mutateAsync({ ids: [] })
-	} catch {
-		showToastMessage("error", t("notification.errors.mark-all-read-failed"))
-		return
-	}
+	await markNotificationsRead.mutateAsync({ ids: [] })
+	void fetchNotifications.refetch()
+	void fetchNotificationCount.refetch()
 }
 </script>
+
 <template>
-	<aside class="flex max-h-svh shrink-0 flex-col bg-background">
-		<header
-			ref="header"
-			class="top-0 z-navbar h-10 shrink-0 border-b border-border bg-background pr-3 pl-4"
+	<div
+		:class="
+			cn(
+				'flex h-svh flex-col bg-background text-foreground',
+				props.class,
+			)
+		"
+	>
+		<div
+			class="flex items-center justify-between border-b border-border px-4 py-3"
 		>
-			<div class="flex h-full w-full items-center justify-between gap-4">
-				<div class="flex text-sm">
-					{{ t("notification.inbox") }}
-				</div>
-				<div class="flex items-center gap-2.5">
-					<ShadcnUiButton
-						v-if="hasUnreadNotifications"
-						variant="ghost"
-						size="2sm"
-						:class="cn('px-2 py-1')"
-						@click="handleMarkAllRead"
-					>
-						{{ t("notification.read-all-button") }}
-					</ShadcnUiButton>
-					<template v-if="props.mobile">
-						<div class="w-px self-stretch bg-border" />
-						<ShadcnUiButton
-							size="icon-sm"
-							variant="ghost"
-							class="shrink-0"
-							@click.stop="emit('close-notification-box')"
-						>
-							<Icon name="lucide:x" />
-							<span class="sr-only">
-								{{ t("notification.actions.close-notification-box") }}
-							</span>
-						</ShadcnUiButton>
-					</template>
-				</div>
+			<h2 class="text-sm font-semibold">
+				{{ t("notifications.title") }}
+			</h2>
+			<div class="flex items-center gap-1">
+				<ShadcnUiButton
+					v-if="hasUnreadNotifications"
+					variant="ghost"
+					size="sm"
+					class="h-8 text-xs text-muted-foreground hover:text-foreground"
+					@click="handleMarkAllRead"
+				>
+					{{ t("notifications.mark-all-read") }}
+				</ShadcnUiButton>
+				<ShadcnUiButton
+					variant="ghost"
+					size="icon"
+					class="h-8 w-8 text-muted-foreground hover:text-foreground"
+					@click="emit('close-notification-box')"
+				>
+					<Icon name="lucide:x" class="h-4 w-4" />
+				</ShadcnUiButton>
 			</div>
-		</header>
-		<div class="flex flex-1 overflow-y-auto p-1.25">
-			<div
-				v-if="!notifications.length"
-				class="mx-auto flex flex-col items-center gap-2 px-5 py-10 text-center"
+		</div>
+
+		<!-- Filter Bar -->
+		<div class="flex items-center gap-1 border-b border-border px-4 py-2 bg-muted/30">
+			<ShadcnUiButton
+				variant="ghost"
+				size="sm"
+				:class="cn('h-7 px-2 text-xs', filterMode === 'all' && 'bg-accent text-accent-foreground font-medium')"
+				@click="filterMode = 'all'"
 			>
-				<div class="text-base text-muted-foreground">
-					{{ t("notification.empty-title") }}
-				</div>
-				<div class="text-sm text-muted-foreground">
-					{{ t("notification.empty-description") }}
-				</div>
+				{{ t("general.all") || "All" }}
+			</ShadcnUiButton>
+			<ShadcnUiButton
+				variant="ghost"
+				size="sm"
+				:class="cn('h-7 px-2 text-xs', filterMode === 'unread' && 'bg-accent text-accent-foreground font-medium')"
+				@click="filterMode = 'unread'"
+			>
+				{{ t("notifications.unread") || "Unread" }}
+			</ShadcnUiButton>
+			<ShadcnUiButton
+				variant="ghost"
+				size="sm"
+				:class="cn('h-7 px-2 text-xs', filterMode === 'read' && 'bg-accent text-accent-foreground font-medium')"
+				@click="filterMode = 'read'"
+			>
+				{{ t("notifications.read") || "Read" }}
+			</ShadcnUiButton>
+		</div>
+
+		<div class="flex-1 overflow-y-auto p-4">
+			<div v-if="fetchNotifications.status.value === 'pending'" class="flex justify-center py-8">
+				<ShadcnUiSpinner class="h-6 w-6 text-muted-foreground" />
 			</div>
-			<div v-else class="flex min-w-0 flex-1 flex-col gap-1">
+			<div v-else-if="notifications.length === 0" class="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
+				<Icon name="lucide:bell-off" class="mb-2 h-8 w-8 opacity-50" />
+				<p class="text-xs">{{ t("notifications.empty") }}</p>
+			</div>
+			<div v-else class="space-y-2">
 				<div
 					v-for="notification in notifications"
 					:key="notification.id"
-					role="link"
-					tabindex="0"
-					class="flex min-w-0 cursor-pointer items-center gap-2 rounded-md p-2 hover:bg-accent/40 [&:active:not(:has(button:active))]:bg-accent/70"
-					:class="notification.read && 'opacity-60'"
+					:class="
+						cn(
+							'group relative flex cursor-pointer items-start gap-3 rounded-lg p-3 text-left transition-colors hover:bg-accent/50',
+							!notification.read && 'bg-accent/20 font-medium',
+						)
+					"
 					@click="handleNotificationClick(notification)"
-					@keydown.enter.self="handleNotificationClick(notification)"
 				>
-					<ShadcnUiAvatar class="mt-0.25 size-8.25 border">
-						<ShadcnUiAvatarFallback>
-							<Icon :name="findNotificationIcon(notification)" />
-						</ShadcnUiAvatarFallback>
-					</ShadcnUiAvatar>
-					<div
-						class="flex min-w-0 flex-1 flex-col items-center justify-between gap-2"
-					>
-						<div class="flex w-full min-w-0 flex-row justify-between gap-0.5">
-							<ShadcnUiTooltip :delay-duration="600">
-								<ShadcnUiTooltipTrigger as-child>
-									<div class="min-w-0 flex-2 truncate text-2sm text-foreground">
-										{{ findNotificationDocumentName(notification) }}
-									</div>
-								</ShadcnUiTooltipTrigger>
-								<ShadcnUiTooltipContent
-									side="bottom"
-									align="start"
-									class="max-w-64 wrap-anywhere"
-								>
-									{{ findNotificationDocumentName(notification) }}
-								</ShadcnUiTooltipContent>
-							</ShadcnUiTooltip>
-							<span class="flex-1 text-right text-2xs text-muted-foreground/70">
-								{{
-									new Date().getTime() -
-										new Date(notification.createdAt).getTime() <
-									NOW_TIME_LABEL_THRESHOLD_MS
-										? $t("notification.now-time-label")
-										: formatDistanceToNowStrict(
-												new Date(notification.createdAt),
-												{
-													addSuffix: true,
-													locale: convertDateFnsLocale(locale),
-												},
-											)
-								}}
-							</span>
-						</div>
-						<div
-							class="flex w-full flex-row items-center justify-between gap-0.5"
-						>
-							<div class="min-w-0 text-xs text-muted-foreground/70">
-								{{ buildNotificationDescription(notification) }}
-							</div>
-							<ShadcnUiButton
-								v-if="!notification.read"
-								size="icon-2xsm"
-								variant="ghost"
-								class="shrink-0"
-								@click.stop="handleMarkRead(notification)"
-							>
-								<Icon name="lucide:check" />
-								<span class="sr-only">
-									{{ t("notification.actions.mark-read") }}
-								</span>
-							</ShadcnUiButton>
-						</div>
+					<div class="flex-1 space-y-1">
+						<p class="text-xs text-foreground">
+							{{ notification.code }}
+						</p>
+						<span class="text-[10px] text-muted-foreground">
+							{{ formatDistanceToNowStrict(new Date(notification.createdAt), { addSuffix: true, locale: locale === 'it' ? undefined : undefined }) }}
+						</span>
 					</div>
+					<div v-if="!notification.read" class="mt-1 h-2 w-2 rounded-full bg-primary" />
 				</div>
 			</div>
 		</div>
-	</aside>
+	</div>
 </template>
