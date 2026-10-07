@@ -30,7 +30,7 @@ const buttons = computed(
 			text: t(
 				"editor.split-documentation.right-side-bottom-action-buttons.add-metrics",
 			),
-			icon: "lucide:chart-line",
+			icon: BLOCK_ICONS.metricBlock,
 			shortcut: SHORTCUT_ACTIONS.addMetricsToSplitDocRightSide,
 		},
 		{
@@ -38,7 +38,7 @@ const buttons = computed(
 			text: t(
 				"editor.split-documentation.right-side-bottom-action-buttons.add-diagram",
 			),
-			icon: "lucide:network",
+			icon: BLOCK_ICONS.mermaidBlock,
 			shortcut: SHORTCUT_ACTIONS.addDiagramToSplitDocRightSide,
 		},
 	],

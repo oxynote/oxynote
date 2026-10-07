@@ -12,7 +12,6 @@ import HorizontalRule from "@tiptap/extension-horizontal-rule"
 import Bold from "@tiptap/extension-bold"
 import Code from "@tiptap/extension-code"
 import Italic from "@tiptap/extension-italic"
-import Link from "@tiptap/extension-link"
 import Strike from "@tiptap/extension-strike"
 import Underline from "@tiptap/extension-underline"
 import {
@@ -44,6 +43,7 @@ import {
 import UniqueID from "./tiptap-utils/unique-id"
 import { CommentMark, type CommentMarkOptions } from "./comments/comment-mark"
 import { COMMENT_MARK_NAME } from "./mark-names"
+import { LinkMark } from "./link/link-mark"
 import { defaultContentPlaceholder } from "./placeholder"
 import { MermaidBlock } from "./blocks/mermaid"
 import { FigmaBlock } from "./blocks/figma"
@@ -96,15 +96,7 @@ const nodeExtensions: Extensions = [
 	Bold,
 	Code,
 	Italic,
-	Link.configure({
-		openOnClick: false,
-		HTMLAttributes: {
-			class:
-				"text-primary underline underline-offset-2 hover:text-primary/80 cursor-pointer",
-		},
-	}).extend({
-		inclusive: false,
-	}),
+	LinkMark,
 	Strike,
 	Underline,
 	HorizontalRule.extend({

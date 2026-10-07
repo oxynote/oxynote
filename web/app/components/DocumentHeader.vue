@@ -96,7 +96,7 @@ async function toggleReviewability() {
 			await createDocumentBranch.mutateAsync({
 				docId: editorStore.activeDocumentId,
 				req: {
-					branch: "draft",
+					branch: DOCUMENT_DRAFT_BRANCH_NAME,
 					sourceBranchId: editorStore.mappedDefaultBranchId,
 				},
 			})
@@ -252,9 +252,7 @@ function activateBranch(branch: "default" | "draft") {
 									size="sm"
 									:class="cn('h-fit gap-0.75 px-2 py-1')"
 								>
-									{{
-										$t(`editor.navbar.document-modes.${activeBranchMode}.title`)
-									}}
+									{{ $t(`general.branch-labels.${activeBranchMode}`) }}
 									<Icon name="lucide:chevron-down" class="mt-0.5" />
 								</ShadcnUiButton>
 							</ShadcnUiDropdownMenuTrigger>
@@ -267,7 +265,7 @@ function activateBranch(branch: "default" | "draft") {
 								<ShadcnUiDropdownMenuItem @click="activateBranch('default')">
 									<div class="flex flex-col gap-0.5">
 										<div class="text-2sm font-medium">
-											{{ $t(`editor.navbar.document-modes.main.title`) }}
+											{{ $t(`general.branch-labels.main`) }}
 										</div>
 										<div class="text-xs text-muted-foreground">
 											{{ $t(`editor.navbar.document-modes.main.description`) }}
@@ -278,7 +276,7 @@ function activateBranch(branch: "default" | "draft") {
 								<ShadcnUiDropdownMenuItem @click="activateBranch('draft')">
 									<div class="flex flex-col gap-0.5">
 										<div class="text-2sm font-medium">
-											{{ $t(`editor.navbar.document-modes.draft.title`) }}
+											{{ $t(`general.branch-labels.draft`) }}
 										</div>
 										<div class="text-xs text-muted-foreground">
 											{{ $t(`editor.navbar.document-modes.draft.description`) }}

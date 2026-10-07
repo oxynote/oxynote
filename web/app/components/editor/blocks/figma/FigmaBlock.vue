@@ -294,7 +294,7 @@ onBeforeUnmount(() => {
 			"
 			@click="openPopover"
 		>
-			<Icon name="simple-icons:figma" class="size-4.5 text-foreground" />
+			<Icon :name="BLOCK_ICONS.figmaBlock" class="size-4.5 text-foreground" />
 			<DiffChangeMarker
 				:node="props.node"
 				class="absolute top-1/2 right-2 -translate-y-1/2"

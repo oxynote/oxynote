@@ -486,7 +486,7 @@ function openModal() {
 				<ShadcnUiEmpty v-if="config.dataSourceId">
 					<ShadcnUiEmptyHeader>
 						<ShadcnUiEmptyMedia variant="icon" class="size-9">
-							<Icon name="lucide:chart-line" class="size-6" />
+							<Icon :name="BLOCK_ICONS.metricBlock" class="size-6" />
 						</ShadcnUiEmptyMedia>
 						<ShadcnUiEmptyTitle>
 							{{ $t("editor.metrics.status.no-data-loaded.title") }}
@@ -530,7 +530,7 @@ function openModal() {
 				<ShadcnUiEmpty v-else>
 					<ShadcnUiEmptyHeader>
 						<ShadcnUiEmptyMedia variant="icon" class="size-9">
-							<Icon name="lucide:chart-line" class="size-6" />
+							<Icon :name="BLOCK_ICONS.metricBlock" class="size-6" />
 						</ShadcnUiEmptyMedia>
 						<ShadcnUiEmptyTitle>
 							{{ $t("editor.metrics.status.data-source-not-selected.title") }}
@@ -560,7 +560,7 @@ function openModal() {
 			<ShadcnUiEmpty v-else>
 				<ShadcnUiEmptyHeader>
 					<ShadcnUiEmptyMedia variant="icon" class="size-9">
-						<Icon name="lucide:chart-line" class="size-6" />
+						<Icon :name="BLOCK_ICONS.metricBlock" class="size-6" />
 					</ShadcnUiEmptyMedia>
 					<ShadcnUiEmptyTitle>
 						{{
@@ -596,7 +596,7 @@ function openModal() {
 			<ShadcnUiEmpty>
 				<ShadcnUiEmptyHeader>
 					<ShadcnUiEmptyMedia variant="icon" class="size-9">
-						<Icon name="lucide:chart-line" class="size-6" />
+						<Icon :name="BLOCK_ICONS.metricBlock" class="size-6" />
 					</ShadcnUiEmptyMedia>
 					<ShadcnUiEmptyTitle>
 						{{ $t("editor.metrics.status.query-error.title") }}
@@ -640,7 +640,7 @@ function openModal() {
 			<ShadcnUiEmpty>
 				<ShadcnUiEmptyHeader>
 					<ShadcnUiEmptyMedia variant="icon" class="size-9">
-						<Icon name="lucide:chart-line" class="size-6" />
+						<Icon :name="BLOCK_ICONS.metricBlock" class="size-6" />
 					</ShadcnUiEmptyMedia>
 					<ShadcnUiEmptyTitle>
 						{{ $t("editor.metrics.status.invalid-data.title") }}

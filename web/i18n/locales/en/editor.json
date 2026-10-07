@@ -65,11 +65,9 @@
 			"open-ai-assistant": "Open Rubber Duck",
 			"document-modes": {
 				"main": {
-					"title": "Main Version",
 					"description": "View the main version of the page"
 				},
 				"draft": {
-					"title": "Draft Version",
 					"description": "Edit, review, and manage the draft version of the page"
 				}
 			},

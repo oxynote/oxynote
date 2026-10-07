@@ -189,7 +189,7 @@ describe("contentExtensionsWithIDs", () => {
 			]
 
 			expect(rendered[0]).toBe("a")
-			expect(rendered[1].class).toContain("text-primary")
+			expect(rendered[1].class).toContain("text-link")
 			expect(rendered[1].href).toBe("https://example.com")
 		})
 	})

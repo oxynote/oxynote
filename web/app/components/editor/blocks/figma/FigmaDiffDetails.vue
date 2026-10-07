@@ -78,7 +78,7 @@ function describe(src: unknown) {
 			:empty-label="t('editor.figma.empty')"
 		>
 			<div class="flex w-full min-w-0 items-center gap-2 p-2">
-				<Icon name="simple-icons:figma" class="size-4 shrink-0" />
+				<Icon :name="BLOCK_ICONS.figmaBlock" class="size-4 shrink-0" />
 				<span class="flex min-w-0 flex-col">
 					<span class="line-clamp-6 text-xs font-medium break-words">
 						{{ value.name }}

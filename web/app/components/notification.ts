@@ -1,8 +1,4 @@
-import {
-	differenceInCalendarDays,
-	differenceInHours,
-	differenceInMinutes,
-} from "date-fns"
+import { differenceInCalendarDays } from "date-fns"
 import type { Notification } from "~/utils/api/notification"
 
 type Translate = (key: string, params?: Record<string, unknown>) => string
@@ -34,34 +30,6 @@ export function notificationDay(
 	}
 
 	return days === 1 ? "yesterday" : "earlier"
-}
-
-export function notificationTimeLabel(
-	createdAt: Date | string,
-	now: Date,
-	t: Translate,
-	d: FormatDate,
-): string {
-	const date = new Date(createdAt)
-	if (notificationDay(date, now) === "earlier") {
-		return d(date, "month-day-short")
-	}
-
-	const minutes = differenceInMinutes(now, date)
-	if (minutes < 1) {
-		return t("notification.now-time-label")
-	}
-
-	if (minutes < 60) {
-		return t("notification.time.minutes", { count: minutes })
-	}
-
-	const hours = differenceInHours(now, date)
-	if (hours < 24) {
-		return t("notification.time.hours", { count: hours })
-	}
-
-	return t("notification.time.days", { count: 1 })
 }
 
 export function hookNotificationLine(

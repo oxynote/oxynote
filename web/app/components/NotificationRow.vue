@@ -1,11 +1,7 @@
 <script lang="ts" setup>
 import type { Notification } from "~/utils/api/notification"
 import { cn } from "~/lib/utils"
-import {
-	hookNotificationLine,
-	notificationTimeLabel,
-	type NotificationActor,
-} from "./notification"
+import { hookNotificationLine, type NotificationActor } from "./notification"
 
 const props = defineProps<{
 	notification: Notification
@@ -70,7 +66,7 @@ const title = computed(
 	() => props.document?.documentName || t("notification.document-fallback"),
 )
 const timeLabel = computed(() =>
-	notificationTimeLabel(props.notification.createdAt, props.now, t, d),
+	relativeTimeLabel(props.notification.createdAt, props.now, t, d),
 )
 const hookLine = computed(() =>
 	isHook.value ? hookNotificationLine(props.notification, t, d) : null,

@@ -19,11 +19,11 @@ import Bold from "@tiptap/extension-bold"
 import Code from "@tiptap/extension-code"
 import Italic from "@tiptap/extension-italic"
 import Strike from "@tiptap/extension-strike"
-import Link from "@tiptap/extension-link"
 import { CodeBlock } from "../blocks/code-block"
 import { deletePendingCommentMarks } from "./comment-mark"
 import { deletePendingNodeComments } from "./node-comment-extension"
 import { COMMENT_MARK_NAME } from "../mark-names"
+import { LinkMark } from "../link/link-mark"
 import { DIFF_COMMENT_TX_META } from "../diff/diff-content-lock"
 
 const PENDING_COMMENT_ID = "pending"
@@ -55,15 +55,7 @@ export const CommentExtensions = [
 	Bold,
 	Code,
 	Italic,
-	Link.configure({
-		openOnClick: false,
-		HTMLAttributes: {
-			class:
-				"text-primary underline underline-offset-2 hover:text-primary/80 cursor-pointer",
-		},
-	}).extend({
-		inclusive: false,
-	}),
+	LinkMark,
 	Strike,
 	Underline,
 	HorizontalRule,

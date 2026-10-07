@@ -102,7 +102,7 @@ watchImmediate([debouncedSource, isDark], async ([source]) => {
 			<ShadcnUiEmpty>
 				<ShadcnUiEmptyHeader>
 					<ShadcnUiEmptyMedia variant="icon" class="size-9">
-						<Icon name="lucide:network" class="size-6" />
+						<Icon :name="BLOCK_ICONS.mermaidBlock" class="size-6" />
 					</ShadcnUiEmptyMedia>
 					<ShadcnUiEmptyTitle>
 						{{ t("editor.mermaid.preview.loading") }}
@@ -114,7 +114,7 @@ watchImmediate([debouncedSource, isDark], async ([source]) => {
 			<ShadcnUiEmpty>
 				<ShadcnUiEmptyHeader>
 					<ShadcnUiEmptyMedia variant="icon" class="size-9">
-						<Icon name="lucide:network" class="size-6" />
+						<Icon :name="BLOCK_ICONS.mermaidBlock" class="size-6" />
 					</ShadcnUiEmptyMedia>
 					<ShadcnUiEmptyTitle>
 						{{ t("editor.mermaid.preview.load-error") }}
@@ -131,7 +131,7 @@ watchImmediate([debouncedSource, isDark], async ([source]) => {
 			<ShadcnUiEmpty>
 				<ShadcnUiEmptyHeader>
 					<ShadcnUiEmptyMedia variant="icon" class="size-9">
-						<Icon name="lucide:network" class="size-6" />
+						<Icon :name="BLOCK_ICONS.mermaidBlock" class="size-6" />
 					</ShadcnUiEmptyMedia>
 					<ShadcnUiEmptyTitle>
 						{{ t("editor.mermaid.preview.render-error") }}
@@ -157,7 +157,7 @@ watchImmediate([debouncedSource, isDark], async ([source]) => {
 			<ShadcnUiEmpty>
 				<ShadcnUiEmptyHeader>
 					<ShadcnUiEmptyMedia variant="icon" class="size-9">
-						<Icon name="lucide:network" class="size-6" />
+						<Icon :name="BLOCK_ICONS.mermaidBlock" class="size-6" />
 					</ShadcnUiEmptyMedia>
 					<ShadcnUiEmptyTitle>
 						{{ t("editor.mermaid.preview.empty") }}

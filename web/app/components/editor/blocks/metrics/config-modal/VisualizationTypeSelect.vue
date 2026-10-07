@@ -47,7 +47,10 @@ function handleTypeSelection(type: GenericQueryChartType) {
 			"
 			@click="handleTypeSelection(GenericQueryChartType.Line)"
 		>
-			<Icon name="lucide:chart-line" class="size-5 shrink-0" />
+			<Icon
+				:name="METRIC_CHART_ICONS[GenericQueryChartType.Line]"
+				class="size-5 shrink-0"
+			/>
 			<span class="text-2sm text-foreground">
 				{{ $t("editor.metrics.config.type-options.line-chart.title") }}
 			</span>
@@ -75,7 +78,10 @@ function handleTypeSelection(type: GenericQueryChartType) {
 			"
 			@click="handleTypeSelection(GenericQueryChartType.Bar)"
 		>
-			<Icon name="lucide:bar-chart-3" class="size-5 shrink-0" />
+			<Icon
+				:name="METRIC_CHART_ICONS[GenericQueryChartType.Bar]"
+				class="size-5 shrink-0"
+			/>
 			<span class="text-2sm text-foreground">
 				{{ $t("editor.metrics.config.type-options.bar-chart.title") }}
 			</span>
@@ -103,7 +109,10 @@ function handleTypeSelection(type: GenericQueryChartType) {
 			"
 			@click="handleTypeSelection(GenericQueryChartType.Gauge)"
 		>
-			<Icon name="lucide:gauge" class="size-5.5 shrink-0" />
+			<Icon
+				:name="METRIC_CHART_ICONS[GenericQueryChartType.Gauge]"
+				class="size-5.5 shrink-0"
+			/>
 			<span class="text-2sm text-foreground">
 				{{ $t("editor.metrics.config.type-options.gauge-chart.title") }}
 			</span>

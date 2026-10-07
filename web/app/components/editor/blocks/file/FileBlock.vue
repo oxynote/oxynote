@@ -248,7 +248,7 @@ async function downloadOnDesktop() {
 			"
 			@click="openFilePicker"
 		>
-			<Icon name="mingcute:attachment-line" class="size-4 text-foreground" />
+			<Icon :name="BLOCK_ICONS.fileBlock" class="size-4 text-foreground" />
 			<div class="mt-0.25 text-2sm text-muted-foreground">
 				{{
 					uploading

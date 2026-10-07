@@ -18,6 +18,7 @@
 	--popover-foreground: oklch(0.2221 0 0);
 	--primary: oklch(0.3589 0.0697 258.28);
 	--primary-foreground: oklch(0.985 0 0);
+	--link: var(--primary);
 	--secondary: oklch(0.97 0 0);
 	--secondary-foreground: oklch(0.265 0 0);
 	--muted: oklch(0.97 0 0);
@@ -200,6 +201,7 @@
 	--popover-foreground: oklch(1 0 0);
 	--primary: oklch(0.3589 0.0697 258.28);
 	--primary-foreground: oklch(0.985 0 0);
+	--link: oklch(0.88 0.055 258.28);
 	--secondary: oklch(0.1398 0 0);
 	--secondary-foreground: oklch(1 0 0);
 	--muted: oklch(0.1398 0 0);
@@ -309,6 +311,7 @@
 	--color-popover-foreground: var(--popover-foreground);
 	--color-primary: var(--primary);
 	--color-primary-foreground: var(--primary-foreground);
+	--color-link: var(--link);
 	--color-secondary: var(--secondary);
 	--color-secondary-foreground: var(--secondary-foreground);
 	--color-muted: var(--muted);
@@ -422,7 +425,7 @@
 
 @layer utilities {
 	.link-primary {
-		@apply cursor-pointer text-primary underline underline-offset-2 hover:text-primary/80;
+		@apply cursor-pointer text-link underline underline-offset-2 hover:text-link/80;
 	}
 
 	.inline-code {

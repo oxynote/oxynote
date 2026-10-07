@@ -262,9 +262,11 @@ watchImmediate(
 
 		recordedBranchView = key
 
-		void recordBranchView(docId, branchId).catch((err: unknown) => {
-			console.error("Failed to record branch view:", err)
-		})
+		void recordBranchView
+			.mutateAsync({ docId: docId, branchId: branchId })
+			.catch((err: unknown) => {
+				console.error("Failed to record branch view:", err)
+			})
 	},
 )
 

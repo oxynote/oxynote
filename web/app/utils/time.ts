@@ -1,4 +1,9 @@
 import { CalendarDate } from "@internationalized/date"
+import {
+	differenceInCalendarDays,
+	differenceInHours,
+	differenceInMinutes,
+} from "date-fns"
 import { enUS, type Locale } from "date-fns/locale"
 
 const dateFnsLocales: Record<string, Locale> = {
@@ -79,4 +84,35 @@ export function roundDateToNearest5Seconds(date: Date | string): string {
 
 	// Return ISO string without milliseconds (strip .000Z and add Z)
 	return rounded.toISOString().replace(/\.\d{3}Z$/, "Z")
+}
+
+// relativeTimeLabel says in a few characters how long ago a moment was:
+// now, then minutes, hours and one day. Anything before yesterday, by the
+// calendar, shows its date instead.
+export function relativeTimeLabel(
+	date: Date | string,
+	now: Date,
+	t: (key: string, params?: Record<string, unknown>) => string,
+	d: (value: Date, format: string) => string,
+): string {
+	const then = new Date(date)
+	if (differenceInCalendarDays(now, then) > 1) {
+		return d(then, "month-day-short")
+	}
+
+	const minutes = differenceInMinutes(now, then)
+	if (minutes < 1) {
+		return t("general.relative-time.now")
+	}
+
+	if (minutes < 60) {
+		return t("general.relative-time.minutes", { count: minutes })
+	}
+
+	const hours = differenceInHours(now, then)
+	if (hours < 24) {
+		return t("general.relative-time.hours", { count: hours })
+	}
+
+	return t("general.relative-time.days", { count: 1 })
 }

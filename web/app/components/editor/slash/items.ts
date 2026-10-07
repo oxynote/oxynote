@@ -123,7 +123,7 @@ export const allItems: CommandItem[] = [
 		titleI18nKey: "editor.slash-commands.items.heading-1.title",
 		descriptionI18nKey: "editor.slash-commands.items.heading-1.description",
 		nodeType: Heading.name,
-		icon: "lucide:heading-1",
+		icon: HEADING_LEVEL_ICONS[1],
 		group: CommandGroup.Text,
 		shortcut: "# ",
 		command: ({ editor, range }: CommandData) => {
@@ -152,7 +152,7 @@ export const allItems: CommandItem[] = [
 		titleI18nKey: "editor.slash-commands.items.heading-2.title",
 		descriptionI18nKey: "editor.slash-commands.items.heading-2.description",
 		nodeType: Heading.name,
-		icon: "lucide:heading-2",
+		icon: HEADING_LEVEL_ICONS[2],
 		group: CommandGroup.Text,
 		shortcut: "## ",
 		command: ({ editor, range }: CommandData) => {
@@ -181,7 +181,7 @@ export const allItems: CommandItem[] = [
 		titleI18nKey: "editor.slash-commands.items.heading-3.title",
 		descriptionI18nKey: "editor.slash-commands.items.heading-3.description",
 		nodeType: Heading.name,
-		icon: "lucide:heading-3",
+		icon: HEADING_LEVEL_ICONS[3],
 		group: CommandGroup.Text,
 		shortcut: "### ",
 		command: ({ editor, range }: CommandData) => {
@@ -211,7 +211,7 @@ export const allItems: CommandItem[] = [
 		titleI18nKey: "editor.slash-commands.items.bulleted-list.title",
 		descriptionI18nKey: "editor.slash-commands.items.bulleted-list.description",
 		nodeType: BulletList.name,
-		icon: "lucide:list",
+		icon: BLOCK_ICONS.bulletList,
 		group: CommandGroup.List,
 		shortcut: "- ",
 		command: ({ editor, range }: CommandData) => {
@@ -235,7 +235,7 @@ export const allItems: CommandItem[] = [
 		titleI18nKey: "editor.slash-commands.items.numbered-list.title",
 		descriptionI18nKey: "editor.slash-commands.items.numbered-list.description",
 		nodeType: OrderedList.name,
-		icon: "lucide:list-ordered",
+		icon: BLOCK_ICONS.orderedList,
 		group: CommandGroup.List,
 		shortcut: "1. ",
 		command: ({ editor, range }: CommandData) => {
@@ -259,7 +259,7 @@ export const allItems: CommandItem[] = [
 		titleI18nKey: "editor.slash-commands.items.checklist.title",
 		descriptionI18nKey: "editor.slash-commands.items.checklist.description",
 		nodeType: TaskList.name,
-		icon: "lucide:list-checks",
+		icon: BLOCK_ICONS.taskList,
 		group: CommandGroup.List,
 		shortcut: "[] ",
 		command: ({ editor, range }: CommandData) => {
@@ -284,7 +284,7 @@ export const allItems: CommandItem[] = [
 		titleI18nKey: "editor.slash-commands.items.code-block.title",
 		descriptionI18nKey: "editor.slash-commands.items.code-block.description",
 		nodeType: CodeBlock.name,
-		icon: "lucide:square-code",
+		icon: BLOCK_ICONS.codeBlock,
 		group: CommandGroup.BasicBlock,
 		shortcut: "```",
 		command: ({ editor, range }: CommandData) => {
@@ -330,7 +330,7 @@ export const allItems: CommandItem[] = [
 		titleI18nKey: "editor.slash-commands.items.callout.title",
 		descriptionI18nKey: "editor.slash-commands.items.callout.description",
 		nodeType: CalloutBlock.name,
-		icon: "lucide:square-m",
+		icon: BLOCK_ICONS.calloutBlock,
 		group: CommandGroup.BasicBlock,
 		shortcut: "!!",
 		command: ({ editor, range }: CommandData) => {
@@ -376,7 +376,7 @@ export const allItems: CommandItem[] = [
 		titleI18nKey: "editor.slash-commands.items.image.title",
 		descriptionI18nKey: "editor.slash-commands.items.image.description",
 		nodeType: ImageBlock.name,
-		icon: "lucide:image",
+		icon: BLOCK_ICONS.imageBlock,
 		group: CommandGroup.BasicBlock,
 		command: ({ editor, range }: CommandData) => {
 			replaceParagraphWithEmptyBlock(editor, range, ImageBlock.name)
@@ -386,7 +386,7 @@ export const allItems: CommandItem[] = [
 		titleI18nKey: "editor.slash-commands.items.file.title",
 		descriptionI18nKey: "editor.slash-commands.items.file.description",
 		nodeType: FileBlock.name,
-		icon: "mingcute:attachment-line",
+		icon: BLOCK_ICONS.fileBlock,
 		group: CommandGroup.BasicBlock,
 		command: ({ editor, range }: CommandData) => {
 			replaceParagraphWithEmptyBlock(editor, range, FileBlock.name)
@@ -396,7 +396,7 @@ export const allItems: CommandItem[] = [
 		titleI18nKey: "editor.slash-commands.items.figma-embed.title",
 		descriptionI18nKey: "editor.slash-commands.items.figma-embed.description",
 		nodeType: FigmaBlock.name,
-		icon: "simple-icons:figma",
+		icon: BLOCK_ICONS.figmaBlock,
 		group: CommandGroup.BasicBlock,
 		command: ({ editor, range }: CommandData) => {
 			const { state, view } = editor
@@ -436,7 +436,7 @@ export const allItems: CommandItem[] = [
 		titleI18nKey: "editor.slash-commands.items.divider.title",
 		descriptionI18nKey: "editor.slash-commands.items.divider.description",
 		nodeType: HorizontalRule.name,
-		icon: "lucide:minus",
+		icon: BLOCK_ICONS.horizontalRule,
 		group: CommandGroup.BasicBlock,
 		shortcut: "---",
 		command: ({ editor, range }: CommandData) => {
@@ -480,7 +480,7 @@ export const allItems: CommandItem[] = [
 		descriptionI18nKey:
 			"editor.slash-commands.items.mermaid-diagram.description",
 		nodeType: MermaidBlock.name,
-		icon: "lucide:network",
+		icon: BLOCK_ICONS.mermaidBlock,
 		group: CommandGroup.PowerBlock,
 		command: ({ editor, range }: CommandData) => {
 			const { state, view } = editor
@@ -524,7 +524,7 @@ export const allItems: CommandItem[] = [
 		descriptionI18nKey:
 			"editor.slash-commands.items.split-documentation.description",
 		nodeType: SplitDocumentation.name,
-		icon: "lucide:square-split-horizontal",
+		icon: BLOCK_ICONS.splitDocumentation,
 		group: CommandGroup.PowerBlock,
 		shortcut: "||",
 		command: ({ editor, range }: CommandData) => {
@@ -549,7 +549,7 @@ export const allItems: CommandItem[] = [
 		titleI18nKey: "editor.slash-commands.items.live-metrics.title",
 		descriptionI18nKey: "editor.slash-commands.items.live-metrics.description",
 		nodeType: METRIC_BLOCK_NAME,
-		icon: "lucide:chart-line",
+		icon: BLOCK_ICONS.metricBlock,
 		group: CommandGroup.PowerBlock,
 		shortcut: "%%",
 		command: ({ editor, range }: CommandData) => {

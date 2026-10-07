@@ -44,7 +44,7 @@ export const buttonVariants = cva(
 					"data-[status=active]:bg-transparent data-[status=active]:text-accent-foreground/70 data-[status=active]:[&:not(:disabled):hover:not(:active)]:bg-transparent data-[status=active]:[&:not(:disabled):active]:bg-transparent",
 					"text-accent-foreground/30 bg-transparent [&:not(:disabled):hover:not(:active)]:bg-transparent [&:not(:disabled):hover:not(:active)]:text-accent-foreground/40 focus:bg-transparent focus:text-accent-foreground/50 dark:[&:not(:disabled):hover:not(:active)]:bg-transparent dark:focus:bg-transparent",
 				),
-				link: "text-primary underline-offset-4 [&:not(:disabled):hover:not(:active)]:underline",
+				link: "text-link underline-offset-4 [&:not(:disabled):hover:not(:active)]:underline",
 			},
 			size: {
 				default: "h-9 px-4 py-2 has-[>svg]:px-3",

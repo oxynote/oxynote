@@ -6,16 +6,10 @@
 		"empty-description": "You'll receive notifications here for page review invitations, triggered hooks, and more",
 		"document-fallback": "Deleted Page",
 		"hook-fallback": "Unknown",
-		"now-time-label": "now",
 		"days": {
 			"today": "Today",
 			"yesterday": "Yesterday",
 			"earlier": "Earlier"
-		},
-		"time": {
-			"minutes": "{count}m",
-			"hours": "{count}h",
-			"days": "{count}d"
 		},
 		"messages": {
 			"separator": "·",

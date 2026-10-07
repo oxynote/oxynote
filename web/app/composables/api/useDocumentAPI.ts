@@ -4,14 +4,18 @@ import type {
 	DocumentBranchCreateRequest,
 	DocumentBranchCreateResponse,
 	DocumentBranchesResponse,
+	DocumentBranchSearchResponse,
 	BranchReviewersResponse,
 	DocumentCreateRequest,
 	DocumentCreateResponse,
 	DocumentMaintainersResponse,
+	DocumentRecentsResponse,
+	DocumentSearchParams,
 	DocumentSearchResponse,
 	DocumentTreeElement,
 	DocumentTreeResponse,
 	DocumentTreeUpdateRequest,
+	DocumentViewSource,
 	MetricSimulationCheckResponse,
 } from "~/utils"
 import isDeepEqual from "fast-deep-equal"
@@ -27,6 +31,9 @@ export const DOCUMENT_QUERY_KEYS = {
 		["documents", docId, "maintainers"] as const,
 	branchReviewers: (docId: string, branchId: string) =>
 		["documents", docId, "branches", branchId, "reviewers"] as const,
+	search: (q: string, currentDocId: string | null) =>
+		["documents", "search", q, currentDocId] as const,
+	recent: (from: DocumentViewSource) => ["documents", "recent", from] as const,
 }
 
 export default function () {
@@ -536,28 +543,116 @@ export default function () {
 		},
 	})
 
-	async function searchDocuments(q: string): Promise<DocumentSearchResponse> {
-		// we don't want to use useQuery here as searches are
-		// typically one-off and we don't want to cache them
-		return await $coreAPIClient<DocumentSearchResponse>(
-			`/api/documents/search/legacy?q=${encodeURIComponent(q)}`,
-			{
-				method: "GET",
+	function useSearchDocuments(
+		paramsRef: MaybeRefOrGetter<DocumentSearchParams>,
+	) {
+		return useInfiniteQuery({
+			key: () => {
+				const params = toValue(paramsRef)
+
+				return DOCUMENT_QUERY_KEYS.search(params.q, params.currentDocId)
 			},
+			query: async ({ pageParam }) => {
+				const params = toValue(paramsRef)
+				const searchParams = new URLSearchParams({ q: params.q })
+
+				if (params.currentDocId) {
+					searchParams.set("currentDocId", params.currentDocId)
+				}
+
+				if (pageParam) {
+					searchParams.set("nextToken", pageParam)
+				}
+
+				return await $coreAPIClient<DocumentSearchResponse>(
+					`/api/documents/search?${searchParams.toString()}`,
+					{ method: "GET" },
+				)
+			},
+			initialPageParam: null as string | null,
+			getNextPageParam: (lastPage) => lastPage.nextToken,
+			enabled: () =>
+				toValue(paramsRef).q.length >= DOCUMENT_SEARCH_QUERY_MIN_LENGTH,
+			// the previous search stays on screen while the next one loads,
+			// but not across an emptied query
+			placeholderData: (previousData) =>
+				toValue(paramsRef).q ? previousData : undefined,
+			refetchOnWindowFocus: false,
+			refetchOnReconnect: false,
+			// a search is one-off, so its result is dropped once the query
+			// text moves on. Typing the same text again searches again.
+			gcTime: 0,
+		})
+	}
+
+	// loads the hits of one branch that come after the given token. The
+	// first token is the grouped result's nextHitsToken.
+	async function searchDocumentBranch(
+		docId: string,
+		branchId: string,
+		q: string,
+		nextToken: string,
+	): Promise<DocumentBranchSearchResponse> {
+		const searchParams = new URLSearchParams({ q, nextToken })
+
+		return await $coreAPIClient<DocumentBranchSearchResponse>(
+			`/api/documents/${docId}/branches/${branchId}/search?${searchParams.toString()}`,
+			{ method: "GET" },
 		)
 	}
 
-	// records that the user opened the branch, which search lists as
-	// recently viewed
-	async function recordBranchView(docId: string, branchId: string) {
-		if (!isXid(docId) || !isXid(branchId)) {
-			return
-		}
-
-		await $coreAPIClient(`/api/documents/${docId}/branches/${branchId}/views`, {
-			method: "POST",
+	// the branches the user opened most recently. A source other than
+	// "all" lists only the opens recorded with it
+	function useFetchRecentDocuments(
+		from: DocumentViewSource,
+		enabledRef: MaybeRefOrGetter<boolean>,
+	) {
+		return useQuery({
+			key: DOCUMENT_QUERY_KEYS.recent(from),
+			query: async () => {
+				return await $coreAPIClient<DocumentRecentsResponse>(
+					`/api/documents/recent?from=${from}`,
+					{ method: "GET" },
+				)
+			},
+			enabled: () => toValue(enabledRef),
+			refetchOnWindowFocus: false,
+			refetchOnReconnect: false,
+			staleTime: 60 * 1000, // 3 min
 		})
 	}
+
+	// records that the user opened the branch. An open that names its
+	// source also counts under "all", and changes that source's recent list.
+	const recordBranchView = useMutation({
+		mutation: async ({
+			docId,
+			branchId,
+			from,
+		}: {
+			docId: string
+			branchId: string
+			from?: DocumentViewSource
+		}) => {
+			if (!isXid(docId) || !isXid(branchId)) {
+				return
+			}
+
+			await $coreAPIClient(
+				`/api/documents/${docId}/branches/${branchId}/views${from ? `?from=${from}` : ""}`,
+				{ method: "POST" },
+			)
+		},
+		async onSuccess(_data, { docId, branchId, from }) {
+			if (!from || !isXid(docId) || !isXid(branchId)) {
+				return
+			}
+
+			await queryCache.invalidateQueries({
+				key: DOCUMENT_QUERY_KEYS.recent(from),
+			})
+		},
+	})
 
 	// runs a block, which core resolves from the stored branch and
 	// dispatches on its kind. For a metric block that means probing whether
@@ -1234,7 +1329,9 @@ export default function () {
 		updateDocumentTree,
 		createDocument,
 		duplicateDocument,
-		searchDocuments,
+		useSearchDocuments,
+		searchDocumentBranch,
+		useFetchRecentDocuments,
 		recordBranchView,
 		deleteDocument,
 		updateDocumentTreeElementCache,

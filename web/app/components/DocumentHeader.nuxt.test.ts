@@ -254,9 +254,7 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 
 		const wrapper = await mountHeader()
 
-		expect(wrapper.text()).toContain(
-			t("editor.navbar.document-modes.main.title"),
-		)
+		expect(wrapper.text()).toContain(t("general.branch-labels.main"))
 	})
 
 	it("offers no branch picker while the draft branch is still being created", async ({
@@ -269,9 +267,7 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 
 		const wrapper = await mountHeader()
 
-		expect(wrapper.text()).not.toContain(
-			t("editor.navbar.document-modes.main.title"),
-		)
+		expect(wrapper.text()).not.toContain(t("general.branch-labels.main"))
 	})
 
 	it("names the draft version when the draft branch is active", async ({
@@ -282,9 +278,7 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 
 		const wrapper = await mountHeader()
 
-		expect(wrapper.text()).toContain(
-			t("editor.navbar.document-modes.draft.title"),
-		)
+		expect(wrapper.text()).toContain(t("general.branch-labels.draft"))
 	})
 
 	it("falls back to the main version when the active branch is unknown", async ({
@@ -295,9 +289,7 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 
 		const wrapper = await mountHeader()
 
-		expect(wrapper.text()).toContain(
-			t("editor.navbar.document-modes.main.title"),
-		)
+		expect(wrapper.text()).toContain(t("general.branch-labels.main"))
 	})
 
 	it("switches to the draft branch from the version picker", async ({
@@ -308,7 +300,7 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 		const wrapper = await mountHeader()
 		await wrapper.get("[data-slot='dropdown-menu-trigger']").trigger("click")
 
-		menuItem(t("editor.navbar.document-modes.draft.title")).click()
+		menuItem(t("general.branch-labels.draft")).click()
 		await nextTick()
 
 		expect(editorStore.activeBranchId).toBe(DRAFT_BRANCH)
@@ -324,7 +316,7 @@ describe("<DocumentHeader>", { concurrent: false }, () => {
 		const wrapper = await mountHeader()
 		await wrapper.get("[data-slot='dropdown-menu-trigger']").trigger("click")
 
-		menuItem(t("editor.navbar.document-modes.main.title")).click()
+		menuItem(t("general.branch-labels.main")).click()
 		await nextTick()
 
 		expect(editorStore.activeBranchId).toBe(MAIN_BRANCH)

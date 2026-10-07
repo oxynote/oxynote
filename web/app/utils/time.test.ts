@@ -6,8 +6,13 @@ import {
 	dateToCalendarDate,
 	delay,
 	parseDurationString,
+	relativeTimeLabel,
 	roundDateToNearest5Seconds,
 } from "./time"
+
+// noon, so a moment from this morning and one from late last night fall on
+// different calendar days
+const NOW = new Date(2026, 2, 14, 12, 0, 0)
 
 describe("convertDateFnsLocale", () => {
 	it.for([
@@ -140,3 +145,64 @@ describe("roundDateToNearest5Seconds", () => {
 		).toBe("2024-06-15T12:00:05Z")
 	})
 })
+
+describe("relativeTimeLabel", () => {
+	it.for([
+		{
+			name: "says now within the first minute",
+			input: new Date(2026, 2, 14, 11, 59, 30),
+			expected: "general.relative-time.now",
+		},
+		{
+			name: "counts minutes within the first hour",
+			input: new Date(2026, 2, 14, 11, 55, 0),
+			expected: 'general.relative-time.minutes:{"count":5}',
+		},
+		{
+			name: "counts hours within the first day",
+			input: new Date(2026, 2, 14, 10, 0, 0),
+			expected: 'general.relative-time.hours:{"count":2}',
+		},
+		{
+			name: "counts hours for last night",
+			input: new Date(2026, 2, 13, 23, 0, 0),
+			expected: 'general.relative-time.hours:{"count":13}',
+		},
+		{
+			name: "counts one day once yesterday is a full day back",
+			input: new Date(2026, 2, 13, 9, 0, 0),
+			expected: 'general.relative-time.days:{"count":1}',
+		},
+		{
+			name: "shows the date before yesterday",
+			input: new Date(2026, 2, 10, 9, 0, 0),
+			expected: "month-day-short:2026-03-10",
+		},
+	])("$name", ({ input, expected }, { expect }) => {
+		expect(relativeTimeLabel(input, NOW, fakeT, fakeD)).toBe(expected)
+	})
+
+	it("accepts a moment written as a string", ({ expect }) => {
+		expect(
+			relativeTimeLabel(
+				new Date(2026, 2, 14, 10, 0, 0).toISOString(),
+				NOW,
+				fakeT,
+				fakeD,
+			),
+		).toBe('general.relative-time.hours:{"count":2}')
+	})
+})
+
+// answers with the key and its params, so a test reads which message the
+// helper picked and what it filled in
+function fakeT(key: string, params?: Record<string, unknown>) {
+	return params ? `${key}:${JSON.stringify(params)}` : key
+}
+
+function fakeD(value: Date, format: string) {
+	const month = String(value.getMonth() + 1).padStart(2, "0")
+	const day = String(value.getDate()).padStart(2, "0")
+
+	return `${format}:${String(value.getFullYear())}-${month}-${day}`
+}

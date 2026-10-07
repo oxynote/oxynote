@@ -274,7 +274,7 @@ onBeforeUnmount(() => {
 			"
 			@click="openFilePicker"
 		>
-			<Icon name="lucide:image" class="size-4.5 text-foreground" />
+			<Icon :name="BLOCK_ICONS.imageBlock" class="size-4.5 text-foreground" />
 			<DiffChangeMarker
 				:node="props.node"
 				class="absolute top-1/2 right-2 -translate-y-1/2"

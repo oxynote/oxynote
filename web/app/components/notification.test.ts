@@ -1,9 +1,5 @@
 import { describe, it } from "vitest"
-import {
-	hookNotificationLine,
-	notificationDay,
-	notificationTimeLabel,
-} from "./notification"
+import { hookNotificationLine, notificationDay } from "./notification"
 import { DocumentHookType } from "~/utils/api/document"
 import {
 	NotificationCode,
@@ -50,43 +46,6 @@ describe("notificationDay", () => {
 		expect(
 			notificationDay(new Date(2026, 2, 13, 8, 0, 0).toISOString(), NOW),
 		).toBe("yesterday")
-	})
-})
-
-describe("notificationTimeLabel", () => {
-	it.for([
-		{
-			name: "says now within the first minute",
-			input: new Date(2026, 2, 14, 11, 59, 30),
-			expected: "notification.now-time-label",
-		},
-		{
-			name: "counts minutes within the first hour",
-			input: new Date(2026, 2, 14, 11, 55, 0),
-			expected: 'notification.time.minutes:{"count":5}',
-		},
-		{
-			name: "counts hours within the first day",
-			input: new Date(2026, 2, 14, 10, 0, 0),
-			expected: 'notification.time.hours:{"count":2}',
-		},
-		{
-			name: "counts hours for last night",
-			input: new Date(2026, 2, 13, 23, 0, 0),
-			expected: 'notification.time.hours:{"count":13}',
-		},
-		{
-			name: "counts one day once yesterday is a full day back",
-			input: new Date(2026, 2, 13, 9, 0, 0),
-			expected: 'notification.time.days:{"count":1}',
-		},
-		{
-			name: "shows the date before yesterday",
-			input: new Date(2026, 2, 10, 9, 0, 0),
-			expected: "month-day-short:2026-03-10",
-		},
-	])("$name", ({ input, expected }, { expect }) => {
-		expect(notificationTimeLabel(input, NOW, fakeT, fakeD)).toBe(expected)
 	})
 })
 

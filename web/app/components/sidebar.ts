@@ -249,3 +249,29 @@ export function documentTreeBreadcrumbs(
 
 	return []
 }
+
+// documentTreeByLevel lists the tree one level at a time, the roots first.
+// Within a level every parent gives its first child before any parent
+// gives its second, so no branch of the tree fills the front alone.
+export function documentTreeByLevel(
+	tree: DocumentTreeElement[],
+): DocumentTreeElement[] {
+	const res: DocumentTreeElement[] = []
+	let level = tree
+
+	while (level.length) {
+		res.push(...level)
+
+		const families = level.map((elem) => elem.children ?? [])
+		const longest = Math.max(...families.map((family) => family.length))
+		const next: DocumentTreeElement[] = []
+
+		for (let i = 0; i < longest; i++) {
+			next.push(...families.flatMap((family) => family[i] ?? []))
+		}
+
+		level = next
+	}
+
+	return res
+}

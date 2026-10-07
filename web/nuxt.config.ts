@@ -1,4 +1,5 @@
 import tailwindcss from "@tailwindcss/vite"
+import { blockIconList } from "./app/utils/block-icon"
 import { selectableIconList } from "./app/utils/icon"
 
 // DESKTOP_BUILD selects how `__DESKTOP_BUILD__` is materialized in the bundle:
@@ -182,7 +183,12 @@ export default defineNuxtConfig({
 			// one on first use: inlined for SSR, fetched in batches after
 			// client-side navigation. The desktop build has no server to ask
 			// and loads from disk, so it bundles them and stays offline-safe
-			icons: isDesktopBuild ? selectableIconList() : [],
+			icons: [
+				// the block icons are named in a .ts file, which the scan
+				// below does not read
+				...blockIconList(),
+				...(isDesktopBuild ? selectableIconList() : []),
+			],
 			scan: true,
 			sizeLimitKb: 256,
 		},

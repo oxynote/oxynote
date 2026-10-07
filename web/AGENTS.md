@@ -140,6 +140,11 @@ render). vee-validate uses its own messages (see [README.md](README.md)).
   icon, loaded after the page's load event. Custom SVGs:
   [app/assets/custom-icons/](app/assets/custom-icons/), prefix
   `custom-icons:`.
+- A block's icon is defined once, in
+  [app/utils/block-icon.ts](app/utils/block-icon.ts) (also heading levels
+  and metric chart types). Never write a block's icon name anywhere else.
+  The icon scanner reads `.vue` files only, so an icon named only in a
+  `.ts` file has to be listed in `clientBundle.icons`, as that file's are.
 - Avoid `lucide:` icons where possible; the app is migrating off Lucide.
   MingCute (`mingcute:`) is one good source of alternatives.
 - **Every dialog and sheet renders a `DialogDescription`** (`sr-only` when

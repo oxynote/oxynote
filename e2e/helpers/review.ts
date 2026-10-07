@@ -11,7 +11,7 @@ type BranchName = "main" | "draft"
 // name a test asserts comes through here, so the message key — which
 // still spells the concept as a document mode — is written once.
 export function branchLabel(branch: BranchName): string {
-	return t(`editor.navbar.document-modes.${branch}.title`)
+	return t(`general.branch-labels.${branch}`)
 }
 
 // branchSwitcher is the navbar dropdown trigger naming the open branch

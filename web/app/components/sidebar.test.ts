@@ -2,6 +2,7 @@ import { describe, it } from "vitest"
 import {
 	SIDEBAR_ITEM_PLACEHOLDER_ID,
 	documentTreeBreadcrumbs,
+	documentTreeByLevel,
 	extractDocumentTreeElement,
 	processDocumentTree,
 	processTagTree,
@@ -419,5 +420,70 @@ describe("documentTreeBreadcrumbs", () => {
 
 	it("returns an empty array for an empty tree", ({ expect }) => {
 		expect(documentTreeBreadcrumbs([], ID_A)).toEqual([])
+	})
+})
+
+describe("documentTreeByLevel", () => {
+	it("lists the roots before any page below them", ({ expect }) => {
+		const tree = [
+			treeElement("a", "A", [treeElement("a1", "A1", [])]),
+			treeElement("b", "B", null),
+		]
+
+		expect(documentTreeByLevel(tree).map((elem) => elem.id)).toEqual([
+			"a",
+			"b",
+			"a1",
+		])
+	})
+
+	it("takes one child from every parent before a second from any", ({
+		expect,
+	}) => {
+		const tree = [
+			treeElement("a", "A", [
+				treeElement("a1", "A1", []),
+				treeElement("a2", "A2", []),
+				treeElement("a3", "A3", []),
+			]),
+			treeElement("b", "B", [treeElement("b1", "B1", [])]),
+			treeElement("c", "C", [
+				treeElement("c1", "C1", []),
+				treeElement("c2", "C2", []),
+			]),
+		]
+
+		expect(documentTreeByLevel(tree).map((elem) => elem.id)).toEqual([
+			"a",
+			"b",
+			"c",
+			"a1",
+			"b1",
+			"c1",
+			"a2",
+			"c2",
+			"a3",
+		])
+	})
+
+	it("finishes a level before it goes one deeper", ({ expect }) => {
+		const tree = [
+			treeElement("a", "A", [
+				treeElement("a1", "A1", [treeElement("a1x", "A1X", [])]),
+			]),
+			treeElement("b", "B", [treeElement("b1", "B1", [])]),
+		]
+
+		expect(documentTreeByLevel(tree).map((elem) => elem.id)).toEqual([
+			"a",
+			"b",
+			"a1",
+			"b1",
+			"a1x",
+		])
+	})
+
+	it("returns an empty array for an empty tree", ({ expect }) => {
+		expect(documentTreeByLevel([])).toEqual([])
 	})
 })

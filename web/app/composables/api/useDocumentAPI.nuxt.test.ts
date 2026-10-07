@@ -67,6 +67,28 @@ function makeElem(
 	}
 }
 
+// one page of the grouped search, with a result per branch id
+function makeSearchPage(branchIds: string[], nextToken: string | null) {
+	return {
+		total: { hits: 0, documents: branchIds.length, capped: false },
+		nextToken,
+		results: branchIds.map((branchId) => ({
+			document: {
+				id: DOC_ID,
+				title: "Doc A",
+				titleHtml: null,
+				icon: "icon-a",
+				branch: { id: branchId, name: "main", default: true },
+				updatedAt: "2026-01-01T00:00:00.000Z",
+				updatedBy: null,
+			},
+			hits: [],
+			totalHits: 0,
+			nextHitsToken: null,
+		})),
+	}
+}
+
 function makeBranch(branchId: string, branchName: string) {
 	return {
 		branchId,
@@ -795,21 +817,213 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 		})
 	})
 
-	describe("searchDocuments", () => {
-		it("searches with the encoded query", async ({ expect }) => {
-			const results = [{ id: "b1", documentId: DOC_ID }]
+	describe("useSearchDocuments", () => {
+		it("searches the first page for the query, ranking the open document first", async ({
+			expect,
+		}) => {
+			const page = makeSearchPage(["b1"], null)
 			const searchCalls = mockEndpoint(
 				"GET",
-				"/api/documents/search/legacy",
-				() => results,
+				"/api/documents/search",
+				() => page,
+			)
+			const api = makeDocumentAPI()
+			const search = runInApp(() =>
+				api.useSearchDocuments({ q: "a b/c", currentDocId: DOC_ID }),
+			)
+
+			const result = await search.refresh()
+
+			expect(result.data).toEqual({ pages: [page], pageParams: [null] })
+			expect(search.hasNextPage.value).toBe(false)
+			expect(searchCalls).toHaveLength(1)
+			expect(searchCalls[0]?.query).toEqual({
+				q: "a b/c",
+				currentDocId: DOC_ID,
+			})
+		})
+
+		it("names no document while none is open", async ({ expect }) => {
+			const searchCalls = mockEndpoint("GET", "/api/documents/search", () =>
+				makeSearchPage([], null),
+			)
+			const api = makeDocumentAPI()
+			const search = runInApp(() =>
+				api.useSearchDocuments({ q: "run", currentDocId: null }),
+			)
+
+			await search.refresh()
+
+			expect(searchCalls).toHaveLength(1)
+			expect(searchCalls[0]?.query).toEqual({ q: "run" })
+		})
+
+		it("does not search a query shorter than the search accepts", async ({
+			expect,
+		}) => {
+			const searchCalls = mockEndpoint("GET", "/api/documents/search", () =>
+				makeSearchPage([], null),
 			)
 			const api = makeDocumentAPI()
 
-			const result = await api.searchDocuments("a b/c")
+			const search = runInApp(() =>
+				api.useSearchDocuments({ q: "r", currentDocId: null }),
+			)
+			await flushPromises()
 
-			expect(result).toEqual(results)
+			expect(search.data.value).toBeUndefined()
+			expect(searchCalls).toHaveLength(0)
+		})
+
+		it("does not search while the query is empty", async ({ expect }) => {
+			const searchCalls = mockEndpoint("GET", "/api/documents/search", () =>
+				makeSearchPage([], null),
+			)
+			const api = makeDocumentAPI()
+
+			const search = runInApp(() =>
+				api.useSearchDocuments({ q: "", currentDocId: DOC_ID }),
+			)
+			await flushPromises()
+
+			expect(search.data.value).toBeUndefined()
+			expect(searchCalls).toHaveLength(0)
+		})
+
+		it("loads the next page with the token of the last one", async ({
+			expect,
+		}) => {
+			const first = makeSearchPage(["b1"], "token-2")
+			const second = makeSearchPage(["b2"], null)
+			const searchCalls = mockEndpoint(
+				"GET",
+				"/api/documents/search",
+				(call) => (call.query.nextToken ? second : first),
+			)
+			const api = makeDocumentAPI()
+			const search = runInApp(() =>
+				api.useSearchDocuments({ q: "run", currentDocId: null }),
+			)
+			await search.refresh()
+			expect(search.hasNextPage.value).toBe(true)
+
+			await search.loadNextPage()
+
+			expect(search.data.value).toEqual({
+				pages: [first, second],
+				pageParams: [null, "token-2"],
+			})
+			expect(search.hasNextPage.value).toBe(false)
+			expect(searchCalls).toHaveLength(2)
+			expect(searchCalls[1]?.query).toEqual({ q: "run", nextToken: "token-2" })
+		})
+
+		it("keeps the pages of the previous search while the next one loads", async ({
+			expect,
+		}) => {
+			const first = makeSearchPage(["b1"], null)
+			mockEndpoint("GET", "/api/documents/search", () => first)
+			const api = makeDocumentAPI()
+			const params = ref({ q: "run", currentDocId: null })
+			const search = runInApp(() => api.useSearchDocuments(params))
+			await search.refresh()
+			disposeMockEndpoints()
+			const pending = mockDeferredEndpoint("GET", "/api/documents/search")
+
+			params.value = { q: "runs", currentDocId: null }
+			await pending.reached
+
+			expect(search.isPlaceholderData.value).toBe(true)
+			expect(search.data.value).toEqual({ pages: [first], pageParams: [null] })
+
+			const second = makeSearchPage(["b2"], null)
+			pending.resolve(second)
+			await search.refresh()
+			expect(search.isPlaceholderData.value).toBe(false)
+			expect(search.data.value).toEqual({ pages: [second], pageParams: [null] })
+		})
+
+		it("keeps no pages across an emptied query", async ({ expect }) => {
+			mockEndpoint("GET", "/api/documents/search", () =>
+				makeSearchPage(["b1"], null),
+			)
+			const api = makeDocumentAPI()
+			const params = ref({ q: "run", currentDocId: null })
+			const search = runInApp(() => api.useSearchDocuments(params))
+			await search.refresh()
+
+			params.value = { q: "", currentDocId: null }
+			await flushPromises()
+
+			expect(search.data.value).toBeUndefined()
+		})
+	})
+
+	describe("searchDocumentBranch", () => {
+		it("asks for the hits of the branch that follow the token", async ({
+			expect,
+		}) => {
+			const page = {
+				totalHits: 9,
+				nextToken: null,
+				hits: [{ id: "p4", type: "paragraph", text: "a <mark>run</mark>" }],
+			}
+			const searchCalls = mockEndpoint(
+				"GET",
+				`/api/documents/${DOC_ID}/branches/${BRANCH_ID}/search`,
+				() => page,
+			)
+			const api = makeDocumentAPI()
+
+			const result = await api.searchDocumentBranch(
+				DOC_ID,
+				BRANCH_ID,
+				"a b/c",
+				"token-1",
+			)
+
+			expect(result).toEqual(page)
 			expect(searchCalls).toHaveLength(1)
-			expect(searchCalls[0]?.query).toEqual({ q: "a b/c" })
+			expect(searchCalls[0]?.query).toEqual({
+				q: "a b/c",
+				nextToken: "token-1",
+			})
+		})
+	})
+
+	describe("useFetchRecentDocuments", () => {
+		it("lists the branches opened from the given source", async ({
+			expect,
+		}) => {
+			const recent = {
+				results: [{ ...makeSearchPage(["b1"], null).results[0]?.document }],
+			}
+			const recentCalls = mockEndpoint(
+				"GET",
+				"/api/documents/recent",
+				() => recent,
+			)
+			const api = makeDocumentAPI()
+			const list = runInApp(() => api.useFetchRecentDocuments("search", true))
+
+			const result = await list.refresh()
+
+			expect(result.data).toEqual(recent)
+			expect(recentCalls).toHaveLength(1)
+			expect(recentCalls[0]?.query).toEqual({ from: "search" })
+		})
+
+		it("asks for nothing while it is switched off", async ({ expect }) => {
+			const recentCalls = mockEndpoint("GET", "/api/documents/recent", () => ({
+				results: [],
+			}))
+			const api = makeDocumentAPI()
+
+			const list = runInApp(() => api.useFetchRecentDocuments("search", false))
+			await flushPromises()
+
+			expect(list.data.value).toBeUndefined()
+			expect(recentCalls).toHaveLength(0)
 		})
 	})
 
@@ -822,9 +1036,62 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 			)
 			const api = makeDocumentAPI()
 
-			await api.recordBranchView(DOC_ID, BRANCH_ID)
+			await api.recordBranchView.mutateAsync({
+				docId: DOC_ID,
+				branchId: BRANCH_ID,
+			})
 
 			expect(viewCalls).toHaveLength(1)
+			expect(viewCalls[0]?.query).toEqual({})
+		})
+
+		it("names the source of the view and reloads that source's recent list", async ({
+			expect,
+		}) => {
+			const viewCalls = mockEndpoint(
+				"POST",
+				`/api/documents/${DOC_ID}/branches/${BRANCH_ID}/views`,
+				() => null,
+			)
+			const recentCalls = mockEndpoint("GET", "/api/documents/recent", () => ({
+				results: [],
+			}))
+			const api = makeDocumentAPI()
+			const list = runInApp(() => api.useFetchRecentDocuments("search", true))
+			await list.refresh()
+
+			await api.recordBranchView.mutateAsync({
+				docId: DOC_ID,
+				branchId: BRANCH_ID,
+				from: "search",
+			})
+
+			expect(viewCalls).toHaveLength(1)
+			expect(viewCalls[0]?.query).toEqual({ from: "search" })
+			expect(recentCalls).toHaveLength(2)
+		})
+
+		it("leaves the recent list alone when the view names no source", async ({
+			expect,
+		}) => {
+			mockEndpoint(
+				"POST",
+				`/api/documents/${DOC_ID}/branches/${BRANCH_ID}/views`,
+				() => null,
+			)
+			const recentCalls = mockEndpoint("GET", "/api/documents/recent", () => ({
+				results: [],
+			}))
+			const api = makeDocumentAPI()
+			const list = runInApp(() => api.useFetchRecentDocuments("search", true))
+			await list.refresh()
+
+			await api.recordBranchView.mutateAsync({
+				docId: DOC_ID,
+				branchId: BRANCH_ID,
+			})
+
+			expect(recentCalls).toHaveLength(1)
 		})
 
 		it("bails out for a non-xid branch id without a request", async ({
@@ -837,7 +1104,10 @@ describe("useDocumentAPI", { concurrent: false }, () => {
 			)
 			const api = makeDocumentAPI()
 
-			await api.recordBranchView(DOC_ID, "optimistic")
+			await api.recordBranchView.mutateAsync({
+				docId: DOC_ID,
+				branchId: "optimistic",
+			})
 
 			expect(viewCalls).toHaveLength(0)
 		})

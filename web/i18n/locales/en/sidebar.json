@@ -71,14 +71,40 @@
 			"update-tag-failed": "Failed to update the tag. Please try again",
 			"delete-tag-failed": "Failed to delete the tag. Please try again",
 			"remove-document-tag-failed": "Failed to remove the tag from the page. Please try again",
-			"signout-failed": "Failed to log out. Please try again"
+			"signout-failed": "Failed to log out. Please try again",
+			"search-more-matches-failed": "Failed to load more matches. Please try again"
 		},
 		"search": {
 			"title-screen-reader-hint": "Search for Pages",
 			"description-screen-reader-hint": "Search for pages by title or content",
-			"input-placeholder": "Search for pages...",
+			"input-placeholder": "Search pages, headings, code…",
 			"empty-state": "Start typing to search for pages...",
-			"no-results": "No results found for {query}"
+			"recent": "Recent",
+			"suggested": "Suggested",
+			"suggested-tooltip": "Picked for you from this workspace",
+			"viewed-tooltip": "Last opened on {date}",
+			"updated-tooltip": "Last edited on {date}",
+			"updated-by-tooltip": "Last edited by {user} on {date}",
+			"no-results": "No matches for “{query}”",
+			"no-results-description": "Try a shorter word or check the spelling.",
+			"current-page": "Current page",
+			"updated-by-you": "you",
+			"updated-meta": "{user} · {time}",
+			"breadcrumb-separator": "/",
+			"breadcrumb-collapsed": "…",
+			"metric-source": "({source})",
+			"more-matches": "{count} more match… | {count} more matches…",
+			"hints": {
+				"navigate": "navigate",
+				"open": "open",
+				"new-tab": "new tab"
+			},
+			"total": "{matches} · {pages}",
+			"total-matches": "{count} match | {count} matches",
+			"total-matches-capped": "{count}+ matches",
+			"total-pages": "{count} page | {count} pages",
+			"total-pages-capped": "{count}+ pages",
+			"total-thousands": "{count}k"
 		},
 		"notification-sheet": {
 			"title": "Inbox",

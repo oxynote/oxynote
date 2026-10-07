@@ -50,7 +50,9 @@ describe("<NotificationRow>", () => {
 	it("shows how long ago the notification arrived", async ({ expect }) => {
 		const wrapper = await mountRow({ createdAt: "2026-03-14T10:00:00Z" })
 
-		expect(wrapper.text()).toContain(t("notification.time.hours", { count: 2 }))
+		expect(wrapper.text()).toContain(
+			t("general.relative-time.hours", { count: 2 }),
+		)
 	})
 
 	it("marks an unread notification with a dot and a bold title", async ({
