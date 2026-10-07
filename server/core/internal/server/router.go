@@ -301,6 +301,7 @@ func (s *Server) router() chi.Router {
 	r.Route("/documents", func(sr chi.Router) {
 		sr.Get("/search", s.handlers.document.SearchDocuments)
 		sr.Get("/search/legacy", s.handlers.document.SearchDocumentsLegacy)
+		sr.Get("/recent", s.handlers.document.FetchRecentlyViewedDocuments)
 		sr.Post("/", s.handlers.document.CreateDocument)
 		sr.Route("/{documentId}", func(ssr chi.Router) {
 			ssr.Use(s.handlers.document.RequireDocumentAccess)

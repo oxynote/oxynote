@@ -171,7 +171,7 @@ type groupEntries struct {
 // request. A page token is an offset into that order. Only the page's
 // own entries are then read in full and highlighted.
 func (i *Index) SearchGroups(ctx context.Context, gq GroupQuery) (GroupPage, error) {
-	if err := ValidateQuery(gq.Query); err != nil {
+	if err := validatePagedQuery(gq.Query); err != nil {
 		return GroupPage{}, err
 	}
 

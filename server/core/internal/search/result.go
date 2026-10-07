@@ -66,26 +66,6 @@ func NewResponse(page GroupPage, docs []document.Document) Response {
 	return res
 }
 
-// NewRecentResponse lists the documents with no hits, as the search
-// endpoint answers an empty query.
-func NewRecentResponse(docs []document.Document) Response {
-	res := Response{
-		Total: ResponseTotal{
-			Documents: len(docs),
-		},
-		Results: make([]Result, 0, len(docs)),
-	}
-
-	for _, doc := range docs {
-		res.Results = append(res.Results, Result{
-			Document: newResultDocument(doc),
-			Hits:     []ResultHit{},
-		})
-	}
-
-	return res
-}
-
 // ResponseTotal holds the counts across every page of a search.
 type ResponseTotal struct {
 	// Hits specifies the number of matching blocks, document names

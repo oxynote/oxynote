@@ -132,50 +132,6 @@ func Test_NewResponse(t *testing.T) {
 	}`, string(data))
 }
 
-func Test_NewRecentResponse(t *testing.T) {
-	t.Parallel()
-
-	updatedAt := time.Date(2026, 10, 4, 9, 12, 41, 0, time.UTC)
-
-	doc := document.Document{
-		ID:            xid.New(),
-		BranchID:      xid.New(),
-		BranchName:    "main",
-		DocumentName:  "Shipments",
-		Icon:          "truck",
-		Default:       true,
-		UpdatedAt:     updatedAt,
-		LastUpdatedBy: null.StringFrom("usr-1"),
-	}
-
-	data, err := json.Marshal(NewRecentResponse(nil))
-	require.NoError(t, err)
-	assert.JSONEq(t, `{"total": {"hits": 0, "documents": 0, "capped": false}, "nextToken": null, "results": []}`, string(data))
-
-	data, err = json.Marshal(NewRecentResponse([]document.Document{doc}))
-	require.NoError(t, err)
-	assert.JSONEq(t, `{
-		"total": {"hits": 0, "documents": 1, "capped": false},
-		"nextToken": null,
-		"results": [
-			{
-				"document": {
-					"id": "`+doc.ID.String()+`",
-					"title": "Shipments",
-					"titleHtml": null,
-					"icon": "truck",
-					"branch": {"id": "`+doc.BranchID.String()+`", "name": "main", "default": true},
-					"updatedAt": "2026-10-04T09:12:41Z",
-					"updatedBy": "usr-1"
-				},
-				"hits": [],
-				"totalHits": 0,
-				"nextHitsToken": null
-			}
-		]
-	}`, string(data))
-}
-
 func Test_NewBranchResponse(t *testing.T) {
 	t.Parallel()
 

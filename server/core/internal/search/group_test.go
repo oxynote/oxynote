@@ -191,6 +191,10 @@ func Test_Index_SearchGroups(t *testing.T) {
 			Query: GroupQuery{OrganizationID: "org-1"},
 			Err:   ErrInvalidQuery,
 		},
+		"Short query": {
+			Query: GroupQuery{OrganizationID: "org-1", Query: "s"},
+			Err:   ErrInvalidQuery,
+		},
 		"Invalid page token": {
 			Query: GroupQuery{OrganizationID: "org-1", Query: "shipment", PageToken: "%%%"},
 			Err:   ErrInvalidPageToken,

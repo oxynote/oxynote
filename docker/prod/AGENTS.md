@@ -33,6 +33,10 @@ mailpit, since the example runs without email.
   `linux/arm64`. Local builds (`prod-build`, `e2e-prod`) target only the
   Docker engine's own architecture, so CI's release gate tests amd64
   alone.
+- **`server.json`** is the image's entry in the official MCP Registry.
+  After a release, set its `version` to the tag and run
+  `mcp-publisher publish docker/prod/server.json`. The URL path must match
+  the Caddyfile's `/core` route.
 
 ## Invariants
 

@@ -499,8 +499,7 @@ func (h *Handler) FetchDocumentTree(w http.ResponseWriter, r *http.Request) {
 }
 
 // SearchDocuments handles the search for document branches matching a
-// query, one page at a time. An empty query lists the branches the user
-// viewed most recently instead.
+// query, one page at a time.
 func (h *Handler) SearchDocuments(w http.ResponseWriter, r *http.Request) {
 	session, ok := auth.RequireSession(h.log, w, r)
 	if !ok {
@@ -520,24 +519,10 @@ func (h *Handler) SearchDocuments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit := search.GroupLimit(inp.Limit)
-
-	if inp.Query == "" {
-		docs, err := h.db.FetchRecentlyViewedDocuments(r.Context(), session.UserID, session.ActiveOrganizationID, limit)
-		if err != nil {
-			httpserver.RespondError(h.log, w, err)
-			return
-		}
-
-		httpserver.Respond(h.log, w, search.NewRecentResponse(docs), http.StatusOK)
-
-		return
-	}
-
 	gq := search.GroupQuery{
 		OrganizationID: session.ActiveOrganizationID,
 		Query:          inp.Query,
-		Limit:          limit,
+		Limit:          search.GroupLimit(inp.Limit),
 		HitsLimit:      inp.HitsLimit,
 		PageToken:      inp.NextToken,
 	}
@@ -559,6 +544,42 @@ func (h *Handler) SearchDocuments(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httpserver.Respond(h.log, w, search.NewResponse(page, docs), http.StatusOK)
+}
+
+// FetchRecentlyViewedDocuments handles the listing of the document
+// branches the user opened most recently, from anywhere unless the
+// request names an origin.
+func (h *Handler) FetchRecentlyViewedDocuments(w http.ResponseWriter, r *http.Request) {
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
+		return
+	}
+
+	inp := struct {
+		From  search.ViewFrom `schema:"from"`
+		Limit int             `schema:"limit"`
+	}{
+		From: search.ViewFromAll,
+	}
+
+	if err := httpserver.DecodeForm(r, &inp); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	docs, err := h.db.FetchRecentlyViewedDocuments(
+		r.Context(),
+		session.UserID,
+		session.ActiveOrganizationID,
+		inp.From,
+		search.GroupLimit(inp.Limit),
+	)
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	httpserver.Respond(h.log, w, search.NewRecentResponse(docs), http.StatusOK)
 }
 
 // SearchDocumentsLegacy handles the search for blocks matching a query,
@@ -1117,18 +1138,26 @@ type BranchesDBAgent interface {
 // document branch views database.
 type BranchViewsDBAgent interface {
 	// UpsertDocumentBranchView should record that the user viewed the
-	// branch at the given time.
+	// branch from the given origin at the given time.
 	UpsertDocumentBranchView(
 		ctx context.Context,
 		userID string,
 		organizationID string,
 		branchID xid.ID,
+		from search.ViewFrom,
 		viewedAt time.Time,
 	) error
 
 	// FetchRecentlyViewedDocuments should fetch up to limit branches the
-	// user viewed in the organization, most recent first.
-	FetchRecentlyViewedDocuments(ctx context.Context, userID, organizationID string, limit int) ([]documentCore.Document, error)
+	// user viewed from the given origin in the organization, most recent
+	// first.
+	FetchRecentlyViewedDocuments(
+		ctx context.Context,
+		userID string,
+		organizationID string,
+		from search.ViewFrom,
+		limit int,
+	) ([]search.RecentDocument, error)
 }
 
 // TreeDBAgent is an interface that handles communication with the document

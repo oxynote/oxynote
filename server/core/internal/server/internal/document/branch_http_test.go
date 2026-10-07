@@ -1352,18 +1352,30 @@ func Test_Handler_UpdateDocumentBranch(t *testing.T) {
 }
 
 func Test_Handler_RecordDocumentBranchView(t *testing.T) {
+	// stubBranch answers the branch lookup with a branch of the document.
+	stubBranch := func(context.Context, xid.ID, string) (*documentCore.Document, error) {
+		return branchDoc(_branchID), nil
+	}
+
 	cc := map[string]struct {
 		DB         *DBMock
 		NoSession  bool
 		OmitDoc    bool
 		OmitBranch bool
+		Query      string
 		RespCode   int
 		Upserted   int
+		From       search.ViewFrom
 	}{
 		"No session in context": {
 			DB:        &DBMock{},
 			NoSession: true,
 			RespCode:  http.StatusUnauthorized,
+		},
+		"Invalid origin": {
+			DB:       &DBMock{},
+			Query:    "from=tree",
+			RespCode: http.StatusBadRequest,
 		},
 		"Missing document ID parameter": {
 			DB:       &DBMock{},
@@ -1396,24 +1408,31 @@ func Test_Handler_RecordDocumentBranchView(t *testing.T) {
 		},
 		"Error returned by DB.UpsertDocumentBranchView": {
 			DB: &DBMock{
-				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
-					return branchDoc(_branchID), nil
-				},
-				UpsertDocumentBranchViewFunc: func(context.Context, string, string, xid.ID, time.Time) error {
+				FetchDocumentByBranchIDFunc: stubBranch,
+				UpsertDocumentBranchViewFunc: func(context.Context, string, string, xid.ID, search.ViewFrom, time.Time) error {
 					return assert.AnError
 				},
 			},
 			RespCode: http.StatusInternalServerError,
 			Upserted: 1,
+			From:     search.ViewFromAll,
 		},
 		"Successful record": {
 			DB: &DBMock{
-				FetchDocumentByBranchIDFunc: func(context.Context, xid.ID, string) (*documentCore.Document, error) {
-					return branchDoc(_branchID), nil
-				},
+				FetchDocumentByBranchIDFunc: stubBranch,
 			},
 			RespCode: http.StatusNoContent,
 			Upserted: 1,
+			From:     search.ViewFromAll,
+		},
+		"Successful record from search": {
+			DB: &DBMock{
+				FetchDocumentByBranchIDFunc: stubBranch,
+			},
+			Query:    "from=search",
+			RespCode: http.StatusNoContent,
+			Upserted: 1,
+			From:     search.ViewFromSearch,
 		},
 	}
 
@@ -1423,9 +1442,12 @@ func Test_Handler_RecordDocumentBranchView(t *testing.T) {
 
 			hdl, _ := newTestHandler(c.DB, &fakePublisher{})
 
+			req := newRequest(http.MethodPost, "", c.NoSession, c.OmitDoc, c.OmitBranch)
+			req.URL.RawQuery = c.Query
+
 			rec := httptest.NewRecorder()
 
-			hdl.RecordDocumentBranchView(rec, newRequest(http.MethodPost, "", c.NoSession, c.OmitDoc, c.OmitBranch))
+			hdl.RecordDocumentBranchView(rec, req)
 
 			assert.Equal(t, c.RespCode, rec.Code)
 
@@ -1439,6 +1461,7 @@ func Test_Handler_RecordDocumentBranchView(t *testing.T) {
 			assert.Equal(t, "u1", ff[0].UserID)
 			assert.Equal(t, "org1", ff[0].OrganizationID)
 			assert.Equal(t, _branchID, ff[0].BranchID)
+			assert.Equal(t, c.From, ff[0].From)
 			assert.False(t, ff[0].ViewedAt.IsZero())
 
 			if c.RespCode == http.StatusNoContent {

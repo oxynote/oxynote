@@ -622,10 +622,21 @@ func (h *Handler) DeleteDocumentBranch(w http.ResponseWriter, r *http.Request) {
 }
 
 // RecordDocumentBranchView handles recording that the user opened a
-// document branch.
+// document branch, from anywhere unless the request names an origin.
 func (h *Handler) RecordDocumentBranchView(w http.ResponseWriter, r *http.Request) {
 	session, ok := auth.RequireSession(h.log, w, r)
 	if !ok {
+		return
+	}
+
+	inp := struct {
+		From search.ViewFrom `schema:"from"`
+	}{
+		From: search.ViewFromAll,
+	}
+
+	if err := httpserver.DecodeForm(r, &inp); err != nil {
+		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
@@ -657,6 +668,7 @@ func (h *Handler) RecordDocumentBranchView(w http.ResponseWriter, r *http.Reques
 		session.UserID,
 		session.ActiveOrganizationID,
 		branchID,
+		inp.From,
 		timeutil.Now(),
 	); err != nil {
 		httpserver.RespondError(h.log, w, err)

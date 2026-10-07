@@ -98,7 +98,7 @@ var _ Tx = &TxMock{}
 //			FetchDocumentsByBranchIDsFunc: func(ctx context.Context, branchIDs []xid.ID, organizationID string) ([]documentCore.Document, error) {
 //				panic("mock out the FetchDocumentsByBranchIDs method")
 //			},
-//			FetchRecentlyViewedDocumentsFunc: func(ctx context.Context, userID string, organizationID string, limit int) ([]documentCore.Document, error) {
+//			FetchRecentlyViewedDocumentsFunc: func(ctx context.Context, userID string, organizationID string, from search.ViewFrom, limit int) ([]search.RecentDocument, error) {
 //				panic("mock out the FetchRecentlyViewedDocuments method")
 //			},
 //			InsertBranchReviewerFunc: func(ctx context.Context, reviewer documentCore.BranchReviewer) error {
@@ -146,7 +146,7 @@ var _ Tx = &TxMock{}
 //			UpdateDocumentTreeFunc: func(ctx context.Context, ss documentCore.Summaries, organizationID string) error {
 //				panic("mock out the UpdateDocumentTree method")
 //			},
-//			UpsertDocumentBranchViewFunc: func(ctx context.Context, userID string, organizationID string, branchID xid.ID, viewedAt time.Time) error {
+//			UpsertDocumentBranchViewFunc: func(ctx context.Context, userID string, organizationID string, branchID xid.ID, from search.ViewFrom, viewedAt time.Time) error {
 //				panic("mock out the UpsertDocumentBranchView method")
 //			},
 //			UpsertDocumentMaintainersFunc: func(ctx context.Context, documentID xid.ID, organizationID string, maintainerIDs []string) error {
@@ -232,7 +232,7 @@ type TxMock struct {
 	FetchDocumentsByBranchIDsFunc func(ctx context.Context, branchIDs []xid.ID, organizationID string) ([]documentCore.Document, error)
 
 	// FetchRecentlyViewedDocumentsFunc mocks the FetchRecentlyViewedDocuments method.
-	FetchRecentlyViewedDocumentsFunc func(ctx context.Context, userID string, organizationID string, limit int) ([]documentCore.Document, error)
+	FetchRecentlyViewedDocumentsFunc func(ctx context.Context, userID string, organizationID string, from search.ViewFrom, limit int) ([]search.RecentDocument, error)
 
 	// InsertBranchReviewerFunc mocks the InsertBranchReviewer method.
 	InsertBranchReviewerFunc func(ctx context.Context, reviewer documentCore.BranchReviewer) error
@@ -280,7 +280,7 @@ type TxMock struct {
 	UpdateDocumentTreeFunc func(ctx context.Context, ss documentCore.Summaries, organizationID string) error
 
 	// UpsertDocumentBranchViewFunc mocks the UpsertDocumentBranchView method.
-	UpsertDocumentBranchViewFunc func(ctx context.Context, userID string, organizationID string, branchID xid.ID, viewedAt time.Time) error
+	UpsertDocumentBranchViewFunc func(ctx context.Context, userID string, organizationID string, branchID xid.ID, from search.ViewFrom, viewedAt time.Time) error
 
 	// UpsertDocumentMaintainersFunc mocks the UpsertDocumentMaintainers method.
 	UpsertDocumentMaintainersFunc func(ctx context.Context, documentID xid.ID, organizationID string, maintainerIDs []string) error
@@ -509,6 +509,8 @@ type TxMock struct {
 			UserID string
 			// OrganizationID is the organizationID argument value.
 			OrganizationID string
+			// From is the from argument value.
+			From search.ViewFrom
 			// Limit is the limit argument value.
 			Limit int
 		}
@@ -643,6 +645,8 @@ type TxMock struct {
 			OrganizationID string
 			// BranchID is the branchID argument value.
 			BranchID xid.ID
+			// From is the from argument value.
+			From search.ViewFrom
 			// ViewedAt is the viewedAt argument value.
 			ViewedAt time.Time
 		}
@@ -1747,16 +1751,18 @@ func (mock *TxMock) FetchDocumentsByBranchIDsCalls() []struct {
 }
 
 // FetchRecentlyViewedDocuments calls FetchRecentlyViewedDocumentsFunc.
-func (mock *TxMock) FetchRecentlyViewedDocuments(ctx context.Context, userID string, organizationID string, limit int) ([]documentCore.Document, error) {
+func (mock *TxMock) FetchRecentlyViewedDocuments(ctx context.Context, userID string, organizationID string, from search.ViewFrom, limit int) ([]search.RecentDocument, error) {
 	callInfo := struct {
 		Ctx            context.Context
 		UserID         string
 		OrganizationID string
+		From           search.ViewFrom
 		Limit          int
 	}{
 		Ctx:            ctx,
 		UserID:         userID,
 		OrganizationID: organizationID,
+		From:           from,
 		Limit:          limit,
 	}
 	mock.lockFetchRecentlyViewedDocuments.Lock()
@@ -1764,12 +1770,12 @@ func (mock *TxMock) FetchRecentlyViewedDocuments(ctx context.Context, userID str
 	mock.lockFetchRecentlyViewedDocuments.Unlock()
 	if mock.FetchRecentlyViewedDocumentsFunc == nil {
 		var (
-			documentsOut []documentCore.Document
-			errOut       error
+			recentDocumentsOut []search.RecentDocument
+			errOut             error
 		)
-		return documentsOut, errOut
+		return recentDocumentsOut, errOut
 	}
-	return mock.FetchRecentlyViewedDocumentsFunc(ctx, userID, organizationID, limit)
+	return mock.FetchRecentlyViewedDocumentsFunc(ctx, userID, organizationID, from, limit)
 }
 
 // FetchRecentlyViewedDocumentsCalls gets all the calls that were made to FetchRecentlyViewedDocuments.
@@ -1780,12 +1786,14 @@ func (mock *TxMock) FetchRecentlyViewedDocumentsCalls() []struct {
 	Ctx            context.Context
 	UserID         string
 	OrganizationID string
+	From           search.ViewFrom
 	Limit          int
 } {
 	var calls []struct {
 		Ctx            context.Context
 		UserID         string
 		OrganizationID string
+		From           search.ViewFrom
 		Limit          int
 	}
 	mock.lockFetchRecentlyViewedDocuments.RLock()
@@ -2411,18 +2419,20 @@ func (mock *TxMock) UpdateDocumentTreeCalls() []struct {
 }
 
 // UpsertDocumentBranchView calls UpsertDocumentBranchViewFunc.
-func (mock *TxMock) UpsertDocumentBranchView(ctx context.Context, userID string, organizationID string, branchID xid.ID, viewedAt time.Time) error {
+func (mock *TxMock) UpsertDocumentBranchView(ctx context.Context, userID string, organizationID string, branchID xid.ID, from search.ViewFrom, viewedAt time.Time) error {
 	callInfo := struct {
 		Ctx            context.Context
 		UserID         string
 		OrganizationID string
 		BranchID       xid.ID
+		From           search.ViewFrom
 		ViewedAt       time.Time
 	}{
 		Ctx:            ctx,
 		UserID:         userID,
 		OrganizationID: organizationID,
 		BranchID:       branchID,
+		From:           from,
 		ViewedAt:       viewedAt,
 	}
 	mock.lockUpsertDocumentBranchView.Lock()
@@ -2434,7 +2444,7 @@ func (mock *TxMock) UpsertDocumentBranchView(ctx context.Context, userID string,
 		)
 		return errOut
 	}
-	return mock.UpsertDocumentBranchViewFunc(ctx, userID, organizationID, branchID, viewedAt)
+	return mock.UpsertDocumentBranchViewFunc(ctx, userID, organizationID, branchID, from, viewedAt)
 }
 
 // UpsertDocumentBranchViewCalls gets all the calls that were made to UpsertDocumentBranchView.
@@ -2446,6 +2456,7 @@ func (mock *TxMock) UpsertDocumentBranchViewCalls() []struct {
 	UserID         string
 	OrganizationID string
 	BranchID       xid.ID
+	From           search.ViewFrom
 	ViewedAt       time.Time
 } {
 	var calls []struct {
@@ -2453,6 +2464,7 @@ func (mock *TxMock) UpsertDocumentBranchViewCalls() []struct {
 		UserID         string
 		OrganizationID string
 		BranchID       xid.ID
+		From           search.ViewFrom
 		ViewedAt       time.Time
 	}
 	mock.lockUpsertDocumentBranchView.RLock()

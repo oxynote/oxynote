@@ -1287,39 +1287,11 @@ func Test_Handler_SearchDocuments(t *testing.T) {
 			Query:    "?q=shipment&currentDocId=",
 			RespCode: http.StatusBadRequest,
 		},
-		"Error returned by DB.FetchRecentlyViewedDocuments": {
-			DB: &DBMock{
-				FetchRecentlyViewedDocumentsFunc: func(context.Context, string, string, int) ([]documentCore.Document, error) {
-					return nil, assert.AnError
-				},
-			},
-			Searcher: &SearcherMock{},
-			RespCode: http.StatusInternalServerError,
-		},
-		"Successful listing of recent documents": {
-			DB: &DBMock{
-				FetchRecentlyViewedDocumentsFunc: func(context.Context, string, string, int) ([]documentCore.Document, error) {
-					return []documentCore.Document{doc}, nil
-				},
-			},
-			Searcher: &SearcherMock{},
-			Query:    "?limit=5",
-			RespCode: http.StatusOK,
-			RespJSON: `{
-				"total": {"hits": 0, "documents": 1, "capped": false},
-				"nextToken": null,
-				"results": [{"document": ` + docJSON + `, "hits": [], "totalHits": 0, "nextHitsToken": null}]
-			}`,
-			Check: func(t *testing.T, db *DBMock, searcher *SearcherMock) {
-				t.Helper()
-
-				ff := db.FetchRecentlyViewedDocumentsCalls()
-				require.Len(t, ff, 1)
-				assert.Equal(t, "u1", ff[0].UserID)
-				assert.Equal(t, "org1", ff[0].OrganizationID)
-				assert.Equal(t, 5, ff[0].Limit)
-				assert.Empty(t, searcher.SearchGroupsCalls())
-			},
+		"Short query": {
+			DB:       &DBMock{},
+			Searcher: stubSearcher(search.GroupPage{}, search.ErrInvalidQuery),
+			Query:    "?q=a",
+			RespCode: http.StatusBadRequest,
 		},
 		"Error returned by Searcher.SearchGroups": {
 			DB:       &DBMock{},
@@ -1442,6 +1414,135 @@ func Test_Handler_SearchDocuments(t *testing.T) {
 			if c.Check != nil {
 				c.Check(t, c.DB, c.Searcher)
 			}
+		})
+	}
+}
+
+func Test_Handler_FetchRecentlyViewedDocuments(t *testing.T) {
+	doc := search.RecentDocument{
+		ID:             _documentID,
+		OrganizationID: "org1",
+		BranchID:       _branchID,
+		BranchName:     documentCore.DefaultBranch,
+		DocumentName:   "Shipments",
+		Icon:           "truck",
+		Default:        true,
+		UpdatedAt:      time.Date(2026, 10, 4, 9, 12, 41, 0, time.UTC),
+		LastUpdatedBy:  null.StringFrom("u2"),
+		ViewedAt:       time.Date(2026, 10, 7, 8, 0, 0, 0, time.UTC),
+	}
+
+	// stubDocs answers the listing with the documents.
+	stubDocs := func(docs ...search.RecentDocument) func(context.Context, string, string, search.ViewFrom, int) ([]search.RecentDocument, error) {
+		return func(context.Context, string, string, search.ViewFrom, int) ([]search.RecentDocument, error) {
+			return docs, nil
+		}
+	}
+
+	cc := map[string]struct {
+		DB        *DBMock
+		NoSession bool
+		Query     string
+		RespCode  int
+		RespJSON  string
+		From      search.ViewFrom
+		Limit     int
+	}{
+		"No session in context": {
+			DB:        &DBMock{},
+			NoSession: true,
+			RespCode:  http.StatusUnauthorized,
+		},
+		"Invalid limit": {
+			DB:       &DBMock{},
+			Query:    "?limit=abc",
+			RespCode: http.StatusBadRequest,
+		},
+		"Invalid origin": {
+			DB:       &DBMock{},
+			Query:    "?from=tree",
+			RespCode: http.StatusBadRequest,
+		},
+		"Error returned by DB.FetchRecentlyViewedDocuments": {
+			DB: &DBMock{
+				FetchRecentlyViewedDocumentsFunc: func(context.Context, string, string, search.ViewFrom, int) ([]search.RecentDocument, error) {
+					return nil, assert.AnError
+				},
+			},
+			RespCode: http.StatusInternalServerError,
+			From:     search.ViewFromAll,
+			Limit:    search.GroupLimitDefault,
+		},
+		"Successful listing": {
+			DB: &DBMock{
+				FetchRecentlyViewedDocumentsFunc: stubDocs(doc),
+			},
+			Query:    "?from=search&limit=5",
+			RespCode: http.StatusOK,
+			RespJSON: `{
+				"results": [{
+					"id": "` + _documentID.String() + `",
+					"title": "Shipments",
+					"titleHtml": null,
+					"icon": "truck",
+					"branch": {"id": "` + _branchID.String() + `", "name": "main", "default": true},
+					"updatedAt": "2026-10-04T09:12:41Z",
+					"updatedBy": "u2",
+					"viewedAt": "2026-10-07T08:00:00Z"
+				}]
+			}`,
+			From:  search.ViewFromSearch,
+			Limit: 5,
+		},
+		"Successful listing capped at the maximum": {
+			DB: &DBMock{
+				FetchRecentlyViewedDocumentsFunc: stubDocs(),
+			},
+			Query:    "?limit=500",
+			RespCode: http.StatusOK,
+			RespJSON: `{"results": []}`,
+			From:     search.ViewFromAll,
+			Limit:    search.GroupLimitMax,
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			hdl, _ := newTestHandler(c.DB, &fakePublisher{})
+
+			req := httptest.NewRequest(http.MethodGet, "http://test.com/"+c.Query, http.NoBody)
+
+			if !c.NoSession {
+				req = req.WithContext(auth.AddSessionToContext(req.Context(), auth.Session{
+					UserID:               "u1",
+					ActiveOrganizationID: "org1",
+				}))
+			}
+
+			rec := httptest.NewRecorder()
+
+			hdl.FetchRecentlyViewedDocuments(rec, req)
+
+			assert.Equal(t, c.RespCode, rec.Code)
+
+			if c.RespJSON != "" {
+				assert.JSONEq(t, c.RespJSON, rec.Body.String())
+			}
+
+			ff := c.DB.FetchRecentlyViewedDocumentsCalls()
+
+			if c.Limit == 0 {
+				assert.Empty(t, ff)
+				return
+			}
+
+			require.Len(t, ff, 1)
+			assert.Equal(t, "u1", ff[0].UserID)
+			assert.Equal(t, "org1", ff[0].OrganizationID)
+			assert.Equal(t, c.From, ff[0].From)
+			assert.Equal(t, c.Limit, ff[0].Limit)
 		})
 	}
 }

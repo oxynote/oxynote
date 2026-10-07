@@ -22,6 +22,11 @@ const (
 	// bounds the work one request can ask for.
 	MaxQueryLength = 200
 
+	// _minPagedQueryLength is the fewest characters a query of the paged
+	// searches holds, surrounding spaces excluded. Shorter terms match
+	// too much of the dictionary to rank.
+	_minPagedQueryLength = 2
+
 	// _searchResultLimit caps the number of hits the search endpoint
 	// returns.
 	_searchResultLimit = 30
@@ -55,7 +60,7 @@ const (
 )
 
 // ErrInvalidQuery is returned when a search query is empty or over
-// MaxQueryLength.
+// MaxQueryLength, or when a paged search query is too short.
 var ErrInvalidQuery = errutil.New(http.StatusBadRequest, "document.invalid_search_query", "invalid search query")
 
 // ValidateQuery reports whether the query is one the index will run.
@@ -65,6 +70,17 @@ func ValidateQuery(q string) error {
 	}
 
 	return nil
+}
+
+// validatePagedQuery reports whether the query is one the paged searches
+// run. On top of ValidateQuery, they refuse one under
+// _minPagedQueryLength.
+func validatePagedQuery(q string) error {
+	if utf8.RuneCountInString(strings.TrimSpace(q)) < _minPagedQueryLength {
+		return ErrInvalidQuery
+	}
+
+	return ValidateQuery(q)
 }
 
 // SearchDocuments searches the organization's entries and returns them as

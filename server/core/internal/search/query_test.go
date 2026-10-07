@@ -169,6 +169,27 @@ func Test_ValidateQuery(t *testing.T) {
 	}
 }
 
+func Test_validatePagedQuery(t *testing.T) {
+	cc := map[string]struct {
+		Query string
+		Err   error
+	}{
+		"Empty query":          {Err: ErrInvalidQuery},
+		"Short query":          {Query: " a ", Err: ErrInvalidQuery},
+		"Overlong query":       {Query: strings.Repeat("a", MaxQueryLength+1), Err: ErrInvalidQuery},
+		"Query at the minimum": {Query: "éa"},
+		"Plain query":          {Query: "deploy"},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			testutil.AssertEqualError(t, c.Err, validatePagedQuery(c.Query))
+		})
+	}
+}
+
 func Test_Index_search(t *testing.T) {
 	t.Parallel()
 

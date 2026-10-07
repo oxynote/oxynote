@@ -1,0 +1,31 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.oxynote/oxynote",
+  "title": "Oxynote",
+  "description": "Self-hosted team docs with live Prometheus charts. Read, write and query your docs over MCP.",
+  "version": "0.8.4",
+  "repository": {
+    "url": "https://github.com/oxynote/oxynote",
+    "source": "github",
+    "id": "1321878383"
+  },
+  "icons": [
+    {
+      "src": "https://raw.githubusercontent.com/oxynote/oxynote/main/web/public/favicon.svg",
+      "mimeType": "image/svg+xml",
+      "sizes": ["any"]
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://{host}/core/api/mcp",
+      "variables": {
+        "host": {
+          "description": "Domain of your Oxynote instance, e.g. docs.example.com",
+          "isRequired": true
+        }
+      }
+    }
+  ]
+}

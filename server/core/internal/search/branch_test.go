@@ -126,6 +126,10 @@ func Test_Index_SearchBranch(t *testing.T) {
 			Query: BranchQuery{OrganizationID: "org-1", BranchID: main.BranchID},
 			Err:   ErrInvalidQuery,
 		},
+		"Short query": {
+			Query: BranchQuery{OrganizationID: "org-1", BranchID: main.BranchID, Query: "s"},
+			Err:   ErrInvalidQuery,
+		},
 		"Invalid page token": {
 			Query: BranchQuery{OrganizationID: "org-1", BranchID: main.BranchID, Query: "shipment", PageToken: "%%%"},
 			Err:   ErrInvalidPageToken,

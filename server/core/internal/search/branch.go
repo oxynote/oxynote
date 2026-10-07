@@ -67,7 +67,7 @@ type BranchPage struct {
 // of them, highlighted. The hits come in the order SearchGroups shows a
 // group's hits in, so a group's NextHitsToken continues the group.
 func (i *Index) SearchBranch(ctx context.Context, bq BranchQuery) (BranchPage, error) {
-	if err := ValidateQuery(bq.Query); err != nil {
+	if err := validatePagedQuery(bq.Query); err != nil {
 		return BranchPage{}, err
 	}
 
