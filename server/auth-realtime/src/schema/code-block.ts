@@ -73,6 +73,24 @@ export const CodeBlock = CodeBlockLowlight.extend<CodeBlockOptions>({
 			],
 		]
 	},
+	addAttributes() {
+		return {
+			...this.parent?.(),
+			auto: {
+				default: false,
+				parseHTML: (element) =>
+					element.getAttribute("data-auto") ===
+					"true",
+				renderHTML: (attrs) => {
+					if (!attrs.auto) {
+						return {}
+					}
+
+					return { "data-auto": "true" }
+				},
+			},
+		}
+	},
 	addOptions(): CodeBlockOptions {
 		const parent = this.parent ? this.parent() : null
 		return {

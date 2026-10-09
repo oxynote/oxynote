@@ -12,6 +12,7 @@ import type { CodeBlockOptions } from "./index"
 import {
 	CodeBlock,
 	CodeBlockTitle,
+	isLanguageDetected,
 	lowlight,
 	setUpCodeBlockNode,
 	TitledCodeBlock,
@@ -105,6 +106,17 @@ function rightSide(...children: PMNode[]): PMNode {
 }
 
 const docOf = docBuilder(schema)
+
+const detectionSchema = new Schema({
+	nodes: {
+		doc: { content: `${CODE_BLOCK_NAME}+` },
+		[CODE_BLOCK_NAME]: {
+			content: "text*",
+			attrs: { language: { default: null }, auto: { default: false } },
+		},
+		text: {},
+	},
+})
 
 describe("lowlight", () => {
 	it("registers curl alongside the common grammars", ({ expect }) => {
@@ -390,6 +402,22 @@ describe("CodeBlock", () => {
 			)
 
 			expect(addInputRules()).toEqual([])
+		})
+	})
+
+	describe("addAttributes", () => {
+		it("leaves detection off for a block that does not name it", ({
+			expect,
+		}) => {
+			const addAttributes = getExtensionField<
+				() => Record<string, { default: unknown }>
+			>(
+				CodeBlock,
+				"addAttributes",
+				extensionContext(CodeBlock, CODE_BLOCK_NAME),
+			)
+
+			expect(addAttributes().auto?.default).toBe(false)
 		})
 	})
 
@@ -731,3 +759,25 @@ describe("setUpCodeBlockNode", () => {
 		expect(chain.run).toHaveBeenCalledTimes(1)
 	})
 })
+
+describe("isLanguageDetected", () => {
+	it.for([
+		{ name: "detects a block without a language", input: {}, expected: true },
+		{
+			name: "detects a block with detection on",
+			input: { language: "go", auto: true },
+			expected: true,
+		},
+		{
+			name: "leaves a block whose language was picked",
+			input: { language: "go" },
+			expected: false,
+		},
+	])("$name", ({ input, expected }, { expect }) => {
+		expect(isLanguageDetected(detectedCode(input))).toBe(expected)
+	})
+})
+
+function detectedCode(attrs: Record<string, unknown>): PMNode {
+	return detectionSchema.nodes[CODE_BLOCK_NAME].create(attrs)
+}

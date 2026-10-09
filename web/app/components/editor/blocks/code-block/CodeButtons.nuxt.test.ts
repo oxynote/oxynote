@@ -2,7 +2,9 @@ import { flushPromises, type VueWrapper } from "@vue/test-utils"
 import { beforeEach, describe, it, vi } from "vitest"
 import CodeButtons from "./CodeButtons.vue"
 import {
+	commandArgs,
 	makeEditor,
+	makeEditorState,
 	makeNode,
 	mountNodeView,
 	type EditorStub,
@@ -14,6 +16,7 @@ const GO_SNIPPET =
 	'package main\n\nimport "fmt"\n\nfunc main() {\n\tfmt.Println("hi")\n}\n'
 
 const COPIED_RESET_MS = 700
+const STORE_DELAY_MS = 500
 
 function mountButtons(
 	options: {
@@ -110,7 +113,27 @@ describe("<CodeButtons>", { concurrent: false }, () => {
 		emitFrom(wrapper, Select, "update:modelValue", "rust")
 
 		expect(updateAttributes).toHaveBeenCalledTimes(1)
-		expect(updateAttributes).toHaveBeenCalledWith({ language: "rust" })
+		expect(updateAttributes).toHaveBeenCalledWith({
+			language: "rust",
+			auto: false,
+		})
+	})
+
+	it("turns detection off when the user picks the detected language", async ({
+		expect,
+	}) => {
+		const updateAttributes = vi.fn()
+		const wrapper = await mountButtons({
+			attrs: { language: "rust", auto: true },
+			updateAttributes: updateAttributes,
+		})
+
+		emitFrom(wrapper, Select, "update:modelValue", "rust")
+
+		expect(updateAttributes).toHaveBeenCalledWith({
+			language: "rust",
+			auto: false,
+		})
 	})
 
 	it("stores nothing when the picked language is already set", async ({
@@ -142,9 +165,7 @@ describe("<CodeButtons>", { concurrent: false }, () => {
 			),
 		})
 
-		editor.on.mock.calls.forEach(([, handler]) => {
-			;(handler as () => void)()
-		})
+		reportUpdate(editor)
 		await nextTick()
 
 		expect(editor.on).toHaveBeenCalledTimes(1)
@@ -161,12 +182,93 @@ describe("<CodeButtons>", { concurrent: false }, () => {
 			editor: editor,
 		})
 
-		editor.on.mock.calls.forEach(([, handler]) => {
-			;(handler as () => void)()
-		})
+		reportUpdate(editor)
 		await nextTick()
 
 		expect(selectedLanguage(wrapper)).toBe("Python")
+	})
+
+	it("stores the detected language once the user stops typing", async ({
+		expect,
+	}) => {
+		const editor = makeEditor()
+		await mountEdited(editor)
+
+		reportUpdate(editor)
+		await vi.advanceTimersByTimeAsync(STORE_DELAY_MS - 1)
+
+		expect(commandArgs(editor.commands, "command")).toBeUndefined()
+
+		await vi.advanceTimersByTimeAsync(1)
+
+		const tr = { setNodeAttribute: vi.fn(), setMeta: vi.fn() }
+		const [store] = commandArgs(editor.commands, "command") as [
+			(props: { tr: unknown }) => boolean,
+		]
+		store({ tr: tr })
+
+		expect(tr.setNodeAttribute.mock.calls).toEqual([
+			[0, "language", "go"],
+			[0, "auto", true],
+		])
+		expect(tr.setMeta).toHaveBeenCalledWith("addToHistory", false)
+	})
+
+	it("stores nothing for a remote change", async ({ expect }) => {
+		const editor = makeEditor()
+		await mountEdited(editor)
+
+		reportUpdate(editor, true)
+		await vi.advanceTimersByTimeAsync(STORE_DELAY_MS)
+
+		expect(commandArgs(editor.commands, "command")).toBeUndefined()
+	})
+
+	it("stores nothing while the caret is outside the block", async ({
+		expect,
+	}) => {
+		const editor = makeEditor({
+			state: makeEditorState({ from: 10, to: 10 }),
+		})
+		await mountEdited(editor)
+
+		reportUpdate(editor)
+		await vi.advanceTimersByTimeAsync(STORE_DELAY_MS)
+
+		expect(commandArgs(editor.commands, "command")).toBeUndefined()
+	})
+
+	it("stores nothing over a language the user picked", async ({ expect }) => {
+		const editor = makeEditor()
+		await mountEdited(editor, { language: "python" })
+
+		reportUpdate(editor)
+		await vi.advanceTimersByTimeAsync(STORE_DELAY_MS)
+
+		expect(commandArgs(editor.commands, "command")).toBeUndefined()
+	})
+
+	it("stores nothing when the detected language is already stored", async ({
+		expect,
+	}) => {
+		const editor = makeEditor()
+		await mountEdited(editor, { language: "go", auto: true })
+
+		reportUpdate(editor)
+		await vi.advanceTimersByTimeAsync(STORE_DELAY_MS)
+
+		expect(commandArgs(editor.commands, "command")).toBeUndefined()
+	})
+
+	it("stores nothing once unmounted", async ({ expect }) => {
+		const editor = makeEditor()
+		const wrapper = await mountEdited(editor)
+
+		reportUpdate(editor)
+		wrapper.unmount()
+		await vi.advanceTimersByTimeAsync(STORE_DELAY_MS)
+
+		expect(commandArgs(editor.commands, "command")).toBeUndefined()
 	})
 
 	it("stops listening for editor updates once unmounted", async ({
@@ -285,3 +387,32 @@ describe("<CodeButtons>", { concurrent: false }, () => {
 		)
 	})
 })
+
+// run the editor's update listeners as a change would. A remote change
+// carries the sync plugin's meta, a local one carries none.
+function reportUpdate(editor: EditorStub, remote = false) {
+	const transaction = { getMeta: () => (remote ? {} : undefined) }
+
+	editor.on.mock.calls.forEach(([, handler]) => {
+		;(handler as (props: { transaction: unknown }) => void)({
+			transaction: transaction,
+		})
+	})
+}
+
+// mount an empty block, then give it the Go snippet as an edit would
+async function mountEdited(
+	editor: EditorStub,
+	attrs: Record<string, unknown> = {},
+) {
+	const wrapper = await mountButtons({ attrs: attrs, editor: editor })
+	await wrapper.setProps({
+		node: makeNode(
+			{ uid: "code-1", language: null, ...attrs },
+			{ textContent: GO_SNIPPET },
+		),
+	})
+	vi.useFakeTimers()
+
+	return wrapper
+}

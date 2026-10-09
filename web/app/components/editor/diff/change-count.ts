@@ -10,6 +10,7 @@ import {
 } from "~/components/editor/attribute-names"
 import { SIMULATION_ACTIVE_ATTR } from "~/components/editor/blocks/metrics/simulation"
 import {
+	CODE_BLOCK_NAME,
 	FILE_BLOCK_NAME,
 	IMAGE_BLOCK_NAME,
 	METRIC_BLOCK_NAME,
@@ -45,6 +46,10 @@ const UNTRACKED_ATTRIBUTES: Record<string, string[]> = {
 // attributes that change together and count as one change, per node
 // type. Each attribute maps to the name of its group.
 const ATTRIBUTE_GROUPS: Record<string, Record<string, string>> = {
+	[CODE_BLOCK_NAME]: {
+		language: "language",
+		auto: "language",
+	},
 	[FILE_BLOCK_NAME]: {
 		src: "file",
 		name: "file",

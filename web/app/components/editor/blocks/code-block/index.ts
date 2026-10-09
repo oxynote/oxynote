@@ -14,6 +14,7 @@ import CodeTitle from "./CodeTitle.vue"
 import { extendedCodeBlockLanguages } from "./languages"
 import { createLowlight } from "lowlight"
 import { Selection, TextSelection } from "prosemirror-state"
+import type { Node as PMNode } from "@tiptap/pm/model"
 import { KeywordColor } from "./keyword"
 import { deleteNode } from "../../tiptap-utils/node"
 import {
@@ -139,6 +140,22 @@ export const CodeBlock = CodeBlockLowlight.extend<CodeBlockOptions>({
 			exitOnTripleEnter: false,
 			lowlight: lowlight,
 			type: "document",
+		}
+	},
+	addAttributes() {
+		return {
+			...this.parent?.(),
+			auto: {
+				default: false,
+				parseHTML: (element) => element.getAttribute("data-auto") === "true",
+				renderHTML: (attrs) => {
+					if (!attrs.auto) {
+						return {}
+					}
+
+					return { "data-auto": "true" }
+				},
+			},
 		}
 	},
 	addInputRules() {
@@ -329,4 +346,10 @@ export function setUpCodeBlockNode(
 			},
 		})
 		.run()
+}
+
+// a block is detected until someone picks its language. A block without a
+// language is detected too, because older blocks carry no auto attribute.
+export function isLanguageDetected(node: PMNode): boolean {
+	return Boolean(node.attrs.auto) || !node.attrs.language
 }

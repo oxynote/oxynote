@@ -5,12 +5,20 @@ import {
 	defaultExtendedCodeBlockLanguage,
 	extendedCodeBlockLanguageOptions,
 } from "./languages"
-import { lowlight, type CodeBlockOptions } from "./index"
+import { isLanguageDetected, type CodeBlockOptions } from "./index"
+import { detectLanguage } from "./detection"
+import { isChangeOrigin } from "@tiptap/extension-collaboration"
+import type { Transaction } from "@tiptap/pm/state"
+
+// detection runs every grammar over the code, so it waits until the code
+// stops changing
+const STORE_DELAY_MS = 500
 
 const props = defineProps({
 	...nodeViewProps,
 })
 const { isEditable } = useEditorMeta()
+
 const isCopied = ref(false)
 const typeClass = computed(() => {
 	return (props.extension.options as CodeBlockOptions).type === "comment"
@@ -20,48 +28,9 @@ const typeClass = computed(() => {
 
 const detectedLanguage = ref(defaultExtendedCodeBlockLanguage)
 
-function detectLanguage() {
-	if (props.node.attrs.language) {
-		return
-	}
-
-	const content = props.node.textContent
-	if (!content.trim()) {
-		detectedLanguage.value = defaultExtendedCodeBlockLanguage
-		return
-	}
-
-	try {
-		const result = lowlight.highlightAuto(content)
-
-		if (
-			result.data?.language &&
-			result.data.relevance &&
-			result.data.relevance >= 2
-		) {
-			detectedLanguage.value = result.data.language
-			return
-		}
-	} catch {
-		// Ignore errors
-	}
-
-	detectedLanguage.value = defaultExtendedCodeBlockLanguage
-}
-
-onBeforeMount(() => {
-	detectLanguage()
-})
-onMounted(() => {
-	props.editor.on("update", detectLanguage)
-})
-onUnmounted(() => {
-	props.editor.off("update", detectLanguage)
-})
-
 const currentLang = computed({
 	get: () => {
-		// If language is null (auto mode), show detected language
+		// a block the detector has not stored yet shows its own guess
 		if (!props.node.attrs.language) {
 			return detectedLanguage.value
 		}
@@ -69,12 +38,83 @@ const currentLang = computed({
 		return props.node.attrs.language as string
 	},
 	set: (lang: string) => {
-		// User selected a language - set it (no longer auto)
-		if (props.node.attrs.language !== lang) {
-			props.updateAttributes({ language: lang })
+		// picking a language turns detection off, even when it is the
+		// detected one
+		if (props.node.attrs.language !== lang || props.node.attrs.auto) {
+			props.updateAttributes({ language: lang, auto: false })
 		}
 	},
 })
+
+let storeTimeout: ReturnType<typeof setTimeout> | undefined
+
+onBeforeMount(() => {
+	updateDetectedLanguage()
+})
+onMounted(() => {
+	props.editor.on("update", onEditorUpdate)
+})
+onUnmounted(() => {
+	props.editor.off("update", onEditorUpdate)
+	clearTimeout(storeTimeout)
+})
+
+function updateDetectedLanguage() {
+	if (props.node.attrs.language) {
+		return
+	}
+
+	detectedLanguage.value = detectLanguage(props.node.textContent)
+}
+
+function onEditorUpdate({ transaction }: { transaction: Transaction }) {
+	updateDetectedLanguage()
+
+	// only the user typing in the block stores its language, because the
+	// server counts every write as an edit by its user
+	if (isChangeOrigin(transaction) || !isCaretInside()) {
+		return
+	}
+
+	clearTimeout(storeTimeout)
+	storeTimeout = setTimeout(storeDetectedLanguage, STORE_DELAY_MS)
+}
+
+function isCaretInside(): boolean {
+	const pos = props.getPos()
+	if (typeof pos !== "number") {
+		return false
+	}
+
+	const { from, to } = props.editor.state.selection
+
+	return from >= pos && to <= pos + props.node.nodeSize
+}
+
+function storeDetectedLanguage() {
+	const pos = props.getPos()
+	if (typeof pos !== "number" || !isLanguageDetected(props.node)) {
+		return
+	}
+
+	const language = detectLanguage(props.node.textContent)
+	if (props.node.attrs.language === language && props.node.attrs.auto) {
+		return
+	}
+
+	// the write stays out of the undo history. A tracked write after an
+	// undo would clear what can be redone.
+	props.editor
+		.chain()
+		.command(({ tr }) => {
+			tr.setNodeAttribute(pos, "language", language)
+			tr.setNodeAttribute(pos, "auto", true)
+			tr.setMeta("addToHistory", false)
+
+			return true
+		})
+		.run()
+}
 
 async function copyCodeBlock() {
 	try {
