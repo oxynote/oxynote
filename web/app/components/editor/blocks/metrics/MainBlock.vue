@@ -370,7 +370,7 @@ function disableVisualizationRefreshTemporarily() {
 					{{ lastOtherEditingUser.name }}
 				</div>
 				<div
-					class="absolute top-1 right-1.5 z-1 flex items-center rounded-md bg-background pl-0.5"
+					class="absolute top-1 right-1.5 z-1 flex items-center rounded-md bg-background has-[>:not(button)]:pl-0.5"
 				>
 					<DiffChangeMarker :node="props.node" class="mr-1">
 						<MetricDiffDetails :node="props.node" />

@@ -50,6 +50,7 @@ mockNuxtImport(
 )
 
 const DEBOUNCE_MS = 300
+const SPINNER_MIN_TIME_MS = 400
 const TOOLTIP_DELAY_MS = 300
 const SEARCH_URL = "/api/documents/search"
 const RECENT_URL = "/api/documents/recent"
@@ -696,19 +697,35 @@ describe("<SearchModal>", { concurrent: false }, () => {
 			expect(headerIcons()).toEqual(["lucide:search", "lucide:x"])
 		})
 
-		it("shows the spinner as soon as the query is typed", async ({
+		it("keeps the spinner for a minimum time when the search answers at once", async ({
 			expect,
 		}) => {
+			mockSearch(makePage([makeResult()]))
+			await mountModal()
+			await type("run")
+			await vi.advanceTimersByTimeAsync(DEBOUNCE_MS)
+			await flushPromises()
+
+			await vi.advanceTimersByTimeAsync(SPINNER_MIN_TIME_MS - 1)
+
+			expect(rowTexts()).toEqual([expect.stringContaining("Runbook")])
+			expect(headerIcons()).toEqual([
+				"svg-spinners:blocks-shuffle-3",
+				"lucide:x",
+			])
+
+			await vi.advanceTimersByTimeAsync(1)
+			expect(headerIcons()).toEqual(["lucide:search", "lucide:x"])
+		})
+
+		it("keeps the magnifier while the query is typed", async ({ expect }) => {
 			mockSearch(makePage([makeResult()]))
 			await mountModal()
 			await search("run")
 
 			await type("runs")
 
-			expect(headerIcons()).toEqual([
-				"svg-spinners:blocks-shuffle-3",
-				"lucide:x",
-			])
+			expect(headerIcons()).toEqual(["lucide:search", "lucide:x"])
 			expect(rowTexts()).toEqual([expect.stringContaining("Runbook")])
 		})
 
@@ -1989,6 +2006,7 @@ async function search(query: string) {
 	input.dispatchEvent(new Event("input", { bubbles: true }))
 	await vi.advanceTimersByTimeAsync(DEBOUNCE_MS)
 	await flushPromises()
+	await vi.advanceTimersByTimeAsync(SPINNER_MIN_TIME_MS)
 	await nextTick()
 }
 

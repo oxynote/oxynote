@@ -67,7 +67,16 @@ export function nodeOverlayOffset(nodeDOM: HTMLElement): NodeOverlayOffset {
 			if (!isTaskItem) {
 				return { ...defaults, extraLeft: 25 }
 			}
+
+			break
 		}
+		// a checklist paragraph is padded away from its checkbox. The
+		// panel starts at the text, as it does in any other list.
+		case "P":
+			return {
+				...defaults,
+				extraLeft: -parseFloat(getComputedStyle(nodeDOM).paddingLeft),
+			}
 	}
 
 	return defaults
@@ -85,10 +94,15 @@ export function highlightTiptapScrollElement(
 		return
 	}
 
-	const target =
+	const linked =
 		element.isConnected || !elementId
 			? element
 			: (document.getElementById(elementId) ?? element)
+
+	// a code block's title and its code are drawn as one box, so a link
+	// to either highlights the whole block
+	const parent = linked.parentElement
+	const target = parent?.dataset.type === "titled-code-block" ? parent : linked
 
 	if (!target.isConnected) {
 		return

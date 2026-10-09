@@ -64,6 +64,13 @@ describe("nodeOverlayOffset", { concurrent: false }, () => {
 		).toMatchObject({ extraLeft: 25 })
 	})
 
+	it("starts a padded paragraph's panel at its text", ({ expect }) => {
+		const el = attach(document.createElement("p"))
+		el.style.paddingLeft = "12px"
+
+		expect(nodeOverlayOffset(el)).toMatchObject({ extraLeft: -12 })
+	})
+
 	it("leaves task list items unpadded", ({ expect }) => {
 		const el = attach(document.createElement("li"))
 		el.setAttribute("data-checked", "false")
@@ -175,6 +182,27 @@ describe("highlightTiptapScrollElement", { concurrent: false }, () => {
 		expect(overlay.style.top).toBe("15px")
 		expect(overlay.style.left).toBe("35px")
 		expect(overlay.style.height).toBe("30px")
+		expect(overlay.style.width).toBe("110px")
+	})
+
+	it("covers the whole titled code block for a link to one of its parts", ({
+		expect,
+	}) => {
+		const { target } = setupDom()
+		target.setAttribute("data-type", "titled-code-block")
+		target.style.height = "60px"
+		const code = document.createElement("pre")
+		code.style.height = "20px"
+		target.appendChild(code)
+
+		highlightTiptapScrollElement("", code)
+
+		const overlay = overlays()[0] as HTMLElement
+		expect(ResizeObserverStub.instances[0]?.observe).toHaveBeenCalledWith(
+			target,
+		)
+		expect(overlay.style.top).toBe("15px")
+		expect(overlay.style.height).toBe("70px")
 		expect(overlay.style.width).toBe("110px")
 	})
 

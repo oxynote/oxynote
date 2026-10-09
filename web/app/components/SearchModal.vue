@@ -48,6 +48,7 @@ const ROW_CLASS =
 const TOUCH_HIDDEN_CLASS = "[@media(hover:none),(max-width:30rem)]:hidden"
 const CLOSE_KEY = "esc"
 const START_LIST_MIN_LENGTH = 5
+const SPINNER_MIN_TIME_MS = 400
 // keys drawn as icons. The enter character sits low in its key cap, and
 // the arrows match its weight this way.
 const KEY_ICONS: Record<string, string> = {
@@ -59,9 +60,6 @@ const KEY_ICONS: Record<string, string> = {
 const searchQuery = ref("")
 const trimmedSearchQuery = computed(() => searchQuery.value.trim())
 const debouncedSearchQuery = refDebounced(trimmedSearchQuery, 300)
-const isTyping = computed(
-	() => trimmedSearchQuery.value !== debouncedSearchQuery.value,
-)
 // a query the search would refuse as too short counts as no query at all
 const isSearchable = computed(
 	() => trimmedSearchQuery.value.length >= DOCUMENT_SEARCH_QUERY_MIN_LENGTH,
@@ -189,10 +187,13 @@ const recents = computed(() => {
 const isSearching = computed(
 	() =>
 		isSearchable.value &&
-		(isTyping.value ||
-			search.status.value === "pending" ||
-			search.isPlaceholderData.value),
+		search.asyncStatus.value === "loading" &&
+		!isLoadingMore.value,
 )
+// a search answered at once would only flash the spinner, so it stays for
+// a minimum time once shown
+const isSpinnerHeld = refAutoReset(false, SPINNER_MIN_TIME_MS)
+const isSpinnerShown = computed(() => isSearching.value || isSpinnerHeld.value)
 const view = computed(() => {
 	if (isSearchable.value) {
 		if (groups.value.length) {
@@ -303,6 +304,12 @@ watch(
 		selectedIndex.value = -1
 	},
 )
+
+watch(isSearching, (isSearching) => {
+	if (isSearching) {
+		isSpinnerHeld.value = true
+	}
+})
 
 watch(view, (view) => {
 	if (view === "start") {
@@ -571,12 +578,12 @@ async function handleLoadMoreHits(result: DocumentSearchResult) {
 			>
 				<Icon
 					:name="
-						isSearching ? 'svg-spinners:blocks-shuffle-3' : 'lucide:search'
+						isSpinnerShown ? 'svg-spinners:blocks-shuffle-3' : 'lucide:search'
 					"
 					:class="
 						cn(
 							'mx-px size-4.5 shrink-0 text-muted-foreground',
-							isSearching && 'opacity-50',
+							isSpinnerShown && 'opacity-50',
 						)
 					"
 				/>

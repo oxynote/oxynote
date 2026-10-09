@@ -82,7 +82,7 @@
 			"recent": "Recent",
 			"suggested": "Suggested",
 			"suggested-tooltip": "Picked for you from this workspace",
-			"viewed-tooltip": "Last opened on {date}",
+			"viewed-tooltip": "Last searched and opened on {date}",
 			"updated-tooltip": "Last edited on {date}",
 			"updated-by-tooltip": "Last edited by {user} on {date}",
 			"no-results": "No matches for “{query}”",
