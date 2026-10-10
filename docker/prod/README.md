@@ -46,7 +46,7 @@ fails the boot with an error naming it.
 
 | Variable | Meaning |
 | --- | --- |
-| `OXYNOTE_PUBLIC_URL` | the origin users open in the browser, e.g. `https://notes.example.com`. Scheme + host only — every public URL, the cookie domain, and the CORS rules derive from it. Defaults to `http://localhost:8080`, which is right only while the container's port 8080 is published as host port 8080; set it for a domain or any other host port. |
+| `OXYNOTE_PUBLIC_URL` | the origin users open in the browser, e.g. `https://notes.example.com`. Scheme + host only — every public URL, the cookie domain, and the CORS rules derive from it. Defaults to `http://localhost:8080`, which is right only while the container's port 8080 is published as host port 8080; set it for a domain or any other host port. The MCP server needs an `https://` origin or a loopback host; on any other `http://` origin it is off and the boot logs a warning. |
 
 ### Optional features
 

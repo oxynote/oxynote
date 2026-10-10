@@ -168,6 +168,13 @@ func Test_Options_Validate(t *testing.T) {
 	assert.NoError(t, Options{SessionURL: _testSessionURL, ResourceURL: _testResourceURL}.Validate())
 }
 
+func Test_Options_Enabled(t *testing.T) {
+	t.Parallel()
+
+	assert.False(t, Options{SessionURL: _testSessionURL}.Enabled())
+	assert.True(t, Options{ResourceURL: _testResourceURL}.Enabled())
+}
+
 func Test_NewHandler(t *testing.T) {
 	t.Parallel()
 

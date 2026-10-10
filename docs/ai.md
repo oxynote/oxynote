@@ -3,8 +3,9 @@
 Both features run inside the [production image](../docker/prod/README.md)
 and are configured through its `OXYNOTE_*` variables. The assistant is the
 in-app chat; the MCP server lets external clients such as Claude Code use
-the same tools against your documents. The MCP server is always on and does
-not need the assistant.
+the same tools against your documents. The MCP server does not need the
+assistant, but it needs an `https://` public URL or a loopback host such
+as `localhost`. On a plain `http://` LAN address it is off.
 
 ## AI assistant
 

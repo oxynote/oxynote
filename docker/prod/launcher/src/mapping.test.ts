@@ -4,6 +4,7 @@ import {
 	buildChildEnvs,
 	caddyPort,
 	corePort,
+	mcpAvailable,
 	webPort,
 } from "./mapping.js"
 import { testConfig, testSecrets } from "./test-helpers.js"
@@ -99,6 +100,21 @@ describe("buildChildEnvs", () => {
 		expect(envs.core.OXYNOTE_CORE_SERVER_MCP_RESOURCE_URL).toBe(
 			"https://notes.example.com/core/api/mcp",
 		)
+	})
+
+	it("turns MCP off in both services when it is unavailable", ({
+		expect,
+	}) => {
+		const envs = build(
+			testConfig({
+				publicOrigin: "http://192.168.1.6:18555",
+			}),
+		)
+
+		expect(envs.core.OXYNOTE_CORE_SERVER_MCP_RESOURCE_URL).toBe("")
+		expect(
+			envs.authRealtime.OXYNOTE_AUTH_REALTIME_MCP_RESOURCE,
+		).toBe("")
 	})
 
 	it("wires the services to each other over loopback", ({ expect }) => {
@@ -411,5 +427,38 @@ describe("buildChildEnvs", () => {
 		expect(envs.web.NUXT_PUBLIC_DOCS_URL).toBe(
 			"https://github.com/oxynote/oxynote",
 		)
+	})
+})
+
+describe("mcpAvailable", () => {
+	it.for([
+		{ name: "https", input: "https://192.168.1.6", expected: true },
+		{
+			name: "http on localhost",
+			input: "http://localhost:8080",
+			expected: true,
+		},
+		{
+			name: "http on a loopback IPv4",
+			input: "http://127.0.0.1:8080",
+			expected: true,
+		},
+		{
+			name: "http on the loopback IPv6",
+			input: "http://[::1]:8080",
+			expected: true,
+		},
+		{
+			name: "http on a LAN address",
+			input: "http://192.168.1.6:18555",
+			expected: false,
+		},
+		{
+			name: "http on a domain",
+			input: "http://notes.example.com",
+			expected: false,
+		},
+	])("reports $expected for $name", ({ input, expected }, { expect }) => {
+		expect(mcpAvailable(input)).toBe(expected)
 	})
 })

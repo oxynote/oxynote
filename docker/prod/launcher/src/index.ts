@@ -22,6 +22,7 @@ import {
 	corePort,
 	coreUrl,
 	dataDir,
+	mcpAvailable,
 	postgresPort,
 	webPort,
 	webUrl,
@@ -217,6 +218,12 @@ async function main(): Promise<void> {
 		bakedSentryDsns,
 		inheritedEnv,
 	)
+	if (!mcpAvailable(config.publicOrigin)) {
+		log.warn(
+			`MCP is off: ${config.publicOrigin} is plain http on a non-loopback host. Serve Oxynote over https to use MCP.`,
+		)
+	}
+
 	const embeddedDatabase = config.databaseDsn === undefined
 
 	if (embeddedDatabase) {

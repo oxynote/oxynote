@@ -1140,6 +1140,28 @@ describe("createAuth", () => {
 		])
 	})
 
+	it.for([
+		{
+			name: "registers",
+			input: "http://localhost:8080/core/api/mcp",
+			expected: true,
+		},
+		{ name: "skips", input: undefined, expected: false },
+	])(
+		"$name the MCP provider by whether a resource is set",
+		({ input, expected }, { expect }) => {
+			const { auth } = buildAuth({
+				env: testEnv({ mcpResource: input }),
+			})
+
+			expect(
+				auth.options.plugins.some(
+					(p) => p.id === "oauth-provider",
+				),
+			).toBe(expected)
+		},
+	)
+
 	describe("email callbacks", () => {
 		it("sends a password reset on the public link", async ({
 			expect,

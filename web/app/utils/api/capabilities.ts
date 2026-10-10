@@ -17,4 +17,5 @@ export interface Capabilities {
 	slack: boolean
 	aiAssistant: AssistantCapability
 	changeDetection: boolean
+	mcp: boolean
 }

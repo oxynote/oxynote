@@ -20,7 +20,7 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n({ useScope: "global" })
-const { isAnyAppEnabled } = useCapabilitiesAPI()
+const { isAnyAppEnabled, isMcpEnabled } = useCapabilitiesAPI()
 const openAction = ref<
 	| null
 	| "email-change"
@@ -58,11 +58,15 @@ const sections = computed(() => [
 				},
 			]
 		: []),
-	{
-		title: t("settings.mcp.title"),
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
-		component: McpSection,
-	},
+	...(isMcpEnabled.value
+		? [
+				{
+					title: t("settings.mcp.title"),
+					// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this
+					component: McpSection,
+				},
+			]
+		: []),
 	{
 		title: t("settings.data-sources.title"),
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- eslint's ts program resolves .vue imports as error typed, vue-tsc accepts this

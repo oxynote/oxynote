@@ -136,6 +136,16 @@ describe("<BaseModal>", { concurrent: false }, () => {
 		expect(dialogText()).not.toContain(t("settings.apps.title"))
 	})
 
+	it("drops the MCP section on a deployment without MCP", async ({
+		expect,
+	}) => {
+		seedCapabilities({ mcp: false })
+
+		await mountModal()
+
+		expect(dialogText()).not.toContain(t("settings.mcp.title"))
+	})
+
 	it("gives the deep-linkable sections their anchors", async ({ expect }) => {
 		await mountModal()
 

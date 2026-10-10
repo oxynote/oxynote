@@ -78,6 +78,11 @@ func Test_Server_httpRouter(t *testing.T) {
 	// mount walks as "*").
 	assert.True(t, routes["GET /api/*/capabilities"])
 
+	// MCP is off while its handler is nil, so nothing is mounted for it.
+	for route := range routes {
+		assert.NotContains(t, route, "/api/mcp")
+	}
+
 	// the service-to-service surface stays where it is.
 	assert.True(t, routes["POST /api/x/organizations/{organizationId}/teardown"])
 	assert.True(t, routes["PUT /api/x/documents/{documentId}/branch/{branchId}/"])

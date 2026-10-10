@@ -79,6 +79,7 @@ export function seedCapabilities(capabilities: Partial<Capabilities> = {}) {
 		github: true,
 		slack: true,
 		changeDetection: true,
+		mcp: true,
 		aiAssistant: { status: AssistantStatus.Active, model: "test-model" },
 		...capabilities,
 	})

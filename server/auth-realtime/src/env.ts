@@ -30,7 +30,8 @@ export interface Env {
 	frontendUrl: string
 	organizationInvitationUrl: string
 	trustedOrigins: string[]
-	mcpResource: string
+	// undefined turns MCP off: the OAuth provider is not registered.
+	mcpResource: string | undefined
 	// MCP access tokens carry better-auth's resolved base URL (origin +
 	// basePath) as their issuer. The internal MCP session endpoint
 	// verifies against it.
@@ -136,9 +137,11 @@ const SOCIAL_PROVIDERS = [
 }[]
 
 // every variable the service reads, spelled out. Only the social
-// credentials and the valkey URL are allowed to be absent — a provider
-// with neither half is left unregistered, and one with a single half is a
-// boot error rather than a broken OAuth redirect discovered by a user.
+// credentials, the valkey URL, the trusted origins and the MCP resource
+// are allowed to be absent. A missing MCP resource leaves MCP off. A
+// provider with neither half is left unregistered, and one with a single
+// half is a boot error rather than a broken OAuth redirect discovered by
+// a user.
 const schema = z
 	.object({
 		OXYNOTE_AUTH_REALTIME_BACKEND_URL: httpUrl(),
@@ -154,7 +157,7 @@ const schema = z
 		OXYNOTE_AUTH_REALTIME_BETTER_AUTH_ORGANIZATION_INVITATION_URL:
 			httpUrl(),
 		OXYNOTE_AUTH_REALTIME_TRUSTED_ORIGINS: z.string().optional(),
-		OXYNOTE_AUTH_REALTIME_MCP_RESOURCE: httpUrl(),
+		OXYNOTE_AUTH_REALTIME_MCP_RESOURCE: httpUrl().optional(),
 		OXYNOTE_AUTH_REALTIME_MAX_ORGANIZATIONS: limit(1),
 		OXYNOTE_AUTH_REALTIME_MAX_ORGANIZATION_MEMBERS: limit(Infinity),
 		// better-auth's limiter buckets by client IP, and sign-in and

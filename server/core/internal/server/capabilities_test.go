@@ -35,7 +35,8 @@ func Test_Server_fetchCapabilities(t *testing.T) {
 			"github": false,
 			"slack": true,
 			"aiAssistant": {"status": "active-but-weak", "model": "claude-sonnet-5"},
-			"changeDetection": false
+			"changeDetection": false,
+			"mcp": false
 		}`,
 		rec.Body.String(),
 	)

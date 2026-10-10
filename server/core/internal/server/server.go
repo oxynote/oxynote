@@ -91,6 +91,10 @@ func (o Options) validate() error {
 		return errors.New("invalid port")
 	}
 
+	if !o.MCP.Enabled() {
+		return nil
+	}
+
 	return o.MCP.Validate()
 }
 
@@ -164,6 +168,7 @@ func NewServer(
 			Slack:           slackMan.Configured(),
 			AIAssistant:     opts.Assistant,
 			ChangeDetection: webchangeClient.Configured(),
+			MCP:             opts.MCP.Enabled(),
 		},
 	}
 
@@ -197,12 +202,15 @@ func NewServer(
 	// the MCP handler serves the assistant's tool registry over the
 	// Model Context Protocol; it must be built after the tree notifier
 	// is wired so MCP-driven mutations notify sidebars too.
-	mcpHandler, err := mcp.NewHandler(log, assistantMan, db, client, opts.MCP)
-	if err != nil {
-		return nil, fmt.Errorf("building mcp handler: %w", err)
+	if opts.MCP.Enabled() {
+		mcpHandler, err := mcp.NewHandler(log, assistantMan, db, client, opts.MCP)
+		if err != nil {
+			return nil, fmt.Errorf("building mcp handler: %w", err)
+		}
+
+		srv.handlers.mcp = mcpHandler
 	}
 
-	srv.handlers.mcp = mcpHandler
 	srv.handlers.github = github.NewHandler(log, db, githubMan)
 	srv.handlers.slack = slack.NewHandler(log, db, client, slackMan)
 	srv.handlers.notification = notification.NewHandler(log, db, notifier)

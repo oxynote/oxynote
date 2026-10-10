@@ -57,7 +57,8 @@ func Test_Options_validate(t *testing.T) {
 	assert.NoError(t, Options{Port: 0, MCP: mcpOpts}.validate())
 	assert.NoError(t, Options{Port: 8080, MCP: mcpOpts}.validate())
 	assert.EqualError(t, Options{Port: 999}.validate(), "invalid port")
-	assert.EqualError(t, Options{}.validate(), "missing mcp session url")
+	assert.NoError(t, Options{}.validate())
+	assert.EqualError(t, Options{MCP: MCPOptions{ResourceURL: "http://test.com/core/api/mcp"}}.validate(), "missing mcp session url")
 }
 
 // stubSearcher satisfies the document handler's Searcher.
@@ -222,9 +223,46 @@ func Test_NewServer(t *testing.T) {
 		assert.NotNil(t, srv.handlers.mcp)
 		assert.Len(t, hookMan.BindHookChangeCalls(), 1)
 
-		// nothing above is configured, so every capability reports false;
-		// the search gateway mock is the one switched on.
-		assert.Equal(t, Capabilities{}, srv.capabilities)
+		// nothing above is configured but MCP, so every other capability
+		// reports false.
+		assert.Equal(t, Capabilities{MCP: true}, srv.capabilities)
+	})
+
+	t.Run("MCP off without a resource URL", func(t *testing.T) {
+		t.Parallel()
+
+		srv, err := NewServer(
+			log,
+			Options{Port: 8080},
+			db,
+			fc,
+			storer,
+			// a manager of this subtest's own: NewServer calls
+			// SetTreeNotifier, which must not race the parallel
+			// success case's identical call on a shared manager.
+			assistantCore.NewManager(log, nil, &redis.Pool{}, nil, nil, fc, nil, nil, stubSearchTrigger{}, nil, githubMan, nil, nil, "claude"),
+			datasourceCore.NewManager(log, nil),
+			nil,
+			githubMan,
+			slackMan,
+			webchange.NewClient("", ""),
+			&HookManagerMock{},
+			stubSearcher{},
+			stubSearchTrigger{},
+			notifier,
+			nil,
+			http.DefaultClient,
+		)
+		require.NoError(t, err)
+		require.NotNil(t, srv)
+
+		t.Cleanup(func() {
+			srv.ws.Close()
+			assert.NoError(t, srv.Close())
+		})
+
+		assert.Nil(t, srv.handlers.mcp)
+		assert.False(t, srv.capabilities.MCP)
 	})
 
 	t.Run("Capabilities reflect the configured services", func(t *testing.T) {
@@ -273,6 +311,7 @@ func Test_NewServer(t *testing.T) {
 				Model:  "claude-opus-5",
 			},
 			ChangeDetection: true,
+			MCP:             true,
 		}, srv.capabilities)
 	})
 }

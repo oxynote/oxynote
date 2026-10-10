@@ -25,6 +25,9 @@ type Capabilities struct {
 	// ChangeDetection reports whether the changedetection.io integration
 	// is configured.
 	ChangeDetection bool `json:"changeDetection"`
+
+	// MCP reports whether the MCP surface is served.
+	MCP bool `json:"mcp"`
 }
 
 // AssistantCapability describes the AI assistant's availability,

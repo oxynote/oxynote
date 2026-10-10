@@ -43,8 +43,14 @@ type Options struct {
 
 	// ResourceURL is the canonical public URL of this MCP server
 	// (RFC 8707). The RFC 9728 metadata URL advertised in
-	// WWW-Authenticate challenges is derived from it.
+	// WWW-Authenticate challenges is derived from it. Empty turns the
+	// MCP surface off.
 	ResourceURL string
+}
+
+// Enabled reports whether the MCP surface is served.
+func (o Options) Enabled() bool {
+	return o.ResourceURL != ""
 }
 
 // Validate checks whether the options are valid.

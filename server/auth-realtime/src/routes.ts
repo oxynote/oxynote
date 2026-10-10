@@ -600,6 +600,12 @@ export function createRoutes({
 	// /internal routes, this is protected by the container network plus
 	// Caddy's 403 on /auth-realtime/api/internal/*.
 	app.get("/internal/mcp/session", async (c) => {
+		// without a resource there is no audience to check, so no
+		// token could be verified safely.
+		if (env.mcpResource === undefined) {
+			return c.json({ error: "mcp disabled" }, 404)
+		}
+
 		const header = c.req.header("Authorization") ?? ""
 		if (!header.toLowerCase().startsWith("bearer ")) {
 			return c.json({ error: "missing bearer token" }, 401)

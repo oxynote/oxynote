@@ -57,6 +57,14 @@ describe("loadEnv", () => {
 		expect(env.authOrigin).toBe("http://localhost:8080")
 	})
 
+	it("leaves MCP off without a resource", ({ expect }) => {
+		const env = loadEnv(
+			completeEnv({ OXYNOTE_AUTH_REALTIME_MCP_RESOURCE: "" }),
+		)
+
+		expect(env.mcpResource).toBeUndefined()
+	})
+
 	it("derives the MCP token issuer from the auth origin", ({
 		expect,
 	}) => {

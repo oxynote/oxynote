@@ -182,7 +182,7 @@ async function mcpToken(
 		.setProtectedHeader({ alg: "ES256", kid: "test-key" })
 		.setSubject(claims.sub ?? "user-1")
 		.setIssuer(overrides.issuer ?? ENV.mcpTokenIssuer)
-		.setAudience(overrides.audience ?? ENV.mcpResource)
+		.setAudience(overrides.audience ?? ENV.mcpResource ?? "")
 		.setExpirationTime("1h")
 		.sign(privateKey)
 }
@@ -1193,6 +1193,25 @@ describe("createRoutes", () => {
 	})
 
 	describe("GET /internal/mcp/session", () => {
+		it("answers 404 while MCP is off", async ({ expect }) => {
+			const auth = stubAuth()
+			const { app } = build({
+				env: testEnv({ mcpResource: undefined }),
+				auth,
+			})
+
+			const res = await app.request(
+				"/internal/mcp/session",
+				bearer("any"),
+			)
+
+			expect(res.status).toBe(404)
+			expect(await res.json()).toEqual({
+				error: "mcp disabled",
+			})
+			expect.soft(auth.api.getJwks).not.toHaveBeenCalled()
+		})
+
 		it.for([
 			{ name: "no Authorization header", input: undefined },
 			{ name: "a non-bearer scheme", input: "Basic abc" },

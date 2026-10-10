@@ -329,6 +329,12 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 	warnDisabled(log, assistantMan.Configured(), "assistant is disabled")
 	warnDisabled(log, webchangeClient.Configured(), "changedetection integration is disabled")
 
+	mcpOpts := server.MCPOptions{
+		SessionURL:  buildinfo.Getenv("SERVER_MCP_SESSION_URL"),
+		ResourceURL: buildinfo.Getenv("SERVER_MCP_RESOURCE_URL"),
+	}
+	warnDisabled(log, mcpOpts.Enabled(), "mcp is disabled")
+
 	serverHost, serverPort, err := parseServerAddress(buildinfo.Getenv("SERVER_ADDRESS"))
 	if err != nil {
 		fail(log, closers, "cannot read the configuration", err)
@@ -349,10 +355,7 @@ func main() { //nolint:maintidx // main performs linear wiring of all components
 			Auth: server.AuthOptions{
 				BetterAuthURL: buildinfo.Getenv("SERVER_AUTH_BETTER_AUTH_URL"),
 			},
-			MCP: server.MCPOptions{
-				SessionURL:  buildinfo.Getenv("SERVER_MCP_SESSION_URL"),
-				ResourceURL: buildinfo.Getenv("SERVER_MCP_RESOURCE_URL"),
-			},
+			MCP: mcpOpts,
 		},
 		dbc,
 		metrics,

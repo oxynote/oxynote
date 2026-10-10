@@ -97,6 +97,18 @@ function databaseDsn(config: Config, secrets: Secrets): string {
 	)
 }
 
+// Better Auth's MCP provider refuses a resource URL that is plain http on a
+// non-loopback host, such as a NAS on a LAN address. MCP is left off there
+// so the rest of the app still boots.
+export function mcpAvailable(publicOrigin: string): boolean {
+	const url = new URL(publicOrigin)
+
+	return (
+		url.protocol === "https:" ||
+		/^(localhost|\[::1\]|127\.\d+\.\d+\.\d+)$/.test(url.hostname)
+	)
+}
+
 // buildChildEnvs assembles each process's environment from scratch: a child
 // receives exactly its own component's variables and nothing else, so no
 // flat OXYNOTE_* value and no other component's secret ever leaks through.
@@ -108,7 +120,10 @@ export function buildChildEnvs(
 ): ChildEnvs {
 	const publicCoreUrl = `${config.publicOrigin}/core`
 	const publicAuthRealtimeUrl = `${config.publicOrigin}/auth-realtime`
-	const mcpResourceUrl = `${config.publicOrigin}/core/api/mcp`
+	// an empty resource URL turns MCP off in both services.
+	const mcpResourceUrl = mcpAvailable(config.publicOrigin)
+		? `${config.publicOrigin}/core/api/mcp`
+		: ""
 	const dbDsn = databaseDsn(config, secrets)
 	const sentryDsns = config.crashReportingDisabled
 		? { webDsn: "", coreDsn: "", authRealtimeDsn: "" }

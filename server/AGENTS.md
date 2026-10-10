@@ -39,8 +39,7 @@ GitHub and Slack callback URLs point at `:8080/core/api/apps/...`.
 
 - `/api/...`: session-authed via auth-realtime's `/api/auth/get-session`
   (`SERVER_AUTH_BETTER_AUTH_URL`). `GET /api/capabilities` reports one
-  boolean per optional service (`github`, `slack`, `changeDetection`),
-  snapshotted at boot from each client's `Configured()`, plus `aiAssistant`
+  boolean per optional service, snapshotted at boot, plus `aiAssistant`
   (`status` + `model`).
 - `/api/x/...`: no auth; auth-realtime fetches/stores branch content here
   (`/x/documents/{id}/branches`, `/x/documents/{id}/branch/{branchId}`),

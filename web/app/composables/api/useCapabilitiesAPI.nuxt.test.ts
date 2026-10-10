@@ -17,6 +17,7 @@ function stubCapabilities(overrides: Partial<Capabilities> = {}): Capabilities {
 		github: true,
 		slack: true,
 		changeDetection: true,
+		mcp: true,
 		aiAssistant: { status: AssistantStatus.Active, model: "claude-opus-5" },
 		...overrides,
 	}
@@ -51,6 +52,7 @@ describe("useCapabilitiesAPI", { concurrent: false }, () => {
 					github: true,
 					slack: false,
 					changeDetection: true,
+					mcp: false,
 				}),
 			)
 			const api = makeCapabilitiesAPI()
@@ -60,6 +62,7 @@ describe("useCapabilitiesAPI", { concurrent: false }, () => {
 			expect(api.isGithubEnabled.value).toBe(true)
 			expect(api.isSlackEnabled.value).toBe(false)
 			expect(api.isChangeDetectionEnabled.value).toBe(true)
+			expect(api.isMcpEnabled.value).toBe(false)
 		})
 
 		it("reports every service enabled before the request resolves", ({
@@ -70,6 +73,7 @@ describe("useCapabilitiesAPI", { concurrent: false }, () => {
 			expect(api.isGithubEnabled.value).toBe(true)
 			expect(api.isSlackEnabled.value).toBe(true)
 			expect(api.isChangeDetectionEnabled.value).toBe(true)
+			expect(api.isMcpEnabled.value).toBe(true)
 			expect(api.isAssistantEnabled.value).toBe(true)
 		})
 
@@ -89,6 +93,7 @@ describe("useCapabilitiesAPI", { concurrent: false }, () => {
 			expect(api.isGithubEnabled.value).toBe(true)
 			expect(api.isSlackEnabled.value).toBe(true)
 			expect(api.isChangeDetectionEnabled.value).toBe(true)
+			expect(api.isMcpEnabled.value).toBe(true)
 			expect(api.isAssistantEnabled.value).toBe(true)
 		})
 	})
