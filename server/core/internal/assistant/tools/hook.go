@@ -168,7 +168,7 @@ func decodeHookSettings(raw json.RawMessage) (hook.Type, processor.Settings, err
 func decodeSettings[T any](tp hook.Type, raw json.RawMessage) (T, error) {
 	var dst struct {
 		// Settings is the processor struct the settings decode into.
-		Settings T `json:",embed"` //nolint:revive // embed is the json/v2 option revive does not know yet
+		Settings T `json:",embed"`
 
 		// Type is the hook type the settings belong to.
 		Type hook.Type `json:"type"`
