@@ -118,6 +118,46 @@ func (h *Handler) CreateTag(w http.ResponseWriter, r *http.Request) {
 	httpserver.Respond(h.log, w, t, http.StatusCreated)
 }
 
+// UpdateTag handles renaming or recolouring an existing tag.
+func (h *Handler) UpdateTag(w http.ResponseWriter, r *http.Request) {
+	session, ok := auth.RequireSession(h.log, w, r)
+	if !ok {
+		return
+	}
+
+	tagID, err := httpserver.ExtractNamedID(r, "tagId")
+	if err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	var inp tagCore.UpdateInput
+
+	if err := httpserver.DecodeJSON(r, &inp); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if err := inp.Validate(); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	if err := h.db.UpdateTag(
+		r.Context(),
+		session.ActiveOrganizationID,
+		tagID,
+		inp,
+	); err != nil {
+		httpserver.RespondError(h.log, w, err)
+		return
+	}
+
+	h.NotifyTreeChange(session.ActiveOrganizationID)
+
+	httpserver.Respond(h.log, w, nil, http.StatusNoContent)
+}
+
 // SetTagVisibility handles whether the caller keeps a tag out of their own
 // sidebar. Nobody else's tree changes, so only the caller is told.
 func (h *Handler) SetTagVisibility(w http.ResponseWriter, r *http.Request) {
@@ -297,6 +337,10 @@ type DB interface {
 
 	// InsertTag should store a new tag at the end of its organization's tags.
 	InsertTag(ctx context.Context, t tagCore.Tag) error
+
+	// UpdateTag should rename or recolour a tag in the organization,
+	// preserving its assignments and any field left unset.
+	UpdateTag(ctx context.Context, organizationID string, id xid.ID, inp tagCore.UpdateInput) error
 
 	// SetTagVisibility should record whether one user keeps a tag out of
 	// their sidebar, leaving every other user's view untouched.

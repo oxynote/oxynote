@@ -371,6 +371,7 @@ func (s *Server) router() chi.Router {
 
 	r.Route("/tags", func(sr chi.Router) {
 		sr.Post("/", s.handlers.tag.CreateTag)
+		sr.Put("/{tagId}", s.handlers.tag.UpdateTag)
 		sr.Put("/{tagId}/visibility", s.handlers.tag.SetTagVisibility)
 		sr.Delete("/{tagId}", s.handlers.tag.DeleteTag)
 		sr.Route("/tree", func(ssr chi.Router) {

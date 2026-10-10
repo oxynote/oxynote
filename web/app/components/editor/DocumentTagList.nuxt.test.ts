@@ -9,6 +9,7 @@ import {
 	runInApp,
 } from "~/composables/api/test-helpers"
 import useDocumentAPI from "~/composables/api/useDocumentAPI"
+import useTagAPI from "~/composables/api/useTagAPI"
 import DocumentTagList from "./DocumentTagList.vue"
 import TagPill from "./TagPill.vue"
 import ColorSelect from "./ColorSelect.vue"
@@ -185,6 +186,37 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 		const wrapper = await mountTags()
 
 		expect(wrapper.text()).toContain(t("editor.tags.label"))
+	})
+
+	it("refreshes an assigned pill after editing its tag without reassigning it", async ({
+		expect,
+	}) => {
+		let tag = makeTag(TAG_A, "Production", "#1a9e4a")
+		const treeCalls = mockEndpoint("GET", "/api/tags/tree", () => [tag])
+		const branchCalls = mockEndpoint("GET", BRANCH_TAGS_URL, () => [TAG_A])
+		const updateCalls = mockEndpoint("PUT", `/api/tags/${TAG_A}`, () => {
+			tag = { ...tag, tagName: "Live", color: "#f97316" }
+
+			return {}
+		})
+		const wrapper = await mountTags()
+		const api = runInApp(() => useTagAPI())
+
+		await api.updateTag.mutateAsync({
+			id: TAG_A,
+			req: { tagName: "Live", color: "#f97316" },
+		})
+		await settleMutations()
+
+		expect(updateCalls).toHaveLength(1)
+		expect(treeCalls).toHaveLength(2)
+		expect(branchCalls).toHaveLength(1)
+		expect(
+			wrapper.findAllComponents(TagPill).map((pill) => ({
+				name: pill.props("name"),
+				color: pill.props("color"),
+			})),
+		).toEqual([{ name: "Live", color: "#f97316" }])
 	})
 
 	it("refetches the branch's tags when the server says they changed", async ({

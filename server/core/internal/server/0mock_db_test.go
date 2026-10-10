@@ -299,6 +299,9 @@ var _ DB = &DBMock{}
 //			UpdateSlackUserLinkFunc: func(ctx context.Context, link slackCore.UserLink) error {
 //				panic("mock out the UpdateSlackUserLink method")
 //			},
+//			UpdateTagFunc: func(ctx context.Context, organizationID string, id xid.ID, inp tag.UpdateInput) error {
+//				panic("mock out the UpdateTag method")
+//			},
 //			UpdateTagTreeFunc: func(ctx context.Context, tree tag.Summaries, organizationID string) error {
 //				panic("mock out the UpdateTagTree method")
 //			},
@@ -584,6 +587,9 @@ type DBMock struct {
 
 	// UpdateSlackUserLinkFunc mocks the UpdateSlackUserLink method.
 	UpdateSlackUserLinkFunc func(ctx context.Context, link slackCore.UserLink) error
+
+	// UpdateTagFunc mocks the UpdateTag method.
+	UpdateTagFunc func(ctx context.Context, organizationID string, id xid.ID, inp tag.UpdateInput) error
 
 	// UpdateTagTreeFunc mocks the UpdateTagTree method.
 	UpdateTagTreeFunc func(ctx context.Context, tree tag.Summaries, organizationID string) error
@@ -1372,6 +1378,17 @@ type DBMock struct {
 			// Link is the link argument value.
 			Link slackCore.UserLink
 		}
+		// UpdateTag holds details about calls to the UpdateTag method.
+		UpdateTag []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// OrganizationID is the organizationID argument value.
+			OrganizationID string
+			// ID is the id argument value.
+			ID xid.ID
+			// Inp is the inp argument value.
+			Inp tag.UpdateInput
+		}
 		// UpdateTagTree holds details about calls to the UpdateTagTree method.
 		UpdateTagTree []struct {
 			// Ctx is the ctx argument value.
@@ -1506,6 +1523,7 @@ type DBMock struct {
 	lockUpdateOrganizationLogo                    sync.RWMutex
 	lockUpdateSlackAppOrganizationID              sync.RWMutex
 	lockUpdateSlackUserLink                       sync.RWMutex
+	lockUpdateTag                                 sync.RWMutex
 	lockUpdateTagTree                             sync.RWMutex
 	lockUpdateUserImage                           sync.RWMutex
 	lockUpsertDocumentBranchView                  sync.RWMutex
@@ -5317,6 +5335,53 @@ func (mock *DBMock) UpdateSlackUserLinkCalls() []struct {
 	mock.lockUpdateSlackUserLink.RLock()
 	calls = mock.calls.UpdateSlackUserLink
 	mock.lockUpdateSlackUserLink.RUnlock()
+	return calls
+}
+
+// UpdateTag calls UpdateTagFunc.
+func (mock *DBMock) UpdateTag(ctx context.Context, organizationID string, id xid.ID, inp tag.UpdateInput) error {
+	callInfo := struct {
+		Ctx            context.Context
+		OrganizationID string
+		ID             xid.ID
+		Inp            tag.UpdateInput
+	}{
+		Ctx:            ctx,
+		OrganizationID: organizationID,
+		ID:             id,
+		Inp:            inp,
+	}
+	mock.lockUpdateTag.Lock()
+	mock.calls.UpdateTag = append(mock.calls.UpdateTag, callInfo)
+	mock.lockUpdateTag.Unlock()
+	if mock.UpdateTagFunc == nil {
+		var (
+			errOut error
+		)
+		return errOut
+	}
+	return mock.UpdateTagFunc(ctx, organizationID, id, inp)
+}
+
+// UpdateTagCalls gets all the calls that were made to UpdateTag.
+// Check the length with:
+//
+//	len(mockedDB.UpdateTagCalls())
+func (mock *DBMock) UpdateTagCalls() []struct {
+	Ctx            context.Context
+	OrganizationID string
+	ID             xid.ID
+	Inp            tag.UpdateInput
+} {
+	var calls []struct {
+		Ctx            context.Context
+		OrganizationID string
+		ID             xid.ID
+		Inp            tag.UpdateInput
+	}
+	mock.lockUpdateTag.RLock()
+	calls = mock.calls.UpdateTag
+	mock.lockUpdateTag.RUnlock()
 	return calls
 }
 
