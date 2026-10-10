@@ -96,6 +96,7 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 		const wrapper = await mountBox()
 
 		expect(wrapper.text()).toContain(t("notification.empty-title"))
+		expect(wrapper.text()).toContain(t("notification.empty-description"))
 	})
 
 	it("lists one row per notification", async ({ expect }) => {
@@ -301,14 +302,19 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 			expect,
 		}) => {
 			disposeMockEndpoints()
-			const calls = mockEndpoint("GET", "/api/notifications", (call) => ({
-				notifications: [
-					makeNotification({
-						id: `${String(call.query["filter-read_eq"] ?? "all")}-${String(call.query.page)}`,
-					}),
-				],
-				pageCount: call.query["filter-read_eq"] === "false" ? 2 : 3,
-			}))
+			const calls = mockEndpoint("GET", "/api/notifications", (call) => {
+				const read = call.query["filter-read_eq"]
+				const filter = typeof read === "string" ? read : "all"
+
+				return {
+					notifications: [
+						makeNotification({
+							id: `${filter}-${String(call.query.page)}`,
+						}),
+					],
+					pageCount: read === "false" ? 2 : 3,
+				}
+			})
 			seedPages(
 				[
 					[makeNotification({ id: "all-1" })],
@@ -945,7 +951,17 @@ function rows(wrapper: Awaited<ReturnType<typeof mountBox>>) {
 }
 
 function notificationIds(wrapper: Awaited<ReturnType<typeof mountBox>>) {
-	return wrapper
-		.findAllComponents(NotificationRow)
-		.map((row) => row.props("notification").id)
+	return wrapper.findAllComponents(NotificationRow).map((row) => {
+		const notification: unknown = row.props("notification")
+		if (
+			!notification ||
+			typeof notification !== "object" ||
+			!("id" in notification) ||
+			typeof notification.id !== "string"
+		) {
+			throw new Error("Expected a notification with a string id")
+		}
+
+		return notification.id
+	})
 }

@@ -144,7 +144,7 @@ describe("useNotificationAPI", { concurrent: false }, () => {
 				makePage(
 					[
 						makeNotification(
-							`${String(call.query["filter-read_eq"] ?? "all")}-${String(call.query.page)}`,
+							notificationPageId(call.query),
 							call.query["filter-read_eq"] === "true",
 						),
 					],
@@ -216,12 +216,7 @@ describe("useNotificationAPI", { concurrent: false }, () => {
 				}
 
 				return makePage(
-					[
-						makeNotification(
-							`${String(call.query["filter-read_eq"] ?? "all")}-${String(call.query.page)}`,
-							false,
-						),
-					],
+					[makeNotification(notificationPageId(call.query), false)],
 					2,
 				)
 			})
@@ -692,3 +687,10 @@ describe("useNotificationAPI", { concurrent: false }, () => {
 		})
 	})
 })
+
+function notificationPageId(query: Record<string, unknown>) {
+	const read = query["filter-read_eq"]
+	const filter = typeof read === "string" ? read : "all"
+
+	return `${filter}-${String(query.page)}`
+}

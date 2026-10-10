@@ -274,20 +274,16 @@ async function handleMarkAllRead() {
 			>
 				<div class="text-base text-muted-foreground">
 					{{
-						t(
-							readFilter === "all"
-								? "notification.empty-title"
-								: "notification.filtered-empty-title",
-						)
+						readFilter === "all"
+							? t("notification.empty-title")
+							: t("notification.filtered-empty-title")
 					}}
 				</div>
 				<div class="text-sm text-muted-foreground">
 					{{
-						t(
-							readFilter === "all"
-								? "notification.empty-description"
-								: "notification.filtered-empty-description",
-						)
+						readFilter === "all"
+							? t("notification.empty-description")
+							: t("notification.filtered-empty-description")
 					}}
 				</div>
 			</div>
