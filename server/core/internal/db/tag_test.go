@@ -863,7 +863,7 @@ func Test_agent_UpdateTag(t *testing.T) {
 			err := db.UpdateTag(ctx, c.OrganizationID, c.Tag.ID, c.Input)
 			testutil.RequireEqualError(t, c.Err, err)
 
-			q, args := db.selectTag(c.Tag.OrganizationID).
+			q, args := db.selectTag(db.builder.Select(), c.Tag.OrganizationID).
 				Where(sq.Eq{"tags.id": c.Tag.ID}).
 				MustSql()
 
