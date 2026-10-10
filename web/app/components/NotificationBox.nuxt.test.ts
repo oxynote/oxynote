@@ -12,12 +12,14 @@ import {
 	seedQueryData,
 } from "~/composables/api/test-helpers"
 import NotificationBox from "./NotificationBox.vue"
+import NotificationRow from "./NotificationRow.vue"
 import {
 	at,
 	findButtonByText,
 	mockAuthOrganization,
 	renderedIconNames,
 	seedAuthOrganization,
+	settleMutations,
 	t,
 } from "./test-helpers"
 
@@ -82,6 +84,7 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 
 	afterEach(() => {
 		disposeMockEndpoints()
+		useWebSocketStateStore().state = null
 		vi.useRealTimers()
 	})
 
@@ -213,6 +216,292 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 		).trigger("click")
 
 		expect(wrapper.emitted("close-notification-box")).toHaveLength(1)
+	})
+
+	// filter changes share the mounted query and the endpoint registry.
+	describe("filtering", { concurrent: false }, () => {
+		it("selects all notifications by default", async ({ expect }) => {
+			seedNotifications([
+				makeNotification(),
+				makeNotification({ id: "read", read: true }),
+			])
+
+			const wrapper = await mountBox()
+
+			expect(wrapper.get("[role='group']").attributes("aria-label")).toBe(
+				t("notification.filters.label"),
+			)
+			expect(wrapper.get("button[aria-pressed='true']").text()).toBe(
+				t("notification.filters.all"),
+			)
+			expect(rows(wrapper)).toHaveLength(2)
+		})
+
+		it.for([
+			{ filter: "unread", read: false },
+			{ filter: "read", read: true },
+		])(
+			"fetches $filter notifications beyond the first unfiltered page",
+			async ({ filter, read }, { expect }) => {
+				disposeMockEndpoints()
+				const notifications = Array.from({ length: 52 }, (_unused, index) =>
+					makeNotification({
+						id: `n${index}`,
+						read: index < 50 ? !read : read,
+					}),
+				)
+				const listCalls = mockEndpoint("GET", "/api/notifications", (call) => {
+					const filtered =
+						call.query["filter-read_eq"] === undefined
+							? notifications
+							: notifications.filter(
+									(notification) =>
+										String(notification.read) === call.query["filter-read_eq"],
+								)
+
+					return {
+						notifications: filtered.slice(0, 50),
+						pageCount: Math.ceil(filtered.length / 50),
+					}
+				})
+				const countCalls = mockEndpoint(
+					"GET",
+					"/api/notifications/count",
+					() => ({
+						count: notifications.filter((notification) => !notification.read)
+							.length,
+					}),
+				)
+				const wrapper = await mountBox()
+				await settleMutations()
+				expect(rows(wrapper)).toHaveLength(50)
+
+				await findButtonByText(
+					wrapper,
+					t(`notification.filters.${filter}`),
+				).trigger("click")
+				await settleMutations()
+
+				expect(notificationIds(wrapper)).toEqual(["n50", "n51"])
+				expect(wrapper.get("button[aria-pressed='true']").text()).toBe(
+					t(`notification.filters.${filter}`),
+				)
+				expect(infiniteScroll.canLoadMore()).toBe(false)
+				expect(listCalls.map((call) => call.query)).toEqual([
+					{ limit: "50", page: "1" },
+					{ limit: "50", page: "1", "filter-read_eq": String(read) },
+				])
+				expect(countCalls.map((call) => call.query)).toEqual([
+					{ read: "false" },
+				])
+			},
+		)
+
+		it("starts a new filter at page one and resumes each filter's cached pages", async ({
+			expect,
+		}) => {
+			disposeMockEndpoints()
+			const calls = mockEndpoint("GET", "/api/notifications", (call) => ({
+				notifications: [
+					makeNotification({
+						id: `${String(call.query["filter-read_eq"] ?? "all")}-${String(call.query.page)}`,
+					}),
+				],
+				pageCount: call.query["filter-read_eq"] === "false" ? 2 : 3,
+			}))
+			seedPages(
+				[
+					[makeNotification({ id: "all-1" })],
+					[makeNotification({ id: "all-2" })],
+				],
+				3,
+			)
+			const wrapper = await mountBox()
+			const scroll = wrapper.get(".overflow-y-auto").element
+			scroll.scrollTop = 120
+
+			await findButtonByText(wrapper, t("notification.filters.unread")).trigger(
+				"click",
+			)
+			await settleMutations()
+			expect(scroll.scrollTop).toBe(0)
+			await infiniteScroll.load()
+			await settleMutations()
+			expect(notificationIds(wrapper)).toEqual(["false-1", "false-2"])
+			expect(infiniteScroll.canLoadMore()).toBe(false)
+			await findButtonByText(wrapper, t("notification.filters.all")).trigger(
+				"click",
+			)
+			await settleMutations()
+			expect(notificationIds(wrapper)).toEqual(["all-1", "all-2"])
+			await infiniteScroll.load()
+			await settleMutations()
+
+			expect(notificationIds(wrapper)).toEqual(["all-1", "all-2", "all-3"])
+			expect(calls.map((call) => call.query)).toEqual([
+				{ limit: "50", page: "1", "filter-read_eq": "false" },
+				{ limit: "50", page: "2", "filter-read_eq": "false" },
+				{ limit: "50", page: "3" },
+			])
+		})
+
+		it("describes an empty filtered list without saying the whole inbox is empty", async ({
+			expect,
+		}) => {
+			seedNotifications([makeNotification()], 1)
+			const wrapper = await mountBox()
+
+			await findButtonByText(wrapper, t("notification.filters.read")).trigger(
+				"click",
+			)
+			await settleMutations()
+
+			expect(wrapper.text()).toContain(t("notification.filtered-empty-title"))
+			expect(wrapper.text()).toContain(
+				t("notification.filtered-empty-description"),
+			)
+			expect(wrapper.text()).not.toContain(t("notification.empty-title"))
+			expect(rows(wrapper)).toHaveLength(0)
+			expect(
+				findButtonByText(wrapper, t("notification.read-all-button")).exists(),
+			).toBe(true)
+		})
+
+		it.for([
+			{ name: "one notification", all: false },
+			{ name: "all notifications", all: true },
+		])(
+			"updates filtered results and the unread count after marking $name read",
+			async ({ all }, { expect }) => {
+				disposeMockEndpoints()
+				let notifications = [
+					makeNotification(),
+					makeNotification({ id: "notif-2" }),
+				]
+				const listCalls = mockEndpoint("GET", "/api/notifications", (call) => ({
+					notifications: notifications.filter(
+						(notification) =>
+							call.query["filter-read_eq"] === undefined ||
+							String(notification.read) === call.query["filter-read_eq"],
+					),
+					pageCount: 1,
+				}))
+				const countCalls = mockEndpoint(
+					"GET",
+					"/api/notifications/count",
+					() => ({
+						count: notifications.filter((notification) => !notification.read)
+							.length,
+					}),
+				)
+				const putCalls = mockEndpoint(
+					"PUT",
+					"/api/notifications/read-status",
+					(call) => {
+						const { ids } = call.body as { ids: string[] }
+						notifications = notifications.map((notification) => ({
+							...notification,
+							read:
+								notification.read ||
+								ids.length === 0 ||
+								ids.includes(notification.id),
+						}))
+
+						return {}
+					},
+				)
+				const wrapper = await mountBox()
+				await settleMutations()
+				await findButtonByText(
+					wrapper,
+					t("notification.filters.unread"),
+				).trigger("click")
+				await settleMutations()
+
+				await findButtonByText(
+					wrapper,
+					t(
+						all
+							? "notification.read-all-button"
+							: "notification.actions.mark-read",
+					),
+				).trigger("click")
+				await settleMutations()
+
+				expect(notificationIds(wrapper)).toEqual(all ? [] : ["notif-2"])
+				expect(wrapper.get("button[aria-pressed='true']").text()).toBe(
+					t("notification.filters.unread"),
+				)
+				expect(
+					wrapper
+						.findAll("button")
+						.some(
+							(button) => button.text() === t("notification.read-all-button"),
+						),
+				).toBe(!all)
+				expect(putCalls.map((call) => call.body)).toEqual([
+					{ ids: all ? [] : ["notif-1"] },
+				])
+				expect(countCalls).toHaveLength(2)
+				expect(listCalls.map((call) => call.query["filter-read_eq"])).toEqual([
+					undefined,
+					"false",
+					"false",
+				])
+				expect(toast.custom).not.toHaveBeenCalled()
+			},
+		)
+
+		it("preserves the selected filter on live updates and invalidates inactive filters", async ({
+			expect,
+		}) => {
+			disposeMockEndpoints()
+			let notifications = [makeNotification()]
+			let onNotification: () => void = () => undefined
+			const subscribe = vi.fn((_topic: string, callback: () => void) => {
+				onNotification = callback
+
+				return vi.fn()
+			})
+			useWebSocketStateStore().state = { subscribe } as never
+			const listCalls = mockEndpoint("GET", "/api/notifications", () => ({
+				notifications,
+				pageCount: 1,
+			}))
+			const countCalls = mockEndpoint(
+				"GET",
+				"/api/notifications/count",
+				() => ({ count: notifications.length }),
+			)
+			const wrapper = await mountBox()
+			await settleMutations()
+			await findButtonByText(wrapper, t("notification.filters.unread")).trigger(
+				"click",
+			)
+			await settleMutations()
+			notifications = [...notifications, makeNotification({ id: "notif-2" })]
+
+			onNotification()
+			await settleMutations()
+
+			expect(wrapper.get("button[aria-pressed='true']").text()).toBe(
+				t("notification.filters.unread"),
+			)
+			expect(notificationIds(wrapper)).toEqual(["notif-1", "notif-2"])
+			await findButtonByText(wrapper, t("notification.filters.all")).trigger(
+				"click",
+			)
+			await settleMutations()
+			expect(notificationIds(wrapper)).toEqual(["notif-1", "notif-2"])
+			expect(listCalls.map((call) => call.query["filter-read_eq"])).toEqual([
+				undefined,
+				"false",
+				"false",
+				undefined,
+			])
+			expect(countCalls).toHaveLength(2)
+			expect(subscribe).toHaveBeenCalledTimes(1)
+		})
 	})
 
 	describe("loading more", { concurrent: false }, () => {
@@ -542,6 +831,43 @@ describe("<NotificationBox>", { concurrent: false }, () => {
 			useWebSocketStateStore().state = null
 		})
 
+		it("still refreshes the unread count when a live list refresh fails", async ({
+			expect,
+		}) => {
+			disposeMockEndpoints()
+			let onNotification: () => void = () => undefined
+			const subscribe = vi.fn((_topic: string, callback: () => void) => {
+				onNotification = callback
+
+				return vi.fn()
+			})
+			useWebSocketStateStore().state = { subscribe } as never
+			const listCalls = mockEndpoint("GET", "/api/notifications", () => {
+				throw createError({ statusCode: 400 })
+			})
+			const countCalls = mockEndpoint(
+				"GET",
+				"/api/notifications/count",
+				() => ({ count: 2 }),
+			)
+			seedNotifications([])
+			const wrapper = await mountBox()
+
+			onNotification()
+			await settleMutations()
+
+			expect(
+				findButtonByText(wrapper, t("notification.read-all-button")).exists(),
+			).toBe(true)
+			expect(wrapper.get("button[aria-pressed='true']").text()).toBe(
+				t("notification.filters.all"),
+			)
+			expect(infiniteScroll.canLoadMore()).toBe(false)
+			expect(listCalls).toHaveLength(1)
+			expect(countCalls).toHaveLength(1)
+			expect(subscribe).toHaveBeenCalledTimes(1)
+		})
+
 		it("unsubscribes when it goes away", async ({ expect }) => {
 			const unsubscribe = vi.fn()
 			useWebSocketStateStore().state = {
@@ -576,13 +902,17 @@ function seedPages(pages: unknown[][], pageCount = pages.length, unread = 0) {
 	// a plain seed leaves the entry without its paging state, and the
 	// box's query cannot mount on it
 	runInApp(() => {
-		setInfiniteQueryData(useQueryCache(), ["notifications", "list", 50], {
-			pages: pages.map((notifications) => ({
-				notifications: notifications,
-				pageCount: pageCount,
-			})),
-			pageParams: pages.map((_page, index) => index + 1),
-		})
+		setInfiniteQueryData(
+			useQueryCache(),
+			["notifications", "list", 50, "all"],
+			{
+				pages: pages.map((notifications) => ({
+					notifications: notifications,
+					pageCount: pageCount,
+				})),
+				pageParams: pages.map((_page, index) => index + 1),
+			},
+		)
 	})
 	seedQueryData(["notifications", "count", false], { count: unread })
 }
@@ -612,4 +942,10 @@ function mountBox() {
 
 function rows(wrapper: Awaited<ReturnType<typeof mountBox>>) {
 	return wrapper.findAll("[role='link']")
+}
+
+function notificationIds(wrapper: Awaited<ReturnType<typeof mountBox>>) {
+	return wrapper
+		.findAllComponents(NotificationRow)
+		.map((row) => row.props("notification").id)
 }

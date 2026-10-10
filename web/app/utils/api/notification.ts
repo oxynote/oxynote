@@ -2,6 +2,7 @@ export const WS_NOTIFICATION_CREATION_TOPIC = "creation@notifications"
 
 export interface NotificationsParams {
 	limit: number
+	read?: boolean
 }
 
 export interface NotificationsCountParams {
