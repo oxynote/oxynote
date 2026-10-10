@@ -65,8 +65,8 @@ func selectStep(hints *storage.SelectHints, span int64) int64 {
 // sits at or before the window's start, which is what gives the first
 // point of the evaluation grid something to look back at.
 func samplesIn(value func(tick int64) float64, start, end, step int64) []chunks.Sample {
-	if last := timeAt(latestTick()).UnixMilli(); end > last {
-		end = last
+	if lastMs := timeAt(latestTick()).UnixMilli(); end > lastMs {
+		end = lastMs
 	}
 
 	var ss []chunks.Sample

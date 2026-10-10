@@ -114,6 +114,8 @@ func (c *Credentials) IsValid() bool {
 // MarshalJSON returns the JSON representation of the credentials. Empty
 // credentials marshal as null: emitting nothing at all would make every
 // enclosing struct fail to marshal.
+//
+//nolint:revive // a value receiver would let a struct holding credentials by value emit the secret
 func (c *Credentials) MarshalJSON() ([]byte, error) {
 	if c == nil || len(c.data) == 0 {
 		return []byte("null"), nil

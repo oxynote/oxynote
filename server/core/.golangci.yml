@@ -216,6 +216,12 @@ linters:
           disabled: true
         - name: enforce-switch-style
           disabled: true
+        - name: multiline-if-init
+          disabled: true
+        # embed is a json/v2 option that revive does not know.
+        - name: struct-tag
+          arguments:
+            - json,embed
     rowserrcheck:
       packages:
         - github.com/jmoiron/sqlx

@@ -220,6 +220,8 @@ linters:
           disabled: true
         - name: enforce-switch-style
           disabled: true
+        - name: multiline-if-init
+          disabled: true
     rowserrcheck:
       packages:
         - github.com/jmoiron/sqlx

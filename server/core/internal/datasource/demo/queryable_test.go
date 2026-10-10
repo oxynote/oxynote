@@ -75,18 +75,18 @@ func Test_selectStep(t *testing.T) {
 func Test_samplesIn(t *testing.T) {
 	t.Parallel()
 
-	start := _epoch.Add(time.Hour).UnixMilli()
-	end := _epoch.Add(2 * time.Hour).UnixMilli()
+	startMs := _epoch.Add(time.Hour).UnixMilli()
+	endMs := _epoch.Add(2 * time.Hour).UnixMilli()
 
-	ss := samplesIn(countingValue, start, end, _tickMillis)
+	ss := samplesIn(countingValue, startMs, endMs, _tickMillis)
 
 	require.NotEmpty(t, ss)
 
-	// the window is covered end to end, one sample a step apart, and
+	// the window is covered endMs to endMs, one sample a step apart, and
 	// each carries the value of the tick it lands in.
 	assert.Len(t, ss, 61)
-	assert.Equal(t, start, ss[0].T())
-	assert.Equal(t, end, ss[len(ss)-1].T())
+	assert.Equal(t, startMs, ss[0].T())
+	assert.Equal(t, endMs, ss[len(ss)-1].T())
 
 	for i, s := range ss {
 		assert.Equal(t, float64(tickAtMillis(s.T())), s.F())
@@ -96,18 +96,18 @@ func Test_samplesIn(t *testing.T) {
 		}
 	}
 
-	// the first sample sits at or before the window's start, so the
+	// the first sample sits at or before the window's startMs, so the
 	// first point of the evaluation grid has something to look back at.
-	ss = samplesIn(countingValue, start+30_000, end, _tickMillis)
+	ss = samplesIn(countingValue, startMs+30_000, endMs, _tickMillis)
 	require.NotEmpty(t, ss)
-	assert.LessOrEqual(t, ss[0].T(), start+30_000)
+	assert.LessOrEqual(t, ss[0].T(), startMs+30_000)
 
 	// nothing past the present is ever sampled.
-	last := timeAt(latestTick()).UnixMilli()
+	lastMs := timeAt(latestTick()).UnixMilli()
 
-	ss = samplesIn(countingValue, last-10*_tickMillis, last+time.Hour.Milliseconds(), _tickMillis)
+	ss = samplesIn(countingValue, lastMs-10*_tickMillis, lastMs+time.Hour.Milliseconds(), _tickMillis)
 	require.NotEmpty(t, ss)
-	assert.LessOrEqual(t, ss[len(ss)-1].T(), last)
+	assert.LessOrEqual(t, ss[len(ss)-1].T(), lastMs)
 
 	// a window that lands entirely before the epoch produces nothing
 	// rather than running the timeline backwards.
@@ -137,19 +137,19 @@ func Test_querier_Select(t *testing.T) {
 	t.Parallel()
 
 	var (
-		start = _epoch.Add(time.Hour).UnixMilli()
-		end   = _epoch.Add(2 * time.Hour).UnixMilli()
-		name  = _namespace + "deploy_confidence_index"
+		startMs = _epoch.Add(time.Hour).UnixMilli()
+		endMs   = _epoch.Add(2 * time.Hour).UnixMilli()
+		name    = _namespace + "deploy_confidence_index"
 	)
 
-	q := &querier{registry: newRegistry(), mint: start, maxt: end}
+	q := &querier{registry: newRegistry(), mint: startMs, maxt: endMs}
 
 	// the matchers narrow the set, and every series in it carries the
 	// samples of the window the hints asked about.
 	set := q.Select(
 		context.Background(),
 		true,
-		&storage.SelectHints{Start: start, End: end, Step: _tickMillis},
+		&storage.SelectHints{Start: startMs, End: endMs, Step: _tickMillis},
 		nameMatcher(t, name),
 	)
 
@@ -170,8 +170,8 @@ func Test_querier_Select(t *testing.T) {
 		for it.Next() == chunkenc.ValFloat {
 			ts, _ := it.At()
 
-			assert.GreaterOrEqual(t, ts, start)
-			assert.LessOrEqual(t, ts, end)
+			assert.GreaterOrEqual(t, ts, startMs)
+			assert.LessOrEqual(t, ts, endMs)
 
 			samples++
 		}

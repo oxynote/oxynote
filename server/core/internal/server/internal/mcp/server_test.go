@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/oxynote/oxynote/server/core/internal/assistant/tools"
@@ -127,7 +128,7 @@ func Test_Handler_server(t *testing.T) {
 		},
 		"Both document scopes list every document and tag tool and no data-source tool": {
 			Scopes: []string{ScopeDocumentRead, ScopeDocumentWrite},
-			Names:  append(append([]string{}, _readToolNames...), _writeToolNames...),
+			Names:  slices.Concat(_readToolNames, _writeToolNames),
 		},
 		"Data-source scope lists only the data-source tools": {
 			Scopes: []string{ScopeDataSourceRead},
@@ -136,7 +137,7 @@ func Test_Handler_server(t *testing.T) {
 		},
 		"Read and data-source scopes list both groups": {
 			Scopes: []string{ScopeDocumentRead, ScopeDataSourceRead},
-			Names:  append(append([]string{}, _readToolNames...), _dataSourceToolNames...),
+			Names:  slices.Concat(_readToolNames, _dataSourceToolNames),
 		},
 	}
 

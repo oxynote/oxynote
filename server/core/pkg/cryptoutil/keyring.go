@@ -115,7 +115,7 @@ func (k *Keyring) Encrypt(plaintext, aad []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	return kk.aead.Seal(out, out[_keyringHeaderSize:], plaintext, aad), nil
+	return kk.aead.Seal(out, out[_keyringHeaderSize:], plaintext, aad), nil //nolint:gosec // the nonce is read from crypto/rand above
 }
 
 // Decrypt opens a ciphertext Encrypt produced under any key the keyring
