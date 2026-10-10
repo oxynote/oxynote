@@ -145,6 +145,55 @@ describe("<BlockHandle>", { concurrent: false }, () => {
 		expect(wrapper.text()).toContain(t("editor.drag-handle.screen-reader-hint"))
 	})
 
+	it("opens the compact block and hook menu for the touch-held block", async ({
+		expect,
+	}) => {
+		stubViewportMatches(false)
+		const wrapper = await mountHandle()
+		hoverNode(wrapper, 10)
+		const onNodeLongPress = wrapper
+			.findComponent(DragHandle)
+			.props("onNodeLongPress") as () => void
+
+		onNodeLongPress()
+		await nextTick()
+
+		expect(wrapper.findComponent(CoreMenu).props("hovered")).toEqual(
+			expect.objectContaining({ nodePos: 10, nodeId: "block-1" }),
+		)
+		expect(wrapper.findComponent(HookMenuContent).props("nodeId")).toBe(
+			"block-1",
+		)
+		expect(
+			wrapper
+				.get("button[data-slot='dropdown-menu-trigger']")
+				.attributes("aria-expanded"),
+		).toBe("true")
+		expect(
+			document.body
+				.querySelector("[data-slot='dropdown-menu-content']")
+				?.classList.contains("select-none"),
+		).toBe(true)
+		expect(handleRoot(wrapper).classes()).not.toContain("select-none")
+		expect(useEditorMeta().isLocked.value).toBe(true)
+		expect(grabbingCursor()).toBe(false)
+	})
+
+	it("opens the block menu from its labelled keyboard button", async ({
+		expect,
+	}) => {
+		stubViewportMatches(false)
+		const wrapper = await mountHandle()
+		hoverNode(wrapper, 10)
+		const trigger = wrapper.get("button[data-slot='dropdown-menu-trigger']")
+
+		await trigger.trigger("keydown", { key: "Enter" })
+
+		expect(trigger.text()).toBe(t("editor.drag-handle.screen-reader-hint"))
+		expect(trigger.attributes("aria-expanded")).toBe("true")
+		expect(wrapper.findComponent(CoreMenu).exists()).toBe(true)
+	})
+
 	it("folds the hook handle away on a narrow screen", async ({ expect }) => {
 		stubViewportMatches(false)
 
