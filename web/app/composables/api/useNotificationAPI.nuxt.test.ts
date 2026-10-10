@@ -1,5 +1,5 @@
 import type { EntryKey, UseInfiniteQueryData } from "@pinia/colada"
-import { afterEach, beforeEach, describe, it } from "vitest"
+import { afterEach, beforeEach, describe, it, vi } from "vitest"
 import {
 	clearQueryCache,
 	disposeMockEndpoints,
@@ -305,6 +305,48 @@ describe("useNotificationAPI", { concurrent: false }, () => {
 	})
 
 	describe("markNotificationsRead", () => {
+		it("preserves the error when preparing the optimistic update fails", async ({
+			expect,
+		}) => {
+			const listCalls = mockEndpoint("GET", "/api/notifications", () =>
+				makePage([]),
+			)
+			const countCalls = mockEndpoint(
+				"GET",
+				"/api/notifications/count",
+				() => ({ count: 0 }),
+			)
+			const putCalls = mockEndpoint(
+				"PUT",
+				"/api/notifications/read-status",
+				() => ({}),
+			)
+			const page = makePage([makeNotification("n1", false)])
+			seedPages(LIST_KEY_A, page)
+			const api = makeNotificationAPI()
+			const queryCache = runInApp(() => useQueryCache())
+			const error = new Error("Cache unavailable")
+			const getQueryData = vi
+				.spyOn(queryCache, "getQueryData")
+				.mockImplementationOnce(() => {
+					throw error
+				})
+
+			try {
+				await expect(
+					api.markNotificationsRead.mutateAsync({ ids: ["n1"] }),
+				).rejects.toBe(error)
+				expect(getQueryData).toHaveBeenCalledExactlyOnceWith(LIST_KEY_A)
+				expect(putCalls).toHaveLength(0)
+				expect(listCalls).toHaveLength(0)
+				expect(countCalls).toHaveLength(0)
+			} finally {
+				getQueryData.mockRestore()
+			}
+
+			expect(getPages(LIST_KEY_A)).toEqual(makePages(page))
+		})
+
 		it.for([
 			{ name: "one notification", ids: ["n1"], remaining: ["n2"] },
 			{ name: "all notifications", ids: [], remaining: [] },

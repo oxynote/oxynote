@@ -18,7 +18,7 @@ export default function () {
 	function useFetchManyNotifications(
 		paramsRef: MaybeRefOrGetter<NotificationsParams>,
 	) {
-		return useInfiniteQuery(() => {
+		return useInfiniteQuery<NotificationsResponse, Error, number>(() => {
 			const { limit, read } = toValue(paramsRef)
 
 			return {
@@ -136,6 +136,10 @@ export default function () {
 		},
 		onSuccess: invalidateNotifications,
 		onError(_err, _data, { oldNotifs, newNotifs }) {
+			if (!newNotifs) {
+				return
+			}
+
 			const entries = queryCache.getEntries({
 				key: NOTIFICATION_QUERY_KEYS.listRoot,
 				// switching filters can populate another cache while the
