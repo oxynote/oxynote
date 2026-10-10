@@ -730,6 +730,7 @@ func Test_agent_UpdateTag(t *testing.T) {
 		OrganizationID   string
 		Tag              tag.Tag
 		Input            tag.UpdateInput
+		BranchIDs        []xid.ID
 		Name             string
 		Color            string
 		Err              error
@@ -817,6 +818,32 @@ func Test_agent_UpdateTag(t *testing.T) {
 				Color:          "#3b82f6",
 			}
 		},
+		"Preserves assignments across documents and branches": func(t *testing.T, db *DB) tcase {
+			tg := prepTags(t, db, 1, func(_ int, tg *tag.Tag) {
+				tg.SortIndex = 7
+				tg.CreatedBy = null.StringFrom(prepUsers(t, db, 1)[0])
+			})[0]
+			first := prepTaggedDocument(t, db, tg)
+			second := prepTaggedDocument(t, db, tg)
+			branch := prepDocumentBranches(t, db, 1, func(_ int, br *document.Document) {
+				br.ID = first.ID
+				br.OrganizationID = tg.OrganizationID
+			})[0]
+
+			prepBranchTags(t, db, tg.OrganizationID, branch.BranchID, tg.ID)
+
+			return tcase{
+				OrganizationID: tg.OrganizationID,
+				Tag:            tg,
+				Input: tag.UpdateInput{
+					TagName: null.StringFrom("Release"),
+					Color:   null.StringFrom("#00a63e"),
+				},
+				BranchIDs: []xid.ID{first.BranchID, second.BranchID, branch.BranchID},
+				Name:      "Release",
+				Color:     "#00a63e",
+			}
+		},
 	}
 
 	for cn, cfn := range cc {
@@ -836,19 +863,23 @@ func Test_agent_UpdateTag(t *testing.T) {
 			err := db.UpdateTag(ctx, c.OrganizationID, c.Tag.ID, c.Input)
 			testutil.RequireEqualError(t, c.Err, err)
 
-			q, args := db.builder.Select("tag_name", "color").
-				From("tags").
-				Where(sq.Eq{"id": c.Tag.ID}).
+			q, args := db.selectTag(c.Tag.OrganizationID).
+				Where(sq.Eq{"tags.id": c.Tag.ID}).
 				MustSql()
 
-			var stored struct {
-				TagName string `db:"tag_name"`
-				Color   string `db:"color"`
-			}
+			var stored tag.Tag
 
 			require.NoError(t, sqlx.Get(db.sql, &stored, q, args...))
-			assert.Equal(t, c.Name, stored.TagName)
-			assert.Equal(t, c.Color, stored.Color)
+
+			exp := c.Tag
+			exp.TagName = c.Name
+			exp.Color = c.Color
+			testutil.AssertFilterEqual(t, exp, stored, time.Time{})
+			assert.Equal(t, exp.CreatedAt, stored.CreatedAt.UTC())
+
+			for _, branchID := range c.BranchIDs {
+				assert.Equal(t, []xid.ID{c.Tag.ID}, branchTagIDs(t, db, branchID))
+			}
 		})
 	}
 }
