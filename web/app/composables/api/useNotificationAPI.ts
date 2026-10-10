@@ -4,7 +4,8 @@ import isDeepEqual from "fast-deep-equal"
 type NotificationPages = UseInfiniteQueryData<NotificationsResponse, number>
 
 const NOTIFICATION_QUERY_KEYS = {
-	list: (limit: number) => ["notifications", "list", limit] as const,
+	list: (limit: number, read?: boolean) =>
+		["notifications", "list", limit, read ?? "all"] as const,
 	count: (read: boolean) => ["notifications", "count", read] as const,
 	listRoot: ["notifications", "list"] as const,
 	countRoot: ["notifications", "count"] as const,
@@ -17,27 +18,35 @@ export default function () {
 	function useFetchManyNotifications(
 		paramsRef: MaybeRefOrGetter<NotificationsParams>,
 	) {
-		return useInfiniteQuery({
-			key: () => NOTIFICATION_QUERY_KEYS.list(toValue(paramsRef).limit),
-			query: async ({ pageParam }) => {
-				const searchParams = new URLSearchParams({
-					limit: String(toValue(paramsRef).limit),
-					page: String(pageParam),
-				})
+		return useInfiniteQuery<NotificationsResponse, Error, number>(() => {
+			const { limit, read } = toValue(paramsRef)
 
-				return await $coreAPIClient<NotificationsResponse>(
-					`/api/notifications?${searchParams.toString()}`,
-					{ method: "GET" },
-				)
-			},
-			initialPageParam: 1,
-			getNextPageParam: (lastPage, _pages, lastPageParam) =>
-				lastPageParam < lastPage.pageCount ? lastPageParam + 1 : null,
-			refetchOnMount: false,
-			refetchOnWindowFocus: false,
-			refetchOnReconnect: false,
-			staleTime: 60 * 1000, // 1 min
-			autoRefetch: true,
+			return {
+				key: NOTIFICATION_QUERY_KEYS.list(limit, read),
+				query: async ({ pageParam }) => {
+					const searchParams = new URLSearchParams({
+						limit: String(limit),
+						page: String(pageParam),
+					})
+
+					if (read !== undefined) {
+						searchParams.set("filter-read_eq", String(read))
+					}
+
+					return await $coreAPIClient<NotificationsResponse>(
+						`/api/notifications?${searchParams.toString()}`,
+						{ method: "GET" },
+					)
+				},
+				initialPageParam: 1,
+				getNextPageParam: (lastPage, _pages, lastPageParam) =>
+					lastPageParam < lastPage.pageCount ? lastPageParam + 1 : null,
+				refetchOnMount: false,
+				refetchOnWindowFocus: false,
+				refetchOnReconnect: false,
+				staleTime: 60 * 1000, // 1 min
+				autoRefetch: true,
+			}
 		})
 	}
 
@@ -105,6 +114,12 @@ export default function () {
 							notif.read = true
 						}
 					})
+
+					if (key[3] === false) {
+						page.notifications = page.notifications.filter(
+							(notif) => !notif.read,
+						)
+					}
 				})
 
 				queryCache.setQueryData(key, data)
@@ -119,17 +134,18 @@ export default function () {
 				body: req,
 			})
 		},
-		async onSuccess() {
-			await queryCache.invalidateQueries({
-				key: NOTIFICATION_QUERY_KEYS.listRoot,
-			})
-			await queryCache.invalidateQueries({
-				key: NOTIFICATION_QUERY_KEYS.countRoot,
-			})
-		},
+		onSuccess: invalidateNotifications,
 		onError(_err, _data, { oldNotifs, newNotifs }) {
+			if (!newNotifs) {
+				return
+			}
+
 			const entries = queryCache.getEntries({
 				key: NOTIFICATION_QUERY_KEYS.listRoot,
+				// switching filters can populate another cache while the
+				// mutation is pending; it was not optimistically changed
+				predicate: (entry) =>
+					newNotifs.some(({ key }) => isDeepEqual(key, entry.key)),
 			})
 			const cachedNotifs: { key: EntryKey; data: NotificationPages }[] = []
 
@@ -152,13 +168,21 @@ export default function () {
 			}
 
 			// rollback
-			oldNotifs?.forEach(({ key, data }) => {
+			oldNotifs.forEach(({ key, data }) => {
 				queryCache.setQueryData(key, data)
 			})
 		},
 	})
 
+	async function invalidateNotifications() {
+		await Promise.all([
+			queryCache.invalidateQueries({ key: NOTIFICATION_QUERY_KEYS.listRoot }),
+			queryCache.invalidateQueries({ key: NOTIFICATION_QUERY_KEYS.countRoot }),
+		])
+	}
+
 	return {
+		invalidateNotifications,
 		useFetchManyNotifications,
 		useFetchNotificationCount,
 		markNotificationsRead,

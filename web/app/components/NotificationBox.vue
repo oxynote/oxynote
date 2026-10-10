@@ -17,12 +17,17 @@ const {
 	useFetchManyNotifications,
 	useFetchNotificationCount,
 	markNotificationsRead,
+	invalidateNotifications,
 } = useNotificationAPI()
 const { fetchDocumentTree } = useDocumentAPI()
 const wsState = useWebSocketStateStore()
 const { fetchOrganization } = useAuthSession()
 const fetchNotificationCount = useFetchNotificationCount({ read: false })
-const fetchNotifications = useFetchManyNotifications({ limit: 50 })
+const readFilter = ref<"all" | "unread" | "read">("all")
+const fetchNotifications = useFetchManyNotifications(() => ({
+	limit: 50,
+	read: readFilter.value === "all" ? undefined : readFilter.value === "read",
+}))
 const now = useNow({ interval: 60 * 1000 })
 const list = useTemplateRef("list")
 // a failed load leaves the list at its end, so without the status check
@@ -31,11 +36,16 @@ useInfiniteScroll(list, handleLoadMore, {
 	distance: 100,
 	canLoadMore: () =>
 		fetchNotifications.hasNextPage.value &&
-		fetchNotifications.status.value !== "error",
+		fetchNotifications.status.value !== "error" &&
+		!markNotificationsRead.isLoading.value,
 })
 
 let unsubWsNotifications: (() => void) | null | undefined = null
-const isLoadingMore = ref(false)
+const filters = computed(() => [
+	{ value: "all" as const, label: t("notification.filters.all") },
+	{ value: "unread" as const, label: t("notification.filters.unread") },
+	{ value: "read" as const, label: t("notification.filters.read") },
+])
 
 const notifications = computed(() => {
 	const seen = new Set<string>()
@@ -73,13 +83,19 @@ onMounted(() => {
 	unsubWsNotifications = wsState.state?.subscribe(
 		WS_NOTIFICATION_CREATION_TOPIC,
 		() => {
-			void fetchNotificationCount.refetch()
-			void fetchNotifications.refetch()
+			// refresh failures are already exposed by the queries
+			void invalidateNotifications().catch(() => undefined)
 		},
 	)
 })
 onUnmounted(() => {
 	unsubWsNotifications?.()
+})
+
+watch(readFilter, () => {
+	if (list.value) {
+		list.value.scrollTop = 0
+	}
 })
 
 function findDocument(notification: Notification) {
@@ -153,9 +169,7 @@ async function buildNotificationHref(notification: Notification) {
 }
 
 async function handleLoadMore() {
-	isLoadingMore.value = true
 	await fetchNotifications.loadNextPage()
-	isLoadingMore.value = false
 }
 
 async function handleNotificationClick(notification: Notification) {
@@ -235,16 +249,42 @@ async function handleMarkAllRead() {
 				</div>
 			</div>
 		</header>
+		<div
+			role="group"
+			:aria-label="t('notification.filters.label')"
+			class="flex shrink-0 gap-1 border-b border-border p-1.25"
+		>
+			<ShadcnUiButton
+				v-for="filter in filters"
+				:key="filter.value"
+				variant="ghost"
+				size="2sm"
+				class="flex-1"
+				:aria-pressed="readFilter === filter.value"
+				:data-status="readFilter === filter.value ? 'active' : undefined"
+				@click="readFilter = filter.value"
+			>
+				{{ filter.label }}
+			</ShadcnUiButton>
+		</div>
 		<div ref="list" class="flex flex-1 overflow-y-auto p-1.25">
 			<div
 				v-if="!notifications.length"
 				class="mx-auto flex flex-col items-center gap-2 px-5 py-10 text-center"
 			>
 				<div class="text-base text-muted-foreground">
-					{{ t("notification.empty-title") }}
+					{{
+						readFilter === "all"
+							? t("notification.empty-title")
+							: t("notification.filtered-empty-title")
+					}}
 				</div>
 				<div class="text-sm text-muted-foreground">
-					{{ t("notification.empty-description") }}
+					{{
+						readFilter === "all"
+							? t("notification.empty-description")
+							: t("notification.filtered-empty-description")
+					}}
 				</div>
 			</div>
 			<div v-else class="flex min-w-0 flex-1 flex-col">
@@ -270,7 +310,7 @@ async function handleMarkAllRead() {
 					/>
 				</section>
 				<div
-					v-if="isLoadingMore"
+					v-if="fetchNotifications.isLoading.value"
 					class="flex shrink-0 items-center justify-center py-3 text-muted-foreground"
 				>
 					<Icon
