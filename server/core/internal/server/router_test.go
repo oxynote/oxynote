@@ -77,6 +77,8 @@ func Test_Server_httpRouter(t *testing.T) {
 	// the capability signal lives on the session-authed surface (the "/"
 	// mount walks as "*").
 	assert.True(t, routes["GET /api/*/capabilities"])
+	assert.True(t, routes["PUT /api/*/tags/{tagId}"])
+	assert.False(t, routes["PUT /api/x/tags/{tagId}"])
 
 	// MCP is off while its handler is nil, so nothing is mounted for it.
 	for route := range routes {

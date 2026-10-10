@@ -42,6 +42,11 @@ export interface TagCreateRequest {
 
 export type TagCreateResponse = Tag
 
+export interface TagUpdateRequest {
+	tagName?: string
+	color?: string
+}
+
 export interface UnprocessedTagTreeUpdateRequest {
 	id: string
 	insertBeforeId: string | null

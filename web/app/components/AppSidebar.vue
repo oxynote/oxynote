@@ -27,6 +27,7 @@ const emit = defineEmits<{
 	(e: "open-settings", target: "org-members"): void
 	(e: "delete-document" | "duplicate-document", id: string): void
 	(e: "delete-tag", tag: { id: string; name: string }): void
+	(e: "edit-tag", tag: Pick<TagTreeElement, "id" | "tagName" | "color">): void
 	(e: "create-document", parentId: string | null): void
 }>()
 
@@ -348,6 +349,22 @@ function handleTagVisibilityToggle(tag: TagTreeElement) {
 
 function tagActions(tag: TagTreeElement): SidebarItemAction[] {
 	return [
+		...(isXid(tag.id)
+			? [
+					{
+						id: "edit-tag",
+						name: t("sidebar.item-dropdown-menu-buttons.edit-tag"),
+						icon: "mingcute:edit-2-line",
+						fn: () => {
+							emit("edit-tag", {
+								id: tag.id,
+								tagName: tag.tagName,
+								color: tag.color,
+							})
+						},
+					},
+				]
+			: []),
 		{
 			id: "hide-tag",
 			name: t("sidebar.item-dropdown-menu-buttons.hide-tag"),
