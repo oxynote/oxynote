@@ -823,10 +823,16 @@ func Test_agent_UpdateTag(t *testing.T) {
 				tg.SortIndex = 7
 				tg.CreatedBy = null.StringFrom(prepUsers(t, db, 1)[0])
 			})[0]
-			first := prepTaggedDocument(t, db, tg)
-			second := prepTaggedDocument(t, db, tg)
+			docs := prepDocuments(t, db, 2, func(_ int, doc *document.Document) {
+				doc.OrganizationID = tg.OrganizationID
+			})
+
+			for _, doc := range docs {
+				prepBranchTags(t, db, tg.OrganizationID, doc.BranchID, tg.ID)
+			}
+
 			branch := prepDocumentBranches(t, db, 1, func(_ int, br *document.Document) {
-				br.ID = first.ID
+				br.ID = docs[0].ID
 				br.OrganizationID = tg.OrganizationID
 			})[0]
 
@@ -839,7 +845,7 @@ func Test_agent_UpdateTag(t *testing.T) {
 					TagName: null.StringFrom("Release"),
 					Color:   null.StringFrom("#00a63e"),
 				},
-				BranchIDs: []xid.ID{first.BranchID, second.BranchID, branch.BranchID},
+				BranchIDs: []xid.ID{docs[0].BranchID, docs[1].BranchID, branch.BranchID},
 				Name:      "Release",
 				Color:     "#00a63e",
 			}
