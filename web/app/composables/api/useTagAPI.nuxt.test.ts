@@ -391,12 +391,11 @@ describe("useTagAPI", { concurrent: false }, () => {
 				id: TAG_A,
 				req: { tagName: "Live" },
 			})
-			const rejected = expect(pending).rejects.toThrow()
 			await put.reached
 
 			expect(readTree()).toEqual([original])
 			put.reject(createError({ statusCode: 409 }))
-			await rejected
+			await expect(pending).rejects.toThrow()
 
 			expect(put.calls).toHaveLength(1)
 			expect(treeCalls).toHaveLength(0)
