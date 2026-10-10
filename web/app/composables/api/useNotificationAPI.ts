@@ -168,7 +168,7 @@ export default function () {
 			}
 
 			// rollback
-			oldNotifs?.forEach(({ key, data }) => {
+			oldNotifs.forEach(({ key, data }) => {
 				queryCache.setQueryData(key, data)
 			})
 		},
