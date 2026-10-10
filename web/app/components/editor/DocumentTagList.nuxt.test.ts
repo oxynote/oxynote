@@ -211,12 +211,9 @@ describe("<DocumentTagList>", { concurrent: false }, () => {
 		expect(updateCalls).toHaveLength(1)
 		expect(treeCalls).toHaveLength(2)
 		expect(branchCalls).toHaveLength(1)
-		expect(
-			wrapper.findAllComponents(TagPill).map((pill) => ({
-				name: pill.props("name"),
-				color: pill.props("color"),
-			})),
-		).toEqual([{ name: "Live", color: "#f97316" }])
+		expect(wrapper.findAllComponents(TagPill)).toHaveLength(1)
+		expect(wrapper.getComponent(TagPill).props("name")).toBe("Live")
+		expect(wrapper.getComponent(TagPill).props("color")).toBe("#f97316")
 	})
 
 	it("refetches the branch's tags when the server says they changed", async ({
