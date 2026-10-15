@@ -1,8 +1,10 @@
 import type { VueWrapper } from "@vue/test-utils"
-import { describe, it } from "vitest"
+import { beforeEach, describe, it } from "vitest"
 import BottomAction from "./BottomAction.vue"
 import {
+	clearTeleportedOverlays,
 	findButtonByText,
+	menuItem,
 	mountUnderTooltipProvider,
 	renderedIconNames,
 	t,
@@ -18,6 +20,11 @@ const CODE_KEY =
 	"editor.split-documentation.right-side-bottom-action-buttons.add-code"
 const METRICS_KEY =
 	"editor.split-documentation.right-side-bottom-action-buttons.add-metrics"
+const TRIGGER_KEY = "editor.split-documentation.bottom-action-trigger-label"
+
+function openDropdown(wrapper: VueWrapper) {
+	return wrapper.get("[data-slot='dropdown-menu-trigger']").trigger("click")
+}
 
 function mountAction(buttons: Record<string, unknown>[]) {
 	return mountUnderTooltipProvider(BottomAction, { props: { buttons } })
@@ -32,7 +39,9 @@ function clicks(wrapper: VueWrapper): unknown[] {
 	return (action.emitted("button-click") ?? []).map((args) => args[0])
 }
 
-describe("<SplitDocumentationBottomAction>", () => {
+describe("<SplitDocumentationBottomAction>", { concurrent: false }, () => {
+	beforeEach(clearTeleportedOverlays)
+
 	it("labels a button with its text", async ({ expect }) => {
 		const wrapper = await mountAction([{ id: "params", text: t(PARAMS_KEY) }])
 
@@ -61,19 +70,26 @@ describe("<SplitDocumentationBottomAction>", () => {
 		expect(clicks(wrapper)).toEqual(["params"])
 	})
 
-	it("renders one button per entry", async ({ expect }) => {
+	it("shows a single trigger for two or more entries", async ({ expect }) => {
 		const wrapper = await mountAction([
 			{ id: "code", text: t(CODE_KEY), icon: "lucide:code" },
 			{ id: "metrics", text: t(METRICS_KEY) },
 		])
 
-		expect(wrapper.findAll("button")).toHaveLength(2)
-		expect(wrapper.text()).toContain(t(CODE_KEY))
-		expect(wrapper.text()).toContain(t(METRICS_KEY))
-		expect(renderedIconNames(wrapper)).toEqual([
-			"lucide:code",
-			"lucide:circle-plus",
+		expect(wrapper.findAll("button")).toHaveLength(1)
+		expect(wrapper.text()).toContain(t(TRIGGER_KEY))
+	})
+
+	it("lists every entry once the trigger is opened", async ({ expect }) => {
+		const wrapper = await mountAction([
+			{ id: "code", text: t(CODE_KEY), icon: "lucide:code" },
+			{ id: "metrics", text: t(METRICS_KEY) },
 		])
+
+		await openDropdown(wrapper)
+
+		expect(menuItem(t(CODE_KEY))).not.toBeNull()
+		expect(menuItem(t(METRICS_KEY))).not.toBeNull()
 	})
 
 	it("reports a click on a later button with its own id", async ({
@@ -84,7 +100,9 @@ describe("<SplitDocumentationBottomAction>", () => {
 			{ id: "metrics", text: t(METRICS_KEY) },
 		])
 
-		await findButtonByText(wrapper, t(METRICS_KEY)).trigger("click")
+		await openDropdown(wrapper)
+		menuItem(t(METRICS_KEY)).click()
+		await nextTick()
 
 		expect(clicks(wrapper)).toEqual(["metrics"])
 	})
