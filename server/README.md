@@ -10,6 +10,22 @@ By default the following ports are opened:
 - `8080` - core application's HTTP and WebSocket server.
 - `8081` - auth-realtime's Hocuspocus HTTP and WebSocket server.
 
+# Tag API
+
+`PUT /api/tags/{tagId}` renames or recolours an existing tag in the active
+organization. The route requires a session and is available through the
+front door at `/core/api/tags/{tagId}`.
+
+Send a JSON object with `tagName`, `color`, or both. Omitted or `null` fields
+keep their current values; at least one field must be set. A name cannot be
+empty, and a colour must be a hex value from the existing tag palette.
+Successful updates return `204 No Content` and notify the organization's
+`change@tag-tree` subscribers. The tag's ID, display order, and document
+branch assignments stay unchanged.
+
+Invalid input returns `400`, duplicate names return `409`, and missing tags
+or tags outside the active organization return `404`.
+
 # Better Auth
 
 ## Using Migrations

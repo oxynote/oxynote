@@ -146,6 +146,10 @@ const pendingDocDeletion = ref<{
 	deleteDocument: () => Promise<void>
 	name: string
 } | null>(null)
+const pendingTagEdit = ref<Pick<
+	TagTreeElement,
+	"id" | "tagName" | "color"
+> | null>(null)
 const pendingTagDeletion = ref<{
 	deleteTag: () => Promise<void>
 	name: string
@@ -743,6 +747,7 @@ function clearLinkedBlock() {
 				@duplicate-document="handleDocumentDuplication"
 				@delete-document="handleDocumentDeletion"
 				@delete-tag="handleTagDeletion"
+				@edit-tag="pendingTagEdit = $event"
 				@open-settings="(target) => (settingModalOpen = target)"
 				@toggle-search="searchModalOpen = !searchModalOpen"
 				@toggle-settings="settingModalOpen = !settingModalOpen"
@@ -765,6 +770,7 @@ function clearLinkedBlock() {
 				v-model="pendingDocDeletion"
 			/>
 			<TagDeletionModal v-model="pendingTagDeletion" />
+			<TagEditModal v-model="pendingTagEdit" />
 			<main ref="main" class="w-full min-w-0 bg-background">
 				<EditorIconPickerProvider>
 					<DocumentHeader

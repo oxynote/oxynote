@@ -54,7 +54,8 @@
 			"delete-page": "Delete Page",
 			"remove-tag": "Remove Tag",
 			"delete-tag": "Delete Tag",
-			"hide-tag": "Hide Tag"
+			"hide-tag": "Hide Tag",
+			"edit-tag": "Edit Tag"
 		},
 		"item-placeholder-name": "Add Page",
 		"toggle-sidebar": "Toggle Sidebar",
@@ -109,6 +110,15 @@
 		"notification-sheet": {
 			"title": "Inbox",
 			"description": "Shows your notifications."
+		},
+		"tag-edit-modal": {
+			"title": "Edit Tag",
+			"description": "Update the name or colour wherever this tag is used.",
+			"name-label": "Name",
+			"color-label": "Colour",
+			"save-button": "Save changes",
+			"cancel-button": "Cancel",
+			"duplicate-name": "A tag with this name already exists."
 		}
 	}
 }

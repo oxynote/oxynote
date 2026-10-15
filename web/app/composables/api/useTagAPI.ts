@@ -7,6 +7,7 @@ import type {
 	TagTreeElement,
 	TagTreeResponse,
 	TagTreeUpdateRequest,
+	TagUpdateRequest,
 	TagVisibilityRequest,
 	UnprocessedTagTreeUpdateRequest,
 	BranchTagRequest,
@@ -167,6 +168,27 @@ export default function () {
 
 			// rollback
 			queryCache.setQueryData(TAG_QUERY_KEYS.tree, oldTree)
+		},
+	})
+
+	const updateTag = useMutation({
+		mutation: async ({ id, req }: { id: string; req: TagUpdateRequest }) => {
+			if (!isXid(id)) {
+				// optimistic inserts have not reached the server yet
+				return
+			}
+
+			await $coreAPIClient(`/api/tags/${id}`, {
+				method: "PUT",
+				body: req,
+			})
+		},
+		async onSuccess(_data, { id }) {
+			if (!isXid(id)) {
+				return
+			}
+
+			await queryCache.invalidateQueries({ key: TAG_QUERY_KEYS.tree })
 		},
 	})
 
@@ -543,6 +565,7 @@ export default function () {
 		updateTagTreeDocumentCache,
 		updateTagTree,
 		createTag,
+		updateTag,
 		updateTagVisibility,
 		deleteTag,
 		useFetchBranchTags,

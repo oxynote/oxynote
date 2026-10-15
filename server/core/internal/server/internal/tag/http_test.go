@@ -10,9 +10,11 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/guregu/null/v5"
 	documentCore "github.com/oxynote/oxynote/server/core/internal/document"
 	"github.com/oxynote/oxynote/server/core/internal/server/internal/auth"
 	tagCore "github.com/oxynote/oxynote/server/core/internal/tag"
+	"github.com/oxynote/oxynote/server/core/pkg/errutil"
 	wsMock "github.com/oxynote/wetsocks/wsserver/_mock"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
@@ -378,6 +380,272 @@ func Test_Handler_CreateTag(t *testing.T) {
 				assert.Equal(t, "u1", stored.CreatedBy.String)
 				assert.False(t, stored.ID.IsNil())
 				assert.Contains(t, rec.Body.String(), `"tagName":"Production"`)
+			}
+		})
+	}
+}
+
+func Test_Handler_UpdateTag(t *testing.T) {
+	t.Parallel()
+
+	type check func(*testing.T, *DBMock, *wsMock.Topic, *httptest.ResponseRecorder)
+
+	checks := func(cc ...check) []check { return cc }
+
+	hasResp := func(code int, body string) check {
+		return func(t *testing.T, _ *DBMock, _ *wsMock.Topic, rec *httptest.ResponseRecorder) {
+			assert.Equal(t, code, rec.Code)
+
+			if body == "" {
+				assert.Zero(t, rec.Body.Len(), rec.Body.String())
+				return
+			}
+
+			assert.JSONEq(t, body, rec.Body.String())
+		}
+	}
+
+	wasUpdateCalled := func(count int, inp tagCore.UpdateInput) check {
+		return func(t *testing.T, db *DBMock, _ *wsMock.Topic, _ *httptest.ResponseRecorder) {
+			calls := db.UpdateTagCalls()
+			require.Len(t, calls, count)
+
+			if count == 0 {
+				return
+			}
+
+			assert.Equal(t, "org1", calls[0].OrganizationID)
+			assert.Equal(t, _tagID, calls[0].ID)
+			assert.Equal(t, inp, calls[0].Inp)
+		}
+	}
+
+	wasPublishCalled := func(count int) check {
+		return func(t *testing.T, _ *DBMock, tpc *wsMock.Topic, _ *httptest.ResponseRecorder) {
+			calls := tpc.PublishManyCalls()
+			require.Len(t, calls, count)
+
+			if count == 0 {
+				return
+			}
+
+			assert.Equal(t, TreeChangeMessage{}, calls[0].Payload)
+			assert.True(t, calls[0].Filter(sessionCtx(), "topic"))
+			assert.True(t, calls[0].Filter(otherUserCtx(), "topic"))
+			assert.False(t, calls[0].Filter(context.Background(), "topic"))
+			assert.False(t, calls[0].Filter(auth.AddSessionToContext(context.Background(), auth.Session{
+				UserID:               "u1",
+				ActiveOrganizationID: "org2",
+			}), "topic"))
+		}
+	}
+
+	stubDB := func(err error) *DBMock {
+		return &DBMock{
+			UpdateTagFunc: func(context.Context, string, xid.ID, tagCore.UpdateInput) error {
+				return err
+			},
+		}
+	}
+
+	cc := map[string]struct {
+		DB        *DBMock
+		NoSession bool
+		TagID     string
+		JSON      string
+		Checks    []check
+	}{
+		"No session in context": {
+			DB:        &DBMock{},
+			NoSession: true,
+			TagID:     _tagID.String(),
+			JSON:      `{`,
+			Checks: checks(
+				hasResp(http.StatusUnauthorized, `{"code":"account.not_authenticated","message":"not authenticated"}`),
+				wasUpdateCalled(0, tagCore.UpdateInput{}),
+				wasPublishCalled(0),
+			),
+		},
+		"Malformed tag id": {
+			DB:    &DBMock{},
+			TagID: "not-an-xid",
+			JSON:  `{"tagName":"Release"}`,
+			Checks: checks(
+				hasResp(http.StatusNotFound, `{"code":"general","message":"not found"}`),
+				wasUpdateCalled(0, tagCore.UpdateInput{}),
+				wasPublishCalled(0),
+			),
+		},
+		"Malformed payload": {
+			DB:    &DBMock{},
+			TagID: _tagID.String(),
+			JSON:  `{`,
+			Checks: checks(
+				hasResp(http.StatusBadRequest, `{"code":"request.invalid_json","message":"invalid JSON body"}`),
+				wasUpdateCalled(0, tagCore.UpdateInput{}),
+				wasPublishCalled(0),
+			),
+		},
+		"Non-string name": {
+			DB:    &DBMock{},
+			TagID: _tagID.String(),
+			JSON:  `{"tagName":123}`,
+			Checks: checks(
+				hasResp(http.StatusBadRequest, `{"code":"request.invalid_json","message":"invalid JSON body"}`),
+				wasUpdateCalled(0, tagCore.UpdateInput{}),
+				wasPublishCalled(0),
+			),
+		},
+		"Empty update": {
+			DB:    &DBMock{},
+			TagID: _tagID.String(),
+			JSON:  `{}`,
+			Checks: checks(
+				hasResp(http.StatusBadRequest, `{"code":"tag.empty_update","message":"tag update needs a name or a colour"}`),
+				wasUpdateCalled(0, tagCore.UpdateInput{}),
+				wasPublishCalled(0),
+			),
+		},
+		"Null fields": {
+			DB:    &DBMock{},
+			TagID: _tagID.String(),
+			JSON:  `{"tagName":null,"color":null}`,
+			Checks: checks(
+				hasResp(http.StatusBadRequest, `{"code":"tag.empty_update","message":"tag update needs a name or a colour"}`),
+				wasUpdateCalled(0, tagCore.UpdateInput{}),
+				wasPublishCalled(0),
+			),
+		},
+		"Empty name": {
+			DB:    &DBMock{},
+			TagID: _tagID.String(),
+			JSON:  `{"tagName":"","color":"#00a63e"}`,
+			Checks: checks(
+				hasResp(http.StatusBadRequest, `{"code":"tag.invalid_name","message":"tag name cannot be empty"}`),
+				wasUpdateCalled(0, tagCore.UpdateInput{}),
+				wasPublishCalled(0),
+			),
+		},
+		"Empty colour": {
+			DB:    &DBMock{},
+			TagID: _tagID.String(),
+			JSON:  `{"color":""}`,
+			Checks: checks(
+				hasResp(http.StatusBadRequest, `{"code":"tag.invalid_color","message":"tag colour must be one of the palette"}`),
+				wasUpdateCalled(0, tagCore.UpdateInput{}),
+				wasPublishCalled(0),
+			),
+		},
+		"Off-palette colour": {
+			DB:    &DBMock{},
+			TagID: _tagID.String(),
+			JSON:  `{"color":"#22c55e"}`,
+			Checks: checks(
+				hasResp(http.StatusBadRequest, `{"code":"tag.invalid_color","message":"tag colour must be one of the palette"}`),
+				wasUpdateCalled(0, tagCore.UpdateInput{}),
+				wasPublishCalled(0),
+			),
+		},
+		"Colour name instead of hex": {
+			DB:    &DBMock{},
+			TagID: _tagID.String(),
+			JSON:  `{"color":"green"}`,
+			Checks: checks(
+				hasResp(http.StatusBadRequest, `{"code":"tag.invalid_color","message":"tag colour must be one of the palette"}`),
+				wasUpdateCalled(0, tagCore.UpdateInput{}),
+				wasPublishCalled(0),
+			),
+		},
+		"Error returned by DB.UpdateTag": {
+			DB:    stubDB(assert.AnError),
+			TagID: _tagID.String(),
+			JSON:  `{"tagName":"Release"}`,
+			Checks: checks(
+				hasResp(http.StatusInternalServerError, `{"code":"general","message":"internal server error"}`),
+				wasUpdateCalled(1, tagCore.UpdateInput{TagName: null.StringFrom("Release")}),
+				wasPublishCalled(0),
+			),
+		},
+		"Duplicate name returned by DB.UpdateTag": {
+			DB:    stubDB(tagCore.ErrDuplicateTagName),
+			TagID: _tagID.String(),
+			JSON:  `{"tagName":"Release"}`,
+			Checks: checks(
+				hasResp(http.StatusConflict, `{"code":"tag.duplicate_name","message":"tag name is already in use"}`),
+				wasUpdateCalled(1, tagCore.UpdateInput{TagName: null.StringFrom("Release")}),
+				wasPublishCalled(0),
+			),
+		},
+		"Missing or foreign tag returned by DB.UpdateTag": {
+			DB:    stubDB(errutil.ErrNotFound),
+			TagID: _tagID.String(),
+			JSON:  `{"tagName":"Release"}`,
+			Checks: checks(
+				hasResp(http.StatusNotFound, `{"code":"general","message":"not found"}`),
+				wasUpdateCalled(1, tagCore.UpdateInput{TagName: null.StringFrom("Release")}),
+				wasPublishCalled(0),
+			),
+		},
+		"Successful rename": {
+			DB:    &DBMock{},
+			TagID: _tagID.String(),
+			JSON:  `{"tagName":"Release"}`,
+			Checks: checks(
+				hasResp(http.StatusNoContent, ""),
+				wasUpdateCalled(1, tagCore.UpdateInput{TagName: null.StringFrom("Release")}),
+				wasPublishCalled(1),
+			),
+		},
+		"Successful recolour": {
+			DB:    &DBMock{},
+			TagID: _tagID.String(),
+			JSON:  `{"color":"#00a63e"}`,
+			Checks: checks(
+				hasResp(http.StatusNoContent, ""),
+				wasUpdateCalled(1, tagCore.UpdateInput{Color: null.StringFrom("#00a63e")}),
+				wasPublishCalled(1),
+			),
+		},
+		"Successful rename and recolour": {
+			DB:    &DBMock{},
+			TagID: _tagID.String(),
+			JSON:  `{"tagName":"Release","color":"#00a63e"}`,
+			Checks: checks(
+				hasResp(http.StatusNoContent, ""),
+				wasUpdateCalled(1, tagCore.UpdateInput{
+					TagName: null.StringFrom("Release"),
+					Color:   null.StringFrom("#00a63e"),
+				}),
+				wasPublishCalled(1),
+			),
+		},
+	}
+
+	for cn, c := range cc {
+		t.Run(cn, func(t *testing.T) {
+			t.Parallel()
+
+			tpc := &wsMock.Topic{}
+			hdl := Handler{
+				log: slog.New(slog.DiscardHandler),
+				db:  c.DB,
+			}
+			hdl.BindTreeChange(tpc)
+
+			req := withParams(
+				httptest.NewRequest(http.MethodPut, "http://test.com/", strings.NewReader(c.JSON)),
+				map[string]string{"tagId": c.TagID},
+			)
+
+			if !c.NoSession {
+				req = req.WithContext(addSession(req.Context()))
+			}
+
+			rec := httptest.NewRecorder()
+			hdl.UpdateTag(rec, req)
+
+			for _, check := range c.Checks {
+				check(t, c.DB, tpc, rec)
 			}
 		})
 	}
