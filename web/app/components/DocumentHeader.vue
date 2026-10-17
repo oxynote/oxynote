@@ -84,6 +84,17 @@ if (import.meta.client) {
 	})
 }
 
+const pendingReviewabilityDisable = ref<(() => Promise<void>) | null>(null)
+
+function requestToggleReviewability() {
+	if (isReviewable.value) {
+		pendingReviewabilityDisable.value = toggleReviewability
+		return
+	}
+
+	void toggleReviewability()
+}
+
 async function toggleReviewability() {
 	if (!editorStore.activeDocumentId || !editorStore.mappedDefaultBranchId) {
 		return
@@ -361,7 +372,7 @@ function activateBranch(branch: "default" | "draft") {
 										}}
 									</span>
 								</ShadcnUiDropdownMenuItem>
-								<ShadcnUiDropdownMenuItem @click="toggleReviewability">
+								<ShadcnUiDropdownMenuItem @click="requestToggleReviewability">
 									<Icon
 										:name="
 											isReviewable
@@ -434,4 +445,5 @@ function activateBranch(branch: "default" | "draft") {
 			</div>
 		</Transition>
 	</header>
+	<DisableReviewabilityModal v-model="pendingReviewabilityDisable" />
 </template>

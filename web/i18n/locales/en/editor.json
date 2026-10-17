@@ -78,7 +78,13 @@
 				},
 				"review-workflow": {
 					"enable-title": "Make Reviewable",
-					"disable-title": "Make Non Reviewable"
+					"disable-title": "Make Non Reviewable",
+					"disable-confirm-modal": {
+						"title": "Make Non Reviewable",
+						"description": "This discards the draft version and all its changes. This action cannot be undone.",
+						"confirm-button": "Make non reviewable",
+						"cancel-button": "Cancel"
+					}
 				},
 				"delete": {
 					"title": "Delete"
@@ -530,7 +536,8 @@
 				"add-code": "Add Code",
 				"add-metrics": "Add Metrics",
 				"add-diagram": "Add Diagram"
-			}
+			},
+			"bottom-action-trigger-label": "Add Block"
 		},
 		"metrics": {
 			"labels": {
