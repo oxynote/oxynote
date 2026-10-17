@@ -219,6 +219,7 @@ describe("DragHandlePlugin", { concurrent: false }, () => {
 		const editor = opts.editor ?? mountEditor(opts.content)
 		const element = document.createElement("div")
 		const onNodeChange = vi.fn()
+		const onNodeLongPress = vi.fn()
 		const onElementDragStart = vi.fn()
 		const onElementDragEnd = vi.fn()
 		const onDragCancel = vi.fn()
@@ -231,6 +232,7 @@ describe("DragHandlePlugin", { concurrent: false }, () => {
 			locked: opts.locked,
 			getReferencedVirtualElement: opts.getReferencedVirtualElement,
 			onNodeChange,
+			onNodeLongPress,
 			onElementDragStart,
 			onElementDragEnd,
 			onDragCancel,
@@ -245,6 +247,7 @@ describe("DragHandlePlugin", { concurrent: false }, () => {
 			element,
 			handle,
 			onNodeChange,
+			onNodeLongPress,
 			onElementDragStart,
 			onElementDragEnd,
 			onDragCancel,
@@ -430,6 +433,120 @@ describe("DragHandlePlugin", { concurrent: false }, () => {
 			expect(() => {
 				handle.unbind()
 			}).not.toThrow()
+		})
+	})
+
+	describe("touch long press", { concurrent: false }, () => {
+		it("targets the held block before opening its menu without starting a drag", async ({
+			expect,
+		}) => {
+			const {
+				editor,
+				element,
+				onNodeChange,
+				onNodeLongPress,
+				onElementDragStart,
+			} = setup({ content: [paragraph("one"), paragraph("two")] })
+			const pos = must(editor.state.doc.firstChild, "first paragraph").nodeSize
+			const node = must(editor.state.doc.nodeAt(pos), "second paragraph")
+			const dom = editor.view.nodeDOM(pos) as HTMLElement
+			vi.mocked(findDraggableNodeAtCoords).mockReturnValue({
+				node,
+				pos,
+				depth: 1,
+				dom,
+			})
+
+			dom.dispatchEvent(
+				new PointerEvent("pointerdown", {
+					bubbles: true,
+					pointerType: "touch",
+					pointerId: 1,
+					isPrimary: true,
+					clientX: 20,
+					clientY: 30,
+				}),
+			)
+			await vi.advanceTimersByTimeAsync(500)
+
+			expect
+				.soft(onNodeChange)
+				.toHaveBeenCalledExactlyOnceWith({ editor, node, pos, depth: 1 })
+			expect.soft(onNodeLongPress).toHaveBeenCalledTimes(1)
+			expect
+				.soft(onNodeChange.mock.invocationCallOrder[0])
+				.toBeLessThan(
+					must(
+						onNodeLongPress.mock.invocationCallOrder[0],
+						"menu callback order",
+					),
+				)
+			expect
+				.soft(findDraggableNodeAtCoords)
+				.toHaveBeenCalledExactlyOnceWith(editor, 20, 30)
+			expect.soft(element.style.visibility).toBe("")
+			expect.soft(onElementDragStart).not.toHaveBeenCalled()
+			expect.soft(editor.view.dragging).toBeNull()
+		})
+
+		it("leaves an open menu pinned when another block is held", async ({
+			expect,
+		}) => {
+			const { editor, onNodeLongPress } = setup({ locked: true })
+
+			editor.view.dom.dispatchEvent(
+				new PointerEvent("pointerdown", {
+					bubbles: true,
+					pointerType: "touch",
+					pointerId: 1,
+					isPrimary: true,
+				}),
+			)
+			await vi.advanceTimersByTimeAsync(500)
+
+			expect.soft(onNodeLongPress).not.toHaveBeenCalled()
+			expect.soft(findDraggableNodeAtCoords).not.toHaveBeenCalled()
+		})
+
+		it("does not open a menu when the touch has no eligible block", async ({
+			expect,
+		}) => {
+			const { editor, element, onNodeLongPress } = setup()
+			vi.mocked(findDraggableNodeAtCoords).mockReturnValue(null)
+
+			editor.view.dom.dispatchEvent(
+				new PointerEvent("pointerdown", {
+					bubbles: true,
+					pointerType: "touch",
+					pointerId: 1,
+					isPrimary: true,
+				}),
+			)
+			await vi.advanceTimersByTimeAsync(500)
+
+			expect.soft(onNodeLongPress).not.toHaveBeenCalled()
+			expect.soft(element.style.visibility).toBe("hidden")
+		})
+
+		it("cancels a pending touch when the plugin is destroyed", async ({
+			expect,
+		}) => {
+			const pluginKey = new PluginKey("longPressCleanup")
+			const { editor, onNodeLongPress } = setup({ pluginKey })
+			editor.view.dom.dispatchEvent(
+				new PointerEvent("pointerdown", {
+					bubbles: true,
+					pointerType: "touch",
+					pointerId: 1,
+					isPrimary: true,
+				}),
+			)
+
+			editor.unregisterPlugin(pluginKey)
+			await vi.advanceTimersByTimeAsync(500)
+
+			expect.soft(onNodeLongPress).not.toHaveBeenCalled()
+			expect.soft(findDraggableNodeAtCoords).not.toHaveBeenCalled()
 		})
 	})
 

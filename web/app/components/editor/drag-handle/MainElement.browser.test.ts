@@ -1,4 +1,4 @@
-import { Editor } from "@tiptap/core"
+import { Editor } from "@tiptap/vue-3"
 import Document from "@tiptap/extension-document"
 import Paragraph from "@tiptap/extension-paragraph"
 import Text from "@tiptap/extension-text"
@@ -148,6 +148,44 @@ describe("DragHandle", { concurrent: false }, () => {
 		editor.commands.insertContent("x")
 
 		expect(element.draggable).toBe(false)
+	})
+
+	it("opens the menu for a touch-held block without a mouse hover", async ({
+		expect,
+	}) => {
+		const editor = makeEditor()
+		const onNodeLongPress = vi.fn()
+		const onNodeChange = vi.fn()
+		const wrapper = mountHandle({ editor, onNodeLongPress, onNodeChange })
+		const paragraph = editor.view.dom.querySelector("p")
+		if (!paragraph) {
+			throw new Error("the test needs a paragraph")
+		}
+		const rect = paragraph.getBoundingClientRect()
+		vi.useFakeTimers()
+
+		try {
+			paragraph.dispatchEvent(
+				new PointerEvent("pointerdown", {
+					bubbles: true,
+					pointerType: "touch",
+					pointerId: 1,
+					isPrimary: true,
+					clientX: rect.left + 5,
+					clientY: rect.top + rect.height / 2,
+				}),
+			)
+			await vi.advanceTimersByTimeAsync(500)
+
+			expect(onNodeLongPress).toHaveBeenCalledTimes(1)
+			expect(onNodeChange).toHaveBeenCalledWith(
+				expect.objectContaining({ pos: 0, node: editor.state.doc.firstChild }),
+			)
+			expect((wrapper.element as HTMLElement).style.visibility).toBe("")
+			expect(editor.view.dragging).toBeNull()
+		} finally {
+			vi.useRealTimers()
+		}
 	})
 
 	it("forwards the node change callback to the plugin", ({ expect }) => {

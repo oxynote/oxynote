@@ -11,6 +11,7 @@ import type * as Y from "yjs"
 import type { HocuspocusProvider } from "@hocuspocus/provider"
 import { type Editor, Extension } from "@tiptap/core"
 import IconPicker from "./IconPicker.vue"
+import { bindTouchLongPress } from "./long-press"
 import DiffTitle from "./diff/DiffTitle.vue"
 import { defaultNamePlaceholder } from "./placeholder"
 import { renderCollaborationCaret } from "./collaboration"
@@ -260,6 +261,17 @@ onBeforeUnmount(() => {
 	}
 })
 
+watch(nameLineElem, (element, _previous, onCleanup) => {
+	if (element) {
+		onCleanup(
+			bindTouchLongPress(element, () => {
+				hookMenuOpen.value = true
+				return true
+			}),
+		)
+	}
+})
+
 // the panel marks what the handle points at, so it follows the handle's
 // hover and outlasts it for as long as the menu it opened is up
 watch(
@@ -439,7 +451,7 @@ async function executeReviewableAction() {
 					:hook-status="hookStatus"
 					:lifted="hookHandleShown"
 				/>
-				<ShadcnUiDropdownMenu @update:open="(v: boolean) => (hookMenuOpen = v)">
+				<ShadcnUiDropdownMenu v-model:open="hookMenuOpen">
 					<ShadcnUiDropdownMenuTrigger as-child>
 						<button
 							ref="hook-handle"
@@ -497,7 +509,12 @@ async function executeReviewableAction() {
 							</span>
 						</button>
 					</ShadcnUiDropdownMenuTrigger>
-					<ShadcnUiDropdownMenuContent side="right" align="start" loop>
+					<ShadcnUiDropdownMenuContent
+						class="select-none"
+						side="right"
+						align="start"
+						loop
+					>
 						<HooksMenuContent
 							:active-branch-hooks="activeBranchHooks"
 							:target-branch-hooks="props.targetBranchHooks"
