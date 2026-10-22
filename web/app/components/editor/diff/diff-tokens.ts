@@ -1,5 +1,6 @@
 import type { JSONContent } from "@tiptap/core"
 import type { Node as PMNode } from "@tiptap/pm/model"
+import Link from "@tiptap/extension-link"
 import Text from "@tiptap/extension-text"
 import { COMMENT_MARK_NAME } from "~/components/editor/mark-names"
 
@@ -10,12 +11,19 @@ export interface DiffToken {
 	marks: JSONContent[]
 }
 
-/** strip comment marks so they don't produce false token diffs */
-function stripCommentMarks(marks: JSONContent[]): JSONContent[] {
+// the marks the diff compares: no comments, and links by href only. No
+// one edits the other link attributes, and old links carry a stale class.
+function comparedMarks(marks: JSONContent[]): JSONContent[] {
 	if (marks.length === 0) {
 		return marks
 	}
-	return marks.filter((m) => m.type !== COMMENT_MARK_NAME)
+	return marks
+		.filter((m) => m.type !== COMMENT_MARK_NAME)
+		.map((m) =>
+			m.type === Link.name
+				? { type: m.type, attrs: { href: m.attrs?.href as unknown } }
+				: m,
+		)
 }
 
 /** extract character-level tokens from a JSON textblock node's inline content */
@@ -31,7 +39,7 @@ export function extractTokensFromJSON(node: JSONContent): DiffToken[] {
 			continue
 		}
 
-		const marks = stripCommentMarks(child.marks ?? [])
+		const marks = comparedMarks(child.marks ?? [])
 		for (const char of child.text) {
 			tokens.push({ text: char, marks })
 		}
@@ -48,7 +56,7 @@ export function extractTokensFromPMNode(node: PMNode): DiffToken[] {
 		if (!child.isText || !child.text) {
 			return
 		}
-		const marks = stripCommentMarks(
+		const marks = comparedMarks(
 			child.marks.map((m) => m.toJSON() as JSONContent),
 		)
 		for (const char of child.text) {

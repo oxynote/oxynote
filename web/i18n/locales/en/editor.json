@@ -334,7 +334,8 @@
 			"page-or-url-placeholder": "https://example.com + Enter",
 			"open": "Open",
 			"edit": "Edit",
-			"delete": "Delete Link"
+			"delete": "Delete Link",
+			"previous": "Previous link"
 		},
 		"hooks": {
 			"title": "Freshness Hooks",

@@ -166,6 +166,7 @@ export default defineConfig({
 						"@tiptap/core",
 						"@tiptap/pm/model",
 						"@tiptap/pm/state",
+						"@tiptap/extension-link",
 						"@tiptap/extension-list",
 						"safe-stable-stringify",
 						"fast-deep-equal",

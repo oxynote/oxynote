@@ -124,6 +124,16 @@ function buildDiffDecorations(doc: PMNode): DecorationSet {
 						}),
 					)
 					cursor += len
+				} else if (op.type === "relink") {
+					// the same span DiffLinkChangedMark renders
+					const len = opTextLength(op)
+					decorations.push(
+						Decoration.inline(cursor, cursor + len, {
+							class: "diff-text-added",
+							"data-old-href": op.oldHref,
+						}),
+					)
+					cursor += len
 				} else {
 					// delete — widget at current position
 					decorations.push(

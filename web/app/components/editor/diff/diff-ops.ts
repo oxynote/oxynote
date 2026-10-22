@@ -1,9 +1,17 @@
 import { diffWordsWithSpace, wordsWithSpaceDiff } from "diff"
+import Link from "@tiptap/extension-link"
 import type { DiffToken } from "./diff-tokens"
 
-export interface DiffOp {
-	type: "equal" | "insert" | "delete"
-	tokens: DiffToken[]
+export type DiffOp =
+	| { type: "equal" | "insert" | "delete"; tokens: DiffToken[] }
+	// same text, new link target
+	| { type: "relink"; tokens: DiffToken[]; oldHref: string }
+
+// how one character's marks changed
+enum MarkChange {
+	None,
+	Relinked,
+	Other,
 }
 
 // compute a word-level diff between old and new token arrays.
@@ -11,7 +19,8 @@ export interface DiffOp {
 // blocks that respect word boundaries, then refines "equal" regions
 // to detect mark changes (e.g. bold/italic added or removed) —
 // characters whose text matches but whose marks differ are emitted
-// as delete+insert pairs so they appear as changed in the diff.
+// as delete+insert pairs so they appear as changed in the diff. A
+// changed link target alone is a relink, since both sides look alike.
 export function computeTokenDiff(
 	oldTokens: DiffToken[],
 	newTokens: DiffToken[],
@@ -84,9 +93,9 @@ function marksMatch(a: DiffToken["marks"], b: DiffToken["marks"]): boolean {
 	return jsonStableStringify(a) === jsonStableStringify(b)
 }
 
-// walk an "equal" region and detect mark changes. any character
-// whose marks differ is treated as changed, and the changed range
-// is expanded to cover full words (split on whitespace) so that
+// walk an "equal" region and detect mark changes. A character whose
+// link target alone changed is relinked. Any other mark change is
+// expanded to cover full words (split on whitespace) so that
 // mark-only changes produce word-level diffs consistent with how
 // diffWordsWithSpace treats text changes.
 function splitEqualByMarks(
@@ -98,112 +107,92 @@ function splitEqualByMarks(
 	len: number,
 	text: string,
 ): void {
-	// build a boolean mask: true = marks differ at this position
-	const changed = new Uint8Array(len)
-	for (let i = 0; i < len; i++) {
-		if (
-			!marksMatch(
-				// eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- the equal region spans len tokens on both sides, so both reads are in bounds
-				oldTokens[oldStart + i]!.marks,
-				// eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- the equal region spans len tokens on both sides, so both reads are in bounds
-				newTokens[newStart + i]!.marks,
-			)
-		) {
-			changed[i] = 1
-		}
-	}
+	const changes = Array.from({ length: len }, (_, i) =>
+		markChange(
+			// eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- the equal region spans len tokens on both sides, so both reads are in bounds
+			oldTokens[oldStart + i]!.marks,
+			// eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- the equal region spans len tokens on both sides, so both reads are in bounds
+			newTokens[newStart + i]!.marks,
+		),
+	)
 
-	// expand changed regions to word boundaries using the same
+	// expand other changes to word boundaries using the same
 	// tokenizer as diffWordsWithSpace so that mark-only changes
 	// produce word-level diffs consistent with text changes.
 	const wordTokens = wordsWithSpaceDiff.tokenize(text)
 
 	let offset = 0
 	for (const wordToken of wordTokens) {
-		// eslint-disable-next-line @typescript-eslint/no-misused-spread -- the changed mask is indexed by code point, matching DiffToken granularity
-		const tokenLen = [...wordToken].length
-		const tokenEnd = offset + tokenLen
+		// eslint-disable-next-line @typescript-eslint/no-misused-spread -- the changes are indexed by code point, matching DiffToken granularity
+		const tokenEnd = offset + [...wordToken].length
 
-		// check if any character in this token has a mark change
-		let hasChange = false
-		for (let j = offset; j < tokenEnd; j++) {
-			if (changed[j]) {
-				hasChange = true
-				break
-			}
-		}
-
-		// if so, mark the entire token as changed
-		if (hasChange) {
-			for (let j = offset; j < tokenEnd; j++) {
-				changed[j] = 1
-			}
+		if (changes.slice(offset, tokenEnd).includes(MarkChange.Other)) {
+			changes.fill(MarkChange.Other, offset, tokenEnd)
 		}
 
 		offset = tokenEnd
 	}
 
-	// emit runs based on the expanded mask
+	// emit one op per run of the same change
 	let runStart = 0
-	let runChanged = !!changed[0]
-
-	for (let i = 1; i < len; i++) {
-		const c = !!changed[i]
-		if (c !== runChanged) {
+	for (const [i, change] of changes.entries()) {
+		if (changes[i + 1] !== change) {
 			flushRun(
 				ops,
-				oldTokens,
-				newTokens,
-				oldStart,
-				newStart,
-				runStart,
-				i,
-				!runChanged,
+				oldTokens.slice(oldStart + runStart, oldStart + i + 1),
+				newTokens.slice(newStart + runStart, newStart + i + 1),
+				change,
 			)
-			runStart = i
-			runChanged = c
+			runStart = i + 1
 		}
 	}
-
-	flushRun(
-		ops,
-		oldTokens,
-		newTokens,
-		oldStart,
-		newStart,
-		runStart,
-		len,
-		!runChanged,
-	)
 }
 
-function flushRun(
-	ops: DiffOp[],
-	oldTokens: DiffToken[],
-	newTokens: DiffToken[],
-	oldStart: number,
-	newStart: number,
-	from: number,
-	to: number,
-	isEqual: boolean,
-): void {
-	if (from >= to) {
-		return
+// relinked means linked on both sides with all other marks equal
+function markChange(
+	oldMarks: DiffToken["marks"],
+	newMarks: DiffToken["marks"],
+): MarkChange {
+	if (marksMatch(oldMarks, newMarks)) {
+		return MarkChange.None
 	}
 
-	if (isEqual) {
-		ops.push({
-			type: "equal",
-			tokens: newTokens.slice(newStart + from, newStart + to),
-		})
-	} else {
-		ops.push({
-			type: "delete",
-			tokens: oldTokens.slice(oldStart + from, oldStart + to),
-		})
-		ops.push({
-			type: "insert",
-			tokens: newTokens.slice(newStart + from, newStart + to),
-		})
+	const oldRest = oldMarks.filter((mark) => mark.type !== Link.name)
+	const newRest = newMarks.filter((mark) => mark.type !== Link.name)
+	if (
+		oldRest.length < oldMarks.length &&
+		newRest.length < newMarks.length &&
+		marksMatch(oldRest, newRest)
+	) {
+		return MarkChange.Relinked
+	}
+
+	return MarkChange.Other
+}
+
+// a relink shows its first character's old href, even when two old
+// links merged into one
+function flushRun(
+	ops: DiffOp[],
+	oldRun: DiffToken[],
+	newRun: DiffToken[],
+	change: MarkChange,
+): void {
+	switch (change) {
+		case MarkChange.None:
+			ops.push({ type: "equal", tokens: newRun })
+			break
+		case MarkChange.Relinked:
+			ops.push({
+				type: "relink",
+				tokens: newRun,
+				oldHref: oldRun[0]?.marks.find((mark) => mark.type === Link.name)?.attrs
+					?.href as string,
+			})
+			break
+		case MarkChange.Other:
+			ops.push({ type: "delete", tokens: oldRun })
+			ops.push({ type: "insert", tokens: newRun })
+			break
 	}
 }

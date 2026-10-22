@@ -6,10 +6,15 @@ import Text from "@tiptap/extension-text"
 import type { Schema } from "@tiptap/pm/model"
 import { describe, it } from "vitest"
 import {
+	DIFF_LINK_CHANGED_MARK_NAME,
 	DIFF_TEXT_ADDED_MARK_NAME,
 	DIFF_TEXT_REMOVED_MARK_NAME,
 } from "~/components/editor/mark-names"
-import { DiffTextAddedMark, DiffTextRemovedMark } from "./diff-text-marks"
+import {
+	DiffLinkChangedMark,
+	DiffTextAddedMark,
+	DiffTextRemovedMark,
+} from "./diff-text-marks"
 import { markType } from "../test-helpers"
 
 function makeSchema(): Schema {
@@ -20,6 +25,7 @@ function makeSchema(): Schema {
 		Bold,
 		DiffTextAddedMark,
 		DiffTextRemovedMark,
+		DiffLinkChangedMark,
 	])
 }
 
@@ -73,6 +79,20 @@ describe("DiffTextRemovedMark", () => {
 		expect(set.map((mark) => mark.type.name).sort()).toEqual([
 			DIFF_TEXT_ADDED_MARK_NAME,
 			DIFF_TEXT_REMOVED_MARK_NAME,
+		])
+	})
+})
+
+describe("DiffLinkChangedMark", () => {
+	it("renders as a span carrying the old target", ({ expect }) => {
+		const type = markType(makeSchema(), DIFF_LINK_CHANGED_MARK_NAME)
+
+		expect(
+			type.spec.toDOM?.(type.create({ oldHref: "https://a.test" }), true),
+		).toEqual([
+			"span",
+			{ class: "diff-text-added", "data-old-href": "https://a.test" },
+			0,
 		])
 	})
 })

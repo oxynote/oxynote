@@ -3,6 +3,7 @@ import { Editor, Node } from "@tiptap/core"
 import Document from "@tiptap/extension-document"
 import Heading from "@tiptap/extension-heading"
 import HorizontalRule from "@tiptap/extension-horizontal-rule"
+import Link from "@tiptap/extension-link"
 import { TaskItem, TaskList } from "@tiptap/extension-list"
 import Paragraph from "@tiptap/extension-paragraph"
 import Text from "@tiptap/extension-text"
@@ -53,6 +54,7 @@ function makeEditor(content: JSONContent): Editor {
 			Text,
 			Heading,
 			HorizontalRule,
+			Link,
 			TaskList,
 			TaskItem,
 			ImageBlockStub,
@@ -74,6 +76,19 @@ function makeEditor(content: JSONContent): Editor {
 	editor.commands.setContent(content)
 
 	return editor
+}
+
+function linkParagraph(href: string): JSONContent {
+	return {
+		type: "paragraph",
+		content: [
+			{
+				type: "text",
+				text: "docs",
+				marks: [{ type: "link", attrs: { href } }],
+			},
+		],
+	}
 }
 
 function diffElements(editor: Editor): NodeListOf<Element> {
@@ -262,6 +277,29 @@ describe("DiffDecorations", () => {
 
 		// the widget sits between the surviving halves of the text
 		expect(p?.textContent).toBe("hello cruel world")
+
+		editor.destroy()
+	})
+
+	it("marks relinked text inside its link with the old target", ({
+		expect,
+	}) => {
+		const editor = makeEditor(
+			doc({
+				type: "paragraph",
+				attrs: {
+					diffStatus: DiffStatus.Modified,
+					oldNode: linkParagraph("https://a.test"),
+				},
+				content: linkParagraph("https://b.test").content,
+			}),
+		)
+
+		const spans = editor.view.dom.querySelectorAll("a span.diff-text-added")
+		expect(spans).toHaveLength(1)
+		expect(spans[0]?.textContent).toBe("docs")
+		expect(spans[0]?.getAttribute("data-old-href")).toBe("https://a.test")
+		expect(editor.view.dom.querySelector(".diff-text-removed")).toBeNull()
 
 		editor.destroy()
 	})

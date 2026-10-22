@@ -10,6 +10,7 @@ import { yXmlFragmentToProseMirrorRootNode } from "y-prosemirror"
 import { DiffAttributes } from "~/components/editor/diff/diff-attributes"
 import { DiffDecorations } from "~/components/editor/diff/diff-decorations"
 import {
+	DiffLinkChangedMark,
 	DiffTextAddedMark,
 	DiffTextRemovedMark,
 } from "~/components/editor/diff/diff-text-marks"
@@ -141,6 +142,7 @@ export function useDiffEditor(
 			...patchedExtensions,
 			DiffTextAddedMark,
 			DiffTextRemovedMark,
+			DiffLinkChangedMark,
 			DiffAttributes.configure({ types: allNodeTypes }),
 			DiffDecorations,
 			DiffContentLock,

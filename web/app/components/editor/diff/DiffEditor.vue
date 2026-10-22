@@ -4,6 +4,7 @@ import type { Editor } from "@tiptap/core"
 import type * as Y from "yjs"
 import { contentExtensionsWithIDs } from "../schema-extensions"
 import TextBubbleMenu from "../TextBubbleMenu.vue"
+import LinkBubbleMenu from "../link/LinkBubbleMenu.vue"
 import CommentRenderer from "../comments/CommentRenderer.vue"
 import CommentIndicatorContainer from "../comments/CommentIndicatorContainer.vue"
 import type { NodeCommentOverlayState } from "../comments/node-comment-extension"
@@ -66,6 +67,7 @@ onBeforeUnmount(() => {
 				:diff-context="{ positionMap }"
 				@add-thread="commentRendererElem?.addNewComment('text-selection')"
 			/>
+			<LinkBubbleMenu :editor="editor" :container="containerElem" read-only />
 			<BlockHandle
 				:editor="editor"
 				:active-branch-hooks="props.activeBranchHooks"

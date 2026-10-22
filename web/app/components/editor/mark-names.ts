@@ -3,3 +3,4 @@
 export const COMMENT_MARK_NAME = "comment"
 export const DIFF_TEXT_ADDED_MARK_NAME = "diffTextAdded"
 export const DIFF_TEXT_REMOVED_MARK_NAME = "diffTextRemoved"
+export const DIFF_LINK_CHANGED_MARK_NAME = "diffLinkChanged"

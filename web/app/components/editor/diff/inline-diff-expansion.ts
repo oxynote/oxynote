@@ -13,6 +13,7 @@ import { DiffStatus } from "./position-map"
 import { extractTokensFromJSON, type DiffToken } from "./diff-tokens"
 import { computeTokenDiff } from "./diff-ops"
 import {
+	DIFF_LINK_CHANGED_MARK_NAME,
 	DIFF_TEXT_ADDED_MARK_NAME,
 	DIFF_TEXT_REMOVED_MARK_NAME,
 } from "~/components/editor/mark-names"
@@ -171,6 +172,15 @@ function expandTextblock(node: JSONContent): JSONContent | null {
 					type: DIFF_TEXT_ADDED_MARK_NAME,
 				}),
 			)
+			newIdx += len
+		} else if (op.type === "relink") {
+			mergedContent.push(
+				...tokensToJSON(newTokensFull.slice(newIdx, newIdx + len), {
+					type: DIFF_LINK_CHANGED_MARK_NAME,
+					attrs: { oldHref: op.oldHref },
+				}),
+			)
+			oldIdx += len
 			newIdx += len
 		} else {
 			// deleted text uses old tokens (stripped of comment marks —

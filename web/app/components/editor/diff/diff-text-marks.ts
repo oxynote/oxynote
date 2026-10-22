@@ -1,5 +1,6 @@
 import { Mark } from "@tiptap/core"
 import {
+	DIFF_LINK_CHANGED_MARK_NAME,
 	DIFF_TEXT_ADDED_MARK_NAME,
 	DIFF_TEXT_REMOVED_MARK_NAME,
 } from "~/components/editor/mark-names"
@@ -35,5 +36,28 @@ export const DiffTextRemovedMark = Mark.create({
 
 	renderHTML() {
 		return ["span", { class: "diff-text-removed" }, 0]
+	},
+})
+
+// text whose link target changed. It gets the added wash, and the link
+// popover reads the old target from the span.
+export const DiffLinkChangedMark = Mark.create({
+	name: DIFF_LINK_CHANGED_MARK_NAME,
+	inclusive: false,
+	excludes: "",
+
+	addAttributes() {
+		return { oldHref: { default: null } }
+	},
+
+	renderHTML({ mark }) {
+		return [
+			"span",
+			{
+				class: "diff-text-added",
+				"data-old-href": mark.attrs.oldHref as string | null,
+			},
+			0,
+		]
 	},
 })

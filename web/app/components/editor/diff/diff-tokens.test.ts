@@ -14,6 +14,7 @@ const schema = new Schema({
 	marks: {
 		bold: {},
 		comment: {},
+		link: { attrs: { href: { default: null }, class: { default: null } } },
 	},
 })
 
@@ -55,6 +56,31 @@ describe("extractTokensFromJSON", () => {
 		})
 
 		expect(tokens).toEqual([{ text: "a", marks: [{ type: "bold" }] }])
+	})
+
+	it("keeps only the href of a link", () => {
+		const tokens = extractTokensFromJSON({
+			type: "paragraph",
+			content: [
+				{
+					type: "text",
+					text: "a",
+					marks: [
+						{
+							type: "link",
+							attrs: { href: "https://a.test", class: "old", target: "_blank" },
+						},
+					],
+				},
+			],
+		})
+
+		expect(tokens).toEqual([
+			{
+				text: "a",
+				marks: [{ type: "link", attrs: { href: "https://a.test" } }],
+			},
+		])
 	})
 
 	it("skips non-text inline nodes", () => {
@@ -106,6 +132,21 @@ describe("extractTokensFromPMNode", () => {
 
 		expect(extractTokensFromPMNode(node)).toEqual([
 			{ text: "a", marks: [{ type: "bold" }] },
+		])
+	})
+
+	it("keeps only the href of a link", () => {
+		const node = schema.nodes.paragraph.create(null, [
+			schema.text("a", [
+				schema.marks.link.create({ href: "https://a.test", class: "old" }),
+			]),
+		])
+
+		expect(extractTokensFromPMNode(node)).toEqual([
+			{
+				text: "a",
+				marks: [{ type: "link", attrs: { href: "https://a.test" } }],
+			},
 		])
 	})
 

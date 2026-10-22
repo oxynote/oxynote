@@ -65,6 +65,48 @@ describe("expandInlineDiffs", () => {
 		])
 	})
 
+	it("marks relinked text once with its old target", () => {
+		const result = expandInlineDiffs(
+			doc(
+				modified(
+					[text("see "), text("docs", [link("https://b.test")])],
+					[text("see "), text("docs", [link("https://a.test")])],
+				),
+			),
+		)
+
+		expect(result.content?.[0]?.content).toEqual([
+			{ type: "text", text: "see " },
+			{
+				type: "text",
+				text: "docs",
+				marks: [
+					link("https://b.test"),
+					{ type: "diffLinkChanged", attrs: { oldHref: "https://a.test" } },
+				],
+			},
+		])
+	})
+
+	it("leaves a link whose unrendered class alone changed unmarked", () => {
+		const oldLink = {
+			type: "link",
+			attrs: { href: "https://a.test", class: "old" },
+		}
+		const newLink = {
+			type: "link",
+			attrs: { href: "https://a.test", class: "new" },
+		}
+
+		const result = expandInlineDiffs(
+			doc(modified([text("docs", [newLink])], [text("docs", [oldLink])])),
+		)
+
+		expect(result.content?.[0]?.content).toEqual([
+			{ type: "text", text: "docs", marks: [newLink] },
+		])
+	})
+
 	it("merges runs from separate source text nodes with identical marks", () => {
 		const result = expandInlineDiffs(
 			doc(modified([text("ab"), text("cd")], [text("abcd")])),
@@ -134,3 +176,7 @@ describe("expandInlineDiffs", () => {
 		])
 	})
 })
+
+function link(href: string): { type: string; attrs: { href: string } } {
+	return { type: "link", attrs: { href: href } }
+}

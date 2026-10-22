@@ -1,6 +1,7 @@
 // shared helpers for the link menu suites. Test-only: the
 // app/**/test-helpers.ts coverage exclude keeps this out of the
 // denominator, and nothing here is imported by app code.
+import type { Extensions } from "@tiptap/core"
 import { Editor } from "@tiptap/vue-3"
 import Document from "@tiptap/extension-document"
 import Link from "@tiptap/extension-link"
@@ -10,7 +11,10 @@ import Text from "@tiptap/extension-text"
 // the bubble menu reads link marks straight out of a live document and
 // listens on the editor's own dom, so the suite drives a real editor
 // attached to the page
-export function makeLinkEditor(content: string): Editor {
+export function makeLinkEditor(
+	content: string,
+	extensions: Extensions = [],
+): Editor {
 	const element = document.createElement("div")
 	document.body.appendChild(element)
 
@@ -21,6 +25,7 @@ export function makeLinkEditor(content: string): Editor {
 			Paragraph,
 			Text,
 			Link.configure({ openOnClick: false }),
+			...extensions,
 		],
 		content: content,
 	})

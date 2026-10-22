@@ -342,8 +342,10 @@ Skeletons are `rounded-md bg-primary/10` with a pulse.
 - Hook notice: `rounded-md` tinted box (section 3.4), 12px text, 14px
   status icon, optional full-width action footer divided by a top border.
 - Diff: added and removed blocks get a `rounded-md` translucent green or
-  red wash behind them; changed text gets the same wash inline; a changed
-  block shows a pill marker that opens a before/after card.
+  red wash behind them; changed text gets the same wash inline, and a link
+  whose target alone changed gets the green wash, its popover showing old
+  and new target; a changed block shows a pill marker that opens a
+  before/after card.
 - Comments: yellow underline-and-wash marks in text, a yellow wash over
   commented blocks, indicators in the right margin.
 
