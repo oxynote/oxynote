@@ -46,7 +46,7 @@ app.setAboutPanelOptions({
 const RENDERER_DIST = path.join(__dirname, "..", "..", ".output", "public")
 
 // Same-origin checks for navigation interception. Anything that isn't the
-// app's own origin gets handed to the OS via shell.openExternal.
+// app's own origin stays out of the window.
 const isInternalUrl = (url: string): boolean => {
 	if (url === "about:blank") return true
 	try {
@@ -56,6 +56,14 @@ const isInternalUrl = (url: string): boolean => {
 		return false
 	} catch {
 		return false
+	}
+}
+
+// a collaborator can give a document link any scheme. Only web and mail
+// links go to the OS.
+const openWebOrMailUrl = async (url: string): Promise<void> => {
+	if (/^(https?|mailto):/i.test(url)) {
+		await shell.openExternal(url)
 	}
 }
 
@@ -85,23 +93,24 @@ const createWindow = () => {
 		},
 	})
 
-	// Route every `target="_blank"` / `window.open` to the OS instead of
-	// spawning an in-app browser window. Internal target=_blank links are just
-	// denied — the app shouldn't be opening new in-app windows.
+	// Never spawn an in-app browser window for `target="_blank"` or
+	// `window.open`. Outside web and mail links go to the OS, and everything
+	// else is just denied.
 	win.webContents.setWindowOpenHandler(({ url }) => {
 		if (!isInternalUrl(url)) {
-			void shell.openExternal(url)
+			void openWebOrMailUrl(url)
 		}
 
 		return { action: "deny" }
 	})
 
-	// Top-level navigations to anything outside the app's origin (e.g. raw
-	// <a href="https://…"> clicks) go to the system browser too.
+	// Top-level navigations outside the app's origin are blocked. Web and mail
+	// links among them (e.g. raw <a href="https://…"> clicks) go to the OS
+	// too.
 	win.webContents.on("will-navigate", (event, url) => {
 		if (!isInternalUrl(url)) {
 			event.preventDefault()
-			void shell.openExternal(url)
+			void openWebOrMailUrl(url)
 		}
 	})
 
@@ -115,7 +124,7 @@ const createWindow = () => {
 
 void app.whenReady().then(() => {
 	ipcMain.handle("shell:openExternal", (_event, url: string) =>
-		shell.openExternal(url),
+		openWebOrMailUrl(url),
 	)
 	registerAuthIpcHandlers()
 

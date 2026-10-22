@@ -292,6 +292,34 @@ describe("main", { concurrent: false }, () => {
 		expect(mocks.openExternalMock).toHaveBeenCalledWith("https://example.com")
 	})
 
+	it.for([
+		{
+			name: "opens a mail link in the os",
+			input: "mailto:a@b.test",
+			expected: true,
+		},
+		{
+			name: "keeps a file link from the os",
+			input: "file:///etc/hosts",
+			expected: false,
+		},
+		{
+			name: "keeps another scheme from the os",
+			input: "smb://host/share",
+			expected: false,
+		},
+	])("$name", async ({ input, expected }, { expect }) => {
+		await importMain()
+		const openExternal = registeredListener(
+			mocks.ipcHandleMock,
+			"shell:openExternal",
+		) as (event: unknown, url: string) => Promise<void>
+
+		await openExternal({}, input)
+
+		expect(mocks.openExternalMock.mock.calls).toEqual(expected ? [[input]] : [])
+	})
+
 	describe("content security policy", () => {
 		function receivedHeaders(existing: Record<string, string[]>) {
 			const listener = registeredListener(mocks.onHeadersReceivedMock) as (
@@ -502,10 +530,11 @@ describe("main", { concurrent: false }, () => {
 		it.for([
 			{ url: "https://example.com/page", external: true },
 			{ url: "oxynote://app/index.html", external: false },
-			{ url: "oxynote://elsewhere/index.html", external: true },
+			{ url: "oxynote://elsewhere/index.html", external: false },
+			{ url: "ftp://example.com/file", external: false },
 			{ url: "http://localhost:3000/docs", external: false },
 			{ url: "about:blank", external: false },
-			{ url: "not a url", external: true },
+			{ url: "not a url", external: false },
 		])(
 			"window.open for $url is denied and $external routes it to the os",
 			async ({ url, external }, { expect }) => {
@@ -538,6 +567,20 @@ describe("main", { concurrent: false }, () => {
 			expect(mocks.openExternalMock).toHaveBeenCalledWith(
 				"https://example.com/page",
 			)
+		})
+
+		it("blocks a navigation to another scheme without handing it to the os", async () => {
+			await importMain()
+			const handler = registeredListener(
+				mocks.webContentsOnMock,
+				"will-navigate",
+			) as (event: { preventDefault: () => void }, url: string) => void
+			const preventDefault = vi.fn()
+
+			handler({ preventDefault }, "ftp://example.com/file")
+
+			expect(preventDefault).toHaveBeenCalledTimes(1)
+			expect(mocks.openExternalMock).toHaveBeenCalledTimes(0)
 		})
 
 		it("allows internal top-level navigations", async () => {

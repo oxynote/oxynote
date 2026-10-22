@@ -4,9 +4,9 @@
 import type { Extensions } from "@tiptap/core"
 import { Editor } from "@tiptap/vue-3"
 import Document from "@tiptap/extension-document"
-import Link from "@tiptap/extension-link"
 import Paragraph from "@tiptap/extension-paragraph"
 import Text from "@tiptap/extension-text"
+import { LinkMark } from "./link-mark"
 
 // the bubble menu reads link marks straight out of a live document and
 // listens on the editor's own dom, so the suite drives a real editor
@@ -20,13 +20,7 @@ export function makeLinkEditor(
 
 	return new Editor({
 		element: element,
-		extensions: [
-			Document,
-			Paragraph,
-			Text,
-			Link.configure({ openOnClick: false }),
-			...extensions,
-		],
+		extensions: [Document, Paragraph, Text, LinkMark, ...extensions],
 		content: content,
 	})
 }

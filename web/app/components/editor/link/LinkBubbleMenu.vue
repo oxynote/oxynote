@@ -74,8 +74,11 @@ function syncEditedLink() {
 		return
 	}
 
-	// Get the link mark to extract the current href
-	const linkMark = $pos.marks().find((mark) => mark.type.name === Link.name)
+	// a link is not inclusive, so the marks at its end leave it out. A link
+	// one character long ends at from + 1, so read its first character.
+	const linkMark = state.doc
+		.nodeAt(range.from)
+		?.marks.find((mark) => mark.type === linkType)
 	if (!linkMark) {
 		// Link mark not found, cancel editing
 		cancelEdit()
@@ -159,6 +162,12 @@ function handleMouseEnter(event: MouseEvent) {
 	// Clear any existing timeout
 	if (hoverTimeout) {
 		clearTimeout(hoverTimeout)
+	}
+
+	// leaving a touching link scheduled a close
+	if (closeTimeout) {
+		clearTimeout(closeTimeout)
+		closeTimeout = null
 	}
 
 	// Show popover after a short delay
@@ -282,7 +291,7 @@ function handleClickOutside(event?: MouseEvent) {
 
 	const target = event?.target as Node | null | undefined
 	if (!target || !popoverElem.value.contains(target)) {
-		cancelEdit()
+		closeEdit()
 	}
 }
 
@@ -331,6 +340,48 @@ function cancelEdit() {
 	isHoveringPopover.value = false
 	referenceElem.value = null
 	document.removeEventListener("mousedown", handleClickOutside)
+}
+
+// closing leaves the fields, so it does what leaving them does. Empty
+// text removes the link. A click outside has already moved the focus, so
+// nothing here takes it back.
+function closeEdit() {
+	if (!isEditing.value || !currentLink.value) {
+		cancelEdit()
+		return
+	}
+
+	const { from, to } = currentLink.value
+
+	if (editLinkText.value === "") {
+		props.editor.commands.command(({ tr, state }) => {
+			const linkType = state.schema.marks.link
+			if (!linkType) {
+				return false
+			}
+
+			tr.removeMark(from, to, linkType)
+			return true
+		})
+	} else {
+		void updateLink(editLinkText.value, withScheme(editLinkUrl.value))
+	}
+
+	cancelEdit()
+}
+
+// the scheme is added once the address is left, never while it is typed
+function addMissingScheme() {
+	editLinkUrl.value = withScheme(editLinkUrl.value)
+}
+
+// an address without a scheme gets https, as a browser's address bar does
+function withScheme(url: string): string {
+	if (url === "" || /^[a-z][a-z\d+.-]*:/i.test(url)) {
+		return url
+	}
+
+	return `https://${url}`
 }
 
 function removeLink() {
@@ -387,8 +438,9 @@ async function updateLink(newText: string, newHref: string) {
 		return
 	}
 
+	// the document keeps the old text until new text comes or the popover
+	// closes
 	if (newText === "") {
-		removeLink()
 		return
 	}
 
@@ -432,13 +484,18 @@ async function updateLink(newText: string, newHref: string) {
 		}
 
 		tr.removeMark(from, newTo, linkType)
-		tr.addMark(from, newTo, linkType.create({ href: ensureHttps(newHref) }))
+		tr.addMark(from, newTo, linkType.create({ href: newHref }))
 		tr.setSelection(TextSelection.create(tr.doc, from, newTo))
 
 		return true
 	})
 
 	await nextTick()
+
+	// the popover closed while the update ran
+	if (!isEditing.value) {
+		return
+	}
 
 	// Recompute the new link range from the updated doc
 	const { state } = props.editor
@@ -553,7 +610,7 @@ function editSelection() {
 }
 
 onKeyStroke("Escape", () => {
-	cancelEdit()
+	closeEdit()
 })
 
 defineExpose({
@@ -651,6 +708,7 @@ defineExpose({
 								class="h-[1.775rem] px-2 text-2sm md:text-2sm"
 								disable-focus-effect
 								type="url"
+								@blur="addMissingScheme"
 							/>
 						</div>
 						<div class="flex flex-col gap-1">

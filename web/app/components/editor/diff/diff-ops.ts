@@ -133,10 +133,17 @@ function splitEqualByMarks(
 		offset = tokenEnd
 	}
 
-	// emit one op per run of the same change
+	// emit one op per run of the same change. A relink run also ends where
+	// the old target changes, so each part keeps its own.
 	let runStart = 0
+
 	for (const [i, change] of changes.entries()) {
-		if (changes[i + 1] !== change) {
+		const runEnds =
+			changes[i + 1] !== change ||
+			(change === MarkChange.Relinked &&
+				linkHref(oldTokens[oldStart + i]) !==
+					linkHref(oldTokens[oldStart + i + 1]))
+		if (runEnds) {
 			flushRun(
 				ops,
 				oldTokens.slice(oldStart + runStart, oldStart + i + 1),
@@ -170,8 +177,10 @@ function markChange(
 	return MarkChange.Other
 }
 
-// a relink shows its first character's old href, even when two old
-// links merged into one
+function linkHref(token: DiffToken | undefined): unknown {
+	return token?.marks.find((mark) => mark.type === Link.name)?.attrs?.href
+}
+
 function flushRun(
 	ops: DiffOp[],
 	oldRun: DiffToken[],
@@ -186,8 +195,7 @@ function flushRun(
 			ops.push({
 				type: "relink",
 				tokens: newRun,
-				oldHref: oldRun[0]?.marks.find((mark) => mark.type === Link.name)?.attrs
-					?.href as string,
+				oldHref: linkHref(oldRun[0]) as string,
 			})
 			break
 		case MarkChange.Other:

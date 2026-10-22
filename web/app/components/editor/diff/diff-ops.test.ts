@@ -141,6 +141,28 @@ describe("computeTokenDiff", () => {
 		])
 	})
 
+	it("keeps the old target of each touching link", () => {
+		const oldTokens = [
+			...tokens("foo", [link("https://a.test")]),
+			...tokens("bar", [link("https://b.test")]),
+		]
+		const newTokens = [
+			...tokens("foo", [link("https://c.test")]),
+			...tokens("bar", [link("https://d.test")]),
+		]
+
+		const ops = computeTokenDiff(oldTokens, newTokens)
+
+		expect(ops).toEqual([
+			{
+				type: "relink",
+				tokens: newTokens.slice(0, 3),
+				oldHref: "https://a.test",
+			},
+			{ type: "relink", tokens: newTokens.slice(3), oldHref: "https://b.test" },
+		])
+	})
+
 	it("emits a delete and insert pair when a link target changes with another mark", () => {
 		const oldTokens = tokens("docs", [link("https://a.test")])
 		const newTokens = tokens("docs", [{ type: "bold" }, link("https://b.test")])

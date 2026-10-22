@@ -208,6 +208,28 @@ describe("<LinkBubbleMenu>", { concurrent: false }, () => {
 		expect(popover()).toBeNull()
 	})
 
+	it("keeps the popover open when the pointer moves onto a touching link", async ({
+		expect,
+	}) => {
+		const target = makeEditorFor(
+			'<p><a href="https://old.test">old</a><a href="https://new.test">new</a></p>',
+		)
+		await mountMenu(target)
+		await hoverLink(target)
+		const anchors = Array.from(target.view.dom.querySelectorAll("a"))
+
+		at(anchors, 0).dispatchEvent(
+			new MouseEvent("mouseleave", { bubbles: true }),
+		)
+		at(anchors, 1).dispatchEvent(
+			new MouseEvent("mouseenter", { bubbles: true }),
+		)
+		await vi.advanceTimersByTimeAsync(CLOSE_DELAY_MS)
+		await nextTick()
+
+		expect(popover()?.textContent).toContain("https://new.test")
+	})
+
 	it("ignores the pointer moving over anything but a link", async ({
 		expect,
 	}) => {
@@ -258,15 +280,18 @@ describe("<LinkBubbleMenu>", { concurrent: false }, () => {
 	})
 
 	it.for([
-		{ name: "leaves a shift-click to the selection", init: { shiftKey: true } },
-		{ name: "ignores a click with another button", init: { button: 2 } },
-	])("$name", async ({ init }, { expect }) => {
+		{
+			name: "leaves a shift-click to the selection",
+			input: { shiftKey: true },
+		},
+		{ name: "ignores a click with another button", input: { button: 2 } },
+	])("$name", async ({ input }, { expect }) => {
 		const open = vi.fn()
 		vi.stubGlobal("open", open)
 		const target = makeEditorFor()
 		await mountMenu(target)
 
-		const handled = clickOn(target, linkElement(target), init)
+		const handled = clickOn(target, linkElement(target), input)
 
 		expect(handled).toBe(false)
 		expect(open).not.toHaveBeenCalled()
@@ -365,7 +390,9 @@ describe("<LinkBubbleMenu>", { concurrent: false }, () => {
 		expect(target.getHTML()).toContain('href="https://other.test"')
 	})
 
-	it("gives a scheme-less address one", async ({ expect }) => {
+	it("leaves an address without a scheme alone while it is typed", async ({
+		expect,
+	}) => {
 		const target = makeEditorFor()
 		await mountMenu(target)
 		await hoverLink(target)
@@ -374,7 +401,48 @@ describe("<LinkBubbleMenu>", { concurrent: false }, () => {
 
 		await typeIn(at(popoverInputs(), 0), "other.test")
 
+		expect(target.getHTML()).toContain('href="other.test"')
+		expect(at(popoverInputs(), 0).value).toBe("other.test")
+	})
+
+	it.for([
+		{ input: "other.test", expected: "https://other.test" },
+		{ input: "http://other.test", expected: "http://other.test" },
+		{ input: "mailto:team@oxynote.test", expected: "mailto:team@oxynote.test" },
+	])(
+		"stores $input as $expected once the address field is left",
+		async ({ input, expected }, { expect }) => {
+			const target = makeEditorFor()
+			await mountMenu(target)
+			await hoverLink(target)
+			popoverButton(t("editor.link.edit")).click()
+			await nextTick()
+			await typeIn(at(popoverInputs(), 0), input)
+
+			at(popoverInputs(), 0).dispatchEvent(new FocusEvent("blur"))
+			await nextTick()
+			await nextTick()
+
+			expect(target.getHTML()).toContain(`href="${expected}"`)
+			expect(at(popoverInputs(), 0).value).toBe(expected)
+		},
+	)
+
+	it("adds https to an address without a scheme when the popover closes", async ({
+		expect,
+	}) => {
+		const target = makeEditorFor()
+		await mountMenu(target)
+		await hoverLink(target)
+		popoverButton(t("editor.link.edit")).click()
+		await nextTick()
+		await typeIn(at(popoverInputs(), 0), "other.test")
+
+		window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }))
+		await nextTick()
+
 		expect(target.getHTML()).toContain('href="https://other.test"')
+		expect(popover()).toBeNull()
 	})
 
 	it("stores new link text as the reader types it", async ({ expect }) => {
@@ -389,7 +457,27 @@ describe("<LinkBubbleMenu>", { concurrent: false }, () => {
 		expect(target.getText()).toContain("documentation")
 	})
 
-	it("removes the link when its text is emptied", async ({ expect }) => {
+	it("keeps editing when the link text shrinks to one character", async ({
+		expect,
+	}) => {
+		const target = makeEditorFor()
+		await mountMenu(target)
+		await hoverLink(target)
+		popoverButton(t("editor.link.edit")).click()
+		await nextTick()
+
+		await typeIn(at(popoverInputs(), 1), "x")
+
+		expect(target.getText()).toBe("see x here")
+		expect(popoverInputs().map((input) => input.value)).toEqual([
+			"https://oxynote.test",
+			"x",
+		])
+	})
+
+	it("keeps the link and the popover while its text is empty", async ({
+		expect,
+	}) => {
 		const target = makeEditorFor()
 		await mountMenu(target)
 		await hoverLink(target)
@@ -398,7 +486,81 @@ describe("<LinkBubbleMenu>", { concurrent: false }, () => {
 
 		await typeIn(at(popoverInputs(), 1), "")
 
+		expect(target.getHTML()).toContain('href="https://oxynote.test"')
+		expect(target.getText()).toBe("see docs here")
+		expect(popoverInputs().map((input) => input.value)).toEqual([
+			"https://oxynote.test",
+			"",
+		])
+	})
+
+	it("takes new text typed after the text was emptied", async ({ expect }) => {
+		const target = makeEditorFor()
+		await mountMenu(target)
+		await hoverLink(target)
+		popoverButton(t("editor.link.edit")).click()
+		await nextTick()
+		await typeIn(at(popoverInputs(), 1), "")
+
+		await typeIn(at(popoverInputs(), 1), "guide")
+
+		expect(target.getText()).toBe("see guide here")
+		expect(target.getHTML()).toContain("guide</a>")
+	})
+
+	it.for([
+		{
+			name: "removes the link when escape closes the popover with empty text",
+			input: () => {
+				window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }))
+			},
+		},
+		{
+			name: "removes the link when a click outside closes the popover with empty text",
+			input: () => {
+				document.body.dispatchEvent(
+					new MouseEvent("mousedown", { bubbles: true }),
+				)
+			},
+		},
+	])("$name", async ({ input }, { expect }) => {
+		const target = makeEditorFor()
+		await mountMenu(target)
+		await hoverLink(target)
+		popoverButton(t("editor.link.edit")).click()
+		await nextTick()
+		await typeIn(at(popoverInputs(), 1), "")
+
+		input()
+		await nextTick()
+
 		expect(target.getHTML()).not.toContain("<a")
+		expect(target.getText()).toBe("see docs here")
+		expect(popover()).toBeNull()
+	})
+
+	it("leaves the focus where a click outside put it", async ({
+		expect,
+		onTestFinished,
+	}) => {
+		const target = makeEditorFor()
+		await mountMenu(target)
+		await hoverLink(target)
+		popoverButton(t("editor.link.edit")).click()
+		await nextTick()
+		await typeIn(at(popoverInputs(), 1), "")
+		const outside = document.createElement("input")
+		document.body.appendChild(outside)
+		onTestFinished(() => {
+			outside.remove()
+		})
+		outside.focus()
+
+		outside.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }))
+		await vi.advanceTimersByTimeAsync(CLOSE_DELAY_MS)
+
+		expect(target.getHTML()).not.toContain("<a")
+		expect(document.activeElement).toBe(outside)
 	})
 
 	it("removes the link on request", async ({ expect }) => {
