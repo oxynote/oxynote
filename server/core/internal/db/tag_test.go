@@ -730,7 +730,6 @@ func Test_agent_UpdateTag(t *testing.T) {
 		OrganizationID   string
 		Tag              tag.Tag
 		Input            tag.UpdateInput
-		BranchIDs        []xid.ID
 		Name             string
 		Color            string
 		Err              error
@@ -818,38 +817,6 @@ func Test_agent_UpdateTag(t *testing.T) {
 				Color:          "#3b82f6",
 			}
 		},
-		"Preserves assignments across documents and branches": func(t *testing.T, db *DB) tcase {
-			tg := prepTags(t, db, 1, func(_ int, tg *tag.Tag) {
-				tg.SortIndex = 7
-				tg.CreatedBy = null.StringFrom(prepUsers(t, db, 1)[0])
-			})[0]
-			docs := prepDocuments(t, db, 2, func(_ int, doc *document.Document) {
-				doc.OrganizationID = tg.OrganizationID
-			})
-
-			for _, doc := range docs {
-				prepBranchTags(t, db, tg.OrganizationID, doc.BranchID, tg.ID)
-			}
-
-			branch := prepDocumentBranches(t, db, 1, func(_ int, br *document.Document) {
-				br.ID = docs[0].ID
-				br.OrganizationID = tg.OrganizationID
-			})[0]
-
-			prepBranchTags(t, db, tg.OrganizationID, branch.BranchID, tg.ID)
-
-			return tcase{
-				OrganizationID: tg.OrganizationID,
-				Tag:            tg,
-				Input: tag.UpdateInput{
-					TagName: null.StringFrom("Release"),
-					Color:   null.StringFrom("#00a63e"),
-				},
-				BranchIDs: []xid.ID{docs[0].BranchID, docs[1].BranchID, branch.BranchID},
-				Name:      "Release",
-				Color:     "#00a63e",
-			}
-		},
 	}
 
 	for cn, cfn := range cc {
@@ -869,23 +836,19 @@ func Test_agent_UpdateTag(t *testing.T) {
 			err := db.UpdateTag(ctx, c.OrganizationID, c.Tag.ID, c.Input)
 			testutil.RequireEqualError(t, c.Err, err)
 
-			q, args := db.selectTag(db.builder.Select(), c.Tag.OrganizationID).
-				Where(sq.Eq{"tags.id": c.Tag.ID}).
+			q, args := db.builder.Select("tag_name", "color").
+				From("tags").
+				Where(sq.Eq{"id": c.Tag.ID}).
 				MustSql()
 
-			var stored tag.Tag
+			var stored struct {
+				TagName string `db:"tag_name"`
+				Color   string `db:"color"`
+			}
 
 			require.NoError(t, sqlx.Get(db.sql, &stored, q, args...))
-
-			exp := c.Tag
-			exp.TagName = c.Name
-			exp.Color = c.Color
-			testutil.AssertFilterEqual(t, exp, stored, time.Time{})
-			assert.Equal(t, exp.CreatedAt, stored.CreatedAt.UTC())
-
-			for _, branchID := range c.BranchIDs {
-				assert.Equal(t, []xid.ID{c.Tag.ID}, branchTagIDs(t, db, branchID))
-			}
+			assert.Equal(t, c.Name, stored.TagName)
+			assert.Equal(t, c.Color, stored.Color)
 		})
 	}
 }

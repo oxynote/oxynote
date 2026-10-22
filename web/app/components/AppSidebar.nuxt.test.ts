@@ -4,12 +4,11 @@ import {
 	clearQueryCache,
 	disposeMockEndpoints,
 	mockEndpoint,
-	runInApp,
 	seedQueryData,
 } from "~/composables/api/test-helpers"
 import { mockNuxtImport } from "@nuxt/test-utils/runtime"
 import AppSidebar from "./AppSidebar.vue"
-import useTagAPI from "~/composables/api/useTagAPI"
+import TagEditMenu from "./TagEditMenu.vue"
 import {
 	at,
 	clearTeleportedOverlays,
@@ -18,6 +17,7 @@ import {
 	menuItem,
 	mockAuthEndpoint,
 	mountUnderSidebarProvider,
+	openSubMenu,
 	seedAuthOrganization,
 	seedCapabilities,
 	seedPersistentState,
@@ -833,70 +833,18 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 			expect(calls[0]?.body).toEqual({ hidden: true })
 		})
 
-		it("refreshes the sidebar name and colour after editing a tag", async ({
-			expect,
-		}) => {
-			const tags = seededTags()
-			stubQueries({ tags })
-			const calls = mockEndpoint("PUT", `/api/tags/${TAG_A}`, () => {
-				tags[0] = tagElement(TAG_A, "Live", "#f97316")
-
-				return {}
-			})
-			const wrapper = await mountSidebar()
-			await settleMutations()
-			const api = runInApp(() => useTagAPI())
-
-			await api.updateTag.mutateAsync({
-				id: TAG_A,
-				req: { tagName: "Live", color: "#f97316" },
-			})
-			await settleMutations()
-
-			expect(calls).toHaveLength(1)
-			expect(tagIds(wrapper)).toEqual([TAG_A, TAG_B])
-			expect(tagNames(wrapper)[0]).toContain("Live")
-			expect(
-				at(tagRows(wrapper), 0).get("span.rounded-full").attributes("style"),
-			).toBe("background-color: #f97316;")
-		})
-
-		it("does not offer to edit a tag before it is saved", async ({
-			expect,
-		}) => {
-			stubQueries({
-				tags: [
-					{
-						...tagElement("local-tag", "Saving", "#22c55e"),
-						localOptimisticInsert: true,
-					},
-				],
-			})
-			const wrapper = await mountSidebar()
-			await settleMutations()
-
-			await openRowMenu(wrapper, "Saving")
-
-			expect(openMenuRows()).not.toContain(
-				t("sidebar.item-dropdown-menu-buttons.edit-tag"),
-			)
-		})
-
-		it("asks the page to edit a tag from its options menu", async ({
-			expect,
-		}) => {
+		it("opens a tag's edit menu from its options menu", async ({ expect }) => {
 			stubQueries({ tags: seededTags() })
 			const calls = mockEndpoint("PUT", `/api/tags/${TAG_A}`, () => ({}))
 			const wrapper = await mountSidebar()
 			await settleMutations()
-
 			await openRowMenu(wrapper, "Production")
-			menuItem(t("sidebar.item-dropdown-menu-buttons.edit-tag")).click()
-			await settleMutations()
 
-			expect(sidebar(wrapper).emitted("edit-tag")).toEqual([
-				[{ id: TAG_A, tagName: "Production", color: "#22c55e" }],
-			])
+			await openSubMenu(t("sidebar.item-dropdown-menu-buttons.edit-tag"))
+
+			expect(wrapper.getComponent(TagEditMenu).props("tag")).toEqual(
+				tagElement(TAG_A, "Production", "#22c55e"),
+			)
 			expect(calls).toHaveLength(0)
 		})
 
@@ -957,7 +905,7 @@ describe("<AppSidebar>", { concurrent: false }, () => {
 			])
 		})
 
-		it("offers a tag its own actions", async ({ expect }) => {
+		it("offers a tag its own three actions", async ({ expect }) => {
 			stubQueries({ tags: seededTags() })
 			const wrapper = await mountSidebar()
 			await settleMutations()

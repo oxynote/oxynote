@@ -70,6 +70,23 @@ test.describe("tags", () => {
 		await expandTag(page, "Hotfix")
 		await expect(taggedDocument(page, "Hotfix", WELCOME_PAGE)).toBeVisible()
 
+		// a renamed tag keeps its pages, and the header follows the sidebar
+		await openTagActions(page, "Hotfix")
+		await page
+			.getByRole("menuitem", {
+				name: t("sidebar.item-dropdown-menu-buttons.edit-tag"),
+			})
+			.click()
+		await page.getByLabel(t("sidebar.tag-edit-menu.name-label")).fill("Patch")
+		await page
+			.getByRole("button", { name: t("sidebar.tag-edit-menu.update-button") })
+			.click()
+
+		await expect(headerTagPill(page, "Patch")).toBeVisible()
+		await expect(headerTagPill(page, "Hotfix")).toBeHidden()
+		await expandTag(page, "Patch")
+		await expect(taggedDocument(page, "Patch", WELCOME_PAGE)).toBeVisible()
+
 		// hiding is the caller's own view of the sidebar: the page keeps
 		// the tag, and the section's visibility menu still lists it
 		await openTagActions(page, "Release")

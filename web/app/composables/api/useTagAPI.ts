@@ -172,9 +172,33 @@ export default function () {
 	})
 
 	const updateTag = useMutation({
+		onMutate({ id, req }: { id: string; req: TagUpdateRequest }) {
+			if (!isXid(id)) {
+				// optimisticInserts use nanoid
+				return
+			}
+
+			const oldTree = clone(
+				queryCache.getQueryData<TagTreeResponse>(TAG_QUERY_KEYS.tree),
+			)
+			const newTree = clone(oldTree) ?? []
+
+			const tag = newTree.find((t) => t.id === id)
+			if (!tag) {
+				throw new Error("invalid tag data")
+			}
+
+			tag.tagName = req.tagName ?? tag.tagName
+			tag.color = req.color ?? tag.color
+
+			queryCache.setQueryData(TAG_QUERY_KEYS.tree, newTree)
+			queryCache.cancelQueries({ key: TAG_QUERY_KEYS.tree })
+
+			return { newTree, oldTree }
+		},
 		mutation: async ({ id, req }: { id: string; req: TagUpdateRequest }) => {
 			if (!isXid(id)) {
-				// optimistic inserts have not reached the server yet
+				// optimisticInserts use nanoid
 				return
 			}
 
@@ -189,6 +213,15 @@ export default function () {
 			}
 
 			await queryCache.invalidateQueries({ key: TAG_QUERY_KEYS.tree })
+		},
+		onError(_err, _req, { oldTree, newTree }) {
+			const cachedTree = queryCache.getQueryData(TAG_QUERY_KEYS.tree)
+			if (!isDeepEqual(newTree, cachedTree)) {
+				return
+			}
+
+			// rollback
+			queryCache.setQueryData(TAG_QUERY_KEYS.tree, oldTree)
 		},
 	})
 

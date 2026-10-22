@@ -58,8 +58,6 @@ GitHub and Slack callback URLs point at `:8080/core/api/apps/...`.
   `<event>@<domain.path>`; binders are `Handler.BindXxx` under
   `internal/server/internal/...`.
 
-The README lists the public routes; update it when changing handlers.
-
 ## Document storage / Hocuspocus
 
 - Documents have branches (`document_branches`); every document has at least

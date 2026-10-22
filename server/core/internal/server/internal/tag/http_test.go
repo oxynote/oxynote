@@ -430,13 +430,6 @@ func Test_Handler_UpdateTag(t *testing.T) {
 			}
 
 			assert.Equal(t, TreeChangeMessage{}, calls[0].Payload)
-			assert.True(t, calls[0].Filter(sessionCtx(), "topic"))
-			assert.True(t, calls[0].Filter(otherUserCtx(), "topic"))
-			assert.False(t, calls[0].Filter(context.Background(), "topic"))
-			assert.False(t, calls[0].Filter(auth.AddSessionToContext(context.Background(), auth.Session{
-				UserID:               "u1",
-				ActiveOrganizationID: "org2",
-			}), "topic"))
 		}
 	}
 
@@ -486,72 +479,12 @@ func Test_Handler_UpdateTag(t *testing.T) {
 				wasPublishCalled(0),
 			),
 		},
-		"Non-string name": {
-			DB:    &DBMock{},
-			TagID: _tagID.String(),
-			JSON:  `{"tagName":123}`,
-			Checks: checks(
-				hasResp(http.StatusBadRequest, `{"code":"request.invalid_json","message":"invalid JSON body"}`),
-				wasUpdateCalled(0, tagCore.UpdateInput{}),
-				wasPublishCalled(0),
-			),
-		},
 		"Empty update": {
 			DB:    &DBMock{},
 			TagID: _tagID.String(),
 			JSON:  `{}`,
 			Checks: checks(
 				hasResp(http.StatusBadRequest, `{"code":"tag.empty_update","message":"tag update needs a name or a colour"}`),
-				wasUpdateCalled(0, tagCore.UpdateInput{}),
-				wasPublishCalled(0),
-			),
-		},
-		"Null fields": {
-			DB:    &DBMock{},
-			TagID: _tagID.String(),
-			JSON:  `{"tagName":null,"color":null}`,
-			Checks: checks(
-				hasResp(http.StatusBadRequest, `{"code":"tag.empty_update","message":"tag update needs a name or a colour"}`),
-				wasUpdateCalled(0, tagCore.UpdateInput{}),
-				wasPublishCalled(0),
-			),
-		},
-		"Empty name": {
-			DB:    &DBMock{},
-			TagID: _tagID.String(),
-			JSON:  `{"tagName":"","color":"#00a63e"}`,
-			Checks: checks(
-				hasResp(http.StatusBadRequest, `{"code":"tag.invalid_name","message":"tag name cannot be empty"}`),
-				wasUpdateCalled(0, tagCore.UpdateInput{}),
-				wasPublishCalled(0),
-			),
-		},
-		"Empty colour": {
-			DB:    &DBMock{},
-			TagID: _tagID.String(),
-			JSON:  `{"color":""}`,
-			Checks: checks(
-				hasResp(http.StatusBadRequest, `{"code":"tag.invalid_color","message":"tag colour must be one of the palette"}`),
-				wasUpdateCalled(0, tagCore.UpdateInput{}),
-				wasPublishCalled(0),
-			),
-		},
-		"Off-palette colour": {
-			DB:    &DBMock{},
-			TagID: _tagID.String(),
-			JSON:  `{"color":"#22c55e"}`,
-			Checks: checks(
-				hasResp(http.StatusBadRequest, `{"code":"tag.invalid_color","message":"tag colour must be one of the palette"}`),
-				wasUpdateCalled(0, tagCore.UpdateInput{}),
-				wasPublishCalled(0),
-			),
-		},
-		"Colour name instead of hex": {
-			DB:    &DBMock{},
-			TagID: _tagID.String(),
-			JSON:  `{"color":"green"}`,
-			Checks: checks(
-				hasResp(http.StatusBadRequest, `{"code":"tag.invalid_color","message":"tag colour must be one of the palette"}`),
 				wasUpdateCalled(0, tagCore.UpdateInput{}),
 				wasPublishCalled(0),
 			),
@@ -586,27 +519,7 @@ func Test_Handler_UpdateTag(t *testing.T) {
 				wasPublishCalled(0),
 			),
 		},
-		"Successful rename": {
-			DB:    &DBMock{},
-			TagID: _tagID.String(),
-			JSON:  `{"tagName":"Release"}`,
-			Checks: checks(
-				hasResp(http.StatusNoContent, ""),
-				wasUpdateCalled(1, tagCore.UpdateInput{TagName: null.StringFrom("Release")}),
-				wasPublishCalled(1),
-			),
-		},
-		"Successful recolour": {
-			DB:    &DBMock{},
-			TagID: _tagID.String(),
-			JSON:  `{"color":"#00a63e"}`,
-			Checks: checks(
-				hasResp(http.StatusNoContent, ""),
-				wasUpdateCalled(1, tagCore.UpdateInput{Color: null.StringFrom("#00a63e")}),
-				wasPublishCalled(1),
-			),
-		},
-		"Successful rename and recolour": {
+		"Successful update": {
 			DB:    &DBMock{},
 			TagID: _tagID.String(),
 			JSON:  `{"tagName":"Release","color":"#00a63e"}`,

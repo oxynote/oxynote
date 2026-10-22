@@ -20,6 +20,25 @@ export function stubThemeColorContext() {
 	)
 }
 
+// the same stand-in, but it reads a "#rrggbb" colour back as painted, for
+// suites that compare a picked colour with a stored one.
+export function stubHexColorContext() {
+	const context = {
+		clearRect: () => undefined,
+		fillRect: () => undefined,
+		fillStyle: "",
+		getImageData: () => ({
+			data: [1, 3, 5]
+				.map((at) => Number.parseInt(context.fillStyle.slice(at, at + 2), 16))
+				.concat(255),
+		}),
+	}
+
+	vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
+		context as unknown as CanvasRenderingContext2D,
+	)
+}
+
 // the selectable colour palette is read straight off the root element's
 // CSS variables, which no stylesheet defines under happy-dom. Distinct
 // values let a suite tell one swatch from another.

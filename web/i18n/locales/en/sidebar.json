@@ -61,6 +61,13 @@
 		},
 		"item-placeholder-name": "Add Page",
 		"toggle-sidebar": "Toggle Sidebar",
+		"tag-edit-menu": {
+			"name-label": "Name",
+			"name-taken": "Another tag already uses this name",
+			"color-title": "Color",
+			"update-button": "Update",
+			"update-success": "The {name} tag was successfully updated"
+		},
 		"tag-deletion-modal": {
 			"title": "Delete Tag",
 			"description": "Are you sure you want to delete {name}? It will be removed from every page using it. This action cannot be undone.",
@@ -112,15 +119,6 @@
 		"notification-sheet": {
 			"title": "Inbox",
 			"description": "Shows your notifications."
-		},
-		"tag-edit-modal": {
-			"title": "Edit Tag",
-			"description": "Update the name or colour wherever this tag is used.",
-			"name-label": "Name",
-			"color-label": "Colour",
-			"save-button": "Save changes",
-			"cancel-button": "Cancel",
-			"duplicate-name": "A tag with this name already exists."
 		}
 	}
 }

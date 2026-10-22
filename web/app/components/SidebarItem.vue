@@ -3,7 +3,7 @@ import type { HTMLAttributes } from "vue"
 import {
 	SIDEBAR_ITEM_PLACEHOLDER_ID,
 	type SidebarItem,
-	type SidebarItemAction,
+	type PlainActionFn,
 } from "./sidebar"
 import { cn } from "#layers/ui/app/lib/utils"
 
@@ -66,6 +66,7 @@ const collapseChevron = computed(
 )
 const actionsMenu = computed(() => props.item.actions.length > 0)
 const swapsOnHover = computed(() => collapseChevron.value || actionsMenu.value)
+const menuOpen = ref(false)
 
 function handleClick() {
 	if (props.item.id === SIDEBAR_ITEM_PLACEHOLDER_ID) {
@@ -83,8 +84,8 @@ function handleClick() {
 	}
 }
 
-function runAction(action: SidebarItemAction) {
-	void action.fn()
+function runAction(fn: PlainActionFn) {
+	void fn()
 }
 </script>
 
@@ -242,7 +243,7 @@ function runAction(action: SidebarItemAction) {
 					<span>{{ props.item.name }}</span>
 				</NuxtLink>
 			</ShadcnUiSidebarMenuButton>
-			<ShadcnUiDropdownMenu v-if="actionsMenu">
+			<ShadcnUiDropdownMenu v-if="actionsMenu" v-model:open="menuOpen">
 				<ShadcnUiDropdownMenuTrigger as-child>
 					<ShadcnUiSidebarMenuAction class="show-on-parent-hover" show-on-hover>
 						<Icon name="lucide:ellipsis" />
@@ -261,14 +262,31 @@ function runAction(action: SidebarItemAction) {
 					loop
 					inside-sheet
 				>
-					<ShadcnUiDropdownMenuItem
-						v-for="action in props.item.actions"
-						:key="action.id"
-						@click="runAction(action)"
-					>
-						<Icon :name="action.icon" />
-						<span>{{ action.name }}</span>
-					</ShadcnUiDropdownMenuItem>
+					<template v-for="action in props.item.actions" :key="action.id">
+						<ShadcnUiDropdownMenuSub v-if="'menu' in action">
+							<ShadcnUiDropdownMenuSubTrigger>
+								<Icon :name="action.icon" />
+								<span>{{ action.name }}</span>
+							</ShadcnUiDropdownMenuSubTrigger>
+							<ShadcnUiDropdownMenuSubContent
+								side="right"
+								align="start"
+								loop
+								:collision-padding="8"
+								inside-sheet
+							>
+								<component
+									:is="action.menu.component"
+									v-bind="action.menu.props"
+									@close="menuOpen = false"
+								/>
+							</ShadcnUiDropdownMenuSubContent>
+						</ShadcnUiDropdownMenuSub>
+						<ShadcnUiDropdownMenuItem v-else @click="runAction(action.fn)">
+							<Icon :name="action.icon" />
+							<span>{{ action.name }}</span>
+						</ShadcnUiDropdownMenuItem>
+					</template>
 				</ShadcnUiDropdownMenuContent>
 			</ShadcnUiDropdownMenu>
 		</div>

@@ -133,22 +133,23 @@ func (h *Handler) UpdateTag(w http.ResponseWriter, r *http.Request) {
 
 	var inp tagCore.UpdateInput
 
-	if err := httpserver.DecodeJSON(r, &inp); err != nil {
+	if err = httpserver.DecodeJSON(r, &inp); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	if err := inp.Validate(); err != nil {
+	if err = inp.Validate(); err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
 
-	if err := h.db.UpdateTag(
+	err = h.db.UpdateTag(
 		r.Context(),
 		session.ActiveOrganizationID,
 		tagID,
 		inp,
-	); err != nil {
+	)
+	if err != nil {
 		httpserver.RespondError(h.log, w, err)
 		return
 	}
