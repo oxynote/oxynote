@@ -494,6 +494,21 @@ describe("<LinkBubbleMenu>", { concurrent: false }, () => {
 		])
 	})
 
+	it("keeps the link and the popover while its address is empty", async ({
+		expect,
+	}) => {
+		const target = makeEditorFor()
+		await mountMenu(target)
+		await hoverLink(target)
+		popoverButton(t("editor.link.edit")).click()
+		await nextTick()
+
+		await typeIn(at(popoverInputs(), 0), "")
+
+		expect(target.getHTML()).toContain('href="https://oxynote.test"')
+		expect(popoverInputs().map((input) => input.value)).toEqual(["", "docs"])
+	})
+
 	it("takes new text typed after the text was emptied", async ({ expect }) => {
 		const target = makeEditorFor()
 		await mountMenu(target)
@@ -532,6 +547,24 @@ describe("<LinkBubbleMenu>", { concurrent: false }, () => {
 		await typeIn(at(popoverInputs(), 1), "")
 
 		input()
+		await nextTick()
+
+		expect(target.getHTML()).not.toContain("<a")
+		expect(target.getText()).toBe("see docs here")
+		expect(popover()).toBeNull()
+	})
+
+	it("removes the link when the popover closes with an empty address", async ({
+		expect,
+	}) => {
+		const target = makeEditorFor()
+		await mountMenu(target)
+		await hoverLink(target)
+		popoverButton(t("editor.link.edit")).click()
+		await nextTick()
+		await typeIn(at(popoverInputs(), 0), "")
+
+		window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }))
 		await nextTick()
 
 		expect(target.getHTML()).not.toContain("<a")
@@ -588,6 +621,25 @@ describe("<LinkBubbleMenu>", { concurrent: false }, () => {
 		await nextTick()
 
 		expect(popover()).toBeNull()
+	})
+
+	it.for([
+		{ name: "closes the popover on enter in the address field", input: 0 },
+		{ name: "closes the popover on enter in the text field", input: 1 },
+	])("$name", async ({ input }, { expect }) => {
+		const target = makeEditorFor()
+		await mountMenu(target)
+		await hoverLink(target)
+		popoverButton(t("editor.link.edit")).click()
+		await nextTick()
+
+		at(popoverInputs(), input).dispatchEvent(
+			new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+		)
+		await nextTick()
+
+		expect(popover()).toBeNull()
+		expect(target.getHTML()).toContain('href="https://oxynote.test"')
 	})
 
 	it("abandons editing on a click outside the popover", async ({ expect }) => {

@@ -11,6 +11,7 @@ import {
 	isDeletionSuccessInUrl,
 	isOptimisticInsertId,
 	isXid,
+	withDefaultScheme,
 } from "./url"
 
 // default length of https://github.com/rs/xid
@@ -165,6 +166,29 @@ describe("ensureHttps", () => {
 		},
 	])("$name", ({ input, expected }, { expect }) => {
 		expect(ensureHttps(input)).toBe(expected)
+	})
+})
+
+describe("withDefaultScheme", () => {
+	it.for([
+		{
+			name: "prefixes an address without a scheme",
+			input: "example.com",
+			expected: "https://example.com",
+		},
+		{
+			name: "keeps an http address",
+			input: "http://example.com",
+			expected: "http://example.com",
+		},
+		{
+			name: "keeps another scheme",
+			input: "mailto:team@example.com",
+			expected: "mailto:team@example.com",
+		},
+		{ name: "leaves an empty address empty", input: "", expected: "" },
+	])("$name", ({ input, expected }, { expect }) => {
+		expect(withDefaultScheme(input)).toBe(expected)
 	})
 })
 

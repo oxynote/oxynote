@@ -19,7 +19,7 @@ function createLink() {
 	props.editor
 		.chain()
 		.focus()
-		.setLink({ href: ensureHttps(linkUrl.value.trim()) })
+		.setLink({ href: withDefaultScheme(linkUrl.value.trim()) })
 		.run()
 
 	// Reset and close

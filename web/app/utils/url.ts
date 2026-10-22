@@ -107,6 +107,15 @@ export function ensureHttps(url: string): string {
 	return url
 }
 
+// an address without a scheme gets https, as a browser's address bar does
+export function withDefaultScheme(url: string): string {
+	if (url === "" || /^[a-z][a-z\d+.-]*:/i.test(url)) {
+		return url
+	}
+
+	return `https://${url}`
+}
+
 export function extractDomain(url: string): string {
 	try {
 		const normalized = ensureHttps(url) // in case protocol is missing

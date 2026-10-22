@@ -46,18 +46,20 @@ describe("<LinkCreateMenu>", () => {
 		])
 	})
 
-	it("keeps the address the reader typed when it already has a scheme", async ({
-		expect,
-	}) => {
-		const { wrapper, commands } = await mountMenu()
-		await typeUrl(wrapper, "http://oxynote.test")
+	it.for([
+		{ input: "http://oxynote.test" },
+		{ input: "mailto:team@oxynote.test" },
+	])(
+		"keeps the address $input the reader typed with a scheme",
+		async ({ input }, { expect }) => {
+			const { wrapper, commands } = await mountMenu()
+			await typeUrl(wrapper, input)
 
-		await pressKey(wrapper, "Enter")
+			await pressKey(wrapper, "Enter")
 
-		expect(commandArgs(commands, "setLink")).toEqual([
-			{ href: "http://oxynote.test" },
-		])
-	})
+			expect(commandArgs(commands, "setLink")).toEqual([{ href: input }])
+		},
+	)
 
 	it("closes itself once the link is made", async ({ expect }) => {
 		const { wrapper } = await mountMenu()

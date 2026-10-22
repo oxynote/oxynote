@@ -342,8 +342,8 @@ function cancelEdit() {
 	document.removeEventListener("mousedown", handleClickOutside)
 }
 
-// closing leaves the fields, so it does what leaving them does. Empty
-// text removes the link. A click outside has already moved the focus, so
+// closing leaves the fields, so it does what leaving them does. An empty
+// field removes the link. A click outside has already moved the focus, so
 // nothing here takes it back.
 function closeEdit() {
 	if (!isEditing.value || !currentLink.value) {
@@ -353,7 +353,7 @@ function closeEdit() {
 
 	const { from, to } = currentLink.value
 
-	if (editLinkText.value === "") {
+	if (editLinkText.value === "" || editLinkUrl.value === "") {
 		props.editor.commands.command(({ tr, state }) => {
 			const linkType = state.schema.marks.link
 			if (!linkType) {
@@ -364,7 +364,7 @@ function closeEdit() {
 			return true
 		})
 	} else {
-		void updateLink(editLinkText.value, withScheme(editLinkUrl.value))
+		void updateLink(editLinkText.value, withDefaultScheme(editLinkUrl.value))
 	}
 
 	cancelEdit()
@@ -372,16 +372,7 @@ function closeEdit() {
 
 // the scheme is added once the address is left, never while it is typed
 function addMissingScheme() {
-	editLinkUrl.value = withScheme(editLinkUrl.value)
-}
-
-// an address without a scheme gets https, as a browser's address bar does
-function withScheme(url: string): string {
-	if (url === "" || /^[a-z][a-z\d+.-]*:/i.test(url)) {
-		return url
-	}
-
-	return `https://${url}`
+	editLinkUrl.value = withDefaultScheme(editLinkUrl.value)
 }
 
 function removeLink() {
@@ -438,9 +429,9 @@ async function updateLink(newText: string, newHref: string) {
 		return
 	}
 
-	// the document keeps the old text until new text comes or the popover
-	// closes
-	if (newText === "") {
+	// the document keeps the old link while a field is empty. Filling it in
+	// again or closing the popover settles it.
+	if (newText === "" || newHref === "") {
 		return
 	}
 
@@ -709,6 +700,7 @@ defineExpose({
 								disable-focus-effect
 								type="url"
 								@blur="addMissingScheme"
+								@keydown.enter.prevent="closeEdit"
 							/>
 						</div>
 						<div class="flex flex-col gap-1">
@@ -723,6 +715,7 @@ defineExpose({
 								class="h-[1.775rem] px-2 text-2sm md:text-2sm"
 								disable-focus-effect
 								type="text"
+								@keydown.enter.prevent="closeEdit"
 							/>
 						</div>
 					</div>
