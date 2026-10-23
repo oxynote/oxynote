@@ -1,7 +1,5 @@
 <script lang="ts" setup>
 import { colorToHex } from "~/assets/css"
-import { cn } from "#layers/ui/app/lib/utils"
-import { HOOK_SUBMENU_WIDTH_CLASS } from "./editor/hooks/hook-menu"
 import { showToastMessage } from "./toast"
 
 const props = defineProps<{
@@ -88,11 +86,7 @@ async function save() {
 }
 </script>
 <template>
-	<form
-		:class="cn('flex flex-col', HOOK_SUBMENU_WIDTH_CLASS)"
-		@submit.prevent="save"
-		@keydown.tab.stop
-	>
+	<form class="flex w-52 flex-col" @submit.prevent="save" @keydown.tab.stop>
 		<!--
 			reka-ui's sub menu closes on ArrowLeft, and its modal root swallows
 			Tab, wherever inside them the key is pressed. So Tab stays with the
